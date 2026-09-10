@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   markBacksterosTaskInProgressForAgent,
@@ -108,10 +108,14 @@ describe("markBacksterosTaskInReviewForAgent", () => {
 
 describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
   const binding = {
-    draftId: null,
+    kind: "thread" as const,
     threadId: "thread-1",
     environmentId: "env-1",
-    projectId: "proj-1",
+    t3ProjectId: "proj-1",
+    backsterosProjectId: "bproj-1",
+    projectTitle: "Project",
+    title: "Task",
+    displayId: "BSH-1",
   };
 
   it("returns true only when the bound chat is ready", () => {
@@ -126,9 +130,7 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
         },
       ],
     ]);
-    expect(
-      shouldMarkBacksterosTaskInReviewAfterWorking({ binding, shellsByKey }),
-    ).toBe(true);
+    expect(shouldMarkBacksterosTaskInReviewAfterWorking({ binding, shellsByKey })).toBe(true);
   });
 
   it("returns false while waiting on approval or input", () => {

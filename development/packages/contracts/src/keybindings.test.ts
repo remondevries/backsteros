@@ -31,19 +31,13 @@ it.effect("parses keybinding rules", () =>
     assert.strictEqual(parsed.command, "terminal.toggle");
 
     const parsedSidebarToggle = yield* decode(KeybindingRule, {
-      key: "[",
+      key: "mod+b",
       command: "sidebar.toggle",
     });
     assert.strictEqual(parsedSidebarToggle.command, "sidebar.toggle");
 
-    const parsedTaskDetailToggle = yield* decode(KeybindingRule, {
-      key: "shift+[",
-      command: "taskDetail.toggle",
-    });
-    assert.strictEqual(parsedTaskDetailToggle.command, "taskDetail.toggle");
-
     const parsedRightPanelToggle = yield* decode(KeybindingRule, {
-      key: "]",
+      key: "mod+alt+b",
       command: "rightPanel.toggle",
     });
     assert.strictEqual(parsedRightPanelToggle.command, "rightPanel.toggle");
@@ -127,6 +121,12 @@ it.effect("parses keybinding rules", () =>
       when: "!terminalFocus",
     });
     assert.strictEqual(parsedThreadCopyReference.command, "thread.copyReference");
+
+    const parsedThreadStop = yield* decode(KeybindingRule, {
+      key: "mod+escape",
+      command: "thread.stop",
+    });
+    assert.strictEqual(parsedThreadStop.command, "thread.stop");
   }),
 );
 

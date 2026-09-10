@@ -62,9 +62,9 @@ export function captureBacksterosProjectsRailResume(input: {
   readonly selectionTaskId?: string | null;
   readonly routeProjectId?: string | null;
   readonly routeProjectTitle?: string | null;
-  readonly draftId?: string | null;
-  readonly environmentId?: string | null;
-  readonly threadId?: string | null;
+  readonly draftId?: string | null | undefined;
+  readonly environmentId?: string | null | undefined;
+  readonly threadId?: string | null | undefined;
   /** Open task→chat binding — preferred when the URL is still the project page. */
   readonly binding?: BacksterosTaskChatBinding | null;
 }): BacksterosRailResumeSnapshot {

@@ -31,7 +31,7 @@ function ContextGlyph({
 }: {
   readonly accent: string;
   readonly initial: string;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <span
@@ -65,7 +65,7 @@ export function ServersContextBreadcrumb({
   readonly serverId?: string | null;
   readonly appService?: string | null;
   readonly appLabel?: string | null;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   const navigate = useNavigate();
   const locationSearch = useRouterState({
@@ -198,7 +198,7 @@ export function ServersContextBreadcrumb({
                         void navigate({
                           to: "/servers/$serverId/apps/$service",
                           params: { serverId, service: entry.service },
-                          search: preservedAppSearch(locationSearch),
+                          search: preservedAppSearch(locationSearch) as never,
                         })
                       }
                     >

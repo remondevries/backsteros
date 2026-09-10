@@ -58,7 +58,7 @@ export function migrateBacksterosTaskStatus(status: string): BacksterosTaskStatu
 export type BacksterosTaskLikeForGrouping = {
   readonly status: string;
   readonly sortOrder?: number;
-  readonly dueDate?: string | null;
+  readonly dueDate?: string | null | undefined;
   readonly title?: string;
 };
 

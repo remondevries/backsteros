@@ -7,9 +7,7 @@ import { BacksterosTaskDueDateIcon } from "./TaskDueDateIcon";
 import { BacksterosTaskPriorityIcon } from "./TaskPriorityIcon";
 import { BacksterosTaskStatusIcon } from "./TaskStatusIcon";
 import { formatTrackedDuration } from "./trackedTime";
-import {
-  getBacksterosTaskPriorityLabel,
-} from "./taskDetailFormat";
+import { getBacksterosTaskPriorityLabel } from "./taskDetailFormat";
 import { formatTaskDueMetaLabel } from "./taskDueDate";
 import {
   getBacksterosTaskStatusLabel,
@@ -104,19 +102,13 @@ function stringList(value: unknown): string[] {
 }
 
 /** Rich activity copy matching BacksterOS desktop `activityMessage`. */
-export function renderBacksterosActivityMessage(
-  activity: BacksterosTaskActivity,
-): ReactNode {
+export function renderBacksterosActivityMessage(activity: BacksterosTaskActivity): ReactNode {
   const name = <strong>{activity.actorName || "Someone"}</strong>;
   const data = activity.data;
 
   switch (activity.type) {
     case "created":
-      return (
-        <>
-          {name} created this task
-        </>
-      );
+      return <>{name} created this task</>;
     case "status_changed":
       return (
         <>
@@ -175,15 +167,15 @@ export function renderBacksterosActivityMessage(
     case "priority_changed":
       return (
         <>
-          {name} changed priority from <strong>{priorityLabel(data.from)}</strong>{" "}
-          to <strong>{priorityLabel(data.to)}</strong>
+          {name} changed priority from <strong>{priorityLabel(data.from)}</strong> to{" "}
+          <strong>{priorityLabel(data.to)}</strong>
         </>
       );
     case "due_date_changed":
       return (
         <>
-          {name} changed due date from <strong>{dueDateLabel(data.from)}</strong>{" "}
-          to <strong>{dueDateLabel(data.to)}</strong>
+          {name} changed due date from <strong>{dueDateLabel(data.from)}</strong> to{" "}
+          <strong>{dueDateLabel(data.to)}</strong>
         </>
       );
     case "project_changed": {
@@ -191,8 +183,7 @@ export function renderBacksterosActivityMessage(
       const toName = namedValue(data.to, data.toName, "No project");
       return (
         <>
-          {name} moved this task from <strong>{fromName}</strong> to{" "}
-          <strong>{toName}</strong>
+          {name} moved this task from <strong>{fromName}</strong> to <strong>{toName}</strong>
         </>
       );
     }
@@ -209,8 +200,7 @@ export function renderBacksterosActivityMessage(
           : 0;
       return (
         <>
-          {name} tracked <strong>{formatTrackedDuration(durationSeconds)}</strong> on
-          this task
+          {name} tracked <strong>{formatTrackedDuration(durationSeconds)}</strong> on this task
         </>
       );
     }
@@ -221,7 +211,7 @@ export function renderBacksterosActivityMessage(
 
 export function BacksterosActivityLeadingIcon(props: {
   readonly activity: BacksterosTaskActivity;
-  readonly avatarSrcByContactId?: Readonly<Record<string, string>>;
+  readonly avatarSrcByContactId?: Readonly<Record<string, string>> | undefined;
 }): ReactNode {
   const { activity, avatarSrcByContactId } = props;
   const data = activity.data;
@@ -237,18 +227,12 @@ export function BacksterosActivityLeadingIcon(props: {
     return <BacksterosTaskPriorityIcon priority={priority} size={12} />;
   }
   if (activity.type === "due_date_changed") {
-    return (
-      <BacksterosTaskDueDateIcon active={data.to != null} size={12} />
-    );
+    return <BacksterosTaskDueDateIcon active={data.to != null} size={12} />;
   }
   if (activity.type === "assignee_changed") {
     const assigneeId = asOptionalString(data.to);
-    const avatarSrc = assigneeId
-      ? (avatarSrcByContactId?.[assigneeId] ?? null)
-      : null;
-    return (
-      <BacksterosEntityAvatarIcon src={avatarSrc} size={12} kind="contact" />
-    );
+    const avatarSrc = assigneeId ? (avatarSrcByContactId?.[assigneeId] ?? null) : null;
+    return <BacksterosEntityAvatarIcon src={avatarSrc} size={12} kind="contact" />;
   }
   if (activity.type === "related_contacts_changed") {
     return <BacksterosContactPersonIcon size={12} />;
@@ -264,10 +248,6 @@ export function BacksterosActivityLeadingIcon(props: {
   }
 
   const actorContactId = asOptionalString(activity.actorContactId);
-  const actorAvatar = actorContactId
-    ? (avatarSrcByContactId?.[actorContactId] ?? null)
-    : null;
-  return (
-    <BacksterosEntityAvatarIcon src={actorAvatar} size={12} kind="contact" />
-  );
+  const actorAvatar = actorContactId ? (avatarSrcByContactId?.[actorContactId] ?? null) : null;
+  return <BacksterosEntityAvatarIcon src={actorAvatar} size={12} kind="contact" />;
 }

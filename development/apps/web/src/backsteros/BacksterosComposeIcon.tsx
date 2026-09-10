@@ -3,7 +3,7 @@ export function BacksterosComposeIcon({
   className,
   size = 16,
 }: {
-  className?: string;
+  className?: string | undefined;
   size?: number;
 }) {
   return (

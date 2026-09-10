@@ -17,8 +17,8 @@ export function DeploymentListRow({
   showSite = false,
 }: {
   readonly entry: DiscoveredDeployment;
-  readonly onSelect?: (entry: DiscoveredDeployment) => void;
-  readonly showSite?: boolean;
+  readonly onSelect?: ((entry: DiscoveredDeployment) => void) | undefined;
+  readonly showSite?: boolean | undefined;
 }) {
   const via = deploymentVia(entry);
   const relative = formatRelativeTimeLabel(entry.at) || "just now";
@@ -98,9 +98,9 @@ export function DeploymentsList({
   className,
 }: {
   readonly deployments: readonly DiscoveredDeployment[];
-  readonly onSelect?: (entry: DiscoveredDeployment) => void;
-  readonly showSite?: boolean;
-  readonly className?: string;
+  readonly onSelect?: ((entry: DiscoveredDeployment) => void) | undefined;
+  readonly showSite?: boolean | undefined;
+  readonly className?: string | undefined;
 }) {
   return (
     <ul className={cn("px-2 py-1 sm:px-3", className)}>

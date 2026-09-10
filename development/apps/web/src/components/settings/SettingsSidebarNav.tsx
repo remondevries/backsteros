@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, type ComponentType } from "react";
 import {
   ArchiveIcon,
+  FolderKanbanIcon,
   ArrowLeftIcon,
   BlocksIcon,
   BotIcon,
@@ -48,6 +49,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/connections": Link2Icon,
+  "/settings/projects": FolderKanbanIcon,
   "/settings/archived": ArchiveIcon,
 };
 

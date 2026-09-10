@@ -31,23 +31,23 @@ import {
 export type DocumentMarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
-  onBlur?: () => void;
-  disabled?: boolean;
-  ariaLabel?: string;
+  onBlur?: (() => void) | undefined;
+  disabled?: boolean | undefined;
+  ariaLabel?: string | undefined;
   /** Increment to request editor focus (e.g. when switching to edit mode). */
-  focusRequest?: number;
+  focusRequest?: number | undefined;
   /**
    * Size the editor to its content (matches preview). Use on task detail
    * where attachments / activity sit below the description.
    */
-  scrollWithContent?: boolean;
-  className?: string;
-  placeholder?: string;
+  scrollWithContent?: boolean | undefined;
+  className?: string | undefined;
+  placeholder?: string | undefined;
   /**
    * When set, clipboard / drag-drop image files are uploaded and inserted as
    * `![screenshot](url)` markdown embeds.
    */
-  onUploadImages?: UploadMarkdownImages;
+  onUploadImages?: UploadMarkdownImages | undefined;
 };
 
 function focusEditorView(view: EditorView): void {
@@ -177,9 +177,9 @@ export function DocumentMarkdownEditor({
         ref={editorRef}
         value={value}
         height={scrollWithContent ? "auto" : "100%"}
-        minHeight={scrollWithContent ? "6rem" : undefined}
+        {...(scrollWithContent ? { minHeight: "6rem" } : {})}
         theme="none"
-        placeholder={placeholder}
+        {...(placeholder !== undefined ? { placeholder } : {})}
         basicSetup={{
           lineNumbers: false,
           foldGutter: false,

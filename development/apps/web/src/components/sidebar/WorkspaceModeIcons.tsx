@@ -3,7 +3,7 @@ export function WorkspaceCoderIcon({
   className,
   size = 16,
 }: {
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly size?: number;
 }) {
   return (
@@ -26,7 +26,7 @@ export function WorkspaceServersIcon({
   className,
   size = 16,
 }: {
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly size?: number;
 }) {
   return (
@@ -49,7 +49,7 @@ export function WorkspaceGitIcon({
   className,
   size = 16,
 }: {
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly size?: number;
 }) {
   return (

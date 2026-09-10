@@ -9,7 +9,7 @@ import { contentCrossfadeStyle, useContentCrossfade } from "./useContentCrossfad
  */
 export function BacksterosContentCrossfade(props: {
   readonly contentKey: string;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly children: (displayedKey: string) => ReactNode;
 }) {
   const crossfade = useContentCrossfade(props.contentKey);

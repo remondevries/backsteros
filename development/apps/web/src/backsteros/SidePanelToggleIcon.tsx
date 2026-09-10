@@ -9,7 +9,7 @@ export function SidePanelToggleIcon({
   size?: number;
   collapsed?: boolean;
   rail?: "start" | "end" | "bottom";
-  className?: string;
+  className?: string | undefined;
 }) {
   // Slightly chunkier than the desktop twin so the open panel reads at 16px.
   // Bottom rail needs a bit more mass — a horizontal bar reads thinner than a

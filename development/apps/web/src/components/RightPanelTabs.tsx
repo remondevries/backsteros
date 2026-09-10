@@ -56,7 +56,7 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { MAIN_COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
@@ -182,28 +182,12 @@ function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
  * Desktop preview tab backing a surface, or null for non-preview surfaces, the
  * "new browser tab" placeholder, and the web build where no desktop tab exists.
  */
-function previewSessionOf(
-  surface: RightPanelSurface,
-  sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
-): PreviewSessionSnapshot | null {
-  if (surface.kind !== "preview" || !surface.resourceId) return null;
-  const ownerThreadId =
-    "ownerThreadId" in surface && typeof surface.ownerThreadId === "string"
-      ? surface.ownerThreadId
-      : null;
-  if (ownerThreadId) {
-    return (
-      sessions[`${ownerThreadId}:${surface.resourceId}`] ?? sessions[surface.resourceId] ?? null
-    );
-  }
-  return sessions[surface.resourceId] ?? null;
-}
-
 function previewTabIdOf(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
 ): string | null {
-  return previewSessionOf(surface, sessions)?.tabId ?? null;
+  if (surface.kind !== "preview" || !surface.resourceId) return null;
+  return sessions[surface.resourceId]?.tabId ?? null;
 }
 
 /**
@@ -410,14 +394,6 @@ function RightPanelEmptyState(props: {
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
       const target = event.target;
       if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
-      // Capture-phase listeners can see a non-field target while focus is still typing.
-      if (
-        document.activeElement instanceof Element &&
-        document.activeElement !== target &&
-        surfaceShortcutTargetsTypingContext(document.activeElement)
-      ) {
-        return;
-      }
       event.preventDefault();
       event.stopPropagation();
       action.onClick();
@@ -629,7 +605,7 @@ function surfaceTitle(
     case "agents":
       return "Agents";
     case "preview": {
-      const snapshot = previewSessionOf(surface, sessions);
+      const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
       if (snapshot.navStatus.title.trim().length > 0) return snapshot.navStatus.title;
       try {
@@ -677,7 +653,7 @@ function SurfaceIcon({
 }) {
   switch (surface.kind) {
     case "preview": {
-      const snapshot = previewSessionOf(surface, sessions);
+      const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       const url = !snapshot || snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
       const favicon = snapshot ? (desktopByTabId[snapshot.tabId]?.favicon ?? null) : null;
       const capturedUrl =
@@ -1018,7 +994,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             (props.layoutControls
               ? "wco:pr-[var(--workspace-native-controls-inset)]"
               : "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]"),
-          props.mode === "inline" && props.maximized && MAIN_COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
       >

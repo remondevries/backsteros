@@ -34,7 +34,7 @@ function StorageCard({
   readonly title: string;
   readonly description?: string;
   readonly action?: ReactNode;
-  readonly children?: ReactNode;
+  readonly children?: ReactNode | undefined;
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border/70 bg-card/40">

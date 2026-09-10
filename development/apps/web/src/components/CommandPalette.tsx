@@ -640,7 +640,7 @@ function OpenCommandPaletteDialog(props: {
       : resolveThreadReferenceCopyTarget({
           threadId: activeThread.id,
           linkedPullRequestUrl: activeThread.linkedPullRequest?.url ?? null,
-          detectedPullRequestUrl,
+          openPanelPullRequestUrl: detectedPullRequestUrl,
         });
   const copyActiveThreadReference = useCallback(async () => {
     const target = activeThreadReferenceCopyTarget;

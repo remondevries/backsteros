@@ -15,7 +15,7 @@ export function BacksterosTaskDueDateIcon(props: {
   readonly active?: boolean;
   readonly urgency?: BacksterosDueDateUrgency | null;
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   const active = props.active ?? false;
   const size = props.size ?? 14;

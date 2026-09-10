@@ -4,7 +4,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 
-import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
+import type { BrowserSettingsReadError, OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { openBrowserForThread } from "~/rightPanelProjectTools";
 
 import { openPreviewSession } from "./openPreviewSession";
@@ -17,7 +17,7 @@ export async function addBrowserSurface<E>(input: {
   readonly projectRef?: ScopedProjectRef | null;
   /** Omit to use the configured default profile. */
   readonly profileId?: string | undefined;
-}): Promise<AtomCommandResult<void, E>> {
+}): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({
     openPreview: input.openPreview,
     threadRef: input.threadRef,

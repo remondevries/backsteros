@@ -84,8 +84,8 @@ function SectionShell({
   empty,
 }: {
   readonly title: string;
-  readonly children?: ReactNode;
-  readonly empty?: string;
+  readonly children?: ReactNode | undefined;
+  readonly empty?: string | undefined;
 }) {
   return (
     <section className="flex flex-col gap-3">
@@ -213,8 +213,8 @@ function AppsListBody({
   limit,
 }: {
   readonly live: LiveSitesState;
-  readonly onSiteDeleted?: (siteId: string) => void;
-  readonly limit?: number;
+  readonly onSiteDeleted?: ((siteId: string) => void) | undefined;
+  readonly limit?: number | undefined;
 }) {
   const navigate = useNavigate();
   const [pendingDelete, setPendingDelete] = useState<DiscoveredSite | null>(null);
@@ -389,7 +389,7 @@ function RecentAppsSection({
   onSiteDeleted,
 }: {
   readonly live: LiveSitesState;
-  readonly onSiteDeleted?: (siteId: string) => void;
+  readonly onSiteDeleted?: ((siteId: string) => void) | undefined;
 }) {
   return (
     <SectionShell title="Recent Apps">
@@ -405,7 +405,7 @@ function AppsTab({
 }: {
   readonly profile: StaticServerProfile;
   readonly live: LiveSitesState;
-  readonly onSiteDeleted?: (siteId: string) => void;
+  readonly onSiteDeleted?: ((siteId: string) => void) | undefined;
 }) {
   const count = live.phase === "ready" ? live.sites.length : null;
   return (
@@ -567,7 +567,7 @@ function ServerOverview({
   readonly profile: StaticServerProfile;
   readonly connection: ConnectionState;
   readonly live: LiveSitesState;
-  readonly onSiteDeleted?: (siteId: string) => void;
+  readonly onSiteDeleted?: ((siteId: string) => void) | undefined;
 }) {
   return (
     <ScrollArea className="min-h-0 flex-1">

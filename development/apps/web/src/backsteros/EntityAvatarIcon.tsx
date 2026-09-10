@@ -5,9 +5,9 @@ import { BacksterosOrganizationIcon } from "./OrganizationIcon";
 
 /** Round avatar with person/org glyph fallback — matches desktop `EntityAvatarIcon`. */
 export function BacksterosEntityAvatarIcon(props: {
-  readonly src?: string | null;
+  readonly src?: string | null | undefined;
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly kind?: "contact" | "organization";
 }) {
   const size = props.size ?? 14;
@@ -35,18 +35,8 @@ export function BacksterosEntityAvatarIcon(props: {
   }
 
   if (kind === "organization") {
-    return (
-      <BacksterosOrganizationIcon
-        size={size}
-        className={props.className ?? "opacity-70"}
-      />
-    );
+    return <BacksterosOrganizationIcon size={size} className={props.className ?? "opacity-70"} />;
   }
 
-  return (
-    <BacksterosContactPersonIcon
-      size={size}
-      className={props.className ?? "opacity-70"}
-    />
-  );
+  return <BacksterosContactPersonIcon size={size} className={props.className ?? "opacity-70"} />;
 }

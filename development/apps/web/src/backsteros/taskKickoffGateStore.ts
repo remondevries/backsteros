@@ -75,7 +75,9 @@ export const useBacksterosTaskKickoffGateStore = create<BacksterosTaskKickoffGat
     }),
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => resolveStorage()),
+      storage: createJSONStorage(() =>
+        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+      ),
       version: 1,
       partialize: (state) => ({ byTaskId: state.byTaskId }),
       merge: (persisted, current) => {

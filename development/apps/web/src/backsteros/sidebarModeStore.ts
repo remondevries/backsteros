@@ -98,11 +98,11 @@ function normalizeBacksterosRailMode(raw: unknown): BacksterosRailMode {
 }
 
 export function captureSidebarModeResumeLocation(input: {
-  readonly draftId?: string | null;
-  readonly environmentId?: string | null;
-  readonly threadId?: string | null;
-  readonly backsterosProjectId?: string | null;
-  readonly backsterosProjectTitle?: string | null;
+  readonly draftId?: string | null | undefined;
+  readonly environmentId?: string | null | undefined;
+  readonly threadId?: string | null | undefined;
+  readonly backsterosProjectId?: string | null | undefined;
+  readonly backsterosProjectTitle?: string | null | undefined;
 }): SidebarModeResumeLocation {
   if (input.draftId) {
     return { kind: "draft", draftId: input.draftId };

@@ -74,7 +74,7 @@ export function BacksterosRelatedPropertyChips(props: {
   readonly organizations: readonly BacksterosOrganization[];
   readonly contactAvatarSrcById: Readonly<Record<string, string>>;
   readonly organizationAvatarSrcById: Readonly<Record<string, string>>;
-  readonly disabled?: boolean;
+  readonly disabled?: boolean | undefined;
   /** Desktop `data-task-property-dropdown` — R opens related. */
   readonly taskPropertyDropdownId?: string;
   readonly onChange: (next: BacksterosTaskRelatedSelection) => void;

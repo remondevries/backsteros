@@ -45,9 +45,16 @@ import {
 import { resolveStaticServerProfile, type StaticServerProfile } from "./staticServerProfiles";
 
 export type AppDeploymentNavState = {
-  readonly deployment?: DiscoveredDeployment;
-  readonly site?: DiscoveredSite;
+  readonly deployment?: DiscoveredDeployment | undefined;
+  readonly site?: DiscoveredSite | undefined;
 };
+
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    readonly deployment?: DiscoveredDeployment | undefined;
+    readonly site?: DiscoveredSite | undefined;
+  }
+}
 
 type SiteAppearance = {
   readonly accent: string;
@@ -159,9 +166,9 @@ function SectionShell({
   children,
 }: {
   readonly title: string;
-  readonly empty?: string;
+  readonly empty?: string | undefined;
   readonly action?: ReactNode;
-  readonly children?: ReactNode;
+  readonly children?: ReactNode | undefined;
 }) {
   return (
     <section className="min-w-0">
@@ -241,7 +248,7 @@ function DeploymentsSection({
 }: {
   readonly deployments: readonly DiscoveredDeployment[];
   readonly emptyLabel?: string;
-  readonly onSelect?: (entry: DiscoveredDeployment) => void;
+  readonly onSelect?: ((entry: DiscoveredDeployment) => void) | undefined;
 }) {
   if (deployments.length === 0) {
     return <SectionShell title="Deployments" empty={emptyLabel} />;
@@ -550,15 +557,14 @@ export function AppDetailPage({
     void navigate({
       to: "/servers/$serverId/apps/$service",
       params: { serverId, service },
-      search: (prev) => ({
-        ...prev,
+      search: {
         tab: "overview",
         deploymentId: entry.id,
-      }),
+      },
       state: {
         deployment: entry,
         site: detailsSite ?? undefined,
-      } satisfies AppDeploymentNavState,
+      } as AppDeploymentNavState,
     });
   }
 

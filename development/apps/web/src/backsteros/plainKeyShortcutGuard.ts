@@ -10,10 +10,10 @@ import { isBacksterosContentEditModeActive } from "./markdown-editor/contentView
  * CodeMirror) and while focus is in any typing surface.
  */
 export function shouldYieldPlainKeyHotkey(
-  event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "target">,
+  event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "target" | "key">,
   options?: {
-    readonly contentEditModeActive?: boolean;
-    readonly activeElement?: EventTarget | null;
+    readonly contentEditModeActive?: boolean | undefined;
+    readonly activeElement?: EventTarget | null | undefined;
   },
 ): boolean {
   const contentEditModeActive =

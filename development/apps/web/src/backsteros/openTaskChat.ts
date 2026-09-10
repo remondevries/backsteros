@@ -295,7 +295,7 @@ async function prepareBacksterosTaskKickoffGate(input: {
   readonly draftId: DraftId | string;
   readonly task: Pick<BacksterosTask, "id" | "number" | "title">;
   readonly backsterosProject: Pick<BacksterosCodebaseProject, "key" | "localWorkingDirectory">;
-  readonly description?: string | null;
+  readonly description?: string | null | undefined;
 }): Promise<void> {
   let number = input.task.number;
   let title = input.task.title;
@@ -334,7 +334,7 @@ async function prefillBacksterosTaskKickoffPrompt(input: {
   readonly draftId: DraftId | string;
   readonly task: Pick<BacksterosTask, "id" | "number" | "title">;
   readonly backsterosProject: Pick<BacksterosCodebaseProject, "key" | "localWorkingDirectory">;
-  readonly description?: string | null;
+  readonly description?: string | null | undefined;
   readonly taskId?: string;
 }): Promise<void> {
   await prepareBacksterosTaskKickoffGate({

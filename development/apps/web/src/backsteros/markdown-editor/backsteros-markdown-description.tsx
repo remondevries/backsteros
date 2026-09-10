@@ -12,17 +12,17 @@ export type BacksterosMarkdownDescriptionProps = {
   mode: BacksterosMarkdownDescriptionMode;
   value: string;
   onChange: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (() => void) | undefined;
   disabled?: boolean;
   ariaLabel?: string;
   emptyMessage?: string;
-  placeholder?: string;
+  placeholder?: string | undefined;
   /** Focus the editor when switching into edit mode. */
   focusOnEdit?: boolean;
   /** Desktop floating Preview/Edit dock (rendered inside the layout). */
   toggle?: ReactNode;
   /** Paste/drop image upload for markdown embeds (existing tasks only). */
-  onUploadImages?: UploadMarkdownImages;
+  onUploadImages?: UploadMarkdownImages | undefined;
 };
 
 /**

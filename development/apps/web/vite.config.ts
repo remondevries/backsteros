@@ -255,7 +255,7 @@ export default defineConfig(() => {
               });
             },
           },
-        } as const;
+        } as any;
 
         if (!devProxyTarget) {
           return { proxy: backsterosProxy };

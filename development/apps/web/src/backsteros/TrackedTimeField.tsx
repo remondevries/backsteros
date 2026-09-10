@@ -106,8 +106,8 @@ function TrackedTimePillDigits(props: { readonly totalSeconds: number; readonly 
 export function BacksterosTrackedTimeField(props: {
   readonly timerKey: string;
   readonly trackedDurationSeconds?: number | null;
-  readonly trackedMinutes?: number | null;
-  readonly disabled?: boolean;
+  readonly trackedMinutes?: number | null | undefined;
+  readonly disabled?: boolean | undefined;
   readonly label?: string;
   readonly onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   readonly onTimerSessionChange?: (action: "start" | "pause", seconds?: number | null) => void;

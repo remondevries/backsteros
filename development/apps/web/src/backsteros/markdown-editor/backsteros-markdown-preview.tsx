@@ -21,7 +21,7 @@ import {
 
 export type BacksterosMarkdownPreviewProps = {
   body: string;
-  className?: string;
+  className?: string | undefined;
 };
 
 /**
@@ -34,8 +34,8 @@ function MarkdownPreviewImage({
   alt,
   onExpand,
 }: {
-  src?: string | null;
-  alt?: string | null;
+  src?: string | null | undefined;
+  alt?: string | null | undefined;
   onExpand: (preview: ExpandedImagePreview) => void;
 }) {
   const [displaySrc, setDisplaySrc] = useState<string | null>(null);

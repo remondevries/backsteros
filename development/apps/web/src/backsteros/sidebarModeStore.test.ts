@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   captureSidebarModeResumeLocation,
@@ -51,9 +51,7 @@ describe("captureSidebarModeResumeLocation", () => {
 
 describe("sidebarModeResumeLocationsEqual", () => {
   it("compares by kind and identity fields", () => {
-    expect(
-      sidebarModeResumeLocationsEqual({ kind: "home" }, { kind: "home" }),
-    ).toBe(true);
+    expect(sidebarModeResumeLocationsEqual({ kind: "home" }, { kind: "home" })).toBe(true);
     expect(
       sidebarModeResumeLocationsEqual(
         { kind: "draft", draftId: "a" },

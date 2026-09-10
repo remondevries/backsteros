@@ -9,6 +9,7 @@ export type SettingsPath =
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
+  | "/settings/projects"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -54,6 +55,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
+  "/settings/projects": "Projects",
   "/settings/archived": "Archive",
 };
 
@@ -514,6 +516,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Archived threads",
     to: "/settings/archived",
     searchTerms: ["restore reopen deleted history projects"],
+  },
+  {
+    id: "load-balancing",
+    title: "Load balancing",
+    to: "/settings/connections",
+    searchTerms: [
+      "automatic machine environment resources cpu memory capacity preference weight shared projects",
+    ],
+  },
+  {
+    id: "project-defaults",
+    title: "Project defaults and overrides",
+    to: "/settings/projects",
+    searchTerms: [
+      "model workspace browser machines projects inheritance automatic pull checkout grouping actions scripts",
+    ],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 

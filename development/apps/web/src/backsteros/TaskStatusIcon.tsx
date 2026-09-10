@@ -32,7 +32,10 @@ const RING_FILL_BY_STATUS: Partial<Record<BacksterosTaskStatus, number>> = {
   canceled: 0,
 };
 
-function computeIconModel(status: BacksterosTaskStatus, colorScheme: BacksterosColorScheme): IconModel {
+function computeIconModel(
+  status: BacksterosTaskStatus,
+  colorScheme: BacksterosColorScheme,
+): IconModel {
   const color = getBacksterosTaskStatusColor(status, colorScheme);
   if (status === "triage") return { kind: "triage", color };
   if (status === "backlog") return { kind: "backlog", color };
@@ -101,7 +104,7 @@ function DuplicatedIcon() {
 export function BacksterosTaskStatusIcon(props: {
   readonly status: string;
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly title?: string;
   /**
    * When true, replace the static status glyph with the in-progress working

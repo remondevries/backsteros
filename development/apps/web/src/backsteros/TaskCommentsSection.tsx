@@ -52,8 +52,8 @@ export function isCommentComposerFocusShortcut(
 }
 
 function CommentSubmitButton(props: {
-  readonly disabled?: boolean;
-  readonly busy?: boolean;
+  readonly disabled?: boolean | undefined;
+  readonly busy?: boolean | undefined;
   readonly label: string;
 }) {
   return (
@@ -72,7 +72,7 @@ function CommentComposer(props: {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly onSubmit: () => void;
-  readonly busy?: boolean;
+  readonly busy?: boolean | undefined;
   readonly placeholder: string;
   readonly ariaLabel: string;
   readonly variant: "composer" | "reply";
@@ -145,7 +145,7 @@ function CommentActionsMenu(props: {
   readonly onResolve?: () => void;
   readonly resolveLabel?: string;
   readonly onDelete: () => void;
-  readonly disabled?: boolean;
+  readonly disabled?: boolean | undefined;
 }) {
   return (
     <Menu>
@@ -200,7 +200,7 @@ function resolveCommentAvatarSrc(
 export function BacksterosTaskCommentsSection(props: {
   readonly taskId: string;
   readonly comments: readonly BacksterosTaskComment[];
-  readonly avatarSrcByContactId?: Readonly<Record<string, string>>;
+  readonly avatarSrcByContactId?: Readonly<Record<string, string>> | undefined;
   readonly contacts?: readonly {
     readonly id: string;
     readonly email: string | null;

@@ -27,7 +27,10 @@ export function isBacksterosInboxAttentionStatus(status: string | null | undefin
  * Used for inbox membership of non-attention statuses (Due group).
  */
 export function isBacksterosInboxDueTask(
-  input: { readonly dueDate?: string | null; readonly status?: string | null },
+  input: {
+    readonly dueDate?: string | null | undefined;
+    readonly status?: string | null | undefined;
+  },
   referenceDate: Date = new Date(),
 ): boolean {
   if (isBacksterosInactiveTaskStatus(input.status)) return false;
@@ -44,8 +47,8 @@ export function isBacksterosInboxDueTask(
 export function isBacksterosInboxMemberTask(
   input: {
     readonly id: string;
-    readonly dueDate?: string | null;
-    readonly status?: string | null;
+    readonly dueDate?: string | null | undefined;
+    readonly status?: string | null | undefined;
   },
   options?: {
     readonly workingTaskIds?: ReadonlySet<string>;
@@ -81,7 +84,7 @@ export type BacksterosInboxPartition<
   T extends {
     readonly id: string;
     readonly status: string;
-    readonly dueDate?: string | null;
+    readonly dueDate?: string | null | undefined;
   },
 > = {
   readonly attentionTasks: readonly T[];
@@ -98,7 +101,7 @@ export function partitionBacksterosInboxTasks<
   T extends {
     readonly id: string;
     readonly status: string;
-    readonly dueDate?: string | null;
+    readonly dueDate?: string | null | undefined;
     readonly sortOrder?: number;
     readonly title?: string;
   },

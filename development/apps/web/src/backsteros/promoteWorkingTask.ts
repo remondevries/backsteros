@@ -99,10 +99,10 @@ export function shouldMarkBacksterosTaskInReviewAfterWorking(input: {
   readonly shellsByKey: ReadonlyMap<
     string,
     {
-      readonly hasPendingApprovals?: boolean;
-      readonly hasPendingUserInput?: boolean;
-      readonly session?: { readonly status?: string | null } | null;
-      readonly backgroundLiveness?: "working" | "monitoring" | null;
+      readonly hasPendingApprovals?: boolean | undefined;
+      readonly hasPendingUserInput?: boolean | undefined;
+      readonly session?: { readonly status?: string | null | undefined } | null | undefined;
+      readonly backgroundLiveness?: "working" | "monitoring" | null | undefined;
     }
   >;
 }): boolean {
@@ -111,7 +111,10 @@ export function shouldMarkBacksterosTaskInReviewAfterWorking(input: {
     threadKey(input.binding.environmentId, input.binding.threadId),
   );
   if (!shell) return false;
-  return resolveSidebarThreadStatus(shell) === "ready";
+  return (
+    resolveSidebarThreadStatus(shell as Parameters<typeof resolveSidebarThreadStatus>[0]) ===
+    "ready"
+  );
 }
 
 /**
@@ -153,7 +156,9 @@ export function usePromoteWorkingBacksterosTasks() {
       if (
         !shouldMarkBacksterosTaskInReviewAfterWorking({
           binding: byTaskId[taskId],
-          shellsByKey,
+          shellsByKey: shellsByKey as Parameters<
+            typeof shouldMarkBacksterosTaskInReviewAfterWorking
+          >[0]["shellsByKey"],
         })
       ) {
         // Approval / input / monitoring / missing shell: keep the stretch open.

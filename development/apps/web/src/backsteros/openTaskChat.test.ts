@@ -89,7 +89,7 @@ describe("openTaskChat helpers", () => {
     expect(ok).toBe(true);
     const next = useBacksterosTaskChatStore.getState().getBinding("task-a");
     expect(next?.kind).toBe("draft");
-    expect(next?.draftId).not.toBe("draft-1");
+    expect(next?.kind === "draft" ? next.draftId : null).not.toBe("draft-1");
     expect(next?.threadId).not.toBe("thread-1");
     expect(next?.title).toBe("Ship it");
     expect(next?.displayId).toBe("BOD-1");
@@ -97,7 +97,7 @@ describe("openTaskChat helpers", () => {
     expect(navigations).toEqual([
       {
         to: "/draft/$draftId",
-        params: { draftId: next?.draftId },
+        params: { draftId: next?.kind === "draft" ? next.draftId : undefined },
         replace: true,
       },
     ]);

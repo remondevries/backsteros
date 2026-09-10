@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "BacksterDEV (Dev)" instead of "electron"
+// This file mostly exists because we want dev mode to say "T3 Code (Dev)" instead of "electron"
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -15,10 +15,10 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "BacksterDEV (Dev)" : "BacksterDEV";
-export const APP_BUNDLE_ID = isDevelopment
-  ? `com.backsterdev.app.dev.${devBundleIdSuffix || "local"}`
-  : "com.backsterdev.app";
+const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+const APP_BUNDLE_ID = isDevelopment
+  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
+  : "com.t3tools.t3code";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
 const LAUNCHER_VERSION = 15;
 const developmentMacIconPngPath = NodePath.join(
@@ -165,10 +165,14 @@ function registerMacLauncherBundle(appBundlePath) {
   }
 }
 
+// Bundle-internal paths are macOS paths whatever host builds them.
 export function resolveMacLauncherIconPaths(runtimeDir, development = isDevelopment) {
   return {
     sourceIconPath: development ? developmentMacIconPngPath : productionMacIconPngPath,
-    generatedIconPath: NodePath.join(runtimeDir, development ? "icon-dev.icns" : "icon-prod.icns"),
+    generatedIconPath: NodePath.posix.join(
+      runtimeDir,
+      development ? "icon-dev.icns" : "icon-prod.icns",
+    ),
   };
 }
 
@@ -280,12 +284,12 @@ function readJson(path) {
 }
 
 export function resolveMacLauncherPaths(appBundlePath, displayName = APP_DISPLAY_NAME) {
-  const executableDir = NodePath.join(appBundlePath, "Contents", "MacOS");
+  const executableDir = NodePath.posix.join(appBundlePath, "Contents", "MacOS");
   const launcherExecutableName = `${displayName} Launcher`;
   return {
     launcherExecutableName,
-    launcherBinaryPath: NodePath.join(executableDir, launcherExecutableName),
-    runtimeElectronBinaryPath: NodePath.join(executableDir, "Electron"),
+    launcherBinaryPath: NodePath.posix.join(executableDir, launcherExecutableName),
+    runtimeElectronBinaryPath: NodePath.posix.join(executableDir, "Electron"),
   };
 }
 
@@ -383,7 +387,7 @@ function resolveLinuxSandboxArgs(electronBinaryPath) {
   return ["--no-sandbox"];
 }
 
-export function resolveElectronPath() {
+function resolveElectronPath() {
   const electronBinaryPath = resolveElectronBinaryPath();
 
   if (hostPlatform !== "darwin") {

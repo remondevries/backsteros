@@ -20,7 +20,8 @@
           "globalConsole": "off",
           "globalRandom": "off",
           "globalTimers": "off",
-          "globalFetch": "off"
+          "globalFetch": "off",
+          "cryptoRandomUUID": "off"
         }
       }
     ]

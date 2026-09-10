@@ -40,18 +40,18 @@ export function listMarkReplaceTo(state: EditorState, markFrom: number, markTo: 
 }
 
 class ListBulletWidget extends WidgetType {
-  eq(): boolean {
+  override eq(): boolean {
     return true;
   }
 
-  toDOM(): HTMLElement {
+  override toDOM(): HTMLElement {
     const el = document.createElement("span");
     el.className = "cm-list-bullet";
     el.setAttribute("aria-hidden", "true");
     return el;
   }
 
-  ignoreEvent(): boolean {
+  override ignoreEvent(): boolean {
     return false;
   }
 }

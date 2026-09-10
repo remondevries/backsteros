@@ -6,7 +6,7 @@ import octiconsDataUrl from "@primer/octicons/build/data.json?url";
 type PrimerOcticonProps = {
   name: string;
   size?: number;
-  className?: string;
+  className?: string | undefined;
   style?: CSSProperties;
   title?: string;
   /** Shown while JSON loads or when the key is missing. */

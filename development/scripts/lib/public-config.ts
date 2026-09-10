@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Build bootstrap reads optional root env files before an Effect runtime exists.
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
@@ -26,15 +27,19 @@ const REPO_ROOT = NodePath.dirname(
 export function loadRepoEnv({
   baseEnv = process.env,
   repoRoot = REPO_ROOT,
+  homeDir = NodeOS.homedir(),
 }: {
   readonly baseEnv?: Environment;
   readonly repoRoot?: string;
+  readonly homeDir?: string;
 } = {}): Record<string, string | undefined> {
+  const cliEnv = readBacksterosCliEnv(homeDir);
   const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
   const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
-  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
+  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, cliEnv);
 
   return {
+    ...cliEnv,
     ...rootEnv,
     ...localEnv,
     ...baseEnv,
@@ -170,4 +175,19 @@ function firstNonEmpty(sources: readonly Environment[], ...names: readonly strin
 
 function readEnvFile(path: string): Record<string, string | undefined> {
   return NodeFS.existsSync(path) ? NodeUtil.parseEnv(NodeFS.readFileSync(path, "utf8")) : {};
+}
+
+/**
+ * BacksterDEV / agent tooling keep the API key in `~/.config/backsteros/cli.env`.
+ * Prefer that for local `/backsteros-api` proxy auth when the process env is unset
+ * (browser settings may also carry a key; those win when the client sends them).
+ */
+function readBacksterosCliEnv(homeDir: string): Record<string, string | undefined> {
+  const parsed = readEnvFile(NodePath.join(homeDir, ".config", "backsteros", "cli.env"));
+  const out: Record<string, string | undefined> = {};
+  const apiKey = parsed.BACKSTEROS_API_KEY?.trim();
+  const apiUrl = parsed.BACKSTEROS_API_URL?.trim();
+  if (apiKey) out.BACKSTEROS_API_KEY = apiKey;
+  if (apiUrl) out.BACKSTEROS_API_URL = apiUrl;
+  return out;
 }

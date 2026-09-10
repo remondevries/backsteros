@@ -235,7 +235,7 @@ export function hasCustomProjectIcon(name: string): boolean {
 export function CustomProjectIcon(props: {
   name: string;
   size?: number;
-  className?: string;
+  className?: string | undefined;
   style?: CSSProperties;
 }) {
   const { name, size = 16, className, style } = props;

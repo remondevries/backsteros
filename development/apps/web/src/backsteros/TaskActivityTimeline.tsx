@@ -1,9 +1,6 @@
 import { useMemo } from "react";
 
-import {
-  BacksterosActivityLeadingIcon,
-  renderBacksterosActivityMessage,
-} from "./activityMessage";
+import { BacksterosActivityLeadingIcon, renderBacksterosActivityMessage } from "./activityMessage";
 import { formatBacksterosActivityRelativeTime } from "./activityTime";
 import { buildBacksterosActivityTimeline } from "./coalesceActivities";
 import { BacksterosTaskStatusWorkingPulse } from "./TaskStatusWorkingPulse";
@@ -20,7 +17,7 @@ const VISIBLE_ACTIVITY_LIMIT = 12;
  */
 export function BacksterosTaskActivityTimeline(props: {
   readonly activities: readonly BacksterosTaskActivity[];
-  readonly avatarSrcByContactId?: Readonly<Record<string, string>>;
+  readonly avatarSrcByContactId?: Readonly<Record<string, string>> | undefined;
   /** Live agent presence for this task — mirrors desktop `working` prop. */
   readonly working?: boolean;
 }) {
@@ -114,9 +111,7 @@ export function BacksterosTaskActivityTimeline(props: {
           );
         })}
       </ul>
-      {hidden > 0 ? (
-        <p className="bos-task-activity__more">+{hidden} earlier</p>
-      ) : null}
+      {hidden > 0 ? <p className="bos-task-activity__more">+{hidden} earlier</p> : null}
     </div>
   );
 }

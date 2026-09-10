@@ -1079,6 +1079,11 @@ describe("bare-key editable guards", () => {
         if (this.isContentEditable && selector.includes("contenteditable")) return this;
         return null;
       }
+      addEventListener(): void {}
+      removeEventListener(): void {}
+      dispatchEvent(): boolean {
+        return false;
+      }
     }
     globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
 
@@ -1103,6 +1108,11 @@ describe("bare-key editable guards", () => {
       closest() {
         return null;
       }
+      addEventListener(): void {}
+      removeEventListener(): void {}
+      dispatchEvent(): boolean {
+        return false;
+      }
     }
     globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
 
@@ -1111,8 +1121,13 @@ describe("bare-key editable guards", () => {
       const outside = { id: "outside" };
       assert.isTrue(
         isBareKeyShortcutBlockedByEditable(
-          { metaKey: false, ctrlKey: false, altKey: false, target: outside as EventTarget },
-          input as unknown as EventTarget,
+          {
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            target: outside as unknown as EventTarget,
+          },
+          input as unknown as unknown as EventTarget,
         ),
       );
       assert.isFalse(
@@ -1121,9 +1136,9 @@ describe("bare-key editable guards", () => {
             metaKey: true,
             ctrlKey: false,
             altKey: false,
-            target: input as unknown as EventTarget,
+            target: input as unknown as unknown as EventTarget,
           },
-          input as unknown as EventTarget,
+          input as unknown as unknown as EventTarget,
         ),
       );
     } finally {

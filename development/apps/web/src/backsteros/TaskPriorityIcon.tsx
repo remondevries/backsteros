@@ -1,6 +1,4 @@
-import {
-  getBacksterosTaskPriorityLabel,
-} from "./taskDetailFormat";
+import { getBacksterosTaskPriorityLabel } from "./taskDetailFormat";
 
 const BAR_HEIGHTS = [5, 8, 11] as const;
 
@@ -24,7 +22,7 @@ function getActiveBars(priority?: number): number {
 export function BacksterosTaskPriorityIcon(props: {
   readonly priority?: number | null;
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly title?: string;
 }) {
   const priority = props.priority ?? 0;

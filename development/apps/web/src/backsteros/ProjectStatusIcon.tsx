@@ -100,10 +100,7 @@ function getColorSchemeSnapshot(): ColorScheme {
   return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-function computeIconModel(
-  status: BacksterosProjectStatus,
-  colorScheme: ColorScheme,
-): IconModel {
+function computeIconModel(status: BacksterosProjectStatus, colorScheme: ColorScheme): IconModel {
   const color = STATUS_COLORS[status][colorScheme];
   if (status === "backlog") return { kind: "backlog", color };
   if (status === "completed") return { kind: "completed", color };
@@ -141,7 +138,7 @@ function CompletedCheckIcon() {
 export function BacksterosProjectStatusIcon(props: {
   readonly status: string;
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly title?: string;
 }) {
   const status = isBacksterosProjectStatus(props.status) ? props.status : "backlog";

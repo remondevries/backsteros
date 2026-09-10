@@ -8,7 +8,11 @@ export type ListTraversalDirection = "previous" | "next";
  * Flatten tasks in the same order as the sidebar status groups.
  */
 export function orderedBacksterosTaskIds(
-  tasks: readonly { readonly id: string; readonly status: string }[],
+  tasks: readonly {
+    readonly id: string;
+    readonly status: string;
+    readonly title?: string;
+  }[],
 ): string[] {
   return groupBacksterosTasksByStatus(tasks).flatMap((group) => group.tasks.map((task) => task.id));
 }
@@ -22,7 +26,7 @@ export function orderedBacksterosInboxTaskIds(
   tasks: readonly {
     readonly id: string;
     readonly status: string;
-    readonly dueDate?: string | null;
+    readonly dueDate?: string | null | undefined;
     readonly sortOrder?: number;
     readonly title?: string;
   }[],

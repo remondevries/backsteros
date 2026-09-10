@@ -4,9 +4,9 @@ export type BacksterosTaskKickoffInput = {
   readonly id: string;
   readonly number: number;
   readonly title: string;
-  readonly description?: string | null;
-  readonly projectKey?: string | null;
-  readonly workingDirectory?: string | null;
+  readonly description?: string | null | undefined;
+  readonly projectKey?: string | null | undefined;
+  readonly workingDirectory?: string | null | undefined;
 };
 
 /** Lead line — also used by the global Cursor skill as the BacksterOS-task trigger. */

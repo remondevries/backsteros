@@ -1,7 +1,7 @@
 /** Building glyph matching BacksterOS desktop `OrganizationIcon`. */
 export function BacksterosOrganizationIcon(props: {
   readonly size?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   const size = props.size ?? 16;
   return (

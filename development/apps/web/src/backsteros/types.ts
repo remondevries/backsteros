@@ -40,7 +40,7 @@ export interface BacksterosTaskDetail extends BacksterosTask {
   readonly description: string | null;
   readonly dueEndDate?: string | null;
   readonly trackedDurationSeconds?: number | null;
-  readonly trackedMinutes?: number | null;
+  readonly trackedMinutes?: number | null | undefined;
   readonly createdAt: string;
   readonly deletedAt: string | null;
 }
@@ -109,7 +109,7 @@ export type BacksterosCreateTaskInput = {
   readonly description?: string | null;
   readonly status?: string;
   readonly priority?: number;
-  readonly dueDate?: string | null;
+  readonly dueDate?: string | null | undefined;
   readonly assigneeId?: string | null;
   readonly contactId?: string | null;
   readonly relatedContactIds?: readonly string[];
@@ -127,14 +127,14 @@ export type BacksterosTaskUpdatePatch = {
   readonly status?: string;
   readonly priority?: number;
   readonly sortOrder?: number;
-  readonly dueDate?: string | null;
+  readonly dueDate?: string | null | undefined;
   readonly assigneeId?: string | null;
   readonly projectId?: string | null;
   readonly inbox?: boolean;
   readonly relatedContactIds?: readonly string[];
   readonly relatedOrganizationIds?: readonly string[];
   readonly trackedDurationSeconds?: number | null;
-  readonly trackedMinutes?: number | null;
+  readonly trackedMinutes?: number | null | undefined;
   /** When set, BacksterOS records the status change as this actor. */
   readonly activityActor?: "user" | "agent";
 };

@@ -366,7 +366,7 @@ export function UsagePage() {
             {showingPrepaid ? (
               <UsagePrepaidSection range={prepaidRange} refreshNonce={prepaidRefreshNonce} />
             ) : showingLimits ? (
-              <UsageLimitsSection />
+              <UsageLimitsSection selectedEnvironmentIds={null} />
             ) : settling ? (
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}

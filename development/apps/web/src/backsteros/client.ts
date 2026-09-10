@@ -111,11 +111,12 @@ async function backsterosFetchJson<T>(
     const body = await readBacksterosJsonBody<{ error?: unknown } | null>(response).catch(
       () => null,
     );
+    const bodyError = typeof body?.error === "string" ? body.error.trim() : "";
     const message =
-      typeof body?.error === "string"
-        ? body.error
-        : response.status === 401 || response.status === 403
-          ? "BacksterOS rejected the API key. Check Settings → Integrations."
+      response.status === 401 || response.status === 403
+        ? "BacksterOS rejected the API key. Add or update it in Settings → Integrations."
+        : bodyError
+          ? bodyError
           : `BacksterOS request failed (${response.status})`;
     throw new Error(message);
   }

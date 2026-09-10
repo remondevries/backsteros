@@ -18,7 +18,7 @@ export type ProjectOcticonProps = {
    */
   type?: string | null;
   size?: number;
-  className?: string;
+  className?: string | undefined;
   title?: string;
   style?: CSSProperties;
 };
@@ -31,7 +31,7 @@ function DefaultGlyphForType({
 }: {
   type: string | null | undefined;
   size: number;
-  className?: string;
+  className?: string | undefined;
   style?: CSSProperties;
 }) {
   if (migrateLegacyProjectType(type) === "codebase") {

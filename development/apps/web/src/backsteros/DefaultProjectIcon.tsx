@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 type DefaultProjectIconProps = {
   size?: number;
-  className?: string;
+  className?: string | undefined;
   style?: CSSProperties;
 };
 

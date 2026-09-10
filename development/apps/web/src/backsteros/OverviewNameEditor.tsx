@@ -20,7 +20,7 @@ export type BacksterosOverviewNameEditorProps = {
   /** Increment to enter edit mode and focus/select the title field. */
   readonly renameFocusRequest?: number;
   readonly titleClassName?: string;
-  readonly placeholder?: string;
+  readonly placeholder?: string | undefined;
   readonly allowEmpty?: boolean;
   readonly onSave: (
     name: string,

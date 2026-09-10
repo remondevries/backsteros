@@ -46,8 +46,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   readonly brand?: ReactNode;
   /** Right-side control on the brand row (e.g. compose / create). */
   readonly brandAction?: ReactNode;
-  readonly logModeEnabled?: boolean;
-  readonly onLogModeChange?: (enabled: boolean) => void;
+  readonly logModeEnabled?: boolean | undefined;
+  readonly onLogModeChange?: ((enabled: boolean) => void) | undefined;
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -102,9 +102,9 @@ export function SidebarBrand({
   logModeEnabled,
   onLogModeChange,
 }: {
-  readonly className?: string;
-  readonly logModeEnabled?: boolean;
-  readonly onLogModeChange?: (enabled: boolean) => void;
+  readonly className?: string | undefined;
+  readonly logModeEnabled?: boolean | undefined;
+  readonly onLogModeChange?: ((enabled: boolean) => void) | undefined;
 } = {}) {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();

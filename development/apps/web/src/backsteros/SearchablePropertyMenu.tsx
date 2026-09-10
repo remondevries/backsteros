@@ -33,7 +33,7 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   readonly options: readonly BacksterosSearchablePropertyOption<T>[];
   readonly searchPlaceholder: string;
   readonly ariaLabel?: string;
-  readonly disabled?: boolean;
+  readonly disabled?: boolean | undefined;
   readonly muted?: boolean;
   /** Desktop `data-task-property-dropdown` target for S/P/A/… hotkeys. */
   readonly taskPropertyDropdownId?: string;

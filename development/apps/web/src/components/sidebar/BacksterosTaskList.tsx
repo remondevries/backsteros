@@ -68,7 +68,7 @@ function BacksterosTaskRow(props: {
   readonly active: boolean;
   readonly keyboardFocused: boolean;
   readonly working: boolean;
-  readonly projectName?: string | null;
+  readonly projectName?: string | null | undefined;
   readonly onSelect: (task: BacksterosTask) => void;
   readonly sortable?: SortableRowBag;
 }) {
@@ -120,7 +120,7 @@ function BacksterosTaskStatusGroup(props: {
   readonly activeTaskId: string | null;
   readonly keyboardFocusTaskId: string | null;
   readonly workingTaskIds: ReadonlySet<string>;
-  readonly projectNameById?: ReadonlyMap<string, string>;
+  readonly projectNameById?: ReadonlyMap<string, string> | undefined;
   readonly onToggle: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
   readonly onReorderWithinGroup: (
@@ -235,13 +235,13 @@ export function BacksterosTaskList(props: {
   readonly onRetry: () => void;
   readonly activeTaskId: string | null;
   /** j/k cursor — primary outline while this list owns keyboard focus. */
-  readonly keyboardFocusTaskId?: string | null;
+  readonly keyboardFocusTaskId?: string | null | undefined;
   readonly searchQuery?: string;
   readonly emptyLabel?: string;
   readonly statusFilter?: ReadonlySet<BacksterosTaskStatus>;
   /** When true, due today/overdue tasks get a separate "Due" group at the bottom. */
-  readonly showDueGroup?: boolean;
-  readonly projectNameById?: ReadonlyMap<string, string>;
+  readonly showDueGroup?: boolean | undefined;
+  readonly projectNameById?: ReadonlyMap<string, string> | undefined;
   readonly onSelectTask: (task: BacksterosTask) => void;
   readonly onReorderTasks?: (patches: readonly BacksterosTaskSortPatch[]) => void;
 }) {

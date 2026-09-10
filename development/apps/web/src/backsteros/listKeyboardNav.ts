@@ -86,9 +86,9 @@ export type ListKeyboardNavGuardInput = {
     KeyboardEvent,
     "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "target"
   >;
-  readonly terminalFocus?: boolean;
-  readonly commandPaletteOpen?: boolean;
-  readonly modelPickerOpen?: boolean;
+  readonly terminalFocus?: boolean | undefined;
+  readonly commandPaletteOpen?: boolean | undefined;
+  readonly modelPickerOpen?: boolean | undefined;
 };
 
 /**

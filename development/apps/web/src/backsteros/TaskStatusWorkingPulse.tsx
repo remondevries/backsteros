@@ -30,13 +30,13 @@ function fillProgress(phase: number): number {
 }
 
 export type BacksterosTaskStatusWorkingPulseProps = {
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly size?: number;
   /**
    * Tighter halo / strokes for small slots (e.g. 12px activity markers)
    * so the pulse isn't clipped.
    */
-  readonly compact?: boolean;
+  readonly compact?: boolean | undefined;
   /** Accessible label when used as a standalone indicator. */
   readonly "aria-label"?: string;
 };

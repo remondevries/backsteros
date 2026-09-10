@@ -146,6 +146,7 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
   ownerThreadRefForSurface,
@@ -1434,6 +1435,9 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const respondToThreadUserInput = useAtomCommand(threadEnvironment.respondToUserInput, {
+    reportFailure: false,
+  });
+  const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
     reportFailure: false,
   });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
@@ -3903,13 +3907,20 @@ export default function ChatView(props: ChatViewProps) {
           ]
         : [...activeProject.scripts, nextScript];
 
+      const keybindingCommand = commandForProjectScript(nextId);
+      if (!keybindingCommand) {
+        return AsyncResult.failure(
+          Cause.fail(new Error("Script id cannot be bound to a shortcut.")),
+        );
+      }
+
       return persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.workspaceRoot,
         previousScripts: activeProject.scripts,
         nextScripts,
         keybinding: input.keybinding,
-        keybindingCommand: commandForProjectScript(nextId),
+        keybindingCommand,
       });
     },
     [activeProject, persistProjectScripts],
@@ -3936,13 +3947,20 @@ export default function ChatView(props: ChatViewProps) {
             : script,
       );
 
+      const keybindingCommand = commandForProjectScript(scriptId);
+      if (!keybindingCommand) {
+        return AsyncResult.failure(
+          Cause.fail(new Error("Script id cannot be bound to a shortcut.")),
+        );
+      }
+
       return persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.workspaceRoot,
         previousScripts: activeProject.scripts,
         nextScripts,
         keybinding: input.keybinding,
-        keybindingCommand: commandForProjectScript(scriptId),
+        keybindingCommand,
       });
     },
     [activeProject, persistProjectScripts],
@@ -3956,13 +3974,20 @@ export default function ChatView(props: ChatViewProps) {
 
       const deletedName = activeProject.scripts.find((s) => s.id === scriptId)?.name;
 
+      const keybindingCommand = commandForProjectScript(scriptId);
+      if (!keybindingCommand) {
+        return AsyncResult.failure(
+          Cause.fail(new Error("Script id cannot be bound to a shortcut.")),
+        );
+      }
+
       const result = await persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.workspaceRoot,
         previousScripts: activeProject.scripts,
         nextScripts,
         keybinding: null,
-        keybindingCommand: commandForProjectScript(scriptId),
+        keybindingCommand,
       });
       if (result._tag === "Success") {
         toastManager.add({
@@ -4038,15 +4063,14 @@ export default function ChatView(props: ChatViewProps) {
   );
   const createBrowserSurface = useCallback(
     (profileId?: string) => {
-      if (!activeThreadRef || !activeProjectRef) return;
+      if (!activeThreadRef) return;
       void addBrowserSurface({
         threadRef: activeThreadRef,
-        projectRef: activeProjectRef,
         openPreview,
         ...(profileId === undefined ? {} : { profileId }),
       });
     },
-    [activeProjectRef, activeThreadRef, openPreview],
+    [activeThreadRef, openPreview],
   );
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
@@ -4114,6 +4138,7 @@ export default function ChatView(props: ChatViewProps) {
   ]);
   const linkedThreadPullRequest =
     replacementLinkedThreadPullRequest ?? persistedLinkedThreadPullRequest;
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
   const linkedThreadPullRequestKey = linkedThreadPullRequest
     ? JSON.stringify([
         linkedThreadPullRequest.projectId,
@@ -5412,10 +5437,10 @@ export default function ChatView(props: ChatViewProps) {
         ? null
         : resolveThreadReferenceCopyTarget({
             threadId: activeThreadId,
+            openPanelPullRequestUrl,
             linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
-            detectedPullRequestUrl: activeThreadPr?.url ?? null,
           }),
-    [activeThreadId, activeThreadPr?.url, isServerThread, linkedThreadPullRequest?.url],
+    [activeThreadId, isServerThread, linkedThreadPullRequest?.url, openPanelPullRequestUrl],
   );
   const copyActiveThreadReference = useCallback(() => {
     const target = activeThreadReferenceCopyTarget;
@@ -7269,6 +7294,32 @@ export default function ChatView(props: ChatViewProps) {
     [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
   );
 
+  // Closes an async question without messaging the agent. The server records
+  // the dismissal so every client releases the composer.
+  const onDismissUserInput = useCallback(
+    async (requestId: ApprovalRequestId) => {
+      if (!activeThreadId) return;
+
+      setRespondingUserInputRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
+      const result = await dismissThreadUserInput({
+        environmentId,
+        input: { threadId: activeThreadId, requestId },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Failed to dismiss the question.",
+        );
+      }
+      setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
+      return result;
+    },
+    [activeThreadId, dismissThreadUserInput, environmentId, setThreadError],
+  );
+
   const setActivePendingUserInputQuestionIndex = useCallback(
     (nextQuestionIndex: number) => {
       if (!activePendingUserInput) {
@@ -8273,6 +8324,9 @@ export default function ChatView(props: ChatViewProps) {
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
                           headlineProjectTitle={activeBacksterosTaskChat?.projectTitle ?? null}
+                          headlineText={
+                            activeBacksterosTaskChat ? "What should the starting message be." : null
+                          }
                         />
                       </div>
                     </div>
@@ -8412,6 +8466,7 @@ export default function ChatView(props: ChatViewProps) {
                                 onSelectActivePendingUserInputOption
                               }
                               onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                              onDismissActivePendingUserInput={onDismissUserInput}
                               onPreviousActivePendingUserInputQuestion={
                                 onPreviousActivePendingUserInputQuestion
                               }

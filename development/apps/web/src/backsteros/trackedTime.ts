@@ -1,14 +1,8 @@
 /** Tracked-time helpers mirroring `@backsteros/contracts` tracked-time. */
 
 /** Manual input / stored duration display `HH:MM:SS`. */
-export function formatTrackedTimeInput(
-  totalSeconds: number | null | undefined,
-): string {
-  if (
-    totalSeconds == null ||
-    !Number.isFinite(totalSeconds) ||
-    totalSeconds <= 0
-  ) {
+export function formatTrackedTimeInput(totalSeconds: number | null | undefined): string {
+  if (totalSeconds == null || !Number.isFinite(totalSeconds) || totalSeconds <= 0) {
     return "";
   }
   return formatTrackedDuration(Math.floor(totalSeconds));
@@ -24,9 +18,7 @@ export function formatTrackedDuration(totalSeconds: number): string {
 }
 
 /** Persist elapsed timer duration as whole seconds. */
-export function trackedDurationSecondsFromElapsed(
-  totalSeconds: number,
-): number | null {
+export function trackedDurationSecondsFromElapsed(totalSeconds: number): number | null {
   if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return null;
   return Math.floor(totalSeconds);
 }
@@ -64,8 +56,8 @@ export function parseTrackedTimeInput(input: string): number | null {
 }
 
 function resolveTrackedMinutes(input: {
-  trackedMinutes?: number | null;
-  scheduleMinutes?: number | null;
+  trackedMinutes?: number | null | undefined;
+  scheduleMinutes?: number | null | undefined;
 }): number | null {
   if (
     input.trackedMinutes != null &&
@@ -87,8 +79,8 @@ function resolveTrackedMinutes(input: {
 /** Resolve precise tracked duration in seconds for timers and manual entry. */
 export function resolveTrackedDurationSeconds(input: {
   trackedDurationSeconds?: number | null;
-  trackedMinutes?: number | null;
-  scheduleMinutes?: number | null;
+  trackedMinutes?: number | null | undefined;
+  scheduleMinutes?: number | null | undefined;
 }): number | null {
   if (
     input.trackedDurationSeconds != null &&

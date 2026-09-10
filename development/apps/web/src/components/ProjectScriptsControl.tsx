@@ -191,10 +191,10 @@ export default function ProjectScriptsControl({
             </MenuTrigger>
             <MenuPopup align="end">
               {scripts.map((script) => {
-                const shortcutLabel = shortcutLabelForCommand(
-                  keybindings,
-                  commandForProjectScript(script.id),
-                );
+                const command = commandForProjectScript(script.id);
+                const shortcutLabel = command
+                  ? shortcutLabelForCommand(keybindings, command)
+                  : null;
                 return (
                   <MenuItem
                     key={script.id}

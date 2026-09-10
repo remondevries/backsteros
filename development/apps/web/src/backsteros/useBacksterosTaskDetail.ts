@@ -44,9 +44,16 @@ export type BacksterosTaskDetailState =
     }
   | { readonly status: "error"; readonly message: string };
 
-function normalizeTask(task: BacksterosTaskDetail): BacksterosTaskDetail {
+function normalizeTask(
+  task: Omit<BacksterosTaskDetail, "dueDate" | "relatedContactIds" | "relatedOrganizationIds"> & {
+    readonly dueDate?: string | null | undefined;
+    readonly relatedContactIds?: readonly string[] | null | undefined;
+    readonly relatedOrganizationIds?: readonly string[] | null | undefined;
+  },
+): BacksterosTaskDetail {
   return {
     ...task,
+    dueDate: task.dueDate ?? null,
     relatedContactIds: task.relatedContactIds ?? [],
     relatedOrganizationIds: task.relatedOrganizationIds ?? [],
   };
@@ -300,16 +307,19 @@ export function useBacksterosTaskDetail(taskId: string | null): {
     async (patch: BacksterosTaskUpdatePatch) => {
       if (!taskId) return;
 
-      let rollback: Extract<BacksterosTaskDetailState, { status: "ready" }> | null = null;
-      let optimisticKickoffSync: {
+      // Capture before setState: nested assignments are invisible to CFA/tsgo.
+      const rollback =
+        stateRef.current.status === "ready" && stateRef.current.task.id === taskId
+          ? stateRef.current
+          : null;
+      const optimisticKickoffSync: Array<{
         readonly number: number;
         readonly title: string;
         readonly description: string | null;
-      } | null = null;
+      }> = [];
 
       setState((current) => {
         if (current.status !== "ready" || current.task.id !== taskId) return current;
-        rollback = current;
         const nextAssigneeId =
           "assigneeId" in patch ? (patch.assigneeId ?? null) : current.task.assigneeId;
         const optimisticAssignee =
@@ -324,11 +334,11 @@ export function useBacksterosTaskDetail(taskId: string | null): {
           assigneeId: nextAssigneeId,
         });
         if (patch.title != null || patch.description !== undefined) {
-          optimisticKickoffSync = {
+          optimisticKickoffSync.push({
             number: nextTask.number,
             title: nextTask.title,
-            description: nextTask.description,
-          };
+            description: nextTask.description ?? null,
+          });
         }
         return {
           ...current,
@@ -337,12 +347,13 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         };
       });
 
-      if (optimisticKickoffSync) {
+      const kickoffSync = optimisticKickoffSync[0];
+      if (kickoffSync) {
         syncBacksterosTaskKickoffDraftPrompt({
           taskId,
-          number: optimisticKickoffSync.number,
-          title: optimisticKickoffSync.title,
-          description: optimisticKickoffSync.description,
+          number: kickoffSync.number,
+          title: kickoffSync.title,
+          description: kickoffSync.description,
         });
       }
 
@@ -389,12 +400,11 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         }
       } catch (error) {
         if (rollback) {
-          const previous = rollback;
-          setState(previous);
+          setState(rollback);
           if (patch.status != null) {
             notifyBacksterosTaskStatusChanged({
               taskId,
-              status: migrateBacksterosTaskStatus(previous.task.status),
+              status: migrateBacksterosTaskStatus(rollback.task.status),
             });
           }
         }

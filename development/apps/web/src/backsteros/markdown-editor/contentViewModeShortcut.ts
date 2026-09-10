@@ -34,7 +34,7 @@ export function isForceContentPreviewShortcut(
 type ContentViewModeRegistration = {
   run: () => void;
   isEnabled: () => boolean;
-  getHost?: () => Element | null | undefined;
+  getHost?: (() => Element | null | undefined) | undefined;
 };
 
 const toggleHandlers: ContentViewModeRegistration[] = [];
@@ -132,7 +132,7 @@ function registerHandler(
   options: {
     run: () => void;
     isEnabled: () => boolean;
-    getHost?: () => Element | null | undefined;
+    getHost?: (() => Element | null | undefined) | undefined;
   },
 ): () => void {
   ensureWindowListeners();
@@ -157,7 +157,7 @@ function registerHandler(
 export function registerContentViewModeToggle(options: {
   toggle: () => void;
   isEnabled: () => boolean;
-  getHost?: () => Element | null | undefined;
+  getHost?: (() => Element | null | undefined) | undefined;
 }): () => void {
   return registerHandler(toggleHandlers, {
     run: options.toggle,
@@ -172,7 +172,7 @@ export function registerContentViewModeToggle(options: {
 export function registerForceContentPreview(options: {
   forcePreview: () => void;
   isEnabled: () => boolean;
-  getHost?: () => Element | null | undefined;
+  getHost?: (() => Element | null | undefined) | undefined;
 }): () => void {
   return registerHandler(forcePreviewHandlers, {
     run: options.forcePreview,

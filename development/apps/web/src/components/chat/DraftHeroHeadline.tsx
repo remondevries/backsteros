@@ -33,6 +33,11 @@ interface DraftHeroHeadlineProps {
   readonly activeProjectTitle: string | null;
   /** Preferred label for the headline (e.g. BacksterOS project name). */
   readonly headlineProjectTitle?: string | null;
+  /**
+   * When set, replaces the default “What should we build…” copy (used for the
+   * BacksterOS task Advanced kickoff composer).
+   */
+  readonly headlineText?: string | null;
 }
 
 export function DraftHeroHeadline({
@@ -40,6 +45,7 @@ export function DraftHeroHeadline({
   activeProjectRef,
   activeProjectTitle,
   headlineProjectTitle = null,
+  headlineText = null,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -106,9 +112,7 @@ export function DraftHeroHeadline({
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
   const activeProjectDisplayName =
-    headlineProjectTitle?.trim() ||
-    activeProjectGroup?.displayName ||
-    activeProjectTitle;
+    headlineProjectTitle?.trim() || activeProjectGroup?.displayName || activeProjectTitle;
   const hasResolvedProject = activeProjectTitle !== null || Boolean(headlineProjectTitle?.trim());
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
@@ -197,7 +201,9 @@ export function DraftHeroHeadline({
 
   return (
     <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
-      {hasResolvedProject ? (
+      {headlineText?.trim() ? (
+        headlineText.trim()
+      ) : hasResolvedProject ? (
         <>What should we build in {projectSelector}?</>
       ) : canChooseProject ? (
         <>{projectSelector} to start</>

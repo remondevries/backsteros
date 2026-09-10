@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { DraftId, createEmptyThreadDraft, useComposerDraftStore } from "~/composerDraftStore";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 
 import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
@@ -66,23 +66,19 @@ function seedUnsentKickoffDraft(input: {
         projectId: ProjectId.make("project-1"),
         logicalProjectKey: logicalKey,
         createdAt: new Date().toISOString(),
-        runtimeMode: "local",
+        runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,
         worktreePath: null,
-        envMode: "isolated",
+        envMode: "local",
         startFromOrigin: false,
         promotedTo: null,
       },
     },
     draftsByThreadKey: {
       [input.draftId]: {
+        ...createEmptyThreadDraft(),
         prompt: input.gateMode === "gate" ? "" : input.prompt,
-        attachments: [],
-        terminalContexts: [],
-        quotedContexts: [],
-        modelSelection: null,
-        activeProvider: null,
       },
     },
   }));

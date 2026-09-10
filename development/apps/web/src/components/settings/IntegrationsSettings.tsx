@@ -42,6 +42,7 @@ import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
 import { resolveEnvironmentOptionLabel } from "~/components/BranchToolbar.logic";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { isElectron } from "../../env";
 
@@ -1169,6 +1170,19 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
             runWizardImport(importSession.source, importSession.environmentId, input)
           }
           onRefreshSource={() => refreshImportSource(importSession.source.id)}
+          onOpenFullDiskAccessSettings={() => {
+            // Rejects outside the desktop shell (and on shells that predate the
+            // method), so the one toast covers every way the link can fail.
+            void readLocalApi()
+              ?.shell.openSystemSettings("full-disk-access")
+              .catch(() => {
+                toastManager.add({
+                  type: "error",
+                  title: "Could not open System Settings",
+                  description: "Open Privacy & Security → Full Disk Access manually.",
+                });
+              });
+          }}
           onClose={() => setImportSession(null)}
         />
       ) : null}
@@ -1204,11 +1218,7 @@ export function IntegrationsSettingsPanel() {
           previewDefaults
         )}
       </SettingsSection>
-      <SettingsSection
-        id="backsteros"
-        title="BacksterOS"
-        description="Connect this client to a BacksterOS workspace to list codebase projects in the sidebar."
-      >
+      <SettingsSection id="backsteros" title="BacksterOS">
         <BacksterosConnectionSetting />
       </SettingsSection>
     </SettingsPageContainer>

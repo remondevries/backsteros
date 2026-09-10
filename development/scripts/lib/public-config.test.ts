@@ -16,7 +16,11 @@ afterEach(() => {
 
 describe("loadRepoEnv", () => {
   it("does not project cloud configuration for an unconfigured clone", () => {
-    const env = loadRepoEnv({ baseEnv: {}, repoRoot: makeTemporaryDirectory() });
+    const env = loadRepoEnv({
+      baseEnv: {},
+      repoRoot: makeTemporaryDirectory(),
+      homeDir: makeTemporaryDirectory(),
+    });
 
     expect(env.T3CODE_CLERK_PUBLISHABLE_KEY).toBeUndefined();
     expect(env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID).toBeUndefined();
@@ -39,6 +43,37 @@ describe("loadRepoEnv", () => {
     expect(env.VITE_RELAY_OTLP_TRACES_URL).toBeUndefined();
     expect(env.VITE_RELAY_OTLP_TRACES_DATASET).toBeUndefined();
     expect(env.VITE_RELAY_OTLP_TRACES_TOKEN).toBeUndefined();
+    expect(env.BACKSTEROS_API_KEY).toBeUndefined();
+  });
+
+  it("fills BacksterOS API credentials from ~/.config/backsteros/cli.env when unset", () => {
+    const homeDir = makeTemporaryDirectory();
+    NodeFS.mkdirSync(NodePath.join(homeDir, ".config", "backsteros"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(homeDir, ".config", "backsteros", "cli.env"),
+      "BACKSTEROS_API_KEY=sk_test_from_cli\nBACKSTEROS_API_URL=http://127.0.0.1:8788\n",
+    );
+
+    expect(
+      loadRepoEnv({
+        baseEnv: {},
+        repoRoot: makeTemporaryDirectory(),
+        homeDir,
+      }),
+    ).toMatchObject({
+      BACKSTEROS_API_KEY: "sk_test_from_cli",
+      BACKSTEROS_API_URL: "http://127.0.0.1:8788",
+    });
+
+    expect(
+      loadRepoEnv({
+        baseEnv: {
+          BACKSTEROS_API_KEY: "sk_from_process",
+        },
+        repoRoot: makeTemporaryDirectory(),
+        homeDir,
+      }).BACKSTEROS_API_KEY,
+    ).toBe("sk_from_process");
   });
 
   it("applies process, root local, and root precedence in that order", () => {
@@ -52,9 +87,9 @@ describe("loadRepoEnv", () => {
       "T3CODE_CLERK_PUBLISHABLE_KEY=pk_local\nT3CODE_CLERK_JWT_TEMPLATE=template_local\nT3CODE_CLERK_CLI_OAUTH_CLIENT_ID=oauth_local\nT3CODE_RELAY_URL=https://local.example.test\n",
     );
 
-    expect(loadRepoEnv({ baseEnv: {}, repoRoot }).T3CODE_RELAY_URL).toBe(
-      "https://local.example.test",
-    );
+    expect(
+      loadRepoEnv({ baseEnv: {}, repoRoot, homeDir: makeTemporaryDirectory() }).T3CODE_RELAY_URL,
+    ).toBe("https://local.example.test");
     expect(
       loadRepoEnv({
         baseEnv: {
@@ -64,6 +99,7 @@ describe("loadRepoEnv", () => {
           T3CODE_RELAY_URL: "https://ci.example.test",
         },
         repoRoot,
+        homeDir: makeTemporaryDirectory(),
       }),
     ).toMatchObject({
       T3CODE_CLERK_PUBLISHABLE_KEY: "pk_ci",
@@ -112,6 +148,7 @@ describe("loadRepoEnv", () => {
           T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: "relay-client-token",
         },
         repoRoot: makeTemporaryDirectory(),
+        homeDir: makeTemporaryDirectory(),
       }),
     ).toEqual({
       T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
@@ -133,6 +170,7 @@ describe("loadRepoEnv", () => {
           T3CODE_MOBILE_OTLP_TRACES_TOKEN: "mobile-token",
         },
         repoRoot: makeTemporaryDirectory(),
+        homeDir: makeTemporaryDirectory(),
       }),
     ).toEqual({
       T3CODE_RELAY_URL: "https://relay.example.test",

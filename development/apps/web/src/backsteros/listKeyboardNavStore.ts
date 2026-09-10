@@ -27,12 +27,12 @@ export type ListKeyboardNavRegistration = {
    * j/k / arrows — move the cursor only. When set, stepping does not call
    * `onActivate` (so task details are not fetched until Enter).
    */
-  readonly onHighlight?: (id: string) => void;
+  readonly onHighlight?: ((id: string) => void) | undefined;
   /**
    * After Enter/Space on a sidepanel row, move j/k into the main list when
    * both zones are present (project list → project task list).
    */
-  readonly enterMovesToMain?: boolean;
+  readonly enterMovesToMain?: boolean | undefined;
 };
 
 type ListKeyboardNavState = {

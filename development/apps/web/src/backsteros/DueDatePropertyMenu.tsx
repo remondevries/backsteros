@@ -50,8 +50,8 @@ function parseQuickDueQuery(query: string): string | null | "clear" | "pick" {
 
 export function BacksterosDueDatePropertyMenu(props: {
   readonly dueDate: string | null;
-  readonly status?: string | null;
-  readonly disabled?: boolean;
+  readonly status?: string | null | undefined;
+  readonly disabled?: boolean | undefined;
   /** Desktop `data-task-property-dropdown` — Shift+D opens due date. */
   readonly taskPropertyDropdownId?: string;
   readonly onChange: (dueDateIso: string | null) => void;

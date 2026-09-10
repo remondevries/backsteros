@@ -35,8 +35,8 @@ export function SegmentedPillToggle<T extends string>(props: {
   readonly options: readonly SegmentedPillToggleOption<T>[];
   readonly onChange: (value: T) => void;
   readonly ariaLabel: string;
-  readonly disabled?: boolean;
-  readonly className?: string;
+  readonly disabled?: boolean | undefined;
+  readonly className?: string | undefined;
 }) {
   const { value, options, onChange, ariaLabel, disabled = false, className } = props;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,7 +139,7 @@ export function SegmentedPillToggle<T extends string>(props: {
 /** Bottom-right dock for Edit/Preview — desktop `FloatingPillToggleDock`. */
 export function FloatingPillToggleDock(props: {
   readonly children: ReactNode;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <div className={cn("content-view-mode-toggle", props.className)}>

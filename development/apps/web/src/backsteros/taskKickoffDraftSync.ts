@@ -33,7 +33,7 @@ export function syncBacksterosTaskKickoffDraftPrompt(input: {
   readonly taskId: string;
   readonly number: number;
   readonly title: string;
-  readonly description?: string | null;
+  readonly description?: string | null | undefined;
   readonly projectKey?: string | null;
   readonly workingDirectory?: string | null;
 }): boolean {

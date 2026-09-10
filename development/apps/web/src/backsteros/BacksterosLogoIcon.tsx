@@ -7,7 +7,7 @@ export function BacksterosLogoIcon({
   className,
   size = 16,
 }: {
-  className?: string;
+  className?: string | undefined;
   size?: number;
 }) {
   const id = useId();

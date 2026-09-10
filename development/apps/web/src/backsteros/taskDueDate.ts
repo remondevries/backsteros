@@ -95,7 +95,7 @@ export function formatTaskDueMetaLabel(
 export function getTaskDueDateUrgency(
   dueDate: Date | number | string | null | undefined,
   referenceDate: Date = new Date(),
-  options?: { readonly status?: string | null },
+  options?: { readonly status?: string | null | undefined },
 ): BacksterosDueDateUrgency | null {
   const status = options?.status ?? null;
   if (status === "completed" || status === "canceled" || status === "duplicated") {
@@ -111,9 +111,7 @@ export function getTaskDueDateUrgency(
     referenceDate.getMonth(),
     referenceDate.getDate(),
   );
-  const diffDays = Math.round(
-    (parsed.getTime() - refStart.getTime()) / (24 * 60 * 60 * 1000),
-  );
+  const diffDays = Math.round((parsed.getTime() - refStart.getTime()) / (24 * 60 * 60 * 1000));
   if (diffDays < 0) return "overdue";
   if (diffDays === 0) return "due_today";
   if (diffDays <= 3) return "due_soon";

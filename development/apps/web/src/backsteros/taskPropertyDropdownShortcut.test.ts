@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { shouldHandleTaskPropertyDropdownShortcut } from "./taskPropertyDropdownShortcut";
 
@@ -13,7 +13,7 @@ function fakeElement(selectors: readonly string[] = []): FakeElement {
     closest(selector: string) {
       return matches.has(selector) ? this : null;
     },
-  } as FakeElement;
+  } as unknown as FakeElement;
 }
 
 function keyEvent(

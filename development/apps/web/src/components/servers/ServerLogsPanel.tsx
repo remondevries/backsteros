@@ -253,7 +253,7 @@ function LogsViewer({
   readonly loadingLogs: boolean;
   readonly sourcesEmpty: boolean;
   readonly lines: readonly string[];
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
 
