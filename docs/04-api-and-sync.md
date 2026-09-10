@@ -140,7 +140,7 @@ open editors refresh without waiting for the periodic tick.
 GET /api/v1/workspace/events
 ```
 
-Authenticated SSE (Clerk session) on local-core. Events:
+Authenticated SSE (local-shell or API key) on local-core. Events:
 
 ```text
 event: workspace.updated
@@ -216,24 +216,25 @@ Historical context (why it existed): packaged desktop could report PowerSync `re
 
 Former implementation: [`desktop/src/lib/workspace/use-workspace-api-rows.ts`](../desktop/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts). Mobile list hydrate is cold-start / offline-only via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) + [`rest-list-hydration-policy.ts`](../mobile/lib/rest-list-hydration-policy.ts) — no REST refetch or field-merge over local rows while PowerSync is connected and SQLite has rows.
 
-### Merge rules
+### Merge rules (retiring)
 
-- Winner: newer `updatedAt` (see [`desktop/src/lib/merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts)).
-- `preservePendingApiRows` keeps optimistic creates that have not landed in SQLite yet.
-- Column fillers (`fillMissingLinksFromApi`, long text, due dates, …) copy API fields when local won on timestamp but still omits a column (stale schema / partial sync).
+- Once SQLite has rows, **local membership and fields win** — no newer-API overlay on Tier A/B lists (`resolveLocalOrApiRows`).
+- `preservePendingApiRows` / `mergeLocalWithPendingApiCreates` keep optimistic creates until SQLite-first creates land.
+- Column fillers (`fillMissingLinksFromApi`, long text, due dates, …) run on **cold-start rescue only** (`apiFillSourceForColdStart`). Do not add live REST field merges.
+- Documents still use a temporary live merge (`mergeLocalDocumentsWithLiveApi` + soft-revalidate) until SSE→local (see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md)).
 
 ### Failure modes
 
 | Local SQLite | REST | UX |
 | --- | --- | --- |
-| Empty | OK | Lists fill from REST; `source` may still flip to `powersync` once any watch returns |
-| OK | Fail | PowerSync-only; soft revalidate retries later |
-| Both stale | — | User sees last merged snapshot; next sync/hydrate refreshes |
+| Empty | OK | Lists fill from REST cold-start rescue; `source` may still flip to `powersync` once any watch returns |
+| OK | Fail | PowerSync-only |
+| Both stale | — | User sees SQLite snapshot; next PowerSync download refreshes |
 
 ### Debugging
 
 - `workspace.source` — `"powersync"` once a local tasks watch has rows, else `"empty"`
-- `workspace.ready` — combines PowerSync readiness, REST settle, and a **12s** `queriesGracePeriodExpired` so cold start is not blocked forever on a hung watch
+- `workspace.ready` — PowerSync readiness + local/api entity load + a **5s** `queriesGracePeriodExpired`. `restHydrateSettled` no longer unblocks UI by itself (avoids REST-first flashes).
 - Prefer React Profiler on a single task status patch when changing merge or watch code
 
 ### Client logic sharing

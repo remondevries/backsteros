@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
 import * as Ref from "effect/Ref";
@@ -151,13 +152,32 @@ export function isBacksterosApiPath(pathname: string): boolean {
   );
 }
 
+function readBacksterosCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): string {
+  try {
+    const filePath = NodePath.join(NodeOs.homedir(), ".config", "backsteros", "cli.env");
+    if (!NodeFs.existsSync(filePath)) return "";
+    const text = NodeFs.readFileSync(filePath, "utf8");
+    const match = new RegExp(`^(?:export\\s+)?${key}=(.+)$`, "m").exec(text);
+    return match?.[1]?.trim().replace(/^['"]|['"]$/g, "") || "";
+  } catch {
+    return "";
+  }
+}
+
 export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env): string {
-  return (env.BACKSTEROS_API_URL?.trim() || "http://127.0.0.1:8788").replace(/\/$/, "");
+  const fromEnv = env.BACKSTEROS_API_URL?.trim() || "";
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
+  if (fromCli) return fromCli.replace(/\/$/, "");
+  return "http://127.0.0.1:8788";
 }
 
 function resolveBacksterosApiKey(env: NodeJS.ProcessEnv = process.env): string {
   const fromEnv = env.BACKSTEROS_API_KEY?.trim() || "";
   if (fromEnv) return fromEnv;
+
+  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_KEY");
+  if (fromCli) return fromCli;
 
   // Desktop Dev often inherits a shell without `.env.local`; load it once so
   // `/backsteros-api` proxy can authorize against local-core.

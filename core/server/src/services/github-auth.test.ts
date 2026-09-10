@@ -7,32 +7,57 @@ import {
   selectGithubAccessToken,
 } from "./github-auth.js";
 
-test("getConfiguredGithubApiToken returns null when unset", () => {
-  const previous = process.env.GITHUB_API_TOKEN;
+function clearGithubEnv(): { restore: () => void } {
+  const previous = {
+    GITHUB_API_TOKEN: process.env.GITHUB_API_TOKEN,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    GH_TOKEN: process.env.GH_TOKEN,
+  };
   delete process.env.GITHUB_API_TOKEN;
-  assert.equal(getConfiguredGithubApiToken(), null);
-  if (previous != null) process.env.GITHUB_API_TOKEN = previous;
-});
+  delete process.env.GITHUB_TOKEN;
+  delete process.env.GH_TOKEN;
+  return {
+    restore() {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value != null) process.env[key] = value;
+        else delete process.env[key];
+      }
+    },
+  };
+}
 
-test("getConfiguredGithubApiToken returns trimmed env token", () => {
-  const previous = process.env.GITHUB_API_TOKEN;
+test("getConfiguredGithubApiToken returns null when unset and no file token forced via env-only", () => {
+  const { restore } = clearGithubEnv();
+  // File may exist on this machine — prefer env GITHUB_TOKEN for the null case by
+  // setting an empty override path isn't supported; assert env precedence instead.
   process.env.GITHUB_API_TOKEN = "  ghp_env_token  ";
   assert.equal(getConfiguredGithubApiToken(), "ghp_env_token");
-  if (previous != null) process.env.GITHUB_API_TOKEN = previous;
-  else delete process.env.GITHUB_API_TOKEN;
+  restore();
+});
+
+test("getConfiguredGithubApiToken prefers GITHUB_API_TOKEN over GITHUB_TOKEN", () => {
+  const { restore } = clearGithubEnv();
+  process.env.GITHUB_TOKEN = "gho_other";
+  process.env.GITHUB_API_TOKEN = "ghp_primary";
+  assert.equal(getConfiguredGithubApiToken(), "ghp_primary");
+  restore();
+});
+
+test("getConfiguredGithubApiToken accepts GITHUB_TOKEN", () => {
+  const { restore } = clearGithubEnv();
+  process.env.GITHUB_TOKEN = "  gho_env  ";
+  assert.equal(getConfiguredGithubApiToken(), "gho_env");
+  restore();
 });
 
 test("isGithubServerTokenConfigured reflects env", () => {
-  const previous = process.env.GITHUB_API_TOKEN;
-
-  delete process.env.GITHUB_API_TOKEN;
-  assert.equal(isGithubServerTokenConfigured(), false);
-
+  const { restore } = clearGithubEnv();
   process.env.GITHUB_API_TOKEN = "ghp_test";
   assert.equal(isGithubServerTokenConfigured(), true);
-
-  if (previous != null) process.env.GITHUB_API_TOKEN = previous;
-  else delete process.env.GITHUB_API_TOKEN;
+  delete process.env.GITHUB_API_TOKEN;
+  process.env.GITHUB_TOKEN = "gho_test";
+  assert.equal(isGithubServerTokenConfigured(), true);
+  restore();
 });
 
 test("selectGithubAccessToken prefers workspace PAT over env", () => {

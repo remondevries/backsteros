@@ -47,7 +47,7 @@ curl -X POST http://localhost:8788/api/v1/tasks \
 | Caller | Header |
 | --- | --- |
 | Agents / automation | `Authorization: Bearer sk_live_...` |
-| Human (create API keys) | `Authorization: Bearer <Clerk JWT>` |
+| Desktop / mobile (local-core) | `Authorization: Bearer local` (or `LOCAL_SHELL_TOKEN`) |
 
 ## Cursor spellcheck
 
