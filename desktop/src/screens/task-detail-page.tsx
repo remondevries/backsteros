@@ -23,6 +23,7 @@ import {
   INBOX_TASK_KEY,
   isTasksDueFilter,
   resolveDuplicatedTaskHref,
+  resolveSupportParties,
   spellcheckHasChanges,
   toggleSpellcheckSegment,
   type TaskSpellcheckHighlight,
@@ -549,6 +550,35 @@ export function TaskDetailPage({
     taskDetails,
   ]);
 
+  const supportParties = useMemo(
+    () =>
+      task
+        ? resolveSupportParties({
+            task: {
+              contactId: task.contactId,
+              relatedContactIds: task.relatedContactIds ?? [],
+              relatedOrganizationIds: task.relatedOrganizationIds ?? [],
+            },
+            contacts,
+            organizations,
+            contactAvatarSrc,
+            organizationAvatarSrc,
+          })
+        : {
+            contact: null,
+            organization: null,
+            contactHref: null,
+            organizationHref: null,
+          },
+    [
+      contactAvatarSrc,
+      contacts,
+      organizationAvatarSrc,
+      organizations,
+      task,
+    ],
+  );
+
   // When PowerSync list lag drops `linkedCommitShas` (e.g. CLI link), hydrate
   // from REST so Changes stay visible.
   useEffect(() => {
@@ -974,6 +1004,10 @@ export function TaskDetailPage({
           assigneeOptions={assigneeOptions}
           relatedOptions={relatedOptions}
           projectOptions={projectOptions}
+          supportContact={supportParties.contact}
+          supportOrganization={supportParties.organization}
+          supportContactHref={supportParties.contactHref}
+          supportOrganizationHref={supportParties.organizationHref}
           assigneeNavigateHref={
             task.assigneeId ? `/contacts/${task.assigneeId}` : null
           }

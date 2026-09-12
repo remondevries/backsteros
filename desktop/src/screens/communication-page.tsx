@@ -14,6 +14,7 @@ import {
   getFirstCommunicationItemHref,
   getInboxItemDisplayId,
   getInboxTaskRouteSlugForTask,
+  resolveSupportParties,
   routeCopy,
   type InboxTaskListItem,
 } from "@backsteros/ui";
@@ -227,6 +228,31 @@ function CommunicationPageBody() {
     workspace.contacts,
   ]);
 
+  const supportParties = useMemo(
+    () =>
+      resolveSupportParties({
+        task: {
+          contactId: selectedTaskRecord?.contactId,
+          relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
+          relatedOrganizationIds:
+            selectedTaskRecord?.relatedOrganizationIds ?? [],
+        },
+        contacts: workspace.contacts,
+        organizations: workspace.organizations,
+        contactAvatarSrc,
+        organizationAvatarSrc,
+      }),
+    [
+      contactAvatarSrc,
+      organizationAvatarSrc,
+      selectedTaskRecord?.contactId,
+      selectedTaskRecord?.relatedContactIds,
+      selectedTaskRecord?.relatedOrganizationIds,
+      workspace.contacts,
+      workspace.organizations,
+    ],
+  );
+
   const patchTask = useCallback(
     (patch: Record<string, unknown>) => {
       if (!supportTask) return;
@@ -263,6 +289,7 @@ function CommunicationPageBody() {
           dueDate: selectedTaskRecord?.dueDate ?? supportTask.dueDate ?? null,
           assigneeId: selectedTaskRecord?.assigneeId ?? supportTask.assigneeId,
           assigneeName: assignee?.name ?? null,
+          contactId: selectedTaskRecord?.contactId ?? null,
           relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
           relatedOrganizationIds:
             selectedTaskRecord?.relatedOrganizationIds ?? [],
@@ -289,6 +316,10 @@ function CommunicationPageBody() {
         assigneeOptions={assigneeOptions}
         projectOptions={projectOptions}
         relatedOptions={relatedOptions}
+        supportContact={supportParties.contact}
+        supportOrganization={supportParties.organization}
+        supportContactHref={supportParties.contactHref}
+        supportOrganizationHref={supportParties.organizationHref}
         documentLinkOptions={documentLinkOptions}
         emailLinkOptions={emailLinkOptions}
         fileAttachments={fileAttachments}

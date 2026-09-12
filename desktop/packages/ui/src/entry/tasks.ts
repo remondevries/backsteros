@@ -13,4 +13,11 @@ export { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
 
 export { buildTaskDueDatePatch } from "../calendar/calendar-meeting-overlay.js";
 
+export {
+  resolveSupportParties,
+  type ResolveSupportPartiesInput,
+  type ResolvedSupportParties,
+  type SupportPartyTaskLike,
+} from "../tasks/resolve-support-parties.js";
+
 export { useTaskPropertyDropdownShortcuts } from "../tasks/use-task-property-dropdown-shortcuts.js";

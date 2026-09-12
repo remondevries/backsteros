@@ -51,6 +51,8 @@ export type TaskPropertiesDisplayTask = {
   assigneeName?: string | null;
   relatedContactIds?: string[] | null;
   relatedOrganizationIds?: string[] | null;
+  /** Fallback when related contacts are empty (support tickets). */
+  contactId?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   agentCreatedAt?: number | Date | null;

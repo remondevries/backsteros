@@ -2336,6 +2336,30 @@ export {
 } from "./components/tasks/task-properties-inline-chips.js";
 
 export {
+  SupportContactCard,
+  type SupportContactCardProps,
+} from "./components/tasks/support-contact-card.js";
+
+export {
+  SupportOrganizationCard,
+  type SupportOrganizationCardProps,
+} from "./components/tasks/support-organization-card.js";
+
+export type {
+  SupportContactCardModel,
+  SupportOrganizationCardModel,
+  SupportPartyEmail,
+  SupportPartyPhone,
+} from "./components/tasks/support-party-card-types.js";
+
+export {
+  resolveSupportParties,
+  type ResolveSupportPartiesInput,
+  type ResolvedSupportParties,
+  type SupportPartyTaskLike,
+} from "./tasks/resolve-support-parties.js";
+
+export {
   LetterPropertiesDisplay,
   type LetterPropertiesDisplayProps,
   type LetterPropertiesDisplayLetter,

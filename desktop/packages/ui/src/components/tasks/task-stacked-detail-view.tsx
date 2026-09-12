@@ -206,6 +206,18 @@ export function TaskStackedDetailView({
           />
         </ContentDetailTitleHeader>
         <div className="task-detail-stacked__properties">
+          {task.support ? (
+            <div className="task-detail-stacked__support-parties">
+              <SupportContactCard
+                contact={supportContact}
+                viewHref={supportContactHref}
+              />
+              <SupportOrganizationCard
+                organization={supportOrganization}
+                viewHref={supportOrganizationHref}
+              />
+            </div>
+          ) : null}
           <TaskPropertiesInlineChips
             task={task}
             onFieldActivate={onFieldActivate}

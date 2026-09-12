@@ -19,6 +19,7 @@ import {
   getInboxTaskRouteSlugForTask,
   getProjectTaskHref,
   resolveDuplicatedTaskHref,
+  resolveSupportParties,
   type InboxTaskListItem,
 } from "@backsteros/ui";
 
@@ -437,6 +438,18 @@ function InboxPageBody() {
   const resolvedAssigneeId = selectedTaskRecord?.assigneeId ?? null;
   const assignee =
     contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
+  const supportParties = resolveSupportParties({
+    task: {
+      contactId: selectedTaskRecord?.contactId,
+      relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
+      relatedOrganizationIds:
+        selectedTaskRecord?.relatedOrganizationIds ?? [],
+    },
+    contacts,
+    organizations,
+    contactAvatarSrc,
+    organizationAvatarSrc,
+  });
   const deleteEntityLabel = displayId
     ? `task ${displayId}`
     : "task";
@@ -574,6 +587,7 @@ function InboxPageBody() {
             selectedTaskRecord?.dueDate ?? selectedTask.dueDate ?? null,
           assigneeId: resolvedAssigneeId,
           assigneeName: assignee?.name ?? null,
+          contactId: selectedTaskRecord?.contactId ?? null,
           relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
           relatedOrganizationIds:
             selectedTaskRecord?.relatedOrganizationIds ?? [],
@@ -679,6 +693,10 @@ function InboxPageBody() {
         assigneeOptions={assigneeOptions}
         relatedOptions={relatedOptions}
         projectOptions={projectOptions}
+        supportContact={supportParties.contact}
+        supportOrganization={supportParties.organization}
+        supportContactHref={supportParties.contactHref}
+        supportOrganizationHref={supportParties.organizationHref}
         assigneeNavigateHref={
           resolvedAssigneeId ? `/contacts/${resolvedAssigneeId}` : null
         }
