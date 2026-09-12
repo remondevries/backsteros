@@ -550,34 +550,30 @@ export function TaskDetailPage({
     taskDetails,
   ]);
 
-  const supportParties = useMemo(
-    () =>
-      task
-        ? resolveSupportParties({
-            task: {
-              contactId: task.contactId,
-              relatedContactIds: task.relatedContactIds ?? [],
-              relatedOrganizationIds: task.relatedOrganizationIds ?? [],
-            },
-            contacts,
-            organizations,
-            contactAvatarSrc,
-            organizationAvatarSrc,
-          })
-        : {
-            contact: null,
-            organization: null,
-            contactHref: null,
-            organizationHref: null,
-          },
-    [
-      contactAvatarSrc,
+  const supportParties = useMemo(() => {
+    const full =
+      base == null
+        ? null
+        : (allTasks.find((entry) => entry.id === base.id) ?? null);
+    return resolveSupportParties({
+      task: {
+        contactId: full?.contactId ?? base?.contactId ?? null,
+        relatedContactIds: full?.relatedContactIds ?? [],
+        relatedOrganizationIds: full?.relatedOrganizationIds ?? [],
+      },
       contacts,
-      organizationAvatarSrc,
       organizations,
-      task,
-    ],
-  );
+      contactAvatarSrc,
+      organizationAvatarSrc,
+    });
+  }, [
+    allTasks,
+    base,
+    contactAvatarSrc,
+    contacts,
+    organizationAvatarSrc,
+    organizations,
+  ]);
 
   // When PowerSync list lag drops `linkedCommitShas` (e.g. CLI link), hydrate
   // from REST so Changes stay visible.
