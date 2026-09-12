@@ -16,30 +16,39 @@ import { createRequestAbortSignal } from "../request-timeout";
 import { preservePendingApiRows } from "../merge-local-and-api";
 import {
   WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  WORKSPACE_PROJECT_UPDATED_EVENT,
   type WorkspaceDocumentUpdatedDetail,
+  type WorkspaceProjectUpdatedDetail,
 } from "../workspace-events";
+import {
+  shouldDesktopRestHydrateColdStart,
+  shouldDesktopSkipRestHydrateAfterSync,
+} from "./rest-list-hydration-policy";
 import type { WorkspacePowerSync } from "./workspace-data-types";
 
 /** Coalesce bursty agent reorder/move SSE into one metadata fetch. */
 const DOCUMENT_LIVE_FETCH_DEBOUNCE_MS = 100;
+const PROJECT_LIVE_FETCH_DEBOUNCE_MS = 100;
 
 /**
- * REST-hydrated row caches for the workspace snapshot, plus the settle flags
- * used by the readiness computation in the main hook.
+ * REST-hydrated row caches for cold-start rescue + readiness, plus sparse
+ * SSE live overlays for documents/projects (agent/CLI before PowerSync).
  *
- * Linear-shaped: cold-start rescue only for most entities. Documents also
- * soft-revalidate after settle + react to workspace SSE so agent
- * create/move/delete appear before PowerSync download (merged via
- * mergeLocalDocumentsWithLiveApi).
+ * Linear-shaped: hydrate only when disconnected or SQLite has no rows yet
+ * ({@link shouldDesktopRestHydrateColdStart}). Skip after a completed sync
+ * download. Overlays are id-scoped only.
  */
 export function useWorkspaceApiRows({
   authenticated,
   client,
   powerSync,
+  hasLocalRows,
 }: {
   authenticated: boolean;
   client: BacksterosApiClient;
   powerSync: WorkspacePowerSync;
+  /** True once any Tier A/B list watch has returned rows. */
+  hasLocalRows: boolean;
 }) {
   const [apiTasks, setApiTasks] = useState<ApiTask[] | null>(null);
   const [apiInboxTasks, setApiInboxTasks] = useState<ApiTask[] | null>(null);
@@ -51,7 +60,18 @@ export function useWorkspaceApiRows({
   >(null);
   const [apiAreas, setApiAreas] = useState<ApiArea[] | null>(null);
   const [apiDocuments, setApiDocuments] = useState<ApiDocument[] | null>(null);
+  /** SSE agent document rows — not the cold-start hydrate array. */
+  const [liveDocumentsById, setLiveDocumentsById] = useState(
+    () => new Map<string, ApiDocument>(),
+  );
   const [liveDeletedDocumentIds, setLiveDeletedDocumentIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE CLI/agent project rows. */
+  const [liveProjectsById, setLiveProjectsById] = useState(
+    () => new Map<string, ApiProject>(),
+  );
+  const [liveDeletedProjectIds, setLiveDeletedProjectIds] = useState(
     () => new Set<string>(),
   );
   const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
@@ -90,7 +110,10 @@ export function useWorkspaceApiRows({
       setApiOrganizations(null);
       setApiAreas(null);
       setApiDocuments(null);
+      setLiveDocumentsById(new Map());
       setLiveDeletedDocumentIds(new Set());
+      setLiveProjectsById(new Map());
+      setLiveDeletedProjectIds(new Set());
       setApiHabits(null);
       setApiMeetings(null);
     }
@@ -251,7 +274,24 @@ export function useWorkspaceApiRows({
     }
 
     // Already bootstrapped via PowerSync — skip REST list fan-out.
-    if (powerSync.ready && powerSync.lastSyncedAt) {
+    if (
+      shouldDesktopSkipRestHydrateAfterSync(
+        powerSync.ready,
+        powerSync.lastSyncedAt,
+      )
+    ) {
+      hasHydratedOnceRef.current = true;
+      markWave1Hydrated();
+      markWave2Hydrated();
+      setRestHydrateSettled(true);
+      return;
+    }
+
+    // Connected + SQLite already has membership — no REST rescue (mobile parity).
+    if (
+      powerSync.ready &&
+      !shouldDesktopRestHydrateColdStart(powerSync.connected, hasLocalRows)
+    ) {
       hasHydratedOnceRef.current = true;
       markWave1Hydrated();
       markWave2Hydrated();
@@ -264,48 +304,19 @@ export function useWorkspaceApiRows({
       cancelled = true;
       clearWave2Schedule();
     };
-  }, [authenticated, client, powerSync.ready, powerSync.lastSyncedAt]);
+  }, [
+    authenticated,
+    client,
+    hasLocalRows,
+    powerSync.connected,
+    powerSync.lastSyncedAt,
+    powerSync.ready,
+  ]);
 
-  // Soft-revalidate document metadata after cold-start so agent/off-device
-  // creates appear via mergeLocalDocumentsWithLiveApi before PowerSync download.
-  useEffect(() => {
-    if (!authenticated) return;
-    if (!restHydrateSettled && !powerSync.lastSyncedAt) return;
+  // Documents: workspace SSE (below) patches a sparse live overlay for agent
+  // create/move/delete before PowerSync download. No full-list soft-revalidate.
 
-    let cancelled = false;
-    const refresh = async () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        return;
-      }
-      try {
-        const body = await client.requestJson<{ documents: ApiDocument[] }>(
-          "/api/v1/documents",
-        );
-        if (cancelled) return;
-        setApiDocuments((current) =>
-          preservePendingApiRows(current, body.documents),
-        );
-      } catch {
-        // PowerSync remains the primary source.
-      }
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-
-    void refresh();
-    const intervalId = window.setInterval(() => void refresh(), 12_000);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [authenticated, client, powerSync.lastSyncedAt, restHydrateSettled]);
-
-  // Primary live path: agent document SSE → patch apiDocuments / deleted set
-  // (tree + list) before PowerSync download.
+  // Primary live path: agent document SSE → liveDocumentsById / deleted set.
   useEffect(() => {
     if (!authenticated) return;
 
@@ -329,12 +340,9 @@ export function useWorkspaceApiRows({
               next.delete(documentId);
               return next;
             });
-            setApiDocuments((current) => {
-              if (!current) return [row];
-              const index = current.findIndex((doc) => doc.id === row.id);
-              if (index < 0) return [row, ...current];
-              const next = current.slice();
-              next[index] = row;
+            setLiveDocumentsById((current) => {
+              const next = new Map(current);
+              next.set(row.id, row);
               return next;
             });
           })
@@ -347,9 +355,12 @@ export function useWorkspaceApiRows({
                 next.add(documentId);
                 return next;
               });
-              setApiDocuments((current) =>
-                current?.filter((doc) => doc.id !== documentId) ?? null,
-              );
+              setLiveDocumentsById((current) => {
+                if (!current.has(documentId)) return current;
+                const next = new Map(current);
+                next.delete(documentId);
+                return next;
+              });
             }
           });
       }
@@ -367,9 +378,12 @@ export function useWorkspaceApiRows({
           next.add(detail.documentId);
           return next;
         });
-        setApiDocuments((current) =>
-          current?.filter((doc) => doc.id !== detail.documentId) ?? null,
-        );
+        setLiveDocumentsById((current) => {
+          if (!current.has(detail.documentId)) return current;
+          const next = new Map(current);
+          next.delete(detail.documentId);
+          return next;
+        });
         return;
       }
 
@@ -385,6 +399,93 @@ export function useWorkspaceApiRows({
       window.removeEventListener(
         WORKSPACE_DOCUMENT_UPDATED_EVENT,
         onDocumentUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
+  // CLI/agent project SSE → sparse liveProjectsById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const projectId of ids) {
+        void client
+          .requestJson<ApiProject>(
+            `/api/v1/projects/${encodeURIComponent(projectId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedProjectIds((current) => {
+              if (!current.has(projectId)) return current;
+              const next = new Set(current);
+              next.delete(projectId);
+              return next;
+            });
+            setLiveProjectsById((current) => {
+              const next = new Map(current);
+              next.set(row.id, row);
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedProjectIds((current) => {
+                if (current.has(projectId)) return current;
+                const next = new Set(current);
+                next.add(projectId);
+                return next;
+              });
+              setLiveProjectsById((current) => {
+                if (!current.has(projectId)) return current;
+                const next = new Map(current);
+                next.delete(projectId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onProjectUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceProjectUpdatedDetail>)
+        .detail;
+      if (!detail?.projectId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedProjectIds((current) => {
+          if (current.has(detail.projectId)) return current;
+          const next = new Set(current);
+          next.add(detail.projectId);
+          return next;
+        });
+        setLiveProjectsById((current) => {
+          if (!current.has(detail.projectId)) return current;
+          const next = new Map(current);
+          next.delete(detail.projectId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.projectId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, PROJECT_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_PROJECT_UPDATED_EVENT, onProjectUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_PROJECT_UPDATED_EVENT,
+        onProjectUpdated,
       );
     };
   }, [authenticated, client]);
@@ -406,7 +507,10 @@ export function useWorkspaceApiRows({
     setApiAreas,
     apiDocuments,
     setApiDocuments,
+    liveDocumentsById,
     liveDeletedDocumentIds,
+    liveProjectsById,
+    liveDeletedProjectIds,
     apiHabits,
     setApiHabits,
     apiMeetings,

@@ -10,6 +10,7 @@ import { rememberSectionEntryHrefs } from "./section-entry-store.ts";
 afterEach(() => {
   rememberSectionEntryHrefs({
     inbox: null,
+    communication: null,
     contacts: null,
     organizations: null,
     letters: null,
@@ -20,12 +21,17 @@ afterEach(() => {
 test("resolveAppHref expands section roots from the entry store", () => {
   rememberSectionEntryHrefs({
     inbox: "/inbox/in-1",
+    communication: "/communication/sup-1",
     contacts: "/contacts/1",
     organizations: "/organizations/2",
     letters: "/letters/l-3",
     knowledge: "/knowledge/note",
   });
   assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
+  assert.equal(
+    formatResolvedAppHref(resolveAppHref("/communication")),
+    "/communication/sup-1",
+  );
   // Contacts / organizations catalogs stay on the list root.
   assert.equal(formatResolvedAppHref(resolveAppHref("/contacts")), "/contacts");
   assert.equal(

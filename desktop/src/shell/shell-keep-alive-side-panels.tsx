@@ -99,9 +99,16 @@ import {
   DesktopSocialSidePanel,
 } from "./app-shell-side-panels-lazy";
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
+import { DesktopCommunicationSidePanel } from "./side-panels/communication-side-panel";
 import { RouterLink } from "./app-shell-links";
 import { handleDocumentTreeReorder } from "./document-tree-reorder";
 import type { LeftSidePanelDest } from "../lib/left-side-panel-dest";
+import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
+import {
+  getEmailComposeHref,
+  getFirstCommunicationItemHref,
+} from "@backsteros/ui";
+import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 
 const NO_ENTITIES: [] = [];
 
@@ -167,6 +174,8 @@ export function keepAliveSidePanelTree(
       return <OrganizationsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "social":
       return <SocialKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "communication":
+      return <CommunicationKeepAliveSidePanel onNavigate={onNavigate} />;
     case "letters":
       return <LettersKeepAliveSidePanel onNavigate={onNavigate} />;
     case "tasks-list":
@@ -1055,6 +1064,45 @@ export function SocialKeepAliveSidePanel({
       )}
       items={items}
       Link={RouterLink}
+    />
+  );
+}
+
+export function CommunicationKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const items = useCommunicationListItems();
+  const firstHref = getFirstCommunicationItemHref(items);
+  const { contacts } = useDesktopWorkspacePeople();
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+
+  useEffect(() => {
+    if (!firstHref) return;
+    rememberSectionEntryHrefs({ communication: firstHref });
+  }, [firstHref]);
+
+  return (
+    <DesktopCommunicationSidePanel
+      onNavigate={onNavigate}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstHref,
+        pathname.startsWith("/communication/") || pathname.startsWith("/email/"),
+      )}
+      items={items}
+      Link={RouterLink}
+      groupByAttentionStatus
+      // Display-only meta (avatars / labels). No property dropdowns — full card
+      // navigates, matching the non-interactive feel of triage list selection.
+      assigneeOptions={buildAssigneeDropdownOptions(
+        withAvatarSrc(contacts, contactAvatarSrc),
+      )}
+      onComposeEmail={() =>
+        onNavigate(getEmailComposeHref({ list: "communication" }))
+      }
     />
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import "./markdown-editor.css";
 
 import { BacksterosMarkdownPreview } from "./backsteros-markdown-preview";
+import { createContentViewModeDoubleClickHandler } from "./contentViewModeDoubleClick";
 import { DocumentMarkdownEditor } from "./document-markdown-editor";
 import type { UploadMarkdownImages } from "./markdown-image-paste";
 
@@ -21,6 +22,8 @@ export type BacksterosMarkdownDescriptionProps = {
   focusOnEdit?: boolean;
   /** Desktop floating Preview/Edit dock (rendered inside the layout). */
   toggle?: ReactNode;
+  /** Double-click preview ↔ edit (desktop ContentMarkdownViewLayout parity). */
+  onToggleMode?: (() => void) | undefined;
   /** Paste/drop image upload for markdown embeds (existing tasks only). */
   onUploadImages?: UploadMarkdownImages | undefined;
 };
@@ -41,6 +44,7 @@ export function BacksterosMarkdownDescription({
   placeholder = "Add a description…",
   focusOnEdit = true,
   toggle,
+  onToggleMode,
   onUploadImages,
 }: BacksterosMarkdownDescriptionProps) {
   const [focusRequest, setFocusRequest] = useState(0);
@@ -50,6 +54,10 @@ export function BacksterosMarkdownDescription({
       setFocusRequest((n) => n + 1);
     }
   }, [focusOnEdit, mode]);
+
+  const handleContentDoubleClick = onToggleMode
+    ? createContentViewModeDoubleClickHandler(mode, onToggleMode)
+    : undefined;
 
   const editor = (
     <div className="content-markdown-editor-column">
@@ -84,9 +92,19 @@ export function BacksterosMarkdownDescription({
       data-content-view-mode={mode}
     >
       {mode === "edit" ? (
-        <div className="content-markdown-view-layout__edit">{editor}</div>
+        <div
+          className="content-markdown-view-layout__edit"
+          onDoubleClick={handleContentDoubleClick}
+        >
+          {editor}
+        </div>
       ) : (
-        <div className="content-markdown-view-layout__preview">{preview}</div>
+        <div
+          className="content-markdown-view-layout__preview"
+          onDoubleClick={handleContentDoubleClick}
+        >
+          {preview}
+        </div>
       )}
       {toggle}
     </div>

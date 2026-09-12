@@ -32,6 +32,25 @@ export type WorkspaceDocumentUpdatedDetail = {
 export const WORKSPACE_DOCUMENT_UPDATED_EVENT =
   "backsteros-workspace-document-updated";
 
+export type WorkspaceProjectUpdatedDetail = {
+  projectId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports a project create/update/delete. */
+export const WORKSPACE_PROJECT_UPDATED_EVENT =
+  "backsteros-workspace-project-updated";
+
+export type WorkspaceTaskUpdatedDetail = {
+  taskId: string;
+  reason: "comment" | "patch" | null;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports a task (or task-comment) write. */
+export const WORKSPACE_TASK_UPDATED_EVENT =
+  "backsteros-workspace-task-updated";
+
 export type WorkspaceEventsClient = {
   requestStream: (path: string, init?: RequestInit) => Promise<Response>;
 };

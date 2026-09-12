@@ -29,7 +29,13 @@ export type EmailListItem = {
   /** Recipients when known (contact Emails tab matching). */
   to?: string[] | null;
   preview?: string | null;
+  /** Latest activity timestamp (list sort / relative time). */
   receivedAt: number;
+  /**
+   * Earliest inbound message in the thread when known (letter-style “Received”).
+   * Falls back to the oldest message timestamp when direction cannot be inferred.
+   */
+  firstReceivedAt?: number | null;
   threadId?: string | null;
   conceptDraftId?: string | null;
   inReplyToMessageId?: string | null;
@@ -74,8 +80,9 @@ export const EMAIL_INBOX_LIST_PARAM = "list";
 export const EMAIL_INBOX_LIST_VALUE = "inbox";
 export const EMAIL_TASKS_LIST_VALUE = "tasks";
 export const EMAIL_PROJECT_LIST_VALUE = "project";
+export const EMAIL_COMMUNICATION_LIST_VALUE = "communication";
 
-export type EmailListContext = "inbox" | "tasks" | "project";
+export type EmailListContext = "inbox" | "tasks" | "project" | "communication";
 
 function emailListSearchParams(search: string): URLSearchParams {
   const normalized = search.startsWith("?") ? search.slice(1) : search;
@@ -87,11 +94,21 @@ export function getEmailListContext(search: string): EmailListContext | null {
   if (value === EMAIL_INBOX_LIST_VALUE) return "inbox";
   if (value === EMAIL_TASKS_LIST_VALUE) return "tasks";
   if (value === EMAIL_PROJECT_LIST_VALUE) return "project";
+  if (value === EMAIL_COMMUNICATION_LIST_VALUE) return "communication";
   return null;
 }
 
 export function isEmailInboxListContext(search: string): boolean {
   return getEmailListContext(search) === "inbox";
+}
+
+export function isEmailCommunicationListContext(search: string): boolean {
+  return getEmailListContext(search) === "communication";
+}
+
+/** Append `?list=communication` for Communication-sourced email routes. */
+export function withEmailCommunicationListContext(href: string): string {
+  return withEmailListContext(href, "communication");
 }
 
 export function isEmailTasksListContext(search: string): boolean {
@@ -136,7 +153,12 @@ export function isEmailComposePath(pathname: string): boolean {
 export function getEmailComposeHref(options?: {
   /** When true, keep the Inbox side panel open on compose. */
   inboxList?: boolean;
+  /** Explicit list context (`inbox` / `communication` / …). */
+  list?: EmailListContext;
 }): string {
+  if (options?.list) {
+    return withEmailListContext(EMAIL_COMPOSE_PATH, options.list);
+  }
   if (options?.inboxList) {
     return withEmailInboxListContext(EMAIL_COMPOSE_PATH);
   }
@@ -414,6 +436,62 @@ export function filterEmailListItems(
 }
 
 /**
+ * Earliest timestamp among messages we received (not sent from our mailboxes).
+ * When mailbox emails are omitted, returns the earliest message timestamp.
+ */
+export function firstReceivedEmailAtMs(
+  messages: readonly {
+    timestamp?: string | number | null;
+    receivedAt?: number | null;
+    from?: string | null;
+  }[],
+  ourMailboxEmails?: Iterable<string> | null,
+): number | null {
+  const ours = new Set(
+    [...(ourMailboxEmails ?? [])]
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  const parseAt = (message: {
+    timestamp?: string | number | null;
+    receivedAt?: number | null;
+  }): number | null => {
+    if (
+      typeof message.receivedAt === "number" &&
+      Number.isFinite(message.receivedAt) &&
+      message.receivedAt > 0
+    ) {
+      return message.receivedAt;
+    }
+    if (message.timestamp == null) return null;
+    if (typeof message.timestamp === "number") {
+      return Number.isFinite(message.timestamp) && message.timestamp > 0
+        ? message.timestamp
+        : null;
+    }
+    const parsed = Date.parse(message.timestamp);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  let earliestInbound: number | null = null;
+  let earliestAny: number | null = null;
+  for (const message of messages) {
+    const at = parseAt(message);
+    if (at == null) continue;
+    if (earliestAny == null || at < earliestAny) earliestAny = at;
+    if (ours.size === 0) continue;
+    const from = parseReplyToAddress(message.from ?? "").toLowerCase();
+    if (from && ours.has(from)) continue;
+    if (earliestInbound == null || at < earliestInbound) {
+      earliestInbound = at;
+    }
+  }
+
+  return earliestInbound ?? earliestAny;
+}
+
+/**
  * One sidebar row per AgentMail thread. Concept replies stay attached to the
  * parent message — they must not appear as a second inbox item.
  */
@@ -442,11 +520,16 @@ export function collapseEmailListItemsByThread(
     // Prefer the message that owns the concept draft; otherwise the root
     // (oldest) so reply concepts and thread metadata stay on one card.
     const preferred = withConcept ?? oldest;
+    const firstReceivedAt =
+      firstReceivedEmailAtMs(bucket) ??
+      preferred.firstReceivedAt ??
+      oldest.receivedAt;
     collapsed.push({
       ...preferred,
       subject: preferred.subject,
       preview: newest.preview ?? preferred.preview,
       receivedAt: newest.receivedAt,
+      firstReceivedAt,
       conceptDraftId:
         withConcept?.conceptDraftId ?? preferred.conceptDraftId ?? null,
     });

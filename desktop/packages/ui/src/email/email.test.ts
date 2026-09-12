@@ -9,6 +9,7 @@ import {
   emailMailboxLabel,
   filterEmailListItems,
   collapseEmailListItemsByThread,
+  firstReceivedEmailAtMs,
   formatEmailPersonWithAddress,
   formatEmailListPartyLabel,
   getEmailComposeHref,
@@ -58,6 +59,10 @@ test("inbox list context is opt-in via ?list=inbox", () => {
     "/email/a/2",
   );
   assert.equal(getEmailComposeHref({ inboxList: true }), "/email/compose?list=inbox");
+  assert.equal(
+    getEmailComposeHref({ list: "communication" }),
+    "/email/compose?list=communication",
+  );
   assert.equal(getEmailComposeHref(), "/email/compose");
 });
 
@@ -284,7 +289,32 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
   assert.equal(collapsed[0]?.id, "msg_root");
   assert.equal(collapsed[0]?.conceptDraftId, "draft_1");
   assert.equal(collapsed[0]?.receivedAt, 200);
+  assert.equal(collapsed[0]?.firstReceivedAt, 100);
   assert.equal(collapsed[0]?.subject, "Factuur 8959599");
+});
+
+test("firstReceivedEmailAtMs prefers inbound over sent", () => {
+  const ours = new Set(["us@example.com"]);
+  assert.equal(
+    firstReceivedEmailAtMs(
+      [
+        {
+          from: "us@example.com",
+          timestamp: "2026-01-01T10:00:00.000Z",
+        },
+        {
+          from: "them@example.com",
+          timestamp: "2026-01-02T10:00:00.000Z",
+        },
+        {
+          from: "them@example.com",
+          timestamp: "2026-01-03T10:00:00.000Z",
+        },
+      ],
+      ours,
+    ),
+    Date.parse("2026-01-02T10:00:00.000Z"),
+  );
 });
 
 test("stripEmailDraftShell removes greeting already shown above the body", () => {

@@ -38,6 +38,7 @@ export type MobileCrmPowerSync = {
     id: string,
     values: Record<string, unknown>,
   ) => Promise<void>;
+  flushCrudUpload?: () => Promise<boolean>;
 };
 
 function slugifyRelationshipLabel(label: string): string {
@@ -59,6 +60,18 @@ function canWriteViaPowerSync(powerSync: MobileCrmPowerSync): boolean {
   return Boolean(powerSync.ready && shouldSkipRestEntityWrite(powerSync));
 }
 
+async function flushCrmCrudUpload(
+  powerSync: MobileCrmPowerSync,
+  label: string,
+): Promise<void> {
+  if (!powerSync.flushCrudUpload) return;
+  try {
+    await powerSync.flushCrudUpload();
+  } catch (error) {
+    console.warn(`[mobile] ${label} upload flush deferred`, error);
+  }
+}
+
 async function softDeleteLocally(
   powerSync: MobileCrmPowerSync,
   table:
@@ -71,26 +84,6 @@ async function softDeleteLocally(
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
   await powerSync.patchMetadata!(table, id, { deleted_at: deletedAt });
-}
-
-async function findCrmGroupMemberIdLocally(
-  powerSync: MobileCrmPowerSync,
-  input: {
-    groupId: string;
-    subjectType: CrmGroupSubjectType;
-    subjectId: string;
-  },
-): Promise<string | null> {
-  const db = powerSync.database;
-  if (!db) return null;
-  const rows = await db.getAll<{ id: string }>(
-    `SELECT id FROM crm_group_members
-     WHERE group_id = ? AND subject_type = ? AND subject_id = ?
-       AND deleted_at IS NULL
-     LIMIT 1`,
-    [input.groupId, input.subjectType, input.subjectId],
-  );
-  return rows[0]?.id ?? null;
 }
 
 export async function createContactRelationshipViaPowerSyncOrApi(
@@ -283,28 +276,7 @@ export async function createCrmGroupViaPowerSyncOrApi(
   input: { name: string; color?: string | null; description?: string | null },
 ): Promise<CrmGroup> {
   const name = input.name.trim();
-  if (canWriteViaPowerSync(powerSync)) {
-    const id = await powerSync.createMetadata("crm_groups", {
-      name,
-      description: input.description ?? null,
-      color: input.color ?? null,
-      icon: null,
-      sort_order: Date.now(),
-    });
-    const now = new Date().toISOString();
-    return {
-      id,
-      workspaceId: "",
-      name,
-      description: input.description ?? null,
-      color: input.color ?? null,
-      icon: null,
-      sortOrder: Date.now(),
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
-  }
+  await flushCrmCrudUpload(powerSync, "crm group create preflight");
 
   return client.requestJson<CrmGroup>("/api/v1/crm-groups", {
     method: "POST",
@@ -319,7 +291,7 @@ export async function createCrmGroupViaPowerSyncOrApi(
 
 export async function updateCrmGroupViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: MobileCrmPowerSync,
+  _powerSync: MobileCrmPowerSync,
   input: {
     groupId: string;
     existing: CrmGroup;
@@ -327,22 +299,6 @@ export async function updateCrmGroupViaPowerSyncOrApi(
     color?: string | null;
   },
 ): Promise<CrmGroup> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const patch: Record<string, unknown> = {};
-    if (input.name !== undefined) patch.name = input.name.trim();
-    if (input.color !== undefined) patch.color = input.color;
-    if (Object.keys(patch).length > 0) {
-      await powerSync.patchMetadata!("crm_groups", input.groupId, patch);
-    }
-    const now = new Date().toISOString();
-    return {
-      ...input.existing,
-      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-      ...(input.color !== undefined ? { color: input.color } : {}),
-      updatedAt: now,
-    };
-  }
-
   return client.requestJson<CrmGroup>(
     `/api/v1/crm-groups/${encodeURIComponent(input.groupId)}`,
     {
@@ -358,14 +314,9 @@ export async function updateCrmGroupViaPowerSyncOrApi(
 
 export async function deleteCrmGroupViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: MobileCrmPowerSync,
+  _powerSync: MobileCrmPowerSync,
   groupId: string,
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    await softDeleteLocally(powerSync, "crm_groups", groupId);
-    return;
-  }
-
   await client.requestJson(
     `/api/v1/crm-groups/${encodeURIComponent(groupId)}`,
     { method: "DELETE" },
@@ -374,24 +325,13 @@ export async function deleteCrmGroupViaPowerSyncOrApi(
 
 export async function addCrmGroupMemberViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: MobileCrmPowerSync,
+  _powerSync: MobileCrmPowerSync,
   input: {
     groupId: string;
     subjectType: CrmGroupSubjectType;
     subjectId: string;
   },
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const existingId = await findCrmGroupMemberIdLocally(powerSync, input);
-    if (existingId) return;
-    await powerSync.createMetadata("crm_group_members", {
-      group_id: input.groupId,
-      subject_type: input.subjectType,
-      subject_id: input.subjectId,
-    });
-    return;
-  }
-
   await client.requestJson(
     `/api/v1/crm-groups/${encodeURIComponent(input.groupId)}/members`,
     {
@@ -407,7 +347,7 @@ export async function addCrmGroupMemberViaPowerSyncOrApi(
 
 export async function removeCrmGroupMemberViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: MobileCrmPowerSync,
+  _powerSync: MobileCrmPowerSync,
   input: {
     groupId: string;
     subjectType: CrmGroupSubjectType;
@@ -415,23 +355,17 @@ export async function removeCrmGroupMemberViaPowerSyncOrApi(
     memberId?: string | null;
   },
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const memberId =
-      input.memberId ??
-      (await findCrmGroupMemberIdLocally(powerSync, input));
-    if (!memberId) return;
-    await softDeleteLocally(powerSync, "crm_group_members", memberId);
-    return;
-  }
-
   let memberId = input.memberId ?? null;
   if (!memberId) {
     const members = await client.requestJson<{
-      members: { id: string; subjectId: string }[];
+      members: { id: string; subjectId: string; subjectType: string }[];
     }>(`/api/v1/crm-groups/${encodeURIComponent(input.groupId)}/members`);
     memberId =
-      members.members.find((entry) => entry.subjectId === input.subjectId)
-        ?.id ?? null;
+      members.members.find(
+        (entry) =>
+          entry.subjectId === input.subjectId &&
+          entry.subjectType === input.subjectType,
+      )?.id ?? null;
   }
   if (!memberId) return;
 
@@ -441,7 +375,7 @@ export async function removeCrmGroupMemberViaPowerSyncOrApi(
   );
 }
 
-/** POST group membership, retrying while a just-created contact/org uploads (REST path). */
+/** POST group membership, retrying while a just-created contact/org uploads. */
 export async function addCrmGroupMemberWithRetry(
   client: BacksterosApiClient,
   powerSync: MobileCrmPowerSync,
@@ -451,12 +385,10 @@ export async function addCrmGroupMemberWithRetry(
     subjectId: string;
   },
 ) {
-  if (canWriteViaPowerSync(powerSync)) {
-    await addCrmGroupMemberViaPowerSyncOrApi(client, powerSync, input);
-    return;
-  }
-
   const SUBJECT_SYNC_RETRY_DELAYS_MS = [0, 150, 300, 600, 1200] as const;
+
+  await flushCrmCrudUpload(powerSync, "crm group member preflight");
+
   let lastError: unknown;
   for (const delay of SUBJECT_SYNC_RETRY_DELAYS_MS) {
     if (delay > 0) {
@@ -467,12 +399,28 @@ export async function addCrmGroupMemberWithRetry(
       return;
     } catch (error) {
       lastError = error;
-      if (!isSubjectMissingError(error)) throw error;
+      if (!isSubjectMissingError(error) && !isRetryableUploadError(error)) {
+        throw error;
+      }
+      await flushCrmCrudUpload(powerSync, "crm group member retry");
     }
   }
   throw lastError instanceof Error
     ? lastError
     : new Error("Failed to add group member");
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("powersync upload failed (503)") ||
+    message.includes("powersync upload failed (502)") ||
+    message.includes("powersync upload failed (500)") ||
+    message.includes("powersync_mutation_claim_race") ||
+    message.includes("group_not_found") ||
+    message.includes("subject_not_found")
+  );
 }
 
 function isSubjectMissingError(error: unknown): boolean {
@@ -489,7 +437,9 @@ function isSubjectMissingError(error: unknown): boolean {
   return (
     message.includes("contact not found") ||
     message.includes("organization not found") ||
-    message.includes("member subject not found")
+    message.includes("member subject not found") ||
+    message.includes("subject_not_found") ||
+    message.includes("group_not_found")
   );
 }
 

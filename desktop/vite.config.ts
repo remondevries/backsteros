@@ -14,6 +14,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 const bundleReport = process.env.BUNDLE_REPORT === "1";
+// T3 Code HTTP API (Hetzner/Kamal discovery). Default matches development/scripts/dev-runner.ts.
+const t3CodeHttpUrl = (
+  process.env.VITE_T3CODE_URL ||
+  process.env.T3CODE_HTTP_URL ||
+  "http://127.0.0.1:13773"
+).replace(/\/$/, "");
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -135,6 +141,14 @@ export default defineConfig(async () => ({
     host: host || false,
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
+    proxy: {
+      // Same-origin proxy so the Development side panel can read T3 Code
+      // `/api/hetzner/*` without CORS friction during `dev:vite` / `tauri dev`.
+      "/api/hetzner": {
+        target: t3CodeHttpUrl,
+        changeOrigin: true,
+      },
+    },
     hmr: host
       ? {
           protocol: "ws",

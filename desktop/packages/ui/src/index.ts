@@ -140,6 +140,7 @@ export {
   JournalNavIcon,
   KnowledgeBaseNavIcon,
   ContactsNavIcon,
+  CommunicationNavIcon,
   SocialNavIcon,
   LettersNavIcon,
   OrganizationsNavIcon,
@@ -247,10 +248,12 @@ export {
   LETTERS_LIST_PANEL_WIDTH_KEY,
   FINANCE_LIST_PANEL_WIDTH_KEY,
   SOCIAL_LIST_PANEL_WIDTH_KEY,
+  COMMUNICATION_LIST_PANEL_WIDTH_KEY,
   shouldShowContentSidePanel,
   getContentSidePanelWidthKey,
   isInboxPath,
   isInboxPanelPath,
+  isCommunicationPanelPath,
   isCalendarPath,
   isCalendarListPath,
   isCalendarTaskDetailPath,
@@ -359,9 +362,11 @@ export {
   groupEmailItemsByStatus,
   filterEmailListItems,
   collapseEmailListItemsByThread,
+  firstReceivedEmailAtMs,
   getEmailStatusLabel,
   isEmailComposePath,
   isEmailInboxListContext,
+  isEmailCommunicationListContext,
   isEmailProjectListContext,
   isEmailTasksListContext,
   parseEmailDraftPath,
@@ -378,10 +383,12 @@ export {
   type EmailThreadBodyViewMode,
   resolveEmailListItemStatus,
   withEmailInboxListContext,
+  withEmailCommunicationListContext,
   withEmailListContext,
   EMAIL_COMPOSE_PATH,
   EMAIL_INBOX_LIST_PARAM,
   EMAIL_INBOX_LIST_VALUE,
+  EMAIL_COMMUNICATION_LIST_VALUE,
   EMAIL_PROJECT_LIST_VALUE,
   EMAIL_TASKS_LIST_VALUE,
   EMAIL_STATUS_ORDER,
@@ -1713,6 +1720,14 @@ export {
   PolishedCheckbox,
   type PolishedCheckboxProps,
 } from "./components/shared/polished-checkbox.js";
+export {
+  SwitchToggle,
+  type SwitchToggleProps,
+} from "./components/shared/switch-toggle.js";
+export {
+  EntityOverviewSubgroup,
+  type EntityOverviewSubgroupProps,
+} from "./components/shared/entity-overview-subgroup.js";
 
 export {
   MarkdownTaskListInteractProvider,
@@ -2593,6 +2608,7 @@ export {
   TaskActivityPanel,
   type TaskActivityPanelProps,
   type TaskActivityCommentMutations,
+  type TaskActivityCommentResolveMode,
   type TaskActivityRequestJson,
   type TaskActivityCurrentUser,
 } from "./components/tasks/task-activity-panel.js";
@@ -2859,6 +2875,18 @@ export {
 } from "./social/social-contacts.js";
 
 export {
+  COMMUNICATION_LIST_PATH,
+  buildCommunicationItemHrefById,
+  findCommunicationItemBySlugOrId,
+  getCommunicationHref,
+  getCommunicationItemHref,
+  getCommunicationTaskRouteHref,
+  getFirstCommunicationItemHref,
+  getSelectedCommunicationSlugFromPathname,
+  isCommunicationSectionPath,
+} from "./communication/communication.js";
+
+export {
   ContactEmailsEditor,
   type ContactEmailsEditorProps,
   type ContactEmailEntry,
@@ -2886,6 +2914,14 @@ export {
   ContactDetailView,
   type ContactDetailViewProps,
 } from "./components/contacts/contact-detail-view.js";
+
+export {
+  ContactPortalTabView,
+  type ContactPortalTabViewProps,
+  type ContactPortalPersistInput,
+  type ContactPortalProjectOption,
+  type ContactPortalEmailOption,
+} from "./components/contacts/contact-portal-tab-view.js";
 
 export {
   ContactsOverviewView,
@@ -3040,6 +3076,7 @@ export {
 
 export {
   CONTACT_CARD_SECTIONS,
+  CONTACT_PORTAL_SECTION,
   CONTACT_SECTIONS,
   CONTACT_SECTION_IDS,
   getActiveContactSection,
@@ -3049,6 +3086,7 @@ export {
   isContactSectionDetailPath,
   isContactSectionId,
   parseContactSectionId,
+  resolveContactCardSections,
   shouldShowContactNav,
   type ContactSectionConfig,
   type ContactSectionId,

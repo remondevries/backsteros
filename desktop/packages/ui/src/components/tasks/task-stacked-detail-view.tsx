@@ -18,6 +18,8 @@ import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-
 import {
   TaskPropertiesInlineChips,
 } from "./task-properties-inline-chips.js";
+import { SupportContactCard } from "./support-contact-card.js";
+import { SupportOrganizationCard } from "./support-organization-card.js";
 import type { TaskDetailViewTask } from "./task-detail-view.js";
 import {
   TaskLinkAttachments,
@@ -66,6 +68,10 @@ export type TaskStackedDetailViewProps = {
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
+  supportContact?: import("./support-party-card-types.js").SupportContactCardModel | null;
+  supportOrganization?: import("./support-party-card-types.js").SupportOrganizationCardModel | null;
+  supportContactHref?: string | null;
+  supportOrganizationHref?: string | null;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onTimerSessionChange?: (
     action: "start" | "pause",
@@ -106,6 +112,10 @@ export function TaskStackedDetailView({
   projectOptions,
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
+  supportContact = null,
+  supportOrganization = null,
+  supportContactHref = null,
+  supportOrganizationHref = null,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,

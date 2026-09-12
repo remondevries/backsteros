@@ -53,6 +53,7 @@ export function useShellSidePanelHost({
     panelPathname,
     panelSearch,
     inInboxPanel,
+    inCommunicationPanel,
     showSidePanel,
     financeSection,
   } = panel;
@@ -61,6 +62,7 @@ export function useShellSidePanelHost({
     pathname: panelPathname,
     search: panelSearch,
     inInboxPanel,
+    inCommunicationPanel,
     financeSection,
     showSidePanel,
   });
@@ -118,7 +120,7 @@ export function useShellSidePanelHost({
         visibleKeepAlivePanels = nextVisited;
       }
       lastKeepAliveWidthKey.current =
-        getContentSidePanelWidthKey(panelPathname);
+        getContentSidePanelWidthKey(panelPathname, panelSearch);
     }
   }
 

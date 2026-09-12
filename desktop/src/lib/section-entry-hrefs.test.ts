@@ -20,6 +20,7 @@ import {
 afterEach(() => {
   rememberSectionEntryHrefs({
     inbox: null,
+    communication: null,
     contacts: null,
     organizations: null,
     letters: null,

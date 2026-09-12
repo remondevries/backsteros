@@ -21,44 +21,15 @@ afterEach(() => {
 });
 
 describe("markBacksterosTaskInProgressForAgent", () => {
-  it("patches open tasks to in_progress", async () => {
-    fetchMock.mockResolvedValue({
-      id: "task-1",
-      status: "backlog",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+  it("patches tasks to in_progress without a preliminary GET", async () => {
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_progress",
     } as Awaited<ReturnType<typeof updateBacksterosTask>>);
 
     await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalledWith("task-1", {
-      status: "in_progress",
-      activityActor: "agent",
-    });
-  });
-
-  it("skips tasks already in progress", async () => {
-    fetchMock.mockResolvedValueOnce({
-      id: "task-1",
-      status: "in_progress",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
-    await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(false);
-    expect(updateMock).not.toHaveBeenCalled();
-  });
-
-  it("reopens completed (and other) tasks to in_progress when the agent works", async () => {
-    fetchMock.mockResolvedValue({
-      id: "task-2",
-      status: "completed",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
-    updateMock.mockResolvedValue({
-      id: "task-2",
-      status: "in_progress",
-    } as Awaited<ReturnType<typeof updateBacksterosTask>>);
-
-    await expect(markBacksterosTaskInProgressForAgent("task-2")).resolves.toBe(true);
-    expect(updateMock).toHaveBeenCalledWith("task-2", {
       status: "in_progress",
       activityActor: "agent",
     });
@@ -66,43 +37,18 @@ describe("markBacksterosTaskInProgressForAgent", () => {
 });
 
 describe("markBacksterosTaskInReviewForAgent", () => {
-  it("patches in_progress tasks to in_review", async () => {
-    fetchMock.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+  it("patches tasks to in_review without a preliminary GET", async () => {
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_review",
     } as Awaited<ReturnType<typeof updateBacksterosTask>>);
 
     await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalledWith("task-1", {
       status: "in_review",
       activityActor: "agent",
     });
-  });
-
-  it("skips tasks already in review, triage, or terminal", async () => {
-    fetchMock.mockResolvedValueOnce({
-      id: "task-1",
-      status: "in_review",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
-    await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
-
-    fetchMock.mockResolvedValueOnce({
-      id: "task-2",
-      status: "triage",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
-    await expect(markBacksterosTaskInReviewForAgent("task-2")).resolves.toBe(false);
-
-    fetchMock.mockResolvedValueOnce({
-      id: "task-3",
-      status: "completed",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
-    await expect(markBacksterosTaskInReviewForAgent("task-3")).resolves.toBe(false);
-
-    expect(updateMock).not.toHaveBeenCalled();
   });
 });
 
@@ -118,8 +64,8 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
     displayId: "BSH-1",
   };
 
-  it("returns true only when the bound chat is ready", () => {
-    const shellsByKey = new Map([
+  it("returns true when the bound chat is ready or failed", () => {
+    const readyShells = new Map([
       [
         "env-1:thread-1",
         {
@@ -130,7 +76,24 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
         },
       ],
     ]);
-    expect(shouldMarkBacksterosTaskInReviewAfterWorking({ binding, shellsByKey })).toBe(true);
+    expect(
+      shouldMarkBacksterosTaskInReviewAfterWorking({ binding, shellsByKey: readyShells }),
+    ).toBe(true);
+
+    const failedShells = new Map([
+      [
+        "env-1:thread-1",
+        {
+          hasPendingApprovals: false,
+          hasPendingUserInput: false,
+          session: { status: "error" as const },
+          backgroundLiveness: null,
+        },
+      ],
+    ]);
+    expect(
+      shouldMarkBacksterosTaskInReviewAfterWorking({ binding, shellsByKey: failedShells }),
+    ).toBe(true);
   });
 
   it("returns false while waiting on approval or input", () => {

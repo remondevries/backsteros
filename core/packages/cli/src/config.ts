@@ -8,6 +8,11 @@ export type CliConfig = {
   token: string;
   /** Who to attribute writes to on the API. */
   activityActor: "user" | "agent";
+  /**
+   * Optional contact profile for comment authorship (agent comments show as
+   * this person). From BACKSTEROS_AGENT_CONTACT_ID or agent-profile.json.
+   */
+  agentContactId: string | null;
   json: boolean;
 };
 
@@ -45,6 +50,27 @@ export function loadCliEnvFile(path = defaultCliEnvPath()): void {
   }
 }
 
+function defaultAgentProfilePath(): string {
+  return join(homedir(), ".config", "backsteros", "agent-profile.json");
+}
+
+/** Contact id from Settings → Integrations → Agent contact profile. */
+export function readAgentContactIdFromProfile(
+  path = defaultAgentProfilePath(),
+): string | null {
+  if (!existsSync(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+      contactId?: unknown;
+    };
+    return typeof parsed.contactId === "string" && parsed.contactId.trim()
+      ? parsed.contactId.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadConfig(flags: {
   url?: string;
   token?: string;
@@ -73,10 +99,16 @@ export function loadConfig(flags: {
     throw new Error(`Invalid activity actor "${actorRaw}" (use user|agent)`);
   }
 
+  const agentContactId =
+    process.env.BACKSTEROS_AGENT_CONTACT_ID?.trim() ||
+    readAgentContactIdFromProfile() ||
+    null;
+
   return {
     baseUrl,
     token,
     activityActor: actorRaw,
+    agentContactId,
     json: Boolean(flags.json),
   };
 }

@@ -27,6 +27,7 @@ import {
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { CrmGroupColorDot } from "../crm/crm-group-label.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { BirthdayCalendarIcon } from "../calendar/birthday-calendar-icon.js";
 import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
@@ -178,25 +179,7 @@ function DetailsField({
 }
 
 /** Labeled rule separator + field group (same visual language as list subgroups). */
-function DetailsSubgroup({
-  title,
-  children,
-}: {
-  title: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="entity-overview-subgroup" data-subgroup={title}>
-      <div className="entity-overview-subgroup__header">
-        <span className="entity-overview-subgroup__label">{title}</span>
-        <span className="entity-overview-subgroup__rule" aria-hidden="true" />
-      </div>
-      {children != null ? (
-        <div className="entity-overview-subgroup__fields">{children}</div>
-      ) : null}
-    </div>
-  );
-}
+const DetailsSubgroup = EntityOverviewSubgroup;
 
 function normalizeSocialAccounts(
   accounts: ContactSocialAccount[],
@@ -290,10 +273,18 @@ export function ContactOverviewView({
     contact.firstName?.trim() ||
     contact.name.trim().split(/\s+/)[0] ||
     contact.name;
+  const explicitLastName = contact.lastName?.trim() ?? "";
+  const derivedLastName = contact.name.trim().split(/\s+/).slice(1).join(" ");
+  // Empty lastName used to fall through to a derivation from `name`, which
+  // duplicated the surname when firstName already stored the full display name
+  // (e.g. firstName "Brandon Small" + derived "Small").
   const remoteLastName =
-    contact.lastName?.trim() ||
-    contact.name.trim().split(/\s+/).slice(1).join(" ") ||
-    "";
+    explicitLastName ||
+    (remoteFirstName === contact.name.trim() ||
+    (derivedLastName.length > 0 &&
+      remoteFirstName.endsWith(` ${derivedLastName}`))
+      ? ""
+      : derivedLastName);
 
   const [firstName, setFirstName] = useState(remoteFirstName);
   const [firstNameSource, setFirstNameSource] = useState(remoteFirstName);
@@ -693,7 +684,6 @@ export function ContactOverviewView({
                 onDueDateChange={(date) => {
                   const next = date ? formatDueDateInputValue(date) : "";
                   setBirthday(next);
-                  setBirthdaySource(next);
                   persist({ birthday: next.trim() || null });
                 }}
               />
@@ -714,7 +704,6 @@ export function ContactOverviewView({
             }}
             onSave={(next) => {
               setLanguages(next);
-              setLanguagesSource(languagesKey(next));
               persist({ languages: next });
             }}
           />
@@ -937,9 +926,7 @@ export function ContactOverviewView({
                       const resolved = resolveDropdownNone(next);
                       const nextCode = resolved?.trim() || "";
                       setCountry(nextCode);
-                      setCountrySource(nextCode);
                       setRegion("");
-                      setRegionSource("");
                       persistLocation({
                         country: nextCode || null,
                         region: null,
@@ -1015,7 +1002,6 @@ export function ContactOverviewView({
                         const resolved = resolveDropdownNone(next);
                         const nextRegion = resolved?.trim() || "";
                         setRegion(nextRegion);
-                        setRegionSource(nextRegion);
                         persistLocation({
                           region: nextRegion || null,
                         });
@@ -1142,8 +1128,10 @@ export function ContactOverviewView({
                   const composed = [next, lastName].filter(Boolean).join(" ");
                   const result = await onSaveName(composed || next);
                   if (result.ok) {
+                    // Keep source on the last confirmed remote until the patched
+                    // contact lands — bumping source early lets adoptRemoteField
+                    // briefly revert the field (visible flicker).
                     setFirstName(next);
-                    setFirstNameSource(next);
                   }
                   return result;
                 }
@@ -1155,7 +1143,6 @@ export function ContactOverviewView({
                 const result = await onSaveFirstName(next);
                 if (result.ok) {
                   setFirstName(next);
-                  setFirstNameSource(next);
                 }
                 return result;
               }}
@@ -1177,7 +1164,6 @@ export function ContactOverviewView({
                   const result = await onSaveName(composed);
                   if (result.ok) {
                     setLastName(next);
-                    setLastNameSource(next);
                   }
                   return result;
                 }
@@ -1189,7 +1175,6 @@ export function ContactOverviewView({
                 const result = await onSaveLastName(next);
                 if (result.ok) {
                   setLastName(next);
-                  setLastNameSource(next);
                 }
                 return result;
               }}
@@ -1264,7 +1249,6 @@ export function ContactOverviewView({
               onSave={(next) => {
                 const trimmed = next.trim();
                 setTitle(trimmed);
-                setTitleSource(trimmed);
                 if (trimmed !== (contact.title ?? "").trim()) {
                   persist({ title: trimmed || null });
                 }
@@ -1281,7 +1265,6 @@ export function ContactOverviewView({
                 onChange={(next) => {
                   const resolved = resolveDropdownNone(next) ?? "";
                   setOrganizationId(resolved);
-                  setOrganizationIdSource(resolved);
                   persist({
                     organizationId: resolved || null,
                   });

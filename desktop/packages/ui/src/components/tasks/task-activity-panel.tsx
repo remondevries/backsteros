@@ -585,12 +585,14 @@ function CommentAuthorMeta({
   createdAt,
   avatarSrc,
   resolved = false,
+  resolvedLabel = "Resolved",
   isAgent = false,
 }: {
   authorName: string;
   createdAt: string;
   avatarSrc: string | null;
   resolved?: boolean;
+  resolvedLabel?: string;
   isAgent?: boolean;
 }) {
   return (
@@ -611,7 +613,15 @@ function CommentAuthorMeta({
         {isAgent ? "Agent" : authorName}
       </span>
       {resolved ? (
-        <span className="task-activity-comment__resolved">Resolved</span>
+        <span
+          className={`task-activity-comment__resolved${
+            resolvedLabel === "Solution"
+              ? " task-activity-comment__resolved--solution"
+              : ""
+          }`}
+        >
+          {resolvedLabel}
+        </span>
       ) : null}
       <time className="task-activity-comment__time" dateTime={createdAt}>
         {formatRelativeTime(createdAt)}
@@ -706,6 +716,8 @@ export type TaskActivityCommentMutations = {
   delete: (comment: TaskComment, replyIds: string[]) => Promise<void>;
 };
 
+export type TaskActivityCommentResolveMode = "thread" | "ticket";
+
 export type TaskActivityPanelProps = {
   taskId: string;
   /** Bump reload when the parent task changes (e.g. status patch). */
@@ -742,6 +754,14 @@ export type TaskActivityPanelProps = {
   ) => void | Promise<void>;
   /** When set, comment CRUD uses local-first PowerSync instead of REST. */
   commentMutations?: TaskActivityCommentMutations;
+  /**
+   * Support tickets use `ticket`: “Resolve ticket” pins a single solution at
+   * the top and notifies the host to complete the task. Default `thread`
+   * keeps the existing resolve/collapse UX.
+   */
+  commentResolveMode?: TaskActivityCommentResolveMode;
+  /** Fired after a ticket-mode resolve/unresolve succeeds (`true` = resolved). */
+  onResolveTicket?: (resolved: boolean) => void | Promise<void>;
 };
 
 export function TaskActivityPanel({
@@ -760,6 +780,8 @@ export function TaskActivityPanel({
   headerActions,
   onContinueHoldComment,
   commentMutations,
+  commentResolveMode = "thread",
+  onResolveTicket,
 }: TaskActivityPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const editInputRef = useRef<TaskCommentEditorHandle | null>(null);
@@ -809,11 +831,23 @@ export function TaskActivityPanel({
   commentMutationsRef.current = commentMutations;
 
   const comments = useMemo(() => {
-    if (!localFeedActive) return restComments;
     const byId = new Map<string, TaskComment>();
-    for (const comment of localComments ?? []) {
-      if (pendingDeletes[comment.id]) continue;
-      byId.set(comment.id, comment);
+    if (localFeedActive) {
+      for (const comment of localComments ?? []) {
+        if (pendingDeletes[comment.id]) continue;
+        byId.set(comment.id, comment);
+      }
+      // REST hydrate fills restComments even while PowerSync is active — SQLite
+      // often lags peer/portal writes, so merge REST as a fallback source.
+      for (const comment of restComments) {
+        if (pendingDeletes[comment.id]) continue;
+        if (!byId.has(comment.id)) byId.set(comment.id, comment);
+      }
+    } else {
+      for (const comment of restComments) {
+        if (pendingDeletes[comment.id]) continue;
+        byId.set(comment.id, comment);
+      }
     }
     for (const comment of pendingComments) {
       if (pendingDeletes[comment.id]) continue;
@@ -909,24 +943,26 @@ export function TaskActivityPanel({
   }, [localActivities, localComments, localFeedActive, localFeedLoading]);
 
   useEffect(() => {
-    if (localFeedActive) return;
     const controller = new AbortController();
     const loadId = ++feedLoadIdRef.current;
     const isInitialLoad = !hasLoadedFeedRef.current;
-    if (isInitialLoad) {
+    if (isInitialLoad && !localFeedActive) {
       setLoadingFeed(true);
     }
-    setError(null);
+    if (!localFeedActive) setError(null);
 
     const isStale = () =>
       loadId !== feedLoadIdRef.current || controller.signal.aborted;
 
+    const fetchComments = () =>
+      requestJsonRef.current<{ comments: TaskComment[] }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+        { signal: controller.signal },
+      );
+
     const fetchFeed = () =>
       Promise.all([
-        requestJsonRef.current<{ comments: TaskComment[] }>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
-          { signal: controller.signal },
-        ),
+        fetchComments(),
         requestJsonRef.current<{ activities: TaskActivity[] }>(
           `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
           { signal: controller.signal },
@@ -935,6 +971,15 @@ export function TaskActivityPanel({
 
     void (async () => {
       try {
+        if (localFeedActive) {
+          // PowerSync owns activities; still REST-pull comments so portal/peer
+          // rows appear before SQLite catches up.
+          const commentsResult = await fetchComments();
+          if (isStale()) return;
+          setRestComments(commentsResult.comments ?? []);
+          return;
+        }
+
         let commentsResult: { comments: TaskComment[] };
         let activitiesResult: { activities: TaskActivity[] };
         try {
@@ -972,6 +1017,7 @@ export function TaskActivityPanel({
         // Superseded / aborted loads must not paint — WebKit may label those
         // "Load failed" instead of AbortError; isStale covers that case.
         if (isStale() || isAbortError(err)) return;
+        if (localFeedActive) return;
         setError(feedLoadErrorMessage(err));
         if (isInitialLoad) {
           setRestComments([]);
@@ -985,6 +1031,9 @@ export function TaskActivityPanel({
       controller.abort();
     };
   }, [localFeedActive, taskId, taskUpdatedAt, feedRevision]);
+
+  // Keep pending overlays for optimistic local edits; REST restComments already
+  // covers peer hydrate while PowerSync is active.
 
   const activityTimeline = useMemo((): ActivityTimelineItem[] => {
     // Coalesce + agent grouping need chronological order; display is newest-first.
@@ -1024,13 +1073,26 @@ export function TaskActivityPanel({
     );
   }, [comments]);
 
-  const rootComments = useMemo(
-    () =>
-      sortedComments
-        .filter((comment) => comment.parentCommentId == null)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [sortedComments],
-  );
+  const ticketResolveMode = commentResolveMode === "ticket";
+
+  const rootComments = useMemo(() => {
+    const roots = sortedComments.filter(
+      (comment) => comment.parentCommentId == null,
+    );
+    if (ticketResolveMode) {
+      // Solution (resolved) pins first, then newest unresolved.
+      return roots.sort((a, b) => {
+        const aResolved = a.resolvedAt != null;
+        const bResolved = b.resolvedAt != null;
+        if (aResolved !== bResolved) return aResolved ? -1 : 1;
+        if (aResolved && bResolved) {
+          return (b.resolvedAt ?? "").localeCompare(a.resolvedAt ?? "");
+        }
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+    }
+    return roots.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [sortedComments, ticketResolveMode]);
 
   const repliesByParentId = useMemo(() => {
     const map = new Map<string, TaskComment[]>();
@@ -1265,17 +1327,47 @@ export function TaskActivityPanel({
 
   const toggleResolveThread = (comment: TaskComment) => {
     const nextResolved = !comment.resolvedAt;
-    void patchComment(comment.id, {
-      resolvedAt: nextResolved ? new Date().toISOString() : null,
-    });
-    if (nextResolved) {
-      setExpandedResolvedIds((current) => {
-        if (!current[comment.id]) return current;
-        const next = { ...current };
-        delete next[comment.id];
-        return next;
+    void (async () => {
+      if (ticketResolveMode && nextResolved) {
+        const others = comments.filter(
+          (entry) =>
+            entry.parentCommentId == null &&
+            entry.id !== comment.id &&
+            entry.resolvedAt != null,
+        );
+        for (const other of others) {
+          const cleared = await patchComment(other.id, { resolvedAt: null });
+          if (!cleared) return;
+        }
+      }
+
+      const updated = await patchComment(comment.id, {
+        resolvedAt: nextResolved ? new Date().toISOString() : null,
       });
-    }
+      if (!updated) return;
+
+      if (ticketResolveMode) {
+        try {
+          await onResolveTicket?.(nextResolved);
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not update ticket status.",
+          );
+        }
+        return;
+      }
+
+      if (nextResolved) {
+        setExpandedResolvedIds((current) => {
+          if (!current[comment.id]) return current;
+          const next = { ...current };
+          delete next[comment.id];
+          return next;
+        });
+      }
+    })();
   };
 
   const expandResolvedThread = (commentId: string) => {
@@ -1663,7 +1755,10 @@ export function TaskActivityPanel({
           const isEditing = editingCommentId === comment.id;
           const isResolved = comment.resolvedAt != null;
           const isResolvedCollapsed =
-            isResolved && !expandedResolvedIds[comment.id] && !isEditing;
+            !ticketResolveMode &&
+            isResolved &&
+            !expandedResolvedIds[comment.id] &&
+            !isEditing;
           const threadCount = 1 + replies.length;
           const isEditingThread =
             editingCommentId != null &&
@@ -1695,9 +1790,13 @@ export function TaskActivityPanel({
                   ? [
                       {
                         id: "resolve",
-                        label: target.resolvedAt
-                          ? "Unresolve thread"
-                          : "Resolve thread",
+                        label: ticketResolveMode
+                          ? target.resolvedAt
+                            ? "Unresolve ticket"
+                            : "Resolve ticket"
+                          : target.resolvedAt
+                            ? "Unresolve thread"
+                            : "Resolve thread",
                         onSelect: () => toggleResolveThread(target),
                       },
                     ]
@@ -1790,10 +1889,18 @@ export function TaskActivityPanel({
               key={comment.id}
               className={`entity-properties-section task-activity-comment-card${
                 isResolved ? " is-resolved is-resolved-expanded" : ""
+              }${
+                ticketResolveMode && isResolved
+                  ? " task-activity-comment-card--solution"
+                  : ""
               }`}
-              aria-label={`Comment by ${comment.authorName}`}
+              aria-label={
+                ticketResolveMode && isResolved
+                  ? `Solution by ${comment.authorName}`
+                  : `Comment by ${comment.authorName}`
+              }
             >
-              {isResolved ? (
+              {isResolved && !ticketResolveMode ? (
                 <div className="task-activity-comment-card__toolbar">
                   <div className="task-activity-comment-card__actions">
                     {commentActionsMenu}
@@ -1825,6 +1932,9 @@ export function TaskActivityPanel({
                       currentUserAvatar,
                     )}
                     resolved={isResolved}
+                    resolvedLabel={
+                      ticketResolveMode && isResolved ? "Solution" : "Resolved"
+                    }
                     isAgent={isAgentComment(comment)}
                   />
                   {renderCommentBody(comment)}

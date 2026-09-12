@@ -572,3 +572,153 @@
   font-size: 11px;
   line-height: 1.3;
 }
+
+/* Support ticket Contact / Organization cards (properties rail + stacked). */
+.support-party-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.support-party-card.is-empty {
+  padding: 12px 10px;
+}
+
+.support-party-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.support-party-card__avatar {
+  flex-shrink: 0;
+}
+
+.support-party-card__identity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.support-party-card__name {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.support-party-card__subtitle {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.support-party-card__address {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.support-party-card__empty {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.support-party-card__channel-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.support-party-card__channels {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.support-party-card__channel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  text-decoration: none;
+}
+
+.support-party-card__channel:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.support-party-card__channel > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+.support-party-card__channel-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.support-party-card__channel-label {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.support-party-card__channel-value {
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.support-party-card__footer {
+  padding-top: 2px;
+}
+
+.support-party-card__open {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.support-party-card__open:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.task-detail-stacked__support-parties {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+

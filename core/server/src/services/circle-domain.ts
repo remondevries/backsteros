@@ -18,6 +18,7 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
+import { hashPortalPassword } from "../lib/portal-password.js";
 import {
   assertPrivateStorageKey,
   buildLetterPdfStorageKey,
@@ -92,6 +93,18 @@ type ContactInput = {
   socialAccounts?: ContactSocialAccount[];
   birthday?: string | null;
   languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl">;
+  portalUsername?: string | null;
+  /** Write-only; hashed before persist. Null/"" clears. */
+  portalPassword?: string | null;
+  portalPasswordHash?: string | null;
+  portalSettings?: {
+    language?: "en" | "nl";
+    enabledProjectIds?: string[] | null;
+    financials?: boolean;
+    support?: boolean;
+    canAddTickets?: boolean;
+    canAddTasks?: boolean;
+  } | null;
 };
 
 function formatContactDisplayName(
@@ -451,8 +464,19 @@ export async function createContact(
     input.number,
     executor,
   );
-  const { name: _legacyName, firstName: _f, lastName: _l, email, emails, phone, phones, ...rest } =
-    input;
+  const {
+    name: _legacyName,
+    firstName: _f,
+    lastName: _l,
+    email,
+    emails,
+    phone,
+    phones,
+    portalPassword,
+    portalPasswordHash: incomingHash,
+    portalSettings: portalSettingsInput,
+    ...rest
+  } = input;
   const emailFields = normalizeContactEmailsInput({
     email: email ?? null,
     emails: emails ?? [],
@@ -461,11 +485,54 @@ export async function createContact(
     phone: phone ?? null,
     phones: phones ?? [],
   });
+  let portalPasswordHash: string | null = incomingHash ?? null;
+  if (portalPassword !== undefined) {
+    if (portalPassword === null || portalPassword === "") {
+      portalPasswordHash = null;
+    } else {
+      portalPasswordHash = await hashPortalPassword(portalPassword);
+    }
+  }
+  const portalSettings =
+    portalSettingsInput === null || portalSettingsInput === undefined
+      ? {}
+      : portalSettingsInput;
   const [row] = await executor
     .insert(contacts)
-    .values({ id, workspaceId, ...rest, ...names, ...emailFields, ...phoneFields, number })
+    .values({
+      id,
+      workspaceId,
+      ...rest,
+      ...names,
+      ...emailFields,
+      ...phoneFields,
+      number,
+      portalPasswordHash,
+      portalSettings,
+    } as typeof contacts.$inferInsert)
     .returning();
   return row!;
+}
+
+export async function getContactByPortalUsername(
+  workspaceId: string,
+  username: string,
+  executor: DbExecutor = db,
+) {
+  const normalized = username.trim().toLowerCase();
+  if (!normalized) return null;
+  const [row] = await executor
+    .select()
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        isNull(contacts.deletedAt),
+        sql`lower(${contacts.portalUsername}) = ${normalized}`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getContactById(
@@ -610,8 +677,23 @@ export async function updateContact(
     emails: _es,
     phone: _p,
     phones: _ps,
+    portalPassword,
+    portalPasswordHash: _ignoredHash,
+    portalSettings: portalSettingsInput,
     ...rest
   } = input;
+  let portalPasswordHash: string | null | undefined;
+  if (portalPassword !== undefined) {
+    if (portalPassword === null || portalPassword === "") {
+      portalPasswordHash = null;
+    } else {
+      portalPasswordHash = await hashPortalPassword(portalPassword);
+    }
+  } else if (input.portalPasswordHash !== undefined) {
+    portalPasswordHash = input.portalPasswordHash;
+  }
+  const portalSettings =
+    portalSettingsInput === null ? {} : portalSettingsInput;
   const [row] = await executor
     .update(contacts)
     .set({
@@ -619,6 +701,8 @@ export async function updateContact(
       ...(namePatch ?? {}),
       ...(emailPatch ?? {}),
       ...(phonePatch ?? {}),
+      ...(portalPasswordHash !== undefined ? { portalPasswordHash } : {}),
+      ...(portalSettingsInput !== undefined ? { portalSettings } : {}),
       updatedAt: new Date(),
     })
     .where(

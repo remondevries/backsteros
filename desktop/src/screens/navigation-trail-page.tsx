@@ -572,9 +572,19 @@ function TrailProjectLeaf({
         dueDate: project.dueDate ?? null,
         taskProgress: { total, completed },
       }}
-      onSaveName={(name) => {
-        void workspace.patchProject(project.id, { name });
-        return { ok: true as const };
+      onSaveName={async (name) => {
+        try {
+          await workspace.patchProject(project.id, { name });
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not save project name.",
+          };
+        }
       }}
       onSaveKey={async (key) => {
         const conflict = workspace.projects.some(
@@ -685,13 +695,33 @@ function TrailContactLeaf({
           });
         });
       }}
-      onSaveFirstName={(firstName) => {
-        void workspace.patchContact(contact.id, { firstName });
-        return { ok: true as const };
+      onSaveFirstName={async (firstName) => {
+        try {
+          await workspace.patchContact(contact.id, { firstName });
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not save first name.",
+          };
+        }
       }}
-      onSaveLastName={(lastName) => {
-        void workspace.patchContact(contact.id, { lastName });
-        return { ok: true as const };
+      onSaveLastName={async (lastName) => {
+        try {
+          await workspace.patchContact(contact.id, { lastName });
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not save last name.",
+          };
+        }
       }}
     />
   );
@@ -719,9 +749,19 @@ function TrailOrganizationLeaf({
         key: organization.key,
         number: organization.number,
       }}
-      onSaveName={(name) => {
-        void workspace.patchOrganization(organization.id, { name });
-        return { ok: true as const };
+      onSaveName={async (name) => {
+        try {
+          await workspace.patchOrganization(organization.id, { name });
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not save organization name.",
+          };
+        }
       }}
     />
   );

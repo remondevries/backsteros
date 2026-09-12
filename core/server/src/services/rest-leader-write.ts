@@ -95,7 +95,8 @@ export function buildContactRestPayload(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
   return restFieldsToSyncPayload(contactId, body, {
-    jsonStringify: ["social_accounts", "emails", "phones", "languages"],
+    jsonStringify: ["social_accounts", "emails", "phones", "languages", "portal_settings"],
+    skipKeys: ["portalPassword", "activityActor", "agentInboxApproved"],
   });
 }
 
@@ -328,7 +329,7 @@ export async function commitRestEntityWrite(input: {
     input.mutationId ??
     newRestMutationId(input.entity, input.entityId, input.operation);
 
-  return commitMutationsLeaderFirst({
+  const result = await commitMutationsLeaderFirst({
     workspaceId: input.workspaceId,
     mutationId,
     deviceId: "rest",
@@ -342,6 +343,29 @@ export async function commitRestEntityWrite(input: {
       },
     ],
   });
+
+  // Wake peer immediately (sync_events / table twin) — especially cloud→local.
+  if (result.source !== "local_fallback") {
+    const { notifyPeerOfEntityWrite } = await import(
+      "./core-replication/nudge.js"
+    );
+    const taskIdFromPayload =
+      typeof input.payload.task_id === "string"
+        ? input.payload.task_id
+        : typeof input.payload.taskId === "string"
+          ? input.payload.taskId
+          : null;
+    notifyPeerOfEntityWrite({
+      workspaceId: input.workspaceId,
+      reason: "rest",
+      entity: input.entity,
+      entityId: input.entityId,
+      taskId: taskIdFromPayload,
+      operation: input.operation === "delete" ? "delete" : "upsert",
+    });
+  }
+
+  return result;
 }
 
 /** Batch forward (reorder, batch update) as one leader mutation. */
@@ -354,7 +378,7 @@ export async function commitRestEntityWriteBatch(input: {
     input.mutationId ??
     `rest:batch:${Date.now()}:${crypto.randomUUID()}`;
 
-  return commitMutationsLeaderFirst({
+  const result = await commitMutationsLeaderFirst({
     workspaceId: input.workspaceId,
     mutationId,
     deviceId: "rest",
@@ -365,4 +389,27 @@ export async function commitRestEntityWriteBatch(input: {
         `${mutationId}:${change.entity}:${change.entityId}:${index}`,
     })),
   });
+
+  if (result.source !== "local_fallback" && input.changes[0]) {
+    const { notifyPeerOfEntityWrite } = await import(
+      "./core-replication/nudge.js"
+    );
+    const first = input.changes[0];
+    const taskIdFromPayload =
+      typeof first.payload.task_id === "string"
+        ? first.payload.task_id
+        : typeof first.payload.taskId === "string"
+          ? first.payload.taskId
+          : null;
+    notifyPeerOfEntityWrite({
+      workspaceId: input.workspaceId,
+      reason: "rest-batch",
+      entity: first.entity,
+      entityId: first.entityId,
+      taskId: taskIdFromPayload,
+      operation: first.operation === "delete" ? "delete" : "upsert",
+    });
+  }
+
+  return result;
 }

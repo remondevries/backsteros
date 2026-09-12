@@ -361,6 +361,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         notifyBacksterosTaskStatusChanged({
           taskId,
           status: migrateBacksterosTaskStatus(patch.status),
+          projectId: rollback?.task.projectId ?? null,
         });
       }
 
@@ -396,6 +397,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
           notifyBacksterosTaskStatusChanged({
             taskId,
             status: migrateBacksterosTaskStatus(updated.status),
+            projectId: updated.projectId,
           });
         }
       } catch (error) {
@@ -405,6 +407,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
             notifyBacksterosTaskStatusChanged({
               taskId,
               status: migrateBacksterosTaskStatus(rollback.task.status),
+              projectId: rollback.task.projectId,
             });
           }
         }

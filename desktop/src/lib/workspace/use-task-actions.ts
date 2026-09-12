@@ -61,6 +61,7 @@ export function useWorkspaceTaskActions({
        * must pass false so the task stays on the tasks overview (`!inbox`).
        */
       inbox?: boolean;
+      support?: boolean;
     }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Task title is required.");
@@ -84,6 +85,7 @@ export function useWorkspaceTaskActions({
           : {}),
         dueDate: toApiDueDateIso(input.dueDate),
         inbox,
+        ...(input.support === true ? { support: true } : {}),
         projectId: null,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
@@ -231,6 +233,7 @@ export function useWorkspaceTaskActions({
       relatedOrganizationIds?: string[];
       dueDate?: string | null;
       links?: TaskLink[];
+      support?: boolean;
     }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Task title is required.");
@@ -255,6 +258,7 @@ export function useWorkspaceTaskActions({
           : {}),
         dueDate: toApiDueDateIso(input.dueDate),
         inbox: false,
+        ...(input.support === true ? { support: true } : {}),
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
       // Local create + REST dual-write (same client id) so numbers appear even

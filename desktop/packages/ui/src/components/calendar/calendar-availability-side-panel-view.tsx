@@ -48,12 +48,18 @@ function AvailabilityDayToggle({
       role="switch"
       aria-checked={checked}
       aria-label={`Toggle ${dayLabel}`}
-      className={`calendar-availability-day-toggle${checked ? " is-on" : ""}`}
+      className={[
+        "calendar-availability-day-toggle",
+        "switch-toggle",
+        checked ? "is-on" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       disabled={disabled}
       onClick={() => onChange(!checked)}
     >
-      <span className="calendar-availability-day-toggle__switch" aria-hidden="true">
-        <span className="calendar-availability-day-toggle__thumb" />
+      <span className="switch-toggle__track" aria-hidden="true">
+        <span className="switch-toggle__thumb" />
       </span>
       <span className="calendar-availability-day-toggle__label">{dayLabel}</span>
     </button>

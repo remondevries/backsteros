@@ -1,9 +1,5 @@
-/* Inbox side panel is often ~244px — hide party so the subject keeps the row. */
-@container inbox-list-card (max-width: 280px) {
-  .inbox-list-item-email-party {
-    display: none;
-  }
-}
+/* Party/from now stacks above the subject (`.email-side-panel-org-label`);
+   keep that label visible in narrow Communication / Inbox panels. */
 
 .inbox-list-item-title {
   min-width: 0;

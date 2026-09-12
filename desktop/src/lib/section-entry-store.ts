@@ -1,5 +1,6 @@
 type SectionEntryKey =
   | "inbox"
+  | "communication"
   | "contacts"
   | "organizations"
   | "letters"
@@ -7,6 +8,7 @@ type SectionEntryKey =
 
 const entries: Record<SectionEntryKey, string | null> = {
   inbox: null,
+  communication: null,
   contacts: null,
   organizations: null,
   letters: null,

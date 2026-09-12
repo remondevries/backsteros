@@ -29,6 +29,7 @@ import {
   StableKeepAliveTree,
   isKeepAliveSurface,
   rememberInboxPanelSelectionHref,
+  rememberCommunicationPanelSelectionHref,
   rememberKeepAliveHref,
   routerAgreesWithWindow,
   shouldKeepAliveSurface,
@@ -39,6 +40,7 @@ import {
 import {
   areasPage,
   calendarPage,
+  communicationPage,
   contactsPage,
   developmentPage,
   emailPage,
@@ -78,6 +80,7 @@ const ProjectsPage = projectsPage.Page;
 const SettingsPage = settingsPage.Page;
 const SocialPage = socialPage.Page;
 const CalendarPage = calendarPage.Page;
+const CommunicationPage = communicationPage.Page;
 const MeetingDetailPage = meetingDetailPage.Page;
 const TaskDetailPage = taskDetailPage.Page;
 const InboxPage = inboxPage.Page;
@@ -96,6 +99,7 @@ const KEEP_ALIVE_PAGE: Partial<Record<PendingPageSurface, () => ReactNode>> = {
   contacts: () => <ContactsPage />,
   organizations: () => <OrganizationsPage />,
   letters: () => <LettersPage />,
+  communication: () => <CommunicationPage />,
   social: () => <SocialPage />,
 };
 
@@ -166,6 +170,9 @@ function ShellRouteContent({
       syncVisibleKeepAliveSurfaceFromRoute(null);
       // Inbox list stays warm on email detail — keep its selection href in sync.
       rememberInboxPanelSelectionHref(
+        `${location.pathname}${location.searchStr ?? ""}`,
+      );
+      rememberCommunicationPanelSelectionHref(
         `${location.pathname}${location.searchStr ?? ""}`,
       );
     } else {
@@ -550,6 +557,7 @@ export function OrgContactScopedMeetingDetailPage() {
 export {
   AreasPage,
   CalendarPage,
+  CommunicationPage,
   ContactsPage,
   DevelopmentPage,
   EmailPage,

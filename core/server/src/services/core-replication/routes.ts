@@ -72,6 +72,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
       reason?: string;
       entity?: string;
       entity_id?: string;
+      task_id?: string | null;
       storage_key?: string | null;
       content_version?: number | null;
       operation?: string;
@@ -91,6 +92,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
       reason: body.reason?.trim(),
       entity: body.entity?.trim(),
       entityId: body.entity_id?.trim(),
+      taskId: typeof body.task_id === "string" ? body.task_id : null,
       storageKey:
         typeof body.storage_key === "string" ? body.storage_key : null,
       contentVersion:
@@ -215,6 +217,15 @@ export function registerCoreReplicationRoutes(app: Hono) {
       deviceId: body.device_id?.trim() || "replica",
       changes,
     });
+
+    // Open portal/desktop shells on this core (usually cloud) need SSE before
+    // PowerSync — especially task_comment → parent task id.
+    const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+      "./sync-event-live-publish.js"
+    );
+    for (const event of result.events) {
+      publishWorkspaceUpdatedFromSyncEvent(workspaceId, event);
+    }
 
     return c.json({
       last_sync_id: result.lastSyncId,

@@ -215,25 +215,64 @@ function createFetcher(options: ApiClientOptions): ApiFetcher {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
+function createTimeoutSignal(timeoutMs: number): AbortSignal {
+  if (
+    typeof AbortSignal !== "undefined" &&
+    "timeout" in AbortSignal &&
+    typeof (AbortSignal as typeof AbortSignal & {
+      timeout: (ms: number) => AbortSignal;
+    }).timeout === "function"
+  ) {
+    return (
+      AbortSignal as typeof AbortSignal & {
+        timeout: (ms: number) => AbortSignal;
+      }
+    ).timeout(timeoutMs);
+  }
+  // WebKit / older runtimes: AbortSignal.timeout is missing — without a
+  // fallback, hung HTTP/1.1 slots (SSE filling the 6-conn pool) never abort.
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(
+      typeof DOMException === "function"
+        ? new DOMException(`Timeout after ${timeoutMs}ms`, "TimeoutError")
+        : new Error(`Timeout after ${timeoutMs}ms`),
+    );
+  }, timeoutMs);
+  controller.signal.addEventListener(
+    "abort",
+    () => {
+      clearTimeout(timer);
+    },
+    { once: true },
+  );
+  return controller.signal;
+}
+
 function mergeAbortSignals(
   userSignal: AbortSignal | null | undefined,
   timeoutMs: number,
 ): AbortSignal | undefined {
   if (typeof AbortSignal === "undefined") return userSignal ?? undefined;
-  const timeoutSignal =
-    "timeout" in AbortSignal
-      ? (AbortSignal as typeof AbortSignal & {
-          timeout: (ms: number) => AbortSignal;
-        }).timeout(timeoutMs)
-      : undefined;
-  if (!timeoutSignal) return userSignal ?? undefined;
+  const timeoutSignal = createTimeoutSignal(timeoutMs);
   if (!userSignal) return timeoutSignal;
   if ("any" in AbortSignal) {
     return (AbortSignal as typeof AbortSignal & {
       any: (signals: AbortSignal[]) => AbortSignal;
     }).any([userSignal, timeoutSignal]);
   }
-  return userSignal;
+  // No AbortSignal.any — abort the shared controller when either fires.
+  const controller = new AbortController();
+  const forward = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  if (userSignal.aborted || timeoutSignal.aborted) {
+    forward();
+    return controller.signal;
+  }
+  userSignal.addEventListener("abort", forward, { once: true });
+  timeoutSignal.addEventListener("abort", forward, { once: true });
+  return controller.signal;
 }
 
 function withRequestTimeout(init: RequestInit = {}): RequestInit {
@@ -256,6 +295,15 @@ async function rawRequest(
   const timedInit = withRequestTimeout(init);
   throwIfAborted(timedInit.signal);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  // JSON string bodies from `requestJson` callers often omit Content-Type;
+  // without it Hono leaves `c.req.valid("json")` empty and PATCHes no-op.
+  if (
+    typeof timedInit.body === "string" &&
+    timedInit.body.length > 0 &&
+    !headers.has("content-type")
+  ) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
     ...timedInit,
     headers,

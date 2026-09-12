@@ -174,6 +174,8 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     due_end_date: row.dueEndDate?.toISOString() ?? null,
     triaged_at: row.triagedAt?.toISOString() ?? null,
     inbox: row.inbox,
+    support: row.support,
+    notification: row.notification,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
     linked_commit_shas: JSON.stringify(
@@ -295,6 +297,9 @@ function contactSnapshot(row: typeof contacts.$inferSelect) {
     social_accounts: JSON.stringify(row.socialAccounts ?? []),
     birthday: row.birthday ?? null,
     languages: JSON.stringify(row.languages ?? []),
+    portal_username: row.portalUsername ?? null,
+    portal_password_hash: row.portalPasswordHash ?? null,
+    portal_settings: JSON.stringify(row.portalSettings ?? {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -1226,6 +1231,9 @@ const contactKeys = {
   social_accounts: "socialAccounts",
   birthday: "birthday",
   languages: "languages",
+  portal_username: "portalUsername",
+  portal_password_hash: "portalPasswordHash",
+  portal_settings: "portalSettings",
   avatar_storage_key: "avatarStorageKey",
   avatar_content_type: "avatarContentType",
 };
@@ -1288,6 +1296,13 @@ function normalizeContactSyncPayload(
       next.languages = JSON.parse(next.languages);
     } catch {
       next.languages = [];
+    }
+  }
+  if (typeof next.portalSettings === "string") {
+    try {
+      next.portalSettings = JSON.parse(next.portalSettings);
+    } catch {
+      next.portalSettings = {};
     }
   }
   return next;
@@ -1941,6 +1956,8 @@ function mapTaskUpsert(
     dueEndDate: asNullableString(payload.due_end_date ?? payload.dueEndDate),
     triagedAt: asNullableString(payload.triaged_at ?? payload.triagedAt),
     inbox: asBoolean(payload.inbox),
+    support: asBoolean(payload.support),
+    notification: asBoolean(payload.notification),
     links: parseTaskLinks(payload.links),
     agentChatId: asNullableString(
       payload.agent_chat_id ?? payload.agentChatId,
@@ -2124,6 +2141,8 @@ export async function applySyncChange(
             dueEndDate: input.dueEndDate,
             triagedAt: input.triagedAt,
             inbox: input.inbox,
+            support: input.support,
+            notification: input.notification,
             links: input.links,
             agentChatId: input.agentChatId,
             linkedCommitShas: input.linkedCommitShas,
@@ -2173,6 +2192,8 @@ export async function applySyncChange(
               dueEndDate: input.dueEndDate,
               triagedAt: input.triagedAt,
               inbox: projectId ? input.inbox : true,
+              support: input.support,
+              notification: input.notification,
               links: input.links,
               agentChatId: input.agentChatId,
               linkedCommitShas: input.linkedCommitShas,
@@ -2227,6 +2248,8 @@ export async function applySyncChange(
               dueEndDate: input.dueEndDate,
               triagedAt: input.triagedAt,
               inbox: input.inbox,
+              support: input.support,
+              notification: input.notification,
               links: input.links,
               agentChatId: input.agentChatId,
               linkedCommitShas: input.linkedCommitShas,
@@ -2393,19 +2416,46 @@ export async function applySyncChange(
       const payload = normalizeContactSyncPayload(
         camelizePayload(change.payload, contactKeys),
       );
+      // Keep `portalPasswordHash` here: REST leader writes and peer replication
+      // must apply hashes. PowerSync client uploads strip the column earlier
+      // (`mapCrudBatch` + PowerSync ingest below) so stale SQLite rows cannot clobber.
       if (existing) {
         const parsed = updateContactSchema.safeParse(payload);
-        if (!parsed.success) throw new Error("INVALID_CONTACT");
+        if (!parsed.success) {
+          console.error(
+            "INVALID_CONTACT (update)",
+            parsed.error.issues.slice(0, 8),
+          );
+          throw new Error("INVALID_CONTACT");
+        }
         const row = await circleService.updateContact(
           workspaceId, change.entity_id, parsed.data, executor,
         );
+        if (row && parsed.data.organizationId !== undefined) {
+          await crmGroupsService.inheritOrganizationGroupMemberships(
+            workspaceId,
+            row.id,
+            executor,
+          );
+        }
         return row ? contactSnapshot(row) : null;
       }
       if (change.operation === "patch") return null;
       const parsed = contactInputSchema.safeParse(payload);
-      if (!parsed.success) throw new Error("INVALID_CONTACT");
+      if (!parsed.success) {
+        console.error(
+          "INVALID_CONTACT (create)",
+          parsed.error.issues.slice(0, 8),
+        );
+        throw new Error("INVALID_CONTACT");
+      }
       const row = await circleService.createContact(
         workspaceId, parsed.data, change.entity_id, executor,
+      );
+      await crmGroupsService.inheritOrganizationGroupMemberships(
+        workspaceId,
+        row.id,
+        executor,
       );
       return contactSnapshot(row);
     }
@@ -3696,34 +3746,134 @@ export async function applyPowerSyncBatch(input: {
   }
 
   if (shouldForwardMutationsToLeader()) {
-    const [parentReceipt] = await db
-      .insert(mutationReceipts)
-      .values({
+    const claimReceipt = async () => {
+      const [parentReceipt] = await db
+        .insert(mutationReceipts)
+        .values({
+          workspaceId: input.workspaceId,
+          mutationId: input.mutationId,
+          deviceId: input.deviceId,
+          result: { accepted: false, source: "powersync_leader_first_pending" },
+        })
+        .onConflictDoNothing()
+        .returning({ mutationId: mutationReceipts.mutationId });
+      return parentReceipt ?? null;
+    };
+
+    let parentReceipt = await claimReceipt();
+    if (!parentReceipt) {
+      const [existing] = await db
+        .select({
+          mutationId: mutationReceipts.mutationId,
+          result: mutationReceipts.result,
+        })
+        .from(mutationReceipts)
+        .where(
+          and(
+            eq(mutationReceipts.workspaceId, input.workspaceId),
+            eq(mutationReceipts.mutationId, input.mutationId),
+          ),
+        )
+        .limit(1);
+      const accepted =
+        existing?.result &&
+        typeof existing.result === "object" &&
+        (existing.result as { accepted?: unknown }).accepted === true;
+      if (accepted) {
+        return { ok: true as const, duplicate: true };
+      }
+      // Prior attempt claimed the id but never finished applying — drop the
+      // claim so PowerSync can retry without a silent ACK-and-wipe.
+      await db
+        .delete(mutationReceipts)
+        .where(
+          and(
+            eq(mutationReceipts.workspaceId, input.workspaceId),
+            eq(mutationReceipts.mutationId, input.mutationId),
+          ),
+        );
+      parentReceipt = await claimReceipt();
+      if (!parentReceipt) {
+        const [raced] = await db
+          .select({ result: mutationReceipts.result })
+          .from(mutationReceipts)
+          .where(
+            and(
+              eq(mutationReceipts.workspaceId, input.workspaceId),
+              eq(mutationReceipts.mutationId, input.mutationId),
+            ),
+          )
+          .limit(1);
+        if (
+          raced?.result &&
+          typeof raced.result === "object" &&
+          (raced.result as { accepted?: unknown }).accepted === true
+        ) {
+          return { ok: true as const, duplicate: true };
+        }
+        throw new Error("POWERSYNC_MUTATION_CLAIM_RACE");
+      }
+    }
+
+    try {
+      const leaderResult = await commitMutationsLeaderFirst({
         workspaceId: input.workspaceId,
         mutationId: input.mutationId,
         deviceId: input.deviceId,
-      })
-      .onConflictDoNothing()
-      .returning({ mutationId: mutationReceipts.mutationId });
-    if (!parentReceipt) {
-      return { ok: true as const, duplicate: true };
+        changes,
+      });
+      await db
+        .update(mutationReceipts)
+        .set({ result: { accepted: true, source: "powersync_leader_first" } })
+        .where(
+          and(
+            eq(mutationReceipts.workspaceId, input.workspaceId),
+            eq(mutationReceipts.mutationId, input.mutationId),
+          ),
+        );
+      // local_fallback already pushed tables + nudged inside commitMutationsLeaderFirst.
+      if (leaderResult.source !== "local_fallback" && changes[0]) {
+        const { notifyPeerOfEntityWrite } = await import(
+          "./core-replication/nudge.js"
+        );
+        const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+          "./core-replication/sync-event-live-publish.js"
+        );
+        const first = changes[0];
+        const taskIdFromPayload =
+          typeof first.payload.task_id === "string"
+            ? first.payload.task_id
+            : typeof first.payload.taskId === "string"
+              ? first.payload.taskId
+              : null;
+        // Wake open shells on this core (desktop) before the peer round-trip.
+        publishWorkspaceUpdatedFromSyncEvent(input.workspaceId, {
+          entity: first.entity,
+          entityId: first.entityId,
+          operation: first.operation,
+          payload: first.payload,
+        });
+        notifyPeerOfEntityWrite({
+          workspaceId: input.workspaceId,
+          reason: "powersync",
+          entity: first.entity,
+          entityId: first.entityId,
+          taskId: taskIdFromPayload,
+          operation: first.operation === "delete" ? "delete" : "upsert",
+        });
+      }
+      return { ok: true as const, duplicate: false };
+    } catch (error) {
+      await db
+        .delete(mutationReceipts)
+        .where(
+          and(
+            eq(mutationReceipts.workspaceId, input.workspaceId),
+            eq(mutationReceipts.mutationId, input.mutationId),
+          ),
+        );
+      throw error;
     }
-    await commitMutationsLeaderFirst({
-      workspaceId: input.workspaceId,
-      mutationId: input.mutationId,
-      deviceId: input.deviceId,
-      changes,
-    });
-    await db
-      .update(mutationReceipts)
-      .set({ result: { accepted: true, source: "powersync_leader_first" } })
-      .where(
-        and(
-          eq(mutationReceipts.workspaceId, input.workspaceId),
-          eq(mutationReceipts.mutationId, input.mutationId),
-        ),
-      );
-    return { ok: true as const, duplicate: false };
   }
 
   let duplicate = false;
@@ -3746,7 +3896,22 @@ export async function applyPowerSyncBatch(input: {
       const entity = mapPowerSyncTable(entry.table);
       if (!entity) continue;
       const operation = mapPowerSyncOp(entry.op);
-      const payload = entry.data ?? {};
+      let payload = entry.data ?? {};
+      // Never accept portal password hashes from the PowerSync client — REST
+      // `portalPassword` is the only write path for credentials.
+      if (
+        entity === "contact" &&
+        operation !== "delete" &&
+        payload &&
+        ("portal_password_hash" in payload || "portalPasswordHash" in payload)
+      ) {
+        const {
+          portal_password_hash: _snakeHash,
+          portalPasswordHash: _camelHash,
+          ...rest
+        } = payload as Record<string, unknown>;
+        payload = rest;
+      }
       const change: SyncChange = {
         entity,
         entity_id: entry.id,
@@ -3796,6 +3961,12 @@ export async function applyPowerSyncBatch(input: {
         ) {
           console.warn(
             `[powersync] skipping ${entry.op} ${entry.table}/${entry.id}: ${error.message}`,
+          );
+          const { appendOpsLog } = await import("../lib/ops-log-buffer.js");
+          appendOpsLog(
+            "warn",
+            "powersync skipped permanent validation error",
+            `${entry.op} ${entry.table}/${entry.id}: ${error.message}`,
           );
           continue;
         }

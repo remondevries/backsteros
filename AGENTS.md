@@ -85,3 +85,11 @@ docs/04-api-and-sync.md
 ```
 
 When answering architecture questions, cite the relevant doc section — do not rely on training data for stack choices.
+
+
+## Machine secrets (agents)
+
+Shared API/deploy secrets live in **Infisical** and cache to `~/.config/secrets/` (`refresh-secrets`).
+BacksterOS CLI auth: `~/.config/backsteros/cli.env`. Prefer those over asking for pasted tokens.
+App runtime wiring (local DB/API URLs) stays in each app’s `.env`.
+See `~/BacksterOS/Knowledge Base/secrets-infisical.md`.

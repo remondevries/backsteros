@@ -121,6 +121,7 @@ export {
   partsFromKeepAliveHref,
   rememberKeepAliveHref,
   rememberInboxPanelSelectionHref,
+  rememberCommunicationPanelSelectionHref,
   resetKeepAliveForTests,
   resolveWarmKeepAliveHref,
   routerAgreesWithWindow,

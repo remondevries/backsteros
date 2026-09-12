@@ -71,6 +71,42 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
     assert.equal(received[0]?.entityId, "task_1");
   });
 
+  it("publishes task_comment against the parent task id", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "task_comment",
+      entityId: "comment_1",
+      operation: "upsert",
+      payload: { task_id: "task_1", project_id: "proj_1" },
+    });
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.kind, "task");
+    assert.equal(received[0]?.entityId, "task_1");
+    assert.equal(received[0]?.reason, "comment");
+    assert.equal(received[0]?.projectId, "proj_1");
+  });
+
+  it("ignores task_comment without a task_id", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "task_comment",
+      entityId: "comment_1",
+      operation: "upsert",
+      payload: {},
+    });
+
+    assert.equal(received.length, 0);
+  });
+
   it("ignores entities without a live shell channel", () => {
     const received: WorkspaceUpdatedEvent[] = [];
     subscribeWorkspaceUpdated("ws_1", (event) => {

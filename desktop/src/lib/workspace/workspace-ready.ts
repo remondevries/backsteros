@@ -15,7 +15,11 @@ export type WorkspaceSurfaceReady = Record<WorkspaceSurface, boolean>;
 
 export type WorkspaceReadyInput = {
   authenticated: boolean;
-  restHydrateSettled: boolean;
+  /**
+   * @deprecated Not used for readiness. Kept so callers can stop passing it
+   * in a follow-up without a wide type break.
+   */
+  restHydrateSettled?: boolean;
   queriesGracePeriodExpired: boolean;
   powerSyncReady: boolean;
   powerSyncStatus: string;
@@ -53,9 +57,12 @@ function entityReady(
 ): boolean {
   if (!input.authenticated) return true;
   if (input.powerSyncStatus === "error") return true;
-  if (input.restHydrateSettled) return true;
+  // Local SQLite watch returned (including empty) — Linear primary path.
   if (keys.some((key) => input.localLoaded[key])) return true;
+  // Cold-start REST rescue filled api* while SQLite was still empty.
   if (keys.some((key) => input.apiLoaded[key])) return true;
+  // Hung watch: unblock after grace (do not treat restHydrateSettled alone as
+  // ready — that flashed REST lists before PowerSync membership landed).
   if (input.powerSyncReady && input.queriesGracePeriodExpired) return true;
   return false;
 }

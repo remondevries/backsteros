@@ -99,6 +99,8 @@ export function toTask(row: DbTask): Task {
     dueEndDate: toIso(row.dueEndDate),
     triagedAt: toIso(row.triagedAt),
     inbox: row.inbox,
+    support: row.support,
+    notification: row.notification,
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
     linkedCommitShas: row.linkedCommitShas ?? [],

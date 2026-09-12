@@ -20,6 +20,7 @@ export type PendingPageSurface =
   | "knowledge"
   | "letters"
   | "finance"
+  | "communication"
   | "social"
   | "contacts"
   | "organizations"
@@ -147,6 +148,8 @@ export function surfaceForPathname(pathname: string): PendingPageSurface {
       return "projects";
     case "finance":
       return "finance";
+    case "communication":
+      return "communication";
     case "social":
       return "social";
     case "contacts":
@@ -187,6 +190,9 @@ export function resolveAppHref(href: string): ResolvedAppHref {
 
   if (pathname === "/inbox") {
     const first = peekSectionEntryHref("inbox");
+    if (first) withEntry(first);
+  } else if (pathname === "/communication") {
+    const first = peekSectionEntryHref("communication");
     if (first) withEntry(first);
   } else if (pathname === "/contacts") {
     // Contacts catalog lives in main content (no auto-open of last contact).

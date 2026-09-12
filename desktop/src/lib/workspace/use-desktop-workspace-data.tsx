@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import type {
@@ -45,8 +46,9 @@ import {
   fillMissingMoneybirdContactIdFromApi,
   fillMissingNumberFromApi,
   fillMissingParentFromApi,
+  fillMissingTaskFlagsFromApi,
   fillMissingTypeFromApi,
-  mergeLocalDocumentsWithLiveApi,
+  applyLiveEntityOverlay,
   mergeLocalWithPendingApiCreates,
   preferNewerByUpdatedAt,
   resolveLocalOrApiRows,
@@ -135,7 +137,7 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
     const task = snakeRow(row) as ApiTask;
     return {
       ...task,
-      number: coerceTaskDisplayNumber(task.number),
+      number: coerceTaskDisplayNumber(task.number) ?? 0,
       relatedContactIds: parseStringIdArray(task.relatedContactIds),
       relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
     };
@@ -228,6 +230,13 @@ function useDesktopWorkspaceDataImpl(): {
     { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
 
+  const hasLocalWorkspaceRows = Boolean(
+    (localAllTasks.data?.length ?? 0) > 0 ||
+      (localProjects.data?.length ?? 0) > 0 ||
+      (localContacts.data?.length ?? 0) > 0 ||
+      (localDocuments.data?.length ?? 0) > 0,
+  );
+
   const {
     apiTasks,
     setApiTasks,
@@ -245,14 +254,100 @@ function useDesktopWorkspaceDataImpl(): {
     setApiAreas,
     apiDocuments,
     setApiDocuments,
+    liveDocumentsById,
     liveDeletedDocumentIds,
+    liveProjectsById,
+    liveDeletedProjectIds,
     apiHabits,
     setApiHabits,
     apiMeetings,
     setApiMeetings,
-    restHydrateSettled,
     queriesGracePeriodExpired,
-  } = useWorkspaceApiRows({ authenticated, client, powerSync });
+  } = useWorkspaceApiRows({
+    authenticated,
+    client,
+    powerSync,
+    hasLocalRows: hasLocalWorkspaceRows,
+  });
+
+  /**
+   * One-shot REST snapshot used only to heal `support` / `notification` when
+   * PowerSync still has 0/false. Not fed into pending-create merge (that would
+   * resurrect API-only membership).
+   *
+   * Do not depend on `localTasks` array identity — PowerSync watches rewrite it
+   * often and would cancel the fetch before `setTaskFlagSource` (no bell on
+   * Tasks / Communication).
+   */
+  const [taskFlagSource, setTaskFlagSource] = useState<ApiTask[] | null>(null);
+  const taskFlagsBackfillDoneRef = useRef(false);
+  const localTasksForFlagHealRef = useRef<ApiTask[]>([]);
+  localTasksForFlagHealRef.current = [
+    ...(localTasks ?? []),
+    ...(localInboxTasks ?? []),
+  ];
+  const localTaskCountForFlagHeal =
+    (localTasks?.length ?? 0) + (localInboxTasks?.length ?? 0);
+  useEffect(() => {
+    if (!authenticated || !powerSync.ready) {
+      taskFlagsBackfillDoneRef.current = false;
+      setTaskFlagSource(null);
+      return;
+    }
+    if (taskFlagsBackfillDoneRef.current) return;
+    if (localTaskCountForFlagHeal === 0) return;
+
+    taskFlagsBackfillDoneRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [tasksBody, inboxBody] = await Promise.all([
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks"),
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox"),
+        ]);
+        const all = [...tasksBody.tasks, ...(inboxBody.tasks ?? [])];
+        // Always publish the flag source — even if this effect cleaned up —
+        // so list icons (Tasks + Communication) update. Only skip SQLite heal
+        // when unmounted / logged out.
+        setTaskFlagSource(all);
+        if (cancelled || !powerSync.patchMetadata) return;
+
+        const localById = new Map(
+          localTasksForFlagHealRef.current.map((row) => [row.id, row]),
+        );
+        for (const api of all) {
+          const local = localById.get(api.id);
+          if (!local) continue;
+          const patch: Record<string, number> = {};
+          if (api.notification && !local.notification) patch.notification = 1;
+          if (api.support && !local.support) patch.support = 1;
+          if (Object.keys(patch).length === 0) continue;
+          try {
+            await powerSync.patchMetadata("tasks", api.id, patch);
+          } catch (error) {
+            console.warn(
+              "[desktop] task flag SQLite heal failed",
+              api.id,
+              error,
+            );
+          }
+        }
+      } catch (error) {
+        taskFlagsBackfillDoneRef.current = false;
+        console.warn("[desktop] task flag source fetch failed", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authenticated,
+    client,
+    localTaskCountForFlagHeal,
+    powerSync.ready,
+    powerSync.patchMetadata,
+  ]);
 
   // Copy REST numbers into SQLite when local rows still have null/0
   // (create/scope-move lag). Re-runs when the missing set changes. Also rescue
@@ -326,29 +421,45 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localProjects.data?.map((row) => snakeRow(row) as ApiProject) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiProjects);
-    return fillMissingLongTextFromApi(
-      fillMissingCodebaseFieldsFromApi(
-        fillMissingTypeFromApi(
-          resolveLocalOrApiRows(localMapped, apiProjects),
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        fillMissingCodebaseFieldsFromApi(
+          fillMissingTypeFromApi(
+            // Shell creates still land in apiProjects before the watch mirrors.
+            mergeLocalWithPendingApiCreates(
+              resolveLocalOrApiRows(localMapped, apiProjects),
+              apiProjects,
+            ),
+            fillFrom,
+          ),
           fillFrom,
         ),
         fillFrom,
+        ["summary", "description"],
       ),
-      apiProjects,
-      ["summary", "description"],
+      liveProjectsById,
+      { deletedIds: liveDeletedProjectIds },
     );
-  }, [apiProjects, localProjects.data]);
+  }, [
+    apiProjects,
+    liveDeletedProjectIds,
+    liveProjectsById,
+    localProjects.data,
+  ]);
 
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
     for (const project of rawProjects) map.set(project.id, project);
-    // Local-primary project membership can omit a row (sync lag) while tasks
-    // still reference it — keep API projects in the lookup so KEY-N resolves.
+    // Local-primary membership can omit a row (sync lag) while tasks still
+    // reference it — keep cold-start API + live SSE projects in the lookup.
     for (const project of apiProjects ?? []) {
       if (!map.has(project.id)) map.set(project.id, project);
     }
+    for (const project of liveProjectsById.values()) {
+      if (!map.has(project.id)) map.set(project.id, project);
+    }
     return map;
-  }, [apiProjects, rawProjects]);
+  }, [apiProjects, liveProjectsById, rawProjects]);
 
   const rawOrganizations = useMemo(() => {
     const localMapped =
@@ -364,7 +475,7 @@ function useDesktopWorkspaceDataImpl(): {
         ),
         fillFrom,
       ),
-      apiOrganizations,
+      fillFrom,
       [
         "summary",
         "notes",
@@ -373,8 +484,6 @@ function useDesktopWorkspaceDataImpl(): {
         "region",
         "chamberOfCommerce",
         "taxNumber",
-        // Coords may lag in SQLite after schema adds / Moneybird geocode writes
-        // to Postgres; fill from REST so the Details map can render.
         "latitude",
         "longitude",
         "address",
@@ -413,20 +522,22 @@ function useDesktopWorkspaceDataImpl(): {
                 ),
                 fillFrom,
               ),
-              // Prefer live REST when PowerSync lags (CLI-linked commits, etc.).
-              apiTasks,
+              fillFrom,
             ),
             fillFrom,
           ),
           fillFrom,
         ),
-        // Live API: server number after create / project scope move.
-        apiTasks,
+        fillFrom,
       ),
       fillFrom,
     );
-    return fillMissingAgentInboxApprovedAtFromApi(resolved, apiTasks);
-  }, [apiTasks, localTasks]);
+    return fillMissingTaskFlagsFromApi(
+      fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
+      // Flag heal source (or cold-start fillFrom) — not membership api* lists.
+      taskFlagSource ?? fillFrom,
+    );
+  }, [apiTasks, localTasks, taskFlagSource]);
 
   const rawInboxTasks = useMemo(() => {
     const localMapped = localInboxTasks;
@@ -446,25 +557,29 @@ function useDesktopWorkspaceDataImpl(): {
                 ),
                 fillFrom,
               ),
-              apiInboxTasks,
+              fillFrom,
             ),
             fillFrom,
           ),
           fillFrom,
         ),
-        apiInboxTasks,
+        fillFrom,
       ),
       fillFrom,
     );
-    return fillMissingAgentInboxApprovedAtFromApi(resolved, apiInboxTasks);
-  }, [apiInboxTasks, localInboxTasks]);
+    return fillMissingTaskFlagsFromApi(
+      fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
+      taskFlagSource ?? fillFrom,
+    );
+  }, [apiInboxTasks, localInboxTasks, taskFlagSource]);
 
   const rawLetters = useMemo(() => {
     const localMapped =
       localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiLetters);
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiLetters),
-      apiLetters,
+      fillFrom,
       ["context"],
     );
   }, [apiLetters, localLetters.data]);
@@ -477,12 +592,13 @@ function useDesktopWorkspaceDataImpl(): {
         ? null
         : (localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting) ??
           null);
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiMeetings);
     return fillMissingLongTextFromApi(
       fillMissingMeetingPropertiesFromApi(
         resolveLocalOrApiRows(localMapped, apiMeetings),
-        apiMeetings,
+        fillFrom,
       ),
-      apiMeetings,
+      fillFrom,
       ["summary", "notes", "transcription"],
     );
   }, [apiMeetings, localMeetings.data, localMeetings.error]);
@@ -490,6 +606,7 @@ function useDesktopWorkspaceDataImpl(): {
   const rawContacts = useMemo(() => {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
     return fillMissingLongTextFromApi(
       // Same race as tasks: optimistic create lands in apiContacts before the
       // PowerSync watch mirrors the INSERT — without this, the new contact is
@@ -498,9 +615,27 @@ function useDesktopWorkspaceDataImpl(): {
         resolveLocalOrApiRows(localMapped, apiContacts),
         apiContacts,
       ),
-      apiContacts,
-      // birthday / names / emails: fill when local SQLite is still missing new CRM columns
-      ["summary", "notes", "birthday", "firstName", "lastName", "emails", "phones", "languages", "socialAccounts", "latitude", "longitude", "address", "city", "postalCode", "country", "region"],
+      fillFrom,
+      [
+        "summary",
+        "notes",
+        "birthday",
+        "firstName",
+        "lastName",
+        "emails",
+        "phones",
+        "languages",
+        "socialAccounts",
+        "latitude",
+        "longitude",
+        "address",
+        "city",
+        "postalCode",
+        "country",
+        "region",
+        "portalUsername",
+        "portalSettings",
+      ],
     );
   }, [apiContacts, localContacts.data]);
 
@@ -517,14 +652,21 @@ function useDesktopWorkspaceDataImpl(): {
   const rawDocuments = useMemo(() => {
     const localMapped =
       localDocuments.data?.map((row) => snakeRow(row) as ApiDocument) ?? null;
-    // Overlay newer API metadata (agent move/rename) + pending creates; hide
-    // live deletes until PowerSync drops the SQLite row.
-    return mergeLocalDocumentsWithLiveApi(
-      resolveLocalOrApiRows(localMapped, apiDocuments),
-      apiDocuments,
+    // Cold-start / shell pending creates via apiDocuments; agent SSE via sparse overlay.
+    return applyLiveEntityOverlay(
+      mergeLocalWithPendingApiCreates(
+        resolveLocalOrApiRows(localMapped, apiDocuments),
+        apiDocuments,
+      ),
+      liveDocumentsById,
       { deletedIds: liveDeletedDocumentIds },
     );
-  }, [apiDocuments, liveDeletedDocumentIds, localDocuments.data]);
+  }, [
+    apiDocuments,
+    liveDeletedDocumentIds,
+    liveDocumentsById,
+    localDocuments.data,
+  ]);
 
   const habits = useMemo((): ApiHabit[] => {
     const localMapped =
@@ -558,9 +700,10 @@ function useDesktopWorkspaceDataImpl(): {
           todayTaskStatus: local.todayTaskStatus ?? null,
         } satisfies ApiHabit;
       }) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiHabits);
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiHabits),
-      apiHabits,
+      fillFrom,
       ["description"],
     );
   }, [apiHabits, localHabits.data]);
@@ -643,6 +786,8 @@ function useDesktopWorkspaceDataImpl(): {
         agentCreatedAt: task.agentCreatedAt,
         agentInboxApprovedAt: task.agentInboxApprovedAt,
         inboxUpdatedAt: task.inboxUpdatedAt,
+        support: task.support ?? null,
+        notification: task.notification ?? null,
       });
     });
     return sortInboxItemsByAttentionStatus(inboxTaskItems);
@@ -790,7 +935,6 @@ function useDesktopWorkspaceDataImpl(): {
   const readyInput = useMemo(
     () => ({
       authenticated,
-      restHydrateSettled,
       queriesGracePeriodExpired,
       powerSyncReady: powerSync.ready,
       powerSyncStatus: powerSync.status,
@@ -843,7 +987,6 @@ function useDesktopWorkspaceDataImpl(): {
       powerSync.ready,
       powerSync.status,
       queriesGracePeriodExpired,
-      restHydrateSettled,
     ],
   );
 
@@ -995,7 +1138,12 @@ function useDesktopWorkspaceDataImpl(): {
     async (id: string, values: Record<string, unknown>) => {
       // organizationName is display-only (joined from organizations); writing it
       // as organization_name fails SQLite and aborts the PowerSync upload path.
-      const { organizationName: _organizationName, ...writable } = values;
+      // portalPasswordSet is API-only (derived from portal_password_hash).
+      const {
+        organizationName: _organizationName,
+        portalPasswordSet: _portalPasswordSet,
+        ...writable
+      } = values;
       const touchesNames =
         writable.firstName !== undefined ||
         writable.lastName !== undefined ||

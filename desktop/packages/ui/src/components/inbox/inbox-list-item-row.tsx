@@ -167,7 +167,9 @@ export function InboxListItemRowComponent({
         >
           <div className="app-side-panel-item-row-primary">
             <InboxItemTypeIcon kind="letter" />
-            <span className="inbox-list-item-title">{item.title}</span>
+            <span className="inbox-list-item-title" title={item.title}>
+              {item.title}
+            </span>
           </div>
           {hasProject ? (
             <div className="app-side-panel-item-row-meta">
@@ -183,19 +185,41 @@ export function InboxListItemRowComponent({
     );
   }
 
-  const hasProjectMeta = Boolean(
-    item.projectId || item.projectName || item.projectKey,
-  );
+  const isSupportTask = item.kind === "task" && Boolean(item.support);
+  const isNotificationTask =
+    item.kind === "task" && Boolean(item.notification);
+  const supportProjectLabel = isSupportTask
+    ? item.projectName?.trim() || item.projectKey?.trim() || null
+    : null;
+  const supportOrganizationLabel = isSupportTask
+    ? item.organizationName?.trim() || null
+    : null;
+  /** Support stack above the title; notification tasks use meta project like regular tasks. */
+  const supportContextLabel =
+    isNotificationTask
+      ? null
+      : supportProjectLabel ?? supportOrganizationLabel;
+  /** Email: party/address above the subject (same stack as support tickets). */
+  const emailPartyLabel =
+    isEmail && item.kind === "email" ? item.partyLabel?.trim() || null : null;
+  const titleStackLabel = supportContextLabel ?? emailPartyLabel;
+  const supportContactLabel = isSupportTask
+    ? item.contactName?.trim() || null
+    : null;
+  const hasProjectMeta =
+    (!isSupportTask || isNotificationTask) &&
+    Boolean(item.projectId || item.projectName || item.projectKey);
   const hasProject = Boolean(item.projectId || item.projectKey);
   const dueDate = item.kind === "meeting" ? null : item.dueDate;
   const assigneeId = item.kind === "meeting" ? null : item.assigneeId;
-  const hasDueMeta = dueDate != null;
+  const hasDueMeta = !isSupportTask && dueDate != null;
   const status = migrateLegacyTaskStatus(item.status);
   // Emails always; tasks only once assigned to a project (matches detail rail).
+  // Support tickets are editable even without a project (portal triage).
   const canEditStatus =
     Boolean(onStatusChange) &&
     item.kind !== "meeting" &&
-    (isEmail || hasProject);
+    (isEmail || hasProject || isSupportTask);
   const canEditAssignee =
     assigneeOptions.length > 0 && Boolean(onAssigneeChange);
   const showAssignee = canEditAssignee || Boolean(assigneeId);
@@ -205,6 +229,75 @@ export function InboxListItemRowComponent({
   const assigneeLabel = assigneeId
     ? (assigneeOption?.label ?? "Assigned")
     : "Unassigned";
+  const statusControl = canEditStatus ? (
+    <span className="inbox-list-item-field">
+      <DeferredSearchableDropdown
+        value={status}
+        options={STATUS_OPTIONS}
+        onChange={(next) => onStatusChange!(item.id, next)}
+        searchPlaceholder="Change status…"
+        searchShortcutLabel="S"
+        ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
+        taskPropertyDropdownId="status"
+        panelAlign="start"
+        panelWidth={280}
+        renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+          <button
+            type="button"
+            id={triggerId}
+            className={
+              isEmail
+                ? "inbox-list-item-email-mark"
+                : "task-item-row__icon-trigger"
+            }
+            title={isEmail ? "Email" : getTaskStatusLabel(status)}
+            tabIndex={-1}
+            disabled={disabled}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-label={`Change status: ${getTaskStatusLabel(status)}`}
+            onMouseDown={stopFieldEvent}
+            onClick={(event) => {
+              stopFieldEvent(event);
+              onToggle();
+            }}
+          >
+            {isEmail ? (
+              <InboxItemTypeIcon
+                kind="email"
+                size={14}
+                style={emailIconStyle}
+              />
+            ) : (
+              <TaskStatusIcon
+                status={status}
+                size={14}
+                working={agentWorking}
+                support={item.kind === "task" && Boolean(item.support)}
+                notification={item.kind === "task" && Boolean(item.notification)}
+              />
+            )}
+          </button>
+        )}
+      />
+    </span>
+  ) : isEmail ? (
+    <span
+      className="inbox-list-item-email-mark"
+      title="Email"
+      aria-label="Email"
+    >
+      <InboxItemTypeIcon kind="email" size={14} style={emailIconStyle} />
+    </span>
+  ) : (
+    <TaskStatusIcon
+      status={status}
+      size={14}
+      working={agentWorking}
+      support={item.kind === "task" && Boolean(item.support)}
+      notification={item.kind === "task" && Boolean(item.notification)}
+    />
+  );
 
   return (
     <li className="inbox-list-item" {...keyboardNavItemProps(item.id)}>
@@ -221,89 +314,51 @@ export function InboxListItemRowComponent({
           aria-label={item.title}
           className="inbox-list-item-hit-area"
         />
-        <div className="app-side-panel-item-row-primary inbox-list-item-card-layer">
-          {canEditStatus ? (
-            <span className="inbox-list-item-field">
-              <DeferredSearchableDropdown
-                value={status}
-                options={STATUS_OPTIONS}
-                onChange={(next) => onStatusChange!(item.id, next)}
-                searchPlaceholder="Change status…"
-                searchShortcutLabel="S"
-                ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
-                taskPropertyDropdownId="status"
-                panelAlign="start"
-                panelWidth={280}
-                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-                  <button
-                    type="button"
-                    id={triggerId}
-                    className={
-                      isEmail
-                        ? "inbox-list-item-email-mark"
-                        : "task-item-row__icon-trigger"
-                    }
-                    title={
-                      isEmail ? "Email" : getTaskStatusLabel(status)
-                    }
-                    tabIndex={-1}
-                    disabled={disabled}
-                    aria-haspopup="listbox"
-                    aria-expanded={open}
-                    aria-label={`Change status: ${getTaskStatusLabel(status)}`}
-                    onMouseDown={stopFieldEvent}
-                    onClick={(event) => {
-                      stopFieldEvent(event);
-                      onToggle();
-                    }}
-                  >
-                    {isEmail ? (
-                      <InboxItemTypeIcon
-                        kind="email"
-                        size={14}
-                        style={emailIconStyle}
-                      />
-                    ) : (
-                      <TaskStatusIcon
-                        status={status}
-                        size={14}
-                        working={agentWorking}
-                      />
-                    )}
-                  </button>
-                )}
+        <div
+          className={`app-side-panel-item-row-primary inbox-list-item-card-layer${
+            titleStackLabel ? " email-side-panel-primary--with-stack" : ""
+          }`}
+        >
+          {titleStackLabel ? (
+            <span className="email-side-panel-status-slot">
+              <span
+                className="email-side-panel-status-spacer"
+                data-lines="1"
+                aria-hidden="true"
               />
-            </span>
-          ) : isEmail ? (
-            <span
-              className="inbox-list-item-email-mark"
-              title="Email"
-              aria-label="Email"
-            >
-              <InboxItemTypeIcon
-                kind="email"
-                size={14}
-                style={emailIconStyle}
-              />
+              {statusControl}
             </span>
           ) : (
-            <TaskStatusIcon
-              status={status}
-              size={14}
-              working={agentWorking}
-            />
+            statusControl
           )}
-          <span className="inbox-list-item-title-wrap">
-            <span className="inbox-list-item-title">
+          <span
+            className={`inbox-list-item-title-wrap${
+              titleStackLabel ? " email-side-panel-title-stack" : ""
+            }`}
+          >
+            {supportProjectLabel && !isNotificationTask ? (
+              <span className="email-side-panel-org-label">
+                {supportProjectLabel}
+              </span>
+            ) : supportOrganizationLabel && !isNotificationTask ? (
+              <span className="email-side-panel-org-label">
+                {supportOrganizationLabel}
+              </span>
+            ) : emailPartyLabel ? (
+              <span
+                className="email-side-panel-org-label"
+                title={emailPartyLabel}
+              >
+                {emailPartyLabel}
+              </span>
+            ) : null}
+            <span className="inbox-list-item-title" title={item.title}>
               {agentWorking && !isEmail ? (
                 <ShimmerText>{item.title}</ShimmerText>
               ) : (
                 item.title
               )}
             </span>
-            {isEmail && item.partyLabel ? (
-              <span className="inbox-list-item-email-party">{item.partyLabel}</span>
-            ) : null}
             {titleTrailing ? (
               <span className="inbox-list-item-title-trailing">
                 {titleTrailing}
@@ -321,8 +376,31 @@ export function InboxListItemRowComponent({
             onPriorityChange={onPriorityChange}
             onDueDateChange={onDueDateChange}
           />
+          {isSupportTask && supportContactLabel ? (
+            <Tooltip label={supportContactLabel}>
+              <span
+                className="inbox-list-item-meta-label"
+                aria-label={supportContactLabel}
+              >
+                {item.contactAvatarSrc ? (
+                  <span className="inbox-list-item-assignee-avatar">
+                    <AssigneeListMark
+                      label={supportContactLabel}
+                      avatarSrc={item.contactAvatarSrc}
+                      size={18}
+                    />
+                  </span>
+                ) : null}
+                <span className="inbox-list-item-truncate email-side-panel-contact-name">
+                  {supportContactLabel}
+                </span>
+              </span>
+            </Tooltip>
+          ) : null}
           {hasProjectMeta ? (
-            projectOptions.length > 0 && onProjectChange ? (
+            !isNotificationTask &&
+            projectOptions.length > 0 &&
+            onProjectChange ? (
               <span className="inbox-list-item-field">
                 <DeferredSearchableDropdown
                   value={item.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TaskActivity, TaskActivityType, TaskComment } from "@backsteros/contracts";
 
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
@@ -176,6 +176,77 @@ const feedSessionCache = new Map<
   { activities: TaskActivity[]; comments: TaskComment[] }
 >();
 
+/**
+ * Peer/REST comment overlays (portal → cloud → local Postgres) that arrive
+ * before PowerSync SQLite. Survives activity-panel remounts that reset React
+ * state — without this, comments flash then vanish when feedRevision resets.
+ */
+const peerCommentOverlays = new Map<string, Map<string, TaskComment>>();
+const peerOverlayListeners = new Set<() => void>();
+
+function notifyPeerOverlayListeners() {
+  for (const listener of peerOverlayListeners) {
+    listener();
+  }
+}
+
+function isNewerComment(next: TaskComment, prev: TaskComment | undefined) {
+  if (!prev) return true;
+  return prev.updatedAt < next.updatedAt;
+}
+
+/** Merge REST/peer comments into the process-local overlay for a task. */
+export function mergePeerTaskComments(
+  taskId: string,
+  comments: readonly TaskComment[],
+): void {
+  const key = taskId.trim();
+  if (!key || comments.length === 0) return;
+  let map = peerCommentOverlays.get(key);
+  if (!map) {
+    map = new Map();
+    peerCommentOverlays.set(key, map);
+  }
+  let changed = false;
+  for (const comment of comments) {
+    if (comment.deletedAt) {
+      if (map.delete(comment.id)) changed = true;
+      continue;
+    }
+    const prev = map.get(comment.id);
+    if (!isNewerComment(comment, prev)) continue;
+    map.set(comment.id, comment);
+    changed = true;
+  }
+  if (changed) notifyPeerOverlayListeners();
+}
+
+function readPeerTaskComments(taskId: string): TaskComment[] {
+  const map = peerCommentOverlays.get(taskId);
+  return map ? [...map.values()] : [];
+}
+
+function prunePeerTaskComments(
+  taskId: string,
+  localComments: readonly TaskComment[],
+): void {
+  const map = peerCommentOverlays.get(taskId);
+  if (!map || map.size === 0) return;
+  const localById = new Map(localComments.map((c) => [c.id, c]));
+  let changed = false;
+  for (const [id, pending] of map) {
+    const local = localById.get(id);
+    if (!local) continue;
+    // Drop overlay once SQLite has a same-or-newer row.
+    if (!(local.updatedAt < pending.updatedAt)) {
+      map.delete(id);
+      changed = true;
+    }
+  }
+  if (map.size === 0) peerCommentOverlays.delete(taskId);
+  if (changed) notifyPeerOverlayListeners();
+}
+
 export function readTaskActivityFeedCache(taskId: string): {
   activities: TaskActivity[];
   comments: TaskComment[];
@@ -198,6 +269,7 @@ export function writeTaskActivityFeedCache(
 export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
   const { ready } = useDesktopPowerSync();
   const enabled = Boolean(ready && taskId);
+  const [peerOverlayVersion, setPeerOverlayVersion] = useState(0);
   const activityQuery = usePowerSyncQuery<ActivityRow>(
     enabled ? TASK_ACTIVITIES_SQL : null,
     taskId ? [taskId] : [],
@@ -209,6 +281,16 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     { rowComparator: COMMENT_ROW_COMPARATOR },
   );
 
+  useEffect(() => {
+    const onPeerOverlay = () => {
+      setPeerOverlayVersion((n) => n + 1);
+    };
+    peerOverlayListeners.add(onPeerOverlay);
+    return () => {
+      peerOverlayListeners.delete(onPeerOverlay);
+    };
+  }, []);
+
   const activities = useMemo(() => {
     if (!activityQuery.data) return null;
     return activityQuery.data
@@ -216,10 +298,31 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
       .filter((row): row is TaskActivity => row != null);
   }, [activityQuery.data]);
 
-  const comments = useMemo(() => {
+  const sqliteComments = useMemo(() => {
     if (!commentQuery.data) return null;
     return commentQuery.data.map(sqliteRowToTaskComment);
   }, [commentQuery.data]);
+
+  useEffect(() => {
+    if (!taskId || !sqliteComments) return;
+    prunePeerTaskComments(taskId, sqliteComments);
+  }, [sqliteComments, taskId]);
+
+  const comments = useMemo(() => {
+    if (!sqliteComments) return null;
+    const peer = taskId ? readPeerTaskComments(taskId) : [];
+    if (peer.length === 0) return sqliteComments;
+    const byId = new Map(sqliteComments.map((c) => [c.id, c]));
+    for (const comment of peer) {
+      const existing = byId.get(comment.id);
+      if (!existing || existing.updatedAt < comment.updatedAt) {
+        byId.set(comment.id, comment);
+      }
+    }
+    return [...byId.values()];
+    // peerOverlayVersion forces re-merge when overlays change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerOverlayVersion, sqliteComments, taskId]);
 
   const cached = taskId ? readTaskActivityFeedCache(taskId) : null;
   const snapshotReady = activities != null && comments != null;

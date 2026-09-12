@@ -532,8 +532,10 @@ export function ProjectPanelDetailView({
                     }
                     const result = await onSaveName(next);
                     if (result.ok) {
+                      // Keep source on the last confirmed remote until the patched
+                      // project lands — bumping source early lets adoptRemoteField
+                      // briefly revert the field.
                       setName(next);
-                      setNameSource(next);
                     }
                     return result;
                   }}

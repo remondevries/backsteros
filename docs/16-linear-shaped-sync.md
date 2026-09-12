@@ -84,7 +84,7 @@ flowchart TB
 3. Desktop: local-only Tier A/B lists; remove merge helpers; keep upload path.
 4. Docs/13 rewrite to Phase B live + Linear leader; iOS follows shared packages later.
 
-## Cutover progress (Aug 2026)
+## Cutover progress (Sep 2026)
 
 | Slice | Status |
 | --- | --- |
@@ -92,15 +92,38 @@ flowchart TB
 | Empty-body vault push/apply guards | Landed |
 | `vaultPath` / machine-local settings denylist | Landed |
 | REST document content → `sync_events` | Landed |
-| Desktop `resolveLocalOrApiRows` (no wall-clock merge) | Landed |
-| Desktop cold-start-only REST hydrate (no soft-revalidate) | Landed |
-| API column fillers only on cold start | Landed |
+| Desktop `resolveLocalOrApiRows` local-only when SQLite has rows (no newer-API overlay) | Landed |
+| Desktop cold-start-only REST hydrate (skip when `lastSyncedAt` or connected+local rows) | Landed — mobile-parity policy in `rest-list-hydration-policy.ts` |
+| Ready gate ignores `restHydrateSettled` (local / api rescue / grace only) | Landed |
+| API column fillers only on cold start (no live REST field merge) | Landed |
+| Soft-refresh tasks/meetings/projects/documents skip while PowerSync connected | Landed |
+| Documents 12s REST list soft-revalidate | Removed — SSE + PowerSync only while connected |
+| Optimistic `api*` patches for Tier A/B while PowerSync ready | Removed — SQLite watches are authoritative (documents still warm `apiDocuments` for shell pending creates) |
+| Documents/projects SSE → sparse `live*ById` overlay (`applyLiveEntityOverlay`) | Landed — not full REST list merge |
+| Task status REST confirm while connected | Removed — await PowerSync flush; REST only if flush empty/failed |
+| Pending API creates merge (`mergeLocalWithPendingApiCreates`) | Partial — keep until watch latency for shell creates is proven |
+| Documents `mergeLocalDocumentsWithLiveApi` full-list path | Deprecated adapter — prefer `applyLiveEntityOverlay` |
+| Scope-move / letter-relocate / `agentInboxApproved` REST exceptions | Partial — still required |
 | True cloud `lastSyncId` + replica apply protocol | Partial — local REST/PowerSync forward to `POST /internal/core-replication/mutations`; cloud assigns sync_id; local applies ordered events (no local append). Table LWW remains catch-up |
-| Drop REST list hydrate entirely | Partial — mobile skips while PowerSync connected + SQLite has rows; empty-SQLite / offline rescue remains |
+| Drop REST list hydrate entirely | Partial — desktop + mobile skip while connected + SQLite has rows; empty-SQLite / offline rescue remains |
+| Mobile inbox/tasks force-hydrate + live due-date REST merge | Removed — real `hasLocalRows`; no REST field merge while connected with local rows |
 | Mutation receipts across cores | Partial — REST/PowerSync claim receipts; leader accept is idempotent on event mutation id |
-| Desktop writes via PowerSync upload only | Partial — `shouldSkipRestEntityWrite`; sole REST exception `taskPatchRequiresRestWrite` (`agentInboxApproved`) |
+| Desktop writes via PowerSync upload only | Partial — `shouldSkipRestEntityWrite`; remaining REST: scope move (number), letter vault relocate, `taskPatchRequiresRestWrite` (`agentInboxApproved`), flush-empty fallback |
 | Legacy `/api/v1/sync/{bootstrap,pull,push}` | Quarantined DEAD — storage-health only; do not build new clients |
 | Leader-first writes (cloud clock) | Partial — local-core forwards when `CORE_REPLICATION_ROLE=local`; offline falls back to local clock |
+
+## Desktop acceptance gates (connected + SQLite has rows)
+
+Do **not** add new `fillMissing*FromApi` live overlays or newer-API list merges. Ship only when:
+
+1. Task status / Communication notification icon / due date never flash REST→local.
+2. Product lists do not change when `/api/v1/tasks` (or sibling list GETs) are slow or stale.
+3. Cold start with `lastSyncedAt` set never fans out wave 1/2 REST hydrate.
+4. Empty SQLite + no sync still shows cold-start rescue **or** an explicit empty state (no hung spinner forever). Grace period in code is **5s** (`queriesGracePeriodExpired`).
+
+## Freeze rule
+
+New Tier A/B columns must land in PowerSync schema + `deploy/powersync/sync-config.yaml` **before** UI depends on them. Do not paper over lag with live REST fillers.
 
 ## Non-goals
 

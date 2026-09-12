@@ -184,6 +184,7 @@ function BacksterosTaskDescriptionSection(props: {
         placeholder="Add a description…"
         emptyMessage="Add a description…"
         onUploadImages={onUploadImages}
+        onToggleMode={() => setViewMode(mode === "preview" ? "edit" : "preview")}
         toggle={
           <FloatingPillToggleDock>
             <SegmentedPillToggle

@@ -359,7 +359,9 @@ export function useWorkspaceEntityPatching({
       const projectsBody = await client.requestJson<{ projects: ApiProject[] }>(
         "/api/v1/projects",
       );
-      setApiProjects(projectsBody.projects);
+      setApiProjects((current) =>
+        preservePendingApiRows(current, projectsBody.projects),
+      );
     } catch {
       // PowerSync remains the primary source.
     }
@@ -378,12 +380,12 @@ export function useWorkspaceEntityPatching({
   }, [authenticated, client, powerSync, setApiMeetings]);
 
   /**
-   * Pull document metadata from REST even while PowerSync is connected.
-   * Agent/off-device creates otherwise wait on SQLite download; pending-merge
-   * needs apiDocuments to include those rows.
+   * Pull document metadata from REST when PowerSync is not connected.
+   * While connected, workspace SSE + PowerSync download are the live path —
+   * list soft-refresh fought SQLite and reintroduced dual-hydrate flashes.
    */
   const softRefreshApiDocuments = useCallback(async () => {
-    if (!authenticated) return;
+    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
     try {
       const documentsBody = await client.requestJson<{
         documents: ApiDocument[];
@@ -394,7 +396,7 @@ export function useWorkspaceEntityPatching({
     } catch {
       // PowerSync remains the primary source.
     }
-  }, [authenticated, client, setApiDocuments]);
+  }, [authenticated, client, powerSync, setApiDocuments]);
 
   const patchViaPowerSyncOrApi = useCallback(
     async (
@@ -476,7 +478,7 @@ export function useWorkspaceEntityPatching({
           "status" in values ||
           "format" in values);
 
-      // Optimistic API cache first — UI must not wait on SQLite or REST.
+      // Local SQLite first. Tier A/B UI reads watches; documents still warm api*.
       const persistLocalAndMaybeRest = async (): Promise<
         { number?: number } | void
       > => {
@@ -586,27 +588,9 @@ export function useWorkspaceEntityPatching({
               error,
             );
           }
-          // Status patches have stranded on PowerSync-only upload (UI snaps
-          // back after sync). Always confirm on the leader via REST.
-          if (table === "tasks" && typeof values.status === "string") {
-            try {
-              const updated = await client.requestJson<ApiTask>(path, {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(apiValues),
-              });
-              await applyTaskServerRow(updated);
-              return typeof updated?.number === "number"
-                ? { number: updated.number }
-                : undefined;
-            } catch (error) {
-              console.warn("[desktop] task status REST confirm failed", error);
-              if (shouldSkipRestAfterCrudFlush(uploaded)) return;
-              throw error instanceof Error
-                ? error
-                : new Error("Could not update task status.");
-            }
-          }
+          // Status patches used to dual-write REST "because PowerSync stranded"
+          // — that re-fought SQLite. Await flush above; fall through to REST
+          // only when the upload queue was empty or flush failed.
           if (shouldSkipRestAfterCrudFlush(uploaded)) return;
         }
         try {
@@ -663,8 +647,10 @@ export function useWorkspaceEntityPatching({
         }
       };
 
-      // Optimistic cache + local SQLite. Status patches await persistence so
-      // a failed upload cannot leave the UI on a value Postgres never got.
+      // Optimistic local SQLite is authoritative for Tier A/B lists. Skip
+      // bumping the REST api* cache for those tables when PowerSync is ready —
+      // resolveLocalOrApiRows ignores newer API overlays. Documents still warm
+      // apiDocuments for pending shell creates (SSE uses liveDocumentsById).
       if (powerSync.ready) {
         // Non-status task patches (due date, priority, …) must not re-base the
         // API cache onto a stale REST row whose status still says backlog while
@@ -682,7 +668,11 @@ export function useWorkspaceEntityPatching({
             optimisticValues = { ...values, status: localStatus };
           }
         }
-        applyOptimisticEntityPatch(table, id, optimisticValues);
+        if (table === "documents") {
+          applyOptimisticEntityPatch(table, id, optimisticValues);
+        } else if (table === "tasks" && typeof values.status === "string") {
+          nudgeDynamicIslandTasksRefresh();
+        }
         const mustAwaitRest =
           authenticated &&
           ("agentChatId" in values ||

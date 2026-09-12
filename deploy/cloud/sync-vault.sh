@@ -14,7 +14,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOCAL_VAULT="${LOCAL_VAULT:-${BACKSTEROS_VAULT_PATH:-}}"
-CLOUD_HOST="${CLOUD_HOST:-root@100.117.142.79}"
+CLOUD_HOST="${CLOUD_HOST:-root@100.75.45.22}"
 CLOUD_VAULT_VOLUME="${CLOUD_VAULT_VOLUME:-cloud_cloud_vault}"
 DRY_RUN="${DRY_RUN:-0}"
 

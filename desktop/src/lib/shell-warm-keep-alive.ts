@@ -22,6 +22,7 @@ export const KEEP_ALIVE_SURFACES = new Set<PendingPageSurface>([
   "contacts",
   "organizations",
   "letters",
+  "communication",
   "social",
 ]);
 
@@ -53,6 +54,7 @@ const KEEP_ALIVE_GO_ROOT: Partial<Record<PendingPageSurface, string>> = {
   contacts: "/contacts",
   organizations: "/organizations",
   letters: "/letters",
+  communication: "/communication",
   social: "/social",
 };
 
@@ -264,7 +266,21 @@ export function rememberKeepAliveHref(
  * so selection + j/k stay on the open message instead of the previous task.
  */
 export function rememberInboxPanelSelectionHref(href: string): boolean {
-  if (!mountedKeepAliveSurfaces.has("inbox")) return false;
+  return rememberEmailListPanelSelectionHref(href, "inbox");
+}
+
+/**
+ * Communication list stays mounted while viewing `/email/…?list=communication`.
+ */
+export function rememberCommunicationPanelSelectionHref(href: string): boolean {
+  return rememberEmailListPanelSelectionHref(href, "communication");
+}
+
+function rememberEmailListPanelSelectionHref(
+  href: string,
+  list: "inbox" | "communication",
+): boolean {
+  if (!mountedKeepAliveSurfaces.has(list)) return false;
   const resolved = resolveAppHref(href);
   if (!resolved.pathname.startsWith("/email/")) return false;
   const params = new URLSearchParams(
@@ -272,10 +288,10 @@ export function rememberInboxPanelSelectionHref(href: string): boolean {
       ? resolved.search.slice(1)
       : resolved.search,
   );
-  if (params.get("list") !== "inbox") return false;
+  if (params.get("list") !== list) return false;
   const nextHref = formatResolvedAppHref(resolved);
-  if (lastKeepAliveHref.get("inbox") === nextHref) return false;
-  rememberKeepAliveHref("inbox", resolved.pathname, resolved.search);
+  if (lastKeepAliveHref.get(list) === nextHref) return false;
+  rememberKeepAliveHref(list, resolved.pathname, resolved.search);
   emitWarmKeepAlive();
   return true;
 }

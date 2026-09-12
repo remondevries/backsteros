@@ -48,3 +48,5 @@ services:
 volumes:
   cloud_core_pg:
   cloud_vault:
+    external: true
+    name: cloud_cloud_vault

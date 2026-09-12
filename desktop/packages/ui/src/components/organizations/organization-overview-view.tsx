@@ -29,6 +29,7 @@ import {
   ContactSocialAccountsEditor,
   type ContactSocialAccount,
 } from "../contacts/contact-social-accounts-editor.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { ContactEmailsEditor } from "../contacts/contact-emails-editor.js";
 import { ContactPhonesEditor } from "../contacts/contact-phones-editor.js";
 import { ContactSummaryEditor } from "../contacts/contact-summary-editor.js";
@@ -193,25 +194,7 @@ function DetailsField({
 }
 
 /** Labeled rule separator + field group (same visual language as list subgroups). */
-function DetailsSubgroup({
-  title,
-  children,
-}: {
-  title: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="entity-overview-subgroup" data-subgroup={title}>
-      <div className="entity-overview-subgroup__header">
-        <span className="entity-overview-subgroup__label">{title}</span>
-        <span className="entity-overview-subgroup__rule" aria-hidden="true" />
-      </div>
-      {children != null ? (
-        <div className="entity-overview-subgroup__fields">{children}</div>
-      ) : null}
-    </div>
-  );
-}
+const DetailsSubgroup = EntityOverviewSubgroup;
 
 function normalizeSocialAccounts(
   accounts: ContactSocialAccount[],
@@ -746,7 +729,6 @@ export function OrganizationOverviewView({
             onCommit={(next) => {
               const normalized = normalizeOrganizationWebsite(next);
               setWebsite(normalized);
-              setWebsiteSource(normalized);
               persist({ website: normalized || null });
             }}
           />
@@ -771,7 +753,6 @@ export function OrganizationOverviewView({
                   const resolved = resolveDropdownNone(next);
                   const nextSize = resolved?.trim() || "";
                   setSize(nextSize);
-                  setSizeSource(nextSize);
                   persist({ size: nextSize || null });
                 }}
                 searchPlaceholder="Search size…"
@@ -858,10 +839,19 @@ export function OrganizationOverviewView({
                 email: nextEmail,
                 emails: nextEmails,
               });
-              setEmail(normalized.email ?? "");
-              setEmailSource(normalized.email ?? "");
+              const nextEmailValue = normalized.email ?? "";
+              setEmail(nextEmailValue);
               setEmails(normalized.emails);
-              setEmailsSource(emailsKey(normalized.emails));
+              const emailMatches =
+                nextEmailValue === (organization.email ?? "");
+              const emailsMatch =
+                emailsKey(normalized.emails) ===
+                emailsKey(organization.emails ?? []);
+              if (emailMatches && emailsMatch) {
+                setEmailSource(nextEmailValue);
+                setEmailsSource(emailsKey(normalized.emails));
+                return;
+              }
               persist({
                 email: normalized.email,
                 emails: normalized.emails,
@@ -886,10 +876,19 @@ export function OrganizationOverviewView({
                 phone: nextPhone,
                 phones: nextPhones,
               });
-              setPhone(normalized.phone ?? "");
-              setPhoneSource(normalized.phone ?? "");
+              const nextPhoneValue = normalized.phone ?? "";
+              setPhone(nextPhoneValue);
               setPhones(normalized.phones);
-              setPhonesSource(phonesKey(normalized.phones));
+              const phoneMatches =
+                nextPhoneValue === (organization.phone ?? "");
+              const phonesMatch =
+                phonesKey(normalized.phones) ===
+                phonesKey(organization.phones ?? []);
+              if (phoneMatches && phonesMatch) {
+                setPhoneSource(nextPhoneValue);
+                setPhonesSource(phonesKey(normalized.phones));
+                return;
+              }
               persist({
                 phone: normalized.phone,
                 phones: normalized.phones,
@@ -1094,9 +1093,7 @@ export function OrganizationOverviewView({
                       const resolved = resolveDropdownNone(next);
                       const nextCode = resolved?.trim() || "";
                       setCountry(nextCode);
-                      setCountrySource(nextCode);
                       setRegion("");
-                      setRegionSource("");
                       persistLocation({
                         country: nextCode || null,
                         region: null,
@@ -1172,7 +1169,6 @@ export function OrganizationOverviewView({
                         const resolved = resolveDropdownNone(next);
                         const nextRegion = resolved?.trim() || "";
                         setRegion(nextRegion);
-                        setRegionSource(nextRegion);
                         persistLocation({
                           region: nextRegion || null,
                         });
@@ -1299,8 +1295,10 @@ export function OrganizationOverviewView({
                   }
                   const result = await onSaveName(next);
                   if (result.ok) {
+                    // Keep source on the last confirmed remote until the patched
+                    // organization lands — bumping source early lets
+                    // adoptRemoteField briefly revert the field.
                     setName(next);
-                    setNameSource(next);
                   }
                   return result;
                 }}

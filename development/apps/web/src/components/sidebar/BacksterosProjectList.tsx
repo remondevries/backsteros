@@ -89,8 +89,8 @@ function BacksterosProjectRow(props: {
             : "text-sidebar-foreground hover:bg-sidebar-row-hover",
           keyboardFocused &&
             "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)] text-sidebar-foreground",
-          sortable?.isDragging && "opacity-80 shadow-md",
-          sortable?.listeners && "cursor-grab active:cursor-grabbing",
+          sortable?.listeners && "cursor-pointer",
+          sortable?.isDragging && "cursor-grabbing opacity-80 shadow-md",
         )}
         {...(sortable?.listeners ?? {})}
       >
@@ -178,7 +178,16 @@ function BacksterosStatusGroup(props: {
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-          onDragEnd={handleDragEnd}
+          onDragStart={() => {
+            document.body.style.cursor = "grabbing";
+          }}
+          onDragCancel={() => {
+            document.body.style.removeProperty("cursor");
+          }}
+          onDragEnd={(event) => {
+            document.body.style.removeProperty("cursor");
+            handleDragEnd(event);
+          }}
         >
           <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             <ul role="list" className="flex flex-col gap-px" aria-label={`${label} projects`}>

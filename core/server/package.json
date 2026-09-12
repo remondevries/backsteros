@@ -20,6 +20,7 @@
     "db:powersync-token": "tsx --env-file=.env src/db/powersync-token.ts",
     "db:seed": "tsx --env-file=.env src/db/seed.ts",
     "replication:bootstrap": "tsx --env-file=.env src/scripts/replication-bootstrap.ts",
+    "parity:check": "tsx --env-file=.env src/scripts/core-parity-check.ts",
     "prove:crm-powersync-leader": "tsx --env-file=.env src/scripts/prove-crm-powersync-leader-write.ts",
     "vault:pull-until-done": "tsx --env-file=.env src/scripts/vault-pull-until-done.ts",
     "vault:reconcile-check": "tsx --env-file=.env src/scripts/vault-reconcile-check.ts",

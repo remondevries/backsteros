@@ -31,6 +31,12 @@ import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskRelatedChips } from "./task-related-chips.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import { SupportContactCard } from "./support-contact-card.js";
+import { SupportOrganizationCard } from "./support-organization-card.js";
+import type {
+  SupportContactCardModel,
+  SupportOrganizationCardModel,
+} from "./support-party-card-types.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
@@ -51,6 +57,10 @@ export type TaskPropertiesDisplayTask = {
   agentInboxApprovedAt?: number | Date | null;
   trackedDurationSeconds?: number | null;
   trackedMinutes?: number | null;
+  /** Notification-style task — bell glyph with status color. */
+  notification?: boolean | null;
+  /** Client support ticket — support-ring glyph with status color. */
+  support?: boolean | null;
 };
 
 export type TaskPropertiesDisplayProps = {
@@ -71,6 +81,12 @@ export type TaskPropertiesDisplayProps = {
   projectNavigateHref?: string | null;
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
+  /** Support tickets: resolved client contact for the Contact card. */
+  supportContact?: SupportContactCardModel | null;
+  /** Support tickets: resolved client organization for the Organization card. */
+  supportOrganization?: SupportOrganizationCardModel | null;
+  supportContactHref?: string | null;
+  supportOrganizationHref?: string | null;
   agentInboxPending?: boolean;
   onAgentInboxApprove?: () => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
@@ -106,6 +122,10 @@ export function TaskPropertiesDisplay({
   projectNavigateHref,
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
+  supportContact = null,
+  supportOrganization = null,
+  supportContactHref = null,
+  supportOrganizationHref = null,
   agentInboxPending = false,
   onAgentInboxApprove,
   onTrackedDurationSecondsChange,
@@ -172,7 +192,14 @@ export function TaskPropertiesDisplay({
             searchShortcutLabel="S"
             ariaLabel="Status"
             taskPropertyDropdownId="status"
-            fallbackIcon={<TaskStatusIcon status={status} size={14} />}
+            fallbackIcon={
+              <TaskStatusIcon
+                status={status}
+                size={14}
+                support={Boolean(task?.support)}
+                notification={Boolean(task?.notification)}
+              />
+            }
             fallbackLabel={getTaskStatusLabel(status)}
           />
           <PropertyDropdown
@@ -240,27 +267,46 @@ export function TaskPropertiesDisplay({
               </button>
             )}
           </PropertyFieldGroup>
-          <PropertyFieldGroup label="Related">
-            <TaskRelatedChips
-              values={relatedValues}
-              options={relatedOptions}
-              onChange={
-                canEditRelated
-                  ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
-                  : undefined
-              }
-              disabled={disabled}
-              emptyLabel="No related"
-              searchPlaceholder="Add related…"
-              searchShortcutLabel="R"
-              ariaLabel="Related"
-              taskPropertyDropdownId="related"
-              onCreateFromQuery={onCreateRelatedContactFromQuery}
-              variant="rail"
-              onActivate={() => onFieldActivate?.("related")}
-            />
-          </PropertyFieldGroup>
+          {task?.support ? null : (
+            <PropertyFieldGroup label="Related">
+              <TaskRelatedChips
+                values={relatedValues}
+                options={relatedOptions}
+                onChange={
+                  canEditRelated
+                    ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+                    : undefined
+                }
+                disabled={disabled}
+                emptyLabel="No related"
+                searchPlaceholder="Add related…"
+                searchShortcutLabel="R"
+                ariaLabel="Related"
+                taskPropertyDropdownId="related"
+                onCreateFromQuery={onCreateRelatedContactFromQuery}
+                variant="rail"
+                onActivate={() => onFieldActivate?.("related")}
+              />
+            </PropertyFieldGroup>
+          )}
         </EntityPropertiesSection>
+
+        {task?.support ? (
+          <>
+            <EntityPropertiesSection title="Contact">
+              <SupportContactCard
+                contact={supportContact}
+                viewHref={supportContactHref}
+              />
+            </EntityPropertiesSection>
+            <EntityPropertiesSection title="Organization">
+              <SupportOrganizationCard
+                organization={supportOrganization}
+                viewHref={supportOrganizationHref}
+              />
+            </EntityPropertiesSection>
+          </>
+        ) : null}
 
         <EntityPropertiesSection title="Project">
           {canEditProject ? (

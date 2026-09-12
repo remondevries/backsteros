@@ -1755,10 +1755,20 @@ function ProjectsPageBody({
               }`
             : null
         }
-        onSaveName={(name) => {
+        onSaveName={async (name) => {
           patchSelected({ name });
-          void workspace.patchProject(project.id, { name });
-          return { ok: true };
+          try {
+            await workspace.patchProject(project.id, { name });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not save project name.",
+            };
+          }
         }}
         onSaveKey={async (key) => {
           const conflict = projectList.some(

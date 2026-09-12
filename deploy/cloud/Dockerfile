@@ -11,7 +11,11 @@ COPY core/packages/contracts ./core/packages/contracts
 COPY core/server ./core/server
 
 # Skip postinstall (totem compile) — cloud-core does not need Whoop dist for API/replication.
-RUN pnpm install --frozen-lockfile --filter @backsteros/server... --ignore-scripts
+# Large optional peers (e.g. op-sqlite via drizzle) often time out on flaky npm; give them room.
+RUN pnpm config set fetch-timeout 600000 \
+  && pnpm config set fetch-retries 5 \
+  && pnpm config set network-concurrency 4 \
+  && pnpm install --frozen-lockfile --filter @backsteros/server... --ignore-scripts
 RUN pnpm --filter @backsteros/contracts build
 RUN pnpm --filter @backsteros/server build
 

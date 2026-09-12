@@ -90,6 +90,27 @@ function ProgressRingIcon({ fillRatio }: { fillRatio: number }) {
   );
 }
 
+function NotificationBellIcon() {
+  return (
+    <path
+      fill="currentColor"
+      d="M15.737 17.75c-.07.813-.27 1.654-.696 2.36-.592.98-1.588 1.64-3.042 1.64s-2.449-.66-3.04-1.64c-.427-.706-.627-1.547-.697-2.36H5.366c-.596 0-1.129-.148-1.526-.497-.403-.356-.566-.831-.588-1.28-.04-.846.405-1.742.976-2.309.68-.676.985-1.602 1.138-2.749.076-.571.111-1.169.146-1.796l.004-.066c.034-.596.069-1.22.144-1.822.156-1.241.5-2.536 1.508-3.5C8.182 2.758 9.73 2.25 11.999 2.25s3.818.509 4.832 1.48c1.008.965 1.352 2.26 1.508 3.501.075.602.11 1.226.144 1.822l.003.066c.036.627.07 1.225.147 1.796.153 1.147.458 2.073 1.138 2.75.588.584 1.028 1.485.975 2.334-.028.448-.2.916-.603 1.263-.396.342-.923.488-1.51.488z"
+    />
+  );
+}
+
+/** Support-ring glyph for client support tickets (status color preserved). */
+function SupportTicketIcon() {
+  return (
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M19.449 8.448 16.388 11a4.52 4.52 0 0 1 0 2.002l3.061 2.55a8.275 8.275 0 0 0 0-7.103ZM15.552 19.45 13 16.388a4.52 4.52 0 0 1-2.002 0l-2.55 3.061a8.275 8.275 0 0 0 7.103 0ZM4.55 15.552 7.612 13a4.52 4.52 0 0 1 0-2.002L4.551 8.45a8.275 8.275 0 0 0 0 7.103ZM8.448 4.55 11 7.612a4.52 4.52 0 0 1 2.002 0l2.55-3.061a8.275 8.275 0 0 0-7.103 0Zm8.657-.86a9.776 9.776 0 0 1 1.79 1.415 9.776 9.776 0 0 1 1.414 1.788 9.764 9.764 0 0 1 0 10.211 9.777 9.777 0 0 1-1.415 1.79 9.777 9.777 0 0 1-1.788 1.414 9.764 9.764 0 0 1-10.212 0 9.776 9.776 0 0 1-1.788-1.415 9.776 9.776 0 0 1-1.415-1.788 9.764 9.764 0 0 1 0-10.212 9.774 9.774 0 0 1 1.415-1.788A9.774 9.774 0 0 1 6.894 3.69a9.764 9.764 0 0 1 10.211 0ZM14.121 9.88a2.985 2.985 0 0 0-1.11-.704 3.015 3.015 0 0 0-2.022 0 2.985 2.985 0 0 0-1.11.704c-.326.325-.56.705-.704 1.11a3.015 3.015 0 0 0 0 2.022c.144.405.378.785.704 1.11.325.326.705.56 1.11.704.652.233 1.37.233 2.022 0a2.985 2.985 0 0 0 1.11-.704c.326-.325.56-.705.704-1.11a3.016 3.016 0 0 0 0-2.022 2.985 2.985 0 0 0-.704-1.11Z"
+    />
+  );
+}
+
 export type TaskStatusIconProps = {
   status: TaskStatus | string;
   title?: string;
@@ -106,6 +127,16 @@ export type TaskStatusIconProps = {
    * circle — no pie wedge fill. Same ring geometry/color as the status.
    */
   ringOnly?: boolean;
+  /**
+   * Support tickets use a support-ring glyph instead of the status shape,
+   * while keeping the status color.
+   */
+  support?: boolean;
+  /**
+   * Notification-style tasks use a bell glyph instead of the status shape,
+   * while keeping the status color.
+   */
+  notification?: boolean;
   /** When set, shows the green Updated indicator on the icon. */
   inboxUpdatedAt?: Date | string | number | null;
 };
@@ -118,6 +149,8 @@ export function TaskStatusIcon({
   highlighted = false,
   working = false,
   ringOnly = false,
+  support = false,
+  notification = false,
   inboxUpdatedAt,
 }: TaskStatusIconProps) {
   const normalizedStatus = isTaskStatus(status) ? status : "backlog";
@@ -140,6 +173,46 @@ export function TaskStatusIcon({
           size={size}
           aria-label={title ?? "Agent working"}
         />
+      </IconWithInboxUpdateIndicator>
+    );
+  }
+
+  if (support) {
+    return (
+      <IconWithInboxUpdateIndicator inboxUpdatedAt={inboxUpdatedAt}>
+        <svg
+          className={mergeIconSvgClassName(className, { highlighted })}
+          style={highlighted ? undefined : iconSvgColorStyle(model.color)}
+          viewBox="0 0 24 24"
+          width={size}
+          height={size}
+          aria-hidden={title ? undefined : true}
+          aria-label={title ? undefined : label}
+          role={title ? "img" : undefined}
+        >
+          {title ? <title>{title}</title> : null}
+          <SupportTicketIcon />
+        </svg>
+      </IconWithInboxUpdateIndicator>
+    );
+  }
+
+  if (notification) {
+    return (
+      <IconWithInboxUpdateIndicator inboxUpdatedAt={inboxUpdatedAt}>
+        <svg
+          className={mergeIconSvgClassName(className, { highlighted })}
+          style={highlighted ? undefined : iconSvgColorStyle(model.color)}
+          viewBox="0 0 24 24"
+          width={size}
+          height={size}
+          aria-hidden={title ? undefined : true}
+          aria-label={title ? undefined : label}
+          role={title ? "img" : undefined}
+        >
+          {title ? <title>{title}</title> : null}
+          <NotificationBellIcon />
+        </svg>
       </IconWithInboxUpdateIndicator>
     );
   }

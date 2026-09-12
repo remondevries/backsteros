@@ -1,8 +1,10 @@
 import type { WorkspacePowerSync } from "./workspace-data-types";
 
 /**
- * Sole REST dual-write exception while PowerSync is primary — see
- * {@link taskPatchRequiresRestWrite} in `@backsteros/contracts`.
+ * REST exceptions while PowerSync is primary — see also
+ * {@link taskPatchRequiresRestWrite} in `@backsteros/contracts`
+ * (`agentInboxApproved`). Desktop additionally uses REST for task scope moves
+ * (server number), letter vault relocate, and empty-flush fallback.
  */
 export { taskPatchRequiresRestWrite } from "@backsteros/contracts";
 

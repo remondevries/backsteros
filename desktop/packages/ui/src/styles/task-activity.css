@@ -593,6 +593,15 @@
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
+.task-activity-comment__resolved--solution {
+  color: color-mix(in srgb, #3fb950 85%, var(--foreground));
+  background: color-mix(in srgb, #3fb950 18%, transparent);
+}
+
+.task-activity-comment-card--solution {
+  border-color: color-mix(in srgb, #3fb950 35%, transparent);
+}
+
 .task-activity-comment__time {
   font-size: 10px;
   color: color-mix(in srgb, var(--foreground) 28%, transparent);
@@ -1262,6 +1271,38 @@ button.crm-activity-event__marker--add:hover {
 .crm-activity-event__marker--letter {
   background: color-mix(in srgb, #f2cc60 22%, var(--background, #0d0d0d));
   color: #f2cc60;
+}
+
+.crm-activity-event__marker--deployment,
+.crm-activity-event__marker--deployment-success {
+  background: color-mix(in srgb, #3d9a6a 22%, var(--background, #0d0d0d));
+  color: #3d9a6a;
+}
+
+.crm-activity-event__marker--deployment-running {
+  background: color-mix(in srgb, #3b5bdb 22%, var(--background, #0d0d0d));
+  color: #6ea8fe;
+}
+
+.crm-activity-event__marker--deployment-failed {
+  background: color-mix(in srgb, #c45c5c 22%, var(--background, #0d0d0d));
+  color: #c45c5c;
+}
+
+.crm-activity-event__glyph--deployment {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.crm-activity-event__deployment-commit {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92em;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+
+.crm-activity-event__deployment-meta {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
 .crm-activity-event__glyph {

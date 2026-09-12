@@ -171,7 +171,12 @@ export function InboxListPane({
   } = useRestReloadFlags();
 
   const localRows = useMemo(() => {
-    const filled = fillMissingDueDatesFromApi(syncedTasks ?? [], restDueSource);
+    const synced = syncedTasks ?? [];
+    // Cold-start / offline only — do not merge REST due dates over live SQLite.
+    const filled =
+      powerSync.connected && synced.length > 0
+        ? synced
+        : fillMissingDueDatesFromApi(synced, restDueSource);
     return filled
       .filter((row) =>
         taskBelongsInInbox({
@@ -185,7 +190,7 @@ export function InboxListPane({
         }),
       )
       .map((row) => withDisplayId(row));
-  }, [restDueSource, syncedTasks]);
+  }, [powerSync.connected, restDueSource, syncedTasks]);
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
@@ -243,9 +248,7 @@ export function InboxListPane({
   useRestListHydration(
     reloadRest,
     true,
-    // Always allow one REST hydrate even while PowerSync is connected so
-    // due_date can be corrected before membership filtering (UTC/local skew).
-    false,
+    (syncedTasks?.length ?? 0) > 0,
   );
 
   const taskRows = useMemo(

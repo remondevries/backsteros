@@ -147,3 +147,27 @@ test("inbox on email keeps the warm inbox dest", () => {
     "inbox",
   );
 });
+
+test("communication on email keeps the warm communication dest", () => {
+  assert.equal(
+    resolveLeftSidePanelDest({
+      pathname: "/email/box/msg",
+      search: "?list=communication",
+      inInboxPanel: false,
+      inCommunicationPanel: true,
+      financeSection: false,
+      showSidePanel: true,
+    }),
+    "communication",
+  );
+  assert.equal(
+    resolveLeftSidePanelDest({
+      pathname: "/communication/sup-1",
+      inInboxPanel: false,
+      inCommunicationPanel: true,
+      financeSection: false,
+      showSidePanel: true,
+    }),
+    "communication",
+  );
+});

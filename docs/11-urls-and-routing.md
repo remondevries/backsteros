@@ -13,7 +13,7 @@
 | URL | Purpose |
 | --- | --- |
 | `https://agent.backsteros.com` | Public agents HTTPS door → **cloud-core** on the VPS |
-| `http://100.117.142.79:8788` | Cloud-core on Tailscale (same data twin) |
+| `http://100.75.45.22:8788` | Cloud-core on Tailscale (Hetzner `lemodesign`; same data twin) |
 
 Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale
 `:8788`). Do **not** point them at the Mac — that dies when the laptop sleeps.
@@ -64,11 +64,12 @@ local computer
   PowerSync       → http://127.0.0.1:8080  (Docker)
   desktop/ / mobile/ → shells against local core (+ Tailscale when needed)
 
-VPS (backsteros.com host)
+VPS (Hetzner lemodesign — 46.225.171.3 / Tailscale 100.75.45.22)
   cloud-core      → :8788 (Docker; Tailscale peer for replication)
-  agents door     → https://agent.backsteros.com → :3080 → cloud-core
-  portal / n8n    → separate stacks on same box
+  agents door     → https://agent.backsteros.com → kamal-proxy → :3080 → cloud-core
+  portal / n8n    → kamal-proxy on same box
 ```
+
 
 ## Desktop Finance routes (v2)
 

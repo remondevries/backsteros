@@ -1,0 +1,55 @@
+/* Shared on/off switch (portal settings, calendar availability, etc.). */
+
+.switch-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.switch-toggle:disabled {
+  cursor: default;
+}
+
+.switch-toggle__track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+  transition: background 120ms ease;
+}
+
+.switch-toggle.is-on .switch-toggle__track,
+.switch-toggle[aria-checked="true"] .switch-toggle__track {
+  /* Match keyboard-nav / brand accent so on is obvious on dark chrome. */
+  background: var(--switch-toggle-on, #ee7a47);
+}
+
+.switch-toggle:disabled .switch-toggle__track {
+  opacity: 0.45;
+}
+
+.switch-toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 120ms ease;
+}
+
+.switch-toggle.is-on .switch-toggle__thumb,
+.switch-toggle[aria-checked="true"] .switch-toggle__thumb {
+  transform: translateX(14px);
+}

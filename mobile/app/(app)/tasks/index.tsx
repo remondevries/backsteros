@@ -176,15 +176,18 @@ export default function TasksScreen() {
 
   const localRows = useMemo(() => {
     const synced = (syncedTasks ?? []).map((row) => withDisplayId(row));
+    // Cold-start / offline only — do not merge REST fields over live SQLite.
+    if (powerSync.connected && synced.length > 0) {
+      return synced;
+    }
     const filled = fillMissingDueDatesFromApi(synced, restRows);
     if (!restRows?.length) return filled;
-    // Include API rows PowerSync has not caught up with yet.
     const localIds = new Set(filled.map((row) => row.id));
     return [
       ...filled,
       ...restRows.filter((row) => !localIds.has(row.id)),
     ];
-  }, [restRows, syncedTasks]);
+  }, [powerSync.connected, restRows, syncedTasks]);
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
@@ -222,9 +225,7 @@ export default function TasksScreen() {
   useRestListHydration(
     reloadRest,
     true,
-    // Always allow one REST hydrate while connected so due_date (and missing
-    // rows) match the API — same reason as Inbox membership correction.
-    false,
+    (syncedTasks?.length ?? 0) > 0,
   );
 
   const allRows = useMemo(() => {

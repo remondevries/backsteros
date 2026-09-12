@@ -8,7 +8,11 @@ import type {
   Task as ApiTask,
   TaskLink,
 } from "@backsteros/contracts";
-import { coerceContactLanguages } from "@backsteros/contracts";
+import {
+  coerceContactLanguages,
+  normalizeOrganizationEmailsInput,
+  normalizeOrganizationPhonesInput,
+} from "@backsteros/contracts";
 import type {
   ContactListItem,
   KnowledgeListItem,
@@ -52,12 +56,14 @@ export function parseMeetingAttendeeContactIdsFromRow(
   );
 }
 
+const SQLITE_BOOL_KEYS = new Set(["inbox", "support", "notification"]);
+
 export function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     output[
       key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-    ] = key === "inbox" ? Boolean(value) : value;
+    ] = SQLITE_BOOL_KEYS.has(key) ? Boolean(value) : value;
   }
   return output;
 }
@@ -127,7 +133,7 @@ export function mapTask(
     : null;
   return {
     id: task.id,
-    number: coerceTaskDisplayNumber(task.number),
+    number: coerceTaskDisplayNumber(task.number) ?? 0,
     title: task.title,
     status: task.status,
     priority: task.priority,
@@ -150,6 +156,9 @@ export function mapTask(
     trackedMinutes: task.trackedMinutes ?? null,
     trackedDurationSeconds: task.trackedDurationSeconds ?? null,
     inboxUpdatedAt: asEpoch(task.inboxUpdatedAt),
+    support: task.support ?? false,
+    notification: task.notification ?? false,
+    inbox: task.inbox ?? false,
   };
 }
 
@@ -333,6 +342,17 @@ export function mapContact(
   const socialAccounts = normalizeContactSocialAccounts(
     (contact as { socialAccounts?: unknown }).socialAccounts,
   );
+  const portalSettingsRaw = (contact as { portalSettings?: unknown }).portalSettings;
+  let portalSettingsParsed: unknown = portalSettingsRaw ?? null;
+  if (typeof portalSettingsParsed === "string") {
+    try {
+      portalSettingsParsed = JSON.parse(portalSettingsParsed) as unknown;
+    } catch {
+      portalSettingsParsed = null;
+    }
+  }
+  const portalPasswordHash = (contact as { portalPasswordHash?: string | null })
+    .portalPasswordHash;
   return {
     id: contact.id,
     name: contact.name,
@@ -357,11 +377,31 @@ export function mapContact(
     updatedAt: asEpoch(contact.updatedAt),
     birthday: contact.birthday ?? null,
     languages,
+    portalUsername:
+      (contact as { portalUsername?: string | null }).portalUsername ?? null,
+    portalPasswordSet: Boolean(
+      (contact as { portalPasswordSet?: boolean }).portalPasswordSet ??
+        portalPasswordHash,
+    ),
+    portalSettings:
+      portalSettingsParsed &&
+      typeof portalSettingsParsed === "object" &&
+      !Array.isArray(portalSettingsParsed)
+        ? (portalSettingsParsed as ContactListItem["portalSettings"])
+        : null,
     socialAccounts: socialAccounts.length > 0 ? socialAccounts : null,
   };
 }
 
 export function mapOrganization(org: ApiOrganization): OrganizationListItem {
+  const emails = normalizeOrganizationEmailsInput({
+    email: org.email,
+    emails: org.emails,
+  }).emails;
+  const phones = normalizeOrganizationPhonesInput({
+    phone: org.phone,
+    phones: org.phones,
+  }).phones;
   return {
     id: org.id,
     name: org.name,
@@ -371,6 +411,11 @@ export function mapOrganization(org: ApiOrganization): OrganizationListItem {
     avatarUpdatedAt: asEpoch(org.updatedAt),
     updatedAt: asEpoch(org.updatedAt),
     moneybirdContactId: org.moneybirdContactId ?? null,
+    email: org.email ?? null,
+    emails: emails.length > 0 ? emails : null,
+    phone: org.phone ?? null,
+    phones: phones.length > 0 ? phones : null,
+    website: org.website ?? null,
     address: org.address ?? null,
     city: org.city ?? null,
     postalCode: org.postalCode ?? null,

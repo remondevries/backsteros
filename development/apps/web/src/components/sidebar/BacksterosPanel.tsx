@@ -31,6 +31,7 @@ import {
 } from "~/backsteros/promoteWorkingTask";
 import type { BacksterosProjectSortPatch } from "~/backsteros/project-reorder";
 import type { BacksterosTaskSortPatch } from "~/backsteros/task-reorder";
+import { useSettleBacksterosTaskChatOnComplete } from "~/backsteros/useSettleBacksterosTaskChatOnComplete";
 import { useSyncBacksterosAgentPresence } from "~/backsteros/useBacksterosAgentPresence";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
@@ -217,6 +218,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
 
   usePromoteWorkingBacksterosTasks();
   useSyncBacksterosAgentPresence(true);
+  useSettleBacksterosTaskChatOnComplete();
   useEffect(() => {
     return subscribeBacksterosTaskStatusChanged(({ taskId, status }) => {
       patchLocalTask(taskId, { status });

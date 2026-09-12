@@ -1,4 +1,4 @@
-import { isEmailInboxListContext, isEmailPath } from "../email/email.js";
+import { isEmailInboxListContext, isEmailCommunicationListContext, isEmailPath } from "../email/email.js";
 import { isJournalSectionPath } from "../journal/journal.js";
 import {
   isContactSectionPath,
@@ -7,6 +7,7 @@ import {
   isOrganizationSectionPath,
 } from "../navigation/entity-routes.js";
 import { isSocialSectionPath } from "../social/social-contacts.js";
+import { isCommunicationSectionPath } from "../communication/communication.js";
 import {
   isLettersSectionPath,
   isProjectLettersSectionPath,
@@ -27,10 +28,12 @@ export const ORGANIZATIONS_LIST_PANEL_WIDTH_KEY =
 export const LETTERS_LIST_PANEL_WIDTH_KEY = "letters-list-panel-width";
 export const FINANCE_LIST_PANEL_WIDTH_KEY = "finance-list-panel-width";
 export const SOCIAL_LIST_PANEL_WIDTH_KEY = "social-list-panel-width";
+export const COMMUNICATION_LIST_PANEL_WIDTH_KEY =
+  "communication-list-panel-width";
 
 /**
  * Routes that show the left content side panel (list + detail).
- * Email detail only keeps the panel when opened from Inbox (`?list=inbox`).
+ * Email detail only keeps the panel when opened from Inbox or Communication.
  */
 export function shouldShowContentSidePanel(
   pathname: string,
@@ -40,12 +43,15 @@ export function shouldShowContentSidePanel(
     pathname === "/inbox" ||
     pathname.startsWith("/inbox/") ||
     isCalendarListPath(pathname) ||
-    (isEmailPath(pathname) && isEmailInboxListContext(search)) ||
+    (isEmailPath(pathname) &&
+      (isEmailInboxListContext(search) ||
+        isEmailCommunicationListContext(search))) ||
     isJournalSectionPath(pathname) ||
     isKnowledgeSectionPath(pathname) ||
     isLettersSectionPath(pathname) ||
     isContactSectionPath(pathname) ||
     isOrganizationSectionPath(pathname) ||
+    isCommunicationSectionPath(pathname) ||
     isSocialSectionPath(pathname) ||
     isFinanceSectionPath(pathname) ||
     isProjectDocumentsSectionPath(pathname) ||
@@ -53,7 +59,10 @@ export function shouldShowContentSidePanel(
   );
 }
 
-export function getContentSidePanelWidthKey(pathname: string): string {
+export function getContentSidePanelWidthKey(
+  pathname: string,
+  search = "",
+): string {
   if (isProjectDocumentsSectionPath(pathname)) {
     return DOCUMENTS_LIST_PANEL_WIDTH_KEY;
   }
@@ -71,6 +80,12 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   }
   if (isSocialSectionPath(pathname)) {
     return SOCIAL_LIST_PANEL_WIDTH_KEY;
+  }
+  if (
+    isCommunicationSectionPath(pathname) ||
+    (isEmailPath(pathname) && isEmailCommunicationListContext(search))
+  ) {
+    return COMMUNICATION_LIST_PANEL_WIDTH_KEY;
   }
   if (isFinanceSectionPath(pathname)) {
     return FINANCE_LIST_PANEL_WIDTH_KEY;
@@ -123,6 +138,20 @@ export function isInboxPanelPath(pathname: string, search = ""): boolean {
   return (
     isInboxPath(pathname) ||
     (isEmailPath(pathname) && isEmailInboxListContext(search))
+  );
+}
+
+/**
+ * True when the Communication side panel should host the list.
+ * Email routes qualify when opened from Communication (`?list=communication`).
+ */
+export function isCommunicationPanelPath(
+  pathname: string,
+  search = "",
+): boolean {
+  return (
+    isCommunicationSectionPath(pathname) ||
+    (isEmailPath(pathname) && isEmailCommunicationListContext(search))
   );
 }
 

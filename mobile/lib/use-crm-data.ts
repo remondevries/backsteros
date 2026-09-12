@@ -20,10 +20,8 @@ import {
 import {
   mapContactRelationshipListItem,
   mapCrmActivityRow,
-  mapCrmGroupRow,
   type ContactRelationshipRow,
   type CrmActivityRow,
-  type CrmGroupRow,
   type CrmRelationshipLabelRow,
 } from "./crm-row-mappers";
 import {
@@ -65,25 +63,6 @@ const CRM_ACTIVITIES_SQL = `
     AND a.subject_type = ?
     AND a.subject_id = ?
   ORDER BY a.occurred_at DESC, a.id DESC
-`.trim();
-
-const CRM_GROUPS_LIST_SQL = `
-  SELECT id, name, description, color, icon, sort_order, created_at, updated_at, deleted_at
-  FROM crm_groups
-  WHERE deleted_at IS NULL
-  ORDER BY sort_order ASC, name COLLATE NOCASE ASC
-`.trim();
-
-const CRM_SUBJECT_GROUPS_SQL = `
-  SELECT
-    g.id, g.name, g.description, g.color, g.icon, g.sort_order,
-    g.created_at, g.updated_at, g.deleted_at
-  FROM crm_groups g
-  INNER JOIN crm_group_members m ON m.group_id = g.id AND m.deleted_at IS NULL
-  WHERE g.deleted_at IS NULL
-    AND m.subject_type = ?
-    AND m.subject_id = ?
-  ORDER BY g.sort_order ASC, g.name COLLATE NOCASE ASC
 `.trim();
 
 const CRM_RELATIONSHIP_LABELS_SQL = `
@@ -392,17 +371,11 @@ export function useCrmGroupsForSubject(
 ) {
   const client = useMobileApiClient();
   const powerSync = useMobilePowerSync();
-  const localEnabled = Boolean(enabled && subjectId && powerSync.ready);
-  const allGroupsQuery = useLocalQuery<CrmGroupRow>(CRM_GROUPS_LIST_SQL);
-  const memberGroupsQuery = useLocalQuery<CrmGroupRow>(
-    CRM_SUBJECT_GROUPS_SQL,
-    localEnabled && subjectId ? [subjectType, subjectId] : ["", ""],
-  );
   const [restAllGroups, setRestAllGroups] = useState<CrmGroup[]>([]);
   const [restMemberGroups, setRestMemberGroups] = useState<CrmGroup[]>([]);
 
   const reloadRest = useCallback(async () => {
-    if (!enabled || !subjectId || localEnabled) return;
+    if (!enabled || !subjectId) return;
     const allBody = await client.requestJson<{ groups: CrmGroup[] }>(
       "/api/v1/crm-groups",
     );
@@ -421,23 +394,13 @@ export function useCrmGroupsForSubject(
       }
       throw error;
     }
-  }, [client, enabled, localEnabled, subjectId, subjectType]);
+  }, [client, enabled, subjectId, subjectType]);
 
   useEffect(() => {
     void reloadRest().catch(() => {
       /* ignore cold-start */
     });
   }, [reloadRest]);
-
-  const allGroups = useMemo(() => {
-    if (localEnabled) return allGroupsQuery.data.map(mapCrmGroupRow);
-    return restAllGroups;
-  }, [allGroupsQuery.data, localEnabled, restAllGroups]);
-
-  const memberGroups = useMemo(() => {
-    if (localEnabled) return memberGroupsQuery.data.map(mapCrmGroupRow);
-    return restMemberGroups;
-  }, [localEnabled, memberGroupsQuery.data, restMemberGroups]);
 
   const createGroup = useCallback(
     async (input: { name: string; color?: string | null }) => {
@@ -453,9 +416,9 @@ export function useCrmGroupsForSubject(
           subjectId,
         });
       }
-      if (!localEnabled) await reloadRest();
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest, subjectId, subjectType],
+    [client, powerSync, reloadRest, subjectId, subjectType],
   );
 
   const toggleMembership = useCallback(
@@ -474,16 +437,17 @@ export function useCrmGroupsForSubject(
           subjectId,
         });
       }
-      if (!localEnabled) await reloadRest();
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest, subjectId, subjectType],
+    [client, powerSync, reloadRest, subjectId, subjectType],
   );
 
   return {
-    allGroups,
-    memberGroups,
+    allGroups: restAllGroups,
+    memberGroups: restMemberGroups,
     createGroup,
     toggleMembership,
-    reload: localEnabled ? async () => {} : reloadRest,
+    reload: reloadRest,
   };
 }
+

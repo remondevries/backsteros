@@ -355,6 +355,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["backsteros api key url codebase projects sidebar"],
   },
   {
+    id: "backsteros-agent-contact",
+    title: "Agent contact profile",
+    to: "/settings/integrations",
+    searchTerms: ["backsteros agent contact profile comment author attribution"],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",

@@ -10,6 +10,11 @@ export type OrganizationListItem = {
   avatarSrc?: string | null;
   /** Linked Moneybird contact id when set. */
   moneybirdContactId?: string | null;
+  email?: string | null;
+  emails?: Array<{ label: "general" | "support" | "other"; address: string }> | null;
+  phone?: string | null;
+  phones?: Array<{ label: "general" | "support" | "other"; number: string }> | null;
+  website?: string | null;
   address?: string | null;
   city?: string | null;
   postalCode?: string | null;
@@ -126,6 +131,16 @@ export type ContactListItem = {
   birthday?: string | null;
   /** Preferred languages for Details chips. */
   languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl"> | null;
+  portalUsername?: string | null;
+  portalPasswordSet?: boolean;
+  portalSettings?: {
+    language?: "en" | "nl";
+    enabledProjectIds?: string[] | null;
+    financials?: boolean;
+    support?: boolean;
+    canAddTickets?: boolean;
+    canAddTasks?: boolean;
+  } | null;
   /** Social profiles for list chips (right side of overview rows). */
   socialAccounts?: Array<{ platform: string; url: string }> | null;
   /** CRM groups for list chips (right side of overview rows). */

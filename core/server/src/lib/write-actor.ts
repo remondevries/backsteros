@@ -23,3 +23,39 @@ export function writeActorFromAuth(
   }
   return { userId: auth.userId, kind: "user" };
 }
+
+/**
+ * Resolve the comment write actor.
+ * API-key callers may override authorship with `authorContactId`
+ * (client portal, agent contact profile). Explicit contact wins over
+ * `activityActor: "agent"` so agent comments can show as a person.
+ */
+export function writeActorForComment(
+  auth: AuthContext,
+  options?: {
+    activityActor?: "user" | "agent";
+    authorContactId?: string | null;
+  },
+): TaskWriteActor {
+  const override = options?.authorContactId?.trim() || null;
+  // Prefer explicit portal/agent contact over anonymous Agent / key contact.
+  if (override && auth.apiKeyId) {
+    return {
+      userId: null,
+      contactId: override,
+      kind: "contact",
+    };
+  }
+  if (options?.activityActor === "agent") {
+    // API keys with an attached contact still show as that person.
+    if (auth.contactId) {
+      return {
+        userId: null,
+        contactId: auth.contactId,
+        kind: "contact",
+      };
+    }
+    return { userId: null, kind: "agent" };
+  }
+  return writeActorFromAuth(auth, options?.activityActor);
+}

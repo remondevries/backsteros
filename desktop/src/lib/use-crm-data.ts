@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClientError } from "@backsteros/api-client";
 import type {
@@ -14,13 +14,9 @@ import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import {
   mapContactRelationshipListItem,
   mapCrmActivityRow,
-  mapCrmGroupMemberSubjectIds,
-  mapCrmGroupRow,
   mapCrmRelationshipLabelRow,
   type ContactRelationshipRow,
   type CrmActivityRow,
-  type CrmGroupMemberRow,
-  type CrmGroupRow,
   type CrmRelationshipLabelRow,
 } from "./workspace/crm-row-mappers";
 import {
@@ -37,13 +33,13 @@ import {
   updateCrmRelationshipLabelViaPowerSyncOrApi,
 } from "./workspace/crm-mutations";
 import {
+  dedupeCatalogGroups,
+  reconcileDuplicateCrmGroups,
+} from "./workspace/crm-group-reconcile";
+import {
   CONTACT_RELATIONSHIPS_FOR_CONTACT_SQL,
   CRM_ACTIVITIES_FOR_SUBJECT_SQL,
-  CRM_CONTACT_GROUP_MEMBERSHIPS_SQL,
-  CRM_GROUP_MEMBERS_SQL,
-  CRM_GROUPS_LIST_SQL,
   CRM_RELATIONSHIP_LABELS_SQL,
-  CRM_SUBJECT_GROUPS_SQL,
 } from "./workspace/workspace-sql";
 
 export { addCrmGroupMemberWithRetry } from "./workspace/crm-mutations";
@@ -476,51 +472,79 @@ export function notifyCrmGroupsChanged() {
   window.dispatchEvent(new Event(CRM_GROUPS_CHANGED));
 }
 
-/** Workspace CRM groups catalog for the contacts left panel. */
+/** Workspace CRM groups catalog for the contacts left panel (REST/Postgres). */
 export function useCrmGroupsCatalog(enabled = true) {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
-  const localEnabled = useCrmLocalReads(enabled);
-  const query = usePowerSyncQuery<CrmGroupRow>(
-    localEnabled ? CRM_GROUPS_LIST_SQL : null,
-  );
   const [restGroups, setRestGroups] = useState<CrmGroup[]>([]);
+  const [serverGroups, setServerGroups] = useState<CrmGroup[] | null>(null);
+  const [groupIdRedirects, setGroupIdRedirects] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [restLoading, setRestLoading] = useState(false);
+  const reconcileStartedRef = useRef(false);
 
   const reloadRest = useCallback(async () => {
-    if (!enabled || localEnabled) return;
+    if (!enabled) return;
     setRestLoading(true);
     try {
       const body = await client.requestJson<{ groups: CrmGroup[] }>(
         "/api/v1/crm-groups",
       );
       setRestGroups(body.groups);
+      setServerGroups(body.groups);
     } catch {
       /* ignore cold-start */
     } finally {
       setRestLoading(false);
     }
-  }, [client, enabled, localEnabled]);
+  }, [client, enabled]);
 
   useEffect(() => {
     void reloadRest();
   }, [reloadRest]);
 
   useEffect(() => {
-    if (!enabled || localEnabled) return;
+    if (!enabled || reconcileStartedRef.current) return;
+    reconcileStartedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      // One-shot cleanup of leftover PowerSync-only duplicate group rows.
+      const result = await reconcileDuplicateCrmGroups(client, powerSync);
+      if (cancelled) return;
+      if (result.redirectGroupIds.size > 0) {
+        setGroupIdRedirects(new Map(result.redirectGroupIds));
+      }
+      if (result.mergedGroupCount > 0 || result.movedMemberCount > 0) {
+        notifyCrmGroupsChanged();
+        await reloadRest();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, enabled, powerSync, reloadRest]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const onChange = () => {
       void reloadRest();
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
     return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
-  }, [enabled, localEnabled, reloadRest]);
+  }, [enabled, reloadRest]);
 
   const groups = useMemo(() => {
-    if (localEnabled && query.data) {
-      return query.data.map(mapCrmGroupRow);
-    }
-    return restGroups;
-  }, [localEnabled, query.data, restGroups]);
+    return dedupeCatalogGroups(restGroups, serverGroups);
+  }, [restGroups, serverGroups]);
+
+  const resolveGroupId = useCallback(
+    (groupId: string | null | undefined) => {
+      if (!groupId) return null;
+      return groupIdRedirects.get(groupId) ?? groupId;
+    },
+    [groupIdRedirects],
+  );
 
   const createGroup = useCallback(
     async (input: { name: string; color?: string | null }) => {
@@ -530,12 +554,10 @@ export function useCrmGroupsCatalog(enabled = true) {
         input,
       );
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
       return group;
     },
-    [client, localEnabled, powerSync, reloadRest],
+    [client, powerSync, reloadRest],
   );
 
   const updateGroup = useCallback(
@@ -551,32 +573,29 @@ export function useCrmGroupsCatalog(enabled = true) {
         ...input,
       });
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
       return group;
     },
-    [client, groups, localEnabled, powerSync, reloadRest],
+    [client, groups, powerSync, reloadRest],
   );
 
   const deleteGroup = useCallback(
     async (groupId: string) => {
       await deleteCrmGroupViaPowerSyncOrApi(client, powerSync, groupId);
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest],
+    [client, powerSync, reloadRest],
   );
 
   return {
     groups,
-    loading: localEnabled ? query.loading : restLoading,
+    resolveGroupId,
+    loading: restLoading,
     createGroup,
     updateGroup,
     deleteGroup,
-    reload: localEnabled ? async () => {} : reloadRest,
+    reload: reloadRest,
   };
 }
 
@@ -586,100 +605,146 @@ export type CrmContactGroupChip = {
   color: string | null;
 };
 
-type CrmContactGroupMembershipRow = {
-  contact_id: string;
-  group_id: string;
-  name: string;
-  color: string | null;
-  sort_order: number;
+type CrmGroupMemberApiRow = {
+  id: string;
+  subjectType: string;
+  subjectId: string;
 };
 
-/** Map of contact id → CRM groups for list chips (PowerSync). */
+/** Map of contact id → CRM groups for list chips (REST/Postgres). */
 export function useCrmContactGroupsByContactId(enabled = true) {
-  const query = usePowerSyncQuery<CrmContactGroupMembershipRow>(
-    enabled ? CRM_CONTACT_GROUP_MEMBERSHIPS_SQL : null,
+  const { client } = useDesktopApi();
+  const [map, setMap] = useState<Map<string, CrmContactGroupChip[]>>(
+    () => new Map(),
   );
 
-  return useMemo(() => {
-    const map = new Map<string, CrmContactGroupChip[]>();
-    for (const row of query.data ?? []) {
-      const chip: CrmContactGroupChip = {
-        id: row.group_id,
-        name: row.name,
-        color: row.color,
-      };
-      const existing = map.get(row.contact_id);
-      if (existing) existing.push(chip);
-      else map.set(row.contact_id, [chip]);
+  const reload = useCallback(async () => {
+    if (!enabled) {
+      setMap(new Map());
+      return;
     }
-    return map;
-  }, [query.data]);
+    try {
+      const groupsBody = await client.requestJson<{ groups: CrmGroup[] }>(
+        "/api/v1/crm-groups",
+      );
+      const groups = groupsBody.groups ?? [];
+      const next = new Map<string, CrmContactGroupChip[]>();
+      await Promise.all(
+        groups.map(async (group) => {
+          const membersBody = await client.requestJson<{
+            members: CrmGroupMemberApiRow[];
+          }>(`/api/v1/crm-groups/${encodeURIComponent(group.id)}/members`);
+          const chip: CrmContactGroupChip = {
+            id: group.id,
+            name: group.name,
+            color: group.color,
+          };
+          for (const member of membersBody.members ?? []) {
+            if (member.subjectType !== "contact" || !member.subjectId) continue;
+            const existing = next.get(member.subjectId);
+            if (existing) existing.push(chip);
+            else next.set(member.subjectId, [chip]);
+          }
+        }),
+      );
+      setMap(next);
+    } catch {
+      setMap(new Map());
+    }
+  }, [client, enabled]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const onChange = () => {
+      void reload();
+    };
+    window.addEventListener(CRM_GROUPS_CHANGED, onChange);
+    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+  }, [enabled, reload]);
+
+  return map;
 }
 
-/** Contact ids that belong to a CRM group (organizations ignored for catalog filter). */
+type CrmGroupMembersState = {
+  contactIds: Set<string>;
+  organizationIds: Set<string>;
+  loading: boolean;
+  reload: () => Promise<void>;
+};
+
+function useCrmGroupMembers(
+  groupId: string | null,
+  enabled: boolean,
+): CrmGroupMembersState {
+  const { client } = useDesktopApi();
+  const [contactIds, setContactIds] = useState<Set<string>>(() => new Set());
+  const [organizationIds, setOrganizationIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(async () => {
+    if (!enabled || !groupId) {
+      setContactIds(new Set());
+      setOrganizationIds(new Set());
+      return;
+    }
+    setLoading(true);
+    try {
+      const body = await client.requestJson<{
+        members: CrmGroupMemberApiRow[];
+      }>(`/api/v1/crm-groups/${encodeURIComponent(groupId)}/members`);
+      const nextContacts = new Set<string>();
+      const nextOrgs = new Set<string>();
+      for (const member of body.members ?? []) {
+        if (!member.subjectId) continue;
+        if (member.subjectType === "contact") nextContacts.add(member.subjectId);
+        if (member.subjectType === "organization") nextOrgs.add(member.subjectId);
+      }
+      setContactIds(nextContacts);
+      setOrganizationIds(nextOrgs);
+    } catch {
+      setContactIds(new Set());
+      setOrganizationIds(new Set());
+    } finally {
+      setLoading(false);
+    }
+  }, [client, enabled, groupId]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!enabled || !groupId) return;
+    const onChange = () => {
+      void reload();
+    };
+    window.addEventListener(CRM_GROUPS_CHANGED, onChange);
+    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+  }, [enabled, groupId, reload]);
+
+  return { contactIds, organizationIds, loading, reload };
+}
+
+/**
+ * Contact + organization ids that belong to a CRM group (REST/Postgres).
+ * Portal client picker uses the same membership table and expands org members.
+ */
 export function useCrmGroupContactIds(
   groupId: string | null,
   enabled: boolean,
 ) {
-  const { client } = useDesktopApi();
-  const localEnabled = useCrmLocalReads(enabled && Boolean(groupId));
-  const query = usePowerSyncQuery<CrmGroupMemberRow>(
-    localEnabled ? CRM_GROUP_MEMBERS_SQL : null,
-    localEnabled && groupId ? [groupId] : [],
-  );
-  const [restContactIds, setRestContactIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [restLoading, setRestLoading] = useState(false);
-
-  const reloadRest = useCallback(async () => {
-    if (!enabled || !groupId || localEnabled) {
-      setRestContactIds(new Set());
-      return;
-    }
-    setRestLoading(true);
-    try {
-      const body = await client.requestJson<{
-        members: { subjectType: string; subjectId: string }[];
-      }>(`/api/v1/crm-groups/${encodeURIComponent(groupId)}/members`);
-      setRestContactIds(
-        new Set(
-          body.members
-            .filter((row) => row.subjectType === "contact")
-            .map((row) => row.subjectId),
-        ),
-      );
-    } catch {
-      setRestContactIds(new Set());
-    } finally {
-      setRestLoading(false);
-    }
-  }, [client, enabled, groupId, localEnabled]);
-
-  useEffect(() => {
-    void reloadRest();
-  }, [reloadRest]);
-
-  useEffect(() => {
-    if (!enabled || !groupId || localEnabled) return;
-    const onChange = () => {
-      void reloadRest();
-    };
-    window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
-  }, [enabled, groupId, localEnabled, reloadRest]);
-
-  const contactIds = useMemo(() => {
-    if (localEnabled && query.data) {
-      return mapCrmGroupMemberSubjectIds(query.data, "contact");
-    }
-    return restContactIds;
-  }, [localEnabled, query.data, restContactIds]);
-
+  const members = useCrmGroupMembers(groupId, enabled);
   return {
-    contactIds,
-    loading: localEnabled ? query.loading : restLoading,
-    reload: localEnabled ? async () => {} : reloadRest,
+    contactIds: members.contactIds,
+    organizationIds: members.organizationIds,
+    loading: members.loading,
+    reload: members.reload,
   };
 }
 
@@ -688,65 +753,11 @@ export function useCrmGroupOrganizationIds(
   groupId: string | null,
   enabled: boolean,
 ) {
-  const { client } = useDesktopApi();
-  const localEnabled = useCrmLocalReads(enabled && Boolean(groupId));
-  const query = usePowerSyncQuery<CrmGroupMemberRow>(
-    localEnabled ? CRM_GROUP_MEMBERS_SQL : null,
-    localEnabled && groupId ? [groupId] : [],
-  );
-  const [restOrganizationIds, setRestOrganizationIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [restLoading, setRestLoading] = useState(false);
-
-  const reloadRest = useCallback(async () => {
-    if (!enabled || !groupId || localEnabled) {
-      setRestOrganizationIds(new Set());
-      return;
-    }
-    setRestLoading(true);
-    try {
-      const body = await client.requestJson<{
-        members: { subjectType: string; subjectId: string }[];
-      }>(`/api/v1/crm-groups/${encodeURIComponent(groupId)}/members`);
-      setRestOrganizationIds(
-        new Set(
-          body.members
-            .filter((row) => row.subjectType === "organization")
-            .map((row) => row.subjectId),
-        ),
-      );
-    } catch {
-      setRestOrganizationIds(new Set());
-    } finally {
-      setRestLoading(false);
-    }
-  }, [client, enabled, groupId, localEnabled]);
-
-  useEffect(() => {
-    void reloadRest();
-  }, [reloadRest]);
-
-  useEffect(() => {
-    if (!enabled || !groupId || localEnabled) return;
-    const onChange = () => {
-      void reloadRest();
-    };
-    window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
-  }, [enabled, groupId, localEnabled, reloadRest]);
-
-  const organizationIds = useMemo(() => {
-    if (localEnabled && query.data) {
-      return mapCrmGroupMemberSubjectIds(query.data, "organization");
-    }
-    return restOrganizationIds;
-  }, [localEnabled, query.data, restOrganizationIds]);
-
+  const members = useCrmGroupMembers(groupId, enabled);
   return {
-    organizationIds,
-    loading: localEnabled ? query.loading : restLoading,
-    reload: localEnabled ? async () => {} : reloadRest,
+    organizationIds: members.organizationIds,
+    loading: members.loading,
+    reload: members.reload,
   };
 }
 
@@ -757,19 +768,11 @@ export function useCrmGroupsForSubject(
 ) {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
-  const localEnabled = useCrmLocalReads(enabled && Boolean(subjectId));
-  const allGroupsQuery = usePowerSyncQuery<CrmGroupRow>(
-    localEnabled ? CRM_GROUPS_LIST_SQL : null,
-  );
-  const memberGroupsQuery = usePowerSyncQuery<CrmGroupRow>(
-    localEnabled ? CRM_SUBJECT_GROUPS_SQL : null,
-    localEnabled && subjectId ? [subjectType, subjectId] : [],
-  );
   const [restAllGroups, setRestAllGroups] = useState<CrmGroup[]>([]);
   const [restMemberGroups, setRestMemberGroups] = useState<CrmGroup[]>([]);
 
   const reloadRest = useCallback(async () => {
-    if (!enabled || !subjectId || localEnabled) return;
+    if (!enabled || !subjectId) return;
     const allBody = await client.requestJson<{ groups: CrmGroup[] }>(
       "/api/v1/crm-groups",
     );
@@ -788,7 +791,7 @@ export function useCrmGroupsForSubject(
       }
       throw error;
     }
-  }, [client, enabled, localEnabled, subjectId, subjectType]);
+  }, [client, enabled, subjectId, subjectType]);
 
   useEffect(() => {
     void reloadRest().catch(() => {
@@ -797,27 +800,13 @@ export function useCrmGroupsForSubject(
   }, [reloadRest]);
 
   useEffect(() => {
-    if (!enabled || localEnabled) return;
+    if (!enabled) return;
     const onChange = () => {
       void reloadRest().catch(() => {});
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
     return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
-  }, [enabled, localEnabled, reloadRest]);
-
-  const allGroups = useMemo(() => {
-    if (localEnabled && allGroupsQuery.data) {
-      return allGroupsQuery.data.map(mapCrmGroupRow);
-    }
-    return restAllGroups;
-  }, [allGroupsQuery.data, localEnabled, restAllGroups]);
-
-  const memberGroups = useMemo(() => {
-    if (localEnabled && memberGroupsQuery.data) {
-      return memberGroupsQuery.data.map(mapCrmGroupRow);
-    }
-    return restMemberGroups;
-  }, [localEnabled, memberGroupsQuery.data, restMemberGroups]);
+  }, [enabled, reloadRest]);
 
   const createGroup = useCallback(
     async (input: { name: string; color?: string | null }) => {
@@ -834,11 +823,9 @@ export function useCrmGroupsForSubject(
         });
       }
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest, subjectId, subjectType],
+    [client, powerSync, reloadRest, subjectId, subjectType],
   );
 
   const toggleMembership = useCallback(
@@ -858,30 +845,27 @@ export function useCrmGroupsForSubject(
         });
       }
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest, subjectId, subjectType],
+    [client, powerSync, reloadRest, subjectId, subjectType],
   );
 
   const deleteGroup = useCallback(
     async (groupId: string) => {
       await deleteCrmGroupViaPowerSyncOrApi(client, powerSync, groupId);
       notifyCrmGroupsChanged();
-      if (!localEnabled) {
-        await reloadRest();
-      }
+      await reloadRest();
     },
-    [client, localEnabled, powerSync, reloadRest],
+    [client, powerSync, reloadRest],
   );
 
   return {
-    allGroups,
-    memberGroups,
+    allGroups: restAllGroups,
+    memberGroups: restMemberGroups,
     createGroup,
     toggleMembership,
     deleteGroup,
-    reload: localEnabled ? async () => {} : reloadRest,
+    reload: reloadRest,
   };
 }
+

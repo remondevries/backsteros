@@ -21,6 +21,12 @@ export function snapshotFor(
   if (surface === "inbox") {
     params.itemId = parts[0] === "inbox" ? parts[1] : undefined;
   }
+  if (surface === "communication") {
+    // Same shape as inbox: /communication/$itemId. Warm flips never rematch
+    // the router, so without this parse CommunicationPage always sees a
+    // missing itemId and replace-navigates back to the first list item.
+    params.itemId = parts[0] === "communication" ? parts[1] : undefined;
+  }
   if (surface === "journal-habits") {
     params.habitId = parts[2];
   }

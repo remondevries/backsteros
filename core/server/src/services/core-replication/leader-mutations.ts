@@ -333,6 +333,34 @@ export async function commitMutationsLeaderFirst(input: {
     );
     // Local apply+append — do not applyPeer again (already applied in accept).
     const fallback = await acceptLeaderMutations(input);
+
+    // Cloud never pulls sync_events from local. Push table twin + nudge so
+    // portal/cloud see the write without waiting for the 15s tick.
+    const { replicatedTablesForEntities } = await import("./entity-tables.js");
+    const { scheduleTableReplicationPush } = await import("./worker.js");
+    const { notifyPeerOfEntityWrite } = await import("./nudge.js");
+    const tables = replicatedTablesForEntities(
+      input.changes.map((change) => change.entity),
+    );
+    scheduleTableReplicationPush(tables, "local_fallback");
+    const first = input.changes[0];
+    if (first) {
+      const taskIdFromPayload =
+        typeof first.payload.task_id === "string"
+          ? first.payload.task_id
+          : typeof first.payload.taskId === "string"
+            ? first.payload.taskId
+            : null;
+      notifyPeerOfEntityWrite({
+        workspaceId: input.workspaceId,
+        reason: "local_fallback",
+        entity: first.entity,
+        entityId: first.entityId,
+        taskId: taskIdFromPayload,
+        operation: first.operation === "delete" ? "delete" : "upsert",
+      });
+    }
+
     return { ...fallback, source: "local_fallback" };
   }
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import {
   getProjectRouteParamFromPathname,
   getProjectRouteScopeFromPathname,
+  isCommunicationPanelPath,
   isFinanceSectionPath,
   isInboxPanelPath,
   isProjectDocumentsSectionPath,
@@ -39,6 +40,9 @@ export function useShellSidePanel() {
   const inInboxPanel =
     isInboxPanelPath(panelPathname, panelSearch) ||
     isInboxPanelPath(pathname, search);
+  const inCommunicationPanel =
+    isCommunicationPanelPath(panelPathname, panelSearch) ||
+    isCommunicationPanelPath(pathname, search);
   const settingsPage = isSettingsPath(pathname);
 
   const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
@@ -75,10 +79,18 @@ export function useShellSidePanel() {
     }
   }, [activeProject, location.state]);
 
-  const sidebarActivePathname = resolveSidebarActivePathname(
-    pathname,
-    projectNavFrom,
-  );
+  const sidebarActivePathname = (() => {
+    if (inInboxPanel && (pathname.startsWith("/email/") || pathname === "/email")) {
+      return "/inbox";
+    }
+    if (
+      inCommunicationPanel &&
+      (pathname.startsWith("/email/") || pathname === "/email")
+    ) {
+      return "/communication";
+    }
+    return resolveSidebarActivePathname(pathname, projectNavFrom);
+  })();
   const financeSection = isFinanceSectionPath(panelPathname);
 
   return {
@@ -86,6 +98,7 @@ export function useShellSidePanel() {
     panelPathname,
     panelSearch,
     inInboxPanel,
+    inCommunicationPanel,
     settingsPage,
     projectRouteParam,
     projectRouteScope,

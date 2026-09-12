@@ -1,15 +1,23 @@
 /**
  * Cheap revision fingerprints for soft-poll change detection.
- * Prefer id + updatedAt over full JSON.stringify of list payloads.
+ * Prefer id + updatedAt (+ status when present) over full JSON.stringify.
+ *
+ * Status is included so a promote that bumps only `status` (before `updatedAt`
+ * lands on a follow-up poll) still invalidates soft-poll skip. Optimistic
+ * overlays in `pendingTaskStatus` keep soft-poll from regressing mid-flight.
  */
 
 export function backsterosEntityListFingerprint(
-  items: readonly { readonly id: string; readonly updatedAt: string }[],
+  items: readonly {
+    readonly id: string;
+    readonly updatedAt: string;
+    readonly status?: string;
+  }[],
 ): string {
   if (items.length === 0) return "0";
   let out = String(items.length);
   for (const item of items) {
-    out += `\0${item.id}:${item.updatedAt}`;
+    out += `\0${item.id}:${item.updatedAt}:${item.status ?? ""}`;
   }
   return out;
 }

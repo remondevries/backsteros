@@ -17,6 +17,7 @@ import { parseAppHref } from "../router/navigate-href";
 import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
 import {
   dismissKeepAliveForOutletNavigation,
+  rememberCommunicationPanelSelectionHref,
   rememberInboxPanelSelectionHref,
   tryWarmKeepAliveFlip,
 } from "../lib/shell-warm-keep-alive";
@@ -104,6 +105,7 @@ export function RouterLink({
         // is on a different keep-alive path.
         rememberSectionEntryFromNav(destination);
         rememberInboxPanelSelectionHref(destination);
+        rememberCommunicationPanelSelectionHref(destination);
         dismissKeepAliveForOutletNavigation(destination);
         onClick?.(event);
       }}
@@ -124,6 +126,7 @@ export function RouterLink({
         if (event.key === " ") {
           rememberSectionEntryFromNav(destination);
           rememberInboxPanelSelectionHref(destination);
+          rememberCommunicationPanelSelectionHref(destination);
           dismissKeepAliveForOutletNavigation(destination);
         }
         restKeyDown?.(event);
@@ -161,6 +164,7 @@ export const DesktopClientLink = forwardRef<HTMLAnchorElement, ClientLinkProps>(
           }
           rememberSectionEntryFromNav(destination);
           rememberInboxPanelSelectionHref(destination);
+          rememberCommunicationPanelSelectionHref(destination);
           dismissKeepAliveForOutletNavigation(destination);
           onClick?.(event);
         }}

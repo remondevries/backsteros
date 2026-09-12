@@ -77,6 +77,10 @@ export type TaskItemRowTask = {
   relatedContactIds?: string[] | null;
   /** Organizations this task is about / for (Related property). */
   relatedOrganizationIds?: string[] | null;
+  /** Client support ticket (portal Support / Communication). */
+  support?: boolean | null;
+  /** Notification-style task (triage workflow; distinct UI filter). */
+  notification?: boolean | null;
   ownerInitials?: string | null;
   sortOrder?: number;
   /** Epoch ms when known — used to refresh activity feeds after patches. */
@@ -114,6 +118,8 @@ export type TaskItemRowTask = {
   /** Meeting schedule chip label when `listKind` is `"meeting"`. */
   meetingScheduleLabel?: string | null;
   inboxUpdatedAt?: number | Date | string | null;
+  /** When true, task is queued in the personal Inbox attention list. */
+  inbox?: boolean | null;
 };
 
 export type TaskItemRowProps = {
@@ -305,12 +311,15 @@ function TaskItemRowComponent({
   const showTrailingDue = showDueMeta && !leadingDue && !hasLeadingStamp;
   const iconBeforeId = chromeOrder === "timetracking";
   const statusOptions = TASK_ROW_STATUS_OPTIONS;
+  const isNotificationTask = Boolean(task.notification);
 
   const projectChip =
     showProject ? (
       projectOptions.length > 0 && onProjectChange && !isMeeting ? (
         <span
-          className="task-item-row__project"
+          className={`task-item-row__project${
+            isNotificationTask ? " task-item-row__project--inline" : ""
+          }`}
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
@@ -325,7 +334,7 @@ function TaskItemRowComponent({
             ariaLabel="Change project"
             taskPropertyDropdownId="project"
             className="task-item-row__dropdown"
-            panelAlign="end"
+            panelAlign={isNotificationTask ? "start" : "end"}
             panelWidth={280}
             renderTrigger={({ open, disabled, triggerId, onToggle }) => {
               const projectLabel = task.projectName ?? "No project";
@@ -346,7 +355,7 @@ function TaskItemRowComponent({
                     onToggle();
                   }}
                 >
-                  <DefaultProjectIcon size={12} />
+                  {isNotificationTask ? null : <DefaultProjectIcon size={12} />}
                   <span className="task-item-row__project-name">
                     {projectLabel}
                   </span>
@@ -356,8 +365,12 @@ function TaskItemRowComponent({
           />
         </span>
       ) : task.projectName ? (
-        <span className="task-item-row__project">
-          <DefaultProjectIcon size={12} />
+        <span
+          className={`task-item-row__project${
+            isNotificationTask ? " task-item-row__project--inline" : ""
+          }`}
+        >
+          {isNotificationTask ? null : <DefaultProjectIcon size={12} />}
           <span className="task-item-row__project-name">
             {task.projectName}
           </span>
@@ -627,6 +640,8 @@ function TaskItemRowComponent({
                           status={status}
                           size={14}
                           working={agentWorking}
+                          support={Boolean(task.support)}
+                          notification={Boolean(task.notification)}
                         />
                       )}
                     </button>
@@ -655,6 +670,8 @@ function TaskItemRowComponent({
         {titleTrailing && titleTrailingAlign === "after-status" ? (
           <span className="task-item-row__status-trailing">{titleTrailing}</span>
         ) : null}
+
+        {isNotificationTask ? projectChip : null}
 
         <span
           className={`task-item-row__title-wrap${
@@ -714,7 +731,7 @@ function TaskItemRowComponent({
               </span>
             )
           ) : null}
-          {projectChip}
+          {isNotificationTask ? null : projectChip}
           {assigneeChip}
         </span>
       </div>

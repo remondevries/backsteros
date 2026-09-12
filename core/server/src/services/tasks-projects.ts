@@ -569,8 +569,11 @@ export async function listTasks(
     contactId?: string;
     assigneeId?: string;
     relatedContactId?: string;
+    relatedOrganizationId?: string;
     status?: string;
     inbox?: boolean;
+    support?: boolean;
+    notification?: boolean;
   } = {},
   executor: DbExecutor = db,
 ) {
@@ -587,8 +590,19 @@ export async function listTasks(
       sql`${tasks.relatedContactIds} @> ${JSON.stringify([filters.relatedContactId])}::jsonb`,
     );
   }
+  if (filters.relatedOrganizationId) {
+    conditions.push(
+      sql`${tasks.relatedOrganizationIds} @> ${JSON.stringify([filters.relatedOrganizationId])}::jsonb`,
+    );
+  }
   if (filters.status) conditions.push(eq(tasks.status, filters.status));
   if (filters.inbox !== undefined) conditions.push(eq(tasks.inbox, filters.inbox));
+  if (filters.support !== undefined) {
+    conditions.push(eq(tasks.support, filters.support));
+  }
+  if (filters.notification !== undefined) {
+    conditions.push(eq(tasks.notification, filters.notification));
+  }
 
   return executor
     .select()
@@ -729,7 +743,11 @@ async function createTaskWithExecutor(
     input.contactId ?? null,
     executor,
   );
-  const status = input.status ?? "ready_to_start";
+  const support = input.support ?? false;
+  const notification = input.notification ?? false;
+  const status =
+    input.status ??
+    (support || notification ? "triage" : "ready_to_start");
   const agentInbox =
     options?.authKind === "api_key" || actor?.kind === "agent";
   const agentCreatedAt =
@@ -766,7 +784,13 @@ async function createTaskWithExecutor(
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       dueEndDate: input.dueEndDate ? new Date(input.dueEndDate) : null,
       triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
-      inbox: input.inbox ?? (!input.projectId && !input.contactId),
+      inbox:
+        input.inbox ??
+        (support || notification
+          ? true
+          : !input.projectId && !input.contactId),
+      support,
+      notification,
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
       linkedCommitShas: input.linkedCommitShas ?? [],
@@ -1011,6 +1035,8 @@ export async function updateTask(
         (input.projectId !== undefined || input.contactId !== undefined
           ? !nextProjectId && !nextContactId
           : undefined),
+      support: input.support,
+      notification: input.notification,
       links: input.links,
       agentChatId: input.agentChatId,
       linkedCommitShas: input.linkedCommitShas,

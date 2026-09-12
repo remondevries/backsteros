@@ -15,10 +15,12 @@ export function resolveLeftSidePanelDest(input: {
   pathname: string;
   search?: string;
   inInboxPanel: boolean;
+  inCommunicationPanel?: boolean;
   financeSection: boolean;
   showSidePanel: boolean;
 }): LeftSidePanelDest | null {
   if (input.inInboxPanel) return "inbox";
+  if (input.inCommunicationPanel) return "communication";
   if (input.financeSection && input.showSidePanel) return "finance";
   if (!input.showSidePanel) return null;
   const surface = keepAliveSidePanelSurface(input.pathname);

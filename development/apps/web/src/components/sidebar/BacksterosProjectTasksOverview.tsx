@@ -29,6 +29,10 @@ import {
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
+import {
+  BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME,
+  useBacksterosTaskHasUnsentDraft,
+} from "~/backsteros/taskUnsentDraft";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
@@ -94,6 +98,7 @@ function BacksterosOverviewTaskRow(props: {
     status: task.status,
   });
   const priority = task.priority ?? 0;
+  const hasUnsentDraft = useBacksterosTaskHasUnsentDraft(task.id) && !selected;
 
   return (
     <li ref={sortable?.setNodeRef} style={sortable?.style} className="bos-task-row-item">
@@ -106,6 +111,7 @@ function BacksterosOverviewTaskRow(props: {
           "bos-task-row",
           selected && "is-selected",
           keyboardFocused && "is-keyboard-focus",
+          hasUnsentDraft && "is-draft",
           sortable?.listeners && "is-draggable",
           sortable?.isDragging && "is-dragging",
         )}
@@ -118,6 +124,16 @@ function BacksterosOverviewTaskRow(props: {
         <span className="bos-task-row__status">
           <BacksterosTaskStatusIcon status={task.status} size={14} working={working} />
         </span>
+        {hasUnsentDraft ? (
+          <span
+            aria-label="Unsent draft"
+            role="img"
+            data-testid={`backsteros-overview-draft-indicator-${task.id}`}
+            className="bos-task-row__draft-dot inline-flex shrink-0 items-center"
+          >
+            <span aria-hidden className={BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME} />
+          </span>
+        ) : null}
         <span className="bos-task-row__title-wrap">
           <span className="bos-task-row__title">{task.title}</span>
         </span>
@@ -219,7 +235,16 @@ function BacksterosOverviewStatusGroup(props: {
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-          onDragEnd={handleDragEnd}
+          onDragStart={() => {
+            document.body.style.cursor = "grabbing";
+          }}
+          onDragCancel={() => {
+            document.body.style.removeProperty("cursor");
+          }}
+          onDragEnd={(event) => {
+            document.body.style.removeProperty("cursor");
+            handleDragEnd(event);
+          }}
         >
           <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             <ul role="list" className="bos-status-group__items" aria-label={`${label} tasks`}>

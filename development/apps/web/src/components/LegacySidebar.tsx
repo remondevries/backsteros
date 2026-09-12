@@ -2284,7 +2284,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         <SidebarMenuButton
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           className={`pr-8 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:text-sidebar-foreground max-sm:pr-14 ${
-            isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : ""
+            isManualProjectSorting
+              ? dragHandleProps?.isDragging
+                ? "cursor-grabbing"
+                : "cursor-pointer"
+              : ""
           }`}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.listeners : {})}
@@ -2632,7 +2636,7 @@ function LocalSecondaryStatus() {
 
 type SortableProjectHandleProps = Pick<
   ReturnType<typeof useSortable>,
-  "attributes" | "listeners" | "setActivatorNodeRef"
+  "attributes" | "listeners" | "setActivatorNodeRef" | "isDragging"
 >;
 
 function ProjectSortMenu({
@@ -2788,7 +2792,7 @@ function SortableProjectItem({
       data-sidebar="menu-item"
       data-slot="sidebar-menu-item"
     >
-      {children({ attributes, listeners, setActivatorNodeRef })}
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
     </li>
   );
 }
@@ -3294,6 +3298,7 @@ export default function LegacySidebar() {
 
   const handleProjectDragEnd = useCallback(
     (event: DragEndEvent) => {
+      document.body.style.removeProperty("cursor");
       if (sidebarProjectSortOrder !== "manual") {
         dragInProgressRef.current = false;
         return;
@@ -3320,12 +3325,14 @@ export default function LegacySidebar() {
       }
       dragInProgressRef.current = true;
       suppressProjectClickAfterDragRef.current = true;
+      document.body.style.cursor = "grabbing";
     },
     [sidebarProjectSortOrder],
   );
 
   const handleProjectDragCancel = useCallback((_event: DragCancelEvent) => {
     dragInProgressRef.current = false;
+    document.body.style.removeProperty("cursor");
   }, []);
 
   const animatedProjectListsRef = useRef(new WeakSet<HTMLElement>());

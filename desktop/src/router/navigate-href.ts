@@ -8,6 +8,7 @@ import { rememberProjectNavFromHref } from "../lib/project-type-cache";
 import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
 import {
   dismissKeepAliveForOutletNavigation,
+  rememberCommunicationPanelSelectionHref,
   rememberInboxPanelSelectionHref,
   tryWarmKeepAliveFlip,
 } from "../lib/shell-warm-keep-alive";
@@ -52,6 +53,7 @@ export function navigateToHref(
   }
   rememberSectionEntryFromNav(target);
   rememberInboxPanelSelectionHref(target);
+  rememberCommunicationPanelSelectionHref(target);
   dismissKeepAliveForOutletNavigation(target);
   const { pathname, search, hash } = parseAppHref(target);
   navigate({

@@ -24,12 +24,11 @@ const CONTACT_MORE_TAB = {
 };
 
 function isCardOnlySections(sections: readonly ContactSectionConfig[]): boolean {
+  const baseIds = CONTACT_CARD_SECTIONS.map((entry) => entry.id);
+  const withoutPortal = sections.filter((entry) => entry.id !== "portal");
   return (
-    sections === CONTACT_CARD_SECTIONS ||
-    (sections.length === CONTACT_CARD_SECTIONS.length &&
-      sections.every(
-        (entry, index) => entry.id === CONTACT_CARD_SECTIONS[index]?.id,
-      ))
+    withoutPortal.length === baseIds.length &&
+    withoutPortal.every((entry, index) => entry.id === baseIds[index])
   );
 }
 

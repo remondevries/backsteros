@@ -28,6 +28,7 @@ import {
   SegmentedPillToggle,
   emailMessageBody,
   emailMessageHtmlBody,
+  firstReceivedEmailAtMs,
   type EmailMailbox,
 } from "@backsteros/ui";
 
@@ -252,6 +253,10 @@ export function EmailThreadDetail({
     ]
       .map((email) => email?.trim().toLowerCase())
       .filter((email): email is string => Boolean(email)),
+  );
+  const firstReceivedAtMs = firstReceivedEmailAtMs(
+    threadMessages,
+    ourMailboxEmails,
   );
   const status = (
     <>
@@ -774,6 +779,10 @@ export function EmailThreadDetail({
                         : metadata?.dueDate
                           ? new Date(metadata.dueDate)
                           : null,
+                    receivedDate:
+                      firstReceivedAtMs != null
+                        ? new Date(firstReceivedAtMs)
+                        : null,
                   }}
                   organizationOptions={organizationOptions}
                   contactOptions={contactOptions}

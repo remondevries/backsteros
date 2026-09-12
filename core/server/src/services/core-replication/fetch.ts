@@ -2,7 +2,6 @@ import { sqlClient } from "../../db/index.js";
 import type { BootstrapTable, ReplicatedTable } from "./constants.js";
 import {
   compareCursor,
-  maxCursor,
   tableExists,
   toIso,
 } from "./cursors.js";
@@ -76,16 +75,22 @@ async function fetchRowsSince(
     since.rowId,
   ]) as { row: Record<string, unknown> }[];
 
+  const changes: ReplicationChange[] = rows.map(({ row }) => ({
+    table: spec.name,
+    row: sanitizeOutboundRow(spec.name, row),
+  }));
+
+  // Rows are ORDER BY (updated_at, pk). The page watermark is always the last
+  // row — do not max() against `since` after millisecond truncation, or a
+  // microsecond-ahead page whose ids sort before since.rowId never advances.
   let cursor = since;
-  const changes: ReplicationChange[] = rows.map(({ row }) => {
-    const updatedAt = toIso(row[spec.updatedAtColumn] as string | Date);
-    const rowId = rowIdFromPk(row, spec.pk);
-    cursor = maxCursor(cursor, { updatedAt, rowId });
-    return {
-      table: spec.name,
-      row: sanitizeOutboundRow(spec.name, row),
+  if (rows.length > 0) {
+    const last = rows[rows.length - 1]!.row;
+    cursor = {
+      updatedAt: toIso(last[spec.updatedAtColumn] as string | Date),
+      rowId: rowIdFromPk(last, spec.pk),
     };
-  });
+  }
 
   return { changes, cursor };
 }

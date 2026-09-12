@@ -4,6 +4,7 @@ import type { NavigationItemIconId } from "../../navigation/navigation.js";
 import {
   AreasNavIcon,
   CalendarNavIcon,
+  CommunicationNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
   EmailNavIcon,
@@ -36,6 +37,7 @@ export const NAVIGATION_ITEM_ICONS: Record<
   development: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
+  communication: CommunicationNavIcon,
   social: SocialNavIcon,
   contacts: ContactsNavIcon,
   organizations: OrganizationsNavIcon,

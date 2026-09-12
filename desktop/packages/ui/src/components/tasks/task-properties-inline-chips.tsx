@@ -170,7 +170,14 @@ export function TaskPropertiesInlineChips({
           searchShortcutLabel="S"
           ariaLabel="Status"
           taskPropertyDropdownId="status"
-          fallbackIcon={<TaskStatusIcon status={status} size={14} />}
+          fallbackIcon={
+            <TaskStatusIcon
+              status={status}
+              size={14}
+              support={Boolean(task?.support)}
+              notification={Boolean(task?.notification)}
+            />
+          }
           fallbackLabel={getTaskStatusLabel(status)}
           triggerVariant="inlineChip"
           panelAlign="start"
@@ -229,24 +236,26 @@ export function TaskPropertiesInlineChips({
             onClick={() => onFieldActivate?.("assignee")}
           />
         )}
-        <TaskRelatedChips
-          values={relatedValues}
-          options={relatedOptions}
-          onChange={
-            canEditRelated
-              ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
-              : undefined
-          }
-          disabled={disabled}
-          emptyLabel="Related"
-          searchPlaceholder="Add related…"
-          searchShortcutLabel="R"
-          ariaLabel="Related"
-          taskPropertyDropdownId="related"
-          onCreateFromQuery={onCreateRelatedContactFromQuery}
-          variant="inline"
-          onActivate={() => onFieldActivate?.("related")}
-        />
+        {task?.support ? null : (
+          <TaskRelatedChips
+            values={relatedValues}
+            options={relatedOptions}
+            onChange={
+              canEditRelated
+                ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+                : undefined
+            }
+            disabled={disabled}
+            emptyLabel="Related"
+            searchPlaceholder="Add related…"
+            searchShortcutLabel="R"
+            ariaLabel="Related"
+            taskPropertyDropdownId="related"
+            onCreateFromQuery={onCreateRelatedContactFromQuery}
+            variant="inline"
+            onActivate={() => onFieldActivate?.("related")}
+          />
+        )}
         {canEditProject ? (
           <PropertyDropdown
             value={task?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}

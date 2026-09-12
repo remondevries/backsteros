@@ -1,4 +1,5 @@
 import {
+  getFirstCommunicationItemHref,
   getFirstInboxItemHref,
   getKnowledgeHref,
   getOrganizationsHref,
@@ -104,6 +105,7 @@ export function firstKnowledgeHref(
 
 export function rememberWorkspaceSectionEntries(input: {
   inboxItems: readonly InboxListItem[];
+  communicationItems?: readonly InboxListItem[];
   contacts: readonly {
     id: string;
     name: string;
@@ -123,6 +125,13 @@ export function rememberWorkspaceSectionEntries(input: {
   const seed: Partial<Record<SectionEntryKey, string | null>> = {};
   if (peekSectionEntryHref("inbox") == null) {
     seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
+  }
+  if (
+    peekSectionEntryHref("communication") == null &&
+    input.communicationItems
+  ) {
+    seed.communication =
+      getFirstCommunicationItemHref(input.communicationItems) ?? null;
   }
   // Contacts / organizations catalogs live in main content — always list root.
   seed.contacts = "/contacts";

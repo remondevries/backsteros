@@ -89,6 +89,9 @@ export async function runCommentCommand(
       const body: CreateTaskCommentInput = {
         body: message,
         activityActor: config.activityActor,
+        ...(config.agentContactId
+          ? { authorContactId: config.agentContactId }
+          : {}),
       };
       if (typeof values.parent === "string") {
         body.parentCommentId = values.parent;

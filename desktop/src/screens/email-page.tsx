@@ -226,6 +226,13 @@ export function EmailPage({
       ];
     }
 
+    if (listContext === "communication") {
+      return [
+        { label: "Communication", href: "/communication" },
+        { label: currentLabel },
+      ];
+    }
+
     if (listContext === "project") {
       const project =
         (projectKey

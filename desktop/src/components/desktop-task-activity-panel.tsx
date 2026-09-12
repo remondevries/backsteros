@@ -3,17 +3,26 @@ import type {
   CursorSettings,
   ResearchResponse,
   SpellcheckResponse,
+  TaskComment,
 } from "@backsteros/contracts";
 import {
   TaskActivityPanel,
   type TaskActivityCommentMutations,
+  type TaskActivityCommentResolveMode,
 } from "@backsteros/ui";
 
 import { isTaskAgentWorkingForUi } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopPowerSync } from "../lib/powersync-context";
-import { useTaskActivityLocalFeed } from "../lib/task-activity-feed";
+import {
+  mergePeerTaskComments,
+  useTaskActivityLocalFeed,
+} from "../lib/task-activity-feed";
+import {
+  WORKSPACE_TASK_UPDATED_EVENT,
+  type WorkspaceTaskUpdatedDetail,
+} from "../lib/workspace-events";
 import {
   createTaskCommentViaPowerSyncOrApi,
   deleteTaskCommentViaPowerSyncOrApi,
@@ -51,6 +60,11 @@ export type DesktopTaskActivityPanelProps = {
   spellcheckControlsVisible?: boolean;
   /** Increment to force-refresh comments + activities (e.g. after posting a timer row). */
   activityFeedBump?: number;
+  /**
+   * Support Communication tickets: “Resolve ticket” pins a solution and can
+   * complete the task. Default thread mode keeps Resolve thread UX.
+   */
+  commentResolveMode?: TaskActivityCommentResolveMode;
   taskSummary: {
     number: number;
     title: string;
@@ -76,6 +90,7 @@ export function DesktopTaskActivityPanel({
   onSpellcheckReset,
   spellcheckControlsVisible = true,
   activityFeedBump = 0,
+  commentResolveMode = "thread",
   taskSummary,
 }: DesktopTaskActivityPanelProps) {
   const { client } = useDesktopApi();
@@ -97,6 +112,45 @@ export function DesktopTaskActivityPanel({
     if (!activityFeedBump) return;
     setFeedRevision((n) => n + 1);
   }, [activityFeedBump]);
+
+  // Portal (and other peers) write comments on cloud-core; local SSE rebroadcasts
+  // with reason "comment" before PowerSync catches up — bump the feed so the
+  // panel can REST-merge into pending overlays.
+  useEffect(() => {
+    const onTaskUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceTaskUpdatedDetail>).detail;
+      if (!detail || detail.taskId !== taskId) return;
+      if (detail.reason !== "comment") return;
+      setFeedRevision((n) => n + 1);
+    };
+    window.addEventListener(WORKSPACE_TASK_UPDATED_EVENT, onTaskUpdated);
+    return () => {
+      window.removeEventListener(WORKSPACE_TASK_UPDATED_EVENT, onTaskUpdated);
+    };
+  }, [taskId]);
+
+  // Always REST-hydrate peer comments into a process-local overlay. Pending
+  // React state alone is cleared when Communication remounts the panel
+  // (feedRevision resets to 0) — that caused portal comments to flash then vanish.
+  useEffect(() => {
+    if (!localFeed.active) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const result = await client.requestJson<{ comments: TaskComment[] }>(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        mergePeerTaskComments(taskId, result.comments ?? []);
+      } catch {
+        // Overlay hydrate is best-effort; PowerSync remains the source of truth.
+      }
+    })();
+    return () => {
+      controller.abort();
+    };
+  }, [client, feedRevision, localFeed.active, taskId]);
 
   const working =
     isTaskAgentWorkingForUi(
@@ -405,6 +459,22 @@ export function DesktopTaskActivityPanel({
     </>
   );
 
+  const onResolveTicket = useCallback(
+    async (resolved: boolean) => {
+      if (!resolved) return;
+      if (patchTaskValues) {
+        await patchTaskValues({ status: "completed" });
+        return;
+      }
+      await client.requestJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "completed" }),
+      });
+    },
+    [client, patchTaskValues, taskId],
+  );
+
   return (
     <>
       <TaskActivityPanel
@@ -422,6 +492,10 @@ export function DesktopTaskActivityPanel({
         localFeedLoading={localFeed.loading}
         headerActions={headerActions}
         commentMutations={commentMutations}
+        commentResolveMode={commentResolveMode}
+        onResolveTicket={
+          commentResolveMode === "ticket" ? onResolveTicket : undefined
+        }
       />
       {spellcheckError ? (
         <p className="task-activity__error" role="alert">

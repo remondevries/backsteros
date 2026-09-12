@@ -10,6 +10,7 @@ import type {
 } from "@backsteros/contracts";
 import { CRM_ACTIVITY_PREVIEW_MAX_CHARS } from "@backsteros/contracts";
 
+import { findExistingCrmGroupByName } from "./crm-group-name";
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { WorkspacePowerSync } from "./workspace-data-types";
 
@@ -31,10 +32,30 @@ function previewFromBody(body: string): string {
 /**
  * Prefer local SQLite when PowerSync is ready — same gate as contact/org
  * creates. Requiring `connected` forced REST while a just-created contact was
- * still local-only, so relationship/group writes 404'd.
+ * still local-only, so relationship writes 404'd.
+ *
+ * CRM groups/members are intentionally excluded: they always write via REST so
+ * desktop, portal, and cloud-core share one Postgres membership table.
  */
 function canWriteViaPowerSync(powerSync: WorkspacePowerSync): boolean {
   return Boolean(powerSync.ready && powerSync.createMetadata);
+}
+
+/** CRM groups are API/Postgres-only (portal reads the same table). */
+export function crmGroupsUseRestOnly(): boolean {
+  return true;
+}
+
+async function flushCrmCrudUpload(
+  powerSync: WorkspacePowerSync,
+  label: string,
+): Promise<void> {
+  if (!powerSync.flushCrudUpload) return;
+  try {
+    await powerSync.flushCrudUpload();
+  } catch (error) {
+    console.warn(`[desktop] ${label} upload flush deferred`, error);
+  }
 }
 
 async function softDeleteLocally(
@@ -49,26 +70,6 @@ async function softDeleteLocally(
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
   await powerSync.patchMetadata!(table, id, { deleted_at: deletedAt });
-}
-
-async function findCrmGroupMemberIdLocally(
-  powerSync: WorkspacePowerSync,
-  input: {
-    groupId: string;
-    subjectType: CrmGroupSubjectType;
-    subjectId: string;
-  },
-): Promise<string | null> {
-  const db = powerSync.database;
-  if (!db) return null;
-  const rows = await db.getAll<{ id: string }>(
-    `SELECT id FROM crm_group_members
-     WHERE group_id = ? AND subject_type = ? AND subject_id = ?
-       AND deleted_at IS NULL
-     LIMIT 1`,
-    [input.groupId, input.subjectType, input.subjectId],
-  );
-  return rows[0]?.id ?? null;
 }
 
 export async function createContactRelationshipViaPowerSyncOrApi(
@@ -298,28 +299,13 @@ export async function createCrmGroupViaPowerSyncOrApi(
   input: { name: string; color?: string | null; description?: string | null },
 ): Promise<CrmGroup> {
   const name = input.name.trim();
-  if (canWriteViaPowerSync(powerSync)) {
-    const id = await powerSync.createMetadata("crm_groups", {
-      name,
-      description: input.description ?? null,
-      color: input.color ?? null,
-      icon: null,
-      sort_order: Date.now(),
-    });
-    const now = new Date().toISOString();
-    return {
-      id,
-      workspaceId: "",
-      name,
-      description: input.description ?? null,
-      color: input.color ?? null,
-      icon: null,
-      sortOrder: Date.now(),
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
+  const existing = await findExistingCrmGroupByName(client, powerSync, name);
+  if (existing) {
+    return existing;
   }
+
+  // Flush pending contact/org CRUD so a follow-up membership POST can resolve subjects.
+  await flushCrmCrudUpload(powerSync, "crm group create preflight");
 
   return client.requestJson<CrmGroup>("/api/v1/crm-groups", {
     method: "POST",
@@ -334,7 +320,7 @@ export async function createCrmGroupViaPowerSyncOrApi(
 
 export async function updateCrmGroupViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: WorkspacePowerSync,
+  _powerSync: WorkspacePowerSync,
   input: {
     groupId: string;
     existing: CrmGroup;
@@ -342,22 +328,6 @@ export async function updateCrmGroupViaPowerSyncOrApi(
     color?: string | null;
   },
 ): Promise<CrmGroup> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const patch: Record<string, unknown> = {};
-    if (input.name !== undefined) patch.name = input.name.trim();
-    if (input.color !== undefined) patch.color = input.color;
-    if (Object.keys(patch).length > 0) {
-      await powerSync.patchMetadata!("crm_groups", input.groupId, patch);
-    }
-    const now = new Date().toISOString();
-    return {
-      ...input.existing,
-      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-      ...(input.color !== undefined ? { color: input.color } : {}),
-      updatedAt: now,
-    };
-  }
-
   return client.requestJson<CrmGroup>(
     `/api/v1/crm-groups/${encodeURIComponent(input.groupId)}`,
     {
@@ -373,14 +343,9 @@ export async function updateCrmGroupViaPowerSyncOrApi(
 
 export async function deleteCrmGroupViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: WorkspacePowerSync,
+  _powerSync: WorkspacePowerSync,
   groupId: string,
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    await softDeleteLocally(powerSync, "crm_groups", groupId);
-    return;
-  }
-
   await client.requestJson(
     `/api/v1/crm-groups/${encodeURIComponent(groupId)}`,
     { method: "DELETE" },
@@ -389,24 +354,13 @@ export async function deleteCrmGroupViaPowerSyncOrApi(
 
 export async function addCrmGroupMemberViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: WorkspacePowerSync,
+  _powerSync: WorkspacePowerSync,
   input: {
     groupId: string;
     subjectType: CrmGroupSubjectType;
     subjectId: string;
   },
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const existingId = await findCrmGroupMemberIdLocally(powerSync, input);
-    if (existingId) return;
-    await powerSync.createMetadata("crm_group_members", {
-      group_id: input.groupId,
-      subject_type: input.subjectType,
-      subject_id: input.subjectId,
-    });
-    return;
-  }
-
   await client.requestJson(
     `/api/v1/crm-groups/${encodeURIComponent(input.groupId)}/members`,
     {
@@ -422,7 +376,7 @@ export async function addCrmGroupMemberViaPowerSyncOrApi(
 
 export async function removeCrmGroupMemberViaPowerSyncOrApi(
   client: BacksterosApiClient,
-  powerSync: WorkspacePowerSync,
+  _powerSync: WorkspacePowerSync,
   input: {
     groupId: string;
     subjectType: CrmGroupSubjectType;
@@ -430,23 +384,17 @@ export async function removeCrmGroupMemberViaPowerSyncOrApi(
     memberId?: string | null;
   },
 ): Promise<void> {
-  if (canWriteViaPowerSync(powerSync)) {
-    const memberId =
-      input.memberId ??
-      (await findCrmGroupMemberIdLocally(powerSync, input));
-    if (!memberId) return;
-    await softDeleteLocally(powerSync, "crm_group_members", memberId);
-    return;
-  }
-
   let memberId = input.memberId ?? null;
   if (!memberId) {
     const members = await client.requestJson<{
-      members: { id: string; subjectId: string }[];
+      members: { id: string; subjectId: string; subjectType: string }[];
     }>(`/api/v1/crm-groups/${encodeURIComponent(input.groupId)}/members`);
     memberId =
-      members.members.find((entry) => entry.subjectId === input.subjectId)
-        ?.id ?? null;
+      members.members.find(
+        (entry) =>
+          entry.subjectId === input.subjectId &&
+          entry.subjectType === input.subjectType,
+      )?.id ?? null;
   }
   if (!memberId) return;
 
@@ -456,7 +404,7 @@ export async function removeCrmGroupMemberViaPowerSyncOrApi(
   );
 }
 
-/** POST group membership, retrying while a just-created contact/org uploads (REST path). */
+/** POST group membership, retrying while a just-created contact/org uploads. */
 export async function addCrmGroupMemberWithRetry(
   client: BacksterosApiClient,
   powerSync: WorkspacePowerSync,
@@ -466,12 +414,11 @@ export async function addCrmGroupMemberWithRetry(
     subjectId: string;
   },
 ) {
-  if (canWriteViaPowerSync(powerSync)) {
-    await addCrmGroupMemberViaPowerSyncOrApi(client, powerSync, input);
-    return;
-  }
-
   const SUBJECT_SYNC_RETRY_DELAYS_MS = [0, 150, 300, 600, 1200] as const;
+
+  // Contact/org may still be uploading via PowerSync — land them before REST membership.
+  await flushCrmCrudUpload(powerSync, "crm group member preflight");
+
   let lastError: unknown;
   for (const delay of SUBJECT_SYNC_RETRY_DELAYS_MS) {
     if (delay > 0) {
@@ -482,12 +429,33 @@ export async function addCrmGroupMemberWithRetry(
       return;
     } catch (error) {
       lastError = error;
-      if (!isSubjectMissingError(error)) throw error;
+      if (!isSubjectMissingError(error) && !isRetryableUploadError(error)) {
+        throw error;
+      }
+      await flushCrmCrudUpload(powerSync, "crm group member retry");
     }
   }
   throw lastError instanceof Error
-    ? lastError
+    ? lastError.message.toLowerCase().includes("subject") ||
+      lastError.message.toLowerCase().includes("not found")
+      ? new Error(
+          "Contact or organization is not on the server yet. Wait for sync or re-save it, then try again.",
+        )
+      : lastError
     : new Error("Failed to add group member");
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("powersync upload failed (503)") ||
+    message.includes("powersync upload failed (502)") ||
+    message.includes("powersync upload failed (500)") ||
+    message.includes("powersync_mutation_claim_race") ||
+    message.includes("group_not_found") ||
+    message.includes("subject_not_found")
+  );
 }
 
 function isSubjectMissingError(error: unknown): boolean {
@@ -506,7 +474,9 @@ function isSubjectMissingError(error: unknown): boolean {
     message.includes("contact not found") ||
     message.includes("related contact") ||
     message.includes("organization not found") ||
-    message.includes("member subject not found")
+    message.includes("member subject not found") ||
+    message.includes("subject_not_found") ||
+    message.includes("group_not_found")
   );
 }
 

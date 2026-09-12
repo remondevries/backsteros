@@ -175,15 +175,8 @@
   cursor: pointer;
 }
 
-.bos-task-row.is-draggable {
-  cursor: grab;
-}
-
-.bos-task-row.is-draggable:active {
-  cursor: grabbing;
-}
-
 .bos-task-row.is-dragging {
+  cursor: grabbing;
   opacity: 0.8;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
@@ -194,6 +187,20 @@
 
 .bos-task-row.is-selected {
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.bos-task-row.is-draft:not(.is-selected) {
+  background: color-mix(in srgb, #f59e0b 4%, transparent);
+}
+
+.bos-task-row.is-draft:not(.is-selected):hover {
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+}
+
+.bos-task-row__draft-dot {
+  width: 6px;
+  height: 16px;
+  justify-content: center;
 }
 
 /* Keyboard j/k cursor — primary outline so focus is obvious without opening. */

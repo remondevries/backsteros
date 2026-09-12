@@ -153,6 +153,7 @@ export function resolveTabNavIconId(
     development: "development",
     letters: "letters",
     finance: "finance",
+    communication: "communication",
     social: "social",
     contacts: "contacts",
     organizations: "organizations",

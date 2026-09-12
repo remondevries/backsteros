@@ -53,6 +53,8 @@ const tasks = new Table(
     due_end_date: column.text,
     triaged_at: column.text,
     inbox: column.integer,
+    support: column.integer,
+    notification: column.integer,
     links: column.text,
     agent_chat_id: column.text,
     linked_commit_shas: column.text,
@@ -71,6 +73,8 @@ const tasks = new Table(
       project: ["project_id"],
       contact: ["contact_id"],
       habit: ["habit_id"],
+      support: ["support"],
+      notification: ["notification"],
     },
   },
 );
@@ -162,6 +166,9 @@ const contacts = new Table(
     social_accounts: column.text,
     birthday: column.text,
     languages: column.text,
+    portal_username: column.text,
+    portal_password_hash: column.text,
+    portal_settings: column.text,
     ...commonDates,
   },
   { indexes: { organization: ["organization_id"] } },
@@ -471,12 +478,21 @@ export function mapCrudBatch(
     opData?: Record<string, unknown>;
   }>,
 ): UploadEntry[] {
-  return crud.map((entry) => ({
-    table: entry.table,
-    op: entry.op,
-    id: entry.id,
-    ...(entry.opData ? { data: entry.opData } : {}),
-  }));
+  return crud.map((entry) => {
+    let data = entry.opData;
+    // Portal password hashes are write-once via REST (`portalPassword`). Never
+    // re-upload a stale local hash — it silently overwrites a fresher server hash.
+    if (entry.table === "contacts" && data && "portal_password_hash" in data) {
+      const { portal_password_hash: _hash, ...rest } = data;
+      data = rest;
+    }
+    return {
+      table: entry.table,
+      op: entry.op,
+      id: entry.id,
+      ...(data && Object.keys(data).length > 0 ? { data } : {}),
+    };
+  });
 }
 
 export function powerSyncMutationId(

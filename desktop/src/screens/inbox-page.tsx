@@ -107,6 +107,8 @@ function resolveInboxTaskFromWorkspace(
     projectName: full.projectName ?? null,
     assigneeId: full.assigneeId ?? null,
     inbox: false,
+    support: full.support ?? null,
+    notification: full.notification ?? null,
   });
 }
 
@@ -585,6 +587,7 @@ function InboxPageBody() {
           trackedMinutes: selectedTaskRecord?.trackedMinutes ?? null,
           trackedDurationSeconds:
             selectedTaskRecord?.trackedDurationSeconds ?? null,
+          support: selectedTaskRecord?.support ?? selectedTask.support ?? false,
           description: fetchedDescription,
           links: parseTaskLinks(
             taskDetails[selectedTask.id]?.links),

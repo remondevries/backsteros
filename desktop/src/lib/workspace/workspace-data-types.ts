@@ -148,6 +148,8 @@ export type DesktopWorkspaceData = {
     links?: TaskLink[];
     /** Default true. Pass false for Today/Tomorrow due-list creates. */
     inbox?: boolean;
+    /** Mark as a Communication support ticket. */
+    support?: boolean;
   }) => Promise<{ id: string; number: number | null }>;
   createProjectTask: (input: {
     projectId: string;
@@ -160,6 +162,8 @@ export type DesktopWorkspaceData = {
     relatedOrganizationIds?: string[];
     dueDate?: string | null;
     links?: TaskLink[];
+    /** Mark as a Communication support ticket. */
+    support?: boolean;
   }) => Promise<{ id: string; number: number | null }>;
   /** Create a copy of an existing task (new id/number; no agent chat). */
   duplicateTask: (

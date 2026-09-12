@@ -17,6 +17,19 @@ function commentApiPath(taskId: string, commentId?: string): string {
     : base;
 }
 
+async function flushCommentCrudUpload(
+  powerSync: WorkspacePowerSync,
+): Promise<void> {
+  if (!powerSync.flushCrudUpload || !shouldSkipRestEntityWrite(powerSync)) {
+    return;
+  }
+  try {
+    await powerSync.flushCrudUpload();
+  } catch (error) {
+    console.warn("[desktop] task comment upload flush deferred", error);
+  }
+}
+
 export function sqliteRowToTaskComment(row: {
   id: string;
   task_id: string;
@@ -75,45 +88,47 @@ export async function createTaskCommentViaPowerSyncOrApi(
   if (!body) throw new Error("Comment body is required");
 
   const parentCommentId = input.parentCommentId?.trim() || null;
-  const sqliteValues: Record<string, unknown> = {
-    task_id: input.taskId,
-    parent_comment_id: parentCommentId,
-    author_user_id: input.author.userId,
-    author_contact_id: input.author.contactId ?? null,
-    author_email: input.author.email,
-    body,
-    resolved_at: null,
-  };
 
-  if (
-    powerSync.ready &&
-    powerSync.createMetadata &&
-    shouldSkipRestEntityWrite(powerSync)
-  ) {
-    const id = await powerSync.createMetadata("task_comments", sqliteValues);
-    return sqliteRowToTaskComment({
-      id,
-      task_id: input.taskId,
-      parent_comment_id: parentCommentId,
-      author_user_id: input.author.userId,
-      author_contact_id: input.author.contactId ?? null,
-      author_email: input.author.email,
-      body,
-      resolved_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      deleted_at: null,
-    });
+  // Comments must reach cloud-core for the portal. PowerSync-only writes often
+  // stayed in SQLite (upload lag / failed flush), so REST is the source of
+  // truth. Keep a local row when PowerSync is up for instant desktop paint.
+  const created = await client.requestJson<TaskComment>(
+    commentApiPath(input.taskId),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        body,
+        parentCommentId,
+      }),
+    },
+  );
+
+  if (powerSync.ready && powerSync.createMetadata) {
+    try {
+      await powerSync.createMetadata(
+        "task_comments",
+        {
+          task_id: created.taskId,
+          parent_comment_id: created.parentCommentId,
+          author_user_id: created.authorUserId,
+          author_contact_id: created.authorContactId,
+          author_email: created.authorEmail,
+          body: created.body,
+          resolved_at: created.resolvedAt,
+          created_at: created.createdAt,
+          updated_at: created.updatedAt,
+          deleted_at: created.deletedAt,
+        },
+        created.id,
+      );
+      await flushCommentCrudUpload(powerSync);
+    } catch (error) {
+      console.warn("[desktop] local comment mirror deferred", error);
+    }
   }
 
-  return client.requestJson<TaskComment>(commentApiPath(input.taskId), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      body,
-      parentCommentId,
-    }),
-  });
+  return created;
 }
 
 export async function patchTaskCommentViaPowerSyncOrApi(
@@ -127,39 +142,7 @@ export async function patchTaskCommentViaPowerSyncOrApi(
     resolvedAt?: string | null;
   },
 ): Promise<TaskComment> {
-  const sqliteValues: Record<string, unknown> = {};
-  if (input.body !== undefined) sqliteValues.body = input.body.trim();
-  if (input.resolvedAt !== undefined) sqliteValues.resolved_at = input.resolvedAt;
-
-  if (powerSync.ready && Object.keys(sqliteValues).length > 0) {
-    try {
-      await powerSync.patchMetadata(
-        "task_comments",
-        input.commentId,
-        sqliteValues,
-      );
-    } catch {
-      if (shouldSkipRestEntityWrite(powerSync)) {
-        throw new Error("Could not update comment locally.");
-      }
-    }
-  }
-
-  if (shouldSkipRestEntityWrite(powerSync)) {
-    const now = new Date().toISOString();
-    return {
-      ...input.existing,
-      body:
-        input.body !== undefined ? input.body.trim() : input.existing.body,
-      resolvedAt:
-        input.resolvedAt !== undefined
-          ? input.resolvedAt
-          : input.existing.resolvedAt,
-      updatedAt: now,
-    };
-  }
-
-  return client.requestJson<TaskComment>(
+  const updated = await client.requestJson<TaskComment>(
     commentApiPath(input.taskId, input.commentId),
     {
       method: "PATCH",
@@ -172,6 +155,29 @@ export async function patchTaskCommentViaPowerSyncOrApi(
       }),
     },
   );
+
+  if (powerSync.ready && powerSync.patchMetadata) {
+    try {
+      const sqliteValues: Record<string, unknown> = {};
+      if (input.body !== undefined) sqliteValues.body = input.body.trim();
+      if (input.resolvedAt !== undefined) {
+        sqliteValues.resolved_at = input.resolvedAt;
+      }
+      sqliteValues.updated_at = updated.updatedAt;
+      if (Object.keys(sqliteValues).length > 0) {
+        await powerSync.patchMetadata(
+          "task_comments",
+          input.commentId,
+          sqliteValues,
+        );
+        await flushCommentCrudUpload(powerSync);
+      }
+    } catch (error) {
+      console.warn("[desktop] local comment patch mirror deferred", error);
+    }
+  }
+
+  return updated;
 }
 
 async function softDeleteTaskCommentLocally(
@@ -193,21 +199,24 @@ export async function deleteTaskCommentViaPowerSyncOrApi(
     replyIds: string[];
   },
 ): Promise<void> {
-  const deletedAt = new Date().toISOString();
-  const idsToDelete = [
-    input.comment.id,
-    ...input.replyIds.filter((id) => id !== input.comment.id),
-  ];
-
-  if (powerSync.ready && shouldSkipRestEntityWrite(powerSync)) {
-    for (const id of idsToDelete) {
-      await softDeleteTaskCommentLocally(powerSync, id, deletedAt);
-    }
-    return;
-  }
-
   await client.requestJson<void>(
     commentApiPath(input.taskId, input.comment.id),
     { method: "DELETE" },
   );
+
+  if (powerSync.ready && shouldSkipRestEntityWrite(powerSync)) {
+    const deletedAt = new Date().toISOString();
+    const idsToDelete = [
+      input.comment.id,
+      ...input.replyIds.filter((id) => id !== input.comment.id),
+    ];
+    try {
+      for (const id of idsToDelete) {
+        await softDeleteTaskCommentLocally(powerSync, id, deletedAt);
+      }
+      await flushCommentCrudUpload(powerSync);
+    } catch (error) {
+      console.warn("[desktop] local comment delete mirror deferred", error);
+    }
+  }
 }

@@ -4,7 +4,10 @@ import { backsterosEntityListFingerprint } from "./backsterosEntityFingerprint";
 import { createBacksterosSharedQuery, useBacksterosSharedQuery } from "./backsterosQueryStore";
 import { fetchBacksterosInboxAttentionTasks, fetchBacksterosTask } from "./client";
 import { isBacksterosInboxMemberTask, mergeBacksterosInboxTasksWithWorking } from "./inboxDue";
+import { applyPendingBacksterosTaskStatuses, pendingStatusPatch } from "./pendingTaskStatus";
+import { settleBoundChatsForCompletedTasks } from "./settleTaskChatOnComplete";
 import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
+import { upsertBacksterosTaskInList } from "./taskListUpsert";
 import type { BacksterosTask } from "./types";
 import type { BacksterosProjectTasksState } from "./useBacksterosProjectTasks";
 import { useBacksterosDisplayedWorkingTaskIds } from "./useBacksterosAgentPresence";
@@ -16,7 +19,13 @@ const EMPTY_WORKING_TASK_ID_SET: ReadonlySet<string> = new Set();
 const EMPTY_WORKING_TASKS_BY_ID: ReadonlyMap<string, BacksterosTask> = new Map();
 
 const inboxQuery = createBacksterosSharedQuery({
-  fetch: fetchBacksterosInboxAttentionTasks,
+  fetch: async (signal) => {
+    const tasks = applyPendingBacksterosTaskStatuses(
+      await fetchBacksterosInboxAttentionTasks(signal),
+    );
+    settleBoundChatsForCompletedTasks(tasks);
+    return tasks;
+  },
   fingerprint: backsterosEntityListFingerprint,
   errorMessage: "Failed to load BacksterOS inbox",
   softPollIntervalMs: BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS,
@@ -137,6 +146,7 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
 
   const patchLocalTask = useCallback(
     (taskId: string, patch: LocalTaskPatch) => {
+      pendingStatusPatch(taskId, patch);
       inboxQuery.patchReadyData((tasks) => {
         let changed = false;
         const next = tasks.flatMap((task) => {
@@ -166,6 +176,51 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
     applySortOrderPatches,
     workingTaskIds,
   };
+}
+
+/**
+ * Patch status in the shared inbox cache. No-ops while the query is not ready.
+ */
+export function patchBacksterosInboxTaskStatusLocal(taskId: string, status: string): void {
+  pendingStatusPatch(taskId, { status });
+  inboxQuery.patchReadyData((tasks) => {
+    let changed = false;
+    const next = tasks.flatMap((task) => {
+      if (task.id !== taskId) return [task];
+      changed = true;
+      const updated = { ...task, status };
+      // Membership without live working ids — attention statuses (incl. in_review)
+      // stay; others drop if they no longer qualify.
+      if (isBacksterosInboxMemberTask(updated)) {
+        return [updated];
+      }
+      return [];
+    });
+    return changed ? next : tasks;
+  });
+}
+
+/**
+ * Optimistically insert/replace/remove a task in the shared inbox cache.
+ * No-ops while the inbox query is not ready (rail not mounted yet).
+ */
+export function upsertBacksterosInboxTaskLocal(
+  task: BacksterosTask,
+  workingTaskIds: ReadonlySet<string> = EMPTY_WORKING_TASK_ID_SET,
+): void {
+  pendingStatusPatch(task.id, { status: task.status });
+  inboxQuery.patchReadyData((tasks) => {
+    const member = isBacksterosInboxMemberTask(task, { workingTaskIds });
+    const index = tasks.findIndex((entry) => entry.id === task.id);
+    if (index >= 0) {
+      if (!member) {
+        return tasks.filter((entry) => entry.id !== task.id);
+      }
+      return upsertBacksterosTaskInList(tasks, task);
+    }
+    if (!member) return tasks;
+    return upsertBacksterosTaskInList(tasks, task);
+  });
 }
 
 /** Test helper. */

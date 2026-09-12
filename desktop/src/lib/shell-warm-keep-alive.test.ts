@@ -10,6 +10,7 @@ import {
   keepAliveSidePanelSurface,
   lastHrefForKeepAliveSurface,
   markKeepAliveSurfaceMounted,
+  rememberCommunicationPanelSelectionHref,
   rememberInboxPanelSelectionHref,
   rememberKeepAliveHref,
   resetKeepAliveForTests,
@@ -26,6 +27,7 @@ afterEach(() => {
   resetKeepAliveForTests();
   rememberSectionEntryHrefs({
     inbox: null,
+    communication: null,
     contacts: null,
     organizations: null,
     letters: null,
@@ -276,4 +278,29 @@ test("inbox-sourced email hrefs update the warm inbox selection", () => {
   );
   assert.equal(rememberInboxPanelSelectionHref("/email/box/msg"), false);
   assert.equal(rememberInboxPanelSelectionHref("/inbox/in-2"), false);
+});
+
+test("communication-sourced email hrefs update the warm communication selection", () => {
+  markKeepAliveSurfaceMounted("communication");
+  rememberKeepAliveHref("communication", "/communication/sup-1", "");
+  assert.equal(
+    rememberCommunicationPanelSelectionHref(
+      "/email/box/msg?list=communication",
+    ),
+    true,
+  );
+  assert.equal(
+    lastHrefForKeepAliveSurface("communication"),
+    "/email/box/msg?list=communication",
+  );
+  assert.equal(
+    rememberCommunicationPanelSelectionHref(
+      "/email/box/msg?list=communication",
+    ),
+    false,
+  );
+  assert.equal(
+    rememberCommunicationPanelSelectionHref("/email/box/msg?list=inbox"),
+    false,
+  );
 });

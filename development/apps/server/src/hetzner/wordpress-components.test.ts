@@ -10,8 +10,8 @@ import {
 function appWith(components: WordpressAppRecord["components"]): WordpressAppRecord {
   return {
     serverId: "165290762",
-    service: "ov-wordpress",
-    siteRoot: "/home/deploy/sites/ov",
+    service: "oosterlaarverhoeven-wordpress",
+    siteRoot: "/home/deploy/sites/oosterlaarverhoeven",
     components,
     webhookToken: "test-token",
     updatedAt: "2026-09-10T00:00:00.000Z",
@@ -106,9 +106,9 @@ describe("resolveComponentDeploys", () => {
 });
 
 describe("siteRootNameHints", () => {
-  it("derives ov from ov-wordpress", () => {
-    expect(siteRootNameHints("ov-wordpress")).toEqual(
-      expect.arrayContaining(["ov-wordpress", "ov"]),
+  it("derives site slug from *-wordpress service", () => {
+    expect(siteRootNameHints("oosterlaarverhoeven-wordpress")).toEqual(
+      expect.arrayContaining(["oosterlaarverhoeven-wordpress", "oosterlaarverhoeven"]),
     );
   });
 });

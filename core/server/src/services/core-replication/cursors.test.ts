@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { compareCursor, maxCursor } from "./cursor-order.js";
+import { compareCursor, maxCursor, toIso } from "./cursor-order.js";
 import type { ReplicationCursor } from "./types.js";
 
 describe("replication cursors", () => {
@@ -64,5 +64,31 @@ describe("replication cursors", () => {
       compareCursor(localRow, pullTip) < 0,
       "local row is behind pull tip (would be lost with a shared cursor)",
     );
+  });
+
+  it("preserves postgres microseconds in toIso", () => {
+    assert.equal(
+      toIso("2026-09-10 05:36:56.851323+00"),
+      "2026-09-10T05:36:56.851323Z",
+    );
+    assert.ok(
+      compareCursor(
+        { updatedAt: "2026-09-10T05:36:56.851323Z", rowId: "a" },
+        { updatedAt: "2026-09-10T05:36:56.851Z", rowId: "z" },
+      ) > 0,
+    );
+  });
+
+  it("maxCursor advances when candidate has later fractional seconds", () => {
+    const since: ReplicationCursor = {
+      updatedAt: "2026-09-10T05:36:56.851Z",
+      rowId: "LyWHfLHd_LuT7b9QPKwp2",
+    };
+    const pageLast: ReplicationCursor = {
+      updatedAt: "2026-09-10T05:36:56.851323Z",
+      rowId: "-5I0GsCA5Jy8xDTu9-2cL",
+    };
+    // pageLast is later in true time even if id sorts before since.rowId
+    assert.deepEqual(maxCursor(since, pageLast), pageLast);
   });
 });

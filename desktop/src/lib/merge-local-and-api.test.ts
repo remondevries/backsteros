@@ -10,7 +10,9 @@ import {
   fillMissingLinkedCommitShasFromApi,
   fillMissingMeetingPropertiesFromApi,
   fillMissingNumberFromApi,
+  fillMissingTaskFlagsFromApi,
   fillMissingTypeFromApi,
+  applyLiveEntityOverlay,
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
   mergeLocalDocumentsWithLiveApi,
@@ -51,6 +53,26 @@ test("mergeLocalWithPendingApiCreates keeps optimistic API-only rows", () => {
   assert.equal(merged[1]?.title, "local");
 });
 
+test("mergeLocalWithPendingApiCreates keeps CLI-created projects in the list", () => {
+  // Mirrors desktop rawProjects: local SQLite already has membership, so
+  // resolveLocalOrApiRows alone would drop a brand-new API project.
+  const local = [{ id: "ld", key: "LD" }];
+  const api = [
+    { id: "ld", key: "LD" },
+    { id: "lh", key: "LH" },
+  ];
+  const resolved = resolveLocalOrApiRows(local, api);
+  assert.deepEqual(
+    resolved.map((row) => row.id),
+    ["ld"],
+  );
+  const merged = mergeLocalWithPendingApiCreates(resolved, api);
+  assert.deepEqual(
+    merged.map((row) => row.key),
+    ["LH", "LD"],
+  );
+});
+
 test("mergeLocalWithPendingApiCreates surfaces agent document creates until local sync", () => {
   const localDocs = [
     { id: "doc-1", type: "project", title: "Existing" },
@@ -69,7 +91,77 @@ test("mergeLocalWithPendingApiCreates surfaces agent document creates until loca
   );
 });
 
-test("mergeLocalDocumentsWithLiveApi overlays newer API metadata (moves)", () => {
+test("applyLiveEntityOverlay overlays newer SSE metadata (moves)", () => {
+  const localDocs = [
+    {
+      id: "doc-1",
+      parentId: "folder-a",
+      title: "Note",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const overlay = new Map([
+    [
+      "doc-1",
+      {
+        id: "doc-1",
+        parentId: "folder-b",
+        title: "Note",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      "doc-2",
+      {
+        id: "doc-2",
+        parentId: null as string | null,
+        title: "Agent create",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  ]);
+  const merged = applyLiveEntityOverlay(localDocs, overlay);
+  assert.equal(merged.find((row) => row.id === "doc-1")?.parentId, "folder-b");
+  assert.ok(merged.some((row) => row.id === "doc-2"));
+});
+
+test("applyLiveEntityOverlay keeps newer local optimistic edits", () => {
+  const localDocs = [
+    {
+      id: "doc-1",
+      title: "Local rename",
+      updatedAt: "2026-01-03T00:00:00.000Z",
+    },
+  ];
+  const overlay = new Map([
+    [
+      "doc-1",
+      {
+        id: "doc-1",
+        title: "Stale SSE",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  ]);
+  const merged = applyLiveEntityOverlay(localDocs, overlay);
+  assert.equal(merged[0]?.title, "Local rename");
+});
+
+test("applyLiveEntityOverlay hides deleted ids until PowerSync drops them", () => {
+  const localDocs = [
+    { id: "doc-1", title: "Gone", updatedAt: "2026-01-01T00:00:00.000Z" },
+    { id: "doc-2", title: "Keep", updatedAt: "2026-01-01T00:00:00.000Z" },
+  ];
+  const merged = applyLiveEntityOverlay(localDocs, null, {
+    deletedIds: new Set(["doc-1"]),
+  });
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["doc-2"],
+  );
+});
+
+test("mergeLocalDocumentsWithLiveApi adapter still overlays list rows", () => {
   const localDocs = [
     {
       id: "doc-1",
@@ -90,40 +182,7 @@ test("mergeLocalDocumentsWithLiveApi overlays newer API metadata (moves)", () =>
   assert.equal(merged[0]?.parentId, "folder-b");
 });
 
-test("mergeLocalDocumentsWithLiveApi keeps newer local optimistic edits", () => {
-  const localDocs = [
-    {
-      id: "doc-1",
-      title: "Local rename",
-      updatedAt: "2026-01-03T00:00:00.000Z",
-    },
-  ];
-  const apiDocs = [
-    {
-      id: "doc-1",
-      title: "Stale API",
-      updatedAt: "2026-01-02T00:00:00.000Z",
-    },
-  ];
-  const merged = mergeLocalDocumentsWithLiveApi(localDocs, apiDocs);
-  assert.equal(merged[0]?.title, "Local rename");
-});
-
-test("mergeLocalDocumentsWithLiveApi hides deleted ids until PowerSync drops them", () => {
-  const localDocs = [
-    { id: "doc-1", title: "Gone", updatedAt: "2026-01-01T00:00:00.000Z" },
-    { id: "doc-2", title: "Keep", updatedAt: "2026-01-01T00:00:00.000Z" },
-  ];
-  const merged = mergeLocalDocumentsWithLiveApi(localDocs, null, {
-    deletedIds: new Set(["doc-1"]),
-  });
-  assert.deepEqual(
-    merged.map((row) => row.id),
-    ["doc-2"],
-  );
-});
-
-test("resolveLocalOrApiRows keeps local membership but overlays newer API patches", () => {
+test("resolveLocalOrApiRows keeps local membership and ignores newer API patches", () => {
   const resolved = resolveLocalOrApiRows(
     [
       {
@@ -155,8 +214,8 @@ test("resolveLocalOrApiRows keeps local membership but overlays newer API patche
     ],
   );
   assert.equal(resolved.length, 2);
-  assert.equal(resolved[0]?.status, "in_progress");
-  assert.equal(resolved[0]?.title, "api");
+  assert.equal(resolved[0]?.status, "triage");
+  assert.equal(resolved[0]?.title, "local");
   assert.equal(resolved[1]?.title, "local-only");
 });
 
@@ -179,7 +238,7 @@ test("preferNewerByUpdatedAt prefers current on equal updatedAt (BOD-62)", () =>
   );
 });
 
-test("resolveLocalOrApiRows keeps local in_progress when API tie has stale backlog (BOD-62)", () => {
+test("resolveLocalOrApiRows keeps local in_progress when API has stale backlog (BOD-62)", () => {
   const stamp = "2026-09-08T12:00:00.000Z";
   const resolved = resolveLocalOrApiRows(
     [
@@ -203,19 +262,19 @@ test("resolveLocalOrApiRows keeps local in_progress when API tie has stale backl
   assert.equal(resolved[0]?.dueDate, "2026-09-08T21:59:59.999Z");
 });
 
-test("resolveLocalOrApiRows keeps newer local over stale API hydrate", () => {
+test("resolveLocalOrApiRows keeps local even when API row is newer", () => {
   const resolved = resolveLocalOrApiRows(
     [
       {
         id: "1",
-        updatedAt: "2026-01-03T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
         status: "completed",
       },
     ],
     [
       {
         id: "1",
-        updatedAt: "2026-01-02T00:00:00.000Z",
+        updatedAt: "2026-01-03T00:00:00.000Z",
         status: "triage",
       },
     ],
@@ -276,6 +335,50 @@ test("fillMissingAgentInboxApprovedAtFromApi keeps local approval when present",
     [{ id: "1", agentInboxApprovedAt: "2026-08-28T10:00:00.000Z" }],
   );
   assert.equal(filled[0]?.agentInboxApprovedAt, "2026-08-28T09:00:00.000Z");
+});
+
+test("fillMissingTaskFlagsFromApi copies notification when local PowerSync lagged", () => {
+  const filled = fillMissingTaskFlagsFromApi(
+    [
+      {
+        id: "1",
+        support: true,
+        notification: false,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        support: true,
+        notification: true,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.notification, true);
+});
+
+test("fillMissingTaskFlagsFromApi prefers newer API clear of notification", () => {
+  const filled = fillMissingTaskFlagsFromApi(
+    [
+      {
+        id: "1",
+        support: true,
+        notification: true,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        support: true,
+        notification: false,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.notification, false);
 });
 
 test("fillMissingDueDatesFromApi copies scheduling when local omitted due date", () => {

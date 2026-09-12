@@ -383,6 +383,16 @@ export const taskSchema = z.object({
   dueEndDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable(),
   inbox: z.boolean(),
+  /**
+   * Client support ticket (portal Support / Communication).
+   * Email threads use `email_threads`, not this flag.
+   */
+  support: z.boolean(),
+  /**
+   * Notification-style task. Same workflow as normal work; UI can present
+   * and filter these differently from project/support tasks.
+   */
+  notification: z.boolean(),
   links: z.array(taskLinkSchema),
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
@@ -427,6 +437,10 @@ export const createTaskSchema = z.object({
   dueEndDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable().optional(),
   inbox: z.boolean().optional(),
+  /** Mark as a client support ticket (defaults false). */
+  support: z.boolean().optional(),
+  /** Mark as a notification-style task (defaults false). */
+  notification: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
   /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
@@ -499,6 +513,12 @@ export const createTaskCommentSchema = z.object({
    * `agent` stores a null author user so the UI shows "Agent".
    */
   activityActor: z.enum(["user", "agent"]).optional(),
+  /**
+   * Optional contact to attribute as author (API-key callers only, e.g. client portal
+   * or BacksterDEV agent contact profile). Takes precedence over `activityActor: "agent"`.
+   * Ignored for session/user auth.
+   */
+  authorContactId: z.string().nullable().optional(),
 });
 
 export const updateTaskCommentSchema = z
@@ -857,6 +877,55 @@ export const calendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
+/** Per-contact client portal preferences / ACL. */
+export const contactPortalSettingsSchema = z.preprocess(
+  (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return value;
+    }
+    const raw = value as Record<string, unknown>;
+    if (Array.isArray(raw.languages)) return raw;
+    // Migrate legacy single `language` into `languages`.
+    if (typeof raw.language === "string" && raw.language.trim()) {
+      const { language: _legacy, ...rest } = raw;
+      return { ...rest, languages: [raw.language] };
+    }
+    return raw;
+  },
+  z.object({
+    /** Preferred portal languages (flag chips; first is primary when relevant). */
+    languages: z
+      .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
+      .default([]),
+    /**
+     * Project ids visible in the portal.
+     * `null` = all organization projects (default); `[]` = none; otherwise allowlist.
+     */
+    enabledProjectIds: z.array(z.string().min(1)).nullable().default(null),
+    financials: z.boolean().default(true),
+    support: z.boolean().default(true),
+    /** Allow creating support tickets from the portal. */
+    canAddTickets: z.boolean().default(true),
+    /** Allow creating tasks on project boards from the portal. */
+    canAddTasks: z.boolean().default(true),
+  }),
+);
+export type ContactPortalSettings = z.infer<typeof contactPortalSettingsSchema>;
+
+export const DEFAULT_CONTACT_PORTAL_SETTINGS: ContactPortalSettings = {
+  languages: [],
+  enabledProjectIds: null,
+  financials: true,
+  support: true,
+  canAddTickets: true,
+  canAddTasks: true,
+};
+
+export const portalAuthLoginSchema = z.object({
+  username: z.string().trim().min(1).max(128),
+  password: z.string().min(8).max(256),
+});
+
 const contactWritableFieldsSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
@@ -919,6 +988,19 @@ const contactWritableFieldsSchema = z.object({
   /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
   avatarStorageKey: z.string().nullable().optional(),
   avatarContentType: z.string().nullable().optional(),
+  /** Client portal login username (unique per workspace when set). */
+  portalUsername: z.string().trim().min(1).max(128).nullable().optional(),
+  /**
+   * Write-only portal password. Null/empty clears the stored hash.
+   * Never returned from the API — see `portalPasswordSet`.
+   */
+  portalPassword: z
+    .union([z.string().min(8).max(256), z.literal(""), z.null()])
+    .optional(),
+  /** Set by sync replication after hashing — not for public clients. */
+  portalPasswordHash: z.string().nullable().optional(),
+  /** Portal module ACL / language for this contact. */
+  portalSettings: contactPortalSettingsSchema.nullable().optional(),
 });
 
 export const contactInputSchema = contactWritableFieldsSchema.superRefine(
@@ -973,6 +1055,10 @@ export const contactSchema = z.object({
   socialAccounts: z.array(contactSocialAccountSchema),
   birthday: calendarDateSchema.nullable().optional(),
   languages: z.array(z.enum(["nl", "en", "de", "es", "fr", "pl"])),
+  portalUsername: z.string().nullable().optional(),
+  /** True when a portal password hash is stored (hash itself is never returned). */
+  portalPasswordSet: z.boolean().optional(),
+  portalSettings: contactPortalSettingsSchema.nullable().optional(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
   deletedAt: nullableIsoDateSchema,

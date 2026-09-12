@@ -1784,6 +1784,194 @@
   min-width: 0;
 }
 
+.contact-portal-tab__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Title sits close to section copy; more room before the controls. */
+.contact-portal-tab .entity-overview-subgroup {
+  gap: 4px;
+}
+
+.contact-portal-tab .entity-overview-subgroup__fields {
+  gap: 8px;
+}
+
+.contact-portal-tab__hint {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.contact-portal-tab__hint + .contact-portal-tab__hint {
+  margin-top: -8px;
+}
+
+.contact-portal-tab__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-portal-tab__field-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.contact-portal-tab__credential {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.contact-portal-tab__username-dropdown {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.contact-portal-tab__credential-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.contact-portal-tab__credential.has-action .contact-portal-tab__credential-control,
+.contact-portal-tab__password .contact-portal-tab__password-input {
+  padding-right: 36px;
+}
+
+.contact-portal-tab__password.has-confirm .contact-portal-tab__password-input {
+  padding-right: 88px;
+}
+
+.contact-portal-tab__credential-actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.contact-portal-tab__credential-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.contact-portal-tab__password-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.contact-portal-tab__password-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.contact-portal-tab__password-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.contact-portal-tab__password-saved {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: #2f9e44;
+}
+
+.contact-portal-tab__credential-action:hover {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.contact-portal-tab__toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.contact-portal-tab__toggle-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contact-portal-tab__toggle-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.contact-portal-tab__toggle-description {
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.contact-portal-tab__project-line {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.contact-portal-tab__project-key {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.contact-portal-tab__project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .contact-social-accounts__row-top {
   display: flex;
   min-width: 0;

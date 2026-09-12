@@ -86,6 +86,12 @@ export type InboxSidePanelViewProps = {
   /** When true for an item, its status icon becomes the agent-working pulse. */
   isItemAgentWorking?: (item: InboxListItem) => boolean;
   emptyLabel?: string;
+  /** Side panel header title (defaults to Inbox). */
+  title?: string;
+  /** Override list hrefs (e.g. Communication routes instead of Inbox). */
+  hrefById?: ReadonlyMap<string, string>;
+  /** Resolve selected slug from pathname (defaults to Inbox `/inbox/$slug`). */
+  resolveSelectedSlug?: (pathname: string) => string | null;
   /** Hide the local "Inbox" pane header when a parent chrome breadcrumb is used. */
   showHeader?: boolean;
   /**
@@ -127,6 +133,9 @@ export function InboxSidePanelView({
   renderTitleTrailing,
   isItemAgentWorking,
   emptyLabel = "Your inbox is empty.",
+  title = "Inbox",
+  hrefById: hrefByIdProp,
+  resolveSelectedSlug = getSelectedInboxSlugFromPathname,
   showHeader = true,
   minimized = false,
   highlightedId = null,
@@ -136,7 +145,7 @@ export function InboxSidePanelView({
   const [composing, setComposing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
+  const selectedSlug = resolveSelectedSlug(pathname);
   const emailPath = parseEmailMessagePath(pathname);
 
   const selectedItemId = useMemo(() => {
@@ -201,7 +210,10 @@ export function InboxSidePanelView({
     }));
   }, [attentionGroups, collapsedGroups, items, minimized, useVirtualList]);
 
-  const hrefById = useMemo(() => buildInboxItemHrefById(items), [items]);
+  const hrefById = useMemo(
+    () => hrefByIdProp ?? buildInboxItemHrefById(items),
+    [hrefByIdProp, items],
+  );
 
   function renderRow(item: InboxListItem) {
     const href = hrefById.get(item.id) ?? getInboxItemHref(item, items);
@@ -233,7 +245,7 @@ export function InboxSidePanelView({
     >
       {showHeader ? (
         <ContentSidePanelHeader
-          title="Inbox"
+          title={title}
           actions={
             !minimized && (onCreateTask || onComposeEmail) ? (
               <>
@@ -251,7 +263,7 @@ export function InboxSidePanelView({
                   <button
                     type="button"
                     className="app-side-panel-section-action"
-                    aria-label="Add inbox task"
+                    aria-label={`Add ${title.toLowerCase()} task`}
                     onClick={() => {
                       setCreateError(null);
                       setComposing(true);

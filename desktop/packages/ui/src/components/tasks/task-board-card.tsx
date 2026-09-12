@@ -36,6 +36,10 @@ export type TaskBoardCardTask = {
   emailPartyLabel?: string | null;
   emailMailboxLabel?: string | null;
   emailMailboxAvatarSrc?: string | null;
+  /** Support ticket — support-ring glyph with status color. */
+  support?: boolean | null;
+  /** Notification-style task — bell glyph with status color. */
+  notification?: boolean | null;
 };
 
 export type TaskBoardCardProps = {
@@ -227,6 +231,8 @@ export function TaskBoardCardComponent({
                   status={status}
                   size={14}
                   working={agentWorking}
+                  support={Boolean(task.support)}
+                  notification={Boolean(task.notification)}
                 />
               </button>
             )}

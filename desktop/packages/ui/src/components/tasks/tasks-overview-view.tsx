@@ -288,7 +288,9 @@ export function TasksOverviewView({
         (result) => {
           if (!result || typeof result !== "object") return;
           const nextNumber =
-            "number" in result && result.number !== undefined
+            "number" in result &&
+            result.number !== undefined &&
+            result.number !== null
               ? result.number
               : undefined;
           const nextProjectId =
@@ -296,7 +298,10 @@ export function TasksOverviewView({
               ? result.projectId
               : undefined;
           if (nextNumber === undefined && nextProjectId === undefined) return;
-          const patch = {
+          const patch: {
+            number?: number;
+            projectId?: string | null;
+          } = {
             ...(nextNumber !== undefined ? { number: nextNumber } : {}),
             ...(nextProjectId !== undefined
               ? { projectId: nextProjectId }

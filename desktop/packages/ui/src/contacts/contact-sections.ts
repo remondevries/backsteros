@@ -1,6 +1,7 @@
 export const CONTACT_SECTION_IDS = [
   "overview",
   "details",
+  "portal",
   "tasks",
   "letters",
 ] as const;
@@ -15,7 +16,7 @@ export type ContactSectionConfig = {
 };
 
 /**
- * Tabs shown on the standalone contact profile card (Activity / Details).
+ * Tabs shown on the standalone contact profile card (Activity / Details / Portal).
  * A "More..." tab is appended in the UI to expand the workspace.
  * Tasks + Letters live in that expanded workspace.
  */
@@ -29,9 +30,17 @@ export const CONTACT_CARD_SECTIONS: readonly ContactSectionConfig[] = [
   },
 ];
 
+export const CONTACT_PORTAL_SECTION: ContactSectionConfig = {
+  id: "portal",
+  label: "Portal",
+  segment: "portal",
+  supportsDetail: false,
+};
+
 /** All contact sections including tasks/letters (routing + org-scoped card). */
 export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
   ...CONTACT_CARD_SECTIONS,
+  CONTACT_PORTAL_SECTION,
   { id: "tasks", label: "Tasks", segment: "tasks", supportsDetail: true },
   { id: "letters", label: "Letters", segment: "letters", supportsDetail: true },
 ];
@@ -42,8 +51,18 @@ export function isContactSectionId(value: string): value is ContactSectionId {
 
 export function isContactCardSectionId(
   value: string,
-): value is "overview" | "details" {
-  return value === "overview" || value === "details";
+): value is "overview" | "details" | "portal" {
+  return value === "overview" || value === "details" || value === "portal";
+}
+
+/** Card tabs for a contact — inserts Portal between Details and More when Clients. */
+export function resolveContactCardSections(options?: {
+  showPortal?: boolean;
+}): ContactSectionConfig[] {
+  if (!options?.showPortal) {
+    return [...CONTACT_CARD_SECTIONS];
+  }
+  return [...CONTACT_CARD_SECTIONS, CONTACT_PORTAL_SECTION];
 }
 
 /** Parse a URL segment (`tasks`, `letters`, …). Empty / missing → overview. */

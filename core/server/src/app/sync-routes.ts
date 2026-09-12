@@ -253,6 +253,21 @@ export function registerSyncRoutes(app: Hono) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json({ error: "Project not found", code: "not_found" }, 404);
         }
+        // Transient claim/ordering races — keep the upload queue retrying.
+        if (
+          error instanceof Error &&
+          (error.message === "POWERSYNC_MUTATION_CLAIM_RACE" ||
+            error.message === "GROUP_NOT_FOUND" ||
+            error.message === "SUBJECT_NOT_FOUND")
+        ) {
+          return c.json(
+            {
+              error: error.message,
+              code: "powersync_retry",
+            },
+            503,
+          );
+        }
         console.error(
           "[powersync/write] batch failed",
           error instanceof Error ? error.message : error,

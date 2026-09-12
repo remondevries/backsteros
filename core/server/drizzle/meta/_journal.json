@@ -638,6 +638,27 @@
       "when": 1792330000000,
       "tag": "0099_task_linked_commit_shas",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792700000000,
+      "tag": "0100_task_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0101_task_notification",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792900000000,
+      "tag": "0102_contact_portal",
+      "breakpoints": true
     }
   ]
 }

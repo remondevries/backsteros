@@ -189,6 +189,11 @@ body[data-keyboard-nav-hover="suppressed"]
   overflow: hidden;
 }
 
+.inbox-list-item-meta-label > .inbox-list-item-truncate {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .inbox-list-item {
   width: 100%;
 }
@@ -253,8 +258,26 @@ body[data-keyboard-nav-hover="suppressed"]
 .inbox-list-item-title-wrap--stack,
 .email-side-panel-title-stack {
   flex-direction: column;
-  align-items: flex-start;
+  /* Stretch children so title/org labels get a real width bound — otherwise
+     `align-items: flex-start` lets the title grow to max-content and the card
+     clips it without ellipsis. */
+  align-items: stretch;
   gap: 1px;
+}
+
+.inbox-list-item-title-wrap--stack > .inbox-list-item-title,
+.email-side-panel-title-stack > .inbox-list-item-title {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.inbox-list-item-title .text-shimmer {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbox-list-item-title-line {

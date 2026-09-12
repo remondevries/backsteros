@@ -12,12 +12,34 @@ import {
   type TokenProvider,
 } from "@backsteros/api-client";
 
+import { sseUrlForApiUrl } from "./env";
+
 type ApiContextValue = {
   client: BacksterosApiClient;
   apiUrl: string;
 };
 
 const ApiContext = createContext<ApiContextValue | null>(null);
+
+function createDesktopFetch(apiUrl: string): typeof globalThis.fetch {
+  const sseBase = sseUrlForApiUrl(apiUrl);
+  const apiBase = apiUrl.replace(/\/$/, "");
+  if (sseBase === apiBase) {
+    return globalThis.fetch.bind(globalThis);
+  }
+  return (input, init) => {
+    const raw =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    if (raw.includes("/events") && raw.startsWith(apiBase)) {
+      return globalThis.fetch(`${sseBase}${raw.slice(apiBase.length)}`, init);
+    }
+    return globalThis.fetch(input as RequestInfo, init);
+  };
+}
 
 export function ApiProvider({
   children,
@@ -42,6 +64,7 @@ export function ApiProvider({
         getToken: hasTokenProvider
           ? () => getTokenRef.current?.()
           : undefined,
+        fetch: createDesktopFetch(apiUrl),
       }),
     }),
     [apiUrl, hasTokenProvider],

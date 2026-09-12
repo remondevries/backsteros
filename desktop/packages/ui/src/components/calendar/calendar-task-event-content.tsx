@@ -109,6 +109,8 @@ export function CalendarTaskEventContent({
         }
         size={12}
         className="task-calendar-event__status-icon"
+        support={Boolean(arg.event.extendedProps.support)}
+        notification={Boolean(arg.event.extendedProps.notification)}
         inboxUpdatedAt={
           "inboxUpdatedAt" in arg.event.extendedProps
             ? (arg.event.extendedProps.inboxUpdatedAt as

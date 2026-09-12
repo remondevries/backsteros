@@ -22,6 +22,7 @@ import {
   CalendarPage,
   CalendarScopedMeetingDetailPage,
   CalendarScopedTaskDetailPage,
+  CommunicationPage,
   ContactScopedLetterPage,
   ContactScopedMeetingDetailPage,
   ContactScopedTaskDetailPage,
@@ -694,6 +695,26 @@ const socialDetailRoute = createRoute({
   ),
 });
 
+const communicationRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "communication",
+  component: () => (
+    <LazyRoute>
+      <CommunicationPage />
+    </LazyRoute>
+  ),
+});
+
+const communicationDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "communication/$itemId",
+  component: () => (
+    <LazyRoute>
+      <CommunicationPage />
+    </LazyRoute>
+  ),
+});
+
 const contactsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "contacts",
@@ -851,6 +872,8 @@ export const routeTree = rootRoute.addChildren([
     organizationSectionRoute,
     socialRoute,
     socialDetailRoute,
+    communicationRoute,
+    communicationDetailRoute,
     contactsRoute,
     contactTaskDetailRoute,
     contactLetterDetailRoute,

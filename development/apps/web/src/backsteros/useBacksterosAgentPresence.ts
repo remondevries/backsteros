@@ -15,6 +15,47 @@ import { useBacksterosTaskChatStore } from "./taskChatStore";
 const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
 /**
+ * After we clear presence locally, ignore poll/SSE re-adds until this TTL
+ * (covers core DELETE lag + presence TTL). Fresh local working clears it.
+ */
+const PRESENCE_CLEAR_SUPPRESS_MS = 60_000;
+const presenceClearSuppressedUntil = new Map<string, number>();
+
+function suppressRemotePresenceReadd(taskId: string): void {
+  presenceClearSuppressedUntil.set(taskId, Date.now() + PRESENCE_CLEAR_SUPPRESS_MS);
+}
+
+function clearPresenceReaddSuppression(taskId: string): void {
+  presenceClearSuppressedUntil.delete(taskId);
+}
+
+function isRemotePresenceReaddSuppressed(taskId: string, now = Date.now()): boolean {
+  const until = presenceClearSuppressedUntil.get(taskId);
+  if (until == null) return false;
+  if (until <= now) {
+    presenceClearSuppressedUntil.delete(taskId);
+    return false;
+  }
+  return true;
+}
+
+function filterSuppressedRemoteWorkingTaskIds(taskIds: ReadonlySet<string>): ReadonlySet<string> {
+  if (taskIds.size === 0) return EMPTY_WORKING_TASK_IDS;
+  const now = Date.now();
+  let changed = false;
+  const next = new Set<string>();
+  for (const taskId of taskIds) {
+    if (isRemotePresenceReaddSuppressed(taskId, now)) {
+      changed = true;
+      continue;
+    }
+    next.add(taskId);
+  }
+  if (!changed) return taskIds;
+  return next.size === 0 ? EMPTY_WORKING_TASK_IDS : next;
+}
+
+/**
  * Fallback poll when SSE is down. SSE is primary; keep this slow to avoid
  * rewriting the whole task list every few seconds.
  */
@@ -45,6 +86,7 @@ export function mergeBacksterosDisplayedWorkingTaskIds(input: {
  * immediately so the pulse stops without waiting for the next poll.
  */
 export function clearBacksterosDisplayedAgentPresence(taskId: string): void {
+  suppressRemotePresenceReadd(taskId);
   useBacksterosAgentPresenceStore.getState().clearRemoteWorkingTaskId(taskId);
   void clearBacksterosTaskAgentPresence(taskId).catch(() => {});
 }
@@ -74,6 +116,7 @@ export function applyBacksterosAgentPresenceSseData(data: string): void {
     const taskId = typeof parsed.taskId === "string" ? parsed.taskId.trim() : "";
     if (!taskId) return;
     if (parsed.live === true) {
+      if (isRemotePresenceReaddSuppressed(taskId)) return;
       useBacksterosAgentPresenceStore.getState().addRemoteWorkingTaskId(taskId);
       return;
     }
@@ -127,6 +170,7 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
       inFlight = (async () => {
         for (const taskId of localWorkingTaskIds) {
           if (missingTasks.has(taskId)) continue;
+          clearPresenceReaddSuppression(taskId);
           published.add(taskId);
           await heartbeat(taskId);
         }
@@ -170,7 +214,9 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
             setRemoteWorkingTaskIds(EMPTY_WORKING_TASK_IDS);
             return;
           }
-          setRemoteWorkingTaskIds(new Set(presence.map((row) => row.taskId)));
+          setRemoteWorkingTaskIds(
+            filterSuppressedRemoteWorkingTaskIds(new Set(presence.map((row) => row.taskId))),
+          );
         })
         .catch(() => {});
     };

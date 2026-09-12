@@ -245,6 +245,25 @@ export const contacts = pgTable(
       .$type<Array<"nl" | "en" | "de" | "es" | "fr" | "pl">>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /** Client portal login username (Clients CRM group contacts). */
+    portalUsername: text("portal_username"),
+    /** scrypt hash of portal password — never expose in public API responses. */
+    portalPasswordHash: text("portal_password_hash"),
+    /**
+     * Portal ACL / prefs for this contact:
+     * `{ languages, enabledProjectIds (null = all), financials, support, canAddTickets, canAddTasks }`.
+     */
+    portalSettings: jsonb("portal_settings")
+      .$type<{
+        languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl">;
+        enabledProjectIds?: string[] | null;
+        financials?: boolean;
+        support?: boolean;
+        canAddTickets?: boolean;
+        canAddTasks?: boolean;
+      }>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -256,6 +275,9 @@ export const contacts = pgTable(
     uniqueIndex("contacts_workspace_number_unique")
       .on(table.workspaceId, table.number)
       .where(sql`${table.deletedAt} is null and ${table.number} is not null`),
+    uniqueIndex("contacts_workspace_portal_username_unique")
+      .on(table.workspaceId, table.portalUsername)
+      .where(sql`${table.deletedAt} is null and ${table.portalUsername} is not null`),
     index("contacts_organization_id_idx").on(table.organizationId),
     index("contacts_email_idx").on(table.workspaceId, table.email),
     index("contacts_birthday_idx").on(table.workspaceId, table.birthday),
@@ -554,6 +576,17 @@ export const tasks = pgTable(
     dueEndDate: timestamp("due_end_date", { withTimezone: true }),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
     inbox: boolean("inbox").notNull().default(false),
+    /**
+     * Portal / client support ticket. Same task workflow as normal work;
+     * Communication UI and portal Support filter on this flag.
+     * (Email stays on `email_threads` — task-shaped metadata + mail extras.)
+     */
+    support: boolean("support").notNull().default(false),
+    /**
+     * Notification-style task. Same workflow as normal work (triage → …),
+     * but UI can filter and present these differently from project/support work.
+     */
+    notification: boolean("notification").notNull().default(false),
     links: jsonb("links")
       .$type<{ id: string; url: string; createdAt: string }[]>()
       .notNull()
@@ -602,6 +635,12 @@ export const tasks = pgTable(
     index("tasks_assignee_id_idx").on(table.assigneeId),
     index("tasks_workspace_due_date_idx").on(table.workspaceId, table.dueDate),
     index("tasks_status_idx").on(table.status),
+    index("tasks_workspace_support_idx")
+      .on(table.workspaceId, table.support)
+      .where(sql`${table.support} = true and ${table.deletedAt} is null`),
+    index("tasks_workspace_notification_idx")
+      .on(table.workspaceId, table.notification)
+      .where(sql`${table.notification} = true and ${table.deletedAt} is null`),
     index("tasks_habit_id_idx").on(table.habitId),
     uniqueIndex("tasks_habit_due_unique")
       .on(table.habitId, table.dueDate)

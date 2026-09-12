@@ -77,6 +77,7 @@ import {
   crmGroupMemberInputSchema,
   createCrmActivityNoteSchema,
   crmActivityFeedQuerySchema,
+  portalAuthLoginSchema,
 } from "@backsteros/contracts";
 
 import {
@@ -96,6 +97,8 @@ import {
   toTaskActivity,
   toTaskComment,
 } from "../lib/mappers.js";
+import { toPublicContact } from "../lib/public-contact.js";
+import { hashPortalPassword, verifyPortalPassword } from "../lib/portal-password.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
 import {
@@ -127,6 +130,7 @@ import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import {
   publishDocumentWorkspaceUpdated,
+  publishProjectWorkspaceUpdated,
   subscribeWorkspaceUpdated,
 } from "../lib/workspace-events.js";
 import { notifyPeerOfDocumentWrite } from "../services/core-replication/nudge.js";
@@ -197,7 +201,7 @@ import {
 } from "../services/sync.js";
 import { newId } from "../lib/crypto.js";
 import { db } from "../db/index.js";
-import { writeActorFromAuth } from "../lib/write-actor.js";
+import { writeActorFromAuth, writeActorForComment } from "../lib/write-actor.js";
 import {
   buildAreaRestPayload,
   buildBankAccountRestPayload,
@@ -342,6 +346,24 @@ const contactSchema = z.object({
     .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
     .max(5)
     .optional(),
+  portalUsername: z.string().trim().min(1).max(128).nullable().optional(),
+  portalPassword: z
+    .union([z.string().min(8).max(256), z.literal(""), z.null()])
+    .optional(),
+  portalSettings: z
+    .object({
+      languages: z
+        .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
+        .optional(),
+      language: z.enum(["en", "nl"]).optional(),
+      enabledProjectIds: z.array(z.string()).nullable().optional(),
+      financials: z.boolean().optional(),
+      support: z.boolean().optional(),
+      canAddTickets: z.boolean().optional(),
+      canAddTasks: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 const areaSchema = z.object({
   name: z.string().min(1).max(255),
@@ -400,6 +422,25 @@ function forbidden() {
 
 function notFound(resource: string) {
   return { error: `${resource} not found`, code: "not_found" as const };
+}
+
+/** Hash write-only `portalPassword` into `portalPasswordHash` for REST / leader payloads. */
+async function prepareContactWriteBody<T extends Record<string, unknown>>(
+  body: T,
+): Promise<T & { portalPasswordHash?: string | null }> {
+  if (!Object.prototype.hasOwnProperty.call(body, "portalPassword")) {
+    return body;
+  }
+  const { portalPassword, ...rest } = body as T & {
+    portalPassword?: string | null;
+  };
+  const next = { ...rest } as T & { portalPasswordHash?: string | null };
+  if (portalPassword === null || portalPassword === "") {
+    next.portalPasswordHash = null;
+  } else if (typeof portalPassword === "string") {
+    next.portalPasswordHash = await hashPortalPassword(portalPassword);
+  }
+  return next;
 }
 
 function avatarEntityToSyncEntity(entityType: string): SyncEntity | null {
@@ -463,6 +504,26 @@ function publishDocumentLiveFromAgent(
     contentVersion: input?.contentVersion ?? null,
     operation: input?.operation ?? "upsert",
     projectId: input?.projectId ?? null,
+  });
+}
+
+/**
+ * REST/agent project writes → local SSE + peer nudge so desktop/portal
+ * refresh before PowerSync / the replication tick.
+ */
+function publishProjectLive(
+  auth: AuthContext,
+  projectId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  publishProjectWorkspaceUpdated(auth.workspaceId, projectId, { operation });
+  notifyPeerOfDocumentWrite({
+    workspaceId: auth.workspaceId,
+    reason: "project",
+    entity: "project",
+    entityId: projectId,
+    operation,
+    projectId,
   });
 }
 
@@ -666,6 +727,7 @@ export function registerApiRoutes(app: Hono) {
           if (!row) {
             throw new Error("PROJECT_CREATE_FAILED");
           }
+          publishProjectLive(auth, row.id, "upsert");
           return c.json(toProject(row), 201);
         }
         const row = await taskProjectService.createProject(
@@ -673,6 +735,7 @@ export function registerApiRoutes(app: Hono) {
           body,
         );
         await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishProjectLive(auth, row.id, "upsert");
         return c.json(toProject(row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
@@ -737,6 +800,7 @@ export function registerApiRoutes(app: Hono) {
               (body as Record<string, unknown>)[key] = value;
             }
           }
+          publishProjectLive(auth, projectId, "upsert");
           return c.json(body);
         }
         const row = await taskProjectService.updateProject(
@@ -748,6 +812,7 @@ export function registerApiRoutes(app: Hono) {
           return c.json(notFound("Project"), 404);
         }
         await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishProjectLive(auth, row.id, "upsert");
         return c.json(toProject(row));
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
@@ -808,6 +873,7 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: projectId },
       });
+      publishProjectLive(auth, projectId, "delete");
       return c.body(null, 204);
     }
     const row = await taskProjectService.deleteProject(
@@ -818,6 +884,7 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Project"), 404);
     }
     await recordProjectRestSyncEvent(auth.workspaceId, row, "delete");
+    publishProjectLive(auth, row.id, "delete");
     return c.body(null, 204);
   });
 
@@ -1602,11 +1669,20 @@ export function registerApiRoutes(app: Hono) {
       contactId: c.req.query("contactId"),
       assigneeId: c.req.query("assigneeId"),
       relatedContactId: c.req.query("relatedContactId"),
+      relatedOrganizationId: c.req.query("relatedOrganizationId"),
       status: c.req.query("status"),
       inbox:
         c.req.query("inbox") === undefined
           ? undefined
           : c.req.query("inbox") === "true",
+      support:
+        c.req.query("support") === undefined
+          ? undefined
+          : c.req.query("support") === "true",
+      notification:
+        c.req.query("notification") === undefined
+          ? undefined
+          : c.req.query("notification") === "true",
     });
     return c.json({ tasks: rows.map(toTask) });
   });
@@ -1707,15 +1783,26 @@ export function registerApiRoutes(app: Hono) {
     const workspaceId = auth.workspaceId;
     return streamSSE(c, async (stream) => {
       let closed = false;
+      let pendingWrites = 0;
+      const MAX_PENDING_WRITES = 16;
       const unsubscribe = subscribeAgentPresence(workspaceId, (event) => {
-        if (closed) return;
-        void stream.writeSSE({
-          event: "agent.presence",
-          data: JSON.stringify({
-            taskId: event.taskId,
-            live: event.live,
-          }),
-        });
+        if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
+        pendingWrites += 1;
+        void stream
+          .writeSSE({
+            event: "agent.presence",
+            data: JSON.stringify({
+              taskId: event.taskId,
+              live: event.live,
+            }),
+          })
+          .catch(() => {
+            closed = true;
+            unsubscribe();
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+          });
       });
       stream.onAbort(() => {
         closed = true;
@@ -1848,6 +1935,10 @@ export function registerApiRoutes(app: Hono) {
       }
       const body = c.req.valid("json");
       const taskId = c.req.param("id");
+      const actor = writeActorForComment(auth, {
+        activityActor: body.activityActor,
+        authorContactId: body.authorContactId,
+      });
       if (isRestLeaderFirstWrite()) {
         const existingTask = await taskProjectService.getTaskById(
           auth.workspaceId,
@@ -1855,7 +1946,6 @@ export function registerApiRoutes(app: Hono) {
         );
         if (!existingTask) return c.json(notFound("Task"), 404);
         const commentId = newId();
-        const actor = writeActorFromAuth(auth, body.activityActor);
         const profile = await taskCommentService.resolveWriteActorProfile(
           auth.workspaceId,
           actor,
@@ -1890,10 +1980,30 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         taskId,
         body,
-        writeActorFromAuth(auth, body.activityActor),
+        actor,
       );
       if (!row) return c.json(notFound("Task"), 404);
       await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+        "../services/core-replication/sync-event-live-publish.js"
+      );
+      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+        entity: "task_comment",
+        entityId: row.id,
+        operation: "upsert",
+        payload: { task_id: taskId },
+      });
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "rest",
+        entity: "task_comment",
+        entityId: row.id,
+        taskId,
+        operation: "upsert",
+      });
       return c.json(toTaskComment(row), 201);
     },
   );
@@ -1939,6 +2049,26 @@ export function registerApiRoutes(app: Hono) {
       );
       if (!row) return c.json(notFound("Comment"), 404);
       await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+        "../services/core-replication/sync-event-live-publish.js"
+      );
+      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+        entity: "task_comment",
+        entityId: row.id,
+        operation: "upsert",
+        payload: { task_id: taskId },
+      });
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "rest",
+        entity: "task_comment",
+        entityId: row.id,
+        taskId,
+        operation: "upsert",
+      });
       return c.json(toTaskComment(row));
     },
   );
@@ -1979,6 +2109,26 @@ export function registerApiRoutes(app: Hono) {
     );
     if (deleted) {
       await recordTaskCommentRestSyncEvent(auth.workspaceId, deleted, "delete");
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+        "../services/core-replication/sync-event-live-publish.js"
+      );
+      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+        entity: "task_comment",
+        entityId: commentId,
+        operation: "delete",
+        payload: { task_id: taskId },
+      });
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "rest",
+        entity: "task_comment",
+        entityId: commentId,
+        taskId,
+        operation: "delete",
+      });
     }
     return c.body(null, 204);
   });
@@ -3615,19 +3765,50 @@ export function registerApiRoutes(app: Hono) {
     return c.body(null, 204);
   });
 
+  app.post(
+    "/api/v1/portal/auth/login",
+    zValidator("json", portalAuthLoginSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      const row = await circleService.getContactByPortalUsername(
+        auth.workspaceId,
+        body.username,
+      );
+      if (!row?.portalPasswordHash) {
+        return c.json(
+          { error: "Invalid username or password", code: "unauthorized" },
+          401,
+        );
+      }
+      const ok = await verifyPortalPassword(body.password, row.portalPasswordHash);
+      if (!ok) {
+        return c.json(
+          { error: "Invalid username or password", code: "unauthorized" },
+          401,
+        );
+      }
+      return c.json({
+        contact: toPublicContact(row),
+      });
+    },
+  );
+
   app.get("/api/v1/contacts", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
-    return c.json({ contacts: await circleService.listContacts(auth.workspaceId, {
+    const rows = await circleService.listContacts(auth.workspaceId, {
       organizationId: c.req.query("organizationId"),
       q: c.req.query("q"),
-    }) });
+    });
+    return c.json({ contacts: rows.map(toPublicContact) });
   });
   app.get("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
     const row = await circleService.getContactById(auth.workspaceId, c.req.param("id"));
-    return row ? c.json(row) : c.json(notFound("Contact"), 404);
+    return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
   });
   app.get("/api/v1/contacts/:id/relations", async (c) => {
     const auth = getAuth(c);
@@ -3638,7 +3819,7 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/contacts", zValidator("json", contactSchema), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const body = c.req.valid("json");
+    const body = await prepareContactWriteBody(c.req.valid("json"));
     if (isRestLeaderFirstWrite()) {
       const contactId = newId();
       await commitRestEntityWrite({
@@ -3650,17 +3831,40 @@ export function registerApiRoutes(app: Hono) {
       });
       const row = await circleService.getContactById(auth.workspaceId, contactId);
       if (!row) return c.json({ error: "Contact create failed", code: "internal" }, 500);
-      return c.json(row, 201);
+      await crmGroupsService.inheritOrganizationGroupMemberships(
+        auth.workspaceId,
+        row.id,
+      );
+      return c.json(toPublicContact(row), 201);
     }
     const row = await circleService.createContact(auth.workspaceId, body);
     await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
-    return c.json(row, 201);
+    for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
+      auth.workspaceId,
+      row.id,
+    )) {
+      const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
+      if (dbRow) {
+        await recordCrmGroupMemberRestSyncEvent(
+          auth.workspaceId,
+          dbRow,
+          "upsert",
+        );
+      }
+    }
+    return c.json(toPublicContact(row), 201);
   });
   app.patch("/api/v1/contacts/:id", zValidator("json", contactSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
     const contactId = c.req.param("id");
-    const patch = c.req.valid("json");
+    const raw = c.req.valid("json") as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(raw, "portalPassword")) {
+      console.info(
+        `[portal-password] PATCH contact=${contactId} includesPassword=${raw.portalPassword !== undefined && raw.portalPassword !== null} clear=${raw.portalPassword === "" || raw.portalPassword === null}`,
+      );
+    }
+    const patch = await prepareContactWriteBody(raw);
     if (isRestLeaderFirstWrite()) {
       const existing = await circleService.getContactById(auth.workspaceId, contactId);
       if (!existing) return c.json(notFound("Contact"), 404);
@@ -3672,12 +3876,33 @@ export function registerApiRoutes(app: Hono) {
         payload: buildContactRestPayload(contactId, patch),
       });
       const row = await circleService.getContactById(auth.workspaceId, contactId);
-      return c.json(row);
+      if (row && patch.organizationId !== undefined) {
+        await crmGroupsService.inheritOrganizationGroupMemberships(
+          auth.workspaceId,
+          row.id,
+        );
+      }
+      return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
     }
     const row = await circleService.updateContact(auth.workspaceId, contactId, patch);
     if (!row) return c.json(notFound("Contact"), 404);
     await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
-    return c.json(row);
+    if (patch.organizationId !== undefined) {
+      for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
+        auth.workspaceId,
+        row.id,
+      )) {
+        const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
+        if (dbRow) {
+          await recordCrmGroupMemberRestSyncEvent(
+            auth.workspaceId,
+            dbRow,
+            "upsert",
+          );
+        }
+      }
+    }
+    return c.json(toPublicContact(row));
   });
   app.delete("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
@@ -4090,6 +4315,13 @@ export function registerApiRoutes(app: Hono) {
       if (dbRow) {
         await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "upsert");
       }
+      notifyPeerOfDocumentWrite({
+        workspaceId: auth.workspaceId,
+        reason: "crm_group",
+        entity: "crm_group",
+        entityId: row.id,
+        operation: "upsert",
+      });
       return c.json(row, 201);
     },
   );
@@ -4132,6 +4364,13 @@ export function registerApiRoutes(app: Hono) {
       if (dbRow) {
         await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "upsert");
       }
+      notifyPeerOfDocumentWrite({
+        workspaceId: auth.workspaceId,
+        reason: "crm_group",
+        entity: "crm_group",
+        entityId: groupId,
+        operation: "upsert",
+      });
       return c.json(row);
     },
   );
@@ -4162,6 +4401,13 @@ export function registerApiRoutes(app: Hono) {
     if (dbRow) {
       await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "delete");
     }
+    notifyPeerOfDocumentWrite({
+      workspaceId: auth.workspaceId,
+      reason: "crm_group",
+      entity: "crm_group",
+      entityId: groupId,
+      operation: "delete",
+    });
     return c.body(null, 204);
   });
   app.get("/api/v1/crm-groups/:id/members", async (c) => {
@@ -4189,40 +4435,94 @@ export function registerApiRoutes(app: Hono) {
       const body = c.req.valid("json");
       try {
         if (isRestLeaderFirstWrite()) {
-          const memberId = newId();
-          await commitRestEntityWrite({
-            workspaceId: auth.workspaceId,
-            entity: "crm_group_member",
-            entityId: memberId,
-            operation: "upsert",
-            payload: buildCrmGroupMemberRestPayload(memberId, groupId, body),
-          });
-          const row = await crmGroupsService.getCrmGroupMemberById(
+          if (!(await crmGroupsService.getCrmGroupById(auth.workspaceId, groupId))) {
+            return c.json(notFound("Group"), 404);
+          }
+
+          const planned = await crmGroupsService.planCrmGroupMembershipCascade(
             auth.workspaceId,
-            memberId,
+            body,
           );
-          if (!row) {
+          let primary: Awaited<
+            ReturnType<typeof crmGroupsService.getCrmGroupMemberById>
+          > = null;
+
+          for (const subject of planned) {
+            const currentMembers = await crmGroupsService.listCrmGroupMembers(
+              auth.workspaceId,
+              groupId,
+            );
+            const already = currentMembers?.find(
+              (member) =>
+                member.subjectType === subject.subjectType &&
+                member.subjectId === subject.subjectId,
+            );
+            const isPrimary =
+              subject.subjectType === body.subjectType &&
+              subject.subjectId === body.subjectId;
+            if (already) {
+              if (isPrimary) primary = already;
+              continue;
+            }
+
+            const memberId = newId();
+            await commitRestEntityWrite({
+              workspaceId: auth.workspaceId,
+              entity: "crm_group_member",
+              entityId: memberId,
+              operation: "upsert",
+              payload: buildCrmGroupMemberRestPayload(memberId, groupId, subject),
+            });
+            const row =
+              (await crmGroupsService.getCrmGroupMemberById(
+                auth.workspaceId,
+                memberId,
+              )) ??
+              (
+                await crmGroupsService.listCrmGroupMembers(
+                  auth.workspaceId,
+                  groupId,
+                )
+              )?.find(
+                (member) =>
+                  member.subjectType === subject.subjectType &&
+                  member.subjectId === subject.subjectId,
+              ) ??
+              null;
+            if (!row) {
+              return c.json(
+                { error: "Group member create failed", code: "internal" },
+                500,
+              );
+            }
+            if (isPrimary) primary = row;
+          }
+
+          if (!primary) {
             return c.json(
               { error: "Group member create failed", code: "internal" },
               500,
             );
           }
-          return c.json(row, 201);
+          return c.json(primary, 201);
         }
-        const row = await crmGroupsService.addCrmGroupMember(
+
+        const result = await crmGroupsService.addCrmGroupMemberWithCascade(
           auth.workspaceId,
           groupId,
           body,
         );
-        const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, row.id);
-        if (dbRow) {
-          await recordCrmGroupMemberRestSyncEvent(
-            auth.workspaceId,
-            dbRow,
-            "upsert",
-          );
+        for (const member of result.members) {
+          const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
+          if (dbRow) {
+            await recordCrmGroupMemberRestSyncEvent(
+              auth.workspaceId,
+              dbRow,
+              "upsert",
+            );
+          }
         }
-        return c.json(row, 201);
+        return c.json(result.primary, 201);
       } catch (error) {
         if (!(error instanceof Error)) throw error;
         if (error.message === "GROUP_NOT_FOUND") {
@@ -4242,34 +4542,71 @@ export function registerApiRoutes(app: Hono) {
     }
     const groupId = c.req.param("groupId");
     const memberId = c.req.param("id");
+    const existing = await crmGroupsService.getCrmGroupMemberById(
+      auth.workspaceId,
+      memberId,
+    );
+    if (!existing || existing.groupId !== groupId) {
+      return c.json(notFound("Member"), 404);
+    }
+
     if (isRestLeaderFirstWrite()) {
-      const existing = await crmGroupsService.getCrmGroupMemberById(
-        auth.workspaceId,
-        memberId,
-      );
-      if (!existing) return c.json(notFound("Member"), 404);
-      await commitRestEntityWrite({
-        workspaceId: auth.workspaceId,
-        entity: "crm_group_member",
-        entityId: memberId,
-        operation: "delete",
-        payload: { id: memberId, group_id: groupId },
-      });
+      const removeTargets = [existing];
+      if (existing.subjectType === "organization") {
+        const members = await crmGroupsService.listCrmGroupMembers(
+          auth.workspaceId,
+          groupId,
+        );
+        const planned = await crmGroupsService.planCrmGroupMembershipCascade(
+          auth.workspaceId,
+          {
+            subjectType: "organization",
+            subjectId: existing.subjectId,
+          },
+        );
+        const contactIds = new Set(
+          planned
+            .filter((entry) => entry.subjectType === "contact")
+            .map((entry) => entry.subjectId),
+        );
+        for (const member of members ?? []) {
+          if (
+            member.subjectType === "contact" &&
+            contactIds.has(member.subjectId) &&
+            member.id !== existing.id
+          ) {
+            removeTargets.push(member);
+          }
+        }
+      }
+
+      for (const target of removeTargets) {
+        await commitRestEntityWrite({
+          workspaceId: auth.workspaceId,
+          entity: "crm_group_member",
+          entityId: target.id,
+          operation: "delete",
+          payload: { id: target.id, group_id: groupId },
+        });
+      }
       return c.body(null, 204);
     }
-    const ok = await crmGroupsService.removeCrmGroupMember(
+
+    const result = await crmGroupsService.removeCrmGroupMemberWithCascade(
       auth.workspaceId,
       groupId,
       memberId,
     );
-    if (!ok) return c.json(notFound("Member"), 404);
-    const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, memberId);
-    if (dbRow) {
-      await recordCrmGroupMemberRestSyncEvent(
-        auth.workspaceId,
-        dbRow,
-        "delete",
-      );
+    if (result.removed.length === 0) return c.json(notFound("Member"), 404);
+    for (const member of result.removed) {
+      const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
+      if (dbRow) {
+        await recordCrmGroupMemberRestSyncEvent(
+          auth.workspaceId,
+          dbRow,
+          "delete",
+        );
+      }
     }
     return c.body(null, 204);
   });
@@ -5509,15 +5846,26 @@ export function registerApiRoutes(app: Hono) {
     const workspaceId = auth.workspaceId;
     return streamSSE(c, async (stream) => {
       let closed = false;
+      let pendingWrites = 0;
+      const MAX_PENDING_WRITES = 16;
       const unsubscribe = subscribeEmailUpdated(workspaceId, (event) => {
-        if (closed) return;
-        void stream.writeSSE({
-          event: "email.updated",
-          data: JSON.stringify({
-            inboxId: event.inboxId,
-            messageId: event.messageId,
-          }),
-        });
+        if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
+        pendingWrites += 1;
+        void stream
+          .writeSSE({
+            event: "email.updated",
+            data: JSON.stringify({
+              inboxId: event.inboxId,
+              messageId: event.messageId,
+            }),
+          })
+          .catch(() => {
+            closed = true;
+            unsubscribe();
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+          });
       });
       stream.onAbort(() => {
         closed = true;
@@ -5550,19 +5898,32 @@ export function registerApiRoutes(app: Hono) {
     const workspaceId = auth.workspaceId;
     return streamSSE(c, async (stream) => {
       let closed = false;
+      /** Drop events when the client is slow — unbounded writeSSE filled TCP
+       *  buffers (~1MB+) and, with HTTP/1.1's 6-conn limit, starved REST. */
+      let pendingWrites = 0;
+      const MAX_PENDING_WRITES = 16;
       const unsubscribe = subscribeWorkspaceUpdated(workspaceId, (event) => {
-        if (closed) return;
-        void stream.writeSSE({
-          event: "workspace.updated",
-          data: JSON.stringify({
-            kind: event.kind,
-            entityId: event.entityId,
-            projectId: event.projectId ?? null,
-            reason: event.reason ?? null,
-            contentVersion: event.contentVersion ?? null,
-            operation: event.operation ?? "upsert",
-          }),
-        });
+        if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
+        pendingWrites += 1;
+        void stream
+          .writeSSE({
+            event: "workspace.updated",
+            data: JSON.stringify({
+              kind: event.kind,
+              entityId: event.entityId,
+              projectId: event.projectId ?? null,
+              reason: event.reason ?? null,
+              contentVersion: event.contentVersion ?? null,
+              operation: event.operation ?? "upsert",
+            }),
+          })
+          .catch(() => {
+            closed = true;
+            unsubscribe();
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+          });
       });
       stream.onAbort(() => {
         closed = true;

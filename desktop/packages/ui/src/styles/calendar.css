@@ -2014,40 +2014,6 @@
   color: var(--foreground);
 }
 
-.calendar-availability-day-toggle__switch {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 18%, transparent);
-  transition: background 120ms ease;
-}
-
-.calendar-availability-day-toggle.is-on .calendar-availability-day-toggle__switch {
-  background: color-mix(in srgb, var(--foreground) 88%, transparent);
-}
-
-.calendar-availability-day-toggle:disabled .calendar-availability-day-toggle__switch {
-  opacity: 0.45;
-}
-
-.calendar-availability-day-toggle__thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-  transition: transform 120ms ease;
-}
-
-.calendar-availability-day-toggle.is-on .calendar-availability-day-toggle__thumb {
-  transform: translateX(14px);
-}
-
 .calendar-availability-day-row__body {
   display: flex;
   flex-direction: column;

@@ -26,6 +26,7 @@ import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdo
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { formatTaskDueMetaLabel } from "../../tasks/task-due-date.js";
 
 export type EmailPropertiesDisplayThread = {
   organizationId?: string | null;
@@ -40,6 +41,8 @@ export type EmailPropertiesDisplayThread = {
   status: string;
   priority?: number | null;
   dueDate?: number | Date | string | null;
+  /** First inbound message timestamp (letter-style Received; read-only). */
+  receivedDate?: number | Date | string | null;
 };
 
 export type EmailPropertiesDisplayProps = {
@@ -97,6 +100,7 @@ export function EmailPropertiesDisplay({
   const status = migrateLegacyTaskStatus(thread.status?.trim() || "triage");
   const priority = thread.priority ?? 0;
   const due = toDate(thread.dueDate);
+  const received = toDate(thread.receivedDate);
 
   const statusOptions: SearchableDropdownOption<TaskStatus>[] =
     TASK_STATUS_ORDER.map((value) => ({
@@ -340,6 +344,18 @@ export function EmailPropertiesDisplay({
             {organizationField}
           </PropertyFieldGroup>
           <PropertyFieldGroup label="Contact">{contactField}</PropertyFieldGroup>
+          <PropertyFieldGroup label="Received">
+            <button
+              type="button"
+              className="property-dropdown-trigger"
+              data-task-property-dropdown="receivedDate"
+              onClick={() => onFieldActivate?.("received")}
+            >
+              <span className="property-dropdown-trigger__label">
+                {received ? formatTaskDueMetaLabel(received) : "—"}
+              </span>
+            </button>
+          </PropertyFieldGroup>
         </EntityPropertiesSection>
 
         <EntityPropertiesSection title="Properties">

@@ -1,13 +1,13 @@
 # cloud-core — Phase A (meeting booking)
 
-Runs `core/server` + Postgres on the **backsteros** server (`100.117.142.79` Tailscale,
-`161.35.86.25` public) alongside the client portal and agents door.
-Portal containers reach the API at `http://backsteros:8788` on the Docker network
-(or `http://127.0.0.1:8788` from the host).
+Runs `core/server` + Postgres on **Hetzner `lemodesign`** (`100.75.45.22` Tailscale,
+`46.225.171.3` public) alongside the client portal and agents door (kamal-proxy).
+Portal containers should reach the API at `http://172.18.0.1:8788` (kamal network
+gateway → host) or via Tailscale.
 
-> **Legacy:** cloud-core was first deployed on the Kamal VPS (`209.38.44.246`). Consolidated
-> to backsteros in Aug 2026 — see [../backsteros-server/README.md](../backsteros-server/README.md).
-> Public product hosts (`backsteros.com/app`, `service.`, `sync.`) are 410 Gone (2026-09).
+> **Migrated 2026-09-09** from DigitalOcean `161.35.86.25` / `100.117.142.79`.
+> Older Kamal VPS `209.38.44.246` was retired earlier. See
+> [../backsteros-server/README.md](../backsteros-server/README.md).
 
 ## Prerequisites
 
@@ -100,15 +100,15 @@ PowerSync and Clerk are **not** required for portal meeting booking (API key aut
 
 ### Tailscale (instant cloud → local push)
 
-cloud-core runs on the **backsteros** server, which is already on your tailnet
-(`100.117.142.79`). Set:
+cloud-core runs on **Hetzner `lemodesign`**, already on your tailnet
+(`100.75.45.22`). Set:
 
 ```env
 # cloud .env
 CORE_REPLICATION_PEER_URL=http://100.94.74.107:8788   # macbook tailnet IP
 
 # local-core .env
-CORE_REPLICATION_PEER_URL=http://100.117.142.79:8788
+CORE_REPLICATION_PEER_URL=http://100.75.45.22:8788
 ```
 
 Local-core stays bound to `127.0.0.1`. **Hub** enables Tailscale Serve on API start:

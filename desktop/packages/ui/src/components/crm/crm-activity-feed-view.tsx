@@ -27,7 +27,7 @@ export type CrmActivityTaskRelation = "assigned" | "related";
 
 export type CrmActivityFeedItem = {
   id: string;
-  kind: "note" | "meeting" | "task" | "letter";
+  kind: "note" | "meeting" | "task" | "letter" | "deployment";
   occurredAt: string;
   body?: string | null;
   bodyPreview?: string | null;
@@ -42,6 +42,12 @@ export type CrmActivityFeedItem = {
   taskRelation?: CrmActivityTaskRelation | null;
   letterId?: string | null;
   letterTitle?: string | null;
+  /** Deployment timeline fields (`kind: "deployment"`). */
+  deploymentStatus?: "success" | "failed" | "running" | null;
+  deploymentSite?: string | null;
+  deploymentCommit?: string | null;
+  deploymentSummary?: string | null;
+  deploymentMeta?: string | null;
 };
 
 export type CrmActivityCreateKind =
@@ -90,7 +96,13 @@ function formatRelativeTime(iso: string): string {
   });
 }
 
-function ActivityTypeIcon({ kind }: { kind: CrmActivityFeedItem["kind"] }) {
+function ActivityTypeIcon({
+  kind,
+  deploymentStatus,
+}: {
+  kind: CrmActivityFeedItem["kind"];
+  deploymentStatus?: CrmActivityFeedItem["deploymentStatus"];
+}) {
   if (kind === "meeting") {
     return <CalendarNavIcon className="crm-activity-event__glyph" />;
   }
@@ -99,6 +111,19 @@ function ActivityTypeIcon({ kind }: { kind: CrmActivityFeedItem["kind"] }) {
   }
   if (kind === "letter") {
     return <LettersNavIcon className="crm-activity-event__glyph" />;
+  }
+  if (kind === "deployment") {
+    const label =
+      deploymentStatus === "failed"
+        ? "×"
+        : deploymentStatus === "running"
+          ? "↑"
+          : "✓";
+    return (
+      <span className="crm-activity-event__glyph crm-activity-event__glyph--deployment">
+        {label}
+      </span>
+    );
   }
   return <ProjectOcticon icon="note" size={14} className="crm-activity-event__glyph" />;
 }
@@ -187,6 +212,35 @@ function ActivityDetail({
       <>
         Letter <strong>{title}</strong> received
       </>
+    );
+  }
+
+  if (item.kind === "deployment") {
+    const site = item.deploymentSite?.trim() || "Deploy";
+    const summary = item.deploymentSummary?.trim();
+    const commit = item.deploymentCommit?.trim();
+    const meta = item.deploymentMeta?.trim();
+    return (
+      <span className="crm-activity-event__deployment">
+        <strong>{site}</strong>
+        {commit ? (
+          <>
+            {" "}
+            <span className="crm-activity-event__deployment-commit">
+              {commit}
+            </span>
+          </>
+        ) : null}
+        {summary ? (
+          <>
+            {" — "}
+            <span className="crm-activity-event__note">{summary}</span>
+          </>
+        ) : null}
+        {meta ? (
+          <span className="crm-activity-event__deployment-meta"> · {meta}</span>
+        ) : null}
+      </span>
     );
   }
 
@@ -522,11 +576,15 @@ export function CrmActivityFeedView({
               const eventKindClass =
                 item.kind === "task" && item.taskRelation
                   ? `crm-activity-event--task-${item.taskRelation}`
-                  : `crm-activity-event--${item.kind}`;
+                  : item.kind === "deployment" && item.deploymentStatus
+                    ? `crm-activity-event--deployment-${item.deploymentStatus}`
+                    : `crm-activity-event--${item.kind}`;
               const markerKindClass =
                 item.kind === "task" && item.taskRelation
                   ? `crm-activity-event__marker--task-${item.taskRelation}`
-                  : `crm-activity-event__marker--${item.kind}`;
+                  : item.kind === "deployment" && item.deploymentStatus
+                    ? `crm-activity-event__marker--deployment-${item.deploymentStatus}`
+                    : `crm-activity-event__marker--${item.kind}`;
               return (
               <li
                 key={item.id}
@@ -548,7 +606,10 @@ export function CrmActivityFeedView({
                         markerKindClass,
                       ].join(" ")}
                     >
-                      <ActivityTypeIcon kind={item.kind} />
+                      <ActivityTypeIcon
+                        kind={item.kind}
+                        deploymentStatus={item.deploymentStatus}
+                      />
                     </span>
                   </span>
                 </span>

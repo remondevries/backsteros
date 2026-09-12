@@ -48,11 +48,14 @@ describe("loadConfig", () => {
     // Point at a missing env file so this test stays hermetic.
     const prevEnvPath = process.env.BACKSTEROS_CLI_ENV;
     process.env.BACKSTEROS_CLI_ENV = "/tmp/backsteros-cli-missing.env";
+    const prevAgentContact = process.env.BACKSTEROS_AGENT_CONTACT_ID;
+    delete process.env.BACKSTEROS_AGENT_CONTACT_ID;
     try {
       const config = loadConfig({});
       assert.equal(config.baseUrl, "http://127.0.0.1:8788");
       assert.equal(config.token, "local");
       assert.equal(config.activityActor, "agent");
+      assert.equal(config.agentContactId, null);
     } finally {
       if (prevUrl === undefined) delete process.env.BACKSTEROS_API_URL;
       else process.env.BACKSTEROS_API_URL = prevUrl;
@@ -60,6 +63,8 @@ describe("loadConfig", () => {
       else process.env.BACKSTEROS_API_KEY = prevKey;
       if (prevEnvPath === undefined) delete process.env.BACKSTEROS_CLI_ENV;
       else process.env.BACKSTEROS_CLI_ENV = prevEnvPath;
+      if (prevAgentContact === undefined) delete process.env.BACKSTEROS_AGENT_CONTACT_ID;
+      else process.env.BACKSTEROS_AGENT_CONTACT_ID = prevAgentContact;
     }
   });
 });

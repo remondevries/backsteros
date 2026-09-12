@@ -24,6 +24,7 @@ import {
   CONTACT_DETAIL_EXPAND_FADE_MS,
   CONTACT_EXPANDED_WORKSPACE_TAB_IDS,
   CONTACT_SECTIONS,
+  ContactPortalTabView,
   CrmActivityFeedView,
   EntityDetailLayout,
   RegisterEntityDeleteAction,
@@ -43,6 +44,7 @@ import {
   getScopedContactSectionHref,
   getScopedContactTaskHref,
   getScopedContactsListHref,
+  resolveContactCardSections,
   resolveLetterDetailHref,
   getUniqueListItemRouteParam,
   isContactCardSectionId,
@@ -208,15 +210,34 @@ export function ContactsPage({
       : parseContactOverlayLayout(location.searchStr ?? "");
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(isStandalone && keepAliveActive);
+  const effectiveGroupId = groupsCatalog.resolveGroupId(selectedGroupId);
   const groupMembers = useCrmGroupContactIds(
-    selectedGroupId,
-    isStandalone && keepAliveActive && Boolean(selectedGroupId),
+    effectiveGroupId,
+    isStandalone && keepAliveActive && Boolean(effectiveGroupId),
   );
   const groupsByContactId = useCrmContactGroupsByContactId(keepAliveActive);
-  const selectedGroupName = selectedGroupId
-    ? (groupsCatalog.groups.find((group) => group.id === selectedGroupId)
+  const selectedGroupName = effectiveGroupId
+    ? (groupsCatalog.groups.find((group) => group.id === effectiveGroupId)
         ?.name ?? null)
     : null;
+
+  useEffect(() => {
+    if (
+      !isStandalone ||
+      !selectedGroupId ||
+      !effectiveGroupId ||
+      selectedGroupId === effectiveGroupId
+    ) {
+      return;
+    }
+    navigate(getContactsGroupHref(effectiveGroupId), { replace: true });
+  }, [
+    effectiveGroupId,
+    isStandalone,
+    navigate,
+    selectedGroupId,
+  ]);
+
   const selected = routedSlug
     ? resolveListItemFromSlug(contacts, routedSlug)
     : null;
@@ -248,10 +269,11 @@ export function ContactsPage({
   const pinnedWasSelectedRef = useRef(false);
   const [workspaceTab, setWorkspaceTab] =
     useState<ContactExpandedWorkspaceTabId>("meetings");
-  /** Activity / Details on the profile card — local so they never close workspace entities. */
-  const [cardSection, setCardSection] = useState<"overview" | "details">(
-    "overview",
-  );
+  /** Activity / Details / Portal on the profile card — local so they never close workspace entities. */
+  const [cardSection, setCardSection] = useState<
+    "overview" | "details" | "portal"
+  >("overview");
+  const [portalSaveError, setPortalSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pinnedContactId) {
@@ -473,22 +495,65 @@ export function ContactsPage({
     () => crmGroups.memberGroups.map((group) => group.id),
     [crmGroups.memberGroups],
   );
+  const showPortalTab = useMemo(
+    () =>
+      groupOptions.some(
+        (group) =>
+          group.name.trim().toLowerCase() === "clients" &&
+          memberGroupIds.includes(group.id),
+      ),
+    [groupOptions, memberGroupIds],
+  );
+  const contactProfileSections = useMemo(() => {
+    if (isStandalone) {
+      return resolveContactCardSections({ showPortal: showPortalTab });
+    }
+    return showPortalTab
+      ? [...CONTACT_SECTIONS]
+      : CONTACT_SECTIONS.filter((entry) => entry.id !== "portal");
+  }, [isStandalone, showPortalTab]);
+  const portalProjects = useMemo(() => {
+    const organizationId =
+      details?.organizationId ?? selected?.organizationId ?? null;
+    if (!organizationId) return [];
+    return workspace.projects
+      .filter((project) => project.organizationId === organizationId)
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        key: project.key ?? null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [details?.organizationId, selected?.organizationId, workspace.projects]);
   const handleMemberGroupIdsChange = useCallback(
     (nextIds: string[]) => {
       const previous = new Set(memberGroupIds);
       const next = new Set(nextIds);
-      for (const groupId of next) {
-        if (!previous.has(groupId)) {
-          void crmGroups.toggleMembership(groupId, true);
+      void (async () => {
+        try {
+          for (const groupId of next) {
+            if (!previous.has(groupId)) {
+              await crmGroups.toggleMembership(groupId, true);
+            }
+          }
+          for (const groupId of previous) {
+            if (!next.has(groupId)) {
+              await crmGroups.toggleMembership(groupId, false);
+            }
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to update groups";
+          const friendly =
+            /subject not found|member subject|404/i.test(message)
+              ? "This contact isn’t on the server yet, so it can’t join a group. Wait for sync or re-save the contact, then try again."
+              : message;
+          window.alert(friendly);
+          await crmGroups.reload();
         }
-      }
-      for (const groupId of previous) {
-        if (!next.has(groupId)) {
-          void crmGroups.toggleMembership(groupId, false);
-        }
-      }
+      })();
     },
-    [crmGroups.toggleMembership, memberGroupIds],
+    [crmGroups, memberGroupIds],
   );
   const sectionLabel =
     profileSection === "overview"
@@ -504,11 +569,9 @@ export function ContactsPage({
     setAvatarOverride(undefined);
   }, [panelContactId]);
 
-  useEffect(() => {
-    setCardSection("overview");
-  }, [panelContactId]);
-
-  // Sync Activity / Details from deep-link URLs when no workspace entity is open.
+  // Keep Activity / Details / Portal in sync with the URL. Re-apply when the
+  // selected contact changes so a later panelContactId resolve cannot wipe a
+  // /portal (or /details) deep link back to Activity.
   useEffect(() => {
     if (!isStandalone || workspaceDetail) return;
     if (
@@ -519,10 +582,20 @@ export function ContactsPage({
       setCardSection("details");
       return;
     }
-    if (!sectionParam || sectionParam === "overview") {
-      setCardSection("overview");
+    if (sectionParam === "portal") {
+      setCardSection("portal");
+      return;
     }
-  }, [isStandalone, sectionParam, workspaceDetail]);
+    setCardSection("overview");
+  }, [isStandalone, panelContactId, sectionParam, workspaceDetail]);
+
+  useEffect(() => {
+    if (showPortalTab) return;
+    if (cardSection !== "portal") return;
+    // Don't fight a /portal deep link while CRM groups are still loading.
+    if (sectionParam === "portal") return;
+    setCardSection("overview");
+  }, [cardSection, sectionParam, showPortalTab]);
 
   // Invalid section segment → overview (standalone overlay / org detail).
   // Legacy `/activity` and `/relationships` → `/details`.
@@ -559,7 +632,7 @@ export function ContactsPage({
       navigate(
         getContactOverlayHref(selectedSlugValue, {
           layout: "page",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -627,7 +700,7 @@ export function ContactsPage({
         : [
             {
               label: "Contacts",
-              href: getContactsGroupHref(selectedGroupId),
+              href: getContactsGroupHref(effectiveGroupId),
             },
             {
               label: selected.name,
@@ -636,7 +709,7 @@ export function ContactsPage({
                   ? undefined
                   : getContactOverlayHref(selectedSlugValue, {
                       layout: overlayLayout,
-                      groupId: selectedGroupId,
+                      groupId: effectiveGroupId,
                     }),
             },
             ...(sectionLabel ? [{ label: sectionLabel }] : []),
@@ -667,14 +740,22 @@ export function ContactsPage({
       avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
       groups: groupsByContactId.get(contact.id) ?? null,
     }));
-    if (!selectedGroupId) return mapped;
-    return mapped.filter((contact) => groupMembers.contactIds.has(contact.id));
+    if (!effectiveGroupId) return mapped;
+    // Same rule as portal client picker: direct contact members + contacts at
+    // member organizations (Postgres CRM group membership via REST).
+    return mapped.filter(
+      (contact) =>
+        groupMembers.contactIds.has(contact.id) ||
+        (Boolean(contact.organizationId) &&
+          groupMembers.organizationIds.has(contact.organizationId!)),
+    );
   }, [
     contactAvatarSrc,
     contacts,
+    effectiveGroupId,
     groupMembers.contactIds,
+    groupMembers.organizationIds,
     groupsByContactId,
-    selectedGroupId,
   ]);
 
   const handleDeleteContact = useCallback(async () => {
@@ -685,7 +766,7 @@ export function ContactsPage({
       await workspace.softDeleteContact(selected.id);
       navigate(
         isStandalone
-          ? getContactsGroupHref(selectedGroupId)
+          ? getContactsGroupHref(effectiveGroupId)
           : contactsListHref,
         { replace: true },
       );
@@ -793,7 +874,7 @@ export function ContactsPage({
       if (isStandalone) {
         navigate(
           getContactOverlayHref(routeParam, {
-            groupId: selectedGroupId,
+            groupId: effectiveGroupId,
           }),
         );
         return;
@@ -807,10 +888,10 @@ export function ContactsPage({
     void workspace
       .createContact({ firstName: "New", lastName: "contact" })
       .then(async (created) => {
-        if (selectedGroupId) {
+        if (effectiveGroupId) {
           try {
             await addCrmGroupMemberWithRetry(client, powerSync, {
-              groupId: selectedGroupId,
+              groupId: effectiveGroupId,
               subjectType: "contact",
               subjectId: created.id,
             });
@@ -829,7 +910,7 @@ export function ContactsPage({
               { id: created.id, key: created.key, number: created.number },
             ]),
             {
-              groupId: selectedGroupId,
+              groupId: effectiveGroupId,
             },
           ),
         );
@@ -858,7 +939,7 @@ export function ContactsPage({
         getContactOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "page",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -883,7 +964,7 @@ export function ContactsPage({
         getContactOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "panel",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -904,7 +985,7 @@ export function ContactsPage({
         getContactOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "panel",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1045,7 +1126,7 @@ export function ContactsPage({
       setListFaded(false);
       setWorkspaceFaded(false);
       setDetailCollapsed(false);
-      navigate(getContactsGroupHref(selectedGroupId), { replace: true });
+      navigate(getContactsGroupHref(effectiveGroupId), { replace: true });
     };
 
     // Already on the reopen strip — leave immediately.
@@ -1160,7 +1241,7 @@ export function ContactsPage({
           navigate(
             getContactOverlayHref(selectedSlugValue, {
               layout: "page",
-              groupId: selectedGroupId,
+              groupId: effectiveGroupId,
             }),
           );
         } else if (overlayLayout === "page") {
@@ -1191,7 +1272,7 @@ export function ContactsPage({
               navigate(
                 getContactOverlayHref(selectedSlugValue, {
                   layout: "page",
-                  groupId: selectedGroupId,
+                  groupId: effectiveGroupId,
                 }),
               );
             }
@@ -1239,7 +1320,7 @@ export function ContactsPage({
         getContactOverlayHref(selectedSlugValue, {
           section: next === "overview" ? undefined : next,
           layout: overlayLayout,
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1251,7 +1332,7 @@ export function ContactsPage({
         getContactOverlayHref(selectedSlugValue, {
           section: next === "overview" ? undefined : next,
           layout: overlayLayout,
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1266,6 +1347,72 @@ export function ContactsPage({
     if (!selected || !selectedSlugValue) return null;
     const contact = selected;
     const contactRouteSlug = selectedSlugValue;
+
+    if (sectionId === "portal") {
+      return (
+        <ContactPortalTabView
+          settings={contact.portalSettings}
+          portalUsername={contact.portalUsername}
+          portalPasswordSet={Boolean(contact.portalPasswordSet)}
+          projects={portalProjects}
+          emails={getContactEmailAddresses({
+            email: details?.email ?? contact.email,
+            emails: details?.emails ?? contact.emails,
+          }).map((address) => ({ address }))}
+          error={portalSaveError}
+          onSave={async ({ settings, portalUsername, portalPassword }) => {
+            setPortalSaveError(null);
+            try {
+              // Password is REST-only. Never follow with settings/PowerSync in the
+              // same turn — a queued contact upload with a stale
+              // `portal_password_hash` can clobber the hash we just set (UI shows
+              // success from the REST 200 while login still uses the old password).
+              if (portalPassword !== null) {
+                await client.requestJson(
+                  `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
+                  {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      portalPassword,
+                      // Never clear username during a password-only confirm.
+                      ...(portalUsername
+                        ? { portalUsername }
+                        : contact.portalUsername
+                          ? { portalUsername: contact.portalUsername }
+                          : {}),
+                    }),
+                  },
+                );
+                return;
+              }
+              await client.requestJson(
+                `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    portalSettings: settings,
+                    portalUsername,
+                  }),
+                },
+              );
+              await workspace.patchContact(contact.id, {
+                portalSettings: settings,
+                portalUsername,
+              });
+            } catch (error) {
+              setPortalSaveError(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to save portal settings",
+              );
+              throw error;
+            }
+          }}
+        />
+      );
+    }
 
     if (sectionId === "tasks") {
       return (
@@ -1364,12 +1511,12 @@ export function ContactsPage({
   ): { label: string; href?: string }[] {
     if (!selected || !selectedSlugValue) return [];
     return [
-      { label: "Contacts", href: getContactsGroupHref(selectedGroupId) },
+      { label: "Contacts", href: getContactsGroupHref(effectiveGroupId) },
       {
         label: selected.name,
         href: getContactOverlayHref(selectedSlugValue, {
           layout: "page",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
       },
       { label: sectionLabel, href: sectionHref },
@@ -1492,7 +1639,7 @@ export function ContactsPage({
         groupOptions={groupOptions}
         memberGroupIds={memberGroupIds}
         onMemberGroupIdsChange={handleMemberGroupIdsChange}
-        sections={isStandalone ? CONTACT_CARD_SECTIONS : CONTACT_SECTIONS}
+        sections={contactProfileSections}
         section={profileSection}
         onSectionChange={handleSectionChange}
         onMore={isStandalone ? expandOverlay : undefined}
@@ -1656,13 +1803,33 @@ export function ContactsPage({
             }}
           />
         }
-        onSaveFirstName={(firstName) => {
-          void workspace.patchContact(contact.id, { firstName });
-          return { ok: true };
+        onSaveFirstName={async (firstName) => {
+          try {
+            await workspace.patchContact(contact.id, { firstName });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not save first name.",
+            };
+          }
         }}
-        onSaveLastName={(lastName) => {
-          void workspace.patchContact(contact.id, { lastName });
-          return { ok: true };
+        onSaveLastName={async (lastName) => {
+          try {
+            await workspace.patchContact(contact.id, { lastName });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not save last name.",
+            };
+          }
         }}
         onSaveDetails={(patch: ContactOverviewDetails) => {
           void workspace.patchContact(contact.id, patch);
@@ -1870,7 +2037,7 @@ export function ContactsPage({
             navigate(
               getContactOverlayHref(selectedSlugValue, {
                 layout: "page",
-                groupId: selectedGroupId,
+                groupId: effectiveGroupId,
               }),
             );
           }

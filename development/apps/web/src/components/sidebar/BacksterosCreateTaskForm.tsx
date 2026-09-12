@@ -34,6 +34,7 @@ import {
   BACKSTEROS_TASK_PRIORITY_LABELS,
   getBacksterosTaskPriorityLabel,
 } from "~/backsteros/taskDetailFormat";
+import { backsterosTaskListRowFromDetail } from "~/backsteros/taskListUpsert";
 import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import {
@@ -44,6 +45,8 @@ import {
 import type { BacksterosCodebaseProject, BacksterosContact } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosContactAvatarSrcMap } from "~/backsteros/useBacksterosContactAvatars";
+import { upsertBacksterosInboxTaskLocal } from "~/backsteros/useBacksterosInboxAttentionTasks";
+import { upsertBacksterosProjectTaskLocal } from "~/backsteros/useBacksterosProjectTasks";
 import { useEnsureBacksterosT3Project } from "~/backsteros/useEnsureBacksterosT3Project";
 import { useTaskPropertyDropdownShortcuts } from "~/backsteros/useTaskPropertyDropdownShortcuts";
 import { useProjects } from "~/state/entities";
@@ -522,6 +525,11 @@ export function BacksterosCreateTaskForm({
         assigneeId,
       });
 
+      // Paint the left rail immediately — do not wait for soft-poll (3–8s).
+      const listRow = backsterosTaskListRowFromDetail(created);
+      upsertBacksterosProjectTaskLocal(listRow);
+      upsertBacksterosInboxTaskLocal(listRow);
+
       closeCompose();
       openTaskDetail({ taskId: created.id, project: selectedProject });
       await openBacksterosTaskChat({
@@ -555,6 +563,25 @@ export function BacksterosCreateTaskForm({
     submitting,
     title,
   ]);
+
+  // ⌘/Ctrl+Enter creates from anywhere in the modal (title, description,
+  // property chips, or the footer) — same path as the Create task button.
+  useEffect(() => {
+    function handleSubmitShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (event.key !== "Enter" || event.repeat) return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (!canSubmit) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      void handleCreate();
+    }
+
+    window.addEventListener("keydown", handleSubmitShortcut, true);
+    return () => window.removeEventListener("keydown", handleSubmitShortcut, true);
+  }, [canSubmit, handleCreate]);
 
   // When nothing owns focus, land on Create task so Enter can submit.
   useEffect(() => {
@@ -783,11 +810,9 @@ export function BacksterosCreateTaskForm({
                   event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  // Bare Enter stays on one line; ⌘/Ctrl+Enter is handled globally.
+                  if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
                     event.preventDefault();
-                    if ((event.metaKey || event.ctrlKey) && canSubmit) {
-                      void handleCreate();
-                    }
                   }
                 }}
                 placeholder="Task title"
@@ -851,6 +876,7 @@ export function BacksterosCreateTaskForm({
             size="sm"
             disabled={!canSubmit}
             data-compose-action="submit"
+            aria-keyshortcuts="Meta+Enter Control+Enter"
             onClick={() => void handleCreate()}
             onFocus={() => {
               composeTabCursorRef.current = "submit";

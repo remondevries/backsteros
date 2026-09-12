@@ -16,6 +16,8 @@ import {
   type ProjectStatus,
 } from "@backsteros/ui";
 
+import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
+import { DevelopmentDeploymentsSidePanel } from "../components/development-deployments-side-panel";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useRoutePathActive } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
@@ -27,6 +29,7 @@ import {
 import { navigateToHref } from "../router/navigate-href";
 
 const DEVELOPMENT_LIST_HREF = "/development";
+const DEVELOPMENT_SIDE_PANEL_WIDTH_KEY = "development-side-panel-width";
 
 function buildDevelopmentListHref(view: ListBoardView): string {
   if (view === "list") return DEVELOPMENT_LIST_HREF;
@@ -102,79 +105,88 @@ function DevelopmentPageBody() {
   return (
     <>
       <RegisterPageTitle title="Development" />
-      <ProjectsOverviewView
-        projects={projects}
-        workingProjectIds={workingProjectIds}
-        organizations={organizations}
-        secondaryGrouping="organization"
-        showAreaFilters={false}
-        showTypeGroups={false}
-        emptyMessage="No codebase projects yet."
-        view={listView}
-        onViewChange={(nextView) => {
-          persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
-          navigate(buildDevelopmentListHref(nextView));
-        }}
-        onSelectProject={(key) => {
-          const match = projects.find(
-            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-          );
-          const href = `/projects/${key}`;
-          if (match?.name) primeTabTitle(href, match.name);
-          const state: ProjectLocationState = {
-            projectType: "codebase",
-            from: "development",
-          };
-          navigate(href, { state });
-        }}
-        onStatusChange={(projectId, status: ProjectStatus) => {
-          void workspace.patchProject(projectId, { status });
-        }}
-        onPriorityChange={(projectId, priority) => {
-          void workspace.patchProject(projectId, { priority });
-        }}
-        onStartDateChange={(projectId, startDate) => {
-          void workspace.patchProject(projectId, {
-            startDate: startDate ? startDate.toISOString() : null,
-          });
-        }}
-        onDueDateChange={(projectId, dueDate) => {
-          void workspace.patchProject(projectId, {
-            dueDate: dueDate ? dueDate.toISOString() : null,
-          });
-        }}
-        onCreateProject={async ({ status, name }) => {
-          return workspace.createProject({
-            name,
-            status,
-            type: "codebase",
-          });
-        }}
-        onCreatedProject={(_id, key) => {
-          if (!key) return;
-          const href = `/projects/${key}`;
-          const match = projects.find(
-            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-          );
-          if (match?.name) primeTabTitle(href, match.name);
-          const state: ProjectLocationState = {
-            projectType: "codebase",
-            from: "development",
-          };
-          navigate(href, { state });
-        }}
-        onReorder={(request) => {
-          const patches = projectReorderPatches(
-            projects as ProjectOverviewRowProject[],
-            request,
-          );
-          for (const patch of patches) {
-            void workspace.patchProject(patch.id, {
-              status: patch.status,
-              sortOrder: patch.sortOrder,
-            });
-          }
-        }}
+      <DesktopCollapsibleRightSidePanelLayout
+        storageKey={DEVELOPMENT_SIDE_PANEL_WIDTH_KEY}
+        panelAriaLabel="Development side panel"
+        showPanelLabel="Show side panel"
+        hidePanelLabel="Hide side panel"
+        main={
+          <ProjectsOverviewView
+            projects={projects}
+            workingProjectIds={workingProjectIds}
+            organizations={organizations}
+            secondaryGrouping="organization"
+            showAreaFilters={false}
+            showTypeGroups={false}
+            emptyMessage="No codebase projects yet."
+            view={listView}
+            onViewChange={(nextView) => {
+              persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
+              navigate(buildDevelopmentListHref(nextView));
+            }}
+            onSelectProject={(key) => {
+              const match = projects.find(
+                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+              );
+              const href = `/projects/${key}`;
+              if (match?.name) primeTabTitle(href, match.name);
+              const state: ProjectLocationState = {
+                projectType: "codebase",
+                from: "development",
+              };
+              navigate(href, { state });
+            }}
+            onStatusChange={(projectId, status: ProjectStatus) => {
+              void workspace.patchProject(projectId, { status });
+            }}
+            onPriorityChange={(projectId, priority) => {
+              void workspace.patchProject(projectId, { priority });
+            }}
+            onStartDateChange={(projectId, startDate) => {
+              void workspace.patchProject(projectId, {
+                startDate: startDate ? startDate.toISOString() : null,
+              });
+            }}
+            onDueDateChange={(projectId, dueDate) => {
+              void workspace.patchProject(projectId, {
+                dueDate: dueDate ? dueDate.toISOString() : null,
+              });
+            }}
+            onCreateProject={async ({ status, name }) => {
+              return workspace.createProject({
+                name,
+                status,
+                type: "codebase",
+              });
+            }}
+            onCreatedProject={(_id, key) => {
+              if (!key) return;
+              const href = `/projects/${key}`;
+              const match = projects.find(
+                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+              );
+              if (match?.name) primeTabTitle(href, match.name);
+              const state: ProjectLocationState = {
+                projectType: "codebase",
+                from: "development",
+              };
+              navigate(href, { state });
+            }}
+            onReorder={(request) => {
+              const patches = projectReorderPatches(
+                projects as ProjectOverviewRowProject[],
+                request,
+              );
+              for (const patch of patches) {
+                void workspace.patchProject(patch.id, {
+                  status: patch.status,
+                  sortOrder: patch.sortOrder,
+                });
+              }
+            }}
+          />
+        }
+        sidePanel={<DevelopmentDeploymentsSidePanel />}
       />
     </>
   );

@@ -25,10 +25,18 @@ describe("backsterosEntityListFingerprint", () => {
     );
   });
 
-  it("ignores extra payload fields", () => {
+  it("ignores non-status payload fields", () => {
     expect(
       backsterosEntityListFingerprint([{ id: "1", updatedAt: "t1", title: "a" } as never]),
     ).toBe(backsterosEntityListFingerprint([{ id: "1", updatedAt: "t1", title: "b" } as never]));
+  });
+
+  it("changes when status changes", () => {
+    expect(
+      backsterosEntityListFingerprint([{ id: "1", updatedAt: "t1", status: "in_review" }]),
+    ).not.toBe(
+      backsterosEntityListFingerprint([{ id: "1", updatedAt: "t1", status: "in_progress" }]),
+    );
   });
 });
 

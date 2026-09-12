@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { CRM_ACTIVITY_PREVIEW_MAX_CHARS } from "@backsteros/contracts";
 
+import { crmGroupsUseRestOnly } from "./crm-mutations";
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 
 test("shouldSkipRestEntityWrite when PowerSync connected", () => {
@@ -37,6 +38,10 @@ test("CRM local writes gate on ready, not only connected", () => {
     canWriteViaPowerSync({ ready: false, createMetadata: async () => "id" }),
     false,
   );
+});
+
+test("CRM groups always use REST so desktop matches portal/Postgres", () => {
+  assert.equal(crmGroupsUseRestOnly(), true);
 });
 
 test("activity preview length matches contract cap", () => {

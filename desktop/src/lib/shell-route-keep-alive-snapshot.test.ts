@@ -61,3 +61,14 @@ test("snapshotFor still parses global letters slug", () => {
   const snapshot = snapshotFor("letters", "/letters/l-4", "");
   assert.equal(snapshot.params.slug, "l-4");
 });
+
+test("snapshotFor parses communication itemId like inbox", () => {
+  const withItem = snapshotFor("communication", "/communication/in-51", "");
+  assert.equal(withItem.params.itemId, "in-51");
+
+  const root = snapshotFor("communication", "/communication", "");
+  assert.equal(root.params.itemId, undefined);
+
+  const inbox = snapshotFor("inbox", "/inbox/in-9", "");
+  assert.equal(inbox.params.itemId, "in-9");
+});

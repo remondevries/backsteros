@@ -15,6 +15,7 @@ import { ProjectOcticon } from "../projects/project-octicon.js";
 import {
   AreasNavIcon,
   CalendarNavIcon,
+  CommunicationNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
   EmailNavIcon,
@@ -84,6 +85,7 @@ const NAVIGATION_ICONS: Record<
   development: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
+  communication: CommunicationNavIcon,
   social: SocialNavIcon,
   contacts: ContactsNavIcon,
   organizations: OrganizationsNavIcon,

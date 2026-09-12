@@ -25,7 +25,7 @@ function replicationHeaders(secret: string): HeadersInit {
   };
 }
 
-async function pullTable(table: ReplicatedTable) {
+export async function pullTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
@@ -84,7 +84,7 @@ async function pullTable(table: ReplicatedTable) {
   }
 }
 
-async function pushTable(table: ReplicatedTable) {
+export async function pushTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
@@ -246,3 +246,56 @@ export function stopCoreReplicationWorker(): void {
 }
 
 export { getChangesSince, applyRemoteChanges };
+
+/**
+ * After local_fallback (or any write that did not go through the leader clock),
+ * push the affected tables to the peer immediately instead of waiting for the
+ * periodic tick. Fire-and-forget; peer offline → next tick retries.
+ */
+export function scheduleTableReplicationPush(
+  tables: readonly ReplicatedTable[],
+  reason = "entity-write",
+): void {
+  if (tables.length === 0 || !getCoreReplicationConfig()) return;
+
+  void (async () => {
+    for (const table of tables) {
+      try {
+        await pushTable(table);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendOpsLog(
+          "warn",
+          `core replication immediate push failed (${reason})`,
+          `${table}: ${message}`,
+        );
+      }
+    }
+  })();
+}
+
+/**
+ * Peer wake path: pull specific tables from the other core so metadata writes
+ * (CRM groups, contacts, …) land without waiting for the 15s tick.
+ */
+export function scheduleTableReplicationPull(
+  tables: readonly ReplicatedTable[],
+  reason = "nudge",
+): void {
+  if (tables.length === 0 || !getCoreReplicationConfig()) return;
+
+  void (async () => {
+    for (const table of tables) {
+      try {
+        await pullTable(table);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendOpsLog(
+          "warn",
+          `core replication immediate pull failed (${reason})`,
+          `${table}: ${message}`,
+        );
+      }
+    }
+  })();
+}

@@ -42,15 +42,13 @@ function hasLinks(value: unknown): boolean {
 
 /**
  * Resolve list rows for the Linear-shaped client.
- * Once SQLite/PowerSync has rows, keep that membership — REST is only a
- * cold-start rescue when local is empty.
+ * Once SQLite/PowerSync has rows, return local only — REST must not overlay
+ * fields (that caused status / notification / due-date flashes). REST is only
+ * a cold-start rescue when local is empty.
  *
- * Still overlay an API row when its `updatedAt` is strictly newer. Optimistic
- * patches bump the API cache immediately while the SQLite watch is still a tick
- * behind; without this, a re-render snaps status (and other fields) back to
- * the stale local value until PowerSync catches up — or forever if sync
- * briefly re-delivers the pre-patch row. On equal timestamps, local wins so a
- * due-date-only API bump cannot revive a stale REST status (BOD-62).
+ * Optimistic shell edits must write SQLite first. Pending API-only creates
+ * still use {@link mergeLocalWithPendingApiCreates} until creates are
+ * SQLite-first.
  */
 export function resolveLocalOrApiRows<
   T extends { id: string; updatedAt?: string | number | Date | null },
@@ -59,13 +57,7 @@ export function resolveLocalOrApiRows<
   apiRows: T[] | null | undefined,
 ): T[] {
   if (localRows != null && localRows.length > 0) {
-    if (!apiRows?.length) return localRows;
-    const apiById = new Map(apiRows.map((row) => [row.id, row]));
-    return localRows.map((local) => {
-      const api = apiById.get(local.id);
-      if (!api) return local;
-      return preferNewerByUpdatedAt(local, api);
-    });
+    return localRows;
   }
   return apiRows ?? localRows ?? [];
 }
@@ -87,18 +79,18 @@ export function mergeLocalWithPendingApiCreates<T extends { id: string }>(
 }
 
 /**
- * Documents live path: overlay newer API metadata (move/rename/title) and
- * pending creates onto SQLite rows until PowerSync catches up. Optional
- * `deletedIds` hides agent deletes immediately.
+ * Apply a sparse live overlay (workspace SSE / agent) onto local-primary rows.
+ * Prefer newer `updatedAt` when both exist; prepend overlay-only ids; hide
+ * deleted ids until PowerSync drops them.
  *
- * Scoped to documents only — do not generalize to tasks/projects (Linear-shaped
- * local-primary lists).
+ * This is **not** full REST list merge — callers must only put SSE (or
+ * equivalent) rows into `overlayById`, never the cold-start hydrate array.
  */
-export function mergeLocalDocumentsWithLiveApi<
+export function applyLiveEntityOverlay<
   T extends { id: string; updatedAt?: string | number | Date | null },
 >(
   localRows: T[],
-  apiRows: T[] | null | undefined,
+  overlayById: ReadonlyMap<string, T> | null | undefined,
   options?: { deletedIds?: ReadonlySet<string> },
 ): T[] {
   const deletedIds = options?.deletedIds;
@@ -107,35 +99,52 @@ export function mergeLocalDocumentsWithLiveApi<
       ? localRows.filter((row) => !deletedIds.has(row.id))
       : localRows;
 
-  if (!apiRows?.length) return base;
+  if (!overlayById?.size) return base;
 
-  const apiById = new Map(apiRows.map((row) => [row.id, row]));
   const merged = base.map((local) => {
-    if (deletedIds?.has(local.id)) return local;
-    const api = apiById.get(local.id);
-    if (!api) return local;
-    if (updatedAtMs(api.updatedAt) > updatedAtMs(local.updatedAt)) {
-      return api;
+    const live = overlayById.get(local.id);
+    if (!live) return local;
+    if (updatedAtMs(live.updatedAt) > updatedAtMs(local.updatedAt)) {
+      return live;
     }
     return local;
   });
 
   const localIds = new Set(merged.map((row) => row.id));
-  const pending = apiRows.filter(
-    (row) => !localIds.has(row.id) && !deletedIds?.has(row.id),
-  );
+  const pending: T[] = [];
+  for (const row of overlayById.values()) {
+    if (localIds.has(row.id) || deletedIds?.has(row.id)) continue;
+    pending.push(row);
+  }
   if (pending.length === 0) return merged;
   return [...pending, ...merged];
 }
 
 /**
- * Column fillers for fields that PowerSync list watches already select
- * (links, type, due dates, …) must only run on cold-start rescue (local
- * empty). Once SQLite has rows, pass null so those fillers are no-ops.
- *
- * Do **not** gate {@link fillMissingLongTextFromApi} with this for entities
- * that still merge list-omitted long text from REST (projects, letters, …).
- * Task **description** is not list-filled — detail opens fetch on demand.
+ * @deprecated Use {@link applyLiveEntityOverlay} with an SSE overlay map.
+ * Kept as a thin adapter for older call sites/tests.
+ */
+export function mergeLocalDocumentsWithLiveApi<
+  T extends { id: string; updatedAt?: string | number | Date | null },
+>(
+  localRows: T[],
+  apiRows: T[] | null | undefined,
+  options?: { deletedIds?: ReadonlySet<string> },
+): T[] {
+  if (!apiRows?.length) {
+    return applyLiveEntityOverlay(localRows, null, options);
+  }
+  return applyLiveEntityOverlay(
+    localRows,
+    new Map(apiRows.map((row) => [row.id, row])),
+    options,
+  );
+}
+
+/**
+ * Column fillers must only run on cold-start rescue (local empty). Once
+ * SQLite has rows, pass null so fillers are no-ops — including long text,
+ * task flags, numbers, and commit SHAs. Do not add live REST field merges.
  */
 export function apiFillSourceForColdStart<T>(
   localRows: T[] | null | undefined,
@@ -618,6 +627,55 @@ export function fillMissingAgentInboxApprovedAtFromApi<
     const api = apiById.get(row.id);
     if (!api || optionalTextMissing(api.agentInboxApprovedAt)) return row;
     return { ...row, agentInboxApprovedAt: api.agentInboxApprovedAt };
+  });
+}
+
+function taskFlagTruthy(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
+/**
+ * `support` / `notification` are recent columns. PowerSync can keep 0/false
+ * after cloud/portal writes until download catches up. Desktop heals via a
+ * one-shot flag source (not list membership merge) + optional SQLite patch.
+ * Prefer newer API when it clears a flag.
+ */
+export function fillMissingTaskFlagsFromApi<
+  T extends {
+    id: string;
+    support?: boolean | number | null;
+    notification?: boolean | number | null;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    const apiNewer = updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt);
+    let next = row;
+    if (apiNewer) {
+      if (taskFlagTruthy(row.support) !== taskFlagTruthy(api.support)) {
+        next = { ...next, support: Boolean(api.support) as T["support"] };
+      }
+      if (
+        taskFlagTruthy(row.notification) !== taskFlagTruthy(api.notification)
+      ) {
+        next = {
+          ...next,
+          notification: Boolean(api.notification) as T["notification"],
+        };
+      }
+      return next;
+    }
+    if (!taskFlagTruthy(row.support) && taskFlagTruthy(api.support)) {
+      next = { ...next, support: true as T["support"] };
+    }
+    if (!taskFlagTruthy(row.notification) && taskFlagTruthy(api.notification)) {
+      next = { ...next, notification: true as T["notification"] };
+    }
+    return next;
   });
 }
 

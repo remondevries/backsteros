@@ -53,19 +53,35 @@ export function publishWorkspaceUpdatedFromSyncEvent(
       });
       break;
     case "task":
-    case "task_comment":
       publishTaskWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
         reason: "patch",
       });
       break;
+    case "task_comment": {
+      // entityId on the sync_event is the comment id; shells watch by task id.
+      const taskId =
+        typeof payload.task_id === "string" && payload.task_id.trim()
+          ? payload.task_id.trim()
+          : typeof payload.taskId === "string" && payload.taskId.trim()
+            ? payload.taskId.trim()
+            : null;
+      if (!taskId) break;
+      publishTaskWorkspaceUpdated(workspaceId, taskId, {
+        projectId,
+        reason: "comment",
+      });
+      break;
+    }
     case "meeting":
       publishMeetingWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
       });
       break;
     case "project":
-      publishProjectWorkspaceUpdated(workspaceId, event.entityId);
+      publishProjectWorkspaceUpdated(workspaceId, event.entityId, {
+        operation: operation === "delete" ? "delete" : "upsert",
+      });
       break;
     case "letter":
       publishLetterWorkspaceUpdated(workspaceId, event.entityId, {

@@ -203,14 +203,26 @@ export function OrganizationsPage() {
   );
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(keepAliveActive);
+  const effectiveGroupId = groupsCatalog.resolveGroupId(selectedGroupId);
   const groupMembers = useCrmGroupOrganizationIds(
-    selectedGroupId,
-    keepAliveActive && Boolean(selectedGroupId),
+    effectiveGroupId,
+    keepAliveActive && Boolean(effectiveGroupId),
   );
-  const selectedGroupName = selectedGroupId
-    ? (groupsCatalog.groups.find((group) => group.id === selectedGroupId)
+  const selectedGroupName = effectiveGroupId
+    ? (groupsCatalog.groups.find((group) => group.id === effectiveGroupId)
         ?.name ?? null)
     : null;
+
+  useEffect(() => {
+    if (
+      !selectedGroupId ||
+      !effectiveGroupId ||
+      selectedGroupId === effectiveGroupId
+    ) {
+      return;
+    }
+    navigate(getOrganizationsGroupHref(effectiveGroupId), { replace: true });
+  }, [effectiveGroupId, navigate, selectedGroupId]);
 
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [detailCollapseAnimating, setDetailCollapseAnimating] =
@@ -425,18 +437,33 @@ export function OrganizationsPage() {
     (nextIds: string[]) => {
       const previous = new Set(memberGroupIds);
       const next = new Set(nextIds);
-      for (const groupId of next) {
-        if (!previous.has(groupId)) {
-          void crmGroups.toggleMembership(groupId, true);
+      void (async () => {
+        try {
+          for (const groupId of next) {
+            if (!previous.has(groupId)) {
+              await crmGroups.toggleMembership(groupId, true);
+            }
+          }
+          for (const groupId of previous) {
+            if (!next.has(groupId)) {
+              await crmGroups.toggleMembership(groupId, false);
+            }
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to update groups";
+          const friendly =
+            /subject not found|member subject|404/i.test(message)
+              ? "This organization isn’t on the server yet, so it can’t join a group. Wait for sync or re-save it, then try again."
+              : message;
+          window.alert(friendly);
+          await crmGroups.reload();
         }
-      }
-      for (const groupId of previous) {
-        if (!next.has(groupId)) {
-          void crmGroups.toggleMembership(groupId, false);
-        }
-      }
+      })();
     },
-    [crmGroups.toggleMembership, memberGroupIds],
+    [crmGroups, memberGroupIds],
   );
 
   useEffect(() => {
@@ -881,7 +908,7 @@ export function OrganizationsPage() {
       navigate(
         getOrganizationOverlayHref(selectedSlugValue, {
           layout: "page",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -911,7 +938,7 @@ export function OrganizationsPage() {
       ? [
           {
             label: "Organizations",
-            href: getOrganizationsGroupHref(selectedGroupId),
+            href: getOrganizationsGroupHref(effectiveGroupId),
           },
           {
             label: selected.name,
@@ -920,7 +947,7 @@ export function OrganizationsPage() {
                 ? undefined
                 : getOrganizationOverlayHref(selectedSlugValue, {
                     layout: overlayLayout,
-                    groupId: selectedGroupId,
+                    groupId: effectiveGroupId,
                   }),
           },
           ...(sectionLabel ? [{ label: sectionLabel }] : []),
@@ -935,7 +962,7 @@ export function OrganizationsPage() {
     }
     try {
       await workspace.softDeleteOrganization(selected.id);
-      navigate(getOrganizationsGroupHref(selectedGroupId), { replace: true });
+      navigate(getOrganizationsGroupHref(effectiveGroupId), { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -1264,7 +1291,7 @@ export function OrganizationsPage() {
       ...org,
       avatarSrc: organizationAvatarSrc[org.id] ?? org.avatarSrc ?? null,
     }));
-    if (!selectedGroupId) return mapped;
+    if (!effectiveGroupId) return mapped;
     return mapped.filter((org) =>
       groupMembers.organizationIds.has(org.id),
     );
@@ -1282,7 +1309,7 @@ export function OrganizationsPage() {
         organizations,
       );
       navigate(
-        getOrganizationOverlayHref(routeParam, { groupId: selectedGroupId }),
+        getOrganizationOverlayHref(routeParam, { groupId: effectiveGroupId }),
       );
     },
     [navigate, organizations, selectedGroupId],
@@ -1292,10 +1319,10 @@ export function OrganizationsPage() {
     void workspace
       .createOrganization({ name: "New organization" })
       .then(async (created) => {
-        if (selectedGroupId) {
+        if (effectiveGroupId) {
           try {
             await addCrmGroupMemberWithRetry(client, powerSync, {
-              groupId: selectedGroupId,
+              groupId: effectiveGroupId,
               subjectType: "organization",
               subjectId: created.id,
             });
@@ -1318,7 +1345,7 @@ export function OrganizationsPage() {
                 number: created.number,
               },
             ]),
-            { groupId: selectedGroupId },
+            { groupId: effectiveGroupId },
           ),
         );
       })
@@ -1353,7 +1380,7 @@ export function OrganizationsPage() {
         getOrganizationOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "page",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1368,7 +1395,7 @@ export function OrganizationsPage() {
         getOrganizationOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "panel",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1389,7 +1416,7 @@ export function OrganizationsPage() {
         getOrganizationOverlayHref(selectedSlugValue, {
           section: cardSection === "overview" ? undefined : cardSection,
           layout: "panel",
-          groupId: selectedGroupId,
+          groupId: effectiveGroupId,
         }),
         { replace: true },
       );
@@ -1523,7 +1550,7 @@ export function OrganizationsPage() {
       setListFaded(false);
       setWorkspaceFaded(false);
       setDetailCollapsed(false);
-      navigate(getOrganizationsGroupHref(selectedGroupId), { replace: true });
+      navigate(getOrganizationsGroupHref(effectiveGroupId), { replace: true });
     };
 
     // Already on the reopen strip — leave immediately.
@@ -1677,7 +1704,7 @@ export function OrganizationsPage() {
       getOrganizationOverlayHref(selectedSlugValue, {
         section: next === "overview" ? undefined : next,
         layout: overlayLayout,
-        groupId: selectedGroupId,
+        groupId: effectiveGroupId,
       }),
       { replace: true },
     );
@@ -1987,9 +2014,19 @@ export function OrganizationsPage() {
             }}
           />
         }
-        onSaveName={(name) => {
-          void workspace.patchOrganization(organization.id, { name });
-          return { ok: true };
+        onSaveName={async (name) => {
+          try {
+            await workspace.patchOrganization(organization.id, { name });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not save organization name.",
+            };
+          }
         }}
         onSaveDetails={(patch: OrganizationOverviewDetails) => {
           void workspace.patchOrganization(organization.id, patch);

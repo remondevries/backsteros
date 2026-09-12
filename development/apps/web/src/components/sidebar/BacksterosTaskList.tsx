@@ -21,6 +21,10 @@ import { isBacksterosInboxMemberTask, partitionBacksterosInboxTasks } from "~/ba
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import {
+  BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME,
+  useBacksterosTaskHasUnsentDraft,
+} from "~/backsteros/taskUnsentDraft";
+import {
   taskSortOrderPatchesForGroup,
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
@@ -73,6 +77,7 @@ function BacksterosTaskRow(props: {
   readonly sortable?: SortableRowBag;
 }) {
   const { task, active, keyboardFocused, working, projectName, onSelect, sortable } = props;
+  const hasUnsentDraft = useBacksterosTaskHasUnsentDraft(task.id) && !active;
   return (
     <li ref={sortable?.setNodeRef} style={sortable?.style}>
       <button
@@ -84,11 +89,13 @@ function BacksterosTaskRow(props: {
           "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
           active
             ? "bg-sidebar-row-active text-sidebar-foreground"
-            : "text-sidebar-foreground hover:bg-sidebar-row-hover",
+            : hasUnsentDraft
+              ? "bg-amber-400/[0.04] text-sidebar-foreground hover:bg-amber-400/[0.08]"
+              : "text-sidebar-foreground hover:bg-sidebar-row-hover",
           keyboardFocused &&
             "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)] text-sidebar-foreground",
-          sortable?.isDragging && "opacity-80 shadow-md",
-          sortable?.listeners && "cursor-grab active:cursor-grabbing",
+          sortable?.listeners && "cursor-pointer",
+          sortable?.isDragging && "cursor-grabbing opacity-80 shadow-md",
         )}
         {...(sortable?.listeners ?? {})}
       >
@@ -98,6 +105,16 @@ function BacksterosTaskRow(props: {
           working={working}
           className="mt-0.5 shrink-0"
         />
+        {hasUnsentDraft ? (
+          <span
+            aria-label="Unsent draft"
+            role="img"
+            data-testid={`backsteros-task-draft-indicator-${task.id}`}
+            className="mt-1.5 inline-flex shrink-0 items-center"
+          >
+            <span aria-hidden className={BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME} />
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{task.title}</span>
           {projectName ? (
@@ -181,7 +198,16 @@ function BacksterosTaskStatusGroup(props: {
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-          onDragEnd={handleDragEnd}
+          onDragStart={() => {
+            document.body.style.cursor = "grabbing";
+          }}
+          onDragCancel={() => {
+            document.body.style.removeProperty("cursor");
+          }}
+          onDragEnd={(event) => {
+            document.body.style.removeProperty("cursor");
+            handleDragEnd(event);
+          }}
         >
           <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             <ul role="list" className="flex flex-col gap-px" aria-label={`${label} tasks`}>

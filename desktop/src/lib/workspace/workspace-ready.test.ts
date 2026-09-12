@@ -84,3 +84,41 @@ test("global ready when any core surface ready", () => {
   );
   assert.equal(computeWorkspaceGlobalReady(bySurface), true);
 });
+
+test("restHydrateSettled alone does not mark surfaces ready", () => {
+  const ready = computeWorkspaceSurfaceReady(
+    baseInput({
+      restHydrateSettled: true,
+      powerSyncReady: true,
+    }),
+  );
+  assert.equal(ready.inbox, false);
+  assert.equal(ready.tasks, false);
+  assert.equal(ready.knowledge, false);
+});
+
+test("grace period unblocks when PowerSync ready but watches hung", () => {
+  const ready = computeWorkspaceSurfaceReady(
+    baseInput({
+      powerSyncReady: true,
+      queriesGracePeriodExpired: true,
+    }),
+  );
+  assert.equal(ready.inbox, true);
+  assert.equal(ready.tasks, true);
+});
+
+test("apiLoaded cold rescue unblocks without local watches", () => {
+  const ready = computeWorkspaceSurfaceReady(
+    baseInput({
+      apiLoaded: {
+        ...baseInput().apiLoaded,
+        tasks: true,
+        inboxTasks: true,
+        projects: true,
+      },
+    }),
+  );
+  assert.equal(ready.inbox, true);
+  assert.equal(ready.tasks, true);
+});

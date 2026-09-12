@@ -41,6 +41,10 @@ export type CalendarTaskLike = {
   dueEndDate?: number | Date | null;
   /** External update flag — green dot on status icons. */
   inboxUpdatedAt?: number | Date | string | null;
+  /** Support tickets use a support-ring glyph. */
+  support?: boolean | null;
+  /** Notification-style tasks use a bell glyph. */
+  notification?: boolean | null;
   /** Email rows mixed into task lists — never scheduled from the calendar. */
   listKind?: "task" | "email" | "meeting";
   habitId?: string | null;
@@ -82,6 +86,8 @@ export type TaskCalendarEvent = {
         status: string;
         projectName?: string | null;
         inboxUpdatedAt?: number | Date | string | null;
+        support?: boolean;
+        notification?: boolean;
         habitId?: string | null;
         habitIcon?: string | null;
       }
@@ -215,6 +221,8 @@ export function taskToCalendarEvent(
       status: task.status,
       projectName: task.projectName?.trim() || null,
       inboxUpdatedAt: task.inboxUpdatedAt ?? null,
+      support: Boolean(task.support),
+      notification: Boolean(task.notification),
       habitId,
       habitIcon: habitId ? (task.habitIcon ?? null) : null,
     },

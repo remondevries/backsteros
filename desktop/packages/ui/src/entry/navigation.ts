@@ -35,7 +35,10 @@ export {
   isJournalSectionPath,
 } from "../journal/journal.js";
 
-export { isInboxPanelPath } from "../content/content-side-panel.js";
+export {
+  isCommunicationPanelPath,
+  isInboxPanelPath,
+} from "../content/content-side-panel.js";
 export { isSettingsPath } from "../navigation/settings.js";
 
 export {

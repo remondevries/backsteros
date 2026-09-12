@@ -352,6 +352,8 @@ export function CalendarTasksSidePanelView({
                     <TaskStatusIcon
                       status={task.status}
                       size={14}
+                      support={Boolean(task.support)}
+                      notification={Boolean(task.notification)}
                       inboxUpdatedAt={task.inboxUpdatedAt}
                     />
                     <span className="calendar-tasks-side-panel-title">

@@ -7,6 +7,7 @@ import { KEEP_ALIVE_SURFACES } from "./shell-warm-keep-alive";
 import {
   areasPage,
   calendarPage,
+  communicationPage,
   contactsPage,
   developmentPage,
   emailPage,
@@ -40,6 +41,7 @@ const SURFACE_PAGES: Partial<Record<PendingPageSurface, ShellLazyPage>> = {
   knowledge: knowledgePage,
   letters: lettersPage,
   finance: financePage,
+  communication: communicationPage,
   social: socialPage,
   contacts: contactsPage,
   organizations: organizationsPage,
@@ -65,6 +67,8 @@ const SIDE_PANEL_LOADERS: Partial<
   contacts: () => import("../shell/side-panels/contacts-side-panel"),
   organizations: () => import("../shell/side-panels/organizations-side-panel"),
   social: () => import("../shell/side-panels/social-side-panel"),
+  communication: () =>
+    import("../shell/side-panels/communication-side-panel"),
   finance: () => import("../shell/side-panels/finance-side-panel"),
   knowledge: () => import("../shell/side-panels/knowledge-side-panel"),
   letters: () => import("../shell/side-panels/letters-side-panel"),
@@ -121,6 +125,7 @@ export function preloadGoNavigationRouteChunks(): void {
     "/development",
     "/letters",
     "/finance/dashboard",
+    "/communication",
     "/contacts",
     "/organizations",
   ]) {

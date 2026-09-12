@@ -41,6 +41,8 @@ import {
 } from "./task-properties-display.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
+import { SupportContactCard } from "./support-contact-card.js";
+import { SupportOrganizationCard } from "./support-organization-card.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import {
   TaskLinkAttachments,
@@ -151,6 +153,10 @@ export type TaskDetailViewProps = {
   onCreateRelatedContactFromQuery?: (query: string) => void;
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
   onAgentInboxApprove?: () => void;
+  supportContact?: import("./support-party-card-types.js").SupportContactCardModel | null;
+  supportOrganization?: import("./support-party-card-types.js").SupportOrganizationCardModel | null;
+  supportContactHref?: string | null;
+  supportOrganizationHref?: string | null;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onTimerSessionChange?: (
     action: "start" | "pause",
@@ -200,6 +206,10 @@ export function TaskDetailView({
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
   onAgentInboxApprove,
+  supportContact = null,
+  supportOrganization = null,
+  supportContactHref = null,
+  supportOrganizationHref = null,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
@@ -470,6 +480,18 @@ export function TaskDetailView({
               </ContentDetailTitleHeader>
               {!usePropertiesRail ? (
                 <div className="task-detail-stacked__properties">
+                  {task.support ? (
+                    <div className="task-detail-stacked__support-parties">
+                      <SupportContactCard
+                        contact={supportContact}
+                        viewHref={supportContactHref}
+                      />
+                      <SupportOrganizationCard
+                        organization={supportOrganization}
+                        viewHref={supportOrganizationHref}
+                      />
+                    </div>
+                  ) : null}
                   <TaskPropertiesInlineChips
                     task={task}
                     onFieldActivate={onFieldActivate}
@@ -567,6 +589,10 @@ export function TaskDetailView({
                 onCreateRelatedContactFromQuery={
                   onCreateRelatedContactFromQuery
                 }
+                supportContact={supportContact}
+                supportOrganization={supportOrganization}
+                supportContactHref={supportContactHref}
+                supportOrganizationHref={supportOrganizationHref}
                 agentInboxPending={agentInboxPending}
                 onAgentInboxApprove={onAgentInboxApprove}
                 onTrackedDurationSecondsChange={

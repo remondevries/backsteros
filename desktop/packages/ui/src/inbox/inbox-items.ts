@@ -79,6 +79,15 @@ export type InboxTaskListItem = {
   agentInboxApprovedAt?: number | null;
   /** External update flag — surfaces in the Updated inbox group. */
   inboxUpdatedAt?: number | Date | string | null;
+  /** Client support ticket (portal Support / Communication). */
+  support?: boolean | null;
+  /** Notification-style task (distinct UI filter / presentation). */
+  notification?: boolean | null;
+  /** Related organization label (Communication support rows). */
+  organizationName?: string | null;
+  /** Related contact label (Communication support rows). */
+  contactName?: string | null;
+  contactAvatarSrc?: string | null;
 };
 
 export type InboxLetterListItem = {
@@ -104,7 +113,7 @@ export type InboxEmailListItem = {
   draftId?: string | null;
   threadId: string | null;
   title: string;
-  /** `Name (email@domain)` shown beside the subject. */
+  /** `Name (email@domain)` stacked above the subject in side panels. */
   partyLabel: string | null;
   status: string;
   priority: number;
@@ -238,6 +247,11 @@ export function buildInboxTaskListItem(input: {
   agentCreatedAt?: number | Date | string | null;
   agentInboxApprovedAt?: number | Date | string | null;
   inboxUpdatedAt?: number | Date | string | null;
+  support?: boolean | null;
+  notification?: boolean | null;
+  organizationName?: string | null;
+  contactName?: string | null;
+  contactAvatarSrc?: string | null;
 }): InboxTaskListItem {
   const toEpoch = (value: number | Date | string | null | undefined) => {
     if (value == null || value === "") return null;
@@ -266,6 +280,11 @@ export function buildInboxTaskListItem(input: {
     agentCreatedAt: toEpoch(input.agentCreatedAt),
     agentInboxApprovedAt: toEpoch(input.agentInboxApprovedAt),
     inboxUpdatedAt: input.inboxUpdatedAt ?? null,
+    support: input.support ?? null,
+    notification: input.notification ?? null,
+    organizationName: input.organizationName ?? null,
+    contactName: input.contactName ?? null,
+    contactAvatarSrc: input.contactAvatarSrc ?? null,
   };
 }
 

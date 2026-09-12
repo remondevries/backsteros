@@ -925,6 +925,22 @@
   white-space: nowrap;
 }
 
+/* Notification tasks in task lists: keep the full project name (no ellipsis). */
+.task-item-row__project--inline {
+  max-width: none;
+  min-width: max-content;
+  flex: 0 0 auto;
+  margin-right: 2px;
+  overflow: visible;
+}
+
+.task-item-row__project--inline .task-item-row__project-name {
+  min-width: max-content;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
 .projects-overview-list {
   display: flex;
   min-height: 0;
