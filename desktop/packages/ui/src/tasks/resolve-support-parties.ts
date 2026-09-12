@@ -47,17 +47,21 @@ function firstId(ids: string[] | null | undefined): string | null {
 }
 
 function contactEmails(contact: ContactListItem): SupportPartyEmail[] {
-  return contactEmailRowsForEditor(contact).map((entry) => ({
-    label: entry.label,
-    address: entry.address,
-  }));
+  return contactEmailRowsForEditor(contact)
+    .filter((entry) => entry.address.trim().length > 0)
+    .map((entry) => ({
+      label: entry.label,
+      address: entry.address,
+    }));
 }
 
 function contactPhones(contact: ContactListItem): SupportPartyPhone[] {
-  return contactPhoneRowsForEditor(contact).map((entry) => ({
-    label: entry.label,
-    number: entry.number,
-  }));
+  return contactPhoneRowsForEditor(contact)
+    .filter((entry) => entry.number.trim().length > 0)
+    .map((entry) => ({
+      label: entry.label,
+      number: entry.number,
+    }));
 }
 
 function organizationEmails(
@@ -66,10 +70,12 @@ function organizationEmails(
   return normalizeOrganizationEmailsInput({
     email: organization.email,
     emails: organization.emails,
-  }).emails.map((entry) => ({
-    label: entry.label,
-    address: entry.address,
-  }));
+  }).emails
+    .filter((entry) => entry.address.trim().length > 0)
+    .map((entry) => ({
+      label: entry.label,
+      address: entry.address,
+    }));
 }
 
 function organizationPhones(
@@ -78,10 +84,12 @@ function organizationPhones(
   return normalizeOrganizationPhonesInput({
     phone: organization.phone,
     phones: organization.phones,
-  }).phones.map((entry) => ({
-    label: entry.label,
-    number: entry.number,
-  }));
+  }).phones
+    .filter((entry) => entry.number.trim().length > 0)
+    .map((entry) => ({
+      label: entry.label,
+      number: entry.number,
+    }));
 }
 
 function toContactModel(

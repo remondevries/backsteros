@@ -165,7 +165,6 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   GitPullRequestLockedIcon,
-  GlobeIcon,
   GoalIcon,
   GrabberIcon,
   GraphIcon,
@@ -392,6 +391,7 @@ import { CarIcon } from "../components/icons/car-icon.js";
 import { CartIcon } from "../components/icons/cart-icon.js";
 import { CreamIcon } from "../components/icons/cream-icon.js";
 import { GiftIcon } from "../components/icons/gift-icon.js";
+import { GlobeIcon } from "../components/icons/globe-icon.js";
 import { GymIcon } from "../components/icons/gym-icon.js";
 import { HangerIcon } from "../components/icons/hanger-icon.js";
 import { JournalIcon } from "../components/icons/journal-icon.js";

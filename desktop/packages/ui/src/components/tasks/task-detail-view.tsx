@@ -478,9 +478,9 @@ export function TaskDetailView({
                 {displayIdNode}
                 {titleEditor}
               </ContentDetailTitleHeader>
-              {!usePropertiesRail ? (
+              {!usePropertiesRail || task.support ? (
                 <div className="task-detail-stacked__properties">
-                  {task.support ? (
+                  {!usePropertiesRail && task.support ? (
                     <div className="task-detail-stacked__support-parties">
                       <SupportContactCard
                         contact={supportContact}

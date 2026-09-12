@@ -165,111 +165,115 @@ export function TaskPropertiesDisplay({
     Boolean(onRelatedChange) && relatedOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
+  /** Support tickets keep Contact/Org in the rail; other props sit under the title. */
+  const supportPartiesOnly = Boolean(task?.support);
 
   return (
     <div className="task-detail-properties-scroll">
-      <div className="detail-properties-panel__timer">
-        <TrackedTimeField
-          variant="pill"
-          trackedDurationSeconds={task?.trackedDurationSeconds ?? null}
-          trackedMinutes={task?.trackedMinutes ?? null}
-          scheduleMinutes={trackedMinutesFromTaskSchedule(
-            toDate(task?.dueDate),
-            toDate(task?.dueEndDate),
-          )}
-          disabled={disabled}
-          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-          onTimerSessionChange={onTimerSessionChange}
-          timerSession={timerSession}
-        />
-      </div>
-      <div className="entity-properties-stack">
-        <EntityPropertiesSection title="Properties">
-          <PropertyDropdown
-            value={status}
-            options={statusOptions}
-            onChange={onStatusChange}
-            disabled={disabled || statusDisabled || !onStatusChange}
-            searchPlaceholder="Change status…"
-            searchShortcutLabel="S"
-            ariaLabel="Status"
-            taskPropertyDropdownId="status"
-            fallbackIcon={
-              <TaskStatusIcon
-                status={status}
-                size={14}
-                support={Boolean(task?.support)}
-                notification={Boolean(task?.notification)}
-              />
-            }
-            fallbackLabel={getTaskStatusLabel(status)}
-          />
-          <PropertyDropdown
-            value={String(priority)}
-            options={priorityOptions}
-            onChange={(next) => onPriorityChange?.(Number(next))}
-            disabled={disabled}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel="Priority"
-            taskPropertyDropdownId="priority"
-            fallbackIcon={<TaskPriorityIcon priority={priority} size={14} />}
-            fallbackLabel={getTaskPriorityLabel(priority)}
-          />
-          <TaskDueDateDropdown
-            dueDate={due}
-            status={status}
-            variant="property"
-            disabled={disabled}
-            onDueDateChange={onDueDateChange}
-          />
-          <PropertyFieldGroup label="Assignee">
-            {canEditAssignee ? (
-              <PropertyDropdownNavigateRow navigateHref={assigneeNavigateHref}>
-                <PropertyDropdown
-                  value={assigneeValue}
-                  options={assigneeOptions}
-                  onChange={(next) =>
-                    onAssigneeChange?.(resolveDropdownNone(next))
-                  }
-                  disabled={disabled}
-                  searchPlaceholder="Change assignee…"
-                  searchShortcutLabel="A"
-                  ariaLabel="Assignee"
-                  taskPropertyDropdownId="assignee"
-                  fallbackIcon={<ContactPersonIcon size={14} />}
-                  fallbackLabel="Unassigned"
-                  mutedFallback
-                  createFromQueryLabel={
-                    onCreateAssigneeFromQuery
-                      ? (query) =>
-                          getCreateEntityFromQueryLabel("contact", query)
-                      : undefined
-                  }
-                  onCreateFromQuery={onCreateAssigneeFromQuery}
-                />
-              </PropertyDropdownNavigateRow>
-            ) : (
-              <button
-                type="button"
-                className="property-dropdown-trigger"
-                data-task-property-dropdown="assignee"
-                disabled={disabled}
-                onClick={() => onFieldActivate?.("assignee")}
-              >
-                <span
-                  className="property-dropdown-trigger__icon"
-                  aria-hidden="true"
-                >
-                  <ContactPersonIcon size={14} />
-                </span>
-                <span className="property-dropdown-trigger__label">
-                  {task?.assigneeName?.trim() || "Unassigned"}
-                </span>
-              </button>
+      {supportPartiesOnly ? null : (
+        <div className="detail-properties-panel__timer">
+          <TrackedTimeField
+            variant="pill"
+            trackedDurationSeconds={task?.trackedDurationSeconds ?? null}
+            trackedMinutes={task?.trackedMinutes ?? null}
+            scheduleMinutes={trackedMinutesFromTaskSchedule(
+              toDate(task?.dueDate),
+              toDate(task?.dueEndDate),
             )}
-          </PropertyFieldGroup>
-          {task?.support ? null : (
+            disabled={disabled}
+            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+            onTimerSessionChange={onTimerSessionChange}
+            timerSession={timerSession}
+          />
+        </div>
+      )}
+      <div className="entity-properties-stack">
+        {supportPartiesOnly ? null : (
+          <EntityPropertiesSection title="Properties">
+            <PropertyDropdown
+              value={status}
+              options={statusOptions}
+              onChange={onStatusChange}
+              disabled={disabled || statusDisabled || !onStatusChange}
+              searchPlaceholder="Change status…"
+              searchShortcutLabel="S"
+              ariaLabel="Status"
+              taskPropertyDropdownId="status"
+              fallbackIcon={
+                <TaskStatusIcon
+                  status={status}
+                  size={14}
+                  support={Boolean(task?.support)}
+                  notification={Boolean(task?.notification)}
+                />
+              }
+              fallbackLabel={getTaskStatusLabel(status)}
+            />
+            <PropertyDropdown
+              value={String(priority)}
+              options={priorityOptions}
+              onChange={(next) => onPriorityChange?.(Number(next))}
+              disabled={disabled}
+              searchPlaceholder="Change priority…"
+              searchShortcutLabel="P"
+              ariaLabel="Priority"
+              taskPropertyDropdownId="priority"
+              fallbackIcon={<TaskPriorityIcon priority={priority} size={14} />}
+              fallbackLabel={getTaskPriorityLabel(priority)}
+            />
+            <TaskDueDateDropdown
+              dueDate={due}
+              status={status}
+              variant="property"
+              disabled={disabled}
+              onDueDateChange={onDueDateChange}
+            />
+            <PropertyFieldGroup label="Assignee">
+              {canEditAssignee ? (
+                <PropertyDropdownNavigateRow navigateHref={assigneeNavigateHref}>
+                  <PropertyDropdown
+                    value={assigneeValue}
+                    options={assigneeOptions}
+                    onChange={(next) =>
+                      onAssigneeChange?.(resolveDropdownNone(next))
+                    }
+                    disabled={disabled}
+                    searchPlaceholder="Change assignee…"
+                    searchShortcutLabel="A"
+                    ariaLabel="Assignee"
+                    taskPropertyDropdownId="assignee"
+                    fallbackIcon={<ContactPersonIcon size={14} />}
+                    fallbackLabel="Unassigned"
+                    mutedFallback
+                    createFromQueryLabel={
+                      onCreateAssigneeFromQuery
+                        ? (query) =>
+                            getCreateEntityFromQueryLabel("contact", query)
+                        : undefined
+                    }
+                    onCreateFromQuery={onCreateAssigneeFromQuery}
+                  />
+                </PropertyDropdownNavigateRow>
+              ) : (
+                <button
+                  type="button"
+                  className="property-dropdown-trigger"
+                  data-task-property-dropdown="assignee"
+                  disabled={disabled}
+                  onClick={() => onFieldActivate?.("assignee")}
+                >
+                  <span
+                    className="property-dropdown-trigger__icon"
+                    aria-hidden="true"
+                  >
+                    <ContactPersonIcon size={14} />
+                  </span>
+                  <span className="property-dropdown-trigger__label">
+                    {task?.assigneeName?.trim() || "Unassigned"}
+                  </span>
+                </button>
+              )}
+            </PropertyFieldGroup>
             <PropertyFieldGroup label="Related">
               <TaskRelatedChips
                 values={relatedValues}
@@ -290,10 +294,10 @@ export function TaskPropertiesDisplay({
                 onActivate={() => onFieldActivate?.("related")}
               />
             </PropertyFieldGroup>
-          )}
-        </EntityPropertiesSection>
+          </EntityPropertiesSection>
+        )}
 
-        {task?.support ? (
+        {supportPartiesOnly ? (
           <>
             <EntityPropertiesSection title="Contact">
               <SupportContactCard
@@ -310,45 +314,47 @@ export function TaskPropertiesDisplay({
           </>
         ) : null}
 
-        <EntityPropertiesSection title="Project">
-          {canEditProject ? (
-            <PropertyDropdownNavigateRow navigateHref={projectNavigateHref}>
-              <PropertyDropdown
-                value={task?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
-                options={projectOptions}
-                onChange={(next) =>
-                  onProjectChange?.(resolveDropdownProjectKey(next))
-                }
+        {supportPartiesOnly ? null : (
+          <EntityPropertiesSection title="Project">
+            {canEditProject ? (
+              <PropertyDropdownNavigateRow navigateHref={projectNavigateHref}>
+                <PropertyDropdown
+                  value={task?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
+                  options={projectOptions}
+                  onChange={(next) =>
+                    onProjectChange?.(resolveDropdownProjectKey(next))
+                  }
+                  disabled={disabled}
+                  searchPlaceholder="Change project…"
+                  searchShortcutLabel="⇧P"
+                  ariaLabel="Project"
+                  taskPropertyDropdownId="project"
+                  fallbackIcon={<DefaultProjectIcon size={14} />}
+                  fallbackLabel="No project"
+                  mutedFallback
+                />
+              </PropertyDropdownNavigateRow>
+            ) : (
+              <button
+                type="button"
+                className="property-dropdown-trigger"
+                data-task-property-dropdown="project"
                 disabled={disabled}
-                searchPlaceholder="Change project…"
-                searchShortcutLabel="⇧P"
-                ariaLabel="Project"
-                taskPropertyDropdownId="project"
-                fallbackIcon={<DefaultProjectIcon size={14} />}
-                fallbackLabel="No project"
-                mutedFallback
-              />
-            </PropertyDropdownNavigateRow>
-          ) : (
-            <button
-              type="button"
-              className="property-dropdown-trigger"
-              data-task-property-dropdown="project"
-              disabled={disabled}
-              onClick={() => onFieldActivate?.("project")}
-            >
-              <span
-                className="property-dropdown-trigger__icon"
-                aria-hidden="true"
+                onClick={() => onFieldActivate?.("project")}
               >
-                <DefaultProjectIcon size={14} />
-              </span>
-              <span className="property-dropdown-trigger__label">
-                {task?.projectName?.trim() || "No project"}
-              </span>
-            </button>
-          )}
-        </EntityPropertiesSection>
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  <DefaultProjectIcon size={14} />
+                </span>
+                <span className="property-dropdown-trigger__label">
+                  {task?.projectName?.trim() || "No project"}
+                </span>
+              </button>
+            )}
+          </EntityPropertiesSection>
+        )}
 
         {agentInboxPending && onAgentInboxApprove ? (
           <button

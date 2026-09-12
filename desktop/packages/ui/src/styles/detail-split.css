@@ -51,6 +51,21 @@
   margin-inline: auto;
 }
 
+/*
+ * Rail layout: chips sit between title and description. Match the 1rem column
+ * inset used by the padded title + markdown preview, and keep equal vertical
+ * gaps above/below the chip row (0.75rem + 0.75rem ≈ the usual 1.5rem title gap).
+ */
+.inbox-detail-body--document > .task-detail-stacked__properties {
+  padding-inline: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.inbox-detail-body--document
+  > .content-detail-title-header--padded:has(+ .task-detail-stacked__properties) {
+  margin-bottom: 0.75rem;
+}
+
 .task-detail-stacked__properties .task-detail-properties-scroll {
   overflow: visible;
 }

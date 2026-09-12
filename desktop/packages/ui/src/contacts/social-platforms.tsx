@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { GlobeIcon, LinkIcon } from "@primer/octicons-react";
+import { LinkIcon } from "@primer/octicons-react";
 
 import { DiscordIcon } from "../components/icons/discord-icon.js";
 import { FacebookIcon } from "../components/icons/facebook-icon.js";
 import { GitHubIcon } from "../components/icons/github-icon.js";
+import { GlobeIcon } from "../components/icons/globe-icon.js";
 import { InstagramIcon } from "../components/icons/instagram-icon.js";
 import { LinkedInIcon } from "../components/icons/linkedin-icon.js";
 import { SlackIcon } from "../components/icons/slack-icon.js";

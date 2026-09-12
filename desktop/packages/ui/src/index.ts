@@ -156,6 +156,7 @@ export {
 } from "./components/shell/sidebar-nav-icons.js";
 
 export { DevelopmentAdeLogoIcon } from "./components/icons/development-ade-logo-icon.js";
+export { GlobeIcon, type GlobeIconProps } from "./components/icons/globe-icon.js";
 export { ProfileLogoIcon } from "./components/icons/profile-logo-icon.js";
 
 export {

@@ -53,12 +53,11 @@ export function SupportOrganizationCard({
         />
         <div className="support-party-card__identity">
           <p className="support-party-card__name">{organization.name}</p>
+          {addressLine ? (
+            <p className="support-party-card__address">{addressLine}</p>
+          ) : null}
         </div>
       </div>
-
-      {addressLine ? (
-        <p className="support-party-card__address">{addressLine}</p>
-      ) : null}
 
       {hasChannels ? (
         <div className="support-party-card__channel-groups">

@@ -59,12 +59,11 @@ export function SupportContactCard({
             {lastName ? <span> {lastName}</span> : null}
           </p>
           {job ? <p className="support-party-card__subtitle">{job}</p> : null}
+          {addressLine ? (
+            <p className="support-party-card__address">{addressLine}</p>
+          ) : null}
         </div>
       </div>
-
-      {addressLine ? (
-        <p className="support-party-card__address">{addressLine}</p>
-      ) : null}
 
       {hasChannels ? (
         <div className="support-party-card__channel-groups">

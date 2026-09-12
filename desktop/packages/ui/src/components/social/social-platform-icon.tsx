@@ -7,6 +7,7 @@ import {
   type SocialPlatformId,
 } from "../../social/social-contacts.js";
 import { InstagramIcon } from "../icons/instagram-icon.js";
+import { GlobeIcon } from "../icons/globe-icon.js";
 
 type SocialPlatformIconProps = {
   platform: string;
@@ -64,17 +65,7 @@ function GitHubGlyph({ size }: { size: number }) {
 }
 
 function WebsiteGlyph({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 0 0 4.118 6.05c-.39-.87-.618-2.088-.618-3.3 0-.387.022-.76.06-1.118A9.9 9.9 0 0 1 1.5 8Zm6.5 6.5c.89 0 2.15-.88 2.97-2.85.27-.65.45-1.38.54-2.15H4.49c.09.77.27 1.5.54 2.15.82 1.97 2.08 2.85 2.97 2.85Zm2.992-6.5c-.09-.77-.27-1.5-.54-2.15C9.65 2.88 8.39 2 7.5 2c-.89 0-2.15.88-2.97 2.85-.27.65-.45 1.38-.54 2.15h5.502ZM14.5 8a9.9 9.9 0 0 1-3.56 1.632c.038.358.06.731.06 1.118 0 1.212-.228 2.43-.618 3.3A6.5 6.5 0 0 0 14.5 8ZM5.06 6.368A9.9 9.9 0 0 1 8.5 1.5a6.5 6.5 0 0 0-3.44 4.868Z" />
-    </svg>
-  );
+  return <GlobeIcon size={size} />;
 }
 
 function OtherGlyph({ size }: { size: number }) {
