@@ -34,6 +34,8 @@ export const EMAIL_INBOX_UPDATED_EVENT = "backsteros-email-inbox-updated";
 const SSE_RELOAD_DEBOUNCE_MS = 400;
 /** Catch-up poll while SSE is subscribed (SSE is primary). */
 const LIVE_CATCHUP_POLL_MS = 60_000;
+/** Skip mount REST when the session list cache is still fresh. */
+const AGENTMAIL_CACHE_FRESH_MS = 45_000;
 
 export type EmailInboxUpdatedDetail = {
   inboxId: string;
@@ -324,7 +326,18 @@ export function useAgentMailMailboxes(
   useEffect(() => {
     mountedRef.current = true;
     if (!active) return;
-    void reload();
+    const cached = peekAgentMailListCache();
+    const cacheFresh =
+      cached != null &&
+      typeof cached.cachedAt === "number" &&
+      Date.now() - cached.cachedAt < AGENTMAIL_CACHE_FRESH_MS;
+    if (cacheFresh) {
+      hydratedRef.current = true;
+      setLoading(false);
+      setMessagesLoading(false);
+    } else {
+      void reload();
+    }
     return () => {
       mountedRef.current = false;
       reloadAbortRef.current?.abort();

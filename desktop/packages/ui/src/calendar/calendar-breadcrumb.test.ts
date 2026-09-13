@@ -46,7 +46,7 @@ test("withCalendarViewSearch preserves unrelated params", () => {
 
 test("buildCalendarBreadcrumbItems includes view and detail labels", () => {
   assert.deepEqual(buildCalendarBreadcrumbItems({ viewMode: "month" }), [
-    { label: "Calendar", href: "/calendar" },
+    { label: "Agenda", href: "/calendar" },
     { label: "Month", href: "/calendar?view=month" },
   ]);
   assert.deepEqual(
@@ -55,7 +55,7 @@ test("buildCalendarBreadcrumbItems includes view and detail labels", () => {
       rangeTitle: "Aug 17 – 23, 2026",
     }),
     [
-      { label: "Calendar", href: "/calendar" },
+      { label: "Agenda", href: "/calendar" },
       { label: "Aug 17 – 23, 2026", href: "/calendar" },
     ],
   );
@@ -65,7 +65,7 @@ test("buildCalendarBreadcrumbItems includes view and detail labels", () => {
       detailLabel: "BSH-3 Fix calendar",
     }),
     [
-      { label: "Calendar", href: "/calendar" },
+      { label: "Agenda", href: "/calendar" },
       { label: "Week", href: "/calendar" },
       { label: "BSH-3 Fix calendar" },
     ],
@@ -80,7 +80,7 @@ test("buildCalendarBreadcrumbItems for availability mode", () => {
       rangeTitle: "Aug 17 – 23, 2026",
     }),
     [
-      { label: "Calendar", href: "/calendar" },
+      { label: "Agenda", href: "/calendar" },
       { label: "Aug 17 – 23, 2026", href: "/calendar" },
       {
         label: "Availability",
@@ -98,7 +98,7 @@ test("buildCalendarBreadcrumbItems for timetracking mode", () => {
       rangeTitle: "Aug 17 – 23, 2026",
     }),
     [
-      { label: "Calendar", href: "/calendar" },
+      { label: "Agenda", href: "/calendar" },
       { label: "Aug 17 – 23, 2026", href: "/calendar" },
       {
         label: "Timetracking",

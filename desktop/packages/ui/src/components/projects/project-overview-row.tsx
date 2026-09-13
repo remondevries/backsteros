@@ -18,6 +18,7 @@ import {
 import type { ProjectArea } from "../../projects/project-areas.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
+import { CloudflareIcon } from "../icons/cloudflare-icon.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -40,6 +41,10 @@ export type ProjectOverviewRowProject = {
   /** Project kind — `general` (default) or a labeled type (codebase, etc.). */
   type?: string | null;
   icon?: string | null;
+  /** Cloudflare zone id when this domain is linked via zone match. */
+  cloudflareZoneId?: string | null;
+  /** Registrar/hosting provider (e.g. TransIP). */
+  provider?: string | null;
   startDate?: number | Date | null;
   dueDate?: number | Date | null;
   sortOrder?: number;
@@ -108,6 +113,7 @@ export function ProjectOverviewRow({
   const due = toDate(project.dueDate ?? null);
   const startLabel = start ? formatTaskDueMetaLabel(start) : null;
   const dueLabel = due ? formatTaskDueMetaLabel(due) : null;
+  const cloudflareConnected = Boolean(project.cloudflareZoneId?.trim());
 
   const statusOptions = PROJECT_STATUS_ORDER.map((value) => ({
     value,
@@ -210,6 +216,19 @@ export function ProjectOverviewRow({
           </span>
           <span className="project-overview-row__title-wrap">
             <span className="project-overview-row__title">{project.name}</span>
+            {cloudflareConnected ? (
+              <span
+                className="project-overview-row__title-trailing"
+                title="Connected to Cloudflare"
+              >
+                <span
+                  className="project-cloudflare-badge"
+                  aria-label="Connected to Cloudflare"
+                >
+                  <CloudflareIcon height={10} />
+                </span>
+              </span>
+            ) : null}
           </span>
         </span>
         <span className="project-overview-row__health" aria-hidden="true" />

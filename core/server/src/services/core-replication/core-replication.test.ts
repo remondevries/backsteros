@@ -28,6 +28,8 @@ describe("core-replication constants", () => {
     assert.ok(REPLICATED_TABLES.includes("projects"));
     assert.ok(REPLICATED_TABLES.includes("tasks"));
     assert.ok(REPLICATED_TABLES.includes("documents"));
+    assert.ok(REPLICATED_TABLES.includes("space_publish_settings"));
+    assert.ok(REPLICATED_TABLES.includes("space_site_keys"));
     assert.ok(REPLICATED_TABLES.includes("contacts"));
     assert.ok(REPLICATED_TABLES.includes("contact_relationships"));
     assert.ok(REPLICATED_TABLES.includes("crm_groups"));

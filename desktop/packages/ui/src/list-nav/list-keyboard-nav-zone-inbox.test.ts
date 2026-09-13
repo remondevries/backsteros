@@ -124,7 +124,7 @@ describe("resolveZonePolicy", () => {
   });
 
   it("knowledge/letters default sidepanel with auto-switch to main", () => {
-    for (const path of ["/knowledge", "/letters"]) {
+    for (const path of ["/spaces", "/letters"]) {
       const policy = resolveZonePolicy(path, {
         activeZone: "sidepanel",
         preferSidepanelForJk: false,
@@ -138,7 +138,7 @@ describe("resolveZonePolicy", () => {
 
   it("preferSidepanelForJk keeps j/k on sidepanel when auto-switch would fire", () => {
     assert.equal(
-      resolveZonePolicy("/knowledge", {
+      resolveZonePolicy("/spaces", {
         activeZone: "sidepanel",
         preferSidepanelForJk: true,
         hasMainList: true,
@@ -170,7 +170,7 @@ describe("getListKeyboardNavSurfaceKey", () => {
   });
 
   it("keeps section roots distinct for warm flips", () => {
-    assert.equal(getListKeyboardNavSurfaceKey("/knowledge"), "knowledge");
+    assert.equal(getListKeyboardNavSurfaceKey("/spaces"), "knowledge");
     assert.equal(getListKeyboardNavSurfaceKey("/letters"), "letters");
     assert.equal(getListKeyboardNavSurfaceKey("/contacts"), "contacts");
     assert.equal(getListKeyboardNavSurfaceKey("/projects"), "projects");

@@ -59,7 +59,7 @@ export function MeetingDetailPage({
       return [...breadcrumbItemsProp, { label: meetingLabel }];
     }
     return [
-      { label: "Calendar", href: "/calendar" },
+      { label: "Agenda", href: "/calendar" },
       { label: meetingLabel },
     ];
   }, [breadcrumbItemsProp, meetingLabel]);

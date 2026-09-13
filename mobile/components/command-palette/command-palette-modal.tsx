@@ -39,9 +39,9 @@ const EMPTY_DESTINATIONS: readonly Destination[] = [
   { id: "inbox", title: "Inbox", subtitle: "G I", href: "/inbox" },
   { id: "email", title: "Email", subtitle: "G E", href: "/email" },
   { id: "tasks", title: "Tasks", subtitle: "G T", href: "/tasks" },
-  { id: "calendar", title: "Calendar", subtitle: "G M", href: "/calendar" },
+  { id: "calendar", title: "Agenda", subtitle: "G A", href: "/calendar" },
   { id: "contacts", title: "Contacts", subtitle: "G C", href: "/contacts" },
-  { id: "social", title: "Social", subtitle: "Social accounts", href: "/social" },
+  { id: "social", title: "Network", subtitle: "G N", href: "/social" },
   {
     id: "organizations",
     title: "Organizations",

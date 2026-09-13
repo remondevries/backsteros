@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CursorSettings,
   ResearchResponse,
@@ -129,11 +129,21 @@ export function DesktopTaskActivityPanel({
     };
   }, [taskId]);
 
-  // Always REST-hydrate peer comments into a process-local overlay. Pending
-  // React state alone is cleared when Communication remounts the panel
-  // (feedRevision resets to 0) — that caused portal comments to flash then vanish.
+  // Peer REST hydrate — desktop local-first: skip on cold open when PowerSync
+  // already has the thread. Still hydrate when local is empty (peers not synced
+  // yet) or when feedRevision bumps (SSE comment / portal write).
+  const peerHydratedTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    peerHydratedTaskRef.current = null;
+  }, [taskId]);
+
   useEffect(() => {
     if (!localFeed.active) return;
+    if (localFeed.loading) return;
+    const localCount = localFeed.comments?.length ?? 0;
+    if (feedRevision === 0 && localCount > 0) return;
+    if (feedRevision === 0 && peerHydratedTaskRef.current === taskId) return;
+
     const controller = new AbortController();
     void (async () => {
       try {
@@ -142,6 +152,7 @@ export function DesktopTaskActivityPanel({
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
+        peerHydratedTaskRef.current = taskId;
         mergePeerTaskComments(taskId, result.comments ?? []);
       } catch {
         // Overlay hydrate is best-effort; PowerSync remains the source of truth.
@@ -150,7 +161,14 @@ export function DesktopTaskActivityPanel({
     return () => {
       controller.abort();
     };
-  }, [client, feedRevision, localFeed.active, taskId]);
+  }, [
+    client,
+    feedRevision,
+    localFeed.active,
+    localFeed.comments?.length,
+    localFeed.loading,
+    taskId,
+  ]);
 
   const working =
     isTaskAgentWorkingForUi(

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { desktopManualChunks } from "./vite.manual-chunks";
+import { backsterosVaultDevPlugin } from "./vite-plugin-vault-dev";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,7 @@ const t3CodeHttpUrl = (
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [
+    backsterosVaultDevPlugin(__dirname),
     tailwindcss(),
     react(),
     wasm(),
@@ -142,7 +144,7 @@ export default defineConfig(async () => ({
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
     proxy: {
-      // Same-origin proxy so the Development side panel can read T3 Code
+      // Same-origin proxy so the Catalog side panel can read T3 Code
       // `/api/hetzner/*` without CORS friction during `dev:vite` / `tauri dev`.
       "/api/hetzner": {
         target: t3CodeHttpUrl,

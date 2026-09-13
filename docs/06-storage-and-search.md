@@ -27,7 +27,11 @@ Configure via desktop **Settings → Storage** or `BACKSTEROS_VAULT_PATH`.
     {YYYY}/
       {MM}/
         {YYYY-MM-DD} - {Subject}.pdf
-  Knowledge Base/
+  Spaces/
+    knowledge-base/
+      second-brain/
+    support/
+    websites/
     {path}.md
   .backsteros/           # avatars and other non-browsable blobs
 ```

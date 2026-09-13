@@ -102,6 +102,7 @@ function TreeRenameForm({
       <input
         ref={inputRef}
         value={value}
+        size={Math.max(1, value.length || 1)}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") {

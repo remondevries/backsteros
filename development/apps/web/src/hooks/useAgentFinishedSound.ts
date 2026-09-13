@@ -1,18 +1,50 @@
-import { useEffect, useRef } from "react";
+import { useParams } from "@tanstack/react-router";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useEffect, useMemo, useRef } from "react";
 
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { useThreadShells } from "~/state/entities";
+import {
+  resolveActiveThreadRouteRef,
+  resolveThreadRouteTarget,
+} from "~/threadRoutes";
 
-import { playAgentFinishedSound, unlockAgentFinishedSound } from "../agentFinishedSound";
+import {
+  playAgentFinishedSound,
+  shouldPlayAgentFinishedSound,
+  unlockAgentFinishedSound,
+} from "../agentFinishedSound";
 
 /**
  * Plays {@link playAgentFinishedSound} when any thread leaves the Working
  * state for Ready or Failed (agent finished). Skips the initial mount so
- * already-idle threads do not chime on load.
+ * already-idle threads do not chime on load. Skips when the user already has
+ * that chat focused in a visible window.
  */
 export function useAgentFinishedSound(): void {
   const shells = useThreadShells();
   const previousWorkingKeysRef = useRef<ReadonlySet<string> | null>(null);
+  const routeTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
+  const routeDraftThread = useComposerDraftStore((store) =>
+    routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
+  );
+  const activeThreadKey = useMemo(() => {
+    const threadRef = resolveActiveThreadRouteRef(routeTarget, routeDraftThread);
+    if (threadRef) return scopedThreadKey(threadRef);
+    if (routeTarget?.kind === "draft" && routeDraftThread) {
+      return scopedThreadKey({
+        environmentId: routeDraftThread.environmentId,
+        threadId: routeDraftThread.threadId,
+      });
+    }
+    return null;
+  }, [routeDraftThread, routeTarget]);
+  const activeThreadKeyRef = useRef(activeThreadKey);
+  activeThreadKeyRef.current = activeThreadKey;
 
   useEffect(() => {
     const unlock = () => unlockAgentFinishedSound();
@@ -49,10 +81,17 @@ export function useAgentFinishedSound(): void {
       const status = resolveSidebarThreadStatus(shell);
       // Ready = turn done; failed = agent stopped with an error. Both are
       // "finished working" from the user's point of view.
-      if (status === "ready" || status === "failed") {
-        playAgentFinishedSound();
-        return;
+      if (status !== "ready" && status !== "failed") continue;
+      if (
+        !shouldPlayAgentFinishedSound({
+          finishedThreadKey: key,
+          activeThreadKey: activeThreadKeyRef.current,
+        })
+      ) {
+        continue;
       }
+      playAgentFinishedSound();
+      return;
     }
   }, [shells]);
 }

@@ -1,95 +1,82 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import test from "node:test";
 
 import {
+  projectListHrefForNavFrom,
+  projectNavFromLocationState,
   recalledProjectNavFrom,
-  rememberProjectNavFrom,
   rememberProjectNavFromHref,
   resolveProjectNavFromForPath,
   resolveSidebarActivePathname,
 } from "./project-type-cache.ts";
 
-
-test("resolveSidebarActivePathname keeps Projects when from projects or unset", () => {
+test("resolveSidebarActivePathname remaps project paths when from catalog", () => {
+  assert.equal(
+    resolveSidebarActivePathname("/projects/BOD", "catalog"),
+    "/catalog",
+  );
+  assert.equal(
+    resolveSidebarActivePathname("/projects/BOD/tasks/bod-1", "catalog"),
+    "/catalog",
+  );
   assert.equal(
     resolveSidebarActivePathname("/projects/BOD", "projects"),
     "/projects/BOD",
   );
   assert.equal(
-    resolveSidebarActivePathname("/projects/BOD/files", null),
-    "/projects/BOD/files",
-  );
-});
-
-test("resolveSidebarActivePathname remaps Development and Areas project routes", () => {
-  assert.equal(
-    resolveSidebarActivePathname("/projects/BOD", "development"),
-    "/development",
+    resolveSidebarActivePathname("/projects/BOD", null),
+    "/projects/BOD",
   );
   assert.equal(
-    resolveSidebarActivePathname("/projects/BOD/tasks/bod-1", "development"),
-    "/development",
-  );
-  assert.equal(
-    resolveSidebarActivePathname("/projects/BOD/files", "areas"),
-    "/areas",
-  );
-});
-
-test("resolveSidebarActivePathname leaves list roots and non-project paths alone", () => {
-  assert.equal(
-    resolveSidebarActivePathname("/projects", "development"),
+    resolveSidebarActivePathname("/projects", "catalog"),
     "/projects",
   );
   assert.equal(
-    resolveSidebarActivePathname("/projects/new", "development"),
+    resolveSidebarActivePathname("/projects/new", "catalog"),
     "/projects/new",
   );
   assert.equal(
-    resolveSidebarActivePathname("/development", "development"),
-    "/development",
+    resolveSidebarActivePathname("/catalog", "catalog"),
+    "/catalog",
   );
   assert.equal(
-    resolveSidebarActivePathname("/organizations/acme/projects/BOD", "development"),
+    resolveSidebarActivePathname("/organizations/acme/projects/BOD", "catalog"),
     "/organizations/acme/projects/BOD",
   );
 });
 
 test("resolveProjectNavFromForPath prefers location state then cache", () => {
-  rememberProjectNavFrom("id-nav-1", "NAV1", "areas");
+  assert.equal(
+    resolveProjectNavFromForPath({
+      locationState: { from: "catalog" },
+      projectKey: "BOD",
+    }),
+    "catalog",
+  );
   assert.equal(
     resolveProjectNavFromForPath({
       locationState: { from: "development" },
-      projectId: "id-nav-1",
-      projectKey: "NAV1",
-      routeParam: "NAV1",
+      projectKey: "BOD",
     }),
-    "development",
+    "catalog",
   );
   assert.equal(
     resolveProjectNavFromForPath({
       locationState: null,
-      projectId: "id-nav-1",
-      projectKey: "NAV1",
-      routeParam: "NAV1",
+      projectKey: "missing",
     }),
-    "areas",
+    null,
   );
 });
 
-test("rememberProjectNavFromHref caches from state for warm project opens", () => {
-  rememberProjectNavFromHref("/projects/BOD/files?tab=1", {
-    from: "development",
+test("rememberProjectNavFromHref caches from navigate state", () => {
+  rememberProjectNavFromHref("/projects/BOD/tasks/1", {
+    from: "catalog",
   });
-  assert.equal(recalledProjectNavFrom("BOD"), "development");
+  assert.equal(recalledProjectNavFrom("BOD"), "catalog");
   assert.equal(
-    resolveSidebarActivePathname(
-      "/projects/BOD/files",
-      recalledProjectNavFrom("bod"),
-    ),
-    "/development",
+    projectNavFromLocationState({ from: "catalog" }),
+    "catalog",
   );
-
-  rememberProjectNavFromHref("/projects/new", { from: "areas" });
-  assert.equal(recalledProjectNavFrom("new"), null);
+  assert.equal(projectListHrefForNavFrom("catalog"), "/catalog");
 });

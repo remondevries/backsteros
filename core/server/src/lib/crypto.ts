@@ -5,9 +5,14 @@ import { nanoid } from "nanoid";
 import type { ApiKeyScope } from "@backsteros/contracts";
 
 export const API_KEY_PREFIX = "sk_live_";
+export const SPACE_SITE_KEY_PREFIX = "sk_space_";
 
 export function generateApiKeySecret(): string {
   return `${API_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
+}
+
+export function generateSpaceSiteKeySecret(): string {
+  return `${SPACE_SITE_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
 }
 
 export function hashApiKey(secret: string): string {

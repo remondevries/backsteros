@@ -167,6 +167,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   type?: string;
   localWorkingDirectory?: string | null;
   githubRepository?: string | null;
+  cloudflareZoneId?: string | null;
+  provider?: string | null;
 } {
   return {
     id: project.id,
@@ -181,6 +183,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     organizationId: project.organizationId ?? null,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     githubRepository: project.githubRepository ?? null,
+    cloudflareZoneId: project.cloudflareZoneId ?? null,
+    provider: project.provider ?? null,
     startDate: asEpoch(project.startDate),
     dueDate: asEpoch(project.dueDate),
     sortOrder: project.sortOrder,
@@ -189,6 +193,21 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
 }
 
 export function mapDocument(document: ApiDocument): KnowledgeListItem {
+  const contactIdsRaw = (document as { contactIds?: unknown }).contactIds;
+  let contactIds: string[] | null = null;
+  if (Array.isArray(contactIdsRaw)) {
+    contactIds = contactIdsRaw.filter((id): id is string => typeof id === "string");
+  } else if (typeof contactIdsRaw === "string" && contactIdsRaw.trim()) {
+    try {
+      const parsed = JSON.parse(contactIdsRaw) as unknown;
+      if (Array.isArray(parsed)) {
+        contactIds = parsed.filter((id): id is string => typeof id === "string");
+      }
+    } catch {
+      contactIds = null;
+    }
+  }
+
   return {
     id: document.id,
     title: document.title,
@@ -197,7 +216,17 @@ export function mapDocument(document: ApiDocument): KnowledgeListItem {
     parentId: document.parentId,
     sortOrder: document.sortOrder,
     icon: document.icon,
+    updatedAt: asEpoch(document.updatedAt),
     projectId: document.projectId,
+    publishStatus: document.publishStatus ?? "concept",
+    publishSlug: document.publishSlug ?? null,
+    seoTitle: document.seoTitle ?? null,
+    seoDescription: document.seoDescription ?? null,
+    audience: document.audience ?? "group",
+    contactIds,
+    placementFolderId: document.placementFolderId ?? null,
+    coverStorageKey: document.coverStorageKey ?? null,
+    coverContentType: document.coverContentType ?? null,
   };
 }
 

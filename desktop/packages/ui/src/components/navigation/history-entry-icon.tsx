@@ -82,7 +82,7 @@ const NAVIGATION_ICONS: Record<
   calendar: CalendarNavIcon,
   areas: AreasNavIcon,
   projects: DefaultProjectIcon,
-  development: DevelopmentNavIcon,
+  catalog: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
   communication: CommunicationNavIcon,

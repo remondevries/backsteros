@@ -102,8 +102,8 @@ function SignedInTabs() {
         <Tabs.Screen
           name="calendar"
           options={{
-            title: "Calendar",
-            tabBarAccessibilityLabel: "Calendar",
+            title: "Agenda",
+            tabBarAccessibilityLabel: "Agenda",
             tabBarIcon: ({ color, size }) => (
               <CalendarNavIcon color={color} size={size} />
             ),
@@ -150,11 +150,11 @@ function SignedInTabs() {
           }}
         />
         <Tabs.Screen
-          name="development"
+          name="catalog"
           options={{
-            ...tabOverflowOptions("development"),
-            title: "Development",
-            tabBarAccessibilityLabel: "Development",
+            ...tabOverflowOptions("catalog"),
+            title: "Catalog",
+            tabBarAccessibilityLabel: "Catalog",
             tabBarIcon: ({ color, size }) => (
               <TerminalConsoleIcon color={color} size={size} />
             ),
@@ -197,8 +197,8 @@ function SignedInTabs() {
           name="knowledge"
           options={{
             ...tabOverflowOptions("knowledge"),
-            title: "Knowledge Base",
-            tabBarAccessibilityLabel: "Knowledge Base",
+            title: "Spaces",
+            tabBarAccessibilityLabel: "Spaces",
             tabBarIcon: ({ color, size }) => (
               <KnowledgeBaseNavIcon color={color} size={size} />
             ),
@@ -209,8 +209,8 @@ function SignedInTabs() {
           name="social"
           options={{
             ...overflowTabOptions,
-            title: "Social",
-            tabBarAccessibilityLabel: "Social",
+            title: "Network",
+            tabBarAccessibilityLabel: "Network",
           }}
         />
         <Tabs.Screen name="organizations" options={overflowTabOptions} />

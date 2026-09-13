@@ -120,6 +120,7 @@ type WorkspaceProject = ProjectOverviewRowProject & {
   type?: string;
   localWorkingDirectory?: string | null;
   githubRepository?: string | null;
+  provider?: string | null;
 };
 
 export type ProjectsPageProps = {
@@ -429,13 +430,6 @@ function ProjectsPageBody({
     routeScope,
     selected,
   ]);
-
-  // Soft-pull document metadata when viewing Docs so agent creates show before
-  // PowerSync mirrors them into SQLite.
-  useEffect(() => {
-    if (activeSection !== "documents") return;
-    void workspace.softRefreshApiDocuments();
-  }, [activeSection, selected?.id, workspace.softRefreshApiDocuments]);
 
   // Match web: open first project letter when landing on Letters index.
   useEffect(() => {
@@ -809,6 +803,7 @@ function ProjectsPageBody({
     return (
       <ProjectsOverviewView
         projects={projects}
+        nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
         workingProjectIds={workingProjectIds}
         area={areaFilter}
         onAreaChange={(area) => {
@@ -883,6 +878,9 @@ function ProjectsPageBody({
           const state: ProjectLocationState = { from: "projects" };
           navigate(href, { state });
         }}
+        onCreateArea={async ({ parent, name }) =>
+          workspace.createArea({ parent, name })
+        }
         onReorder={(request) => {
           const patches = projectReorderPatches(projects, request);
           for (const patch of patches) {
@@ -1253,6 +1251,14 @@ function ProjectsPageBody({
                     <LetterPdfPreview
                       letterId={selectedLetter.id}
                       attachmentId={pdfPanel.selectedAttachmentId}
+                      vaultStorageKey={
+                        pdfPanel.selectedAttachmentId
+                          ? (pdfPanel.attachments.find(
+                              (entry) =>
+                                entry.id === pdfPanel.selectedAttachmentId,
+                            )?.storageKey ?? null)
+                          : (selectedLetterRecord?.storageKey ?? null)
+                      }
                       useApi={pdfPanel.hasPdf}
                       revision={pdfPanel.revision}
                     />
@@ -1691,6 +1697,9 @@ function ProjectsPageBody({
               localPatch.githubRepository =
                 (patch.githubRepository as string | null) ?? null;
             }
+            if ("provider" in patch) {
+              localPatch.provider = (patch.provider as string | null) ?? null;
+            }
             if ("startDate" in patch) {
               localPatch.startDate = patch.startDate
                 ? new Date(String(patch.startDate)).getTime()
@@ -1822,6 +1831,17 @@ function ProjectsPageBody({
         onTypeChange={(type) => {
           patchSelected({ type });
           void workspace.patchProject(project.id, { type });
+        }}
+        onProviderChange={(provider) => {
+          const patch: {
+            provider: string | null;
+            icon?: string;
+          } = { provider };
+          if (provider === "transip") {
+            patch.icon = "transip";
+          }
+          patchSelected(patch);
+          void workspace.patchProject(project.id, patch);
         }}
         onAreaChange={(area: ProjectArea | null) => {
           patchSelected({ area, areaId: null });

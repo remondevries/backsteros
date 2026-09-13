@@ -6,9 +6,11 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { generateOpenApi } from "@ts-rest/open-api";
 
-import { apiContract } from "@backsteros/contracts";
+import { fullApiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
+import { registerSpacesPublishRoutes } from "./app/spaces-publish-routes.js";
+import { registerSpacesRoutes } from "./app/spaces-routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
 import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
@@ -78,7 +80,7 @@ export function createApp() {
   );
 
   app.get("/api/v1/openapi.json", (c) => {
-    const document = generateOpenApi(apiContract, {
+    const document = generateOpenApi(fullApiContract, {
       info: {
         title: "BacksterOS API",
         version: "0.1.0",
@@ -98,6 +100,8 @@ export function createApp() {
 
   const api = new Hono();
   registerApiRoutes(api);
+  registerSpacesRoutes(api);
+  registerSpacesPublishRoutes(api);
   registerSyncRoutes(api);
   registerOpsRoutes(api);
   registerCoreReplicationRoutes(api);

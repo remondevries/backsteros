@@ -1,6 +1,7 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import { getTodayJournalDateSlug } from "@backsteros/ui";
 
+import { getDesktopVaultRoot } from "./desktop-vault";
 import { prefetchDocumentContent } from "./document-content-cache";
 import { prefetchLetterAttachments } from "./letter-attachment-cache";
 import { createPersistedSessionLruCache } from "./session-lru-cache";
@@ -38,11 +39,18 @@ export function rememberJournalDocumentId(
   journalDocumentIdByDate.set(dateSlug, id);
 }
 
-/** Ensure a journal day exists and return its document id (deduped). */
+/** Ensure a journal day exists and return its document id (deduped).
+ * Prefer passing a PowerSync-known id via `localDocumentId` to skip REST.
+ */
 export function ensureJournalDocumentId(
   client: BacksterosApiClient,
   dateSlug: string,
+  localDocumentId?: string | null,
 ): Promise<string | null> {
+  if (localDocumentId?.trim()) {
+    rememberJournalDocumentId(dateSlug, localDocumentId.trim());
+    return Promise.resolve(localDocumentId.trim());
+  }
   const cachedId = journalDocumentIdByDate.peek(dateSlug);
   if (cachedId) return Promise.resolve(cachedId);
 
@@ -83,9 +91,11 @@ export function warmTodayJournalEntry(
     prefetchDocumentContent(client, input.documentId);
     return;
   }
-  void ensureJournalDocumentId(client, input.dateSlug).then((documentId) => {
-    if (documentId) prefetchDocumentContent(client, documentId);
-  });
+  void ensureJournalDocumentId(client, input.dateSlug, input.documentId).then(
+    (documentId) => {
+      if (documentId) prefetchDocumentContent(client, documentId);
+    },
+  );
 }
 
 /**
@@ -103,6 +113,8 @@ export function warmWorkspaceDetailCaches(
     firstLetterId?: string | null;
   },
 ): void {
+  // Resolve vault root early so Spaces/journal opens hit disk, not REST.
+  void getDesktopVaultRoot(client);
   warmTodayJournalEntry(client, {
     dateSlug: input.todayJournal.dateSlug ?? getTodayJournalDateSlug(),
     documentId: input.todayJournal.documentId,

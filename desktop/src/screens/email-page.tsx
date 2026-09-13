@@ -322,9 +322,10 @@ export function EmailPage({
             <Link
               className="inbox-moved-banner__link"
               to="/settings/$tab"
-              params={{ tab: "email" }}
+              params={{ tab: "integrations" }}
+              search={{ open: "email" } as never}
             >
-              Settings → E-mail
+              Settings → Integrations
             </Link>{" "}
             appears in the left panel.
           </p>

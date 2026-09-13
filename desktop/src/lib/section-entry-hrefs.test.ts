@@ -53,7 +53,7 @@ describe("section entry hrefs", () => {
         { id: "folder", title: "Folder", kind: "folder" },
         { id: "doc-1", title: "Note", path: "note", kind: "document" },
       ]),
-      "/knowledge/note",
+      "/spaces/note",
     );
   });
 });
@@ -65,7 +65,7 @@ describe("resolveAppHref section roots", () => {
       contacts: "/contacts/1",
       organizations: "/organizations/2",
       letters: "/letters/l-3",
-      knowledge: "/knowledge/note",
+      knowledge: "/spaces/note",
     });
     assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
     // Contacts catalog is main-content (no last-contact redirect).
@@ -82,9 +82,10 @@ describe("resolveAppHref section roots", () => {
       formatResolvedAppHref(resolveAppHref("/letters")),
       "/letters/l-3",
     );
+    // Spaces overview stays on the list root (like projects / contacts).
     assert.equal(
-      formatResolvedAppHref(resolveAppHref("/knowledge")),
-      "/knowledge/note",
+      formatResolvedAppHref(resolveAppHref("/spaces")),
+      "/spaces",
     );
   });
 
@@ -108,7 +109,7 @@ describe("shouldKeepAliveSurface", () => {
   it("keeps list/calendar/inbox/knowledge/tasks/journal panes after first visit", () => {
     assert.equal(shouldKeepAliveSurface("calendar", "/calendar"), true);
     assert.equal(shouldKeepAliveSurface("inbox", "/inbox/in-1"), true);
-    assert.equal(shouldKeepAliveSurface("knowledge", "/knowledge/note"), true);
+    assert.equal(shouldKeepAliveSurface("knowledge", "/spaces/note"), true);
     assert.equal(shouldKeepAliveSurface("tasks-list", "/tasks"), true);
     assert.equal(
       shouldKeepAliveSurface("journal-day", "/journal/2026-08-26"),
@@ -142,11 +143,15 @@ describe("shouldKeepAliveSurface", () => {
 });
 
 describe("shouldKeepAliveSidePanelSurface", () => {
-  it("keeps calendar, inbox, knowledge, and journal panels", () => {
+  it("keeps calendar, inbox, knowledge (inside space), and journal panels", () => {
     assert.equal(shouldKeepAliveSidePanelSurface("calendar", "/calendar"), true);
     assert.equal(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1"), true);
     assert.equal(
-      shouldKeepAliveSidePanelSurface("knowledge", "/knowledge/note"),
+      shouldKeepAliveSidePanelSurface("knowledge", "/spaces"),
+      false,
+    );
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("knowledge", "/spaces/note"),
       true,
     );
     assert.equal(

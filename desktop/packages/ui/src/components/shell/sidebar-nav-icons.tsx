@@ -1,5 +1,6 @@
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
+import { CalendarIcon } from "../icons/calendar-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
@@ -75,22 +76,7 @@ export function TasksNavIcon({ className }: SidebarNavIconProps) {
 }
 
 export function CalendarNavIcon({ className }: SidebarNavIconProps) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M11 1C13.2091 1 15 2.79086 15 5V11C15 13.2091 13.2091 15 11 15H5C2.79086 15 1 13.2091 1 11V5C1 2.79086 2.79086 1 5 1H11ZM13.5 6H2.5V11C2.5 12.3807 3.61929 13.5 5 13.5H11C12.3807 13.5 13.5 12.3807 13.5 11V6Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
+  return <CalendarIcon size={16} className={className} />;
 }
 
 /** Target / bullseye mark for Habit Tracker navigation. */
@@ -511,6 +497,9 @@ export function ProjectsNavIcon({ className }: SidebarNavIconProps) {
 export function DevelopmentNavIcon({ className }: SidebarNavIconProps) {
   return <TerminalConsoleIcon className={className} size={16} />;
 }
+
+/** Alias — Catalog replaced Development in the sidebar. */
+export const CatalogNavIcon = DevelopmentNavIcon;
 
 export function SidebarSettingsIcon({
   className,

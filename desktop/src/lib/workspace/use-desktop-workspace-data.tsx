@@ -650,8 +650,13 @@ function useDesktopWorkspaceDataImpl(): {
   }, [apiAreas, localAreas.data]);
 
   const rawDocuments = useMemo(() => {
+    // On a broken local watch (e.g. SELECT of cover_* before SQLite migrated),
+    // ignore local and fall back to REST so Spaces overview stays populated.
     const localMapped =
-      localDocuments.data?.map((row) => snakeRow(row) as ApiDocument) ?? null;
+      localDocuments.error != null
+        ? null
+        : (localDocuments.data?.map((row) => snakeRow(row) as ApiDocument) ??
+          null);
     // Cold-start / shell pending creates via apiDocuments; agent SSE via sparse overlay.
     return applyLiveEntityOverlay(
       mergeLocalWithPendingApiCreates(
@@ -666,8 +671,8 @@ function useDesktopWorkspaceDataImpl(): {
     liveDeletedDocumentIds,
     liveDocumentsById,
     localDocuments.data,
+    localDocuments.error,
   ]);
-
   const habits = useMemo((): ApiHabit[] => {
     const localMapped =
       localHabits.data?.map((row) => {
@@ -889,6 +894,7 @@ function useDesktopWorkspaceDataImpl(): {
     createProjectFolder,
     renameDocument,
     updateDocumentIcon,
+    updateDocumentPublishFields,
     moveDocument,
     reorderDocuments,
     deleteDocument,
@@ -1345,6 +1351,7 @@ function useDesktopWorkspaceDataImpl(): {
       createProjectFolder,
       renameDocument,
       updateDocumentIcon,
+      updateDocumentPublishFields,
       moveDocument,
       reorderDocuments,
       deleteDocument,
@@ -1388,6 +1395,7 @@ function useDesktopWorkspaceDataImpl(): {
       softRefreshApiDocuments,
       softDeleteTask,
       updateDocumentIcon,
+      updateDocumentPublishFields,
       updateHabit,
     ],
   );

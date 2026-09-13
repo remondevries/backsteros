@@ -29,6 +29,9 @@ export const PROJECT_TYPES = [
   "domeinname",
 ] as const;
 
+/** Registrar / hosting providers (Catalog Domains; extensible). */
+export const PROJECT_PROVIDERS = ["transip"] as const;
+
 export const DOCUMENT_TYPES = ["project", "knowledge", "journal"] as const;
 
 export const API_KEY_SCOPES = [
@@ -88,6 +91,7 @@ export const FINANCIAL_AMOUNT_SIGNS = ["all", "debit", "credit"] as const;
 export const taskStatusSchema = z.enum(TASK_STATUSES);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
 export const projectTypeSchema = z.enum(PROJECT_TYPES);
+export const projectProviderSchema = z.enum(PROJECT_PROVIDERS);
 export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
 export const apiKeyScopeSchema = z.enum(API_KEY_SCOPES);
 export const bankAccountInstitutionSchema = z.enum(BANK_ACCOUNT_INSTITUTIONS);
@@ -157,7 +161,11 @@ export const projectSchema = z.object({
   icon: z.string().nullable(),
   color: z.string().nullable(),
   type: projectTypeSchema,
+  /** Registrar/hosting provider for Domains (e.g. TransIP). */
+  provider: projectProviderSchema.nullable(),
   githubRepository: githubRepositoryNameSchema.nullable(),
+  /** Cloudflare zone id for Domains DNS management. */
+  cloudflareZoneId: z.string().max(64).nullable(),
   /** Absolute local folder for agent/PTY (machine-specific; Development console). */
   localWorkingDirectory: z.string().max(4096).nullable(),
   status: projectStatusSchema,
@@ -181,7 +189,9 @@ export const createProjectSchema = z.object({
   icon: z.string().max(128).nullable().optional(),
   color: z.string().max(64).nullable().optional(),
   type: projectTypeSchema.optional(),
+  provider: projectProviderSchema.nullable().optional(),
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
+  cloudflareZoneId: z.string().max(64).nullable().optional(),
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
   status: projectStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
@@ -672,6 +682,15 @@ export const documentSchema = z.object({
   snippet: z.string().nullable(),
   contentVersion: z.number().int().positive(),
   contentEtag: z.string().nullable(),
+  publishStatus: z.enum(["concept", "published", "offline"]).default("concept"),
+  publishSlug: z.string().nullable().optional(),
+  seoTitle: z.string().nullable().optional(),
+  seoDescription: z.string().nullable().optional(),
+  audience: z.enum(["group", "individual"]).default("group"),
+  contactIds: z.array(z.string()).nullable().optional(),
+  placementFolderId: z.string().nullable().optional(),
+  coverStorageKey: z.string().nullable().optional(),
+  coverContentType: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -715,6 +734,13 @@ export const updateDocumentSchema = z
     icon: z.string().nullable().optional(),
     sortOrder: z.number().int().optional(),
     journalDate: z.string().date().nullable().optional(),
+    publishStatus: z.enum(["concept", "published", "offline"]).optional(),
+    publishSlug: z.string().max(500).nullable().optional(),
+    seoTitle: z.string().max(500).nullable().optional(),
+    seoDescription: z.string().max(5000).nullable().optional(),
+    audience: z.enum(["group", "individual"]).optional(),
+    contactIds: z.array(z.string()).nullable().optional(),
+    placementFolderId: z.string().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
@@ -732,6 +758,86 @@ export const documentContentSchema = z.object({
 export const updateDocumentContentSchema = z.object({
   content: z.string().max(5_000_000),
   ifMatchVersion: z.number().int().positive().optional(),
+});
+
+export const spaceSeoAddressSchema = z.object({
+  streetAddress: z.string().max(500).optional(),
+  addressLocality: z.string().max(200).optional(),
+  addressRegion: z.string().max(200).optional(),
+  postalCode: z.string().max(40).optional(),
+  addressCountry: z.string().max(120).optional(),
+});
+
+export const spaceSeoSocialSchema = z.object({
+  facebook: z.string().max(2000).optional(),
+  twitter: z.string().max(2000).optional(),
+  linkedin: z.string().max(2000).optional(),
+  instagram: z.string().max(2000).optional(),
+  youtube: z.string().max(2000).optional(),
+  github: z.string().max(2000).optional(),
+});
+
+/** Space-level SEO / Schema.org / Open Graph entity metadata. */
+export const spaceSeoMetaSchema = z.object({
+  siteName: z.string().max(200).optional(),
+  organizationName: z.string().max(200).optional(),
+  phone: z.string().max(80).optional(),
+  email: z.string().max(320).optional(),
+  address: spaceSeoAddressSchema.optional(),
+  social: spaceSeoSocialSchema.optional(),
+});
+
+export const spaceSiteKeySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  siteKeyPrefix: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export const spacePublishSettingsSchema = z.object({
+  spaceDocumentId: z.string(),
+  publicBaseUrl: z.string().nullable(),
+  allowedDomains: z.array(z.string()),
+  seoMeta: spaceSeoMetaSchema,
+  siteKeys: z.array(spaceSiteKeySchema),
+  /** Derived: siteKeys.length > 0 */
+  siteKeyPresent: z.boolean(),
+  updatedAt: z.string().datetime(),
+});
+
+export const updateSpacePublishSettingsSchema = z
+  .object({
+    publicBaseUrl: z.string().max(2000).nullable().optional(),
+    allowedDomains: z.array(z.string().max(255)).max(100).optional(),
+    seoMeta: spaceSeoMetaSchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const createSpaceSiteKeySchema = z.object({
+  label: z.string().trim().min(1).max(80),
+});
+
+export const spaceSiteKeyCreatedSchema = z.object({
+  siteKey: z.string(),
+  key: spaceSiteKeySchema,
+  settings: spacePublishSettingsSchema,
+});
+
+export const publicSpaceArticleSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  slug: z.string(),
+  seoTitle: z.string().nullable(),
+  seoDescription: z.string().nullable(),
+  path: z.string(),
+  updatedAt: z.string().datetime(),
+  content: z.string(),
+});
+
+export const publicSpaceArticleListItemSchema = publicSpaceArticleSchema.omit({
+  content: true,
 });
 
 export const searchResultSchema = z.object({
@@ -1834,6 +1940,19 @@ export const avatarSchema = z.object({
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
 });
+export const avatarSignedUrlQuerySchema = z.object({
+  /** Desired TTL in seconds (clamped server-side; default 7 days, max 30 days). */
+  ttlSeconds: z.coerce.number().int().positive().optional(),
+});
+export const avatarSignedUrlSchema = z.object({
+  url: z.string().url(),
+  expiresAt: isoDateSchema,
+});
+export const publicAvatarQuerySchema = z.object({
+  exp: z.coerce.number().int().positive(),
+  sig: z.string().min(32).max(128),
+  ws: z.string().min(1),
+});
 
 export const upsertDevicePushTokenSchema = z.object({
   platform: z.enum(["ios", "android", "web"]),
@@ -1988,6 +2107,91 @@ export const githubTestConnectionResultSchema = z.object({
   ok: z.boolean(),
   error: z.string().nullable(),
   login: z.string().nullable(),
+});
+
+/** TransIP domain inventory (Catalog Domains sync). */
+export const transipStatusSchema = z.object({
+  configured: z.boolean(),
+});
+export const transipSettingsSchema = z.object({
+  apiTokenConfigured: z.boolean(),
+  apiTokenPreview: z.string().nullable(),
+  /** True when a workspace token or env fallback is configured. */
+  connected: z.boolean(),
+  /** Env / ~/.config/secrets/transip.env fallback is set. */
+  envTokenConfigured: z.boolean(),
+});
+export const updateTransipSettingsSchema = z.object({
+  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
+  apiToken: z.string().optional(),
+});
+export const transipTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  domainCount: z.number().int().nonnegative().nullable(),
+});
+export const transipDomainSyncCreatedSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  name: z.string(),
+});
+export const transipDomainSyncEntrySchema = z.object({
+  name: z.string(),
+  status: z.string().nullable(),
+  renewalDate: z.string().nullable(),
+  action: z.enum(["created", "skipped", "healed"]),
+});
+export const transipDomainSyncResultSchema = z.object({
+  fetched: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  healed: z.number().int().nonnegative().default(0),
+  createdProjects: z.array(transipDomainSyncCreatedSchema),
+  healedProjectIds: z.array(z.string()).default([]),
+  domains: z.array(transipDomainSyncEntrySchema),
+});
+
+/** Cloudflare DNS (API token; zone matching for Catalog Domains). */
+export const cloudflareStatusSchema = z.object({
+  configured: z.boolean(),
+});
+export const cloudflareSettingsSchema = z.object({
+  apiTokenConfigured: z.boolean(),
+  apiTokenPreview: z.string().nullable(),
+  /** True when a workspace token or env fallback is configured. */
+  connected: z.boolean(),
+  /** Env / ~/.config/secrets/cloudflare.env fallback is set. */
+  envTokenConfigured: z.boolean(),
+});
+export const updateCloudflareSettingsSchema = z.object({
+  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
+  apiToken: z.string().optional(),
+});
+export const cloudflareTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  zoneCount: z.number().int().nonnegative().nullable(),
+});
+export const cloudflareZoneMatchEntrySchema = z.object({
+  name: z.string(),
+  projectId: z.string().nullable(),
+  zoneId: z.string().nullable(),
+  action: z.enum([
+    "matched",
+    "updated",
+    "unchanged",
+    "unmatched_project",
+    "unmatched_zone",
+  ]),
+});
+export const cloudflareZoneMatchResultSchema = z.object({
+  fetched: z.number().int().nonnegative(),
+  matched: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  unmatchedProjects: z.number().int().nonnegative(),
+  unmatchedZones: z.number().int().nonnegative(),
+  domains: z.array(cloudflareZoneMatchEntrySchema),
 });
 
 /** Shared place/geocode result for contacts (and later meetings). */
@@ -2961,6 +3165,20 @@ export type Document = z.infer<typeof documentSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
 export type DocumentContent = z.infer<typeof documentContentSchema>;
+export type SpacePublishSettings = z.infer<typeof spacePublishSettingsSchema>;
+export type UpdateSpacePublishSettingsInput = z.infer<
+  typeof updateSpacePublishSettingsSchema
+>;
+export type SpaceSeoMeta = z.infer<typeof spaceSeoMetaSchema>;
+export type SpaceSeoAddress = z.infer<typeof spaceSeoAddressSchema>;
+export type SpaceSeoSocial = z.infer<typeof spaceSeoSocialSchema>;
+export type SpaceSiteKey = z.infer<typeof spaceSiteKeySchema>;
+export type CreateSpaceSiteKeyInput = z.infer<typeof createSpaceSiteKeySchema>;
+export type SpaceSiteKeyCreated = z.infer<typeof spaceSiteKeyCreatedSchema>;
+export type PublicSpaceArticle = z.infer<typeof publicSpaceArticleSchema>;
+export type PublicSpaceArticleListItem = z.infer<
+  typeof publicSpaceArticleListItemSchema
+>;
 export type UpdateDocumentContentInput = z.infer<typeof updateDocumentContentSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
 export type DocumentType = z.infer<typeof documentTypeSchema>;
@@ -3053,6 +3271,7 @@ export type Letter = z.infer<typeof letterSchema>;
 export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
 export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
+export type AvatarSignedUrl = z.infer<typeof avatarSignedUrlSchema>;
 export type TaskImage = z.infer<typeof taskImageSchema>;
 export type Mention = z.infer<typeof mentionSchema>;
 export type CursorSettings = z.infer<typeof cursorSettingsSchema>;
@@ -3078,6 +3297,28 @@ export type UpdateGithubSettingsInput = z.infer<
 >;
 export type GithubTestConnectionResult = z.infer<
   typeof githubTestConnectionResultSchema
+>;
+export type TransipStatus = z.infer<typeof transipStatusSchema>;
+export type TransipSettings = z.infer<typeof transipSettingsSchema>;
+export type UpdateTransipSettingsInput = z.infer<
+  typeof updateTransipSettingsSchema
+>;
+export type TransipTestConnectionResult = z.infer<
+  typeof transipTestConnectionResultSchema
+>;
+export type TransipDomainSyncResult = z.infer<
+  typeof transipDomainSyncResultSchema
+>;
+export type CloudflareStatus = z.infer<typeof cloudflareStatusSchema>;
+export type CloudflareSettings = z.infer<typeof cloudflareSettingsSchema>;
+export type UpdateCloudflareSettingsInput = z.infer<
+  typeof updateCloudflareSettingsSchema
+>;
+export type CloudflareTestConnectionResult = z.infer<
+  typeof cloudflareTestConnectionResultSchema
+>;
+export type CloudflareZoneMatchResult = z.infer<
+  typeof cloudflareZoneMatchResultSchema
 >;
 export type MapboxTestConnectionResult = z.infer<
   typeof mapboxTestConnectionResultSchema

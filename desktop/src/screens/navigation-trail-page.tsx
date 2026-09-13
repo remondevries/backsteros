@@ -172,14 +172,15 @@ function resolveSourceBreadcrumbs(
     ];
   }
 
-  const knowledgeMatch = source.match(/^\/knowledge\/(.+)$/);
+  const knowledgeMatch =
+    source.match(/^\/spaces\/(.+)$/) ?? source.match(/^\/knowledge\/(.+)$/);
   if (knowledgeMatch) {
     const slug = decodeURIComponent(knowledgeMatch[1]!);
     const document = workspace.knowledgeDocuments.find(
       (entry) => entry.path === slug || entry.id === slug,
     );
     return [
-      { label: "Knowledge Base", href: "/knowledge" },
+      { label: "Spaces", href: "/spaces" },
       {
         label: document?.title ?? slug.split("/").pop() ?? "Document",
         href: getKnowledgeHref(slug),
@@ -346,7 +347,7 @@ function TrailDocumentLeaf({
   );
 
   if (loading) {
-    return sectionLabel === "Knowledge Base" ? (
+    return sectionLabel === "Spaces" ? (
       <KnowledgeDetailSkeleton />
     ) : (
       <DocumentDetailSkeleton />
@@ -456,7 +457,7 @@ export function NavigationTrailPage({
       <TrailDocumentLeaf
         documentId={document.id}
         title={document.title}
-        sectionLabel={isKnowledge ? "Knowledge Base" : "Documents"}
+        sectionLabel={isKnowledge ? "Spaces" : "Documents"}
         breadcrumbItems={breadcrumbItems}
       />
     );
@@ -625,6 +626,16 @@ function TrailProjectLeaf({
       }}
       onTypeChange={(type) => {
         void workspace.patchProject(project.id, { type });
+      }}
+      onProviderChange={(provider) => {
+        const patch: {
+          provider: string | null;
+          icon?: string;
+        } = { provider };
+        if (provider === "transip") {
+          patch.icon = "transip";
+        }
+        void workspace.patchProject(project.id, patch);
       }}
       organizationOptions={buildOrganizationDropdownOptions(
         withAvatarSrc(workspace.organizations, organizationAvatarSrc),

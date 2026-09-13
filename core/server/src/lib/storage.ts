@@ -8,6 +8,7 @@ import {
   rename,
   rm,
   rmdir,
+  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -38,6 +39,38 @@ export type ProjectVaultFolderOptions = {
   projectType?: string | null;
 };
 
+/** Product Spaces vault root (formerly “Knowledge Base”). */
+export const VAULT_SPACES_FOLDER = "Spaces";
+/** Pre-rename vault folder — still resolved for existing files. */
+export const VAULT_SPACES_FOLDER_LEGACY = "Knowledge Base";
+
+/** Top-level category folders under `Spaces/` (vault + document path slugs). */
+export const SPACES_CATEGORY_KNOWLEDGE_BASE = "knowledge-base";
+export const SPACES_CATEGORY_SUPPORT = "support";
+export const SPACES_CATEGORY_WEBSITES = "websites";
+
+export const SPACES_SECOND_BRAIN_FOLDER = "second-brain";
+
+/** Vault-relative path for the default Second brain space. */
+export const SPACES_SECOND_BRAIN_RELATIVE = path.posix.join(
+  SPACES_CATEGORY_KNOWLEDGE_BASE,
+  SPACES_SECOND_BRAIN_FOLDER,
+);
+
+/** Directories always ensured under `Spaces/`. */
+export const SPACES_HIERARCHY_FOLDERS = [
+  SPACES_CATEGORY_KNOWLEDGE_BASE,
+  SPACES_SECOND_BRAIN_RELATIVE,
+  SPACES_CATEGORY_SUPPORT,
+  SPACES_CATEGORY_WEBSITES,
+] as const;
+
+const SPACES_TOP_LEVEL_CATEGORY_NAMES = new Set<string>([
+  SPACES_CATEGORY_KNOWLEDGE_BASE,
+  SPACES_CATEGORY_SUPPORT,
+  SPACES_CATEGORY_WEBSITES,
+]);
+
 /** In-memory vault root (warmed from workspace settings or env). */
 let vaultPathCache: string | null = null;
 
@@ -45,7 +78,7 @@ export const VAULT_ROOT_FOLDERS = [
   "Journal",
   "Projects",
   "Letters",
-  "Knowledge Base",
+  VAULT_SPACES_FOLDER,
   ".backsteros",
   path.join(".backsteros", "avatars"),
   path.join(".backsteros", "attachments"),
@@ -137,7 +170,7 @@ function ensureMarkdownExtension(filePath: string): string {
  * Obsidian-style vault-relative keys:
  * Journal/{date}.md
  * Projects/{projectKey}/Documents/{path}.md
- * Knowledge Base/{path}.md
+ * Spaces/{path}.md
  */
 export function buildStorageKey(
   type: "project" | "knowledge" | "journal",
@@ -157,7 +190,7 @@ export function buildStorageKey(
     }
     case "knowledge":
       return path.posix.join(
-        "Knowledge Base",
+        VAULT_SPACES_FOLDER,
         ensureMarkdownExtension(normalizedPath),
       );
     case "project": {
@@ -230,7 +263,7 @@ export function buildLetterPdfStorageKey(input: {
 /** Private/system blobs stay under .backsteros (not for Obsidian browsing). */
 export function buildPrivateStorageKey(
   _workspaceId: string,
-  category: "pdfs" | "avatars" | "attachments" | "finance-imports",
+  category: "pdfs" | "avatars" | "attachments" | "finance-imports" | "space-covers",
   entityId: string,
   fileName: string,
 ): string {
@@ -238,6 +271,14 @@ export function buildPrivateStorageKey(
     return path.posix.join(
       ".backsteros",
       "avatars",
+      safeSegment(entityId),
+      safeSegment(fileName),
+    );
+  }
+  if (category === "space-covers") {
+    return path.posix.join(
+      ".backsteros",
+      "space-covers",
       safeSegment(entityId),
       safeSegment(fileName),
     );
@@ -266,6 +307,11 @@ export function buildPrivateStorageKey(
     safeSegment(entityId),
     safeSegment(fileName),
   );
+}
+
+/** Space folder cover / OG image under `.backsteros/space-covers/{spaceId}/cover`. */
+export function buildSpaceCoverStorageKey(spaceDocumentId: string): string {
+  return buildPrivateStorageKey("", "space-covers", spaceDocumentId, "cover");
 }
 
 /** Task description images under `.backsteros/attachments/tasks/{taskId}/…`. */
@@ -347,18 +393,264 @@ export function snippetForContent(content: string): string {
   return `${trimmed.slice(0, SNIPPET_LENGTH)}…`;
 }
 
+/** Map legacy `Knowledge Base/…` keys into Second brain under Spaces. */
+export function normalizeVaultRelativeKey(key: string): string {
+  return rewriteLegacyKnowledgeBaseStorageKey(key);
+}
+
+function vaultAbsoluteCandidates(root: string, key: string): string[] {
+  const preferredKey = normalizeVaultRelativeKey(key);
+  const preferred = path.resolve(root, preferredKey);
+  const candidates = [preferred];
+  const seen = new Set([preferred]);
+
+  const add = (relative: string) => {
+    const absolute = path.resolve(root, relative);
+    if (seen.has(absolute)) return;
+    seen.add(absolute);
+    candidates.push(absolute);
+  };
+
+  // Pre-Second-brain Spaces layout: Spaces/{path}
+  const posix = key.replace(/\\/g, "/");
+  if (
+    posix === VAULT_SPACES_FOLDER_LEGACY ||
+    posix.startsWith(`${VAULT_SPACES_FOLDER_LEGACY}/`)
+  ) {
+    add(`${VAULT_SPACES_FOLDER}${posix.slice(VAULT_SPACES_FOLDER_LEGACY.length)}`);
+    add(posix);
+  }
+
+  // Preferred Spaces/knowledge-base/second-brain/… also try legacy KB root.
+  if (
+    preferredKey === path.posix.join(VAULT_SPACES_FOLDER, SPACES_SECOND_BRAIN_RELATIVE) ||
+    preferredKey.startsWith(
+      `${path.posix.join(VAULT_SPACES_FOLDER, SPACES_SECOND_BRAIN_RELATIVE)}/`,
+    )
+  ) {
+    const suffix = preferredKey.slice(
+      path.posix.join(VAULT_SPACES_FOLDER, SPACES_SECOND_BRAIN_RELATIVE).length,
+    );
+    add(`${VAULT_SPACES_FOLDER_LEGACY}${suffix}`);
+  }
+
+  // Portal space moved Support ← Second brain. Metadata may already point at
+  // Spaces/support/portal/… while bytes remain under second-brain/portal/….
+  const supportPortalPrefix = path.posix.join(
+    VAULT_SPACES_FOLDER,
+    SPACES_CATEGORY_SUPPORT,
+    "portal",
+  );
+  const secondBrainPortalPrefix = path.posix.join(
+    VAULT_SPACES_FOLDER,
+    SPACES_SECOND_BRAIN_RELATIVE,
+    "portal",
+  );
+  if (
+    preferredKey === supportPortalPrefix ||
+    preferredKey.startsWith(`${supportPortalPrefix}/`)
+  ) {
+    const suffix = preferredKey.slice(supportPortalPrefix.length);
+    add(`${secondBrainPortalPrefix}${suffix}`);
+  }
+  if (
+    preferredKey === secondBrainPortalPrefix ||
+    preferredKey.startsWith(`${secondBrainPortalPrefix}/`)
+  ) {
+    const suffix = preferredKey.slice(secondBrainPortalPrefix.length);
+    add(`${supportPortalPrefix}${suffix}`);
+  }
+
+  return candidates;
+}
+
 async function absolutePathForKey(
   key: string,
   settingsVaultPath?: string | null,
+  mode: "read" | "write" = "read",
 ): Promise<string> {
   assertVaultRelativeKey(key);
   const root = await resolveVaultPath(settingsVaultPath);
-  const absolute = path.resolve(root, key);
   const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  if (absolute !== root && !absolute.startsWith(rootWithSep)) {
+  const candidates = vaultAbsoluteCandidates(root, key);
+  const preferred = candidates[0]!;
+
+  if (mode === "write") {
+    // Never recreate legacy Knowledge Base/ — always write the preferred Spaces path.
+    if (preferred !== root && !preferred.startsWith(rootWithSep)) {
+      throw new Error("STORAGE_KEY_OUTSIDE_WORKSPACE");
+    }
+    return preferred;
+  }
+
+  for (const absolute of candidates) {
+    if (absolute !== root && !absolute.startsWith(rootWithSep)) {
+      throw new Error("STORAGE_KEY_OUTSIDE_WORKSPACE");
+    }
+    try {
+      await access(absolute, constants.F_OK);
+      return absolute;
+    } catch {
+      // try next candidate
+    }
+  }
+  if (preferred !== root && !preferred.startsWith(rootWithSep)) {
     throw new Error("STORAGE_KEY_OUTSIDE_WORKSPACE");
   }
-  return absolute;
+  return preferred;
+}
+
+/**
+ * Move loose files/folders at the Spaces root into Second brain so the
+ * category layout (Knowledge Base / Support / Websites) stays clean.
+ */
+async function migrateLooseSpacesEntries(spacesRoot: string): Promise<void> {
+  const secondBrain = path.join(
+    spacesRoot,
+    ...SPACES_SECOND_BRAIN_RELATIVE.split("/"),
+  );
+  await mkdir(secondBrain, { recursive: true });
+  let entries;
+  try {
+    entries = await readdir(spacesRoot, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    if (SPACES_TOP_LEVEL_CATEGORY_NAMES.has(entry.name)) continue;
+    await movePathBestEffort(
+      path.join(spacesRoot, entry.name),
+      path.join(secondBrain, entry.name),
+    );
+  }
+}
+
+/**
+ * When `Spaces/` was created beside a legacy vault-root `Knowledge Base/`,
+ * merge that folder’s contents into Second brain (do not leave files stranded).
+ */
+async function migrateLegacyKnowledgeBaseBesideSpaces(
+  vaultRoot: string,
+  spacesRoot: string,
+): Promise<void> {
+  const legacy = path.join(vaultRoot, VAULT_SPACES_FOLDER_LEGACY);
+  try {
+    await access(legacy, constants.F_OK);
+  } catch {
+    return;
+  }
+
+  const secondBrain = path.join(
+    spacesRoot,
+    ...SPACES_SECOND_BRAIN_RELATIVE.split("/"),
+  );
+  await mkdir(secondBrain, { recursive: true });
+
+  let entries;
+  try {
+    entries = await readdir(legacy, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    await movePathBestEffort(
+      path.join(legacy, entry.name),
+      path.join(secondBrain, entry.name),
+    );
+  }
+
+  try {
+    const leftover = await readdir(legacy);
+    const meaningful = leftover.filter((name) => !name.startsWith("."));
+    if (meaningful.length === 0) {
+      await rm(legacy, { recursive: true, force: true });
+    }
+  } catch {
+    // leave legacy folder if cleanup fails
+  }
+}
+
+async function movePathBestEffort(from: string, to: string): Promise<void> {
+  if (path.resolve(from) === path.resolve(to)) return;
+  try {
+    await access(to, constants.F_OK);
+  } catch {
+    try {
+      await mkdir(path.dirname(to), { recursive: true });
+      await rename(from, to);
+    } catch {
+      // best-effort migration
+    }
+    return;
+  }
+
+  // Destination exists — merge directories; for files keep newer then drop source.
+  let fromStat;
+  let toStat;
+  try {
+    fromStat = await stat(from);
+    toStat = await stat(to);
+  } catch {
+    return;
+  }
+
+  if (fromStat.isDirectory() && toStat.isDirectory()) {
+    const fromEntries = await readdir(from, { withFileTypes: true }).catch(
+      () => null,
+    );
+    if (fromEntries) {
+      for (const entry of fromEntries) {
+        if (entry.name.startsWith(".")) continue;
+        await movePathBestEffort(
+          path.join(from, entry.name),
+          path.join(to, entry.name),
+        );
+      }
+    }
+    try {
+      await rm(from, { recursive: true, force: true });
+    } catch {
+      // leave non-empty leftovers
+    }
+    return;
+  }
+
+  if (fromStat.isFile() && toStat.isFile()) {
+    // Destination already has the note (canonical Second brain) — drop the
+    // leftover Knowledge Base copy so the legacy tree can be removed.
+    try {
+      await unlink(from);
+    } catch {
+      // best-effort
+    }
+    return;
+  }
+
+  // Type mismatch — prefer destination layout; drop the legacy path.
+  try {
+    await rm(from, { recursive: true, force: true });
+  } catch {
+    // best-effort
+  }
+}
+
+/** Rewrite vault-relative storage keys after Knowledge Base → Second brain move. */
+export function rewriteLegacyKnowledgeBaseStorageKey(key: string): string {
+  const posix = key.replace(/\\/g, "/");
+  const prefix = `${VAULT_SPACES_FOLDER_LEGACY}/`;
+  if (posix === VAULT_SPACES_FOLDER_LEGACY) {
+    return path.posix.join(VAULT_SPACES_FOLDER, SPACES_SECOND_BRAIN_RELATIVE);
+  }
+  if (posix.startsWith(prefix)) {
+    return path.posix.join(
+      VAULT_SPACES_FOLDER,
+      SPACES_SECOND_BRAIN_RELATIVE,
+      posix.slice(prefix.length),
+    );
+  }
+  return key;
 }
 
 export async function ensureVaultStructure(
@@ -366,9 +658,34 @@ export async function ensureVaultStructure(
 ): Promise<void> {
   const root = path.resolve(vaultPath);
   await mkdir(root, { recursive: true });
+
+  const legacySpaces = path.join(root, VAULT_SPACES_FOLDER_LEGACY);
+  const spaces = path.join(root, VAULT_SPACES_FOLDER);
+  try {
+    await access(legacySpaces, constants.F_OK);
+    try {
+      await access(spaces, constants.F_OK);
+    } catch {
+      await rename(legacySpaces, spaces);
+    }
+  } catch {
+    // no legacy folder
+  }
+
   for (const folder of VAULT_ROOT_FOLDERS) {
     await mkdir(path.join(root, folder), { recursive: true });
   }
+
+  for (const relative of SPACES_HIERARCHY_FOLDERS) {
+    await mkdir(path.join(spaces, ...relative.split("/")), {
+      recursive: true,
+    });
+  }
+  // Merge a leftover vault-root "Knowledge Base/" into Second brain when both
+  // it and Spaces/ exist (rename-only migration cannot run in that case).
+  await migrateLegacyKnowledgeBaseBesideSpaces(root, spaces);
+  await migrateLooseSpacesEntries(spaces);
+
   // Keep an empty placeholder so Obsidian shows the folder.
   const gitkeep = path.join(root, "Projects", ".gitkeep");
   try {
@@ -603,7 +920,7 @@ export async function putObject(
   settingsVaultPath?: string | null,
 ): Promise<{ etag: string | null; byteSize: number }> {
   void contentType;
-  const absolute = await absolutePathForKey(key, settingsVaultPath);
+  const absolute = await absolutePathForKey(key, settingsVaultPath, "write");
   await mkdir(path.dirname(absolute), { recursive: true });
   const bytes =
     typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body);
@@ -625,6 +942,7 @@ export async function getObject(
   byteSize: number;
 }> {
   const absolute = await absolutePathForKey(key, settingsVaultPath);
+  const preferred = await absolutePathForKey(key, settingsVaultPath, "write");
   let bytes: Buffer;
   try {
     bytes = await readFile(absolute);
@@ -638,7 +956,39 @@ export async function getObject(
     }
     throw error;
   }
-  const isPdf = absolute.toLowerCase().endsWith(".pdf");
+
+  // Heal path drift (e.g. Portal under Support while bytes stay in Second brain).
+  if (absolute !== preferred) {
+    try {
+      await mkdir(path.dirname(preferred), { recursive: true });
+      try {
+        await rename(absolute, preferred);
+      } catch (error) {
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code)
+            : "";
+        if (code === "EXDEV") {
+          await writeFile(preferred, bytes);
+          await unlink(absolute);
+        } else if (code !== "ENOENT") {
+          // Preferred may already exist — keep serving bytes we read.
+          console.warn(
+            "[storage] vault reconcile after read failed",
+            key,
+            absolute,
+            "→",
+            preferred,
+            error,
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("[storage] vault reconcile mkdir failed", key, error);
+    }
+  }
+
+  const isPdf = preferred.toLowerCase().endsWith(".pdf");
   return {
     body: bytes.toString("utf8"),
     bytes,
@@ -665,15 +1015,66 @@ export async function deleteObject(
   }
 }
 
-/** Move a vault object to a new key (no-op when keys match). */
+/**
+ * If bytes for `key` only exist at a legacy candidate path, move them to the
+ * canonical preferred key. No-op when already aligned or missing.
+ */
+export async function reconcileObjectToPreferredKey(
+  key: string,
+  settingsVaultPath?: string | null,
+): Promise<boolean> {
+  const preferred = await absolutePathForKey(key, settingsVaultPath, "write");
+  try {
+    await access(preferred, constants.F_OK);
+    return false;
+  } catch {
+    // continue — preferred missing
+  }
+
+  const found = await absolutePathForKey(key, settingsVaultPath, "read");
+  if (found === preferred) {
+    try {
+      await access(preferred, constants.F_OK);
+      return false;
+    } catch {
+      throw new Error("STORAGE_OBJECT_NOT_FOUND");
+    }
+  }
+
+  await mkdir(path.dirname(preferred), { recursive: true });
+  try {
+    await rename(found, preferred);
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
+    if (code === "ENOENT") {
+      throw new Error("STORAGE_OBJECT_NOT_FOUND");
+    }
+    if (code === "EXDEV") {
+      const bytes = await readFile(found);
+      await writeFile(preferred, bytes);
+      await unlink(found);
+      return true;
+    }
+    throw error;
+  }
+  return true;
+}
+
+/** Move a vault object to a new key (reconciles when keys match but path drifted). */
 export async function moveObject(
   fromKey: string,
   toKey: string,
   settingsVaultPath?: string | null,
 ): Promise<void> {
-  if (fromKey === toKey) return;
+  if (fromKey === toKey) {
+    await reconcileObjectToPreferredKey(fromKey, settingsVaultPath);
+    return;
+  }
   const fromAbsolute = await absolutePathForKey(fromKey, settingsVaultPath);
-  const toAbsolute = await absolutePathForKey(toKey, settingsVaultPath);
+  const toAbsolute = await absolutePathForKey(toKey, settingsVaultPath, "write");
   await mkdir(path.dirname(toAbsolute), { recursive: true });
   try {
     await rename(fromAbsolute, toAbsolute);

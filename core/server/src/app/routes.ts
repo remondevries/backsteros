@@ -50,6 +50,8 @@ import {
   mapboxGeocodeQuerySchema,
   mapboxStaticMapQuerySchema,
   updateGithubSettingsSchema,
+  updateTransipSettingsSchema,
+  updateCloudflareSettingsSchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
@@ -78,6 +80,8 @@ import {
   createCrmActivityNoteSchema,
   crmActivityFeedQuerySchema,
   portalAuthLoginSchema,
+  avatarSignedUrlQuerySchema,
+  publicAvatarQuerySchema,
 } from "@backsteros/contracts";
 
 import {
@@ -106,6 +110,13 @@ import {
   resolveAvatarContentType,
   sniffAvatarContentType,
 } from "../lib/avatar-content-type.js";
+import {
+  buildAvatarSignedUrl,
+  getAvatarUrlSigningSecret,
+  getPublicApiOrigin,
+  isAvatarSignedEntityType,
+  verifyAvatarSignature,
+} from "../lib/avatar-signed-url.js";
 import { resolveTaskAttachmentContentType } from "../lib/task-attachment-content-type.js";
 import {
   MAX_AVATAR_BYTES,
@@ -126,6 +137,8 @@ import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { MapboxApiError } from "../lib/mapbox-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
+import { TransipApiError } from "../lib/transip-client.js";
+import { CloudflareApiError } from "../lib/cloudflare-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import {
@@ -238,6 +251,10 @@ import { emitHabitTaskSyncChanges } from "../services/habit-task-sync.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
 import * as whoopService from "../services/whoop.js";
 import * as pushInboxTriageService from "../services/push-inbox-triage.js";
+import * as transipDomainsSyncService from "../services/transip-domains-sync.js";
+import * as transipSettingsService from "../services/transip-settings.js";
+import * as cloudflareZonesSyncService from "../services/cloudflare-zones-sync.js";
+import * as cloudflareSettingsService from "../services/cloudflare-settings.js";
 import type { SyncEntity } from "../lib/sync-constants.js";
 
 const { sanitizeWorkspaceSettings } = cursorSettingsService;
@@ -454,7 +471,9 @@ async function withAuth(c: Context, next: Next) {
   if (
     c.req.path.startsWith("/api/v1/sync") ||
     c.req.path.startsWith("/api/v1/powersync") ||
-    c.req.path === "/api/v1/webhooks/agentmail"
+    c.req.path === "/api/v1/webhooks/agentmail" ||
+    c.req.path.startsWith("/api/v1/public/avatars/") ||
+    c.req.path.startsWith("/api/v1/public/spaces/")
   ) {
     await next();
     return;
@@ -915,6 +934,88 @@ export function registerApiRoutes(app: Hono) {
           { error: error.message, code: error.code },
           error.status,
         );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/transip/status", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+    return c.json(await transipSettingsService.getTransipStatus(auth.workspaceId));
+  });
+
+  app.post("/api/v1/transip/domains/sync", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    try {
+      const result = await transipDomainsSyncService.syncTransipDomains(
+        auth.workspaceId,
+      );
+      for (const project of result.createdProjects) {
+        publishProjectLive(auth, project.id, "upsert");
+      }
+      for (const projectId of result.healedProjectIds) {
+        publishProjectLive(auth, projectId, "upsert");
+      }
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        if (error.status === 401 || error.status === 403) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/cloudflare/status", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+    return c.json(
+      await cloudflareSettingsService.getCloudflareStatus(auth.workspaceId),
+    );
+  });
+
+  app.post("/api/v1/cloudflare/zones/match", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    try {
+      const result = await cloudflareZonesSyncService.matchCloudflareZones(
+        auth.workspaceId,
+      );
+      for (const entry of result.domains) {
+        if (entry.action !== "updated" || !entry.projectId) continue;
+        publishProjectLive(auth, entry.projectId, "upsert");
+      }
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        if (error.status === 401 || error.status === 403) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
       }
       throw error;
     }
@@ -5306,6 +5407,112 @@ export function registerApiRoutes(app: Hono) {
       return c.json(row);
     },
   );
+  app.get(
+    "/api/v1/avatars/:entityType/:entityId/signed-url",
+    zValidator("query", avatarSignedUrlQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "avatars:read")) return c.json(forbidden(), 403);
+
+      const entityType = c.req.param("entityType");
+      const entityId = c.req.param("entityId");
+      if (!isAvatarSignedEntityType(entityType)) {
+        return c.json(
+          { error: "Invalid avatar entity type", code: "bad_request" as const },
+          400,
+        );
+      }
+
+      const secret = getAvatarUrlSigningSecret();
+      const origin = getPublicApiOrigin();
+      if (!secret || !origin) {
+        return c.json(
+          {
+            error:
+              "Avatar signed URLs are not configured (AVATAR_URL_SIGNING_SECRET and PUBLIC_API_URL)",
+            code: "service_unavailable" as const,
+          },
+          503,
+        );
+      }
+
+      const existing = await circleService.getAvatar(
+        auth.workspaceId,
+        entityType,
+        entityId,
+      );
+      if (!existing) return c.json(notFound("Avatar"), 404);
+
+      const query = c.req.valid("query");
+      const minted = buildAvatarSignedUrl({
+        origin,
+        workspaceId: auth.workspaceId,
+        entityType,
+        entityId,
+        secret,
+        ttlSeconds: query.ttlSeconds,
+      });
+
+      return c.json({
+        url: minted.url,
+        expiresAt: minted.expiresAt.toISOString(),
+      });
+    },
+  );
+
+  app.get(
+    "/api/v1/public/avatars/:entityType/:entityId",
+    zValidator("query", publicAvatarQuerySchema),
+    async (c) => {
+      const entityType = c.req.param("entityType");
+      const entityId = c.req.param("entityId");
+      if (!isAvatarSignedEntityType(entityType)) {
+        return c.json(notFound("Avatar"), 404);
+      }
+
+      const secret = getAvatarUrlSigningSecret();
+      if (!secret) {
+        return c.json(notFound("Avatar"), 404);
+      }
+
+      const query = c.req.valid("query");
+      const payload = {
+        workspaceId: query.ws,
+        entityType,
+        entityId,
+        exp: query.exp,
+      };
+      if (!verifyAvatarSignature(payload, query.sig, secret)) {
+        return c.json(notFound("Avatar"), 404);
+      }
+
+      const result = await circleService.getAvatar(
+        query.ws,
+        entityType,
+        entityId,
+      );
+      if (!result) return c.json(notFound("Avatar"), 404);
+
+      const contentType = resolveAvatarContentType(
+        result.row.contentType,
+        result.bytes,
+      );
+      const remainingTtl = Math.max(0, query.exp - Math.floor(Date.now() / 1000));
+      const cacheSeconds = Math.min(300, remainingTtl);
+      c.header("Content-Type", contentType);
+      c.header(
+        "Cache-Control",
+        cacheSeconds > 0
+          ? `public, max-age=${cacheSeconds}`
+          : "public, max-age=0, must-revalidate",
+      );
+      const body = Uint8Array.from(result.bytes);
+      return c.body(
+        body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+      );
+    },
+  );
+
   app.get("/api/v1/avatars/:entityType/:entityId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "avatars:read")) return c.json(forbidden(), 403);
@@ -5691,6 +5898,68 @@ export function registerApiRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(
       await githubSettingsService.testGithubConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/settings/transip", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await transipSettingsService.getTransipSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/transip", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateTransipSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid TransIP settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await transipSettingsService.updateTransipSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/transip/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await transipSettingsService.testTransipConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/settings/cloudflare", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await cloudflareSettingsService.getCloudflareSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/cloudflare", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateCloudflareSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid Cloudflare settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await cloudflareSettingsService.updateCloudflareSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/cloudflare/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await cloudflareSettingsService.testCloudflareConnection(auth.workspaceId),
     );
   });
   app.get(

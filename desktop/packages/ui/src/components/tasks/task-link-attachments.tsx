@@ -38,7 +38,7 @@ export type TaskLinkPickerOption = {
   detail?: string | null;
   /** e.g. Document / Letter — shown above the title in picker results. */
   kindLabel?: string | null;
-  /** e.g. Knowledge Base / BacksterOS (Desktop) — ownership scope. */
+  /** e.g. Spaces / BacksterOS (Desktop) — ownership scope. */
   scopeLabel?: string | null;
 };
 
@@ -168,6 +168,7 @@ export function isAppEmailTaskLinkUrl(url: string): boolean {
 export function isAppDocumentTaskLinkUrl(url: string): boolean {
   const trimmed = url.trim();
   return (
+    /^\/spaces\//i.test(trimmed) ||
     /^\/knowledge\//i.test(trimmed) ||
     /\/documents\//i.test(trimmed)
   );

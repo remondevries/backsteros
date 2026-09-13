@@ -10,6 +10,7 @@ import {
   LIST_REORDER_APPEND_ATTR,
   LIST_REORDER_GROUP_ATTR,
   LIST_REORDER_ITEM_ATTR,
+  LIST_REORDER_LAYOUT_ATTR,
   LIST_REORDER_NO_DRAG_SELECTOR,
   groupedListPointerDropToRequest,
   insertBeforeKeyForPointerTarget,
@@ -22,6 +23,7 @@ const DRAG_THRESHOLD_PX = 5;
 export type GroupedListPointerItemBind = {
   [LIST_REORDER_ITEM_ATTR]: string;
   [LIST_REORDER_GROUP_ATTR]: string;
+  [LIST_REORDER_LAYOUT_ATTR]?: string;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
 };
 
@@ -35,6 +37,13 @@ export type UseGroupedListPointerReorderOptions = {
   itemOrderKey: (itemId: string) => string;
   groupAppendOrderKey: (groupKey: string) => string;
   onReorder: (request: GroupedListPointerReorderRequest) => void;
+  /**
+   * `"grid"` enables left/right half hit-testing (before vs after).
+   * Default keeps classic before-item behavior for vertical lists.
+   */
+  itemLayout?: "list" | "grid";
+  /** Next sibling in a group — required for grid after-item drops. */
+  getNextItemId?: (itemId: string, groupKey: string) => string | null;
 };
 
 export type { GroupedListPointerReorderRequest };
@@ -49,6 +58,8 @@ export function useGroupedListPointerReorder({
   itemOrderKey,
   groupAppendOrderKey,
   onReorder,
+  itemLayout = "list",
+  getNextItemId,
 }: UseGroupedListPointerReorderOptions) {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [insertBeforeKey, setInsertBeforeKey] = useState<string | null>(null);
@@ -67,6 +78,7 @@ export function useGroupedListPointerReorder({
   const itemOrderKeyRef = useRef(itemOrderKey);
   const groupAppendOrderKeyRef = useRef(groupAppendOrderKey);
   const onReorderRef = useRef(onReorder);
+  const getNextItemIdRef = useRef(getNextItemId);
   const suppressClickRef = useRef(false);
   const stopSelectStartRef = useRef<(() => void) | null>(null);
 
@@ -85,6 +97,10 @@ export function useGroupedListPointerReorder({
   useEffect(() => {
     onReorderRef.current = onReorder;
   }, [onReorder]);
+
+  useEffect(() => {
+    getNextItemIdRef.current = getNextItemId;
+  }, [getNextItemId]);
 
   useEffect(() => {
     if (!draggingItemId) return;
@@ -159,6 +175,7 @@ export function useGroupedListPointerReorder({
         itemId: origin.id,
         fromGroupKey: origin.fromGroupKey,
         target,
+        getNextItemId: getNextItemIdRef.current,
       });
 
       onReorderRef.current(request);
@@ -213,9 +230,12 @@ export function useGroupedListPointerReorder({
     (itemId: string, groupKey: string): GroupedListPointerItemBind => ({
       [LIST_REORDER_ITEM_ATTR]: itemId,
       [LIST_REORDER_GROUP_ATTR]: groupKey,
+      ...(itemLayout === "grid"
+        ? { [LIST_REORDER_LAYOUT_ATTR]: "grid" }
+        : {}),
       onPointerDown: (event) => startPointerDrag(itemId, groupKey, event),
     }),
-    [startPointerDrag],
+    [itemLayout, startPointerDrag],
   );
 
   const bindAppendZone = useCallback(

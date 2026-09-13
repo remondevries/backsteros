@@ -1,4 +1,8 @@
 import { invoke } from "./tauri-invoke-instrumentation";
+import { isTauriRuntime } from "./tauri-runtime";
+import { createPersistedSessionLruCache } from "./session-lru-cache";
+
+export { isTauriRuntime } from "./tauri-runtime";
 
 export type WhoopSettingsStatus = {
   connected: boolean;
@@ -23,10 +27,6 @@ export type WhoopDayResult = {
   error?: string | null;
 };
 
-export function isTauriRuntime(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 export async function fetchWhoopSettingsStatus(): Promise<WhoopSettingsStatus> {
   if (!isTauriRuntime()) {
     return {
@@ -42,10 +42,17 @@ export async function fetchWhoopSettingsStatus(): Promise<WhoopSettingsStatus> {
   return invoke<WhoopSettingsStatus>("whoop_status");
 }
 
+type PersistedWhoopDay = WhoopDayResult & { cachedAt: number };
+
 const WHOOP_DAY_CACHE_LIMIT = 40;
 const WHOOP_DAY_CACHE_TTL_MS = 120_000;
 const whoopDayCache = new Map<string, WhoopDayResult>();
 const whoopDayCacheWrittenAt = new Map<string, number>();
+/** Survives soft reloads / remounts within the browser session. */
+const whoopPersisted = createPersistedSessionLruCache<PersistedWhoopDay>({
+  limit: WHOOP_DAY_CACHE_LIMIT,
+  storageKey: "backsteros:whoop-day-v1",
+});
 /** In-flight day fetches so journal open + prefetch share one invoke. */
 const whoopDayInflight = new Map<string, Promise<WhoopDayResult>>();
 
@@ -53,15 +60,27 @@ export function peekWhoopDayCache(date: string): WhoopDayResult | null {
   const result = whoopDayCache.get(date);
   const writtenAt = whoopDayCacheWrittenAt.get(date);
   if (
-    !result ||
-    writtenAt == null ||
-    Date.now() - writtenAt >= WHOOP_DAY_CACHE_TTL_MS
+    result &&
+    writtenAt != null &&
+    Date.now() - writtenAt < WHOOP_DAY_CACHE_TTL_MS
   ) {
-    whoopDayCache.delete(date);
-    whoopDayCacheWrittenAt.delete(date);
+    return result;
+  }
+  whoopDayCache.delete(date);
+  whoopDayCacheWrittenAt.delete(date);
+
+  const persisted = whoopPersisted.peek(date);
+  if (
+    !persisted ||
+    Date.now() - persisted.cachedAt >= WHOOP_DAY_CACHE_TTL_MS
+  ) {
+    if (persisted) whoopPersisted.delete(date);
     return null;
   }
-  return result;
+  const { cachedAt: _cachedAt, ...day } = persisted;
+  whoopDayCache.set(date, day);
+  whoopDayCacheWrittenAt.set(date, persisted.cachedAt);
+  return day;
 }
 
 function writeWhoopDayCache(date: string, result: WhoopDayResult): void {
@@ -69,13 +88,16 @@ function writeWhoopDayCache(date: string, result: WhoopDayResult): void {
   if (!result.authenticated || !result.snapshot) {
     whoopDayCache.delete(date);
     whoopDayCacheWrittenAt.delete(date);
+    whoopPersisted.delete(date);
     return;
   }
   if (whoopDayCache.has(date)) {
     whoopDayCache.delete(date);
   }
+  const now = Date.now();
   whoopDayCache.set(date, result);
-  whoopDayCacheWrittenAt.set(date, Date.now());
+  whoopDayCacheWrittenAt.set(date, now);
+  whoopPersisted.set(date, { ...result, cachedAt: now });
   while (whoopDayCache.size > WHOOP_DAY_CACHE_LIMIT) {
     const oldest = whoopDayCache.keys().next().value;
     if (oldest == null) break;

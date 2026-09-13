@@ -80,7 +80,7 @@ export function isAppEmailTaskLinkUrl(url: string): boolean {
 export function isAppDocumentTaskLinkUrl(url: string): boolean {
   const trimmed = url.trim();
   return (
-    /^\/knowledge\//i.test(trimmed) ||
+    /^\/(?:spaces|knowledge)\//i.test(trimmed) ||
     /^\/document\//i.test(trimmed) ||
     /\/documents\//i.test(trimmed)
   );

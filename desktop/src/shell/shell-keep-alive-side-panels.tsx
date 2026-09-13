@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { primeTabTitle } from "@backsteros/ui/shell";
 import {
@@ -23,17 +23,28 @@ import {
   type CalendarSidePanelHabitItem,
 } from "@backsteros/ui/calendar";
 import {
+  filterDocumentsForHelpArticleScope,
+  filterDocumentsForSpaceRoot,
+  findHelpArticleIndividualRoot,
   getContactsGroupHref,
   getFirstInboxItemHref,
   getJournalHref,
   getOrganizationsGroupHref,
   getScopedProjectSectionHref,
+  getSelectedSpaceRootFromPathname,
   getSocialHref,
   getUniqueListItemRouteParam,
   groupItemsByAlphaLetter,
+  HELP_ARTICLE_AUDIENCE_INDIVIDUAL,
+  HELP_ARTICLE_INDIVIDUAL_FOLDER_SLUG,
+  helpArticleIndividualRootPath,
+  isSupportCenterDocumentPath,
   normalizeContactSocialAccounts,
   parseCrmGroupId,
   resolveLetterDetailHref,
+  useHelpArticleAudienceMap,
+  useHelpArticleListScope,
+  useWriteHelpArticleAudience,
   type SocialContactListItem,
 } from "@backsteros/ui";
 import {
@@ -48,10 +59,7 @@ import {
 import { useDesktopApi } from "../lib/api-context";
 import { useAgentMail } from "../lib/agentmail-context";
 import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
-import {
-  firstKnowledgeHref,
-  firstLetterHref,
-} from "../lib/section-entry-hrefs";
+import { firstLetterHref } from "../lib/section-entry-hrefs";
 import { buildMailboxByIdMap } from "../lib/email-list-tasks";
 import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
 import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
@@ -730,34 +738,138 @@ export function KnowledgeKeepAliveSidePanel({
   const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const workspaceActions = useDesktopWorkspaceActions();
+  const [listScope, setListScope] = useHelpArticleListScope();
+  const audienceById = useHelpArticleAudienceMap();
+  const writeArticleAudience = useWriteHelpArticleAudience();
+  const ensuringIndividualRootRef = useRef(false);
 
+  const spaceRoot = useMemo(
+    () => getSelectedSpaceRootFromPathname(pathname, knowledgeDocuments),
+    [knowledgeDocuments, pathname],
+  );
+
+  const isSupportSpace = isSupportCenterDocumentPath(spaceRoot?.path);
+
+  // Ensure Support center has the reserved Individual folder (hidden from Group).
   useEffect(() => {
-    void workspaceActions.softRefreshApiDocuments();
-  }, [workspaceActions.softRefreshApiDocuments]);
+    if (!isSupportSpace || !spaceRoot) return;
+    if (findHelpArticleIndividualRoot(knowledgeDocuments)) {
+      ensuringIndividualRootRef.current = false;
+      return;
+    }
+    if (ensuringIndividualRootRef.current) return;
+    ensuringIndividualRootRef.current = true;
+    const parentPath = spaceRoot.path ?? "support";
+    void workspaceActions
+      .createKnowledgeFolder({
+        title: HELP_ARTICLE_INDIVIDUAL_FOLDER_SLUG,
+        parentId: spaceRoot.id,
+        parentPath,
+        path: helpArticleIndividualRootPath(parentPath),
+      })
+      .catch(() => {
+        // Retry on next render if create failed (offline / race).
+        ensuringIndividualRootRef.current = false;
+      });
+  }, [isSupportSpace, knowledgeDocuments, spaceRoot, workspaceActions]);
+
+  const scopedDocuments = useMemo(() => {
+    if (!spaceRoot) return [];
+    return filterDocumentsForSpaceRoot(knowledgeDocuments, spaceRoot.id);
+  }, [knowledgeDocuments, spaceRoot]);
+
+  const individualRoot = useMemo(
+    () =>
+      isSupportSpace ? findHelpArticleIndividualRoot(scopedDocuments) : null,
+    [isSupportSpace, scopedDocuments],
+  );
+
+  const panelDocuments = useMemo(() => {
+    if (!isSupportSpace) return scopedDocuments;
+    return filterDocumentsForHelpArticleScope(
+      scopedDocuments,
+      listScope,
+      audienceById,
+    );
+  }, [audienceById, isSupportSpace, listScope, scopedDocuments]);
+
+  const firstInSpaceHref = useMemo(() => {
+    const first = panelDocuments.find((doc) => doc.kind !== "folder");
+    if (first) return getKnowledgeHref(first.path ?? first.id);
+    if (spaceRoot) return getKnowledgeHref(spaceRoot.path ?? spaceRoot.id);
+    return null;
+  }, [panelDocuments, spaceRoot]);
+
+  const resolveCreateParent = useCallback(
+    (parentFolderId: string | null | undefined) => {
+      const wantsIndividual =
+        isSupportSpace && listScope === HELP_ARTICLE_AUDIENCE_INDIVIDUAL;
+      const requestedId = parentFolderId ?? null;
+      // Individual list: root creates land under `_individual`.
+      if (wantsIndividual && (requestedId == null || requestedId === spaceRoot?.id)) {
+        if (individualRoot) {
+          return {
+            parentId: individualRoot.id,
+            parentPath: individualRoot.path ?? null,
+          };
+        }
+      }
+      const parentId = requestedId ?? spaceRoot?.id ?? null;
+      const parent =
+        parentId == null
+          ? null
+          : (knowledgeDocuments.find((doc) => doc.id === parentId) ??
+            (parentId === spaceRoot?.id ? spaceRoot : null));
+      return {
+        parentId,
+        parentPath: parent?.path ?? spaceRoot?.path ?? null,
+      };
+    },
+    [
+      individualRoot,
+      isSupportSpace,
+      knowledgeDocuments,
+      listScope,
+      spaceRoot,
+    ],
+  );
 
   return (
     <DesktopKnowledgeSidePanel
       onNavigate={onNavigate}
       pathname={panePathnameWithFirstItem(
         pathname,
-        firstKnowledgeHref(knowledgeDocuments),
-        pathname.startsWith("/knowledge/"),
+        firstInSpaceHref,
+        pathname.startsWith("/spaces/"),
       )}
-      items={knowledgeDocuments}
+      items={panelDocuments}
       loading={!knowledgeReady}
+      title={spaceRoot?.title ?? "Spaces"}
+      listScope={isSupportSpace ? listScope : null}
+      onListScopeChange={isSupportSpace ? setListScope : undefined}
       onAdd={(parentFolderId) => {
+        const { parentId, parentPath } = resolveCreateParent(parentFolderId);
         void workspaceActions
           .createKnowledgeDocument({
             title: "Untitled",
-            parentId: parentFolderId,
+            parentId,
+            folderPath: parentPath ?? spaceRoot?.path ?? undefined,
           })
           .then((created) => {
+            if (isSupportSpace) {
+              writeArticleAudience(created.id, listScope);
+            }
             onNavigate(getKnowledgeHref(created.path || created.id));
           });
       }}
       onCreateFolder={async ({ title, parentId }) => {
         try {
-          await workspaceActions.createKnowledgeFolder({ title, parentId });
+          const resolved = resolveCreateParent(parentId);
+          await workspaceActions.createKnowledgeFolder({
+            title,
+            parentId: resolved.parentId,
+            parentPath: resolved.parentPath,
+          });
           return { ok: true };
         } catch (error) {
           return {
@@ -774,12 +886,14 @@ export function KnowledgeKeepAliveSidePanel({
       onReorderTreeItem={(request) =>
         handleDocumentTreeReorder(
           request,
-          knowledgeDocuments.map((item) => ({
+          scopedDocuments.map((item) => ({
             id: item.id,
             title: item.title,
             path: item.path ?? item.id,
             kind: item.kind === "folder" ? "folder" : "document",
-            parentId: item.parentId ?? null,
+            // Restore real parent for root-level items when reordering.
+            parentId:
+              item.parentId ?? spaceRoot?.id ?? null,
             sortOrder: item.sortOrder ?? 0,
             icon: item.icon ?? null,
           })),
@@ -816,16 +930,6 @@ export function ProjectKeepAliveSidePanel({
       (document) => document.projectId === activeProject.id,
     );
   }, [activeProject, projectDocuments]);
-
-  useEffect(() => {
-    if (!activeProject) return;
-    if (!pathname.includes("/documents")) return;
-    void workspaceActions.softRefreshApiDocuments();
-  }, [
-    activeProject?.id,
-    pathname,
-    workspaceActions.softRefreshApiDocuments,
-  ]);
 
   const projectLettersForPanel = useMemo(() => {
     if (!activeProject) return [];

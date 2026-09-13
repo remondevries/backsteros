@@ -40,6 +40,8 @@ import { DocumentTreeNodeView } from "./document-tree.js";
 import { FolderPlusIcon } from "../icons/folder-plus-icon.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { KnowledgeSidePanelSkeleton } from "../skeletons/knowledge-detail-skeleton.js";
+import { KnowledgeSidePanelScopeFooter } from "../spaces/knowledge-side-panel-scope-footer.js";
+import type { HelpArticleAudience } from "../../spaces/help-article-properties.js";
 
 export type KnowledgeSidePanelLinkComponent = ComponentType<{
   to: string;
@@ -83,6 +85,12 @@ export type KnowledgeSidePanelViewProps = {
   getDocumentHref?: (pathOrId?: string) => string;
   getSelectedSlugFromPathname?: (pathname: string) => string | null;
   title?: string;
+  /**
+   * Support center: Group / Individual list toggle at the bottom of the panel.
+   * Omit for Knowledge Base / Websites.
+   */
+  listScope?: HelpArticleAudience | null;
+  onListScopeChange?: (scope: HelpArticleAudience) => void;
 };
 
 function toTreeSource(item: KnowledgeListItem) {
@@ -114,7 +122,9 @@ export function KnowledgeSidePanelView({
   loading = false,
   getDocumentHref = getKnowledgeHref,
   getSelectedSlugFromPathname = getSelectedKnowledgeSlugFromPathname,
-  title = "Knowledge Base",
+  title = "Spaces",
+  listScope = null,
+  onListScopeChange,
 }: KnowledgeSidePanelViewProps) {
   const selectedSlug = getSelectedSlugFromPathname(pathname);
   const [addingFolder, setAddingFolder] = useState(false);
@@ -230,9 +240,19 @@ export function KnowledgeSidePanelView({
 
   const showList = items.length > 0 || addingFolder;
   const showLoadingSkeleton = loading && items.length === 0 && !addingFolder;
+  const showScopeFooter =
+    listScope != null && typeof onListScopeChange === "function";
 
   return (
-    <div className="app-content-side-panel app-content-side-panel--documents">
+    <div
+      className={[
+        "app-content-side-panel",
+        "app-content-side-panel--documents",
+        showScopeFooter ? "knowledge-side-panel--with-scope-footer" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <ContentSidePanelHeader
         title={title}
         actions={
@@ -277,7 +297,9 @@ export function KnowledgeSidePanelView({
             <KnowledgeSidePanelSkeleton />
           ) : (
             <ContentSidePanelEmpty>
-              No documents yet. Use the plus button to add one.
+              {listScope === "individual"
+                ? "No individual articles yet. Use the plus button to add one."
+                : "No documents yet. Use the plus button to add one."}
             </ContentSidePanelEmpty>
           )
         ) : (
@@ -316,6 +338,12 @@ export function KnowledgeSidePanelView({
           </ContentSidePanelList>
         )}
       </div>
+      {showScopeFooter && listScope != null && onListScopeChange ? (
+        <KnowledgeSidePanelScopeFooter
+          scope={listScope}
+          onScopeChange={onListScopeChange}
+        />
+      ) : null}
     </div>
   );
 }

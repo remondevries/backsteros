@@ -16,15 +16,21 @@ import {
   buildTaskPdfAttachmentStorageKey,
   checksumForContent,
   ensureProjectVaultFolders,
+  ensureVaultStructure,
+  getObject,
   isCloudCoreVaultHost,
   isSpacesConfigured,
   isStorageConfigured,
   letterPdfSubjectFromFilename,
+  normalizeVaultRelativeKey,
   renameProjectVaultFolder,
   resolveVaultPath,
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
+  rewriteLegacyKnowledgeBaseStorageKey,
   setVaultPathCache,
+  VAULT_SPACES_FOLDER,
+  VAULT_SPACES_FOLDER_LEGACY,
 } from "./storage.js";
 
 test("isStorageConfigured uses vault path cache or env", () => {
@@ -75,6 +81,166 @@ test("cloud-core resolveVaultPath ignores settings Mac path and uses env only", 
   else process.env.CORE_REPLICATION_ROLE = previousRole;
 });
 
+test("normalizeVaultRelativeKey maps legacy Knowledge Base to Second brain", () => {
+  assert.equal(
+    normalizeVaultRelativeKey(`${VAULT_SPACES_FOLDER_LEGACY}/note.md`),
+    `${VAULT_SPACES_FOLDER}/knowledge-base/second-brain/note.md`,
+  );
+  assert.equal(
+    normalizeVaultRelativeKey(VAULT_SPACES_FOLDER_LEGACY),
+    `${VAULT_SPACES_FOLDER}/knowledge-base/second-brain`,
+  );
+  assert.equal(
+    normalizeVaultRelativeKey(`${VAULT_SPACES_FOLDER}/note.md`),
+    `${VAULT_SPACES_FOLDER}/note.md`,
+  );
+});
+
+test("rewriteLegacyKnowledgeBaseStorageKey prefixes Second brain under Spaces", () => {
+  assert.equal(
+    rewriteLegacyKnowledgeBaseStorageKey("Knowledge Base/agentmail/overview.md"),
+    "Spaces/knowledge-base/second-brain/agentmail/overview.md",
+  );
+});
+
+test("getObject resolves Portal bytes left under Second brain after Support move", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-portal-drift-"));
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  try {
+    setVaultPathCache(root);
+    process.env.BACKSTEROS_VAULT_PATH = root;
+    const legacyDir = path.join(
+      root,
+      VAULT_SPACES_FOLDER,
+      "knowledge-base",
+      "second-brain",
+      "portal",
+      "email",
+    );
+    await mkdir(legacyDir, { recursive: true });
+    await writeFile(path.join(legacyDir, "overview.md"), "# Portal email\n", "utf8");
+
+    const preferredKey = `${VAULT_SPACES_FOLDER}/support/portal/email/overview.md`;
+    const result = await getObject(preferredKey);
+    assert.equal(result.body, "# Portal email\n");
+
+    // Read heals bytes onto the Support path.
+    await access(
+      path.join(
+        root,
+        VAULT_SPACES_FOLDER,
+        "support",
+        "portal",
+        "email",
+        "overview.md",
+      ),
+    );
+  } finally {
+    setVaultPathCache(null);
+    if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ensureVaultStructure renames legacy Knowledge Base folder to Spaces", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-spaces-migrate-"));
+  await mkdir(path.join(root, VAULT_SPACES_FOLDER_LEGACY), { recursive: true });
+  await writeFile(
+    path.join(root, VAULT_SPACES_FOLDER_LEGACY, "legacy.md"),
+    "# legacy\n",
+  );
+
+  await ensureVaultStructure(root);
+
+  await access(
+    path.join(
+      root,
+      VAULT_SPACES_FOLDER,
+      "knowledge-base",
+      "second-brain",
+      "legacy.md",
+    ),
+  );
+  await assert.rejects(
+    () => access(path.join(root, VAULT_SPACES_FOLDER_LEGACY)),
+  );
+  await rm(root, { recursive: true, force: true });
+});
+
+test("ensureVaultStructure merges leftover Knowledge Base into Second brain", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-kb-beside-spaces-"));
+  const spaces = path.join(root, VAULT_SPACES_FOLDER);
+  const legacy = path.join(root, VAULT_SPACES_FOLDER_LEGACY);
+  await mkdir(path.join(spaces, "knowledge-base", "second-brain"), {
+    recursive: true,
+  });
+  await mkdir(path.join(legacy, "agentmail"), { recursive: true });
+  await writeFile(path.join(legacy, "scratchpad.md"), "# scratch\n");
+  await writeFile(path.join(legacy, "agentmail", "overview.md"), "# am\n");
+
+  await ensureVaultStructure(root);
+
+  await access(
+    path.join(
+      spaces,
+      "knowledge-base",
+      "second-brain",
+      "scratchpad.md",
+    ),
+  );
+  await access(
+    path.join(
+      spaces,
+      "knowledge-base",
+      "second-brain",
+      "agentmail",
+      "overview.md",
+    ),
+  );
+  await assert.rejects(() => access(legacy));
+  await rm(root, { recursive: true, force: true });
+});
+
+test("ensureVaultStructure drops duplicate Knowledge Base files already in Second brain", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-kb-dupes-"));
+  const spaces = path.join(root, VAULT_SPACES_FOLDER);
+  const legacy = path.join(root, VAULT_SPACES_FOLDER_LEGACY);
+  const secondBrain = path.join(spaces, "knowledge-base", "second-brain");
+  await mkdir(path.join(secondBrain, "agentmail"), { recursive: true });
+  await mkdir(path.join(legacy, "agentmail"), { recursive: true });
+  await writeFile(path.join(secondBrain, "scratchpad.md"), "# keep\n");
+  await writeFile(path.join(legacy, "scratchpad.md"), "# older dupe\n");
+  await writeFile(path.join(secondBrain, "agentmail", "overview.md"), "# keep\n");
+  await writeFile(path.join(legacy, "agentmail", "overview.md"), "# older dupe\n");
+  await writeFile(path.join(legacy, "only-in-legacy.md"), "# unique\n");
+
+  await ensureVaultStructure(root);
+
+  const kept = await readFile(path.join(secondBrain, "scratchpad.md"), "utf8");
+  assert.equal(kept, "# keep\n");
+  await access(path.join(secondBrain, "only-in-legacy.md"));
+  await assert.rejects(() => access(legacy));
+  await rm(root, { recursive: true, force: true });
+});
+
+test("ensureVaultStructure creates Spaces hierarchy and migrates loose files", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-spaces-hierarchy-"));
+  const spaces = path.join(root, VAULT_SPACES_FOLDER);
+  await mkdir(spaces, { recursive: true });
+  await writeFile(path.join(spaces, "orphan.md"), "# orphan\n");
+
+  await ensureVaultStructure(root);
+
+  await access(
+    path.join(spaces, "knowledge-base", "second-brain", "orphan.md"),
+  );
+  await access(path.join(spaces, "support"));
+  await access(path.join(spaces, "websites"));
+  await assert.rejects(() => access(path.join(spaces, "orphan.md")));
+  await rm(root, { recursive: true, force: true });
+});
+
 test("storage keys follow Obsidian vault layout", () => {
   assert.equal(
     buildStorageKey("journal", "2026-07-16.md", undefined, "ws_123"),
@@ -82,7 +248,7 @@ test("storage keys follow Obsidian vault layout", () => {
   );
   assert.equal(
     buildStorageKey("knowledge", "../evil/secrets.md", undefined, "ws_123"),
-    "Knowledge Base/evil/secrets.md",
+    "Spaces/evil/secrets.md",
   );
   assert.equal(
     buildStorageKey("project", "notes/../readme.md", "proj/../key", "ws_123"),

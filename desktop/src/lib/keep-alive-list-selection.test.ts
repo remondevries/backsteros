@@ -12,7 +12,7 @@ test("selects the first list href only when the pane is on the section root", ()
     panePathnameWithFirstItem("/inbox/in-9", "/inbox/in-1", true),
     "/inbox/in-9",
   );
-  assert.equal(panePathnameWithFirstItem("/knowledge", null, false), "/knowledge");
+  assert.equal(panePathnameWithFirstItem("/spaces", null, false), "/spaces");
   assert.equal(
     panePathnameWithFirstItem(
       "/inbox",

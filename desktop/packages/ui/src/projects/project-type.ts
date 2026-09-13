@@ -14,7 +14,7 @@ export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   codebase: "Codebase",
   it_service: "IT Service",
   webhosting: "Webhosting",
-  domeinname: "Domeinname",
+  domeinname: "Domains",
 };
 
 export const PROJECT_TYPE_ORDER: ProjectType[] = [...PROJECT_TYPES];

@@ -49,7 +49,7 @@ export type ProductSidebarProps = {
   pathname: string;
   /**
    * Pathname used for nav active matching. Defaults to `pathname`.
-   * Use when project detail routes should highlight Development/Areas
+   * Use when project detail routes should highlight Catalog/Projects
    * based on which list the user opened the project from.
    */
   activePathname?: string;

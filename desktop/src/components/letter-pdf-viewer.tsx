@@ -10,6 +10,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import { useDesktopApi } from "../lib/api-context";
+import { readDesktopVaultBytes } from "../lib/desktop-vault";
 import {
   LOCAL_CORE_PDF_OFFLINE_MESSAGE,
   letterPdfLoadErrorMessage,
@@ -221,18 +222,21 @@ export function LetterPdfViewer({
 }
 
 /**
- * Fetches a letter PDF from the API when one is available.
- * Prefers attachment download when `attachmentId` is set.
- * Holds the blob in component state only — no session LRU (Tier D).
+ * Fetches a letter PDF — desktop vault-first when `vaultStorageKey` is set,
+ * otherwise API download. Holds the blob in component state only (Tier D).
+ * Mobile / browser without Tauri never hits the vault path.
  */
 export function LetterPdfPreview({
   letterId,
   attachmentId = null,
+  vaultStorageKey = null,
   useApi,
   revision = 0,
 }: {
   letterId: string;
   attachmentId?: string | null;
+  /** Vault-relative key for desktop local-first PDF open. */
+  vaultStorageKey?: string | null;
   useApi: boolean;
   /** Bump after upload to force reload. */
   revision?: number;
@@ -252,16 +256,27 @@ export function LetterPdfPreview({
       return () => controller.abort();
     }
 
-    if (localCoreReachable === false) {
-      setError(LOCAL_CORE_PDF_OFFLINE_MESSAGE);
-      return () => controller.abort();
-    }
-
-    if (!shouldAttemptLetterPdfFetch(localCoreReachable, useApi)) {
-      return () => controller.abort();
-    }
-
     void (async () => {
+      // Desktop-only: paint from local vault when the file is already on disk.
+      if (vaultStorageKey) {
+        const bytes = await readDesktopVaultBytes(client, vaultStorageKey);
+        if (controller.signal.aborted) return;
+        if (bytes && bytes.byteLength > 0) {
+          setPdf(new Blob([bytes], { type: "application/pdf" }));
+          setError(null);
+          return;
+        }
+      }
+
+      if (localCoreReachable === false) {
+        setError(LOCAL_CORE_PDF_OFFLINE_MESSAGE);
+        return;
+      }
+
+      if (!shouldAttemptLetterPdfFetch(localCoreReachable, useApi)) {
+        return;
+      }
+
       try {
         const blob = attachmentId
           ? await client.downloadLetterAttachment(letterId, attachmentId)
@@ -278,7 +293,15 @@ export function LetterPdfPreview({
     })();
 
     return () => controller.abort();
-  }, [attachmentId, client, letterId, localCoreReachable, revision, useApi]);
+  }, [
+    attachmentId,
+    client,
+    letterId,
+    localCoreReachable,
+    revision,
+    useApi,
+    vaultStorageKey,
+  ]);
 
   if (error && !pdf) {
     return (

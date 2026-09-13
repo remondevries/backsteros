@@ -24,8 +24,15 @@ import {
   PROJECT_TYPE_ORDER,
   type ProjectType,
 } from "../../projects/project-type.js";
+import {
+  getProjectProviderLabel,
+  parseProjectProvider,
+  PROJECT_PROVIDER_ORDER,
+  type ProjectProvider,
+} from "../../projects/project-provider.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
+import { TransipIcon } from "../icons/transip-icon.js";
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
 import {
@@ -78,6 +85,7 @@ export type ProjectPanelDetailViewProps = {
   onStatusChange?: (status: ProjectStatus) => void;
   onPriorityChange?: (priority: number) => void;
   onTypeChange?: (type: ProjectType) => void;
+  onProviderChange?: (provider: ProjectProvider | null) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
@@ -124,6 +132,7 @@ export function ProjectPanelDetailView({
   onStatusChange,
   onPriorityChange,
   onTypeChange,
+  onProviderChange,
   onAreaChange,
   onAreaIdChange,
   onOrganizationChange,
@@ -177,6 +186,7 @@ export function ProjectPanelDetailView({
 
   const status = migrateLegacyProjectStatus(project.status);
   const projectType = migrateLegacyProjectType(project.type);
+  const projectProvider = parseProjectProvider(project.provider);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
   const start = toDate(project.startDate);
   const due = toDate(project.dueDate);
@@ -239,6 +249,28 @@ export function ProjectPanelDetailView({
             <ProjectIcon size={14} />
           ),
       })),
+    [],
+  );
+
+  const providerOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No provider",
+        searchTerms: "none unassigned",
+      },
+      ...PROJECT_PROVIDER_ORDER.map((value) => ({
+        value,
+        label: getProjectProviderLabel(value),
+        searchTerms: `${value} ${getProjectProviderLabel(value)}`,
+        icon:
+          value === "transip" ? (
+            <TransipIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          ),
+      })),
+    ],
     [],
   );
 
@@ -414,6 +446,28 @@ export function ProjectPanelDetailView({
           )
         }
         fallbackLabel={getProjectTypeLabel(projectType)}
+        triggerVariant={propertyTriggerVariant}
+        panelAlign={propertyPanelAlign}
+      />
+      <PropertyDropdown
+        value={projectProvider ?? "__none__"}
+        options={providerOptions}
+        onChange={(next) =>
+          onProviderChange?.(
+            next === "__none__" ? null : (next as ProjectProvider),
+          )
+        }
+        searchPlaceholder="Change provider…"
+        ariaLabel="Provider"
+        fallbackIcon={
+          projectProvider === "transip" ? <TransipIcon size={14} /> : null
+        }
+        fallbackLabel={
+          projectProvider
+            ? getProjectProviderLabel(projectProvider)
+            : "No provider"
+        }
+        mutedFallback={!projectProvider}
         triggerVariant={propertyTriggerVariant}
         panelAlign={propertyPanelAlign}
       />

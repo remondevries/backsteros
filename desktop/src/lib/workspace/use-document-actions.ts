@@ -84,6 +84,7 @@ export function useWorkspaceDocumentActions({
       projectId?: string | null;
       parentId?: string | null;
       kind?: "document" | "folder";
+      icon?: string | null;
       content?: string;
     }) => {
       if (!powerSync.createMetadata) {
@@ -91,13 +92,14 @@ export function useWorkspaceDocumentActions({
       }
       const id = crypto.randomUUID().replace(/-/g, "");
       const now = new Date().toISOString();
+      const icon = input.icon ?? null;
       const document = {
         id,
         type: input.type,
         projectId: input.projectId ?? null,
         parentId: input.parentId ?? null,
         kind: input.kind ?? "document",
-        icon: null,
+        icon,
         sortOrder: 0,
         journalDate: null,
         path: input.path,
@@ -126,7 +128,7 @@ export function useWorkspaceDocumentActions({
               projectId: input.projectId ?? null,
               parentId: input.parentId ?? null,
               kind: input.kind ?? "document",
-              icon: null,
+              icon,
               sortOrder: 0,
               journalDate: null,
               path: input.path,
@@ -144,7 +146,15 @@ export function useWorkspaceDocumentActions({
         errorLabel: "local document create",
         afterCreate: async () => {
           if (powerSync.connected) {
-            await powerSync.flushCrudUpload();
+            try {
+              await powerSync.flushCrudUpload();
+            } catch (error) {
+              // Local row already exists; PowerSync will retry upload later.
+              console.warn(
+                "[desktop] document create upload flush failed",
+                error,
+              );
+            }
           }
           const content = input.content ?? "";
           if (content.length > 0) {
@@ -281,27 +291,35 @@ export function useWorkspaceDocumentActions({
   );
 
   const createKnowledgeFolder = useCallback(
-    async (input: { title: string; parentId?: string | null }) => {
+    async (input: {
+      title: string;
+      parentId?: string | null;
+      /** When set, nest the folder path under this vault-relative prefix. */
+      parentPath?: string | null;
+      icon?: string | null;
+      /**
+       * Full vault-relative path override (e.g. system `support/_individual`).
+       * When set, skips title slugification.
+       */
+      path?: string | null;
+    }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Folder name is required.");
       const stamp = Date.now().toString(36);
+      const explicitPath = input.path?.trim().replace(/^\/+|\/+$/g, "") || null;
       const slug =
         title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "") || "folder";
-      const path = `${slug}-${stamp}`;
+      const parentPath = (input.parentPath ?? "").replace(/\.md$/i, "").trim();
+      const nestUnderParent = Boolean(parentPath);
+      const path =
+        explicitPath ??
+        (nestUnderParent ? `${parentPath}/${slug}` : `${slug}-${stamp}`);
       if (!authenticated) throw new Error("Sign in to create folders.");
-      if (shouldSkipRestEntityWrite(powerSync)) {
-        const created = await createDocumentMetadataLocal({
-          type: "knowledge",
-          title,
-          path,
-          parentId: input.parentId ?? null,
-          kind: "folder",
-        });
-        return { id: created.id, path: created.path };
-      }
+      // REST-first for Spaces folders so the API/agents see the same cards as the UI.
+      // PowerSync then catches up via sync download (avoids local-only ghosts).
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -313,6 +331,7 @@ export function useWorkspaceDocumentActions({
             title,
             path,
             parentId: input.parentId ?? undefined,
+            icon: input.icon ?? undefined,
           }),
         },
       );
@@ -323,8 +342,6 @@ export function useWorkspaceDocumentActions({
     [
       authenticated,
       client,
-      createDocumentMetadataLocal,
-      powerSync,
       seedDocumentLocal,
       upsertOptimisticDocument,
     ],
@@ -429,11 +446,19 @@ export function useWorkspaceDocumentActions({
           await powerSync.patchMetadata("documents", id, {
             parent_id: parentId,
           });
-          if (shouldSkipRestEntityWrite(powerSync)) {
-            return { ok: true as const };
+          if (powerSync.flushCrudUpload) {
+            try {
+              await powerSync.flushCrudUpload();
+            } catch (error) {
+              console.warn("[desktop] document move upload flush failed", error);
+            }
           }
         }
+        // Always hit REST so core rewrites Spaces paths for the subtree.
         if (!authenticated) {
+          if (powerSync.ready && powerSync.patchMetadata) {
+            return { ok: true as const };
+          }
           return { ok: false as const, error: "Sign in to move documents." };
         }
         await client.requestJson(
@@ -501,6 +526,35 @@ export function useWorkspaceDocumentActions({
     [authenticated, client, powerSync],
   );
 
+  const updateDocumentPublishFields = useCallback(
+    async (
+      id: string,
+      patch: {
+        publishStatus?: "concept" | "published" | "offline";
+        publishSlug?: string | null;
+        seoTitle?: string | null;
+        seoDescription?: string | null;
+        audience?: "group" | "individual";
+        contactIds?: string[] | null;
+        placementFolderId?: string | null;
+      },
+    ) => {
+      try {
+        await patchViaPowerSyncOrApi("documents", id, patch);
+        return { ok: true as const };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not update publish fields.",
+        };
+      }
+    },
+    [patchViaPowerSyncOrApi],
+  );
+
   const deleteDocument = useCallback(
     async (id: string) => {
       try {
@@ -523,6 +577,7 @@ export function useWorkspaceDocumentActions({
     createProjectFolder,
     renameDocument,
     updateDocumentIcon,
+    updateDocumentPublishFields,
     moveDocument,
     reorderDocuments,
     deleteDocument,

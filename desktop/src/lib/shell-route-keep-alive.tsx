@@ -174,7 +174,7 @@ export function useKeepAliveAfterPaint(): boolean {
  * One location for chrome and keep-alive pages:
  * - Inside a KeepAlivePane → that pane's store href (snapshot)
  * - Else if a keep-alive surface is visible → visible surface store href
- * - Else (Outlet: finance, settings, email, development) → TanStack router
+ * - Else (Outlet: finance, settings, email, catalog) → TanStack router
  *
  * Keep-alive page bodies must not subscribe to the warm epoch: every section
  * flip would re-render every frozen tree. Location updates arrive via

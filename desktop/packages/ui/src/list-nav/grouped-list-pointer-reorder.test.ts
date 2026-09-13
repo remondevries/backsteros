@@ -5,6 +5,7 @@ import {
   LIST_REORDER_APPEND_ATTR,
   LIST_REORDER_GROUP_ATTR,
   LIST_REORDER_ITEM_ATTR,
+  LIST_REORDER_LAYOUT_ATTR,
   groupedListPointerDropToRequest,
   insertBeforeKeyForPointerTarget,
   resolveGroupedListPointerDropTarget,
@@ -12,20 +13,42 @@ import {
 
 /**
  * Minimal element tree: enough of `Element` for the module under test
- * (`closest("[attr]")`, `getAttribute`, `contains`). Installed as the global
- * `Element` so `instanceof Element` holds.
+ * (`closest("[attr]")`, `getAttribute`, `contains`, `getBoundingClientRect`).
+ * Installed as the global `Element` so `instanceof Element` holds.
  */
 class FakeElement {
   parent: FakeElement | null = null;
   readonly attrs: Map<string, string>;
+  bounds: { left: number; width: number };
 
-  constructor(attrs: Record<string, string>, children: FakeElement[] = []) {
+  constructor(
+    attrs: Record<string, string>,
+    children: FakeElement[] = [],
+    bounds: { left: number; width: number } = { left: 0, width: 100 },
+  ) {
     this.attrs = new Map(Object.entries(attrs));
+    this.bounds = bounds;
     for (const child of children) child.parent = this;
   }
 
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null;
+  }
+
+  getBoundingClientRect(): DOMRect {
+    return {
+      x: this.bounds.left,
+      y: 0,
+      left: this.bounds.left,
+      right: this.bounds.left + this.bounds.width,
+      top: 0,
+      bottom: 40,
+      width: this.bounds.width,
+      height: 40,
+      toJSON() {
+        return this;
+      },
+    } as DOMRect;
   }
 
   closest(selector: string): FakeElement | null {
@@ -98,6 +121,37 @@ describe("groupedListPointerDropToRequest", () => {
       },
     );
   });
+
+  it("maps after-item targets to before next sibling or append", () => {
+    assert.deepEqual(
+      groupedListPointerDropToRequest({
+        itemId: "a",
+        fromGroupKey: "todo",
+        target: { kind: "after-item", itemId: "b", groupKey: "todo" },
+        getNextItemId: (id) => (id === "b" ? "c" : null),
+      }),
+      {
+        itemId: "a",
+        fromGroupKey: "todo",
+        toGroupKey: "todo",
+        beforeItemId: "c",
+      },
+    );
+    assert.deepEqual(
+      groupedListPointerDropToRequest({
+        itemId: "a",
+        fromGroupKey: "todo",
+        target: { kind: "after-item", itemId: "c", groupKey: "todo" },
+        getNextItemId: () => null,
+      }),
+      {
+        itemId: "a",
+        fromGroupKey: "todo",
+        toGroupKey: "todo",
+        beforeItemId: null,
+      },
+    );
+  });
 });
 
 describe("insertBeforeKeyForPointerTarget", () => {
@@ -109,6 +163,14 @@ describe("insertBeforeKeyForPointerTarget", () => {
         (group) => `append:${group}`,
       ),
       "item:b",
+    );
+    assert.equal(
+      insertBeforeKeyForPointerTarget(
+        { kind: "after-item", itemId: "b", groupKey: "todo" },
+        (id) => `item:${id}`,
+        (group) => `append:${group}`,
+      ),
+      "item:b:after",
     );
     assert.equal(
       insertBeforeKeyForPointerTarget(
@@ -140,6 +202,30 @@ describe("resolveGroupedListPointerDropTarget", () => {
     assert.deepEqual(resolveGroupedListPointerDropTarget(1, 1, "a"), {
       kind: "append-group",
       groupKey: "done",
+    });
+  });
+
+  it("uses left/right half for grid layout items", () => {
+    const item = new FakeElement(
+      {
+        [LIST_REORDER_ITEM_ATTR]: "b",
+        [LIST_REORDER_GROUP_ATTR]: "todo",
+        [LIST_REORDER_LAYOUT_ATTR]: "grid",
+      },
+      [],
+      { left: 0, width: 100 },
+    );
+
+    stubPointerStack([item]);
+    assert.deepEqual(resolveGroupedListPointerDropTarget(20, 1, "a"), {
+      kind: "before-item",
+      itemId: "b",
+      groupKey: "todo",
+    });
+    assert.deepEqual(resolveGroupedListPointerDropTarget(80, 1, "a"), {
+      kind: "after-item",
+      itemId: "b",
+      groupKey: "todo",
     });
   });
 

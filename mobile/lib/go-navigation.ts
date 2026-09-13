@@ -5,17 +5,17 @@
 export type GoNavigationHref =
   | "/inbox"
   | "/journal"
-  | "/knowledge"
+  | "/spaces"
   | "/tasks"
   | "/calendar"
   | "/habits"
   | "/projects"
-  | "/areas"
-  | "/development"
+  | "/catalog"
   | "/letters"
   | "/finance"
   | "/contacts"
   | "/organizations"
+  | "/social"
   | "/email";
 
 export type GoNavigationItem = {
@@ -29,13 +29,12 @@ export type GoNavigationItem = {
 export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
   { id: "inbox", letter: "i", label: "Inbox", href: "/inbox" },
   { id: "journal", letter: "j", label: "Journal", href: "/journal" },
-  { id: "knowledge", letter: "k", label: "Knowledge Base", href: "/knowledge" },
+  { id: "knowledge", letter: "s", label: "Spaces", href: "/spaces" },
   { id: "tasks", letter: "t", label: "Tasks", href: "/tasks" },
-  { id: "calendar", letter: "m", label: "Calendar", href: "/calendar" },
+  { id: "calendar", letter: "a", label: "Agenda", href: "/calendar" },
   { id: "habits", letter: "h", label: "Habit Tracker", href: "/habits" },
-  { id: "areas", letter: "a", label: "Areas", href: "/areas" },
   { id: "projects", letter: "p", label: "Projects", href: "/projects" },
-  { id: "development", letter: "d", label: "Development", href: "/development" },
+  { id: "catalog", letter: "k", label: "Catalog", href: "/catalog" },
   { id: "letters", letter: "l", label: "Letters", href: "/letters" },
   { id: "finance", letter: "f", label: "Finance", href: "/finance" },
   { id: "contacts", letter: "c", label: "Contacts", href: "/contacts" },
@@ -45,6 +44,7 @@ export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
     label: "Organizations",
     href: "/organizations",
   },
+  { id: "social", letter: "n", label: "Network", href: "/social" },
   { id: "email", letter: "e", label: "Email", href: "/email" },
 ];
 

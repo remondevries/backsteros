@@ -99,7 +99,7 @@ export function RouterLink({
           event.nativeEvent.stopImmediatePropagation();
           return;
         }
-        // Warm project open can leave the router on /development|/areas while
+        // Warm project open can leave the router on /catalog while
         // Projects keep-alive stays visible — dismiss so overview can show.
         // Do not preventDefault: TanStack still needs to move when the router
         // is on a different keep-alive path.

@@ -13,6 +13,7 @@ import {
   RegisterPageTitle,
   getFinanceNavHref,
   getFinanceTransactionsHref,
+  getIntegrationsSettingsHref,
   type FinanceAccountsChromeState,
   type FinanceCategoriesChromeState,
   type FinanceGoalsChromeState,
@@ -515,7 +516,9 @@ function FinancePageBody() {
         onCreateOrganizationFromQuery={(query) =>
           workspace.createOrganization({ name: query })
         }
-        onOpenSettings={() => navigate("/settings/moneybird")}
+        onOpenSettings={() =>
+          navigate(getIntegrationsSettingsHref("moneybird"))
+        }
       />
     );
   } else if (navId === "investments") {

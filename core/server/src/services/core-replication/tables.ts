@@ -54,6 +54,8 @@ const TABLE_SPECS: TableSpec[] = [
   spec("cashflow_planner_entries", ["id"], "updated_at", { optional: true }),
   spec("tasks", ["id"]),
   spec("documents", ["id"]),
+  spec("space_publish_settings", ["id"], "updated_at", { optional: true }),
+  spec("space_site_keys", ["id"], "updated_at", { optional: true }),
   spec("letters", ["id"]),
   spec("letter_attachments", ["id"], "updated_at", { optional: true }),
   spec("task_attachments", ["id"], "updated_at", { optional: true }),

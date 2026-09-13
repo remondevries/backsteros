@@ -1315,7 +1315,7 @@ function StorageTab() {
   return (
     <SettingsCard
       title="Connection"
-      description="Documents, journal notes, and letter PDFs live in a local Obsidian-style vault on the computer running the API. Pick a folder once on desktop; BacksterOS creates Journal, Projects, Letters, and Knowledge Base automatically."
+      description="Documents, journal notes, and letter PDFs live in a local Obsidian-style vault on the computer running the API. Pick a folder once on desktop; BacksterOS creates Journal, Projects, Letters, and Spaces automatically."
     >
       <SettingsFieldRow
         label="Status"

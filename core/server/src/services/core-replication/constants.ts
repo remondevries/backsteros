@@ -28,6 +28,9 @@ export const REPLICATED_TABLES = [
   "cashflow_planner_entries",
   "tasks",
   "documents",
+  /** Site keys / public base URL for Spaces publish (after documents FK parent). */
+  "space_publish_settings",
+  "space_site_keys",
   "letters",
   "letter_attachments",
   "task_attachments",

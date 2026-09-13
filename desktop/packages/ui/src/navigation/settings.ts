@@ -2,13 +2,23 @@ export type SettingsTabId =
   | "general"
   | "account"
   | "api"
-  | "cursor"
-  | "github"
-  | "moneybird"
-  | "mapbox"
-  | "email"
-  | "whoop"
+  | "integrations"
   | "storage";
+
+/** Former per-vendor settings routes; redirect to Integrations. */
+export const LEGACY_INTEGRATION_SETTINGS_TABS = [
+  "cursor",
+  "github",
+  "transip",
+  "cloudflare",
+  "moneybird",
+  "mapbox",
+  "email",
+  "whoop",
+] as const;
+
+export type LegacyIntegrationSettingsTab =
+  (typeof LEGACY_INTEGRATION_SETTINGS_TABS)[number];
 
 export type SettingsTabGroup = "general" | "integration";
 
@@ -42,53 +52,18 @@ export const SETTINGS_NAV_TABS: {
     href: "/settings/account",
   },
   {
+    id: "integrations",
+    label: "Integrations",
+    description: "Connect tools and turn them on or off",
+    group: "integration",
+    href: "/settings/integrations",
+  },
+  {
     id: "api",
     label: "API",
     description: "Revocable bearer tokens for the external REST API",
     group: "integration",
     href: "/settings/api",
-  },
-  {
-    id: "cursor",
-    label: "Cursor",
-    description: "Use Cursor with Backsteros",
-    group: "integration",
-    href: "/settings/cursor",
-  },
-  {
-    id: "github",
-    label: "GitHub",
-    description: "Personal access token for commits and pull requests",
-    group: "integration",
-    href: "/settings/github",
-  },
-  {
-    id: "moneybird",
-    label: "Moneybird",
-    description: "Sales invoices and bookkeeping for Finance",
-    group: "integration",
-    href: "/settings/moneybird",
-  },
-  {
-    id: "mapbox",
-    label: "Mapbox",
-    description: "Geocode addresses and show location maps",
-    group: "integration",
-    href: "/settings/mapbox",
-  },
-  {
-    id: "email",
-    label: "E-mail",
-    description: "AgentMail inboxes for incoming messages in Inbox",
-    group: "integration",
-    href: "/settings/email",
-  },
-  {
-    id: "whoop",
-    label: "Whoop",
-    description: "Recovery, sleep, and strain data for journal entries",
-    group: "integration",
-    href: "/settings/whoop",
   },
   {
     id: "storage",
@@ -134,4 +109,17 @@ export function isSettingsPath(pathname: string): boolean {
 
 export function isSettingsTabId(value: string): value is SettingsTabId {
   return SETTINGS_NAV_TABS.some((tab) => tab.id === value);
+}
+
+export function isLegacyIntegrationSettingsTab(
+  value: string,
+): value is LegacyIntegrationSettingsTab {
+  return (LEGACY_INTEGRATION_SETTINGS_TABS as readonly string[]).includes(value);
+}
+
+export function getIntegrationsSettingsHref(
+  open?: LegacyIntegrationSettingsTab | string | null,
+): string {
+  if (!open) return "/settings/integrations";
+  return `/settings/integrations?open=${encodeURIComponent(open)}`;
 }

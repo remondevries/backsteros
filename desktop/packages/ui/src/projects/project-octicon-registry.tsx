@@ -1,6 +1,7 @@
 "use client";
 
 import type { ComponentType, SVGProps } from "react";
+import { CalendarIcon } from "../components/icons/calendar-icon.js";
 import {
   AccessibilityIcon,
   AccessibilityInsetIcon,
@@ -40,7 +41,6 @@ import {
   BrowserIcon,
   BugIcon,
   CacheIcon,
-  CalendarIcon,
   CheckIcon,
   CheckCircleIcon,
   CheckCircleFillIcon,
@@ -404,9 +404,11 @@ import { PhoneIcon } from "../components/icons/phone-icon.js";
 import { RazorIcon } from "../components/icons/razor-icon.js";
 import { ShoeIcon } from "../components/icons/shoe-icon.js";
 import { ShopIcon } from "../components/icons/shop-icon.js";
+import { SecondBrainIcon } from "../components/icons/second-brain-icon.js";
 import { SpotifyIcon } from "../components/icons/spotify-icon.js";
 import { TerminalConsoleIcon } from "../components/icons/terminal-console-icon.js";
 import { ToothIcon } from "../components/icons/tooth-icon.js";
+import { TransipIcon } from "../components/icons/transip-icon.js";
 import { WasherIcon } from "../components/icons/washer-icon.js";
 import { WaterIcon } from "../components/icons/water-icon.js";
 
@@ -722,6 +724,7 @@ const OCTICON_BY_KEY = {
   "screen-full": ScreenFullIcon,
   "screen-normal": ScreenNormalIcon,
   "search": SearchIcon,
+  "second-brain": SecondBrainIcon,
   "server": ServerIcon,
   "share": ShareIcon,
   "share-android": ShareAndroidIcon,
@@ -787,6 +790,7 @@ const OCTICON_BY_KEY = {
   "tooth": ToothIcon,
   "tracked-by-closed-completed": TrackedByClosedCompletedIcon,
   "tracked-by-closed-not-planned": TrackedByClosedNotPlannedIcon,
+  "transip": TransipIcon,
   "trash": TrashIcon,
   "triangle-down": TriangleDownIcon,
   "triangle-left": TriangleLeftIcon,

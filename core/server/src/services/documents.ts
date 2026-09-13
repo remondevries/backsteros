@@ -18,16 +18,60 @@ import {
   getObject,
   putObject,
   snippetForContent,
+  SPACES_CATEGORY_KNOWLEDGE_BASE,
+  SPACES_CATEGORY_SUPPORT,
+  SPACES_CATEGORY_WEBSITES,
+  SPACES_SECOND_BRAIN_FOLDER,
+  SPACES_SECOND_BRAIN_RELATIVE,
+  rewriteLegacyKnowledgeBaseStorageKey,
 } from "../lib/storage.js";
 import { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
 import { syncDocumentMetadataFromStorageKey } from "./vault-document-metadata.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
+import {
+  healSpacesHierarchy,
+  moveDocumentWithPathRewrite,
+} from "./spaces-hierarchy.js";
 
 export { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
+export { healSpacesHierarchy } from "./spaces-hierarchy.js";
 
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
+
+const SPACES_HIERARCHY_SEED: ReadonlyArray<{
+  path: string;
+  title: string;
+  parentPath: string | null;
+}> = [
+  {
+    path: SPACES_CATEGORY_KNOWLEDGE_BASE,
+    title: "Knowledge Base",
+    parentPath: null,
+  },
+  {
+    path: SPACES_SECOND_BRAIN_RELATIVE,
+    title: "Second brain",
+    parentPath: SPACES_CATEGORY_KNOWLEDGE_BASE,
+  },
+  {
+    path: SPACES_CATEGORY_SUPPORT,
+    title: "Support",
+    parentPath: null,
+  },
+  {
+    path: SPACES_CATEGORY_WEBSITES,
+    title: "Websites",
+    parentPath: null,
+  },
+];
+
+const SPACES_CATEGORY_ROOT_PATHS = new Set(
+  SPACES_HIERARCHY_SEED.filter((row) => row.parentPath == null).map(
+    (row) => row.path,
+  ),
+);
 
 async function getDocumentRow(
   workspaceId: string,
@@ -85,6 +129,10 @@ export async function listDocuments(
   },
   executor: DbExecutor = db,
 ) {
+  if (!filters?.type || filters.type === "knowledge") {
+    await ensureSpacesHierarchy(workspaceId, executor);
+  }
+
   const conditions = [
     eq(documents.workspaceId, workspaceId),
     isNull(documents.deletedAt),
@@ -103,6 +151,122 @@ export async function listDocuments(
     .from(documents)
     .where(and(...conditions))
     .orderBy(desc(documents.updatedAt));
+}
+
+/**
+ * Ensure Knowledge Base / Support / Websites folder rows exist, and attach
+ * orphan root knowledge documents under Second brain.
+ */
+export async function ensureSpacesHierarchy(
+  workspaceId: string,
+  executor: DbExecutor = db,
+): Promise<void> {
+  const byPath = new Map<string, string>();
+
+  for (const seed of SPACES_HIERARCHY_SEED) {
+    let row = await findDocumentByPath(
+      workspaceId,
+      "knowledge",
+      seed.path,
+      null,
+      executor,
+    );
+    if (!row) {
+      const parentId = seed.parentPath
+        ? (byPath.get(seed.parentPath) ?? null)
+        : null;
+      try {
+        row = await createDocument(
+          workspaceId,
+          {
+            type: "knowledge",
+            kind: "folder",
+            title: seed.title,
+            path: seed.path,
+            parentId: parentId ?? undefined,
+            content: "",
+          },
+          newId(),
+          executor,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "DOCUMENT_PATH_EXISTS"
+        ) {
+          row = await findDocumentByPath(
+            workspaceId,
+            "knowledge",
+            seed.path,
+            null,
+            executor,
+          );
+        } else {
+          throw error;
+        }
+      }
+    } else if (seed.parentPath) {
+      const expectedParentId = byPath.get(seed.parentPath) ?? null;
+      if (expectedParentId && row.parentId !== expectedParentId) {
+        await executor
+          .update(documents)
+          .set({ parentId: expectedParentId, updatedAt: new Date() })
+          .where(eq(documents.id, row.id));
+        row = { ...row, parentId: expectedParentId };
+      }
+    }
+    if (row) byPath.set(seed.path, row.id);
+  }
+
+  const secondBrainId = byPath.get(SPACES_SECOND_BRAIN_RELATIVE);
+  if (!secondBrainId) return;
+
+  const knowledgeRows = await executor
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.type, "knowledge"),
+        isNull(documents.deletedAt),
+      ),
+    );
+
+  const seedPaths = new Set(SPACES_HIERARCHY_SEED.map((s) => s.path));
+  for (const row of knowledgeRows) {
+    if (seedPaths.has(row.path)) continue;
+    if (SPACES_CATEGORY_ROOT_PATHS.has(row.path)) continue;
+
+    const nextStorageKey = rewriteLegacyKnowledgeBaseStorageKey(row.storageKey);
+    const patches: {
+      parentId?: string;
+      storageKey?: string;
+      updatedAt: Date;
+    } = { updatedAt: new Date() };
+    let changed = false;
+
+    if (row.parentId == null) {
+      patches.parentId = secondBrainId;
+      changed = true;
+    }
+    if (nextStorageKey !== row.storageKey) {
+      patches.storageKey = nextStorageKey;
+      changed = true;
+    }
+    if (!changed) continue;
+
+    await executor
+      .update(documents)
+      .set(patches)
+      .where(eq(documents.id, row.id));
+  }
+
+  // Align paths with parent chain; move Portal under Support when misplaced.
+  try {
+    await healSpacesHierarchy(workspaceId, executor);
+  } catch (error) {
+    console.warn("[spaces] hierarchy heal failed", error);
+  }
 }
 
 export async function getDocumentById(
@@ -263,6 +427,13 @@ export async function updateDocument(
       icon: input.icon,
       sortOrder: input.sortOrder,
       journalDate: input.journalDate,
+      publishStatus: input.publishStatus,
+      publishSlug: input.publishSlug,
+      seoTitle: input.seoTitle,
+      seoDescription: input.seoDescription,
+      audience: input.audience,
+      contactIds: input.contactIds,
+      placementFolderId: input.placementFolderId,
       updatedAt: new Date(),
     })
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
@@ -377,23 +548,7 @@ export async function moveDocument(
   id: string,
   parentId: string | null,
 ) {
-  if (parentId === id) throw new Error("INVALID_PARENT");
-  if (parentId) {
-    const parent = await getDocumentRow(workspaceId, parentId);
-    if (!parent || parent.kind !== "folder") throw new Error("FOLDER_NOT_FOUND");
-  }
-  const [row] = await db
-    .update(documents)
-    .set({ parentId, updatedAt: new Date() })
-    .where(
-      and(
-        eq(documents.workspaceId, workspaceId),
-        eq(documents.id, id),
-        isNull(documents.deletedAt),
-      ),
-    )
-    .returning();
-  return row ?? null;
+  return moveDocumentWithPathRewrite(workspaceId, id, parentId);
 }
 
 export async function reorderDocuments(workspaceId: string, orderedIds: string[]) {

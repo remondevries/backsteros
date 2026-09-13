@@ -109,12 +109,12 @@ function SocialPageBody() {
         selected.firstName ?? "",
         selected.lastName,
       ) || selected.name
-    : "Social";
+    : "Network";
 
   useDesktopSectionBreadcrumb(
     selected
       ? [
-          { label: "Social", href: "/social" },
+          { label: "Network", href: "/social" },
           {
             label: displayName,
             href: getSocialHref(
@@ -122,7 +122,7 @@ function SocialPageBody() {
             ),
           },
         ]
-      : [{ label: "Social", href: "/social" }],
+      : [{ label: "Network", href: "/social" }],
   );
 
   if (selected) {

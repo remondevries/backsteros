@@ -170,7 +170,7 @@ export type ComposeModalProps = {
   projectsHref?: string;
   /**
    * Which compose kinds are available. Defaults to task + document.
-   * Pass `["task"]` to hide document creation (e.g. development console).
+   * Pass `["task"]` to hide document creation (e.g. catalog console).
    */
   allowedKinds?: ComposeKind[];
   /** When true, task creation requires a project from `projects`. */
@@ -576,7 +576,7 @@ export function ComposeModal({
     }
 
     if (!documentProjectId) {
-      setError("Select Knowledge Base or a project for this document.");
+      setError("Select Spaces or a project for this document.");
       return;
     }
 
@@ -871,7 +871,7 @@ export function ComposeModal({
     () => [
       {
         value: KNOWLEDGE_BASE_VALUE,
-        label: "Knowledge Base",
+        label: "Spaces",
         searchTerms: "knowledge base kb documentation wiki",
         icon: <KnowledgeBaseNavIcon className="size-3.5 text-foreground/70" />,
       },
@@ -1015,7 +1015,7 @@ export function ComposeModal({
   const headerProjectFallbackLabel = isTask
     ? "No project"
     : isComposeKnowledgeBaseValue(documentProjectId)
-      ? "Knowledge Base"
+      ? "Spaces"
       : "Select project";
   const headerProjectPlaceholder = isTask
     ? "Change project…"

@@ -17,7 +17,7 @@ type ProjectScopeSource = Pick<ProjectListItem, "id" | "key" | "name">;
 /** Ownership label for attachment picker rows (project name or fallback). */
 export function formatAttachmentScopeLabel(
   project: Pick<ProjectScopeSource, "name"> | null | undefined,
-  fallback = "Knowledge Base",
+  fallback = "Spaces",
 ): string {
   if (!project) return fallback;
   return project.name?.trim() || "Untitled project";
@@ -66,7 +66,7 @@ export function buildDocumentLinkOptions(
         // Path is internal — ownership is shown via scopeLabel instead.
         detail: null,
         kindLabel: "Document",
-        scopeLabel: formatAttachmentScopeLabel(project, "Knowledge Base"),
+        scopeLabel: formatAttachmentScopeLabel(project, "Spaces"),
       };
     });
 }

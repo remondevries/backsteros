@@ -18,7 +18,6 @@ import { DesktopOverlayPalettePage } from "../screens/desktop-overlay-palette-pa
 import { validateTasksListSearch } from "./routes/tasks.route";
 import { validateCalendarSearch } from "./routes/calendar.route";
 import {
-  AreasPage,
   CalendarPage,
   CalendarScopedMeetingDetailPage,
   CalendarScopedTaskDetailPage,
@@ -27,7 +26,7 @@ import {
   ContactScopedMeetingDetailPage,
   ContactScopedTaskDetailPage,
   ContactsPage,
-  DevelopmentPage,
+  CatalogPage,
   EmailPage,
   FinancePage,
   HabitTrackerPage,
@@ -255,8 +254,8 @@ const knowledgeV2Route = createRoute({
     const next =
       location.pathname === "/knowledge-v2" ||
       location.pathname === "/knowledge-v2/"
-        ? "/knowledge"
-        : location.pathname.replace(/^\/knowledge-v2/, "/knowledge");
+        ? "/spaces"
+        : location.pathname.replace(/^\/knowledge-v2/, "/spaces");
     throw redirect({ href: `${next}${location.searchStr}`, replace: true });
   },
   component: () => <Outlet />,
@@ -340,11 +339,9 @@ const calendarMeetingDetailRoute = createRoute({
 const areasRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "areas",
-  component: () => (
-    <LazyRoute>
-      <AreasPage />
-    </LazyRoute>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/projects", replace: true });
+  },
 });
 
 const projectsRoute = createRoute({
@@ -357,14 +354,25 @@ const projectsRoute = createRoute({
   ),
 });
 
-const developmentRoute = createRoute({
+const catalogRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "development",
+  path: "catalog",
   component: () => (
     <LazyRoute>
-      <DevelopmentPage />
+      <CatalogPage />
     </LazyRoute>
   ),
+});
+
+const developmentRedirectRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "development",
+  beforeLoad: ({ location }) => {
+    throw redirect({
+      href: `/catalog${location.searchStr ?? ""}`,
+      replace: true,
+    });
+  },
 });
 
 const projectTaskDetailRoute = createRoute({
@@ -473,14 +481,14 @@ const projectDetailRoute = createRoute({
   ),
 });
 
-const knowledgeRoute = createRoute({
+const spacesRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "knowledge",
+  path: "spaces",
   component: () => <Outlet />,
 });
 
-const knowledgeIndexRoute = createRoute({
-  getParentRoute: () => knowledgeRoute,
+const spacesIndexRoute = createRoute({
+  getParentRoute: () => spacesRoute,
   path: "/",
   component: () => (
     <LazyRoute>
@@ -489,14 +497,40 @@ const knowledgeIndexRoute = createRoute({
   ),
 });
 
-const knowledgeSplatRoute = createRoute({
-  getParentRoute: () => knowledgeRoute,
+const spacesSplatRoute = createRoute({
+  getParentRoute: () => spacesRoute,
   path: "$",
   component: () => (
     <LazyRoute>
       <KnowledgePage />
     </LazyRoute>
   ),
+});
+
+/** Legacy `/knowledge` → `/spaces` (and nested paths). */
+const knowledgeLegacyRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "knowledge",
+  beforeLoad: ({ location }) => {
+    const next =
+      location.pathname === "/knowledge" || location.pathname === "/knowledge/"
+        ? "/spaces"
+        : location.pathname.replace(/^\/knowledge/, "/spaces");
+    throw redirect({ href: `${next}${location.searchStr}`, replace: true });
+  },
+  component: () => <Outlet />,
+});
+
+const knowledgeLegacyIndexRoute = createRoute({
+  getParentRoute: () => knowledgeLegacyRoute,
+  path: "/",
+  component: () => null,
+});
+
+const knowledgeLegacySplatRoute = createRoute({
+  getParentRoute: () => knowledgeLegacyRoute,
+  path: "$",
+  component: () => null,
 });
 
 const lettersRoute = createRoute({
@@ -789,6 +823,10 @@ const settingsRoute = createRoute({
 const settingsTabRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "settings/$tab",
+  validateSearch: (search: Record<string, unknown>): { open?: string } => {
+    const open = typeof search.open === "string" ? search.open : undefined;
+    return open ? { open } : {};
+  },
   component: () => (
     <LazyRoute>
       <SettingsPage />
@@ -824,7 +862,8 @@ export const routeTree = rootRoute.addChildren([
     calendarMeetingDetailRoute,
     areasRoute,
     projectsRoute,
-    developmentRoute,
+    catalogRoute,
+    developmentRedirectRoute,
     projectTaskDetailRoute,
     projectDocumentsSplatRoute,
     projectLetterDetailRoute,
@@ -836,9 +875,13 @@ export const routeTree = rootRoute.addChildren([
     projectPullsRoute,
     projectSectionRoute,
     projectDetailRoute,
-    knowledgeRoute.addChildren([
-      knowledgeIndexRoute,
-      knowledgeSplatRoute,
+    spacesRoute.addChildren([
+      spacesIndexRoute,
+      spacesSplatRoute,
+    ]),
+    knowledgeLegacyRoute.addChildren([
+      knowledgeLegacyIndexRoute,
+      knowledgeLegacySplatRoute,
     ]),
     knowledgeV2Route.addChildren([
       knowledgeV2IndexRoute,

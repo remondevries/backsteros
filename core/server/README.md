@@ -83,7 +83,7 @@ On first configure, the API creates:
 Journal/
 Projects/{PROJECT_KEY}/Documents|Updates/   # + Codebase/ for codebase projects
 Letters/{YYYY}/{MM}/
-Knowledge Base/
+Spaces/
 .backsteros/   # avatars / system blobs
 ```
 

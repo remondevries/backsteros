@@ -15,7 +15,6 @@ export type PendingPageSurface =
   | "task-detail"
   | "calendar"
   | "meeting-detail"
-  | "areas"
   | "projects"
   | "knowledge"
   | "letters"
@@ -25,7 +24,7 @@ export type PendingPageSurface =
   | "contacts"
   | "organizations"
   | "settings"
-  | "development"
+  | "catalog"
   | "unknown";
 
 export type ResolvedAppHref = {
@@ -83,6 +82,7 @@ function pathSegments(pathname: string): string[] {
 /** File/document splats can contain `tasks` or `letters` as folder names. */
 function isSplatContentPath(parts: string[]): boolean {
   return (
+    parts[0] === "spaces" ||
     parts[0] === "knowledge" ||
     parts.includes("files") ||
     parts.includes("documents") ||
@@ -126,7 +126,7 @@ export function surfaceForPathname(pathname: string): PendingPageSurface {
   const parts = pathSegments(pathname);
   const root = parts[0];
   if (!root) return "unknown";
-  if (root === "knowledge") return "knowledge";
+  if (root === "spaces" || root === "knowledge") return "knowledge";
 
   if (isTaskDetailPath(parts)) return "task-detail";
   if (isStandaloneOrContactLetterPath(parts)) return "letters";
@@ -143,7 +143,7 @@ export function surfaceForPathname(pathname: string): PendingPageSurface {
     case "calendar":
       return parts[1] === "meetings" ? "meeting-detail" : "calendar";
     case "areas":
-      return "areas";
+      return "projects";
     case "projects":
       return "projects";
     case "finance":
@@ -163,8 +163,10 @@ export function surfaceForPathname(pathname: string): PendingPageSurface {
     }
     case "settings":
       return "settings";
+    case "catalog":
+      return "catalog";
     case "development":
-      return "development";
+      return "catalog";
     default:
       return "unknown";
   }
@@ -201,9 +203,8 @@ export function resolveAppHref(href: string): ResolvedAppHref {
   } else if (pathname === "/letters") {
     const first = peekSectionEntryHref("letters");
     if (first) withEntry(first);
-  } else if (pathname === "/knowledge") {
-    const first = peekSectionEntryHref("knowledge");
-    if (first) withEntry(first);
+  } else if (pathname === "/spaces" || pathname === "/knowledge") {
+    // Spaces overview lives in main content (like /projects).
   } else if (pathname === "/journal") {
     withEntry(journalTodayHref());
   } else if (pathname === "/email") {
@@ -212,6 +213,8 @@ export function resolveAppHref(href: string): ResolvedAppHref {
     else withEntry("/inbox");
   } else if (pathname === "/finance") {
     withEntry("/finance/dashboard");
+  } else if (pathname === "/areas") {
+    withEntry("/projects");
   } else if (pathname === "/settings") {
     withEntry(DEFAULT_SETTINGS_HREF);
   } else if (pathname === "/tasks" && search === "") {

@@ -47,6 +47,8 @@ export type DesktopWorkspaceData = {
       type?: string;
       localWorkingDirectory?: string | null;
       githubRepository?: string | null;
+      cloudflareZoneId?: string | null;
+      provider?: string | null;
     }
   >;
   letters: LetterListItem[];
@@ -212,6 +214,10 @@ export type DesktopWorkspaceData = {
   createKnowledgeFolder: (input: {
     title: string;
     parentId?: string | null;
+    parentPath?: string | null;
+    icon?: string | null;
+    /** Full vault-relative path override (system folders). */
+    path?: string | null;
   }) => Promise<{ id: string; path: string }>;
   createProjectFolder: (input: {
     projectId: string;
@@ -226,6 +232,18 @@ export type DesktopWorkspaceData = {
     id: string,
     icon: string | null,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  updateDocumentPublishFields: (
+    id: string,
+    patch: {
+      publishStatus?: "concept" | "published" | "offline";
+      publishSlug?: string | null;
+      seoTitle?: string | null;
+      seoDescription?: string | null;
+      audience?: "group" | "individual";
+      contactIds?: string[] | null;
+      placementFolderId?: string | null;
+    },
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   moveDocument: (
     id: string,
     parentId: string | null,
@@ -237,5 +255,8 @@ export type DesktopWorkspaceData = {
     id: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Soft-pull document list from REST (agent creates before PowerSync). */
-  softRefreshApiDocuments: () => Promise<void>;
+  softRefreshApiDocuments: (options?: {
+    force?: boolean;
+    type?: "knowledge";
+  }) => Promise<void>;
 };

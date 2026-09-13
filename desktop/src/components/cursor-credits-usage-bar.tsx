@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri-invoke-instrumentation";
+import { isTauriRuntime } from "../lib/tauri-runtime";
 
 import { useAgentMail } from "../lib/agentmail-context";
 import {
@@ -119,6 +120,11 @@ export function CursorCreditsUsageBar() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!isTauriRuntime()) {
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     const load = async () => {

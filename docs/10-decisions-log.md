@@ -279,7 +279,7 @@ fork of the Next deployment pipeline.
 **Decision:**
 
 - Store markdown and letter PDFs under a **local vault root** (`BACKSTEROS_VAULT_PATH` or Settings → Storage)
-- Auto-create `Journal/`, `Projects/{KEY}/{Codebase,Documents,Updates}/`, `Letters/YYYY/MM/`, `Knowledge Base/`
+- Auto-create `Journal/`, `Projects/{KEY}/{Codebase,Documents,Updates}/`, `Letters/YYYY/MM/`, `Spaces/` (migrates legacy `Knowledge Base/`)
 - Keep Postgres metadata + `storage_key`; clients use API/PowerSync (no bulk Tier C/D sync)
 - Avatars and other system blobs under `.backsteros/`
 

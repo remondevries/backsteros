@@ -1562,11 +1562,11 @@
   visibility: hidden;
 }
 
-.contact-location-map__field {
+.entity-address-fields {
   display: flex;
-  min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  min-width: 0;
 }
 
 .contact-location-map__field > span {

@@ -95,7 +95,7 @@ function toTreeSource(item: KnowledgeListItem) {
 }
 
 /**
- * Shared document/folder tree side panel used by Knowledge Base and project Documents.
+ * Shared document/folder tree side panel used by Spaces and project Documents.
  */
 export function DocumentTreeSidePanelView({
   pathname,

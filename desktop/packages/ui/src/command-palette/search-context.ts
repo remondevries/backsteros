@@ -16,7 +16,7 @@ import type { CommandPaletteFilterMode } from "./command-palette.js";
 export type CommandPaletteSearchContext =
   | { kind: "inbox"; label: "Inbox" }
   | { kind: "tasks"; label: "Tasks" }
-  | { kind: "knowledge"; label: "Knowledge Base" }
+  | { kind: "knowledge"; label: "Spaces" }
   | { kind: "letters"; label: "Letters" }
   | { kind: "contacts"; label: "Contacts" }
   | { kind: "organizations"; label: "Organizations" }
@@ -68,8 +68,8 @@ export function resolveCommandPaletteSearchContext(
     return { kind: "tasks", label: "Tasks" };
   }
 
-  if (pathname.startsWith("/knowledge")) {
-    return { kind: "knowledge", label: "Knowledge Base" };
+  if (pathname.startsWith("/spaces") || pathname.startsWith("/knowledge")) {
+    return { kind: "knowledge", label: "Spaces" };
   }
 
   if (pathname.startsWith("/letters")) {

@@ -38,11 +38,13 @@ export function getSelectedProjectDocumentPathFromPathname(
   return decodeURIComponent(match[1]!);
 }
 
-/** Selected document path from `/knowledge/:slug` (or legacy `/knowledge-v2/:slug`). */
+/** Selected document path from `/spaces/:slug` (or legacy `/knowledge` / `/knowledge-v2`). */
 export function getSelectedKnowledgeDocumentPathFromPathname(
   pathname: string,
 ): string | undefined {
-  const match = pathname.match(/^\/knowledge\/(.+)$/);
+  const match =
+    pathname.match(/^\/spaces\/(.+)$/) ??
+    pathname.match(/^\/knowledge\/(.+)$/);
   if (match) {
     return decodeURIComponent(match[1]!);
   }

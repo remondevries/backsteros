@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -77,6 +78,20 @@ describe("vault-replication manifest-first listing", () => {
     );
   });
 
+  it("rewrites legacy Knowledge Base keys when reading the manifest", () => {
+    const files = vaultFileMetaFromManifest({
+      "Knowledge Base/note.md": { mtimeMs: 1, size: 10 },
+      "Spaces/knowledge-base/second-brain/note.md": { mtimeMs: 2, size: 20 },
+    });
+    assert.deepEqual(files, [
+      {
+        relativePath: "Spaces/knowledge-base/second-brain/note.md",
+        mtimeMs: 2,
+        size: 20,
+      },
+    ]);
+  });
+
   it("merges dirty stats into the previous listing", () => {
     const files = applyDirtyVaultPathStats({
       previous: {
@@ -110,6 +125,23 @@ describe("vault-replication paths", () => {
     assert.equal(
       normalizeVaultMarkdownPath("Projects/Foo/Documents/note.md"),
       "Projects/Foo/Documents/note.md",
+    );
+  });
+
+  it("rewrites legacy Knowledge Base paths into Second brain", () => {
+    assert.equal(
+      normalizeVaultMarkdownPath("Knowledge Base/agentmail/overview.md"),
+      "Spaces/knowledge-base/second-brain/agentmail/overview.md",
+    );
+    assert.equal(
+      resolveSafeVaultAbsolute(
+        "/tmp/vault",
+        "Knowledge Base/scratchpad.md",
+      ),
+      path.resolve(
+        "/tmp/vault",
+        "Spaces/knowledge-base/second-brain/scratchpad.md",
+      ),
     );
   });
 

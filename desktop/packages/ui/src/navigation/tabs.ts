@@ -150,7 +150,7 @@ export function resolveTabNavIconId(
     calendar: "calendar",
     areas: "areas",
     projects: "projects",
-    development: "development",
+    catalog: "catalog",
     letters: "letters",
     finance: "finance",
     communication: "communication",

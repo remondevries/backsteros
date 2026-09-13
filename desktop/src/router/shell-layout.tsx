@@ -38,11 +38,10 @@ import {
   useVisitedKeepAliveSurfaces,
 } from "../lib/shell-route-keep-alive";
 import {
-  areasPage,
   calendarPage,
   communicationPage,
   contactsPage,
-  developmentPage,
+  catalogPage,
   emailPage,
   financePage,
   habitTrackerPage,
@@ -66,8 +65,7 @@ import {
   useScopedProject,
 } from "../lib/workspace/use-scoped-entities";
 
-const AreasPage = areasPage.Page;
-const DevelopmentPage = developmentPage.Page;
+const CatalogPage = catalogPage.Page;
 const ContactsPage = contactsPage.Page;
 const EmailPage = emailPage.Page;
 const HabitTrackerPage = habitTrackerPage.Page;
@@ -300,7 +298,7 @@ export function CalendarScopedTaskDetailPage() {
     <TaskDetailPage
       taskRouteParam={taskId}
       backHref="/calendar"
-      breadcrumbItems={[{ label: "Calendar", href: "/calendar" }]}
+      breadcrumbItems={[{ label: "Agenda", href: "/calendar" }]}
     />
   );
 }
@@ -555,11 +553,10 @@ export function OrgContactScopedMeetingDetailPage() {
 }
 
 export {
-  AreasPage,
   CalendarPage,
   CommunicationPage,
   ContactsPage,
-  DevelopmentPage,
+  CatalogPage,
   EmailPage,
   FinancePage,
   HabitTrackerPage,

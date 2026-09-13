@@ -514,6 +514,13 @@ function LettersPageBody({
             <LetterPdfPreview
               letterId={letter.id}
               attachmentId={pdfPanel.selectedAttachmentId}
+              vaultStorageKey={
+                pdfPanel.selectedAttachmentId
+                  ? (pdfPanel.attachments.find(
+                      (entry) => entry.id === pdfPanel.selectedAttachmentId,
+                    )?.storageKey ?? null)
+                  : (record?.storageKey ?? null)
+              }
               useApi={pdfPanel.hasPdf}
               revision={pdfPanel.revision}
             />

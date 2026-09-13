@@ -253,26 +253,72 @@ export type KnowledgeListItem = {
   parentId?: string | null;
   sortOrder?: number;
   icon?: string | null;
+  /**
+   * Optional space/folder blurb for overview cards.
+   * Not yet persisted on documents — reserved for a future DB field.
+   */
+  description?: string | null;
+  /** Epoch ms when the document/folder was last updated. */
+  updatedAt?: number | null;
   /** Set for project-scoped documents (`type=project`). */
   projectId?: string | null;
+  publishStatus?: "concept" | "published" | "offline" | null;
+  publishSlug?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  audience?: "group" | "individual" | null;
+  contactIds?: string[] | null;
+  placementFolderId?: string | null;
+  coverStorageKey?: string | null;
+  coverContentType?: string | null;
 };
 
-export function getKnowledgeHref(pathOrId?: string): string {
-  if (!pathOrId) return "/knowledge";
+/** Canonical in-app Spaces section path (formerly `/knowledge`). */
+export const SPACES_APP_PATH = "/spaces";
+/** Legacy Spaces URL — router redirects to {@link SPACES_APP_PATH}. */
+export const SPACES_APP_PATH_LEGACY = "/knowledge";
+
+function isSpacesAppRootPath(pathname: string): boolean {
+  return (
+    pathname === SPACES_APP_PATH ||
+    pathname === `${SPACES_APP_PATH}/` ||
+    pathname === SPACES_APP_PATH_LEGACY ||
+    pathname === `${SPACES_APP_PATH_LEGACY}/`
+  );
+}
+
+function spacesAppDetailPrefix(pathname: string): string | null {
+  if (pathname.startsWith(`${SPACES_APP_PATH}/`)) {
+    return `${SPACES_APP_PATH}/`;
+  }
+  if (pathname.startsWith(`${SPACES_APP_PATH_LEGACY}/`)) {
+    return `${SPACES_APP_PATH_LEGACY}/`;
+  }
+  return null;
+}
+
+export function getSpacesHref(pathOrId?: string): string {
+  if (!pathOrId) return SPACES_APP_PATH;
   // Preserve path separators (Next parity) — encode then restore `/`.
   const encoded = encodeURIComponent(pathOrId).replace(/%2F/gi, "/");
-  return encoded ? `/knowledge/${encoded}` : "/knowledge";
+  return encoded ? `${SPACES_APP_PATH}/${encoded}` : SPACES_APP_PATH;
+}
+
+/** @deprecated Prefer {@link getSpacesHref}. */
+export function getKnowledgeHref(pathOrId?: string): string {
+  return getSpacesHref(pathOrId);
 }
 
 export function getKnowledgeV2Href(pathOrId?: string): string {
-  return getKnowledgeHref(pathOrId);
+  return getSpacesHref(pathOrId);
 }
 
 export function getSelectedKnowledgeSlugFromPathname(
   pathname: string,
 ): string | null {
-  if (pathname.startsWith("/knowledge/")) {
-    const slug = pathname.slice("/knowledge/".length);
+  const prefix = spacesAppDetailPrefix(pathname);
+  if (prefix) {
+    const slug = pathname.slice(prefix.length);
     return slug ? decodeURIComponent(slug) : null;
   }
   return getSelectedKnowledgeV2SlugFromPathname(pathname);
@@ -288,8 +334,8 @@ export function getSelectedKnowledgeV2SlugFromPathname(
 
 export function isKnowledgeSectionPath(pathname: string): boolean {
   return (
-    pathname === "/knowledge" ||
-    pathname.startsWith("/knowledge/") ||
+    isSpacesAppRootPath(pathname) ||
+    spacesAppDetailPrefix(pathname) != null ||
     isKnowledgeV2SectionPath(pathname)
   );
 }

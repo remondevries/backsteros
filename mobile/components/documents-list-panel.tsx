@@ -200,7 +200,7 @@ function filterDocumentsForSearch(
 }
 
 /**
- * Document / knowledge tree list — shared by project panels and Knowledge Base.
+ * Document / knowledge tree list — shared by project panels and Spaces.
  */
 export function DocumentsListPanel({
   documentType,

@@ -34,7 +34,7 @@ export const NAVIGATION_ITEM_ICONS: Record<
   calendar: CalendarNavIcon,
   areas: AreasNavIcon,
   projects: ProjectsNavIcon,
-  development: DevelopmentNavIcon,
+  catalog: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
   communication: CommunicationNavIcon,

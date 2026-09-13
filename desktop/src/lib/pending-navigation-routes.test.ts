@@ -12,8 +12,8 @@ test("resolvePendingPageSurface maps canonical section roots", () => {
     resolvePendingPageSurface("/journal/habits/habit-1"),
     "journal-habits",
   );
-  assert.equal(resolvePendingPageSurface("/knowledge"), "knowledge");
-  assert.equal(resolvePendingPageSurface("/knowledge/note"), "knowledge");
+  assert.equal(resolvePendingPageSurface("/spaces"), "knowledge");
+  assert.equal(resolvePendingPageSurface("/spaces/note"), "knowledge");
   assert.equal(resolvePendingPageSurface("/letters"), "letters");
   assert.equal(resolvePendingPageSurface("/letters/l-1"), "letters");
 });

@@ -99,7 +99,7 @@ PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm --filter @backsteros/desktop pt
 
 Under **Settings → Cursor**, paste a Cursor user API key, enable Spellcheck, and pick a model. The key is stored in core Postgres (not PowerSync). Task detail shows a **Spellcheck** button when the feature is on; preview and confirm before applying.
 
-Under **Settings → Storage**, choose a local Obsidian-style vault folder on the machine running the API. Core creates `Journal/`, `Projects/`, `Letters/`, and `Knowledge Base/` automatically.
+Under **Settings → Storage**, choose a local Obsidian-style vault folder on the machine running the API. Core creates `Journal/`, `Projects/`, `Letters/`, and `Spaces/` automatically (with `knowledge-base/second-brain`, `support/`, and `websites/` under Spaces; legacy `Knowledge Base/` is renamed on startup).
 
 ### Auth / API smoke
 

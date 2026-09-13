@@ -61,7 +61,6 @@ test("shouldMissDocumentContentCache misses when checksum drifted", () => {
 });
 
 test("shouldMissDocumentContentCache keeps hit when no known checksum yet", () => {
-  // Open path always revalidates via network; peek may still first-paint.
   assert.equal(
     shouldMissDocumentContentCache({
       content: "# body",
@@ -72,8 +71,35 @@ test("shouldMissDocumentContentCache keeps hit when no known checksum yet", () =
   );
 });
 
-test("fetchDocumentContent always revalidates — never returns warm LRU as final", async () => {
-  const id = `doc-revalidate-${Date.now()}`;
+test("fetchDocumentContent returns warm LRU without REST when checksum trusted", async () => {
+  const id = `doc-local-first-${Date.now()}`;
+  writeDocumentContentCache(id, {
+    content: "# cached",
+    contentVersion: 1,
+    checksum: "abc",
+  });
+
+  let requestCount = 0;
+  const client = {
+    requestJson: async () => {
+      requestCount += 1;
+      return {
+        content: "# from-server",
+        contentVersion: 2,
+        checksum: "fresh",
+      };
+    },
+  };
+
+  const result = await fetchDocumentContent(client as never, id);
+  assert.equal(requestCount, 0);
+  assert.equal(result?.content, "# cached");
+  assert.equal(result?.contentVersion, 1);
+  discardDocumentContentCache(id);
+});
+
+test("fetchDocumentContent force bypasses warm LRU and hits REST", async () => {
+  const id = `doc-force-${Date.now()}`;
   writeDocumentContentCache(id, {
     content: "# stale-cache",
     contentVersion: 1,
@@ -92,7 +118,7 @@ test("fetchDocumentContent always revalidates — never returns warm LRU as fina
     },
   };
 
-  const result = await fetchDocumentContent(client as never, id);
+  const result = await fetchDocumentContent(client as never, id, { force: true });
   assert.equal(requestCount, 1);
   assert.equal(result?.content, "# from-server");
   assert.equal(result?.contentVersion, 2);

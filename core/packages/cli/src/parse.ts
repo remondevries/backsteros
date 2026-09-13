@@ -60,10 +60,20 @@ const COMMENT_OPTS = {
   unresolve: { type: "boolean" as const, default: false },
 };
 
+const SPACES_OPTS = {
+  ...GLOBAL_OPTS,
+  category: { type: "string" as const },
+  title: { type: "string" as const, short: "t" as const },
+  icon: { type: "string" as const },
+  content: { type: "string" as const },
+  parent: { type: "string" as const },
+};
+
 function resourceOptions(resource: string | undefined) {
   if (resource === "project") return PROJECT_OPTS;
   if (resource === "task") return TASK_OPTS;
   if (resource === "comment") return COMMENT_OPTS;
+  if (resource === "spaces") return SPACES_OPTS;
   return GLOBAL_OPTS;
 }
 
@@ -105,7 +115,7 @@ export function parseCliArgv(argv: string[]): ParsedCli {
 }
 
 export function usageText(): string {
-  return `backsteros — BacksterOS CLI (tasks, projects, comments)
+  return `backsteros — BacksterOS CLI (tasks, projects, comments, spaces, transip, cloudflare)
 
 Usage:
   backsteros [--json] [--url URL] [--token TOKEN] [--actor user|agent] <resource> <action> [args]
@@ -134,6 +144,25 @@ Comments:
   backsteros comment create <task id|KEY-number> --message "..."
   backsteros comment update <task id|KEY-number> <comment-id> --message "..."
   backsteros comment delete <task id|KEY-number> <comment-id>
+
+Spaces:
+  backsteros spaces categories
+  backsteros spaces list --category support|knowledge-base|websites
+  backsteros spaces create --category support --title "Portal"
+  backsteros spaces get <spaceId>
+  backsteros spaces tree <spaceId>
+  backsteros spaces heal
+  backsteros spaces article create <spaceId> --title "..." [--content "..."]
+  backsteros spaces article get <articleId>
+  backsteros spaces article set <articleId> --content "..."
+
+TransIP:
+  backsteros transip status
+  backsteros transip sync-domains
+
+Cloudflare:
+  backsteros cloudflare status
+  backsteros cloudflare match-zones
 
 Notes:
   --body on project/task accepts a JSON object merged into create/update payloads.

@@ -139,9 +139,8 @@ export function rememberWorkspaceSectionEntries(input: {
   if (peekSectionEntryHref("letters") == null) {
     seed.letters = firstLetterHref(input.letters);
   }
-  if (peekSectionEntryHref("knowledge") == null) {
-    seed.knowledge = firstKnowledgeHref(input.knowledgeDocuments);
-  }
+  // Spaces overview lives in main content — always list root.
+  seed.knowledge = "/spaces";
   if (Object.keys(seed).length > 0) {
     rememberSectionEntryHrefs(seed);
   }

@@ -186,7 +186,7 @@ export function ComposeScreen() {
     () => [
       {
         value: COMPOSE_KNOWLEDGE_BASE_VALUE,
-        label: "Knowledge Base",
+        label: "Spaces",
         icon: <ProjectIcon size={14} color={colors.foreground} />,
       },
       ...projects.map((project) => ({
@@ -202,9 +202,9 @@ export function ComposeScreen() {
   const selectedAssignee = contacts.find((entry) => entry.id === assigneeId);
   const selectedProject = projects.find((entry) => entry.id === projectId);
   const selectedDocumentTarget = isComposeKnowledgeBaseValue(documentTarget)
-    ? "Knowledge Base"
+    ? "Spaces"
     : projects.find((entry) => entry.id === documentTarget)?.name?.trim() ||
-      "Knowledge Base";
+      "Spaces";
 
   const taskProperties: EditableProperty[] = [
     {

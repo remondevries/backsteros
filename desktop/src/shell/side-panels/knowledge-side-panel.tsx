@@ -20,6 +20,7 @@ import type { SidePanelNavProps } from "./types.js";
 
 export function DesktopKnowledgeSidePanel({
   onNavigate,
+  title = "Spaces",
   ...viewProps
 }: Omit<
   KnowledgeSidePanelViewProps,
@@ -31,7 +32,6 @@ export function DesktopKnowledgeSidePanel({
   | "Link"
   | "getDocumentHref"
   | "getSelectedSlugFromPathname"
-  | "title"
 > &
   SidePanelNavProps) {
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
@@ -87,7 +87,7 @@ export function DesktopKnowledgeSidePanel({
       onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
       [key: string]: unknown;
     }) {
-      const slug = String(to).replace(/^\/knowledge\/?/, "");
+      const slug = String(to).replace(/^\/(?:spaces|knowledge)\/?/, "");
       const item = items.find(
         (entry) =>
           slug === entry.id ||
@@ -115,7 +115,7 @@ export function DesktopKnowledgeSidePanel({
   return (
     <KnowledgeSidePanelView
       {...viewProps}
-      title="Knowledge Base"
+      title={title}
       getDocumentHref={getKnowledgeHref}
       getSelectedSlugFromPathname={getSelectedKnowledgeSlugFromPathname}
       Link={PrefetchLink}

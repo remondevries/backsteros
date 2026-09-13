@@ -247,7 +247,14 @@ export function getListKeyboardNavSurfaceKey(pathname: string): string {
     return "organizations";
   }
   if (path === "/letters" || path.startsWith("/letters/")) return "letters";
-  if (path === "/knowledge" || path.startsWith("/knowledge/")) return "knowledge";
+  if (
+    path === "/spaces" ||
+    path.startsWith("/spaces/") ||
+    path === "/knowledge" ||
+    path.startsWith("/knowledge/")
+  ) {
+    return "knowledge";
+  }
   return path.split("/").filter(Boolean)[0] ?? "/";
 }
 

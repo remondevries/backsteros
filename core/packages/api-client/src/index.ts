@@ -5,9 +5,10 @@ import {
   type InitClientReturn,
 } from "@ts-rest/core";
 import {
-  apiContract,
-  type ApiContract,
+  fullApiContract,
+  type FullApiContract,
   type Avatar,
+  type Document,
   type FinancialImportResult,
   type Letter,
   type LetterAttachment,
@@ -504,7 +505,7 @@ async function putBinaryWithProgress(
 }
 
 export type BacksterosApiClient = {
-  contract: InitClientReturn<ApiContract, {
+  contract: InitClientReturn<FullApiContract, {
     baseUrl: string;
     api: ApiFetcher;
   }>;
@@ -547,6 +548,13 @@ export type BacksterosApiClient = {
   ): Promise<Avatar>;
   downloadAvatar(entityType: string, entityId: string): Promise<Blob>;
   deleteAvatar(entityType: string, entityId: string): Promise<Avatar>;
+  uploadSpaceCover(
+    spaceDocumentId: string,
+    image: Blob | ArrayBuffer,
+    contentType?: string,
+  ): Promise<Document>;
+  downloadSpaceCover(spaceDocumentId: string): Promise<Blob>;
+  deleteSpaceCover(spaceDocumentId: string): Promise<Document>;
   uploadTaskImage(
     taskId: string,
     image: Blob | ArrayBuffer,
@@ -588,7 +596,7 @@ export type BacksterosApiClient = {
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
   const normalized = { ...options, baseUrl: trimBaseUrl(options.baseUrl) };
   const fetcher = createFetcher(normalized);
-  const contract = initClient(apiContract, {
+  const contract = initClient(fullApiContract, {
     baseUrl: normalized.baseUrl,
     api: fetcher,
   });
@@ -693,6 +701,26 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
     deleteAvatar: (entityType, entityId) =>
       requestJson<Avatar>(
         `/api/v1/avatars/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`,
+        { method: "DELETE" },
+      ),
+    uploadSpaceCover: (spaceDocumentId, image, contentType) =>
+      requestJson<Document>(
+        `/api/v1/spaces/${encodeURIComponent(spaceDocumentId)}/cover`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": contentType ?? "application/octet-stream",
+          },
+          body: image,
+        },
+      ),
+    downloadSpaceCover: (spaceDocumentId) =>
+      requestBinary(
+        `/api/v1/spaces/${encodeURIComponent(spaceDocumentId)}/cover`,
+      ),
+    deleteSpaceCover: (spaceDocumentId) =>
+      requestJson<Document>(
+        `/api/v1/spaces/${encodeURIComponent(spaceDocumentId)}/cover`,
         { method: "DELETE" },
       ),
     uploadTaskImage: (taskId, image, filename, contentType) =>

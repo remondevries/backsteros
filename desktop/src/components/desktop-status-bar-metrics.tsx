@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { invoke } from "../lib/tauri-invoke-instrumentation";
+import { isTauriRuntime } from "../lib/tauri-runtime";
 
 type SystemStats = {
   cpuPercent: number | null;
@@ -49,6 +50,8 @@ export function DesktopStatusBarMetrics({
   const [stats, setStats] = useState<SystemStats | null>(null);
 
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let cancelled = false;
     let unlisten: UnlistenFn | undefined;
 
@@ -58,14 +61,14 @@ export function DesktopStatusBarMetrics({
       try {
         await invoke("set_system_stats_disk_path", { path });
       } catch {
-        /* offline or permission */
+        /* offline, permission, or non-Tauri preview */
       }
 
       try {
         const data = await invoke<SystemStats>("system_stats", { path });
         if (!cancelled) setStats(data);
       } catch {
-        /* offline or permission */
+        /* offline, permission, or non-Tauri preview */
       }
 
       try {

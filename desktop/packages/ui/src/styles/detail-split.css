@@ -1,8 +1,9 @@
-/* Letter / task / meeting detail: notes | properties — web data-detail-split parity */
+/* Letter / task / meeting / help-article detail: notes | properties — web data-detail-split parity */
 .letter-detail-split,
 .meeting-detail-split,
 .task-detail-view,
-.task-detail-split {
+.task-detail-split,
+.help-article-detail-split {
   display: flex;
   min-height: 0;
   width: 100%;
@@ -15,7 +16,8 @@
 .letter-detail-split .detail-with-properties,
 .meeting-detail-split .detail-with-properties,
 .task-detail-split .detail-with-properties,
-.email-detail-split .detail-with-properties {
+.email-detail-split .detail-with-properties,
+.help-article-detail-split .detail-with-properties {
   min-height: 0;
   flex: 1;
 }

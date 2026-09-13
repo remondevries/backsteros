@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { isTauriRuntime } from "./tauri-runtime";
+
 function readDomFullscreenHint(): boolean {
   if (typeof window === "undefined" || typeof screen === "undefined") {
     return false;
@@ -14,6 +16,7 @@ function readDomFullscreenHint(): boolean {
 
 /** Toggle native Tauri window fullscreen (macOS space / Windows exclusive FS). */
 export async function toggleTauriWindowFullscreen(): Promise<void> {
+  if (!isTauriRuntime()) return;
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   const appWindow = getCurrentWindow();
   const currentlyFullscreen = await appWindow.isFullscreen();
@@ -28,6 +31,13 @@ export function useTauriWindowFullscreen(): boolean {
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
+    if (!isTauriRuntime()) {
+      setFullscreen(readDomFullscreenHint());
+      const onResize = () => setFullscreen(readDomFullscreenHint());
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
+    }
+
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
 

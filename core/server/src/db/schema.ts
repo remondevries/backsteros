@@ -122,6 +122,8 @@ export const workspaceIntegrationSecrets = pgTable(
     agentmailWebhookUrl: text("agentmail_webhook_url"),
     mapboxAccessToken: text("mapbox_access_token"),
     githubApiToken: text("github_api_token"),
+    transipAccessToken: text("transip_access_token"),
+    cloudflareApiToken: text("cloudflare_api_token"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -510,8 +512,12 @@ export const projects = pgTable(
     icon: text("icon"),
     color: text("color"),
     type: text("type").notNull().default("general"),
+    /** Registrar/hosting provider for Domains (e.g. `transip`). */
+    provider: text("provider"),
     /** `owner/repo` when linked; only meaningful for `type = codebase`. */
     githubRepository: text("github_repository"),
+    /** Cloudflare zone id when linked; used for Domains DNS management. */
+    cloudflareZoneId: text("cloudflare_zone_id"),
     /**
      * Absolute path on the developer's machine for agent/PTY cwd.
      * Not multi-device; stored so the Development console persists across reloads.
@@ -535,6 +541,8 @@ export const projects = pgTable(
     index("projects_organization_id_idx").on(table.organizationId),
     index("projects_area_id_idx").on(table.areaId),
     index("projects_type_idx").on(table.type),
+    index("projects_provider_idx").on(table.provider),
+    index("projects_cloudflare_zone_id_idx").on(table.cloudflareZoneId),
     index("projects_deleted_at_idx").on(table.deletedAt),
   ],
 );
@@ -996,6 +1004,19 @@ export const documents = pgTable(
     snippet: text("snippet"),
     contentVersion: integer("content_version").notNull().default(1),
     contentEtag: text("content_etag"),
+    /** Spaces publish: concept | published | offline */
+    publishStatus: text("publish_status").notNull().default("concept"),
+    /** Public slug relative to the space root (e.g. email-setup/inbox). */
+    publishSlug: text("publish_slug"),
+    seoTitle: text("seo_title"),
+    seoDescription: text("seo_description"),
+    /** Spaces publish audience: group | individual */
+    audience: text("audience").notNull().default("group"),
+    contactIds: text("contact_ids").array(),
+    placementFolderId: text("placement_folder_id"),
+    /** Space folder OG/cover image (vault blob under .backsteros/space-covers). */
+    coverStorageKey: text("cover_storage_key"),
+    coverContentType: text("cover_content_type"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1022,6 +1043,93 @@ export const documents = pgTable(
       table.projectId,
       table.path,
     ),
+    index("documents_workspace_publish_status_idx").on(
+      table.workspaceId,
+      table.publishStatus,
+    ),
+    index("documents_workspace_publish_slug_idx").on(
+      table.workspaceId,
+      table.publishSlug,
+    ),
+  ],
+);
+
+/**
+ * Per–space-root publish settings (site key, domains, public base URL).
+ * Site key hash is server-only — not published to PowerSync.
+ */
+export const spacePublishSettings = pgTable(
+  "space_publish_settings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    spaceDocumentId: text("space_document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    publicBaseUrl: text("public_base_url"),
+    allowedDomains: text("allowed_domains").array().notNull().default([]),
+    /** Organization / Open Graph / social metadata for published spaces (JSON-LD ready). */
+    seoMeta: jsonb("seo_meta")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    siteKeyPrefix: text("site_key_prefix"),
+    siteKeyHash: text("site_key_hash"),
+    siteKeyCreatedAt: timestamp("site_key_created_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("space_publish_settings_workspace_space_uidx").on(
+      table.workspaceId,
+      table.spaceDocumentId,
+    ),
+    index("space_publish_settings_workspace_id_idx").on(table.workspaceId),
+    index("space_publish_settings_site_key_prefix_idx").on(table.siteKeyPrefix),
+  ],
+);
+
+/**
+ * Per–space labeled site keys (server-only hashes — not published to PowerSync).
+ * Multiple keys per space; allowed domains stay on space_publish_settings.
+ */
+export const spaceSiteKeys = pgTable(
+  "space_site_keys",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    spaceDocumentId: text("space_document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    siteKeyPrefix: text("site_key_prefix").notNull(),
+    siteKeyHash: text("site_key_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("space_site_keys_space_prefix_uidx").on(
+      table.workspaceId,
+      table.spaceDocumentId,
+      table.siteKeyPrefix,
+    ),
+    index("space_site_keys_workspace_id_idx").on(table.workspaceId),
+    index("space_site_keys_space_document_id_idx").on(table.spaceDocumentId),
+    index("space_site_keys_prefix_idx").on(table.siteKeyPrefix),
   ],
 );
 
@@ -1651,6 +1759,8 @@ export type DbMeeting = typeof meetings.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;
 export type DbDocument = typeof documents.$inferSelect;
+export type DbSpacePublishSettings = typeof spacePublishSettings.$inferSelect;
+export type DbSpaceSiteKey = typeof spaceSiteKeys.$inferSelect;
 export type DbWorkspace = typeof workspaces.$inferSelect;
 export type DbOrganization = typeof organizations.$inferSelect;
 export type DbContact = typeof contacts.$inferSelect;

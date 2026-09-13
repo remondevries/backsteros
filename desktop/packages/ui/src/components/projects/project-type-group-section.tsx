@@ -62,6 +62,8 @@ export type ProjectTypeGroupSectionProps = {
   /** Pointer-based append-zone bind (Tauri/WebKit-safe). */
   pointerReorderAppend?: GroupedListPointerAppendBind | null;
   showPointerAppendIndicator?: boolean;
+  /** Extra class on the items `<ul>` (e.g. denser Websites grid). */
+  itemsClassName?: string;
 };
 
 function PlusIcon() {
@@ -119,6 +121,7 @@ export function ProjectTypeGroupSection({
   listDrag,
   pointerReorderAppend = null,
   showPointerAppendIndicator = false,
+  itemsClassName,
 }: ProjectTypeGroupSectionProps) {
   const pointerAppendEnabled = Boolean(pointerReorderAppend);
   const html5DragEnabled = Boolean(listDrag) && !pointerAppendEnabled;
@@ -303,7 +306,13 @@ export function ProjectTypeGroupSection({
         ) : null}
       </div>
       {!collapsed ? (
-        <ul className="project-type-subgroup__items">{children}</ul>
+        <ul
+          className={["project-type-subgroup__items", itemsClassName]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {children}
+        </ul>
       ) : null}
     </li>
   );

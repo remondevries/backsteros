@@ -5,11 +5,10 @@ import {
 } from "./pending-navigation-routes";
 import { KEEP_ALIVE_SURFACES } from "./shell-warm-keep-alive";
 import {
-  areasPage,
   calendarPage,
   communicationPage,
   contactsPage,
-  developmentPage,
+  catalogPage,
   emailPage,
   financePage,
   habitTrackerPage,
@@ -36,7 +35,6 @@ const SURFACE_PAGES: Partial<Record<PendingPageSurface, ShellLazyPage>> = {
   "task-detail": taskDetailPage,
   calendar: calendarPage,
   "meeting-detail": meetingDetailPage,
-  areas: areasPage,
   projects: projectsPage,
   knowledge: knowledgePage,
   letters: lettersPage,
@@ -46,7 +44,7 @@ const SURFACE_PAGES: Partial<Record<PendingPageSurface, ShellLazyPage>> = {
   contacts: contactsPage,
   organizations: organizationsPage,
   settings: settingsPage,
-  development: developmentPage,
+  catalog: catalogPage,
 };
 
 function shellPageForHref(href: string): ShellLazyPage | undefined {
@@ -117,22 +115,22 @@ export function preloadGoNavigationRouteChunks(): void {
     "/inbox",
     "/journal",
     "/journal/habits",
-    "/knowledge",
+    "/spaces",
     "/tasks",
     "/calendar",
-    "/areas",
     "/projects",
-    "/development",
+    "/catalog",
     "/letters",
     "/finance/dashboard",
     "/communication",
     "/contacts",
     "/organizations",
+    "/social",
   ]) {
     preloadShellRouteChunkForHref(href);
   }
   void calendarPage.load();
-  void developmentPage.load();
+  void catalogPage.load();
   void financePage.load();
   void emailPage.load();
   void settingsPage.load();

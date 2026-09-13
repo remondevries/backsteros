@@ -147,6 +147,7 @@ export {
   AreasNavIcon,
   ProjectsNavIcon,
   DevelopmentNavIcon,
+  CatalogNavIcon,
   SidebarSettingsIcon,
   SidebarChevronIcon,
   SidebarHistoryClockIcon,
@@ -157,6 +158,11 @@ export {
 
 export { DevelopmentAdeLogoIcon } from "./components/icons/development-ade-logo-icon.js";
 export { GlobeIcon, type GlobeIconProps } from "./components/icons/globe-icon.js";
+export {
+  CloudflareIcon,
+  type CloudflareIconProps,
+} from "./components/icons/cloudflare-icon.js";
+export { TransipIcon, type TransipIconProps } from "./components/icons/transip-icon.js";
 export { ProfileLogoIcon } from "./components/icons/profile-logo-icon.js";
 
 export {
@@ -913,6 +919,11 @@ export {
 } from "./components/tasks/task-due-date-icon.js";
 
 export {
+  CalendarIcon,
+  type CalendarIconProps,
+} from "./components/icons/calendar-icon.js";
+
+export {
   TaskListPropertyFields,
   type TaskListPropertyFieldsProps,
 } from "./components/tasks/task-list-property-fields.js";
@@ -1213,6 +1224,9 @@ export {
   getUniqueListItemRouteParam,
   resolveListItemFromSlug,
   getKnowledgeHref,
+  getSpacesHref,
+  SPACES_APP_PATH,
+  SPACES_APP_PATH_LEGACY,
   getKnowledgeV2Href,
   getSelectedKnowledgeSlugFromPathname,
   getSelectedKnowledgeV2SlugFromPathname,
@@ -1549,15 +1563,42 @@ export {
   SETTINGS_NAV_TABS,
   SETTINGS_TAB_GROUP_ORDER,
   SETTINGS_SHORTCUT_HINT,
+  LEGACY_INTEGRATION_SETTINGS_TABS,
   getSettingsTabFromPath,
   getSettingsTabMeta,
   getSettingsSectionLabel,
   getDefaultSettingsHref,
+  getIntegrationsSettingsHref,
   isSettingsPath,
   isSettingsTabId,
+  isLegacyIntegrationSettingsTab,
   type SettingsTabId,
   type SettingsTabGroup,
+  type LegacyIntegrationSettingsTab,
 } from "./navigation/settings.js";
+
+export {
+  WORKSPACE_INTEGRATIONS,
+  INTEGRATION_ENABLED_SETTINGS_KEY,
+  getWorkspaceIntegrationMeta,
+  isWorkspaceIntegrationId,
+  isIntegrationEnabled,
+  parseIntegrationEnabledMap,
+  type WorkspaceIntegrationId,
+  type WorkspaceIntegrationMeta,
+  type IntegrationEnabledMap,
+} from "./integrations/integration-catalog.js";
+
+export {
+  IntegrationsOverviewView,
+  type IntegrationsOverviewItem,
+  type IntegrationsOverviewViewProps,
+} from "./components/settings/integrations-overview-view.js";
+
+export {
+  IntegrationSettingsModal,
+  type IntegrationSettingsModalProps,
+} from "./components/settings/integration-settings-modal.js";
 
 export {
   StatusGroupSection,
@@ -1591,6 +1632,13 @@ export {
   type KnowledgeSidePanelLinkComponent,
   type KnowledgeSidePanelMutationResult,
 } from "./components/documents/knowledge-side-panel-view.js";
+
+export {
+  DocumentTreeSidePanelView,
+  type DocumentTreeSidePanelViewProps,
+  type DocumentTreeSidePanelLinkComponent,
+  type DocumentTreeSidePanelMutationResult,
+} from "./components/documents/document-tree-side-panel-view.js";
 
 export {
   EntityDetailLayout,
@@ -1667,6 +1715,32 @@ export {
 } from "./projects/project-type.js";
 
 export {
+  PROJECT_PROVIDERS,
+  PROJECT_PROVIDER_ORDER,
+  PROJECT_PROVIDER_LABELS,
+  PROJECT_PROVIDER_ICON_KEYS,
+  isProjectProvider,
+  getProjectProviderLabel,
+  parseProjectProvider,
+  type ProjectProvider,
+} from "./projects/project-provider.js";
+
+export {
+  PROJECT_TYPE_FILTER_ALL,
+  PROJECT_TYPE_FILTERS,
+  PROJECT_TYPE_FILTER_ORDER,
+  PROJECT_TYPE_SEARCH_PARAM,
+  filterProjectsByType,
+  getProjectTypeFilterLabel,
+  isProjectTypeFilter,
+  parseProjectTypeFilter,
+  getCatalogListTypeHref,
+  parseProjectTypeFilterFromLocation,
+  projectTypeForCatalogCreate,
+  type ProjectTypeFilter,
+} from "./projects/project-type-filters.js";
+
+export {
   describeProjectProgressHexagonPath,
   describeProjectProgressPieWedge,
   PROJECT_PROGRESS_HEX_STROKE_WIDTH,
@@ -1729,6 +1803,11 @@ export {
   EntityOverviewSubgroup,
   type EntityOverviewSubgroupProps,
 } from "./components/shared/entity-overview-subgroup.js";
+export {
+  EntityAddressFields,
+  type EntityAddressFieldsProps,
+  type EntityAddressValue,
+} from "./components/shared/entity-address-fields.js";
 
 export {
   MarkdownTaskListInteractProvider,
@@ -2113,6 +2192,178 @@ export {
 } from "./components/projects/areas-overview-view.js";
 
 export {
+  SpacesOverviewView,
+  type SpacesOverviewViewProps,
+} from "./components/spaces/spaces-overview-view.js";
+
+export {
+  SpaceOverviewCard,
+  SpaceOverviewCreateCard,
+  SpaceOverviewRow,
+  SPACE_CREATE_DEFAULT_ICON,
+  type SpaceOverviewCardItem,
+  type SpaceOverviewCardProps,
+  type SpaceOverviewCreateCardProps,
+  type SpaceOverviewRowItem,
+  type SpaceOverviewRowProps,
+} from "./components/spaces/space-overview-card.js";
+
+export {
+  WebsiteSpaceRow,
+  websiteFaviconHost,
+  type WebsiteSpaceRowProps,
+} from "./components/spaces/website-space-row.js";
+
+export {
+  DEFAULT_SUPPORT_SPACE_SETTINGS,
+  DEFAULT_SPACE_SEO_SETTINGS,
+  DEFAULT_SPACE_SEO_ENTITY,
+  SPACE_SEO_SOCIAL_FIELDS,
+  SPACE_SEO_SOCIAL_PREFIXES,
+  SpaceSettingsSidePanel,
+  SpaceSettingsStubModal,
+  SpaceSettingsStubPanel,
+  SupportSpaceSettingsModal,
+  spaceSeoEntityFromPayload,
+  spaceSeoEntityToPayload,
+  spaceSeoSocialHref,
+  spaceSeoSocialLeaf,
+  type SpaceSeoEntityAddress,
+  type SpaceSeoEntityPayload,
+  type SpaceSeoEntitySettings,
+  type SpaceSeoEntitySocial,
+  type SpaceSeoSettings,
+  type SpaceSettingsSidePanelProps,
+  type SpaceSettingsStubModalProps,
+  type SpaceSettingsStubPanelProps,
+  type SupportSpaceSettings,
+  type SupportSpaceSettingsModalProps,
+  type SpaceSiteKeyInfo,
+} from "./components/spaces/support-space-settings-modal.js";
+
+export {
+  applyOptimisticSpaceReorder,
+  buildSpaceSiblingOrderIds,
+  isSpacesCategoryId,
+  spaceGroupAppendOrderKey,
+  spaceOrderAfterKey,
+  spaceOrderKey,
+  type SpaceReorderRequest,
+} from "./spaces/space-list-reorder.js";
+
+export {
+  SPACES_CATEGORIES,
+  SPACES_CATEGORY_KNOWLEDGE_BASE,
+  SPACES_CATEGORY_SUPPORT,
+  SPACES_CATEGORY_WEBSITES,
+  SPACES_SECOND_BRAIN_RELATIVE,
+  countArticlesInFolder,
+  filterDocumentsForSpaceRoot,
+  findKnowledgeFolderByPath,
+  formatSpaceUpdatedLabel,
+  getSelectedSpaceRootFromPathname,
+  isSpacesOverviewPath,
+  isSupportCenterDocumentPath,
+  isWebsiteDocumentPath,
+  knowledgePathShowsSidePanel,
+  latestUpdatedAtInFolder,
+  listSpaceChildFolders,
+  normalizeSpacesDocumentPath,
+  resolveSpaceOverviewAccent,
+  resolveSpaceOverviewDescription,
+  resolveSpaceOverviewIconKey,
+  resolveSpacesCategoryId,
+  resolveSpaceUpdatedFreshness,
+  type SpacesCategory,
+  type SpacesCategoryId,
+} from "./spaces/spaces-categories.js";
+
+export {
+  findDuplicateSpaceOverviewIdsToDelete,
+  findLocalOnlySpacesToPublish,
+  preferSpaceOverviewSibling,
+  type SpacePublishCandidate,
+} from "./spaces/spaces-reconcile.js";
+
+export {
+  HELP_ARTICLE_AUDIENCE_CLIENT,
+  HELP_ARTICLE_AUDIENCE_EVERYONE,
+  HELP_ARTICLE_AUDIENCE_GROUP,
+  HELP_ARTICLE_AUDIENCE_INDIVIDUAL,
+  HELP_ARTICLE_AUDIENCE_ORDER,
+  HELP_ARTICLE_LIST_SCOPE_OPTIONS,
+  HELP_ARTICLE_STATUS_DEFAULT,
+  HELP_ARTICLE_STATUS_LABELS,
+  HELP_ARTICLE_STATUS_ORDER,
+  HELP_ARTICLE_STATUSES,
+  createDefaultHelpArticleProperties,
+  getHelpArticleAudienceLabel,
+  getHelpArticleStatusLabel,
+  isHelpArticleStatus,
+  normalizeHelpArticleAudience,
+  normalizeHelpArticleProperties,
+  normalizeHelpArticleSlug,
+  normalizeHelpArticleSlugLeaf,
+  normalizeHelpArticleStatus,
+  composeHelpArticleSlug,
+  helpArticleSlugLeaf,
+  resolveHelpArticleSlugPrefix,
+  rewriteHelpArticleSlugPrefix,
+  type HelpArticleAudience,
+  type HelpArticleProperties,
+  type HelpArticleSeoDetails,
+  type HelpArticleStatus,
+} from "./spaces/help-article-properties.js";
+
+export {
+  HELP_ARTICLE_INDIVIDUAL_FOLDER_SLUG,
+  collectHelpArticleIndividualTreeIds,
+  findHelpArticleIndividualRoot,
+  helpArticleIndividualRootPath,
+  isHelpArticleIndividualRootFolder,
+  isInHelpArticleIndividualTree,
+} from "./spaces/help-article-individual-folder.js";
+
+export {
+  listHelpArticleMoveFolders,
+  listHelpArticlePlacementFolders,
+  resolveHelpArticleFolderId,
+  type HelpArticlePlacementFolder,
+} from "./spaces/help-article-placement.js";
+
+export {
+  filterDocumentsForHelpArticleScope,
+  readHelpArticleAudienceMap,
+  readHelpArticleListScope,
+  resolveHelpArticleAudience,
+  subscribeHelpArticleAudienceMap,
+  subscribeHelpArticleListScope,
+  writeHelpArticleAudience,
+  writeHelpArticleListScope,
+} from "./spaces/help-article-scope-storage.js";
+
+export {
+  useHelpArticleAudienceMap,
+  useHelpArticleListScope,
+  useWriteHelpArticleAudience,
+} from "./spaces/use-help-article-scope.js";
+
+export {
+  HelpArticlePropertiesDisplay,
+  type HelpArticlePropertiesDisplayProps,
+} from "./components/spaces/help-article-properties-display.js";
+
+export {
+  HelpArticleDetailView,
+  type HelpArticleDetailViewProps,
+} from "./components/spaces/help-article-detail-view.js";
+
+export {
+  KnowledgeSidePanelScopeFooter,
+  type KnowledgeSidePanelScopeFooterProps,
+} from "./components/spaces/knowledge-side-panel-scope-footer.js";
+
+export {
   ProjectDetailView,
   type ProjectDetailViewProps,
   type ProjectDetailViewProject,
@@ -2311,6 +2562,8 @@ export {
   LETTER_PROPERTIES_PANEL_WIDTH_KEY,
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
   MEETING_PROPERTIES_PANEL_WIDTH_KEY,
+  HELP_ARTICLE_PROPERTIES_PANEL_WIDTH_KEY,
+  SPACE_SETTINGS_PANEL_WIDTH_KEY,
   isTaskDetailPath,
 } from "./content/properties-panel.js";
 
@@ -2502,6 +2755,7 @@ export {
   stripDuplicateDocumentTitleHeading,
   getDocumentEditorBody,
   serializeDocumentBody,
+  serializeSpacesDocumentBody,
   mergeJournalContent,
   type DocumentFrontmatter,
 } from "./documents/document-frontmatter.js";

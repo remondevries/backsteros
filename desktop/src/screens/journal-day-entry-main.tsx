@@ -33,6 +33,7 @@ import {
   peekJournalDocumentId,
   rememberJournalDocumentId,
 } from "../lib/prefetch-workspace-content";
+import { useDesktopPowerSync } from "../lib/powersync-context";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import {
   useKeepAliveActive,
@@ -79,6 +80,7 @@ export function JournalDayEntryMain({
     [dateSlug],
   );
   const { client } = useDesktopApi();
+  const powerSync = useDesktopPowerSync();
   const { journalDocumentIdsByDate } = useDesktopWorkspaceDocuments();
   const knownId =
     journalDocumentIdsByDate[dateSlug] ??
@@ -109,6 +111,8 @@ export function JournalDayEntryMain({
 
   useEffect(() => {
     if (!keepAliveActive || knownId) return;
+    // Wait for PowerSync so we don't REST-create a day that already exists locally.
+    if (!powerSync.ready) return;
     let cancelled = false;
     setEnsureError(null);
     void ensureJournalDocumentId(client, dateSlug).then((id) => {
@@ -119,7 +123,7 @@ export function JournalDayEntryMain({
     return () => {
       cancelled = true;
     };
-  }, [client, dateSlug, ensureNonce, keepAliveActive, knownId]);
+  }, [client, dateSlug, ensureNonce, keepAliveActive, knownId, powerSync.ready]);
 
   if (ensureError && !documentId) {
     return (

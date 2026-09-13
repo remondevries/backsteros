@@ -10,13 +10,13 @@ import { colors } from "../lib/theme";
 import { CommandPaletteSearchButton } from "./command-palette/command-palette-search-button";
 import { SectionListHeader } from "./section-list-header";
 
-/** Plus menu — folder / document create for Knowledge Base. */
+/** Plus menu — folder / document create for Spaces. */
 export function KnowledgeHeaderPlus() {
   const router = useRouter();
 
   return (
     <HeaderPlusMenuButton
-      accessibilityLabel="Create in Knowledge Base"
+      accessibilityLabel="Create in Spaces"
       items={[
         {
           key: "folder",
@@ -51,7 +51,7 @@ export function KnowledgeHeader({
 } = {}) {
   return (
     <SectionListHeader
-      title="Knowledge Base"
+      title="Spaces"
       showGlobalSearch
       plusControl={<KnowledgeHeaderPlus />}
       trailingControl={

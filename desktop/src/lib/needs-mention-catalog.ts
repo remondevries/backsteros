@@ -12,7 +12,12 @@ export function needsMentionCatalog(
 ): boolean {
   if (composeOpen) return true;
   if (pathname.startsWith("/tasks/")) return true;
-  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) {
+  if (
+    pathname === "/spaces" ||
+    pathname.startsWith("/spaces/") ||
+    pathname === "/knowledge" ||
+    pathname.startsWith("/knowledge/")
+  ) {
     return true;
   }
   if (pathname === "/letters" || pathname.startsWith("/letters/")) return true;

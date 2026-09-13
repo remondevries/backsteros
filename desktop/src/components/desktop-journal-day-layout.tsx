@@ -29,7 +29,7 @@ export type DesktopCollapsibleRightSidePanelLayoutProps = {
 
 /**
  * Main column + collapsible right `ResizableSidePanel` (]` toggle).
- * Shared by Journal day timeline, Development, and similar splits.
+ * Shared by Journal day timeline, Catalog, and similar splits.
  */
 export function DesktopCollapsibleRightSidePanelLayout({
   main,

@@ -52,13 +52,9 @@ function createSharedLazyPage<M extends ScreenModule<K>, K extends string>(
   };
 }
 
-export const areasPage = createSharedLazyPage(
-  () => import("../screens/areas-page"),
-  "AreasPage",
-);
-export const developmentPage = createSharedLazyPage(
-  () => import("../screens/development-page"),
-  "DevelopmentPage",
+export const catalogPage = createSharedLazyPage(
+  () => import("../screens/catalog-page"),
+  "CatalogPage",
 );
 export const contactsPage = createSharedLazyPage(
   () => import("../screens/contacts-page"),
@@ -138,8 +134,7 @@ export const notFoundPage = createSharedLazyPage(
 );
 
 const ALL_PAGES = [
-  areasPage,
-  developmentPage,
+  catalogPage,
   contactsPage,
   emailPage,
   habitTrackerPage,

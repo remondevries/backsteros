@@ -9,7 +9,7 @@ const typesByKey = new Map<string, string>();
 const navFromById = new Map<string, ProjectNavFrom>();
 const navFromByKey = new Map<string, ProjectNavFrom>();
 
-export type ProjectNavFrom = "areas" | "development" | "projects";
+export type ProjectNavFrom = "catalog" | "projects";
 
 export function rememberProjectType(
   id: string,
@@ -62,8 +62,8 @@ export function recalledProjectNavFrom(
 
 export type ProjectLocationState = {
   projectType?: string;
-  /** List the user navigated from (Areas / Development / Projects). */
-  from?: ProjectNavFrom;
+  /** List the user navigated from (Catalog / Projects). */
+  from?: ProjectNavFrom | "areas" | "development";
 };
 
 export function projectTypeFromLocationState(
@@ -74,32 +74,37 @@ export function projectTypeFromLocationState(
   return typeof type === "string" && type.trim() ? type.trim() : null;
 }
 
+function normalizeProjectNavFrom(
+  from: ProjectLocationState["from"] | null | undefined,
+): ProjectNavFrom | null {
+  if (from === "catalog" || from === "projects") return from;
+  // Legacy Development list → Catalog.
+  if (from === "development") return "catalog";
+  // Legacy Areas list — now folded into Projects.
+  if (from === "areas") return "projects";
+  return null;
+}
+
 export function projectNavFromLocationState(
   state: unknown,
 ): ProjectNavFrom | null {
   if (!state || typeof state !== "object") return null;
-  const from = (state as ProjectLocationState).from;
-  if (from === "areas" || from === "development" || from === "projects") {
-    return from;
-  }
-  return null;
+  return normalizeProjectNavFrom((state as ProjectLocationState).from);
 }
 
 export function projectListHrefForNavFrom(from: ProjectNavFrom): string {
-  if (from === "areas") return "/areas";
-  if (from === "development") return "/development";
+  if (from === "catalog") return "/catalog";
   return "/projects";
 }
 
 export function projectListLabelForNavFrom(from: ProjectNavFrom): string {
-  if (from === "areas") return "Areas";
-  if (from === "development") return "Development";
+  if (from === "catalog") return "Catalog";
   return "Projects";
 }
 
 /**
  * Sidebar active matching uses pathname prefixes (`/projects/...` → Projects).
- * When the user opened a project from Development or Areas, remap to that list
+ * When the user opened a project from Catalog, remap to that list
  * so the correct nav item stays highlighted.
  */
 export function resolveSidebarActivePathname(
@@ -117,7 +122,7 @@ export function resolveSidebarActivePathname(
 /**
  * Persist nav-from from navigate `state` before a warm keep-alive flip.
  * Warm flips update the URL without TanStack `navigate()`, so location state
- * never lands — caching by project key keeps Development/Areas highlighted.
+ * never lands — caching by project key keeps Catalog highlighted.
  */
 export function rememberProjectNavFromHref(
   href: string,

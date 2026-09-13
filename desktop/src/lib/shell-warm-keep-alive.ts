@@ -46,7 +46,7 @@ let warmKeepAliveEpoch = 0;
 const KEEP_ALIVE_GO_ROOT: Partial<Record<PendingPageSurface, string>> = {
   calendar: "/calendar",
   inbox: "/inbox",
-  knowledge: "/knowledge",
+  knowledge: "/spaces",
   "tasks-list": "/tasks",
   "journal-day": "/journal",
   "journal-habits": "/journal/habits",
@@ -120,7 +120,7 @@ export function shouldKeepAliveSurface(
     return root === "letters";
   }
   if (surface === "knowledge") {
-    return root === "knowledge";
+    return root === "spaces" || root === "knowledge";
   }
   if (surface === "journal-day" || surface === "journal-habits") {
     return resolveAppHref(pathname).surface === surface;
@@ -134,6 +134,10 @@ export function shouldKeepAliveSidePanelSurface(
   pathname: string,
 ): boolean {
   if (!shouldKeepAliveSurface(surface, pathname)) return false;
+  // Spaces overview has no list chrome — panel only inside a space.
+  if (surface === "knowledge") {
+    return pathname.split("/").filter(Boolean).length >= 2;
+  }
   return true;
 }
 
@@ -150,12 +154,15 @@ export function keepAliveSidePanelSurface(
   return shouldKeepAliveSidePanelSurface(surface, pathname) ? surface : null;
 }
 
-/** Tasks list and /projects root have no list chrome — do not reserve a column. */
+/** Tasks list and /projects|/spaces roots have no list chrome — do not reserve a column. */
 export function keepAliveDestinationShowsSidePanel(pathname: string): boolean {
   const surface = keepAliveSidePanelSurface(pathname);
   if (surface == null) return false;
   if (surface === "tasks-list") return false;
   if (surface === "projects") {
+    return pathname.split("/").filter(Boolean).length >= 2;
+  }
+  if (surface === "knowledge") {
     return pathname.split("/").filter(Boolean).length >= 2;
   }
   return true;
@@ -309,7 +316,7 @@ export function resolveWarmKeepAliveHref(href: string): string {
  * already returned false).
  *
  * Warm flips leave the TanStack match on a previous path. Re-clicking an Outlet
- * item (e.g. Development) is a router no-op unless we dismiss and pushState.
+ * item (e.g. Catalog) is a router no-op unless we dismiss and pushState.
  *
  * First visit to another keep-alive section (g+t while Calendar is showing,
  * Tasks not mounted yet): only clear `visible`. Do not pushState — TanStack

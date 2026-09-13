@@ -25,6 +25,7 @@ import {
   getVaultPathCache,
   isStorageConfigured,
   resolveVaultPath,
+  rewriteLegacyKnowledgeBaseStorageKey,
 } from "../../lib/storage.js";
 import { getCoreReplicationConfig } from "./config.js";
 
@@ -223,8 +224,11 @@ async function walkMarkdownFiles(
     if (!entry.isFile() || !isMarkdownFileName(entry.name)) continue;
     try {
       const info = await stat(childAbs);
+      const relativePath = rewriteLegacyKnowledgeBaseStorageKey(
+        childRel.replace(/\\/g, "/"),
+      );
       out.push({
-        relativePath: childRel.replace(/\\/g, "/"),
+        relativePath,
         mtimeMs: Math.trunc(info.mtimeMs),
         size: info.size,
       });

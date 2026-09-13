@@ -1,6 +1,7 @@
 /**
  * Play a short chime when an agent turn finishes.
  * Uses a singleton HTMLAudioElement so overlapping finishes don't stack.
+ * Suppressed while the user already has that chat in focus.
  */
 
 const AGENT_FINISHED_SOUND_URL = "/sounds/agent-finished.mp3";
@@ -15,6 +16,28 @@ function getAudio(): HTMLAudioElement | null {
     audio.preload = "auto";
   }
   return audio;
+}
+
+/** True when the app window/tab is visible and focused. */
+export function isAppDocumentFocused(
+  doc: Pick<Document, "visibilityState" | "hasFocus"> = document,
+): boolean {
+  return doc.visibilityState === "visible" && doc.hasFocus();
+}
+
+/**
+ * Play only when the user is not already focused on the chat that finished.
+ * Window blurred / hidden tab → play. Viewing that thread with focus → skip.
+ * Viewing a different thread (or no chat) with focus → play.
+ */
+export function shouldPlayAgentFinishedSound(input: {
+  finishedThreadKey: string;
+  activeThreadKey: string | null;
+  doc?: Pick<Document, "visibilityState" | "hasFocus">;
+}): boolean {
+  const doc = input.doc ?? document;
+  if (!isAppDocumentFocused(doc)) return true;
+  return input.activeThreadKey !== input.finishedThreadKey;
 }
 
 /** Call from a user gesture so browsers allow later programmatic play. */

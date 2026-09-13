@@ -2,6 +2,10 @@ import { initContract } from "@ts-rest/core";
 import { z } from "zod";
 
 import {
+  cloudflareContract,
+  type CloudflareContract,
+} from "./cloudflare-contract.js";
+import {
   apiKeySchema,
   badRequestSchema,
   createApiKeyResponseSchema,
@@ -716,6 +720,146 @@ export const apiContract = c.router(
         503: errorSchema,
       },
       summary: "Write document body to object storage",
+    },
+    getSpacePublishSettings: {
+      method: "GET",
+      path: "/api/v1/spaces/:spaceDocumentId/publish-settings",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      responses: {
+        200: s.spacePublishSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Get Spaces publish settings for a space root folder",
+    },
+    updateSpacePublishSettings: {
+      method: "PUT",
+      path: "/api/v1/spaces/:spaceDocumentId/publish-settings",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      body: s.updateSpacePublishSettingsSchema,
+      responses: {
+        200: s.spacePublishSettingsSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Update Spaces publish settings (domains, public base URL)",
+    },
+    createSpaceSiteKey: {
+      method: "POST",
+      path: "/api/v1/spaces/:spaceDocumentId/site-key",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      body: s.createSpaceSiteKeySchema,
+      responses: {
+        201: s.spaceSiteKeyCreatedSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Create a labeled Spaces site key (plaintext returned once)",
+    },
+    revokeSpaceSiteKey: {
+      method: "DELETE",
+      path: "/api/v1/spaces/:spaceDocumentId/site-key/:keyId",
+      pathParams: z.object({
+        spaceDocumentId: z.string(),
+        keyId: z.string(),
+      }),
+      body: null,
+      responses: {
+        200: s.spacePublishSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Revoke one Spaces site key by id",
+    },
+    putSpaceCover: {
+      method: "PUT",
+      path: "/api/v1/spaces/:spaceDocumentId/cover",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      body: c.type<ArrayBuffer | Blob>(),
+      responses: {
+        200: documentSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+        413: badRequestSchema,
+      },
+      summary: "Upload a cover / OG image for a space folder",
+    },
+    getSpaceCover: {
+      method: "GET",
+      path: "/api/v1/spaces/:spaceDocumentId/cover",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      responses: {
+        200: c.otherResponse({ contentType: "image/*", body: c.type<Blob>() }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Download the cover / OG image for a space folder",
+    },
+    deleteSpaceCover: {
+      method: "DELETE",
+      path: "/api/v1/spaces/:spaceDocumentId/cover",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      body: null,
+      responses: {
+        200: documentSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Remove the cover / OG image for a space folder",
+    },
+    getPublicSpaceCover: {
+      method: "GET",
+      path: "/api/v1/public/spaces/:spaceDocumentId/cover",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      responses: {
+        200: c.otherResponse({ contentType: "image/*", body: c.type<Blob>() }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Public cover image for SEO/OG embeds (space site key required)",
+    },
+    listPublicSpaceArticles: {
+      method: "GET",
+      path: "/api/v1/public/spaces/:spaceDocumentId/articles",
+      pathParams: z.object({ spaceDocumentId: z.string() }),
+      responses: {
+        200: z.object({
+          articles: z.array(s.publicSpaceArticleListItemSchema),
+        }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "List published Group articles for a space (site-key auth)",
+    },
+    getPublicSpaceArticle: {
+      method: "GET",
+      path: "/api/v1/public/spaces/:spaceDocumentId/article",
+      pathParams: z.object({
+        spaceDocumentId: z.string(),
+      }),
+      query: z.object({
+        slug: z.string().min(1).max(500),
+      }),
+      responses: {
+        200: s.publicSpaceArticleSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Get a published Group article by slug (site-key auth)",
     },
     search: {
       method: "GET",
@@ -1606,6 +1750,32 @@ export const apiContract = c.router(
       },
       summary: "Download avatar",
     },
+    getAvatarSignedUrl: {
+      method: "GET",
+      path: "/api/v1/avatars/:entityType/:entityId/signed-url",
+      pathParams: s.avatarParamsSchema,
+      query: s.avatarSignedUrlQuerySchema,
+      responses: {
+        200: s.avatarSignedUrlSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+        503: errorSchema,
+      },
+      summary: "Mint a time-limited public avatar URL (HMAC-signed)",
+    },
+    getPublicAvatar: {
+      method: "GET",
+      path: "/api/v1/public/avatars/:entityType/:entityId",
+      pathParams: s.avatarParamsSchema,
+      query: s.publicAvatarQuerySchema,
+      responses: {
+        200: c.otherResponse({ contentType: "image/*", body: c.type<Blob>() }),
+        404: errorSchema,
+      },
+      summary: "Download avatar via signed public URL (no API key)",
+    },
     deleteAvatar: {
       method: "DELETE",
       path: "/api/v1/avatars/:entityType/:entityId",
@@ -1675,7 +1845,7 @@ export const apiContract = c.router(
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "Set local vault folder path (creates Journal/Projects/Letters/Knowledge Base)",
+      summary: "Set local vault folder path (creates Journal/Projects/Letters/Spaces)",
     },
     getCursorSettings: {
       method: "GET",
@@ -1805,6 +1975,61 @@ export const apiContract = c.router(
         403: errorSchema,
       },
       summary: "Test GitHub API token with /user",
+    },
+    getTransipStatus: {
+      method: "GET",
+      path: "/api/v1/transip/status",
+      responses: {
+        200: s.transipStatusSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Whether a TransIP access token is configured on this core",
+    },
+    getTransipSettings: {
+      method: "GET",
+      path: "/api/v1/settings/transip",
+      responses: {
+        200: s.transipSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Get TransIP integration settings (access token redacted)",
+    },
+    updateTransipSettings: {
+      method: "PATCH",
+      path: "/api/v1/settings/transip",
+      body: s.updateTransipSettingsSchema,
+      responses: {
+        200: s.transipSettingsSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Update TransIP access token",
+    },
+    testTransipConnection: {
+      method: "GET",
+      path: "/api/v1/settings/transip/test",
+      responses: {
+        200: s.transipTestConnectionResultSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Test TransIP access token by listing domains",
+    },
+    syncTransipDomains: {
+      method: "POST",
+      path: "/api/v1/transip/domains/sync",
+      body: z.undefined().optional(),
+      responses: {
+        200: s.transipDomainSyncResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "Import TransIP domains as Catalog domeinname projects (backlog; skip existing names)",
     },
     mapboxGeocode: {
       method: "GET",
@@ -2759,3 +2984,11 @@ export const apiContract = c.router(
 );
 
 export type ApiContract = typeof apiContract;
+
+/** Main API + Cloudflare (split so declarations stay under TS7056). */
+export type FullApiContract = ApiContract & CloudflareContract;
+
+export const fullApiContract: FullApiContract = {
+  ...apiContract,
+  ...cloudflareContract,
+};

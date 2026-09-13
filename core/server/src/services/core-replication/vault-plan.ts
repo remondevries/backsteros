@@ -4,6 +4,8 @@
  */
 import path from "node:path";
 
+import { rewriteLegacyKnowledgeBaseStorageKey } from "../../lib/storage.js";
+
 export type VaultFileMeta = {
   relativePath: string;
   mtimeMs: number;
@@ -48,7 +50,12 @@ export function normalizeVaultMarkdownPath(raw: string): string {
   if (segments.length === 0 || segments.some((s) => s === "..")) {
     throw new VaultPathError("Path traversal is not allowed");
   }
-  const relativePath = segments.join("/");
+  // Legacy vault-root "Knowledge Base/…" → Spaces/knowledge-base/second-brain/…
+  const rewritten = rewriteLegacyKnowledgeBaseStorageKey(segments.join("/"));
+  const relativePath = rewritten
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== ".")
+    .join("/");
   const base = basenameOf(relativePath);
   if (base.startsWith("._") || base === ".DS_Store") {
     throw new VaultPathError("macOS junk paths are not replicated");
@@ -92,13 +99,21 @@ export function shouldSkipFullVaultWalk(input: {
 export function vaultFileMetaFromManifest(
   manifest: VaultManifest,
 ): VaultFileMeta[] {
-  return Object.entries(manifest)
-    .map(([relativePath, entry]) => ({
-      relativePath,
-      mtimeMs: entry.mtimeMs,
-      size: entry.size,
-    }))
-    .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const byPath = new Map<string, VaultFileMeta>();
+  for (const [relativePath, entry] of Object.entries(manifest)) {
+    const rewritten = rewriteLegacyKnowledgeBaseStorageKey(relativePath);
+    const prev = byPath.get(rewritten);
+    if (!prev || entry.mtimeMs >= prev.mtimeMs) {
+      byPath.set(rewritten, {
+        relativePath: rewritten,
+        mtimeMs: entry.mtimeMs,
+        size: entry.size,
+      });
+    }
+  }
+  return [...byPath.values()].sort((a, b) =>
+    a.relativePath.localeCompare(b.relativePath),
+  );
 }
 
 /**
@@ -110,23 +125,20 @@ export function applyDirtyVaultPathStats(input: {
   dirtyStats: ReadonlyMap<string, { mtimeMs: number; size: number } | null>;
 }): VaultFileMeta[] {
   const byPath = new Map(
-    Object.entries(input.previous).map(([relativePath, entry]) => [
-      relativePath,
-      {
-        relativePath,
-        mtimeMs: entry.mtimeMs,
-        size: entry.size,
-      } satisfies VaultFileMeta,
+    vaultFileMetaFromManifest(input.previous).map((file) => [
+      file.relativePath,
+      file,
     ]),
   );
 
   for (const [relativePath, statOrNull] of input.dirtyStats) {
+    const rewritten = rewriteLegacyKnowledgeBaseStorageKey(relativePath);
     if (statOrNull == null) {
-      byPath.delete(relativePath);
+      byPath.delete(rewritten);
       continue;
     }
-    byPath.set(relativePath, {
-      relativePath,
+    byPath.set(rewritten, {
+      relativePath: rewritten,
       mtimeMs: statOrNull.mtimeMs,
       size: statOrNull.size,
     });

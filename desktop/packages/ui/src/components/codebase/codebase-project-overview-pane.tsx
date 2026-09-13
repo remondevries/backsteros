@@ -1906,6 +1906,16 @@ export function CodebaseProjectOverviewPane({
                 onTypeChange={(type) => {
                   void patchProject({ type }).catch(() => undefined);
                 }}
+                onProviderChange={(provider) => {
+                  const patch: {
+                    provider: string | null;
+                    icon?: string;
+                  } = { provider };
+                  if (provider === "transip") {
+                    patch.icon = "transip";
+                  }
+                  void patchProject(patch).catch(() => undefined);
+                }}
                 onAreaChange={(area: ProjectArea | null) => {
                   void patchProject({ area, areaId: null }).catch(
                     () => undefined,

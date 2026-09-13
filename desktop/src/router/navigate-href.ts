@@ -46,7 +46,7 @@ export function navigateToHref(
   options?: { replace?: boolean; state?: unknown },
 ): void {
   const target = formatResolvedAppHref(resolveAppHref(href));
-  // Warm flips skip TanStack state — cache nav-from so Development/Areas stay highlighted.
+  // Warm flips skip TanStack state — cache nav-from so Catalog/Areas stay highlighted.
   rememberProjectNavFromHref(target, options?.state);
   if (tryWarmKeepAliveFlip(target, { replace: options?.replace })) {
     return;

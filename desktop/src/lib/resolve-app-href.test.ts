@@ -25,7 +25,7 @@ test("resolveAppHref expands section roots from the entry store", () => {
     contacts: "/contacts/1",
     organizations: "/organizations/2",
     letters: "/letters/l-3",
-    knowledge: "/knowledge/note",
+    knowledge: "/spaces/note",
   });
   assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
   assert.equal(
@@ -39,16 +39,14 @@ test("resolveAppHref expands section roots from the entry store", () => {
     "/organizations",
   );
   assert.equal(formatResolvedAppHref(resolveAppHref("/letters")), "/letters/l-3");
-  assert.equal(
-    formatResolvedAppHref(resolveAppHref("/knowledge")),
-    "/knowledge/note",
-  );
+  // Spaces overview stays on the list root.
+  assert.equal(formatResolvedAppHref(resolveAppHref("/spaces")), "/spaces");
   assert.equal(formatResolvedAppHref(resolveAppHref("/email")), "/inbox/in-1");
   assert.match(
     formatResolvedAppHref(resolveAppHref("/journal")),
     /^\/journal\/\d{4}-\d{2}-\d{2}$/,
   );
-  assert.equal(resolveAppHref("/knowledge").surface, "knowledge");
+  assert.equal(resolveAppHref("/spaces").surface, "knowledge");
   assert.equal(resolveAppHref("/inbox").surface, "inbox");
 });
 

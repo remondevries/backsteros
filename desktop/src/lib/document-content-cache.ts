@@ -1,5 +1,6 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
+import { readDesktopVaultText } from "./desktop-vault";
 import { createPersistedSessionLruCache } from "./session-lru-cache";
 
 export type CachedDocumentContent = {
@@ -26,7 +27,7 @@ export function shouldMissDocumentContentCache(
   return cached.checksum !== knownChecksum;
 }
 
-/** Bounded warm cache for Tier D markdown (hover / j-k prefetch). Not PowerSync. */
+/** Bounded warm cache for document markdown (hover / j-k prefetch). */
 const contentCache = createPersistedSessionLruCache<CachedDocumentContent>({
   limit: 32,
   storageKey: "backsteros:doc-content-v2",
@@ -67,60 +68,116 @@ function entryFromResponse(data: {
   };
 }
 
+export type FetchDocumentContentOptions = {
+  force?: boolean;
+  /** When set (e.g. PowerSync checksum), drop LRU if it drifted. */
+  knownChecksum?: string | null;
+  /** Vault-relative key from PowerSync / API metadata. */
+  storageKey?: string | null;
+  /** PowerSync content_version — used when painting from a vault file. */
+  contentVersion?: number | null;
+};
+
+async function fetchDocumentContentViaRest(
+  client: BacksterosApiClient,
+  documentId: string,
+): Promise<CachedDocumentContent | null> {
+  try {
+    const data = await client.requestJson<{
+      content: string;
+      contentVersion: number;
+      checksum?: string | null;
+    }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`);
+    const entry = entryFromResponse(data);
+    contentCache.set(documentId, entry);
+    return entry;
+  } catch (error) {
+    console.warn(
+      `[document-content] failed to fetch ${documentId}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+/**
+ * Local-first document body load (Tasks-shaped):
+ * 1. Warm session LRU when checksum is trusted
+ * 2. Desktop vault file via storageKey (same disk Obsidian uses)
+ * 3. REST only as cold fallback / force refresh
+ */
+async function resolveDocumentContent(
+  client: BacksterosApiClient,
+  documentId: string,
+  options?: FetchDocumentContentOptions,
+): Promise<CachedDocumentContent | null> {
+  // Live refresh (SSE / version bump): go to REST so we don't paint a
+  // stale local vault file while cloud→desktop replication catches up.
+  if (options?.force) {
+    return fetchDocumentContentViaRest(client, documentId);
+  }
+
+  const cached = contentCache.peek(documentId);
+  if (
+    cached &&
+    !shouldMissDocumentContentCache(cached, options?.knownChecksum)
+  ) {
+    return cached;
+  }
+
+  // Desktop vault file — same local-first idea as task descriptions in SQLite.
+  const storageKey = options?.storageKey?.trim();
+  if (storageKey) {
+    const vaultBody = await readDesktopVaultText(client, storageKey);
+    if (vaultBody != null) {
+      const entry: CachedDocumentContent = {
+        content: vaultBody,
+        contentVersion:
+          typeof options?.contentVersion === "number" &&
+          Number.isFinite(options.contentVersion)
+            ? options.contentVersion
+            : 1,
+        checksum: options?.knownChecksum ?? null,
+      };
+      contentCache.set(documentId, entry);
+      return entry;
+    }
+  }
+
+  return fetchDocumentContentViaRest(client, documentId);
+}
+
 /**
  * Warm the session content cache. Safe to call from hover / j-k highlight.
- * No-ops when already cached with a checksum; dedupes concurrent requests.
+ * Prefers vault/local cache; REST only on miss.
  */
 export function prefetchDocumentContent(
   client: BacksterosApiClient,
   documentId: string | null | undefined,
+  options?: Omit<FetchDocumentContentOptions, "force">,
 ): void {
   const id = documentId?.trim();
   if (!id) return;
   const cached = contentCache.peek(id);
-  if (cached && !shouldMissDocumentContentCache(cached)) return;
+  if (cached && !shouldMissDocumentContentCache(cached, options?.knownChecksum)) {
+    return;
+  }
   if (inflight.has(id)) return;
 
-  const request = client
-    .requestJson<{
-      content: string;
-      contentVersion: number;
-      checksum?: string | null;
-    }>(`/api/v1/documents/${encodeURIComponent(id)}/content`)
-    .then((data) => {
-      const entry = entryFromResponse(data);
-      contentCache.set(id, entry);
-      return entry;
-    })
-    .catch((error) => {
-      console.warn(
-        `[document-content] failed to fetch ${id}:`,
-        error instanceof Error ? error.message : error,
-      );
-      return null;
-    })
-    .finally(() => {
-      inflight.delete(id);
-    });
-
+  const request = resolveDocumentContent(client, id, options).finally(() => {
+    inflight.delete(id);
+  });
   inflight.set(id, request);
 }
 
 /**
  * Shared with the hook so open + prefetch use the same in-flight map.
- *
- * Always revalidates over the network (GET heals vault disk vs content_version).
- * Peek still first-paints from the LRU; do not short-circuit fetch on a hit —
- * a stale body + matching ifMatchVersion must not overwrite a newer .md.
+ * Local vault / warm LRU first; REST when forced or no local body.
  */
 export function fetchDocumentContent(
   client: BacksterosApiClient,
   documentId: string,
-  options?: {
-    force?: boolean;
-    /** When set (e.g. PowerSync checksum), drop LRU if it drifted. */
-    knownChecksum?: string | null;
-  },
+  options?: FetchDocumentContentOptions,
 ): Promise<CachedDocumentContent | null> {
   if (options?.force) {
     contentCache.delete(documentId);
@@ -134,28 +191,11 @@ export function fetchDocumentContent(
     if (existing) return existing;
   }
 
-  const request = client
-    .requestJson<{
-      content: string;
-      contentVersion: number;
-      checksum?: string | null;
-    }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`)
-    .then((data) => {
-      const entry = entryFromResponse(data);
-      contentCache.set(documentId, entry);
-      return entry;
-    })
-    .catch((error) => {
-      console.warn(
-        `[document-content] failed to fetch ${documentId}:`,
-        error instanceof Error ? error.message : error,
-      );
-      return null;
-    })
-    .finally(() => {
+  const request = resolveDocumentContent(client, documentId, options).finally(
+    () => {
       inflight.delete(documentId);
-    });
-
+    },
+  );
   inflight.set(documentId, request);
   return request;
 }

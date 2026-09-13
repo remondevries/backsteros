@@ -19,8 +19,10 @@ export {
   prefetchDocumentContent,
 } from "./document-content-cache";
 
-/** Coalesce bursty agent patches into one Tier D refetch. */
+/** Coalesce bursty agent patches into one content refresh. */
 const SSE_REFETCH_DEBOUNCE_MS = 150;
+
+const DOCUMENT_CONTENT_META_SQL = `SELECT storage_key, content_version, checksum FROM documents WHERE id = ? AND deleted_at IS NULL LIMIT 1`;
 
 function asContentVersion(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -31,16 +33,18 @@ function asContentVersion(value: unknown): number | null {
   return null;
 }
 
+function asOptionalString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 /**
- * Load / save document markdown via `/api/v1/documents/:id/content`.
+ * Load / save document markdown — local-first like task descriptions:
+ * warm LRU → desktop vault file (storage_key) → REST cold fallback.
  *
  * - `loading` — no body for this id yet (cold open / day switch)
  * - `refreshing` — revalidate while showing cached body for the *same* id
- * - persisted LRU + shared inflight with `prefetchDocumentContent`
- * - keeps the body in the bounded LRU after leave (return visits / reload)
- * - **primary live path:** workspace SSE (agent writes) → force GET (no
- *   PowerSync wait). Dirty edit drafts are preserved by the markdown editor.
- * - **fallback:** PowerSync `content_version` advance → force GET
+ * - **live path:** workspace SSE / PowerSync content_version → refresh
+ *   (vault first, REST if disk miss)
  *
  * By default, switching document ids never keeps the previous entry's body
  * (Knowledge). Pass `keepPreviousOnMiss` to keep prior body visible.
@@ -76,17 +80,20 @@ export function useDesktopDocumentContent(
   const contentVersionRef = useRef(contentVersion);
   contentVersionRef.current = contentVersion;
 
-  const syncedVersionRows = usePowerSyncQuery<Record<string, unknown>>(
-    enabled && documentId
-      ? "SELECT content_version FROM documents WHERE id = ?"
-      : null,
+  const metaRows = usePowerSyncQuery<Record<string, unknown>>(
+    enabled && documentId ? DOCUMENT_CONTENT_META_SQL : null,
     enabled && documentId ? [documentId] : [],
     { rowComparator: DOCUMENT_VERSION_ROW_COMPARATOR },
   );
+  const metaSettled = metaRows.data !== null;
+  const metaRow = metaRows.data?.[0] ?? null;
   const syncedContentVersion = asContentVersion(
-    syncedVersionRows.data?.[0]?.content_version ??
-      syncedVersionRows.data?.[0]?.contentVersion,
+    metaRow?.content_version ?? metaRow?.contentVersion,
   );
+  const storageKey = asOptionalString(
+    metaRow?.storage_key ?? metaRow?.storageKey,
+  );
+  const knownChecksum = asOptionalString(metaRow?.checksum);
 
   if (documentId !== activeId) {
     setActiveId(documentId);
@@ -124,6 +131,11 @@ export function useDesktopDocumentContent(
     if (!documentId || !enabled) {
       return;
     }
+    // Wait for PowerSync metadata so vault storage_key is available — same
+    // idea as task description (local row first, REST only after settle).
+    if (!metaSettled && !peekDocumentContentCache(documentId)) {
+      return;
+    }
 
     let cancelled = false;
     const fetchId = documentId;
@@ -137,7 +149,11 @@ export function useDesktopDocumentContent(
       setLoading(true);
     }
 
-    void fetchDocumentContent(client, fetchId).then((data) => {
+    void fetchDocumentContent(client, fetchId, {
+      storageKey,
+      contentVersion: syncedContentVersion,
+      knownChecksum,
+    }).then((data) => {
       if (cancelled) {
         // Keep the bounded session LRU — discarding here made every
         // return visit wait on the network again (journal 1.6s + 510ms).
@@ -157,9 +173,19 @@ export function useDesktopDocumentContent(
     return () => {
       cancelled = true;
     };
-  }, [client, documentId, enabled, keepPreviousOnMiss, skeletonUntilFetched]);
+  }, [
+    client,
+    documentId,
+    enabled,
+    keepPreviousOnMiss,
+    knownChecksum,
+    metaSettled,
+    skeletonUntilFetched,
+    storageKey,
+    syncedContentVersion,
+  ]);
 
-  // Primary live path: agent/vault SSE → force Tier D refetch (no PowerSync wait).
+  // Primary live path: agent/vault SSE → refresh (vault first, REST fallback).
   useEffect(() => {
     if (!documentId || !enabled) return;
 
@@ -185,17 +211,20 @@ export function useDesktopDocumentContent(
         const fetchId = documentId;
         discardDocumentContentCache(fetchId);
         setRefreshing(true);
-        void fetchDocumentContent(client, fetchId, { force: true }).then(
-          (data) => {
-            if (cancelled || !data) {
-              if (!cancelled) setRefreshing(false);
-              return;
-            }
-            setInitialBody(data.content);
-            setContentVersion(data.contentVersion);
-            setRefreshing(false);
-          },
-        );
+        void fetchDocumentContent(client, fetchId, {
+          force: true,
+          storageKey,
+          contentVersion: detail.contentVersion,
+          knownChecksum,
+        }).then((data) => {
+          if (cancelled || !data) {
+            if (!cancelled) setRefreshing(false);
+            return;
+          }
+          setInitialBody(data.content);
+          setContentVersion(data.contentVersion);
+          setRefreshing(false);
+        });
       }, SSE_REFETCH_DEBOUNCE_MS);
     };
 
@@ -208,7 +237,7 @@ export function useDesktopDocumentContent(
         onDocumentUpdated,
       );
     };
-  }, [client, documentId, enabled]);
+  }, [client, documentId, enabled, knownChecksum, storageKey]);
 
   // Fallback: PowerSync content_version advanced (SSE missed / offline catch-up).
   useEffect(() => {
@@ -219,7 +248,12 @@ export function useDesktopDocumentContent(
     let cancelled = false;
     const fetchId = documentId;
     setRefreshing(true);
-    void fetchDocumentContent(client, fetchId, { force: true }).then((data) => {
+    void fetchDocumentContent(client, fetchId, {
+      force: true,
+      storageKey,
+      contentVersion: syncedContentVersion,
+      knownChecksum,
+    }).then((data) => {
       if (cancelled || !data) {
         if (!cancelled) setRefreshing(false);
         return;
@@ -232,7 +266,15 @@ export function useDesktopDocumentContent(
     return () => {
       cancelled = true;
     };
-  }, [client, contentVersion, documentId, enabled, syncedContentVersion]);
+  }, [
+    client,
+    contentVersion,
+    documentId,
+    enabled,
+    knownChecksum,
+    storageKey,
+    syncedContentVersion,
+  ]);
 
   const onSave = useCallback(
     async (content: string) => {

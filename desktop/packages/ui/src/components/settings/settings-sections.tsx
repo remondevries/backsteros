@@ -115,6 +115,8 @@ export type IntegrationConnectionSettingsViewProps = {
   headerDescription: string;
   body: ReactNode;
   connected?: boolean;
+  /** Hide the page header when embedded in a modal. */
+  hideHeader?: boolean;
   statusLabel: string;
   secondaryLabel: string;
   secondaryValue: string;
@@ -132,6 +134,7 @@ export function IntegrationConnectionSettingsView({
   headerDescription,
   body,
   connected,
+  hideHeader = false,
   statusLabel,
   secondaryLabel,
   secondaryValue,
@@ -145,11 +148,13 @@ export function IntegrationConnectionSettingsView({
 }: IntegrationConnectionSettingsViewProps) {
   return (
     <>
-      <SettingsContentHeader
-        title={title}
-        description={headerDescription}
-        connected={connected}
-      />
+      {hideHeader ? null : (
+        <SettingsContentHeader
+          title={title}
+          description={headerDescription}
+          connected={connected}
+        />
+      )}
       <section className="settings-card">
         <h2>Connection</h2>
         <div className="settings-card-body-copy">{body}</div>

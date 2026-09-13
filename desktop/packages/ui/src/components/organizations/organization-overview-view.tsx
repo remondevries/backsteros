@@ -15,13 +15,8 @@ import {
   type SearchableDropdownOption,
 } from "../dropdowns/searchable-dropdown.js";
 import {
-  countryHasRegions,
   formatCountryLabel,
   formatRegionLabel,
-  listCountries,
-  listRegionsForCountry,
-  resolveCountryOption,
-  resolveRegionOption,
 } from "../../geo/country-region.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { CrmGroupColorDot } from "../crm/crm-group-label.js";
@@ -29,6 +24,7 @@ import {
   ContactSocialAccountsEditor,
   type ContactSocialAccount,
 } from "../contacts/contact-social-accounts-editor.js";
+import { EntityAddressFields } from "../shared/entity-address-fields.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { ContactEmailsEditor } from "../contacts/contact-emails-editor.js";
 import { ContactPhonesEditor } from "../contacts/contact-phones-editor.js";
@@ -619,17 +615,6 @@ export function OrganizationOverviewView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [locationEditing, mapExpanded]);
 
-  const countryOptions = useMemo(
-    () => [
-      { value: DROPDOWN_NONE_VALUE, label: "No country" },
-      ...listCountries().map((entry) => ({
-        value: entry.code,
-        label: entry.name,
-        searchTerms: `${entry.name} ${entry.code}`,
-      })),
-    ],
-    [],
-  );
   const sizeOptions = useMemo(() => {
     const known = new Set<string>(ORGANIZATION_SIZE_OPTIONS);
     const trimmed = size.trim();
@@ -653,26 +638,6 @@ export function OrganizationOverviewView({
   const sizeDropdownValue = size.trim()
     ? size.trim()
     : DROPDOWN_NONE_VALUE;
-  const resolvedCountry = resolveCountryOption(country);
-  const countryDropdownValue =
-    resolvedCountry?.code ??
-    (country.trim() ? country.trim() : DROPDOWN_NONE_VALUE);
-  const regionOptions = useMemo(() => {
-    const regions = listRegionsForCountry(country);
-    return [
-      { value: DROPDOWN_NONE_VALUE, label: "No state / province" },
-      ...regions.map((entry) => ({
-        value: entry.name,
-        label: entry.name,
-        searchTerms: `${entry.name} ${entry.code}`,
-      })),
-    ];
-  }, [country]);
-  const showRegionField = countryHasRegions(country);
-  const resolvedRegion = resolveRegionOption(country, region);
-  const regionDropdownValue =
-    resolvedRegion?.name ??
-    (region.trim() ? region.trim() : DROPDOWN_NONE_VALUE);
 
   const groupDropdownOptions = useMemo(
     () =>
@@ -1006,220 +971,31 @@ export function OrganizationOverviewView({
             hidden={!locationEditing}
           >
             <div className="contact-location-map__editor-inner">
-              <label
-                className="contact-location-map__field"
-                htmlFor="organization-address"
-              >
-                <span>Address</span>
-                <input
-                  id="organization-address"
-                  type="text"
-                  className="entity-overview-input"
-                  value={address}
-                  onChange={(event) => setAddress(event.target.value)}
-                  onBlur={() =>
-                    persistLocation({ address: address.trim() || null })
-                  }
-                />
-              </label>
-              <div className="contact-location-map__field-row">
-                <label
-                  className="contact-location-map__field"
-                  htmlFor="organization-city"
-                >
-                  <span>City</span>
-                  <input
-                    id="organization-city"
-                    type="text"
-                    className="entity-overview-input"
-                    value={city}
-                    autoComplete="address-level2"
-                    onChange={(event) => setCity(event.target.value)}
-                    onBlur={() =>
-                      persistLocation({ city: city.trim() || null })
-                    }
-                  />
-                </label>
-                <label
-                  className="contact-location-map__field"
-                  htmlFor="organization-postal"
-                >
-                  <span>Postal code</span>
-                  <input
-                    id="organization-postal"
-                    type="text"
-                    className="entity-overview-input"
-                    value={postalCode}
-                    autoComplete="postal-code"
-                    onChange={(event) => setPostalCode(event.target.value)}
-                    onBlur={() =>
-                      persistLocation({
-                        postalCode: postalCode.trim() || null,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div
-                className={[
-                  "contact-location-map__field-row",
-                  showRegionField ? null : "is-single",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                <label
-                  className="contact-location-map__field"
-                  htmlFor="organization-country"
-                >
-                  <span>Country</span>
-                  <SearchableDropdown
-                    value={countryDropdownValue}
-                    options={
-                      resolvedCountry || !country.trim()
-                        ? countryOptions
-                        : [
-                            {
-                              value: country.trim(),
-                              label: country.trim(),
-                              searchTerms: country.trim(),
-                            },
-                            ...countryOptions.filter(
-                              (option) => option.value !== DROPDOWN_NONE_VALUE,
-                            ),
-                          ]
-                    }
-                    onChange={(next) => {
-                      const resolved = resolveDropdownNone(next);
-                      const nextCode = resolved?.trim() || "";
-                      setCountry(nextCode);
-                      setRegion("");
-                      persistLocation({
-                        country: nextCode || null,
-                        region: null,
-                      });
-                    }}
-                    searchPlaceholder="Search countries…"
-                    ariaLabel="Country"
-                    panelAlign="start"
-                    panelWidth="trigger"
-                    className="entity-overview-dropdown"
-                    renderTrigger={({
-                      selected,
-                      open,
-                      disabled,
-                      triggerId,
-                      onToggle,
-                    }) => {
-                      const label =
-                        selected?.label ??
-                        (formatCountryLabel(country) || "No country");
-                      return (
-                        <button
-                          type="button"
-                          id={triggerId}
-                          disabled={disabled}
-                          aria-haspopup="listbox"
-                          aria-expanded={open}
-                          aria-label={`Country: ${label}`}
-                          title={label}
-                          onClick={onToggle}
-                          className={[
-                            "entity-overview-input",
-                            "entity-overview-dropdown-trigger",
-                            selected && selected.value !== DROPDOWN_NONE_VALUE
-                              ? null
-                              : "is-muted",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          <span className="entity-overview-dropdown-trigger__label">
-                            {label}
-                          </span>
-                        </button>
-                      );
-                    }}
-                  />
-                </label>
-                {showRegionField ? (
-                  <label
-                    className="contact-location-map__field"
-                    htmlFor="organization-region"
-                  >
-                    <span>State / province</span>
-                    <SearchableDropdown
-                      value={regionDropdownValue}
-                      options={
-                        resolvedRegion || !region.trim()
-                          ? regionOptions
-                          : [
-                              {
-                                value: region.trim(),
-                                label: region.trim(),
-                                searchTerms: region.trim(),
-                              },
-                              ...regionOptions.filter(
-                                (option) =>
-                                  option.value !== DROPDOWN_NONE_VALUE,
-                              ),
-                            ]
-                      }
-                      onChange={(next) => {
-                        const resolved = resolveDropdownNone(next);
-                        const nextRegion = resolved?.trim() || "";
-                        setRegion(nextRegion);
-                        persistLocation({
-                          region: nextRegion || null,
-                        });
-                      }}
-                      searchPlaceholder="Search states / provinces…"
-                      ariaLabel="State or province"
-                      panelAlign="start"
-                      panelWidth="trigger"
-                      className="entity-overview-dropdown"
-                      renderTrigger={({
-                        selected,
-                        open,
-                        disabled,
-                        triggerId,
-                        onToggle,
-                      }) => {
-                        const label =
-                          selected?.label ??
-                          (formatRegionLabel(country, region) ||
-                            "No state / province");
-                        return (
-                          <button
-                            type="button"
-                            id={triggerId}
-                            disabled={disabled}
-                            aria-haspopup="listbox"
-                            aria-expanded={open}
-                            aria-label={`State or province: ${label}`}
-                            title={label}
-                            onClick={onToggle}
-                            className={[
-                              "entity-overview-input",
-                              "entity-overview-dropdown-trigger",
-                              selected &&
-                              selected.value !== DROPDOWN_NONE_VALUE
-                                ? null
-                                : "is-muted",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          >
-                            <span className="entity-overview-dropdown-trigger__label">
-                              {label}
-                            </span>
-                          </button>
-                        );
-                      }}
-                    />
-                  </label>
-                ) : null}
-              </div>
+              <EntityAddressFields
+                idPrefix="organization"
+                value={{ address, city, postalCode, country, region }}
+                onChange={(next) => {
+                  setAddress(next.address);
+                  setCity(next.city);
+                  setPostalCode(next.postalCode);
+                  setCountry(next.country);
+                  setRegion(next.region);
+                }}
+                onCommit={(next) => {
+                  setAddress(next.address);
+                  setCity(next.city);
+                  setPostalCode(next.postalCode);
+                  setCountry(next.country);
+                  setRegion(next.region);
+                  persistLocation({
+                    address: next.address.trim() || null,
+                    city: next.city.trim() || null,
+                    postalCode: next.postalCode.trim() || null,
+                    country: next.country.trim() || null,
+                    region: next.region.trim() || null,
+                  });
+                }}
+              />
               <div className="contact-location-map__editor-actions">
                 <button
                   type="button"

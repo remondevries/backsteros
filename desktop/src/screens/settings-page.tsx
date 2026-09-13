@@ -17,6 +17,7 @@ import {
   SettingsDetailLayout,
   buildAssigneeDropdownOptions,
   getSettingsTabMeta,
+  isLegacyIntegrationSettingsTab,
   isSettingsTabId,
   normalizeAppTimezone,
   type SettingsApiKeyItem,
@@ -35,19 +36,10 @@ import {
   syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import {
-  fetchWhoopDaySnapshot,
-  fetchWhoopSettingsStatus,
-  todayIsoDate,
-  type WhoopSettingsStatus,
-} from "../lib/whoop";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
-import { SettingsCursorTab } from "../components/settings-cursor-tab";
-import { SettingsMoneybirdTab } from "../components/settings-moneybird-tab";
-import { SettingsMapboxTab } from "../components/settings-mapbox-tab";
-import { SettingsGithubTab } from "../components/settings-github-tab";
-import { SettingsEmailTab } from "../components/settings-email-tab";
+import { rememberDesktopVaultRoot } from "../lib/desktop-vault";
+import { SettingsIntegrationsTab } from "../components/settings-integrations-tab";
 
 function SettingsAccountTab({
   settings,
@@ -318,6 +310,7 @@ function SettingsStorageTab({
   const applyStatus = useCallback((body: StorageStatus) => {
     setConfigured(body.configured);
     setVaultPath(body.vaultPath ?? null);
+    if (body.vaultPath) rememberDesktopVaultRoot(body.vaultPath);
     setReason(body.configured ? null : STORAGE_NOT_CONFIGURED_REASON);
   }, []);
 
@@ -389,7 +382,7 @@ function SettingsStorageTab({
       );
       applyStatus(body);
       setTestOk(true);
-      setTestMessage("Vault folder saved. Journal, Projects, Letters, and Knowledge Base were created.");
+      setTestMessage("Vault folder saved. Journal, Projects, Letters, and Spaces were created.");
     } catch (error) {
       setTestOk(false);
       setTestMessage(
@@ -411,7 +404,7 @@ function SettingsStorageTab({
             Documents, journal notes, and letter PDFs live in a local Obsidian-style
             vault on the computer running the API. Pick a folder once; BacksterOS
             creates <code>Journal</code>, <code>Projects</code>,{" "}
-            <code>Letters</code>, and <code>Knowledge Base</code> automatically.
+            <code>Letters</code>, and <code>Spaces</code> automatically.
           </p>
           <div className="settings-field" style={{ marginTop: "1rem" }}>
             <button
@@ -475,116 +468,6 @@ function SettingsStorageTab({
   );
 }
 
-function SettingsWhoopTab({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  const [status, setStatus] = useState<WhoopSettingsStatus | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const next = await fetchWhoopSettingsStatus();
-      setStatus(next);
-      return next;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not read Whoop status.";
-      const fallback: WhoopSettingsStatus = {
-        connected: false,
-        configured: false,
-        email: null,
-        reason: message,
-        envPath: "",
-      };
-      setStatus(fallback);
-      return fallback;
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const connected = status?.connected ?? false;
-
-  return (
-    <IntegrationConnectionSettingsView
-      title={title}
-      headerDescription={description}
-      connected={status === null ? undefined : connected}
-      body={
-        <p>
-          Recovery, sleep, and strain appear above journal entries when Whoop
-          credentials are configured. Tokens are read from a local{" "}
-          <code>totem.env</code> file under{" "}
-          <code>~/.backsteros-agent/</code>. BacksterOS does not store Whoop
-          passwords.
-        </p>
-      }
-      statusLabel={
-        status === null ? "Loading…" : connected ? "Connected" : "Not connected"
-      }
-      secondaryLabel="Account"
-      secondaryValue={status?.email ?? "—"}
-      reason={!connected ? status?.reason : null}
-      hint={
-        connected
-          ? "Credentials are present. Use Test connection to load today\u2019s recovery, sleep, and strain snapshot."
-          : status?.envPath
-            ? `Looking for tokens at ${status.envPath}`
-            : null
-      }
-      testing={testing}
-      testMessage={testMessage}
-      testOk={testOk}
-      testDisabled={status === null}
-      onTestConnection={() => {
-        void (async () => {
-          setTesting(true);
-          setTestMessage(null);
-          setTestOk(null);
-          try {
-            const result = await fetchWhoopDaySnapshot(todayIsoDate());
-            await refresh();
-            if (!result.authenticated) {
-              setTestOk(false);
-              setTestMessage(
-                result.error ??
-                  "Whoop is not connected. Add refresh or bearer tokens to totem.env.",
-              );
-              return;
-            }
-            if (result.snapshot) {
-              setTestOk(true);
-              setTestMessage("Connected — today\u2019s Whoop snapshot loaded.");
-              return;
-            }
-            setTestOk(false);
-            setTestMessage(
-              result.error ?? "Could not load today\u2019s Whoop snapshot.",
-            );
-          } catch (error) {
-            setTestOk(false);
-            setTestMessage(
-              error instanceof Error
-                ? error.message
-                : "Whoop connection test failed",
-            );
-          } finally {
-            setTesting(false);
-          }
-        })();
-      }}
-    />
-  );
-}
-
 export function SettingsPage() {
   const { tab } = useParams({ strict: false }) as { tab?: string };
   const { client } = useDesktopApi();
@@ -633,33 +516,25 @@ export function SettingsPage() {
     return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
   }
 
+  if (isLegacyIntegrationSettingsTab(tab)) {
+    return (
+      <Navigate
+        to="/settings/$tab"
+        params={{ tab: "integrations" }}
+        search={{ open: tab } as never}
+        replace
+      />
+    );
+  }
+
   if (!isSettingsTabId(tab)) {
     return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
   }
 
   return (
     <SettingsDetailLayout>
-      {activeTab === "whoop" ? (
-        <SettingsWhoopTab title={meta.label} description={meta.description} />
-      ) : activeTab === "moneybird" ? (
-        <SettingsMoneybirdTab
-          title={meta.label}
-          description={meta.description}
-        />
-      ) : activeTab === "mapbox" ? (
-        <SettingsMapboxTab
-          title={meta.label}
-          description={meta.description}
-        />
-      ) : activeTab === "email" ? (
-        <SettingsEmailTab
-          title={meta.label}
-          description={meta.description}
-        />
-      ) : activeTab === "storage" ? (
+      {activeTab === "storage" ? (
         <SettingsStorageTab title={meta.label} description={meta.description} />
-      ) : activeTab === "github" ? (
-        <SettingsGithubTab title={meta.label} description={meta.description} />
       ) : (
         <>
           <SettingsContentHeader
@@ -695,7 +570,12 @@ export function SettingsPage() {
             />
           ) : null}
           {activeTab === "api" ? <SettingsApiTab /> : null}
-          {activeTab === "cursor" ? <SettingsCursorTab /> : null}
+          {activeTab === "integrations" ? (
+            <SettingsIntegrationsTab
+              workspaceSettings={workspaceSettings}
+              onSettingsSaved={() => void reloadSettings()}
+            />
+          ) : null}
         </>
       )}
     </SettingsDetailLayout>

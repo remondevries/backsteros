@@ -10,9 +10,11 @@ import { useDesktopApi } from "../lib/api-context";
 export function SettingsMapboxTab({
   title,
   description,
+  hideHeader = false,
 }: {
   title: string;
   description: string;
+  hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
   const [settings, setSettings] = useState<MapboxSettings | null>(null);
@@ -89,10 +91,11 @@ export function SettingsMapboxTab({
 
   return (
     <>
-      <IntegrationConnectionSettingsView
-        title={title}
-        headerDescription={description}
-        connected={settings === null ? undefined : connected}
+    <IntegrationConnectionSettingsView
+      title={title}
+      headerDescription={description}
+      hideHeader={hideHeader}
+      connected={settings === null ? undefined : connected}
         body={
           <p>
             Create a{" "}

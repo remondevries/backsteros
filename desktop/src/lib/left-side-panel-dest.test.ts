@@ -15,7 +15,7 @@ test("warm dests resolve to keep-alive surfaces", () => {
   );
   assert.equal(
     resolveLeftSidePanelDest({
-      pathname: "/knowledge/note",
+      pathname: "/spaces/note",
       inInboxPanel: false,
       financeSection: false,
       showSidePanel: true,

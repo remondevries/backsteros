@@ -306,6 +306,7 @@ export const PROJECT_ICON_KEYS = [
   "screen-full",
   "screen-normal",
   "search",
+  "second-brain",
   "server",
   "share",
   "share-android",
@@ -371,6 +372,7 @@ export const PROJECT_ICON_KEYS = [
   "tooth",
   "tracked-by-closed-completed",
   "tracked-by-closed-not-planned",
+  "transip",
   "trash",
   "triangle-down",
   "triangle-left",
@@ -421,6 +423,7 @@ export const PROJECT_BRAND_ICON_KEYS = [
   "mercedes-benz",
   "netflix",
   "spotify",
+  "transip",
   "vscode",
   "belastingdienst",
 ] as const satisfies readonly ProjectIconKey[];

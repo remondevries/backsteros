@@ -8,12 +8,12 @@ export function SocialHeader({
 } = {}) {
   return (
     <SectionListHeader
-      title="Social"
+      title="Network"
       trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}
-            accessibilityLabel="Hide Social list"
+            accessibilityLabel="Hide Network list"
           />
         ) : null
       }

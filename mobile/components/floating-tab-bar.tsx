@@ -389,7 +389,7 @@ export function FloatingTabBar({
     if (!PRIMARY_ROUTES.has("calendar")) {
       overflow.push({
         key: "calendar",
-        label: "Calendar",
+        label: "Agenda",
         onPress: () => go("calendar"),
         icon: (color) => <CalendarNavIcon color={color} size={18} />,
       });
@@ -427,7 +427,7 @@ export function FloatingTabBar({
     if (!PRIMARY_ROUTES.has("knowledge")) {
       overflow.push({
         key: "knowledge",
-        label: "Knowledge Base",
+        label: "Spaces",
         onPress: () => go("knowledge"),
         icon: (color) => <KnowledgeBaseNavIcon color={color} size={18} />,
       });
@@ -441,7 +441,7 @@ export function FloatingTabBar({
       },
       {
         key: "social",
-        label: "Social",
+        label: "Network",
         onPress: () => go("social"),
         icon: (color) => <SocialNavIcon size={18} color={color} />,
       },

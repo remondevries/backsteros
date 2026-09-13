@@ -383,20 +383,30 @@ export function useWorkspaceEntityPatching({
    * Pull document metadata from REST when PowerSync is not connected.
    * While connected, workspace SSE + PowerSync download are the live path —
    * list soft-refresh fought SQLite and reintroduced dual-hydrate flashes.
+   * Pass `{ force: true }` for rare gap-fills (e.g. Spaces category roots
+   * missing from a stale local SQLite while the stream is connected).
    */
-  const softRefreshApiDocuments = useCallback(async () => {
-    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
-    try {
-      const documentsBody = await client.requestJson<{
-        documents: ApiDocument[];
-      }>("/api/v1/documents");
-      setApiDocuments((current) =>
-        preservePendingApiRows(current, documentsBody.documents),
-      );
-    } catch {
-      // PowerSync remains the primary source.
-    }
-  }, [authenticated, client, powerSync, setApiDocuments]);
+  const softRefreshApiDocuments = useCallback(
+    async (options?: { force?: boolean; type?: "knowledge" }) => {
+      if (!authenticated) return;
+      if (!options?.force && shouldSkipRestEntityWrite(powerSync)) return;
+      try {
+        const path =
+          options?.type === "knowledge"
+            ? "/api/v1/documents?type=knowledge"
+            : "/api/v1/documents";
+        const documentsBody = await client.requestJson<{
+          documents: ApiDocument[];
+        }>(path);
+        setApiDocuments((current) =>
+          preservePendingApiRows(current, documentsBody.documents),
+        );
+      } catch {
+        // PowerSync remains the primary source.
+      }
+    },
+    [authenticated, client, powerSync, setApiDocuments],
+  );
 
   const patchViaPowerSyncOrApi = useCallback(
     async (

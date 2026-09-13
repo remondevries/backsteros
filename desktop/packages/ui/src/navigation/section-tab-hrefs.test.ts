@@ -8,6 +8,28 @@ import {
   resolveSectionTabCycleShortcut,
 } from "./section-tab-hrefs.js";
 
+test("catalog list uses type filter tabs", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/catalog"), [
+    "/catalog",
+    "/catalog?type=general",
+    "/catalog?type=codebase",
+    "/catalog?type=it_service",
+    "/catalog?type=webhosting",
+    "/catalog?type=domeinname",
+  ]);
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/catalog", "?type=codebase&view=board"),
+    [
+      "/catalog?view=board",
+      "/catalog?type=general&view=board",
+      "/catalog?type=codebase&view=board",
+      "/catalog?type=it_service&view=board",
+      "/catalog?type=webhosting&view=board",
+      "/catalog?type=domeinname&view=board",
+    ],
+  );
+});
+
 test("project overview uses default section tabs when workbench is not mounted", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo"), [
     "/projects/demo",

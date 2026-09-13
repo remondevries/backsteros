@@ -10,9 +10,11 @@ import { useDesktopApi } from "../lib/api-context";
 export function SettingsGithubTab({
   title,
   description,
+  hideHeader = false,
 }: {
   title: string;
   description: string;
+  hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
   const [settings, setSettings] = useState<GithubSettings | null>(null);
@@ -90,10 +92,11 @@ export function SettingsGithubTab({
 
   return (
     <>
-      <IntegrationConnectionSettingsView
-        title={title}
-        headerDescription={description}
-        connected={settings === null ? undefined : connected}
+    <IntegrationConnectionSettingsView
+      title={title}
+      headerDescription={description}
+      hideHeader={hideHeader}
+      connected={settings === null ? undefined : connected}
         body={
           <p>
             Paste a{" "}

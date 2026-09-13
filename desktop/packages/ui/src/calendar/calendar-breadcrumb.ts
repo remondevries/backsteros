@@ -21,7 +21,7 @@ export function buildCalendarBreadcrumbItems(input: {
   const rangeLabel =
     input.rangeTitle?.trim() || getCalendarViewModeLabel(input.viewMode);
   const items: ContentBreadcrumbItem[] = [
-    { label: "Calendar", href: "/calendar" },
+    { label: "Agenda", href: "/calendar" },
     {
       label: rangeLabel,
       href: buildCalendarPageHref({

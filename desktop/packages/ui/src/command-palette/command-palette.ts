@@ -167,20 +167,19 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
   },
   {
     id: "knowledge",
-    letter: "k",
-    hint: "G K",
-    label: "Knowledge Base",
-    href: "/knowledge",
+    letter: "s",
+    hint: "G S",
+    label: "Spaces",
+    href: "/spaces",
   },
   { id: "tasks", letter: "t", hint: "G T", label: "Tasks", href: "/tasks" },
   {
     id: "calendar",
-    letter: "m",
-    hint: "G M",
-    label: "Calendar",
+    letter: "a",
+    hint: "G A",
+    label: "Agenda",
     href: "/calendar",
   },
-  { id: "areas", letter: "a", hint: "G A", label: "Areas", href: "/areas" },
   {
     id: "projects",
     letter: "p",
@@ -189,11 +188,11 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     href: "/projects",
   },
   {
-    id: "development",
-    letter: "d",
-    hint: "G D",
-    label: "Development",
-    href: "/development",
+    id: "catalog",
+    letter: "k",
+    hint: "G K",
+    label: "Catalog",
+    href: "/catalog",
   },
   {
     id: "letters",
@@ -222,6 +221,13 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     hint: "G O",
     label: "Organizations",
     href: "/organizations",
+  },
+  {
+    id: "social",
+    letter: "n",
+    hint: "G N",
+    label: "Network",
+    href: "/social",
   },
 ];
 

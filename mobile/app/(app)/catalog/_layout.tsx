@@ -4,7 +4,7 @@ import { iosStackGestureOptions } from "../../../lib/tab-stack-options";
 
 import { colors } from "../../../lib/theme";
 
-export default function DevelopmentLayout() {
+export default function CatalogLayout() {
   return (
     <Stack
       screenOptions={{
@@ -15,7 +15,7 @@ export default function DevelopmentLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Development",
+          title: "Catalog",
           contentStyle: { backgroundColor: colors.background },
         }}
       />

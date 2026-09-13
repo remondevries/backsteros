@@ -33,6 +33,12 @@ import {
   type ProjectAreaFilter,
 } from "../projects/project-areas.js";
 import {
+  getCatalogListTypeHref,
+  PROJECT_TYPE_FILTER_ALL,
+  PROJECT_TYPE_FILTER_ORDER,
+  type ProjectTypeFilter,
+} from "../projects/project-type-filters.js";
+import {
   getProjectSectionHref,
   PROJECT_SECTIONS,
 } from "../projects/project-sections.js";
@@ -153,6 +159,14 @@ export function resolveDesktopSectionTabHrefs(
       ...PROJECT_AREA_ORDER,
     ];
     return areas.map((area) => getProjectsListAreaHref(area, view));
+  }
+
+  if (path === "/catalog" || path === "/development") {
+    const types: ProjectTypeFilter[] = [
+      PROJECT_TYPE_FILTER_ALL,
+      ...PROJECT_TYPE_FILTER_ORDER,
+    ];
+    return types.map((type) => getCatalogListTypeHref(type, view));
   }
 
   const orgProject = parseOrganizationProjectRoute(path);

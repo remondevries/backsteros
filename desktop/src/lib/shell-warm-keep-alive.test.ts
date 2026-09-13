@@ -39,7 +39,7 @@ test("first visit is not a warm flip", () => {
   assert.equal(isWarmKeepAliveSectionFlip("/tasks"), false);
   assert.equal(tryWarmKeepAliveFlip("/tasks"), false);
   assert.equal(tryWarmKeepAliveFlip("/journal"), false);
-  assert.equal(tryWarmKeepAliveFlip("/knowledge"), false);
+  assert.equal(tryWarmKeepAliveFlip("/spaces"), false);
   assert.equal(tryWarmKeepAliveFlip("/letters"), false);
   assert.equal(tryWarmKeepAliveFlip("/journal/habits"), false);
 });
@@ -54,7 +54,7 @@ test("mounted journal, knowledge, letters, habits warm-flip like tasks", () => {
 
   assert.equal(tryWarmKeepAliveFlip("/journal"), true);
   assert.equal(getVisibleKeepAliveSurface(), "journal-day");
-  assert.equal(tryWarmKeepAliveFlip("/knowledge"), true);
+  assert.equal(tryWarmKeepAliveFlip("/spaces"), true);
   assert.equal(getVisibleKeepAliveSurface(), "knowledge");
   assert.equal(tryWarmKeepAliveFlip("/letters"), true);
   assert.equal(getVisibleKeepAliveSurface(), "letters");
@@ -85,11 +85,11 @@ test("mounted knowledge and letters warm-flip from tasks", () => {
   markKeepAliveSurfaceMounted("letters");
   markKeepAliveSurfaceMounted("tasks-list");
   syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
-  assert.equal(tryWarmKeepAliveFlip("/knowledge"), true);
+  assert.equal(tryWarmKeepAliveFlip("/spaces"), true);
   assert.equal(getVisibleKeepAliveSurface(), "knowledge");
   assert.equal(tryWarmKeepAliveFlip("/letters"), true);
   assert.equal(getVisibleKeepAliveSurface(), "letters");
-  assert.equal(tryWarmKeepAliveFlip("/knowledge"), true);
+  assert.equal(tryWarmKeepAliveFlip("/spaces"), true);
   assert.equal(getVisibleKeepAliveSurface(), "knowledge");
 });
 
@@ -153,7 +153,7 @@ test("outlet nav dismisses a visible keep-alive pane", () => {
   rememberKeepAliveHref("projects", "/projects/BOS", "");
   syncVisibleKeepAliveSurfaceFromRoute("projects");
   assert.equal(
-    dismissKeepAliveForOutletNavigation("/development"),
+    dismissKeepAliveForOutletNavigation("/catalog"),
     true,
   );
   assert.equal(getVisibleKeepAliveSurface(), null);
@@ -240,6 +240,11 @@ test("tasks-list and standalone /projects stay in the keep-alive side-panel set"
   assert.equal(keepAliveDestinationShowsSidePanel("/tasks"), false);
   assert.equal(keepAliveDestinationShowsSidePanel("/projects"), false);
   assert.equal(keepAliveDestinationShowsSidePanel("/projects/CA"), true);
+  assert.equal(keepAliveDestinationShowsSidePanel("/spaces"), false);
+  assert.equal(
+    keepAliveDestinationShowsSidePanel("/spaces/second-brain"),
+    true,
+  );
   assert.equal(keepAliveDestinationShowsSidePanel("/contacts"), true);
   assert.equal(keepAliveDestinationShowsSidePanel("/contacts/1"), true);
   assert.equal(

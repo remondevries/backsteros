@@ -26,9 +26,11 @@ function inboxOptionLabel(inbox: AgentMailInboxSummary): string {
 export function SettingsEmailTab({
   title,
   description,
+  hideHeader = false,
 }: {
   title: string;
   description: string;
+  hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
@@ -255,6 +257,7 @@ export function SettingsEmailTab({
       <IntegrationConnectionSettingsView
         title={title}
         headerDescription={description}
+        hideHeader={hideHeader}
         connected={settings === null ? undefined : connected}
         body={
           <p>

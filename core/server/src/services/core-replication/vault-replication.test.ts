@@ -36,17 +36,17 @@ describe("vault-replication filesystem", () => {
     await writeFile(path.join(root, "Journal", "day.md"), "# hi\n");
     await writeVaultManifest(root, {
       "Journal/day.md": { mtimeMs: 1_700_000_000_000, size: 5 },
-      "Knowledge Base/ghost.md": { mtimeMs: 1, size: 1 },
+      "Spaces/ghost.md": { mtimeMs: 1, size: 1 },
     });
 
     const listing = await resolveLocalMarkdownListing(root, {
       "Journal/day.md": { mtimeMs: 1_700_000_000_000, size: 5 },
-      "Knowledge Base/ghost.md": { mtimeMs: 1, size: 1 },
+      "Spaces/ghost.md": { mtimeMs: 1, size: 1 },
     });
     assert.equal(listing.scanned, "manifest");
     assert.deepEqual(
       listing.files.map((f) => f.relativePath),
-      ["Journal/day.md", "Knowledge Base/ghost.md"],
+      ["Journal/day.md", "Spaces/ghost.md"],
     );
   });
 
@@ -80,14 +80,14 @@ describe("vault-replication filesystem", () => {
     const contentBase64 = Buffer.from("# twin\n", "utf8").toString("base64");
 
     const applied = await applyVaultFilePut(root, {
-      path: "Knowledge Base/note.md",
+      path: "Spaces/note.md",
       mtimeMs,
       contentBase64,
     });
     assert.equal(applied, "applied");
 
     const skipped = await applyVaultFilePut(root, {
-      path: "Knowledge Base/note.md",
+      path: "Spaces/note.md",
       mtimeMs,
       contentBase64,
     });
@@ -96,7 +96,7 @@ describe("vault-replication filesystem", () => {
     // Newer stamp must overwrite
     const newer = mtimeMs + 60_000;
     const appliedAgain = await applyVaultFilePut(root, {
-      path: "Knowledge Base/note.md",
+      path: "Spaces/note.md",
       mtimeMs: newer,
       contentBase64: Buffer.from("# newer\n", "utf8").toString("base64"),
     });
@@ -104,12 +104,12 @@ describe("vault-replication filesystem", () => {
 
     // Force known mtime for listing stability
     await utimes(
-      path.join(root, "Knowledge Base", "note.md"),
+      path.join(root, "Spaces", "note.md"),
       newer / 1000,
       newer / 1000,
     );
 
-    const deleted = await applyVaultFileDelete(root, "Knowledge Base/note.md");
+    const deleted = await applyVaultFileDelete(root, "Spaces/note.md");
     assert.equal(deleted, "applied");
   });
 
@@ -117,12 +117,12 @@ describe("vault-replication filesystem", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vault-repl-empty-"));
     const mtimeMs = Date.UTC(2026, 7, 25, 12, 0, 0);
     await applyVaultFilePut(root, {
-      path: "Knowledge Base/keep.md",
+      path: "Spaces/keep.md",
       mtimeMs,
       contentBase64: Buffer.from("# keep me\n", "utf8").toString("base64"),
     });
     const skipped = await applyVaultFilePut(root, {
-      path: "Knowledge Base/keep.md",
+      path: "Spaces/keep.md",
       mtimeMs: mtimeMs + 60_000,
       contentBase64: Buffer.from("", "utf8").toString("base64"),
     });

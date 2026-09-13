@@ -23,8 +23,17 @@ import {
   getProjectAreaFilterLabel,
   PROJECT_AREA_FILTER_ALL,
   PROJECT_AREA_FILTERS,
+  PROJECT_AREAS,
+  type ProjectArea,
   type ProjectAreaFilter,
 } from "../../projects/project-areas.js";
+import {
+  filterProjectsByType,
+  getProjectTypeFilterLabel,
+  PROJECT_TYPE_FILTER_ALL,
+  PROJECT_TYPE_FILTERS,
+  type ProjectTypeFilter,
+} from "../../projects/project-type-filters.js";
 import type { ProjectStatus } from "../../projects/project-status.js";
 import {
   projectGroupAppendOrderKey,
@@ -113,7 +122,7 @@ export type ProjectsOverviewViewProps = {
   organizations?: OrganizationRef[];
   /**
    * Secondary headers inside status/type groups.
-   * Default `"nestedArea"` (Projects / Areas). Use `"organization"` on Development.
+   * Default `"nestedArea"` (Projects / Areas). Use `"organization"` on Catalog.
    */
   secondaryGrouping?: "nestedArea" | "organization";
   onSelectProject?: (projectKey: string) => void;
@@ -127,21 +136,33 @@ export type ProjectsOverviewViewProps = {
     name: string;
   }) => Promise<{ id: string; key?: string } | void> | { id: string; key?: string } | void;
   onCreatedProject?: (projectId: string, projectKey?: string) => void;
+  /** Create a nested custom area under Personal / Business / Clients. */
+  onCreateArea?: (input: {
+    parent: ProjectArea;
+    name: string;
+  }) => Promise<{ id: string } | void> | { id: string } | void;
+  onCreatedArea?: (areaId: string) => void;
   /** Persist list drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: ProjectReorderRequest) => void;
   initialArea?: ProjectAreaFilter;
   /** Controlled area filter (URL sync). */
   area?: ProjectAreaFilter;
   onAreaChange?: (area: ProjectAreaFilter) => void;
+  initialType?: ProjectTypeFilter;
+  /** Controlled type filter (URL sync) — Catalog pills. */
+  typeFilter?: ProjectTypeFilter;
+  onTypeFilterChange?: (type: ProjectTypeFilter) => void;
   initialView?: ListBoardView;
   /** Controlled list/board view (URL sync). */
   view?: ListBoardView;
   onViewChange?: (view: ListBoardView) => void;
   /** When false, hide area pills (organization projects screen). Default true. */
   showAreaFilters?: boolean;
+  /** When true, show type pills (Catalog). Default false. */
+  showTypeFilters?: boolean;
   /**
-   * When false, skip type subgroups (e.g. Development console — all codebase).
-   * Default true.
+   * When false, skip type subgroups (e.g. single-type Catalog filter).
+   * Default true. Auto-disabled while a specific type filter is active.
    */
   showTypeGroups?: boolean;
   emptyMessage?: string;
@@ -169,14 +190,20 @@ export function ProjectsOverviewView({
   onDueDateChange,
   onCreateProject,
   onCreatedProject,
+  onCreateArea,
+  onCreatedArea,
   onReorder,
   initialArea = PROJECT_AREA_FILTER_ALL,
   area: controlledArea,
   onAreaChange,
+  initialType = PROJECT_TYPE_FILTER_ALL,
+  typeFilter: controlledTypeFilter,
+  onTypeFilterChange,
   initialView = "list",
   view: controlledView,
   onViewChange,
   showAreaFilters = true,
+  showTypeFilters = false,
   showTypeGroups = true,
   emptyMessage = "No projects in this area.",
   selectedProjectId = null,
@@ -192,6 +219,15 @@ export function ProjectsOverviewView({
       setUncontrolledArea(next);
     }
   };
+  const [uncontrolledTypeFilter, setUncontrolledTypeFilter] =
+    useState<ProjectTypeFilter>(initialType);
+  const typeFilter = controlledTypeFilter ?? uncontrolledTypeFilter;
+  const setTypeFilter = (next: ProjectTypeFilter) => {
+    onTypeFilterChange?.(next);
+    if (controlledTypeFilter === undefined) {
+      setUncontrolledTypeFilter(next);
+    }
+  };
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
   const view = controlledView ?? uncontrolledView;
@@ -201,6 +237,8 @@ export function ProjectsOverviewView({
       setUncontrolledView(next);
     }
   };
+  const effectiveShowTypeGroups =
+    showTypeGroups && typeFilter === PROJECT_TYPE_FILTER_ALL;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
     () => new Set(),
@@ -212,6 +250,10 @@ export function ProjectsOverviewView({
   const [addingToStatus, setAddingToStatus] = useState<ProjectStatus | null>(
     null,
   );
+  const [addingArea, setAddingArea] = useState(false);
+  const [createAreaParent, setCreateAreaParent] = useState<ProjectArea>("personal");
+  const [createAreaError, setCreateAreaError] = useState<string | null>(null);
+  const [creatingArea, setCreatingArea] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
@@ -337,10 +379,12 @@ export function ProjectsOverviewView({
     [consumeClickSuppression, onSelectProject],
   );
 
-  const filtered = useMemo(
-    () => filterProjectsByArea(localProjects, area),
-    [localProjects, area],
-  );
+  const filtered = useMemo(() => {
+    const byArea = filterProjectsByArea(localProjects, area);
+    return showTypeFilters
+      ? filterProjectsByType(byArea, typeFilter)
+      : byArea;
+  }, [localProjects, area, showTypeFilters, typeFilter]);
   const groups = useMemo(
     () =>
       groupProjectsByStatus(filtered, {
@@ -364,7 +408,7 @@ export function ProjectsOverviewView({
     const result: string[] = [];
     for (const group of groups) {
       if (collapsed.has(group.status)) continue;
-      const typeGroups = showTypeGroups
+      const typeGroups = effectiveShowTypeGroups
         ? groupProjectsByType(group.projects)
         : [
             {
@@ -414,11 +458,11 @@ export function ProjectsOverviewView({
     collapsed,
     collapsedNestedAreas,
     collapsedTypes,
+    effectiveShowTypeGroups,
     groups,
     nestedAreas,
     organizations,
     secondaryGrouping,
-    showTypeGroups,
   ]);
 
   const { highlightedId } = useListKeyboardNavigation({
@@ -433,9 +477,13 @@ export function ProjectsOverviewView({
     enabled: view === "list" && itemIds.length > 0,
   });
 
-  const pillItems = PROJECT_AREA_FILTERS.map((value) => ({
+  const areaPillItems = PROJECT_AREA_FILTERS.map((value) => ({
     value,
     label: getProjectAreaFilterLabel(value),
+  }));
+  const typePillItems = PROJECT_TYPE_FILTERS.map((value) => ({
+    value,
+    label: getProjectTypeFilterLabel(value),
   }));
 
   const showEmpty =
@@ -532,7 +580,7 @@ export function ProjectsOverviewView({
                   />
                 </li>
               ) : null}
-              {(showTypeGroups
+              {(effectiveShowTypeGroups
                 ? groupProjectsByType(group.projects)
                 : [
                     {
@@ -660,13 +708,101 @@ export function ProjectsOverviewView({
 
   return (
     <div className="projects-overview">
+      {showTypeFilters ? (
+        <div className="projects-overview__area-nav">
+          <PillNav
+            ariaLabel="Project type"
+            items={typePillItems}
+            value={typeFilter}
+            onChange={setTypeFilter}
+            className="projects-overview__area-pills"
+          />
+        </div>
+      ) : null}
       {showAreaFilters ? (
-        <PillNav
-          ariaLabel="Project area"
-          items={pillItems}
-          value={area}
-          onChange={setArea}
-        />
+        <div className="projects-overview__area-nav">
+          <PillNav
+            ariaLabel="Project area"
+            items={areaPillItems}
+            value={area}
+            onChange={setArea}
+            className="projects-overview__area-pills"
+          />
+          {onCreateArea ? (
+            <button
+              type="button"
+              className="projects-overview__add-area"
+              aria-label="Add area"
+              aria-expanded={addingArea}
+              onClick={() => {
+                const parent =
+                  area !== PROJECT_AREA_FILTER_ALL ? area : createAreaParent;
+                setCreateAreaParent(parent);
+                setCreateAreaError(null);
+                setAddingArea(true);
+              }}
+            >
+              <ProjectsAreaPlusIcon />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {showAreaFilters && addingArea && onCreateArea ? (
+        <div className="projects-overview__add-area-form">
+          {area === PROJECT_AREA_FILTER_ALL ? (
+            <div
+              className="projects-overview__add-area-parents"
+              role="group"
+              aria-label="Area parent"
+            >
+              {PROJECT_AREAS.map((parent) => (
+                <button
+                  key={parent}
+                  type="button"
+                  className={`projects-overview__add-area-parent${
+                    createAreaParent === parent ? " is-active" : ""
+                  }`}
+                  aria-pressed={createAreaParent === parent}
+                  onClick={() => setCreateAreaParent(parent)}
+                >
+                  {getProjectAreaFilterLabel(parent)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <AddProjectInline
+            disabled={creatingArea}
+            error={createAreaError}
+            placeholder="Area name"
+            ariaLabel="Area name"
+            onCancel={() => {
+              setAddingArea(false);
+              setCreateAreaError(null);
+            }}
+            onSubmit={async (name) => {
+              const parent =
+                area !== PROJECT_AREA_FILTER_ALL ? area : createAreaParent;
+              setCreatingArea(true);
+              setCreateAreaError(null);
+              try {
+                const created = await onCreateArea({ parent, name });
+                setAddingArea(false);
+                if (created?.id) onCreatedArea?.(created.id);
+                if (area === PROJECT_AREA_FILTER_ALL) {
+                  setArea(parent);
+                }
+              } catch (error) {
+                setCreateAreaError(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not create area.",
+                );
+              } finally {
+                setCreatingArea(false);
+              }
+            }}
+          />
+        </div>
       ) : null}
       <ListBoardViewShell
         view={view}
@@ -722,5 +858,18 @@ export function ProjectsOverviewView({
         }
       />
     </div>
+  );
+}
+
+function ProjectsAreaPlusIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="M8 3.5V12.5M3.5 8H12.5"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

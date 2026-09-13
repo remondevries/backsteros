@@ -234,6 +234,7 @@ const AUTO_LANDING_SECTION_ROOTS = [
   "/",
   "/inbox",
   "/journal",
+  "/spaces",
   "/knowledge",
   "/letters",
   "/contacts",

@@ -1,6 +1,6 @@
 export const routeFamilies = [
   "projects",
-  "development",
+  "catalog",
   "areas",
   "tasks",
   "calendar",
@@ -28,7 +28,7 @@ export type NavigationItemIconId =
   | "calendar"
   | "areas"
   | "projects"
-  | "development"
+  | "catalog"
   | "knowledge"
   | "letters"
   | "finance"
@@ -52,7 +52,7 @@ export const navigation: NavigationItem[] = [
   { href: "/journal", label: "Journal", icon: "journal", section: "primary" },
   {
     href: "/calendar",
-    label: "Calendar",
+    label: "Agenda",
     icon: "calendar",
     section: "primary",
   },
@@ -63,7 +63,6 @@ export const navigation: NavigationItem[] = [
     section: "primary",
   },
   { href: "/tasks", label: "Tasks", icon: "tasks", section: "workspace" },
-  { href: "/areas", label: "Areas", icon: "areas", section: "workspace" },
   {
     href: "/projects",
     label: "Projects",
@@ -71,14 +70,14 @@ export const navigation: NavigationItem[] = [
     section: "workspace",
   },
   {
-    href: "/development",
-    label: "Development",
-    icon: "development",
+    href: "/catalog",
+    label: "Catalog",
+    icon: "catalog",
     section: "workspace",
   },
   {
-    href: "/knowledge",
-    label: "Knowledge Base",
+    href: "/spaces",
+    label: "Spaces",
     icon: "knowledge",
     section: "workspace",
   },
@@ -95,7 +94,7 @@ export const navigation: NavigationItem[] = [
     icon: "communication",
     section: "people",
   },
-  { href: "/social", label: "Social", icon: "social", section: "people" },
+  { href: "/social", label: "Network", icon: "social", section: "people" },
   { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   {
     href: "/organizations",
@@ -122,10 +121,10 @@ export const routeCopy: Record<
     singular: "project",
     accent: "#ee7a47",
   },
-  development: {
-    title: "Development",
-    description: "Codebases and engineering work",
-    singular: "development",
+  catalog: {
+    title: "Catalog",
+    description: "Managed products by type — codebases, hosting, domains, and more",
+    singular: "catalog",
     accent: "#5b8def",
   },
   areas: {
@@ -141,7 +140,7 @@ export const routeCopy: Record<
     accent: "#7c9cff",
   },
   calendar: {
-    title: "Calendar",
+    title: "Agenda",
     description: "Tasks scheduled across your week",
     singular: "task",
     accent: "#5b8def",
@@ -165,9 +164,9 @@ export const routeCopy: Record<
     accent: "#5b9fd6",
   },
   social: {
-    title: "Social",
-    description: "Social accounts and activity",
-    singular: "social",
+    title: "Network",
+    description: "Feeds from contacts and social posting",
+    singular: "network",
     accent: "#8b7cf6",
   },
   contacts: {
@@ -183,7 +182,7 @@ export const routeCopy: Record<
     accent: "#d6a85b",
   },
   knowledge: {
-    title: "Knowledge Base",
+    title: "Spaces",
     description: "Documents and reference material",
     singular: "document",
     accent: "#62b98c",

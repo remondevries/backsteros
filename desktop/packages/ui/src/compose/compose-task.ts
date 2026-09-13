@@ -23,9 +23,9 @@ export function isProjectDocumentDetailPath(pathname: string): boolean {
   );
 }
 
-/** Desktop route match for `/knowledge/:slug` or `/knowledge-v2/:slug`. */
+/** Desktop route match for `/spaces/:slug` (and legacy knowledge URLs). */
 export function isKnowledgeDocumentDetailPath(pathname: string): boolean {
-  return /^\/knowledge(?:-v2)?\/.+/.test(pathname);
+  return /^\/(?:spaces|knowledge(?:-v2)?)\/.+/.test(pathname);
 }
 
 export function resolveComposeContextKind(pathname: string): ComposeContextKind {
@@ -113,7 +113,7 @@ export function resolveComposeContextDocumentTarget(
   projects: { id: string; key?: string }[],
 ): string | null {
   const path = normalizePathname(pathname);
-  if (/^\/knowledge(\/|$)/.test(path)) {
+  if (/^\/(?:spaces|knowledge)(\/|$)/.test(path)) {
     return COMPOSE_KNOWLEDGE_BASE_VALUE;
   }
 

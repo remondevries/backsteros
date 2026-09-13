@@ -11,9 +11,11 @@ import { useDesktopApi } from "../lib/api-context";
 export function SettingsMoneybirdTab({
   title,
   description,
+  hideHeader = false,
 }: {
   title: string;
   description: string;
+  hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
   const [settings, setSettings] = useState<MoneybirdSettings | null>(null);
@@ -114,10 +116,11 @@ export function SettingsMoneybirdTab({
 
   return (
     <>
-      <IntegrationConnectionSettingsView
-        title={title}
-        headerDescription={description}
-        connected={settings === null ? undefined : connected}
+    <IntegrationConnectionSettingsView
+      title={title}
+      headerDescription={description}
+      hideHeader={hideHeader}
+      connected={settings === null ? undefined : connected}
         body={
           <p>
             Connect a{" "}
