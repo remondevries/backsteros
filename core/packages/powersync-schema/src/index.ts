@@ -27,6 +27,7 @@ const projects = new Table(
     color: column.text,
     type: column.text,
     provider: column.text,
+    category: column.text,
     github_repository: column.text,
     cloudflare_zone_id: column.text,
     local_working_directory: column.text,

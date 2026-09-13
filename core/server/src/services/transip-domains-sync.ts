@@ -9,7 +9,14 @@ import {
   TransipApiError,
   TransipClient,
   buildDomainProjectSummary,
+  buildTransipDomainProjectIcon,
+  isTransipDomainCancelledLike,
+  parseTransipDomainTagsFromIcon,
+  projectDateToYmd,
+  tagsEqual,
+  transipYmdToIso,
   type TransipDomain,
+  type TransipWhoisContact,
 } from "../lib/transip-client.js";
 import { getWorkspaceOrEnvTransipToken } from "./transip-settings.js";
 import {
@@ -19,6 +26,30 @@ import {
 } from "./rest-leader-write.js";
 import { recordProjectRestSyncEvent } from "./sync.js";
 import * as taskProjectService from "./tasks-projects.js";
+
+/** @deprecated Prefer {@link buildTransipDomainProjectIcon}. */
+export const TRANSIP_DOMAIN_PROJECT_ICON = buildTransipDomainProjectIcon();
+
+function isTransipDomainIcon(icon: string | null | undefined): boolean {
+  const value = icon?.trim() ?? "";
+  if (!value) return false;
+  if (!value.startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(value) as {
+      t?: unknown;
+      k?: unknown;
+      c?: unknown;
+    };
+    return (
+      parsed.t === "i" &&
+      parsed.k === "transip" &&
+      typeof parsed.c === "string" &&
+      parsed.c.toLowerCase() === "#408fce"
+    );
+  } catch {
+    return false;
+  }
+}
 
 export type TransipDomainSyncCreated = {
   id: string;
@@ -30,13 +61,14 @@ export type TransipDomainSyncResult = {
   fetched: number;
   created: number;
   skipped: number;
-  /** Existing projects whose type was corrected to `domeinname`. */
+  /** Existing projects whose type/provider/dates/tags/status were corrected. */
   healed: number;
   createdProjects: TransipDomainSyncCreated[];
   healedProjectIds: string[];
   domains: Array<{
     name: string;
     status: string | null;
+    registrationDate: string | null;
     renewalDate: string | null;
     action: "created" | "skipped" | "healed";
   }>;
@@ -44,18 +76,86 @@ export type TransipDomainSyncResult = {
 
 export { buildDomainProjectSummary };
 
-function shouldImportDomain(domain: TransipDomain): boolean {
-  const status = domain.status?.toLowerCase() ?? "";
-  // Skip clearly gone/cancelled names; import registered + unknown statuses.
-  if (
-    status === "cancelled" ||
-    status === "canceled" ||
-    status === "gone" ||
-    status === "expired"
-  ) {
-    return false;
+type ProjectRow = Awaited<
+  ReturnType<typeof taskProjectService.listProjects>
+>[number];
+
+/** Group Catalog Domains by lowercase name (duplicates can exist). */
+function groupDomainProjectsByName(
+  projects: ProjectRow[],
+): Map<string, ProjectRow[]> {
+  const byName = new Map<string, ProjectRow[]>();
+  for (const project of projects) {
+    if (project.type !== "domeinname") continue;
+    const nameKey = project.name.trim().toLowerCase();
+    const list = byName.get(nameKey);
+    if (list) list.push(project);
+    else byName.set(nameKey, [project]);
   }
-  return true;
+  return byName;
+}
+
+function domainProjectHealPatch(
+  existing: ProjectRow,
+  domain: TransipDomain,
+  startDateIso: string | null,
+  dueDateIso: string | null,
+  cancelledLike: boolean,
+  desiredIcon: string,
+): UpdateProjectInput | null {
+  const needsProvider = existing.provider !== "transip";
+  const iconValue = existing.icon?.trim() ?? "";
+  const existingTags = parseTransipDomainTagsFromIcon(iconValue);
+  const needsTags = !tagsEqual(existingTags, domain.tags);
+  const needsIcon =
+    needsTags ||
+    (!isTransipDomainIcon(iconValue) &&
+      (needsProvider ||
+        !iconValue ||
+        iconValue === "default" ||
+        iconValue === "transip"));
+  const needsStartDate =
+    startDateIso != null &&
+    projectDateToYmd(existing.startDate) !== domain.registrationDate;
+  const needsDueDate =
+    dueDateIso != null &&
+    projectDateToYmd(existing.dueDate) !== domain.renewalDate;
+  const needsOnHold = cancelledLike && existing.status !== "on_hold";
+  if (
+    !needsProvider &&
+    !needsIcon &&
+    !needsStartDate &&
+    !needsDueDate &&
+    !needsOnHold
+  ) {
+    return null;
+  }
+  return {
+    ...(needsProvider ? { provider: "transip" as const } : {}),
+    ...(needsIcon ? { icon: desiredIcon } : {}),
+    ...(needsStartDate ? { startDate: startDateIso } : {}),
+    ...(needsDueDate ? { dueDate: dueDateIso } : {}),
+    ...(needsOnHold ? { status: "on_hold" as const } : {}),
+    summary: buildDomainProjectSummary(domain),
+  };
+}
+
+function applyHealToLocalRow(
+  existing: ProjectRow,
+  patch: UpdateProjectInput,
+  startDateIso: string | null,
+  dueDateIso: string | null,
+  desiredIcon: string,
+): void {
+  if (patch.provider) existing.provider = patch.provider;
+  if (patch.icon) existing.icon = desiredIcon;
+  if (patch.status) existing.status = patch.status;
+  if (patch.startDate !== undefined) {
+    existing.startDate = startDateIso ? new Date(startDateIso) : null;
+  }
+  if (patch.dueDate !== undefined) {
+    existing.dueDate = dueDateIso ? new Date(dueDateIso) : null;
+  }
 }
 
 async function createDomainProject(
@@ -134,7 +234,7 @@ export async function syncTransipDomains(
     throw new TransipApiError(
       400,
       "transip_token_missing",
-      "TransIP access token is not configured. Paste a token in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
     );
   }
 
@@ -143,17 +243,12 @@ export async function syncTransipDomains(
     fetchImpl: options?.fetchImpl,
   });
   const remote = await client.listDomains();
-  const importable = remote.filter(shouldImportDomain);
 
   const allProjects = await taskProjectService.listProjects(workspaceId);
-  // Match by name across all types — older syncs may have stored domains as
-  // `general` when leader-first create omitted `type`.
-  const existingByName = new Map(
-    allProjects.map((project) => [
-      project.name.trim().toLowerCase(),
-      project,
-    ] as const),
-  );
+  // Only match Catalog Domains. Codebase (and other) projects often share the
+  // same hostname as their title — never reuse those rows for TransIP sync.
+  // Heal every Domains row with that name (duplicates from earlier syncs).
+  const existingByName = groupDomainProjectsByName(allProjects);
 
   const usedKeys = allProjects.map((project) => project.key);
 
@@ -163,41 +258,71 @@ export async function syncTransipDomains(
   let skipped = 0;
   let healed = 0;
 
-  for (const domain of importable) {
+  for (const domain of remote) {
     const nameKey = domain.name.trim().toLowerCase();
-    const existing = existingByName.get(nameKey);
-    if (existing) {
-      const needsType = existing.type !== "domeinname";
-      const needsProvider = existing.provider !== "transip";
-      const iconValue = existing.icon?.trim() ?? "";
-      const needsIcon =
-        !iconValue || iconValue === "default" || needsProvider;
-      if (needsType || needsProvider || needsIcon) {
-        const updated = await patchDomainProject(workspaceId, existing.id, {
-          ...(needsType ? { type: "domeinname" as const } : {}),
-          ...(needsProvider ? { provider: "transip" as const } : {}),
-          ...(needsIcon ? { icon: "transip" } : {}),
-          summary: buildDomainProjectSummary(domain),
+    const startDateIso = transipYmdToIso(domain.registrationDate);
+    const dueDateIso = transipYmdToIso(domain.renewalDate);
+    const cancelledLike = isTransipDomainCancelledLike(domain);
+    const desiredIcon = buildTransipDomainProjectIcon(domain.tags);
+    const matches = existingByName.get(nameKey) ?? [];
+
+    if (matches.length > 0) {
+      let healedAny = false;
+      for (const existing of matches) {
+        const patch = domainProjectHealPatch(
+          existing,
+          domain,
+          startDateIso,
+          dueDateIso,
+          cancelledLike,
+          desiredIcon,
+        );
+        if (!patch) continue;
+        const updated = await patchDomainProject(
+          workspaceId,
+          existing.id,
+          patch,
+        );
+        if (!updated) continue;
+        healedAny = true;
+        healedProjectIds.push(updated.id);
+        applyHealToLocalRow(
+          existing,
+          patch,
+          startDateIso,
+          dueDateIso,
+          desiredIcon,
+        );
+      }
+      if (healedAny) {
+        healed += 1;
+        domains.push({
+          name: domain.name,
+          status: domain.status,
+          registrationDate: domain.registrationDate,
+          renewalDate: domain.renewalDate,
+          action: "healed",
         });
-        if (updated) {
-          healed += 1;
-          healedProjectIds.push(updated.id);
-          existing.type = "domeinname";
-          existing.provider = "transip";
-          existing.icon = needsIcon ? "transip" : existing.icon;
-          domains.push({
-            name: domain.name,
-            status: domain.status,
-            renewalDate: domain.renewalDate,
-            action: "healed",
-          });
-          continue;
-        }
+        continue;
       }
       skipped += 1;
       domains.push({
         name: domain.name,
         status: domain.status,
+        registrationDate: domain.registrationDate,
+        renewalDate: domain.renewalDate,
+        action: "skipped",
+      });
+      continue;
+    }
+
+    // Do not create brand-new projects for fully gone names.
+    if ((domain.status?.toLowerCase() ?? "") === "gone") {
+      skipped += 1;
+      domains.push({
+        name: domain.name,
+        status: domain.status,
+        registrationDate: domain.registrationDate,
         renewalDate: domain.renewalDate,
         action: "skipped",
       });
@@ -215,24 +340,33 @@ export async function syncTransipDomains(
       summary: buildDomainProjectSummary(domain),
       type: "domeinname",
       provider: "transip",
-      icon: "transip",
-      status: "backlog",
+      icon: desiredIcon,
+      status: cancelledLike ? "on_hold" : "backlog",
       sortOrder: -Date.now(),
+      ...(startDateIso ? { startDate: startDateIso } : {}),
+      ...(dueDateIso ? { dueDate: dueDateIso } : {}),
     };
 
     const created = await createDomainProject(workspaceId, input, projectId);
     createdProjects.push(created);
-    existingByName.set(nameKey, {
+    const createdRow = {
       id: created.id,
       key: created.key,
       name: created.name,
       type: "domeinname",
       provider: "transip",
-      icon: "transip",
-    } as (typeof allProjects)[number]);
+      icon: desiredIcon,
+      status: cancelledLike ? "on_hold" : "backlog",
+      startDate: startDateIso ? new Date(startDateIso) : null,
+      dueDate: dueDateIso ? new Date(dueDateIso) : null,
+    } as ProjectRow;
+    const createdList = existingByName.get(nameKey);
+    if (createdList) createdList.push(createdRow);
+    else existingByName.set(nameKey, [createdRow]);
     domains.push({
       name: domain.name,
       status: domain.status,
+      registrationDate: domain.registrationDate,
       renewalDate: domain.renewalDate,
       action: "created",
     });
@@ -247,6 +381,103 @@ export async function syncTransipDomains(
     healedProjectIds,
     domains,
   };
+}
+
+export async function getTransipDomainDetail(
+  workspaceId: string,
+  domainName: string,
+  options?: {
+    accessToken?: string | null;
+    fetchImpl?: typeof fetch;
+  },
+) {
+  const accessToken =
+    options?.accessToken?.trim() ||
+    (await getWorkspaceOrEnvTransipToken(workspaceId));
+  if (!accessToken) {
+    throw new TransipApiError(
+      400,
+      "transip_token_missing",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+    );
+  }
+  const client = new TransipClient({
+    accessToken,
+    fetchImpl: options?.fetchImpl,
+  });
+  return client.getDomainDetail(domainName);
+}
+
+export async function updateTransipDomainTags(
+  workspaceId: string,
+  domainName: string,
+  tags: string[],
+  options?: {
+    accessToken?: string | null;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ tags: string[]; projectId: string | null }> {
+  const accessToken =
+    options?.accessToken?.trim() ||
+    (await getWorkspaceOrEnvTransipToken(workspaceId));
+  if (!accessToken) {
+    throw new TransipApiError(
+      400,
+      "transip_token_missing",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+    );
+  }
+  const client = new TransipClient({
+    accessToken,
+    fetchImpl: options?.fetchImpl,
+  });
+  const nextTags = await client.updateDomainTags(domainName, tags);
+  const nameKey = domainName.trim().toLowerCase();
+  const allProjects = await taskProjectService.listProjects(workspaceId);
+  const matches = allProjects.filter(
+    (project) =>
+      project.type === "domeinname" &&
+      project.name.trim().toLowerCase() === nameKey,
+  );
+  if (matches.length === 0) {
+    return { tags: nextTags, projectId: null };
+  }
+  const desiredIcon = buildTransipDomainProjectIcon(nextTags);
+  let lastProjectId: string | null = null;
+  for (const existing of matches) {
+    const updated = await patchDomainProject(workspaceId, existing.id, {
+      icon: desiredIcon,
+    });
+    lastProjectId = updated?.id ?? existing.id;
+  }
+  return { tags: nextTags, projectId: lastProjectId };
+}
+
+export async function updateTransipDomainContacts(
+  workspaceId: string,
+  domainName: string,
+  contacts: TransipWhoisContact[],
+  options?: {
+    accessToken?: string | null;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ contacts: TransipWhoisContact[] }> {
+  const accessToken =
+    options?.accessToken?.trim() ||
+    (await getWorkspaceOrEnvTransipToken(workspaceId));
+  if (!accessToken) {
+    throw new TransipApiError(
+      400,
+      "transip_token_missing",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+    );
+  }
+  const client = new TransipClient({
+    accessToken,
+    fetchImpl: options?.fetchImpl,
+  });
+  const nextContacts = await client.updateDomainContacts(domainName, contacts);
+  return { contacts: nextContacts };
 }
 
 export { TransipApiError };

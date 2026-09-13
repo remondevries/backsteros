@@ -7,7 +7,14 @@ export type DisplayEntityIcon = {
   color?: string;
 };
 
-const PROJECT_TYPES = ["general", "codebase", "it_service", "webhosting", "domeinname"] as const;
+const PROJECT_TYPES = [
+  "general",
+  "codebase",
+  "it_service",
+  "webhosting",
+  "domeinname",
+  "email",
+] as const;
 
 type ProjectType = (typeof PROJECT_TYPES)[number];
 

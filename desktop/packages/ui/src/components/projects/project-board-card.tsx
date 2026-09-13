@@ -212,6 +212,7 @@ export function ProjectBoardCard({
             searchShortcutLabel="⇧S"
             taskPropertyDropdownId="startDate"
             showIcon={false}
+            disabled={project.type === "domeinname"}
             onDueDateChange={onStartDateChange}
           />
           <span className="project-overview-row__dates-sep">›</span>
@@ -219,6 +220,7 @@ export function ProjectBoardCard({
             dueDate={due}
             variant="list"
             showIcon={false}
+            disabled={project.type === "domeinname"}
             onDueDateChange={onDueDateChange}
           />
         </span>

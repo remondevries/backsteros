@@ -136,6 +136,7 @@ function projectSnapshot(row: typeof projects.$inferSelect) {
     color: row.color,
     type: row.type,
     provider: row.provider,
+    category: row.category,
     github_repository: row.githubRepository,
     cloudflare_zone_id: row.cloudflareZoneId,
     local_working_directory: row.localWorkingDirectory,
@@ -1891,6 +1892,7 @@ function mapProjectUpsert(
     color: asString(payload.color),
     type: asString(payload.type) as Project["type"] | undefined,
     provider: asNullableString(payload.provider) as Project["provider"] | undefined,
+    category: asNullableString(payload.category) as Project["category"] | undefined,
     githubRepository: asNullableString(
       payload.github_repository ?? payload.githubRepository,
     ),
@@ -2068,6 +2070,7 @@ export async function applySyncChange(
           color: input.color,
           type: input.type,
           provider: input.provider,
+          category: input.category,
           githubRepository: input.githubRepository,
           cloudflareZoneId: input.cloudflareZoneId,
           localWorkingDirectory: input.localWorkingDirectory,
@@ -3417,12 +3420,16 @@ export async function applySyncChange(
         subjectId: change.payload.subject_id ?? change.payload.subjectId,
       });
       if (!groupId || !parsed.success) throw new Error("INVALID_CRM_GROUP_MEMBER");
+      // Membership sync events already name the intended subject (REST expands
+      // org↔contact cascade into separate writes). Re-cascading here fails when
+      // a sibling is missing on this core while the primary exists.
       const row = await crmGroupsService.addCrmGroupMember(
         workspaceId,
         groupId,
         parsed.data,
         change.entity_id,
         executor,
+        { cascade: false },
       );
       const dbRow = await loadCrmGroupMemberRow(workspaceId, row.id, executor);
       return dbRow ? crmGroupMemberSnapshot(dbRow) : null;

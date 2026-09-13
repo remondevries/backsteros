@@ -6,6 +6,7 @@ export const PROJECT_TYPES = [
   "it_service",
   "webhosting",
   "domeinname",
+  "email",
 ] as const;
 
 export type ProjectType = (typeof PROJECT_TYPES)[number];
@@ -16,6 +17,7 @@ export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   it_service: "IT Service",
   webhosting: "Webhosting",
   domeinname: "Domeinname",
+  email: "E-mail",
 };
 
 export const PROJECT_TYPE_ORDER: readonly ProjectType[] = [...PROJECT_TYPES];

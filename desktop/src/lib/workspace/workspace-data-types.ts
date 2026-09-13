@@ -49,6 +49,7 @@ export type DesktopWorkspaceData = {
       githubRepository?: string | null;
       cloudflareZoneId?: string | null;
       provider?: string | null;
+      category?: string | null;
     }
   >;
   letters: LetterListItem[];
@@ -119,6 +120,8 @@ export type DesktopWorkspaceData = {
   }) => Promise<{ id: string }>;
   softDeleteArea: (id: string) => Promise<void>;
   reloadHabits: () => Promise<ApiHabit[]>;
+  /** Refetch projects from REST (e.g. after TransIP domain sync heals dates). */
+  reloadProjects: () => Promise<ApiProject[]>;
   createHabit: (input: {
     title: string;
     icon?: string | null;

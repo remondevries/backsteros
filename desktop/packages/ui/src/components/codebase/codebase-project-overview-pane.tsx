@@ -25,6 +25,8 @@ import {
   keyboardNavListItemClass,
 } from "../../list-nav/keyboard-nav-item.js";
 import type { ProjectArea } from "../../projects/project-areas.js";
+import { getProjectProviderDefaultIcon } from "../../projects/project-provider.js";
+import { getProjectEmailCategoryDefaultIcon } from "../../projects/project-email-category.js";
 import type { ProjectStatus } from "../../projects/project-status.js";
 import { buildOrganizationDropdownOptions } from "../dropdowns/dropdown-options.js";
 import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
@@ -1904,7 +1906,11 @@ export function CodebaseProjectOverviewPane({
                   void patchProject({ priority }).catch(() => undefined);
                 }}
                 onTypeChange={(type) => {
-                  void patchProject({ type }).catch(() => undefined);
+                  const patch: { type: string; category?: null } = { type };
+                  if (type !== "email") {
+                    patch.category = null;
+                  }
+                  void patchProject(patch).catch(() => undefined);
                 }}
                 onProviderChange={(provider) => {
                   const patch: {
@@ -1912,7 +1918,17 @@ export function CodebaseProjectOverviewPane({
                     icon?: string;
                   } = { provider };
                   if (provider === "transip") {
-                    patch.icon = "transip";
+                    patch.icon = getProjectProviderDefaultIcon("transip");
+                  }
+                  void patchProject(patch).catch(() => undefined);
+                }}
+                onCategoryChange={(category) => {
+                  const patch: {
+                    category: string | null;
+                    icon?: string;
+                  } = { category };
+                  if (category) {
+                    patch.icon = getProjectEmailCategoryDefaultIcon(category);
                   }
                   void patchProject(patch).catch(() => undefined);
                 }}

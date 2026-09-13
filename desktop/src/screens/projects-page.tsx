@@ -64,6 +64,8 @@ import {
   type ProjectStatus,
   type TaskStatus,
   type TreeReorderRequest,
+  getProjectProviderDefaultIcon,
+  getProjectEmailCategoryDefaultIcon,
   projectReorderPatches,
   taskReorderPatches,
 } from "@backsteros/ui";
@@ -121,6 +123,7 @@ type WorkspaceProject = ProjectOverviewRowProject & {
   localWorkingDirectory?: string | null;
   githubRepository?: string | null;
   provider?: string | null;
+  category?: string | null;
 };
 
 export type ProjectsPageProps = {
@@ -813,7 +816,7 @@ function ProjectsPageBody({
         onViewChange={(nextView) => {
           persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
           navigate(
-            getProjectsListAreaHref(areaFilter ?? "all", nextView));
+            getProjectsListAreaHref(areaFilter ?? "personal", nextView));
         }}
         onSelectProject={(key) => {
           const match = projects.find(
@@ -1700,6 +1703,9 @@ function ProjectsPageBody({
             if ("provider" in patch) {
               localPatch.provider = (patch.provider as string | null) ?? null;
             }
+            if ("category" in patch) {
+              localPatch.category = (patch.category as string | null) ?? null;
+            }
             if ("startDate" in patch) {
               localPatch.startDate = patch.startDate
                 ? new Date(String(patch.startDate)).getTime()
@@ -1829,8 +1835,12 @@ function ProjectsPageBody({
           void workspace.patchProject(project.id, { priority });
         }}
         onTypeChange={(type) => {
-          patchSelected({ type });
-          void workspace.patchProject(project.id, { type });
+          const patch: { type: string; category?: null } = { type };
+          if (type !== "email") {
+            patch.category = null;
+          }
+          patchSelected(patch);
+          void workspace.patchProject(project.id, patch);
         }}
         onProviderChange={(provider) => {
           const patch: {
@@ -1838,7 +1848,18 @@ function ProjectsPageBody({
             icon?: string;
           } = { provider };
           if (provider === "transip") {
-            patch.icon = "transip";
+            patch.icon = getProjectProviderDefaultIcon("transip");
+          }
+          patchSelected(patch);
+          void workspace.patchProject(project.id, patch);
+        }}
+        onCategoryChange={(category) => {
+          const patch: {
+            category: string | null;
+            icon?: string;
+          } = { category };
+          if (category) {
+            patch.icon = getProjectEmailCategoryDefaultIcon(category);
           }
           patchSelected(patch);
           void workspace.patchProject(project.id, patch);

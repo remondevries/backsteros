@@ -1,12 +1,9 @@
 "use client";
 
-import { GearIcon, TrashIcon } from "@primer/octicons-react";
 import {
-  useMemo,
   useState,
   type CSSProperties,
   type MouseEvent,
-  type ReactNode,
   type SyntheticEvent,
 } from "react";
 
@@ -20,10 +17,11 @@ import {
   resolveSpaceOverviewAccent,
   resolveSpaceOverviewIconKey,
 } from "../../spaces/spaces-categories.js";
-import { EntityActionsMenu } from "../entity-actions/entity-actions-menu.js";
 import { EntityIconPicker } from "../entity/entity-icon-picker.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
+import { DocumentIcon } from "../documents/document-icon.js";
 import { DocumentOcticon } from "../documents/document-octicon.js";
+import { CogFourIcon } from "../icons/cog-four-icon.js";
 import { getEntityIconColor } from "../projects/project-octicon.js";
 import type { SpaceOverviewCardItem } from "./space-overview-card.js";
 
@@ -43,7 +41,6 @@ export type WebsiteSpaceRowProps = {
     | { ok: true }
     | { ok: false; error: string };
   onOpenSettings?: (item: SpaceOverviewCardItem) => void;
-  onDeleteSpace?: (item: SpaceOverviewCardItem) => void;
   pointerReorderBind?: GroupedListPointerItemBind | null;
   dragging?: boolean;
 };
@@ -96,14 +93,12 @@ export function WebsiteSpaceRow({
   onIconChange,
   onTitleChange,
   onOpenSettings,
-  onDeleteSpace,
   pointerReorderBind = null,
   dragging = false,
 }: WebsiteSpaceRowProps) {
   const articleCount = item.articleCount ?? 0;
   const countLabel = formatArticleCount(articleCount);
   const canPointerReorder = Boolean(pointerReorderBind);
-  const showActionsMenu = Boolean(onOpenSettings || onDeleteSpace);
   const categoryAccent = resolveSpaceOverviewAccent(item.categoryId);
   const interactiveIcon = Boolean(onIconChange);
 
@@ -136,34 +131,6 @@ export function WebsiteSpaceRow({
     "--website-row-accent": squareAccent,
   } as CSSProperties;
   const glyphStyle = { color: "#101010" } as const;
-
-  const menuItems = useMemo(() => {
-    const next: Array<{
-      id: string;
-      label: string;
-      danger?: boolean;
-      icon: ReactNode;
-      onSelect: () => void;
-    }> = [];
-    if (onOpenSettings) {
-      next.push({
-        id: "settings",
-        label: "Settings",
-        icon: <GearIcon size={16} />,
-        onSelect: () => onOpenSettings(item),
-      });
-    }
-    if (onDeleteSpace) {
-      next.push({
-        id: "delete",
-        label: "Delete",
-        danger: true,
-        icon: <TrashIcon size={16} />,
-        onSelect: () => onDeleteSpace(item),
-      });
-    }
-    return next;
-  }, [item, onDeleteSpace, onOpenSettings]);
 
   return (
     <>
@@ -251,23 +218,37 @@ export function WebsiteSpaceRow({
           ) : null}
         </div>
 
-        <span className="website-space-row__badge" title={countLabel}>
-          {countLabel}
-        </span>
+        <div className="space-overview-card__pills website-space-row__pills">
+          <span
+            className="space-overview-card__pill"
+            title={countLabel}
+            aria-label={countLabel}
+          >
+            <DocumentIcon size={12} />
+            <span>{articleCount}</span>
+          </span>
+        </div>
 
-        {showActionsMenu ? (
+        {onOpenSettings ? (
           <div
             className="website-space-row__menu"
             data-list-reorder-no-drag=""
             onMouseDown={stopCardNavigate}
             onClick={stopCardNavigate}
           >
-            <EntityActionsMenu
-              ariaLabel={`${item.title} actions`}
-              triggerAriaLabel={`More actions for ${item.title}`}
-              triggerClassName="website-space-row__menu-trigger"
-              items={menuItems}
-            />
+            <button
+              type="button"
+              className="website-space-row__menu-trigger"
+              aria-label={`Open settings for ${item.title}`}
+              title="Settings"
+              onMouseDown={stopFieldEvent}
+              onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                stopFieldEvent(event);
+                onOpenSettings(item);
+              }}
+            >
+              <CogFourIcon size={16} />
+            </button>
           </div>
         ) : null}
       </article>

@@ -123,6 +123,14 @@ export const workspaceIntegrationSecrets = pgTable(
     mapboxAccessToken: text("mapbox_access_token"),
     githubApiToken: text("github_api_token"),
     transipAccessToken: text("transip_access_token"),
+    /** TransIP control-panel login — used with private key to mint JWTs. */
+    transipLogin: text("transip_login"),
+    /** PEM private key from TransIP API key pair. */
+    transipPrivateKey: text("transip_private_key"),
+    /** Cached JWT expiry (from token `exp` or mint response). */
+    transipAccessTokenExpiresAt: timestamp("transip_access_token_expires_at", {
+      withTimezone: true,
+    }),
     cloudflareApiToken: text("cloudflare_api_token"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -514,6 +522,8 @@ export const projects = pgTable(
     type: text("type").notNull().default("general"),
     /** Registrar/hosting provider for Domains (e.g. `transip`). */
     provider: text("provider"),
+    /** Email provider category when `type = email` (e.g. `proton`). */
+    category: text("category"),
     /** `owner/repo` when linked; only meaningful for `type = codebase`. */
     githubRepository: text("github_repository"),
     /** Cloudflare zone id when linked; used for Domains DNS management. */
@@ -542,6 +552,7 @@ export const projects = pgTable(
     index("projects_area_id_idx").on(table.areaId),
     index("projects_type_idx").on(table.type),
     index("projects_provider_idx").on(table.provider),
+    index("projects_category_idx").on(table.category),
     index("projects_cloudflare_zone_id_idx").on(table.cloudflareZoneId),
     index("projects_deleted_at_idx").on(table.deletedAt),
   ],

@@ -414,7 +414,10 @@ export async function addCrmGroupMemberWithRetry(
     subjectId: string;
   },
 ) {
-  const SUBJECT_SYNC_RETRY_DELAYS_MS = [0, 150, 300, 600, 1200] as const;
+  // PowerSync upload + peer replication can take a few seconds on a busy core.
+  const SUBJECT_SYNC_RETRY_DELAYS_MS = [
+    0, 200, 400, 800, 1600, 3200, 5000,
+  ] as const;
 
   // Contact/org may still be uploading via PowerSync — land them before REST membership.
   await flushCrmCrudUpload(powerSync, "crm group member preflight");
@@ -423,6 +426,12 @@ export async function addCrmGroupMemberWithRetry(
   for (const delay of SUBJECT_SYNC_RETRY_DELAYS_MS) {
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    const subjectReady = await crmGroupSubjectExistsOnServer(client, input);
+    if (!subjectReady) {
+      lastError = new Error("Member subject not found");
+      await flushCrmCrudUpload(powerSync, "crm group member retry");
+      continue;
     }
     try {
       await addCrmGroupMemberViaPowerSyncOrApi(client, powerSync, input);
@@ -443,6 +452,29 @@ export async function addCrmGroupMemberWithRetry(
         )
       : lastError
     : new Error("Failed to add group member");
+}
+
+async function crmGroupSubjectExistsOnServer(
+  client: BacksterosApiClient,
+  input: {
+    subjectType: CrmGroupSubjectType;
+    subjectId: string;
+  },
+): Promise<boolean> {
+  const path =
+    input.subjectType === "contact"
+      ? `/api/v1/contacts/${encodeURIComponent(input.subjectId)}`
+      : `/api/v1/organizations/${encodeURIComponent(input.subjectId)}`;
+  try {
+    await client.requestJson(path);
+    return true;
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      return false;
+    }
+    // Auth blips / transient errors — still attempt the membership POST.
+    return true;
+  }
 }
 
 function isRetryableUploadError(error: unknown): boolean {

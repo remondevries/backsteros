@@ -19,6 +19,7 @@ import type { ProjectArea } from "../../projects/project-areas.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { CloudflareIcon } from "../icons/cloudflare-icon.js";
+import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -45,11 +46,15 @@ export type ProjectOverviewRowProject = {
   cloudflareZoneId?: string | null;
   /** Registrar/hosting provider (e.g. TransIP). */
   provider?: string | null;
+  /** Email provider category when `type = email`. */
+  category?: string | null;
   startDate?: number | Date | null;
   dueDate?: number | Date | null;
   sortOrder?: number;
   taskProgress?: ProjectTaskProgress;
 };
+
+export type ProjectOverviewListColumns = "default" | "domains";
 
 export type ProjectOverviewRowProps = {
   project: ProjectOverviewRowProject;
@@ -72,6 +77,16 @@ export type ProjectOverviewRowProps = {
   pointerReorderBind?: GroupedListPointerItemBind | null;
   /** True while this row is the active pointer-drag source. */
   dragging?: boolean;
+  /** Column set — `"domains"` shows Name + Dates only. */
+  columns?: ProjectOverviewListColumns;
+  selected?: boolean;
+  forceShowCheckbox?: boolean;
+  showCheckbox?: boolean;
+  onToggleSelected?: (
+    projectId: string,
+    checked: boolean,
+    event?: { shiftKey: boolean },
+  ) => void;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -104,6 +119,11 @@ export function ProjectOverviewRow({
   onDrop,
   pointerReorderBind = null,
   dragging = false,
+  columns = "default",
+  selected = false,
+  forceShowCheckbox = false,
+  showCheckbox = true,
+  onToggleSelected,
 }: ProjectOverviewRowProps) {
   const canPointerReorder = Boolean(pointerReorderBind);
   const canHtml5Drag = draggable && !canPointerReorder;
@@ -148,6 +168,9 @@ export function ProjectOverviewRow({
         draggable={canHtml5Drag}
         className={[
           "project-overview-row",
+          columns === "domains" ? "project-overview-row--domains" : null,
+          selected ? "is-selected" : null,
+          forceShowCheckbox ? "force-show-checkbox" : null,
           keyboardNavListItemClass(keyboardHighlighted),
           canPointerReorder || canHtml5Drag
             ? "project-overview-row--draggable"
@@ -167,6 +190,21 @@ export function ProjectOverviewRow({
         {...(pointerReorderBind ?? {})}
       >
         <span className="project-overview-row__name">
+          {showCheckbox ? (
+            <span
+              className="project-overview-row__check"
+              onClick={stopFieldEvent}
+              onKeyDown={stopFieldEvent}
+            >
+              <PolishedCheckbox
+                checked={selected}
+                ariaLabel={`Select ${project.name}`}
+                onCheckedChange={(checked, event) => {
+                  onToggleSelected?.(project.id, checked, event);
+                }}
+              />
+            </span>
+          ) : null}
           <ProjectOcticon icon={project.icon} type={project.type} size={14} />
           <span className="project-overview-row__key">{project.key}</span>
           <span
@@ -215,7 +253,9 @@ export function ProjectOverviewRow({
             />
           </span>
           <span className="project-overview-row__title-wrap">
-            <span className="project-overview-row__title">{project.name}</span>
+            <span className="project-overview-row__title">
+              {project.name}
+            </span>
             {cloudflareConnected ? (
               <span
                 className="project-overview-row__title-trailing"
@@ -225,51 +265,55 @@ export function ProjectOverviewRow({
                   className="project-cloudflare-badge"
                   aria-label="Connected to Cloudflare"
                 >
-                  <CloudflareIcon height={10} />
+                  <CloudflareIcon height={7} />
                 </span>
               </span>
             ) : null}
           </span>
         </span>
-        <span className="project-overview-row__health" aria-hidden="true" />
-        <span
-          className="project-overview-row__priority"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
-        >
-          <SearchableDropdown
-            value={String(project.priority)}
-            options={priorityOptions}
-            onChange={(next) => onPriorityChange?.(project.id, Number(next))}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel={`Change priority: ${getTaskPriorityLabel(project.priority)}`}
-            taskPropertyDropdownId="priority"
-            className="task-item-row__dropdown"
-            panelAlign="start"
-            panelWidth={280}
-            renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className="task-item-row__icon-trigger"
-                title={getTaskPriorityLabel(project.priority)}
-                tabIndex={-1}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label={`Change priority: ${getTaskPriorityLabel(project.priority)}`}
-                onMouseDown={stopFieldEvent}
-                onClick={(event) => {
-                  stopFieldEvent(event);
-                  onToggle();
-                }}
-              >
-                <TaskPriorityIcon priority={project.priority} size={14} />
-              </button>
-            )}
-          />
-        </span>
+        {columns === "default" ? (
+          <span className="project-overview-row__health" aria-hidden="true" />
+        ) : null}
+        {columns === "default" ? (
+          <span
+            className="project-overview-row__priority"
+            onMouseDown={stopFieldEvent}
+            onClick={stopFieldEvent}
+          >
+            <SearchableDropdown
+              value={String(project.priority)}
+              options={priorityOptions}
+              onChange={(next) => onPriorityChange?.(project.id, Number(next))}
+              searchPlaceholder="Change priority…"
+              searchShortcutLabel="P"
+              ariaLabel={`Change priority: ${getTaskPriorityLabel(project.priority)}`}
+              taskPropertyDropdownId="priority"
+              className="task-item-row__dropdown"
+              panelAlign="start"
+              panelWidth={280}
+              renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                <button
+                  type="button"
+                  id={triggerId}
+                  className="task-item-row__icon-trigger"
+                  title={getTaskPriorityLabel(project.priority)}
+                  tabIndex={-1}
+                  disabled={disabled}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-label={`Change priority: ${getTaskPriorityLabel(project.priority)}`}
+                  onMouseDown={stopFieldEvent}
+                  onClick={(event) => {
+                    stopFieldEvent(event);
+                    onToggle();
+                  }}
+                >
+                  <TaskPriorityIcon priority={project.priority} size={14} />
+                </button>
+              )}
+            />
+          </span>
+        ) : null}
         <span
           className="project-overview-row__dates"
           onMouseDown={stopFieldEvent}
@@ -278,10 +322,13 @@ export function ProjectOverviewRow({
           <TaskDueDateDropdown
             dueDate={start}
             variant="list"
+            status="completed"
             noDueDateLabel="No start date"
             searchShortcutLabel="⇧S"
             taskPropertyDropdownId="startDate"
             showIcon={false}
+            labelFormat={columns === "domains" ? "calendar" : "relative"}
+            disabled={project.type === "domeinname"}
             onDueDateChange={(next) => onStartDateChange?.(project.id, next)}
           />
           <span className="project-overview-row__dates-sep">›</span>
@@ -289,16 +336,22 @@ export function ProjectOverviewRow({
             dueDate={due}
             variant="list"
             showIcon={false}
+            labelFormat={columns === "domains" ? "calendar" : "relative"}
+            disabled={project.type === "domeinname"}
             onDueDateChange={(next) => onDueDateChange?.(project.id, next)}
           />
         </span>
-        <span className="project-overview-row__issues">
-          {progress.total > 0 ? progress.total : "—"}
-        </span>
-        <span className="project-overview-row__status">
-          <span>{formatProjectTaskProgressPercent(progress)}</span>
-          <ProjectProgressRing progress={progress} size={14} />
-        </span>
+        {columns === "default" ? (
+          <span className="project-overview-row__issues">
+            {progress.total > 0 ? progress.total : "—"}
+          </span>
+        ) : null}
+        {columns === "default" ? (
+          <span className="project-overview-row__status">
+            <span>{formatProjectTaskProgressPercent(progress)}</span>
+            <ProjectProgressRing progress={progress} size={14} />
+          </span>
+        ) : null}
       </div>
       {/* Keep labels for screen readers when dates empty */}
       {!startLabel && !dueLabel ? null : null}
@@ -306,15 +359,38 @@ export function ProjectOverviewRow({
   );
 }
 
-export function ProjectsListHeader() {
+export function ProjectsListHeader({
+  columns = "default",
+}: {
+  columns?: ProjectOverviewListColumns;
+}) {
   return (
-    <div className="project-overview-row project-overview-header" role="row">
+    <div
+      className={[
+        "project-overview-row",
+        "project-overview-header",
+        columns === "domains" ? "project-overview-row--domains" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      role="row"
+    >
       <span>Name</span>
-      <span className="text-center">Health</span>
-      <span className="text-center">Priority</span>
-      <span>Dates</span>
-      <span className="text-center">Issues</span>
-      <span className="text-right">Status</span>
+      {columns === "default" ? (
+        <span className="text-center">Health</span>
+      ) : null}
+      {columns === "default" ? (
+        <span className="text-center">Priority</span>
+      ) : null}
+      <span className={columns === "domains" ? "text-center" : undefined}>
+        Dates
+      </span>
+      {columns === "default" ? (
+        <span className="text-center">Issues</span>
+      ) : null}
+      {columns === "default" ? (
+        <span className="text-right">Status</span>
+      ) : null}
     </div>
   );
 }

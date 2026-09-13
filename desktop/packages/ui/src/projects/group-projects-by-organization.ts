@@ -40,20 +40,25 @@ function sortOrgs(items: OrganizationRef[]): OrganizationRef[] {
 /**
  * Split a flat project list by `organizationId`.
  * Only organizations that appear in `organizations` and have matching projects
- * get a header. Projects without a matching org stay in an ungrouped bucket
- * (`showHeader: false`). Ungrouped first, then orgs by sortOrder then name —
+ * get a header. Projects without a matching org stay in an ungrouped bucket.
+ * Ungrouped first, then orgs by sortOrder then name —
  * so ungrouped rows are not mistaken for members of the last subgroup.
+ *
+ * Pass `ungroupedLabel` to show a subgroup header for ungrouped projects
+ * (Catalog Domains).
  */
 export function groupProjectsByOrganization<
   T extends ProjectLikeForOrganizationGrouping,
 >(
   projects: readonly T[],
   organizations: readonly OrganizationRef[] = [],
+  options?: { ungroupedLabel?: string },
 ): OrganizationBucket<T>[] {
   if (projects.length === 0) return [];
 
   const orderedOrgs = sortOrgs([...organizations]);
   const orgIds = new Set(orderedOrgs.map((org) => org.id));
+  const ungroupedLabel = options?.ungroupedLabel?.trim() || null;
 
   const buckets: OrganizationBucket<T>[] = [];
 
@@ -64,8 +69,8 @@ export function groupProjectsByOrganization<
   if (ungrouped.length > 0) {
     buckets.push({
       organizationId: null,
-      name: null,
-      showHeader: false,
+      name: ungroupedLabel,
+      showHeader: Boolean(ungroupedLabel),
       projects: ungrouped,
     });
   }

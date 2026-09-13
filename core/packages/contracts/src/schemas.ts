@@ -27,10 +27,19 @@ export const PROJECT_TYPES = [
   "it_service",
   "webhosting",
   "domeinname",
+  "email",
 ] as const;
 
 /** Registrar / hosting providers (Catalog Domains; extensible). */
 export const PROJECT_PROVIDERS = ["transip"] as const;
+
+/** Email providers for `type = email` projects (Catalog; extensible). */
+export const PROJECT_EMAIL_CATEGORIES = [
+  "lemo_hosting",
+  "google_workspaces",
+  "office365",
+  "proton",
+] as const;
 
 export const DOCUMENT_TYPES = ["project", "knowledge", "journal"] as const;
 
@@ -92,6 +101,7 @@ export const taskStatusSchema = z.enum(TASK_STATUSES);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
 export const projectTypeSchema = z.enum(PROJECT_TYPES);
 export const projectProviderSchema = z.enum(PROJECT_PROVIDERS);
+export const projectEmailCategorySchema = z.enum(PROJECT_EMAIL_CATEGORIES);
 export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
 export const apiKeyScopeSchema = z.enum(API_KEY_SCOPES);
 export const bankAccountInstitutionSchema = z.enum(BANK_ACCOUNT_INSTITUTIONS);
@@ -163,6 +173,8 @@ export const projectSchema = z.object({
   type: projectTypeSchema,
   /** Registrar/hosting provider for Domains (e.g. TransIP). */
   provider: projectProviderSchema.nullable(),
+  /** Email provider category when `type = email`. */
+  category: projectEmailCategorySchema.nullable(),
   githubRepository: githubRepositoryNameSchema.nullable(),
   /** Cloudflare zone id for Domains DNS management. */
   cloudflareZoneId: z.string().max(64).nullable(),
@@ -190,6 +202,7 @@ export const createProjectSchema = z.object({
   color: z.string().max(64).nullable().optional(),
   type: projectTypeSchema.optional(),
   provider: projectProviderSchema.nullable().optional(),
+  category: projectEmailCategorySchema.nullable().optional(),
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
   cloudflareZoneId: z.string().max(64).nullable().optional(),
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
@@ -2114,15 +2127,32 @@ export const transipStatusSchema = z.object({
   configured: z.boolean(),
 });
 export const transipSettingsSchema = z.object({
+  /** Control-panel login used with the private key. */
+  login: z.string().nullable(),
+  loginConfigured: z.boolean(),
+  privateKeyConfigured: z.boolean(),
+  /** Both login and private key are present. */
+  keyConfigured: z.boolean(),
   apiTokenConfigured: z.boolean(),
   apiTokenPreview: z.string().nullable(),
-  /** True when a workspace token or env fallback is configured. */
+  /** ISO timestamp when the cached JWT expires (if known). */
+  tokenExpiresAt: z.string().nullable(),
+  /** True when workspace key/token or env fallback is configured. */
   connected: z.boolean(),
-  /** Env / ~/.config/secrets/transip.env fallback is set. */
+  /** Env / ~/.config/secrets/transip.env access token fallback. */
   envTokenConfigured: z.boolean(),
+  /** Env login + private key fallback. */
+  envKeyConfigured: z.boolean(),
 });
 export const updateTransipSettingsSchema = z.object({
-  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
+  /** TransIP account login. Empty string clears. Omit to leave unchanged. */
+  login: z.string().optional(),
+  /** PEM private key from the TransIP API key pair. Empty clears. */
+  privateKey: z.string().optional(),
+  /**
+   * Legacy: paste a control-panel access token.
+   * Prefer login + privateKey (auto-refreshed JWTs). Empty string clears.
+   */
   apiToken: z.string().optional(),
 });
 export const transipTestConnectionResultSchema = z.object({
@@ -2138,6 +2168,7 @@ export const transipDomainSyncCreatedSchema = z.object({
 export const transipDomainSyncEntrySchema = z.object({
   name: z.string(),
   status: z.string().nullable(),
+  registrationDate: z.string().nullable().optional(),
   renewalDate: z.string().nullable(),
   action: z.enum(["created", "skipped", "healed"]),
 });
@@ -2149,6 +2180,62 @@ export const transipDomainSyncResultSchema = z.object({
   createdProjects: z.array(transipDomainSyncCreatedSchema),
   healedProjectIds: z.array(z.string()).default([]),
   domains: z.array(transipDomainSyncEntrySchema),
+});
+
+export const transipDomainNameserverSchema = z.object({
+  hostname: z.string(),
+  ipv4: z.string().nullable(),
+  ipv6: z.string().nullable(),
+});
+
+export const transipDomainWhoisContactSchema = z.object({
+  type: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  companyName: z.string().nullable(),
+  companyKvk: z.string().nullable(),
+  companyType: z.string().nullable(),
+  street: z.string().nullable(),
+  number: z.string().nullable(),
+  postalCode: z.string().nullable(),
+  city: z.string().nullable(),
+  phoneNumber: z.string().nullable(),
+  faxNumber: z.string().nullable(),
+  email: z.string().nullable(),
+  country: z.string().nullable(),
+});
+
+export const transipDomainDetailSchema = z.object({
+  name: z.string(),
+  status: z.string().nullable(),
+  /** Null when active; typically `"cancelled"` when scheduled/cancelled. */
+  cancellationStatus: z.string().nullable(),
+  cancellationDate: z.string().nullable(),
+  registrationDate: z.string().nullable(),
+  renewalDate: z.string().nullable(),
+  isDnsOnly: z.boolean(),
+  tags: z.array(z.string()),
+  authCode: z.string().nullable(),
+  authCodeError: z.string().nullable(),
+  nameservers: z.array(transipDomainNameserverSchema),
+  contacts: z.array(transipDomainWhoisContactSchema),
+});
+
+export const updateTransipDomainTagsInputSchema = z.object({
+  tags: z.array(z.string()),
+});
+
+export const updateTransipDomainTagsResultSchema = z.object({
+  tags: z.array(z.string()),
+  projectId: z.string().nullable(),
+});
+
+export const updateTransipDomainContactsInputSchema = z.object({
+  contacts: z.array(transipDomainWhoisContactSchema).min(1),
+});
+
+export const updateTransipDomainContactsResultSchema = z.object({
+  contacts: z.array(transipDomainWhoisContactSchema),
 });
 
 /** Cloudflare DNS (API token; zone matching for Catalog Domains). */
@@ -2192,6 +2279,27 @@ export const cloudflareZoneMatchResultSchema = z.object({
   unmatchedProjects: z.number().int().nonnegative(),
   unmatchedZones: z.number().int().nonnegative(),
   domains: z.array(cloudflareZoneMatchEntrySchema),
+});
+
+export const cloudflareDnsRecordSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  name: z.string(),
+  content: z.string(),
+  ttl: z.number().nullable(),
+  proxied: z.boolean().nullable(),
+  priority: z.number().nullable(),
+});
+
+export const cloudflareDnsRecordsResultSchema = z.object({
+  zoneId: z.string(),
+  records: z.array(cloudflareDnsRecordSchema),
+});
+
+export const cloudflarePurgeCacheResultSchema = z.object({
+  zoneId: z.string(),
+  id: z.string().nullable(),
+  purged: z.literal(true),
 });
 
 /** Shared place/geocode result for contacts (and later meetings). */
@@ -3309,6 +3417,22 @@ export type TransipTestConnectionResult = z.infer<
 export type TransipDomainSyncResult = z.infer<
   typeof transipDomainSyncResultSchema
 >;
+export type TransipDomainDetail = z.infer<typeof transipDomainDetailSchema>;
+export type UpdateTransipDomainTagsInput = z.infer<
+  typeof updateTransipDomainTagsInputSchema
+>;
+export type UpdateTransipDomainTagsResult = z.infer<
+  typeof updateTransipDomainTagsResultSchema
+>;
+export type UpdateTransipDomainContactsInput = z.infer<
+  typeof updateTransipDomainContactsInputSchema
+>;
+export type UpdateTransipDomainContactsResult = z.infer<
+  typeof updateTransipDomainContactsResultSchema
+>;
+export type TransipDomainWhoisContact = z.infer<
+  typeof transipDomainWhoisContactSchema
+>;
 export type CloudflareStatus = z.infer<typeof cloudflareStatusSchema>;
 export type CloudflareSettings = z.infer<typeof cloudflareSettingsSchema>;
 export type UpdateCloudflareSettingsInput = z.infer<
@@ -3320,10 +3444,16 @@ export type CloudflareTestConnectionResult = z.infer<
 export type CloudflareZoneMatchResult = z.infer<
   typeof cloudflareZoneMatchResultSchema
 >;
+export type CloudflareDnsRecord = z.infer<typeof cloudflareDnsRecordSchema>;
+export type CloudflareDnsRecordsResult = z.infer<
+  typeof cloudflareDnsRecordsResultSchema
+>;
+export type CloudflarePurgeCacheResult = z.infer<
+  typeof cloudflarePurgeCacheResultSchema
+>;
 export type MapboxTestConnectionResult = z.infer<
   typeof mapboxTestConnectionResultSchema
->;
-export type MapboxGeocodeResult = z.infer<typeof mapboxGeocodeResultSchema>;
+>;export type MapboxGeocodeResult = z.infer<typeof mapboxGeocodeResultSchema>;
 export type AgentMailSettings = z.infer<typeof agentMailSettingsSchema>;
 export type UpdateAgentMailSettingsInput = z.infer<
   typeof updateAgentMailSettingsSchema

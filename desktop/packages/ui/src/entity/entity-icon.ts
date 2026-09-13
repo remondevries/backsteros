@@ -18,8 +18,23 @@ export const ENTITY_ICON_COLOR_PRESETS = [
 
 export type ParsedEntityIcon =
   | { kind: "default"; color?: string }
-  | { kind: "icon"; key: ProjectIconKey; color?: string }
+  | {
+      kind: "icon";
+      key: ProjectIconKey;
+      color?: string;
+      /** Extra metadata (e.g. TransIP registrar tags) preserved across color edits. */
+      tags?: string[];
+    }
   | { kind: "emoji"; emoji: string };
+
+function parseIconTags(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const tags = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
+}
 
 const ALLOWED_EMOJI = new Set(ENTITY_ICON_EMOJIS.map((entry) => entry.emoji));
 
@@ -70,8 +85,9 @@ export function parseEntityIcon(
             typeof record.c === "string" && isValidEntityIconColor(record.c)
               ? record.c
               : undefined;
+          const tags = parseIconTags(record.tags);
 
-          return { kind: "icon", key: record.k, color };
+          return { kind: "icon", key: record.k, color, ...(tags ? { tags } : {}) };
         }
       }
     } catch {
@@ -99,8 +115,15 @@ export function serializeEntityIcon(value: ParsedEntityIcon): string | null {
     return JSON.stringify({ t: "e", v: value.emoji });
   }
 
+  const payload: Record<string, unknown> = { t: "i", k: value.key };
   if (value.color && isValidEntityIconColor(value.color)) {
-    return JSON.stringify({ t: "i", k: value.key, c: value.color });
+    payload.c = value.color;
+  }
+  if (value.tags && value.tags.length > 0) {
+    payload.tags = [...value.tags];
+  }
+  if (payload.c || payload.tags) {
+    return JSON.stringify(payload);
   }
 
   return value.key;

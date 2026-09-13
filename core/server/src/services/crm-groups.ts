@@ -658,15 +658,28 @@ export async function addCrmGroupMemberWithCascade(
     const isPrimary =
       subject.subjectType === input.subjectType &&
       subject.subjectId === input.subjectId;
-    const row = await insertCrmGroupMemberRaw(
-      workspaceId,
-      groupId,
-      subject,
-      isPrimary ? entityId : undefined,
-      executor,
-    );
-    members.push(row);
-    if (isPrimary) primary = row;
+    try {
+      const row = await insertCrmGroupMemberRaw(
+        workspaceId,
+        groupId,
+        subject,
+        isPrimary ? entityId : undefined,
+        executor,
+      );
+      members.push(row);
+      if (isPrimary) primary = row;
+    } catch (error) {
+      // Cascade subjects can lag behind PowerSync / peer replication. Never
+      // block the primary membership on a missing sibling contact/org.
+      if (
+        !isPrimary &&
+        error instanceof Error &&
+        error.message === "SUBJECT_NOT_FOUND"
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
 
   if (!primary) {

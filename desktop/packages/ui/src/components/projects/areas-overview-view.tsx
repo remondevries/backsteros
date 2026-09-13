@@ -179,6 +179,8 @@ export function AreasOverviewView({
     projectId: string,
     startDate: Date | null,
   ) => {
+    const target = localProjects.find((project) => project.id === projectId);
+    if (target?.type === "domeinname") return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId
@@ -190,6 +192,8 @@ export function AreasOverviewView({
   };
 
   const handleDueDateChange = (projectId: string, dueDate: Date | null) => {
+    const target = localProjects.find((project) => project.id === projectId);
+    if (target?.type === "domeinname") return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId

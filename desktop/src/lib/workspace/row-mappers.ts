@@ -169,6 +169,7 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   githubRepository?: string | null;
   cloudflareZoneId?: string | null;
   provider?: string | null;
+  category?: string | null;
 } {
   return {
     id: project.id,
@@ -185,6 +186,7 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: project.cloudflareZoneId ?? null,
     provider: project.provider ?? null,
+    category: project.category ?? null,
     startDate: asEpoch(project.startDate),
     dueDate: asEpoch(project.dueDate),
     sortOrder: project.sortOrder,

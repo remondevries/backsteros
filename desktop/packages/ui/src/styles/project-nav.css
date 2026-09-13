@@ -2472,6 +2472,14 @@
   justify-content: space-between;
   align-items: center;
   gap: 6px;
+  /* Sit over the profile header so the avatar/title align with the toggle. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: transparent;
 }
 
 .contact-detail-panel__chrome-start,
@@ -2479,6 +2487,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  pointer-events: auto;
 }
 
 .contact-detail-panel__chrome-end {
@@ -2487,6 +2496,20 @@
 
 .contact-detail-panel__chrome-start:empty {
   min-width: 0;
+}
+
+.contact-detail-panel__card {
+  position: relative;
+}
+
+.contact-detail-panel__body .entity-overview {
+  /* Chrome overlays the top; keep a slim inset so the header meets the toggle. */
+  padding-top: 8px;
+}
+
+.contact-detail-panel__body .contact-overview__chrome {
+  /* Keep the title clear of the floating hide toggle. */
+  padding-right: 36px;
 }
 
 .contact-detail-panel__body {

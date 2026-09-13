@@ -138,7 +138,7 @@ export function useListBoardViewShortcuts({
       if (onProjectsListPage) {
         persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
         const area =
-          parseProjectAreaFilterFromLocation(pathname, search) ?? "all";
+          parseProjectAreaFilterFromLocation(pathname, search) ?? "personal";
         onNavigate(getProjectsListAreaHref(area, nextView));
         return;
       }

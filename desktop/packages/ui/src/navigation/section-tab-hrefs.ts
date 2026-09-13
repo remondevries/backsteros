@@ -28,8 +28,7 @@ import {
 } from "../list-nav/list-board-view.js";
 import {
   getProjectsListAreaHref,
-  PROJECT_AREA_FILTER_ALL,
-  PROJECT_AREA_ORDER,
+  PROJECT_AREA_FILTERS,
   type ProjectAreaFilter,
 } from "../projects/project-areas.js";
 import {
@@ -154,11 +153,9 @@ export function resolveDesktopSectionTabHrefs(
   }
 
   if (path === "/projects") {
-    const areas: ProjectAreaFilter[] = [
-      PROJECT_AREA_FILTER_ALL,
-      ...PROJECT_AREA_ORDER,
-    ];
-    return areas.map((area) => getProjectsListAreaHref(area, view));
+    return PROJECT_AREA_FILTERS.map((area: ProjectAreaFilter) =>
+      getProjectsListAreaHref(area, view),
+    );
   }
 
   if (path === "/catalog" || path === "/development") {

@@ -127,6 +127,7 @@ export type SpaceSettingsSidePanelProps = {
     file: File,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   onCoverRemove?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  onDelete?: () => void;
 };
 
 /**
@@ -147,6 +148,7 @@ export function SpaceSettingsSidePanel({
   onRevokeSiteKey,
   onCoverUpload,
   onCoverRemove,
+  onDelete,
 }: SpaceSettingsSidePanelProps) {
   const coverInputRef = useRef<HTMLInputElement>(null);
   const seoDraftRef = useRef<SpaceSeoSettings>({
@@ -619,6 +621,19 @@ export function SpaceSettingsSidePanel({
             </button>
           ) : null}
         </div>
+
+        {onDelete ? (
+          <div className="space-settings-side-panel__danger">
+            <button
+              type="button"
+              className="space-settings-side-panel__delete"
+              disabled={busy}
+              onClick={() => onDelete()}
+            >
+              Delete space
+            </button>
+          </div>
+        ) : null}
 
         <div className="contact-section-tabs space-settings-side-panel__tabs">
           <PillNav

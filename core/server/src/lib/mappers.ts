@@ -61,6 +61,7 @@ export function toProject(row: DbProject): Project {
     color: row.color,
     type: row.type as Project["type"],
     provider: (row.provider as Project["provider"]) ?? null,
+    category: (row.category as Project["category"]) ?? null,
     githubRepository: row.githubRepository ?? null,
     cloudflareZoneId: row.cloudflareZoneId ?? null,
     localWorkingDirectory: row.localWorkingDirectory ?? null,

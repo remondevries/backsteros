@@ -1,6 +1,6 @@
 "use client";
 
-import { ProjectIcon } from "@primer/octicons-react";
+import { MailIcon, ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -30,6 +30,12 @@ import {
   PROJECT_PROVIDER_ORDER,
   type ProjectProvider,
 } from "../../projects/project-provider.js";
+import {
+  getProjectEmailCategoryLabel,
+  parseProjectEmailCategory,
+  PROJECT_EMAIL_CATEGORY_ORDER,
+  type ProjectEmailCategory,
+} from "../../projects/project-email-category.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { TransipIcon } from "../icons/transip-icon.js";
@@ -74,12 +80,16 @@ export type ProjectDetailViewProject = {
   type?: string | null;
   /** Registrar/hosting provider (e.g. TransIP for Domains). */
   provider?: string | null;
+  /** Email provider category when `type = email`. */
+  category?: string | null;
   icon?: string | null;
   organizationId?: string | null;
   summary?: string | null;
   description?: string | null;
   startDate?: number | Date | null;
   dueDate?: number | Date | null;
+  /** Linked Cloudflare zone when Catalog Domains matched this hostname. */
+  cloudflareZoneId?: string | null;
   taskProgress?: ProjectTaskProgress;
 };
 
@@ -112,6 +122,7 @@ export type ProjectDetailViewProps = {
   onPriorityChange?: (priority: number) => void;
   onTypeChange?: (type: ProjectType) => void;
   onProviderChange?: (provider: ProjectProvider | null) => void;
+  onCategoryChange?: (category: ProjectEmailCategory | null) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
@@ -146,6 +157,7 @@ export function ProjectDetailView({
   onPriorityChange,
   onTypeChange,
   onProviderChange,
+  onCategoryChange,
   onAreaChange,
   onAreaIdChange,
   onOrganizationChange,
@@ -206,6 +218,7 @@ export function ProjectDetailView({
   const status = migrateLegacyProjectStatus(project.status);
   const projectType = migrateLegacyProjectType(project.type);
   const projectProvider = parseProjectProvider(project.provider);
+  const projectCategory = parseProjectEmailCategory(project.category);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
   const start = toDate(project.startDate);
   const due = toDate(project.dueDate);
@@ -264,6 +277,8 @@ export function ProjectDetailView({
         icon:
           value === "codebase" ? (
             <TerminalConsoleIcon size={14} />
+          ) : value === "email" ? (
+            <MailIcon size={14} />
           ) : (
             <ProjectIcon size={14} />
           ),
@@ -288,6 +303,23 @@ export function ProjectDetailView({
           ) : (
             <ProjectIcon size={14} />
           ),
+      })),
+    ],
+    [],
+  );
+
+  const categoryOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No category",
+        searchTerms: "none unassigned",
+      },
+      ...PROJECT_EMAIL_CATEGORY_ORDER.map((value) => ({
+        value,
+        label: getProjectEmailCategoryLabel(value),
+        searchTerms: `${value} ${getProjectEmailCategoryLabel(value)}`,
+        icon: <MailIcon size={14} />,
       })),
     ],
     [],
@@ -490,6 +522,8 @@ export function ProjectDetailView({
                     fallbackIcon={
                       projectType === "codebase" ? (
                         <TerminalConsoleIcon size={14} />
+                      ) : projectType === "email" ? (
+                        <MailIcon size={14} />
                       ) : (
                         <ProjectIcon size={14} />
                       )
@@ -520,6 +554,28 @@ export function ProjectDetailView({
                     }
                     mutedFallback={!projectProvider}
                   />
+                  {projectType === "email" ? (
+                    <PropertyDropdown
+                      value={projectCategory ?? "__none__"}
+                      options={categoryOptions}
+                      onChange={(next) =>
+                        onCategoryChange?.(
+                          next === "__none__"
+                            ? null
+                            : (next as ProjectEmailCategory),
+                        )
+                      }
+                      searchPlaceholder="Change category…"
+                      ariaLabel="Category"
+                      fallbackIcon={<MailIcon size={14} />}
+                      fallbackLabel={
+                        projectCategory
+                          ? getProjectEmailCategoryLabel(projectCategory)
+                          : "No category"
+                      }
+                      mutedFallback={!projectCategory}
+                    />
+                  ) : null}
                   {organizationOptions.length > 0 || onOrganizationChange ? (
                     <PropertyDropdownNavigateRow
                       navigateHref={

@@ -1719,11 +1719,26 @@ export {
   PROJECT_PROVIDER_ORDER,
   PROJECT_PROVIDER_LABELS,
   PROJECT_PROVIDER_ICON_KEYS,
+  PROJECT_PROVIDER_ICON_COLORS,
   isProjectProvider,
   getProjectProviderLabel,
+  getProjectProviderDefaultIcon,
   parseProjectProvider,
   type ProjectProvider,
 } from "./projects/project-provider.js";
+
+export {
+  PROJECT_EMAIL_CATEGORIES,
+  PROJECT_EMAIL_CATEGORY_ORDER,
+  PROJECT_EMAIL_CATEGORY_LABELS,
+  PROJECT_EMAIL_CATEGORY_ICON_KEYS,
+  PROJECT_EMAIL_CATEGORY_ICON_COLORS,
+  isProjectEmailCategory,
+  getProjectEmailCategoryLabel,
+  getProjectEmailCategoryDefaultIcon,
+  parseProjectEmailCategory,
+  type ProjectEmailCategory,
+} from "./projects/project-email-category.js";
 
 export {
   PROJECT_TYPE_FILTER_ALL,
@@ -2075,12 +2090,15 @@ export {
 export {
   PROJECT_AREAS,
   PROJECT_AREA_FILTER_ALL,
+  PROJECT_AREA_FILTER_DEFAULT,
+  PROJECT_AREA_FILTER_OTHER,
   PROJECT_AREA_LABELS,
   PROJECT_AREA_FILTERS,
   PROJECT_AREA_ORDER,
   PROJECT_AREA_SEARCH_PARAM,
   getProjectAreaFilterLabel,
   filterProjectsByArea,
+  isDefinedProjectArea,
   isProjectAreaFilter,
   parseProjectAreaFilter,
   getProjectsListAreaHref,
@@ -2173,7 +2191,14 @@ export {
   ProjectsListHeader,
   type ProjectOverviewRowProps,
   type ProjectOverviewRowProject,
+  type ProjectOverviewListColumns,
 } from "./components/projects/project-overview-row.js";
+
+export {
+  ProjectBulkEditBar,
+  type ProjectBulkEditBarProps,
+  type ProjectBulkPatch,
+} from "./components/projects/project-bulk-edit-bar.js";
 
 export {
   ProjectBoardCard,
@@ -2374,6 +2399,49 @@ export {
   ProjectPanelDetailView,
   type ProjectPanelDetailViewProps,
 } from "./components/projects/project-panel-detail-view.js";
+export {
+  DomainDetailView,
+  type DomainDetailViewProps,
+} from "./components/projects/domain-detail-view.js";
+export {
+  DomainOverviewView,
+  type DomainOverviewViewProps,
+} from "./components/projects/domain-overview-view.js";
+export {
+  DomainWhoisContactEditor,
+  type DomainWhoisContactEditorProps,
+  contactsEqual,
+} from "./components/projects/domain-whois-contact-editor.js";
+export {
+  DomainCloudflarePanel,
+  type DomainCloudflarePanelProps,
+  type DomainCloudflareDnsRecord,
+  type DomainCloudflareDnsResult,
+} from "./components/projects/domain-cloudflare-panel.js";
+export {
+  DOMAIN_CARD_SECTIONS,
+  DOMAIN_CLOUDFLARE_SECTION,
+  DOMAIN_SECTION_IDS,
+  isDomainSectionId,
+  parseDomainSectionId,
+  resolveDomainCardSections,
+  type DomainSectionConfig,
+  type DomainSectionId,
+} from "./projects/domain-sections.js";
+export {
+  DomainRegistrarPanel,
+  type DomainRegistrarPanelProps,
+  type DomainRegistrarDetail,
+  type DomainRegistrarContact,
+  type DomainRegistrarNameserver,
+} from "./components/projects/domain-registrar-panel.js";
+export {
+  parseTransipDomainTagsFromIcon,
+  buildTransipDomainProjectIcon,
+  formatDomainNameWithTags,
+  normalizeTransipDomainTags,
+  collectTransipDomainTagsFromProjects,
+} from "./projects/transip-domain-tags.js";
 
 export {
   ProjectKeyEditor,

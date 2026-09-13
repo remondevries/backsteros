@@ -479,6 +479,9 @@ function KnowledgePageBody() {
             delete next[item.id];
             return next;
           });
+          setSettingsSpace((current) =>
+            current?.id === item.id ? null : current,
+          );
           return { ok: true as const };
         },
       });
@@ -974,44 +977,6 @@ function KnowledgePageBody() {
               onCreateSpaceFolder={handleCreateSpaceFolder}
               onReorderSpace={handleReorderSpace}
               onOpenSpaceSettings={handleOpenSpaceSettings}
-              onDeleteSpace={requestDeleteSpace}
-              onCoverUpload={async (item, file) => {
-                rememberDesktopSpaceCoverPreview(item.id, file);
-                try {
-                  const document = await client.uploadSpaceCover(
-                    item.id,
-                    file,
-                    file.type || undefined,
-                  );
-                  rememberDesktopSpaceCover(
-                    {
-                      id: document.id,
-                      coverStorageKey: document.coverStorageKey ?? null,
-                      updatedAt:
-                        typeof document.updatedAt === "string"
-                          ? Date.parse(document.updatedAt)
-                          : (document.updatedAt as number | null | undefined) ??
-                            Date.now(),
-                    },
-                    file,
-                  );
-                  await workspace.softRefreshApiDocuments({
-                    force: true,
-                    type: "knowledge",
-                  });
-                } catch (error) {
-                  clearDesktopSpaceCoverPreview(item.id);
-                  throw error;
-                }
-              }}
-              onCoverRemove={async (item) => {
-                clearDesktopSpaceCoverPreview(item.id);
-                await client.deleteSpaceCover(item.id);
-                await workspace.softRefreshApiDocuments({
-                  force: true,
-                  type: "knowledge",
-                });
-              }}
             />
           </div>
           {settingsSpace ? (
@@ -1040,6 +1005,7 @@ function KnowledgePageBody() {
                   }
                   initialSeoEntity={settingsSpaceSeoEntity}
                   onClose={() => setSettingsSpace(null)}
+                  onDelete={() => requestDeleteSpace(settingsSpace)}
                   onSeoChange={async (seo) => {
                     await workspace.updateDocumentPublishFields(
                       settingsSpace.id,

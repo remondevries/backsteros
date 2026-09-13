@@ -77,7 +77,10 @@ function parseDisplayEntityIcon(
 }
 
 function defaultIconKeyForType(type: string | null | undefined): string | null {
-  return migrateLegacyProjectType(type) === "codebase" ? "terminal" : null;
+  const migrated = migrateLegacyProjectType(type);
+  if (migrated === "codebase") return "terminal";
+  if (migrated === "email") return "mail";
+  return null;
 }
 
 /** Strip Next entity-icon JSON / emoji payloads down to an octicon key when possible. */
@@ -115,10 +118,22 @@ function DefaultGlyphForType({
   className?: string;
   style?: CSSProperties;
 }) {
-  if (migrateLegacyProjectType(type) === "codebase") {
+  const migrated = migrateLegacyProjectType(type);
+  if (migrated === "codebase") {
     return (
       <TerminalConsoleIcon size={size} className={className} style={style} />
     );
+  }
+  if (migrated === "email") {
+    const MailGlyph = resolveOcticonComponent("mail");
+    if (MailGlyph) {
+      return createElement(MailGlyph, {
+        size,
+        className,
+        style,
+        "aria-hidden": true,
+      });
+    }
   }
   return (
     <DefaultProjectIcon size={size} className={className} style={style} />

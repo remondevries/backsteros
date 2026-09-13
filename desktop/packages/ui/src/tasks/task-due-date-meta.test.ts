@@ -62,4 +62,17 @@ describe("formatTaskDueMetaLabel", () => {
     const ymd = formatLocalYmd(tomorrow);
     assert.equal(formatTaskDueMetaLabel(ymd), "Tomorrow");
   });
+
+  it("includes year when the date is outside the current calendar year", () => {
+    assert.equal(formatTaskDueMetaLabel("2019-01-12"), "Jan 12, 2019");
+    assert.equal(formatTaskDueMetaLabel("2027-01-12"), "Jan 12, 2027");
+  });
+
+  it("can always include the year for domain-style calendar labels", () => {
+    const thisYear = new Date().getFullYear();
+    assert.equal(
+      formatTaskDueMetaLabel(`${thisYear}-12-06`, { alwaysIncludeYear: true }),
+      `Dec 6, ${thisYear}`,
+    );
+  });
 });

@@ -70,7 +70,7 @@ export type TaskDueDateDropdownProps = {
    * `ymd-time` = always `YYYY-MM-DD @ HH:MM:SS` (local).
    * `long` = always `28 Aug 1990` (includes year).
    */
-  labelFormat?: "relative" | "ymd" | "ymd-time" | "long";
+  labelFormat?: "relative" | "ymd" | "ymd-time" | "long" | "calendar";
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
   triggerVariant?: import("../dropdowns/property-dropdown.js").PropertyDropdownTriggerVariant;
   /** Open the panel on mount (used by deferred list-row mounts). */
@@ -148,7 +148,11 @@ export function TaskDueDateDropdown({
         ? committedYmd
         : labelFormat === "long"
           ? (formatBirthdayLabel(committedYmd) ?? committedYmd)
-          : (formatTaskDueMetaLabel(committedYmd) ?? committedYmd)
+          : labelFormat === "calendar"
+            ? (formatTaskDueMetaLabel(committedYmd, {
+                alwaysIncludeYear: true,
+              }) ?? committedYmd)
+            : (formatTaskDueMetaLabel(committedYmd) ?? committedYmd)
     : noDueDateLabel;
   const hasDueDate = Boolean(committedYmd);
   const dueDateUrgency = useMemo(

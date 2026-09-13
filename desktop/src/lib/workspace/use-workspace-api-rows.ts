@@ -510,6 +510,7 @@ export function useWorkspaceApiRows({
     liveDocumentsById,
     liveDeletedDocumentIds,
     liveProjectsById,
+    setLiveProjectsById,
     liveDeletedProjectIds,
     apiHabits,
     setApiHabits,

@@ -68,6 +68,7 @@ describe("project-type-filters", () => {
       "it_service",
       "webhosting",
       "domeinname",
+      "email",
     ]);
   });
 

@@ -52,6 +52,7 @@ import {
   updateGithubSettingsSchema,
   updateTransipSettingsSchema,
   updateCloudflareSettingsSchema,
+  updateTransipDomainContactsInputSchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
@@ -255,6 +256,7 @@ import * as transipDomainsSyncService from "../services/transip-domains-sync.js"
 import * as transipSettingsService from "../services/transip-settings.js";
 import * as cloudflareZonesSyncService from "../services/cloudflare-zones-sync.js";
 import * as cloudflareSettingsService from "../services/cloudflare-settings.js";
+import * as cloudflareZoneOpsService from "../services/cloudflare-zone-ops.js";
 import type { SyncEntity } from "../lib/sync-constants.js";
 
 const { sanitizeWorkspaceSettings } = cursorSettingsService;
@@ -980,6 +982,131 @@ export function registerApiRoutes(app: Hono) {
     }
   });
 
+  app.get("/api/v1/transip/domains/:domainName", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+    const domainName = c.req.param("domainName")?.trim() ?? "";
+    if (!domainName) {
+      return c.json(
+        { error: "Domain name required", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const detail = await transipDomainsSyncService.getTransipDomainDetail(
+        auth.workspaceId,
+        decodeURIComponent(domainName),
+      );
+      return c.json(detail);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        const status =
+          error.status === 404
+            ? 404
+            : error.status === 401 || error.status === 403
+              ? error.status
+              : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+      throw error;
+    }
+  });
+
+  app.put("/api/v1/transip/domains/:domainName/tags", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const domainName = c.req.param("domainName")?.trim() ?? "";
+    if (!domainName) {
+      return c.json(
+        { error: "Domain name required", code: "bad_request" },
+        400,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    const tags = Array.isArray((body as { tags?: unknown } | null)?.tags)
+      ? ((body as { tags: unknown[] }).tags
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter(Boolean))
+      : null;
+    if (tags == null) {
+      return c.json(
+        { error: "tags must be an array of strings", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await transipDomainsSyncService.updateTransipDomainTags(
+        auth.workspaceId,
+        decodeURIComponent(domainName),
+        tags,
+      );
+      if (result.projectId) {
+        publishProjectLive(auth, result.projectId, "upsert");
+      }
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        const status =
+          error.status === 404
+            ? 404
+            : error.status === 401 || error.status === 403
+              ? error.status
+              : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+      throw error;
+    }
+  });
+
+  app.put("/api/v1/transip/domains/:domainName/contacts", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const domainName = c.req.param("domainName")?.trim() ?? "";
+    if (!domainName) {
+      return c.json(
+        { error: "Domain name required", code: "bad_request" },
+        400,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateTransipDomainContactsInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "contacts must be a non-empty array", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await transipDomainsSyncService.updateTransipDomainContacts(
+        auth.workspaceId,
+        decodeURIComponent(domainName),
+        parsed.data.contacts,
+      );
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        const status =
+          error.status === 404
+            ? 404
+            : error.status === 401 || error.status === 403
+              ? error.status
+              : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/cloudflare/status", async (c) => {
     const auth = getAuth(c);
     if (!auth) {
@@ -1007,6 +1134,75 @@ export function registerApiRoutes(app: Hono) {
         publishProjectLive(auth, entry.projectId, "upsert");
       }
       return c.json(result);
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        if (error.status === 401 || error.status === 403) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/cloudflare/zones/:zoneId/dns-records", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+    const zoneId = c.req.param("zoneId")?.trim() ?? "";
+    if (!zoneId) {
+      return c.json(
+        { error: "Zone id required", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await cloudflareZoneOpsService.listCloudflareDnsRecords(
+          auth.workspaceId,
+          decodeURIComponent(zoneId),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        if (error.status === 401 || error.status === 403) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/v1/cloudflare/zones/:zoneId/purge-cache", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const zoneId = c.req.param("zoneId")?.trim() ?? "";
+    if (!zoneId) {
+      return c.json(
+        { error: "Zone id required", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await cloudflareZoneOpsService.purgeCloudflareCache(
+          auth.workspaceId,
+          decodeURIComponent(zoneId),
+        ),
+      );
     } catch (error) {
       if (error instanceof CloudflareApiError) {
         if (error.status === 401 || error.status === 403) {
@@ -4549,6 +4745,36 @@ export function registerApiRoutes(app: Hono) {
           > = null;
 
           for (const subject of planned) {
+            const isPrimary =
+              subject.subjectType === body.subjectType &&
+              subject.subjectId === body.subjectId;
+
+            // Skip cascade targets that are not on this core yet; fail only if
+            // the subject the user actually selected is missing.
+            if (subject.subjectType === "contact") {
+              const contact = await circleService.getContactById(
+                auth.workspaceId,
+                subject.subjectId,
+              );
+              if (!contact) {
+                if (isPrimary) {
+                  return c.json(notFound("Member subject"), 404);
+                }
+                continue;
+              }
+            } else {
+              const organization = await circleService.getOrganizationById(
+                auth.workspaceId,
+                subject.subjectId,
+              );
+              if (!organization) {
+                if (isPrimary) {
+                  return c.json(notFound("Member subject"), 404);
+                }
+                continue;
+              }
+            }
+
             const currentMembers = await crmGroupsService.listCrmGroupMembers(
               auth.workspaceId,
               groupId,
@@ -4558,9 +4784,6 @@ export function registerApiRoutes(app: Hono) {
                 member.subjectType === subject.subjectType &&
                 member.subjectId === subject.subjectId,
             );
-            const isPrimary =
-              subject.subjectType === body.subjectType &&
-              subject.subjectId === body.subjectId;
             if (already) {
               if (isPrimary) primary = already;
               continue;

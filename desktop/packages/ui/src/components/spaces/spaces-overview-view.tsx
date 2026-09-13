@@ -60,12 +60,6 @@ export type SpacesOverviewViewProps = {
   /** Persist within-category card reorder (full sibling id order). */
   onReorderSpace?: (orderedIds: string[]) => void;
   onOpenSpaceSettings?: (item: SpaceOverviewCardItem) => void;
-  onDeleteSpace?: (item: SpaceOverviewCardItem) => void;
-  onCoverUpload?: (
-    item: SpaceOverviewCardItem,
-    file: File,
-  ) => void | Promise<void>;
-  onCoverRemove?: (item: SpaceOverviewCardItem) => void | Promise<void>;
   /** Show grey placeholder cards per category until documents are ready. */
   loading?: boolean;
 };
@@ -79,9 +73,6 @@ export function SpacesOverviewView({
   onCreateSpaceFolder,
   onReorderSpace,
   onOpenSpaceSettings,
-  onDeleteSpace,
-  onCoverUpload,
-  onCoverRemove,
   loading = false,
 }: SpacesOverviewViewProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(
@@ -358,7 +349,6 @@ export function SpacesOverviewView({
                             onIconChange={onIconChange}
                             onTitleChange={onTitleChange}
                             onOpenSettings={onOpenSpaceSettings}
-                            onDeleteSpace={onDeleteSpace}
                             pointerReorderBind={
                               canReorder
                                 ? bindItem(child.id, category.id)
@@ -374,9 +364,6 @@ export function SpacesOverviewView({
                             onIconChange={onIconChange}
                             onTitleChange={onTitleChange}
                             onOpenSettings={onOpenSpaceSettings}
-                            onDeleteSpace={onDeleteSpace}
-                            onCoverUpload={onCoverUpload}
-                            onCoverRemove={onCoverRemove}
                             pointerReorderBind={
                               canReorder
                                 ? bindItem(child.id, category.id)

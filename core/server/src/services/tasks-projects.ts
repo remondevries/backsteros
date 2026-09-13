@@ -336,6 +336,7 @@ export async function createProject(
       color: input.color ?? null,
       type,
       provider: input.provider ?? null,
+      category: input.category ?? null,
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
       localWorkingDirectory: input.localWorkingDirectory ?? null,
@@ -414,6 +415,12 @@ export async function updateProject(
       ? null
       : input.githubRepository;
 
+  // Leaving email type clears the provider category.
+  const category =
+    input.type !== undefined && input.type !== "email"
+      ? null
+      : input.category;
+
   const [updatedRow] = await executor
     .update(projects)
     .set({
@@ -436,6 +443,7 @@ export async function updateProject(
       color: input.color,
       type: input.type,
       provider: input.provider,
+      category,
       githubRepository,
       cloudflareZoneId: input.cloudflareZoneId,
       localWorkingDirectory: input.localWorkingDirectory,

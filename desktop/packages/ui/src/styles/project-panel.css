@@ -613,3 +613,355 @@
   animation-timing-function: ease-in-out !important;
   animation-duration: 1.35s !important;
 }
+
+.domain-registrar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.domain-registrar-panel__heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.domain-registrar-panel__block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.domain-registrar-panel__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.domain-registrar-panel__muted {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.domain-registrar-panel__error {
+  margin: 0;
+  font-size: 12px;
+  color: #da615d;
+}
+
+.domain-registrar-panel__auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-registrar-panel__auth-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.domain-registrar-panel__button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.domain-registrar-panel__button:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.domain-registrar-panel__list,
+.domain-registrar-panel__contacts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.domain-registrar-panel__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.domain-registrar-panel__ns-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.domain-registrar-panel__contact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.domain-registrar-panel__contact-type {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.domain-registrar-panel__contact-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.domain-overview .contact-overview__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.domain-overview__header-tag {
+  margin-left: 6px;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.domain-overview__registrar-status {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.domain-overview__registrar-status.is-muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.domain-overview__muted {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.domain-overview__error {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #da615d;
+}
+
+.domain-overview__value {
+  font-size: 13px;
+}
+
+.domain-overview__renews-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.domain-overview__years {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  white-space: nowrap;
+}
+
+.domain-overview__tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.domain-overview__tag {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 13px;
+}
+
+.domain-overview__auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-overview__auth-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.domain-overview__button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.domain-overview__button:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.domain-overview__list,
+.domain-overview__contacts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.domain-overview__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.domain-overview__ns-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.domain-overview__contact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.domain-overview__contact-type {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.domain-overview__contact-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.domain-whois-location {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.domain-whois-location__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.domain-whois-location__line {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.domain-whois-location__line.is-muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.domain-whois-location__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.domain-cloudflare-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.domain-cloudflare-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.domain-cloudflare-panel__ok {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, #4ade80 80%, var(--foreground));
+}
+
+.domain-cloudflare-panel__table-wrap {
+  overflow-x: auto;
+  margin: 0 -2px;
+}
+
+.domain-cloudflare-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.domain-cloudflare-panel__table th,
+.domain-cloudflare-panel__table td {
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.domain-cloudflare-panel__table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  white-space: nowrap;
+}
+
+.domain-cloudflare-panel__type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+}
+
+.domain-cloudflare-panel__name,
+.domain-cloudflare-panel__content {
+  word-break: break-word;
+  max-width: 14rem;
+}
+
+

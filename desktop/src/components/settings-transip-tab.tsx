@@ -18,6 +18,8 @@ export function SettingsTransipTab({
 }) {
   const { client } = useDesktopApi();
   const [settings, setSettings] = useState<TransipSettings | null>(null);
+  const [loginDraft, setLoginDraft] = useState("");
+  const [privateKeyDraft, setPrivateKeyDraft] = useState("");
   const [apiTokenDraft, setApiTokenDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -48,6 +50,8 @@ export function SettingsTransipTab({
   }, [loadSettings]);
 
   const patchSettings = async (patch: {
+    login?: string;
+    privateKey?: string;
     apiToken?: string;
   }): Promise<TransipSettings | null> => {
     setSaving(true);
@@ -75,6 +79,30 @@ export function SettingsTransipTab({
     }
   };
 
+  const onSaveKeyAuth = async () => {
+    const login = loginDraft.trim() || settings?.login || "";
+    const privateKey = privateKeyDraft.trim();
+    const patch: { login?: string; privateKey?: string } = {};
+    if (loginDraft.trim() || !settings?.loginConfigured) {
+      if (login) patch.login = login;
+    }
+    if (privateKey) patch.privateKey = privateKey;
+    if (!patch.login && !patch.privateKey) return;
+    if (!settings?.loginConfigured && !patch.login) return;
+    if (!settings?.privateKeyConfigured && !patch.privateKey) return;
+    const body = await patchSettings(patch);
+    if (body) {
+      setPrivateKeyDraft("");
+      if (loginDraft.trim()) setLoginDraft("");
+    }
+  };
+
+  const onClearKeyAuth = async () => {
+    await patchSettings({ login: "", privateKey: "" });
+    setLoginDraft("");
+    setPrivateKeyDraft("");
+  };
+
   const onSaveToken = async () => {
     const value = apiTokenDraft.trim();
     if (!value) return;
@@ -88,29 +116,33 @@ export function SettingsTransipTab({
   };
 
   const connected = settings?.connected ?? false;
+  const keyConfigured = settings?.keyConfigured ?? false;
   const tokenConfigured = settings?.apiTokenConfigured ?? false;
+  const expiresLabel = settings?.tokenExpiresAt
+    ? new Date(settings.tokenExpiresAt).toLocaleString()
+    : null;
 
   return (
     <>
-    <IntegrationConnectionSettingsView
-      title={title}
-      headerDescription={description}
-      hideHeader={hideHeader}
-      connected={settings === null ? undefined : connected}
+      <IntegrationConnectionSettingsView
+        title={title}
+        headerDescription={description}
+        hideHeader={hideHeader}
+        connected={settings === null ? undefined : connected}
         body={
           <p>
-            Paste a{" "}
+            Prefer{" "}
             <a
               href="https://www.transip.eu/knowledgebase/77-using-the-transip-rest-api/"
               target="_blank"
               rel="noreferrer"
             >
-              TransIP access token
+              login + private key
             </a>{" "}
-            (prefer <strong>read-only</strong>). Stored in core like
-            Moneybird/GitHub — not synced via PowerSync. Env{" "}
-            <code>TRANSIP_ACCESS_TOKEN</code> remains a fallback when no Settings
-            token is saved.
+            from the TransIP control panel. Core mints access tokens (up to 1
+            month) and refreshes them before they expire — no monthly paste.
+            Use a key that is <strong>not</strong> read-only so tags and WHOIS
+            can be updated.
           </p>
         }
         statusLabel={
@@ -120,26 +152,11 @@ export function SettingsTransipTab({
               ? "Connected"
               : "Not connected"
         }
-        secondaryLabel="Token"
-        secondaryValue={
-          tokenConfigured
-            ? (settings?.apiTokenPreview ?? "Configured")
-            : settings?.envTokenConfigured
-              ? "Env fallback only"
-              : "—"
-        }
-        hint={
-          tokenConfigured
-            ? "Catalog → Domains can sync your TransIP domain inventory."
-            : settings?.envTokenConfigured
-              ? "Using TRANSIP_ACCESS_TOKEN from the server environment until you save a Settings token."
-              : null
-        }
+        testLabel={testing ? "Testing…" : "Test connection"}
         testing={testing}
         testMessage={testMessage}
         testOk={testOk}
-        testDisabled={settings === null || !connected}
-        onTestConnection={() => {
+        onTest={() => {
           void (async () => {
             setTesting(true);
             setTestMessage(null);
@@ -149,14 +166,13 @@ export function SettingsTransipTab({
                 await client.requestJson<TransipTestConnectionResult>(
                   "/api/v1/settings/transip/test",
                 );
-              await loadSettings();
               setTestOk(result.ok);
               setTestMessage(
                 result.ok
-                  ? result.domainCount != null
-                    ? `Connected — ${result.domainCount} domain${result.domainCount === 1 ? "" : "s"} visible.`
-                    : "Connected to TransIP."
-                  : (result.error ?? "TransIP connection test failed."),
+                  ? `OK — ${result.domainCount ?? 0} domain${
+                      result.domainCount === 1 ? "" : "s"
+                    }`
+                  : result.error ?? "TransIP connection test failed.",
               );
             } catch (error) {
               setTestOk(false);
@@ -173,10 +189,87 @@ export function SettingsTransipTab({
       />
 
       <section className="settings-card">
-        <h2>Access token</h2>
+        <h2>Login + private key</h2>
         <p>
-          Create a token in the TransIP control panel under API. Read-only is
-          enough to list domains for Catalog.
+          Create an API key pair in TransIP → API. Store the private key here
+          with your login. Core requests a JWT when needed and refreshes it
+          about two days before expiry.
+        </p>
+        <label className="settings-field">
+          TransIP login
+          <input
+            type="text"
+            autoComplete="username"
+            placeholder={
+              settings?.loginConfigured
+                ? `Configured (${settings.login ?? "••••"})`
+                : "Your TransIP username…"
+            }
+            value={loginDraft}
+            onChange={(event) => setLoginDraft(event.target.value)}
+          />
+        </label>
+        <label className="settings-field">
+          Private key (PEM)
+          <textarea
+            autoComplete="off"
+            rows={6}
+            spellCheck={false}
+            placeholder={
+              settings?.privateKeyConfigured
+                ? "Configured — paste a new key to replace"
+                : "-----BEGIN PRIVATE KEY-----\n…"
+            }
+            value={privateKeyDraft}
+            onChange={(event) => setPrivateKeyDraft(event.target.value)}
+          />
+        </label>
+        <div className="settings-cursor-key-actions">
+          <button
+            type="button"
+            disabled={
+              saving ||
+              !(
+                (loginDraft.trim() || settings?.loginConfigured) &&
+                (privateKeyDraft.trim() || settings?.privateKeyConfigured) &&
+                (loginDraft.trim() || privateKeyDraft.trim())
+              )
+            }
+            onClick={() => void onSaveKeyAuth()}
+          >
+            {saving ? "Saving…" : "Save key auth"}
+          </button>
+          <button
+            type="button"
+            disabled={
+              saving ||
+              (!settings?.loginConfigured && !settings?.privateKeyConfigured)
+            }
+            onClick={() => void onClearKeyAuth()}
+          >
+            Clear key auth
+          </button>
+        </div>
+        {keyConfigured ? (
+          <p className="settings-hint">
+            Key auth on file for {settings?.login}
+            {expiresLabel ? ` · cached token expires ${expiresLabel}` : ""}.
+          </p>
+        ) : (
+          <p className="settings-hint">
+            No key auth stored
+            {settings?.envKeyConfigured
+              ? " (env TRANSIP_LOGIN + TRANSIP_PRIVATE_KEY is available)."
+              : "."}
+          </p>
+        )}
+      </section>
+
+      <section className="settings-card">
+        <h2>Access token (legacy)</h2>
+        <p>
+          Optional fallback if you paste a control-panel token. These expire
+          within one month and are not auto-refreshed — prefer key auth above.
         </p>
         <label className="settings-field">
           TransIP access token
@@ -211,6 +304,7 @@ export function SettingsTransipTab({
         {tokenConfigured ? (
           <p className="settings-hint">
             Token on file: {settings?.apiTokenPreview}
+            {expiresLabel ? ` · expires ${expiresLabel}` : ""}
           </p>
         ) : (
           <p className="settings-hint">

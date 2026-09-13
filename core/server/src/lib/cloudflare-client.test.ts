@@ -26,4 +26,69 @@ describe("CloudflareClient", () => {
     ]);
     assert.equal(calls.length, 1);
   });
+
+  it("lists and sorts DNS records", async () => {
+    const client = new CloudflareClient({ apiToken: "test-token" });
+    (client as unknown as {
+      client: {
+        dns: { records: { list: (q: { zone_id: string }) => AsyncGenerator } };
+      };
+    }).client = {
+      dns: {
+        records: {
+          async *list(query: { zone_id: string }) {
+            assert.equal(query.zone_id, "zone1");
+            yield {
+              id: "r2",
+              type: "A",
+              name: "www.example.com",
+              content: "1.2.3.4",
+              ttl: 1,
+              proxied: true,
+            };
+            yield {
+              id: "r1",
+              type: "CNAME",
+              name: "example.com",
+              content: "target.example.net",
+              ttl: 300,
+              proxied: false,
+            };
+          },
+        },
+      },
+    };
+
+    const records = await client.listDnsRecords("zone1");
+    assert.deepEqual(
+      records.map((entry) => entry.id),
+      ["r1", "r2"],
+    );
+  });
+
+  it("purges everything for a zone", async () => {
+    const client = new CloudflareClient({ apiToken: "test-token" });
+    let purgeArgs: unknown = null;
+    (client as unknown as {
+      client: {
+        cache: {
+          purge: (params: unknown) => Promise<{ id: string }>;
+        };
+      };
+    }).client = {
+      cache: {
+        purge: async (params) => {
+          purgeArgs = params;
+          return { id: "purge-1" };
+        },
+      },
+    };
+
+    const result = await client.purgeEverything("zone1");
+    assert.deepEqual(purgeArgs, {
+      zone_id: "zone1",
+      purge_everything: true,
+    });
+    assert.deepEqual(result, { id: "purge-1" });
+  });
 });

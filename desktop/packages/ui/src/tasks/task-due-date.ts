@@ -148,6 +148,7 @@ export function getTaskDueDateUrgency(
 
 export function formatTaskDueMetaLabel(
   dueDate: Date | number | string | null | undefined,
+  options?: { alwaysIncludeYear?: boolean },
 ): string | null {
   if (dueDate == null) return null;
 
@@ -168,16 +169,30 @@ export function formatTaskDueMetaLabel(
   const parsed = parseYmdLocal(ymd);
   if (!parsed) return null;
 
-  const today = formatLocalYmd(new Date());
-  if (ymd === today) return "Today";
+  const alwaysIncludeYear = options?.alwaysIncludeYear === true;
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (ymd === formatLocalYmd(tomorrow)) return "Tomorrow";
+  if (!alwaysIncludeYear) {
+    const today = formatLocalYmd(new Date());
+    if (ymd === today) return "Today";
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (ymd === formatLocalYmd(yesterday)) return "Yesterday";
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (ymd === formatLocalYmd(tomorrow)) return "Tomorrow";
 
-  return `${MONTH_NAMES[parsed.getMonth()]} ${parsed.getDate()}`;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (ymd === formatLocalYmd(yesterday)) return "Yesterday";
+  }
+
+  const monthDay = `${MONTH_NAMES[parsed.getMonth()]} ${parsed.getDate()}`;
+  // Include year when not this calendar year so project start›due ranges
+  // (e.g. domain registration 2019 vs renewal 2027) stay distinguishable.
+  // Domain lists pass alwaysIncludeYear so renewals in the current year keep it too.
+  if (
+    alwaysIncludeYear ||
+    parsed.getFullYear() !== new Date().getFullYear()
+  ) {
+    return `${monthDay}, ${parsed.getFullYear()}`;
+  }
+  return monthDay;
 }

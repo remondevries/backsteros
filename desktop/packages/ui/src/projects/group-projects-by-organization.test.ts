@@ -40,3 +40,14 @@ test("groupProjectsByOrganization buckets by organizationId and leaves ungrouped
     ],
   );
 });
+
+test("groupProjectsByOrganization can label the ungrouped bucket", () => {
+  const groups = groupProjectsByOrganization(
+    [{ id: "b", organizationId: null }],
+    [{ id: "acme", name: "Acme" }],
+    { ungroupedLabel: "No organization" },
+  );
+
+  assert.equal(groups[0]?.showHeader, true);
+  assert.equal(groups[0]?.name, "No organization");
+});

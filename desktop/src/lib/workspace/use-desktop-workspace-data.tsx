@@ -36,6 +36,7 @@ import {
   fillMissingAgentChatIdFromApi,
   fillMissingAgentInboxApprovedAtFromApi,
   fillMissingDueDatesFromApi,
+  fillMissingProjectDatesFromApi,
   fillMissingHabitIdFromApi,
   dropStaleLocalHabitTasks,
   fillMissingCodebaseFieldsFromApi,
@@ -257,6 +258,7 @@ function useDesktopWorkspaceDataImpl(): {
     liveDocumentsById,
     liveDeletedDocumentIds,
     liveProjectsById,
+    setLiveProjectsById,
     liveDeletedProjectIds,
     apiHabits,
     setApiHabits,
@@ -422,20 +424,23 @@ function useDesktopWorkspaceDataImpl(): {
       localProjects.data?.map((row) => snakeRow(row) as ApiProject) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiProjects);
     return applyLiveEntityOverlay(
-      fillMissingLongTextFromApi(
-        fillMissingCodebaseFieldsFromApi(
-          fillMissingTypeFromApi(
-            // Shell creates still land in apiProjects before the watch mirrors.
-            mergeLocalWithPendingApiCreates(
-              resolveLocalOrApiRows(localMapped, apiProjects),
-              apiProjects,
+      fillMissingProjectDatesFromApi(
+        fillMissingLongTextFromApi(
+          fillMissingCodebaseFieldsFromApi(
+            fillMissingTypeFromApi(
+              // Shell creates still land in apiProjects before the watch mirrors.
+              mergeLocalWithPendingApiCreates(
+                resolveLocalOrApiRows(localMapped, apiProjects),
+                apiProjects,
+              ),
+              fillFrom,
             ),
             fillFrom,
           ),
           fillFrom,
+          ["summary", "description"],
         ),
         fillFrom,
-        ["summary", "description"],
       ),
       liveProjectsById,
       { deletedIds: liveDeletedProjectIds },
@@ -809,6 +814,11 @@ function useDesktopWorkspaceDataImpl(): {
     [localInboxTasks, localTasks],
   );
 
+  const getProjectById = useCallback(
+    (id: string) => projectsById.get(id) ?? null,
+    [projectsById],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -829,6 +839,8 @@ function useDesktopWorkspaceDataImpl(): {
     setApiOrganizations,
     setApiMeetings,
     setApiDocuments,
+    setLiveProjectsById,
+    getProjectById,
     getLocalTaskStatus,
   });
 
@@ -1128,6 +1140,13 @@ function useDesktopWorkspaceDataImpl(): {
     },
     [patchViaPowerSyncOrApi],
   );
+  const reloadProjects = useCallback(async () => {
+    const body = await client.requestJson<{ projects: ApiProject[] }>(
+      "/api/v1/projects",
+    );
+    setApiProjects(body.projects);
+    return body.projects;
+  }, [client, setApiProjects]);
   const patchLetter = useCallback(
     async (id: string, values: Record<string, unknown>) => {
       await patchViaPowerSyncOrApi("letters", id, values);
@@ -1336,6 +1355,7 @@ function useDesktopWorkspaceDataImpl(): {
       createArea,
       softDeleteArea,
       reloadHabits,
+      reloadProjects,
       createHabit,
       updateHabit,
       recordHabitDay,
@@ -1383,6 +1403,7 @@ function useDesktopWorkspaceDataImpl(): {
       patchTask,
       recordHabitDay,
       reloadHabits,
+      reloadProjects,
       renameDocument,
       reorderDocuments,
       softDeleteArea,

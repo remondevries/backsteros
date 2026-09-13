@@ -48,7 +48,10 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
       ? formatDueDateTimeStamp(props.dueDate) || ymdValue
       : props.labelFormat === "ymd"
         ? ymdValue
-        : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+        : props.labelFormat === "calendar"
+          ? (formatTaskDueMetaLabel(ymdValue, { alwaysIncludeYear: true }) ??
+            ymdValue)
+          : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
     : (props.noDueDateLabel ?? "No due date");
   const hasDueDate = Boolean(ymdValue);
   const dueDateUrgency = useMemo(

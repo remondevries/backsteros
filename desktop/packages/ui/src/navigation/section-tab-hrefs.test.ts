@@ -8,24 +8,20 @@ import {
   resolveSectionTabCycleShortcut,
 } from "./section-tab-hrefs.js";
 
-test("catalog list uses type filter tabs", () => {
-  assert.deepEqual(resolveDesktopSectionTabHrefs("/catalog"), [
-    "/catalog",
-    "/catalog?type=general",
-    "/catalog?type=codebase",
-    "/catalog?type=it_service",
-    "/catalog?type=webhosting",
-    "/catalog?type=domeinname",
+test("projects list uses area filter tabs with Other instead of All", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects"), [
+    "/projects",
+    "/projects?area=business",
+    "/projects?area=clients",
+    "/projects?area=other",
   ]);
   assert.deepEqual(
-    resolveDesktopSectionTabHrefs("/catalog", "?type=codebase&view=board"),
+    resolveDesktopSectionTabHrefs("/projects", "?area=other&view=board"),
     [
-      "/catalog?view=board",
-      "/catalog?type=general&view=board",
-      "/catalog?type=codebase&view=board",
-      "/catalog?type=it_service&view=board",
-      "/catalog?type=webhosting&view=board",
-      "/catalog?type=domeinname&view=board",
+      "/projects?view=board",
+      "/projects?area=business&view=board",
+      "/projects?area=clients&view=board",
+      "/projects?area=other&view=board",
     ],
   );
 });

@@ -338,6 +338,12 @@ export function EntityIconPicker({
       kind: "icon",
       key: iconKey,
       color: selectedColor,
+      // Keep TransIP (etc.) tags when only recoloring / reaffirming the same key.
+      ...(parsedValue.kind === "icon" &&
+      parsedValue.key === iconKey &&
+      parsedValue.tags?.length
+        ? { tags: parsedValue.tags }
+        : {}),
     });
   }
 

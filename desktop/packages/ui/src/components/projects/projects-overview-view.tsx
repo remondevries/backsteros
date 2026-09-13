@@ -18,12 +18,15 @@ import {
   projectTypeCollapseKey,
 } from "../../projects/group-projects-by-type.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
+import { useListMultiSelect } from "../../list-nav/use-list-multi-select.js";
 import {
   filterProjectsByArea,
   getProjectAreaFilterLabel,
-  PROJECT_AREA_FILTER_ALL,
+  PROJECT_AREA_FILTER_DEFAULT,
+  PROJECT_AREA_FILTER_OTHER,
   PROJECT_AREA_FILTERS,
   PROJECT_AREAS,
+  isDefinedProjectArea,
   type ProjectArea,
   type ProjectAreaFilter,
 } from "../../projects/project-areas.js";
@@ -57,6 +60,10 @@ import {
   ProjectsListHeader,
   type ProjectOverviewRowProject,
 } from "./project-overview-row.js";
+import {
+  ProjectBulkEditBar,
+  type ProjectBulkPatch,
+} from "./project-bulk-edit-bar.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
 import { ProjectTypeGroupSection } from "./project-type-group-section.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
@@ -71,6 +78,7 @@ import {
   computeProjectKeyColumnCh,
   projectKeyColumnCssVars,
 } from "../../projects/project-key-column-width.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 type SecondaryBucket = {
   id: string | null;
@@ -86,14 +94,14 @@ function getSecondaryBuckets(
   organizations: OrganizationRef[],
 ): SecondaryBucket[] {
   if (mode === "organization") {
-    return groupProjectsByOrganization(projects, organizations).map(
-      (bucket) => ({
-        id: bucket.organizationId,
-        name: bucket.name,
-        showHeader: bucket.showHeader,
-        projects: bucket.projects,
-      }),
-    );
+    return groupProjectsByOrganization(projects, organizations, {
+      ungroupedLabel: "No organization",
+    }).map((bucket) => ({
+      id: bucket.organizationId ?? "__none__",
+      name: bucket.name,
+      showHeader: bucket.showHeader,
+      projects: bucket.projects,
+    }));
   }
   return groupProjectsByNestedArea(projects, nestedAreas).map((bucket) => ({
     id: bucket.areaId,
@@ -130,6 +138,10 @@ export type ProjectsOverviewViewProps = {
   onPriorityChange?: (projectId: string, priority: number) => void;
   onStartDateChange?: (projectId: string, startDate: Date | null) => void;
   onDueDateChange?: (projectId: string, dueDate: Date | null) => void;
+  onOrganizationChange?: (
+    projectId: string,
+    organizationId: string | null,
+  ) => void;
   /** Create a project in a status group (Next AddProjectInline). */
   onCreateProject?: (input: {
     status: ProjectStatus;
@@ -176,6 +188,11 @@ export type ProjectsOverviewViewProps = {
    * resize the column.
    */
   projectKeyColumnCh?: number;
+  /**
+   * Column set for the list header + rows.
+   * `"domains"` keeps Name + Dates only (Catalog Domains).
+   */
+  listColumns?: "default" | "domains";
 };
 
 export function ProjectsOverviewView({
@@ -188,12 +205,13 @@ export function ProjectsOverviewView({
   onPriorityChange,
   onStartDateChange,
   onDueDateChange,
+  onOrganizationChange,
   onCreateProject,
   onCreatedProject,
   onCreateArea,
   onCreatedArea,
   onReorder,
-  initialArea = PROJECT_AREA_FILTER_ALL,
+  initialArea = PROJECT_AREA_FILTER_DEFAULT,
   area: controlledArea,
   onAreaChange,
   initialType = PROJECT_TYPE_FILTER_ALL,
@@ -209,6 +227,7 @@ export function ProjectsOverviewView({
   selectedProjectId = null,
   workingProjectIds,
   projectKeyColumnCh: projectKeyColumnChProp,
+  listColumns = "default",
 }: ProjectsOverviewViewProps) {
   const [uncontrolledArea, setUncontrolledArea] =
     useState<ProjectAreaFilter>(initialArea);
@@ -247,6 +266,8 @@ export function ProjectsOverviewView({
     () => new Set(),
   );
   const [localProjects, setLocalProjects] = useState(projects);
+  const pendingStatusByIdRef = useRef(new Map<string, ProjectStatus>());
+  const pendingPriorityByIdRef = useRef(new Map<string, number>());
   const [addingToStatus, setAddingToStatus] = useState<ProjectStatus | null>(
     null,
   );
@@ -271,10 +292,32 @@ export function ProjectsOverviewView({
   );
 
   useEffect(() => {
-    setLocalProjects(projects);
+    setLocalProjects(
+      projects.map((project) => {
+        let next = project;
+        const pendingStatus = pendingStatusByIdRef.current.get(project.id);
+        if (pendingStatus !== undefined) {
+          if (migrateLegacyProjectStatus(project.status) === pendingStatus) {
+            pendingStatusByIdRef.current.delete(project.id);
+          } else {
+            next = { ...next, status: pendingStatus };
+          }
+        }
+        const pendingPriority = pendingPriorityByIdRef.current.get(project.id);
+        if (pendingPriority !== undefined) {
+          if (project.priority === pendingPriority) {
+            pendingPriorityByIdRef.current.delete(project.id);
+          } else {
+            next = { ...next, priority: pendingPriority };
+          }
+        }
+        return next;
+      }),
+    );
   }, [projects]);
 
   const handleStatusChange = (projectId: string, status: ProjectStatus) => {
+    pendingStatusByIdRef.current.set(projectId, status);
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId ? { ...project, status } : project,
@@ -284,6 +327,7 @@ export function ProjectsOverviewView({
   };
 
   const handlePriorityChange = (projectId: string, priority: number) => {
+    pendingPriorityByIdRef.current.set(projectId, priority);
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId ? { ...project, priority } : project,
@@ -296,6 +340,8 @@ export function ProjectsOverviewView({
     projectId: string,
     startDate: Date | null,
   ) => {
+    const target = localProjects.find((project) => project.id === projectId);
+    if (target?.type === "domeinname") return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId
@@ -307,6 +353,8 @@ export function ProjectsOverviewView({
   };
 
   const handleDueDateChange = (projectId: string, dueDate: Date | null) => {
+    const target = localProjects.find((project) => project.id === projectId);
+    if (target?.type === "domeinname") return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId
@@ -315,6 +363,18 @@ export function ProjectsOverviewView({
       ),
     );
     onDueDateChange?.(projectId, dueDate);
+  };
+
+  const handleOrganizationChange = (
+    projectId: string,
+    organizationId: string | null,
+  ) => {
+    setLocalProjects((current) =>
+      current.map((project) =>
+        project.id === projectId ? { ...project, organizationId } : project,
+      ),
+    );
+    onOrganizationChange?.(projectId, organizationId);
   };
 
   const handleProjectReorder = useCallback(
@@ -380,11 +440,15 @@ export function ProjectsOverviewView({
   );
 
   const filtered = useMemo(() => {
-    const byArea = filterProjectsByArea(localProjects, area);
+    // Catalog (and other type-only lists) hide area pills — do not apply the
+    // Projects-page area default (Personal), or unassigned projects vanish.
+    const byArea = showAreaFilters
+      ? filterProjectsByArea(localProjects, area)
+      : localProjects;
     return showTypeFilters
       ? filterProjectsByType(byArea, typeFilter)
       : byArea;
-  }, [localProjects, area, showTypeFilters, typeFilter]);
+  }, [localProjects, area, showAreaFilters, showTypeFilters, typeFilter]);
   const groups = useMemo(
     () =>
       groupProjectsByStatus(filtered, {
@@ -465,6 +529,10 @@ export function ProjectsOverviewView({
     secondaryGrouping,
   ]);
 
+  const extendSelectionAlongStepRef = useRef<
+    (fromId: string | null, toId: string) => void
+  >(() => {});
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
@@ -475,7 +543,61 @@ export function ProjectsOverviewView({
     },
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
     enabled: view === "list" && itemIds.length > 0,
+    onShiftStep: ({ fromId, toId }) => {
+      if (view !== "list") return;
+      extendSelectionAlongStepRef.current(fromId, toId);
+    },
   });
+
+  const {
+    selectedIds,
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    extendSelectionAlongStep,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(itemIds, {
+    selectAllShortcutEnabled: view === "list",
+    highlightedId,
+    toggleHighlightedShortcutEnabled: view === "list",
+  });
+  extendSelectionAlongStepRef.current = extendSelectionAlongStep;
+
+  const selectedProjects = useMemo(
+    () => filtered.filter((project) => selectedIds.has(project.id)),
+    [filtered, selectedIds],
+  );
+
+  const organizationOptions = useMemo<SearchableDropdownOption<string>[]>(
+    () =>
+      organizations.map((org) => ({
+        value: org.id,
+        label: org.name,
+      })),
+    [organizations],
+  );
+
+  const applyBulkPatch = async (patch: ProjectBulkPatch) => {
+    const ids = [...selectedIds];
+    for (const projectId of ids) {
+      if (patch.status !== undefined) {
+        handleStatusChange(projectId, patch.status);
+      }
+      if (patch.priority !== undefined) {
+        handlePriorityChange(projectId, patch.priority);
+      }
+      if ("startDate" in patch) {
+        handleStartDateChange(projectId, patch.startDate ?? null);
+      }
+      if ("dueDate" in patch) {
+        handleDueDateChange(projectId, patch.dueDate ?? null);
+      }
+      if ("organizationId" in patch) {
+        handleOrganizationChange(projectId, patch.organizationId ?? null);
+      }
+    }
+  };
 
   const areaPillItems = PROJECT_AREA_FILTERS.map((value) => ({
     value,
@@ -492,8 +614,17 @@ export function ProjectsOverviewView({
   const listContent = showEmpty ? (
     <p className="overview-empty">{emptyMessage}</p>
   ) : (
-    <div className="projects-overview-list" style={projectKeyColumnStyle}>
-      <ProjectsListHeader />
+    <div
+      className={[
+        "projects-overview-list",
+        listColumns === "domains" ? "projects-overview-list--domains" : null,
+        hasBulkSelection ? "has-bulk-selection" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={projectKeyColumnStyle}
+    >
+      <ProjectsListHeader columns={listColumns} />
       <ul
         className="overview-grouped-list"
         role="list"
@@ -598,9 +729,15 @@ export function ProjectsOverviewView({
                     <ProjectOverviewRow
                       key={project.id}
                       project={project}
+                      columns={listColumns}
+                      selected={isSelected(project.id)}
+                      forceShowCheckbox={hasBulkSelection}
                       keyboardHighlighted={highlightedId === project.id}
                       agentWorking={workingProjectIds?.has(project.id) ?? false}
                       onSelect={selectProject}
+                      onToggleSelected={(projectId, _checked, event) =>
+                        toggleSelected(projectId, Boolean(event?.shiftKey))
+                      }
                       onStatusChange={handleStatusChange}
                       onPriorityChange={handlePriorityChange}
                       onStartDateChange={handleStartDateChange}
@@ -624,7 +761,7 @@ export function ProjectsOverviewView({
                     nestedAreas,
                     organizations,
                   ).map((secondary) => {
-                    if (!secondary.showHeader || !secondary.id) {
+                    if (!secondary.showHeader) {
                       return (
                         <Fragment
                           key={`${typeGroup.type}:ungrouped`}
@@ -634,22 +771,23 @@ export function ProjectsOverviewView({
                       );
                     }
 
+                    const secondaryId = secondary.id ?? "__none__";
                     const secondaryKey = secondaryCollapseKey(
                       secondaryGrouping,
                       group.status,
                       typeGroup.type,
-                      secondary.id,
+                      secondaryId,
                     );
                     const secondaryCollapsed =
                       collapsedNestedAreas.has(secondaryKey);
 
                     return (
                       <ProjectTypeGroupSection
-                        key={secondary.id}
+                        key={secondaryId}
                         title={
                           secondary.name ??
                           (secondaryGrouping === "organization"
-                            ? "Organization"
+                            ? "No organization"
                             : "Sub-area")
                         }
                         collapsed={secondaryCollapsed}
@@ -735,8 +873,9 @@ export function ProjectsOverviewView({
               aria-label="Add area"
               aria-expanded={addingArea}
               onClick={() => {
-                const parent =
-                  area !== PROJECT_AREA_FILTER_ALL ? area : createAreaParent;
+                const parent = isDefinedProjectArea(area)
+                  ? area
+                  : createAreaParent;
                 setCreateAreaParent(parent);
                 setCreateAreaError(null);
                 setAddingArea(true);
@@ -749,7 +888,7 @@ export function ProjectsOverviewView({
       ) : null}
       {showAreaFilters && addingArea && onCreateArea ? (
         <div className="projects-overview__add-area-form">
-          {area === PROJECT_AREA_FILTER_ALL ? (
+          {area === PROJECT_AREA_FILTER_OTHER ? (
             <div
               className="projects-overview__add-area-parents"
               role="group"
@@ -780,15 +919,16 @@ export function ProjectsOverviewView({
               setCreateAreaError(null);
             }}
             onSubmit={async (name) => {
-              const parent =
-                area !== PROJECT_AREA_FILTER_ALL ? area : createAreaParent;
+              const parent = isDefinedProjectArea(area)
+                ? area
+                : createAreaParent;
               setCreatingArea(true);
               setCreateAreaError(null);
               try {
                 const created = await onCreateArea({ parent, name });
                 setAddingArea(false);
                 if (created?.id) onCreatedArea?.(created.id);
-                if (area === PROJECT_AREA_FILTER_ALL) {
+                if (area === PROJECT_AREA_FILTER_OTHER) {
                   setArea(parent);
                 }
               } catch (error) {
@@ -808,6 +948,24 @@ export function ProjectsOverviewView({
         view={view}
         onViewChange={setView}
         listContent={listContent}
+        listOverlay={
+          hasBulkSelection ? (
+            <ProjectBulkEditBar
+              selectedProjects={selectedProjects}
+              showPriority
+              showOrganization={
+                secondaryGrouping === "organization" &&
+                organizationOptions.length > 0
+              }
+              organizationOptions={organizationOptions}
+              onClear={clearSelection}
+              onSelectAll={
+                selectedIds.size < itemIds.length ? selectAll : undefined
+              }
+              onApply={applyBulkPatch}
+            />
+          ) : null
+        }
         boardContent={
           filtered.length === 0 ? (
             <p className="overview-empty">{emptyMessage}</p>

@@ -492,6 +492,45 @@ export function fillMissingDueDatesFromApi<
   });
 }
 
+/**
+ * When local omits project `startDate` / `dueDate` (PowerSync lag after a
+ * server-side heal like TransIP registration dates), copy from the API row.
+ */
+export function fillMissingProjectDatesFromApi<
+  T extends {
+    id: string;
+    startDate?: string | null;
+    dueDate?: string | null;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    const apiNewer = updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt);
+    let next = row;
+    if (
+      (!dueDateMissing(api.startDate) && dueDateMissing(row.startDate)) ||
+      (apiNewer &&
+        !dueDateMissing(api.startDate) &&
+        api.startDate !== row.startDate)
+    ) {
+      next = { ...next, startDate: api.startDate };
+    }
+    if (
+      (!dueDateMissing(api.dueDate) && dueDateMissing(row.dueDate)) ||
+      (apiNewer &&
+        !dueDateMissing(api.dueDate) &&
+        api.dueDate !== row.dueDate)
+    ) {
+      next = { ...next, dueDate: api.dueDate };
+    }
+    return next;
+  });
+}
+
 function attendeeIdsMissing(value: unknown): boolean {
   if (value == null || value === "") return true;
   if (Array.isArray(value)) return value.length === 0;

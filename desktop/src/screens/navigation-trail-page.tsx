@@ -21,6 +21,8 @@ import {
   getKnowledgeHref,
   getNavigationTrailAncestorHref,
   getOrganizationsHref,
+  getProjectProviderDefaultIcon,
+  getProjectEmailCategoryDefaultIcon,
   getProjectsHref,
   INBOX_TASK_KEY,
   isEntityRouteId,
@@ -625,7 +627,11 @@ function TrailProjectLeaf({
         void workspace.patchProject(project.id, { priority });
       }}
       onTypeChange={(type) => {
-        void workspace.patchProject(project.id, { type });
+        const patch: { type: string; category?: null } = { type };
+        if (type !== "email") {
+          patch.category = null;
+        }
+        void workspace.patchProject(project.id, patch);
       }}
       onProviderChange={(provider) => {
         const patch: {
@@ -633,7 +639,17 @@ function TrailProjectLeaf({
           icon?: string;
         } = { provider };
         if (provider === "transip") {
-          patch.icon = "transip";
+          patch.icon = getProjectProviderDefaultIcon("transip");
+        }
+        void workspace.patchProject(project.id, patch);
+      }}
+      onCategoryChange={(category) => {
+        const patch: {
+          category: string | null;
+          icon?: string;
+        } = { category };
+        if (category) {
+          patch.icon = getProjectEmailCategoryDefaultIcon(category);
         }
         void workspace.patchProject(project.id, patch);
       }}

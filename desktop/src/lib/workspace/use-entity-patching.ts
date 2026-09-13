@@ -94,6 +94,8 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations,
   setApiMeetings,
   setApiDocuments,
+  setLiveProjectsById,
+  getProjectById,
   getLocalTaskStatus,
 }: {
   authenticated: boolean;
@@ -108,6 +110,10 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations: ApiRowsSetter<ApiOrganization>;
   setApiMeetings: ApiRowsSetter<ApiMeeting>;
   setApiDocuments: ApiRowsSetter<ApiDocument>;
+  setLiveProjectsById?: (
+    updater: (current: Map<string, ApiProject>) => Map<string, ApiProject>,
+  ) => void;
+  getProjectById?: (id: string) => ApiProject | null | undefined;
   /**
    * PowerSync-local status for optimistic API cache merges. Due-date (and
    * other non-status) patches must not re-base onto a stale REST row that
@@ -218,6 +224,31 @@ export function useWorkspaceEntityPatching({
     [setApiProjects],
   );
 
+  /** Optimistic project fields that win over lagging PowerSync via live overlay. */
+  const applyLiveProjectOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      if (!setLiveProjectsById) {
+        applyApiProjectPatch(id, values);
+        return;
+      }
+      const nextUpdatedAt = new Date().toISOString();
+      const base = getProjectById?.(id) ?? null;
+      setLiveProjectsById((current) => {
+        const previous = current.get(id) ?? base;
+        if (!previous) return current;
+        const next = new Map(current);
+        next.set(id, {
+          ...previous,
+          ...values,
+          updatedAt: nextUpdatedAt,
+        } as ApiProject);
+        return next;
+      });
+      applyApiProjectPatch(id, values);
+    },
+    [applyApiProjectPatch, getProjectById, setLiveProjectsById],
+  );
+
   const applyApiOrganizationPatch = useCallback(
     (id: string, values: Record<string, unknown>) => {
       const nextUpdatedAt = new Date().toISOString();
@@ -316,7 +347,7 @@ export function useWorkspaceEntityPatching({
         applyApiMeetingPatch(id, values);
       }
       if (table === "projects") {
-        applyApiProjectPatch(id, values);
+        applyLiveProjectOptimisticPatch(id, values);
       }
       if (table === "documents") {
         applyApiDocumentPatch(id, values);
@@ -334,7 +365,7 @@ export function useWorkspaceEntityPatching({
       applyApiLetterPatch,
       applyApiMeetingPatch,
       applyApiOrganizationPatch,
-      applyApiProjectPatch,
+      applyLiveProjectOptimisticPatch,
       applyApiTaskPatch,
     ],
   );
@@ -680,6 +711,11 @@ export function useWorkspaceEntityPatching({
         }
         if (table === "documents") {
           applyOptimisticEntityPatch(table, id, optimisticValues);
+        } else if (table === "projects") {
+          // List rows optimistically update in ProjectsOverviewView; detail
+          // panels read workspace.projects. Push a live overlay so both agree
+          // before PowerSync watch / upload catch up.
+          applyLiveProjectOptimisticPatch(id, optimisticValues);
         } else if (table === "tasks" && typeof values.status === "string") {
           nudgeDynamicIslandTasksRefresh();
         }
@@ -734,7 +770,7 @@ export function useWorkspaceEntityPatching({
         body: JSON.stringify(values),
       });
       if (table === "projects") {
-        applyApiProjectPatch(id, values);
+        applyLiveProjectOptimisticPatch(id, values);
         if (
           "type" in values ||
           "githubRepository" in values ||
@@ -759,7 +795,7 @@ export function useWorkspaceEntityPatching({
       applyApiMeetingPatch,
       applyOptimisticEntityPatch,
       applyApiOrganizationPatch,
-      applyApiProjectPatch,
+      applyLiveProjectOptimisticPatch,
       applyApiTaskPatch,
       authenticated,
       client,

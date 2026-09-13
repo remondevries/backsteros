@@ -57,6 +57,7 @@ export const PROJECT_LIST_COLUMNS = [
   "github_repository",
   "cloudflare_zone_id",
   "provider",
+  "category",
   "local_working_directory",
   "status",
   "priority",

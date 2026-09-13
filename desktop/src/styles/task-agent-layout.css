@@ -920,7 +920,8 @@
   padding: 6px 8px 0;
 }
 
-/* Contact panel: expand/collapse on the leading edge, hide toggle on the trailing. */
+/* Contact panel: expand/collapse on the leading edge, hide toggle on the trailing.
+ * Positioned over the profile header (see project-nav.css) so content aligns. */
 .desktop-journal-day-layout__chrome.contact-detail-panel__chrome {
   width: 100%;
   box-sizing: border-box;

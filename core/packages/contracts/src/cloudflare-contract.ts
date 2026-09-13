@@ -67,6 +67,31 @@ export const cloudflareContract = c.router(
       summary:
         "Match Catalog Domains to Cloudflare zones by hostname and store zone ids",
     },
+    listCloudflareDnsRecords: {
+      method: "GET",
+      path: "/api/v1/cloudflare/zones/:zoneId/dns-records",
+      pathParams: z.object({ zoneId: z.string().min(1) }),
+      responses: {
+        200: s.cloudflareDnsRecordsResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "List DNS records for a Cloudflare zone",
+    },
+    purgeCloudflareCache: {
+      method: "POST",
+      path: "/api/v1/cloudflare/zones/:zoneId/purge-cache",
+      pathParams: z.object({ zoneId: z.string().min(1) }),
+      body: z.undefined().optional(),
+      responses: {
+        200: s.cloudflarePurgeCacheResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Purge all cached files for a Cloudflare zone",
+    },
   },
   {
     pathPrefix: "",

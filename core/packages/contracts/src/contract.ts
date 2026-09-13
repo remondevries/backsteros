@@ -6,6 +6,10 @@ import {
   type CloudflareContract,
 } from "./cloudflare-contract.js";
 import {
+  transipContract,
+  type TransipContract,
+} from "./transip-contract.js";
+import {
   apiKeySchema,
   badRequestSchema,
   createApiKeyResponseSchema,
@@ -2029,7 +2033,7 @@ export const apiContract = c.router(
         403: errorSchema,
       },
       summary:
-        "Import TransIP domains as Catalog domeinname projects (backlog; skip existing names)",
+        "Import TransIP domains as Catalog domeinname projects (backlog; skip existing domain names)",
     },
     mapboxGeocode: {
       method: "GET",
@@ -2985,10 +2989,11 @@ export const apiContract = c.router(
 
 export type ApiContract = typeof apiContract;
 
-/** Main API + Cloudflare (split so declarations stay under TS7056). */
-export type FullApiContract = ApiContract & CloudflareContract;
+/** Main API + split routers (keeps declarations under TS7056). */
+export type FullApiContract = ApiContract & CloudflareContract & TransipContract;
 
 export const fullApiContract: FullApiContract = {
   ...apiContract,
   ...cloudflareContract,
+  ...transipContract,
 };

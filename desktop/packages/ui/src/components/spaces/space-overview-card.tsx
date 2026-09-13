@@ -1,16 +1,12 @@
 "use client";
 
-import { GearIcon, ImageIcon, TrashIcon } from "@primer/octicons-react";
 import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
-  type ChangeEvent,
   type MouseEvent,
-  type ReactNode,
   type SyntheticEvent,
 } from "react";
 
@@ -28,11 +24,11 @@ import {
   resolveSpaceUpdatedFreshness,
   type SpacesCategoryId,
 } from "../../spaces/spaces-categories.js";
-import { EntityActionsMenu } from "../entity-actions/entity-actions-menu.js";
 import { EntityIconPicker } from "../entity/entity-icon-picker.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { DocumentIcon } from "../documents/document-icon.js";
 import { DocumentOcticon } from "../documents/document-octicon.js";
+import { CogFourIcon } from "../icons/cog-four-icon.js";
 import { getEntityIconColor } from "../projects/project-octicon.js";
 import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
 
@@ -77,12 +73,6 @@ export type SpaceOverviewCardProps = {
     | { ok: true }
     | { ok: false; error: string };
   onOpenSettings?: (item: SpaceOverviewCardItem) => void;
-  onDeleteSpace?: (item: SpaceOverviewCardItem) => void;
-  onCoverUpload?: (
-    item: SpaceOverviewCardItem,
-    file: File,
-  ) => void | Promise<void>;
-  onCoverRemove?: (item: SpaceOverviewCardItem) => void | Promise<void>;
   /** Pointer-based list drag-reorder (prefer over HTML5 DnD on desktop). */
   pointerReorderBind?: GroupedListPointerItemBind | null;
   /** True while this card is the active pointer-drag source. */
@@ -162,14 +152,10 @@ export function SpaceOverviewCard({
   onIconChange,
   onTitleChange,
   onOpenSettings,
-  onDeleteSpace,
-  onCoverUpload,
-  onCoverRemove,
   pointerReorderBind = null,
   dragging = false,
 }: SpaceOverviewCardProps) {
   const gradientId = useId().replace(/:/g, "");
-  const coverInputRef = useRef<HTMLInputElement>(null);
   const articleCount = item.articleCount ?? 0;
   const countLabel = formatArticleCount(articleCount);
   const updatedLabel = formatSpaceUpdatedLabel(item.updatedAt);
@@ -185,37 +171,7 @@ export function SpaceOverviewCard({
   });
   const categoryAccent = resolveSpaceOverviewAccent(item.categoryId);
   const canPointerReorder = Boolean(pointerReorderBind);
-  const showActionsMenu = Boolean(onOpenSettings || onDeleteSpace);
-  const interactiveCover = Boolean(onCoverUpload);
   const hasCover = Boolean(item.coverSrc);
-
-  const menuItems = useMemo(() => {
-    const next: Array<{
-      id: string;
-      label: string;
-      danger?: boolean;
-      icon: ReactNode;
-      onSelect: () => void;
-    }> = [];
-    if (onOpenSettings) {
-      next.push({
-        id: "settings",
-        label: "Settings",
-        icon: <GearIcon size={16} />,
-        onSelect: () => onOpenSettings(item),
-      });
-    }
-    if (onDeleteSpace) {
-      next.push({
-        id: "delete",
-        label: "Delete",
-        danger: true,
-        icon: <TrashIcon size={16} />,
-        onSelect: () => onDeleteSpace(item),
-      });
-    }
-    return next;
-  }, [item, onDeleteSpace, onOpenSettings]);
 
   const defaultIconKey = resolveSpaceOverviewIconKey({
     path: item.path,
@@ -233,7 +189,6 @@ export function SpaceOverviewCard({
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [coverPending, setCoverPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const interactiveIcon = Boolean(onIconChange);
 
@@ -283,102 +238,28 @@ export function SpaceOverviewCard({
           ) : (
             <SpaceCardGraph gradientId={`space-graph-${gradientId}`} />
           )}
-          {interactiveCover ? (
-            <div
-              className="space-overview-card__cover-actions"
-              data-list-reorder-no-drag=""
-              onMouseDown={stopCardNavigate}
-              onClick={stopCardNavigate}
-            >
-              <input
-                ref={coverInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                className="space-overview-card__cover-input"
-                tabIndex={-1}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (!file || !onCoverUpload) return;
-                  setCoverPending(true);
-                  setError(null);
-                  void Promise.resolve(onCoverUpload(item, file))
-                    .catch((reason: unknown) => {
-                      setError(
-                        reason instanceof Error
-                          ? reason.message
-                          : "Could not upload cover.",
-                      );
-                    })
-                    .finally(() => setCoverPending(false));
-                }}
-              />
-              <button
-                type="button"
-                className="space-overview-card__cover-action space-overview-card__cover-action--primary"
-                disabled={coverPending}
-                aria-label={
-                  hasCover
-                    ? `Replace cover for ${item.title}`
-                    : `Add cover for ${item.title}`
-                }
-                onMouseDown={stopFieldEvent}
-                onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                  stopFieldEvent(event);
-                  coverInputRef.current?.click();
-                }}
-              >
-                <ImageIcon size={12} />
-                <span>
-                  {coverPending
-                    ? "Uploading…"
-                    : hasCover
-                      ? "Replace cover"
-                      : "Add cover"}
-                </span>
-              </button>
-              {hasCover && onCoverRemove ? (
-                <button
-                  type="button"
-                  className="space-overview-card__cover-action space-overview-card__cover-action--danger"
-                  disabled={coverPending}
-                  aria-label={`Remove cover for ${item.title}`}
-                  onMouseDown={stopFieldEvent}
-                  onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                    stopFieldEvent(event);
-                    setCoverPending(true);
-                    setError(null);
-                    void Promise.resolve(onCoverRemove(item))
-                      .catch((reason: unknown) => {
-                        setError(
-                          reason instanceof Error
-                            ? reason.message
-                            : "Could not remove cover.",
-                        );
-                      })
-                      .finally(() => setCoverPending(false));
-                  }}
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-          ) : null}
         </div>
 
-        {showActionsMenu ? (
+        {onOpenSettings ? (
           <div
             className="space-overview-card__menu"
             data-list-reorder-no-drag=""
             onMouseDown={stopCardNavigate}
             onClick={stopCardNavigate}
           >
-            <EntityActionsMenu
-              ariaLabel={`${item.title} actions`}
-              triggerAriaLabel={`More actions for ${item.title}`}
-              triggerClassName="space-overview-card__menu-trigger"
-              items={menuItems}
-            />
+            <button
+              type="button"
+              className="space-overview-card__menu-trigger"
+              aria-label={`Open settings for ${item.title}`}
+              title="Settings"
+              onMouseDown={stopFieldEvent}
+              onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                stopFieldEvent(event);
+                onOpenSettings(item);
+              }}
+            >
+              <CogFourIcon size={16} />
+            </button>
           </div>
         ) : null}
 
