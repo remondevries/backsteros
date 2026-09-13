@@ -1,14 +1,8 @@
-import { initContract } from "@ts-rest/core";
+import { initContract, type AppRouter } from "@ts-rest/core";
 import { z } from "zod";
 
-import {
-  cloudflareContract,
-  type CloudflareContract,
-} from "./cloudflare-contract.js";
-import {
-  transipContract,
-  type TransipContract,
-} from "./transip-contract.js";
+import { cloudflareContract } from "./cloudflare-contract.js";
+import { transipContract } from "./transip-contract.js";
 import {
   apiKeySchema,
   badRequestSchema,
@@ -54,7 +48,7 @@ import * as s from "./schemas.js";
 
 const c = initContract();
 
-export const apiContract = c.router(
+export const apiContract: AppRouter = c.router(
   {
     health: {
       method: "GET",
@@ -2987,10 +2981,10 @@ export const apiContract = c.router(
   },
 );
 
-export type ApiContract = typeof apiContract;
+export type ApiContract = AppRouter;
 
 /** Main API + split routers (keeps declarations under TS7056). */
-export type FullApiContract = ApiContract & CloudflareContract & TransipContract;
+export type FullApiContract = AppRouter;
 
 export const fullApiContract: FullApiContract = {
   ...apiContract,
