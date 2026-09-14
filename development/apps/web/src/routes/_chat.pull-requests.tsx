@@ -1875,12 +1875,14 @@ function PullRequestsRouteView() {
               onAddFiles={() => undefined}
               onAddPullRequest={() => undefined}
               onAddAgents={() => undefined}
+              onAddComponentEditor={() => undefined}
               browserAvailable={false}
               terminalAvailable={false}
               diffAvailable={false}
               filesAvailable={false}
               pullRequestAvailable={false}
               agentsAvailable={false}
+              componentEditorAvailable={false}
               liveAgentCount={0}
               pullRequestStatusSeeds={listedPullRequestTabStatuses}
             >

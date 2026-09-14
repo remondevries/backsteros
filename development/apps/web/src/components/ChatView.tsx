@@ -185,12 +185,17 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
+import { ComponentEditorPanel } from "./ComponentEditorPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { BranchToolbar } from "./BranchToolbar";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  isBareKeyShortcutBlockedByEditable,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -4085,6 +4090,10 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addComponentEditorSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "component-editor");
+  }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -6120,6 +6129,13 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (!command) return;
 
+      // Bare / shift-only chords (e.g. `]`, `[`, `⇧[`) must not steal from the
+      // chat composer or other inputs — same guard as AppSidebarLayout's `[`.
+      // Escape → composer.blur still runs while typing.
+      if (command !== "composer.blur" && isBareKeyShortcutBlockedByEditable(event)) {
+        return;
+      }
+
       if (command === "composer.focus") {
         event.preventDefault();
         event.stopPropagation();
@@ -8058,6 +8074,11 @@ export default function ChatView(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
+    ) : renderedRightPanelSurface?.kind === "component-editor" ? (
+      <ComponentEditorPanel
+        environmentId={activeThreadRef?.environmentId ?? null}
+        cwd={activeWorkspaceRoot ?? null}
+      />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&
       ((activeProject && activeWorkspaceRoot) ||
@@ -8644,12 +8665,14 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          onAddComponentEditor={addComponentEditorSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           agentsAvailable
+          componentEditorAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
           {rightPanelContent}
@@ -8694,12 +8717,14 @@ export default function ChatView(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            onAddComponentEditor={addComponentEditorSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
             agentsAvailable
+            componentEditorAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >
             {rightPanelContent}

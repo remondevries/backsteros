@@ -453,15 +453,15 @@
       .boot-shell-brand-row {
         display: inline-flex;
         align-items: center;
-        gap: 16px;
+        gap: 12px;
       }
 
-      /* Same mark as the sidebar brand — BacksterOS boot spin speed (1.15s). */
+      /* Match backsteros-desktop boot-splash (28px mark + wordmark). */
       #boot-shell-logo {
         display: block;
         flex-shrink: 0;
-        width: 48px;
-        height: 48px;
+        width: 28px;
+        height: 28px;
         color: inherit;
         transform-origin: center center;
         animation: boot-shell-spin 1.15s linear infinite;
@@ -469,8 +469,8 @@
 
       #boot-shell-logo svg {
         display: block;
-        width: 48px;
-        height: 48px;
+        width: 28px;
+        height: 28px;
       }
 
       @keyframes boot-shell-spin {
@@ -481,7 +481,7 @@
 
       .boot-shell-brand {
         margin: 0;
-        font-size: 36px;
+        font-size: 28px;
         letter-spacing: -0.03em;
         line-height: 1;
         color: inherit;
@@ -524,18 +524,13 @@
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div
-          id="boot-shell-card"
-          role="status"
-          aria-live="polite"
-          aria-label="Loading BacksterDEV"
-        >
+        <div id="boot-shell-card" role="status" aria-live="polite" aria-label="Loading BacksterDEV">
           <div class="boot-shell-brand-row">
             <!-- Sidebar mark (BacksterosLogoIcon) — BacksterOS loading spin while booting -->
             <span id="boot-shell-logo" aria-hidden="true">
               <svg
-                width="48"
-                height="48"
+                width="28"
+                height="28"
                 viewBox="0 0 110 110"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"

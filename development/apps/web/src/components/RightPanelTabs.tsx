@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Component,
   FileDiff,
   Files,
   GitPullRequest,
@@ -105,12 +106,14 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddComponentEditor: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  componentEditorAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -140,6 +143,7 @@ const SURFACE_DISABLED_REASONS = {
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
+  componentEditor: "Component editor is only available from a thread.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -162,6 +166,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
   agents: "Available from a thread.",
+  componentEditor: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction =
@@ -299,12 +304,14 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddComponentEditor: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  componentEditorAvailable: boolean;
   liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
@@ -370,6 +377,16 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
+    },
+    {
+      label: "Component editor",
+      description: "Edit HTML/CSS with a live preview.",
+      icon: Component,
+      shortcut: "C",
+      available: props.componentEditorAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.componentEditor,
+      onClick: props.onAddComponentEditor,
+      badgeCount: 0,
     },
   ] as const;
 
@@ -604,6 +621,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
+    case "component-editor":
+      return "Component editor";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -685,6 +704,8 @@ function SurfaceIcon({
       );
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "component-editor":
+      return <Component className="size-3 shrink-0" />;
   }
 }
 
@@ -813,6 +834,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.agentsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.agents,
       onClick: props.onAddAgents,
+    },
+    {
+      label: "Component editor",
+      icon: Component,
+      shortcut: "C",
+      available: props.componentEditorAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.componentEditor,
+      onClick: props.onAddComponentEditor,
     },
   ] as const;
 
@@ -1251,12 +1280,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
+            onAddComponentEditor={props.onAddComponentEditor}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
+            componentEditorAvailable={props.componentEditorAvailable}
             liveAgentCount={props.liveAgentCount}
           />
         ) : (

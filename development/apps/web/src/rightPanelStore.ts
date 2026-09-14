@@ -3,20 +3,13 @@
  *
  * Browser and terminal tabs are scoped to a project/codebase so switching
  * conversations within the same project keeps those tools. Diff, files, file,
- * pull-request, and agents stay thread-scoped.
+ * pull-request, agents, and component-editor stay thread-scoped.
  *
  * Durable resources (preview sessions, PTYs) remain owned by the creating
  * thread; surfaces carry `ownerThreadId` so render/RPC paths use that owner.
  */
-import {
-  scopedProjectKey,
-  scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import type {
-  ChatFileAttachment,
-  ScopedProjectRef,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { ChatFileAttachment, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -30,6 +23,7 @@ export const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "agents",
+  "component-editor",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -85,7 +79,8 @@ export type RightPanelSurface =
       repository: string;
       number: number;
     }
-  | { id: "agents"; kind: "agents" };
+  | { id: "agents"; kind: "agents" }
+  | { id: "component-editor"; kind: "component-editor" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
@@ -141,11 +136,7 @@ interface RightPanelStoreState {
     terminalId: string,
     direction?: "horizontal" | "vertical",
   ) => void;
-  activateTerminal: (
-    projectRef: ScopedProjectRef,
-    surfaceId: string,
-    terminalId: string,
-  ) => void;
+  activateTerminal: (projectRef: ScopedProjectRef, surfaceId: string, terminalId: string) => void;
   closeTerminal: (projectRef: ScopedProjectRef, surfaceId: string, terminalId: string) => void;
   activateSurface: (
     threadRef: ScopedThreadRef,
@@ -199,17 +190,11 @@ export function isProjectToolSurface(
   return surface.kind === "preview" || surface.kind === "terminal";
 }
 
-export function browserSurfaceId(
-  ownerThreadId: string,
-  tabId: string,
-): `browser:${string}` {
+export function browserSurfaceId(ownerThreadId: string, tabId: string): `browser:${string}` {
   return `browser:${ownerThreadId}:${tabId}`;
 }
 
-export function terminalSurfaceId(
-  ownerThreadId: string,
-  terminalId: string,
-): `terminal:${string}` {
+export function terminalSurfaceId(ownerThreadId: string, terminalId: string): `terminal:${string}` {
   return `terminal:${ownerThreadId}:${terminalId}`;
 }
 
@@ -223,6 +208,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "agents":
       return { id: "agents", kind };
+    case "component-editor":
+      return { id: "component-editor", kind };
   }
 };
 
@@ -460,20 +447,14 @@ function normalizePersistedSurfaces(
       ];
     }
     if (kind === "preview") {
-      const preview = normalizePreviewSurface(
-        surface as RightPanelSurface,
-        ownerThreadIdFromKey,
-      );
+      const preview = normalizePreviewSurface(surface as RightPanelSurface, ownerThreadIdFromKey);
       return preview ? [preview] : [];
     }
     if (kind === "terminal") {
-      const terminal = normalizeTerminalSurface(
-        surface as RightPanelSurface,
-        ownerThreadIdFromKey,
-      );
+      const terminal = normalizeTerminalSurface(surface as RightPanelSurface, ownerThreadIdFromKey);
       return terminal ? [terminal] : [];
     }
-    if (kind === "diff" || kind === "files" || kind === "agents") {
+    if (kind === "diff" || kind === "files" || kind === "agents" || kind === "component-editor") {
       return [surface as RightPanelSurface];
     }
     return [];
@@ -505,8 +486,7 @@ function normalizePersistedPanelState(
     (typeof (validThreadState as { isOpen?: unknown }).isOpen === "boolean"
       ? Boolean((validThreadState as { isOpen: boolean }).isOpen)
       : persistedActiveSurfaceId !== null);
-  const activeSurfaceId =
-    persistedActiveSurfaceId ?? (isOpen ? (surfaces[0]?.id ?? null) : null);
+  const activeSurfaceId = persistedActiveSurfaceId ?? (isOpen ? (surfaces[0]?.id ?? null) : null);
   const activeGeneration =
     typeof (validThreadState as { activeGeneration?: unknown }).activeGeneration === "number" &&
     Number.isSafeInteger((validThreadState as { activeGeneration: number }).activeGeneration)
@@ -567,8 +547,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                   {
                     isOpen,
                     surfaces,
-                    activeSurfaceId:
-                      activeSurfaceId ?? (isOpen ? (surfaces[0]?.id ?? null) : null),
+                    activeSurfaceId: activeSurfaceId ?? (isOpen ? (surfaces[0]?.id ?? null) : null),
                     activeGeneration: Math.max(
                       threadOnly?.activeGeneration ?? 0,
                       normalized?.activeGeneration ?? 0,
@@ -796,30 +775,30 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         set((state) => {
           const generation = bumpClock(state);
           return {
-          activationClock: generation,
-          byThreadKey: updateBagBag(state.byThreadKey, scopedThreadKey(ref), (current) => {
-            const withoutStandaloneExplorer = current.surfaces.filter(
-              (surface) => surface.kind !== "files",
-            );
-            const surfaceId = `file:${relativePath}` as const;
-            const existing = withoutStandaloneExplorer.find(
-              (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
-                surface.id === surfaceId && surface.kind === "file",
-            );
-            const surface = fileSurface(
-              relativePath,
-              normalizeRevealLine(line),
-              (existing?.revealRequestId ?? 0) + 1,
-            );
-            return {
-              isOpen: true,
-              activeSurfaceId: surface.id,
-              activeGeneration: generation,
-              surfaces: existing
-                ? withoutStandaloneExplorer.map((entry) =>
-                    entry.id === surface.id ? surface : entry,
-                  )
-                : [...withoutStandaloneExplorer, surface],
+            activationClock: generation,
+            byThreadKey: updateBagBag(state.byThreadKey, scopedThreadKey(ref), (current) => {
+              const withoutStandaloneExplorer = current.surfaces.filter(
+                (surface) => surface.kind !== "files",
+              );
+              const surfaceId = `file:${relativePath}` as const;
+              const existing = withoutStandaloneExplorer.find(
+                (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
+                  surface.id === surfaceId && surface.kind === "file",
+              );
+              const surface = fileSurface(
+                relativePath,
+                normalizeRevealLine(line),
+                (existing?.revealRequestId ?? 0) + 1,
+              );
+              return {
+                isOpen: true,
+                activeSurfaceId: surface.id,
+                activeGeneration: generation,
+                surfaces: existing
+                  ? withoutStandaloneExplorer.map((entry) =>
+                      entry.id === surface.id ? surface : entry,
+                    )
+                  : [...withoutStandaloneExplorer, surface],
               };
             }),
           };
@@ -937,9 +916,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                         ? (fallback?.id ?? null)
                         : current.activeSurfaceId,
                     activeGeneration:
-                      current.activeSurfaceId === surfaceId
-                        ? generation
-                        : current.activeGeneration,
+                      current.activeSurfaceId === surfaceId ? generation : current.activeGeneration,
                   };
                 }
                 return {
@@ -986,18 +963,15 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           if (bag === "thread") {
             return {
               activationClock: generation,
-              byThreadKey: updateBagBag(
-                state.byThreadKey,
-                scopedThreadKey(threadRef),
-                (current) =>
-                  current.surfaces.some((surface) => surface.id === surfaceId)
-                    ? {
-                        ...current,
-                        isOpen: true,
-                        activeSurfaceId: surfaceId,
-                        activeGeneration: generation,
-                      }
-                    : current,
+              byThreadKey: updateBagBag(state.byThreadKey, scopedThreadKey(threadRef), (current) =>
+                current.surfaces.some((surface) => surface.id === surfaceId)
+                  ? {
+                      ...current,
+                      isOpen: true,
+                      activeSurfaceId: surfaceId,
+                      activeGeneration: generation,
+                    }
+                  : current,
               ),
             };
           }
@@ -1269,9 +1243,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           return {
             activationClock: generation,
             byThreadKey: updateBagBag(state.byThreadKey, scopedThreadKey(threadRef), (current) =>
-              current.isOpen
-                ? current
-                : { ...current, isOpen: true, activeGeneration: generation },
+              current.isOpen ? current : { ...current, isOpen: true, activeGeneration: generation },
             ),
           };
         }),

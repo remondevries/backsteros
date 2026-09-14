@@ -38,3 +38,6 @@ node_modules/
 *.log
 .env*
 !.env.example
+
+# Local BacksterDEV workspace scratch (synced editor artifacts)
+.backsterdev/
