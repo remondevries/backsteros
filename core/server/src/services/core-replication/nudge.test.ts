@@ -71,6 +71,26 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
     assert.equal(received[0]?.entityId, "task_1");
   });
 
+  it("publishes meetings with delete operation", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "meeting",
+      entityId: "mtg_1",
+      operation: "delete",
+      payload: { project_id: "proj_1" },
+    });
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.kind, "meeting");
+    assert.equal(received[0]?.entityId, "mtg_1");
+    assert.equal(received[0]?.operation, "delete");
+    assert.equal(received[0]?.projectId, "proj_1");
+  });
+
   it("publishes task_comment against the parent task id", () => {
     const received: WorkspaceUpdatedEvent[] = [];
     subscribeWorkspaceUpdated("ws_1", (event) => {

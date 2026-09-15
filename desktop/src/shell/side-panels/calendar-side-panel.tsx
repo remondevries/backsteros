@@ -5,11 +5,11 @@ import {
   isCalendarListPath,
   type CalendarPageMode,
   type CalendarSidePanelHabitItem,
+  type MeetingListItem,
   unscheduledCalendarTasks,
 } from "@backsteros/ui";
 
 import { useCalendarPageModeControls } from "../../lib/use-calendar-page-mode";
-import type { useDesktopWorkspaceMeta } from "../../lib/workspace-data";
 import { DesktopCalendarAvailabilitySidePanel } from "./calendar-availability-side-panel";
 import { DesktopCalendarTasksSidePanel } from "./calendar-tasks-side-panel";
 import { DesktopCalendarTimetrackingSidePanel } from "./calendar-timetracking-side-panel";
@@ -17,13 +17,12 @@ import { DesktopCalendarTimetrackingSidePanel } from "./calendar-timetracking-si
 export type DesktopCalendarSidePanelProps = {
   pathname: string;
   search: string;
-  meetings: ReturnType<typeof useDesktopWorkspaceMeta>["meetings"];
   tasks: ReturnType<typeof unscheduledCalendarTasks>;
+  meetings?: MeetingListItem[];
   habits?: CalendarSidePanelHabitItem[];
   loading?: boolean;
-  panelVariant?: "calendar" | "meetings";
   onCreateMeeting: () => void;
-  onMeetingOpen: (meetingId: string) => void;
+  onMeetingOpen?: (meetingId: string) => void;
   onTaskOpen: (taskId: string) => void;
   onToggleHabit?: (
     habit: CalendarSidePanelHabitItem,
@@ -48,15 +47,14 @@ function resolveCalendarBodyMode(
 export function DesktopCalendarSidePanel({
   pathname,
   search,
-  meetings,
   tasks,
+  meetings = [],
   habits = [],
   loading,
   onCreateMeeting,
   onMeetingOpen,
   onTaskOpen,
   onToggleHabit,
-  panelVariant = "calendar",
 }: DesktopCalendarSidePanelProps) {
   const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
   const bodyMode = resolveCalendarBodyMode(pathname, pageMode);
@@ -66,9 +64,7 @@ export function DesktopCalendarSidePanel({
       ? "Availability"
       : bodyMode === "timetracking"
         ? "Timetracking"
-        : panelVariant === "meetings"
-          ? "Meetings"
-          : "Calendar";
+        : "Calendar";
 
   const className = [
     "calendar-side-panel",
@@ -120,11 +116,10 @@ export function DesktopCalendarSidePanel({
           embedded
           pathname={pathname}
           search={search}
-          meetings={meetings}
           tasks={tasks}
+          meetings={meetings}
           habits={habits}
           loading={loading}
-          panelVariant={panelVariant}
           pageMode={pageMode}
           onPageModeChange={handlePageModeChange}
           onCreateMeeting={onCreateMeeting}

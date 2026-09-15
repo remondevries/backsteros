@@ -43,6 +43,31 @@ test("buildCalendarSidePanelKeyboardItemIds respects collapsed groups and meetin
   assert.deepEqual(ids, ["meeting:m1", "meeting:m2"]);
 });
 
+test("buildCalendarSidePanelKeyboardItemIds lists inbox triage meetings before habits and tasks", () => {
+  const ids = buildCalendarSidePanelKeyboardItemIds({
+    meetings: [
+      {
+        id: "scheduled",
+        status: "on_hold",
+        startAt: "2026-08-22T10:00:00.000Z",
+        number: 1,
+      },
+      {
+        id: "triage",
+        status: "triage",
+        startAt: "2026-08-25T10:00:00.000Z",
+        number: 2,
+      },
+    ],
+    tasks: [{ id: "t1" }],
+    habits: [{ id: "h1" }],
+    meetingsCollapsed: true,
+    habitsCollapsed: false,
+    tasksCollapsed: false,
+  });
+  assert.deepEqual(ids, ["meeting:triage", "habit:h1", "task:t1"]);
+});
+
 test("buildCalendarSidePanelKeyboardItemIds lists inbox triage meetings before scheduled meetings", () => {
   const ids = buildCalendarSidePanelKeyboardItemIds({
     meetings: [

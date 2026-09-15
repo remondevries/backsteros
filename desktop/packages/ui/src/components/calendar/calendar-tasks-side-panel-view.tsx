@@ -13,26 +13,23 @@ import {
 } from "../../calendar/calendar-side-panel-keyboard.js";
 import { type CalendarPageMode } from "../../calendar/calendar-page-mode.js";
 import { CalendarSidePanelModeFooter } from "./calendar-side-panel-mode-footer.js";
-import { type MeetingListItem } from "../../meetings/meetings.js";
-import {
-  meetingEpochAttribute,
-  CALENDAR_EXTERNAL_DRAG_ITEM_SELECTOR,
-} from "../../calendar/calendar-task-drag.js";
+import { CALENDAR_EXTERNAL_DRAG_ITEM_SELECTOR } from "../../calendar/calendar-task-drag.js";
 import { useCalendarExternalTaskDrag } from "../../calendar/use-calendar-external-task-drag.js";
 import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
 import { keyboardNavItemProps } from "../../list-nav/keyboard-nav-item.js";
+import { type MeetingListItem } from "../../meetings/meetings.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
 import { ContentSidePanelShell } from "../content/content-side-panel-shell.js";
+import {
+  buildMeetingListItemCardData,
+  MeetingListItemCard,
+} from "../meetings/meeting-list-item-card.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
-import {
-  buildMeetingListItemCardData,
-  MeetingListItemCard,
-} from "../meetings/meeting-list-item-card.js";
 
 /** Today's habit row for the calendar side panel (icon + checkbox + drag). */
 export type CalendarSidePanelHabitItem = {
@@ -45,8 +42,9 @@ export type CalendarSidePanelHabitItem = {
 };
 
 export type CalendarTasksSidePanelViewProps = {
-  meetings?: MeetingListItem[];
   tasks: CalendarTaskLike[];
+  /** Triage/inbox meetings — shown above habits (right rail keeps scheduled). */
+  meetings?: MeetingListItem[];
   /** Today's habits with a day task — checkbox + drag onto the grid. */
   habits?: CalendarSidePanelHabitItem[];
   loading?: boolean;
@@ -60,30 +58,27 @@ export type CalendarTasksSidePanelViewProps = {
     checked: boolean,
   ) => void;
   emptyLabel?: string;
-  /** When `meetings`, hide unscheduled tasks/habits and use a meetings-focused header. */
-  panelVariant?: "calendar" | "meetings";
   selectedItemId?: string | null;
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
-  inboxCollapsed?: boolean;
-  onToggleInboxGroup?: () => void;
-  meetingsCollapsed?: boolean;
-  onToggleMeetingsGroup?: () => void;
   tasksCollapsed?: boolean;
   onToggleTasksGroup?: () => void;
   habitsCollapsed?: boolean;
   onToggleHabitsGroup?: () => void;
+  inboxMeetingsCollapsed?: boolean;
+  onToggleInboxMeetingsGroup?: () => void;
   /** When true, render only the list body — parent shell owns chrome + mode footer. */
   embedded?: boolean;
 };
 
 /**
- * Calendar left panel: meetings + habits + unscheduled tasks.
+ * Calendar left panel: inbox meetings + habits + unscheduled tasks
+ * (scheduled meetings live on the right rail / grid).
  */
 export function CalendarTasksSidePanelView({
-  meetings = [],
   tasks,
+  meetings = [],
   habits = [],
   loading = false,
   pageMode,
@@ -93,72 +88,38 @@ export function CalendarTasksSidePanelView({
   onTaskOpen,
   onToggleHabit,
   emptyLabel = "No unscheduled tasks.",
-  panelVariant = "calendar",
   selectedItemId = null,
   highlightedId = null,
   listRef,
   listContainerProps,
-  inboxCollapsed: inboxCollapsedProp,
-  onToggleInboxGroup,
-  meetingsCollapsed: meetingsCollapsedProp,
-  onToggleMeetingsGroup,
   tasksCollapsed: tasksCollapsedProp,
   onToggleTasksGroup,
   habitsCollapsed: habitsCollapsedProp,
   onToggleHabitsGroup,
+  inboxMeetingsCollapsed: inboxMeetingsCollapsedProp,
+  onToggleInboxMeetingsGroup,
   embedded = false,
 }: CalendarTasksSidePanelViewProps) {
   const dragContainerRef = useRef<HTMLDivElement>(null);
-  const showUnscheduledTasks = panelVariant === "calendar";
-  const showHabits = panelVariant === "calendar";
-  const { inboxMeetings, scheduledMeetings } =
-    partitionCalendarSidePanelMeetings(meetings);
-  const [localInboxCollapsed, setLocalInboxCollapsed] = useState(false);
-  const [localMeetingsCollapsed, setLocalMeetingsCollapsed] = useState(false);
   const [localTasksCollapsed, setLocalTasksCollapsed] = useState(false);
   const [localHabitsCollapsed, setLocalHabitsCollapsed] = useState(false);
-  const inboxCollapsed = inboxCollapsedProp ?? localInboxCollapsed;
-  const meetingsCollapsed =
-    meetingsCollapsedProp ?? localMeetingsCollapsed;
+  const [localInboxCollapsed, setLocalInboxCollapsed] = useState(false);
   const tasksCollapsed = tasksCollapsedProp ?? localTasksCollapsed;
   const habitsCollapsed = habitsCollapsedProp ?? localHabitsCollapsed;
-  const toggleInboxGroup =
-    onToggleInboxGroup ??
-    (() => setLocalInboxCollapsed((value) => !value));
-  const toggleMeetingsGroup =
-    onToggleMeetingsGroup ??
-    (() => setLocalMeetingsCollapsed((value) => !value));
+  const inboxMeetingsCollapsed =
+    inboxMeetingsCollapsedProp ?? localInboxCollapsed;
   const toggleTasksGroup =
     onToggleTasksGroup ?? (() => setLocalTasksCollapsed((value) => !value));
   const toggleHabitsGroup =
     onToggleHabitsGroup ?? (() => setLocalHabitsCollapsed((value) => !value));
+  const toggleInboxMeetingsGroup =
+    onToggleInboxMeetingsGroup ??
+    (() => setLocalInboxCollapsed((value) => !value));
 
-  function renderMeetingRow(meeting: MeetingListItem) {
-    const itemId = calendarSidePanelMeetingItemId(meeting.id);
-    return (
-      <li
-        key={meeting.id}
-        className="calendar-tasks-side-panel-item calendar-tasks-side-panel-item--draggable"
-        data-calendar-meeting-id={meeting.id}
-        data-calendar-meeting-title={meeting.title || "Untitled meeting"}
-        data-calendar-meeting-start-ms={meetingEpochAttribute(meeting.startAt)}
-        data-calendar-meeting-end-ms={meetingEpochAttribute(meeting.endAt)}
-      >
-        <MeetingListItemCard
-          item={buildMeetingListItemCardData(meeting)}
-          itemId={itemId}
-          active={selectedItemId === itemId}
-          keyboardHighlighted={highlightedId === itemId}
-          onActivate={() => onMeetingOpen?.(meeting.id)}
-        />
-      </li>
-    );
-  }
+  const { inboxMeetings } = partitionCalendarSidePanelMeetings(meetings);
 
   const canDragExternal =
-    showUnscheduledTasks &&
-    !loading &&
-    (tasks.length > 0 || habits.length > 0);
+    !loading && (tasks.length > 0 || habits.length > 0);
 
   useCalendarExternalTaskDrag(dragContainerRef, {
     enabled: canDragExternal,
@@ -167,20 +128,13 @@ export function CalendarTasksSidePanelView({
   });
 
   const hasInboxMeetings = inboxMeetings.length > 0;
-  const hasMeetings = scheduledMeetings.length > 0;
-  const hasHabits = showHabits && habits.length > 0;
-  const hasTasks = showUnscheduledTasks && tasks.length > 0;
-  const hasListContent =
-    hasInboxMeetings || hasMeetings || hasHabits || hasTasks;
-  const panelTitle = panelVariant === "meetings" ? "Meetings" : "Calendar";
-  const listAriaLabel =
-    panelVariant === "meetings" ? "Meetings" : "Calendar items";
-  const resolvedEmptyLabel =
-    panelVariant === "meetings" ? "No meetings yet." : emptyLabel;
+  const hasHabits = habits.length > 0;
+  const hasTasks = tasks.length > 0;
+  const hasListContent = hasInboxMeetings || hasHabits || hasTasks;
 
   const shell = (
     <ContentSidePanelShell
-      title={panelTitle}
+      title="Calendar"
       className="calendar-side-panel"
       mainRef={embedded ? undefined : dragContainerRef}
       headerActions={
@@ -200,8 +154,8 @@ export function CalendarTasksSidePanelView({
         <p className="app-content-side-panel-empty">Loading…</p>
       }
       isEmpty={loading || !hasListContent}
-      emptyLabel={resolvedEmptyLabel}
-      listAriaLabel={listAriaLabel}
+      emptyLabel={emptyLabel}
+      listAriaLabel="Calendar items"
       listRef={listRef}
       listContainerProps={listContainerProps}
       bare={embedded}
@@ -218,19 +172,26 @@ export function CalendarTasksSidePanelView({
       {hasInboxMeetings ? (
         <ProjectTypeGroupSection
           title="Inbox"
-          collapsed={inboxCollapsed}
-          onToggle={toggleInboxGroup}
+          collapsed={inboxMeetingsCollapsed}
+          onToggle={toggleInboxMeetingsGroup}
         >
-          {inboxMeetings.map((meeting) => renderMeetingRow(meeting))}
-        </ProjectTypeGroupSection>
-      ) : null}
-      {hasMeetings ? (
-        <ProjectTypeGroupSection
-          title="Meetings"
-          collapsed={meetingsCollapsed}
-          onToggle={toggleMeetingsGroup}
-        >
-          {scheduledMeetings.map((meeting) => renderMeetingRow(meeting))}
+          {inboxMeetings.map((meeting) => {
+            const itemId = calendarSidePanelMeetingItemId(meeting.id);
+            return (
+              <li
+                key={meeting.id}
+                className="calendar-tasks-side-panel-item calendar-tasks-side-panel-item--meeting"
+              >
+                <MeetingListItemCard
+                  item={buildMeetingListItemCardData(meeting)}
+                  itemId={itemId}
+                  active={selectedItemId === itemId}
+                  keyboardHighlighted={highlightedId === itemId}
+                  onActivate={() => onMeetingOpen?.(meeting.id)}
+                />
+              </li>
+            );
+          })}
         </ProjectTypeGroupSection>
       ) : null}
       {hasHabits ? (

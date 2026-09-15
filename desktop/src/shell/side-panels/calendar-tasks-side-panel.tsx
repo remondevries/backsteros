@@ -4,6 +4,7 @@ import {
   CalendarTasksSidePanelView,
   type CalendarPageMode,
   type CalendarSidePanelHabitItem,
+  type MeetingListItem,
   unscheduledCalendarTasks,
   buildCalendarSidePanelKeyboardItemIds,
   getSelectedCalendarSidePanelItemId,
@@ -15,34 +16,31 @@ import {
 } from "@backsteros/ui";
 
 import { useKeepAliveActive } from "../../lib/shell-route-keep-alive";
-import type { useDesktopWorkspaceMeta } from "../../lib/workspace-data";
 
-/** Tasks/meetings body — chrome owned by DesktopCalendarSidePanel when embedded. */
+/** Tasks/habits body — chrome owned by DesktopCalendarSidePanel when embedded. */
 export function DesktopCalendarTasksSidePanel({
   pathname,
   search,
-  meetings,
   tasks,
+  meetings = [],
   habits = [],
   loading,
   onCreateMeeting,
   onMeetingOpen,
   onTaskOpen,
   onToggleHabit,
-  panelVariant = "calendar",
   embedded = false,
   pageMode,
   onPageModeChange,
 }: {
   pathname: string;
   search: string;
-  meetings: ReturnType<typeof useDesktopWorkspaceMeta>["meetings"];
   tasks: ReturnType<typeof unscheduledCalendarTasks>;
+  meetings?: MeetingListItem[];
   habits?: CalendarSidePanelHabitItem[];
   loading?: boolean;
-  panelVariant?: "calendar" | "meetings";
   onCreateMeeting: () => void;
-  onMeetingOpen: (meetingId: string) => void;
+  onMeetingOpen?: (meetingId: string) => void;
   onTaskOpen: (taskId: string) => void;
   onToggleHabit?: (
     habit: CalendarSidePanelHabitItem,
@@ -54,28 +52,27 @@ export function DesktopCalendarTasksSidePanel({
 }) {
   const keepAliveActive = useKeepAliveActive();
   const listRef = useRef<HTMLElement>(null);
-  const [inboxCollapsed, setInboxCollapsed] = useState(false);
-  const [meetingsCollapsed, setMeetingsCollapsed] = useState(false);
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [habitsCollapsed, setHabitsCollapsed] = useState(false);
+  const [inboxMeetingsCollapsed, setInboxMeetingsCollapsed] = useState(false);
   const selectedItemId = getSelectedCalendarSidePanelItemId(pathname, search);
   const itemIds = useMemo(
     () =>
       buildCalendarSidePanelKeyboardItemIds({
+        // Left panel owns triage/inbox meetings; scheduled stay on the right rail.
         meetings,
         tasks,
         habits,
-        inboxCollapsed,
-        meetingsCollapsed,
+        inboxCollapsed: inboxMeetingsCollapsed,
         habitsCollapsed,
         tasksCollapsed,
+        meetingsCollapsed: true,
       }),
     [
-      meetings,
       habits,
-      inboxCollapsed,
-      meetingsCollapsed,
       habitsCollapsed,
+      inboxMeetingsCollapsed,
+      meetings,
       tasks,
       tasksCollapsed,
     ],
@@ -88,15 +85,17 @@ export function DesktopCalendarTasksSidePanel({
       setCalendarSidePanelKeyboardHighlightId(itemId);
       const parsed = parseCalendarSidePanelKeyboardItemId(itemId);
       if (!parsed) return;
-      if (parsed.kind === "meeting") {
-        onMeetingOpen(parsed.entityId);
-        return;
-      }
       if (parsed.kind === "habit") {
         // Habits stay in-panel (checkbox / drag) — no overlay.
         return;
       }
-      onTaskOpen(parsed.entityId);
+      if (parsed.kind === "meeting") {
+        onMeetingOpen?.(parsed.entityId);
+        return;
+      }
+      if (parsed.kind === "task") {
+        onTaskOpen(parsed.entityId);
+      }
     },
     zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
     enabled: keepAliveActive && itemIds.length > 0,
@@ -113,11 +112,10 @@ export function DesktopCalendarTasksSidePanel({
 
   return (
     <CalendarTasksSidePanelView
-      meetings={meetings}
       tasks={tasks}
+      meetings={meetings}
       habits={habits}
       loading={loading}
-      panelVariant={panelVariant}
       pageMode={pageMode}
       onPageModeChange={onPageModeChange}
       onCreateMeeting={onCreateMeeting}
@@ -129,13 +127,9 @@ export function DesktopCalendarTasksSidePanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       embedded={embedded}
-      inboxCollapsed={inboxCollapsed}
-      onToggleInboxGroup={() => {
-        setInboxCollapsed((value) => !value);
-      }}
-      meetingsCollapsed={meetingsCollapsed}
-      onToggleMeetingsGroup={() => {
-        setMeetingsCollapsed((value) => !value);
+      inboxMeetingsCollapsed={inboxMeetingsCollapsed}
+      onToggleInboxMeetingsGroup={() => {
+        setInboxMeetingsCollapsed((value) => !value);
       }}
       habitsCollapsed={habitsCollapsed}
       onToggleHabitsGroup={() => {

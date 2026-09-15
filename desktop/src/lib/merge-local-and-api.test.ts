@@ -73,6 +73,42 @@ test("mergeLocalWithPendingApiCreates keeps CLI-created projects in the list", (
   );
 });
 
+test("mergeLocalWithPendingApiCreates keeps agent/CLI meetings until PowerSync mirrors", () => {
+  // Mirrors desktop rawMeetings: calendar already has Daily Briefing locally,
+  // so resolveLocalOrApiRows alone would drop brand-new Lemo-Design meetings.
+  const local = [
+    {
+      id: "daily",
+      title: "Daily Briefing",
+      startAt: "2026-09-15T15:00:00.000Z",
+    },
+  ];
+  const api = [
+    {
+      id: "daily",
+      title: "Daily Briefing",
+      startAt: "2026-09-15T15:00:00.000Z",
+    },
+    {
+      id: "lemo",
+      title: "Standup catch-up — Lemo-Design",
+      startAt: "2026-09-15T13:00:00.000Z",
+    },
+  ];
+  assert.deepEqual(
+    resolveLocalOrApiRows(local, api).map((row) => row.id),
+    ["daily"],
+  );
+  const merged = mergeLocalWithPendingApiCreates(
+    resolveLocalOrApiRows(local, api),
+    api,
+  );
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["lemo", "daily"],
+  );
+});
+
 test("mergeLocalWithPendingApiCreates surfaces agent document creates until local sync", () => {
   const localDocs = [
     { id: "doc-1", type: "project", title: "Existing" },

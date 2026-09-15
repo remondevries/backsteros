@@ -1,3 +1,4 @@
+import { startOfWeekYmd } from "../habits/habit-month-grid.js";
 import {
   getPreferredColorSchemeSnapshot,
   resolveTaskStatusColor,
@@ -13,6 +14,13 @@ import { resolveMeetingEffectiveStatus } from "./meeting-status.js";
 
 export const MEETING_DISPLAY_KEY = "M";
 
+/** Same red as calendar “today” / due-today meeting icons. */
+export const MEETING_CURRENT_WEEK_ICON_COLOR = "#e5534b";
+/** Triage orange — inbox / next-week accent (legacy week tone). */
+export const MEETING_NEXT_WEEK_ICON_COLOR = "#ee7a47";
+/** Neutral gray — not today (scheduled list rail). */
+export const MEETING_MUTED_WEEK_ICON_COLOR = "#8B929A";
+
 /** Same red as task due-date “today” (on_hold semantic). */
 export function resolveMeetingAccentColor(
   colorScheme: TaskStatusColorScheme = getPreferredColorSchemeSnapshot(),
@@ -20,12 +28,91 @@ export function resolveMeetingAccentColor(
   return resolveTaskStatusColor("on_hold", undefined, { colorScheme });
 }
 
-/** Meeting list icon color by effective status (triage orange, else status color). */
+export type MeetingScheduleIconTone = "past" | "current" | "next" | "later";
+
+function formatLocalYmdForSchedule(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function addDaysYmdForSchedule(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(y!, m! - 1, d!);
+  date.setDate(date.getDate() + days);
+  return formatLocalYmdForSchedule(date);
+}
+
+function meetingStartYmdForSchedule(
+  startAt: number | Date | string,
+  fallback: Date,
+): string {
+  const date = new Date(startAt);
+  if (Number.isNaN(date.getTime())) return formatLocalYmdForSchedule(fallback);
+  return formatLocalYmdForSchedule(date);
+}
+
+/** True when the meeting starts on the local calendar day of `now`. */
+export function isMeetingScheduledToday(
+  startAt: number | Date | string,
+  options?: { now?: Date },
+): boolean {
+  const now = options?.now ?? new Date();
+  return (
+    meetingStartYmdForSchedule(startAt, now) === formatLocalYmdForSchedule(now)
+  );
+}
+
+/** Bucket a meeting start into past / current / next / later week (Mon-start). */
+export function meetingScheduleIconTone(
+  startAt: number | Date | string,
+  options?: { now?: Date },
+): MeetingScheduleIconTone {
+  const now = options?.now ?? new Date();
+  const meetingWeek = startOfWeekYmd(meetingStartYmdForSchedule(startAt, now));
+  const thisWeek = startOfWeekYmd(formatLocalYmdForSchedule(now));
+  if (meetingWeek < thisWeek) return "past";
+  if (meetingWeek === thisWeek) return "current";
+  if (meetingWeek === addDaysYmdForSchedule(thisWeek, 7)) return "next";
+  return "later";
+}
+
+/** Icon paint for scheduled list rails: today red, otherwise gray. */
+export function resolveMeetingScheduleIconColor(
+  startAt: number | Date | string,
+  options?: { now?: Date },
+): string {
+  if (isMeetingScheduledToday(startAt, options)) {
+    return MEETING_CURRENT_WEEK_ICON_COLOR;
+  }
+  return MEETING_MUTED_WEEK_ICON_COLOR;
+}
+
+/**
+ * Meeting list icon color.
+ * Triage stays orange (inbox) even when a start time exists; otherwise prefer
+ * today-red / else-gray when `startAt` is provided, else effective status color.
+ */
 export function resolveMeetingListIconColor(
   status: string | null | undefined,
-  options?: { colorScheme?: TaskStatusColorScheme },
+  options?: {
+    colorScheme?: TaskStatusColorScheme;
+    startAt?: number | Date | string | null;
+    now?: Date;
+  },
 ): string {
-  const statusKey = (status?.trim() || "ready_to_start").toLowerCase();
+  const statusKey = migrateLegacyTaskStatus(
+    (status?.trim() || "ready_to_start").toLowerCase(),
+  );
+  if (statusKey === "triage") {
+    return resolveTaskStatusColor("triage", undefined, options);
+  }
+  if (options?.startAt != null && options.startAt !== "") {
+    return resolveMeetingScheduleIconColor(options.startAt, {
+      now: options.now,
+    });
+  }
   return resolveTaskStatusColor(statusKey, undefined, options);
 }
 

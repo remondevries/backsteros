@@ -13,11 +13,16 @@ import type {
 import { ApiClientError, type BacksterosApiClient } from "@backsteros/api-client";
 
 import { createRequestAbortSignal } from "../request-timeout";
-import { preservePendingApiRows } from "../merge-local-and-api";
+import {
+  preferNewerByUpdatedAt,
+  preservePendingApiRows,
+} from "../merge-local-and-api";
 import {
   WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  WORKSPACE_MEETING_UPDATED_EVENT,
   WORKSPACE_PROJECT_UPDATED_EVENT,
   type WorkspaceDocumentUpdatedDetail,
+  type WorkspaceMeetingUpdatedDetail,
   type WorkspaceProjectUpdatedDetail,
 } from "../workspace-events";
 import {
@@ -29,6 +34,7 @@ import type { WorkspacePowerSync } from "./workspace-data-types";
 /** Coalesce bursty agent reorder/move SSE into one metadata fetch. */
 const DOCUMENT_LIVE_FETCH_DEBOUNCE_MS = 100;
 const PROJECT_LIVE_FETCH_DEBOUNCE_MS = 100;
+const MEETING_LIVE_FETCH_DEBOUNCE_MS = 100;
 
 /**
  * REST-hydrated row caches for cold-start rescue + readiness, plus sparse
@@ -74,6 +80,13 @@ export function useWorkspaceApiRows({
   const [liveDeletedProjectIds, setLiveDeletedProjectIds] = useState(
     () => new Set<string>(),
   );
+  /** SSE agent/CLI meeting rows (calendar before PowerSync). */
+  const [liveMeetingsById, setLiveMeetingsById] = useState(
+    () => new Map<string, ApiMeeting>(),
+  );
+  const [liveDeletedMeetingIds, setLiveDeletedMeetingIds] = useState(
+    () => new Set<string>(),
+  );
   const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
   const [apiMeetings, setApiMeetings] = useState<ApiMeeting[] | null>(null);
   const [restHydrateSettled, setRestHydrateSettled] = useState(!authenticated);
@@ -114,6 +127,8 @@ export function useWorkspaceApiRows({
       setLiveDeletedDocumentIds(new Set());
       setLiveProjectsById(new Map());
       setLiveDeletedProjectIds(new Set());
+      setLiveMeetingsById(new Map());
+      setLiveDeletedMeetingIds(new Set());
       setApiHabits(null);
       setApiMeetings(null);
     }
@@ -490,6 +505,97 @@ export function useWorkspaceApiRows({
     };
   }, [authenticated, client]);
 
+  // Agent/CLI meeting SSE → sparse liveMeetingsById overlay for calendar.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const meetingId of ids) {
+        void client
+          .requestJson<ApiMeeting>(
+            `/api/v1/meetings/${encodeURIComponent(meetingId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedMeetingIds((current) => {
+              if (!current.has(meetingId)) return current;
+              const next = new Set(current);
+              next.delete(meetingId);
+              return next;
+            });
+            setLiveMeetingsById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedMeetingIds((current) => {
+                if (current.has(meetingId)) return current;
+                const next = new Set(current);
+                next.add(meetingId);
+                return next;
+              });
+              setLiveMeetingsById((current) => {
+                if (!current.has(meetingId)) return current;
+                const next = new Map(current);
+                next.delete(meetingId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onMeetingUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceMeetingUpdatedDetail>)
+        .detail;
+      if (!detail?.meetingId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedMeetingIds((current) => {
+          if (current.has(detail.meetingId)) return current;
+          const next = new Set(current);
+          next.add(detail.meetingId);
+          return next;
+        });
+        setLiveMeetingsById((current) => {
+          if (!current.has(detail.meetingId)) return current;
+          const next = new Map(current);
+          next.delete(detail.meetingId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.meetingId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, MEETING_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_MEETING_UPDATED_EVENT, onMeetingUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_MEETING_UPDATED_EVENT,
+        onMeetingUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
   return {
     apiTasks,
     setApiTasks,
@@ -512,6 +618,9 @@ export function useWorkspaceApiRows({
     liveProjectsById,
     setLiveProjectsById,
     liveDeletedProjectIds,
+    liveMeetingsById,
+    setLiveMeetingsById,
+    liveDeletedMeetingIds,
     apiHabits,
     setApiHabits,
     apiMeetings,

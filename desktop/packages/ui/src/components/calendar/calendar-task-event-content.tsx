@@ -8,6 +8,7 @@ import {
   calendarEventHasExpandedContent,
 } from "../../calendar/calendar-events.js";
 import { MEETINGS_AVAILABILITY_MARKER_TYPE } from "../../calendar/calendar-availability-events.js";
+import { meetingBelongsInInbox } from "../../inbox/inbox-items.js";
 import { isPastCompletedMeeting } from "../../meetings/meeting-status.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
@@ -78,6 +79,13 @@ export function CalendarTaskEventContent({
   const meetingFinished =
     entity.entityType === "meeting" &&
     readMeetingFinished(arg.event.extendedProps);
+  const meetingStatus =
+    typeof arg.event.extendedProps.status === "string"
+      ? arg.event.extendedProps.status
+      : null;
+  const meetingInTriage =
+    entity.entityType === "meeting" &&
+    meetingBelongsInInbox({ status: meetingStatus });
 
   const statusIcon =
     entity.entityType === "birthday" ? (
@@ -88,7 +96,10 @@ export function CalendarTaskEventContent({
     ) : entity.entityType === "meeting" ? (
       <TaskDueDateIcon
         active={!meetingFinished}
-        urgency={meetingFinished ? null : "due_today"}
+        // Triage → orange (due_soon); scheduled → red today accent.
+        urgency={
+          meetingFinished ? null : meetingInTriage ? "due_soon" : "due_today"
+        }
         size={12}
         className="task-calendar-event__status-icon"
       />

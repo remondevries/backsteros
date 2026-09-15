@@ -85,4 +85,19 @@ describe("hybrid write bar", () => {
       ),
     );
   });
+
+  it("nudges peer after cloud REST writes for task / meeting / crm_activity", () => {
+    // Agent API-key path writes on cloud without commitRestEntityWrite —
+    // without these helpers local-core waits on the ~15s replication tick.
+    const routes = readSrc("../app/routes.ts");
+    assert.ok(routes.includes("function publishTaskLive("));
+    assert.ok(routes.includes("function publishMeetingLive("));
+    assert.ok(routes.includes("function nudgeCrmActivityLive("));
+    assert.ok(routes.includes('entity: "task"'));
+    assert.ok(routes.includes('entity: "meeting"'));
+    assert.ok(routes.includes('entity: "crm_activity"'));
+    assert.ok(routes.includes("publishTaskLive(auth,"));
+    assert.ok(routes.includes("publishMeetingLive(auth,"));
+    assert.ok(routes.includes("nudgeCrmActivityLive(auth,"));
+  });
 });

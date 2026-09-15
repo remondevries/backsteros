@@ -144,7 +144,9 @@ import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import {
   publishDocumentWorkspaceUpdated,
+  publishMeetingWorkspaceUpdated,
   publishProjectWorkspaceUpdated,
+  publishTaskWorkspaceUpdated,
   subscribeWorkspaceUpdated,
 } from "../lib/workspace-events.js";
 import { notifyPeerOfDocumentWrite } from "../services/core-replication/nudge.js";
@@ -545,6 +547,79 @@ function publishProjectLive(
     entityId: projectId,
     operation,
     projectId,
+  });
+}
+
+
+/**
+ * REST/agent meeting writes → local SSE + peer nudge so calendar / meeting
+ * property UIs refresh before PowerSync mirrors the row.
+ */
+function publishMeetingLive(
+  auth: AuthContext,
+  meetingId: string,
+  input?: {
+    projectId?: string | null;
+    operation?: "upsert" | "delete";
+  },
+): void {
+  const operation = input?.operation ?? "upsert";
+  publishMeetingWorkspaceUpdated(auth.workspaceId, meetingId, {
+    projectId: input?.projectId ?? null,
+    operation,
+  });
+  notifyPeerOfDocumentWrite({
+    workspaceId: auth.workspaceId,
+    reason: "meeting",
+    entity: "meeting",
+    entityId: meetingId,
+    operation,
+    projectId: input?.projectId ?? null,
+  });
+}
+
+/**
+ * REST/agent task writes → local SSE + peer nudge so task lists refresh
+ * before PowerSync / the replication tick (parity with documents/meetings).
+ */
+function publishTaskLive(
+  auth: AuthContext,
+  taskId: string,
+  input?: {
+    projectId?: string | null;
+    operation?: "upsert" | "delete";
+  },
+): void {
+  const operation = input?.operation ?? "upsert";
+  publishTaskWorkspaceUpdated(auth.workspaceId, taskId, {
+    projectId: input?.projectId ?? null,
+    reason: "patch",
+  });
+  notifyPeerOfDocumentWrite({
+    workspaceId: auth.workspaceId,
+    reason: "task",
+    entity: "task",
+    entityId: taskId,
+    operation,
+    projectId: input?.projectId ?? null,
+  });
+}
+
+/**
+ * CRM activity notes have no workspace SSE channel — peer nudge only so
+ * local-core pulls `crm_activities` without waiting for the 15s tick.
+ */
+function nudgeCrmActivityLive(
+  auth: AuthContext,
+  activityId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  notifyPeerOfDocumentWrite({
+    workspaceId: auth.workspaceId,
+    reason: "crm_activity",
+    entity: "crm_activity",
+    entityId: activityId,
+    operation,
   });
 }
 
@@ -2467,6 +2542,10 @@ export function registerApiRoutes(app: Hono) {
           if (!row) {
             throw new Error("TASK_CREATE_FAILED");
           }
+          publishTaskLive(auth, row.id, {
+            projectId: row.projectId ?? null,
+            operation: "upsert",
+          });
           return c.json(toTask(row), 201);
         }
         const row = await taskProjectService.createTask(
@@ -2483,6 +2562,10 @@ export function registerApiRoutes(app: Hono) {
           },
         );
         await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishTaskLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
         return c.json(toTask(row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -2561,6 +2644,12 @@ export function registerApiRoutes(app: Hono) {
             auth.workspaceId,
             taskId,
           );
+          if (row) {
+            publishTaskLive(auth, row.id, {
+              projectId: row.projectId ?? null,
+              operation: "upsert",
+            });
+          }
           return c.json(toTask(row!));
         }
         const row = await taskProjectService.updateTask(
@@ -2575,6 +2664,10 @@ export function registerApiRoutes(app: Hono) {
           return c.json(notFound("Task"), 404);
         }
         await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishTaskLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
         return c.json(toTask(row));
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -2631,6 +2724,10 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: taskId },
       });
+      publishTaskLive(auth, taskId, {
+        projectId: existing.projectId ?? null,
+        operation: "delete",
+      });
       return c.body(null, 204);
     }
     const row = await taskProjectService.deleteTask(
@@ -2641,6 +2738,10 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Task"), 404);
     }
     await recordTaskRestSyncEvent(auth.workspaceId, row, "delete");
+    publishTaskLive(auth, row.id, {
+      projectId: row.projectId ?? null,
+      operation: "delete",
+    });
     return c.body(null, 204);
   });
 
@@ -3251,6 +3352,12 @@ export function registerApiRoutes(app: Hono) {
         await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
       }
     }
+    for (const row of rows) {
+      publishTaskLive(auth, row.id, {
+        projectId: row.projectId ?? null,
+        operation: "upsert",
+      });
+    }
     return c.json({ tasks: rows.map(toTask) });
   });
 
@@ -3286,6 +3393,12 @@ export function registerApiRoutes(app: Hono) {
           await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
         }
       }
+      for (const row of rows) {
+        publishTaskLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
+      }
       return c.json({ tasks: rows.map(toTask) });
     },
   );
@@ -3310,6 +3423,12 @@ export function registerApiRoutes(app: Hono) {
         }),
       });
       const row = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      if (row) {
+        publishTaskLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
+      }
       return c.json(toTask(row!));
     }
     const row = await taskProjectService.updateTask(
@@ -3321,6 +3440,10 @@ export function registerApiRoutes(app: Hono) {
     );
     if (!row) return c.json(notFound("Task"), 404);
     await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+    publishTaskLive(auth, row.id, {
+      projectId: row.projectId ?? null,
+      operation: "upsert",
+    });
     return c.json(toTask(row));
   });
 
@@ -3348,6 +3471,12 @@ export function registerApiRoutes(app: Hono) {
         }),
       });
       const row = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      if (row) {
+        publishTaskLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
+      }
       return c.json(toTask(row!));
     }
     const row = await taskProjectService.updateTask(
@@ -3364,6 +3493,10 @@ export function registerApiRoutes(app: Hono) {
     );
     if (!row) return c.json(notFound("Task"), 404);
     await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+    publishTaskLive(auth, row.id, {
+      projectId: row.projectId ?? null,
+      operation: "upsert",
+    });
     return c.json(toTask(row));
   });
 
@@ -3688,6 +3821,12 @@ export function registerApiRoutes(app: Hono) {
             throw new Error("MEETING_CREATE_FAILED");
           }
           const row = await meetingService.getMeetingById(auth.workspaceId, meetingId);
+          if (row) {
+            publishMeetingLive(auth, row.id, {
+              projectId: row.projectId ?? null,
+              operation: "upsert",
+            });
+          }
           return c.json(row, 201);
         }
         const row = await meetingService.createMeeting(
@@ -3705,6 +3844,10 @@ export function registerApiRoutes(app: Hono) {
             dbRow.id,
           );
         }
+        publishMeetingLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
         return c.json(row, 201);
       } catch (error) {
         if (
@@ -3750,6 +3893,12 @@ export function registerApiRoutes(app: Hono) {
             payload: buildMeetingRestPayload(meetingId, patch),
           });
           const row = await meetingService.getMeetingById(auth.workspaceId, meetingId);
+          if (row) {
+            publishMeetingLive(auth, row.id, {
+              projectId: row.projectId ?? null,
+              operation: "upsert",
+            });
+          }
           return c.json(row);
         }
         const row = await meetingService.updateMeeting(
@@ -3769,6 +3918,10 @@ export function registerApiRoutes(app: Hono) {
             dbRow.id,
           );
         }
+        publishMeetingLive(auth, row.id, {
+          projectId: row.projectId ?? null,
+          operation: "upsert",
+        });
         return c.json(row);
       } catch (error) {
         if (
@@ -3808,6 +3961,10 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: meetingId },
       });
+      publishMeetingLive(auth, meetingId, {
+        projectId: existing.projectId ?? null,
+        operation: "delete",
+      });
       return c.body(null, 204);
     }
     const dbRow = await meetingService.deleteMeetingRow(
@@ -3820,6 +3977,10 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       dbRow.id,
     );
+    publishMeetingLive(auth, meetingId, {
+      projectId: dbRow.projectId ?? null,
+      operation: "delete",
+    });
     return c.body(null, 204);
   });
 
@@ -5013,6 +5174,7 @@ export function registerApiRoutes(app: Hono) {
               500,
             );
           }
+          nudgeCrmActivityLive(auth, row.id, "upsert");
           return c.json(row, 201);
         }
         const row = await crmActivitiesService.createCrmActivityNote(
@@ -5025,6 +5187,7 @@ export function registerApiRoutes(app: Hono) {
         if (dbRow) {
           await recordCrmActivityRestSyncEvent(auth.workspaceId, dbRow, "upsert");
         }
+        nudgeCrmActivityLive(auth, row.id, "upsert");
         return c.json(row, 201);
       } catch (error) {
         if (
@@ -5103,6 +5266,7 @@ export function registerApiRoutes(app: Hono) {
               500,
             );
           }
+          nudgeCrmActivityLive(auth, row.id, "upsert");
           return c.json(row, 201);
         }
         const row = await crmActivitiesService.createCrmActivityNote(
@@ -5115,6 +5279,7 @@ export function registerApiRoutes(app: Hono) {
         if (dbRow) {
           await recordCrmActivityRestSyncEvent(auth.workspaceId, dbRow, "upsert");
         }
+        nudgeCrmActivityLive(auth, row.id, "upsert");
         return c.json(row, 201);
       } catch (error) {
         if (

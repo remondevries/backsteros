@@ -4,9 +4,11 @@ import { useDesktopApi } from "./api-context";
 import {
   startWorkspaceEventsLoop,
   WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  WORKSPACE_MEETING_UPDATED_EVENT,
   WORKSPACE_PROJECT_UPDATED_EVENT,
   WORKSPACE_TASK_UPDATED_EVENT,
   type WorkspaceDocumentUpdatedDetail,
+  type WorkspaceMeetingUpdatedDetail,
   type WorkspaceProjectUpdatedDetail,
   type WorkspaceTaskUpdatedDetail,
 } from "./workspace-events";
@@ -46,6 +48,20 @@ export function WorkspaceEventsProvider({ children }: { children: ReactNode }) {
               {
                 detail: {
                   projectId: payload.entityId,
+                  operation: payload.operation,
+                },
+              },
+            ),
+          );
+          return;
+        }
+        if (payload.kind === "meeting") {
+          window.dispatchEvent(
+            new CustomEvent<WorkspaceMeetingUpdatedDetail>(
+              WORKSPACE_MEETING_UPDATED_EVENT,
+              {
+                detail: {
+                  meetingId: payload.entityId,
                   operation: payload.operation,
                 },
               },

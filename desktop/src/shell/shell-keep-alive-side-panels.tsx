@@ -598,29 +598,7 @@ export function CalendarKeepAliveSidePanel({
   const calendarReady = useWorkspaceSurfaceReady("calendar");
   const { habits, meetings } = useDesktopWorkspaceMeta();
   const { tasks, allTasks } = useDesktopWorkspaceTasks();
-  const { organizations } = useDesktopWorkspacePeople();
   const workspaceActions = useDesktopWorkspaceActions();
-
-  const organizationAvatarSrc = useDesktopAvatarSrcMap(
-    "organization",
-    frozen ? NO_ENTITIES : organizations,
-  );
-
-  const calendarMeetings = useMemo(
-    () =>
-      frozen
-        ? meetings
-        : meetings.map((meeting) =>
-            meeting.organizationId
-              ? {
-                  ...meeting,
-                  organizationAvatarSrc:
-                    organizationAvatarSrc[meeting.organizationId] ?? null,
-                }
-              : meeting,
-          ),
-    [frozen, meetings, organizationAvatarSrc],
-  );
 
   const calendarSidePanelTasks = useMemo(
     () => unscheduledCalendarTasks(tasks),
@@ -657,11 +635,10 @@ export function CalendarKeepAliveSidePanel({
     <DesktopCalendarSidePanel
       pathname={pathname}
       search={search}
-      meetings={calendarMeetings}
       tasks={calendarSidePanelTasks}
+      meetings={meetings}
       habits={calendarSidePanelHabits}
       loading={!calendarReady}
-      panelVariant="calendar"
       onCreateMeeting={() => {
         const { startAt, endAt } = defaultNewMeetingTimes();
         void workspaceActions

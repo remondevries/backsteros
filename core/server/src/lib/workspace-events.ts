@@ -75,7 +75,10 @@ export function publishTaskWorkspaceUpdated(
 export function publishMeetingWorkspaceUpdated(
   workspaceId: string,
   meetingId: string,
-  input?: { projectId?: string | null },
+  input?: {
+    projectId?: string | null;
+    operation?: WorkspaceUpdatedOperation;
+  },
 ): void {
   publishWorkspaceUpdated({
     workspaceId,
@@ -83,6 +86,7 @@ export function publishMeetingWorkspaceUpdated(
     entityId: meetingId,
     projectId: input?.projectId ?? null,
     reason: "patch",
+    operation: input?.operation ?? "upsert",
   });
 }
 

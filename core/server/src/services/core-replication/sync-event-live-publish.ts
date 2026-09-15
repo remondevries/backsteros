@@ -76,6 +76,7 @@ export function publishWorkspaceUpdatedFromSyncEvent(
     case "meeting":
       publishMeetingWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
+        operation: operation === "delete" ? "delete" : "upsert",
       });
       break;
     case "project":

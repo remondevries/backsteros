@@ -51,6 +51,15 @@ export type WorkspaceTaskUpdatedDetail = {
 export const WORKSPACE_TASK_UPDATED_EVENT =
   "backsteros-workspace-task-updated";
 
+export type WorkspaceMeetingUpdatedDetail = {
+  meetingId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports a meeting create/update/delete. */
+export const WORKSPACE_MEETING_UPDATED_EVENT =
+  "backsteros-workspace-meeting-updated";
+
 export type WorkspaceEventsClient = {
   requestStream: (path: string, init?: RequestInit) => Promise<Response>;
 };

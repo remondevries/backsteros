@@ -96,6 +96,8 @@ export function useWorkspaceEntityPatching({
   setApiDocuments,
   setLiveProjectsById,
   getProjectById,
+  setLiveMeetingsById,
+  getMeetingById,
   getLocalTaskStatus,
 }: {
   authenticated: boolean;
@@ -114,6 +116,10 @@ export function useWorkspaceEntityPatching({
     updater: (current: Map<string, ApiProject>) => Map<string, ApiProject>,
   ) => void;
   getProjectById?: (id: string) => ApiProject | null | undefined;
+  setLiveMeetingsById?: (
+    updater: (current: Map<string, ApiMeeting>) => Map<string, ApiMeeting>,
+  ) => void;
+  getMeetingById?: (id: string) => ApiMeeting | null | undefined;
   /**
    * PowerSync-local status for optimistic API cache merges. Due-date (and
    * other non-status) patches must not re-base onto a stale REST row that
@@ -313,6 +319,35 @@ export function useWorkspaceEntityPatching({
     [setApiMeetings],
   );
 
+  /**
+   * Optimistic meeting fields that win over lagging PowerSync via live overlay
+   * (calendar drag / title / property edits). Without this, SQLite watch lag or
+   * a stale SSE GET can make edits appear to revert.
+   */
+  const applyLiveMeetingOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      if (!setLiveMeetingsById) {
+        applyApiMeetingPatch(id, values);
+        return;
+      }
+      const nextUpdatedAt = new Date().toISOString();
+      const base = getMeetingById?.(id) ?? null;
+      setLiveMeetingsById((current) => {
+        const previous = current.get(id) ?? base;
+        if (!previous) return current;
+        const next = new Map(current);
+        next.set(id, {
+          ...previous,
+          ...values,
+          updatedAt: nextUpdatedAt,
+        } as ApiMeeting);
+        return next;
+      });
+      applyApiMeetingPatch(id, values);
+    },
+    [applyApiMeetingPatch, getMeetingById, setLiveMeetingsById],
+  );
+
   const applyApiDocumentPatch = useCallback(
     (id: string, values: Record<string, unknown>) => {
       const nextUpdatedAt = new Date().toISOString();
@@ -344,7 +379,7 @@ export function useWorkspaceEntityPatching({
         applyApiLetterPatch(id, values);
       }
       if (table === "meetings") {
-        applyApiMeetingPatch(id, values);
+        applyLiveMeetingOptimisticPatch(id, values);
       }
       if (table === "projects") {
         applyLiveProjectOptimisticPatch(id, values);
@@ -363,7 +398,7 @@ export function useWorkspaceEntityPatching({
       applyApiContactPatch,
       applyApiDocumentPatch,
       applyApiLetterPatch,
-      applyApiMeetingPatch,
+      applyLiveMeetingOptimisticPatch,
       applyApiOrganizationPatch,
       applyLiveProjectOptimisticPatch,
       applyApiTaskPatch,
@@ -398,17 +433,28 @@ export function useWorkspaceEntityPatching({
     }
   }, [authenticated, client, powerSync, setApiProjects]);
 
-  const softRefreshApiMeetings = useCallback(async () => {
-    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
-    try {
-      const meetingsBody = await client.requestJson<{ meetings: ApiMeeting[] }>(
-        "/api/v1/meetings",
-      );
-      setApiMeetings(meetingsBody.meetings);
-    } catch {
-      // PowerSync remains the primary source.
-    }
-  }, [authenticated, client, powerSync, setApiMeetings]);
+  /**
+   * Soft-pull meetings from REST for gap-fill (agent/CLI / cloud-leader twin
+   * creates before PowerSync download). While connected, skip unless
+   * `{ force: true }` — same shape as documents Spaces rescue.
+   */
+  const softRefreshApiMeetings = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!authenticated) return;
+      if (!options?.force && shouldSkipRestEntityWrite(powerSync)) return;
+      try {
+        const meetingsBody = await client.requestJson<{
+          meetings: ApiMeeting[];
+        }>("/api/v1/meetings");
+        setApiMeetings((current) =>
+          preservePendingApiRows(current, meetingsBody.meetings),
+        );
+      } catch {
+        // PowerSync remains the primary source.
+      }
+    },
+    [authenticated, client, powerSync, setApiMeetings],
+  );
 
   /**
    * Pull document metadata from REST when PowerSync is not connected.
@@ -485,25 +531,49 @@ export function useWorkspaceEntityPatching({
 
       const applyMeetingServerRow = async (row: ApiMeeting | null | undefined) => {
         if (!row || table !== "meetings") return;
-        applyApiMeetingPatch(id, {
-          projectId: row.projectId,
-          organizationId: row.organizationId,
-          locationOrganizationId: row.locationOrganizationId,
-          attendeeContactIds: row.attendeeContactIds,
+        // Full row — title / schedule / notes must land in the live overlay,
+        // not only CRM property fields.
+        applyLiveMeetingOptimisticPatch(id, {
+          number: row.number,
+          title: row.title,
+          summary: row.summary,
+          notes: row.notes,
+          transcription: row.transcription,
           status: row.status,
           format: row.format,
+          location: row.location,
+          locationOrganizationId: row.locationOrganizationId,
+          projectId: row.projectId,
+          organizationId: row.organizationId,
+          attendeeContactIds: row.attendeeContactIds,
+          startAt: row.startAt,
+          endAt: row.endAt,
+          trackedMinutes: row.trackedMinutes,
+          trackedDurationSeconds: row.trackedDurationSeconds,
+          sortOrder: row.sortOrder,
           updatedAt: row.updatedAt,
         });
         if (powerSync.ready && powerSync.patchMetadata) {
           try {
-            await powerSync.patchMetadata("meetings", id, toSnakeFields({
-              projectId: row.projectId ?? null,
-              organizationId: row.organizationId ?? null,
-              locationOrganizationId: row.locationOrganizationId ?? null,
-              attendeeContactIds: row.attendeeContactIds ?? [],
-              status: row.status,
-              format: row.format ?? "video_call",
-            }));
+            await powerSync.patchMetadata(
+              "meetings",
+              id,
+              toSnakeFields({
+                title: row.title,
+                summary: row.summary ?? null,
+                notes: row.notes ?? null,
+                transcription: row.transcription ?? null,
+                projectId: row.projectId ?? null,
+                organizationId: row.organizationId ?? null,
+                locationOrganizationId: row.locationOrganizationId ?? null,
+                attendeeContactIds: row.attendeeContactIds ?? [],
+                status: row.status,
+                format: row.format ?? "video_call",
+                location: row.location ?? null,
+                startAt: row.startAt,
+                endAt: row.endAt,
+              }),
+            );
           } catch (error) {
             console.warn("[desktop] local meeting property sync failed", error);
           }
@@ -716,6 +786,11 @@ export function useWorkspaceEntityPatching({
           // panels read workspace.projects. Push a live overlay so both agree
           // before PowerSync watch / upload catch up.
           applyLiveProjectOptimisticPatch(id, optimisticValues);
+        } else if (table === "meetings") {
+          // Calendar grid + side panels read rawMeetings (SQLite + live overlay).
+          // Push live overlay immediately so drag/title/property edits stick
+          // before the watch / agent SSE round-trip.
+          applyLiveMeetingOptimisticPatch(id, optimisticValues);
         } else if (table === "tasks" && typeof values.status === "string") {
           nudgeDynamicIslandTasksRefresh();
         }
@@ -753,6 +828,7 @@ export function useWorkspaceEntityPatching({
           : undefined;
       }
       if (table === "meetings") {
+        applyLiveMeetingOptimisticPatch(id, values);
         const updated = await client.requestJson<ApiMeeting>(path, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -792,7 +868,7 @@ export function useWorkspaceEntityPatching({
     [
       applyApiContactPatch,
       applyApiLetterPatch,
-      applyApiMeetingPatch,
+      applyLiveMeetingOptimisticPatch,
       applyOptimisticEntityPatch,
       applyApiOrganizationPatch,
       applyLiveProjectOptimisticPatch,
@@ -829,6 +905,12 @@ export function useWorkspaceEntityPatching({
     }
     if (table === "meetings") {
       setApiMeetings((rows) => rows?.filter((row) => row.id !== id) ?? null);
+      setLiveMeetingsById?.((current) => {
+        if (!current.has(id)) return current;
+        const next = new Map(current);
+        next.delete(id);
+        return next;
+      });
       return;
     }
     if (table === "contacts") {
@@ -850,6 +932,7 @@ export function useWorkspaceEntityPatching({
     setApiOrganizations,
     setApiProjects,
     setApiTasks,
+    setLiveMeetingsById,
   ]);
 
   const softDeleteViaPowerSyncOrApi = useCallback(
@@ -897,5 +980,6 @@ export function useWorkspaceEntityPatching({
     softDeleteViaPowerSyncOrApi,
     softRefreshApiTasks,
     softRefreshApiDocuments,
+    softRefreshApiMeetings,
   };
 }

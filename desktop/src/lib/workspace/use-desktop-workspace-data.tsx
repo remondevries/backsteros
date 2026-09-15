@@ -260,6 +260,9 @@ function useDesktopWorkspaceDataImpl(): {
     liveProjectsById,
     setLiveProjectsById,
     liveDeletedProjectIds,
+    liveMeetingsById,
+    setLiveMeetingsById,
+    liveDeletedMeetingIds,
     apiHabits,
     setApiHabits,
     apiMeetings,
@@ -598,15 +601,32 @@ function useDesktopWorkspaceDataImpl(): {
         : (localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting) ??
           null);
     const fillFrom = apiFillSourceForColdStart(localMapped, apiMeetings);
-    return fillMissingLongTextFromApi(
-      fillMissingMeetingPropertiesFromApi(
-        resolveLocalOrApiRows(localMapped, apiMeetings),
+    // Cold-start / shell pending creates via apiMeetings; agent SSE via sparse overlay.
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        fillMissingMeetingPropertiesFromApi(
+          // Same race as contacts/tasks: agent/CLI (or cloud-leader twin) creates
+          // land in REST before PowerSync mirrors them. Without this merge,
+          // resolveLocalOrApiRows drops API-only meetings once any local row exists.
+          mergeLocalWithPendingApiCreates(
+            resolveLocalOrApiRows(localMapped, apiMeetings),
+            apiMeetings,
+          ),
+          fillFrom,
+        ),
         fillFrom,
+        ["summary", "notes", "transcription"],
       ),
-      fillFrom,
-      ["summary", "notes", "transcription"],
+      liveMeetingsById,
+      { deletedIds: liveDeletedMeetingIds },
     );
-  }, [apiMeetings, localMeetings.data, localMeetings.error]);
+  }, [
+    apiMeetings,
+    liveDeletedMeetingIds,
+    liveMeetingsById,
+    localMeetings.data,
+    localMeetings.error,
+  ]);
 
   const rawContacts = useMemo(() => {
     const localMapped =
@@ -819,6 +839,15 @@ function useDesktopWorkspaceDataImpl(): {
     [projectsById],
   );
 
+  const getMeetingById = useCallback(
+    (id: string) => {
+      const fromLive = liveMeetingsById.get(id);
+      if (fromLive) return fromLive;
+      return rawMeetings.find((meeting) => meeting.id === id) ?? null;
+    },
+    [liveMeetingsById, rawMeetings],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -826,6 +855,7 @@ function useDesktopWorkspaceDataImpl(): {
     softDeleteViaPowerSyncOrApi,
     softRefreshApiTasks,
     softRefreshApiDocuments,
+    softRefreshApiMeetings,
   } = useWorkspaceEntityPatching({
     authenticated,
     client,
@@ -841,6 +871,8 @@ function useDesktopWorkspaceDataImpl(): {
     setApiDocuments,
     setLiveProjectsById,
     getProjectById,
+    setLiveMeetingsById,
+    getMeetingById,
     getLocalTaskStatus,
   });
 
@@ -1376,6 +1408,7 @@ function useDesktopWorkspaceDataImpl(): {
       reorderDocuments,
       deleteDocument,
       softRefreshApiDocuments,
+      softRefreshApiMeetings,
     }),
     [
       createArea,
@@ -1414,6 +1447,7 @@ function useDesktopWorkspaceDataImpl(): {
       softDeleteOrganization,
       softDeleteProject,
       softRefreshApiDocuments,
+      softRefreshApiMeetings,
       softDeleteTask,
       updateDocumentIcon,
       updateDocumentPublishFields,
