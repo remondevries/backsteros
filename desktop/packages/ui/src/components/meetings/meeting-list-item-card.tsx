@@ -19,7 +19,6 @@ import {
   type MeetingListItem,
 } from "../../meetings/meetings.js";
 import {
-  isIncomingMeetingStatus,
   isPastCompletedMeeting,
   resolveMeetingEffectiveStatus,
 } from "../../meetings/meeting-status.js";
@@ -168,15 +167,20 @@ export function MeetingListItemCard(props: MeetingListItemCardProps) {
   const organizationLabel = item.organizationName?.trim() || null;
   const hasTitleStack = Boolean(scheduleLabel);
   const displayId = formatMeetingDisplayId(item.number);
-  const incoming = isIncomingMeetingStatus(status);
   const colorScheme = useSyncExternalStore(
     subscribeToPreferredColorScheme,
     getPreferredColorSchemeSnapshot,
     () => "dark" as const,
   );
   const meetingIconStyle = useMemo(
-    () => iconSvgColorStyle(resolveMeetingListIconColor(status, { colorScheme })),
-    [colorScheme, status],
+    () =>
+      iconSvgColorStyle(
+        resolveMeetingListIconColor(status, {
+          colorScheme,
+          startAt: item.startAt,
+        }),
+      ),
+    [colorScheme, item.startAt, status],
   );
 
   const cardClassName = [
@@ -214,12 +218,6 @@ export function MeetingListItemCard(props: MeetingListItemCardProps) {
             .join(" ")}
         >
           <span className="inbox-list-item-title-line">
-            {incoming ? (
-              <>
-                <span className="inbox-list-item-incoming-label">New</span>
-                {" · "}
-              </>
-            ) : null}
             <span className="inbox-list-item-title" title={item.title}>
               {item.title}
             </span>

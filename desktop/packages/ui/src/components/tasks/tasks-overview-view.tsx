@@ -72,6 +72,8 @@ import {
   type TaskItemRowTask,
 } from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import { useListTypeToFilter } from "../../list-nav/use-list-type-to-filter.js";
+import { listItemMatchesTypeToFilter } from "../../list-nav/list-type-to-filter.js";
 import {
   TasksTodayHabitsChips,
   type HabitCheckChipItem,
@@ -154,6 +156,10 @@ export type TasksOverviewViewProps = {
   taskIdColumnCh?: number;
   /** When false, unregister j/k (hidden keep-alive tasks list). */
   listKeyboardEnabled?: boolean;
+  /**
+   * When false, Shift+F type-to-filter is off. Defaults to `listKeyboardEnabled`.
+   */
+  typeToFilterEnabled?: boolean;
 };
 
 export function TasksOverviewView({
@@ -184,7 +190,11 @@ export function TasksOverviewView({
   isTaskAgentWorking,
   taskIdColumnCh: taskIdColumnChProp,
   listKeyboardEnabled = true,
+  typeToFilterEnabled,
 }: TasksOverviewViewProps) {
+  const listTypeToFilter = useListTypeToFilter({
+    enabled: typeToFilterEnabled ?? listKeyboardEnabled,
+  });
   const [uncontrolledFilter, setUncontrolledFilter] =
     useState<TasksDueFilter>(initialFilter);
   const filter = controlledFilter ?? uncontrolledFilter;
@@ -411,14 +421,22 @@ export function TasksOverviewView({
     [consumeClickSuppression, onSelectTask],
   );
 
-  const filtered = useMemo(
-    () =>
-      filterTasksByDueFilter(
-        localTasks.filter((task) => !isHabitLinkedTask(task)),
-        filter,
+  const filtered = useMemo(() => {
+    const byDue = filterTasksByDueFilter(
+      localTasks.filter((task) => !isHabitLinkedTask(task)),
+      filter,
+    );
+    if (!listTypeToFilter.query) return byDue;
+    return byDue.filter((task) =>
+      listItemMatchesTypeToFilter(
+        listTypeToFilter.query,
+        task.title,
+        task.projectKey,
+        task.projectName,
+        task.number != null ? String(task.number) : null,
       ),
-    [localTasks, filter],
-  );
+    );
+  }, [localTasks, filter, listTypeToFilter.query]);
   // Next DueTasksList always keeps empty status groups so the chrome stays put.
   const groups = useMemo(
     () => groupTasksByStatus(filtered, { includeEmpty: true }),

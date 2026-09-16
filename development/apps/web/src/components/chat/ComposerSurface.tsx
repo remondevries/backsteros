@@ -69,6 +69,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
       data-chat-composer-main-surface="true"
       className={cn(
         "group relative z-10 rounded-[22px] p-px transition-colors duration-200",
+        // Agent accent for focused outline; ChatComposer overrides when a provider is selected.
+        "[--composer-agent-accent:var(--primary)]",
         outlineClasses,
         contextSeamClasses,
         "after:z-20 after:hidden group-has-data-[composer-banner-surface=attached]/composer-surface:after:block",
@@ -80,7 +82,7 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "transition-[box-shadow] duration-200 ease-out",
         "data-composer-focused:after:block",
         "data-composer-focused:after:[clip-path:none]",
-        "data-composer-focused:[--chat-composer-outline:color-mix(in_srgb,var(--primary)_58%,transparent)]",
+        "data-composer-focused:[--chat-composer-outline:color-mix(in_srgb,var(--composer-agent-accent)_58%,transparent)]",
         "data-composer-focused:shadow-[0_12px_28px_-18px_rgb(0_0_0/40%)]",
         "dark:data-composer-focused:shadow-none",
         className,

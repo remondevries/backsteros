@@ -24,6 +24,7 @@ import { ContactSocialLabel } from "./contact-social-label.js";
 import { MeetingPhoneIcon } from "../meetings/meeting-format-icons.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
+import { useListTypeToFilterItems } from "../../list-nav/use-list-type-to-filter.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 export type ContactsOverviewViewProps = {
@@ -37,6 +38,8 @@ export type ContactsOverviewViewProps = {
   onSelect?: (contact: ContactListItem) => void;
   onAdd?: () => void;
   emptyMessage?: string;
+  /** When false, Shift+F type-to-filter is off (hidden keep-alive lists). */
+  typeToFilterEnabled?: boolean;
 };
 
 /**
@@ -50,22 +53,43 @@ export function ContactsOverviewView({
   onSelect,
   onAdd,
   emptyMessage = "No contacts yet.",
+  typeToFilterEnabled = true,
 }: ContactsOverviewViewProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
+  const {
+    items: filterableContacts,
+    query: typeToFilterQuery,
+  } = useListTypeToFilterItems({
+    enabled: typeToFilterEnabled,
+    items: contacts,
+    getHaystacks: (contact) => [
+      contact.name,
+      contact.firstName,
+      contact.lastName,
+      contact.key,
+      contact.email,
+      contact.organizationName,
+      contact.number != null ? String(contact.number) : null,
+    ],
+  });
+
   const { pinnedContacts, sortedContacts } = useMemo(() => {
     if (!pinnedContactId) {
-      return { pinnedContacts: [] as ContactListItem[], sortedContacts: contacts };
+      return {
+        pinnedContacts: [] as ContactListItem[],
+        sortedContacts: filterableContacts,
+      };
     }
     const pinned: ContactListItem[] = [];
     const rest: ContactListItem[] = [];
-    for (const contact of contacts) {
+    for (const contact of filterableContacts) {
       if (contact.id === pinnedContactId) pinned.push(contact);
       else rest.push(contact);
     }
     return { pinnedContacts: pinned, sortedContacts: rest };
-  }, [contacts, pinnedContactId]);
+  }, [filterableContacts, pinnedContactId]);
 
   const grouped = useMemo(
     () => groupItemsByAlphaLetter(sortedContacts),
@@ -89,11 +113,11 @@ export function ContactsOverviewView({
     itemIds,
     selectedId,
     onNavigate: (itemId) => {
-      const match = contacts.find((entry) => entry.id === itemId);
+      const match = filterableContacts.find((entry) => entry.id === itemId);
       if (match) onSelect?.(match);
     },
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
-    enabled: contacts.length > 0,
+    enabled: filterableContacts.length > 0,
   });
 
   function toggleLetter(letter: string) {
@@ -216,8 +240,10 @@ export function ContactsOverviewView({
         </div>
       ) : null}
 
-      {contacts.length === 0 ? (
-        <p className="contacts-overview__empty">{emptyMessage}</p>
+      {filterableContacts.length === 0 ? (
+        <p className="contacts-overview__empty">
+          {typeToFilterQuery ? "No contacts match." : emptyMessage}
+        </p>
       ) : (
         <ul
           className="contacts-overview__list"

@@ -1,38 +1,15 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { formatCountryLabel } from "../../geo/country-region.js";
 import { EntityAddressFields } from "../shared/entity-address-fields.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import type { DomainRegistrarContact } from "./domain-registrar-panel.js";
 
-function DetailsField({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="entity-overview-field">
-      {htmlFor ? (
-        <label className="entity-overview-field__label" htmlFor={htmlFor}>
-          {label}
-        </label>
-      ) : (
-        <span className="entity-overview-field__label">{label}</span>
-      )}
-      {children}
-    </div>
-  );
-}
-
-/** Flat chip text field — same chrome as org / contact detail values. */
-function DetailTextChip({
+function WhoisTextField({
   id,
+  label,
   type = "text",
   value,
   placeholder,
@@ -41,48 +18,37 @@ function DetailTextChip({
   onChange,
   onCommit,
 }: {
-  id?: string;
+  id: string;
+  label: string;
   type?: "text" | "email" | "tel";
   value: string;
-  placeholder: string;
+  placeholder?: string;
   autoComplete?: string;
   disabled?: boolean;
   onChange: (next: string) => void;
   onCommit: (next: string) => void;
 }) {
-  const trimmed = value.trim();
   return (
-    <div className="contact-detail-chips">
-      <div className="contact-detail-chips__row">
-        <div
-          className={[
-            "contact-detail-split-chip",
-            trimmed ? null : "is-muted",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          <input
-            id={id}
-            type={type}
-            className="contact-detail-split-chip__value"
-            value={value}
-            placeholder={placeholder}
-            autoComplete={autoComplete}
-            disabled={disabled}
-            size={Math.max(value.length, placeholder.length, 4)}
-            onChange={(event) => onChange(event.target.value)}
-            onBlur={(event) => onCommit(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                (event.target as HTMLInputElement).blur();
-              }
-            }}
-          />
-        </div>
-      </div>
-    </div>
+    <label className="contact-location-map__field" htmlFor={id}>
+      <span>{label}</span>
+      <input
+        id={id}
+        type={type}
+        className="entity-overview-input"
+        value={value}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={(event) => onCommit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            (event.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+    </label>
   );
 }
 
@@ -187,8 +153,8 @@ export type DomainWhoisContactEditorProps = {
 };
 
 /**
- * Editable WHOIS contact — same DetailsField / chip / address patterns as
- * Contacts → Details (name, email, phone, location).
+ * Editable WHOIS contact — stacked label/input fields matching
+ * EntityAddressFields (Contacts / Organizations location editor).
  */
 export function DomainWhoisContactEditor({
   contact,
@@ -275,37 +241,38 @@ export function DomainWhoisContactEditor({
 
   return (
     <EntityOverviewSubgroup title={`${formatWhoisRole(contact.type)} contact`}>
-      <DetailsField label="First name" htmlFor={`${idPrefix}-first`}>
-        <DetailTextChip
-          id={`${idPrefix}-first`}
-          value={firstName}
-          placeholder="First name"
-          autoComplete="given-name"
-          disabled={disabled}
-          onChange={setFirstName}
-          onCommit={(next) => {
-            setFirstName(next);
-            commit({ firstName: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="Last name" htmlFor={`${idPrefix}-last`}>
-        <DetailTextChip
-          id={`${idPrefix}-last`}
-          value={lastName}
-          placeholder="Last name"
-          autoComplete="family-name"
-          disabled={disabled}
-          onChange={setLastName}
-          onCommit={(next) => {
-            setLastName(next);
-            commit({ lastName: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="Company" htmlFor={`${idPrefix}-company`}>
-        <DetailTextChip
+      <div className="entity-address-fields domain-whois-fields">
+        <div className="contact-location-map__field-row">
+          <WhoisTextField
+            id={`${idPrefix}-first`}
+            label="First name"
+            value={firstName}
+            placeholder="First name"
+            autoComplete="given-name"
+            disabled={disabled}
+            onChange={setFirstName}
+            onCommit={(next) => {
+              setFirstName(next);
+              commit({ firstName: next });
+            }}
+          />
+          <WhoisTextField
+            id={`${idPrefix}-last`}
+            label="Last name"
+            value={lastName}
+            placeholder="Last name"
+            autoComplete="family-name"
+            disabled={disabled}
+            onChange={setLastName}
+            onCommit={(next) => {
+              setLastName(next);
+              commit({ lastName: next });
+            }}
+          />
+        </div>
+        <WhoisTextField
           id={`${idPrefix}-company`}
+          label="Company"
           value={companyName}
           placeholder="Company name"
           autoComplete="organization"
@@ -316,36 +283,35 @@ export function DomainWhoisContactEditor({
             commit({ companyName: next });
           }}
         />
-      </DetailsField>
-      <DetailsField label="KvK" htmlFor={`${idPrefix}-kvk`}>
-        <DetailTextChip
-          id={`${idPrefix}-kvk`}
-          value={companyKvk}
-          placeholder="Chamber of Commerce"
-          disabled={disabled}
-          onChange={setCompanyKvk}
-          onCommit={(next) => {
-            setCompanyKvk(next);
-            commit({ companyKvk: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="Company type" htmlFor={`${idPrefix}-ctype`}>
-        <DetailTextChip
-          id={`${idPrefix}-ctype`}
-          value={companyType}
-          placeholder="e.g. BV"
-          disabled={disabled}
-          onChange={setCompanyType}
-          onCommit={(next) => {
-            setCompanyType(next);
-            commit({ companyType: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="E-mail" htmlFor={`${idPrefix}-email`}>
-        <DetailTextChip
+        <div className="contact-location-map__field-row">
+          <WhoisTextField
+            id={`${idPrefix}-kvk`}
+            label="KvK"
+            value={companyKvk}
+            placeholder="Chamber of Commerce"
+            disabled={disabled}
+            onChange={setCompanyKvk}
+            onCommit={(next) => {
+              setCompanyKvk(next);
+              commit({ companyKvk: next });
+            }}
+          />
+          <WhoisTextField
+            id={`${idPrefix}-ctype`}
+            label="Company type"
+            value={companyType}
+            placeholder="e.g. BV"
+            disabled={disabled}
+            onChange={setCompanyType}
+            onCommit={(next) => {
+              setCompanyType(next);
+              commit({ companyType: next });
+            }}
+          />
+        </div>
+        <WhoisTextField
           id={`${idPrefix}-email`}
+          label="E-mail"
           type="email"
           value={email}
           placeholder="email@example.com"
@@ -357,58 +323,59 @@ export function DomainWhoisContactEditor({
             commit({ email: next });
           }}
         />
-      </DetailsField>
-      <DetailsField label="Phone" htmlFor={`${idPrefix}-phone`}>
-        <DetailTextChip
-          id={`${idPrefix}-phone`}
-          type="tel"
-          value={phoneNumber}
-          placeholder="+31 …"
-          autoComplete="tel"
-          disabled={disabled}
-          onChange={setPhoneNumber}
-          onCommit={(next) => {
-            setPhoneNumber(next);
-            commit({ phoneNumber: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="Fax" htmlFor={`${idPrefix}-fax`}>
-        <DetailTextChip
-          id={`${idPrefix}-fax`}
-          type="tel"
-          value={faxNumber}
-          placeholder="Fax"
-          disabled={disabled}
-          onChange={setFaxNumber}
-          onCommit={(next) => {
-            setFaxNumber(next);
-            commit({ faxNumber: next });
-          }}
-        />
-      </DetailsField>
-      <DetailsField label="Location">
+        <div className="contact-location-map__field-row">
+          <WhoisTextField
+            id={`${idPrefix}-phone`}
+            label="Phone"
+            type="tel"
+            value={phoneNumber}
+            placeholder="+31 …"
+            autoComplete="tel"
+            disabled={disabled}
+            onChange={setPhoneNumber}
+            onCommit={(next) => {
+              setPhoneNumber(next);
+              commit({ phoneNumber: next });
+            }}
+          />
+          <WhoisTextField
+            id={`${idPrefix}-fax`}
+            label="Fax"
+            type="tel"
+            value={faxNumber}
+            placeholder="Fax"
+            disabled={disabled}
+            onChange={setFaxNumber}
+            onCommit={(next) => {
+              setFaxNumber(next);
+              commit({ faxNumber: next });
+            }}
+          />
+        </div>
         <div className="domain-whois-location">
-          <div className="domain-whois-location__summary">
-            <span
-              className={[
-                "domain-whois-location__line",
-                addressLine ? null : "is-muted",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              {addressLine || "Add an address"}
-            </span>
-            <button
-              type="button"
-              className="domain-overview__button"
-              disabled={disabled}
-              aria-expanded={locationEditing}
-              onClick={() => setLocationEditing((open) => !open)}
-            >
-              {locationEditing ? "Done" : "Edit"}
-            </button>
+          <div className="contact-location-map__field">
+            <span>Location</span>
+            <div className="domain-whois-location__summary">
+              <span
+                className={[
+                  "domain-whois-location__line",
+                  addressLine ? null : "is-muted",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {addressLine || "Add an address"}
+              </span>
+              <button
+                type="button"
+                className="domain-overview__button"
+                disabled={disabled}
+                aria-expanded={locationEditing}
+                onClick={() => setLocationEditing((open) => !open)}
+              >
+                {locationEditing ? "Done" : "Edit"}
+              </button>
+            </div>
           </div>
           {locationEditing ? (
             <div className="domain-whois-location__editor">
@@ -441,23 +408,22 @@ export function DomainWhoisContactEditor({
                   });
                 }}
               />
-              <DetailsField label="House number" htmlFor={`${idPrefix}-number`}>
-                <DetailTextChip
-                  id={`${idPrefix}-number`}
-                  value={houseNumber}
-                  placeholder="Number"
-                  disabled={disabled}
-                  onChange={setHouseNumber}
-                  onCommit={(next) => {
-                    setHouseNumber(next);
-                    commit({ number: next });
-                  }}
-                />
-              </DetailsField>
+              <WhoisTextField
+                id={`${idPrefix}-number`}
+                label="House number"
+                value={houseNumber}
+                placeholder="Number"
+                disabled={disabled}
+                onChange={setHouseNumber}
+                onCommit={(next) => {
+                  setHouseNumber(next);
+                  commit({ number: next });
+                }}
+              />
             </div>
           ) : null}
         </div>
-      </DetailsField>
+      </div>
     </EntityOverviewSubgroup>
   );
 }

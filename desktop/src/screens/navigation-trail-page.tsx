@@ -38,6 +38,11 @@ import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
 import {
+  projectListLabelForNavFrom,
+  recalledProjectNavFrom,
+  resolveProjectListHref,
+} from "../lib/project-type-cache";
+import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
@@ -161,8 +166,22 @@ function resolveSourceBreadcrumbs(
         entry.id === docPath ||
         entry.path === decodeURIComponent(docPath),
     );
+    const navFrom =
+      recalledProjectNavFrom(project?.id) ??
+      recalledProjectNavFrom(project?.key) ??
+      recalledProjectNavFrom(projectParam) ??
+      "projects";
     return [
-      { label: "Projects", href: "/projects" },
+      {
+        label: projectListLabelForNavFrom(navFrom),
+        href: resolveProjectListHref({
+          locationState: null,
+          navFrom,
+          projectId: project?.id,
+          projectKey: project?.key,
+          routeParam: projectParam,
+        }),
+      },
       {
         label: project?.name ?? projectParam,
         href: `/projects/${projectParam}`,

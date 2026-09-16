@@ -12,37 +12,55 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CONTACT_DETAIL_COLLAPSE_DURATION_MS,
   CONTACT_DETAIL_CONTENT_FADE_MS,
-  ContactDetailOverlay,
+  CONTACT_DETAIL_EXPAND_FADE_MS,
   DomainDetailView,
+  DOMAIN_EXPANDED_WORKSPACE_TAB_IDS,
+  DOMAIN_EXPANDED_WORKSPACE_TABS,
+  EntityDetailOverlay,
   FinanceSyncIcon,
   ProjectsListSkeleton,
   ProjectsOverviewView,
+  ProjectTasksView,
   RegisterPageTitle,
   PROJECTS_LIST_BOARD_STORAGE_KEY,
+  TASKS_LIST_BOARD_STORAGE_KEY,
+  buildAssigneeDropdownOptions,
   buildTransipDomainProjectIcon,
-  collectTransipDomainTagsFromProjects,
   getCatalogListTypeHref,
+  getProjectSectionHref,
+  getScopedProjectTaskHref,
   parseListBoardViewFromLocation,
   parseProjectTypeFilterFromLocation,
+  parseSectionTabIndex,
   persistListBoardView,
   primeTabTitle,
   projectReorderPatches,
   projectTypeForCatalogCreate,
-  type DomainRegistrarDetail,
-  type DomainRegistrarContact,
-  type DomainCloudflareDnsResult,
+  resolveDomainCardSections,
+  shouldHandleGlobalShortcut,
+  taskReorderPatches,
+  type DomainSectionId,
   type ListBoardView,
   type OrganizationRef,
   type ProjectOverviewRowProject,
   type ProjectReorderRequest,
   type ProjectStatus,
+  type ProjectArea,
   type ProjectTypeFilter,
+  type DomainRegistrarContact,
+  type DomainOverlayLayout,
 } from "@backsteros/ui";
 
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
 import { DevelopmentDeploymentsSidePanel } from "../components/development-deployments-side-panel";
+import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
+import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useDomainProjectApi } from "../lib/use-domain-project-api";
 import { useRoutePathActive } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
@@ -75,6 +93,27 @@ function buildCatalogListHref(
   return getCatalogListTypeHref(type, view);
 }
 
+function mapWorkspaceNestedAreas(
+  areas: {
+    id: string;
+    name: string;
+    parent: string | null;
+    sortOrder?: number;
+  }[],
+) {
+  return areas.map((area) => ({
+    id: area.id,
+    name: area.name,
+    parent:
+      area.parent === "personal" ||
+      area.parent === "business" ||
+      area.parent === "clients"
+        ? (area.parent as ProjectArea)
+        : null,
+    sortOrder: area.sortOrder,
+  }));
+}
+
 export function CatalogPage() {
   const active = useRoutePathActive("/catalog");
   if (!active) return null;
@@ -93,20 +132,40 @@ function CatalogPageBody() {
   const workspace = useDesktopWorkspaceData();
   const { client } = useDesktopApi();
   const agentStatus = useDesktopAgentStatusOptional();
+  const {
+    knownDomainTags,
+    loadDomainRegistrarDetail,
+    updateDomainTags,
+    updateDomainContacts,
+    loadCloudflareDnsRecords,
+    purgeCloudflareCache,
+  } = useDomainProjectApi();
   const [domainsSyncing, setDomainsSyncing] = useState(false);
 
-  // Domains tab: keep the list mounted and open the project in a contacts-style panel.
+  // Domains tab: list + shared entity detail rail (contacts/orgs animations).
   const [selectedDomainKey, setSelectedDomainKey] = useState<string | null>(
     null,
   );
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [detailCollapseAnimating, setDetailCollapseAnimating] = useState(false);
+  /** More… / Expand → page layout with tasks workspace (contacts/orgs pattern). */
+  const [domainOverlayLayout, setDomainOverlayLayout] =
+    useState<DomainOverlayLayout>("panel");
+  const [domainCardSection, setDomainCardSection] =
+    useState<DomainSectionId>("details");
   const [contentFaded, setContentFaded] = useState(false);
+  const [listFaded, setListFaded] = useState(false);
+  const [workspaceFaded, setWorkspaceFaded] = useState(false);
   const [panelProjectId, setPanelProjectId] = useState<string | null>(null);
+  const contentFadeTokenRef = useRef(0);
+  const expandAnimTokenRef = useRef(0);
+  const expandAnimTimerRef = useRef<number | null>(null);
+  const pendingListFadeInRef = useRef(false);
+  const pendingWorkspaceFadeInRef = useRef(false);
   const detailCollapseAnimTimerRef = useRef<number | null>(null);
   const detailCollapseRafRef = useRef<number | null>(null);
-  const contentFadeTokenRef = useRef(0);
-  const prevSelectedDomainIdRef = useRef<string | null>(null);
+  const detailCollapsedRef = useRef(detailCollapsed);
+  detailCollapsedRef.current = detailCollapsed;
 
   const listView = useMemo(
     () =>
@@ -122,7 +181,7 @@ function CatalogPageBody() {
     parseProjectTypeFilterFromLocation(
       location.pathname,
       location.searchStr,
-    ) ?? "all";
+    ) ?? "codebase";
 
   const projects = workspace.projects;
   const showDomainsSync = typeFilter === "domeinname";
@@ -165,8 +224,12 @@ function CatalogPageBody() {
     if (showDomainsSync) return;
     setSelectedDomainKey(null);
     setDetailCollapsed(false);
+    setDomainOverlayLayout("panel");
+    setDomainCardSection("details");
     setPanelProjectId(null);
     setContentFaded(false);
+    setListFaded(false);
+    setWorkspaceFaded(false);
   }, [showDomainsSync]);
 
   const selectedDomainProject = useMemo(() => {
@@ -195,6 +258,273 @@ function CatalogPageBody() {
       ),
     [agentStatus?.workingTaskIds, workspace.allTasks],
   );
+
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    workspace.contacts,
+  );
+
+  const domainTasks = useMemo(() => {
+    if (!panelProject) return [];
+    return workspace.allTasks.filter(
+      (task) =>
+        !task.habitId &&
+        (task.projectId === panelProject.id ||
+          (task.projectKey &&
+            task.projectKey.toLowerCase() ===
+              panelProject.key.toLowerCase())),
+    );
+  }, [panelProject, workspace.allTasks]);
+
+  const assigneeOptions = useMemo(
+    () =>
+      buildAssigneeDropdownOptions(
+        withAvatarSrc(workspace.contacts, contactAvatarSrc),
+      ),
+    [contactAvatarSrc, workspace.contacts],
+  );
+
+  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
+    setDetailCollapseAnimating(true);
+    if (detailCollapseAnimTimerRef.current != null) {
+      window.clearTimeout(detailCollapseAnimTimerRef.current);
+      detailCollapseAnimTimerRef.current = null;
+    }
+    if (detailCollapseRafRef.current != null) {
+      window.cancelAnimationFrame(detailCollapseRafRef.current);
+      detailCollapseRafRef.current = null;
+    }
+    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+        detailCollapseRafRef.current = null;
+        apply();
+        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
+          detailCollapseAnimTimerRef.current = null;
+          setDetailCollapseAnimating(false);
+        }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
+      });
+    });
+  }, []);
+
+  const hideDomainDetail = useCallback(() => {
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+  }, [beginDetailCollapseAnimation]);
+
+  const showDomainDetail = useCallback(() => {
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(false);
+    });
+  }, [beginDetailCollapseAnimation]);
+
+  const detailCloseTimerRef = useRef<number | null>(null);
+
+  /** Match contacts/orgs Escape: slide closed, then clear selection. */
+  const closeDomainOverlay = useCallback(() => {
+    if (detailCloseTimerRef.current != null) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+
+    const leave = () => {
+      expandAnimTokenRef.current += 1;
+      pendingListFadeInRef.current = false;
+      pendingWorkspaceFadeInRef.current = false;
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+        expandAnimTimerRef.current = null;
+      }
+      setListFaded(false);
+      setWorkspaceFaded(false);
+      setContentFaded(false);
+      setDetailCollapsed(false);
+      setDomainOverlayLayout("panel");
+      setDomainCardSection("details");
+      setSelectedDomainKey(null);
+      setPanelProjectId(null);
+    };
+
+    if (detailCollapsedRef.current) {
+      leave();
+      return;
+    }
+
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+    detailCloseTimerRef.current = window.setTimeout(() => {
+      detailCloseTimerRef.current = null;
+      leave();
+    }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
+  }, [beginDetailCollapseAnimation]);
+
+  const expandDomainOverlay = useCallback(() => {
+    if (domainOverlayLayout === "page") return;
+    setDetailCollapsed(false);
+    const token = ++expandAnimTokenRef.current;
+    pendingListFadeInRef.current = false;
+    pendingWorkspaceFadeInRef.current = true;
+    setListFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setWorkspaceFaded(true);
+      setDomainOverlayLayout("page");
+    }, CONTACT_DETAIL_EXPAND_FADE_MS);
+  }, [domainOverlayLayout]);
+
+  const collapseDomainOverlay = useCallback(() => {
+    if (domainOverlayLayout !== "page") return;
+    setDetailCollapsed(false);
+    const token = ++expandAnimTokenRef.current;
+    pendingWorkspaceFadeInRef.current = false;
+    pendingListFadeInRef.current = true;
+    setWorkspaceFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setListFaded(true);
+      setDomainOverlayLayout("panel");
+    }, CONTACT_DETAIL_EXPAND_FADE_MS);
+  }, [domainOverlayLayout]);
+
+  useLayoutEffect(() => {
+    if (domainOverlayLayout !== "page") return;
+    if (!pendingWorkspaceFadeInRef.current) {
+      setListFaded(true);
+      return;
+    }
+    pendingWorkspaceFadeInRef.current = false;
+    setWorkspaceFaded(true);
+    setListFaded(true);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setWorkspaceFaded(false);
+      });
+    });
+  }, [domainOverlayLayout]);
+
+  useLayoutEffect(() => {
+    if (domainOverlayLayout !== "panel") return;
+    if (!pendingListFadeInRef.current) {
+      if (!selectedDomainProject) setListFaded(false);
+      return;
+    }
+    pendingListFadeInRef.current = false;
+    setListFaded(true);
+    setWorkspaceFaded(false);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setListFaded(false);
+      });
+    });
+  }, [domainOverlayLayout, selectedDomainProject]);
+
+  useEffect(() => {
+    return () => {
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+      }
+      if (detailCollapseAnimTimerRef.current != null) {
+        window.clearTimeout(detailCollapseAnimTimerRef.current);
+      }
+      if (detailCollapseRafRef.current != null) {
+        window.cancelAnimationFrame(detailCollapseRafRef.current);
+      }
+      if (detailCloseTimerRef.current != null) {
+        window.clearTimeout(detailCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showDomainsSync || !selectedDomainProject) return;
+
+    const showCloudflare = Boolean(
+      selectedDomainProject.cloudflareZoneId?.trim(),
+    );
+    const cardSections = resolveDomainCardSections({ showCloudflare });
+    const panelTabValues: Array<DomainSectionId | "more"> = [
+      ...cardSections.map((entry) => entry.id),
+      "more",
+    ];
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (!shouldHandleGlobalShortcut(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (domainOverlayLayout === "page") {
+          collapseDomainOverlay();
+        } else {
+          closeDomainOverlay();
+        }
+        return;
+      }
+
+      if (
+        !detailCollapsedRef.current &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        const tabIndex = parseSectionTabIndex(event.key);
+        if (tabIndex != null) {
+          if (!shouldHandleGlobalShortcut(event)) return;
+
+          if (domainOverlayLayout === "page") {
+            const tab = DOMAIN_EXPANDED_WORKSPACE_TAB_IDS[tabIndex];
+            if (!tab) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            return;
+          }
+
+          const target = panelTabValues[tabIndex];
+          if (!target) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          if (target === "more") {
+            expandDomainOverlay();
+            return;
+          }
+          setDomainCardSection(target);
+          return;
+        }
+      }
+
+      if (!isAgentPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      beginDetailCollapseAnimation(() => {
+        setDetailCollapsed((current) => !current);
+      });
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    beginDetailCollapseAnimation,
+    closeDomainOverlay,
+    collapseDomainOverlay,
+    domainOverlayLayout,
+    expandDomainOverlay,
+    loadCloudflareDnsRecords,
+    purgeCloudflareCache,
+    selectedDomainProject,
+    showDomainsSync,
+  ]);
 
   const syncCatalogDomains = useCallback(async () => {
     setDomainsSyncing(true);
@@ -245,71 +575,6 @@ function CatalogPageBody() {
     }
   }, [client, workspace]);
 
-  const loadDomainRegistrarDetail = useCallback(
-    async (domainName: string): Promise<DomainRegistrarDetail> => {
-      return client.requestJson<DomainRegistrarDetail>(
-        `/api/v1/transip/domains/${encodeURIComponent(domainName)}`,
-      );
-    },
-    [client],
-  );
-
-  const knownDomainTags = useMemo(
-    () =>
-      collectTransipDomainTagsFromProjects(
-        projects.filter((project) => project.type === "domeinname"),
-      ),
-    [projects],
-  );
-
-  const updateDomainTags = useCallback(
-    async (domainName: string, tags: string[]) => {
-      return client.requestJson<{ tags: string[]; projectId: string | null }>(
-        `/api/v1/transip/domains/${encodeURIComponent(domainName)}/tags`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ tags }),
-        },
-      );
-    },
-    [client],
-  );
-
-  const updateDomainContacts = useCallback(
-    async (
-      domainName: string,
-      contacts: DomainRegistrarContact[],
-    ) => {
-      return client.requestJson<{ contacts: DomainRegistrarContact[] }>(
-        `/api/v1/transip/domains/${encodeURIComponent(domainName)}/contacts`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ contacts }),
-        },
-      );
-    },
-    [client],
-  );
-
-  const loadCloudflareDnsRecords = useCallback(
-    async (zoneId: string): Promise<DomainCloudflareDnsResult> => {
-      return client.requestJson<DomainCloudflareDnsResult>(
-        `/api/v1/cloudflare/zones/${encodeURIComponent(zoneId)}/dns-records`,
-      );
-    },
-    [client],
-  );
-
-  const purgeCloudflareCache = useCallback(
-    async (zoneId: string): Promise<void> => {
-      await client.requestJson(
-        `/api/v1/cloudflare/zones/${encodeURIComponent(zoneId)}/purge-cache`,
-        { method: "POST" },
-      );
-    },
-    [client],
-  );
-
   const chromeActions = useMemo((): ReactNode => {
     if (!showDomainsSync) return null;
     return (
@@ -359,61 +624,13 @@ function CatalogPageBody() {
     [workspace.organizations],
   );
 
-  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
-    setDetailCollapseAnimating(true);
-    if (detailCollapseAnimTimerRef.current != null) {
-      window.clearTimeout(detailCollapseAnimTimerRef.current);
-      detailCollapseAnimTimerRef.current = null;
-    }
-    if (detailCollapseRafRef.current != null) {
-      window.cancelAnimationFrame(detailCollapseRafRef.current);
-      detailCollapseRafRef.current = null;
-    }
-    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-        detailCollapseRafRef.current = null;
-        apply();
-        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
-          detailCollapseAnimTimerRef.current = null;
-          setDetailCollapseAnimating(false);
-        }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
-      });
-    });
-  }, []);
-
+  // After a full close (no selection), reset collapsed so the next Enter
+  // can run the enter-slide animation like contacts/orgs.
   useEffect(() => {
-    return () => {
-      if (detailCollapseAnimTimerRef.current != null) {
-        window.clearTimeout(detailCollapseAnimTimerRef.current);
-      }
-      if (detailCollapseRafRef.current != null) {
-        window.cancelAnimationFrame(detailCollapseRafRef.current);
-      }
-    };
-  }, []);
-
-  const hideDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(true);
-    });
-  }, [beginDetailCollapseAnimation]);
-
-  const showDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(false);
-    });
-  }, [beginDetailCollapseAnimation]);
-
-  useEffect(() => {
-    const prevId = prevSelectedDomainIdRef.current;
-    prevSelectedDomainIdRef.current = selectedDomainProject?.id ?? null;
     if (!selectedDomainProject?.id) {
       setDetailCollapsed(false);
-      return;
     }
-    // Switching domains while the strip is showing: keep the strip.
-    if (detailCollapsed && prevId != null) return;
-  }, [selectedDomainProject?.id, detailCollapsed]);
+  }, [selectedDomainProject?.id]);
 
   useLayoutEffect(() => {
     const nextId = selectedDomainProject?.id ?? null;
@@ -465,10 +682,11 @@ function CatalogPageBody() {
       const state: ProjectLocationState = {
         projectType: match?.type ?? createType,
         from: "catalog",
+        listHref: `${location.pathname}${location.searchStr ?? ""}`,
       };
       navigate(href, { state });
     },
-    [createType, navigate, projects],
+    [createType, location.pathname, location.searchStr, navigate, projects],
   );
 
   const listProps = {
@@ -507,6 +725,9 @@ function CatalogPageBody() {
       void workspace.patchProject(projectId, {
         dueDate: dueDate ? dueDate.toISOString() : null,
       });
+    },
+    onProjectAreaChange: (projectId: string, area: ProjectArea | null) => {
+      void workspace.patchProject(projectId, { area, areaId: null });
     },
     onOrganizationChange: (projectId: string, organizationId: string | null) => {
       void workspace.patchProject(projectId, { organizationId });
@@ -548,162 +769,284 @@ function CatalogPageBody() {
   }
 
   if (showDomainsSync) {
-    const panelOpen = Boolean(panelProject ?? selectedDomainProject);
+    const domainProject = panelProject
+      ? {
+          ...panelProject,
+          organizationId: panelProject.organizationId ?? null,
+          type: panelProject.type ?? "domeinname",
+          provider: panelProject.provider ?? null,
+          summary: workspace.projectSummaries[panelProject.id] ?? "",
+          description:
+            workspace.projectDescriptions[panelProject.id] ?? "",
+          taskProgress: panelProject.taskProgress ?? {
+            total: 0,
+            completed: 0,
+          },
+        }
+      : null;
+
+    const domainDetailSharedProps = domainProject
+      ? {
+          project: domainProject,
+          organizationOptions,
+          nestedAreas: mapWorkspaceNestedAreas(workspace.areas),
+          knownTags: knownDomainTags,
+          loadDetail: loadDomainRegistrarDetail,
+          loadCloudflareDnsRecords,
+          purgeCloudflareCache,
+          onSaveName: async (name: string) => {
+            try {
+              await workspace.patchProject(domainProject.id, { name });
+              return { ok: true as const };
+            } catch {
+              return {
+                ok: false as const,
+                error: "Could not rename project",
+              };
+            }
+          },
+          onSaveKey: async (key: string) => {
+            try {
+              await workspace.patchProject(domainProject.id, { key });
+              setSelectedDomainKey(key);
+              return { ok: true as const, key };
+            } catch {
+              return {
+                ok: false as const,
+                error: "Could not update key",
+              };
+            }
+          },
+          onStatusChange: (status: ProjectStatus) => {
+            void workspace.patchProject(domainProject.id, { status });
+          },
+          onPriorityChange: (priority: number) => {
+            void workspace.patchProject(domainProject.id, { priority });
+          },
+          onAreaChange: (area: ProjectArea | null) => {
+            void workspace.patchProject(domainProject.id, {
+              area,
+              areaId: null,
+            });
+          },
+          onAreaIdChange: (areaId: string | null) => {
+            void workspace.patchProject(domainProject.id, { areaId });
+          },
+          onOrganizationChange: (organizationId: string | null) => {
+            void workspace.patchProject(domainProject.id, { organizationId });
+          },
+          onCreateOrganizationFromQuery: (query: string) => {
+            void workspace
+              .createOrganization({ name: query })
+              .then((created) => {
+                void workspace.patchProject(domainProject.id, {
+                  organizationId: created.id,
+                });
+              });
+          },
+          onIconChange: (icon: string | null) => {
+            void workspace.patchProject(domainProject.id, { icon });
+          },
+          onTagsChange: async (tags: string[]) => {
+            try {
+              const result = await updateDomainTags(domainProject.name, tags);
+              await workspace.patchProject(domainProject.id, {
+                icon: buildTransipDomainProjectIcon(result.tags),
+              });
+              return { ok: true as const, tags: result.tags };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not update tags",
+              };
+            }
+          },
+          onContactsChange: async (contacts: DomainRegistrarContact[]) => {
+            try {
+              const result = await updateDomainContacts(
+                domainProject.name,
+                contacts,
+              );
+              return { ok: true as const, contacts: result.contacts };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not update WHOIS contacts",
+              };
+            }
+          },
+        }
+      : null;
+
+    const panelOpen = Boolean(domainDetailSharedProps);
+    const listExpandFaded = listFaded && panelOpen;
+
+    const domainTasksPanel =
+      domainProject != null ? (
+        <div className="domain-project-workbench__tasks" data-list-board-view>
+          <ProjectTasksView
+            tasks={domainTasks}
+            assigneeOptions={assigneeOptions}
+            view={listView}
+            onViewChange={(nextView) => {
+              persistListBoardView(nextView, TASKS_LIST_BOARD_STORAGE_KEY);
+            }}
+            onSelectTask={(id) => {
+              const task = domainTasks.find((entry) => entry.id === id);
+              const href =
+                task?.number != null
+                  ? getScopedProjectTaskHref(domainProject.key, task.number)
+                  : `${getProjectSectionHref(domainProject.key, "tasks")}/${id}`;
+              if (task?.title) primeTabTitle(href, task.title);
+              const state: ProjectLocationState = {
+                projectType: "domeinname",
+                from: "catalog",
+                listHref: `${location.pathname}${location.searchStr ?? ""}`,
+              };
+              navigate(href, { state });
+            }}
+            onStatusChange={(taskId, status) => {
+              void workspace.patchTask(taskId, { status });
+            }}
+            onPriorityChange={(taskId, priority) => {
+              void workspace.patchTask(taskId, { priority });
+            }}
+            onDueDateChange={(taskId, dueDate) => {
+              void workspace.patchTask(taskId, {
+                dueDate: dueDate ? dueDate.toISOString() : null,
+              });
+            }}
+            onAssigneeChange={(taskId, assigneeId) => {
+              void workspace.patchTask(taskId, { assigneeId });
+            }}
+            onBulkDelete={async (taskIds) => {
+              for (const taskId of taskIds) {
+                await workspace.softDeleteTask(taskId);
+              }
+            }}
+            onReorder={(request) => {
+              const patches = taskReorderPatches(domainTasks, request);
+              for (const patch of patches) {
+                void workspace.patchTask(patch.id, {
+                  status: patch.status,
+                  sortOrder: patch.sortOrder,
+                });
+              }
+            }}
+            onCreateTask={async ({ status, title }) => {
+              return workspace.createProjectTask({
+                projectId: domainProject.id,
+                title,
+                status,
+              });
+            }}
+            onCreatedTask={(taskId) => {
+              const task = domainTasks.find((entry) => entry.id === taskId);
+              const href =
+                task?.number != null
+                  ? getScopedProjectTaskHref(domainProject.key, task.number)
+                  : `${getProjectSectionHref(domainProject.key, "tasks")}/${taskId}`;
+              if (task?.title) primeTabTitle(href, task.title);
+              navigate(href, {
+                state: {
+                  projectType: "domeinname",
+                  from: "catalog",
+                  listHref: `${location.pathname}${location.searchStr ?? ""}`,
+                } satisfies ProjectLocationState,
+              });
+            }}
+          />
+        </div>
+      ) : null;
 
     return (
-      <>
+      <div
+        className={[
+          "catalog-domains-page",
+          "journal-day-layout",
+          "desktop-journal-day-layout",
+          panelOpen && detailCollapsed ? "is-calendar-collapsed" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-content-detail
+        data-detail-split
+        data-calendar-collapsed={
+          panelOpen && detailCollapsed ? "true" : "false"
+        }
+      >
         <RegisterPageTitle title="Catalog" />
         <div
           className={[
-            "journal-day-layout",
-            "desktop-journal-day-layout",
-            panelOpen && detailCollapsed ? "is-calendar-collapsed" : null,
+            "journal-day-layout__main",
+            listExpandFaded ? "is-expand-faded" : null,
           ]
             .filter(Boolean)
             .join(" ")}
-          data-detail-split
-          data-calendar-collapsed={
-            panelOpen && detailCollapsed ? "true" : "false"
-          }
         >
-          <div className="journal-day-layout__main">
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ProjectsOverviewView
-                {...listProps}
-                selectedProjectId={selectedDomainProject?.id ?? null}
-                onSelectProject={(key) => {
-                  setSelectedDomainKey(key);
-                  // First open expands; switches while collapsed keep the strip.
-                  if (!selectedDomainKey) {
-                    setDetailCollapsed(false);
-                  }
-                }}
-                onCreatedProject={(_id, key) => {
-                  if (!key) return;
-                  setSelectedDomainKey(key);
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ProjectsOverviewView
+              {...listProps}
+              selectedProjectId={selectedDomainProject?.id ?? null}
+              onSelectProject={(key) => {
+                const hadSelection = selectedDomainKey != null;
+                setSelectedDomainKey(key);
+                setDomainOverlayLayout("panel");
+                if (key !== selectedDomainKey) {
+                  setDomainCardSection("details");
+                }
+                // Match contacts: first open slides the rail in. Activating
+                // again (Enter / click) while the ] strip is showing should
+                // also open — domains have no URL change to signal intent.
+                if (!hadSelection || detailCollapsedRef.current) {
                   setDetailCollapsed(false);
-                }}
-              />
-            </div>
+                }
+              }}
+              onCreatedProject={(_id, key) => {
+                if (!key) return;
+                setSelectedDomainKey(key);
+                setDomainOverlayLayout("panel");
+                setDomainCardSection("details");
+                setDetailCollapsed(false);
+              }}
+            />
           </div>
-
-          <ContactDetailOverlay
-            open={panelOpen}
-            collapsed={detailCollapsed}
-            collapseAnimating={detailCollapseAnimating}
-            contentFaded={contentFaded}
-            title={panelProject?.name ?? selectedDomainProject?.name ?? "Domain"}
-            onHide={hideDetail}
-            onShow={showDetail}
-          >
-            {panelProject ? (
-              <DomainDetailView
-                project={{
-                  ...panelProject,
-                  organizationId: panelProject.organizationId ?? null,
-                  type: panelProject.type ?? "domeinname",
-                  provider: panelProject.provider ?? null,
-                  summary: workspace.projectSummaries[panelProject.id] ?? "",
-                  description:
-                    workspace.projectDescriptions[panelProject.id] ?? "",
-                  taskProgress: panelProject.taskProgress ?? {
-                    total: 0,
-                    completed: 0,
-                  },
-                }}
-                organizationOptions={organizationOptions}
-                knownTags={knownDomainTags}
-                loadDetail={loadDomainRegistrarDetail}
-                loadCloudflareDnsRecords={loadCloudflareDnsRecords}
-                purgeCloudflareCache={purgeCloudflareCache}
-                onSaveName={async (name) => {
-                  try {
-                    await workspace.patchProject(panelProject.id, { name });
-                    return { ok: true as const };
-                  } catch {
-                    return {
-                      ok: false as const,
-                      error: "Could not rename project",
-                    };
-                  }
-                }}
-                onSaveKey={async (key) => {
-                  try {
-                    await workspace.patchProject(panelProject.id, { key });
-                    setSelectedDomainKey(key);
-                    return { ok: true as const, key };
-                  } catch {
-                    return {
-                      ok: false as const,
-                      error: "Could not update key",
-                    };
-                  }
-                }}
-                onStatusChange={(status) => {
-                  void workspace.patchProject(panelProject.id, { status });
-                }}
-                onPriorityChange={(priority) => {
-                  void workspace.patchProject(panelProject.id, { priority });
-                }}
-                onOrganizationChange={(organizationId) => {
-                  void workspace.patchProject(panelProject.id, {
-                    organizationId,
-                  });
-                }}
-                onCreateOrganizationFromQuery={(query) => {
-                  void workspace
-                    .createOrganization({ name: query })
-                    .then((created) => {
-                      void workspace.patchProject(panelProject.id, {
-                        organizationId: created.id,
-                      });
-                    });
-                }}
-                onIconChange={(icon) => {
-                  void workspace.patchProject(panelProject.id, { icon });
-                }}
-                onTagsChange={async (tags) => {
-                  try {
-                    const result = await updateDomainTags(
-                      panelProject.name,
-                      tags,
-                    );
-                    await workspace.patchProject(panelProject.id, {
-                      icon: buildTransipDomainProjectIcon(result.tags),
-                    });
-                    return { ok: true as const, tags: result.tags };
-                  } catch (error) {
-                    return {
-                      ok: false as const,
-                      error:
-                        error instanceof Error
-                          ? error.message
-                          : "Could not update tags",
-                    };
-                  }
-                }}
-                onContactsChange={async (contacts) => {
-                  try {
-                    const result = await updateDomainContacts(
-                      panelProject.name,
-                      contacts,
-                    );
-                    return { ok: true as const, contacts: result.contacts };
-                  } catch (error) {
-                    return {
-                      ok: false as const,
-                      error:
-                        error instanceof Error
-                          ? error.message
-                          : "Could not update WHOIS contacts",
-                    };
-                  }
-                }}
-              />
-            ) : null}
-          </ContactDetailOverlay>
         </div>
-      </>
+
+        <EntityDetailOverlay
+          open={panelOpen}
+          collapsed={detailCollapsed}
+          collapseAnimating={detailCollapseAnimating}
+          contentFaded={contentFaded}
+          workspaceFaded={workspaceFaded}
+          overlayLayout={domainOverlayLayout}
+          title={domainProject?.name ?? "Domain"}
+          entityLabel="domain"
+          overlayDataKey="domain"
+          onExpand={expandDomainOverlay}
+          onCollapse={collapseDomainOverlay}
+          onHide={hideDomainDetail}
+          onShow={showDomainDetail}
+          workspaceTabs={DOMAIN_EXPANDED_WORKSPACE_TABS}
+          workspaceTab="tasks"
+          renderWorkspaceTab={() => domainTasksPanel}
+        >
+          {domainDetailSharedProps ? (
+            <DomainDetailView
+              {...domainDetailSharedProps}
+              section={domainCardSection}
+              onSectionChange={setDomainCardSection}
+              onMore={expandDomainOverlay}
+            />
+          ) : null}
+        </EntityDetailOverlay>
+      </div>
     );
   }
 

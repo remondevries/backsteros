@@ -13,6 +13,7 @@ import {
 import { BacksterosDueDatePropertyMenu } from "~/backsteros/DueDatePropertyMenu";
 import { BacksterosEntityAvatarIcon } from "~/backsteros/EntityAvatarIcon";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
+import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import {
   BacksterosMarkdownDescription,
   type BacksterosMarkdownDescriptionMode,
@@ -571,6 +572,7 @@ export function BacksterosCreateTaskForm({
       if (event.defaultPrevented) return;
       if (event.key !== "Enter" || event.repeat) return;
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (isBacksterosFileTaskModalOpen()) return;
       if (!canSubmit) return;
 
       event.preventDefault();

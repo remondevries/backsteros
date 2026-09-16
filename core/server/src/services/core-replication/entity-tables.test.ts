@@ -17,8 +17,20 @@ describe("replicatedTablesForEntity", () => {
   it("dedupes across entities", () => {
     assert.deepEqual(
       replicatedTablesForEntities(["crm_group", "crm_group", "contact"]),
-      ["crm_groups", "contacts"],
+      ["crm_groups", "contacts", "avatars"],
     );
+  });
+
+  it("maps contact/organization twin tables including avatars", () => {
+    assert.deepEqual(replicatedTablesForEntity("contact"), [
+      "contacts",
+      "avatars",
+    ]);
+    assert.deepEqual(replicatedTablesForEntity("organization"), [
+      "organizations",
+      "avatars",
+    ]);
+    assert.deepEqual(replicatedTablesForEntity("api_key"), ["api_keys"]);
   });
 
   it("returns empty for unknown entities", () => {

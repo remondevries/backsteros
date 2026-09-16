@@ -172,10 +172,6 @@ export function WebsiteSpaceRow({
                 if (interactiveIcon) setPickerOpen(true);
               }}
             >
-              <span
-                className="website-space-row__icon-glow"
-                aria-hidden="true"
-              />
               <span className="website-space-row__icon-face">
                 <DocumentOcticon
                   icon={displayIcon}

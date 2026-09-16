@@ -9,6 +9,8 @@ import {
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useMemo, useRef } from "react";
 
+import { sanitizeSingleLineText } from "../../text/sanitize-single-line-text.js";
+
 export type HelpArticleSeoFieldProps = {
   value: string;
   onChange: (value: string) => void;
@@ -78,22 +80,21 @@ const seoFieldTheme = EditorView.theme(
   { dark: true },
 );
 
-/** Strip newlines so title/slug stay one line (paste + Enter). */
 function singleLineFilter() {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged) return tr;
-    let sawNewline = false;
+    let dirty = false;
     tr.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
-      if (inserted.toString().includes("\n")) sawNewline = true;
+      if (/[\t\n\r\u2028\u2029]/.test(inserted.toString())) dirty = true;
     });
-    if (!sawNewline) return tr;
+    if (!dirty) return tr;
     return [
       tr,
       {
         changes: {
           from: 0,
           to: tr.newDoc.length,
-          insert: tr.newDoc.toString().replace(/\n/g, ""),
+          insert: sanitizeSingleLineText(tr.newDoc.toString()),
         },
         sequential: true,
       },
@@ -164,6 +165,15 @@ export function HelpArticleSeoField({
                     view.contentDOM.blur();
                     return true;
                   },
+                },
+                {
+                  // Never insert a tab character in single-line fields.
+                  key: "Tab",
+                  run: () => true,
+                },
+                {
+                  key: "Shift-Tab",
+                  run: () => true,
                 },
               ]
             : []),

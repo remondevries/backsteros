@@ -6,12 +6,148 @@ import {
   createInitialHistoryStore,
   getActiveStack,
   getRecentHistoryPagesFromStore,
+  isRedirectContinuation,
   migrateLegacyStore,
   pruneStacks,
   syncTabStackToHref,
 } from "./history-engine.js";
 
 describe("per-tab navigation history store", () => {
+  it("pushes real list overviews so Escape returns to the list", () => {
+    const cases: Array<{ from: string; to: string; label: string }> = [
+      {
+        from: "/spaces",
+        to: "/spaces/knowledge-base/ideas",
+        label: "Spaces",
+      },
+      {
+        from: "/knowledge",
+        to: "/knowledge/second-brain/note",
+        label: "Legacy knowledge",
+      },
+      { from: "/contacts", to: "/contacts/42", label: "Contacts" },
+      {
+        from: "/organizations",
+        to: "/organizations/acme",
+        label: "Organizations",
+      },
+      { from: "/projects", to: "/projects/demo", label: "Projects" },
+      { from: "/tasks", to: "/tasks/abc", label: "Tasks" },
+      {
+        from: "/catalog",
+        to: "/projects/mail",
+        label: "Catalog → project",
+      },
+      {
+        from: "/journal/habits",
+        to: "/journal/habits/habit-1",
+        label: "Habit tracker",
+      },
+    ];
+
+    for (const { from, to, label } of cases) {
+      assert.equal(
+        isRedirectContinuation(from, to),
+        false,
+        `${label}: ${from} → ${to} must push`,
+      );
+    }
+
+    let store = createInitialHistoryStore("tab-a", "/catalog", "Catalog");
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/spaces",
+      "Spaces",
+      null,
+    );
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/spaces/knowledge-base/ideas",
+      "Idea's",
+      null,
+    );
+
+    const stack = getActiveStack(store, "tab-a");
+    assert.ok(stack);
+    assert.equal(stack.index, 2);
+    assert.deepEqual(
+      stack.entries.map((entry) => entry.href),
+      ["/catalog", "/spaces", "/spaces/knowledge-base/ideas"],
+    );
+  });
+
+  it("replaces auto-landing section roots instead of pushing the empty root", () => {
+    const cases: Array<{ from: string; to: string; label: string }> = [
+      { from: "/inbox", to: "/inbox/task-1", label: "Inbox" },
+      {
+        from: "/communication",
+        to: "/communication/task-1",
+        label: "Communication",
+      },
+      { from: "/social", to: "/social/alice", label: "Network" },
+      { from: "/letters", to: "/letters/12", label: "Letters" },
+      {
+        from: "/journal",
+        to: "/journal/2026-09-13",
+        label: "Journal → today",
+      },
+      {
+        from: "/finance",
+        to: "/finance/dashboard",
+        label: "Finance",
+      },
+      {
+        from: "/settings",
+        to: "/settings/integrations",
+        label: "Settings",
+      },
+      {
+        from: "/projects/demo/documents",
+        to: "/projects/demo/documents/readme",
+        label: "Project documents index",
+      },
+      {
+        from: "/projects/demo/letters",
+        to: "/projects/demo/letters/1",
+        label: "Project letters index",
+      },
+    ];
+
+    for (const { from, to, label } of cases) {
+      assert.equal(
+        isRedirectContinuation(from, to),
+        true,
+        `${label}: ${from} → ${to} must replace`,
+      );
+    }
+
+    let store = createInitialHistoryStore("tab-a", "/catalog", "Catalog");
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/inbox",
+      "Inbox",
+      null,
+    );
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/inbox/task-1",
+      "Task 1",
+      null,
+    );
+
+    const stack = getActiveStack(store, "tab-a");
+    assert.ok(stack);
+    assert.equal(stack.index, 1);
+    assert.deepEqual(
+      stack.entries.map((entry) => entry.href),
+      ["/catalog", "/inbox/task-1"],
+    );
+  });
+
   it("keeps stacks isolated across tabs", () => {
     let store = createInitialHistoryStore("tab-a", "/inbox", "Inbox");
     store = applyPathnameChangeForTab(

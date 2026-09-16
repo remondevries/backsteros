@@ -1,10 +1,16 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
+import {
+  PROVIDER_ACCENT_SWATCHES,
+  PROVIDER_ACCENT_SWATCH_LABELS,
+  type ProviderAccentSwatch,
+} from "../providerAccentColors";
+
 /**
  * Ids for the per-thread action menu. Snooze presets are dispatched as
  * `snooze:<presetId>` so the union stays closed while the preset list
- * remains data-driven.
+ * remains data-driven. Color picks are `color:<hex>` / `color:clear`.
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
@@ -16,6 +22,9 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "color"
+  | `color:${string}`
+  | "color:clear"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -35,6 +44,8 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** Current composer accent for this chat (override or resolved). */
+  readonly currentAccentColor?: string | null;
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -42,6 +53,44 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
+}
+
+export function buildComposerColorMenuItems(input: {
+  readonly currentAccentColor?: string | null;
+  readonly includeClear?: boolean;
+}): ReadonlyArray<ContextMenuItem<`color:${string}` | "color:clear">> {
+  const current = input.currentAccentColor?.trim().toLowerCase() ?? "";
+  const swatches = PROVIDER_ACCENT_SWATCHES.map((swatch) => {
+    const selected = current === swatch.toLowerCase();
+    return {
+      id: `color:${swatch}` as const,
+      label: selected
+        ? `✓ ${PROVIDER_ACCENT_SWATCH_LABELS[swatch]}`
+        : PROVIDER_ACCENT_SWATCH_LABELS[swatch],
+      swatchColor: swatch,
+    };
+  });
+  if (!input.includeClear) return swatches;
+  return [
+    ...swatches,
+    {
+      id: "color:clear" as const,
+      label: "Reset to automatic",
+      separatorBefore: true,
+    },
+  ];
+}
+
+export function parseComposerColorMenuAction(
+  action: string,
+): { kind: "set"; hex: ProviderAccentSwatch } | { kind: "clear" } | null {
+  if (action === "color:clear") return { kind: "clear" };
+  if (!action.startsWith("color:#")) return null;
+  const hex = action.slice("color:".length);
+  const match = PROVIDER_ACCENT_SWATCHES.find(
+    (swatch) => swatch.toLowerCase() === hex.toLowerCase(),
+  );
+  return match ? { kind: "set", hex: match } : null;
 }
 
 /**
@@ -69,6 +118,15 @@ export function buildThreadActionMenuItems(
             : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
+    {
+      id: "color",
+      label: "Color",
+      icon: "palette",
+      children: buildComposerColorMenuItems({
+        currentAccentColor: state.currentAccentColor,
+        includeClear: true,
+      }),
+    },
     // Both lifecycle actions stay available on pinned threads: settling
     // clears the pin ("done" beats "keep on top"), and snoozing hides the
     // card until wake with the pin intact.

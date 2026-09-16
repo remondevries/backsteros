@@ -23,6 +23,25 @@ function getAuth(c: { get: (key: "auth") => AuthContext | undefined }) {
   return c.get("auth");
 }
 
+/** Spaces mutate `documents` outside the main docs REST helpers — wake peer. */
+function wakeSpacesDocuments(
+  workspaceId: string,
+  documentId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  void import("../services/core-replication/nudge.js").then(
+    ({ notifyPeerOfEntityWrite }) => {
+      notifyPeerOfEntityWrite({
+        workspaceId,
+        reason: "spaces",
+        entity: "document",
+        entityId: documentId,
+        operation,
+      });
+    },
+  );
+}
+
 function toDocument(row: {
   id: string;
   workspaceId: string;
@@ -99,6 +118,7 @@ export function registerSpacesRoutes(app: Hono) {
     const report = await documentService.healSpacesHierarchy(
       auth!.workspaceId,
     );
+    wakeSpacesDocuments(auth!.workspaceId, "spaces-heal", "upsert");
     return c.json({ ok: true as const, report });
   });
 
@@ -147,6 +167,7 @@ export function registerSpacesRoutes(app: Hono) {
           c.req.param("categoryId"),
           c.req.valid("json"),
         );
+        wakeSpacesDocuments(auth!.workspaceId, space.id, "upsert");
         return c.json({ space }, 201);
       } catch (error) {
         if (error instanceof Error && error.message === "INVALID_CATEGORY") {
@@ -216,6 +237,7 @@ export function registerSpacesRoutes(app: Hono) {
           },
         );
         if (!row) return c.json(notFound("Article"), 404);
+        wakeSpacesDocuments(auth!.workspaceId, row.id, "upsert");
         return c.json({ article: toDocument(row) });
       } catch (error) {
         if (
@@ -242,6 +264,7 @@ export function registerSpacesRoutes(app: Hono) {
       c.req.param("id"),
     );
     if (!row) return c.json(notFound("Article"), 404);
+    wakeSpacesDocuments(auth!.workspaceId, row.id, "delete");
     return c.json({ ok: true as const, id: row.id });
   });
 
@@ -280,6 +303,7 @@ export function registerSpacesRoutes(app: Hono) {
           c.req.valid("json"),
         );
         if (!space) return c.json(notFound("Space"), 404);
+        wakeSpacesDocuments(auth!.workspaceId, space.id, "upsert");
         return c.json({ space });
       } catch (error) {
         if (error instanceof Error && error.message === "INVALID_CATEGORY") {
@@ -306,6 +330,7 @@ export function registerSpacesRoutes(app: Hono) {
       c.req.param("spaceId"),
     );
     if (!row) return c.json(notFound("Space"), 404);
+    wakeSpacesDocuments(auth!.workspaceId, row.id, "delete");
     return c.json({ ok: true as const, id: row.id });
   });
 
@@ -343,6 +368,7 @@ export function registerSpacesRoutes(app: Hono) {
           c.req.param("spaceId"),
           c.req.valid("json"),
         );
+        wakeSpacesDocuments(auth!.workspaceId, row.id, "upsert");
         return c.json({ article: toDocument(row) }, 201);
       } catch (error) {
         if (error instanceof Error && error.message === "SPACE_NOT_FOUND") {

@@ -5,6 +5,7 @@ import {
   formatContactDisplayName,
   getContactEmailAddresses,
   taskInvolvesContact,
+  type ContactPortalSettings,
   type MapboxGeocodeResult,
   type MapboxSettings,
 } from "@backsteros/contracts";
@@ -18,7 +19,6 @@ import {
   ContactRelationshipsListView,
   ContactTasksListView,
   ContactsOverviewView,
-  CONTACT_CARD_SECTIONS,
   CONTACT_DETAIL_COLLAPSE_DURATION_MS,
   CONTACT_DETAIL_CONTENT_FADE_MS,
   CONTACT_DETAIL_EXPAND_FADE_MS,
@@ -495,6 +495,11 @@ export function ContactsPage({
     () => crmGroups.memberGroups.map((group) => group.id),
     [crmGroups.memberGroups],
   );
+  const appliedMemberGroupIdsRef = useRef(memberGroupIds);
+  useEffect(() => {
+    appliedMemberGroupIdsRef.current = memberGroupIds;
+  }, [memberGroupIds]);
+  const membershipSyncChainRef = useRef(Promise.resolve());
   const showPortalTab = useMemo(
     () =>
       groupOptions.some(
@@ -527,33 +532,36 @@ export function ContactsPage({
   }, [details?.organizationId, selected?.organizationId, workspace.projects]);
   const handleMemberGroupIdsChange = useCallback(
     (nextIds: string[]) => {
-      const previous = new Set(memberGroupIds);
+      const previous = new Set(appliedMemberGroupIdsRef.current);
       const next = new Set(nextIds);
-      void (async () => {
-        try {
-          for (const groupId of next) {
-            if (!previous.has(groupId)) {
-              await crmGroups.toggleMembership(groupId, true);
+      appliedMemberGroupIdsRef.current = nextIds;
+      membershipSyncChainRef.current = membershipSyncChainRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            for (const groupId of next) {
+              if (!previous.has(groupId)) {
+                await crmGroups.toggleMembership(groupId, true);
+              }
             }
-          }
-          for (const groupId of previous) {
-            if (!next.has(groupId)) {
-              await crmGroups.toggleMembership(groupId, false);
+            for (const groupId of previous) {
+              if (!next.has(groupId)) {
+                await crmGroups.toggleMembership(groupId, false);
+              }
             }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Failed to update groups";
+            const friendly =
+              /subject not found|member subject|404/i.test(message)
+                ? "This contact isn’t on the server yet, so it can’t join a group. Wait for sync or re-save the contact, then try again."
+                : message;
+            window.alert(friendly);
+            await crmGroups.reload();
           }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Failed to update groups";
-          const friendly =
-            /subject not found|member subject|404/i.test(message)
-              ? "This contact isn’t on the server yet, so it can’t join a group. Wait for sync or re-save the contact, then try again."
-              : message;
-          window.alert(friendly);
-          await crmGroups.reload();
-        }
-      })();
+        });
     },
-    [crmGroups, memberGroupIds],
+    [crmGroups],
   );
   const sectionLabel =
     profileSection === "overview"
@@ -1351,7 +1359,7 @@ export function ContactsPage({
     if (sectionId === "portal") {
       return (
         <ContactPortalTabView
-          settings={contact.portalSettings}
+          settings={contact.portalSettings as ContactPortalSettings | null | undefined}
           portalUsername={contact.portalUsername}
           portalPasswordSet={Boolean(contact.portalPasswordSet)}
           projects={portalProjects}
@@ -1922,6 +1930,7 @@ export function ContactsPage({
                 : "No contacts yet."
             }
             pinnedContactId={pinnedContactId}
+            typeToFilterEnabled={keepAliveActive}
             onSelect={(contact) => openContact(contact)}
             onAdd={createAndOpenContact}
           />
@@ -2012,6 +2021,7 @@ export function ContactsPage({
           }
           selectedId={selected?.id ?? null}
           pinnedContactId={pinnedContactId}
+          typeToFilterEnabled={keepAliveActive}
           onSelect={(contact) => openContact(contact)}
           onAdd={createAndOpenContact}
         />

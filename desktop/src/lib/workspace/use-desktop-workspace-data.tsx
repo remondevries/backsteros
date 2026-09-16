@@ -263,6 +263,18 @@ function useDesktopWorkspaceDataImpl(): {
     liveMeetingsById,
     setLiveMeetingsById,
     liveDeletedMeetingIds,
+    liveContactsById,
+    liveDeletedContactIds,
+    liveOrganizationsById,
+    liveDeletedOrganizationIds,
+    liveAreasById,
+    liveDeletedAreaIds,
+    liveHabitsById,
+    liveDeletedHabitIds,
+    liveLettersById,
+    liveDeletedLetterIds,
+    liveTasksById,
+    liveDeletedTaskIds,
     apiHabits,
     setApiHabits,
     apiMeetings,
@@ -475,34 +487,43 @@ function useDesktopWorkspaceDataImpl(): {
         (row) => snakeRow(row) as ApiOrganization,
       ) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiOrganizations);
-    return fillMissingLongTextFromApi(
-      fillMissingMoneybirdContactIdFromApi(
-        mergeLocalWithPendingApiCreates(
-          resolveLocalOrApiRows(localMapped, apiOrganizations),
-          apiOrganizations,
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        fillMissingMoneybirdContactIdFromApi(
+          mergeLocalWithPendingApiCreates(
+            resolveLocalOrApiRows(localMapped, apiOrganizations),
+            apiOrganizations,
+          ),
+          fillFrom,
         ),
         fillFrom,
+        [
+          "summary",
+          "notes",
+          "size",
+          "socialAccounts",
+          "region",
+          "chamberOfCommerce",
+          "taxNumber",
+          "latitude",
+          "longitude",
+          "address",
+          "city",
+          "postalCode",
+          "country",
+          "emails",
+          "phones",
+        ],
       ),
-      fillFrom,
-      [
-        "summary",
-        "notes",
-        "size",
-        "socialAccounts",
-        "region",
-        "chamberOfCommerce",
-        "taxNumber",
-        "latitude",
-        "longitude",
-        "address",
-        "city",
-        "postalCode",
-        "country",
-        "emails",
-        "phones",
-      ],
+      liveOrganizationsById,
+      { deletedIds: liveDeletedOrganizationIds },
     );
-  }, [apiOrganizations, localOrganizations.data]);
+  }, [
+    apiOrganizations,
+    liveDeletedOrganizationIds,
+    liveOrganizationsById,
+    localOrganizations.data,
+  ]);
 
   const organizationsById = useMemo(() => {
     const map = new Map<string, ApiOrganization>();
@@ -540,12 +561,22 @@ function useDesktopWorkspaceDataImpl(): {
       ),
       fillFrom,
     );
-    return fillMissingTaskFlagsFromApi(
-      fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
-      // Flag heal source (or cold-start fillFrom) — not membership api* lists.
-      taskFlagSource ?? fillFrom,
+    return applyLiveEntityOverlay(
+      fillMissingTaskFlagsFromApi(
+        fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
+        // Flag heal source (or cold-start fillFrom) — not membership api* lists.
+        taskFlagSource ?? fillFrom,
+      ),
+      liveTasksById,
+      { deletedIds: liveDeletedTaskIds },
     );
-  }, [apiTasks, localTasks, taskFlagSource]);
+  }, [
+    apiTasks,
+    liveDeletedTaskIds,
+    liveTasksById,
+    localTasks,
+    taskFlagSource,
+  ]);
 
   const rawInboxTasks = useMemo(() => {
     const localMapped = localInboxTasks;
@@ -575,22 +606,41 @@ function useDesktopWorkspaceDataImpl(): {
       ),
       fillFrom,
     );
-    return fillMissingTaskFlagsFromApi(
-      fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
-      taskFlagSource ?? fillFrom,
+    return applyLiveEntityOverlay(
+      fillMissingTaskFlagsFromApi(
+        fillMissingAgentInboxApprovedAtFromApi(resolved, fillFrom),
+        taskFlagSource ?? fillFrom,
+      ),
+      liveTasksById,
+      { deletedIds: liveDeletedTaskIds },
     );
-  }, [apiInboxTasks, localInboxTasks, taskFlagSource]);
+  }, [
+    apiInboxTasks,
+    liveDeletedTaskIds,
+    liveTasksById,
+    localInboxTasks,
+    taskFlagSource,
+  ]);
 
   const rawLetters = useMemo(() => {
     const localMapped =
       localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiLetters);
-    return fillMissingLongTextFromApi(
-      resolveLocalOrApiRows(localMapped, apiLetters),
-      fillFrom,
-      ["context"],
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        resolveLocalOrApiRows(localMapped, apiLetters),
+        fillFrom,
+        ["context"],
+      ),
+      liveLettersById,
+      { deletedIds: liveDeletedLetterIds },
     );
-  }, [apiLetters, localLetters.data]);
+  }, [
+    apiLetters,
+    liveDeletedLetterIds,
+    liveLettersById,
+    localLetters.data,
+  ]);
 
   const rawMeetings = useMemo(() => {
     // On a broken local watch (e.g. SELECT of a column not yet in SQLite),
@@ -632,47 +682,61 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
-    return fillMissingLongTextFromApi(
-      // Same race as tasks: optimistic create lands in apiContacts before the
-      // PowerSync watch mirrors the INSERT — without this, the new contact is
-      // dropped from membership and open/create flashes "Not found".
-      mergeLocalWithPendingApiCreates(
-        resolveLocalOrApiRows(localMapped, apiContacts),
-        apiContacts,
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        // Same race as tasks: optimistic create lands in apiContacts before the
+        // PowerSync watch mirrors the INSERT — without this, the new contact is
+        // dropped from membership and open/create flashes "Not found".
+        mergeLocalWithPendingApiCreates(
+          resolveLocalOrApiRows(localMapped, apiContacts),
+          apiContacts,
+        ),
+        fillFrom,
+        [
+          "summary",
+          "notes",
+          "birthday",
+          "firstName",
+          "lastName",
+          "organizationId",
+          "emails",
+          "phones",
+          "languages",
+          "socialAccounts",
+          "latitude",
+          "longitude",
+          "address",
+          "city",
+          "postalCode",
+          "country",
+          "region",
+          "portalUsername",
+          "portalSettings",
+        ],
       ),
-      fillFrom,
-      [
-        "summary",
-        "notes",
-        "birthday",
-        "firstName",
-        "lastName",
-        "emails",
-        "phones",
-        "languages",
-        "socialAccounts",
-        "latitude",
-        "longitude",
-        "address",
-        "city",
-        "postalCode",
-        "country",
-        "region",
-        "portalUsername",
-        "portalSettings",
-      ],
+      liveContactsById,
+      { deletedIds: liveDeletedContactIds },
     );
-  }, [apiContacts, localContacts.data]);
+  }, [
+    apiContacts,
+    liveContactsById,
+    liveDeletedContactIds,
+    localContacts.data,
+  ]);
 
   const rawAreas = useMemo(() => {
     const localMapped =
       localAreas.data?.map((row) => snakeRow(row) as ApiArea) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiAreas);
-    return fillMissingParentFromApi(
-      resolveLocalOrApiRows(localMapped, apiAreas),
-      fillFrom,
+    return applyLiveEntityOverlay(
+      fillMissingParentFromApi(
+        resolveLocalOrApiRows(localMapped, apiAreas),
+        fillFrom,
+      ),
+      liveAreasById,
+      { deletedIds: liveDeletedAreaIds },
     );
-  }, [apiAreas, localAreas.data]);
+  }, [apiAreas, liveAreasById, liveDeletedAreaIds, localAreas.data]);
 
   const rawDocuments = useMemo(() => {
     // On a broken local watch (e.g. SELECT of cover_* before SQLite migrated),
@@ -731,12 +795,16 @@ function useDesktopWorkspaceDataImpl(): {
         } satisfies ApiHabit;
       }) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiHabits);
-    return fillMissingLongTextFromApi(
-      resolveLocalOrApiRows(localMapped, apiHabits),
-      fillFrom,
-      ["description"],
+    return applyLiveEntityOverlay(
+      fillMissingLongTextFromApi(
+        resolveLocalOrApiRows(localMapped, apiHabits),
+        fillFrom,
+        ["description"],
+      ),
+      liveHabitsById,
+      { deletedIds: liveDeletedHabitIds },
     );
-  }, [apiHabits, localHabits.data]);
+  }, [apiHabits, liveDeletedHabitIds, liveHabitsById, localHabits.data]);
 
   const source: DesktopWorkspaceData["source"] = localAllTasks.data
     ? "powersync"

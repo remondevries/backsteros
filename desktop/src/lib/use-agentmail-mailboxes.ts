@@ -24,6 +24,7 @@ import {
   writeAgentMailListCache,
 } from "./agentmail-list-cache";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
+import { WORKSPACE_EMAIL_UPDATED_EVENT } from "./workspace-events";
 
 export const EMAIL_LIST_PATCH_EVENT = "backsteros-email-list-patch";
 export const EMAIL_LIST_REMOVE_EVENT = "backsteros-email-list-remove";
@@ -354,6 +355,9 @@ export function useAgentMailMailboxes(
     function handleReload() {
       void reload();
     }
+    function handleWorkspaceEmailUpdated() {
+      scheduleDebouncedReload();
+    }
     function handlePatch(event: Event) {
       const detail = (event as CustomEvent<EmailListPatchDetail>).detail;
       if (!detail?.inboxId || !detail.messageId) return;
@@ -365,6 +369,10 @@ export function useAgentMailMailboxes(
       setMessages((current) => applyListRemove(current, detail));
     }
     window.addEventListener("backsteros-email-mailboxes-reload", handleReload);
+    window.addEventListener(
+      WORKSPACE_EMAIL_UPDATED_EVENT,
+      handleWorkspaceEmailUpdated,
+    );
     window.addEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
     window.addEventListener(EMAIL_LIST_REMOVE_EVENT, handleRemove);
     return () => {
@@ -372,10 +380,14 @@ export function useAgentMailMailboxes(
         "backsteros-email-mailboxes-reload",
         handleReload,
       );
+      window.removeEventListener(
+        WORKSPACE_EMAIL_UPDATED_EVENT,
+        handleWorkspaceEmailUpdated,
+      );
       window.removeEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
       window.removeEventListener(EMAIL_LIST_REMOVE_EVENT, handleRemove);
     };
-  }, [active, reload]);
+  }, [active, reload, scheduleDebouncedReload]);
 
   useEffect(() => {
     if (!active || !apiKeyConfigured || !liveUpdates) return;

@@ -423,11 +423,17 @@ export async function addCrmGroupMemberWithRetry(
   await flushCrmCrudUpload(powerSync, "crm group member preflight");
 
   let lastError: unknown;
+  let healedSubject = false;
   for (const delay of SUBJECT_SYNC_RETRY_DELAYS_MS) {
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    const subjectReady = await crmGroupSubjectExistsOnServer(client, input);
+    let subjectReady = await crmGroupSubjectExistsOnServer(client, input);
+    if (!subjectReady && !healedSubject) {
+      healedSubject = true;
+      await ensureCrmGroupSubjectOnServer(client, powerSync, input);
+      subjectReady = await crmGroupSubjectExistsOnServer(client, input);
+    }
     if (!subjectReady) {
       lastError = new Error("Member subject not found");
       await flushCrmCrudUpload(powerSync, "crm group member retry");
@@ -441,6 +447,10 @@ export async function addCrmGroupMemberWithRetry(
       if (!isSubjectMissingError(error) && !isRetryableUploadError(error)) {
         throw error;
       }
+      if (!healedSubject) {
+        healedSubject = true;
+        await ensureCrmGroupSubjectOnServer(client, powerSync, input);
+      }
       await flushCrmCrudUpload(powerSync, "crm group member retry");
     }
   }
@@ -452,6 +462,127 @@ export async function addCrmGroupMemberWithRetry(
         )
       : lastError
     : new Error("Failed to add group member");
+}
+
+type LocalSubjectRow = {
+  id: string;
+  name: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  organization_id?: string | null;
+  key?: string | null;
+};
+
+async function readLocalSubjectRow(
+  powerSync: WorkspacePowerSync,
+  input: {
+    subjectType: CrmGroupSubjectType;
+    subjectId: string;
+  },
+): Promise<LocalSubjectRow | null> {
+  const db = powerSync.database;
+  if (!db?.getAll) return null;
+  const table = input.subjectType === "contact" ? "contacts" : "organizations";
+  try {
+    const rows = await db.getAll<LocalSubjectRow>(
+      `SELECT id, name,
+        ${input.subjectType === "contact" ? "first_name, last_name, organization_id, key" : "key"}
+       FROM ${table}
+       WHERE id = ? AND deleted_at IS NULL
+       LIMIT 1`,
+      [input.subjectId],
+    );
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When a local-only PowerSync contact/org never uploaded, PATCH upserts it onto
+ * Postgres under the same id so CRM group membership can proceed.
+ */
+async function ensureCrmGroupSubjectOnServer(
+  client: BacksterosApiClient,
+  powerSync: WorkspacePowerSync,
+  input: {
+    subjectType: CrmGroupSubjectType;
+    subjectId: string;
+  },
+): Promise<void> {
+  await flushCrmCrudUpload(powerSync, "crm group subject heal flush");
+  if (await crmGroupSubjectExistsOnServer(client, input)) return;
+
+  const local = await readLocalSubjectRow(powerSync, input);
+  if (!local) return;
+
+  if (input.subjectType === "contact") {
+    let organizationId = local.organization_id ?? null;
+    if (organizationId) {
+      const orgExists = await crmGroupSubjectExistsOnServer(client, {
+        subjectType: "organization",
+        subjectId: organizationId,
+      });
+      if (!orgExists) {
+        await ensureCrmGroupSubjectOnServer(client, powerSync, {
+          subjectType: "organization",
+          subjectId: organizationId,
+        });
+        if (
+          !(await crmGroupSubjectExistsOnServer(client, {
+            subjectType: "organization",
+            subjectId: organizationId,
+          }))
+        ) {
+          organizationId = null;
+        }
+      }
+    }
+    const firstName =
+      (local.first_name ?? "").trim() ||
+      (local.name ?? "").trim().split(/\s+/)[0] ||
+      "Contact";
+    const lastName =
+      (local.last_name ?? "").trim() ||
+      (local.name ?? "").trim().split(/\s+/).slice(1).join(" ") ||
+      null;
+    try {
+      await client.requestJson(
+        `/api/v1/contacts/${encodeURIComponent(input.subjectId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            firstName,
+            lastName,
+            name: local.name ?? [firstName, lastName].filter(Boolean).join(" "),
+            ...(local.key ? { key: local.key } : {}),
+            organizationId,
+          }),
+        },
+      );
+    } catch {
+      /* membership retry will surface a clear error */
+    }
+    return;
+  }
+
+  const name = (local.name ?? "").trim() || "Organization";
+  try {
+    await client.requestJson(
+      `/api/v1/organizations/${encodeURIComponent(input.subjectId)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          ...(local.key ? { key: local.key } : {}),
+        }),
+      },
+    );
+  } catch {
+    /* membership retry will surface a clear error */
+  }
 }
 
 async function crmGroupSubjectExistsOnServer(

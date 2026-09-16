@@ -1,0 +1,158 @@
+/* File-as-BacksterOS-task modal — project/agent chips + brief send, beam on shell. */
+
+.bos-file-task-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+
+.bos-file-task-modal-overlay {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgb(0 0 0 / 0.35);
+  cursor: default;
+}
+
+.bos-file-task-modal-dialog {
+  position: fixed;
+  top: 128px;
+  left: 50%;
+  z-index: 301;
+  width: min(640px, calc(100vw - 48px));
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+.bos-file-task-modal-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 14px;
+  background: var(--popover, var(--background));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.42);
+}
+
+.bos-file-task-dialog-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bos-file-task-header-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bos-file-task-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+  padding-inline: 8px;
+  padding-bottom: 4px;
+}
+
+.bos-file-task-textarea {
+  min-height: 96px;
+  max-height: 280px;
+  flex: 1;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.bos-file-task-textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.bos-file-task-send {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: none;
+  border-radius: 9999px;
+  background: var(--message-action, var(--primary));
+  color: var(--message-action-foreground, var(--primary-foreground));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
+}
+
+.bos-file-task-send:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.bos-file-task-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.bos-file-task-warning {
+  border-radius: 10px;
+  border: 0.5px solid color-mix(in srgb, #c47a2a 45%, transparent);
+  background: color-mix(in srgb, #c47a2a 12%, transparent);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-inline: 8px;
+  padding: 10px 12px;
+}
+
+.bos-file-task-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.bos-file-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.bos-file-task-success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.bos-file-task-success-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.bos-file-task-modal-meta {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}

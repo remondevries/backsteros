@@ -631,7 +631,7 @@
   align-items: center;
   flex-wrap: nowrap;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border: 0.5px solid rgb(255 255 255 / 0.1);
   border-radius: 999px;
   background: transparent;
@@ -763,12 +763,15 @@
 }
 
 .due-date-calendar__day {
+  box-sizing: border-box;
   display: flex;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+  justify-self: center;
   align-items: center;
   justify-content: center;
   border: 0.5px solid transparent;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--foreground);
   font: inherit;
@@ -778,7 +781,7 @@
   cursor: pointer;
 }
 
-.due-date-calendar__day:hover:not(:disabled):not(.is-selected) {
+.due-date-calendar__day:hover:not(:disabled):not(.is-selected):not(.is-today) {
   background: rgb(255 255 255 / 0.06);
 }
 
@@ -787,11 +790,21 @@
 }
 
 .due-date-calendar__day.is-today:not(.is-selected) {
-  border-color: rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  border-color: transparent;
+  background: #f97316;
+  color: var(--background, #0a0a0a);
+  font-weight: 600;
+}
+
+.due-date-calendar__day.is-today:not(.is-selected):hover:not(:disabled) {
+  background: #ea580c;
 }
 
 .due-date-calendar__day.is-selected {
-  background: color-mix(in srgb, var(--foreground) 88%, transparent);
+  border-color: transparent;
+  border-radius: 4px;
+  background: #fff;
   color: #111;
   font-weight: 600;
 }
@@ -1185,6 +1198,15 @@
   background: rgb(255 255 255 / 0.03);
 }
 
+/* Open in side panel / detail — persists when focus leaves the list. */
+.project-overview-row.is-active {
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.project-overview-row.is-active:hover {
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+}
+
 .project-overview-row__name {
   display: flex;
   min-width: 0;
@@ -1214,14 +1236,11 @@
 .project-overview-row:focus-within .project-overview-row__check,
 .project-overview-row.keyboard-nav-item-highlight .project-overview-row__check,
 .project-overview-row.is-selected .project-overview-row__check,
+.project-overview-row.is-active .project-overview-row__check,
 .project-overview-row.force-show-checkbox .project-overview-row__check,
 .has-bulk-selection .project-overview-row__check {
   opacity: 1;
   pointer-events: auto;
-}
-
-.project-bulk-bar__date.is-empty {
-  opacity: 0.72;
 }
 
 .project-overview-row__key {
@@ -1307,15 +1326,16 @@
   overflow: hidden;
 }
 
+/* Hug label width — stretched chips leave empty space inside the dashed pill. */
 .project-overview-row__dates .task-due-date-dropdown {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
 }
 
 .project-overview-row__dates .task-due-date-dropdown__searchable,
 .project-overview-row__dates .task-due-date-dropdown__list-trigger {
-  width: 100%;
+  width: auto;
   max-width: 100%;
 }
 
@@ -1326,7 +1346,7 @@
   opacity: 1;
 }
 
-/* Domains list: centered plain dates (registrar-owned, not editable chips). */
+/* Domains catalog columns: center the Dates column. */
 .project-overview-row--domains .project-overview-row__dates {
   justify-content: center;
 }
@@ -1335,7 +1355,8 @@
   flex: 0 1 auto;
 }
 
-.project-overview-row--domains
+/* Domain project type: plain registrar-owned dates (not editable chips). */
+.project-overview-row--registrar-dates
   .project-overview-row__dates
   .task-due-date-dropdown__list-trigger {
   width: auto;
@@ -1347,21 +1368,46 @@
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
-.project-overview-row--domains
+.project-overview-row--registrar-dates
   .project-overview-row__dates
   .task-due-date-dropdown__list-trigger.is-empty {
   border: none;
   color: color-mix(in srgb, var(--foreground) 40%, transparent);
 }
 
-.project-overview-row--domains
+.project-overview-row--registrar-dates
   .project-overview-row__dates
   .task-due-date-dropdown__list-trigger:hover {
   background: transparent;
 }
 
-.project-overview-row--domains
+.project-overview-row--registrar-dates
   .project-overview-row__dates
+  .task-due-date-dropdown__list-trigger:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.project-board-card__dates--registrar .task-due-date-dropdown__list-trigger {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.project-board-card__dates--registrar
+  .task-due-date-dropdown__list-trigger.is-empty {
+  border: none;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.project-board-card__dates--registrar
+  .task-due-date-dropdown__list-trigger:hover {
+  background: transparent;
+}
+
+.project-board-card__dates--registrar
   .task-due-date-dropdown__list-trigger:disabled {
   cursor: default;
   opacity: 1;
@@ -1400,10 +1446,8 @@
 /* Spaces overview — card grid (integrations-05 inspired). */
 .projects-overview-list--spaces .project-type-subgroup__items {
   display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(min(100%, 480px), 480px)
-  );
+  /* Fluid columns that share the row; cards cap at 480px via max-width. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 16px;
   /* Match section label: header pad 8 + chevron 14 + gap 8. */
   padding: 4px 0 12px 30px;
@@ -1415,10 +1459,7 @@
 .projects-overview-list--spaces
   .project-type-subgroup__items--websites {
   gap: 12px;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(min(100%, 480px), 480px)
-  );
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 }
 
 .website-space-row-item {
@@ -1545,16 +1586,6 @@
 
 .website-space-row__icon-trigger:disabled {
   cursor: default;
-}
-
-.website-space-row__icon-glow {
-  position: absolute;
-  inset: -3px;
-  border-radius: 6px;
-  background: var(--website-row-accent, #34d399);
-  opacity: 0.45;
-  filter: blur(12px);
-  pointer-events: none;
 }
 
 .website-space-row__icon-face {
@@ -1811,33 +1842,11 @@
   width: 100%;
   overflow: hidden;
   border-radius: 10px 10px 0 0;
-  background:
-    radial-gradient(
-      120% 90% at 80% 10%,
-      color-mix(in srgb, var(--space-card-accent) 22%, transparent),
-      transparent 55%
-    ),
-    color-mix(in srgb, var(--foreground) 4%, var(--background));
+  background: color-mix(in srgb, var(--foreground) 4%, var(--background));
 }
 
-.space-overview-card__graph {
-  position: absolute;
-  inset: 8% 0 -2% 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.9;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 55%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
-}
-
-.space-overview-card__graph-line {
-  opacity: 0.9;
+.space-overview-card__visual--cover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
 }
 
 .space-overview-card__cover {
@@ -1909,16 +1918,20 @@
   background: transparent;
 }
 
-.space-settings-side-panel__header {
+/* Beat `.app-content-side-panel-header.content-chrome-header` (8px) so the
+   title lines up with `.space-settings-side-panel__body` (14px). */
+.space-settings-side-panel
+  .app-content-side-panel-header.space-settings-side-panel__header {
   flex-shrink: 0;
+  padding-inline: 14px;
 }
 
 .space-settings-side-panel__body {
-  display: flex;
+  /* Block layout so tab content + danger zone stack and scroll together.
+     Flex + default shrink was collapsing the tab body and painting danger over fields. */
+  display: block;
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 0;
   overflow: auto;
   padding: 8px 14px 16px;
 }
@@ -1929,9 +1942,28 @@
 }
 
 .space-settings-side-panel__danger {
+  position: static;
   display: flex;
-  justify-content: flex-end;
-  padding: 10px 16px 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px;
+  border: 0.5px solid color-mix(in srgb, #ef4444 32%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 7%, transparent);
+}
+
+.space-settings-side-panel__danger-title {
+  color: color-mix(in srgb, #ef4444 78%, var(--foreground));
+}
+
+.space-settings-side-panel__danger .space-settings-side-panel__hint {
+  margin: 0;
+  max-width: 36em;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .space-settings-side-panel__delete {
@@ -1964,7 +1996,6 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  min-height: 0;
   padding-bottom: 28px;
 }
 
@@ -2475,9 +2506,26 @@
 }
 
 .space-overview-card.is-keyboard-highlighted,
-.space-overview-card.keyboard-nav-item-highlight {
-  outline: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
-  outline-offset: -1px;
+.space-overview-card.keyboard-nav-item-highlight,
+.space-overview-card.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.space-overview-card.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.space-overview-card.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.space-overview-card.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  /* Inset box-shadow sits under the cover panel — use an overlay ring instead. */
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.space-overview-card.is-keyboard-highlighted::after,
+.space-overview-card.keyboard-nav-item-highlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  pointer-events: none;
 }
 
 /* Features-15 visual panel — no dashed grid chrome. */
@@ -2521,16 +2569,6 @@
 
 .space-overview-card__icon-trigger:disabled {
   cursor: default;
-}
-
-.space-overview-card__icon-glow {
-  position: absolute;
-  inset: -3px;
-  border-radius: 6px;
-  background: var(--space-card-accent);
-  opacity: 0.45;
-  filter: blur(12px);
-  pointer-events: none;
 }
 
 .space-overview-card__icon-face {

@@ -19,6 +19,7 @@ import {
   ProjectLettersView,
   ProjectTasksView,
   ProjectsOverviewView,
+  DomainDetailView,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   RegisterPageTitle,
@@ -31,6 +32,7 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildProjectKeyRenameRedirectPath,
+  buildTransipDomainProjectIcon,
   findDocumentTreeNodeById,
   formatLetterDisplayId,
   getFirstLetterInListOrder,
@@ -55,6 +57,7 @@ import {
   persistListBoardView,
   resolveLetterDetailHref,
   serializeDocumentBody,
+  type DomainRegistrarContact,
   type KnowledgeListItem,
   type ListBoardView,
   type ProjectArea,
@@ -102,16 +105,20 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDomainProjectApi } from "../lib/use-domain-project-api";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
+import { DomainProjectWorkbench } from "./domain-project-workbench";
 import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
 import {
   projectTypeFromLocationState,
   projectNavFromLocationState,
-  projectListHrefForNavFrom,
   projectListLabelForNavFrom,
   recalledProjectType,
   recalledProjectNavFrom,
   rememberProjectNavFrom,
+  rememberProjectListHref,
+  projectListHrefFromLocationState,
+  resolveProjectListHref,
   type ProjectLocationState,
   type ProjectNavFrom,
 } from "../lib/project-type-cache";
@@ -232,6 +239,14 @@ function ProjectsPageBody({
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
+  const {
+    knownDomainTags,
+    loadDomainRegistrarDetail,
+    updateDomainTags,
+    updateDomainContacts,
+    loadCloudflareDnsRecords,
+    purgeCloudflareCache,
+  } = useDomainProjectApi();
   const agentMail = useAgentMail();
   const [projectOverlay, setProjectOverlay] = useState<
     Record<string, Partial<WorkspaceProject>>
@@ -502,9 +517,19 @@ function ProjectsPageBody({
     if (from) {
       rememberProjectNavFrom(selected.id, selected.key, from);
     }
+    const listHref = projectListHrefFromLocationState(location.state);
+    if (listHref) {
+      rememberProjectListHref(selected.id, selected.key, listHref);
+    }
   }, [location.state, selected]);
 
-  const standaloneListHref = projectListHrefForNavFrom(projectNavFrom);
+  const standaloneListHref = resolveProjectListHref({
+    locationState: location.state,
+    navFrom: projectNavFrom,
+    projectId: selected?.id,
+    projectKey: selected?.key,
+    routeParam: routeSlug,
+  });
   const standaloneListLabel = projectListLabelForNavFrom(projectNavFrom);
   const projectBackHref = organizationRouteParam
     ? projectsListHref
@@ -770,6 +795,15 @@ function ProjectsPageBody({
         { includeNone: false }),
     [organizationAvatarSrc, organizations]);
 
+  const domainOrganizationOptions = useMemo(
+    () =>
+      organizations.map((org) => ({
+        value: org.id,
+        label: org.name,
+      })),
+    [organizations],
+  );
+
   const letterOrganizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
@@ -807,7 +841,12 @@ function ProjectsPageBody({
       <ProjectsOverviewView
         projects={projects}
         nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
+        organizations={organizations.map((org) => ({
+          id: org.id,
+          name: org.name,
+        }))}
         workingProjectIds={workingProjectIds}
+        typeToFilterEnabled={keepAliveActive}
         area={areaFilter}
         onAreaChange={(area) => {
           navigate(getProjectsListAreaHref(area, projectsListView));
@@ -827,6 +866,7 @@ function ProjectsPageBody({
           }
           const state: ProjectLocationState = {
             from: "projects",
+            listHref: `${location.pathname}${location.searchStr ?? ""}`,
             ...(match?.type ? { projectType: match.type } : {}),
           };
           navigate(href, { state });
@@ -846,6 +886,12 @@ function ProjectsPageBody({
           void workspace.patchProject(projectId, {
             dueDate: dueDate ? dueDate.toISOString() : null,
           });
+        }}
+        onOrganizationChange={(projectId, organizationId) => {
+          void workspace.patchProject(projectId, { organizationId });
+        }}
+        onProjectAreaChange={(projectId, area) => {
+          void workspace.patchProject(projectId, { area, areaId: null });
         }}
         onCreateProject={async ({ status, name }) => {
           const organizationId = organizationRouteParam
@@ -878,7 +924,10 @@ function ProjectsPageBody({
           }
           const href = `/projects/${key}`;
           if (createdName) primeTabTitle(href, createdName);
-          const state: ProjectLocationState = { from: "projects" };
+          const state: ProjectLocationState = {
+            from: "projects",
+            listHref: `${location.pathname}${location.searchStr ?? ""}`,
+          };
           navigate(href, { state });
         }}
         onCreateArea={async ({ parent, name }) =>
@@ -919,7 +968,11 @@ function ProjectsPageBody({
     cachedType === "codebase" ||
     project.type === "codebase"
       ? "codebase"
-      : (project.type ?? navType ?? cachedType ?? "general");
+      : navType === "domeinname" ||
+          cachedType === "domeinname" ||
+          project.type === "domeinname"
+        ? "domeinname"
+        : (project.type ?? navType ?? cachedType ?? "general");
   // Tasks (list or board) and Docs stay in the codebase workbench so the left
   // Tasks/Files/Docs/Commits/PRs sidebar remains; only letters/updates use the
   // default project section chrome.
@@ -929,6 +982,7 @@ function ProjectsPageBody({
       activeSection === "tasks" ||
       activeSection === "documents" ||
       isCodebaseWorkbenchPath(location.pathname, projectKey));
+  const isDomainWorkbench = effectiveType === "domeinname";
 
   const patchSelected = (
     patch: Partial<WorkspaceProject>) => {
@@ -952,7 +1006,7 @@ function ProjectsPageBody({
     // left sidebar stays mounted (same as list view). Default projects use
     // the `/tasks` section route.
     const base =
-      effectiveType === "codebase"
+      effectiveType === "codebase" || effectiveType === "domeinname"
         ? getScopedProjectBasePath(projectKey, routeScope)
         : getScopedProjectSectionHref(projectKey, "tasks", routeScope);
     navigate(
@@ -1720,6 +1774,157 @@ function ProjectsPageBody({
             void workspace.patchProject(project.id, patch);
           }}
         />
+      </>
+    );
+  }
+
+  if (isDomainWorkbench) {
+    const domainProject = {
+      ...project,
+      organizationId: project.organizationId ?? null,
+      type: "domeinname" as const,
+      provider: project.provider ?? null,
+      summary: workspace.projectSummaries[project.id] ?? "",
+      description: workspace.projectDescriptions[project.id] ?? "",
+      taskProgress,
+    };
+
+    const saveDomainName = async (name: string) => {
+      patchSelected({ name });
+      try {
+        await workspace.patchProject(project.id, { name });
+        return { ok: true as const };
+      } catch {
+        return { ok: false as const, error: "Could not rename project" };
+      }
+    };
+
+    const saveDomainKey = async (key: string) => {
+      const conflict = projectList.some(
+        (entry) =>
+          entry.id !== project.id &&
+          entry.key.toLowerCase() === key.toLowerCase(),
+      );
+      if (conflict) {
+        return { ok: false as const, error: "Project key already exists." };
+      }
+      const previousKey = project.key;
+      patchSelected({ key });
+      try {
+        await workspace.patchProject(project.id, { key });
+      } catch (error) {
+        patchSelected({ key: previousKey });
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not update project ID.",
+        };
+      }
+      const nextPath = buildProjectKeyRenameRedirectPath(
+        location.pathname,
+        previousKey,
+        key,
+      );
+      if (nextPath !== location.pathname) {
+        navigate(nextPath, { replace: true });
+      }
+      return { ok: true as const, key };
+    };
+
+    const domainDetailProps = {
+      project: domainProject,
+      organizationOptions: domainOrganizationOptions,
+      nestedAreas: mapWorkspaceNestedAreas(workspace.areas),
+      knownTags: knownDomainTags,
+      loadDetail: loadDomainRegistrarDetail,
+      loadCloudflareDnsRecords,
+      purgeCloudflareCache,
+      onSaveName: saveDomainName,
+      onSaveKey: saveDomainKey,
+      onStatusChange: (status: ProjectStatus) => {
+        patchSelected({ status });
+        void workspace.patchProject(project.id, { status });
+      },
+      onPriorityChange: (priority: number) => {
+        patchSelected({ priority });
+        void workspace.patchProject(project.id, { priority });
+      },
+      onAreaChange: (area: ProjectArea | null) => {
+        patchSelected({ area, areaId: null });
+        void workspace.patchProject(project.id, { area, areaId: null });
+      },
+      onAreaIdChange: (areaId: string | null) => {
+        patchSelected({ areaId });
+        void workspace.patchProject(project.id, { areaId });
+      },
+      onOrganizationChange: (organizationId: string | null) => {
+        patchSelected({ organizationId });
+        void workspace.patchProject(project.id, { organizationId });
+      },
+      onCreateOrganizationFromQuery: (query: string) => {
+        void workspace.createOrganization({ name: query }).then((created) => {
+          patchSelected({ organizationId: created.id });
+          void workspace.patchProject(project.id, {
+            organizationId: created.id,
+          });
+        });
+      },
+      onIconChange: (icon: string | null) => {
+        patchSelected({ icon });
+        void workspace.patchProject(project.id, { icon });
+      },
+      onTagsChange: async (tags: string[]) => {
+        try {
+          const result = await updateDomainTags(project.name, tags);
+          await workspace.patchProject(project.id, {
+            icon: buildTransipDomainProjectIcon(result.tags),
+          });
+          return { ok: true as const, tags: result.tags };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error ? error.message : "Could not update tags",
+          };
+        }
+      },
+      onContactsChange: async (contacts: DomainRegistrarContact[]) => {
+        try {
+          const result = await updateDomainContacts(project.name, contacts);
+          return { ok: true as const, contacts: result.contacts };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not update WHOIS contacts",
+          };
+        }
+      },
+    };
+
+    return (
+      <>
+        <RegisterPageTitle
+          active={keepAliveActive}
+          href={location.pathname}
+          title={project.name}
+        />
+        <RegisterEntityDuplicateAction
+          confirm="project"
+          entityLabel={`project "${project.name}"`}
+          onDuplicate={handleDuplicateProject}
+        />
+        <RegisterEntityDeleteAction
+          entityLabel={`project "${project.name}"`}
+          onDelete={handleDeleteProject}
+        />
+        <DomainProjectWorkbench tasksPanel={renderSection("tasks")}>
+          <DomainDetailView {...domainDetailProps} />
+        </DomainProjectWorkbench>
       </>
     );
   }

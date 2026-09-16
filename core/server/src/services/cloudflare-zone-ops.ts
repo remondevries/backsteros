@@ -29,6 +29,25 @@ export async function listCloudflareDnsRecords(
   return { zoneId: zoneId.trim(), records };
 }
 
+export async function updateCloudflareDnsRecord(
+  workspaceId: string,
+  zoneId: string,
+  recordId: string,
+  patch: {
+    type: string;
+    name: string;
+    content: string;
+    ttl: number | null;
+    proxied: boolean | null;
+    priority: number | null;
+  },
+  options?: { apiToken?: string | null },
+): Promise<{ zoneId: string; record: CloudflareDnsRecord }> {
+  const client = await createClient(workspaceId, options?.apiToken);
+  const record = await client.updateDnsRecord(zoneId, recordId, patch);
+  return { zoneId: zoneId.trim(), record };
+}
+
 export async function purgeCloudflareCache(
   workspaceId: string,
   zoneId: string,

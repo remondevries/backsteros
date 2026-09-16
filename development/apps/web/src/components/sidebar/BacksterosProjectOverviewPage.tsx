@@ -215,6 +215,7 @@ export function BacksterosProjectOverviewPage({
       <BacksterosProjectTasksOverview
         state={tasksState}
         projectKey={project?.key ?? null}
+        project={project}
         selectedTaskId={selectedTaskId}
         keyboardFocusTaskId={keyboardFocusTaskId}
         onRetry={reloadTasks}

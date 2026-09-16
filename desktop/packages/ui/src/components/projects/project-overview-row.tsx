@@ -16,6 +16,7 @@ import {
   type ProjectTaskProgress,
 } from "../../projects/project-progress-ring.js";
 import type { ProjectArea } from "../../projects/project-areas.js";
+import { projectTypeHasRegistrarOwnedDates } from "../../projects/project-type.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { CloudflareIcon } from "../icons/cloudflare-icon.js";
@@ -79,7 +80,10 @@ export type ProjectOverviewRowProps = {
   dragging?: boolean;
   /** Column set — `"domains"` shows Name + Dates only. */
   columns?: ProjectOverviewListColumns;
+  /** Multi-select checkbox state. */
   selected?: boolean;
+  /** Persistently active (e.g. open in Catalog side panel). */
+  active?: boolean;
   forceShowCheckbox?: boolean;
   showCheckbox?: boolean;
   onToggleSelected?: (
@@ -121,6 +125,7 @@ export function ProjectOverviewRow({
   dragging = false,
   columns = "default",
   selected = false,
+  active = false,
   forceShowCheckbox = false,
   showCheckbox = true,
   onToggleSelected,
@@ -129,6 +134,7 @@ export function ProjectOverviewRow({
   const canHtml5Drag = draggable && !canPointerReorder;
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
   const status = migrateLegacyProjectStatus(project.status);
+  const registrarOwnedDates = projectTypeHasRegistrarOwnedDates(project.type);
   const start = toDate(project.startDate ?? null);
   const due = toDate(project.dueDate ?? null);
   const startLabel = start ? formatTaskDueMetaLabel(start) : null;
@@ -169,7 +175,11 @@ export function ProjectOverviewRow({
         className={[
           "project-overview-row",
           columns === "domains" ? "project-overview-row--domains" : null,
+          registrarOwnedDates
+            ? "project-overview-row--registrar-dates"
+            : null,
           selected ? "is-selected" : null,
+          active ? "is-active" : null,
           forceShowCheckbox ? "force-show-checkbox" : null,
           keyboardNavListItemClass(keyboardHighlighted),
           canPointerReorder || canHtml5Drag
@@ -327,8 +337,8 @@ export function ProjectOverviewRow({
             searchShortcutLabel="⇧S"
             taskPropertyDropdownId="startDate"
             showIcon={false}
-            labelFormat={columns === "domains" ? "calendar" : "relative"}
-            disabled={project.type === "domeinname"}
+            labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+            disabled={registrarOwnedDates}
             onDueDateChange={(next) => onStartDateChange?.(project.id, next)}
           />
           <span className="project-overview-row__dates-sep">›</span>
@@ -336,8 +346,8 @@ export function ProjectOverviewRow({
             dueDate={due}
             variant="list"
             showIcon={false}
-            labelFormat={columns === "domains" ? "calendar" : "relative"}
-            disabled={project.type === "domeinname"}
+            labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+            disabled={registrarOwnedDates}
             onDueDateChange={(next) => onDueDateChange?.(project.id, next)}
           />
         </span>

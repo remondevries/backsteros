@@ -8,7 +8,7 @@ import { FINANCE_BULK_SCOPE_ATTRIBUTE } from "../../tasks/task-property-dropdown
 
 export type FinanceBulkBarProps = {
   selectionCount: number;
-  /** Dropdowns / field editors rendered between Select all and Clear. */
+  /** Dropdowns / field editors rendered between Select all and Deselect. */
   children?: ReactNode;
   /** Optional dock wrapper class (panel vs full transactions list). */
   dockClassName?: string;
@@ -119,7 +119,7 @@ export function relabelDropdownNoneOption<
 
 /**
  * Shared floating bulk editor for transaction multi-select (main list and
- * right-hand panels). Keeps Select all / Clear / Delete consistent everywhere.
+ * right-hand panels). Keeps Select all / Deselect / Delete consistent everywhere.
  */
 export function FinanceBulkBar({
   selectionCount,
@@ -236,7 +236,7 @@ export function FinanceBulkBar({
             disabled={applyInFlight}
             onClick={onClear}
           >
-            Clear
+            Deselect
           </button>
           {onDelete ? (
             <button

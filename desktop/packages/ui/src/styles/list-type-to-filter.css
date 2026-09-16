@@ -1,0 +1,30 @@
+/* List type-to-filter — Shift+F search mode on the List/Board toggle.
+
+   Typing (capturing keys): full purple on the active segment.
+   Locked results (query kept, j/k again): same purple at 50% opacity. */
+
+body[data-list-type-to-filter-search]
+  .list-board-view-shell
+  .segmented-pill-toggle__indicator,
+body[data-list-type-to-filter-locked]
+  .list-board-view-shell
+  .segmented-pill-toggle__indicator {
+  background: #7c3aed;
+  border-color: color-mix(in srgb, #7c3aed 70%, white);
+}
+
+body[data-list-type-to-filter-locked]
+  .list-board-view-shell
+  .segmented-pill-toggle__indicator {
+  background: rgb(124 58 237 / 0.5);
+  border-color: color-mix(in srgb, #7c3aed 35%, transparent);
+}
+
+body[data-list-type-to-filter-search]
+  .list-board-view-shell
+  .segmented-pill-toggle-btn.is-active,
+body[data-list-type-to-filter-locked]
+  .list-board-view-shell
+  .segmented-pill-toggle-btn.is-active {
+  color: #fff;
+}

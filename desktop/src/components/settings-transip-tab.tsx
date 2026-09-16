@@ -152,11 +152,20 @@ export function SettingsTransipTab({
               ? "Connected"
               : "Not connected"
         }
-        testLabel={testing ? "Testing…" : "Test connection"}
+        secondaryLabel="Auth"
+        secondaryValue={
+          settings === null
+            ? "…"
+            : keyConfigured
+              ? "Login + key"
+              : tokenConfigured
+                ? "API token"
+                : "—"
+        }
         testing={testing}
         testMessage={testMessage}
         testOk={testOk}
-        onTest={() => {
+        onTestConnection={() => {
           void (async () => {
             setTesting(true);
             setTestMessage(null);

@@ -56,6 +56,11 @@ export async function getWorkspaceLastSyncId(
  * same ordered log. On local-core (replica), forward to cloud leader first so
  * cloud assigns sync_id; then apply the returned ordered event locally.
  * On cloud / offline: claim a mutation receipt and append locally.
+ *
+ * After a successful record on either role, wake the peer (table push + nudge
+ * pull) so cloud↔local stay in lockstep without waiting for the ~15s tick.
+ * This is the single choke-point for every `record*RestSyncEvent` helper —
+ * cloud API routes that only recorded sync_events historically never nudged.
  */
 export async function recordRestEntitySyncEvent(input: {
   workspaceId: string;
@@ -73,6 +78,18 @@ export async function recordRestEntitySyncEvent(input: {
   const { shouldForwardMutationsToLeader, commitMutationsLeaderFirst } =
     await import("./core-replication/leader-mutations.js");
 
+  const wakePeer = () => {
+    void import("./core-replication/nudge.js").then(({ notifyPeerOfEntityWrite }) => {
+      notifyPeerOfEntityWrite({
+        workspaceId: input.workspaceId,
+        reason: "rest-sync-event",
+        entity: input.entity,
+        entityId: input.entityId,
+        operation: input.operation === "delete" ? "delete" : "upsert",
+      });
+    });
+  };
+
   if (shouldForwardMutationsToLeader()) {
     const result = await commitMutationsLeaderFirst({
       workspaceId: input.workspaceId,
@@ -88,10 +105,14 @@ export async function recordRestEntitySyncEvent(input: {
         },
       ],
     });
+    // local_fallback already pushed + nudged inside commitMutationsLeaderFirst.
+    if (result.source !== "local_fallback" && result.events.length > 0) {
+      wakePeer();
+    }
     return result.events.length > 0 ? "recorded" : "duplicate";
   }
 
-  return db.transaction(async (tx) => {
+  const status = await db.transaction(async (tx) => {
     const [receipt] = await tx
       .insert(mutationReceipts)
       .values({
@@ -103,7 +124,7 @@ export async function recordRestEntitySyncEvent(input: {
       .returning({ mutationId: mutationReceipts.mutationId });
 
     if (!receipt) {
-      return "duplicate";
+      return "duplicate" as const;
     }
 
     await appendSyncEvent(
@@ -129,8 +150,13 @@ export async function recordRestEntitySyncEvent(input: {
         ),
       );
 
-    return "recorded";
+    return "recorded" as const;
   });
+
+  if (status === "recorded") {
+    wakePeer();
+  }
+  return status;
 }
 
 export type SyncEventRow = {

@@ -97,6 +97,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { BacksterosConnectionSetting } from "./BacksterosConnectionSetting";
+import { BacksterosFileTaskAgentsSetting } from "./BacksterosFileTaskAgentsSetting";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
 
@@ -1220,6 +1221,7 @@ export function IntegrationsSettingsPanel() {
       </SettingsSection>
       <SettingsSection id="backsteros" title="BacksterOS">
         <BacksterosConnectionSetting />
+        <BacksterosFileTaskAgentsSetting />
       </SettingsSection>
     </SettingsPageContainer>
   );

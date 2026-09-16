@@ -2,6 +2,7 @@ import { initContract, type AppRouter } from "@ts-rest/core";
 import { z } from "zod";
 
 import { cloudflareContract } from "./cloudflare-contract.js";
+import { fileTaskCallbackContract } from "./file-task-callback-contract.js";
 import { transipContract } from "./transip-contract.js";
 import {
   apiKeySchema,
@@ -2983,11 +2984,15 @@ export const apiContract: AppRouter = c.router(
 
 export type ApiContract = AppRouter;
 
-/** Main API + split routers (keeps declarations under TS7056). */
+/**
+ * Main API + Cloudflare/Transip split routers.
+ * Typed as AppRouter so declaration emit stays under TS7056.
+ */
 export type FullApiContract = AppRouter;
 
 export const fullApiContract: FullApiContract = {
   ...apiContract,
   ...cloudflareContract,
+  ...fileTaskCallbackContract,
   ...transipContract,
 };

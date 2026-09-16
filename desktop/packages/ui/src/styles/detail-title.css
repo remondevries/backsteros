@@ -258,6 +258,14 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Calendar horizontal day-pan must not rubber-band the shell. */
+.page-scroll:has([data-calendar-view]),
+.bos-product-shell:has([data-calendar-view]) {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 /* Row split lives on .detail-with-properties (main | properties rail) */

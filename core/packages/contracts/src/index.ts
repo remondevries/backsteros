@@ -1,6 +1,7 @@
 export * from "./schemas.js";
 export * from "./contract.js";
 export * from "./cloudflare-contract.js";
+export * from "./file-task-callback-contract.js";
 export * from "./transip-contract.js";
 export * from "./agent-attention-notifications.js";
 export * from "./contact-emails.js";

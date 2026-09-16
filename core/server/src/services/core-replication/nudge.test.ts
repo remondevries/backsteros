@@ -54,6 +54,25 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
     assert.equal(received[0]?.operation, "delete");
   });
 
+  it("publishes task deletes with operation delete", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "task",
+      entityId: "t_del",
+      operation: "delete",
+      payload: {},
+    });
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.kind, "task");
+    assert.equal(received[0]?.entityId, "t_del");
+    assert.equal(received[0]?.operation, "delete");
+  });
+
   it("publishes tasks", () => {
     const received: WorkspaceUpdatedEvent[] = [];
     subscribeWorkspaceUpdated("ws_1", (event) => {
@@ -127,7 +146,7 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
     assert.equal(received.length, 0);
   });
 
-  it("ignores entities without a live shell channel", () => {
+  it("publishes contact and crm_group_member updates for open shells", () => {
     const received: WorkspaceUpdatedEvent[] = [];
     subscribeWorkspaceUpdated("ws_1", (event) => {
       received.push(event);
@@ -139,8 +158,78 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
       operation: "upsert",
       payload: {},
     });
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "crm_group_member",
+      entityId: "m_1",
+      operation: "delete",
+      payload: {},
+    });
+
+    assert.equal(received.length, 2);
+    assert.equal(received[0]?.kind, "contact");
+    assert.equal(received[0]?.entityId, "c_1");
+    assert.equal(received[0]?.operation, "upsert");
+    assert.equal(received[1]?.kind, "crm_group_member");
+    assert.equal(received[1]?.operation, "delete");
+  });
+
+  it("publishes task_activity against the parent task id", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "task_activity",
+      entityId: "ta_1",
+      operation: "upsert",
+      payload: { task_id: "t_9" },
+    });
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.kind, "task");
+    assert.equal(received[0]?.entityId, "t_9");
+  });
+
+  it("ignores unknown entity names without a live shell channel", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "not_a_sync_entity",
+      entityId: "x_1",
+      operation: "upsert",
+      payload: {},
+    });
 
     assert.equal(received.length, 0);
+  });
+
+  it("publishes finance and habit entities for open shells", () => {
+    const received: WorkspaceUpdatedEvent[] = [];
+    subscribeWorkspaceUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "bank_account",
+      entityId: "ba_1",
+      operation: "upsert",
+      payload: {},
+    });
+    publishWorkspaceUpdatedFromSyncEvent("ws_1", {
+      entity: "habit",
+      entityId: "h_1",
+      operation: "delete",
+      payload: {},
+    });
+
+    assert.equal(received.length, 2);
+    assert.equal(received[0]?.kind, "bank_account");
+    assert.equal(received[1]?.kind, "habit");
+    assert.equal(received[1]?.operation, "delete");
   });
 });
 

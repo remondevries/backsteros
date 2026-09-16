@@ -39,13 +39,17 @@ export function DesktopJournalSidePanel({
   }) {
   const { client } = useDesktopApi();
   const { journalDocumentIdsByDate } = useDesktopWorkspaceDocuments();
+  // Prefer workspace (PowerSync) rows from the keep-alive shell. Only fall back
+  // to REST when the panel is opened without items and not in listOnly mode —
+  // same local-primary rule as calendar/tasks (no list GET on every visit).
+  const skipJournalListFetch = listOnly || viewProps.items.length > 0;
   const resource = useDesktopResource<{
     documents: Array<{ journalDate?: string | null }>;
   }>(
-    listOnly
+    skipJournalListFetch
       ? async () => ({ documents: [] })
       : (api) => api.requestJson("/api/v1/documents?type=journal"),
-    [listOnly],
+    [skipJournalListFetch],
   );
   const { pathname } = viewProps;
   const items = useMemo(() => {

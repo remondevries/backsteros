@@ -1,21 +1,30 @@
 import { withCrmGroupSearch } from "./contact-group-filter.js";
+import {
+  ENTITY_DETAIL_COLLAPSE_DURATION_MS,
+  ENTITY_DETAIL_CONTENT_FADE_MS,
+  ENTITY_DETAIL_EXPAND_FADE_MS,
+  ENTITY_DETAIL_PANEL_WIDTH,
+  ENTITY_DETAIL_STRIP_WIDTH_PX,
+  type EntityOverlayLayout,
+} from "../shared/entity-detail-overlay.js";
 
 /**
  * Width for the standalone contacts detail card — fraction of the content area.
  */
-export const CONTACT_DETAIL_PANEL_WIDTH = "30%";
+export const CONTACT_DETAIL_PANEL_WIDTH = ENTITY_DETAIL_PANEL_WIDTH;
 
 /** Collapsed reopen strip — matches agent / journal calendar strip. */
-export const CONTACT_DETAIL_STRIP_WIDTH_PX = 46;
+export const CONTACT_DETAIL_STRIP_WIDTH_PX = ENTITY_DETAIL_STRIP_WIDTH_PX;
 
 /** Match agent-rail / context-panel collapse duration. */
-export const CONTACT_DETAIL_COLLAPSE_DURATION_MS = 220;
+export const CONTACT_DETAIL_COLLAPSE_DURATION_MS =
+  ENTITY_DETAIL_COLLAPSE_DURATION_MS;
 
 /** Crossfade when switching contacts while the panel stays open. */
-export const CONTACT_DETAIL_CONTENT_FADE_MS = 280;
+export const CONTACT_DETAIL_CONTENT_FADE_MS = ENTITY_DETAIL_CONTENT_FADE_MS;
 
 /** Fade list ↔ expanded workspace when toggling contactLayout=page. */
-export const CONTACT_DETAIL_EXPAND_FADE_MS = CONTACT_DETAIL_CONTENT_FADE_MS;
+export const CONTACT_DETAIL_EXPAND_FADE_MS = ENTITY_DETAIL_EXPAND_FADE_MS;
 
 /** @deprecated Width is percentage-based; kept so existing imports keep compiling. */
 export const CONTACT_DETAIL_PANEL_WIDTH_KEY = "contact-detail-panel-width";
@@ -23,7 +32,7 @@ export const CONTACT_DETAIL_PANEL_WIDTH_KEY = "contact-detail-panel-width";
 /** Search param: contact overlay opens as full page vs narrow right panel. */
 export const CONTACT_OVERLAY_LAYOUT_PARAM = "contactLayout";
 
-export type ContactOverlayLayout = "page" | "panel";
+export type ContactOverlayLayout = EntityOverlayLayout;
 
 /** Left workspace tabs when the contact overlay is expanded to page layout. */
 export const CONTACT_EXPANDED_WORKSPACE_TAB_IDS = [

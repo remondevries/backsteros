@@ -22,6 +22,7 @@ import {
   EMAIL_INBOX_UPDATED_EVENT,
   type EmailInboxUpdatedDetail,
 } from "../../lib/use-agentmail-mailboxes";
+import { WORKSPACE_EMAIL_UPDATED_EVENT } from "../../lib/workspace-events";
 
 export function useEmailMessageDetail({
   inboxId,
@@ -113,10 +114,21 @@ export function useEmailMessageDetail({
       if (!detail?.inboxId || detail.inboxId !== inboxId) return;
       refreshOpenThread();
     };
+    const onWorkspaceEmailUpdated = () => {
+      refreshOpenThread();
+    };
     window.addEventListener(EMAIL_INBOX_UPDATED_EVENT, onInboxUpdated);
+    window.addEventListener(
+      WORKSPACE_EMAIL_UPDATED_EVENT,
+      onWorkspaceEmailUpdated,
+    );
     const timer = window.setInterval(refreshOpenThread, 15_000);
     return () => {
       window.removeEventListener(EMAIL_INBOX_UPDATED_EVENT, onInboxUpdated);
+      window.removeEventListener(
+        WORKSPACE_EMAIL_UPDATED_EVENT,
+        onWorkspaceEmailUpdated,
+      );
       window.clearInterval(timer);
     };
   }, [inboxId, isCompose, messageId, reloadMessageDetail]);

@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
+  MIN_CALENDAR_MEETING_DURATION_MINUTES,
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
+  calendarSelectionToMeetingRange,
   taskCalendarEventClassNames,
   taskCalendarEventColors,
   taskCalendarEventNeutralColors,
@@ -275,6 +277,22 @@ test("calendarChangeToMeetingPatch derives status from schedule", () => {
     now,
   );
   assert.equal(pastPatch?.status, "completed");
+});
+
+test("calendarSelectionToMeetingRange enforces a 15-minute minimum", () => {
+  const start = new Date("2026-08-23T14:00:00.000Z");
+  const shortEnd = new Date("2026-08-23T14:05:00.000Z");
+  const range = calendarSelectionToMeetingRange({
+    start,
+    end: shortEnd,
+    allDay: false,
+  });
+
+  assert.ok(range);
+  assert.equal(
+    new Date(range.endAt).getTime() - new Date(range.startAt).getTime(),
+    MIN_CALENDAR_MEETING_DURATION_MINUTES * 60_000,
+  );
 });
 
 test("meetingToCalendarEvent maps timed meetings", () => {

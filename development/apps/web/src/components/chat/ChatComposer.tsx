@@ -100,6 +100,17 @@ import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
 import {
+  findBacksterosTaskIdForThread,
+  useBacksterosTaskChatStore,
+} from "../../backsteros/taskChatStore";
+import { isBacksterosFileTaskModalOpen } from "../../backsteros/fileTaskUiStore";
+import { composerAccentOverrideKey, useComposerAccentStore } from "../../composerAccentStore";
+import {
+  composerAgentAccentButtonStyle,
+  composerAgentAccentStyle,
+  resolveComposerAccentColor,
+} from "../../providerAccentColors";
+import {
   ComposerBannerStack,
   type ComposerBannerStackContent,
   type ComposerBannerStackItem,
@@ -1055,6 +1066,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
+  agentAccentColor?: string | null;
   preserveComposerFocusOnPointerDown?: boolean;
   showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
@@ -1087,6 +1099,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
+        agentAccentColor={props.agentAccentColor}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         showSendWhileRunning={props.showSendWhileRunning ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
@@ -1613,6 +1626,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
   const noProviderAvailable = selectedProviderEntry === undefined;
+  const backsterosTaskBindings = useBacksterosTaskChatStore((state) => state.byTaskId);
+  const composerAccentOverrides = useComposerAccentStore((state) => state.overrides);
+  const composerAccentOverride = useMemo(() => {
+    const taskId = activeThreadId
+      ? findBacksterosTaskIdForThread({
+          threadId: activeThreadId,
+          environmentId,
+          byTaskId: backsterosTaskBindings,
+        })
+      : null;
+    const key = composerAccentOverrideKey({
+      taskId,
+      threadId: activeThreadId,
+    });
+    return key ? composerAccentOverrides[key] : undefined;
+  }, [activeThreadId, backsterosTaskBindings, composerAccentOverrides, environmentId]);
+  const composerAgentAccent = useMemo(
+    () =>
+      resolveComposerAccentColor({
+        threadId: activeThreadId,
+        draftKey: composerTargetKey(composerDraftTarget),
+        instanceId: selectedProviderEntry?.instanceId,
+        accentColor: selectedProviderEntry?.accentColor,
+        overrideColor: composerAccentOverride,
+      }),
+    [activeThreadId, composerAccentOverride, composerDraftTarget, selectedProviderEntry],
+  );
+  const composerAgentAccentCss = useMemo(
+    () => (composerAgentAccent ? composerAgentAccentStyle(composerAgentAccent) : undefined),
+    [composerAgentAccent],
+  );
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null
@@ -3030,6 +3074,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => {
+    // File-task modal owns ⌘/Ctrl+Enter exclusively while open.
+    if (key === "Enter" && (event.metaKey || event.ctrlKey) && isBacksterosFileTaskModalOpen()) {
+      return true;
+    }
     if (key === "Tab" && event.shiftKey) {
       if (!planModeUiEnabled) return false;
       toggleInteractionMode();
@@ -4971,6 +5019,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               }
                               isPreparingWorktree={false}
                               hasSendableContent={false}
+                              agentAccentColor={composerAgentAccent}
                               preserveComposerFocusOnPointerDown
                               onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                               onInterrupt={handleInterruptPrimaryAction}
@@ -5023,7 +5072,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-composer-focused={isComposerFocused ? "" : undefined}
+          data-composer-agent-accent={composerAgentAccent ?? undefined}
           className={composerProviderState.composerFrameClassName}
+          style={composerAgentAccentCss}
         >
           <div
             ref={composerSurfaceRef}
@@ -5064,7 +5115,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-30"
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full disabled:opacity-30",
+                    composerAgentAccent
+                      ? "hover:brightness-110"
+                      : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+                  )}
+                  style={
+                    composerAgentAccent
+                      ? composerAgentAccentButtonStyle(composerAgentAccent)
+                      : undefined
+                  }
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
                   onPointerDown={(event) => event.preventDefault()}
@@ -5539,6 +5600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       isPreparingWorktree={false}
                       hasSendableContent={false}
+                      agentAccentColor={composerAgentAccent}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
@@ -5643,6 +5705,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
+                    agentAccentColor={composerAgentAccent}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
                     showSendWhileRunning={isMobileViewport}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}

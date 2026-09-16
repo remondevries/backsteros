@@ -4,6 +4,8 @@
 
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
+- [Composer](./user/composer.md)
+- [Filing BacksterOS tasks from BacksterDEV](./user/backsteros-file-task.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Review usage](./user/usage.md)

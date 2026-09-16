@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useDesktopAvatarSrcMap } from "../../lib/avatar-src";
 import { uploadDesktopAvatar } from "../../lib/avatar-upload";
 import { useDesktopPowerSync } from "../../lib/powersync-context";
+import { WORKSPACE_FINANCE_UPDATED_EVENT } from "../../lib/workspace-events";
 import {
   createBankAccountViaPowerSyncOrApi,
   createFinancialCategoryViaPowerSyncOrApi,
@@ -169,6 +170,24 @@ export function useFinanceCoreData({
       refreshGoals().catch(() => setGoals([])),
       refreshRecurrings().catch(() => setRecurrings([])),
     ]);
+  }, [refreshAccounts, refreshCategories, refreshGoals, refreshRecurrings]);
+
+  // Peer / portal finance writes → refresh catalogs before PowerSync catches up.
+  useEffect(() => {
+    const onFinanceUpdated = () => {
+      void Promise.all([
+        refreshAccounts().catch(() => {}),
+        refreshCategories().catch(() => {}),
+        refreshGoals().catch(() => {}),
+        refreshRecurrings().catch(() => {}),
+      ]);
+    };
+    window.addEventListener(WORKSPACE_FINANCE_UPDATED_EVENT, onFinanceUpdated);
+    return () =>
+      window.removeEventListener(
+        WORKSPACE_FINANCE_UPDATED_EVENT,
+        onFinanceUpdated,
+      );
   }, [refreshAccounts, refreshCategories, refreshGoals, refreshRecurrings]);
 
   useEffect(() => {

@@ -77,6 +77,31 @@ export function resolveListKeyboardStepTarget(input: {
     : (itemIds[itemIds.length - 1] ?? null);
 }
 
+/**
+ * Row to highlight when activating a list (Tab into zone, setActiveZone).
+ * Prefer an explicit landing id, then the open/selected row, then an existing
+ * j/k highlight (e.g. closest-to-today on the meetings rail), else first item.
+ */
+export function resolveListKeyboardActivationAnchor(input: {
+  preferredItemId?: string | null;
+  selectedId: string | null;
+  highlightedId: string | null;
+  itemIds: readonly string[];
+}): string | null {
+  const { preferredItemId, selectedId, highlightedId, itemIds } = input;
+  if (itemIds.length === 0) return null;
+  if (preferredItemId != null && itemIds.includes(preferredItemId)) {
+    return preferredItemId;
+  }
+  if (selectedId != null && itemIds.includes(selectedId)) {
+    return selectedId;
+  }
+  if (highlightedId != null && itemIds.includes(highlightedId)) {
+    return highlightedId;
+  }
+  return itemIds[0] ?? null;
+}
+
 export function flattenGroupedListItemIds<T>(
   groups: Array<{ key: string; items: T[] }>,
   collapsedKeys: ReadonlySet<string>,

@@ -2,14 +2,40 @@
  * Authenticated SSE subscriber for workspace entity updates.
  * Desktop uses this to refresh REST snapshots and invalidate Tier D caches
  * when agents write via the API before PowerSync catches up.
+ *
+ * Kinds match core `SyncEntity` (except task_comment is remapped to task).
  */
 
-export type WorkspaceUpdatedKind =
-  | "task"
-  | "meeting"
-  | "project"
-  | "document"
-  | "letter";
+export const WORKSPACE_UPDATED_KIND_VALUES = [
+  "project",
+  "task",
+  "document",
+  "area",
+  "organization",
+  "contact",
+  "letter",
+  "workspace_setting",
+  "bank_account",
+  "financial_category",
+  "financial_goal",
+  "financial_recurring",
+  "cashflow_planner_entry",
+  "financial_transaction",
+  "habit",
+  "meeting",
+  "contact_relationship",
+  "crm_relationship_label",
+  "crm_group",
+  "crm_group_member",
+  "crm_activity",
+  "task_activity",
+  "email_thread",
+  "email_thread_comment",
+  "recurring_task",
+  "mention",
+] as const;
+
+export type WorkspaceUpdatedKind = (typeof WORKSPACE_UPDATED_KIND_VALUES)[number];
 
 export type WorkspaceUpdatedOperation = "upsert" | "delete";
 
@@ -60,21 +86,127 @@ export type WorkspaceMeetingUpdatedDetail = {
 export const WORKSPACE_MEETING_UPDATED_EVENT =
   "backsteros-workspace-meeting-updated";
 
+export type WorkspaceContactUpdatedDetail = {
+  contactId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports a contact create/update/delete. */
+export const WORKSPACE_CONTACT_UPDATED_EVENT =
+  "backsteros-workspace-contact-updated";
+
+export type WorkspaceOrganizationUpdatedDetail = {
+  organizationId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports an organization create/update/delete. */
+export const WORKSPACE_ORGANIZATION_UPDATED_EVENT =
+  "backsteros-workspace-organization-updated";
+
+export type WorkspaceAreaUpdatedDetail = {
+  areaId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+export const WORKSPACE_AREA_UPDATED_EVENT =
+  "backsteros-workspace-area-updated";
+
+export type WorkspaceHabitUpdatedDetail = {
+  habitId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+export const WORKSPACE_HABIT_UPDATED_EVENT =
+  "backsteros-workspace-habit-updated";
+
+export type WorkspaceLetterUpdatedDetail = {
+  letterId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
+export const WORKSPACE_LETTER_UPDATED_EVENT =
+  "backsteros-workspace-letter-updated";
+
+/**
+ * Fired when workspace SSE reports a CRM group or membership change.
+ * Listeners should refetch Clients filters / group chips (REST or PowerSync).
+ */
+export const WORKSPACE_CRM_GROUPS_UPDATED_EVENT =
+  "backsteros-workspace-crm-groups-updated";
+
+/**
+ * Fired for CRM activity / relationship / label writes (subject-detail panels).
+ */
+export const WORKSPACE_CRM_DATA_UPDATED_EVENT =
+  "backsteros-workspace-crm-data-updated";
+
+/** Fired for bank accounts / categories / goals / recurrings / transactions. */
+export const WORKSPACE_FINANCE_UPDATED_EVENT =
+  "backsteros-workspace-finance-updated";
+
+/** Fired for email thread sync entities (AgentMail may also push separately). */
+export const WORKSPACE_EMAIL_UPDATED_EVENT =
+  "backsteros-workspace-email-updated";
+
+/**
+ * Catch-all for remaining entities (workspace_setting, mention, task_activity,
+ * recurring_task, cashflow_planner_entry, …) when no dedicated handler exists.
+ */
+export const WORKSPACE_ENTITY_UPDATED_EVENT =
+  "backsteros-workspace-entity-updated";
+
+export type WorkspaceEntityUpdatedDetail = {
+  kind: WorkspaceUpdatedKind;
+  entityId: string;
+  operation: WorkspaceUpdatedOperation;
+};
+
 export type WorkspaceEventsClient = {
   requestStream: (path: string, init?: RequestInit) => Promise<Response>;
 };
 
-const WORKSPACE_UPDATED_KINDS = new Set<WorkspaceUpdatedKind>([
-  "task",
-  "meeting",
-  "project",
-  "document",
-  "letter",
+const WORKSPACE_UPDATED_KINDS = new Set<string>(WORKSPACE_UPDATED_KIND_VALUES);
+
+const FINANCE_KINDS = new Set<WorkspaceUpdatedKind>([
+  "bank_account",
+  "financial_category",
+  "financial_goal",
+  "financial_recurring",
+  "financial_transaction",
+  "cashflow_planner_entry",
 ]);
+
+const CRM_DATA_KINDS = new Set<WorkspaceUpdatedKind>([
+  "contact_relationship",
+  "crm_relationship_label",
+  "crm_activity",
+]);
+
+const EMAIL_KINDS = new Set<WorkspaceUpdatedKind>([
+  "email_thread",
+  "email_thread_comment",
+]);
+
+export function isFinanceWorkspaceKind(
+  kind: WorkspaceUpdatedKind,
+): boolean {
+  return FINANCE_KINDS.has(kind);
+}
+
+export function isCrmDataWorkspaceKind(
+  kind: WorkspaceUpdatedKind,
+): boolean {
+  return CRM_DATA_KINDS.has(kind);
+}
+
+export function isEmailWorkspaceKind(kind: WorkspaceUpdatedKind): boolean {
+  return EMAIL_KINDS.has(kind);
+}
 
 function parseWorkspaceUpdatedKind(value: unknown): WorkspaceUpdatedKind | null {
   if (typeof value !== "string") return null;
-  return WORKSPACE_UPDATED_KINDS.has(value as WorkspaceUpdatedKind)
+  return WORKSPACE_UPDATED_KINDS.has(value)
     ? (value as WorkspaceUpdatedKind)
     : null;
 }

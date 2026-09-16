@@ -30,6 +30,28 @@ describe("filterListKeyboardNavZonesForTab", () => {
       ["content", "main"],
     );
   });
+
+  it("keeps all three calendar columns in the Tab cycle", () => {
+    assert.deepEqual(
+      filterListKeyboardNavZonesForTab(
+        ["sidepanel", "main", "content"],
+        false,
+        "/calendar",
+      ),
+      ["sidepanel", "main", "content"],
+    );
+  });
+
+  it("still drops sidepanel on calendar while a detail pane is open", () => {
+    assert.deepEqual(
+      filterListKeyboardNavZonesForTab(
+        ["sidepanel", "main", "content"],
+        true,
+        "/calendar",
+      ),
+      ["main", "content"],
+    );
+  });
 });
 
 describe("resolveListKeyboardNavTabTargetZone with detail cycle", () => {
@@ -38,7 +60,7 @@ describe("resolveListKeyboardNavTabTargetZone with detail cycle", () => {
       resolveListKeyboardNavTabTargetZone(
         "main",
         "forward",
-        ["content", "main"],
+        ["main", "content"],
         true,
       ),
       "content",
@@ -47,10 +69,26 @@ describe("resolveListKeyboardNavTabTargetZone with detail cycle", () => {
       resolveListKeyboardNavTabTargetZone(
         "content",
         "forward",
-        ["content", "main"],
+        ["main", "content"],
         true,
       ),
       "main",
+    );
+  });
+
+  it("cycles calendar left → grid → meetings", () => {
+    const zones = ["sidepanel", "main", "content"] as const;
+    assert.equal(
+      resolveListKeyboardNavTabTargetZone("sidepanel", "forward", [...zones], true),
+      "main",
+    );
+    assert.equal(
+      resolveListKeyboardNavTabTargetZone("main", "forward", [...zones], true),
+      "content",
+    );
+    assert.equal(
+      resolveListKeyboardNavTabTargetZone("content", "forward", [...zones], true),
+      "sidepanel",
     );
   });
 });

@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getContactEmailAddresses } from "@backsteros/contracts";
+import { X } from "lucide-react";
 
 import {
   CalendarAvailabilityView,
   CalendarDateNav,
   CalendarMeetingDetailOverlay,
+  CalendarMeetingsSidePanelView,
   CalendarTaskDetailOverlay,
   CalendarTimetrackingView,
   CalendarView,
   CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
   CALENDAR_MEETING_OVERLAY_PARAM,
+  CALENDAR_MEETINGS_SIDE_PANEL_WIDTH_KEY,
   CALENDAR_PAGE_MODE_PARAM,
+  CALENDAR_TASK_OVERLAY_LAYOUT_PARAM,
   CALENDAR_TASK_OVERLAY_PARAM,
   CALENDAR_TIMETRACKING_DETAIL_PANEL_WIDTH_KEY,
   CALENDAR_VIEW_MODE_PARAM,
@@ -20,7 +24,9 @@ import {
   buildCalendarBreadcrumbItems,
   buildCalendarDayHabitsByDate,
   buildProjectDropdownOptions,
+  calendarSidePanelMeetingItemId,
   collectTimetrackingEntries,
+  ExpandLayoutIcon,
   formatMeetingBreadcrumbLabel,
   formatMeetingDisplayId,
   getSelectedCalendarGridEventId,
@@ -29,15 +35,19 @@ import {
   getUniqueListItemRouteParam,
   getContactSectionHref,
   getEmailComposeHref,
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
   MeetingDetailView,
+  meetingCalendarEventClassNames,
   mergeCalendarGridEvents,
   parseCalendarMeetingOverlayId,
   parseCalendarMeetingOverlayLayout,
   parseCalendarPageModeParam,
   parseCalendarTaskOverlayId,
+  parseCalendarTaskOverlayLayout,
   parseCalendarViewModeParam,
   readTimetrackingPeriodFromSearch,
   RegisterEntityDeleteAction,
+  EntityHeaderActionsSlot,
   RegisterPageTitle,
   ResizableSidePanel,
   ProjectOcticon,
@@ -47,8 +57,8 @@ import {
   useCalendarDateNavigationShortcuts,
   type CalendarHabitIconItem,
   type CalendarBirthdayPopoverContact,
-  type CalendarMeetingPopoverMeeting,
   type CalendarMeetingOverlayLayout,
+  type CalendarTaskOverlayLayout,
   type CalendarTaskPopoverTask,
   type CalendarViewMode,
   type MeetingCalendarPatch,
@@ -61,6 +71,7 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
@@ -86,6 +97,12 @@ type CalendarDateNavApi = {
   prev: () => void;
   next: () => void;
   today?: () => void;
+};
+
+type CalendarMeetingDraft = {
+  key: number;
+  startAt: string;
+  endAt: string;
 };
 
 function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
@@ -140,6 +157,9 @@ function CalendarPageBody() {
   const meetingOverlayLayout = parseCalendarMeetingOverlayLayout(
     searchParams.toString(),
   );
+  const taskOverlayLayout = parseCalendarTaskOverlayLayout(
+    searchParams.toString(),
+  );
   const viewMode = parseCalendarViewModeParam(
     searchParams.get(CALENDAR_VIEW_MODE_PARAM),
   );
@@ -162,8 +182,25 @@ function CalendarPageBody() {
   > | null>(null);
   const viewedDateRef = useRef<Date | null>(null);
   const wasFrozenRef = useRef(keepAliveFrozen);
+  const meetingDraftSequenceRef = useRef(0);
   const [calendarNavReady, setCalendarNavReady] = useState(false);
   const [rangeTitle, setRangeTitle] = useState("");
+  const [meetingDraft, setMeetingDraft] =
+    useState<CalendarMeetingDraft | null>(null);
+
+  useEffect(() => {
+    if (!keepAliveActive) {
+      setMeetingDraft(null);
+    }
+  }, [keepAliveActive]);
+
+  // When PowerSync is disconnected, soft-pull REST so agent/CLI creates still
+  // appear. While connected, skip — SSE liveMeetingsById + PowerSync download
+  // are the live path (same as documents; avoid a full list GET on every visit).
+  useEffect(() => {
+    if (!keepAliveActive) return;
+    void workspace.softRefreshApiMeetings().catch(() => {});
+  }, [keepAliveActive, workspace.softRefreshApiMeetings]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -172,6 +209,20 @@ function CalendarPageBody() {
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     keepAliveFrozen ? [] : workspace.organizations,
+  );
+
+  const panelMeetings = useMemo(
+    () =>
+      workspace.meetings.map((meeting) =>
+        meeting.organizationId
+          ? {
+              ...meeting,
+              organizationAvatarSrc:
+                organizationAvatarSrc[meeting.organizationId] ?? null,
+            }
+          : meeting,
+      ),
+    [organizationAvatarSrc, workspace.meetings],
   );
 
   const projectOptions = useMemo(
@@ -317,6 +368,9 @@ function CalendarPageBody() {
     {
       actions: isTimetrackingMode ? undefined : dateNav,
       enabled: keepAliveActive,
+      // ⋯ menu lives next to close in the meeting chrome (panel + expanded).
+      hideEntityActionsSlot:
+        !isTimetrackingMode && Boolean(openMeetingId && meeting),
     },
   );
 
@@ -330,6 +384,7 @@ function CalendarPageBody() {
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete(CALENDAR_TASK_OVERLAY_PARAM);
+          next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
           if (meetingId) {
             next.set(CALENDAR_MEETING_OVERLAY_PARAM, meetingId);
             const resolvedLayout =
@@ -352,7 +407,7 @@ function CalendarPageBody() {
   );
 
   const setOpenTaskId = useCallback(
-    (taskId: string | null) => {
+    (taskId: string | null, layout?: CalendarTaskOverlayLayout) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -360,8 +415,16 @@ function CalendarPageBody() {
           next.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
           if (taskId) {
             next.set(CALENDAR_TASK_OVERLAY_PARAM, taskId);
+            const resolvedLayout =
+              layout ?? parseCalendarTaskOverlayLayout(prev.toString());
+            if (resolvedLayout === "page") {
+              next.set(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM, "page");
+            } else {
+              next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
+            }
           } else {
             next.delete(CALENDAR_TASK_OVERLAY_PARAM);
+            next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
           }
           return next;
         },
@@ -373,16 +436,21 @@ function CalendarPageBody() {
 
   const openMeetingFromGrid = useCallback(
     (meetingId: string) => {
-      setOpenMeetingId(meetingId);
+      setMeetingDraft(null);
+      setOpenMeetingId(
+        meetingId,
+        viewMode === "list" ? "page" : undefined,
+      );
     },
-    [setOpenMeetingId],
+    [setOpenMeetingId, viewMode],
   );
 
   const openTaskFromGrid = useCallback(
     (taskId: string) => {
-      setOpenTaskId(taskId);
+      setMeetingDraft(null);
+      setOpenTaskId(taskId, viewMode === "list" ? "page" : undefined);
     },
-    [setOpenTaskId],
+    [setOpenTaskId, viewMode],
   );
 
   const openBirthdayFromGrid = useCallback(
@@ -553,6 +621,46 @@ function CalendarPageBody() {
     [setSearchParams],
   );
 
+  const setTaskOverlayLayout = useCallback(
+    (layout: CalendarTaskOverlayLayout) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (!next.get(CALENDAR_TASK_OVERLAY_PARAM)) {
+            return prev;
+          }
+          if (layout === "page") {
+            next.set(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM, "page");
+          } else {
+            next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // List view has no meetings rail — keep open details as fullscreen overlays.
+  useEffect(() => {
+    if (viewMode !== "list") return;
+    if (openMeetingId && meetingOverlayLayout === "panel") {
+      setMeetingOverlayLayout("page");
+    }
+    if (openTaskId && taskOverlayLayout === "panel") {
+      setTaskOverlayLayout("page");
+    }
+  }, [
+    meetingOverlayLayout,
+    openMeetingId,
+    openTaskId,
+    setMeetingOverlayLayout,
+    setTaskOverlayLayout,
+    taskOverlayLayout,
+    viewMode,
+  ]);
+
   const events = useMemo(() => {
     if (keepAliveFrozen && frozenEventsRef.current) {
       return frozenEventsRef.current;
@@ -588,6 +696,35 @@ function CalendarPageBody() {
     workspace.contacts,
   ]);
 
+  const calendarEvents = useMemo(() => {
+    if (!meetingDraft) return events;
+    return [
+      ...events,
+      {
+        id: `meeting-draft:${meetingDraft.key}`,
+        title: "Name of meeting",
+        start: meetingDraft.startAt,
+        end: meetingDraft.endAt,
+        allDay: false,
+        editable: false,
+        startEditable: false,
+        durationEditable: false,
+        classNames: [
+          ...meetingCalendarEventClassNames(),
+          "meeting-calendar-event--draft",
+        ],
+        extendedProps: {
+          entityType: "meeting" as const,
+          meetingId: `draft:${meetingDraft.key}`,
+          status: "triage",
+          endAt: meetingDraft.endAt,
+          finished: false,
+          draft: true,
+        },
+      },
+    ];
+  }, [events, meetingDraft]);
+
   const dayHabitsByDate = useMemo(() => {
     if (keepAliveFrozen && frozenDayHabitsRef.current) {
       return frozenDayHabitsRef.current;
@@ -611,18 +748,15 @@ function CalendarPageBody() {
 
   const handleCreateMeetingFromSelect = useCallback(
     (range: { startAt: string; endAt: string }) => {
-      void workspace
-        .createMeeting({
-          title: "New meeting",
-          status: "triage",
-          startAt: range.startAt,
-          endAt: range.endAt,
-        })
-        .then((created) => {
-          setOpenMeetingId(created.id);
-        });
+      meetingDraftSequenceRef.current += 1;
+      setOpenMeetingId(null);
+      setMeetingDraft({
+        key: meetingDraftSequenceRef.current,
+        startAt: range.startAt,
+        endAt: range.endAt,
+      });
     },
-    [setOpenMeetingId, workspace],
+    [setOpenMeetingId],
   );
 
   const tasksById = useMemo(
@@ -663,27 +797,6 @@ function CalendarPageBody() {
     [popoverDescription, popoverTaskId, tasksById],
   );
 
-  const meetingsById = useMemo(
-    () => new Map(workspace.meetings.map((meeting) => [meeting.id, meeting])),
-    [workspace.meetings],
-  );
-
-  const resolveMeeting = useCallback(
-    (meetingId: string): CalendarMeetingPopoverMeeting | null => {
-      const meeting = meetingsById.get(meetingId);
-      if (!meeting) return null;
-      return {
-        id: meeting.id,
-        title: meeting.title,
-        number: meeting.number,
-        summary: meeting.summary ?? null,
-        startAt: meeting.startAt,
-        endAt: meeting.endAt,
-      };
-    },
-    [meetingsById],
-  );
-
   const patchMeeting = useCallback(
     (values: Record<string, unknown>) => {
       if (!meeting) return;
@@ -697,6 +810,54 @@ function CalendarPageBody() {
     workspace,
     patchMeeting,
   );
+
+  const discardMeetingDraft = useCallback(() => {
+    setMeetingDraft(null);
+  }, []);
+
+  const saveMeetingDraftTitle = useCallback(
+    async (title: string) => {
+      const draft = meetingDraft;
+      const trimmed = title.trim();
+      if (!draft || !trimmed) {
+        setMeetingDraft(null);
+        return;
+      }
+      const created = await workspace.createMeeting({
+        title: trimmed,
+        status: "triage",
+        startAt: draft.startAt,
+        endAt: draft.endAt,
+      });
+      setMeetingDraft((current) =>
+        current?.key === draft.key ? null : current,
+      );
+      setOpenMeetingId(created.id);
+    },
+    [meetingDraft, setOpenMeetingId, workspace],
+  );
+
+  const activeMeetingDetailProps = meetingDraft
+    ? {
+        format: "video_call",
+        meeting: {
+          status: "triage" as const,
+          format: "video_call",
+          startAt: new Date(meetingDraft.startAt),
+          endAt: new Date(meetingDraft.endAt),
+          projectKey: null,
+          projectName: null,
+          organizationId: null,
+          organizationName: null,
+          locationOrganizationId: null,
+          locationOrganizationName: null,
+          locationOrganizationAddress: null,
+          attendeeContactIds: [],
+          trackedMinutes: null,
+          trackedDurationSeconds: null,
+        },
+      }
+    : meetingDetailProps;
 
   const handleDeleteMeeting = useCallback(async () => {
     if (!meeting) {
@@ -770,6 +931,7 @@ function CalendarPageBody() {
         next.delete(CALENDAR_MEETING_OVERLAY_PARAM);
         next.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
         next.delete(CALENDAR_TASK_OVERLAY_PARAM);
+        next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
         return next;
       },
       { replace: true },
@@ -777,6 +939,36 @@ function CalendarPageBody() {
   }, [setSearchParams]);
 
   const { setActiveZone } = useListKeyboardNavigationZone();
+  const pendingReturnMeetingIdRef = useRef<string | null>(null);
+
+  const closeMeetingDetail = useCallback(() => {
+    if (openMeetingId) {
+      pendingReturnMeetingIdRef.current = openMeetingId;
+    }
+    setOpenMeetingId(null);
+  }, [openMeetingId, setOpenMeetingId]);
+
+  // After the overlay unmounts, reclaim the meetings rail on that row. Wait a
+  // frame so React has torn down the overlay; use container-only focus so we
+  // do not re-focus the row (that flashed while the rail un-faded).
+  useEffect(() => {
+    if (openMeetingId != null || isTimetrackingMode) return;
+    const returnId = pendingReturnMeetingIdRef.current;
+    if (!returnId) return;
+    pendingReturnMeetingIdRef.current = null;
+
+    const frame = requestAnimationFrame(() => {
+      setActiveZone(LIST_KEYBOARD_NAV_ZONE_CONTENT, {
+        activate: true,
+        preferSidepanelForJk: false,
+        highlightItemId: calendarSidePanelMeetingItemId(returnId),
+        focusContainerOnly: true,
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isTimetrackingMode, openMeetingId, setActiveZone]);
+
   const dismissTimetrackingDetail = useCallback(() => {
     const returnId = openTask?.id ?? meeting?.id ?? null;
     closeTimetrackingDetail();
@@ -865,6 +1057,45 @@ function CalendarPageBody() {
   const selectedGridEventId = useMemo(
     () => getSelectedCalendarGridEventId(pathname, search),
     [pathname, search],
+  );
+
+  const isListView = viewMode === "list";
+
+  const calendarGrid = (
+    <CalendarView
+      events={calendarEvents}
+      viewMode={viewMode}
+      onViewModeChange={handleViewModeChange}
+      onCalendarApi={handleCalendarApi}
+      onRangeTitleChange={setRangeTitle}
+      selectedGridEventId={selectedGridEventId}
+      keyboardNavigationEnabled={
+        keepAliveActive && !openMeetingId && !openTaskId
+      }
+      bookingAvailability={
+        settings
+          ? {
+              weekdayHours: settings.weekdayHours,
+              timezone: settings.timezone,
+            }
+          : undefined
+      }
+      onTaskReschedule={handleTaskReschedule}
+      onMeetingReschedule={handleMeetingReschedule}
+      onCreateMeetingFromSelect={handleCreateMeetingFromSelect}
+      resolveTask={resolveTask}
+      onTaskPopoverChange={setPopoverTaskId}
+      resolveBirthdayContact={resolveBirthdayContact}
+      onTaskOpen={openTaskFromGrid}
+      onBirthdayOpen={openBirthdayFromGrid}
+      onBirthdayAddNote={handleBirthdayAddNote}
+      onBirthdayAddTask={handleBirthdayAddTask}
+      onBirthdayAddMeeting={handleBirthdayAddMeeting}
+      onBirthdaySendEmail={handleBirthdaySendEmail}
+      onMeetingOpen={openMeetingFromGrid}
+      dayHabitsByDate={dayHabitsByDate}
+      onToggleDayHabit={handleToggleDayHabit}
+    />
   );
 
   return (
@@ -983,49 +1214,192 @@ function CalendarPageBody() {
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
           {settingsLoading ? "Loading availability…" : "Unable to load availability settings."}
         </div>
+      ) : isListView ? (
+        calendarGrid
       ) : (
-        <CalendarView
-          events={events}
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          onCalendarApi={handleCalendarApi}
-          onRangeTitleChange={setRangeTitle}
-          selectedGridEventId={selectedGridEventId}
-          keyboardNavigationEnabled={
-            keepAliveActive && !openMeetingId && !openTaskId
+        <DesktopCollapsibleRightSidePanelLayout
+          storageKey={CALENDAR_MEETINGS_SIDE_PANEL_WIDTH_KEY}
+          panelAriaLabel="Meetings"
+          showPanelLabel="Show meetings"
+          hidePanelLabel="Close"
+          defaultWidth={360}
+          minWidth={280}
+          maxWidth={560}
+          showChrome={Boolean(
+            meetingDraft ||
+              (!isTimetrackingMode &&
+                openMeetingId &&
+                meeting &&
+                meetingOverlayLayout === "panel") ||
+              (!isTimetrackingMode &&
+                openTaskId &&
+                openTask &&
+                taskOverlayLayout === "panel"),
+          )}
+          chromeHideIcon={<X size={14} />}
+          chromeStart={
+            !isTimetrackingMode &&
+            openMeetingId &&
+            meeting &&
+            meetingOverlayLayout === "panel" ? (
+              <button
+                type="button"
+                className="desktop-agent-surface-tab desktop-agent-surface-tab--icon"
+                onClick={() => setMeetingOverlayLayout("page")}
+                aria-label="Expand meeting"
+                title="Expand (Enter)"
+              >
+                <ExpandLayoutIcon size={14} />
+              </button>
+            ) : !isTimetrackingMode &&
+              openTaskId &&
+              openTask &&
+              taskOverlayLayout === "panel" ? (
+              <button
+                type="button"
+                className="desktop-agent-surface-tab desktop-agent-surface-tab--icon"
+                onClick={() => setTaskOverlayLayout("page")}
+                aria-label="Expand task"
+                title="Expand (Enter)"
+              >
+                <ExpandLayoutIcon size={14} />
+              </button>
+            ) : null
           }
-          bookingAvailability={
-            settings
-              ? {
-                  weekdayHours: settings.weekdayHours,
-                  timezone: settings.timezone,
+          chromeEnd={
+            !isTimetrackingMode &&
+            openMeetingId &&
+            meeting &&
+            meetingOverlayLayout === "panel" ? (
+              <EntityHeaderActionsSlot />
+            ) : null
+          }
+          onChromeHide={
+            meetingDraft
+              ? discardMeetingDraft
+              : !isTimetrackingMode &&
+                  openMeetingId &&
+                  meeting &&
+                  meetingOverlayLayout === "panel"
+              ? closeMeetingDetail
+              : !isTimetrackingMode &&
+                  openTaskId &&
+                  openTask &&
+                  taskOverlayLayout === "panel"
+                ? () => setOpenTaskId(null)
+                : undefined
+          }
+          main={calendarGrid}
+          sidePanel={
+            <div className="calendar-right-rail">
+              <div
+                className={[
+                  "calendar-right-rail__meetings",
+                  !isTimetrackingMode &&
+                  (meetingDraft ||
+                    (openTaskId && openTask && taskOverlayLayout === "panel") ||
+                    (openMeetingId &&
+                      meeting &&
+                      meetingOverlayLayout === "panel"))
+                    ? "is-faded"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <CalendarMeetingsSidePanelView
+                  meetings={panelMeetings}
+                  viewMode={viewMode}
+                  selectedMeetingId={openMeetingId}
+                  onMeetingOpen={openMeetingFromGrid}
+                  keyboardNavigationEnabled={
+                    keepAliveActive && !isTimetrackingMode
+                  }
+                />
+              </div>
+              <CalendarMeetingDetailOverlay
+                key={meetingDraft ? `draft-${meetingDraft.key}` : "meeting"}
+                open={Boolean(
+                  !isTimetrackingMode &&
+                    (meetingDraft ||
+                      (openMeetingId &&
+                        meeting &&
+                        meetingOverlayLayout === "panel")),
+                )}
+                overlayLayout="panel"
+                placement="rail"
+                showChrome={false}
+                onClose={
+                  meetingDraft ? discardMeetingDraft : closeMeetingDetail
                 }
-              : undefined
+                onExpand={
+                  meetingDraft
+                    ? undefined
+                    : () => setMeetingOverlayLayout("page")
+                }
+                displayId={meetingDraft ? "" : (displayId ?? "M-?")}
+                title={meeting?.title ?? ""}
+                titlePlaceholder={
+                  meetingDraft ? "Name of meeting" : undefined
+                }
+                titleAutoEdit={Boolean(meetingDraft)}
+                onEmptyTitleDiscard={
+                  meetingDraft ? discardMeetingDraft : undefined
+                }
+                summary={meeting?.summary ?? ""}
+                notes={meeting?.notes ?? ""}
+                transcription={meeting?.transcription ?? ""}
+                onTitleChange={
+                  meetingDraft
+                    ? saveMeetingDraftTitle
+                    : (title) => patchMeeting({ title })
+                }
+                onSummaryChange={(summary) => patchMeeting({ summary })}
+                onNotesChange={(notes) => patchMeeting({ notes })}
+                onTranscriptionChange={(transcription) =>
+                  patchMeeting({ transcription })
+                }
+                {...activeMeetingDetailProps}
+              />
+              <CalendarTaskDetailOverlay
+                open={Boolean(
+                  !isTimetrackingMode &&
+                    openTaskId &&
+                    openTask &&
+                    taskOverlayLayout === "panel",
+                )}
+                overlayLayout="panel"
+                placement="rail"
+                showChrome={false}
+                onClose={() => setOpenTaskId(null)}
+                onExpand={() => setTaskOverlayLayout("page")}
+                ariaLabel={
+                  openTask?.title?.trim()
+                    ? `Task ${openTask.title}`
+                    : "Task details"
+                }
+              >
+                {openTaskId && openTask ? (
+                  <TaskDetailPage taskRouteParam={openTask.id} overlayMode />
+                ) : null}
+              </CalendarTaskDetailOverlay>
+            </div>
           }
-          onTaskReschedule={handleTaskReschedule}
-          onMeetingReschedule={handleMeetingReschedule}
-          onCreateMeetingFromSelect={handleCreateMeetingFromSelect}
-          resolveTask={resolveTask}
-          onTaskPopoverChange={setPopoverTaskId}
-          resolveMeeting={resolveMeeting}
-          resolveBirthdayContact={resolveBirthdayContact}
-          onTaskOpen={openTaskFromGrid}
-          onBirthdayOpen={openBirthdayFromGrid}
-          onBirthdayAddNote={handleBirthdayAddNote}
-          onBirthdayAddTask={handleBirthdayAddTask}
-          onBirthdayAddMeeting={handleBirthdayAddMeeting}
-          onBirthdaySendEmail={handleBirthdaySendEmail}
-          onMeetingOpen={openMeetingFromGrid}
-          dayHabitsByDate={dayHabitsByDate}
-          onToggleDayHabit={handleToggleDayHabit}
         />
       )}
       <CalendarMeetingDetailOverlay
-        open={Boolean(!isTimetrackingMode && openMeetingId && meeting)}
-        overlayLayout={meetingOverlayLayout}
-        onClose={() => setOpenMeetingId(null)}
-        onExpand={() => setMeetingOverlayLayout("page")}
-        onCollapse={() => setMeetingOverlayLayout("panel")}
+        open={Boolean(
+          !isTimetrackingMode &&
+            openMeetingId &&
+            meeting &&
+            meetingOverlayLayout === "page",
+        )}
+        overlayLayout="page"
+        placement="overlay"
+        onClose={closeMeetingDetail}
+        onCollapse={
+          isListView ? undefined : () => setMeetingOverlayLayout("panel")
+        }
         displayId={displayId ?? "M-?"}
         title={meeting?.title ?? ""}
         summary={meeting?.summary ?? ""}
@@ -1038,10 +1412,21 @@ function CalendarPageBody() {
           patchMeeting({ transcription })
         }
         {...meetingDetailProps}
+        headerMoreAction={<EntityHeaderActionsSlot />}
       />
       <CalendarTaskDetailOverlay
-        open={Boolean(!isTimetrackingMode && openTaskId && openTask)}
+        open={Boolean(
+          !isTimetrackingMode &&
+            openTaskId &&
+            openTask &&
+            taskOverlayLayout === "page",
+        )}
+        overlayLayout="page"
+        placement="overlay"
         onClose={() => setOpenTaskId(null)}
+        onCollapse={
+          isListView ? undefined : () => setTaskOverlayLayout("panel")
+        }
         ariaLabel={
           openTask?.title?.trim()
             ? `Task ${openTask.title}`

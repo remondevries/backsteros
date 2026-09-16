@@ -167,6 +167,21 @@ Direction: **cloud ↔ local** (agent on cloud wakes desktop; desktop/vault edit
 local wakes cloud). Local vault `.md` edits (`fs.watch` → metadata heal) also
 nudge the peer.
 
+## File-task callback mailbox (Cloud Core)
+
+Development’s **File as BacksterOS task** flow cannot receive Grok Bot POSTs on
+localhost. Cloud-core holds a TTL mailbox (30 minutes, not replicated):
+
+```http
+POST /api/v1/file-task-callbacks
+GET  /api/v1/file-task-callbacks/{requestId}
+POST /api/v1/public/file-task-callbacks/{requestId}?token=…
+```
+
+BDV (API key, `tasks:write` / `tasks:read`) mints a tokenized `callbackUrl` on
+`https://agent.backsteros.com`. The agent POSTs the fixed result JSON to that
+URL. Unknown tokens 401; expired rows are pruned.
+
 Repo files outside the vault (e.g. git `docs/*.md`) are not BacksterOS documents and will not appear in the desktop app.
 
 ### Conflict policy (v1)

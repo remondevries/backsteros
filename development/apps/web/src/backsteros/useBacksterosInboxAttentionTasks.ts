@@ -223,6 +223,14 @@ export function upsertBacksterosInboxTaskLocal(
   });
 }
 
+/** Drop a soft-deleted task from the shared inbox cache. */
+export function removeBacksterosInboxTaskLocal(taskId: string): void {
+  inboxQuery.patchReadyData((tasks) => {
+    const next = tasks.filter((task) => task.id !== taskId);
+    return next.length === tasks.length ? tasks : next;
+  });
+}
+
 /** Test helper. */
 export function getBacksterosInboxAttentionQueryDebugStats() {
   return inboxQuery.getDebugStats();

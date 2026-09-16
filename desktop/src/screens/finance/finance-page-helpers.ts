@@ -13,6 +13,11 @@ export function notifyBankAccountsChanged() {
   window.dispatchEvent(new Event(BANK_ACCOUNTS_CHANGED_EVENT));
 }
 
+export function subscribeBankAccountsChanged(listener: () => void): () => void {
+  window.addEventListener(BANK_ACCOUNTS_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(BANK_ACCOUNTS_CHANGED_EVENT, listener);
+}
+
 export function accountSlug(account: { key?: string | null; id: string }) {
   return account.key ?? account.id;
 }

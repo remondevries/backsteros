@@ -12,16 +12,13 @@ import {
 
 import { CONTENT_DETAIL_TITLE_CLASS } from "./content-detail-title-header.js";
 import { ENTITY_TITLE_INPUT_ATTRIBUTE } from "../../list-nav/use-list-clear-selection-shortcut.js";
+import { sanitizeSingleLineText } from "../../text/sanitize-single-line-text.js";
 
 /** "First name" / "Job title" stay as-is; "Task" becomes "Task name". */
 function entityNamePhrase(entityLabel: string): string {
   const trimmed = entityLabel.trim();
   if (/\b(name|title)$/i.test(trimmed)) return trimmed;
   return `${trimmed} name`;
-}
-
-function stripNewlines(text: string): string {
-  return text.replace(/[\n\r\u2028\u2029]/g, "");
 }
 
 function selectAllContents(el: HTMLElement) {
@@ -44,6 +41,8 @@ function placeCaretAtEnd(el: HTMLElement) {
 export type OverviewNameEditorProps = {
   value: string;
   entityLabel: string;
+  /** Visible hint while the title input is empty. */
+  placeholder?: string;
   resetKey?: string;
   autoEdit?: boolean;
   /** Increment to focus the title field and select its text. */
@@ -65,6 +64,8 @@ export type OverviewNameEditorProps = {
   onBeginEdit?: () => void;
   /** When true, empty values are allowed (e.g. contact last name / title). */
   allowEmpty?: boolean;
+  /** Discard an empty create draft on blur, Enter, or Escape. */
+  onEmptyDiscard?: () => void;
   /**
    * Shrink-wrap to typed text via contenteditable (contact first/last name
    * and job title). Full-bleed titles leave this off and use a normal input.
@@ -83,6 +84,7 @@ type NameInputProps = {
   inputRef: RefObject<HTMLInputElement | null>;
   draft: string;
   entityLabel: string;
+  placeholder?: string;
   isPending: boolean;
   onDraftChange?: (draft: string) => void;
   setDraft: (next: string) => void;
@@ -97,6 +99,7 @@ function NameInput({
   inputRef,
   draft,
   entityLabel,
+  placeholder,
   isPending,
   onDraftChange,
   setDraft,
@@ -145,6 +148,7 @@ function NameInput({
         }
       }}
       disabled={isPending}
+      placeholder={placeholder}
       aria-label={entityNamePhrase(entityLabel)}
       className="overview-name-editor__input"
     />
@@ -185,7 +189,7 @@ function FitContentEditable({
 }: FitEditableProps) {
   function syncFromDom(el: HTMLSpanElement) {
     const raw = el.textContent ?? "";
-    const cleaned = stripNewlines(raw);
+    const cleaned = sanitizeSingleLineText(raw);
     if (cleaned !== raw) {
       el.textContent = cleaned;
       placeCaretAtEnd(el);
@@ -215,7 +219,7 @@ function FitContentEditable({
       }}
       onPaste={(event) => {
         event.preventDefault();
-        const text = stripNewlines(
+        const text = sanitizeSingleLineText(
           event.clipboardData.getData("text/plain") || "",
         );
         const el = event.currentTarget;
@@ -268,6 +272,7 @@ function FitContentEditable({
 export function OverviewNameEditor({
   value,
   entityLabel,
+  placeholder,
   resetKey,
   autoEdit = false,
   renameFocusRequest = 0,
@@ -278,6 +283,7 @@ export function OverviewNameEditor({
   highlightContent,
   onBeginEdit,
   allowEmpty = false,
+  onEmptyDiscard,
   fitContent = false,
   onSave,
   onSaved,
@@ -383,11 +389,21 @@ export function OverviewNameEditor({
     setEditing(false);
     setError(null);
     fitSeededRef.current = false;
+    if (!value && onEmptyDiscard) {
+      onEmptyDiscard();
+    }
   }
 
   function save() {
     const trimmed = draft.trim();
     setDraft(trimmed);
+
+    if (!trimmed && !value && onEmptyDiscard) {
+      setEditing(false);
+      setError(null);
+      onEmptyDiscard();
+      return;
+    }
 
     if (trimmed === value) {
       setEditing(false);
@@ -437,6 +453,12 @@ export function OverviewNameEditor({
     setDraft(trimmed);
 
     if (!trimmed) {
+      if (!value && onEmptyDiscard) {
+        setEditing(false);
+        setError(null);
+        onEmptyDiscard();
+        return;
+      }
       if (allowEmpty) {
         if (value !== "") {
           startTransition(async () => {
@@ -491,6 +513,7 @@ export function OverviewNameEditor({
     inputRef,
     draft,
     entityLabel,
+    placeholder,
     isPending,
     onDraftChange,
     setDraft,
@@ -551,7 +574,7 @@ export function OverviewNameEditor({
             (value ||
               (allowEmpty || fitContent ? (
                 <span className="overview-name-editor__placeholder">
-                  {entityLabel}
+                  {placeholder ?? entityLabel}
                 </span>
               ) : (
                 value

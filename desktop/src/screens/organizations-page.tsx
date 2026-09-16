@@ -433,37 +433,45 @@ export function OrganizationsPage() {
     () => crmGroups.memberGroups.map((group) => group.id),
     [crmGroups.memberGroups],
   );
+  const appliedMemberGroupIdsRef = useRef(memberGroupIds);
+  useEffect(() => {
+    appliedMemberGroupIdsRef.current = memberGroupIds;
+  }, [memberGroupIds]);
+  const membershipSyncChainRef = useRef(Promise.resolve());
   const handleMemberGroupIdsChange = useCallback(
     (nextIds: string[]) => {
-      const previous = new Set(memberGroupIds);
+      const previous = new Set(appliedMemberGroupIdsRef.current);
       const next = new Set(nextIds);
-      void (async () => {
-        try {
-          for (const groupId of next) {
-            if (!previous.has(groupId)) {
-              await crmGroups.toggleMembership(groupId, true);
+      appliedMemberGroupIdsRef.current = nextIds;
+      membershipSyncChainRef.current = membershipSyncChainRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            for (const groupId of next) {
+              if (!previous.has(groupId)) {
+                await crmGroups.toggleMembership(groupId, true);
+              }
             }
-          }
-          for (const groupId of previous) {
-            if (!next.has(groupId)) {
-              await crmGroups.toggleMembership(groupId, false);
+            for (const groupId of previous) {
+              if (!next.has(groupId)) {
+                await crmGroups.toggleMembership(groupId, false);
+              }
             }
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "Failed to update groups";
+            const friendly =
+              /subject not found|member subject|404/i.test(message)
+                ? "This organization isn’t on the server yet, so it can’t join a group. Wait for sync or re-save it, then try again."
+                : message;
+            window.alert(friendly);
+            await crmGroups.reload();
           }
-        } catch (error) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Failed to update groups";
-          const friendly =
-            /subject not found|member subject|404/i.test(message)
-              ? "This organization isn’t on the server yet, so it can’t join a group. Wait for sync or re-save it, then try again."
-              : message;
-          window.alert(friendly);
-          await crmGroups.reload();
-        }
-      })();
+        });
     },
-    [crmGroups, memberGroupIds],
+    [crmGroups],
   );
 
   useEffect(() => {
@@ -1720,6 +1728,7 @@ export function OrganizationsPage() {
         <ProjectsOverviewView
           projects={orgProjects}
           workingProjectIds={workingProjectIds}
+          typeToFilterEnabled={keepAliveActive}
           nestedAreas={workspace.areas.map((area) => ({
             id: area.id,
             name: area.name,
@@ -1768,6 +1777,9 @@ export function OrganizationsPage() {
             void workspace.patchProject(projectId, {
               dueDate: dueDate ? dueDate.toISOString() : null,
             });
+          }}
+          onProjectAreaChange={(projectId, area) => {
+            void workspace.patchProject(projectId, { area, areaId: null });
           }}
           onCreateProject={async ({ status, name }) => {
             return workspace.createProject({
@@ -2061,6 +2073,7 @@ export function OrganizationsPage() {
                 : "No organizations yet."
             }
             pinnedOrganizationId={pinnedOrganizationId}
+            typeToFilterEnabled={keepAliveActive}
             onSelect={(organization) => openOrganization(organization)}
             onAdd={createAndOpenOrganization}
           />
@@ -2150,6 +2163,7 @@ export function OrganizationsPage() {
           }
           selectedId={selected?.id ?? null}
           pinnedOrganizationId={pinnedOrganizationId}
+          typeToFilterEnabled={keepAliveActive}
           onSelect={(organization) => openOrganization(organization)}
           onAdd={createAndOpenOrganization}
         />

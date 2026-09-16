@@ -60,6 +60,11 @@ the expanded composer's space clear above its last message while the composer re
 again never covers what you scrolled to. New-thread layouts keep the full composer. **Settings → General → Collapse composer** chooses which triggers rest it:
 **On unfocus**, **On scroll**, both, or neither. With neither selected the composer stays expanded.
 
+The focused composer outline and send button use a stable accent color for the active chat, so
+switching threads is easier to notice. Colors come from a small shared palette (and also change if
+you switch providers in the same chat). You can override the color with an accent on the provider
+instance in Settings.
+
 At phone-sized web or desktop window widths, existing threads animate between their compact and
 expanded layouts. Up to three image attachments remain visible in either resting layout, followed
 by a count when more are attached. At wider sizes, videos, files, and other draft context remain

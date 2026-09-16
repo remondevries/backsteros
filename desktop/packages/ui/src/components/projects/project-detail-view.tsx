@@ -21,6 +21,7 @@ import {
 import {
   getProjectTypeLabel,
   migrateLegacyProjectType,
+  projectTypeHasRegistrarOwnedDates,
   PROJECT_TYPE_ORDER,
   type ProjectType,
 } from "../../projects/project-type.js";
@@ -217,6 +218,7 @@ export function ProjectDetailView({
 
   const status = migrateLegacyProjectStatus(project.status);
   const projectType = migrateLegacyProjectType(project.type);
+  const registrarOwnedDates = projectTypeHasRegistrarOwnedDates(project.type);
   const projectProvider = parseProjectProvider(project.provider);
   const projectCategory = parseProjectEmailCategory(project.category);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
@@ -615,7 +617,16 @@ export function ProjectDetailView({
                       />
                     </PropertyDropdownNavigateRow>
                   ) : null}
-                  <span className="project-detail__meta-dates">
+                  <span
+                    className={[
+                      "project-detail__meta-dates",
+                      registrarOwnedDates
+                        ? "project-detail__meta-dates--registrar"
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
                     <TaskDueDateDropdown
                       dueDate={start}
                       variant="property"
@@ -624,6 +635,8 @@ export function ProjectDetailView({
                       searchShortcutLabel="⇧S"
                       taskPropertyDropdownId="startDate"
                       showIcon={false}
+                      labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+                      disabled={registrarOwnedDates}
                       onDueDateChange={onStartDateChange}
                     />
                     <span className="project-overview-row__dates-sep">›</span>
@@ -632,6 +645,8 @@ export function ProjectDetailView({
                       status={status}
                       variant="property"
                       showIcon={false}
+                      labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+                      disabled={registrarOwnedDates}
                       onDueDateChange={onDueDateChange}
                     />
                   </span>

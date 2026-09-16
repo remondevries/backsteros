@@ -15,6 +15,7 @@ import {
 
 import { InboxListSessionProvider } from "../lib/inbox/inbox-list-session-context";
 import { MeetingSchedulingSettingsProvider } from "../lib/use-meeting-scheduling-settings";
+import { DesktopOverlayComposeContextPublisher } from "../components/desktop-overlay-compose-context-publisher";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
 import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
 import { AppShellMentionCatalog } from "./app-shell-mention-catalog";
@@ -79,6 +80,7 @@ export function ShellRuntimeProviders({
             <ListKeyboardNavigationProvider pathname={pathname}>
               <AppShellTaskSideEffects setTabsState={setTabsState} />
               <DesktopOverlayMainNavigationListener />
+              <DesktopOverlayComposeContextPublisher />
               <ExternalOpenHrefListener />
               <RegisterPageTitleProvider
                 pathname={pathname}

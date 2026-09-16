@@ -129,6 +129,8 @@ T3 Code shows the authenticated email for providers that report one. Emails are 
 click the blurred email to reveal it.
 
 Use display names and accent colors to make accounts easy to tell apart in the model picker.
+The focused composer outline and send button use a stable per-chat color from a shared palette
+(overridable by a provider accent when set).
 
 ## I Need A Different API Key Or Endpoint
 

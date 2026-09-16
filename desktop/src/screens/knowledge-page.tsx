@@ -961,6 +961,7 @@ function KnowledgePageBody() {
               documents={knowledgeDocuments}
               coverSrcById={spaceCoverSrc}
               loading={!knowledgeReady}
+              typeToFilterEnabled={keepAliveActive}
               onSelectSpace={(item) => {
                 setSettingsSpace(null);
                 navigateToHref(navigate, getDocHref(item.path || item.id));
@@ -977,6 +978,8 @@ function KnowledgePageBody() {
               onCreateSpaceFolder={handleCreateSpaceFolder}
               onReorderSpace={handleReorderSpace}
               onOpenSpaceSettings={handleOpenSpaceSettings}
+              settingsSpaceId={settingsSpace?.id ?? null}
+              onCloseSpaceSettings={() => setSettingsSpace(null)}
             />
           </div>
           {settingsSpace ? (

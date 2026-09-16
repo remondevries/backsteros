@@ -66,6 +66,62 @@ describe("CloudflareClient", () => {
     );
   });
 
+  it("updates a DNS record", async () => {
+    const client = new CloudflareClient({ apiToken: "test-token" });
+    let editArgs: unknown = null;
+    (client as unknown as {
+      client: {
+        dns: {
+          records: {
+            edit: (
+              id: string,
+              params: Record<string, unknown>,
+            ) => Promise<Record<string, unknown>>;
+          };
+        };
+      };
+    }).client = {
+      dns: {
+        records: {
+          edit: async (id, params) => {
+            editArgs = { id, params };
+            return {
+              id,
+              type: params.type,
+              name: params.name,
+              content: params.content,
+              ttl: params.ttl,
+              proxied: params.proxied ?? null,
+              priority: params.priority ?? null,
+            };
+          },
+        },
+      },
+    };
+
+    const record = await client.updateDnsRecord("zone1", "rec1", {
+      type: "A",
+      name: "www.example.com",
+      content: "9.9.9.9",
+      ttl: 300,
+      proxied: true,
+      priority: null,
+    });
+    assert.deepEqual(editArgs, {
+      id: "rec1",
+      params: {
+        zone_id: "zone1",
+        type: "A",
+        name: "www.example.com",
+        content: "9.9.9.9",
+        ttl: 300,
+        proxied: true,
+      },
+    });
+    assert.equal(record.content, "9.9.9.9");
+    assert.equal(record.proxied, true);
+  });
+
   it("purges everything for a zone", async () => {
     const client = new CloudflareClient({ apiToken: "test-token" });
     let purgeArgs: unknown = null;

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
+import { isListTypeToFilterHoldingEscape } from "../list-nav/list-type-to-filter.js";
 import { isBlockingModalOpen } from "../shortcuts/shortcut-guards.js";
 
 function shouldHandleEscapeBack(
@@ -19,10 +20,14 @@ function shouldHandleEscapeBack(
   if (document.querySelector("[data-searchable-dropdown-panel]")) {
     return false;
   }
+  // Locked / active list type-to-filter owns Escape before history back.
+  if (isListTypeToFilterHoldingEscape()) {
+    return false;
+  }
   // Page overlays own Escape (collapse / close) before history back.
   if (
     document.querySelector(
-      "[data-calendar-meeting-overlay], [data-calendar-task-overlay], [data-contact-overlay], [data-organization-overlay]",
+      "[data-calendar-meeting-overlay], [data-calendar-task-overlay], [data-contact-overlay], [data-organization-overlay], [data-domain-overlay], [data-entity-overlay]",
     )
   ) {
     return false;

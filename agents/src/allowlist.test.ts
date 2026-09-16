@@ -24,8 +24,16 @@ test("blocks sync, PTY, ops, and API key admin", () => {
   assert.equal(isRouteAllowed("POST", "/api/v1/api-keys"), false);
 });
 
-test("allows AgentMail webhook path", () => {
-  assert.equal(isRouteAllowed("POST", "/api/v1/webhooks/agentmail"), true);
+test("allows file-task mailbox on the public door", () => {
+  assert.equal(isRouteAllowed("POST", "/api/v1/file-task-callbacks"), true);
+  assert.equal(
+    isRouteAllowed("GET", "/api/v1/file-task-callbacks/req-1"),
+    true,
+  );
+  assert.equal(
+    isRouteAllowed("POST", "/api/v1/public/file-task-callbacks/req-1"),
+    true,
+  );
 });
 
 test("does not proxy non-v1 paths", () => {

@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 
 import { Button } from "~/components/ui/button";
+import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeModalOpen";
+import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import { isMacPlatform } from "~/lib/utils";
 
 function isStartWorkingShortcut(event: KeyboardEvent): boolean {
@@ -37,6 +39,7 @@ export function BacksterosTaskKickoffStart(props: {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.repeat) return;
       if (!isStartWorkingShortcut(event)) return;
+      if (isBacksterosFileTaskModalOpen() || isBacksterosComposeModalOpen()) return;
       event.preventDefault();
       event.stopPropagation();
       onStartWorking();

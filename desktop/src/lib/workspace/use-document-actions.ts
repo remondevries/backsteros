@@ -456,7 +456,7 @@ export function useWorkspaceDocumentActions({
         }
         // Always hit REST so core rewrites Spaces paths for the subtree.
         if (!authenticated) {
-          if (powerSync.ready && powerSync.patchMetadata) {
+          if (powerSync.ready) {
             return { ok: true as const };
           }
           return { ok: false as const, error: "Sign in to move documents." };

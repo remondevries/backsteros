@@ -10,6 +10,14 @@ export type ProjectTypeFilter = ProjectType | "all";
 
 export const PROJECT_TYPE_FILTER_ALL = "all" as const;
 
+/** Catalog types — excludes `general` (Default); those stay on Projects. */
+export const CATALOG_PROJECT_TYPES: readonly ProjectType[] =
+  PROJECT_TYPE_ORDER.filter((type) => type !== "general");
+
+/** Default Catalog tab when the URL has no (or an invalid) type. */
+export const CATALOG_DEFAULT_PROJECT_TYPE: ProjectType =
+  CATALOG_PROJECT_TYPES[0] ?? "codebase";
+
 export function getProjectTypeFilterLabel(filter: ProjectTypeFilter): string {
   if (filter === PROJECT_TYPE_FILTER_ALL) {
     return "All";
@@ -29,18 +37,51 @@ export function filterProjectsByType<T extends { type?: string | null }>(
   );
 }
 
+/** Catalog list: never includes Default/`general`. */
+export function filterCatalogProjectsByType<T extends { type?: string | null }>(
+  projects: readonly T[],
+  type: ProjectTypeFilter,
+): T[] {
+  if (type === PROJECT_TYPE_FILTER_ALL) {
+    return projects.filter((project) => {
+      const resolved = migrateLegacyProjectType(project.type);
+      return resolved !== "general";
+    });
+  }
+  if (type === "general") {
+    return [];
+  }
+  return filterProjectsByType(projects, type);
+}
+
 export const PROJECT_TYPE_FILTERS: ProjectTypeFilter[] = [
   PROJECT_TYPE_FILTER_ALL,
   ...PROJECT_TYPE_ORDER,
 ];
 
+/** Catalog type pills / number-key tabs (no All, no Default). */
+export const CATALOG_PROJECT_TYPE_FILTERS: ProjectType[] = [
+  ...CATALOG_PROJECT_TYPES,
+];
+
 /** Type order for number-key tabs (excludes “all”; All is index 0 separately). */
 export const PROJECT_TYPE_FILTER_ORDER: ProjectType[] = [...PROJECT_TYPE_ORDER];
+
+/** Catalog number-key tabs (excludes general/Default). */
+export const CATALOG_PROJECT_TYPE_FILTER_ORDER: ProjectType[] = [
+  ...CATALOG_PROJECT_TYPES,
+];
 
 export const PROJECT_TYPE_SEARCH_PARAM = "type";
 
 export function isProjectTypeFilter(value: string): value is ProjectTypeFilter {
   return (PROJECT_TYPE_FILTERS as readonly string[]).includes(value);
+}
+
+export function isCatalogProjectTypeFilter(
+  value: string,
+): value is ProjectType {
+  return (CATALOG_PROJECT_TYPE_FILTERS as readonly string[]).includes(value);
 }
 
 export function parseProjectTypeFilter(
@@ -53,13 +94,27 @@ export function parseProjectTypeFilter(
   return PROJECT_TYPE_FILTER_ALL;
 }
 
+/** Catalog URLs: unknown, All, or Default/`general` → first catalog type. */
+export function parseCatalogProjectTypeFilter(
+  value: string | null | undefined,
+): ProjectType {
+  const trimmed = value?.trim();
+  if (trimmed && isCatalogProjectTypeFilter(trimmed)) {
+    return trimmed;
+  }
+  return CATALOG_DEFAULT_PROJECT_TYPE;
+}
+
 export function getCatalogListTypeHref(
-  type: ProjectTypeFilter = PROJECT_TYPE_FILTER_ALL,
+  type: ProjectTypeFilter = CATALOG_DEFAULT_PROJECT_TYPE,
   view: "list" | "board" = "list",
 ): string {
   const params = new URLSearchParams();
-  if (type !== PROJECT_TYPE_FILTER_ALL) {
-    params.set(PROJECT_TYPE_SEARCH_PARAM, type);
+  const catalogType = isCatalogProjectTypeFilter(String(type))
+    ? type
+    : CATALOG_DEFAULT_PROJECT_TYPE;
+  if (catalogType !== CATALOG_DEFAULT_PROJECT_TYPE) {
+    params.set(PROJECT_TYPE_SEARCH_PARAM, catalogType);
   }
   if (view === "board") {
     params.set("view", "board");
@@ -77,7 +132,7 @@ export function parseProjectTypeFilterFromLocation(
     return null;
   }
   const query = search.startsWith("?") ? search.slice(1) : search;
-  return parseProjectTypeFilter(
+  return parseCatalogProjectTypeFilter(
     new URLSearchParams(query).get(PROJECT_TYPE_SEARCH_PARAM),
   );
 }
@@ -86,8 +141,12 @@ export function parseProjectTypeFilterFromLocation(
 export function projectTypeForCatalogCreate(
   filter: ProjectTypeFilter,
 ): ProjectType {
-  if (filter !== PROJECT_TYPE_FILTER_ALL && isProjectType(filter)) {
+  if (
+    filter !== PROJECT_TYPE_FILTER_ALL &&
+    filter !== "general" &&
+    isProjectType(filter)
+  ) {
     return filter;
   }
-  return "general";
+  return CATALOG_DEFAULT_PROJECT_TYPE;
 }

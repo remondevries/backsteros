@@ -6,6 +6,8 @@ import { deriveMeetingStatusForSchedule, isPastCompletedMeeting } from "../meeti
 
 /** Default block length when a task is dropped on a time slot. */
 export const DEFAULT_TIMED_TASK_DURATION_MINUTES = 60;
+/** Shortest calendar meeting created from a click or drag selection. */
+export const MIN_CALENDAR_MEETING_DURATION_MINUTES = 15;
 
 const TERMINAL_CALENDAR_STATUSES = new Set([
   "completed",
@@ -98,6 +100,8 @@ export type TaskCalendarEvent = {
         status?: string | null;
         endAt?: string;
         finished?: boolean;
+        /** Local-only meeting draft; never resolve it as a persisted entity. */
+        draft?: boolean;
       }
     | {
         entityType: "birthday";
@@ -435,12 +439,13 @@ export function calendarSelectionToMeetingRange(
   const start = toValidDate(change.start);
   if (!start) return null;
   const end = toValidDate(change.end);
+  const minimumEnd = new Date(
+    start.getTime() + MIN_CALENDAR_MEETING_DURATION_MINUTES * 60_000,
+  );
   const effectiveEnd =
-    end && end.getTime() > start.getTime()
+    end && end.getTime() >= minimumEnd.getTime()
       ? end
-      : new Date(
-          start.getTime() + DEFAULT_TIMED_TASK_DURATION_MINUTES * 60_000,
-        );
+      : minimumEnd;
   return {
     startAt: start.toISOString(),
     endAt: effectiveEnd.toISOString(),

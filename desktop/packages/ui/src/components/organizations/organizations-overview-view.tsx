@@ -16,6 +16,7 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { EntityListAvatar } from "../entity/entity-list-avatar.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
+import { useListTypeToFilterItems } from "../../list-nav/use-list-type-to-filter.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 export type OrganizationsOverviewViewProps = {
@@ -29,6 +30,8 @@ export type OrganizationsOverviewViewProps = {
   onSelect?: (organization: OrganizationListItem) => void;
   onAdd?: () => void;
   emptyMessage?: string;
+  /** When false, Shift+F type-to-filter is off (hidden keep-alive lists). */
+  typeToFilterEnabled?: boolean;
 };
 
 function organizationDisplayId(
@@ -52,25 +55,40 @@ export function OrganizationsOverviewView({
   onSelect,
   onAdd,
   emptyMessage = "No organizations yet.",
+  typeToFilterEnabled = true,
 }: OrganizationsOverviewViewProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+
+  const {
+    items: filterableOrganizations,
+    query: typeToFilterQuery,
+  } = useListTypeToFilterItems({
+    enabled: typeToFilterEnabled,
+    items: organizations,
+    getHaystacks: (organization) => [
+      organization.name,
+      organization.key,
+      organization.email,
+      organization.number != null ? String(organization.number) : null,
+    ],
+  });
 
   const { pinnedOrganizations, sortedOrganizations } = useMemo(() => {
     if (!pinnedOrganizationId) {
       return {
         pinnedOrganizations: [] as OrganizationListItem[],
-        sortedOrganizations: organizations,
+        sortedOrganizations: filterableOrganizations,
       };
     }
     const pinned: OrganizationListItem[] = [];
     const rest: OrganizationListItem[] = [];
-    for (const organization of organizations) {
+    for (const organization of filterableOrganizations) {
       if (organization.id === pinnedOrganizationId) pinned.push(organization);
       else rest.push(organization);
     }
     return { pinnedOrganizations: pinned, sortedOrganizations: rest };
-  }, [organizations, pinnedOrganizationId]);
+  }, [filterableOrganizations, pinnedOrganizationId]);
 
   const grouped = useMemo(
     () => groupItemsByAlphaLetter(sortedOrganizations),
@@ -94,11 +112,11 @@ export function OrganizationsOverviewView({
     itemIds,
     selectedId,
     onNavigate: (itemId) => {
-      const match = organizations.find((entry) => entry.id === itemId);
+      const match = filterableOrganizations.find((entry) => entry.id === itemId);
       if (match) onSelect?.(match);
     },
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
-    enabled: organizations.length > 0,
+    enabled: filterableOrganizations.length > 0,
   });
 
   function toggleLetter(letter: string) {
@@ -166,8 +184,10 @@ export function OrganizationsOverviewView({
         </div>
       ) : null}
 
-      {organizations.length === 0 ? (
-        <p className="contacts-overview__empty">{emptyMessage}</p>
+      {filterableOrganizations.length === 0 ? (
+        <p className="contacts-overview__empty">
+          {typeToFilterQuery ? "No organizations match." : emptyMessage}
+        </p>
       ) : (
         <ul
           className="contacts-overview__list"

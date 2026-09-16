@@ -5,6 +5,7 @@ import type { TaskAgentPresence } from "@backsteros/contracts";
 import { db } from "../db/index.js";
 import { taskAgentPresence, tasks } from "../db/schema.js";
 import { publishAgentPresence } from "../lib/agent-presence-events.js";
+import { publishDynamicIslandAgentsWorking } from "../lib/dynamic-island-agents-working.js";
 import {
   isTaskAgentPresenceLive,
   TASK_AGENT_PRESENCE_TTL_MS,
@@ -28,6 +29,28 @@ function publishBecameLive(workspaceId: string, taskId: string): void {
 
 function publishCleared(workspaceId: string, taskId: string): void {
   publishAgentPresence({ workspaceId, taskId, live: false });
+}
+
+/** Keep Dynamic Island agents-working.json fresh (including heartbeat stamps). */
+async function syncDynamicIslandAgentsWorking(
+  workspaceId: string,
+): Promise<void> {
+  try {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - TASK_AGENT_PRESENCE_TTL_MS);
+    const rows = await db
+      .select({ taskId: taskAgentPresence.taskId })
+      .from(taskAgentPresence)
+      .where(
+        and(
+          eq(taskAgentPresence.workspaceId, workspaceId),
+          gt(taskAgentPresence.lastHeartbeatAt, cutoff),
+        ),
+      );
+    publishDynamicIslandAgentsWorking(rows.map((row) => row.taskId));
+  } catch {
+    // Island falls back to stale/empty file.
+  }
 }
 
 export async function upsertTaskAgentPresence(
@@ -97,8 +120,10 @@ export async function upsertTaskAgentPresence(
     .returning();
   if (!row) return null;
 
-  // Heartbeats of already-live rows stay quiet; first insert / resume-from-stale fans out.
+  // Heartbeats of already-live rows stay quiet for SSE; still refresh the
+  // island file so updatedAt does not go stale (~90s).
   if (!wasLive) publishBecameLive(workspaceId, taskId);
+  void syncDynamicIslandAgentsWorking(workspaceId);
   return toPresence(row);
 }
 
@@ -117,6 +142,7 @@ export async function clearTaskAgentPresence(
     .returning({ taskId: taskAgentPresence.taskId });
   if (deleted.length === 0) return false;
   publishCleared(workspaceId, taskId);
+  void syncDynamicIslandAgentsWorking(workspaceId);
   return true;
 }
 
@@ -144,6 +170,9 @@ export async function listLiveTaskAgentPresence(
     .returning({ taskId: taskAgentPresence.taskId });
   for (const row of stale) {
     publishCleared(workspaceId, row.taskId);
+  }
+  if (stale.length > 0) {
+    void syncDynamicIslandAgentsWorking(workspaceId);
   }
 
   if (options?.projectId) {

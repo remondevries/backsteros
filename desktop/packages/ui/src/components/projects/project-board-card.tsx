@@ -14,6 +14,7 @@ import {
   type ProjectTaskProgress,
 } from "../../projects/project-progress-ring.js";
 import type { ProjectArea } from "../../projects/project-areas.js";
+import { projectTypeHasRegistrarOwnedDates } from "../../projects/project-type.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
@@ -69,6 +70,7 @@ export function ProjectBoardCard({
 }: ProjectBoardCardProps) {
   const status = migrateLegacyProjectStatus(project.status);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
+  const registrarOwnedDates = projectTypeHasRegistrarOwnedDates(project.type);
   const start = toDate(project.startDate ?? null);
   const due = toDate(project.dueDate ?? null);
 
@@ -201,7 +203,15 @@ export function ProjectBoardCard({
           />
         </span>
         <span
-          className="task-kanban-card-meta-pill project-board-card__dates"
+          className={[
+            "task-kanban-card-meta-pill",
+            "project-board-card__dates",
+            registrarOwnedDates
+              ? "project-board-card__dates--registrar"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
@@ -212,7 +222,8 @@ export function ProjectBoardCard({
             searchShortcutLabel="⇧S"
             taskPropertyDropdownId="startDate"
             showIcon={false}
-            disabled={project.type === "domeinname"}
+            labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+            disabled={registrarOwnedDates}
             onDueDateChange={onStartDateChange}
           />
           <span className="project-overview-row__dates-sep">›</span>
@@ -220,7 +231,8 @@ export function ProjectBoardCard({
             dueDate={due}
             variant="list"
             showIcon={false}
-            disabled={project.type === "domeinname"}
+            labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+            disabled={registrarOwnedDates}
             onDueDateChange={onDueDateChange}
           />
         </span>

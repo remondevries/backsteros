@@ -86,18 +86,48 @@ describe("hybrid write bar", () => {
     );
   });
 
-  it("nudges peer after cloud REST writes for task / meeting / crm_activity", () => {
+  it("nudges peer after cloud REST writes for CRM circle entities", () => {
     // Agent API-key path writes on cloud without commitRestEntityWrite —
     // without these helpers local-core waits on the ~15s replication tick.
     const routes = readSrc("../app/routes.ts");
     assert.ok(routes.includes("function publishTaskLive("));
     assert.ok(routes.includes("function publishMeetingLive("));
     assert.ok(routes.includes("function nudgeCrmActivityLive("));
-    assert.ok(routes.includes('entity: "task"'));
-    assert.ok(routes.includes('entity: "meeting"'));
-    assert.ok(routes.includes('entity: "crm_activity"'));
+    assert.ok(routes.includes("function nudgeContactLive("));
+    assert.ok(routes.includes("function nudgeOrganizationLive("));
+    assert.ok(routes.includes("function nudgeContactRelationshipLive("));
+    assert.ok(routes.includes("function nudgeCrmGroupMemberLive("));
+    assert.ok(routes.includes("function nudgeCrmRelationshipLabelLive("));
+    assert.ok(routes.includes("nudgeContactLive(auth,"));
+    assert.ok(routes.includes("nudgeOrganizationLive(auth,"));
+    assert.ok(routes.includes("nudgeContactRelationshipLive(auth,"));
+    assert.ok(routes.includes("nudgeCrmGroupMemberLive(auth,"));
+    assert.ok(routes.includes("nudgeCrmRelationshipLabelLive(auth,"));
     assert.ok(routes.includes("publishTaskLive(auth,"));
     assert.ok(routes.includes("publishMeetingLive(auth,"));
     assert.ok(routes.includes("nudgeCrmActivityLive(auth,"));
+    assert.ok(
+      routes.includes('entity: "api_key"'),
+      "API key create/update/revoke must wake peer (api_keys twin)",
+    );
+
+    // Writer-side push + peer pull so contact/org updates are bidirectional.
+    const nudge = readSrc("core-replication/nudge.ts");
+    assert.ok(nudge.includes("scheduleTableReplicationPush"));
+    assert.ok(
+      nudge.includes("replicatedTablesForEntity"),
+      "nudge must map entity → tables for contacts/organizations push+pull",
+    );
+
+    // Central choke-point: every record*RestSyncEvent wakes the peer so new
+    // cloud REST routes cannot silently skip replication again.
+    const syncLog = readSrc("sync-log.ts");
+    assert.ok(syncLog.includes("notifyPeerOfEntityWrite"));
+    assert.ok(syncLog.includes('reason: "rest-sync-event"'));
+
+    const spaces = readSrc("../app/spaces-routes.ts");
+    assert.ok(spaces.includes("wakeSpacesDocuments"));
+    const spacesPublish = readSrc("../app/spaces-publish-routes.ts");
+    assert.ok(spacesPublish.includes("wakeSpacePublish"));
   });
 });

@@ -9,6 +9,8 @@ import { generateOpenApi } from "@ts-rest/open-api";
 import { fullApiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
+import { registerFileTaskCallbackRoutes } from "./app/file-task-callback-routes.js";
+import { registerPublicSchedulingRoutes } from "./app/public-scheduling-routes.js";
 import { registerSpacesPublishRoutes } from "./app/spaces-publish-routes.js";
 import { registerSpacesRoutes } from "./app/spaces-routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
@@ -100,6 +102,8 @@ export function createApp() {
 
   const api = new Hono();
   registerApiRoutes(api);
+  registerFileTaskCallbackRoutes(api);
+  registerPublicSchedulingRoutes(api);
   registerSpacesRoutes(api);
   registerSpacesPublishRoutes(api);
   registerSyncRoutes(api);

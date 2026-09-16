@@ -291,9 +291,12 @@ function TaskItemRowComponent({
   const meetingIconStyle = useMemo(() => {
     if (!isMeeting) return undefined;
     return iconSvgColorStyle(
-      resolveMeetingListIconColor(task.status, { colorScheme }),
+      resolveMeetingListIconColor(task.status, {
+        colorScheme,
+        startAt: task.dueDate ?? null,
+      }),
     );
-  }, [colorScheme, isMeeting, task.status]);
+  }, [colorScheme, isMeeting, task.dueDate, task.status]);
   const meetingDisplayId =
     task.meetingDisplayId?.trim() ||
     (isMeeting ? formatMeetingDisplayId(task.number) : null);

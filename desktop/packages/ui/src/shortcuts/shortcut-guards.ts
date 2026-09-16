@@ -1,4 +1,5 @@
 import { isContentEditModeActive } from "../content/content-view-mode.js";
+import { isListTypeToFilterSearchModeActive } from "../list-nav/list-type-to-filter.js";
 
 export const BLOCKING_MODAL_SELECTORS = [
   "[data-blocking-modal]",
@@ -83,7 +84,11 @@ export function isDirectRoleButtonActivationKey(event: {
 
 /** Page-level shortcuts should not run while editing content or a modal is open. */
 export function shouldBlockPageShortcuts(): boolean {
-  return isContentEditModeActive() || isBlockingModalOpen();
+  return (
+    isContentEditModeActive() ||
+    isBlockingModalOpen() ||
+    isListTypeToFilterSearchModeActive()
+  );
 }
 
 export function shouldHandleGlobalShortcut(event: KeyboardEvent): boolean {
@@ -94,6 +99,11 @@ export function shouldHandleGlobalShortcut(event: KeyboardEvent): boolean {
   // Markdown / document edit mode (⌘E): suppress page hotkeys even if focus
   // briefly left the CodeMirror surface. ⌘E itself uses a separate listener.
   if (isContentEditModeActive()) {
+    return false;
+  }
+
+  // Shift+F list type-to-filter: every letter/symbol goes to the query.
+  if (isListTypeToFilterSearchModeActive()) {
     return false;
   }
 

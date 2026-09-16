@@ -26,6 +26,7 @@ export type TaskPropertyDropdownId =
   | "organization"
   | "contact"
   | "receivedDate"
+  | "format"
   /** Finance transaction row / detail / filter / bulk fields */
   | "category"
   | "account"
@@ -43,7 +44,8 @@ export type TaskPropertyDropdownShortcutKey =
   | "c"
   | "r"
   | "m"
-  | "g";
+  | "g"
+  | "f";
 
 function matchesShortcutLetter(
   event: Pick<KeyboardEvent, "key" | "code">,
@@ -235,6 +237,11 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
   // Tasks: Related contacts. Letters: Received date (whichever trigger exists).
   if (matchesShortcutLetter(event, "r", "KeyR")) {
     return ["related", "receivedDate"];
+  }
+
+  // Meetings: format (video / phone / in person). Only present on meeting detail.
+  if (matchesShortcutLetter(event, "f", "KeyF")) {
+    return ["format"];
   }
 
   return [];

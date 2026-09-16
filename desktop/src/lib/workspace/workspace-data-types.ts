@@ -262,4 +262,6 @@ export type DesktopWorkspaceData = {
     force?: boolean;
     type?: "knowledge";
   }) => Promise<void>;
+  /** Soft-pull meetings from REST (agent/CLI creates before PowerSync). */
+  softRefreshApiMeetings: (options?: { force?: boolean }) => Promise<void>;
 };

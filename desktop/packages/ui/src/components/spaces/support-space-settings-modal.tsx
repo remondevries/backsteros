@@ -10,7 +10,9 @@ import {
   type MouseEvent,
 } from "react";
 
+import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import { ContentSidePanelHeader } from "../content/content-side-panel-header.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { PillNav } from "../shared/pill-nav.js";
 import { EntityAddressFields } from "../shared/entity-address-fields.js";
 import {
@@ -25,6 +27,15 @@ import {
 } from "../../spaces/space-seo-entity.js";
 import { HelpArticleSeoField } from "./help-article-seo-field.js";
 import type { SpaceOverviewCardItem } from "./space-overview-card.js";
+import { sanitizeSingleLineText } from "../../text/sanitize-single-line-text.js";
+
+/** Plain `]` — same as other right-rail toggles. */
+function isSpaceSettingsPanelToggleShortcut(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+  return event.key === "]" || event.code === "BracketRight";
+}
 
 export {
   DEFAULT_SPACE_SEO_ENTITY,
@@ -248,13 +259,21 @@ export function SpaceSettingsSidePanel({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      if (revokeKeyId) {
+      const isEscape = event.key === "Escape";
+      const isToggle = isSpaceSettingsPanelToggleShortcut(event);
+      if (!isEscape && !isToggle) return;
+      // Yield while typing in inputs / editors so Esc and ] stay local.
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      if (isEscape && revokeKeyId) {
         event.preventDefault();
+        event.stopPropagation();
         setRevokeKeyId(null);
         return;
       }
+
       event.preventDefault();
+      event.stopPropagation();
       onClose();
     }
     window.addEventListener("keydown", handleKeyDown, true);
@@ -377,16 +396,37 @@ export function SpaceSettingsSidePanel({
     address?: Partial<SpaceSeoEntitySettings["address"]>;
     social?: Partial<SpaceSeoEntitySettings["social"]>;
   }) {
+    const sanitizeFields = <T extends Record<string, unknown>>(
+      fields: T | undefined,
+    ): T | undefined => {
+      if (!fields) return undefined;
+      const next = { ...fields };
+      for (const [key, value] of Object.entries(next)) {
+        if (typeof value === "string") {
+          (next as Record<string, unknown>)[key] =
+            sanitizeSingleLineText(value);
+        }
+      }
+      return next;
+    };
+
     const draft: SpaceSeoEntitySettings = {
       ...seoEntityDraftRef.current,
-      ...patch,
+      ...sanitizeFields({
+        ...(patch.siteName !== undefined ? { siteName: patch.siteName } : {}),
+        ...(patch.organizationName !== undefined
+          ? { organizationName: patch.organizationName }
+          : {}),
+        ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+        ...(patch.email !== undefined ? { email: patch.email } : {}),
+      }),
       address: {
         ...seoEntityDraftRef.current.address,
-        ...(patch.address ?? {}),
+        ...(sanitizeFields(patch.address) ?? {}),
       },
       social: {
         ...seoEntityDraftRef.current.social,
-        ...(patch.social ?? {}),
+        ...(sanitizeFields(patch.social) ?? {}),
       },
     };
     seoEntityDraftRef.current = draft;
@@ -521,10 +561,11 @@ export function SpaceSettingsSidePanel({
           <button
             type="button"
             className="app-side-panel-section-action"
-            aria-label="Close settings"
+            aria-label="Hide settings"
+            title="Hide settings (])"
             onClick={onClose}
           >
-            <XIcon size={16} />
+            <ProjectsSidePanelIcon size={16} collapsed={false} rail="end" />
           </button>
         }
       />
@@ -622,19 +663,6 @@ export function SpaceSettingsSidePanel({
           ) : null}
         </div>
 
-        {onDelete ? (
-          <div className="space-settings-side-panel__danger">
-            <button
-              type="button"
-              className="space-settings-side-panel__delete"
-              disabled={busy}
-              onClick={() => onDelete()}
-            >
-              Delete space
-            </button>
-          </div>
-        ) : null}
-
         <div className="contact-section-tabs space-settings-side-panel__tabs">
           <PillNav
             className="contact-section-tabs__nav"
@@ -651,7 +679,6 @@ export function SpaceSettingsSidePanel({
         {settingsTab === "seo" ? (
           <div className="space-settings-side-panel__tab-body">
             <section className="space-settings-side-panel__section space-settings-side-panel__section--flush">
-              <h3 className="space-settings-side-panel__section-title">Page</h3>
               <div className="help-article-seo-fields space-settings-side-panel__seo-fields">
                 <HelpArticleSeoField
                   label="Domain"
@@ -709,7 +736,7 @@ export function SpaceSettingsSidePanel({
               </h3>
               <p className="space-settings-side-panel__hint">
                 Site name for social share cards. Title, description, and cover
-                image are used from Page and the cover above.
+                image are used from the fields above and the cover.
               </p>
               <label className="space-settings-side-panel__field">
                 <span className="space-settings-side-panel__label">
@@ -879,7 +906,7 @@ export function SpaceSettingsSidePanel({
                   placeholder="https://portal.example.com/app/help"
                   value={publicBaseUrl}
                   onChange={(event) => {
-                    const next = event.target.value;
+                    const next = sanitizeSingleLineText(event.target.value);
                     setPublicBaseUrl(next);
                     apiDraftRef.current = {
                       ...apiDraftRef.current,
@@ -901,7 +928,8 @@ export function SpaceSettingsSidePanel({
                   placeholder={"portal.example.com\nlocalhost:3000"}
                   value={allowedDomains}
                   onChange={(event) => {
-                    const next = event.target.value;
+                    // Keep newlines (one host per line); strip tabs only.
+                    const next = event.target.value.replace(/\t/g, "");
                     setAllowedDomains(next);
                     apiDraftRef.current = {
                       ...apiDraftRef.current,
@@ -1069,6 +1097,32 @@ export function SpaceSettingsSidePanel({
             {error}
           </p>
         ) : null}
+
+        {onDelete ? (
+          <section
+            className="space-settings-side-panel__danger"
+            aria-labelledby="space-settings-danger-zone-title"
+          >
+            <h3
+              id="space-settings-danger-zone-title"
+              className="space-settings-side-panel__section-title space-settings-side-panel__danger-title"
+            >
+              Danger zone
+            </h3>
+            <p className="space-settings-side-panel__hint">
+              Permanently delete this space and all of its content, including
+              pages, files, and settings. This cannot be undone.
+            </p>
+            <button
+              type="button"
+              className="space-settings-side-panel__delete"
+              disabled={busy}
+              onClick={() => onDelete()}
+            >
+              Delete space
+            </button>
+          </section>
+        ) : null}
       </div>
     </div>
   );
@@ -1101,8 +1155,12 @@ export function SpaceSettingsStubPanel({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+      const isEscape = event.key === "Escape";
+      const isToggle = isSpaceSettingsPanelToggleShortcut(event);
+      if (!isEscape && !isToggle) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
       event.preventDefault();
+      event.stopPropagation();
       onClose();
     }
     window.addEventListener("keydown", handleKeyDown, true);
@@ -1117,14 +1175,16 @@ export function SpaceSettingsStubPanel({
     >
       <ContentSidePanelHeader
         title={`${space.title} settings`}
+        className="space-settings-side-panel__header"
         actions={
           <button
             type="button"
             className="app-side-panel-section-action"
-            aria-label="Close settings"
+            aria-label="Hide settings"
+            title="Hide settings (])"
             onClick={onClose}
           >
-            <XIcon size={16} />
+            <ProjectsSidePanelIcon size={16} collapsed={false} rail="end" />
           </button>
         }
       />

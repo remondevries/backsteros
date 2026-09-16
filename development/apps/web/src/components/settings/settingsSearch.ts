@@ -361,6 +361,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["backsteros agent contact profile comment author attribution"],
   },
   {
+    id: "backsteros-file-task-agents",
+    title: "File-task agents",
+    to: "/settings/integrations",
+    searchTerms: ["backsteros file task grok webhook sander dig then file agent callback"],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",

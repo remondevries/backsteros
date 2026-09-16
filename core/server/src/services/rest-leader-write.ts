@@ -390,25 +390,30 @@ export async function commitRestEntityWriteBatch(input: {
     })),
   });
 
-  if (result.source !== "local_fallback" && input.changes[0]) {
+  if (result.source !== "local_fallback" && input.changes.length > 0) {
     const { notifyPeerOfEntityWrite } = await import(
       "./core-replication/nudge.js"
     );
-    const first = input.changes[0];
-    const taskIdFromPayload =
-      typeof first.payload.task_id === "string"
-        ? first.payload.task_id
-        : typeof first.payload.taskId === "string"
-          ? first.payload.taskId
-          : null;
-    notifyPeerOfEntityWrite({
-      workspaceId: input.workspaceId,
-      reason: "rest-batch",
-      entity: first.entity,
-      entityId: first.entityId,
-      taskId: taskIdFromPayload,
-      operation: first.operation === "delete" ? "delete" : "upsert",
-    });
+    // One wake per entity type so mixed batches still push every mapped table.
+    const seenEntities = new Set<string>();
+    for (const change of input.changes) {
+      if (seenEntities.has(change.entity)) continue;
+      seenEntities.add(change.entity);
+      const taskIdFromPayload =
+        typeof change.payload.task_id === "string"
+          ? change.payload.task_id
+          : typeof change.payload.taskId === "string"
+            ? change.payload.taskId
+            : null;
+      notifyPeerOfEntityWrite({
+        workspaceId: input.workspaceId,
+        reason: "rest-batch",
+        entity: change.entity,
+        entityId: change.entityId,
+        taskId: taskIdFromPayload,
+        operation: change.operation === "delete" ? "delete" : "upsert",
+      });
+    }
   }
 
   return result;

@@ -27,6 +27,8 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { SidebarCursorCreditsUsageBar } from "./SidebarCursorCreditsUsageBar";
+import { SidebarFileTaskCreatingBanner } from "./SidebarFileTaskCreatingBanner";
+import { SidebarFileTaskSuccessBanner } from "./SidebarFileTaskSuccessBanner";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SidebarWorkspaceModeToggle } from "./SidebarWorkspaceModeToggle";
@@ -203,6 +205,8 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="gap-1 p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
+      <SidebarFileTaskCreatingBanner />
+      <SidebarFileTaskSuccessBanner />
       <SidebarWorkspaceModeToggle />
       <SidebarCursorCreditsUsageBar />
       <SidebarUtilityMenu />

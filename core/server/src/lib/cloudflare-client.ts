@@ -149,6 +149,60 @@ export class CloudflareClient {
     }
   }
 
+  async updateDnsRecord(
+    zoneId: string,
+    recordId: string,
+    patch: {
+      type: string;
+      name: string;
+      content: string;
+      ttl: number | null;
+      proxied: boolean | null;
+      priority: number | null;
+    },
+  ): Promise<CloudflareDnsRecord> {
+    const zone = zoneId.trim();
+    const id = recordId.trim();
+    if (!zone || !id) {
+      throw new CloudflareApiError(
+        400,
+        "cloudflare_api_error",
+        "Cloudflare zone id and record id required",
+      );
+    }
+    try {
+      const body: Record<string, unknown> = {
+        zone_id: zone,
+        type: patch.type,
+        name: patch.name,
+        content: patch.content,
+        ttl: patch.ttl ?? 1,
+      };
+      if (patch.proxied != null) {
+        body.proxied = patch.proxied;
+      }
+      if (patch.priority != null) {
+        body.priority = patch.priority;
+      }
+      const raw = await this.client.dns.records.edit(
+        id,
+        body as unknown as Parameters<Cloudflare["dns"]["records"]["edit"]>[1],
+      );
+      const mapped = mapDnsRecord(raw);
+      if (!mapped) {
+        throw new CloudflareApiError(
+          502,
+          "cloudflare_api_error",
+          "Cloudflare returned an unreadable DNS record",
+        );
+      }
+      return mapped;
+    } catch (error) {
+      if (error instanceof CloudflareApiError) throw error;
+      throw mapCloudflareError(error);
+    }
+  }
+
   /** Purge all cached files for the zone (`purge_everything`). */
   async purgeEverything(zoneId: string): Promise<{ id: string | null }> {
     const id = zoneId.trim();

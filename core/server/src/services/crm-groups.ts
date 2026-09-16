@@ -436,8 +436,9 @@ export async function listCrmGroupMembers(
   executor: DbExecutor = db,
 ): Promise<CrmGroupMember[] | null> {
   if (!(await getCrmGroupById(workspaceId, groupId, executor))) return null;
-  // Heal org↔contact membership drift (non-prod safe; idempotent).
-  await materializeCrmGroupMembershipCascade(workspaceId, groupId, executor);
+  // Do not rematerialize on every list — that re-adds contacts after an
+  // intentional remove whenever the organization (or a sibling) is still a
+  // member. Cascade runs on add / inherit / explicit heal instead.
   const rows = await executor
     .select()
     .from(crmGroupMembers)
@@ -693,8 +694,10 @@ export type CrmGroupMemberRemoveResult = {
 };
 
 /**
- * Soft-delete a membership. Removing an organization also removes that org's
- * contacts from the same group so labels stay aligned.
+ * Soft-delete a membership.
+ * - Removing an organization also removes that org's contacts from the group.
+ * - Removing a contact also removes its organization (and thus siblings via the
+ *   org cascade) so labels stay aligned and list inheritance cannot re-add it.
  */
 export async function removeCrmGroupMember(
   workspaceId: string,
@@ -749,6 +752,39 @@ export async function removeCrmGroupMemberWithCascade(
         if (contactIds.includes(row.subjectId)) {
           toRemoveIds.add(row.id);
         }
+      }
+    }
+  }
+
+  if (cascade && existing.subjectType === "contact") {
+    const organizationId = await getContactOrganizationId(
+      workspaceId,
+      existing.subjectId,
+      executor,
+    );
+    if (organizationId) {
+      const [orgMember] = await executor
+        .select()
+        .from(crmGroupMembers)
+        .where(
+          and(
+            eq(crmGroupMembers.workspaceId, workspaceId),
+            eq(crmGroupMembers.groupId, groupId),
+            eq(crmGroupMembers.subjectType, "organization"),
+            eq(crmGroupMembers.subjectId, organizationId),
+            isNull(crmGroupMembers.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (orgMember) {
+        // Re-enter as an org removal so sibling contacts clear too.
+        return removeCrmGroupMemberWithCascade(
+          workspaceId,
+          groupId,
+          orgMember.id,
+          executor,
+          options,
+        );
       }
     }
   }
@@ -913,8 +949,8 @@ export async function listCrmGroupsForSubject(
     return null;
   }
 
-  const groupIdSet = new Set<string>();
-
+  // Direct memberships only. Inherited org↔contact unions made remove/add look
+  // broken (label stayed visible via the related subject after a successful DELETE).
   const direct = await executor
     .select({ groupId: crmGroupMembers.groupId })
     .from(crmGroupMembers)
@@ -926,56 +962,8 @@ export async function listCrmGroupsForSubject(
         isNull(crmGroupMembers.deletedAt),
       ),
     );
-  for (const row of direct) groupIdSet.add(row.groupId);
 
-  // Labels stay aligned even if cascade materialization hasn't run yet.
-  if (subjectType === "contact") {
-    const organizationId = await getContactOrganizationId(
-      workspaceId,
-      subjectId,
-      executor,
-    );
-    if (organizationId) {
-      const viaOrg = await executor
-        .select({ groupId: crmGroupMembers.groupId })
-        .from(crmGroupMembers)
-        .where(
-          and(
-            eq(crmGroupMembers.workspaceId, workspaceId),
-            eq(crmGroupMembers.subjectType, "organization"),
-            eq(crmGroupMembers.subjectId, organizationId),
-            isNull(crmGroupMembers.deletedAt),
-          ),
-        );
-      for (const row of viaOrg) groupIdSet.add(row.groupId);
-    }
-  } else {
-    const contactIds = await listContactIdsForOrganization(
-      workspaceId,
-      subjectId,
-      executor,
-    );
-    if (contactIds.length > 0) {
-      const viaContacts = await executor
-        .select({
-          groupId: crmGroupMembers.groupId,
-          subjectId: crmGroupMembers.subjectId,
-        })
-        .from(crmGroupMembers)
-        .where(
-          and(
-            eq(crmGroupMembers.workspaceId, workspaceId),
-            eq(crmGroupMembers.subjectType, "contact"),
-            isNull(crmGroupMembers.deletedAt),
-          ),
-        );
-      const contactIdSet = new Set(contactIds);
-      for (const row of viaContacts) {
-        if (contactIdSet.has(row.subjectId)) groupIdSet.add(row.groupId);
-      }
-    }
-  }
-
+  const groupIdSet = new Set(direct.map((row) => row.groupId));
   if (groupIdSet.size === 0) return [];
   const groups = await listCrmGroups(workspaceId, executor);
   return groups.filter((group) => groupIdSet.has(group.id));

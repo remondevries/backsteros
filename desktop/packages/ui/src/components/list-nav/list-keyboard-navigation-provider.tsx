@@ -30,7 +30,10 @@ import {
   focusListKeyboardNavItem,
   scrollKeyboardNavItemIntoView,
 } from "../../list-nav/keyboard-nav-item.js";
-import { resolveListKeyboardStepTarget } from "../../list-nav/list-keyboard-nav-index.js";
+import {
+  resolveListKeyboardActivationAnchor,
+  resolveListKeyboardStepTarget,
+} from "../../list-nav/list-keyboard-nav-index.js";
 import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
 import { isListKeyboardNavContainerVisible } from "../../list-nav/list-keyboard-nav-visibility.js";
 import {
@@ -76,6 +79,14 @@ function shouldHandleListKeyboardEscape(
     return false;
   }
   if (document.querySelector("[data-searchable-dropdown-panel]")) {
+    return false;
+  }
+  // Calendar / entity overlays own Escape (close detail) before zone hopping.
+  if (
+    document.querySelector(
+      "[data-calendar-meeting-overlay], [data-calendar-task-overlay], [data-contact-overlay], [data-organization-overlay], [data-domain-overlay], [data-entity-overlay]",
+    )
+  ) {
     return false;
   }
 
@@ -320,26 +331,19 @@ function syncActiveZoneToAvailableRegistrations(
   });
 }
 
-function clearHighlightsExceptZone(
-  registrations: ListKeyboardNavigationRegistration[],
-  zone: ListKeyboardNavZone,
-): void {
-  for (const registration of registrations) {
-    if (registration.zone === zone) {
-      continue;
-    }
-
-    registration.setHighlightedId(null);
-  }
-}
-
-/** Drop highlights on every list except the one that now owns the keys. */
+/** Drop same-zone peer highlights so only one list in the zone shows a ring. */
 function clearHighlightsExceptRegistration(
   registrations: ListKeyboardNavigationRegistration[],
   keep: ListKeyboardNavigationRegistration,
 ): void {
   for (const registration of registrations) {
     if (registration.id === keep.id) {
+      continue;
+    }
+    // Leave other zones alone — their stored landing (e.g. meetings
+    // closest-to-today) must survive while this list is focused, so Tab back
+    // does not fall through to itemIds[0].
+    if (registration.zone !== keep.zone) {
       continue;
     }
 
@@ -367,14 +371,20 @@ function activateListKeyboardRegistration(
   registrations: ListKeyboardNavigationRegistration[],
   registration: ListKeyboardNavigationRegistration,
   highlightItemId?: string | null,
+  focusContainerOnly = false,
 ): void {
   clearHighlightsExceptRegistration(registrations, registration);
-  focusListKeyboardRegistration(registration, highlightItemId);
+  focusListKeyboardRegistration(
+    registration,
+    highlightItemId,
+    focusContainerOnly,
+  );
 }
 
 function focusListKeyboardRegistration(
   registration: ListKeyboardNavigationRegistration,
   preferredItemId?: string | null,
+  focusContainerOnly = false,
 ): void {
   const container = registration.containerRef.current;
   if (!container) {
@@ -382,26 +392,22 @@ function focusListKeyboardRegistration(
   }
 
   const itemIds = registration.getItemIds();
-  const selectedId = registration.getSelectedId();
-  const preferred =
-    preferredItemId && itemIds.includes(preferredItemId)
-      ? preferredItemId
-      : null;
-  const anchorId =
-    preferred ??
-    (selectedId && itemIds.includes(selectedId) ? selectedId : null) ??
-    itemIds[0] ??
-    null;
+  const anchorId = resolveListKeyboardActivationAnchor({
+    preferredItemId,
+    selectedId: registration.getSelectedId(),
+    highlightedId: registration.getHighlightedId(),
+    itemIds,
+  });
 
   suppressKeyboardNavHover();
 
-  if (anchorId) {
+  if (anchorId && registration.getHighlightedId() !== anchorId) {
     registration.setHighlightedId(anchorId);
   }
 
   container.focus({ preventScroll: true });
 
-  if (anchorId) {
+  if (anchorId && !focusContainerOnly) {
     requestAnimationFrame(() => {
       scrollKeyboardNavItemIntoView(container, anchorId);
       focusListKeyboardNavItem(container, anchorId);
@@ -443,6 +449,7 @@ export function ListKeyboardNavigationProvider({
   const pendingActivateZoneRef = useRef<ListKeyboardNavZone | null>(null);
   const pendingActivateHighlightItemIdRef = useRef<string | null>(null);
   const pendingActivateLandAtStartRef = useRef(false);
+  const pendingActivateFocusContainerOnlyRef = useRef(false);
   const [activeZone, setActiveZoneState] = useState<ListKeyboardNavZone | null>(
     null,
   );
@@ -456,17 +463,20 @@ export function ListKeyboardNavigationProvider({
       setActiveZoneState(zone);
       preferSidepanelForJkRef.current = options?.preferSidepanelForJk ?? false;
       document.body.setAttribute("data-keyboard-nav-active-zone", zone);
-      clearHighlightsExceptZone(registrationsRef.current, zone);
+      // Do not clear other zones' stored highlights — display is gated by
+      // activeZone, and wiping landings made Tab restore pick itemIds[0].
       if (options?.activate) {
         const registration = pickBestRegistrationInZone(
           registrationsRef.current,
           zone,
         );
         const landAtStart = options.landAtStart === true;
+        const focusContainerOnly = options.focusContainerOnly === true;
         if (registration) {
           pendingActivateZoneRef.current = null;
           pendingActivateHighlightItemIdRef.current = null;
           pendingActivateLandAtStartRef.current = false;
+          pendingActivateFocusContainerOnlyRef.current = false;
           const highlightItemId = landAtStart
             ? (registration.getItemIds()[0] ?? null)
             : options.highlightItemId;
@@ -474,10 +484,12 @@ export function ListKeyboardNavigationProvider({
             registrationsRef.current,
             registration,
             highlightItemId,
+            focusContainerOnly,
           );
         } else {
           pendingActivateZoneRef.current = zone;
           pendingActivateLandAtStartRef.current = landAtStart;
+          pendingActivateFocusContainerOnlyRef.current = focusContainerOnly;
           pendingActivateHighlightItemIdRef.current = landAtStart
             ? null
             : (options.highlightItemId ?? null);
@@ -486,6 +498,7 @@ export function ListKeyboardNavigationProvider({
         pendingActivateZoneRef.current = null;
         pendingActivateHighlightItemIdRef.current = null;
         pendingActivateLandAtStartRef.current = false;
+        pendingActivateFocusContainerOnlyRef.current = false;
       }
     },
     [],
@@ -495,6 +508,7 @@ export function ListKeyboardNavigationProvider({
     pendingActivateZoneRef.current = null;
     pendingActivateHighlightItemIdRef.current = null;
     pendingActivateLandAtStartRef.current = false;
+    pendingActivateFocusContainerOnlyRef.current = false;
     preferSidepanelForJkRef.current = false;
     clearAllListKeyboardHighlights(registrationsRef.current);
   }, []);
@@ -607,9 +621,12 @@ export function ListKeyboardNavigationProvider({
           const landAtStart = pendingActivateLandAtStartRef.current;
           const pendingHighlightItemId =
             pendingActivateHighlightItemIdRef.current;
+          const focusContainerOnly =
+            pendingActivateFocusContainerOnlyRef.current;
           pendingActivateZoneRef.current = null;
           pendingActivateHighlightItemIdRef.current = null;
           pendingActivateLandAtStartRef.current = false;
+          pendingActivateFocusContainerOnlyRef.current = false;
           const pendingRegistration = pickBestRegistrationInZone(
             registrationsRef.current,
             pendingZone,
@@ -622,6 +639,7 @@ export function ListKeyboardNavigationProvider({
               registrationsRef.current,
               pendingRegistration,
               highlightItemId,
+              focusContainerOnly,
             );
           }
           return;
@@ -746,6 +764,7 @@ function ListKeyboardNavigationGlobalListener({
         const available = filterListKeyboardNavZonesForTab(
           getAvailableKeyboardNavZones(registrationsRef.current),
           isListDetailPanelOpen(),
+          pathnameRef.current,
         );
         if (available.length === 0) {
           event.preventDefault();
@@ -1054,6 +1073,7 @@ export function useListKeyboardNavigation({
   const onNavigateRef = useLatestRef(onNavigate);
   const onShiftStepRef = useLatestRef(onShiftStep);
   const resolveNextItemIdRef = useLatestRef(resolveNextItemId);
+  const manualHighlightRef = useLatestRef(manualHighlight);
   const registrationId = useId();
 
   const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
@@ -1084,8 +1104,6 @@ export function useListKeyboardNavigation({
       : manualHighlight != null && itemIds.includes(manualHighlight)
         ? manualHighlight
         : null;
-
-  const highlightedIdRef = useLatestRef(resolvedHighlight);
 
   // Opening a detail clears the orange j/k highlight but leaves DOM focus on
   // the row — which paints the browser's blue focus ring and looks "focused"
@@ -1133,7 +1151,13 @@ export function useListKeyboardNavigation({
       containerRef,
       getItemIds: () => itemIdsRef.current,
       getSelectedId: () => selectedIdRef.current,
-      getHighlightedId: () => highlightedIdRef.current,
+      // Return the stored landing/j/k row even while this zone is inactive so
+      // Tab activation can restore closest-to-today (etc.) instead of item[0].
+      // Display still uses `resolvedHighlight` (null when another zone owns keys).
+      getHighlightedId: () => {
+        const id = manualHighlightRef.current;
+        return id != null && itemIdsRef.current.includes(id) ? id : null;
+      },
       setHighlightedId: setManualHighlight,
       onActivate: (itemId) => onNavigateRef.current(itemId),
       onShiftStep: (step) => onShiftStepRef.current?.(step),
@@ -1145,9 +1169,9 @@ export function useListKeyboardNavigation({
   }, [
     containerRef,
     resolvedEnabled,
-    highlightedIdRef,
     itemIds.length,
     itemIdsRef,
+    manualHighlightRef,
     onNavigateRef,
     onShiftStepRef,
     register,

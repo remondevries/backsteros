@@ -19,6 +19,13 @@ import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useAgentMail } from "../lib/agentmail-context";
+import {
+  projectListLabelForNavFrom,
+  recalledProjectNavFrom,
+  resolveProjectListHref,
+  type ProjectNavFrom,
+} from "../lib/project-type-cache";
+import { resolveListReturnHref } from "../lib/list-return-href";
 import { EmailComposeView } from "./email/email-compose-view";
 import { EmailThreadDetail } from "./email/email-thread-detail";
 import { useEmailDraftActions } from "./email/use-email-draft-actions";
@@ -254,8 +261,23 @@ export function EmailPage({
             kind: "standalone",
           })
         : "/projects";
+      const navFrom: ProjectNavFrom =
+        recalledProjectNavFrom(project?.id) ??
+        recalledProjectNavFrom(project?.key) ??
+        recalledProjectNavFrom(projectKey) ??
+        "projects";
+      const projectsListHref = resolveProjectListHref({
+        locationState: location.state,
+        navFrom,
+        projectId: project?.id,
+        projectKey: project?.key,
+        routeParam: projectKey,
+      });
       return [
-        { label: "Projects", href: "/projects" },
+        {
+          label: projectListLabelForNavFrom(navFrom),
+          href: projectsListHref,
+        },
         { label: projectLabel, href: projectHref },
         { label: currentLabel },
       ];
@@ -263,7 +285,14 @@ export function EmailPage({
 
     // Tasks list (explicit or default when opened outside Inbox).
     return [
-      { label: "Tasks", href: "/tasks" },
+      {
+        label: "Tasks",
+        href: resolveListReturnHref({
+          kind: "task",
+          locationState: location.state,
+          fallback: "/tasks",
+        }),
+      },
       { label: currentLabel },
     ];
   }, [
@@ -271,6 +300,7 @@ export function EmailPage({
     composeSubject,
     isCompose,
     location.searchStr,
+    location.state,
     message?.threadMetadata?.projectId,
     message?.threadMetadata?.projectName,
     projectKey,

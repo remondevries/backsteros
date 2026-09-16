@@ -71,6 +71,21 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.project-detail__meta-dates--registrar .task-due-date-dropdown,
+.project-detail__meta-dates--registrar .property-dropdown-trigger,
+.project-detail__meta-dates--registrar .property-dropdown-fallback {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.project-detail__meta-dates--registrar .task-due-date-dropdown button:disabled,
+.project-detail__meta-dates--registrar .property-dropdown-trigger:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .project-area-badge {
@@ -314,14 +329,20 @@
 
 .contact-overview__job-title .overview-name-editor__button,
 .contact-overview__job-title .overview-name-editor__fit-editable {
-  font-size: inherit;
-  font-weight: inherit;
+  font-size: 13px;
+  font-weight: 400;
   line-height: inherit;
-  color: inherit;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.contact-overview__job-title .overview-name-editor__placeholder {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 400;
 }
 
 .contact-overview__subtitle-at {
   flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
 }
 
 .contact-overview__subtitle--muted {
@@ -1569,6 +1590,13 @@
   min-width: 0;
 }
 
+.contact-location-map__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 .contact-location-map__field > span {
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font-size: 0.75rem;
@@ -2168,7 +2196,24 @@
   flex: 1;
   gap: 0;
   overflow: hidden;
+  /* Tabs sit full-bleed; header + scroll keep the inset. */
+  padding-inline: 0;
   padding-bottom: 0;
+}
+
+.contact-detail__overview .contact-overview__header {
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+
+.contact-detail__overview .contact-overview__scroll {
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+
+.contact-detail__overview .contact-section-tabs {
+  width: 100%;
+  margin-inline: 0;
 }
 
 .contact-detail__avatar {
@@ -2192,9 +2237,10 @@
   max-width: 64px;
 }
 
-/* Contacts / organizations main catalog + right profile rail (journal-day layout). */
+/* Contacts / organizations / catalog domains — list + right profile rail. */
 .contacts-page,
-.organizations-page {
+.organizations-page,
+.catalog-domains-page {
   position: relative;
   display: flex;
   min-height: 0;
@@ -2204,12 +2250,14 @@
 }
 
 .contacts-page.journal-day-layout,
-.organizations-page.journal-day-layout {
+.organizations-page.journal-day-layout,
+.catalog-domains-page.journal-day-layout {
   flex-direction: row;
 }
 
 .contacts-page .journal-day-layout__main,
-.organizations-page .journal-day-layout__main {
+.organizations-page .journal-day-layout__main,
+.catalog-domains-page .journal-day-layout__main {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -2222,7 +2270,8 @@
 }
 
 .contacts-page .journal-day-layout__main.is-expand-faded,
-.organizations-page .journal-day-layout__main.is-expand-faded {
+.organizations-page .journal-day-layout__main.is-expand-faded,
+.catalog-domains-page .journal-day-layout__main.is-expand-faded {
   opacity: 0;
   pointer-events: none;
 }
@@ -2503,12 +2552,13 @@
 }
 
 .contact-detail-panel__body .entity-overview {
-  /* Chrome overlays the top; keep a slim inset so the header meets the toggle. */
-  padding-top: 8px;
+  /* Clear absolute expand/hide chrome above the avatar/title. */
+  padding-top: 32px;
 }
 
-.contact-detail-panel__body .contact-overview__chrome {
-  /* Keep the title clear of the floating hide toggle. */
+/* Hide toggle only — expand sits in the top chrome gutter, not beside the name. */
+.contact-detail-panel__body .contact-overview__header,
+.contact-detail-panel__body .organization-overview__header {
   padding-right: 36px;
 }
 
@@ -3130,7 +3180,24 @@
   flex: 1;
   gap: 0;
   overflow: hidden;
+  /* Tabs sit full-bleed; header + scroll keep the inset. */
+  padding-inline: 0;
   padding-bottom: 0;
+}
+
+.organization-detail__overview .organization-overview__header {
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+
+.organization-detail__overview .organization-overview__scroll {
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+
+.organization-detail__overview .organization-section-tabs {
+  width: 100%;
+  margin-inline: 0;
 }
 
 .organization-detail__avatar {

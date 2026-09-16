@@ -79,6 +79,9 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       destructive: sourceItem.destructive === true,
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
+      ...(typeof sourceItem.swatchColor === "string" && sourceItem.swatchColor.trim()
+        ? { swatchColor: sourceItem.swatchColor.trim() }
+        : {}),
     };
 
     if (sourceItem.children) {
@@ -137,6 +140,21 @@ export const make = Effect.gen(function* () {
     return destructiveMenuIconCache;
   };
 
+  const createSwatchMenuIcon = (hex: string): Option.Option<Electron.NativeImage> => {
+    if (!/^#[0-9A-Fa-f]{6}$/u.test(hex)) {
+      return Option.none();
+    }
+    try {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect x="2" y="2" width="12" height="12" rx="2.5" ry="2.5" fill="${hex}"/></svg>`;
+      const icon = Electron.nativeImage.createFromDataURL(
+        `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
+      );
+      return icon.isEmpty() ? Option.none() : Option.some(icon);
+    } catch {
+      return Option.none();
+    }
+  };
+
   const buildTemplate = (
     entries: readonly ContextMenuItem[],
     complete: (selectedItemId: Option.Option<string>) => void,
@@ -177,6 +195,11 @@ export const make = Effect.gen(function* () {
         const destructiveIcon = getDestructiveMenuIcon();
         if (Option.isSome(destructiveIcon)) {
           itemOption.icon = destructiveIcon.value;
+        }
+      } else if (typeof item.swatchColor === "string") {
+        const swatchIcon = createSwatchMenuIcon(item.swatchColor);
+        if (Option.isSome(swatchIcon)) {
+          itemOption.icon = swatchIcon.value;
         }
       }
 

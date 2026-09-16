@@ -5,6 +5,10 @@ import {
   resolveAppHref,
 } from "../lib/resolve-app-href";
 import { rememberProjectNavFromHref } from "../lib/project-type-cache";
+import {
+  listReturnHrefFromState,
+  rememberListReturnHref,
+} from "../lib/list-return-href";
 import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
 import {
   dismissKeepAliveForOutletNavigation,
@@ -14,6 +18,18 @@ import {
 } from "../lib/shell-warm-keep-alive";
 
 type AppNavigate = (options: NavigateOptions) => void;
+
+function rememberTaskListReturnHref(href: string, state: unknown): void {
+  const listHref = listReturnHrefFromState("task", state);
+  if (!listHref) return;
+  const pathname = href.split(/[?#]/, 1)[0] ?? href;
+  const parts = pathname.split("/").filter(Boolean);
+  // `/tasks/:due/:slug` or `/tasks/:id`
+  if (parts[0] !== "tasks" || parts.length < 2) return;
+  const routeKey = parts[parts.length - 1];
+  if (!routeKey) return;
+  rememberListReturnHref("task", routeKey, listHref);
+}
 
 export function parseAppHref(href: string): {
   pathname: string;
@@ -46,8 +62,9 @@ export function navigateToHref(
   options?: { replace?: boolean; state?: unknown },
 ): void {
   const target = formatResolvedAppHref(resolveAppHref(href));
-  // Warm flips skip TanStack state — cache nav-from so Catalog/Areas stay highlighted.
+  // Warm flips skip TanStack state — cache list-return so breadcrumbs match Escape.
   rememberProjectNavFromHref(target, options?.state);
+  rememberTaskListReturnHref(target, options?.state);
   if (tryWarmKeepAliveFlip(target, { replace: options?.replace })) {
     return;
   }

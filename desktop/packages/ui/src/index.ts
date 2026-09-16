@@ -542,6 +542,7 @@ export {
 
 export {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
+  MIN_CALENDAR_MEETING_DURATION_MINUTES,
   calendarChangeToTaskPatch,
   isTerminalCalendarTaskStatus,
   isHiddenCalendarTaskStatus,
@@ -558,6 +559,7 @@ export {
   calendarChangeToMeetingPatch,
   calendarSelectionToMeetingRange,
   calendarEntityFromEvent,
+  meetingCalendarEventClassNames,
   meetingToCalendarEvent,
   meetingsToCalendarEvents,
   meetingsToCalendarEventsForDate,
@@ -792,6 +794,68 @@ export {
 } from "./calendar/calendar-side-panel-keyboard.js";
 
 export {
+  findMeetingClosestToReference,
+  groupScheduledMeetingsByPeriod,
+  groupScheduledMeetingsByWeek,
+  isCurrentMeetingScheduleGroup,
+  isCurrentMeetingWeekGroup,
+  meetingDayGroupLabel,
+  meetingMonthGroupLabel,
+  meetingScheduleGranularityFromViewMode,
+  meetingScheduleGroupLabel,
+  meetingWeekGroupLabel,
+  type MeetingScheduleGroup,
+  type MeetingScheduleGroupGranularity,
+  type MeetingWeekGroup,
+} from "./calendar/calendar-meetings-week-groups.js";
+
+export {
+  accumulateCalendarHorizontalDatePan,
+  createCalendarHorizontalDatePanState,
+  resolveCalendarHorizontalPanWheel,
+  shouldPreventCalendarPageHorizontalScroll,
+  CALENDAR_HORIZONTAL_DATE_PAN_THRESHOLD_PX,
+  CALENDAR_HORIZONTAL_DATE_PAN_LOCK_MS,
+  type CalendarHorizontalDatePanState,
+} from "./calendar/calendar-horizontal-date-pan.js";
+
+export {
+  addDaysDate,
+  calendarWeekStripAnchorShiftWeeks,
+  calendarWeekStripDates,
+  calendarWeekStripPaneIndex,
+  CALENDAR_WEEK_STRIP_CENTER_INDEX,
+  CALENDAR_WEEK_STRIP_PANE_COUNT,
+  startOfWeekMondayDate,
+} from "./calendar/calendar-week-strip.js";
+
+export {
+  addMonthsDate,
+  calendarMonthStripDates,
+  CALENDAR_MONTH_STRIP_CENTER_INDEX,
+  CALENDAR_MONTH_STRIP_PANE_COUNT,
+  CALENDAR_MONTH_STRIP_WEEKDAY_LABELS,
+  formatLocalYm,
+  formatMonthAnchorYmd,
+  startOfMonthDate,
+} from "./calendar/calendar-month-strip.js";
+
+export {
+  calendarDayStripDates,
+  CALENDAR_DAY_STRIP_CENTER_INDEX,
+  CALENDAR_DAY_STRIP_PANE_COUNT,
+  formatCalendarDayStripHeaderLabel,
+  formatDayAnchorYmd,
+  startOfLocalDayDate,
+} from "./calendar/calendar-day-strip.js";
+
+export {
+  calendarStripCenterIndex,
+  calendarStripCenterScrollOffset,
+  calendarStripRecycleShift,
+} from "./calendar/calendar-strip-geometry.js";
+
+export {
   CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
   parseCalendarMeetingOverlayLayout,
   withCalendarMeetingSearch,
@@ -825,8 +889,11 @@ export {
 
 export {
   CALENDAR_TASK_OVERLAY_PARAM,
+  CALENDAR_TASK_OVERLAY_LAYOUT_PARAM,
   getCalendarTaskOverlayHref,
   parseCalendarTaskOverlayId,
+  parseCalendarTaskOverlayLayout,
+  type CalendarTaskOverlayLayout,
 } from "./calendar/calendar-task-overlay.js";
 
 export { useCalendarGridKeyboardNavigation } from "./calendar/use-calendar-grid-keyboard-navigation.js";
@@ -846,6 +913,12 @@ export {
   type CalendarTasksSidePanelViewProps,
   type CalendarSidePanelHabitItem,
 } from "./components/calendar/calendar-tasks-side-panel-view.js";
+
+export {
+  CalendarMeetingsSidePanelView,
+  CALENDAR_MEETINGS_SIDE_PANEL_WIDTH_KEY,
+  type CalendarMeetingsSidePanelViewProps,
+} from "./components/calendar/calendar-meetings-side-panel-view.js";
 
 export {
   CalendarDayTimeline,
@@ -1042,6 +1115,14 @@ export { TerminalConsoleIcon } from "./components/icons/terminal-console-icon.js
 export { BrowserWindowIcon } from "./components/icons/browser-window-icon.js";
 export { ProjectsSidePanelIcon } from "./components/codebase/projects-side-panel-icon.js";
 export {
+  ExpandLayoutIcon,
+  type ExpandLayoutIconProps,
+} from "./components/icons/expand-layout-icon.js";
+export {
+  CollapseLayoutIcon,
+  type CollapseLayoutIconProps,
+} from "./components/icons/collapse-layout-icon.js";
+export {
   ProjectOcticon,
   getDisplayProjectIcon,
   getEntityIconColor as getProjectOcticonDisplayColor,
@@ -1114,10 +1195,15 @@ export {
 
 export {
   MEETING_DISPLAY_KEY,
+  MEETING_CURRENT_WEEK_ICON_COLOR,
+  MEETING_NEXT_WEEK_ICON_COLOR,
+  MEETING_MUTED_WEEK_ICON_COLOR,
   formatMeetingDisplayId,
   parseMeetingDisplayId,
   resolveMeetingAccentColor,
   resolveMeetingListIconColor,
+  resolveMeetingScheduleIconColor,
+  meetingScheduleIconTone,
   defaultNewMeetingTimes,
   getCalendarMeetingHref,
   getCalendarMeetingOverlayHref,
@@ -1126,6 +1212,7 @@ export {
   sortMeetingsByStart,
   groupMeetingsByStatus,
   type MeetingListItem,
+  type MeetingScheduleIconTone,
   type MeetingStatusGroup,
 } from "./meetings/meetings.js";
 
@@ -1711,6 +1798,7 @@ export {
   isProjectType,
   getProjectTypeLabel,
   migrateLegacyProjectType,
+  projectTypeHasRegistrarOwnedDates,
   type ProjectType,
 } from "./projects/project-type.js";
 
@@ -1744,11 +1832,18 @@ export {
   PROJECT_TYPE_FILTER_ALL,
   PROJECT_TYPE_FILTERS,
   PROJECT_TYPE_FILTER_ORDER,
+  CATALOG_PROJECT_TYPES,
+  CATALOG_DEFAULT_PROJECT_TYPE,
+  CATALOG_PROJECT_TYPE_FILTERS,
+  CATALOG_PROJECT_TYPE_FILTER_ORDER,
   PROJECT_TYPE_SEARCH_PARAM,
   filterProjectsByType,
+  filterCatalogProjectsByType,
   getProjectTypeFilterLabel,
   isProjectTypeFilter,
+  isCatalogProjectTypeFilter,
   parseProjectTypeFilter,
+  parseCatalogProjectTypeFilter,
   getCatalogListTypeHref,
   parseProjectTypeFilterFromLocation,
   projectTypeForCatalogCreate,
@@ -1991,6 +2086,24 @@ export {
 
 export { useListMultiSelect } from "./list-nav/use-list-multi-select.js";
 export type { UseListMultiSelectOptions } from "./list-nav/use-list-multi-select.js";
+
+export {
+  isListTypeToFilterChar,
+  isListTypeToFilterHoldingEscape,
+  isListTypeToFilterQueryActive,
+  isListTypeToFilterSearchModeActive,
+  isListTypeToFilterToggleShortcut,
+  listItemMatchesTypeToFilter,
+} from "./list-nav/list-type-to-filter.js";
+
+export {
+  useListTypeToFilter,
+  useListTypeToFilterItems,
+  shouldYieldListTypeToFilterEscape,
+} from "./list-nav/use-list-type-to-filter.js";
+export type { ListTypeToFilterController } from "./list-nav/use-list-type-to-filter.js";
+
+export { ListTypeToFilterIndicator } from "./components/list-nav/list-type-to-filter-indicator.js";
 
 export {
   isSelectAllShortcut,
@@ -2501,6 +2614,7 @@ export {
 export { AddFolderInline } from "./components/documents/add-folder-inline.js";
 
 export { FolderPlusIcon } from "./components/icons/folder-plus-icon.js";
+export { SpaceSectionIcon } from "./components/icons/space-section-icon.js";
 
 export {
   buildDocumentTree,
@@ -3279,6 +3393,32 @@ export {
   ContactDetailOverlay,
   type ContactDetailOverlayProps,
 } from "./components/contacts/contact-detail-overlay.js";
+
+export {
+  EntityDetailOverlay,
+  type EntityDetailOverlayProps,
+} from "./components/shared/entity-detail-overlay.js";
+
+export {
+  ENTITY_DETAIL_COLLAPSE_DURATION_MS,
+  ENTITY_DETAIL_CONTENT_FADE_MS,
+  ENTITY_DETAIL_EXPAND_FADE_MS,
+  ENTITY_DETAIL_PANEL_WIDTH,
+  ENTITY_DETAIL_STRIP_WIDTH_PX,
+  type EntityDetailWorkspaceTab,
+  type EntityOverlayLayout,
+} from "./shared/entity-detail-overlay.js";
+
+export {
+  DOMAIN_DETAIL_COLLAPSE_DURATION_MS,
+  DOMAIN_DETAIL_CONTENT_FADE_MS,
+  DOMAIN_DETAIL_EXPAND_FADE_MS,
+  DOMAIN_EXPANDED_WORKSPACE_TAB_IDS,
+  DOMAIN_EXPANDED_WORKSPACE_TABS,
+  isDomainDetailOverlayEngaged,
+  type DomainExpandedWorkspaceTabId,
+  type DomainOverlayLayout,
+} from "./projects/domain-overlay.js";
 
 export {
   CONTACT_DETAIL_COLLAPSE_DURATION_MS,
@@ -4079,6 +4219,7 @@ export {
 export {
   stepListKeyboardIndex,
   resolveListKeyboardStepTarget,
+  resolveListKeyboardActivationAnchor,
   flattenGroupedListItemIds,
   type ListKeyboardNavDirection,
 } from "./list-nav/list-keyboard-nav-index.js";

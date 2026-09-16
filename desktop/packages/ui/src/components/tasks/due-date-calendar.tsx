@@ -16,6 +16,8 @@ export type DueDateCalendarProps = {
   disabled?: boolean;
   /** Initial month to show (defaults to selected date or today). */
   initialMonth?: Date;
+  /** When false, omit the footer Today shortcut (default true). */
+  showTodayButton?: boolean;
 };
 
 function initialMonthForValue(
@@ -41,6 +43,7 @@ export function DueDateCalendar({
   onSelect,
   disabled = false,
   initialMonth,
+  showTodayButton = true,
 }: DueDateCalendarProps) {
   const today = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(
@@ -110,19 +113,21 @@ export function DueDateCalendar({
         ))}
       </div>
 
-      <div className="due-date-calendar__footer">
-        <button
-          type="button"
-          className="due-date-calendar__today"
-          disabled={disabled}
-          onClick={() => {
-            onSelect(todayYmd);
-            setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-          }}
-        >
-          Today
-        </button>
-      </div>
+      {showTodayButton ? (
+        <div className="due-date-calendar__footer">
+          <button
+            type="button"
+            className="due-date-calendar__today"
+            disabled={disabled}
+            onClick={() => {
+              onSelect(todayYmd);
+              setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+            }}
+          >
+            Today
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

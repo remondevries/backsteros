@@ -18,12 +18,24 @@ import {
   preservePendingApiRows,
 } from "../merge-local-and-api";
 import {
+  WORKSPACE_AREA_UPDATED_EVENT,
+  WORKSPACE_CONTACT_UPDATED_EVENT,
   WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  WORKSPACE_HABIT_UPDATED_EVENT,
+  WORKSPACE_LETTER_UPDATED_EVENT,
   WORKSPACE_MEETING_UPDATED_EVENT,
+  WORKSPACE_ORGANIZATION_UPDATED_EVENT,
   WORKSPACE_PROJECT_UPDATED_EVENT,
+  WORKSPACE_TASK_UPDATED_EVENT,
+  type WorkspaceAreaUpdatedDetail,
+  type WorkspaceContactUpdatedDetail,
   type WorkspaceDocumentUpdatedDetail,
+  type WorkspaceHabitUpdatedDetail,
+  type WorkspaceLetterUpdatedDetail,
   type WorkspaceMeetingUpdatedDetail,
+  type WorkspaceOrganizationUpdatedDetail,
   type WorkspaceProjectUpdatedDetail,
+  type WorkspaceTaskUpdatedDetail,
 } from "../workspace-events";
 import {
   shouldDesktopRestHydrateColdStart,
@@ -35,6 +47,12 @@ import type { WorkspacePowerSync } from "./workspace-data-types";
 const DOCUMENT_LIVE_FETCH_DEBOUNCE_MS = 100;
 const PROJECT_LIVE_FETCH_DEBOUNCE_MS = 100;
 const MEETING_LIVE_FETCH_DEBOUNCE_MS = 100;
+const CONTACT_LIVE_FETCH_DEBOUNCE_MS = 100;
+const ORGANIZATION_LIVE_FETCH_DEBOUNCE_MS = 100;
+const AREA_LIVE_FETCH_DEBOUNCE_MS = 100;
+const HABIT_LIVE_FETCH_DEBOUNCE_MS = 100;
+const LETTER_LIVE_FETCH_DEBOUNCE_MS = 100;
+const TASK_LIVE_FETCH_DEBOUNCE_MS = 100;
 
 /**
  * REST-hydrated row caches for cold-start rescue + readiness, plus sparse
@@ -87,6 +105,48 @@ export function useWorkspaceApiRows({
   const [liveDeletedMeetingIds, setLiveDeletedMeetingIds] = useState(
     () => new Set<string>(),
   );
+  /** SSE contact rows (portal / peer writes before PowerSync). */
+  const [liveContactsById, setLiveContactsById] = useState(
+    () => new Map<string, ApiContact>(),
+  );
+  const [liveDeletedContactIds, setLiveDeletedContactIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE organization rows (portal / peer writes before PowerSync). */
+  const [liveOrganizationsById, setLiveOrganizationsById] = useState(
+    () => new Map<string, ApiOrganization>(),
+  );
+  const [liveDeletedOrganizationIds, setLiveDeletedOrganizationIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE area rows (agent / peer writes before PowerSync). */
+  const [liveAreasById, setLiveAreasById] = useState(
+    () => new Map<string, ApiArea>(),
+  );
+  const [liveDeletedAreaIds, setLiveDeletedAreaIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE habit rows (agent / peer writes before PowerSync). */
+  const [liveHabitsById, setLiveHabitsById] = useState(
+    () => new Map<string, ApiHabit>(),
+  );
+  const [liveDeletedHabitIds, setLiveDeletedHabitIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE letter rows (agent / peer writes before PowerSync). */
+  const [liveLettersById, setLiveLettersById] = useState(
+    () => new Map<string, ApiLetter>(),
+  );
+  const [liveDeletedLetterIds, setLiveDeletedLetterIds] = useState(
+    () => new Set<string>(),
+  );
+  /** SSE task rows (portal / agent / peer writes before PowerSync). */
+  const [liveTasksById, setLiveTasksById] = useState(
+    () => new Map<string, ApiTask>(),
+  );
+  const [liveDeletedTaskIds, setLiveDeletedTaskIds] = useState(
+    () => new Set<string>(),
+  );
   const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
   const [apiMeetings, setApiMeetings] = useState<ApiMeeting[] | null>(null);
   const [restHydrateSettled, setRestHydrateSettled] = useState(!authenticated);
@@ -129,6 +189,16 @@ export function useWorkspaceApiRows({
       setLiveDeletedProjectIds(new Set());
       setLiveMeetingsById(new Map());
       setLiveDeletedMeetingIds(new Set());
+      setLiveContactsById(new Map());
+      setLiveDeletedContactIds(new Set());
+      setLiveOrganizationsById(new Map());
+      setLiveDeletedOrganizationIds(new Set());
+      setLiveAreasById(new Map());
+      setLiveDeletedAreaIds(new Set());
+      setLiveHabitsById(new Map());
+      setLiveDeletedHabitIds(new Set());
+      setLiveLettersById(new Map());
+      setLiveDeletedLetterIds(new Set());
       setApiHabits(null);
       setApiMeetings(null);
     }
@@ -596,6 +666,544 @@ export function useWorkspaceApiRows({
     };
   }, [authenticated, client]);
 
+  // Portal / peer contact SSE → sparse liveContactsById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const contactId of ids) {
+        void client
+          .requestJson<ApiContact>(
+            `/api/v1/contacts/${encodeURIComponent(contactId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedContactIds((current) => {
+              if (!current.has(contactId)) return current;
+              const next = new Set(current);
+              next.delete(contactId);
+              return next;
+            });
+            setLiveContactsById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedContactIds((current) => {
+                if (current.has(contactId)) return current;
+                const next = new Set(current);
+                next.add(contactId);
+                return next;
+              });
+              setLiveContactsById((current) => {
+                if (!current.has(contactId)) return current;
+                const next = new Map(current);
+                next.delete(contactId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onContactUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceContactUpdatedDetail>)
+        .detail;
+      if (!detail?.contactId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedContactIds((current) => {
+          if (current.has(detail.contactId)) return current;
+          const next = new Set(current);
+          next.add(detail.contactId);
+          return next;
+        });
+        setLiveContactsById((current) => {
+          if (!current.has(detail.contactId)) return current;
+          const next = new Map(current);
+          next.delete(detail.contactId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.contactId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, CONTACT_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_CONTACT_UPDATED_EVENT, onContactUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_CONTACT_UPDATED_EVENT,
+        onContactUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
+  // Portal / peer organization SSE → sparse liveOrganizationsById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const organizationId of ids) {
+        void client
+          .requestJson<ApiOrganization>(
+            `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedOrganizationIds((current) => {
+              if (!current.has(organizationId)) return current;
+              const next = new Set(current);
+              next.delete(organizationId);
+              return next;
+            });
+            setLiveOrganizationsById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedOrganizationIds((current) => {
+                if (current.has(organizationId)) return current;
+                const next = new Set(current);
+                next.add(organizationId);
+                return next;
+              });
+              setLiveOrganizationsById((current) => {
+                if (!current.has(organizationId)) return current;
+                const next = new Map(current);
+                next.delete(organizationId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onOrganizationUpdated = (event: Event) => {
+      const detail = (
+        event as CustomEvent<WorkspaceOrganizationUpdatedDetail>
+      ).detail;
+      if (!detail?.organizationId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedOrganizationIds((current) => {
+          if (current.has(detail.organizationId)) return current;
+          const next = new Set(current);
+          next.add(detail.organizationId);
+          return next;
+        });
+        setLiveOrganizationsById((current) => {
+          if (!current.has(detail.organizationId)) return current;
+          const next = new Map(current);
+          next.delete(detail.organizationId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.organizationId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, ORGANIZATION_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(
+      WORKSPACE_ORGANIZATION_UPDATED_EVENT,
+      onOrganizationUpdated,
+    );
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_ORGANIZATION_UPDATED_EVENT,
+        onOrganizationUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
+  // Agent / peer area SSE → sparse liveAreasById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const areaId of ids) {
+        void client
+          .requestJson<ApiArea>(
+            `/api/v1/areas/${encodeURIComponent(areaId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedAreaIds((current) => {
+              if (!current.has(areaId)) return current;
+              const next = new Set(current);
+              next.delete(areaId);
+              return next;
+            });
+            setLiveAreasById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedAreaIds((current) => {
+                if (current.has(areaId)) return current;
+                const next = new Set(current);
+                next.add(areaId);
+                return next;
+              });
+              setLiveAreasById((current) => {
+                if (!current.has(areaId)) return current;
+                const next = new Map(current);
+                next.delete(areaId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onAreaUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceAreaUpdatedDetail>).detail;
+      if (!detail?.areaId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedAreaIds((current) => {
+          if (current.has(detail.areaId)) return current;
+          const next = new Set(current);
+          next.add(detail.areaId);
+          return next;
+        });
+        setLiveAreasById((current) => {
+          if (!current.has(detail.areaId)) return current;
+          const next = new Map(current);
+          next.delete(detail.areaId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.areaId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, AREA_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_AREA_UPDATED_EVENT, onAreaUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(WORKSPACE_AREA_UPDATED_EVENT, onAreaUpdated);
+    };
+  }, [authenticated, client]);
+
+  // Agent / peer habit SSE → sparse liveHabitsById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const habitId of ids) {
+        void client
+          .requestJson<ApiHabit>(
+            `/api/v1/habits/${encodeURIComponent(habitId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedHabitIds((current) => {
+              if (!current.has(habitId)) return current;
+              const next = new Set(current);
+              next.delete(habitId);
+              return next;
+            });
+            setLiveHabitsById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedHabitIds((current) => {
+                if (current.has(habitId)) return current;
+                const next = new Set(current);
+                next.add(habitId);
+                return next;
+              });
+              setLiveHabitsById((current) => {
+                if (!current.has(habitId)) return current;
+                const next = new Map(current);
+                next.delete(habitId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onHabitUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceHabitUpdatedDetail>).detail;
+      if (!detail?.habitId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedHabitIds((current) => {
+          if (current.has(detail.habitId)) return current;
+          const next = new Set(current);
+          next.add(detail.habitId);
+          return next;
+        });
+        setLiveHabitsById((current) => {
+          if (!current.has(detail.habitId)) return current;
+          const next = new Map(current);
+          next.delete(detail.habitId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.habitId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, HABIT_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_HABIT_UPDATED_EVENT, onHabitUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(WORKSPACE_HABIT_UPDATED_EVENT, onHabitUpdated);
+    };
+  }, [authenticated, client]);
+
+  // Agent / peer letter SSE → sparse liveLettersById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const letterId of ids) {
+        void client
+          .requestJson<ApiLetter>(
+            `/api/v1/letters/${encodeURIComponent(letterId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedLetterIds((current) => {
+              if (!current.has(letterId)) return current;
+              const next = new Set(current);
+              next.delete(letterId);
+              return next;
+            });
+            setLiveLettersById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedLetterIds((current) => {
+                if (current.has(letterId)) return current;
+                const next = new Set(current);
+                next.add(letterId);
+                return next;
+              });
+              setLiveLettersById((current) => {
+                if (!current.has(letterId)) return current;
+                const next = new Map(current);
+                next.delete(letterId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onLetterUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceLetterUpdatedDetail>)
+        .detail;
+      if (!detail?.letterId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedLetterIds((current) => {
+          if (current.has(detail.letterId)) return current;
+          const next = new Set(current);
+          next.add(detail.letterId);
+          return next;
+        });
+        setLiveLettersById((current) => {
+          if (!current.has(detail.letterId)) return current;
+          const next = new Map(current);
+          next.delete(detail.letterId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.letterId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, LETTER_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_LETTER_UPDATED_EVENT, onLetterUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_LETTER_UPDATED_EVENT,
+        onLetterUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
+  // Portal / agent / peer task SSE → sparse liveTasksById overlay.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const taskId of ids) {
+        void client
+          .requestJson<ApiTask>(`/api/v1/tasks/${encodeURIComponent(taskId)}`)
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedTaskIds((current) => {
+              if (!current.has(taskId)) return current;
+              const next = new Set(current);
+              next.delete(taskId);
+              return next;
+            });
+            setLiveTasksById((current) => {
+              const previous = current.get(row.id);
+              const next = new Map(current);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedTaskIds((current) => {
+                if (current.has(taskId)) return current;
+                const next = new Set(current);
+                next.add(taskId);
+                return next;
+              });
+              setLiveTasksById((current) => {
+                if (!current.has(taskId)) return current;
+                const next = new Map(current);
+                next.delete(taskId);
+                return next;
+              });
+            }
+          });
+      }
+    };
+
+    const onTaskUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceTaskUpdatedDetail>).detail;
+      if (!detail?.taskId) return;
+      // Comment/activity wakes only need the activity panel — skip list fetch.
+      if (detail.reason === "comment") return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedTaskIds((current) => {
+          if (current.has(detail.taskId)) return current;
+          const next = new Set(current);
+          next.add(detail.taskId);
+          return next;
+        });
+        setLiveTasksById((current) => {
+          if (!current.has(detail.taskId)) return current;
+          const next = new Map(current);
+          next.delete(detail.taskId);
+          return next;
+        });
+        return;
+      }
+
+      pendingIds.add(detail.taskId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, TASK_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_TASK_UPDATED_EVENT, onTaskUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(WORKSPACE_TASK_UPDATED_EVENT, onTaskUpdated);
+    };
+  }, [authenticated, client]);
+
   return {
     apiTasks,
     setApiTasks,
@@ -621,6 +1229,18 @@ export function useWorkspaceApiRows({
     liveMeetingsById,
     setLiveMeetingsById,
     liveDeletedMeetingIds,
+    liveContactsById,
+    liveDeletedContactIds,
+    liveOrganizationsById,
+    liveDeletedOrganizationIds,
+    liveAreasById,
+    liveDeletedAreaIds,
+    liveHabitsById,
+    liveDeletedHabitIds,
+    liveLettersById,
+    liveDeletedLetterIds,
+    liveTasksById,
+    liveDeletedTaskIds,
     apiHabits,
     setApiHabits,
     apiMeetings,

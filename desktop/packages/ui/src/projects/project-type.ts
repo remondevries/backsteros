@@ -37,3 +37,13 @@ export function migrateLegacyProjectType(
   }
   return "general";
 }
+
+/**
+ * Domain projects: start/renewal dates come from the registrar — show as
+ * read-only calendar values everywhere (Catalog, Projects, board, detail).
+ */
+export function projectTypeHasRegistrarOwnedDates(
+  type: string | null | undefined,
+): boolean {
+  return migrateLegacyProjectType(type) === "domeinname";
+}

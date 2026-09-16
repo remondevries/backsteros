@@ -12,8 +12,8 @@ export const LIST_KEYBOARD_NAV_CONTENT_PRIORITY = 8;
 
 export const LIST_KEYBOARD_NAV_ZONE_ORDER: ListKeyboardNavZone[] = [
   "sidepanel",
-  "content",
   "main",
+  "content",
 ];
 
 export const LIST_KEYBOARD_NAV_ACTIVE_ZONE_ATTR = "data-keyboard-nav-active-zone";
@@ -387,14 +387,28 @@ export function resolveListKeyboardNavTabTargetZone(
 }
 
 /**
- * While a right detail pane is open (or main+content lists both exist), Tab
- * cycles between the main list and the detail list — not the left nav.
- * Left nav rejoins the Tab cycle only when the detail is closed.
+ * While a right detail pane is open, Tab cycles between the main list and the
+ * detail list — not the left nav.
+ *
+ * Exception: calendar keeps left tasks + grid + right meetings as three peer
+ * columns in the Tab cycle (unless a dismissible detail pane is open).
+ *
+ * On other routes, main+content together also drop the side panel so Tab stays
+ * in the main/detail pair.
  */
 export function filterListKeyboardNavZonesForTab(
   available: ListKeyboardNavZone[],
   detailOpen = false,
+  pathname?: string | null,
 ): ListKeyboardNavZone[] {
+  if (
+    !detailOpen &&
+    pathname != null &&
+    isCalendarListKeyboardPathname(pathname)
+  ) {
+    return available;
+  }
+
   const keepFocusInMainContent =
     detailOpen ||
     (available.includes("main") && available.includes("content"));
@@ -422,4 +436,10 @@ export type ApplyListKeyboardNavZoneOptions = {
    * item (ignore selected row and prior j/k highlight).
    */
   landAtStart?: boolean;
+  /**
+   * When activating, park focus on the list container only — do not focus or
+   * scroll the row. Use when the highlight is already correct and row focus
+   * would flash (e.g. closing a calendar meeting overlay).
+   */
+  focusContainerOnly?: boolean;
 };

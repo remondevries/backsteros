@@ -25,6 +25,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { WORKSPACE_FINANCE_UPDATED_EVENT } from "../../lib/workspace-events";
 import { accountSlug } from "./finance-page-helpers";
 
 /** String-href navigate used by finance page hooks (Phase 5c). */
@@ -230,6 +231,20 @@ export function useFinanceTransactions({
     if (!allAccountsSelected && !selected) return;
     void loadTransactions();
   }, [loadTransactions, selectionKey, showTransactions]);
+
+  useEffect(() => {
+    if (!showTransactions) return;
+    if (!allAccountsSelected && !selected) return;
+    const onFinanceUpdated = () => {
+      void loadTransactions();
+    };
+    window.addEventListener(WORKSPACE_FINANCE_UPDATED_EVENT, onFinanceUpdated);
+    return () =>
+      window.removeEventListener(
+        WORKSPACE_FINANCE_UPDATED_EVENT,
+        onFinanceUpdated,
+      );
+  }, [allAccountsSelected, loadTransactions, selected, showTransactions]);
 
   useEffect(() => {
     let cancelled = false;

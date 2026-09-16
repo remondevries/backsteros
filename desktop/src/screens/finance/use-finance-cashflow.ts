@@ -8,6 +8,7 @@ import type {
 import type { FinanceNavId } from "@backsteros/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useDesktopPowerSync } from "../../lib/powersync-context";
+import { WORKSPACE_FINANCE_UPDATED_EVENT } from "../../lib/workspace-events";
 import {
   createCashflowPlannerEntryViaPowerSyncOrApi,
   deleteCashflowPlannerEntryViaPowerSyncOrApi,
@@ -115,6 +116,19 @@ export function useFinanceCashflow({
   useEffect(() => {
     if (navId !== "cashflow") return;
     void refreshPlannerEntries();
+  }, [navId, refreshPlannerEntries]);
+
+  useEffect(() => {
+    if (navId !== "cashflow") return;
+    const onFinanceUpdated = () => {
+      void refreshPlannerEntries();
+    };
+    window.addEventListener(WORKSPACE_FINANCE_UPDATED_EVENT, onFinanceUpdated);
+    return () =>
+      window.removeEventListener(
+        WORKSPACE_FINANCE_UPDATED_EVENT,
+        onFinanceUpdated,
+      );
   }, [navId, refreshPlannerEntries]);
 
   const createPlannerEntry = useCallback(

@@ -4,7 +4,8 @@ export function isNativeDatePickerOpen(): boolean {
   if (typeof document === "undefined") return false;
   return (
     document.querySelector(`[${NATIVE_DATE_PICKER_OPEN_ATTRIBUTE}]`) !== null ||
-    document.querySelector("[data-due-date-calendar-popover]") !== null
+    document.querySelector("[data-due-date-calendar-popover]") !== null ||
+    document.querySelector("[data-meeting-schedule-panel]") !== null
   );
 }
 

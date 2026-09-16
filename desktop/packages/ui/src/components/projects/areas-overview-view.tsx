@@ -23,6 +23,7 @@ import {
   type GroupedListPointerReorderRequest,
 } from "../../list-nav/use-grouped-list-pointer-reorder.js";
 import type { ProjectStatus } from "../../projects/project-status.js";
+import { projectTypeHasRegistrarOwnedDates } from "../../projects/project-type.js";
 import {
   ListBoardViewShell,
   type ListBoardView,
@@ -180,7 +181,7 @@ export function AreasOverviewView({
     startDate: Date | null,
   ) => {
     const target = localProjects.find((project) => project.id === projectId);
-    if (target?.type === "domeinname") return;
+    if (projectTypeHasRegistrarOwnedDates(target?.type)) return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId
@@ -193,7 +194,7 @@ export function AreasOverviewView({
 
   const handleDueDateChange = (projectId: string, dueDate: Date | null) => {
     const target = localProjects.find((project) => project.id === projectId);
-    if (target?.type === "domeinname") return;
+    if (projectTypeHasRegistrarOwnedDates(target?.type)) return;
     setLocalProjects((current) =>
       current.map((project) =>
         project.id === projectId
@@ -387,6 +388,7 @@ export function AreasOverviewView({
       <ProjectOverviewRow
         key={project.id}
         project={project}
+        active={selectedProjectId === project.id}
         keyboardHighlighted={highlightedId === project.id}
         agentWorking={workingProjectIds?.has(project.id) ?? false}
         onSelect={selectProject}

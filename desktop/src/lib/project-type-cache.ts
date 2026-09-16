@@ -2,6 +2,15 @@
  * Remember project types seen in list/workspace data so detail routes can pick
  * the codebase workbench on the first paint (before a slow API type fill-in).
  */
+
+import {
+  hrefFromLocationParts,
+  listReturnHrefFromState,
+  recalledListReturnHref,
+  rememberListReturnHref,
+  resolveListReturnHref,
+} from "./list-return-href";
+
 const typesById = new Map<string, string>();
 const typesByKey = new Map<string, string>();
 
@@ -60,10 +69,30 @@ export function recalledProjectNavFrom(
   );
 }
 
+export function rememberProjectListHref(
+  id: string,
+  key: string,
+  href: string | null | undefined,
+): void {
+  rememberListReturnHref("project", id, href);
+  rememberListReturnHref("project", key, href);
+}
+
+export function recalledProjectListHref(
+  idOrKey: string | null | undefined,
+): string | null {
+  return recalledListReturnHref("project", idOrKey);
+}
+
 export type ProjectLocationState = {
   projectType?: string;
   /** List the user navigated from (Catalog / Projects). */
   from?: ProjectNavFrom | "areas" | "development";
+  /**
+   * Full list href including filter/view query (e.g. `/catalog?type=email`).
+   * Breadcrumb / delete-back should restore this — Escape already does via history.
+   */
+  listHref?: string;
 };
 
 export function projectTypeFromLocationState(
@@ -102,6 +131,31 @@ export function projectListLabelForNavFrom(from: ProjectNavFrom): string {
   return "Projects";
 }
 
+export function projectListHrefFromLocationState(
+  state: unknown,
+): string | null {
+  return listReturnHrefFromState("project", state);
+}
+
+/**
+ * Prefer the remembered filtered list href (Catalog type / Projects area),
+ * then fall back to the bare section root for `from`.
+ */
+export function resolveProjectListHref(options: {
+  locationState: unknown;
+  navFrom: ProjectNavFrom;
+  projectId?: string | null;
+  projectKey?: string | null;
+  routeParam?: string | null;
+}): string {
+  return resolveListReturnHref({
+    kind: "project",
+    locationState: options.locationState,
+    ids: [options.projectId, options.projectKey, options.routeParam],
+    fallback: projectListHrefForNavFrom(options.navFrom),
+  });
+}
+
 /**
  * Sidebar active matching uses pathname prefixes (`/projects/...` → Projects).
  * When the user opened a project from Catalog, remap to that list
@@ -129,12 +183,14 @@ export function rememberProjectNavFromHref(
   state: unknown,
 ): void {
   const from = projectNavFromLocationState(state);
-  if (!from) return;
+  const listHref = projectListHrefFromLocationState(state);
+  if (!from && !listHref) return;
   const pathname = href.split(/[?#]/, 1)[0] ?? href;
   const match = pathname.match(/^\/projects\/([^/]+)/);
   const key = match?.[1];
   if (!key || key === "new") return;
-  rememberProjectNavFrom(key, key, from);
+  if (from) rememberProjectNavFrom(key, key, from);
+  if (listHref) rememberProjectListHref(key, key, listHref);
 }
 
 /** Prefer location state, then the in-memory nav-from cache. */
@@ -151,3 +207,5 @@ export function resolveProjectNavFromForPath(options: {
     recalledProjectNavFrom(options.routeParam)
   );
 }
+
+export { hrefFromLocationParts };

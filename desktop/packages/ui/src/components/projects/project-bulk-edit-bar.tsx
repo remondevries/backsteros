@@ -9,6 +9,11 @@ import {
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
 } from "../../projects/project-status.js";
+import {
+  PROJECT_AREA_LABELS,
+  PROJECT_AREAS,
+  type ProjectArea,
+} from "../../projects/project-areas.js";
 import { DROPDOWN_NONE_VALUE } from "../dropdowns/dropdown-options.js";
 import {
   FinanceBulkBar,
@@ -21,7 +26,6 @@ import {
 import { FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME } from "../finance/finance-transactions-filter-bar.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -30,8 +34,8 @@ import type { ProjectOverviewRowProject } from "./project-overview-row.js";
 export type ProjectBulkPatch = {
   status?: ProjectStatus;
   priority?: number;
-  startDate?: Date | null;
-  dueDate?: Date | null;
+  /** Top-level area; clearing also clears nested `areaId` on apply. */
+  area?: ProjectArea | null;
   organizationId?: string | null;
 };
 
@@ -48,15 +52,9 @@ export type ProjectBulkEditBarProps = {
 type ProjectBulkDraft = {
   status?: ProjectStatus;
   priority?: number;
-  startDate?: Date | null;
-  dueDate?: Date | null;
+  area?: ProjectArea | null;
   organizationId?: string | null;
 };
-
-function toEpoch(value: number | Date | null | undefined): number | null {
-  if (value == null) return null;
-  return value instanceof Date ? value.getTime() : Number(value);
-}
 
 /**
  * Floating bulk editor for project multi-select — same dock chrome as tasks.
@@ -73,9 +71,6 @@ export function ProjectBulkEditBar({
   const selectionCount = selectedProjects.length;
   const [bulkDraft, setBulkDraft] = useState<ProjectBulkDraft>({});
   const [applyPending, setApplyPending] = useState(false);
-  const registrarDatesLocked = selectedProjects.every(
-    (project) => project.type === "domeinname",
-  );
 
   const selectionDraftKey = useMemo(
     () =>
@@ -106,8 +101,30 @@ export function ProjectBulkEditBar({
       TASK_PRIORITY_ORDER.map((value) => ({
         value: String(value),
         label: getTaskPriorityLabel(value),
+        searchTerms: getTaskPriorityLabel(value),
         icon: <TaskPriorityIcon priority={value} size={18} />,
       })),
+    [],
+  );
+
+  const areaOptions = useMemo(
+    () =>
+      relabelDropdownNoneOption(
+        [
+          {
+            value: DROPDOWN_NONE_VALUE,
+            label: "No area",
+            searchTerms: "none unassigned",
+          },
+          ...PROJECT_AREAS.map((area) => ({
+            value: area,
+            label: PROJECT_AREA_LABELS[area],
+            searchTerms: area,
+          })),
+        ],
+        DROPDOWN_NONE_VALUE,
+        "Area",
+      ),
     [],
   );
 
@@ -148,35 +165,15 @@ export function ProjectBulkEditBar({
     return shared == null ? null : String(shared);
   }, [bulkDraft, selectedProjects]);
 
-  const bulkStartDate = useMemo(() => {
-    if ("startDate" in bulkDraft) return bulkDraft.startDate ?? null;
-    const shared = sharedSelectionValue(
-      selectedProjects.map((project) => toEpoch(project.startDate)),
+  const bulkAreaValue = useMemo(() => {
+    if ("area" in bulkDraft) {
+      return bulkDraft.area ?? DROPDOWN_NONE_VALUE;
+    }
+    return sharedNullableIdSelectionValue(
+      selectedProjects.map((project) => project.area ?? null),
+      DROPDOWN_NONE_VALUE,
     );
-    return shared == null ? null : new Date(shared);
   }, [bulkDraft, selectedProjects]);
-
-  const bulkStartIsMixed =
-    !("startDate" in bulkDraft) &&
-    selectedProjects.length > 1 &&
-    sharedSelectionValue(
-      selectedProjects.map((project) => toEpoch(project.startDate)),
-    ) == null;
-
-  const bulkDueDate = useMemo(() => {
-    if ("dueDate" in bulkDraft) return bulkDraft.dueDate ?? null;
-    const shared = sharedSelectionValue(
-      selectedProjects.map((project) => toEpoch(project.dueDate)),
-    );
-    return shared == null ? null : new Date(shared);
-  }, [bulkDraft, selectedProjects]);
-
-  const bulkDueIsMixed =
-    !("dueDate" in bulkDraft) &&
-    selectedProjects.length > 1 &&
-    sharedSelectionValue(
-      selectedProjects.map((project) => toEpoch(project.dueDate)),
-    ) == null;
 
   const bulkOrganizationValue = useMemo(() => {
     if ("organizationId" in bulkDraft) {
@@ -212,12 +209,7 @@ export function ProjectBulkEditBar({
         if (!bulkDraftReady) return;
         setApplyPending(true);
         try {
-          const patch: ProjectBulkPatch = { ...bulkDraft };
-          if (registrarDatesLocked) {
-            delete patch.startDate;
-            delete patch.dueDate;
-          }
-          await Promise.resolve(onApply(patch));
+          await Promise.resolve(onApply({ ...bulkDraft }));
           setBulkDraft({});
         } finally {
           setApplyPending(false);
@@ -269,71 +261,27 @@ export function ProjectBulkEditBar({
           }
         />
       ) : null}
-      <span
-        className={[
-          "project-bulk-bar__date",
-          ("startDate" in bulkDraft && bulkDraft.startDate != null) ||
-          (!("startDate" in bulkDraft) &&
-            bulkStartDate != null &&
-            !bulkStartIsMixed)
-            ? "is-filled"
-            : "is-empty",
-        ].join(" ")}
-      >
-        <TaskDueDateDropdown
-          dueDate={
-            bulkStartIsMixed && !("startDate" in bulkDraft)
-              ? null
-              : bulkStartDate
-          }
-          variant="property"
-          triggerVariant="composePill"
-          status="completed"
-          disabled={registrarDatesLocked}
-          noDueDateLabel={
-            bulkStartIsMixed && !("startDate" in bulkDraft)
-              ? "Start date"
-              : "No start date"
-          }
-          searchPlaceholder="Set start date"
-          onDueDateChange={(next) =>
-            setBulkDraft((current) => ({
-              ...current,
-              startDate: next,
-            }))
-          }
-        />
-      </span>
-      <span
-        className={[
-          "project-bulk-bar__date",
-          ("dueDate" in bulkDraft && bulkDraft.dueDate != null) ||
-          (!("dueDate" in bulkDraft) && bulkDueDate != null && !bulkDueIsMixed)
-            ? "is-filled"
-            : "is-empty",
-        ].join(" ")}
-      >
-        <TaskDueDateDropdown
-          dueDate={
-            bulkDueIsMixed && !("dueDate" in bulkDraft) ? null : bulkDueDate
-          }
-          variant="property"
-          triggerVariant="composePill"
-          disabled={registrarDatesLocked}
-          noDueDateLabel={
-            bulkDueIsMixed && !("dueDate" in bulkDraft)
-              ? "Due date"
-              : "No due date"
-          }
-          searchPlaceholder="Set due date"
-          onDueDateChange={(next) =>
-            setBulkDraft((current) => ({
-              ...current,
-              dueDate: next,
-            }))
-          }
-        />
-      </span>
+      <SearchableDropdown
+        ariaLabel="Bulk set area"
+        className="property-dropdown"
+        triggerClassName={withBulkDropdownFillState(
+          FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
+          bulkAreaValue,
+          DROPDOWN_NONE_VALUE,
+        )}
+        value={bulkAreaValue}
+        options={areaOptions}
+        emptySelectionLabel="Area"
+        showIcon={bulkDropdownShowIcon(bulkAreaValue, DROPDOWN_NONE_VALUE)}
+        searchPlaceholder="Set area"
+        panelWidth={240}
+        onChange={(value) =>
+          setBulkDraft((current) => ({
+            ...current,
+            area: value === DROPDOWN_NONE_VALUE ? null : (value as ProjectArea),
+          }))
+        }
+      />
       {canShowOrganization ? (
         <SearchableDropdown
           ariaLabel="Bulk set organization"

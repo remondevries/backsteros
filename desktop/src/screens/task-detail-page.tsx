@@ -37,6 +37,11 @@ import {
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
 import {
+  listReturnHrefFromState,
+  rememberListReturnHref,
+  resolveListReturnHref,
+} from "../lib/list-return-href";
+import {
   useShellLocation,
   useShellParams,
   useKeepAliveActive,
@@ -227,9 +232,25 @@ export function TaskDetailPage({
   const dueFilterParam = shellParams.dueFilter ?? dueFilterFromPath;
   const dueFilter: TasksDueFilter | null =
     dueFilterParam && isTasksDueFilter(dueFilterParam) ? dueFilterParam : null;
+  const fallbackBackHref = dueFilter
+    ? buildTasksDueHref(dueFilter)
+    : "/tasks";
   const backHref =
     backHrefProp ??
-    (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
+    resolveListReturnHref({
+      kind: "task",
+      locationState: location.state,
+      ids: [routeParam, shellParams.taskId, shellParams.taskSlug],
+      fallback: fallbackBackHref,
+    });
+
+  useEffect(() => {
+    const listHref = listReturnHrefFromState("task", location.state);
+    if (!listHref) return;
+    for (const id of [routeParam, shellParams.taskId, shellParams.taskSlug]) {
+      if (id) rememberListReturnHref("task", id, listHref);
+    }
+  }, [location.state, routeParam, shellParams.taskId, shellParams.taskSlug]);
   const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
   const { projects, letters } = useDesktopWorkspaceProjects();
@@ -639,10 +660,10 @@ export function TaskDetailPage({
     }
     if (dueFilter) {
       return [
-        { label: "Tasks", href: "/tasks" },
+        { label: "Tasks", href: backHref },
         {
           label: getTasksDueFilterLabel(dueFilter),
-          href: buildTasksDueHref(dueFilter),
+          href: backHref,
         },
         ...(taskLabel ? [{ label: taskLabel }] : []),
       ];

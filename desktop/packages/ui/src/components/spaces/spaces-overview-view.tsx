@@ -8,6 +8,7 @@ import {
   type GroupedListPointerReorderRequest,
 } from "../../list-nav/use-grouped-list-pointer-reorder.js";
 import type { KnowledgeListItem } from "../../navigation/entity-routes.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import {
   applyOptimisticSpaceReorder,
   buildSpaceSiblingOrderIds,
@@ -34,7 +35,17 @@ import {
   SpaceOverviewCreateCard,
   type SpaceOverviewCardItem,
 } from "./space-overview-card.js";
+import { useListTypeToFilter } from "../../list-nav/use-list-type-to-filter.js";
+import { listItemMatchesTypeToFilter } from "../../list-nav/list-type-to-filter.js";
 import { WebsiteSpaceRow } from "./website-space-row.js";
+
+/** Plain `]` — same as other right-rail toggles (agent / catalog / journal). */
+function isSpacesSettingsPanelToggleShortcut(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+  return event.key === "]" || event.code === "BracketRight";
+}
 
 export type SpacesOverviewViewProps = {
   documents: readonly KnowledgeListItem[];
@@ -60,8 +71,13 @@ export type SpacesOverviewViewProps = {
   /** Persist within-category card reorder (full sibling id order). */
   onReorderSpace?: (orderedIds: string[]) => void;
   onOpenSpaceSettings?: (item: SpaceOverviewCardItem) => void;
+  /** When set, `]` closes settings instead of opening another space. */
+  settingsSpaceId?: string | null;
+  onCloseSpaceSettings?: () => void;
   /** Show grey placeholder cards per category until documents are ready. */
   loading?: boolean;
+  /** When false, Shift+F type-to-filter is off (hidden keep-alive lists). */
+  typeToFilterEnabled?: boolean;
 };
 
 export function SpacesOverviewView({
@@ -73,8 +89,12 @@ export function SpacesOverviewView({
   onCreateSpaceFolder,
   onReorderSpace,
   onOpenSpaceSettings,
+  settingsSpaceId = null,
+  onCloseSpaceSettings,
   loading = false,
+  typeToFilterEnabled = true,
 }: SpacesOverviewViewProps) {
+  const listTypeToFilter = useListTypeToFilter({ enabled: typeToFilterEnabled });
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(),
   );
@@ -100,11 +120,23 @@ export function SpacesOverviewView({
   }, [localDocuments]);
 
   const groups = useMemo(() => {
-    return SPACES_CATEGORIES.map((category) => ({
-      category,
-      children: listSpaceChildFolders(localDocuments, category.rootPath),
-    }));
-  }, [localDocuments]);
+    return SPACES_CATEGORIES.map((category) => {
+      let children = listSpaceChildFolders(localDocuments, category.rootPath);
+      if (listTypeToFilter.query) {
+        children = children.filter((child) =>
+          listItemMatchesTypeToFilter(
+            listTypeToFilter.query,
+            child.title,
+            child.path,
+          ),
+        );
+      }
+      return {
+        category,
+        children,
+      };
+    });
+  }, [localDocuments, listTypeToFilter.query]);
 
   const spaceCategoryById = useMemo(() => {
     const map = new Map<string, SpacesCategoryId>();
@@ -227,6 +259,54 @@ export function SpacesOverviewView({
       }
     },
   });
+
+  const resolveSpaceCardItem = useCallback(
+    (itemId: string): SpaceOverviewCardItem | null => {
+      for (const group of groups) {
+        const item = group.children.find((child) => child.id === itemId);
+        if (!item) continue;
+        return {
+          id: item.id,
+          title: item.title,
+          path: item.path,
+          icon: item.icon,
+          description: item.description,
+          categoryId: group.category.id,
+          articleCount: countArticlesInFolder(localDocuments, item.id),
+          updatedAt: latestUpdatedAtInFolder(localDocuments, item.id),
+        };
+      }
+      return null;
+    },
+    [groups, localDocuments],
+  );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!isSpacesSettingsPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (settingsSpaceId) {
+        onCloseSpaceSettings?.();
+        return;
+      }
+
+      if (!highlightedId || !onOpenSpaceSettings) return;
+      const focused = resolveSpaceCardItem(highlightedId);
+      if (focused) onOpenSpaceSettings(focused);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    highlightedId,
+    onCloseSpaceSettings,
+    onOpenSpaceSettings,
+    resolveSpaceCardItem,
+    settingsSpaceId,
+  ]);
 
   useEffect(() => {
     setCreateError(null);

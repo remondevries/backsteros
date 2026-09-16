@@ -46,9 +46,37 @@ function isAgentBrowserPaneActive(): boolean {
 }
 
 /**
- * ⌘L / Ctrl+L opens the add-link modal on task detail or the create-task
- * compose popup. Yields to the agent browser address bar when that pane is
- * active (unless compose owns the shortcut).
+ * Shortcut only when this attachments block is on a visible surface — not a
+ * keep-alive-hidden task page still mounted under /calendar, /inbox, etc.
+ */
+export function isTaskLinkAttachmentsSurfaceActive(
+  root: HTMLElement | null,
+): boolean {
+  if (!root || !root.isConnected) {
+    return false;
+  }
+  if (root.closest("[data-keep-alive-hidden]")) {
+    return false;
+  }
+  let el: HTMLElement | null = root;
+  while (el) {
+    if (el.hasAttribute("hidden")) {
+      return false;
+    }
+    const style = getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+    el = el.parentElement;
+  }
+  return true;
+}
+
+/**
+ * ⌘L / Ctrl+L opens the add-link modal on a visible task detail (or the
+ * create-task compose popup). Does not fire on other routes where a keep-alive
+ * task tree is still mounted. Yields to the agent browser address bar when
+ * that pane is active (unless compose owns the shortcut).
  */
 export function shouldHandleAddTaskLinkShortcut(
   event: KeyboardEvent,
@@ -75,6 +103,10 @@ export function shouldHandleAddTaskLinkShortcut(
   }
 
   const inCompose = isInsideComposeModal(root);
+
+  if (!inCompose && !isTaskLinkAttachmentsSurfaceActive(root)) {
+    return false;
+  }
 
   if (isComposeModalOpen()) {
     if (!inCompose) {

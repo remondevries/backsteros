@@ -920,6 +920,44 @@
   padding: 6px 8px 0;
 }
 
+.desktop-journal-day-layout__chrome--with-start {
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-journal-day-layout__chrome-start,
+.desktop-journal-day-layout__chrome-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-journal-day-layout__chrome-end {
+  margin-left: auto;
+}
+
+/* Match ⋯ entity-actions to chrome icon buttons when hosted in the rail. */
+.desktop-journal-day-layout__chrome-end .entity-header-actions-trigger-wrap,
+.desktop-journal-day-layout__chrome-end .entity-header-actions-trigger {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.desktop-journal-day-layout__chrome-end
+  .entity-header-actions-trigger:hover:not(:disabled) {
+  background: transparent;
+  color: var(--foreground);
+}
+
 /* Contact panel: expand/collapse on the leading edge, hide toggle on the trailing.
  * Positioned over the profile header (see project-nav.css) so content aligns. */
 .desktop-journal-day-layout__chrome.contact-detail-panel__chrome {
@@ -1036,6 +1074,44 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Domain / contact-style profiles in the right rail must fill height so
+ * `.contact-overview__scroll` can overflow — same as contact-detail-panel__body. */
+.desktop-journal-day-layout__calendar-body > .contact-detail,
+.desktop-journal-day-layout__calendar-body > .calendar-meetings-side-panel,
+.desktop-journal-day-layout__calendar-body > .calendar-right-rail,
+.catalog-domains-side-panel__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.catalog-domains-side-panel__body > .contact-detail {
+  height: 100%;
+  min-height: 0;
+}
+
+.domain-project-workbench__tasks {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.journal-day-layout__main > .domain-project-workbench__tasks {
+  min-width: 0;
+  width: 100%;
+}
+
+.journal-day-layout__main > .calendar-view {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .journal-day-layout__calendar.is-collapsed {

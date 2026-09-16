@@ -151,14 +151,15 @@ export async function matchCloudflareZones(
   let unmatchedZones = 0;
   for (const zone of zones) {
     const nameKey = zone.name.trim().toLowerCase();
-    if (projectsByName.has(nameKey)) continue;
-    unmatchedZones += 1;
-    domains.push({
-      name: zone.name,
-      projectId: null,
-      zoneId: zone.id,
-      action: "unmatched_zone",
-    });
+    if (!projectsByName.has(nameKey)) {
+      unmatchedZones += 1;
+      domains.push({
+        name: zone.name,
+        projectId: null,
+        zoneId: zone.id,
+        action: "unmatched_zone",
+      });
+    }
   }
 
   return {
@@ -169,6 +170,79 @@ export async function matchCloudflareZones(
     unmatchedProjects,
     unmatchedZones,
     domains,
+  };
+}
+
+/**
+ * Ensure a domain project has `cloudflareZoneId` set by matching its hostname
+ * to Cloudflare. Used when cloud lags local after a zone match.
+ */
+export async function ensureProjectCloudflareZone(
+  workspaceId: string,
+  projectId: string,
+  options?: { apiToken?: string | null },
+): Promise<{
+  projectId: string;
+  name: string;
+  zoneId: string | null;
+  action: "unchanged" | "updated" | "unmatched";
+}> {
+  const project = await taskProjectService.getProjectById(workspaceId, projectId);
+  if (!project) {
+    throw new CloudflareApiError(404, "not_found", "Project not found");
+  }
+
+  const existing = project.cloudflareZoneId?.trim() || null;
+  if (existing) {
+    return {
+      projectId: project.id,
+      name: project.name,
+      zoneId: existing,
+      action: "unchanged",
+    };
+  }
+
+  const apiToken =
+    options?.apiToken?.trim() ||
+    (await getWorkspaceOrEnvCloudflareToken(workspaceId));
+  if (!apiToken) {
+    throw new CloudflareApiError(
+      400,
+      "cloudflare_token_missing",
+      "Cloudflare API token is not configured. Paste a token in Settings → Integrations → Cloudflare (or set CLOUDFLARE_API_TOKEN).",
+    );
+  }
+
+  const client = new CloudflareClient({ apiToken });
+  const zones = await client.listZones();
+  const nameKey = project.name.trim().toLowerCase();
+  const zone = zones.find((entry) => entry.name.trim().toLowerCase() === nameKey);
+  if (!zone) {
+    return {
+      projectId: project.id,
+      name: project.name,
+      zoneId: null,
+      action: "unmatched",
+    };
+  }
+
+  const patched = await patchProject(workspaceId, project.id, {
+    cloudflareZoneId: zone.id,
+  });
+  if (!patched) {
+    return {
+      projectId: project.id,
+      name: project.name,
+      zoneId: null,
+      action: "unmatched",
+    };
+  }
+
+  return {
+    projectId: project.id,
+    name: project.name,
+    zoneId: zone.id,
+    action: "updated",
   };
 }
 

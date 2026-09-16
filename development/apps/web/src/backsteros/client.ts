@@ -1,4 +1,5 @@
 import { BACKSTEROS_INBOX_ATTENTION_STATUSES, backsterosInboxDueBeforeIso } from "./inboxDue";
+import { resolveFileTaskMailboxBaseUrl } from "./fileTaskAgentsStore";
 import { DEFAULT_BACKSTEROS_API_URL, readBacksterosConnectionSettings } from "./settingsStore";
 import type {
   BacksterosCodebaseProject,
@@ -64,6 +65,38 @@ function resolveBacksterosRequest(pathWithQuery: string): {
   return { url: `${apiUrl}${normalizedPath}`, headers };
 }
 
+/** File-task mailbox via same-origin T3 proxy → Cloud Core (avoids browser CORS). */
+function resolveFileTaskMailboxRequest(pathWithQuery: string): {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+} {
+  const settings = readBacksterosConnectionSettings();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Backsteros-Mailbox-Base": resolveFileTaskMailboxBaseUrl(),
+  };
+  if (settings.apiKey) {
+    headers.Authorization = `Bearer ${settings.apiKey}`;
+  } else {
+    throw new Error("Add a BacksterOS API key in Settings → Integrations.");
+  }
+
+  const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  // /api/v1/file-task-callbacks → /api/backsteros/cloud-file-task-callbacks
+  // /api/v1/file-task-callbacks/:id → /api/backsteros/cloud-file-task-callbacks?requestId=
+  if (normalizedPath === "/api/v1/file-task-callbacks") {
+    return { url: "/api/backsteros/cloud-file-task-callbacks", headers };
+  }
+  const match = normalizedPath.match(/^\/api\/v1\/file-task-callbacks\/([^/?#]+)/);
+  if (match?.[1]) {
+    return {
+      url: `/api/backsteros/cloud-file-task-callbacks?requestId=${encodeURIComponent(decodeURIComponent(match[1]))}`,
+      headers,
+    };
+  }
+  throw new Error(`Unsupported file-task mailbox path: ${normalizedPath}`);
+}
+
 async function readBacksterosJsonBody<T>(response: Response): Promise<T> {
   const raw = await response.text();
   const trimmed = raw.trim();
@@ -90,9 +123,12 @@ async function backsterosFetchJson<T>(
     readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     readonly body?: unknown;
     readonly signal?: AbortSignal;
+    readonly mailbox?: boolean;
   },
 ): Promise<T> {
-  const request = resolveBacksterosRequest(pathWithQuery);
+  const request = init?.mailbox
+    ? resolveFileTaskMailboxRequest(pathWithQuery)
+    : resolveBacksterosRequest(pathWithQuery);
   const method = init?.method ?? "GET";
   const headers: Record<string, string> = { ...request.headers };
   if (init?.body !== undefined) {
@@ -304,6 +340,13 @@ export async function updateBacksterosTask(
   });
 }
 
+/** Soft-delete a task via BacksterOS (`DELETE /api/v1/tasks/:id` → 204). */
+export async function deleteBacksterosTask(taskId: string): Promise<void> {
+  await backsterosFetchJson<undefined>(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function updateBacksterosProject(
   projectId: string,
   patch: { readonly sortOrder: number },
@@ -487,4 +530,42 @@ export async function fetchBacksterosOrganizations(
     organizations?: readonly BacksterosOrganization[];
   }>("/api/v1/organizations", optionalSignalInit(signal));
   return payload.organizations ?? [];
+}
+
+export async function registerBacksterosFileTaskCallback(requestId: string): Promise<{
+  readonly requestId: string;
+  readonly callbackUrl: string;
+  readonly expiresAt: string;
+}> {
+  return backsterosFetchJson<{
+    readonly requestId: string;
+    readonly callbackUrl: string;
+    readonly expiresAt: string;
+  }>("/api/v1/file-task-callbacks", {
+    method: "POST",
+    body: { requestId },
+    mailbox: true,
+  });
+}
+
+export async function fetchBacksterosFileTaskCallback(
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly pending: boolean;
+  readonly result?: {
+    readonly ok: boolean;
+    readonly requestId: string;
+    readonly taskId?: string;
+    readonly taskRef?: string;
+    readonly title?: string;
+    readonly projectId?: string;
+    readonly summary?: string;
+    readonly error?: string;
+  };
+}> {
+  return backsterosFetchJson(`/api/v1/file-task-callbacks/${encodeURIComponent(requestId)}`, {
+    mailbox: true,
+    ...(signal ? { signal } : {}),
+  });
 }

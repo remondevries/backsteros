@@ -21,13 +21,21 @@ import {
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
 } from "../../projects/project-status.js";
+import {
+  PROJECT_AREA_LABELS,
+  PROJECT_AREAS,
+  type ProjectArea,
+} from "../../projects/project-areas.js";
 import { parseTransipDomainTagsFromIcon, normalizeTransipDomainTags } from "../../projects/transip-domain-tags.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { ProjectKeyEditor } from "./project-key-editor.js";
 import { ProjectOverviewIcon } from "./project-overview-icon.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
-import type { ProjectDetailViewProject } from "./project-detail-view.js";
+import type {
+  ProjectDetailNestedArea,
+  ProjectDetailViewProject,
+} from "./project-detail-view.js";
 import {
   type DomainRegistrarContact,
   type DomainRegistrarDetail,
@@ -41,6 +49,8 @@ export type DomainOverviewViewProps = {
   /** Body for the Cloudflare tab (or other future section modes). */
   sectionBody?: ReactNode;
   organizationOptions?: SearchableDropdownOption<string>[];
+  /** Nested custom areas for the Area / sub-area dropdowns. */
+  nestedAreas?: ProjectDetailNestedArea[];
   /** Known TransIP tags across domains — for the tags dropdown. */
   knownTags?: string[];
   loadDetail: (domainName: string) => Promise<DomainRegistrarDetail>;
@@ -58,6 +68,8 @@ export type DomainOverviewViewProps = {
     | { ok: false; error: string };
   onStatusChange?: (status: ProjectStatus) => void;
   onPriorityChange?: (priority: number) => void;
+  onAreaChange?: (area: ProjectArea | null) => void;
+  onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
   onCreateOrganizationFromQuery?: (query: string) => void;
   onIconChange?: (icon: string | null) => void | Promise<void>;
@@ -142,12 +154,15 @@ export function DomainOverviewView({
   sectionNavSlot,
   sectionBody,
   organizationOptions = [],
+  nestedAreas = [],
   knownTags = [],
   loadDetail,
   onSaveName,
   onSaveKey,
   onStatusChange,
   onPriorityChange,
+  onAreaChange,
+  onAreaIdChange,
   onOrganizationChange,
   onCreateOrganizationFromQuery,
   onIconChange,
@@ -370,6 +385,54 @@ export function DomainOverviewView({
       ...organizationOptions,
     ],
     [organizationOptions],
+  );
+
+  const areaOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No area",
+        searchTerms: "none unassigned",
+      },
+      ...PROJECT_AREAS.map((area) => ({
+        value: area,
+        label: PROJECT_AREA_LABELS[area],
+        searchTerms: area,
+      })),
+    ],
+    [],
+  );
+
+  const subAreasForParent = useMemo(() => {
+    if (!project.area) return [];
+    return nestedAreas
+      .filter((area) => area.parent === project.area)
+      .slice()
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [nestedAreas, project.area]);
+
+  const subAreaOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No sub-area",
+        searchTerms: "none unassigned",
+      },
+      ...subAreasForParent.map((area) => ({
+        value: area.id,
+        label: area.name,
+        searchTerms: area.name,
+      })),
+    ],
+    [subAreasForParent],
+  );
+
+  const selectedSubArea = useMemo(
+    () =>
+      project.areaId
+        ? subAreasForParent.find((area) => area.id === project.areaId) ?? null
+        : null,
+    [project.areaId, subAreasForParent],
   );
 
   async function copyAuthCode() {
@@ -605,6 +668,51 @@ export function DomainOverviewView({
           ) : (
             <span className="domain-overview__value">{project.key}</span>
           )}
+        </DetailsField>
+        <DetailsField label="Area">
+          <div className="domain-overview__area-row">
+            <PropertyDropdown
+              value={project.area ?? "__none__"}
+              options={areaOptions}
+              onChange={(next) => {
+                onAreaChange?.(
+                  next === "__none__" ? null : (next as ProjectArea),
+                );
+                onAreaIdChange?.(null);
+              }}
+              searchPlaceholder="Change area…"
+              searchShortcutLabel="A"
+              ariaLabel="Area"
+              taskPropertyDropdownId="area"
+              fallbackLabel={
+                project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+              }
+              mutedFallback={!project.area}
+              triggerVariant="inlineChip"
+              panelAlign="start"
+            />
+            {subAreasForParent.length > 0 ? (
+              <>
+                <span className="domain-overview__area-sep" aria-hidden="true">
+                  /
+                </span>
+                <PropertyDropdown
+                  value={project.areaId ?? "__none__"}
+                  options={subAreaOptions}
+                  onChange={(next) =>
+                    onAreaIdChange?.(next === "__none__" ? null : next)
+                  }
+                  searchPlaceholder="Change sub-area…"
+                  ariaLabel="Sub-area"
+                  taskPropertyDropdownId="areaId"
+                  fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
+                  mutedFallback={!selectedSubArea}
+                  triggerVariant="inlineChip"
+                  panelAlign="start"
+                />
+              </>
+            ) : null}
+          </div>
         </DetailsField>
         <DetailsField label="Organization">
           <PropertyDropdown

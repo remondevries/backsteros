@@ -52,7 +52,9 @@ import {
   updateGithubSettingsSchema,
   updateTransipSettingsSchema,
   updateCloudflareSettingsSchema,
+  updateCloudflareDnsRecordSchema,
   updateTransipDomainContactsInputSchema,
+  updateTransipDomainNameserversInputSchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
@@ -143,7 +145,9 @@ import { CloudflareApiError } from "../lib/cloudflare-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import {
+  isWorkspaceUpdatedKind,
   publishDocumentWorkspaceUpdated,
+  publishEntityWorkspaceUpdated,
   publishMeetingWorkspaceUpdated,
   publishProjectWorkspaceUpdated,
   publishTaskWorkspaceUpdated,
@@ -477,7 +481,8 @@ async function withAuth(c: Context, next: Next) {
     c.req.path.startsWith("/api/v1/powersync") ||
     c.req.path === "/api/v1/webhooks/agentmail" ||
     c.req.path.startsWith("/api/v1/public/avatars/") ||
-    c.req.path.startsWith("/api/v1/public/spaces/")
+    c.req.path.startsWith("/api/v1/public/spaces/") ||
+    c.req.path.startsWith("/api/v1/public/file-task-callbacks/")
   ) {
     await next();
     return;
@@ -550,7 +555,6 @@ function publishProjectLive(
   });
 }
 
-
 /**
  * REST/agent meeting writes → local SSE + peer nudge so calendar / meeting
  * property UIs refresh before PowerSync mirrors the row.
@@ -594,6 +598,7 @@ function publishTaskLive(
   publishTaskWorkspaceUpdated(auth.workspaceId, taskId, {
     projectId: input?.projectId ?? null,
     reason: "patch",
+    operation,
   });
   notifyPeerOfDocumentWrite({
     workspaceId: auth.workspaceId,
@@ -606,21 +611,86 @@ function publishTaskLive(
 }
 
 /**
- * CRM activity notes have no workspace SSE channel — peer nudge only so
- * local-core pulls `crm_activities` without waiting for the 15s tick.
+ * CRM activity notes → local SSE + peer nudge (parity with contacts / meetings).
  */
 function nudgeCrmActivityLive(
   auth: AuthContext,
   activityId: string,
   operation: "upsert" | "delete" = "upsert",
 ): void {
+  nudgePeerEntityLive(auth, "crm_activity", activityId, operation);
+}
+
+/**
+ * Any sync-entity REST write → local workspace SSE + peer nudge so open
+ * desktop shells refresh before PowerSync mirrors; peer stays in lockstep.
+ */
+function nudgePeerEntityLive(
+  auth: AuthContext,
+  entity: string,
+  entityId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  if (isWorkspaceUpdatedKind(entity) && entity !== "task_comment") {
+    publishEntityWorkspaceUpdated(auth.workspaceId, entity, entityId, {
+      operation,
+    });
+  }
   notifyPeerOfDocumentWrite({
     workspaceId: auth.workspaceId,
-    reason: "crm_activity",
-    entity: "crm_activity",
-    entityId: activityId,
+    reason: entity,
+    entity,
+    entityId,
     operation,
   });
+}
+
+function nudgeContactLive(
+  auth: AuthContext,
+  contactId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "contact", contactId, operation);
+}
+
+function nudgeOrganizationLive(
+  auth: AuthContext,
+  organizationId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "organization", organizationId, operation);
+}
+
+function nudgeContactRelationshipLive(
+  auth: AuthContext,
+  relationshipId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "contact_relationship", relationshipId, operation);
+}
+
+function nudgeCrmGroupMemberLive(
+  auth: AuthContext,
+  memberId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "crm_group_member", memberId, operation);
+}
+
+function nudgeCrmGroupLive(
+  auth: AuthContext,
+  groupId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "crm_group", groupId, operation);
+}
+
+function nudgeCrmRelationshipLabelLive(
+  auth: AuthContext,
+  labelId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  nudgePeerEntityLive(auth, "crm_relationship_label", labelId, operation);
 }
 
 /** After letter attachment mutations, sync denormalized letter metadata (not PDF bytes). */
@@ -1182,6 +1252,51 @@ export function registerApiRoutes(app: Hono) {
     }
   });
 
+  app.put("/api/v1/transip/domains/:domainName/nameservers", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const domainName = c.req.param("domainName")?.trim() ?? "";
+    if (!domainName) {
+      return c.json(
+        { error: "Domain name required", code: "bad_request" },
+        400,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateTransipDomainNameserversInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: "nameservers must be an array of 2–13 entries",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+    try {
+      const result =
+        await transipDomainsSyncService.updateTransipDomainNameservers(
+          auth.workspaceId,
+          decodeURIComponent(domainName),
+          parsed.data.nameservers,
+        );
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        const status =
+          error.status === 404
+            ? 404
+            : error.status === 401 || error.status === 403
+              ? error.status
+              : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/cloudflare/status", async (c) => {
     const auth = getAuth(c);
     if (!auth) {
@@ -1223,6 +1338,46 @@ export function registerApiRoutes(app: Hono) {
     }
   });
 
+  app.post("/api/v1/cloudflare/projects/:projectId/zone", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const projectId = c.req.param("projectId")?.trim() ?? "";
+    if (!projectId) {
+      return c.json(
+        { error: "Project id required", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result =
+        await cloudflareZonesSyncService.ensureProjectCloudflareZone(
+          auth.workspaceId,
+          decodeURIComponent(projectId),
+        );
+      if (result.action === "updated") {
+        publishProjectLive(auth, result.projectId, "upsert");
+      }
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        if (
+          error.status === 401 ||
+          error.status === 403 ||
+          error.status === 404
+        ) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status as 401 | 403 | 404,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/cloudflare/zones/:zoneId/dns-records", async (c) => {
     const auth = getAuth(c);
     if (!auth) {
@@ -1243,6 +1398,50 @@ export function registerApiRoutes(app: Hono) {
         await cloudflareZoneOpsService.listCloudflareDnsRecords(
           auth.workspaceId,
           decodeURIComponent(zoneId),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        if (error.status === 401 || error.status === 403) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.put("/api/v1/cloudflare/zones/:zoneId/dns-records/:recordId", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const zoneId = c.req.param("zoneId")?.trim() ?? "";
+    const recordId = c.req.param("recordId")?.trim() ?? "";
+    if (!zoneId || !recordId) {
+      return c.json(
+        { error: "Zone id and record id required", code: "bad_request" },
+        400,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateCloudflareDnsRecordSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid DNS record payload", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await cloudflareZoneOpsService.updateCloudflareDnsRecord(
+          auth.workspaceId,
+          decodeURIComponent(zoneId),
+          decodeURIComponent(recordId),
+          parsed.data,
         ),
       );
     } catch (error) {
@@ -3597,6 +3796,7 @@ export function registerApiRoutes(app: Hono) {
           return c.json({ error: "Habit create failed", code: "internal" }, 500);
         }
         await emitHabitTaskSyncChanges(auth.workspaceId, result.changedTasks);
+        nudgePeerEntityLive(auth, "habit", result.habit.id, "upsert");
         return c.json(result.habit, 201);
       }
       const created = await habitService.createHabit(
@@ -3608,6 +3808,7 @@ export function registerApiRoutes(app: Hono) {
         await recordHabitRestSyncEvent(auth.workspaceId, dbRow, "upsert");
       }
       await emitHabitTaskSyncChanges(auth.workspaceId, created.changedTasks);
+      nudgePeerEntityLive(auth, "habit", created.habit.id, "upsert");
       return c.json(created.habit, 201);
     },
   );
@@ -3647,6 +3848,7 @@ export function registerApiRoutes(app: Hono) {
             auth.workspaceId,
             result.changedTasks,
           );
+          nudgePeerEntityLive(auth, "habit", result.habit.id, "upsert");
           return c.json(result.habit);
         }
         const updated = await habitService.updateHabit(
@@ -3663,6 +3865,7 @@ export function registerApiRoutes(app: Hono) {
           await recordHabitRestSyncEvent(auth.workspaceId, dbRow, "upsert");
         }
         await emitHabitTaskSyncChanges(auth.workspaceId, updated.changedTasks);
+        nudgePeerEntityLive(auth, "habit", updated.habit.id, "upsert");
         return c.json(updated.habit);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -4167,6 +4370,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const row = await circleService.createOrganization(auth.workspaceId, body);
     await recordOrganizationRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgeOrganizationLive(auth, row.id, "upsert");
     return c.json(row, 201);
   });
   app.patch("/api/v1/organizations/:id", zValidator("json", organizationSchema.partial()), async (c) => {
@@ -4179,23 +4383,45 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         organizationId,
       );
-      if (!existing) return c.json(notFound("Organization"), 404);
       await commitRestEntityWrite({
         workspaceId: auth.workspaceId,
         entity: "organization",
         entityId: organizationId,
         operation: "upsert",
-        payload: buildOrganizationRestPayload(organizationId, patch),
+        payload: buildOrganizationRestPayload(
+          organizationId,
+          existing
+            ? patch
+            : { ...patch, name: patch.name ?? "Organization" },
+        ),
       });
       const row = await circleService.getOrganizationById(
         auth.workspaceId,
         organizationId,
       );
-      return c.json(row);
+      return row ? c.json(row) : c.json(notFound("Organization"), 404);
     }
-    const row = await circleService.updateOrganization(auth.workspaceId, organizationId, patch);
-    if (!row) return c.json(notFound("Organization"), 404);
+    let row = await circleService.updateOrganization(
+      auth.workspaceId,
+      organizationId,
+      patch,
+    );
+    if (!row) {
+      try {
+        row = await circleService.createOrganization(
+          auth.workspaceId,
+          {
+            ...patch,
+            name: patch.name ?? "Organization",
+          } as Parameters<typeof circleService.createOrganization>[1],
+          organizationId,
+        );
+      } catch {
+        return c.json(notFound("Organization"), 404);
+      }
+    }
     await recordOrganizationRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgeOrganizationLive(auth, row.id, "upsert");
     return c.json(row);
   });
   app.delete("/api/v1/organizations/:id", async (c) => {
@@ -4220,6 +4446,7 @@ export function registerApiRoutes(app: Hono) {
     const row = await circleService.deleteOrganization(auth.workspaceId, organizationId);
     if (!row) return c.json(notFound("Organization"), 404);
     await recordOrganizationRestSyncEvent(auth.workspaceId, row, "delete");
+    nudgeOrganizationLive(auth, row.id, "delete");
     return c.body(null, 204);
   });
 
@@ -4297,6 +4524,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const row = await circleService.createContact(auth.workspaceId, body);
     await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgeContactLive(auth, row.id, "upsert");
     for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
       auth.workspaceId,
       row.id,
@@ -4308,6 +4536,7 @@ export function registerApiRoutes(app: Hono) {
           dbRow,
           "upsert",
         );
+        nudgeCrmGroupMemberLive(auth, dbRow.id, "upsert");
       }
     }
     return c.json(toPublicContact(row), 201);
@@ -4325,13 +4554,15 @@ export function registerApiRoutes(app: Hono) {
     const patch = await prepareContactWriteBody(raw);
     if (isRestLeaderFirstWrite()) {
       const existing = await circleService.getContactById(auth.workspaceId, contactId);
-      if (!existing) return c.json(notFound("Contact"), 404);
       await commitRestEntityWrite({
         workspaceId: auth.workspaceId,
         entity: "contact",
         entityId: contactId,
         operation: "upsert",
-        payload: buildContactRestPayload(contactId, patch),
+        payload: buildContactRestPayload(
+          contactId,
+          existing ? patch : { ...patch, firstName: patch.firstName ?? patch.name ?? "Contact" },
+        ),
       });
       const row = await circleService.getContactById(auth.workspaceId, contactId);
       if (row && patch.organizationId !== undefined) {
@@ -4342,9 +4573,28 @@ export function registerApiRoutes(app: Hono) {
       }
       return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
     }
-    const row = await circleService.updateContact(auth.workspaceId, contactId, patch);
-    if (!row) return c.json(notFound("Contact"), 404);
+    let row = await circleService.updateContact(auth.workspaceId, contactId, patch);
+    if (!row) {
+      // Heal local-only PowerSync contacts that never uploaded: create with the
+      // client id so membership / relationship writes can proceed.
+      try {
+        row = await circleService.createContact(
+          auth.workspaceId,
+          {
+            ...patch,
+            firstName:
+              patch.firstName ??
+              (typeof patch.name === "string" ? patch.name : null) ??
+              "Contact",
+          } as Parameters<typeof circleService.createContact>[1],
+          contactId,
+        );
+      } catch {
+        return c.json(notFound("Contact"), 404);
+      }
+    }
     await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgeContactLive(auth, row.id, "upsert");
     if (patch.organizationId !== undefined) {
       for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
         auth.workspaceId,
@@ -4357,6 +4607,7 @@ export function registerApiRoutes(app: Hono) {
             dbRow,
             "upsert",
           );
+          nudgeCrmGroupMemberLive(auth, dbRow.id, "upsert");
         }
       }
     }
@@ -4381,6 +4632,7 @@ export function registerApiRoutes(app: Hono) {
     const row = await circleService.deleteContact(auth.workspaceId, contactId);
     if (!row) return c.json(notFound("Contact"), 404);
     await recordContactRestSyncEvent(auth.workspaceId, row, "delete");
+    nudgeContactLive(auth, row.id, "delete");
     return c.body(null, 204);
   });
 
@@ -4441,6 +4693,7 @@ export function registerApiRoutes(app: Hono) {
             dbRow,
             "upsert",
           );
+          nudgeContactRelationshipLive(auth, dbRow.id, "upsert");
         }
         return c.json(row, 201);
       } catch (error) {
@@ -4519,6 +4772,7 @@ export function registerApiRoutes(app: Hono) {
           dbRow,
           "upsert",
         );
+        nudgeContactRelationshipLive(auth, dbRow.id, "upsert");
       }
       return c.json(row);
     },
@@ -4557,6 +4811,7 @@ export function registerApiRoutes(app: Hono) {
         dbRow,
         "delete",
       );
+      nudgeContactRelationshipLive(auth, dbRow.id, "delete");
     }
     return c.body(null, 204);
   });
@@ -4613,6 +4868,7 @@ export function registerApiRoutes(app: Hono) {
             dbRow,
             "upsert",
           );
+          nudgeCrmRelationshipLabelLive(auth, dbRow.id, "upsert");
         }
         return c.json(row, 201);
       } catch (err) {
@@ -4671,6 +4927,7 @@ export function registerApiRoutes(app: Hono) {
             dbRow,
             "upsert",
           );
+          nudgeCrmRelationshipLabelLive(auth, dbRow.id, "upsert");
         }
         return c.json(row);
       } catch (err) {
@@ -4717,6 +4974,7 @@ export function registerApiRoutes(app: Hono) {
         dbRow,
         "delete",
       );
+      nudgeCrmRelationshipLabelLive(auth, dbRow.id, "delete");
     }
     return c.body(null, 204);
   });
@@ -4773,13 +5031,7 @@ export function registerApiRoutes(app: Hono) {
       if (dbRow) {
         await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "upsert");
       }
-      notifyPeerOfDocumentWrite({
-        workspaceId: auth.workspaceId,
-        reason: "crm_group",
-        entity: "crm_group",
-        entityId: row.id,
-        operation: "upsert",
-      });
+      nudgeCrmGroupLive(auth, row.id, "upsert");
       return c.json(row, 201);
     },
   );
@@ -4822,13 +5074,7 @@ export function registerApiRoutes(app: Hono) {
       if (dbRow) {
         await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "upsert");
       }
-      notifyPeerOfDocumentWrite({
-        workspaceId: auth.workspaceId,
-        reason: "crm_group",
-        entity: "crm_group",
-        entityId: groupId,
-        operation: "upsert",
-      });
+      nudgeCrmGroupLive(auth, groupId, "upsert");
       return c.json(row);
     },
   );
@@ -4859,13 +5105,7 @@ export function registerApiRoutes(app: Hono) {
     if (dbRow) {
       await recordCrmGroupRestSyncEvent(auth.workspaceId, dbRow, "delete");
     }
-    notifyPeerOfDocumentWrite({
-      workspaceId: auth.workspaceId,
-      reason: "crm_group",
-      entity: "crm_group",
-      entityId: groupId,
-      operation: "delete",
-    });
+    nudgeCrmGroupLive(auth, groupId, "delete");
     return c.body(null, 204);
   });
   app.get("/api/v1/crm-groups/:id/members", async (c) => {
@@ -5005,6 +5245,7 @@ export function registerApiRoutes(app: Hono) {
               dbRow,
               "upsert",
             );
+            nudgeCrmGroupMemberLive(auth, dbRow.id, "upsert");
           }
         }
         return c.json(result.primary, 201);
@@ -5063,6 +5304,47 @@ export function registerApiRoutes(app: Hono) {
             removeTargets.push(member);
           }
         }
+      } else if (existing.subjectType === "contact") {
+        // Mirror service cascade: clearing a contact label also clears the org
+        // (and sibling contacts) so the label cannot reappear via inheritance.
+        const planned = await crmGroupsService.planCrmGroupMembershipCascade(
+          auth.workspaceId,
+          {
+            subjectType: "contact",
+            subjectId: existing.subjectId,
+          },
+        );
+        const orgId = planned.find(
+          (entry) => entry.subjectType === "organization",
+        )?.subjectId;
+        if (orgId) {
+          const members = await crmGroupsService.listCrmGroupMembers(
+            auth.workspaceId,
+            groupId,
+          );
+          const orgMember = members?.find(
+            (member) =>
+              member.subjectType === "organization" &&
+              member.subjectId === orgId,
+          );
+          if (orgMember) {
+            removeTargets.length = 0;
+            removeTargets.push(orgMember);
+            const contactIds = new Set(
+              planned
+                .filter((entry) => entry.subjectType === "contact")
+                .map((entry) => entry.subjectId),
+            );
+            for (const member of members ?? []) {
+              if (
+                member.subjectType === "contact" &&
+                contactIds.has(member.subjectId)
+              ) {
+                removeTargets.push(member);
+              }
+            }
+          }
+        }
       }
 
       for (const target of removeTargets) {
@@ -5091,6 +5373,7 @@ export function registerApiRoutes(app: Hono) {
           dbRow,
           "delete",
         );
+        nudgeCrmGroupMemberLive(auth, dbRow.id, "delete");
       }
     }
     return c.body(null, 204);
@@ -5331,10 +5614,12 @@ export function registerApiRoutes(app: Hono) {
       if (!row) {
         return c.json({ error: "Area create failed", code: "internal" }, 500);
       }
+      nudgePeerEntityLive(auth, "area", row.id, "upsert");
       return c.json(toArea(row), 201);
     }
     const row = await circleService.createArea(auth.workspaceId, body);
     await recordAreaRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgePeerEntityLive(auth, "area", row.id, "upsert");
     return c.json(toArea(row), 201);
   });
   app.patch("/api/v1/areas/:id", zValidator("json", areaSchema.partial()), async (c) => {
@@ -5353,11 +5638,14 @@ export function registerApiRoutes(app: Hono) {
         payload: buildAreaRestPayload(areaId, patch),
       });
       const row = await circleService.getAreaById(auth.workspaceId, areaId);
-      return row ? c.json(toArea(row)) : c.json(notFound("Area"), 404);
+      if (!row) return c.json(notFound("Area"), 404);
+      nudgePeerEntityLive(auth, "area", row.id, "upsert");
+      return c.json(toArea(row));
     }
     const row = await circleService.updateArea(auth.workspaceId, areaId, patch);
     if (!row) return c.json(notFound("Area"), 404);
     await recordAreaRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgePeerEntityLive(auth, "area", row.id, "upsert");
     return c.json(toArea(row));
   });
   app.delete("/api/v1/areas/:id", async (c) => {
@@ -5374,11 +5662,13 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: areaId, deleted_at: new Date().toISOString() },
       });
+      nudgePeerEntityLive(auth, "area", areaId, "delete");
       return c.body(null, 204);
     }
     const row = await circleService.deleteArea(auth.workspaceId, areaId);
     if (!row) return c.json(notFound("Area"), 404);
     await recordAreaRestSyncEvent(auth.workspaceId, row, "delete");
+    nudgePeerEntityLive(auth, "area", row.id, "delete");
     return c.body(null, 204);
   });
 
@@ -5425,10 +5715,12 @@ export function registerApiRoutes(app: Hono) {
       });
       const row = await circleService.getLetterById(auth.workspaceId, letterId);
       if (!row) return c.json({ error: "Letter create failed", code: "internal" }, 500);
+      nudgePeerEntityLive(auth, "letter", row.id, "upsert");
       return c.json(row, 201);
     }
     const row = await circleService.createLetter(auth.workspaceId, body);
     await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgePeerEntityLive(auth, "letter", row.id, "upsert");
     return c.json(row, 201);
   });
   app.patch("/api/v1/letters/:id", zValidator("json", letterSchema.partial()), async (c) => {
@@ -5447,11 +5739,13 @@ export function registerApiRoutes(app: Hono) {
         payload: buildLetterRestPayload(letterId, patch),
       });
       const row = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (row) nudgePeerEntityLive(auth, "letter", row.id, "upsert");
       return c.json(row);
     }
     const row = await circleService.updateLetter(auth.workspaceId, letterId, patch);
     if (!row) return c.json(notFound("Letter"), 404);
     await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgePeerEntityLive(auth, "letter", row.id, "upsert");
     return c.json(row);
   });
   app.delete("/api/v1/letters/:id", async (c) => {
@@ -5468,11 +5762,13 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: letterId },
       });
+      nudgePeerEntityLive(auth, "letter", letterId, "delete");
       return c.body(null, 204);
     }
     const row = await circleService.deleteLetter(auth.workspaceId, letterId);
     if (!row) return c.json(notFound("Letter"), 404);
     await recordLetterRestSyncEvent(auth.workspaceId, row, "delete");
+    nudgePeerEntityLive(auth, "letter", row.id, "delete");
     return c.body(null, 204);
   });
   app.post("/api/v1/letters/:id/triage", async (c) => {
@@ -5498,11 +5794,13 @@ export function registerApiRoutes(app: Hono) {
         payload: buildLetterRestPayload(letterId, parsed.data),
       });
       const row = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (row) nudgePeerEntityLive(auth, "letter", row.id, "upsert");
       return c.json(row);
     }
     const row = await circleService.triageLetter(auth.workspaceId, letterId, parsed.data);
     if (!row) return c.json(notFound("Letter"), 404);
     await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    nudgePeerEntityLive(auth, "letter", row.id, "upsert");
     return c.json(row);
   });
   app.put("/api/v1/letters/:id/pdf", async (c) => {
@@ -5770,6 +6068,7 @@ export function registerApiRoutes(app: Hono) {
         );
         if (org) {
           await recordOrganizationRestSyncEvent(auth.workspaceId, org, "upsert");
+          nudgeOrganizationLive(auth, org.id, "upsert");
         }
       } else if (syncEntity === "contact") {
         const contact = await circleService.getContactById(
@@ -5778,6 +6077,7 @@ export function registerApiRoutes(app: Hono) {
         );
         if (contact) {
           await recordContactRestSyncEvent(auth.workspaceId, contact, "upsert");
+          nudgeContactLive(auth, contact.id, "upsert");
         }
       } else if (syncEntity === "bank_account") {
         const account = await financeService.getBankAccountById(
@@ -5958,6 +6258,7 @@ export function registerApiRoutes(app: Hono) {
       );
       if (org) {
         await recordOrganizationRestSyncEvent(auth.workspaceId, org, "upsert");
+        nudgeOrganizationLive(auth, org.id, "upsert");
       }
     } else if (syncEntity === "contact") {
       const contact = await circleService.getContactById(
@@ -5966,6 +6267,7 @@ export function registerApiRoutes(app: Hono) {
       );
       if (contact) {
         await recordContactRestSyncEvent(auth.workspaceId, contact, "upsert");
+        nudgeContactLive(auth, contact.id, "upsert");
       }
     } else if (syncEntity === "bank_account") {
       const account = await financeService.getBankAccountById(
@@ -7853,6 +8155,7 @@ export function registerApiRoutes(app: Hono) {
             500,
           );
         }
+        nudgePeerEntityLive(auth, "bank_account", row.id, "upsert");
         return c.json(toBankAccount(row), 201);
       }
       const row = await financeService.createBankAccount(
@@ -7860,6 +8163,7 @@ export function registerApiRoutes(app: Hono) {
         body,
       );
       await recordBankAccountRestSyncEvent(auth.workspaceId, row, "upsert");
+      nudgePeerEntityLive(auth, "bank_account", row.id, "upsert");
       return c.json(toBankAccount(row), 201);
     },
   );
@@ -7889,6 +8193,7 @@ export function registerApiRoutes(app: Hono) {
           accountId,
         );
         if (!row) return c.json(notFound("Bank account"), 404);
+        nudgePeerEntityLive(auth, "bank_account", row.id, "upsert");
         return c.json(toBankAccount(row));
       }
       const row = await financeService.updateBankAccount(
@@ -7898,6 +8203,7 @@ export function registerApiRoutes(app: Hono) {
       );
       if (!row) return c.json(notFound("Bank account"), 404);
       await recordBankAccountRestSyncEvent(auth.workspaceId, row, "upsert");
+      nudgePeerEntityLive(auth, "bank_account", row.id, "upsert");
       return c.json(toBankAccount(row));
     },
   );
@@ -7918,6 +8224,7 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: accountId, deleted_at: new Date().toISOString() },
       });
+      nudgePeerEntityLive(auth, "bank_account", accountId, "delete");
       return c.body(null, 204);
     }
     const row = await financeService.deleteBankAccount(
@@ -7926,6 +8233,7 @@ export function registerApiRoutes(app: Hono) {
     );
     if (!row) return c.json(notFound("Bank account"), 404);
     await recordBankAccountRestSyncEvent(auth.workspaceId, row, "delete");
+    nudgePeerEntityLive(auth, "bank_account", row.id, "delete");
     return c.body(null, 204);
   });
 
@@ -8737,6 +9045,16 @@ export function registerApiRoutes(app: Hono) {
           auth.userId!,
           c.req.valid("json"),
         );
+        const { notifyPeerOfEntityWrite } = await import(
+          "../services/core-replication/nudge.js"
+        );
+        notifyPeerOfEntityWrite({
+          workspaceId: auth.workspaceId,
+          reason: "api_key",
+          entity: "api_key",
+          entityId: row.id,
+          operation: "upsert",
+        });
         return c.json({ apiKey: toApiKey(row), secret }, 201);
       } catch (error) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
@@ -8765,6 +9083,16 @@ export function registerApiRoutes(app: Hono) {
         if (!row) {
           return c.json(notFound("API key"), 404);
         }
+        const { notifyPeerOfEntityWrite } = await import(
+          "../services/core-replication/nudge.js"
+        );
+        notifyPeerOfEntityWrite({
+          workspaceId: auth.workspaceId,
+          reason: "api_key",
+          entity: "api_key",
+          entityId: row.id,
+          operation: "upsert",
+        });
         return c.json(toApiKey(row));
       } catch (error) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
@@ -8788,6 +9116,16 @@ export function registerApiRoutes(app: Hono) {
     if (!row) {
       return c.json(notFound("API key"), 404);
     }
+    const { notifyPeerOfEntityWrite } = await import(
+      "../services/core-replication/nudge.js"
+    );
+    notifyPeerOfEntityWrite({
+      workspaceId: auth.workspaceId,
+      reason: "api_key",
+      entity: "api_key",
+      entityId: row.id,
+      operation: "delete",
+    });
 
     return c.body(null, 204);
   });

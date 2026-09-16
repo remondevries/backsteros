@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js";
+import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 import { shouldYieldComposeToFinanceTxCategory } from "../tasks/task-property-dropdown-keys.js";
 
 /**
@@ -38,19 +39,8 @@ export function useComposeShortcut({
         return;
       }
 
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          tag === "SELECT" ||
-          target.isContentEditable ||
-          target.closest(".cm-editor") ||
-          target.closest("[role='textbox']")
-        ) {
-          return;
-        }
+      if (!shouldHandleGlobalShortcut(event)) {
+        return;
       }
 
       event.preventDefault();

@@ -3,11 +3,13 @@
  * Writes trigger files the island watches — no-op outside Tauri / on failure.
  */
 
+import { isTauriRuntime } from "./tauri-runtime";
+
 const REFRESH_RELATIVE_PATH = ".config/dynamic-island/tasks-refresh";
 const REFRESH_TMP_PATH = "/tmp/dynamic-island-tasks-refresh";
 
 export function nudgeDynamicIslandTasksRefresh(): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isTauriRuntime()) return;
 
   void (async () => {
     const stamp = `${Date.now()}\n`;

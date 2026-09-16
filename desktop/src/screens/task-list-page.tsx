@@ -273,14 +273,16 @@ function TaskListPageBody({
 
   const navigateToTask = (id: string, titleHint?: string | null) => {
     const task = findListTask(id);
+    const due = dueFilter ?? "today";
+    const listHref = buildTasksDueHref(due, view);
+    const listReturnState = { listHref };
     const emailHref = task ? getEmailTaskListHref(task) : null;
     if (emailHref) {
       const title = task?.title || titleHint?.trim() || null;
       if (title) primeTabTitle(emailHref, title);
-      navigateToHref(navigate, emailHref);
+      navigateToHref(navigate, emailHref, { state: listReturnState });
       return;
     }
-    const due = dueFilter ?? "today";
     const pending = pendingCreatedTaskRef.current;
     const title =
       task?.title || titleHint?.trim() || pending?.title?.trim() || "Task";
@@ -304,7 +306,7 @@ function TaskListPageBody({
         assigneeId: task?.assigneeId ?? null,
         routeSlug: id,
       });
-      navigateToHref(navigate, href);
+      navigateToHref(navigate, href, { state: listReturnState });
       return;
     }
     const contact = task.contactId
@@ -330,7 +332,7 @@ function TaskListPageBody({
       assigneeId: task.assigneeId ?? null,
       routeSlug: slug,
     });
-    navigateToHref(navigate, href);
+    navigateToHref(navigate, href, { state: listReturnState });
   };
 
   return (

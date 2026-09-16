@@ -12,6 +12,7 @@ import {
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { PROVIDER_ACCENT_SWATCHES, resolveProviderAccentColor } from "../../providerAccentColors";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Button } from "../ui/button";
 import { ACPRegistryIcon, Gemini, GithubCopilotIcon, PiAgentIcon, type Icon } from "../Icons";
@@ -36,15 +37,6 @@ import {
   type WizardNavigation,
 } from "./AddProviderInstanceDialog.logic";
 import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
-
-const PROVIDER_ACCENT_SWATCHES = [
-  "#2563eb",
-  "#16a34a",
-  "#ea580c",
-  "#dc2626",
-  "#7c3aed",
-  "#0891b2",
-] as const;
 
 /**
  * Normalize a user-provided label into a slug suffix for the instance id.
@@ -193,13 +185,15 @@ export function AddProviderInstanceDialog({
 
     const config = configByDriver[driver] ?? {};
     const hasConfig = Object.keys(config).length > 0;
-    const normalizedAccentColor = normalizeProviderAccentColor(accentColor);
+    // Persist an accent so this agent keeps a stable composer color. Explicit
+    // picks win; otherwise assign from the shared palette by instance id.
+    const normalizedAccentColor = resolveProviderAccentColor(instanceId, accentColor);
 
     const nextInstance: ProviderInstanceConfig = {
       driver,
       enabled: true,
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
-      ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
+      accentColor: normalizedAccentColor,
       ...(hasConfig ? { config } : {}),
     };
     // `ProviderInstanceId.make` revalidates the slug; we've already checked
@@ -386,7 +380,8 @@ export function AddProviderInstanceDialog({
                 ) : null}
               </div>
               <span className="text-[11px] text-muted-foreground">
-                Optional marker shown in the picker.
+                Colors the composer outline and send button for this agent. Leave blank to assign a
+                stable color from the shared palette.
               </span>
             </div>
 

@@ -3,6 +3,8 @@
  * Writes JSON state files the island watches — no-op outside Tauri / on failure.
  */
 
+import { isTauriRuntime } from "./tauri-runtime";
+
 const STATE_RELATIVE_PATH = ".config/dynamic-island/agents-working.json";
 const STATE_TMP_PATH = "/tmp/dynamic-island-agents-working.json";
 
@@ -19,7 +21,7 @@ let warnedTmp = false;
 export function publishDynamicIslandAgentsWorking(
   taskIds: ReadonlySet<string> | readonly string[],
 ): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isTauriRuntime()) return;
 
   const ids = Array.isArray(taskIds)
     ? [...taskIds]

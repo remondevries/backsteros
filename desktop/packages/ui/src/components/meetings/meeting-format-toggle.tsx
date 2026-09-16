@@ -84,7 +84,9 @@ export function MeetingFormatToggle({
         onChange={onChange}
         disabled={disabled || !onChange}
         searchPlaceholder="Change format…"
+        searchShortcutLabel="F"
         ariaLabel="Meeting format"
+        taskPropertyDropdownId="format"
         fallbackIcon={<MeetingFormatIcon format={format} size={14} />}
         fallbackLabel={getMeetingFormatLabel(format)}
         triggerVariant="default"

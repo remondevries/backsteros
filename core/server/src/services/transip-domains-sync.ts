@@ -16,6 +16,7 @@ import {
   tagsEqual,
   transipYmdToIso,
   type TransipDomain,
+  type TransipNameserver,
   type TransipWhoisContact,
 } from "../lib/transip-client.js";
 import { getWorkspaceOrEnvTransipToken } from "./transip-settings.js";
@@ -478,6 +479,36 @@ export async function updateTransipDomainContacts(
   });
   const nextContacts = await client.updateDomainContacts(domainName, contacts);
   return { contacts: nextContacts };
+}
+
+export async function updateTransipDomainNameservers(
+  workspaceId: string,
+  domainName: string,
+  nameservers: TransipNameserver[],
+  options?: {
+    accessToken?: string | null;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ nameservers: TransipNameserver[] }> {
+  const accessToken =
+    options?.accessToken?.trim() ||
+    (await getWorkspaceOrEnvTransipToken(workspaceId));
+  if (!accessToken) {
+    throw new TransipApiError(
+      400,
+      "transip_token_missing",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+    );
+  }
+  const client = new TransipClient({
+    accessToken,
+    fetchImpl: options?.fetchImpl,
+  });
+  const nextNameservers = await client.updateDomainNameservers(
+    domainName,
+    nameservers,
+  );
+  return { nameservers: nextNameservers };
 }
 
 export { TransipApiError };

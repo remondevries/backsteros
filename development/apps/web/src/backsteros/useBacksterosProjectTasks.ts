@@ -149,6 +149,21 @@ export function upsertBacksterosProjectTaskLocal(task: BacksterosTask): void {
   );
 }
 
+/** Drop a soft-deleted task from shared project-task caches. */
+export function removeBacksterosProjectTaskLocal(taskId: string, projectId?: string | null): void {
+  const apply = (tasks: readonly BacksterosTask[]): readonly BacksterosTask[] => {
+    const next = tasks.filter((task) => task.id !== taskId);
+    return next.length === tasks.length ? tasks : next;
+  };
+  if (projectId) {
+    getProjectTasksQuery(projectId).patchReadyData(apply);
+    return;
+  }
+  for (const query of projectTasksQueries.values()) {
+    query.patchReadyData(apply);
+  }
+}
+
 /** Test helper. */
 export function getBacksterosProjectTasksQueryDebugStats(projectId: string) {
   return (

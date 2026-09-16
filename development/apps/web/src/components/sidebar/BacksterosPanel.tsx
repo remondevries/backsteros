@@ -23,6 +23,7 @@ import {
 } from "~/backsteros/listKeyboardNavStore";
 import { isBacksterosGoEditableTarget } from "~/backsteros/backsterosRailMode";
 import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeModalOpen";
+import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import {
@@ -576,8 +577,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
           return;
         }
 
-        // Create-task compose layover owns Escape (close modal / nested menus).
-        if (isBacksterosComposeModalOpen()) {
+        // Create-task / file-task layovers own Escape (close modal / nested menus).
+        if (isBacksterosComposeModalOpen() || isBacksterosFileTaskModalOpen()) {
           return;
         }
 
@@ -631,8 +632,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         }
       }
 
-      // Create-task compose owns keyboard focus — do not move list highlights.
-      if (isBacksterosComposeModalOpen()) {
+      // Create-task / file-task overlays own keyboard focus — do not move list highlights.
+      if (isBacksterosComposeModalOpen() || isBacksterosFileTaskModalOpen()) {
         return;
       }
 
@@ -716,6 +717,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
               statusFilter={INBOX_STATUS_FILTER}
               showDueGroup
               projectNameById={projectNameById}
+              projectById={projectById}
               emptyLabel="Nothing needs attention"
               onSelectTask={handleSelectInboxTask}
               onReorderTasks={handleReorderInboxTasks}
@@ -752,6 +754,9 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
                 onRetry={reloadTasks}
                 activeTaskId={sidepanelActiveTaskId}
                 keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
+                projectById={
+                  displayedProject ? new Map([[displayedProject.id, displayedProject]]) : undefined
+                }
                 onSelectTask={handleSelectProjectTask}
                 onReorderTasks={handleReorderProjectTasks}
               />

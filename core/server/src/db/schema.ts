@@ -1818,3 +1818,29 @@ export const devicePushTokens = pgTable(
 );
 
 export type DbDevicePushToken = typeof devicePushTokens.$inferSelect;
+
+/**
+ * Cloud-only TTL mailbox for Development → Grok Bot file-task receipts.
+ * Not in REPLICATED_TABLES — the public door is cloud-core.
+ */
+export const fileTaskCallbacks = pgTable(
+  "file_task_callbacks",
+  {
+    requestId: text("request_id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    result: jsonb("result"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("file_task_callbacks_workspace_id_idx").on(table.workspaceId),
+    index("file_task_callbacks_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export type DbFileTaskCallback = typeof fileTaskCallbacks.$inferSelect;

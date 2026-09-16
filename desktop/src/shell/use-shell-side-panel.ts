@@ -13,7 +13,9 @@ import {
 import { shouldShowContentSidePanel } from "@backsteros/ui/shell";
 
 import {
+  projectListHrefFromLocationState,
   projectNavFromLocationState,
+  rememberProjectListHref,
   rememberProjectNavFrom,
   resolveProjectNavFromForPath,
   resolveSidebarActivePathname,
@@ -76,6 +78,10 @@ export function useShellSidePanel() {
     const from = projectNavFromLocationState(location.state);
     if (from) {
       rememberProjectNavFrom(activeProject.id, activeProject.key, from);
+    }
+    const listHref = projectListHrefFromLocationState(location.state);
+    if (listHref) {
+      rememberProjectListHref(activeProject.id, activeProject.key, listHref);
     }
   }, [activeProject, location.state]);
 

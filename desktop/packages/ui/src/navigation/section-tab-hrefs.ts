@@ -33,10 +33,9 @@ import {
 } from "../projects/project-areas.js";
 import {
   getCatalogListTypeHref,
-  PROJECT_TYPE_FILTER_ALL,
-  PROJECT_TYPE_FILTER_ORDER,
-  type ProjectTypeFilter,
+  CATALOG_PROJECT_TYPE_FILTER_ORDER,
 } from "../projects/project-type-filters.js";
+import { isDomainDetailOverlayEngaged } from "../projects/domain-overlay.js";
 import {
   getProjectSectionHref,
   PROJECT_SECTIONS,
@@ -159,11 +158,13 @@ export function resolveDesktopSectionTabHrefs(
   }
 
   if (path === "/catalog" || path === "/development") {
-    const types: ProjectTypeFilter[] = [
-      PROJECT_TYPE_FILTER_ALL,
-      ...PROJECT_TYPE_FILTER_ORDER,
-    ];
-    return types.map((type) => getCatalogListTypeHref(type, view));
+    // Domain profile rail owns 1–N while open (Details / Cloudflare / More…).
+    if (isDomainDetailOverlayEngaged()) {
+      return null;
+    }
+    return CATALOG_PROJECT_TYPE_FILTER_ORDER.map((type) =>
+      getCatalogListTypeHref(type, view),
+    );
   }
 
   const orgProject = parseOrganizationProjectRoute(path);

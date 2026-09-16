@@ -9,6 +9,7 @@ export type TaskPropertyDropdownId =
   | "related"
   | "area"
   | "project"
+  | "agent"
   | "organization"
   | "contact"
   | "receivedDate";

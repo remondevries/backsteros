@@ -13,7 +13,6 @@ import {
 import { resolveHistoryEntryDisplay } from "@backsteros/ui/navigation";
 
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
-import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
@@ -145,7 +144,6 @@ function ShellChromeInner({
       chromeHeader={
         chromeHeader ?? (showSidePanelSlot ? <BreadcrumbChromeSkeleton /> : null)
       }
-      statusBar={sidebarCollapsed ? null : <DesktopStatusBar />}
     >
       {children}
     </ProductAppShell>

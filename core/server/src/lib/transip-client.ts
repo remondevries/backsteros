@@ -419,6 +419,54 @@ export class TransipClient {
   }
 
   /**
+   * Replace nameservers at the registrar. TransIP replaces the full set —
+   * pass every hostname you want to keep (empty slots must be omitted).
+   */
+  async updateDomainNameservers(
+    domainName: string,
+    nameservers: TransipNameserver[],
+  ): Promise<TransipNameserver[]> {
+    const name = domainName.trim().toLowerCase();
+    if (!name) {
+      throw new TransipApiError(400, "transip_api_error", "Domain name required");
+    }
+    const normalized = nameservers
+      .map((entry) => ({
+        hostname: entry.hostname?.trim().toLowerCase() ?? "",
+        ipv4: entry.ipv4?.trim() ?? "",
+        ipv6: entry.ipv6?.trim() ?? "",
+      }))
+      .filter((entry) => entry.hostname.length > 0);
+    if (normalized.length === 0) {
+      throw new TransipApiError(
+        400,
+        "transip_api_error",
+        "At least two nameserver hostnames are required",
+      );
+    }
+    if (normalized.length < 2) {
+      throw new TransipApiError(
+        400,
+        "transip_api_error",
+        "TransIP requires at least two nameservers",
+      );
+    }
+    if (normalized.length > 13) {
+      throw new TransipApiError(
+        400,
+        "transip_api_error",
+        "TransIP allows at most 13 nameservers",
+      );
+    }
+    const encoded = encodeURIComponent(name);
+    await this.requestJson("PUT", `/domains/${encoded}/nameservers`, {
+      body: { nameservers: normalized },
+    });
+    const detail = await this.getDomainDetail(name);
+    return detail.nameservers;
+  }
+
+  /**
    * Replace domain tags at the registrar. TransIP overrides the full tags list
    * on each update — pass the complete desired set.
    */

@@ -10,7 +10,7 @@ import {
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { DocumentOcticon } from "../documents/document-octicon.js";
+import { SpaceSectionIcon } from "../icons/space-section-icon.js";
 import { TaskRelatedChips } from "../tasks/task-related-chips.js";
 import { HelpArticleSeoField } from "./help-article-seo-field.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
@@ -185,6 +185,20 @@ export function HelpArticlePropertiesDisplay({
     (option) => option.value !== DROPDOWN_NONE_VALUE,
   );
   const contactIds = article?.contactIds ?? [];
+  const folderIcon = <SpaceSectionIcon size={14} />;
+  const folderSelectOptions: SearchableDropdownOption<string>[] = (
+    folderOptions.length > 0
+      ? folderOptions
+      : [
+          {
+            value: DROPDOWN_NONE_VALUE,
+            label: "No folder",
+            searchTerms: "none root unassigned",
+          },
+        ]
+  ).map((option) =>
+    option.icon != null ? option : { ...option, icon: folderIcon },
+  );
   const canEditFolder =
     showFolderField &&
     Boolean(onFolderChange) &&
@@ -193,7 +207,7 @@ export function HelpArticlePropertiesDisplay({
     Boolean(onPlacementChange) && placementOptions.length > 0;
   const canEditSeo = Boolean(onSeoDetailsChange) && !disabled;
   const selectedFolder =
-    folderOptions.find((option) => option.value === folderId) ?? null;
+    folderSelectOptions.find((option) => option.value === folderId) ?? null;
 
   function commitSeoDetails(
     patch?: Partial<{
@@ -282,17 +296,7 @@ export function HelpArticlePropertiesDisplay({
               {canEditFolder ? (
                 <PropertyDropdown
                   value={folderId ?? DROPDOWN_NONE_VALUE}
-                  options={
-                    folderOptions.length > 0
-                      ? folderOptions
-                      : [
-                          {
-                            value: DROPDOWN_NONE_VALUE,
-                            label: "No folder",
-                            searchTerms: "none root unassigned",
-                          },
-                        ]
-                  }
+                  options={folderSelectOptions}
                   onChange={(next) =>
                     onFolderChange?.(resolveDropdownNone(next))
                   }
@@ -300,9 +304,7 @@ export function HelpArticlePropertiesDisplay({
                   searchPlaceholder="Move to folder…"
                   searchShortcutLabel="F"
                   ariaLabel="Folder"
-                  fallbackIcon={
-                    <DocumentOcticon icon="file-directory" size={14} />
-                  }
+                  fallbackIcon={folderIcon}
                   fallbackLabel="No folder"
                   mutedFallback
                   createFromQueryLabel={
@@ -324,7 +326,7 @@ export function HelpArticlePropertiesDisplay({
                     className="property-dropdown-trigger__icon"
                     aria-hidden="true"
                   >
-                    <DocumentOcticon icon="file-directory" size={14} />
+                    {selectedFolder?.icon ?? folderIcon}
                   </span>
                   <span className="property-dropdown-trigger__label">
                     {selectedFolder?.label ?? "No folder"}
@@ -363,9 +365,7 @@ export function HelpArticlePropertiesDisplay({
                     searchPlaceholder="Choose Group section…"
                     searchShortcutLabel="P"
                     ariaLabel="Appears in"
-                    fallbackIcon={
-                      <DocumentOcticon icon="file-directory" size={14} />
-                    }
+                    fallbackIcon={<SpaceSectionIcon size={14} />}
                     fallbackLabel="No section"
                     mutedFallback
                   />
@@ -380,7 +380,7 @@ export function HelpArticlePropertiesDisplay({
                       className="property-dropdown-trigger__icon"
                       aria-hidden="true"
                     >
-                      <DocumentOcticon icon="file-directory" size={14} />
+                      <SpaceSectionIcon size={14} />
                     </span>
                     <span className="property-dropdown-trigger__label">
                       {article?.placementFolderTitle?.trim() || "No section"}

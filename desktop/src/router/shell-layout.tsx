@@ -64,6 +64,14 @@ import {
   useScopedOrganization,
   useScopedProject,
 } from "../lib/workspace/use-scoped-entities";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
+import {
+  projectListLabelForNavFrom,
+  projectNavFromLocationState,
+  recalledProjectNavFrom,
+  resolveProjectListHref,
+  type ProjectNavFrom,
+} from "../lib/project-type-cache";
 
 const CatalogPage = catalogPage.Page;
 const ContactsPage = contactsPage.Page;
@@ -312,15 +320,29 @@ export function ProjectScopedTaskDetailPage() {
     slug?: string;
     taskSlug?: string;
   };
+  const location = useShellLocation();
   const { project, projectRouteParam } = useScopedProject(slug);
   const backHref = getScopedProjectSectionHref(projectRouteParam, "tasks");
+  const navFrom: ProjectNavFrom =
+    projectNavFromLocationState(location.state) ??
+    recalledProjectNavFrom(project?.id) ??
+    recalledProjectNavFrom(project?.key) ??
+    recalledProjectNavFrom(projectRouteParam) ??
+    "projects";
+  const listHref = resolveProjectListHref({
+    locationState: location.state,
+    navFrom,
+    projectId: project?.id,
+    projectKey: project?.key,
+    routeParam: projectRouteParam,
+  });
 
   return (
     <TaskDetailPage
       taskRouteParam={taskSlug}
       backHref={backHref}
       breadcrumbItems={[
-        { label: "Projects", href: "/projects" },
+        { label: projectListLabelForNavFrom(navFrom), href: listHref },
         {
           label: project?.name ?? projectRouteParam,
           href: getScopedProjectBasePath(projectRouteParam),

@@ -1,28 +1,37 @@
 import { withCrmGroupSearch } from "../contacts/contact-group-filter.js";
+import {
+  ENTITY_DETAIL_COLLAPSE_DURATION_MS,
+  ENTITY_DETAIL_CONTENT_FADE_MS,
+  ENTITY_DETAIL_EXPAND_FADE_MS,
+  ENTITY_DETAIL_PANEL_WIDTH,
+  ENTITY_DETAIL_STRIP_WIDTH_PX,
+  type EntityOverlayLayout,
+} from "../shared/entity-detail-overlay.js";
 
 /**
  * Width for the standalone organizations detail card — fraction of the content area.
  * Matches contacts so both rails align visually.
  */
-export const ORGANIZATION_DETAIL_PANEL_WIDTH = "30%";
+export const ORGANIZATION_DETAIL_PANEL_WIDTH = ENTITY_DETAIL_PANEL_WIDTH;
 
 /** Collapsed reopen strip — matches contacts / agent rail. */
-export const ORGANIZATION_DETAIL_STRIP_WIDTH_PX = 46;
+export const ORGANIZATION_DETAIL_STRIP_WIDTH_PX = ENTITY_DETAIL_STRIP_WIDTH_PX;
 
 /** Match contact / agent-rail collapse duration. */
-export const ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS = 220;
+export const ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS =
+  ENTITY_DETAIL_COLLAPSE_DURATION_MS;
 
 /** Crossfade when switching organizations while the panel stays open. */
-export const ORGANIZATION_DETAIL_CONTENT_FADE_MS = 280;
+export const ORGANIZATION_DETAIL_CONTENT_FADE_MS =
+  ENTITY_DETAIL_CONTENT_FADE_MS;
 
 /** Fade list ↔ expanded workspace when toggling orgLayout=page. */
-export const ORGANIZATION_DETAIL_EXPAND_FADE_MS =
-  ORGANIZATION_DETAIL_CONTENT_FADE_MS;
+export const ORGANIZATION_DETAIL_EXPAND_FADE_MS = ENTITY_DETAIL_EXPAND_FADE_MS;
 
 /** Search param: organization overlay opens as full page vs narrow right panel. */
 export const ORGANIZATION_OVERLAY_LAYOUT_PARAM = "orgLayout";
 
-export type OrganizationOverlayLayout = "page" | "panel";
+export type OrganizationOverlayLayout = EntityOverlayLayout;
 
 /**
  * Left workspace tabs when the org overlay is expanded.

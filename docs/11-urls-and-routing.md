@@ -18,7 +18,8 @@
 Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale
 `:8788`). Do **not** point them at the Mac — that dies when the laptop sleeps.
 Same `sk_live_…` keys work on cloud (replicated). Desktop / PTY stay on
-local-core `127.0.0.1:8788`.
+local-core `127.0.0.1:8788`. Development’s file-task webhook callback is this
+same door: `POST /api/v1/public/file-task-callbacks/{requestId}?token=…`.
 
 On the VPS, `backsteros-agents` must set `CORE_UPSTREAM_URL=http://127.0.0.1:8788`
 (cloud-core loopback), **not** the Mac Tailscale URL.

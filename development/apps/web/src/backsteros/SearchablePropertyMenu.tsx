@@ -42,6 +42,8 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   readonly onTabFromSearch?: () => void;
   /** Shift+Tab from the open search field. */
   readonly onShiftTabFromSearch?: () => void;
+  /** Escape closed the open menu — e.g. restore focus to a composer field. */
+  readonly onEscapeFromSearch?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -98,6 +100,18 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               stopPropertyMenuSearchKeyPropagation(event);
+              if (event.key === "Escape" && props.onEscapeFromSearch) {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                const restore = props.onEscapeFromSearch;
+                queueMicrotask(() => {
+                  window.requestAnimationFrame(() => {
+                    restore();
+                  });
+                });
+                return;
+              }
               if (event.key === "Tab") {
                 event.preventDefault();
                 setOpen(false);

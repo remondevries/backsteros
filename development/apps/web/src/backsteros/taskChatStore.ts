@@ -208,3 +208,21 @@ export function collectBacksterosVibeHiddenChatKeys(input: {
   }
   return { draftIds, threadKeys };
 }
+
+/** Reverse lookup: which BacksterOS task owns this T3 thread (if any). */
+export function findBacksterosTaskIdForThread(input: {
+  readonly threadId: string;
+  readonly environmentId?: string | null;
+  readonly byTaskId?: Readonly<Record<string, BacksterosTaskChatBinding>> | null;
+}): string | null {
+  const threadId = input.threadId.trim();
+  if (!threadId) return null;
+  const environmentId = input.environmentId?.trim() || null;
+  const byTaskId = input.byTaskId ?? useBacksterosTaskChatStore.getState().byTaskId;
+  for (const [taskId, binding] of Object.entries(byTaskId)) {
+    if (binding.threadId !== threadId) continue;
+    if (environmentId && binding.environmentId !== environmentId) continue;
+    return taskId;
+  }
+  return null;
+}

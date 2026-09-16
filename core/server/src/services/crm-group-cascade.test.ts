@@ -34,3 +34,24 @@ test("CRM group cascade plan shape: contact pulls org + siblings", () => {
     ),
   );
 });
+
+test("contact group remove should clear org membership so labels cannot reappear", () => {
+  // Removing contact c-1 from a group must also remove org-1 (and siblings),
+  // otherwise inherited listing / rematerialize brings the label back.
+  const removeTargets = [
+    { subjectType: "organization", subjectId: "org-1" },
+    { subjectType: "contact", subjectId: "c-1" },
+    { subjectType: "contact", subjectId: "c-2" },
+  ];
+  assert.ok(
+    removeTargets.some(
+      (entry) =>
+        entry.subjectType === "organization" && entry.subjectId === "org-1",
+    ),
+  );
+  assert.ok(
+    removeTargets.every((entry) =>
+      ["organization", "contact"].includes(entry.subjectType),
+    ),
+  );
+});

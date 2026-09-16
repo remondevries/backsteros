@@ -35,6 +35,23 @@ type SecretRow = {
   transipAccessTokenExpiresAt: Date | null;
 };
 
+/** Process-local cache for env login+key mints (not workspace-persisted). */
+let envMintedTokenCache: {
+  token: string;
+  expiresAt: Date | null;
+  fingerprint: string;
+} | null = null;
+
+/** TransIP rejects duplicate labels among active tokens — always mint unique. */
+function uniqueTransipTokenLabel(prefix: string): string {
+  const safe = prefix.trim().replace(/[^a-zA-Z0-9_-]+/gu, "-").slice(0, 24);
+  return `${safe || "backsteros"}-${Date.now().toString(36)}`;
+}
+
+function envCredentialsFingerprint(login: string, privateKey: string): string {
+  return `${login}\0${privateKey.length}\0${privateKey.slice(0, 64)}`;
+}
+
 async function getSecretRow(workspaceId: string): Promise<SecretRow | null> {
   const [row] = await db
     .select({
@@ -83,7 +100,7 @@ async function mintAndCacheAccessToken(
     readOnly: false,
     globalKey: true,
     expirationTime: "1 month",
-    label: `backsteros-${workspaceId.slice(0, 8)}`,
+    label: uniqueTransipTokenLabel(`backsteros-${workspaceId.slice(0, 8)}`),
   });
   const expiresAt =
     minted.expiresAt ??
@@ -91,6 +108,36 @@ async function mintAndCacheAccessToken(
       ? new Date(readJwtExpiryMs(minted.token)!)
       : null);
   await persistCachedAccessToken(workspaceId, minted.token, expiresAt);
+  return minted.token;
+}
+
+async function mintEnvAccessToken(
+  login: string,
+  privateKey: string,
+): Promise<string> {
+  const fingerprint = envCredentialsFingerprint(login, privateKey);
+  const cached = envMintedTokenCache;
+  if (
+    cached &&
+    cached.fingerprint === fingerprint &&
+    isTransipAccessTokenFresh(cached.expiresAt ?? readJwtExpiryMs(cached.token))
+  ) {
+    return cached.token;
+  }
+
+  const minted = await createTransipAccessToken({
+    login,
+    privateKey,
+    readOnly: false,
+    globalKey: true,
+    expirationTime: "1 month",
+    label: uniqueTransipTokenLabel("backsteros-env"),
+  });
+  envMintedTokenCache = {
+    token: minted.token,
+    expiresAt: minted.expiresAt,
+    fingerprint,
+  };
   return minted.token;
 }
 
@@ -117,7 +164,7 @@ export async function getWorkspaceTransipAccessToken(
 /**
  * Resolve a usable TransIP JWT:
  * 1. Workspace login+key → mint/refresh cached token when near expiry
- * 2. Env login+key → mint (not persisted)
+ * 2. Env login+key → mint (process-local cache)
  * 3. Fresh workspace cached/manual token
  * 4. Env `TRANSIP_ACCESS_TOKEN`
  */
@@ -145,15 +192,7 @@ export async function getWorkspaceOrEnvTransipToken(
 
   const envKeys = getConfiguredTransipKeyCredentials();
   if (envKeys) {
-    const minted = await createTransipAccessToken({
-      login: envKeys.login,
-      privateKey: envKeys.privateKey,
-      readOnly: false,
-      globalKey: true,
-      expirationTime: "1 month",
-      label: "backsteros-env",
-    });
-    return minted.token;
+    return mintEnvAccessToken(envKeys.login, envKeys.privateKey);
   }
 
   const fromWorkspace = row?.transipAccessToken?.trim() || "";

@@ -5,6 +5,8 @@ import {
   CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
   CALENDAR_MEETING_OVERLAY_PARAM,
   CALENDAR_PAGE_MODE_PARAM,
+  CALENDAR_TASK_OVERLAY_LAYOUT_PARAM,
+  CALENDAR_TASK_OVERLAY_PARAM,
   CALENDAR_TIMETRACKING_DATE_PARAM,
   CALENDAR_VIEW_MODE_PARAM,
   DEFAULT_CALENDAR_PAGE_MODE,
@@ -52,9 +54,10 @@ export function useCalendarPageModeControls() {
         navigateToHref(
           navigate,
           buildCalendarPageHref({
-            viewMode: mode === "availability" && (view === "day" || view === "list")
-              ? undefined
-              : view,
+            viewMode:
+              mode === "availability" && (view === "day" || view === "list")
+                ? "week"
+                : view,
             pageMode: mode,
           }),
           { replace: true },
@@ -71,13 +74,15 @@ export function useCalendarPageModeControls() {
       if (mode === "calendar" || mode === "availability" || mode === "timetracking") {
         next.delete(CALENDAR_MEETING_OVERLAY_PARAM);
         next.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
+        next.delete(CALENDAR_TASK_OVERLAY_PARAM);
+        next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
       }
       if (mode === "availability" || mode === "timetracking") {
         const nextView = parseCalendarViewModeParam(
           next.get(CALENDAR_VIEW_MODE_PARAM),
         );
         if (nextView === "day" || nextView === "list") {
-          next.delete(CALENDAR_VIEW_MODE_PARAM);
+          next.set(CALENDAR_VIEW_MODE_PARAM, "week");
         }
       }
       if (mode !== "timetracking") {
@@ -92,16 +97,19 @@ export function useCalendarPageModeControls() {
     [navigate, pathname, searchParams],
   );
 
-  // Narrow/expanded meeting overlay owns `1`/`2`/`3` for Summary/Notes/
-  // Transcription; Escape closes the overlay and restores these toggles.
+  // Narrow/expanded meeting/task overlay owns digit shortcuts while open.
   const meetingOverlayOpen = Boolean(
     searchParams.get(CALENDAR_MEETING_OVERLAY_PARAM)?.trim(),
+  );
+  const taskOverlayOpen = Boolean(
+    searchParams.get(CALENDAR_TASK_OVERLAY_PARAM)?.trim(),
   );
 
   useCalendarPageModeShortcuts({
     enabled:
       !keepAliveFrozen &&
       !meetingOverlayOpen &&
+      !taskOverlayOpen &&
       (pathname === "/calendar" || pathname.startsWith("/calendar/")),
     pageMode,
     onPageModeChange: handlePageModeChange,

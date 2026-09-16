@@ -18,7 +18,6 @@ import {
   startAgentPresenceEventsLoop,
 } from "./agent-presence-events";
 import {
-  clearDynamicIslandAgentsWorking,
   publishDynamicIslandAgentsWorking,
 } from "../dynamic-island-agents-working";
 import { useDesktopApi } from "../api-context";
@@ -237,15 +236,10 @@ export function DesktopAgentStatusProvider({
     }, DYNAMIC_ISLAND_AGENTS_HEARTBEAT_MS);
     return () => {
       window.clearInterval(timer);
+      // Do not write count 0 on unmount — core (and other shells) may still
+      // have live agent presence; the island ages the file out (~90s).
     };
   }, [workingTaskIds]);
-
-  useEffect(() => {
-    return () => {
-      clearDynamicIslandAgentsWorking();
-    };
-  }, []);
-
   const setOpenTaskIds = useCallback((taskIds: readonly string[]) => {
     setOpenTaskIdsState((current) => {
       if (

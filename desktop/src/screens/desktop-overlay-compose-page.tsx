@@ -14,6 +14,7 @@ import {
   completeDesktopOverlayNavigation,
   DESKTOP_OVERLAY_TOGGLE_COMPOSE_EVENT,
   hideDesktopOverlayWindow,
+  requestComposeOverlayContextFromMain,
 } from "../lib/desktop-overlay";
 import { useDesktopOverlayAutoResize } from "../lib/use-desktop-overlay-auto-resize";
 import { DesktopOverlayRoot } from "../shell/desktop-overlay-root";
@@ -42,39 +43,56 @@ function ComposeOverlayController() {
     return ctx && ctx.length > 0 ? ctx : "/";
   }, [searchParams]);
 
-  const ensureContext = useCallback(async () => {
-    if (contextRef.current) {
-      return;
-    }
+  const ensureContext = useCallback(
+    async (options?: { preferFreshMain?: boolean }) => {
+      if (loadPromiseRef.current) {
+        await loadPromiseRef.current;
+        return;
+      }
 
-    if (loadPromiseRef.current) {
-      await loadPromiseRef.current;
-      return;
-    }
+      const hadCache = contextRef.current != null;
+      if (hadCache && !options?.preferFreshMain) {
+        return;
+      }
 
-    setContextLoading(true);
-    setContextError(null);
+      if (!hadCache) {
+        setContextLoading(true);
+        setContextError(null);
+      }
 
-    const promise = loadComposeOverlayContext(client)
-      .then((next) => {
+      const promise = (async () => {
+        // Prefer warm workspace rows from the main window (PowerSync is off here).
+        const fromMain = await requestComposeOverlayContextFromMain();
+        if (fromMain) {
+          contextRef.current = fromMain;
+          setContext(fromMain);
+          return;
+        }
+        if (hadCache) {
+          return;
+        }
+        const next = await loadComposeOverlayContext(client);
         contextRef.current = next;
         setContext(next);
-      })
-      .catch((error: unknown) => {
-        setContextError(
-          error instanceof Error
-            ? error.message
-            : "Could not load compose options.",
-        );
-      })
-      .finally(() => {
-        setContextLoading(false);
-        loadPromiseRef.current = null;
-      });
+      })()
+        .catch((error: unknown) => {
+          if (hadCache) return;
+          setContextError(
+            error instanceof Error
+              ? error.message
+              : "Could not load compose options.",
+          );
+        })
+        .finally(() => {
+          setContextLoading(false);
+          loadPromiseRef.current = null;
+        });
 
-    loadPromiseRef.current = promise;
-    await promise;
-  }, [client]);
+      loadPromiseRef.current = promise;
+      await promise;
+    },
+    [client],
+  );
 
   // Prefetch while the overlay window is still hidden.
   useEffect(() => {
@@ -83,16 +101,16 @@ function ComposeOverlayController() {
 
   useEffect(() => {
     if (open) {
-      void ensureContext();
+      void ensureContext({ preferFreshMain: true });
     }
   }, [ensureContext, open]);
 
   // Overlay webview is persistent; re-open the modal whenever the panel is shown.
-  // Keep cached projects/contacts — do not flash a loading state on every show.
+  // Refresh from main when possible; keep cache if main is unavailable.
   useEffect(() => {
     const reopen = () => {
       setOpen(true);
-      void ensureContext();
+      void ensureContext({ preferFreshMain: true });
     };
     window.addEventListener("focus", reopen);
     return () => window.removeEventListener("focus", reopen);

@@ -3383,11 +3383,15 @@ export async function applySyncChange(
           change.payload.group_id ?? change.payload.groupId,
         );
         if (!groupId) throw new Error("INVALID_CRM_GROUP_MEMBER");
+        // Same as upsert: REST/cascade already emitted per-subject deletes.
+        // Re-cascading here wipes the sibling org/contact membership on apply
+        // (e.g. deduping one Clients contact row also dropped the org).
         const ok = await crmGroupsService.removeCrmGroupMember(
           workspaceId,
           groupId,
           change.entity_id,
           executor,
+          { cascade: false },
         );
         if (!ok) return null;
         const row = await loadCrmGroupMemberRow(

@@ -2,8 +2,7 @@
 
 import {
   useEffect,
-  useId,
-  useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
@@ -101,46 +100,6 @@ function entityLabelForCategory(categoryId: SpacesCategoryId): string {
   return "Space";
 }
 
-/** Decorative area chart for the features-15 visual panel. */
-function SpaceCardGraph({ gradientId }: { gradientId: string }) {
-  return (
-    <svg
-      className="space-overview-card__graph"
-      viewBox="0 0 320 160"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop
-            offset="0%"
-            stopColor="var(--space-card-accent)"
-            stopOpacity="0.55"
-          />
-          <stop
-            offset="100%"
-            stopColor="var(--space-card-accent)"
-            stopOpacity="0"
-          />
-        </linearGradient>
-      </defs>
-      <path
-        d="M0 118 C28 112 42 78 64 72 C92 64 108 98 136 92 C164 86 178 48 208 54 C236 60 252 96 280 88 C300 82 312 70 320 66 L320 160 L0 160 Z"
-        fill={`url(#${gradientId})`}
-      />
-      <path
-        className="space-overview-card__graph-line"
-        d="M0 118 C28 112 42 78 64 72 C92 64 108 98 136 92 C164 86 178 48 208 54 C236 60 252 96 280 88 C300 82 312 70 320 66"
-        fill="none"
-        stroke="var(--space-card-accent)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
 /**
  * Spaces overview card — features-15 layout (visual + title), half-height panel
  * with icon square overlaid top-left for Support / Knowledge Base.
@@ -155,7 +114,6 @@ export function SpaceOverviewCard({
   pointerReorderBind = null,
   dragging = false,
 }: SpaceOverviewCardProps) {
-  const gradientId = useId().replace(/:/g, "");
   const articleCount = item.articleCount ?? 0;
   const countLabel = formatArticleCount(articleCount);
   const updatedLabel = formatSpaceUpdatedLabel(item.updatedAt);
@@ -228,16 +186,21 @@ export function SpaceOverviewCard({
         }}
         {...(pointerReorderBind ?? {})}
       >
-        <div className="space-overview-card__visual">
+        <div
+          className={[
+            "space-overview-card__visual",
+            hasCover ? "space-overview-card__visual--cover" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {hasCover ? (
             <img
               alt=""
               className="space-overview-card__cover"
               src={item.coverSrc!}
             />
-          ) : (
-            <SpaceCardGraph gradientId={`space-graph-${gradientId}`} />
-          )}
+          ) : null}
         </div>
 
         {onOpenSettings ? (
@@ -279,10 +242,6 @@ export function SpaceOverviewCard({
                 if (interactiveIcon) setPickerOpen(true);
               }}
             >
-              <span
-                className="space-overview-card__icon-glow"
-                aria-hidden="true"
-              />
               <span className="space-overview-card__icon-face">
                 <DocumentOcticon
                   icon={displayIcon}
@@ -414,7 +373,6 @@ export function SpaceOverviewCreateCard({
   onCancel,
   onSubmit,
 }: SpaceOverviewCreateCardProps) {
-  const gradientId = useId().replace(/:/g, "");
   const [icon, setIcon] = useState(SPACE_CREATE_DEFAULT_ICON);
   const [pickerOpen, setPickerOpen] = useState(false);
   const submittingRef = useRef(false);
@@ -464,9 +422,7 @@ export function SpaceOverviewCreateCard({
         data-tauri-drag-region="false"
         aria-label="New space"
       >
-        <div className="space-overview-card__visual">
-          <SpaceCardGraph gradientId={`space-create-graph-${gradientId}`} />
-        </div>
+        <div className="space-overview-card__visual" />
 
         <div className="space-overview-card__body">
           <span className="space-overview-card__icon-wrap">
@@ -481,10 +437,6 @@ export function SpaceOverviewCreateCard({
                 setPickerOpen(true);
               }}
             >
-              <span
-                className="space-overview-card__icon-glow"
-                aria-hidden="true"
-              />
               <span className="space-overview-card__icon-face">
                 <DocumentOcticon icon={icon} size={22} style={glyphStyle} />
               </span>

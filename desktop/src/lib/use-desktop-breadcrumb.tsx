@@ -32,6 +32,11 @@ export type UseDesktopSectionBreadcrumbOptions = {
   /** Extra controls rendered in the chrome header before the ⋯ menu. */
   actions?: ReactNode;
   /**
+   * When true, omit the ⋯ entity-actions slot from the breadcrumb chrome
+   * (e.g. when the slot is already placed inside a detail panel header).
+   */
+  hideEntityActionsSlot?: boolean;
+  /**
    * Optional right chrome matching a detail panel width (e.g. categories
    * 50/50) so the panel appears to continue into the breadcrumb row.
    */
@@ -56,6 +61,7 @@ export function useDesktopSectionBreadcrumb(
     .map((item) => `${item.label}\0${item.href ?? ""}`)
     .join("|");
   const actions = options?.actions;
+  const hideEntityActionsSlot = options?.hideEntityActionsSlot ?? false;
   const trailingPanel = options?.trailingPanel;
   const className = options?.className;
   const enabled = options?.enabled !== false;
@@ -68,7 +74,7 @@ export function useDesktopSectionBreadcrumb(
         actions={
           <>
             {actions}
-            <EntityHeaderActionsSlot />
+            {hideEntityActionsSlot ? null : <EntityHeaderActionsSlot />}
           </>
         }
         trailingPanel={trailingPanel}
@@ -78,7 +84,7 @@ export function useDesktopSectionBreadcrumb(
     );
     // itemsKey tracks label/href identity for the trail.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions, className, enabled, itemsKey, trailingPanel]);
+  }, [actions, className, enabled, hideEntityActionsSlot, itemsKey, trailingPanel]);
 
   useRegisterChromeHeader(enabled ? header : false);
 }

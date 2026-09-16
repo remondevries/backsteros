@@ -454,6 +454,45 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/** Always-on shimmer for short-lived status copy (creating, syncing). Ignores reduced-motion. */
+@keyframes live-status-shine {
+  from {
+    background-position:
+      -6rem 0,
+      0 0;
+  }
+  to {
+    background-position:
+      calc(100% + 6rem) 0,
+      0 0;
+  }
+}
+
+@utility live-status-shine {
+  @media (forced-colors: none) {
+    color: transparent;
+    background-image:
+      linear-gradient(
+        to right,
+        transparent 0%,
+        var(--contrast-foreground) 38%,
+        color-mix(in oklab, var(--contrast-foreground) 25%, white) 50%,
+        var(--contrast-foreground) 62%,
+        transparent 100%
+      ),
+      linear-gradient(
+        color-mix(in oklab, var(--contrast-secondary-label) 68%, var(--background)),
+        color-mix(in oklab, var(--contrast-secondary-label) 68%, var(--background))
+      );
+    background-size:
+      6rem 100%,
+      100% 100%;
+    background-repeat: no-repeat;
+    background-clip: text;
+    animation: live-status-shine 1.6s linear infinite;
+  }
+}
+
 @utility visible-animate-spin {
   animation: var(--animate-spin);
   animation-play-state: var(--visible-animation-state, paused);

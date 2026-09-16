@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  resolveListKeyboardActivationAnchor,
   resolveListKeyboardStepTarget,
   stepListKeyboardIndex,
 } from "./list-keyboard-nav-index.js";
@@ -106,6 +107,58 @@ describe("resolveListKeyboardStepTarget", () => {
         hoverAnchorId: "b",
       }),
       "b",
+    );
+  });
+});
+
+describe("resolveListKeyboardActivationAnchor", () => {
+  const items = ["top", "today", "later"];
+
+  it("prefers an explicit landing id", () => {
+    assert.equal(
+      resolveListKeyboardActivationAnchor({
+        preferredItemId: "later",
+        selectedId: "today",
+        highlightedId: "today",
+        itemIds: items,
+      }),
+      "later",
+    );
+  });
+
+  it("prefers the selected row over an existing highlight", () => {
+    assert.equal(
+      resolveListKeyboardActivationAnchor({
+        preferredItemId: null,
+        selectedId: "today",
+        highlightedId: "top",
+        itemIds: items,
+      }),
+      "today",
+    );
+  });
+
+  it("keeps an existing highlight when nothing is selected (Tab into list)", () => {
+    assert.equal(
+      resolveListKeyboardActivationAnchor({
+        preferredItemId: null,
+        selectedId: null,
+        highlightedId: "today",
+        itemIds: items,
+      }),
+      "today",
+    );
+  });
+
+  it("falls back to the first row only when nothing else applies", () => {
+    assert.equal(
+      resolveListKeyboardActivationAnchor({
+        preferredItemId: null,
+        selectedId: null,
+        highlightedId: null,
+        itemIds: items,
+      }),
+      "top",
     );
   });
 });

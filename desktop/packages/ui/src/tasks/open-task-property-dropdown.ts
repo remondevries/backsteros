@@ -18,6 +18,9 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
   ".task-panel-island--detail",
   ".task-detail-view",
   ".task-detail-stacked",
+  ".meeting-detail-view",
+  ".calendar-meeting-detail-overlay",
+  "[data-calendar-meeting-overlay]",
   ".finance-transactions-view__detail",
   ".finance-categories-view__detail",
 ] as const;
@@ -176,6 +179,24 @@ function resolveFinanceTxDetailScope(): HTMLElement | null {
   return detail instanceof HTMLElement && detail.isConnected ? detail : null;
 }
 
+function resolveMeetingDetailPropertyScope(): HTMLElement | null {
+  for (const selector of [
+    "[data-calendar-meeting-overlay]",
+    ".calendar-meeting-detail-overlay",
+    ".meeting-detail-view",
+  ]) {
+    const scope = document.querySelector(selector);
+    if (
+      scope instanceof HTMLElement &&
+      scope.isConnected &&
+      !isInertSubtree(scope)
+    ) {
+      return scope;
+    }
+  }
+  return null;
+}
+
 /**
  * Finance transaction property hotkeys: prefer the open right detail panel,
  * otherwise the keyboard-highlighted list row.
@@ -205,6 +226,12 @@ export function openTaskPropertyDropdown(
   const ids = Array.isArray(id) ? id : [id];
   requestCloseSearchableDropdowns();
 
+  // Meeting format (F) only when a meeting detail / overlay is open.
+  if (ids.length === 1 && ids[0] === "format") {
+    const meetingScope = resolveMeetingDetailPropertyScope();
+    return Boolean(meetingScope && tryOpenInScope(meetingScope, ids));
+  }
+
   const composeScope = resolveComposeModalPropertyScope();
   if (composeScope) {
     return tryOpenInScope(composeScope, ids);
@@ -213,6 +240,12 @@ export function openTaskPropertyDropdown(
   // Multi-select (>1): open the bulk editor field instead of a single row.
   const bulkScope = resolveTaskBulkPropertyScope();
   if (bulkScope && tryOpenInScope(bulkScope, ids, { centerPlacement: true })) {
+    return true;
+  }
+
+  // Open meeting detail owns schedule (⇧D) over any highlighted list row.
+  const meetingScope = resolveMeetingDetailPropertyScope();
+  if (meetingScope && tryOpenInScope(meetingScope, ids)) {
     return true;
   }
 

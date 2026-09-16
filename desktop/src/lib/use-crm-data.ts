@@ -14,9 +14,11 @@ import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import {
   mapContactRelationshipListItem,
   mapCrmActivityRow,
+  mapCrmGroupRow,
   mapCrmRelationshipLabelRow,
   type ContactRelationshipRow,
   type CrmActivityRow,
+  type CrmGroupRow,
   type CrmRelationshipLabelRow,
 } from "./workspace/crm-row-mappers";
 import {
@@ -39,8 +41,15 @@ import {
 import {
   CONTACT_RELATIONSHIPS_FOR_CONTACT_SQL,
   CRM_ACTIVITIES_FOR_SUBJECT_SQL,
+  CRM_CONTACT_GROUP_MEMBERSHIPS_SQL,
+  CRM_GROUP_MEMBERS_SQL,
+  CRM_GROUPS_LIST_SQL,
   CRM_RELATIONSHIP_LABELS_SQL,
 } from "./workspace/workspace-sql";
+import {
+  WORKSPACE_CRM_DATA_UPDATED_EVENT,
+  WORKSPACE_CRM_GROUPS_UPDATED_EVENT,
+} from "./workspace-events";
 
 export { addCrmGroupMemberWithRetry } from "./workspace/crm-mutations";
 
@@ -151,6 +160,16 @@ export function useCrmActivityFeed(
   useEffect(() => {
     void reloadRest();
   }, [reloadRest]);
+
+  useEffect(() => {
+    if (!enabled || !subjectId || localEnabled) return;
+    const onChange = () => {
+      void reloadRest();
+    };
+    window.addEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+    return () =>
+      window.removeEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+  }, [enabled, localEnabled, reloadRest, subjectId]);
 
   const localActivities = useMemo(() => {
     if (!localEnabled || !activityQuery.data) return null;
@@ -279,6 +298,16 @@ export function useContactRelationships(
     void reloadRest();
   }, [reloadRest]);
 
+  useEffect(() => {
+    if (!enabled || !contactId || localEnabled) return;
+    const onChange = () => {
+      void reloadRest();
+    };
+    window.addEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+    return () =>
+      window.removeEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+  }, [contactId, enabled, localEnabled, reloadRest]);
+
   const labels = useMemo(
     () => labelsQuery.data?.map(mapCrmRelationshipLabelRow) ?? [],
     [labelsQuery.data],
@@ -384,8 +413,11 @@ export function useCrmRelationshipLabels(enabled = true) {
       void reloadRest();
     };
     window.addEventListener(CRM_RELATIONSHIP_LABELS_CHANGED, onChange);
-    return () =>
+    window.addEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+    return () => {
       window.removeEventListener(CRM_RELATIONSHIP_LABELS_CHANGED, onChange);
+      window.removeEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
+    };
   }, [enabled, localEnabled, reloadRest]);
 
   const labels = useMemo(() => {
@@ -472,10 +504,14 @@ export function notifyCrmGroupsChanged() {
   window.dispatchEvent(new Event(CRM_GROUPS_CHANGED));
 }
 
-/** Workspace CRM groups catalog for the contacts left panel (REST/Postgres). */
+/** Workspace CRM groups catalog for the contacts left panel (PowerSync + REST). */
 export function useCrmGroupsCatalog(enabled = true) {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
+  const localEnabled = useCrmLocalReads(enabled);
+  const localQuery = usePowerSyncQuery<CrmGroupRow>(
+    localEnabled ? CRM_GROUPS_LIST_SQL : null,
+  );
   const [restGroups, setRestGroups] = useState<CrmGroup[]>([]);
   const [serverGroups, setServerGroups] = useState<CrmGroup[] | null>(null);
   const [groupIdRedirects, setGroupIdRedirects] = useState<Map<string, string>>(
@@ -531,12 +567,24 @@ export function useCrmGroupsCatalog(enabled = true) {
       void reloadRest();
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+    window.addEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    return () => {
+      window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+      window.removeEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    };
   }, [enabled, reloadRest]);
 
+  const localGroups = useMemo((): CrmGroup[] => {
+    if (!localQuery.data?.length) return [];
+    return localQuery.data.map(mapCrmGroupRow);
+  }, [localQuery.data]);
+
   const groups = useMemo(() => {
+    if (localEnabled && localGroups.length > 0) {
+      return dedupeCatalogGroups(localGroups, serverGroups ?? restGroups);
+    }
     return dedupeCatalogGroups(restGroups, serverGroups);
-  }, [restGroups, serverGroups]);
+  }, [localEnabled, localGroups, restGroups, serverGroups]);
 
   const resolveGroupId = useCallback(
     (groupId: string | null | undefined) => {
@@ -591,7 +639,7 @@ export function useCrmGroupsCatalog(enabled = true) {
   return {
     groups,
     resolveGroupId,
-    loading: restLoading,
+    loading: localEnabled ? localQuery.loading : restLoading,
     createGroup,
     updateGroup,
     deleteGroup,
@@ -611,16 +659,24 @@ type CrmGroupMemberApiRow = {
   subjectId: string;
 };
 
-/** Map of contact id → CRM groups for list chips (REST/Postgres). */
+/** Map of contact id → CRM groups for list chips (PowerSync + REST). */
 export function useCrmContactGroupsByContactId(enabled = true) {
   const { client } = useDesktopApi();
+  const localEnabled = useCrmLocalReads(enabled);
+  const localQuery = usePowerSyncQuery<{
+    contact_id: string;
+    group_id: string;
+    name: string;
+    color: string | null;
+    sort_order: number | null;
+  }>(localEnabled ? CRM_CONTACT_GROUP_MEMBERSHIPS_SQL : null);
   const [map, setMap] = useState<Map<string, CrmContactGroupChip[]>>(
     () => new Map(),
   );
 
   const reload = useCallback(async () => {
-    if (!enabled) {
-      setMap(new Map());
+    if (!enabled || localEnabled) {
+      if (!enabled) setMap(new Map());
       return;
     }
     try {
@@ -642,8 +698,13 @@ export function useCrmContactGroupsByContactId(enabled = true) {
           for (const member of membersBody.members ?? []) {
             if (member.subjectType !== "contact" || !member.subjectId) continue;
             const existing = next.get(member.subjectId);
-            if (existing) existing.push(chip);
-            else next.set(member.subjectId, [chip]);
+            if (existing) {
+              if (!existing.some((entry) => entry.id === chip.id)) {
+                existing.push(chip);
+              }
+            } else {
+              next.set(member.subjectId, [chip]);
+            }
           }
         }),
       );
@@ -651,7 +712,7 @@ export function useCrmContactGroupsByContactId(enabled = true) {
     } catch {
       setMap(new Map());
     }
-  }, [client, enabled]);
+  }, [client, enabled, localEnabled]);
 
   useEffect(() => {
     void reload();
@@ -663,10 +724,35 @@ export function useCrmContactGroupsByContactId(enabled = true) {
       void reload();
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+    window.addEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    return () => {
+      window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+      window.removeEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    };
   }, [enabled, reload]);
 
-  return map;
+  return useMemo(() => {
+    if (localEnabled && localQuery.data) {
+      const next = new Map<string, CrmContactGroupChip[]>();
+      for (const row of localQuery.data) {
+        const chip: CrmContactGroupChip = {
+          id: row.group_id,
+          name: row.name,
+          color: row.color,
+        };
+        const existing = next.get(row.contact_id);
+        if (existing) {
+          if (!existing.some((entry) => entry.id === chip.id)) {
+            existing.push(chip);
+          }
+        } else {
+          next.set(row.contact_id, [chip]);
+        }
+      }
+      return next;
+    }
+    return map;
+  }, [localEnabled, localQuery.data, map]);
 }
 
 type CrmGroupMembersState = {
@@ -681,6 +767,14 @@ function useCrmGroupMembers(
   enabled: boolean,
 ): CrmGroupMembersState {
   const { client } = useDesktopApi();
+  const localEnabled = useCrmLocalReads(enabled && Boolean(groupId));
+  const localQuery = usePowerSyncQuery<{
+    subject_type: string;
+    subject_id: string;
+  }>(
+    localEnabled && groupId ? CRM_GROUP_MEMBERS_SQL : null,
+    localEnabled && groupId ? [groupId] : [],
+  );
   const [contactIds, setContactIds] = useState<Set<string>>(() => new Set());
   const [organizationIds, setOrganizationIds] = useState<Set<string>>(
     () => new Set(),
@@ -688,9 +782,11 @@ function useCrmGroupMembers(
   const [loading, setLoading] = useState(false);
 
   const reload = useCallback(async () => {
-    if (!enabled || !groupId) {
-      setContactIds(new Set());
-      setOrganizationIds(new Set());
+    if (!enabled || !groupId || localEnabled) {
+      if (!enabled || !groupId) {
+        setContactIds(new Set());
+        setOrganizationIds(new Set());
+      }
       return;
     }
     setLoading(true);
@@ -713,7 +809,7 @@ function useCrmGroupMembers(
     } finally {
       setLoading(false);
     }
-  }, [client, enabled, groupId]);
+  }, [client, enabled, groupId, localEnabled]);
 
   useEffect(() => {
     void reload();
@@ -725,10 +821,41 @@ function useCrmGroupMembers(
       void reload();
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+    window.addEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    return () => {
+      window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+      window.removeEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    };
   }, [enabled, groupId, reload]);
 
-  return { contactIds, organizationIds, loading, reload };
+  const localContactIds = useMemo(() => {
+    if (!localEnabled || !localQuery.data) return null;
+    const next = new Set<string>();
+    for (const row of localQuery.data) {
+      if (row.subject_type === "contact" && row.subject_id) {
+        next.add(row.subject_id);
+      }
+    }
+    return next;
+  }, [localEnabled, localQuery.data]);
+
+  const localOrganizationIds = useMemo(() => {
+    if (!localEnabled || !localQuery.data) return null;
+    const next = new Set<string>();
+    for (const row of localQuery.data) {
+      if (row.subject_type === "organization" && row.subject_id) {
+        next.add(row.subject_id);
+      }
+    }
+    return next;
+  }, [localEnabled, localQuery.data]);
+
+  return {
+    contactIds: localContactIds ?? contactIds,
+    organizationIds: localOrganizationIds ?? organizationIds,
+    loading: localEnabled ? localQuery.loading : loading,
+    reload,
+  };
 }
 
 /**
@@ -776,14 +903,17 @@ export function useCrmGroupsForSubject(
     const allBody = await client.requestJson<{ groups: CrmGroup[] }>(
       "/api/v1/crm-groups",
     );
-    setRestAllGroups(allBody.groups);
+    const allGroups = dedupeCatalogGroups(allBody.groups, allBody.groups);
+    setRestAllGroups(allGroups);
     try {
       const memberBody = await client.requestJson<{ groups: CrmGroup[] }>(
         subjectType === "contact"
           ? `/api/v1/contacts/${encodeURIComponent(subjectId)}/groups`
           : `/api/v1/organizations/${encodeURIComponent(subjectId)}/groups`,
       );
-      setRestMemberGroups(memberBody.groups);
+      setRestMemberGroups(
+        dedupeCatalogGroups(memberBody.groups ?? [], allGroups),
+      );
     } catch (error) {
       if (isSubjectMissingError(error)) {
         setRestMemberGroups([]);
@@ -805,7 +935,11 @@ export function useCrmGroupsForSubject(
       void reloadRest().catch(() => {});
     };
     window.addEventListener(CRM_GROUPS_CHANGED, onChange);
-    return () => window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+    window.addEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    return () => {
+      window.removeEventListener(CRM_GROUPS_CHANGED, onChange);
+      window.removeEventListener(WORKSPACE_CRM_GROUPS_UPDATED_EVENT, onChange);
+    };
   }, [enabled, reloadRest]);
 
   const createGroup = useCallback(
@@ -838,16 +972,41 @@ export function useCrmGroupsForSubject(
           subjectId,
         });
       } else {
-        await removeCrmGroupMemberViaPowerSyncOrApi(client, powerSync, {
-          groupId,
-          subjectType,
-          subjectId,
-        });
+        const target =
+          restAllGroups.find((group) => group.id === groupId) ??
+          restMemberGroups.find((group) => group.id === groupId) ??
+          null;
+        // Clear every same-named group id — historical duplicates otherwise leave
+        // the label visible after removing the canonical row.
+        const aliasIds = new Set<string>([groupId]);
+        if (target) {
+          const needle = target.name.trim().toLowerCase();
+          for (const group of [...restAllGroups, ...restMemberGroups]) {
+            if (group.name.trim().toLowerCase() === needle) {
+              aliasIds.add(group.id);
+            }
+          }
+        }
+        for (const aliasId of aliasIds) {
+          await removeCrmGroupMemberViaPowerSyncOrApi(client, powerSync, {
+            groupId: aliasId,
+            subjectType,
+            subjectId,
+          });
+        }
       }
       notifyCrmGroupsChanged();
       await reloadRest();
     },
-    [client, powerSync, reloadRest, subjectId, subjectType],
+    [
+      client,
+      powerSync,
+      reloadRest,
+      restAllGroups,
+      restMemberGroups,
+      subjectId,
+      subjectType,
+    ],
   );
 
   const deleteGroup = useCallback(

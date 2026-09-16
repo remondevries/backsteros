@@ -51,6 +51,25 @@ function getAuth(c: { get: (key: "auth") => AuthContext | undefined }) {
   return c.get("auth");
 }
 
+function wakeSpacePublish(
+  workspaceId: string,
+  entity: "space_publish_setting" | "space_site_key" | "document",
+  entityId: string,
+  operation: "upsert" | "delete" = "upsert",
+): void {
+  void import("../services/core-replication/nudge.js").then(
+    ({ notifyPeerOfEntityWrite }) => {
+      notifyPeerOfEntityWrite({
+        workspaceId,
+        reason: "spaces-publish",
+        entity,
+        entityId,
+        operation,
+      });
+    },
+  );
+}
+
 function siteKeyFromRequest(c: {
   req: { header: (name: string) => string | undefined };
 }): string | null {
@@ -156,6 +175,12 @@ export function registerSpacesPublishRoutes(app: Hono) {
         body,
       );
       if (!settings) return c.json(notFound("Space"), 404);
+      wakeSpacePublish(
+        auth!.workspaceId,
+        "space_publish_setting",
+        spaceDocumentId,
+        "upsert",
+      );
       return c.json(settings);
     },
   );
@@ -187,6 +212,12 @@ export function registerSpacesPublishRoutes(app: Hono) {
         }
         return c.json(notFound("Space"), 404);
       }
+      wakeSpacePublish(
+        auth!.workspaceId,
+        "space_site_key",
+        result.key.id,
+        "upsert",
+      );
       return c.json(
         {
           siteKey: result.siteKey,
@@ -213,6 +244,7 @@ export function registerSpacesPublishRoutes(app: Hono) {
         keyId,
       );
       if (!settings) return c.json(notFound("Site key"), 404);
+      wakeSpacePublish(auth!.workspaceId, "space_site_key", keyId, "delete");
       return c.json(settings);
     },
   );
@@ -395,6 +427,7 @@ export function registerSpacesPublishRoutes(app: Hono) {
         contentType,
       );
       if (!document) return c.json(notFound("Space"), 404);
+      wakeSpacePublish(auth!.workspaceId, "document", document.id, "upsert");
       return c.json(documentSchema.parse(document));
     },
   );
@@ -427,6 +460,7 @@ export function registerSpacesPublishRoutes(app: Hono) {
       spaceDocumentId,
     );
     if (!document) return c.json(notFound("Space"), 404);
+    wakeSpacePublish(auth!.workspaceId, "document", document.id, "upsert");
     return c.json(documentSchema.parse(document));
   });
 

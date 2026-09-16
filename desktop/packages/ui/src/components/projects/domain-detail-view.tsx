@@ -16,6 +16,11 @@ import {
   type DomainOverviewViewProps,
 } from "./domain-overview-view.js";
 
+const DOMAIN_MORE_TAB = {
+  value: "more" as const,
+  label: "More...",
+};
+
 export type DomainDetailViewProps = Omit<
   DomainOverviewViewProps,
   "mode" | "sectionNavSlot" | "sectionBody"
@@ -28,6 +33,11 @@ export type DomainDetailViewProps = Omit<
     zoneId: string,
   ) => Promise<DomainCloudflareDnsResult>;
   purgeCloudflareCache?: (zoneId: string) => Promise<void>;
+  /**
+   * When set, appends a "More..." tab (contacts/orgs pattern) that expands
+   * the Catalog Domains card into the tasks + details workspace.
+   */
+  onMore?: () => void;
 };
 
 /**
@@ -41,6 +51,7 @@ export function DomainDetailView({
   showSectionNav = true,
   loadCloudflareDnsRecords,
   purgeCloudflareCache,
+  onMore,
   ...overviewProps
 }: DomainDetailViewProps) {
   const zoneId = overviewProps.project.cloudflareZoneId?.trim() || null;
@@ -66,7 +77,26 @@ export function DomainDetailView({
     }
   }
 
+  type NavValue = DomainSectionId | "more";
+  const showMoreTab = Boolean(onMore);
+  const sectionItems: { value: NavValue; label: string }[] = [
+    ...sections.map((entry) => ({
+      value: entry.id as NavValue,
+      label: entry.label,
+    })),
+    ...(showMoreTab ? [DOMAIN_MORE_TAB] : []),
+  ];
+
+  function handleNavChange(next: NavValue) {
+    if (next === "more") {
+      onMore?.();
+      return;
+    }
+    setSection(next);
+  }
+
   const mode = activeSection === "cloudflare" ? "cloudflare" : "details";
+  const showTabs = showSectionNav && sectionItems.length > 1;
 
   return (
     <div className="contact-detail domain-detail" data-content-detail>
@@ -75,17 +105,14 @@ export function DomainDetailView({
           {...overviewProps}
           mode={mode}
           sectionNavSlot={
-            showSectionNav && sections.length > 1 ? (
+            showTabs ? (
               <div className="contact-section-tabs">
                 <PillNav
                   className="contact-section-tabs__nav"
                   ariaLabel="Domain sections"
-                  items={sections.map((entry) => ({
-                    value: entry.id,
-                    label: entry.label,
-                  }))}
+                  items={sectionItems}
                   value={activeSection}
-                  onChange={setSection}
+                  onChange={handleNavChange}
                 />
               </div>
             ) : null

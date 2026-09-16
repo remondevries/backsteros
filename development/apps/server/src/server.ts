@@ -25,7 +25,10 @@ import {
   httpCompressionLayer,
 } from "./http.ts";
 import { hetznerRouteLayer } from "./hetzner/http.ts";
-import { backsterosAgentProfileRouteLayer } from "./backsteros/http.ts";
+import {
+  backsterosAgentProfileRouteLayer,
+  backsterosFileTaskRouteLayer,
+} from "./backsteros/http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -556,6 +559,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     cursorPrepaidUsageRouteLayer,
     hetznerRouteLayer,
     backsterosAgentProfileRouteLayer,
+    backsterosFileTaskRouteLayer,
     backsterosApiProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,

@@ -275,6 +275,7 @@ add open-ended sweep items for them unless a dual-core race shows up in prod.
 | Letter/PDF **bytes** | Local vault only — metadata via letter `sync_events` |
 | `financial_import_batches` | Not in `REPLICATED_TABLES`; CSV blob is local storage. Transaction **rows** from CSV/Moneybird use create-via-sync + leader-first (`commitFinancialTransactionCreates`); `import_batch_id` is linked locally after apply and is not round-tripped on the sync clock |
 | `workspace_integration_secrets` | Twin for AgentMail/Moneybird credentials; not `sync_events` |
+| `file_task_callbacks` | Cloud-only TTL mailbox for Development → Grok Bot receipts. Not in `REPLICATED_TABLES`. Agent POSTs via `https://agent.backsteros.com`. |
 
 Contract tests under `core/server/src/services/*-sync.test.ts` and
 `hybrid-write-bar.test.ts` lock the leader-first bar for entities that must not

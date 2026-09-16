@@ -41,6 +41,11 @@ export type ProjectTypeGroupSectionProps = {
    * controlled elsewhere). Defaults to true.
    */
   showCollapseToggle?: boolean;
+  /**
+   * Calendar “today” pill styling on the title (red fill, dark text) —
+   * used for the current week/day/month group in the meetings rail.
+   */
+  titleHighlighted?: boolean;
   children: ReactNode;
   /** Optional + control (Areas page create-in-group). */
   onAdd?: () => void;
@@ -108,6 +113,7 @@ export function ProjectTypeGroupSection({
   titleKeyboardItemId,
   titleKeyboardHighlighted = false,
   showCollapseToggle = true,
+  titleHighlighted = false,
   children,
   onAdd,
   addActionLabel = "project",
@@ -214,6 +220,7 @@ export function ProjectTypeGroupSection({
           className={[
             "project-type-subgroup__label",
             "project-type-subgroup__label-button",
+            titleHighlighted ? "project-type-subgroup__label--highlighted" : null,
             keyboardNavItemClass(titleKeyboardHighlighted),
           ]
             .filter(Boolean)
@@ -230,14 +237,27 @@ export function ProjectTypeGroupSection({
           {title}
         </button>
       ) : (
-        <span className="project-type-subgroup__label">{title}</span>
+        <span
+          className={[
+            "project-type-subgroup__label",
+            titleHighlighted ? "project-type-subgroup__label--highlighted" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {title}
+        </span>
       )}
       <span className="project-type-subgroup__rule" aria-hidden="true" />
     </>
   );
 
   return (
-    <li className="project-type-subgroup" data-type-group={title}>
+    <li
+      className="project-type-subgroup"
+      data-type-group={title}
+      data-current-schedule-group={titleHighlighted ? "true" : undefined}
+    >
       <div
         className={[
           "project-type-subgroup__header-row",

@@ -8,13 +8,23 @@ type CoverEntity = {
   updatedAt?: number | null;
 };
 
+/** Exact versioned key — used after a successful download for this metadata. */
 const coverObjectUrlCache = new Map<string, string>();
+/**
+ * Latest blob URL per space+storage key (ignores document updatedAt).
+ * Lets the UI paint immediately when only unrelated metadata changed.
+ */
+const coverObjectUrlByIdentity = new Map<string, string>();
 /** Instant previews from a just-picked file (before metadata/sync catches up). */
 const coverPreviewById = new Map<string, string>();
 const coverPreviewListeners = new Set<() => void>();
 
+function coverIdentityKey(entry: CoverEntity): string {
+  return `${entry.id}:${entry.coverStorageKey ?? ""}`;
+}
+
 function coverCacheKey(entry: CoverEntity): string {
-  return `${entry.id}:${entry.coverStorageKey}:${entry.updatedAt ?? 0}`;
+  return `${coverIdentityKey(entry)}:${entry.updatedAt ?? 0}`;
 }
 
 function urlsEqual(
@@ -27,16 +37,41 @@ function urlsEqual(
   return leftKeys.every((key) => left[key] === right[key]);
 }
 
-function cachedCoverUrls(
+function lookupCachedCoverUrl(entry: CoverEntity): string | undefined {
+  const exact = coverObjectUrlCache.get(coverCacheKey(entry));
+  if (exact) return exact;
+  return coverObjectUrlByIdentity.get(coverIdentityKey(entry));
+}
+
+/** Partial map of whatever is already in the session RAM cache. */
+function partialCachedCoverUrls(
   targets: CoverEntity[],
-): Record<string, string> | null {
+): Record<string, string> {
   const next: Record<string, string> = {};
   for (const entry of targets) {
-    const url = coverObjectUrlCache.get(coverCacheKey(entry));
-    if (!url) return null;
-    next[entry.id] = url;
+    const url = lookupCachedCoverUrl(entry);
+    if (url) next[entry.id] = url;
   }
   return next;
+}
+
+function storeCoverObjectUrl(entry: CoverEntity, objectUrl: string) {
+  const versioned = coverCacheKey(entry);
+  const identity = coverIdentityKey(entry);
+  const previousVersioned = coverObjectUrlCache.get(versioned);
+  const previousIdentity = coverObjectUrlByIdentity.get(identity);
+  coverObjectUrlCache.set(versioned, objectUrl);
+  coverObjectUrlByIdentity.set(identity, objectUrl);
+  if (previousVersioned && previousVersioned !== objectUrl) {
+    revokeIfUnused(previousVersioned);
+  }
+  if (
+    previousIdentity &&
+    previousIdentity !== objectUrl &&
+    previousIdentity !== previousVersioned
+  ) {
+    revokeIfUnused(previousIdentity);
+  }
 }
 
 function notifyCoverPreviewListeners() {
@@ -45,6 +80,9 @@ function notifyCoverPreviewListeners() {
 
 function revokeIfUnused(url: string) {
   for (const cached of coverObjectUrlCache.values()) {
+    if (cached === url) return;
+  }
+  for (const cached of coverObjectUrlByIdentity.values()) {
     if (cached === url) return;
   }
   for (const preview of coverPreviewById.values()) {
@@ -91,12 +129,7 @@ export function rememberDesktopSpaceCover(
 ): string {
   const objectUrl = URL.createObjectURL(blob);
   if (entry.coverStorageKey) {
-    const key = coverCacheKey(entry);
-    const previous = coverObjectUrlCache.get(key);
-    coverObjectUrlCache.set(key, objectUrl);
-    if (previous && previous !== objectUrl) {
-      revokeIfUnused(previous);
-    }
+    storeCoverObjectUrl(entry, objectUrl);
   }
   const previousPreview = coverPreviewById.get(entry.id);
   coverPreviewById.set(entry.id, objectUrl);
@@ -120,7 +153,8 @@ function mergeCoverPreviewUrls(
 
 /**
  * Resolve space cover blob URLs for folders that have `coverStorageKey`.
- * Optimistic file-pick previews overlay until metadata catches up.
+ * Session RAM cache paints immediately (incl. stale-while-revalidate when only
+ * document `updatedAt` changed); missing covers download one-by-one.
  */
 export function useDesktopSpaceCoverSrcMap(
   entities: CoverEntity[],
@@ -139,14 +173,14 @@ export function useDesktopSpaceCoverSrcMap(
         .join("|"),
     [entities],
   );
-  const cached = useMemo(() => {
+  const cachedPartial = useMemo(() => {
     const currentTargets = entities.filter((entry) => entry.coverStorageKey);
-    return currentTargets.length === 0
-      ? {}
-      : cachedCoverUrls(currentTargets);
+    return partialCachedCoverUrls(currentTargets);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fingerprint]);
-  const [urls, setUrls] = useState<Record<string, string>>(() => cached ?? {});
+  const [urls, setUrls] = useState<Record<string, string>>(
+    () => cachedPartial,
+  );
 
   useEffect(() => {
     const bump = () => setPreviewTick((tick) => tick + 1);
@@ -162,41 +196,47 @@ export function useDesktopSpaceCoverSrcMap(
       setUrls((current) => (Object.keys(current).length === 0 ? current : {}));
       return;
     }
-    const fromCache = cachedCoverUrls(targets);
-    if (fromCache) {
-      setUrls((current) => (urlsEqual(current, fromCache) ? current : fromCache));
-      for (const entry of targets) {
-        if (fromCache[entry.id] && coverPreviewById.has(entry.id)) {
-          clearDesktopSpaceCoverPreview(entry.id);
-        }
+
+    const partial = partialCachedCoverUrls(targets);
+    setUrls((current) => (urlsEqual(current, partial) ? current : partial));
+
+    for (const entry of targets) {
+      if (
+        coverObjectUrlCache.has(coverCacheKey(entry)) &&
+        coverPreviewById.has(entry.id)
+      ) {
+        clearDesktopSpaceCoverPreview(entry.id);
       }
-      return;
     }
+
+    const missing = targets.filter(
+      (entry) => !coverObjectUrlCache.has(coverCacheKey(entry)),
+    );
+    if (missing.length === 0) return;
 
     let cancelled = false;
     void (async () => {
-      const next: Record<string, string> = {};
       await Promise.all(
-        targets.map(async (entry) => {
+        missing.map(async (entry) => {
           try {
             const blob = await client.downloadSpaceCover(entry.id);
+            if (cancelled) return;
             const objectUrl = URL.createObjectURL(blob);
-            const key = coverCacheKey(entry);
-            const previous = coverObjectUrlCache.get(key);
-            if (previous && previous !== objectUrl) {
-              revokeIfUnused(previous);
+            storeCoverObjectUrl(entry, objectUrl);
+            startTransition(() => {
+              setUrls((current) => {
+                if (current[entry.id] === objectUrl) return current;
+                return { ...current, [entry.id]: objectUrl };
+              });
+            });
+            if (coverPreviewById.has(entry.id)) {
+              clearDesktopSpaceCoverPreview(entry.id);
             }
-            coverObjectUrlCache.set(key, objectUrl);
-            next[entry.id] = objectUrl;
           } catch {
-            // Missing/unauthorized cover — skip.
+            // Missing/unauthorized cover — keep stale cache if any.
           }
         }),
       );
-      if (cancelled) return;
-      startTransition(() => {
-        setUrls((current) => (urlsEqual(current, next) ? current : next));
-      });
     })();
 
     return () => {

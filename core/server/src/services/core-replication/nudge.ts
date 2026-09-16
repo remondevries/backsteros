@@ -2,9 +2,13 @@
  * Bidirectional core wake so writes reach the peer without waiting for the
  * periodic replication tick.
  *
- * - Cloud write → nudge local (sync_events pull + optional table pull + SSE)
- * - Local write → nudge cloud (vault/table pull + SSE)
- * - local_fallback also pushes tables before/with the nudge (see leader-mutations)
+ * - Cloud write → push tables to local + nudge local (sync_events pull + table pull)
+ * - Local write → push tables to cloud + nudge cloud (table pull; sync_events
+ *   already landed via leader mutation when healthy)
+ * - local_fallback also pushes before/with the nudge (see leader-mutations)
+ *
+ * Contacts / organizations rely on table-twin catch-up (no workspace SSE), so
+ * the writer-side push is what makes portal↔desktop feel instant both ways.
  */
 import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import {
@@ -15,7 +19,7 @@ import { getCoreReplicationConfig } from "./config.js";
 import { replicatedTablesForEntity } from "./entity-tables.js";
 import { publishWorkspaceUpdatedFromSyncEvent } from "./sync-event-live-publish.js";
 import { pullPeerSyncEvents } from "./sync-event-replication.js";
-import { pullTable } from "./worker.js";
+import { pullTable, scheduleTableReplicationPush } from "./worker.js";
 
 const NUDGE_TIMEOUT_MS = 8_000;
 
@@ -34,7 +38,9 @@ export type ReplicationNudgeInput = {
 
 /**
  * Fire-and-forget wake of the replication peer after an entity write on this
- * core. No-op when replication is unset. Peer offline: warn only.
+ * core. Also pushes mapped table twins so metadata (contacts, organizations, …)
+ * reaches the peer even if the peer’s pull is delayed. No-op when replication
+ * is unset. Peer offline: warn only.
  */
 export function notifyPeerOfEntityWrite(input: ReplicationNudgeInput): void {
   const config = getCoreReplicationConfig();
@@ -42,6 +48,15 @@ export function notifyPeerOfEntityWrite(input: ReplicationNudgeInput): void {
 
   const workspaceId = input.workspaceId.trim();
   if (!workspaceId) return;
+
+  const entity = input.entity?.trim() || "document";
+  const tables = replicatedTablesForEntity(entity);
+  if (tables.length > 0) {
+    scheduleTableReplicationPush(
+      tables,
+      input.reason ?? `nudge:${entity}`,
+    );
+  }
 
   void (async () => {
     const controller = new AbortController();
@@ -57,8 +72,8 @@ export function notifyPeerOfEntityWrite(input: ReplicationNudgeInput): void {
           },
           body: JSON.stringify({
             workspace_id: workspaceId,
-            reason: input.reason ?? input.entity ?? "entity",
-            entity: input.entity ?? "document",
+            reason: input.reason ?? entity,
+            entity,
             entity_id: input.entityId ?? null,
             task_id: input.taskId ?? null,
             storage_key: input.storageKey ?? null,
@@ -120,8 +135,8 @@ export async function handleReplicationNudge(
     }
   }
 
-  // Metadata entities (CRM groups, contacts, …) use table-twin catch-up.
-  // Pull immediately so cloud/local don't wait for the 15s tick after a nudge.
+  // Metadata entities (CRM groups, contacts, organizations, …) use table-twin
+  // catch-up. Pull immediately so cloud/local don't wait for the 15s tick.
   const tables = replicatedTablesForEntity(input.entity);
   for (const table of tables) {
     try {

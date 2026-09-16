@@ -2238,6 +2238,15 @@ export const updateTransipDomainContactsResultSchema = z.object({
   contacts: z.array(transipDomainWhoisContactSchema),
 });
 
+/** TransIP control panel allows up to 13 nameservers (TLD may be lower; min 2). */
+export const updateTransipDomainNameserversInputSchema = z.object({
+  nameservers: z.array(transipDomainNameserverSchema).min(2).max(13),
+});
+
+export const updateTransipDomainNameserversResultSchema = z.object({
+  nameservers: z.array(transipDomainNameserverSchema),
+});
+
 /** Cloudflare DNS (API token; zone matching for Catalog Domains). */
 export const cloudflareStatusSchema = z.object({
   configured: z.boolean(),
@@ -2281,6 +2290,13 @@ export const cloudflareZoneMatchResultSchema = z.object({
   domains: z.array(cloudflareZoneMatchEntrySchema),
 });
 
+export const cloudflareProjectZoneResultSchema = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  zoneId: z.string().nullable(),
+  action: z.enum(["unchanged", "updated", "unmatched"]),
+});
+
 export const cloudflareDnsRecordSchema = z.object({
   id: z.string(),
   type: z.string(),
@@ -2294,6 +2310,20 @@ export const cloudflareDnsRecordSchema = z.object({
 export const cloudflareDnsRecordsResultSchema = z.object({
   zoneId: z.string(),
   records: z.array(cloudflareDnsRecordSchema),
+});
+
+export const updateCloudflareDnsRecordSchema = z.object({
+  type: z.string().min(1),
+  name: z.string().min(1),
+  content: z.string().min(1),
+  ttl: z.number().int().positive().nullable(),
+  proxied: z.boolean().nullable(),
+  priority: z.number().int().nonnegative().nullable(),
+});
+
+export const cloudflareDnsRecordUpdateResultSchema = z.object({
+  zoneId: z.string(),
+  record: cloudflareDnsRecordSchema,
 });
 
 export const cloudflarePurgeCacheResultSchema = z.object({
@@ -3215,6 +3245,42 @@ export type CreateMeetingBookingInput = z.infer<
   typeof createMeetingBookingSchema
 >;
 
+export const fileTaskCallbackSuccessSchema = z.object({
+  ok: z.literal(true),
+  requestId: z.string().min(1).max(128),
+  taskId: z.string().min(1).max(128).optional(),
+  taskRef: z.string().min(1).max(64).optional(),
+  title: z.string().max(500).optional(),
+  projectId: z.string().min(1).max(128).optional(),
+  summary: z.string().max(2000).optional(),
+});
+
+export const fileTaskCallbackFailureSchema = z.object({
+  ok: z.literal(false),
+  requestId: z.string().min(1).max(128),
+  error: z.string().min(1).max(2000),
+});
+
+export const fileTaskCallbackResultSchema = z.discriminatedUnion("ok", [
+  fileTaskCallbackSuccessSchema,
+  fileTaskCallbackFailureSchema,
+]);
+
+export const createFileTaskCallbackSchema = z.object({
+  requestId: z.string().min(1).max(128),
+});
+
+export const fileTaskCallbackCreatedSchema = z.object({
+  requestId: z.string(),
+  callbackUrl: z.string().url(),
+  expiresAt: z.string(),
+});
+
+export const fileTaskCallbackPollSchema = z.object({
+  pending: z.boolean(),
+  result: fileTaskCallbackResultSchema.optional(),
+});
+
 export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;
 export type TaskActivity = z.infer<typeof taskActivitySchema>;
@@ -3430,6 +3496,12 @@ export type UpdateTransipDomainContactsInput = z.infer<
 export type UpdateTransipDomainContactsResult = z.infer<
   typeof updateTransipDomainContactsResultSchema
 >;
+export type UpdateTransipDomainNameserversInput = z.infer<
+  typeof updateTransipDomainNameserversInputSchema
+>;
+export type UpdateTransipDomainNameserversResult = z.infer<
+  typeof updateTransipDomainNameserversResultSchema
+>;
 export type TransipDomainWhoisContact = z.infer<
   typeof transipDomainWhoisContactSchema
 >;
@@ -3444,9 +3516,18 @@ export type CloudflareTestConnectionResult = z.infer<
 export type CloudflareZoneMatchResult = z.infer<
   typeof cloudflareZoneMatchResultSchema
 >;
+export type CloudflareProjectZoneResult = z.infer<
+  typeof cloudflareProjectZoneResultSchema
+>;
 export type CloudflareDnsRecord = z.infer<typeof cloudflareDnsRecordSchema>;
 export type CloudflareDnsRecordsResult = z.infer<
   typeof cloudflareDnsRecordsResultSchema
+>;
+export type UpdateCloudflareDnsRecordInput = z.infer<
+  typeof updateCloudflareDnsRecordSchema
+>;
+export type CloudflareDnsRecordUpdateResult = z.infer<
+  typeof cloudflareDnsRecordUpdateResultSchema
 >;
 export type CloudflarePurgeCacheResult = z.infer<
   typeof cloudflarePurgeCacheResultSchema
@@ -3548,3 +3629,13 @@ export type UpdateRecurringTaskInput = z.infer<typeof updateRecurringTaskSchema>
 export type WhoopSnapshot = z.infer<typeof whoopSnapshotSchema>;
 export type WhoopDayResult = z.infer<typeof whoopDayResultSchema>;
 export type WhoopSettingsStatus = z.infer<typeof whoopSettingsStatusSchema>;
+export type FileTaskCallbackResult = z.infer<
+  typeof fileTaskCallbackResultSchema
+>;
+export type CreateFileTaskCallbackInput = z.infer<
+  typeof createFileTaskCallbackSchema
+>;
+export type FileTaskCallbackCreated = z.infer<
+  typeof fileTaskCallbackCreatedSchema
+>;
+export type FileTaskCallbackPoll = z.infer<typeof fileTaskCallbackPollSchema>;

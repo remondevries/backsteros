@@ -1,8 +1,13 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { cn } from "~/lib/utils";
 
-/** BacksterDEV mark — slow spin with a light scale pulse. */
+/**
+ * BacksterDEV mark — slow spin with a light scale pulse.
+ *
+ * Driven by rAF (not CSS) so `prefers-reduced-motion` cannot freeze it.
+ * Same policy as the file-task orb: this is brand/status chrome.
+ */
 export function BacksterosLogoIcon({
   className,
   size = 16,
@@ -15,9 +20,64 @@ export function BacksterosLogoIcon({
   const paint1 = `paint1_${id}`;
   const paint2 = `paint2_${id}`;
   const paint3 = `paint3_${id}`;
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    let raf = 0;
+    let running = false;
+    const spinPeriodMs = 11_000;
+    const pulsePeriodMs = 2_000;
+    const pulseAmplitude = 0.12; // 1.00 ↔ 1.12
+
+    const tick = (now: number) => {
+      const spin = ((now % spinPeriodMs) / spinPeriodMs) * 360;
+      const pulse = 1 + pulseAmplitude * Math.sin((now / pulsePeriodMs) * Math.PI * 2);
+      root.style.transform = `rotate(${spin}deg) scale(${pulse})`;
+      if (running) raf = requestAnimationFrame(tick);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
+      raf = requestAnimationFrame(tick);
+    };
+
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(raf);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") stop();
+      else start();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    if (document.visibilityState !== "hidden") start();
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      root.style.transform = "";
+    };
+  }, []);
 
   return (
-    <span className={cn("bos-logo-icon no-drag", className)}>
+    <span
+      ref={rootRef}
+      className={cn("bos-logo-icon no-drag", className)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        lineHeight: 0,
+        transformOrigin: "center",
+        willChange: "transform",
+      }}
+    >
       <svg
         width={size}
         height={size}
@@ -26,6 +86,7 @@ export function BacksterosLogoIcon({
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
         className="bos-logo-icon__mark"
+        style={{ display: "block" }}
       >
         <path
           d="M80.0985 80.3848C70.3373 90.146 53.0056 90.0614 41.3512 78.4071L30.9697 68.0256C19.3154 56.3712 19.2301 39.0389 28.9914 29.2777C38.7526 19.5164 56.0849 19.6017 67.7393 31.256L78.1208 41.6375C89.775 53.2919 89.8597 70.6236 80.0985 80.3848Z"

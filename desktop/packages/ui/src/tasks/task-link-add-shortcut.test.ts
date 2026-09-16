@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   isAddTaskLinkShortcut,
+  isTaskLinkAttachmentsSurfaceActive,
   shouldHandleAddTaskLinkShortcut,
 } from "./task-link-add-shortcut.js";
 
@@ -48,8 +49,14 @@ describe("isAddTaskLinkShortcut", () => {
   });
 });
 
+describe("isTaskLinkAttachmentsSurfaceActive", () => {
+  it("rejects missing or detached roots", () => {
+    assert.equal(isTaskLinkAttachmentsSurfaceActive(null), false);
+  });
+});
+
 describe("shouldHandleAddTaskLinkShortcut", () => {
-  it("requires an editable instance that is not already open", () => {
+  it("requires an editable visible instance that is not already open", () => {
     assert.equal(
       shouldHandleAddTaskLinkShortcut(keyEvent({ metaKey: true }), {
         enabled: false,
@@ -66,13 +73,14 @@ describe("shouldHandleAddTaskLinkShortcut", () => {
       }),
       false,
     );
+    // No mounted/visible attachments root (e.g. calendar with keep-alive tasks).
     assert.equal(
       shouldHandleAddTaskLinkShortcut(keyEvent({ metaKey: true }), {
         enabled: true,
         modalAlreadyOpen: false,
         root: null,
       }),
-      true,
+      false,
     );
   });
 });

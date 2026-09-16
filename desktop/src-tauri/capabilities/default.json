@@ -25,6 +25,7 @@
         { "path": "$HOME" },
         { "path": "$HOME/**" },
         { "path": "/tmp/dynamic-island-tasks-refresh" },
+        { "path": "/tmp/dynamic-island-agents-working.json" },
         { "path": "/tmp/backsteros-open-href" },
         { "path": "/Volumes" },
         { "path": "/Volumes/**" },

@@ -15,9 +15,20 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
-import { getBacksterosTaskDisplayId, type BacksterosTask } from "~/backsteros/types";
+import {
+  getBacksterosTaskDisplayId,
+  type BacksterosCodebaseProject,
+  type BacksterosTask,
+} from "~/backsteros/types";
 import { formatTaskDueMetaLabel, getTaskDueDateUrgency } from "~/backsteros/taskDueDate";
 import { getBacksterosTaskPriorityLabel } from "~/backsteros/taskDetailFormat";
 import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
@@ -29,6 +40,7 @@ import {
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
+import { useBacksterosTaskActionMenu } from "~/backsteros/useBacksterosTaskActionMenu";
 import {
   BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME,
   useBacksterosTaskHasUnsentDraft,
@@ -85,13 +97,29 @@ function SortableOverviewTaskRowShell(props: {
 function BacksterosOverviewTaskRow(props: {
   readonly task: BacksterosTask;
   readonly projectKey: string | null | undefined;
+  readonly project?: BacksterosCodebaseProject | null | undefined;
   readonly selected: boolean;
   readonly keyboardFocused: boolean;
   readonly working: boolean;
   readonly onSelect: (task: BacksterosTask) => void;
+  readonly onContextMenu?: (
+    task: BacksterosTask,
+    project: BacksterosCodebaseProject | null | undefined,
+    position: { x: number; y: number },
+  ) => void;
   readonly sortable?: SortableRowBag;
 }) {
-  const { task, projectKey, selected, keyboardFocused, working, onSelect, sortable } = props;
+  const {
+    task,
+    projectKey,
+    project,
+    selected,
+    keyboardFocused,
+    working,
+    onSelect,
+    onContextMenu,
+    sortable,
+  } = props;
   const displayId = getBacksterosTaskDisplayId(task, projectKey);
   const dueLabel = formatTaskDueMetaLabel(task.dueDate);
   const urgency = getTaskDueDateUrgency(task.dueDate, new Date(), {
@@ -99,12 +127,22 @@ function BacksterosOverviewTaskRow(props: {
   });
   const priority = task.priority ?? 0;
   const hasUnsentDraft = useBacksterosTaskHasUnsentDraft(task.id) && !selected;
+  const handleContextMenu = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      if (!onContextMenu) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenu(task, project ?? null, { x: event.clientX, y: event.clientY });
+    },
+    [onContextMenu, project, task],
+  );
 
   return (
     <li ref={sortable?.setNodeRef} style={sortable?.style} className="bos-task-row-item">
       <button
         type="button"
         onClick={() => onSelect(task)}
+        onContextMenu={handleContextMenu}
         aria-current={selected ? "true" : undefined}
         data-keyboard-nav-item={task.id}
         className={cn(
@@ -157,6 +195,7 @@ function BacksterosOverviewStatusGroup(props: {
   readonly label: string;
   readonly tasks: readonly BacksterosTask[];
   readonly projectKey: string | null | undefined;
+  readonly project?: BacksterosCodebaseProject | null | undefined;
   readonly collapsed: boolean;
   readonly reorderEnabled: boolean;
   readonly selectedTaskId: string | null;
@@ -164,6 +203,11 @@ function BacksterosOverviewStatusGroup(props: {
   readonly workingTaskIds: ReadonlySet<string>;
   readonly onToggle: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
+  readonly onTaskContextMenu?: (
+    task: BacksterosTask,
+    project: BacksterosCodebaseProject | null | undefined,
+    position: { x: number; y: number },
+  ) => void;
   readonly onReorderWithinStatus: (
     status: BacksterosTaskStatus,
     orderedTasks: readonly BacksterosTask[],
@@ -174,6 +218,7 @@ function BacksterosOverviewStatusGroup(props: {
     label,
     tasks,
     projectKey,
+    project,
     collapsed,
     reorderEnabled,
     selectedTaskId,
@@ -181,6 +226,7 @@ function BacksterosOverviewStatusGroup(props: {
     workingTaskIds,
     onToggle,
     onSelectTask,
+    onTaskContextMenu,
     onReorderWithinStatus,
   } = props;
 
@@ -254,10 +300,12 @@ function BacksterosOverviewStatusGroup(props: {
                     <BacksterosOverviewTaskRow
                       task={task}
                       projectKey={projectKey}
+                      project={project}
                       selected={selectedTaskId === task.id}
                       keyboardFocused={keyboardFocusTaskId === task.id}
                       working={workingTaskIds.has(task.id)}
                       onSelect={onSelectTask}
+                      onContextMenu={onTaskContextMenu}
                       sortable={bag}
                     />
                   )}
@@ -273,10 +321,12 @@ function BacksterosOverviewStatusGroup(props: {
               key={task.id}
               task={task}
               projectKey={projectKey}
+              project={project}
               selected={selectedTaskId === task.id}
               keyboardFocused={keyboardFocusTaskId === task.id}
               working={workingTaskIds.has(task.id)}
               onSelect={onSelectTask}
+              onContextMenu={onTaskContextMenu}
             />
           ))}
         </ul>
@@ -288,6 +338,7 @@ function BacksterosOverviewStatusGroup(props: {
 export function BacksterosProjectTasksOverview(props: {
   readonly state: BacksterosProjectTasksState;
   readonly projectKey?: string | null;
+  readonly project?: BacksterosCodebaseProject | null;
   readonly selectedTaskId: string | null;
   /** j/k cursor — primary outline while this list owns keyboard focus. */
   readonly keyboardFocusTaskId?: string | null;
@@ -298,6 +349,7 @@ export function BacksterosProjectTasksOverview(props: {
   const {
     state,
     projectKey,
+    project = null,
     selectedTaskId,
     keyboardFocusTaskId = null,
     onRetry,
@@ -307,6 +359,7 @@ export function BacksterosProjectTasksOverview(props: {
   const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(() => new Set());
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
   const reorderEnabled = Boolean(onReorderTasks);
+  const { openMenu: openTaskContextMenu } = useBacksterosTaskActionMenu();
 
   const groups = useMemo(
     () => (state.status === "ready" ? groupBacksterosTasksByStatus(state.tasks) : []),
@@ -370,12 +423,14 @@ export function BacksterosProjectTasksOverview(props: {
               label={group.label}
               tasks={group.tasks}
               projectKey={projectKey}
+              project={project}
               collapsed={collapsed.has(group.status)}
               reorderEnabled={reorderEnabled}
               selectedTaskId={selectedTaskId}
               keyboardFocusTaskId={keyboardFocusTaskId}
               workingTaskIds={workingTaskIds}
               onSelectTask={onSelectTask}
+              onTaskContextMenu={openTaskContextMenu}
               onReorderWithinStatus={handleReorderWithinStatus}
               onToggle={() =>
                 setCollapsed((current) => {

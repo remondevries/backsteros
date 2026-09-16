@@ -30,6 +30,7 @@ import { PullRequestsPageSidebar } from "./pullRequest/PullRequestsPageSidebar";
 import { UsagePageSidebar } from "./usage/UsagePageSidebar";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
 import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
+import { BacksterosFileTaskModal } from "./sidebar/BacksterosFileTaskModal";
 import { useProjects } from "../state/entities";
 import { useBacksterosTaskDetailUiStore } from "../backsteros/taskDetailUiStore";
 
@@ -278,6 +279,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <BacksterosTaskDetailPanel />
       ) : null}
       {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
+      {!replacesThreadSidebar || isOnServersPage ? <BacksterosFileTaskModal /> : null}
       {children}
       <SidebarControl />
     </SidebarProvider>

@@ -297,6 +297,16 @@ async function applyLeaderEventsLocally(
   if (maxCursor > 0) {
     await setSyncEventPullCursor(workspaceId, maxCursor);
   }
+  // Open desktop shells on this core need SSE before PowerSync download —
+  // same as cloud acceptLeaderMutations and handleReplicationNudge.
+  if (events.length > 0) {
+    const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+      "./sync-event-live-publish.js"
+    );
+    for (const event of events) {
+      publishWorkspaceUpdatedFromSyncEvent(workspaceId, event);
+    }
+  }
 }
 
 /**
@@ -339,10 +349,16 @@ export async function commitMutationsLeaderFirst(input: {
     const { replicatedTablesForEntities } = await import("./entity-tables.js");
     const { scheduleTableReplicationPush } = await import("./worker.js");
     const { notifyPeerOfEntityWrite } = await import("./nudge.js");
+    const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+      "./sync-event-live-publish.js"
+    );
     const tables = replicatedTablesForEntities(
       input.changes.map((change) => change.entity),
     );
     scheduleTableReplicationPush(tables, "local_fallback");
+    for (const event of fallback.events) {
+      publishWorkspaceUpdatedFromSyncEvent(input.workspaceId, event);
+    }
     const first = input.changes[0];
     if (first) {
       const taskIdFromPayload =

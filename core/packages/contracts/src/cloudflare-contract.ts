@@ -67,6 +67,21 @@ export const cloudflareContract = c.router(
       summary:
         "Match Catalog Domains to Cloudflare zones by hostname and store zone ids",
     },
+    ensureCloudflareProjectZone: {
+      method: "POST",
+      path: "/api/v1/cloudflare/projects/:projectId/zone",
+      pathParams: z.object({ projectId: z.string().min(1) }),
+      body: z.undefined().optional(),
+      responses: {
+        200: s.cloudflareProjectZoneResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Resolve and store the Cloudflare zone id for a domain project by hostname",
+    },
     listCloudflareDnsRecords: {
       method: "GET",
       path: "/api/v1/cloudflare/zones/:zoneId/dns-records",
@@ -78,6 +93,22 @@ export const cloudflareContract = c.router(
         403: errorSchema,
       },
       summary: "List DNS records for a Cloudflare zone",
+    },
+    updateCloudflareDnsRecord: {
+      method: "PUT",
+      path: "/api/v1/cloudflare/zones/:zoneId/dns-records/:recordId",
+      pathParams: z.object({
+        zoneId: z.string().min(1),
+        recordId: z.string().min(1),
+      }),
+      body: s.updateCloudflareDnsRecordSchema,
+      responses: {
+        200: s.cloudflareDnsRecordUpdateResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Update a DNS record in a Cloudflare zone",
     },
     purgeCloudflareCache: {
       method: "POST",

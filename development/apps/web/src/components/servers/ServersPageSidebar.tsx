@@ -2,9 +2,12 @@ import { useCallback } from "react";
 import { useLocation } from "@tanstack/react-router";
 
 import { BacksterosComposeIcon } from "~/backsteros/BacksterosComposeIcon";
+import { useBacksterosFileTaskUiStore } from "~/backsteros/fileTaskUiStore";
 import { useSidebarModeStore } from "~/backsteros/sidebarModeStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
+import { useBacksterosFileTaskShortcut } from "~/backsteros/useBacksterosFileTaskShortcut";
+import { SidebarFileTaskOrbEntry } from "~/components/sidebar/SidebarFileTaskOrbEntry";
 import { isElectron } from "../../env";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarMenuButton, useSidebar } from "../ui/sidebar";
@@ -41,6 +44,9 @@ export function ServersPageSidebar() {
   const openCreateTaskDetail = useBacksterosTaskDetailUiStore(
     (state) => state.openCreateTaskDetail,
   );
+  const closeCompose = useBacksterosTaskDetailUiStore((state) => state.closeCompose);
+  const openFileTask = useBacksterosFileTaskUiStore((state) => state.openFileTask);
+  const closeFileTask = useBacksterosFileTaskUiStore((state) => state.closeFileTask);
   const { state: projectsState } = useBacksterosCodebaseProjects(true);
   const createTaskProject =
     projectsState.status === "ready" ? (projectsState.projects[0] ?? null) : null;
@@ -58,8 +64,45 @@ export function ServersPageSidebar() {
       return;
     }
     if (isMobile) setOpenMobile(false);
+    closeFileTask();
     openCreateTaskDetail(createTaskProject, { reveal: true });
-  }, [createTaskProject, isMobile, openCreateTaskDetail, projectsState.status, setOpenMobile]);
+  }, [
+    closeFileTask,
+    createTaskProject,
+    isMobile,
+    openCreateTaskDetail,
+    projectsState.status,
+    setOpenMobile,
+  ]);
+
+  const handleFileTaskClick = useCallback(() => {
+    if (!createTaskProject) {
+      toastManager.add({
+        type: "warning",
+        title: projectsState.status === "ready" ? "No projects yet" : "Projects still loading",
+        description:
+          projectsState.status === "ready"
+            ? "Create a BacksterOS project before filing a task."
+            : "Wait a moment and try again.",
+      });
+      return;
+    }
+    if (isMobile) setOpenMobile(false);
+    closeCompose();
+    openFileTask(createTaskProject);
+  }, [
+    closeCompose,
+    createTaskProject,
+    isMobile,
+    openFileTask,
+    projectsState.status,
+    setOpenMobile,
+  ]);
+
+  useBacksterosFileTaskShortcut({
+    enabled: true,
+    onOpen: handleFileTaskClick,
+  });
 
   return (
     <>
@@ -68,26 +111,29 @@ export function ServersPageSidebar() {
         logModeEnabled={logModeEnabled}
         onLogModeChange={setLogModeEnabled}
         brandAction={
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <SidebarMenuButton
-                  size="icon"
-                  type="button"
-                  className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                  onClick={handleNewTaskClick}
-                  aria-label="New task"
+          <div className="flex shrink-0 items-center gap-0.5">
+            <SidebarFileTaskOrbEntry onClick={handleFileTaskClick} />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <SidebarMenuButton
+                    size="icon"
+                    type="button"
+                    className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                    onClick={handleNewTaskClick}
+                    aria-label="New task"
+                  />
+                }
+              >
+                <BacksterosComposeIcon />
+                <span
+                  className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                  aria-hidden="true"
                 />
-              }
-            >
-              <BacksterosComposeIcon />
-              <span
-                className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                aria-hidden="true"
-              />
-            </TooltipTrigger>
-            <TooltipPopup side="right">New task</TooltipPopup>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipPopup side="right">New task</TooltipPopup>
+            </Tooltip>
+          </div>
         }
       />
       <ServersSidebarNav

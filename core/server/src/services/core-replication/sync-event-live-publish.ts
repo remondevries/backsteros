@@ -1,9 +1,12 @@
 /**
  * Map applied sync_events → workspace SSE for open shells (local-core).
+ * Every {@link SyncEntity} wakes open shells; special cases keep task_comment /
+ * document contentVersion semantics.
  */
 import {
+  isWorkspaceUpdatedKind,
+  publishEntityWorkspaceUpdated,
   publishDocumentWorkspaceUpdated,
-  publishLetterWorkspaceUpdated,
   publishMeetingWorkspaceUpdated,
   publishProjectWorkspaceUpdated,
   publishTaskWorkspaceUpdated,
@@ -26,8 +29,8 @@ function asProjectId(payload: Record<string, unknown>): string | null {
 }
 
 /**
- * After a peer sync_event is applied on local-core, notify open shells.
- * No-op kinds (finance, contacts, …) are ignored — PowerSync covers those.
+ * After a peer sync_event is applied on local-core (or leader-first apply),
+ * notify open shells so UI refreshes before PowerSync download catches up.
  */
 export function publishWorkspaceUpdatedFromSyncEvent(
   workspaceId: string,
@@ -43,53 +46,71 @@ export function publishWorkspaceUpdatedFromSyncEvent(
   const contentVersion = asContentVersion(
     payload.content_version ?? payload.contentVersion,
   );
+  const op = operation === "delete" ? "delete" : "upsert";
 
   switch (entity) {
     case "document":
       publishDocumentWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
         contentVersion,
-        operation: operation === "delete" ? "delete" : "upsert",
+        operation: op,
       });
-      break;
+      return;
     case "task":
       publishTaskWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
         reason: "patch",
+        operation: op,
       });
-      break;
+      return;
     case "task_comment": {
-      // entityId on the sync_event is the comment id; shells watch by task id.
       const taskId =
         typeof payload.task_id === "string" && payload.task_id.trim()
           ? payload.task_id.trim()
           : typeof payload.taskId === "string" && payload.taskId.trim()
             ? payload.taskId.trim()
             : null;
-      if (!taskId) break;
+      if (!taskId) return;
       publishTaskWorkspaceUpdated(workspaceId, taskId, {
         projectId,
         reason: "comment",
       });
-      break;
+      return;
+    }
+    case "task_activity": {
+      const taskId =
+        typeof payload.task_id === "string" && payload.task_id.trim()
+          ? payload.task_id.trim()
+          : typeof payload.taskId === "string" && payload.taskId.trim()
+            ? payload.taskId.trim()
+            : null;
+      if (!taskId) return;
+      // Activity rows are task-scoped; wake the task activity feed like comments.
+      publishTaskWorkspaceUpdated(workspaceId, taskId, {
+        projectId,
+        reason: "comment",
+      });
+      return;
     }
     case "meeting":
       publishMeetingWorkspaceUpdated(workspaceId, event.entityId, {
         projectId,
-        operation: operation === "delete" ? "delete" : "upsert",
+        operation: op,
       });
-      break;
+      return;
     case "project":
       publishProjectWorkspaceUpdated(workspaceId, event.entityId, {
-        operation: operation === "delete" ? "delete" : "upsert",
+        operation: op,
       });
-      break;
-    case "letter":
-      publishLetterWorkspaceUpdated(workspaceId, event.entityId, {
-        projectId,
-      });
-      break;
+      return;
     default:
-      break;
+      if (!isWorkspaceUpdatedKind(entity)) return;
+      // task_comment handled above; never emit raw task_comment kind to shells.
+      if (entity === "task_comment") return;
+      publishEntityWorkspaceUpdated(workspaceId, entity, event.entityId, {
+        projectId,
+        operation: op,
+        contentVersion: entity === "document" ? contentVersion : null,
+      });
   }
 }

@@ -223,24 +223,40 @@ function isCanonicalEntityRedirect(fromHref: string, toHref: string): boolean {
 }
 
 /**
- * Section roots that auto-land on a default child (replace, don't push).
+ * Section roots that immediately redirect / auto-select a default child.
+ * Those hops REPLACE the root in history (Escape skips the empty root).
  *
- * `/tasks` and `/projects` are intentionally excluded: their roots are real
- * list screens, so opening a row must push a history entry (Escape returns
- * to the list). Same rule as Next `getTaskReferrerBackHref` treating due-task
- * detail as a back target to the tasks list.
+ * Do NOT list real browsable overviews here — opening a row must PUSH so
+ * Escape returns to the list:
+ * - `/tasks`, `/projects`, `/catalog`, `/spaces` (+ legacy `/knowledge`)
+ * - `/contacts`, `/organizations` (CRM catalogs in main content)
+ * - `/journal/habits` (habit list; only bare `/journal` auto-lands on today)
+ *
+ * Keep in sync with `resolveAppHref` / page `replace: true` first-item effects
+ * (`inbox`, `communication`, `letters`, `social`, `finance`, `settings`,
+ * journal→today, project documents/letters indexes).
  */
 const AUTO_LANDING_SECTION_ROOTS = [
   "/",
   "/inbox",
+  "/communication",
+  "/social",
   "/journal",
-  "/spaces",
-  "/knowledge",
   "/letters",
-  "/contacts",
-  "/organizations",
+  "/finance",
   "/settings",
 ] as const;
+
+/** Project section indexes that auto-open the first child (replace, don't push). */
+function isProjectSectionAutoLand(fromPath: string, toPath: string): boolean {
+  return (
+    (/^\/projects\/[^/]+\/documents$/.test(fromPath) ||
+      /^\/projects\/[^/]+\/letters$/.test(fromPath) ||
+      /^\/organizations\/[^/]+\/projects\/[^/]+\/documents$/.test(fromPath) ||
+      /^\/organizations\/[^/]+\/projects\/[^/]+\/letters$/.test(fromPath)) &&
+    toPath.startsWith(`${fromPath}/`)
+  );
+}
 
 /**
  * Treats a route redirect (e.g. `/` → `/inbox`, or a section root auto-select)
@@ -263,8 +279,9 @@ export function isRedirectContinuation(
   if (
     (fromPath === "/" && toPath.startsWith("/inbox")) ||
     (fromPath === "/areas" && toPath === "/projects") ||
-    (/^\/projects\/[^/]+\/documents$/.test(fromPath) &&
-      toPath.startsWith(`${fromPath}/`))
+    (fromPath === "/email" &&
+      (toPath.startsWith("/email/") || toPath.startsWith("/inbox"))) ||
+    isProjectSectionAutoLand(fromPath, toPath)
   ) {
     return true;
   }

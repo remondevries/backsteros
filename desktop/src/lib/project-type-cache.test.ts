@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   projectListHrefForNavFrom,
+  projectListHrefFromLocationState,
   projectNavFromLocationState,
+  recalledProjectListHref,
   recalledProjectNavFrom,
   rememberProjectNavFromHref,
+  resolveProjectListHref,
   resolveProjectNavFromForPath,
   resolveSidebarActivePathname,
 } from "./project-type-cache.ts";
@@ -79,4 +82,40 @@ test("rememberProjectNavFromHref caches from navigate state", () => {
     "catalog",
   );
   assert.equal(projectListHrefForNavFrom("catalog"), "/catalog");
+});
+
+test("resolveProjectListHref restores filtered catalog/projects tabs", () => {
+  rememberProjectNavFromHref("/projects/RB3", {
+    from: "catalog",
+    listHref: "/catalog?type=email",
+  });
+  assert.equal(recalledProjectListHref("RB3"), "/catalog?type=email");
+  assert.equal(
+    projectListHrefFromLocationState({ listHref: "/catalog?type=domeinname" }),
+    "/catalog?type=domeinname",
+  );
+  assert.equal(
+    resolveProjectListHref({
+      locationState: { from: "catalog", listHref: "/catalog?type=email" },
+      navFrom: "catalog",
+      projectKey: "OTHER",
+    }),
+    "/catalog?type=email",
+  );
+  assert.equal(
+    resolveProjectListHref({
+      locationState: null,
+      navFrom: "catalog",
+      projectKey: "RB3",
+    }),
+    "/catalog?type=email",
+  );
+  assert.equal(
+    resolveProjectListHref({
+      locationState: { listHref: "/evil" },
+      navFrom: "projects",
+      projectKey: "missing-list",
+    }),
+    "/projects",
+  );
 });

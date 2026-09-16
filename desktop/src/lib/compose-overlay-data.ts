@@ -5,25 +5,36 @@ import type {
   Project as ApiProject,
 } from "@backsteros/contracts";
 import {
-  buildDocumentFoldersByTarget,
-  COMPOSE_KNOWLEDGE_BASE_VALUE,
   getInboxTaskRouteHref,
   getKnowledgeHref,
   getProjectDocumentHref,
   getScopedProjectTaskHref,
   toApiDueDateIso,
-  type AssigneeDropdownContact,
-  type ComposeDocumentFoldersByTarget,
   type ComposeModalCreateDocumentInput,
   type ComposeModalCreateTaskInput,
-  type ComposeModalProject,
 } from "@backsteros/ui";
 
 import {
+  buildComposeOverlayContext,
+  type ComposeOverlayContext,
+} from "./compose-overlay-context";
+import {
   getDefaultAssigneeId,
   resolveCreateAssigneeId,
-  syncDefaultAssigneeIdFromSettings,
 } from "./default-assignee";
+
+export type {
+  ComposeOverlayContext,
+  ComposeOverlayContextSnapshot,
+  ComposeOverlayContactSource,
+  ComposeOverlayDocumentFolderSource,
+  ComposeOverlayProjectSource,
+} from "./compose-overlay-context";
+export {
+  buildComposeOverlayContext,
+  composeOverlayContextFromSnapshot,
+  composeOverlayContextToSnapshot,
+} from "./compose-overlay-context";
 
 async function createTaskWithAssigneeFallback(
   client: BacksterosApiClient,
@@ -59,78 +70,33 @@ async function createTaskWithAssigneeFallback(
   }
 }
 
-export type ComposeOverlayContext = {
-  projects: ComposeModalProject[];
-  contacts: AssigneeDropdownContact[];
-  documentFoldersByTarget: ComposeDocumentFoldersByTarget;
-  projectsById: Map<string, { id: string; key: string; name: string }>;
-  defaultAssigneeId: string | null;
-};
-
+/**
+ * Overlay cold path only — main shell uses workspace hooks +
+ * {@link buildComposeOverlayContext}. Prefer
+ * {@link requestComposeOverlayContextFromMain} so the warm main snapshot wins.
+ */
 export async function loadComposeOverlayContext(
   client: BacksterosApiClient,
 ): Promise<ComposeOverlayContext> {
-  const [projectsBody, contactsBody, documentsBody, settingsBody] =
-    await Promise.all([
-      client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
-      client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
-      client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
-      client
-        .requestJson<{ settings: Record<string, unknown> }>("/api/v1/settings")
-        .catch(() => null),
-    ]);
+  const [projectsBody, contactsBody, documentsBody] = await Promise.all([
+    client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
+    client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
+    client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
+  ]);
 
-  const projects = projectsBody.projects.map((project) => ({
-    id: project.id,
-    key: project.key,
-    name: project.name,
-    icon: project.icon ?? null,
-    type: project.type ?? null,
-    color: null as string | null,
-    dueDate: project.dueDate ? new Date(project.dueDate) : null,
-  }));
-
-  const contacts: AssigneeDropdownContact[] = contactsBody.contacts.map(
-    (contact) => ({
-      id: contact.id,
-      name: contact.name,
-      email: contact.email ?? null,
-      emails: contact.emails ?? [],
-      organizationName: null,
-      avatarSrc: null,
-    }),
-  );
-
-  const documentFoldersByTarget = buildDocumentFoldersByTarget(
-    documentsBody.documents.map((document) => ({
+  return buildComposeOverlayContext({
+    projects: projectsBody.projects,
+    contacts: contactsBody.contacts,
+    documents: documentsBody.documents.map((document) => ({
       path: document.path ?? "",
       title: document.title,
       kind: document.kind ?? "document",
       type: document.type === "knowledge" ? "knowledge" : "project",
       projectId: document.projectId ?? null,
     })),
-    projects,
-    COMPOSE_KNOWLEDGE_BASE_VALUE,
-  );
-
-  const projectsById = new Map(
-    projectsBody.projects.map((project) => [
-      project.id,
-      { id: project.id, key: project.key, name: project.name },
-    ]),
-  );
-
-  const defaultAssigneeId = settingsBody
-    ? syncDefaultAssigneeIdFromSettings(settingsBody.settings)
-    : getDefaultAssigneeId();
-
-  return {
-    projects,
-    contacts,
-    documentFoldersByTarget,
-    projectsById,
-    defaultAssigneeId,
-  };
+    // Main shell already syncs this into localStorage; avoid a settings GET.
+    defaultAssigneeId: getDefaultAssigneeId(),
+  });
 }
 
 export async function createComposeOverlayTask(

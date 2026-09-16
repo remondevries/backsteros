@@ -583,7 +583,6 @@ export function ContactOverviewView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [locationEditing, mapExpanded]);
 
-  const titlePart = title.trim();
   const organizationDropdownOptions = useMemo(
     () => buildOrganizationDropdownOptions(organizationOptions),
     [organizationOptions],
@@ -1016,7 +1015,7 @@ export function ContactOverviewView({
           <div className="contact-overview__subtitle">
             <OverviewNameEditor
               value={title}
-              entityLabel="Title"
+              entityLabel="Add title"
               resetKey={`${contact.id}:title`}
               allowEmpty
               fitContent
@@ -1031,9 +1030,9 @@ export function ContactOverviewView({
                 return { ok: true };
               }}
             />
-            {titlePart ? (
-              <span className="contact-overview__subtitle-at">at</span>
-            ) : null}
+            <span className="contact-overview__subtitle-at" aria-hidden="true">
+              ·
+            </span>
             <span className="contact-overview__org-dropdown">
               <PropertyDropdown
                 value={organizationId || DROPDOWN_NONE_VALUE}

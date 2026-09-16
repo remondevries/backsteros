@@ -126,6 +126,8 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { BacksterosComposeIcon } from "~/backsteros/BacksterosComposeIcon";
+import { SidebarFileTaskOrbEntry } from "~/components/sidebar/SidebarFileTaskOrbEntry";
+import { useBacksterosFileTaskUiStore } from "~/backsteros/fileTaskUiStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import {
   collectBacksterosVibeHiddenChatKeys,
@@ -157,10 +159,16 @@ import {
 import { resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
 import { useBacksterosComposeShortcut } from "~/backsteros/useBacksterosComposeShortcut";
+import { useBacksterosFileTaskShortcut } from "~/backsteros/useBacksterosFileTaskShortcut";
 import { resolveBacksterosComposeProject } from "~/backsteros/resolveBacksterosComposeProject";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import {
+  applyComposerColorMenuAction,
+  isComposerColorMenuAction,
+  resolveComposerAccentForMenu,
+} from "../composerAccentMenu";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
@@ -2182,6 +2190,9 @@ export default function Sidebar() {
   const openCreateTaskDetail = useBacksterosTaskDetailUiStore(
     (state) => state.openCreateTaskDetail,
   );
+  const closeCompose = useBacksterosTaskDetailUiStore((state) => state.closeCompose);
+  const openFileTask = useBacksterosFileTaskUiStore((state) => state.openFileTask);
+  const closeFileTask = useBacksterosFileTaskUiStore((state) => state.closeFileTask);
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
   const backsterosTaskSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
@@ -3745,6 +3756,12 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const modelInstanceId =
+          thread.session?.providerInstanceId ?? thread.modelSelection?.instanceId;
+        const providerEntry =
+          (modelInstanceId
+            ? providerEntriesByEnvironment.get(thread.environmentId)?.get(modelInstanceId)
+            : undefined) ?? null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
@@ -3756,6 +3773,12 @@ export default function Sidebar() {
               isRegeneratingTitle,
               isRunning:
                 thread.session?.status === "running" && thread.session.activeTurnId != null,
+              currentAccentColor: resolveComposerAccentForMenu({
+                threadId: thread.id,
+                environmentId: thread.environmentId,
+                instanceId: modelInstanceId,
+                accentColor: providerEntry?.accentColor,
+              }),
               supports: {
                 settlement: supportsSettlement,
                 snooze: supportsSnooze,
@@ -3768,6 +3791,14 @@ export default function Sidebar() {
           ),
         );
         if (clicked._tag === "Failure") return;
+        if (clicked.value != null && isComposerColorMenuAction(clicked.value)) {
+          applyComposerColorMenuAction({
+            action: clicked.value,
+            threadId: thread.id,
+            environmentId: thread.environmentId,
+          });
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset = snoozePresets.find(
             (candidate) => `snooze:${candidate.id}` === clicked.value,
@@ -3948,6 +3979,7 @@ export default function Sidebar() {
       markThreadUnread,
       openProjectSettings,
       projectCwdByKey,
+      providerEntriesByEnvironment,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
@@ -4111,18 +4143,50 @@ export default function Sidebar() {
       return;
     }
     if (isMobile) setOpenMobile(false);
+    closeFileTask();
     openCreateTaskDetail(backsterosCreateTaskProject, { reveal: true });
   }, [
     backsterosCreateTaskProject,
     backsterosProjectsState.status,
+    closeFileTask,
     isMobile,
     openCreateTaskDetail,
+    setOpenMobile,
+  ]);
+
+  const handleFileBacksterosTaskClick = useCallback(() => {
+    if (!backsterosCreateTaskProject) {
+      toastManager.add({
+        type: "warning",
+        title:
+          backsterosProjectsState.status === "ready" ? "No projects yet" : "Projects still loading",
+        description:
+          backsterosProjectsState.status === "ready"
+            ? "Create a BacksterOS project before filing a task."
+            : "Wait a moment and try again.",
+      });
+      return;
+    }
+    if (isMobile) setOpenMobile(false);
+    closeCompose();
+    openFileTask(backsterosCreateTaskProject);
+  }, [
+    backsterosCreateTaskProject,
+    backsterosProjectsState.status,
+    closeCompose,
+    isMobile,
+    openFileTask,
     setOpenMobile,
   ]);
 
   useBacksterosComposeShortcut({
     enabled: isBacksterosScope,
     onCompose: handleNewBacksterosTaskClick,
+  });
+
+  useBacksterosFileTaskShortcut({
+    enabled: isBacksterosScope,
+    onOpen: handleFileBacksterosTaskClick,
   });
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -4160,47 +4224,56 @@ export default function Sidebar() {
         logModeEnabled={logModeEnabled}
         onLogModeChange={handleLogModeChange}
         brandAction={
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <SidebarMenuButton
-                  size="icon"
-                  type="button"
-                  className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                  onClick={isBacksterosScope ? handleNewBacksterosTaskClick : handleNewThreadClick}
-                  disabled={isBacksterosScope ? false : projects.length === 0}
-                  aria-label={isBacksterosScope ? "New task" : "New thread"}
+          <div className="flex shrink-0 items-center gap-0.5">
+            {isBacksterosScope ? (
+              <SidebarFileTaskOrbEntry onClick={handleFileBacksterosTaskClick} />
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <SidebarMenuButton
+                    size="icon"
+                    type="button"
+                    className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                    onClick={
+                      isBacksterosScope ? handleNewBacksterosTaskClick : handleNewThreadClick
+                    }
+                    disabled={isBacksterosScope ? false : projects.length === 0}
+                    aria-label={isBacksterosScope ? "New task" : "New thread"}
+                  />
+                }
+              >
+                <BacksterosComposeIcon />
+                <span
+                  className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                  aria-hidden="true"
                 />
-              }
-            >
-              <BacksterosComposeIcon />
-              <span
-                className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                aria-hidden="true"
-              />
-            </TooltipTrigger>
-            <TooltipPopup side="right">
-              {isBacksterosScope ? (
-                "New task (C)"
-              ) : projectGroups.length > 1 ? (
-                <span className="flex flex-col gap-0.5">
-                  <span>
-                    {newThreadShortcutLabel
-                      ? `New thread (${newThreadShortcutLabel})`
-                      : "New thread"}
+              </TooltipTrigger>
+              <TooltipPopup side="right">
+                {isBacksterosScope ? (
+                  "New task (C)"
+                ) : projectGroups.length > 1 ? (
+                  <span className="flex flex-col gap-0.5">
+                    <span>
+                      {newThreadShortcutLabel
+                        ? `New thread (${newThreadShortcutLabel})`
+                        : "New thread"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      New thread in current project: Shift+click
+                      {newThreadInProjectShortcutLabel
+                        ? ` (${newThreadInProjectShortcutLabel})`
+                        : ""}
+                    </span>
                   </span>
-                  <span className="text-muted-foreground">
-                    New thread in current project: Shift+click
-                    {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
-                  </span>
-                </span>
-              ) : newThreadShortcutLabel ? (
-                `New thread (${newThreadShortcutLabel})`
-              ) : (
-                "New thread"
-              )}
-            </TooltipPopup>
-          </Tooltip>
+                ) : newThreadShortcutLabel ? (
+                  `New thread (${newThreadShortcutLabel})`
+                ) : (
+                  "New thread"
+                )}
+              </TooltipPopup>
+            </Tooltip>
+          </div>
         }
       />
       <SidebarContent

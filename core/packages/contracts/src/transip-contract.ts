@@ -54,6 +54,20 @@ export const transipContract = c.router(
       },
       summary: "Replace TransIP WHOIS contacts for a domain",
     },
+    updateTransipDomainNameservers: {
+      method: "PUT",
+      path: "/api/v1/transip/domains/:domainName/nameservers",
+      pathParams: z.object({ domainName: z.string().min(1) }),
+      body: s.updateTransipDomainNameserversInputSchema,
+      responses: {
+        200: s.updateTransipDomainNameserversResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Replace TransIP nameservers for a domain",
+    },
   },
   {
     strictStatusCodes: true,

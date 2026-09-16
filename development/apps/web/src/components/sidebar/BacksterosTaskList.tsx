@@ -15,11 +15,19 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { isBacksterosInboxMemberTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
+import { useBacksterosTaskActionMenu } from "~/backsteros/useBacksterosTaskActionMenu";
 import {
   BACKSTEROS_TASK_DRAFT_DOT_CLASSNAME,
   useBacksterosTaskHasUnsentDraft,
@@ -29,7 +37,7 @@ import {
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
 import { groupBacksterosTasksByStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
-import type { BacksterosTask } from "~/backsteros/types";
+import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { cn } from "~/lib/utils";
@@ -73,16 +81,42 @@ function BacksterosTaskRow(props: {
   readonly keyboardFocused: boolean;
   readonly working: boolean;
   readonly projectName?: string | null | undefined;
+  readonly project?: BacksterosCodebaseProject | null | undefined;
   readonly onSelect: (task: BacksterosTask) => void;
+  readonly onContextMenu?: (
+    task: BacksterosTask,
+    project: BacksterosCodebaseProject | null | undefined,
+    position: { x: number; y: number },
+  ) => void;
   readonly sortable?: SortableRowBag;
 }) {
-  const { task, active, keyboardFocused, working, projectName, onSelect, sortable } = props;
+  const {
+    task,
+    active,
+    keyboardFocused,
+    working,
+    projectName,
+    project,
+    onSelect,
+    onContextMenu,
+    sortable,
+  } = props;
   const hasUnsentDraft = useBacksterosTaskHasUnsentDraft(task.id) && !active;
+  const handleContextMenu = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      if (!onContextMenu) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenu(task, project ?? null, { x: event.clientX, y: event.clientY });
+    },
+    [onContextMenu, project, task],
+  );
   return (
     <li ref={sortable?.setNodeRef} style={sortable?.style}>
       <button
         type="button"
         onClick={() => onSelect(task)}
+        onContextMenu={handleContextMenu}
         aria-current={active ? "page" : undefined}
         data-keyboard-nav-item={task.id}
         className={cn(
@@ -138,8 +172,14 @@ function BacksterosTaskStatusGroup(props: {
   readonly keyboardFocusTaskId: string | null;
   readonly workingTaskIds: ReadonlySet<string>;
   readonly projectNameById?: ReadonlyMap<string, string> | undefined;
+  readonly projectById?: ReadonlyMap<string, BacksterosCodebaseProject> | undefined;
   readonly onToggle: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
+  readonly onTaskContextMenu?: (
+    task: BacksterosTask,
+    project: BacksterosCodebaseProject | null | undefined,
+    position: { x: number; y: number },
+  ) => void;
   readonly onReorderWithinGroup: (
     groupKey: string,
     orderedTasks: readonly BacksterosTask[],
@@ -155,8 +195,10 @@ function BacksterosTaskStatusGroup(props: {
     keyboardFocusTaskId,
     workingTaskIds,
     projectNameById,
+    projectById,
     onToggle,
     onSelectTask,
+    onTaskContextMenu,
     onReorderWithinGroup,
   } = props;
 
@@ -224,7 +266,13 @@ function BacksterosTaskStatusGroup(props: {
                           ? (projectNameById.get(task.projectId) ?? null)
                           : null
                       }
+                      project={
+                        task.projectId && projectById
+                          ? (projectById.get(task.projectId) ?? null)
+                          : null
+                      }
                       onSelect={onSelectTask}
+                      onContextMenu={onTaskContextMenu}
                       sortable={bag}
                     />
                   )}
@@ -247,7 +295,11 @@ function BacksterosTaskStatusGroup(props: {
                   ? (projectNameById.get(task.projectId) ?? null)
                   : null
               }
+              project={
+                task.projectId && projectById ? (projectById.get(task.projectId) ?? null) : null
+              }
               onSelect={onSelectTask}
+              onContextMenu={onTaskContextMenu}
             />
           ))}
         </ul>
@@ -268,6 +320,7 @@ export function BacksterosTaskList(props: {
   /** When true, due today/overdue tasks get a separate "Due" group at the bottom. */
   readonly showDueGroup?: boolean | undefined;
   readonly projectNameById?: ReadonlyMap<string, string> | undefined;
+  readonly projectById?: ReadonlyMap<string, BacksterosCodebaseProject> | undefined;
   readonly onSelectTask: (task: BacksterosTask) => void;
   readonly onReorderTasks?: (patches: readonly BacksterosTaskSortPatch[]) => void;
 }) {
@@ -281,6 +334,7 @@ export function BacksterosTaskList(props: {
     statusFilter,
     showDueGroup = false,
     projectNameById,
+    projectById,
     onSelectTask,
     onReorderTasks,
   } = props;
@@ -288,6 +342,7 @@ export function BacksterosTaskList(props: {
   const isSearching = searchQuery.trim().length > 0;
   const reorderEnabled = Boolean(onReorderTasks) && !isSearching;
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const { openMenu: openTaskContextMenu } = useBacksterosTaskActionMenu();
 
   const filteredTasks = useMemo(() => {
     if (state.status !== "ready") return [];
@@ -384,7 +439,9 @@ export function BacksterosTaskList(props: {
           keyboardFocusTaskId={keyboardFocusTaskId}
           workingTaskIds={workingTaskIds}
           projectNameById={projectNameById}
+          projectById={projectById}
           onSelectTask={onSelectTask}
+          onTaskContextMenu={openTaskContextMenu}
           onReorderWithinGroup={handleReorderWithinGroup}
           onToggle={() =>
             setCollapsed((current) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { XIcon } from "@primer/octicons-react";
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { MEETING_PROPERTIES_PANEL_WIDTH_KEY } from "../../content/properties-panel.js";
 import {
@@ -18,6 +18,7 @@ import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { PillNav } from "../shared/pill-nav.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { PropertyDropdownTriggerVariant } from "../dropdowns/property-dropdown.js";
+import { deferFocusAfterTitleLeave } from "../../content/use-content-title-editor-navigation.js";
 import { CollapseLayoutIcon } from "../icons/collapse-layout-icon.js";
 import { ExpandLayoutIcon } from "../icons/expand-layout-icon.js";
 import {
@@ -53,6 +54,12 @@ type MeetingContentTabEditorProps = {
   /** When set, preview/edit toggle is rendered by the host (properties dock). */
   dockToggle?: boolean;
   onToggleDock?: (toggle: ReactNode) => void;
+  /**
+   * When true, switch the markdown body into edit mode and focus it once
+   * (e.g. after Enter on the meeting title).
+   */
+  enterEdit?: boolean;
+  onEnterEditHandled?: () => void;
 };
 
 function MeetingContentTabEditor({
@@ -62,6 +69,8 @@ function MeetingContentTabEditor({
   onSave,
   dockToggle = false,
   onToggleDock,
+  enterEdit = false,
+  onEnterEditHandled,
 }: MeetingContentTabEditorProps) {
   const {
     value,
@@ -71,6 +80,8 @@ function MeetingContentTabEditor({
     error,
     handleChange,
     handleBlurSave,
+    requestEditorFocus,
+    activateEditMode,
     setViewMode,
     toggleViewMode,
   } = useMarkdownDetailEditor({
@@ -80,6 +91,18 @@ function MeetingContentTabEditor({
       return { ok: true as const };
     },
   });
+
+  useEffect(() => {
+    if (!enterEdit) return;
+    activateEditMode({ focusEditor: false });
+    deferFocusAfterTitleLeave(requestEditorFocus);
+    onEnterEditHandled?.();
+  }, [
+    activateEditMode,
+    enterEdit,
+    onEnterEditHandled,
+    requestEditorFocus,
+  ]);
 
   const handleToggleViewMode = () => {
     toggleViewMode();
@@ -140,13 +163,21 @@ function MeetingContentTabEditor({
 export type MeetingDetailViewProps = {
   displayId: string;
   title: string;
+  /** Empty-create title hint. */
+  titlePlaceholder?: string;
+  /** Open directly in title editing mode. */
+  titleAutoEdit?: boolean;
+  /** Discard an unsaved meeting whose title is still empty. */
+  onEmptyTitleDiscard?: () => void;
   summary: string;
   notes: string;
   transcription: string;
   format?: MeetingFormat | string | null;
   meeting: MeetingPropertiesInlineChipsProps["meeting"];
-  onTitleChange: (title: string) => void;
+  onTitleChange: (title: string) => void | Promise<void>;
   onFormatChange?: (format: MeetingFormat) => void;
+  /** Extra action(s) rendered to the left of the close button (e.g. ⋯ menu). */
+  headerMoreAction?: ReactNode;
   onSummaryChange: (summary: string) => void;
   onNotesChange: (notes: string) => void;
   onTranscriptionChange: (transcription: string) => void;
@@ -183,6 +214,9 @@ export type MeetingDetailViewProps = {
 export function MeetingDetailView({
   displayId,
   title,
+  titlePlaceholder,
+  titleAutoEdit,
+  onEmptyTitleDiscard,
   summary,
   notes,
   transcription,
@@ -214,9 +248,11 @@ export function MeetingDetailView({
   onClose,
   onExpand,
   onCollapse,
+  headerMoreAction,
 }: MeetingDetailViewProps) {
   const [activeTab, setActiveTab] = useState<MeetingContentTab>("summary");
   const [dockToggle, setDockToggle] = useState<ReactNode>(null);
+  const [pendingSummaryEdit, setPendingSummaryEdit] = useState(false);
   const tabShortcutsEnabled =
     contentTabShortcutsEnabled ?? layout === "panel";
 
@@ -225,6 +261,15 @@ export function MeetingDetailView({
     activeTab,
     onTabChange: setActiveTab,
   });
+
+  const handleLeaveTitleForSummary = useCallback(() => {
+    setActiveTab("summary");
+    setPendingSummaryEdit(true);
+  }, []);
+
+  const handleSummaryEnterEditHandled = useCallback(() => {
+    setPendingSummaryEdit(false);
+  }, []);
 
   const tabValue =
     activeTab === "summary"
@@ -278,12 +323,28 @@ export function MeetingDetailView({
     <OverviewNameEditor
       value={title}
       entityLabel="Meeting"
-      // New calendar meetings open as "New meeting" — land in the title field
-      // so rename does not require an extra click.
-      autoEdit={title === "New meeting"}
+      placeholder={titlePlaceholder}
+      autoEdit={titleAutoEdit ?? title === "New meeting"}
+      allowEmpty={onEmptyTitleDiscard != null}
+      onEmptyDiscard={onEmptyTitleDiscard}
+      onLeaveTitle={(reason) => {
+        if (reason === "enter" || reason === "tab") {
+          handleLeaveTitleForSummary();
+        }
+      }}
       onSave={async (next) => {
-        onTitleChange(next);
-        return { ok: true as const };
+        try {
+          await onTitleChange(next);
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unable to save meeting.",
+          };
+        }
       }}
     />
   );
@@ -353,6 +414,8 @@ export function MeetingDetailView({
         onSave={onTabSave}
         dockToggle
         onToggleDock={setDockToggle}
+        enterEdit={activeTab === "summary" && pendingSummaryEdit}
+        onEnterEditHandled={handleSummaryEnterEditHandled}
       />
     </div>
   );

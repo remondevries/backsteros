@@ -33,7 +33,20 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+    ).toEqual(["color", "rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+  });
+
+  it("offers a Color submenu with swatches and reset", () => {
+    const items = buildThreadActionMenuItems(baseState);
+    const color = items.find((item) => item.id === "color");
+    expect(color?.label).toBe("Color");
+    expect(color?.children?.some((child) => child.id === "color:clear")).toBe(true);
+    const swatchItems = color?.children?.filter((child) => child.id.startsWith("color:#")) ?? [];
+    expect(swatchItems.length).toBeGreaterThan(0);
+    for (const child of swatchItems) {
+      expect(child.swatchColor).toMatch(/^#[0-9A-Fa-f]{6}$/u);
+      expect(child.id).toBe(`color:${child.swatchColor}`);
+    }
   });
 
   it("groups project settings with utility actions before archive", () => {

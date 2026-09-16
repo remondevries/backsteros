@@ -12,11 +12,11 @@ const ENTITY_REPLICATION_TABLES: Partial<
   task: ["tasks"],
   document: ["documents"],
   area: ["areas"],
-  organization: ["organizations"],
-  contact: ["contacts"],
+  organization: ["organizations", "avatars"],
+  contact: ["contacts", "avatars"],
   letter: ["letters", "letter_attachments"],
   workspace_setting: ["workspace_settings"],
-  bank_account: ["bank_accounts"],
+  bank_account: ["bank_accounts", "avatars"],
   financial_category: ["financial_categories"],
   financial_goal: ["financial_goals"],
   financial_recurring: ["financial_recurrings"],
@@ -35,6 +35,12 @@ const ENTITY_REPLICATION_TABLES: Partial<
   email_thread_comment: ["email_thread_comments"],
   recurring_task: ["recurring_tasks"],
   mention: ["mentions"],
+  /** Avatar blob metadata (contact / org / bank account chrome). */
+  avatar: ["avatars"],
+  /** API keys minted/revoked on either core must twin immediately. */
+  api_key: ["api_keys"],
+  space_publish_setting: ["space_publish_settings"],
+  space_site_key: ["space_site_keys"],
 };
 
 export function replicatedTablesForEntity(

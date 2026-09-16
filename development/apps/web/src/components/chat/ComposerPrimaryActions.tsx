@@ -1,7 +1,8 @@
-import { memo, type PointerEventHandler } from "react";
+import { memo, type CSSProperties, type PointerEventHandler } from "react";
 import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
+import { composerAgentAccentButtonStyle } from "../../providerAccentColors";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -28,6 +29,8 @@ interface ComposerPrimaryActionsProps {
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  /** Active agent accent — paints send/action chrome so it cannot fall back to theme blue. */
+  agentAccentColor?: string | null;
   preserveComposerFocusOnPointerDown?: boolean;
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */
@@ -71,6 +74,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
+  agentAccentColor = null,
   preserveComposerFocusOnPointerDown = false,
   showSendWhileRunning = false,
   onPreviousPendingQuestion,
@@ -85,6 +89,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
+  // Agent accent wins over stage artwork — BDV-27 wants the send control to
+  // track the active provider, not the environment stage skin.
+  const agentAccentButtonStyle: CSSProperties | undefined = agentAccentColor
+    ? composerAgentAccentButtonStyle(agentAccentColor)
+    : undefined;
+  const useStageArtwork = stageBackdropVariant != null && agentAccentButtonStyle == null;
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <button
@@ -141,9 +151,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           type="submit"
           size="sm"
           className={cn(
-            "rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+            "rounded-full",
+            agentAccentButtonStyle
+              ? "hover:brightness-110"
+              : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
             compact ? "px-3" : "px-4",
           )}
+          style={agentAccentButtonStyle}
           {...pointerFocusProps}
           disabled={
             isEnvironmentUnavailable ||
@@ -169,9 +183,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           type="submit"
           size="sm"
           className={cn(
-            "rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+            "rounded-full",
+            agentAccentButtonStyle
+              ? "hover:brightness-110"
+              : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
             compact ? "h-9 px-3 sm:h-8" : "h-9 px-4 sm:h-8",
           )}
+          style={agentAccentButtonStyle}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
@@ -185,7 +203,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <Button
           type="submit"
           size="sm"
-          className="h-9 rounded-l-full rounded-r-none bg-message-action px-4 text-message-action-foreground hover:bg-message-action-hover sm:h-8"
+          className={cn(
+            "h-9 rounded-l-full rounded-r-none px-4 sm:h-8",
+            agentAccentButtonStyle
+              ? "hover:brightness-110"
+              : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+          )}
+          style={agentAccentButtonStyle}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
@@ -197,7 +221,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               <Button
                 size="sm"
                 variant="default"
-                className="h-9 rounded-l-none rounded-r-full border-l-message-action-foreground/20 bg-message-action px-2 text-message-action-foreground hover:bg-message-action-hover sm:h-8"
+                className={cn(
+                  "h-9 rounded-l-none rounded-r-full border-l-message-action-foreground/20 px-2 sm:h-8",
+                  agentAccentButtonStyle
+                    ? "hover:brightness-110"
+                    : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+                )}
+                style={agentAccentButtonStyle}
                 aria-label="Implementation actions"
                 {...pointerFocusProps}
                 disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
@@ -224,10 +254,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       type="submit"
       className={cn(
         "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
-        stageBackdropVariant
+        useStageArtwork
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
-          : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
+          : agentAccentButtonStyle
+            ? "enabled:shadow-black/24 enabled:hover:brightness-110"
+            : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
       )}
+      style={agentAccentButtonStyle}
       {...pointerFocusProps}
       disabled={
         isSendBusy ||
@@ -250,7 +283,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                   : "Send message"
       }
     >
-      {stageBackdropVariant ? (
+      {useStageArtwork && stageBackdropVariant ? (
         <span className="absolute inset-0 -z-10" aria-hidden="true">
           <StageBackdropButtonArt variant={stageBackdropVariant} />
         </span>

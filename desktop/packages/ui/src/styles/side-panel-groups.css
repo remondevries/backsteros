@@ -681,6 +681,18 @@ button.side-panel-plain-group-label[aria-current="true"] {
   flex-shrink: 0;
 }
 
+.project-type-subgroup__label--highlighted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: #e5534b;
+  color: #0a0a0a;
+  font-weight: 600;
+}
+
 .project-type-subgroup__toggle-button {
   position: absolute;
   inset: 0;

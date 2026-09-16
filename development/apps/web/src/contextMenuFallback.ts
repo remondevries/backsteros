@@ -14,6 +14,30 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
     { tag: "path", attrs: { d: "m9 12 2 2 4-4" } },
   ],
+  palette: [
+    {
+      tag: "circle",
+      attrs: { cx: "13.5", cy: "6.5", r: ".5", fill: "currentColor" },
+    },
+    {
+      tag: "circle",
+      attrs: { cx: "17.5", cy: "10.5", r: ".5", fill: "currentColor" },
+    },
+    {
+      tag: "circle",
+      attrs: { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor" },
+    },
+    {
+      tag: "circle",
+      attrs: { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor" },
+    },
+    {
+      tag: "path",
+      attrs: {
+        d: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z",
+      },
+    },
+  ],
   clock: [
     { tag: "path", attrs: { d: "M12 6v6l4 2" } },
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
@@ -157,6 +181,27 @@ function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSV
     svg.appendChild(child);
   }
   return svg;
+}
+
+function normalizeMenuSwatchColor(value: string | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^#[0-9A-Fa-f]{6}$/u.test(trimmed) ? trimmed : null;
+}
+
+/** Small rounded color chip shown before a Color submenu label. */
+function createSwatchElement(hex: string): HTMLSpanElement {
+  const swatch = document.createElement("span");
+  swatch.setAttribute("aria-hidden", "true");
+  swatch.style.cssText = [
+    "display:inline-block",
+    "width:0.75rem",
+    "height:0.75rem",
+    "flex-shrink:0",
+    "border-radius:3px",
+    `background-color:${hex}`,
+  ].join(";");
+  return swatch;
 }
 
 function clampMenuPosition(menu: HTMLDivElement, preferredLeft: number, preferredTop: number) {
@@ -351,6 +396,11 @@ export function showContextMenuFallback<T extends string>(
           const icon = createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral");
           if (icon) {
             button.appendChild(icon);
+          }
+        } else {
+          const swatchColor = normalizeMenuSwatchColor(item.swatchColor);
+          if (swatchColor) {
+            button.appendChild(createSwatchElement(swatchColor));
           }
         }
 

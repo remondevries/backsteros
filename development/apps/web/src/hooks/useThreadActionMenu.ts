@@ -16,6 +16,11 @@ import {
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import {
+  applyComposerColorMenuAction,
+  isComposerColorMenuAction,
+  resolveComposerAccentForMenu,
+} from "../composerAccentMenu";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -145,12 +150,25 @@ export function useThreadActionMenu(input: {
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
+          currentAccentColor: resolveComposerAccentForMenu({
+            threadId: thread.id,
+            environmentId: thread.environmentId,
+            instanceId: thread.session?.providerInstanceId ?? thread.modelSelection?.instanceId,
+          }),
           supports,
           snoozePresets,
         });
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
+        if (isComposerColorMenuAction(action)) {
+          applyComposerColorMenuAction({
+            action,
+            threadId: thread.id,
+            environmentId: thread.environmentId,
+          });
+          return;
+        }
         if (action.startsWith("snooze:")) {
           const preset = snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
           if (!preset) return;
