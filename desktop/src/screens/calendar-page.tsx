@@ -75,6 +75,8 @@ import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-jo
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
+import { useMeetingContactNavigation } from "../lib/use-meeting-contact-navigation";
+import { useMeetingPortalEmailActions } from "../lib/use-meeting-portal-email-actions";
 import {
   useKeepAliveActive,
   useKeepAliveFrozen,
@@ -810,6 +812,20 @@ function CalendarPageBody() {
     workspace,
     patchMeeting,
   );
+  const mergeMeetingLocalFields = useCallback(
+    (fields: Record<string, unknown>) => {
+      if (!meeting) return;
+      workspace.mergeMeetingLocalFields(meeting.id, fields);
+    },
+    [meeting, workspace],
+  );
+  const meetingEmailActions = useMeetingPortalEmailActions(
+    meeting?.id,
+    mergeMeetingLocalFields,
+  );
+  const meetingContactNavigation = useMeetingContactNavigation(
+    workspace.contacts,
+  );
 
   const discardMeetingDraft = useCallback(() => {
     setMeetingDraft(null);
@@ -1189,6 +1205,8 @@ function CalendarPageBody() {
                       patchMeeting({ transcription })
                     }
                     {...meetingDetailProps}
+                    {...meetingEmailActions}
+                    {...meetingContactNavigation}
                   />
                 ) : openTask ? (
                   <TaskDetailPage
@@ -1360,6 +1378,8 @@ function CalendarPageBody() {
                   patchMeeting({ transcription })
                 }
                 {...activeMeetingDetailProps}
+                {...meetingEmailActions}
+                {...meetingContactNavigation}
               />
               <CalendarTaskDetailOverlay
                 open={Boolean(
@@ -1412,6 +1432,8 @@ function CalendarPageBody() {
           patchMeeting({ transcription })
         }
         {...meetingDetailProps}
+        {...meetingEmailActions}
+        {...meetingContactNavigation}
         headerMoreAction={<EntityHeaderActionsSlot />}
       />
       <CalendarTaskDetailOverlay

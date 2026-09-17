@@ -920,6 +920,7 @@ function useDesktopWorkspaceDataImpl(): {
     toSnakeFields,
     seedDocumentLocal,
     patchViaPowerSyncOrApi,
+    mergeMeetingLocalFields,
     softDeleteViaPowerSyncOrApi,
     softRefreshApiTasks,
     softRefreshApiDocuments,
@@ -1259,6 +1260,12 @@ function useDesktopWorkspaceDataImpl(): {
     },
     [patchViaPowerSyncOrApi],
   );
+  const mergeMeetingLocalFieldsBound = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      mergeMeetingLocalFields(id, values);
+    },
+    [mergeMeetingLocalFields],
+  );
   const patchContact = useCallback(
     async (id: string, values: Record<string, unknown>) => {
       // organizationName is display-only (joined from organizations); writing it
@@ -1440,6 +1447,7 @@ function useDesktopWorkspaceDataImpl(): {
       patchProject,
       patchLetter,
       patchMeeting,
+      mergeMeetingLocalFields: mergeMeetingLocalFieldsBound,
       patchContact,
       patchOrganization,
       softDeleteTask,
@@ -1495,6 +1503,7 @@ function useDesktopWorkspaceDataImpl(): {
       deleteDocument,
       duplicateProject,
       duplicateTask,
+      mergeMeetingLocalFieldsBound,
       moveDocument,
       patchContact,
       patchLetter,

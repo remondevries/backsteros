@@ -39,6 +39,7 @@ import {
   letterInputSchema,
   areaInputSchema,
   organizationInputSchema,
+  normalizeMeetingAttendeePortalEmails,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -1383,6 +1384,7 @@ const meetingKeys = {
   project_id: "projectId",
   organization_id: "organizationId",
   attendee_contact_ids: "attendeeContactIds",
+  attendee_portal_emails: "attendeePortalEmails",
   start_at: "startAt",
   end_at: "endAt",
   tracked_minutes: "trackedMinutes",
@@ -1718,6 +1720,11 @@ function normalizeMeetingPayload(
       );
     }
   }
+  if (next.attendeePortalEmails !== undefined) {
+    next.attendeePortalEmails = normalizeMeetingAttendeePortalEmails(
+      next.attendeePortalEmails,
+    );
+  }
   return next;
 }
 
@@ -1741,6 +1748,9 @@ function meetingSnapshot(row: typeof meetings.$inferSelect) {
     project_id: row.projectId,
     organization_id: row.organizationId,
     attendee_contact_ids: JSON.stringify(attendeeIds),
+    attendee_portal_emails: JSON.stringify(
+      normalizeMeetingAttendeePortalEmails(row.attendeePortalEmails),
+    ),
     start_at: row.startAt.toISOString(),
     end_at: row.endAt.toISOString(),
     tracked_minutes: row.trackedMinutes ?? null,

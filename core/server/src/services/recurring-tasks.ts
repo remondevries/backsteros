@@ -19,12 +19,8 @@ import {
 } from "../lib/cron.js";
 import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import { toIso } from "../lib/mappers.js";
+import { shouldRunHybridScheduledJob } from "./core-replication/scheduled-job-leadership.js";
 import * as taskProjectService from "./tasks-projects.js";
-
-/** Local-core must not spawn — cloud leader owns due ticks to avoid duplicate tasks. */
-function shouldRunRecurringTaskSpawner(): boolean {
-  return process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local";
-}
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
@@ -262,7 +258,7 @@ export async function deleteRecurringTask(
 
 /** Claim due templates and spawn tasks. Safe to call on overlapping ticks. */
 export async function runDueRecurringTasks(now = new Date()): Promise<number> {
-  if (!shouldRunRecurringTaskSpawner()) {
+  if (!(await shouldRunHybridScheduledJob())) {
     return 0;
   }
 
@@ -351,13 +347,6 @@ let runnerTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startRecurringTaskRunner(intervalMs = 60_000): void {
   if (runnerTimer) return;
-  if (!shouldRunRecurringTaskSpawner()) {
-    appendOpsLog(
-      "info",
-      "recurring task runner skipped (local-core; cloud leader spawns)",
-    );
-    return;
-  }
   const tick = () => {
     void runDueRecurringTasks().catch((error) => {
       console.error("recurring task runner tick failed", error);
@@ -370,7 +359,10 @@ export function startRecurringTaskRunner(intervalMs = 60_000): void {
   };
   tick();
   runnerTimer = setInterval(tick, intervalMs);
-  appendOpsLog("info", "recurring task runner started");
+  appendOpsLog(
+    "info",
+    "recurring task runner started (local-primary, cloud fallback)",
+  );
 }
 
 export function stopRecurringTaskRunner(): void {

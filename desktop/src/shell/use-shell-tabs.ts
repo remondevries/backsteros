@@ -11,6 +11,8 @@ import {
 } from "@backsteros/ui/shell";
 import { useNavigationHistory } from "@backsteros/ui/navigation";
 
+import { withEntityDetailPageLayout } from "../lib/entity-detail-page-layout-href";
+import { formatResolvedAppHref, resolveAppHref } from "../lib/resolve-app-href";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
@@ -197,6 +199,21 @@ export function useShellTabs() {
     navigateToHref(navigate, tab.href);
   }, [navigate]);
 
+  const openHrefInNewTab = useCallback(
+    (href: string) => {
+      const destination = formatResolvedAppHref(
+        resolveAppHref(withEntityDetailPageLayout(href)),
+      );
+      const tab = createProductTab(destination);
+      setTabsState((current) => ({
+        tabs: [...current.tabs, tab],
+        activeTabId: tab.id,
+      }));
+      navigateToHref(navigate, destination);
+    },
+    [navigate],
+  );
+
   const activatePreviousTab = useCallback(() => {
     setTabsState((current) => {
       if (current.tabs.length <= 1) return current;
@@ -243,5 +260,6 @@ export function useShellTabs() {
     activateTab,
     closeTab,
     openNewTab,
+    openHrefInNewTab,
   };
 }

@@ -58,6 +58,15 @@ async function isKnownReplicationTable(table: string): Promise<"live" | "absent"
 }
 
 export function registerCoreReplicationRoutes(app: Hono) {
+  /** Auth-only liveness check for hybrid scheduled-job leadership (local ↔ cloud). */
+  app.get("/internal/core-replication/ping", (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const config = getCoreReplicationConfig();
+    return c.json({ ok: true, role: config?.role ?? null });
+  });
+
   /**
    * Cloud → local wake after agent writes. Local pulls sync_events (+ optional
    * vault file) and publishes workspace SSE for open desktop shells.

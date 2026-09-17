@@ -5,7 +5,10 @@ import type {
   Meeting,
   UpdateMeetingInput,
 } from "@backsteros/contracts";
-import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
+import {
+  normalizeMeetingAttendeePortalEmails,
+  shouldClearInboxUpdatedOnUserWrite,
+} from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
@@ -87,6 +90,9 @@ export function toMeeting(row: DbMeeting): Meeting {
     projectId: row.projectId ?? null,
     organizationId: row.organizationId ?? null,
     attendeeContactIds: attendeeIds,
+    attendeePortalEmails: normalizeMeetingAttendeePortalEmails(
+      row.attendeePortalEmails,
+    ),
     startAt: row.startAt.toISOString(),
     endAt: row.endAt.toISOString(),
     format: (row.format ?? "video_call") as Meeting["format"],
@@ -293,6 +299,44 @@ export async function updateMeeting(
     organizationId: row.organizationId,
   }, executor);
   return toMeeting(row);
+}
+
+export async function recordAttendeePortalEmail(
+  workspaceId: string,
+  meetingId: string,
+  contactId: string,
+  kind: "invite" | "reminder",
+  executor: DbExecutor = db,
+): Promise<Meeting | null> {
+  const existing = await getMeetingRow(workspaceId, meetingId, executor);
+  if (!existing) return null;
+
+  const current = normalizeMeetingAttendeePortalEmails(
+    existing.attendeePortalEmails,
+  );
+  const now = new Date().toISOString();
+  const entry = { ...(current[contactId] ?? {}) };
+  if (kind === "invite") {
+    entry.inviteSentAt = now;
+  } else {
+    entry.reminderSentAt = now;
+  }
+
+  const [row] = await executor
+    .update(meetings)
+    .set({
+      attendeePortalEmails: { ...current, [contactId]: entry },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.id, meetingId),
+        isNull(meetings.deletedAt),
+      ),
+    )
+    .returning();
+  return row ? toMeeting(row) : null;
 }
 
 export async function deleteMeetingRow(

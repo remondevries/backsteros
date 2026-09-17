@@ -25,6 +25,7 @@ import {
   CONTACT_EXPANDED_WORKSPACE_TAB_IDS,
   CONTACT_SECTIONS,
   ContactPortalTabView,
+  ContactPortalLogsTabView,
   CrmActivityFeedView,
   EntityDetailLayout,
   RegisterEntityDeleteAction,
@@ -78,6 +79,8 @@ import {
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
+import { useContactPortalEmailActions } from "../lib/use-contact-portal-email-actions";
+import { useContactPortalLogs } from "../lib/use-contact-portal-logs";
 import { useDesktopPowerSync } from "../lib/powersync-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
@@ -271,7 +274,7 @@ export function ContactsPage({
     useState<ContactExpandedWorkspaceTabId>("meetings");
   /** Activity / Details / Portal on the profile card — local so they never close workspace entities. */
   const [cardSection, setCardSection] = useState<
-    "overview" | "details" | "portal"
+    "overview" | "details" | "portal" | "logs"
   >("overview");
   const [portalSaveError, setPortalSaveError] = useState<string | null>(null);
 
@@ -509,14 +512,27 @@ export function ContactsPage({
       ),
     [groupOptions, memberGroupIds],
   );
+  const showPortalLogsTab = useMemo(
+    () => showPortalTab && Boolean(selected?.portalUsername?.trim()),
+    [showPortalTab, selected?.portalUsername],
+  );
   const contactProfileSections = useMemo(() => {
     if (isStandalone) {
-      return resolveContactCardSections({ showPortal: showPortalTab });
+      return resolveContactCardSections({
+        showPortal: showPortalTab,
+        showPortalLogs: showPortalLogsTab,
+      });
     }
-    return showPortalTab
-      ? [...CONTACT_SECTIONS]
-      : CONTACT_SECTIONS.filter((entry) => entry.id !== "portal");
-  }, [isStandalone, showPortalTab]);
+    if (!showPortalTab) {
+      return CONTACT_SECTIONS.filter(
+        (entry) => entry.id !== "portal" && entry.id !== "logs",
+      );
+    }
+    if (!showPortalLogsTab) {
+      return CONTACT_SECTIONS.filter((entry) => entry.id !== "logs");
+    }
+    return [...CONTACT_SECTIONS];
+  }, [isStandalone, showPortalLogsTab, showPortalTab]);
   const portalProjects = useMemo(() => {
     const organizationId =
       details?.organizationId ?? selected?.organizationId ?? null;
@@ -572,6 +588,19 @@ export function ContactsPage({
   const selectedSlugValue = selected
     ? String(contactSlug(selected, contacts))
     : null;
+  const { onSendPortalInvite, onSendPortalPasswordReset } =
+    useContactPortalEmailActions(selected?.id);
+  const {
+    logs: portalLogs,
+    loading: portalLogsLoading,
+    error: portalLogsError,
+    refresh: refreshPortalLogs,
+  } = useContactPortalLogs(showPortalLogsTab ? selected?.id : null);
+
+  useEffect(() => {
+    if (profileSection !== "logs") return;
+    void refreshPortalLogs();
+  }, [profileSection, refreshPortalLogs]);
 
   useEffect(() => {
     setAvatarOverride(undefined);
@@ -594,6 +623,10 @@ export function ContactsPage({
       setCardSection("portal");
       return;
     }
+    if (sectionParam === "logs") {
+      setCardSection("logs");
+      return;
+    }
     setCardSection("overview");
   }, [isStandalone, panelContactId, sectionParam, workspaceDetail]);
 
@@ -604,6 +637,13 @@ export function ContactsPage({
     if (sectionParam === "portal") return;
     setCardSection("overview");
   }, [cardSection, sectionParam, showPortalTab]);
+
+  useEffect(() => {
+    if (showPortalLogsTab) return;
+    if (cardSection !== "logs") return;
+    if (sectionParam === "logs") return;
+    setCardSection("overview");
+  }, [cardSection, sectionParam, showPortalLogsTab]);
 
   // Invalid section segment → overview (standalone overlay / org detail).
   // Legacy `/activity` and `/relationships` → `/details`.
@@ -1367,10 +1407,31 @@ export function ContactsPage({
             email: details?.email ?? contact.email,
             emails: details?.emails ?? contact.emails,
           }).map((address) => ({ address }))}
+          reservedPortalUsernames={contacts
+            .filter((entry) => entry.id !== contact.id)
+            .map((entry) => entry.portalUsername?.trim().toLowerCase())
+            .filter((value): value is string => Boolean(value))}
           error={portalSaveError}
           onSave={async ({ settings, portalUsername, portalPassword }) => {
             setPortalSaveError(null);
             try {
+              if (portalUsername === null && portalPassword === "") {
+                await client.requestJson(
+                  `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
+                  {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      portalUsername: null,
+                      portalPassword: "",
+                    }),
+                  },
+                );
+                await workspace.patchContact(contact.id, {
+                  portalUsername: null,
+                });
+                return;
+              }
               // Password is REST-only. Never follow with settings/PowerSync in the
               // same turn — a queued contact upload with a stale
               // `portal_password_hash` can clobber the hash we just set (UI shows
@@ -1418,7 +1479,53 @@ export function ContactsPage({
               throw error;
             }
           }}
+          onSendInvite={
+            onSendPortalInvite
+              ? async () => {
+                  setPortalSaveError(null);
+                  try {
+                    await onSendPortalInvite();
+                  } catch (error) {
+                    setPortalSaveError(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to send portal invite",
+                    );
+                    throw error;
+                  }
+                }
+              : undefined
+          }
+          onSendPasswordReset={
+            onSendPortalPasswordReset
+              ? async () => {
+                  setPortalSaveError(null);
+                  try {
+                    await onSendPortalPasswordReset();
+                  } catch (error) {
+                    setPortalSaveError(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to send password reset",
+                    );
+                    throw error;
+                  }
+                }
+              : undefined
+          }
         />
+      );
+    }
+
+    if (sectionId === "logs") {
+      return (
+        <div className="contact-portal-logs-tab entity-overview__details flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+          <ContactPortalLogsTabView
+            logs={portalLogs}
+            loading={portalLogsLoading}
+            error={portalLogsError}
+          />
+        </div>
       );
     }
 

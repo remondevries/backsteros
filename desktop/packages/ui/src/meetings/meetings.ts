@@ -149,6 +149,11 @@ export type MeetingListItem = {
   organizationName?: string | null;
   organizationAvatarSrc?: string | null;
   attendeeContactIds?: string[];
+  /** Server-recorded portal invite/reminder sends per attendee contact id. */
+  attendeePortalEmails?: Record<
+    string,
+    { inviteSentAt?: string; reminderSentAt?: string }
+  >;
   startAt: number | Date | string;
   endAt: number | Date | string;
   trackedMinutes?: number | null;

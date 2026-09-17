@@ -14,10 +14,8 @@ import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { SwitchToggle } from "../shared/switch-toggle.js";
 import { ContactLanguagesEditor } from "./contact-languages-editor.js";
-import {
-  CheckIcon,
-  CopyIcon,
-} from "@primer/octicons-react";
+import { ContactPortalEmailActions } from "./contact-portal-email-actions.js";
+import { CheckIcon, CopyIcon, SyncIcon } from "@primer/octicons-react";
 
 export type ContactPortalProjectOption = {
   id: string;
@@ -29,6 +27,9 @@ export type ContactPortalEmailOption = {
   address: string;
   label?: string | null;
 };
+
+/** Sentinel dropdown value — clears portal username and password. */
+const PORTAL_NO_ACCOUNT_VALUE = "__portal_no_account__";
 
 export type ContactPortalPersistInput = {
   settings: ContactPortalSettings;
@@ -44,8 +45,14 @@ export type ContactPortalTabViewProps = {
   projects: readonly ContactPortalProjectOption[];
   /** Email addresses from the contact Details tab (username choices). */
   emails?: readonly ContactPortalEmailOption[];
+  /** Lowercase portal usernames already assigned to other contacts. */
+  reservedPortalUsernames?: readonly string[];
   error?: string | null;
   onSave: (input: ContactPortalPersistInput) => void | Promise<void>;
+  /** Staff: send the portal password-reset email for this contact. */
+  onSendPasswordReset?: () => void | Promise<void>;
+  /** Staff: invite the contact to choose their own portal password. */
+  onSendInvite?: () => void | Promise<void>;
 };
 
 function SettingToggleRow({
@@ -108,14 +115,19 @@ function ProjectToggleLabel({
 function normalizePortalLanguages(
   settings: ContactPortalSettings | null | undefined,
 ): ContactLanguage[] {
-  if (!settings) return [];
-  if (Array.isArray(settings.languages)) {
-    return coerceContactLanguages(settings.languages);
-  }
-  const legacy = (settings as { language?: unknown }).language;
-  return coerceContactLanguages(
-    typeof legacy === "string" ? [legacy] : [],
-  );
+  const codes = (() => {
+    if (!settings) return [] as ContactLanguage[];
+    if (Array.isArray(settings.languages)) {
+      return coerceContactLanguages(settings.languages);
+    }
+    const legacy = (settings as { language?: unknown }).language;
+    return coerceContactLanguages(
+      typeof legacy === "string" ? [legacy] : [],
+    );
+  })();
+  // Portal UI locale is a single en|nl preference (first match wins).
+  const ui = codes.find((code) => code === "nl" || code === "en");
+  return ui ? [ui] : [];
 }
 
 function normalizePortalSettings(
@@ -142,8 +154,11 @@ export function ContactPortalTabView({
   portalPasswordSet,
   projects,
   emails = [],
+  reservedPortalUsernames = [],
   error = null,
   onSave,
+  onSendPasswordReset,
+  onSendInvite,
 }: ContactPortalTabViewProps) {
   const initial = useMemo(
     () => normalizePortalSettings(settings),
@@ -234,6 +249,16 @@ export function ContactPortalTabView({
     return new Set(draft.enabledProjectIds);
   }, [allProjectIds, draft.enabledProjectIds]);
 
+  const reservedUsernameSet = useMemo(
+    () =>
+      new Set(
+        reservedPortalUsernames
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    [reservedPortalUsernames],
+  );
+
   const emailOptions = useMemo(() => {
     const options: {
       value: string;
@@ -241,11 +266,22 @@ export function ContactPortalTabView({
       searchTerms?: string;
     }[] = [];
     const seen = new Set<string>();
+    const current = username.trim();
+    const currentKey = current
+      ? parseBareEmailAddress(current) ?? current.toLowerCase()
+      : null;
+
     for (const entry of emails) {
       const address = entry.address.trim();
       if (!address) continue;
       const key = parseBareEmailAddress(address);
       if (!key || seen.has(key)) continue;
+      if (
+        reservedUsernameSet.has(key) &&
+        key !== currentKey
+      ) {
+        continue;
+      }
       seen.add(key);
       const kind = entry.label?.trim();
       options.push({
@@ -254,10 +290,9 @@ export function ContactPortalTabView({
         searchTerms: kind ? `${address} ${kind}` : address,
       });
     }
-    const current = username.trim();
     if (current) {
-      const key = parseBareEmailAddress(current);
-      if (!seen.has(key || current.toLowerCase())) {
+      const key = parseBareEmailAddress(current) ?? current.toLowerCase();
+      if (!seen.has(key)) {
         options.unshift({
           value: current,
           label: current,
@@ -266,7 +301,27 @@ export function ContactPortalTabView({
       }
     }
     return options;
-  }, [emails, username]);
+  }, [emails, reservedUsernameSet, username]);
+
+  const usernameDropdownOptions = useMemo(
+    () => [
+      {
+        value: PORTAL_NO_ACCOUNT_VALUE,
+        label: "No account",
+        searchTerms: "no account none remove clear",
+      },
+      ...emailOptions,
+    ],
+    [emailOptions],
+  );
+
+  function clearPortalAccount() {
+    setPassword("");
+    setPasswordSaved(false);
+    void persist({ portalUsername: null, portalPassword: "" }).catch(() => {
+      // Error rendered via `error` prop from parent.
+    });
+  }
 
   function persist(input: {
     settings?: ContactPortalSettings;
@@ -366,20 +421,233 @@ export function ContactPortalTabView({
 
   const passwordDraft = password.trim();
   const canConfirmPassword = passwordDraft.length >= 8 && !passwordSaving;
+  const hasUsername = Boolean(username.trim());
+  const showStaffEmailActions =
+    hasUsername && Boolean(onSendPasswordReset || onSendInvite);
 
   return (
     <div className="contact-portal-tab entity-overview__details flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+      <EntityOverviewSubgroup title="Account">
+        <div className="contact-portal-tab__field">
+          <span className="contact-portal-tab__field-label">Username</span>
+          {emailOptions.length === 0 && !username.trim() ? (
+            <p className="contact-portal-tab__hint">
+              {emails.length > 0
+                ? "Each portal username must be unique. The emails on Details are already used as login usernames by other contacts."
+                : "Add an email on Details to use as the portal username."}
+            </p>
+          ) : (
+            <div
+              className={[
+                "contact-portal-tab__credential",
+                username.trim() ? "has-action" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <SearchableDropdown
+                value={username.trim() || PORTAL_NO_ACCOUNT_VALUE}
+                options={usernameDropdownOptions}
+                onChange={(next) => {
+                  if (next === PORTAL_NO_ACCOUNT_VALUE) {
+                    clearPortalAccount();
+                    return;
+                  }
+                  void persist({ portalUsername: next.trim() || null }).catch(
+                    () => {
+                      // Error rendered via `error` prop from parent.
+                    },
+                  );
+                }}
+                searchPlaceholder="Search emails…"
+                ariaLabel="Portal username"
+                panelAlign="start"
+                panelWidth="trigger"
+                className="entity-overview-dropdown contact-portal-tab__username-dropdown"
+                renderTrigger={({
+                  selected,
+                  open,
+                  disabled,
+                  triggerId,
+                  onToggle,
+                }) => {
+                  const isNoAccount = selected?.value === PORTAL_NO_ACCOUNT_VALUE;
+                  const label = selected?.label ?? "Select email…";
+                  return (
+                    <button
+                      type="button"
+                      id={triggerId}
+                      disabled={disabled}
+                      aria-haspopup="listbox"
+                      aria-expanded={open}
+                      aria-label={
+                        isNoAccount
+                          ? "Portal account: none"
+                          : selected
+                            ? `Portal username: ${selected.label}`
+                            : "Select portal username email"
+                      }
+                      title={label}
+                      onClick={onToggle}
+                      className={[
+                        "entity-overview-input",
+                        "entity-overview-dropdown-trigger",
+                        "contact-portal-tab__credential-control",
+                        selected && !isNoAccount ? null : "is-muted",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      <span className="entity-overview-dropdown-trigger__label">
+                        {label}
+                      </span>
+                    </button>
+                  );
+                }}
+              />
+              {username.trim() ? (
+                <div className="contact-portal-tab__credential-actions">
+                  <button
+                    type="button"
+                    className="contact-portal-tab__credential-action"
+                    aria-label={
+                      usernameCopied ? "Username copied" : "Copy username"
+                    }
+                    title={usernameCopied ? "Copied" : "Copy username"}
+                    onClick={() => {
+                      void copyUsernameToClipboard(username);
+                    }}
+                  >
+                    {usernameCopied ? (
+                      <CheckIcon size={14} />
+                    ) : (
+                      <CopyIcon size={14} />
+                    )}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+        {hasUsername ? (
+        <div className="contact-portal-tab__field">
+          <span className="contact-portal-tab__field-label">Password</span>
+          <div
+            className={[
+              "contact-portal-tab__credential",
+              "contact-portal-tab__password",
+              passwordDraft || passwordSaved ? "has-confirm" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <input
+              type="text"
+              autoComplete="new-password"
+              spellCheck={false}
+              className="entity-overview-input contact-portal-tab__credential-control contact-portal-tab__password-input"
+              value={password}
+              disabled={passwordSaving}
+              onChange={(event) => {
+                setPasswordSaved(false);
+                setPassword(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void commitPassword();
+                }
+              }}
+              placeholder={portalPasswordSet ? "••••••••" : "Set a password"}
+            />
+            {passwordDraft || passwordSaving ? (
+              <div className="contact-portal-tab__credential-actions">
+                <button
+                  type="button"
+                  className="contact-portal-tab__password-confirm"
+                  disabled={!canConfirmPassword}
+                  aria-label={passwordSaving ? "Saving password" : "Confirm password"}
+                  aria-busy={passwordSaving || undefined}
+                  title={
+                    passwordSaving
+                      ? "Saving…"
+                      : canConfirmPassword
+                        ? "Save password"
+                        : "Password must be at least 8 characters"
+                  }
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => {
+                    void commitPassword();
+                  }}
+                >
+                  {passwordSaving ? (
+                    <>
+                      <SyncIcon
+                        size={14}
+                        className="contact-portal-tab__password-spinner"
+                        aria-hidden
+                      />
+                      <span>Saving…</span>
+                    </>
+                  ) : (
+                    "Confirm"
+                  )}
+                </button>
+              </div>
+            ) : passwordSaved ? (
+              <div className="contact-portal-tab__credential-actions">
+                <span
+                  className="contact-portal-tab__password-saved"
+                  role="status"
+                  aria-label="Password saved"
+                  title="Password saved"
+                >
+                  <CheckIcon size={14} />
+                </span>
+              </div>
+            ) : null}
+          </div>
+          {passwordDraft && !canConfirmPassword ? (
+            <p className="contact-portal-tab__hint">
+              Password must be at least 8 characters.
+            </p>
+          ) : null}
+        </div>
+        ) : null}
+      </EntityOverviewSubgroup>
+
+      {showStaffEmailActions ? (
+        <EntityOverviewSubgroup title="Email protocols">
+          <ContactPortalEmailActions
+            hasUsername={hasUsername}
+            portalPasswordSet={portalPasswordSet}
+            onSendInvite={onSendInvite}
+            onSendPasswordReset={onSendPasswordReset}
+          />
+        </EntityOverviewSubgroup>
+      ) : null}
+
       <EntityOverviewSubgroup title="Language">
+        <p className="contact-portal-tab__hint">
+          Preferred portal language for the UI and portal emails.
+        </p>
         <ContactLanguagesEditor
+          selectionMode="single"
+          allowedLanguages={["nl", "en"]}
           languages={draft.languages}
           onChange={(next) => {
+            const languages = coerceContactLanguages(next).slice(0, 1);
             setDraft((current) => ({
               ...current,
-              languages: coerceContactLanguages(next),
+              languages,
             }));
           }}
           onSave={(next) => {
-            patchSettings({ languages: coerceContactLanguages(next) });
+            patchSettings({
+              languages: coerceContactLanguages(next).slice(0, 1),
+            });
           }}
         />
       </EntityOverviewSubgroup>
@@ -436,174 +704,6 @@ export function ContactPortalTabView({
             checked={draft.canAddTasks}
             onChange={(checked) => patchSettings({ canAddTasks: checked })}
           />
-        </div>
-      </EntityOverviewSubgroup>
-
-      <EntityOverviewSubgroup title="Login">
-        <div className="contact-portal-tab__field">
-          <span className="contact-portal-tab__field-label">Username</span>
-          {emailOptions.length === 0 ? (
-            <p className="contact-portal-tab__hint">
-              Add an email on Details to use as the portal username.
-            </p>
-          ) : (
-            <div
-              className={[
-                "contact-portal-tab__credential",
-                username.trim() ? "has-action" : null,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <SearchableDropdown
-                value={username.trim() || null}
-                options={emailOptions}
-                onChange={(next) => {
-                  void persist({ portalUsername: next.trim() || null }).catch(
-                    () => {
-                      // Error rendered via `error` prop from parent.
-                    },
-                  );
-                }}
-                searchPlaceholder="Search emails…"
-                ariaLabel="Portal username"
-                panelAlign="start"
-                panelWidth="trigger"
-                className="entity-overview-dropdown contact-portal-tab__username-dropdown"
-                renderTrigger={({
-                  selected,
-                  open,
-                  disabled,
-                  triggerId,
-                  onToggle,
-                }) => {
-                  const label = selected?.label ?? "Select email…";
-                  return (
-                    <button
-                      type="button"
-                      id={triggerId}
-                      disabled={disabled}
-                      aria-haspopup="listbox"
-                      aria-expanded={open}
-                      aria-label={
-                        selected
-                          ? `Portal username: ${selected.label}`
-                          : "Select portal username email"
-                      }
-                      title={label}
-                      onClick={onToggle}
-                      className={[
-                        "entity-overview-input",
-                        "entity-overview-dropdown-trigger",
-                        "contact-portal-tab__credential-control",
-                        selected ? null : "is-muted",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      <span className="entity-overview-dropdown-trigger__label">
-                        {label}
-                      </span>
-                    </button>
-                  );
-                }}
-              />
-              {username.trim() ? (
-                <div className="contact-portal-tab__credential-actions">
-                  <button
-                    type="button"
-                    className="contact-portal-tab__credential-action"
-                    aria-label={
-                      usernameCopied ? "Username copied" : "Copy username"
-                    }
-                    title={usernameCopied ? "Copied" : "Copy username"}
-                    onClick={() => {
-                      void copyUsernameToClipboard(username);
-                    }}
-                  >
-                    {usernameCopied ? (
-                      <CheckIcon size={14} />
-                    ) : (
-                      <CopyIcon size={14} />
-                    )}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
-        <div className="contact-portal-tab__field">
-          <span className="contact-portal-tab__field-label">Password</span>
-          <div
-            className={[
-              "contact-portal-tab__credential",
-              "contact-portal-tab__password",
-              passwordDraft || passwordSaved ? "has-confirm" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <input
-              type="text"
-              autoComplete="new-password"
-              spellCheck={false}
-              className="entity-overview-input contact-portal-tab__credential-control contact-portal-tab__password-input"
-              value={password}
-              disabled={passwordSaving}
-              onChange={(event) => {
-                setPasswordSaved(false);
-                setPassword(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void commitPassword();
-                }
-              }}
-              placeholder={portalPasswordSet ? "••••••••" : "Set a password"}
-            />
-            {passwordDraft ? (
-              <div className="contact-portal-tab__credential-actions">
-                <button
-                  type="button"
-                  className="contact-portal-tab__password-confirm"
-                  disabled={!canConfirmPassword}
-                  aria-label="Confirm password"
-                  title={
-                    passwordSaving
-                      ? "Saving…"
-                      : canConfirmPassword
-                        ? "Save password"
-                        : "Password must be at least 8 characters"
-                  }
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                  }}
-                  onClick={() => {
-                    void commitPassword();
-                  }}
-                >
-                  {passwordSaving ? "Saving…" : "Confirm"}
-                </button>
-              </div>
-            ) : passwordSaved ? (
-              <div className="contact-portal-tab__credential-actions">
-                <span
-                  className="contact-portal-tab__password-saved"
-                  role="status"
-                  aria-label="Password saved"
-                  title="Password saved"
-                >
-                  <CheckIcon size={14} />
-                </span>
-              </div>
-            ) : null}
-          </div>
-          {passwordDraft && !canConfirmPassword ? (
-            <p className="contact-portal-tab__hint">
-              Password must be at least 8 characters.
-            </p>
-          ) : null}
         </div>
       </EntityOverviewSubgroup>
 

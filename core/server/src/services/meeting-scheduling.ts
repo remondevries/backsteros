@@ -8,6 +8,7 @@ import type {
   MeetingSlot,
   UpdateMeetingSchedulingSettingsInput,
 } from "@backsteros/contracts";
+import { findContactByEmailAddress } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
@@ -17,6 +18,11 @@ import {
   type DbMeetingSchedulingSettings,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import {
+  getContactById,
+  getContactByPortalUsername,
+  listContacts,
+} from "./circle-domain.js";
 import {
   createMeetingRow,
   formatMeetingDisplayId,
@@ -296,6 +302,45 @@ export type PlannedMeetingBooking = {
   input: CreateMeetingInput;
 };
 
+async function resolveBookingAttendeeContactIds(
+  workspaceId: string,
+  input: CreateMeetingBookingInput,
+  executor: DbExecutor = db,
+): Promise<string[]> {
+  const portalUserId = input.portalUserId?.trim();
+  if (portalUserId) {
+    const byId = await getContactById(workspaceId, portalUserId, executor);
+    if (byId) return [byId.id];
+    const byPortalUsername = await getContactByPortalUsername(
+      workspaceId,
+      portalUserId,
+      executor,
+    );
+    if (byPortalUsername) return [byPortalUsername.id];
+  }
+
+  const bookerEmail = input.bookerEmail.trim();
+  if (!bookerEmail) return [];
+
+  const byPortalEmail = await getContactByPortalUsername(
+    workspaceId,
+    bookerEmail,
+    executor,
+  );
+  if (byPortalEmail) return [byPortalEmail.id];
+
+  const rows = await listContacts(workspaceId, { q: bookerEmail });
+  const match = findContactByEmailAddress(
+    rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      emails: row.emails,
+    })),
+    bookerEmail,
+  );
+  return match && typeof match.id === "string" ? [match.id] : [];
+}
+
 /** Validate slot availability and build meeting create input (no DB write). */
 export async function planMeetingBooking(
   workspaceId: string,
@@ -359,6 +404,11 @@ export async function planMeetingBooking(
   }
 
   const bookerName = formatBookerName(input);
+  const attendeeContactIds = await resolveBookingAttendeeContactIds(
+    workspaceId,
+    input,
+    executor,
+  );
   return {
     id,
     input: {
@@ -370,6 +420,7 @@ export async function planMeetingBooking(
       status: EXTERNAL_MEETING_BOOKING_STATUS,
       projectId: row.defaultProjectId ?? null,
       organizationId: row.defaultOrganizationId ?? null,
+      attendeeContactIds,
     },
   };
 }

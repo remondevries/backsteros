@@ -36,16 +36,18 @@ describe("hybrid write bar", () => {
     }
   });
 
-  it("does not spawn recurring tasks on local-core", () => {
+  it("uses hybrid scheduled-job leadership for recurring tasks", () => {
     const src = readSrc("recurring-tasks.ts");
-    assert.ok(src.includes("shouldRunRecurringTaskSpawner"));
-    assert.ok(
-      src.includes(
-        'process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local"',
-      ),
-    );
+    assert.ok(src.includes("shouldRunHybridScheduledJob"));
     assert.ok(src.includes("recordTaskRestSyncEvent"));
     assert.ok(src.includes("recordRecurringTaskRestSyncEvent"));
+  });
+
+  it("uses hybrid scheduled-job leadership for meeting portal reminders", () => {
+    const src = readSrc("meeting-portal-emails.ts");
+    assert.ok(src.includes("shouldRunHybridScheduledJob"));
+    assert.ok(src.includes("sendMeetingPortalEmailToAttendee"));
+    assert.ok(src.includes("recordMeetingRestSyncEvent"));
   });
 
   it("registers and deletes email threads leader-first (not invent-on-list / hard-delete twin-only)", () => {

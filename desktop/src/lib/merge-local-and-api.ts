@@ -557,6 +557,7 @@ export function fillMissingMeetingPropertiesFromApi<
     projectId?: string | null;
     organizationId?: string | null;
     attendeeContactIds?: unknown;
+    attendeePortalEmails?: unknown;
     format?: string | null;
     locationOrganizationId?: string | null;
     updatedAt?: string | number | Date | null;
@@ -645,8 +646,34 @@ export function fillMissingMeetingPropertiesFromApi<
       next = { ...next, locationOrganizationId: api.locationOrganizationId };
     }
 
+    if (portalEmailsEmpty(row.attendeePortalEmails)) {
+      if (!portalEmailsEmpty(api.attendeePortalEmails)) {
+        next = { ...next, attendeePortalEmails: api.attendeePortalEmails };
+      }
+    } else if (
+      !portalEmailsEmpty(api.attendeePortalEmails) &&
+      updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, attendeePortalEmails: api.attendeePortalEmails };
+    }
+
     return next;
   });
+}
+
+function portalEmailsEmpty(raw: unknown): boolean {
+  if (raw == null) return true;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === "{}") return true;
+    try {
+      return portalEmailsEmpty(JSON.parse(trimmed));
+    } catch {
+      return true;
+    }
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) return true;
+  return Object.keys(raw).length === 0;
 }
 
 /**

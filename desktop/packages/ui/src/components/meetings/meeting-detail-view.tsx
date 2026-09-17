@@ -1,11 +1,20 @@
 "use client";
 
 import { XIcon } from "@primer/octicons-react";
-import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { MEETING_PROPERTIES_PANEL_WIDTH_KEY } from "../../content/properties-panel.js";
 import {
-  MEETING_CONTENT_TAB_ORDER,
+  buildMeetingContentTabOrder,
+  isVideoCallMeetingFormat,
+  MEETING_DETAILS_TAB,
   type MeetingContentTab,
 } from "../../meetings/meeting-content-tab-shortcuts.js";
 import { useMeetingContentTabShortcuts } from "../../meetings/use-meeting-content-tab-shortcuts.js";
@@ -24,6 +33,7 @@ import { ExpandLayoutIcon } from "../icons/expand-layout-icon.js";
 import {
   MeetingPropertiesStacked,
 } from "./meeting-properties-stacked.js";
+import { MeetingPortalEmailActions } from "./meeting-portal-email-actions.js";
 import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
@@ -38,16 +48,13 @@ const MEETING_CONTENT_TAB_LABELS: Record<MeetingContentTab, string> = {
   summary: "Summary",
   notes: "Notes",
   transcription: "Transcription",
+  details: "Details",
 };
 
-const MEETING_CONTENT_TABS: { id: MeetingContentTab; label: string }[] =
-  MEETING_CONTENT_TAB_ORDER.map((id) => ({
-    id,
-    label: MEETING_CONTENT_TAB_LABELS[id],
-  }));
+type MeetingMarkdownTab = Exclude<MeetingContentTab, typeof MEETING_DETAILS_TAB>;
 
 type MeetingContentTabEditorProps = {
-  tab: MeetingContentTab;
+  tab: MeetingMarkdownTab;
   value: string;
   ariaLabel: string;
   onSave: (value: string) => void | Promise<void>;
@@ -196,6 +203,10 @@ export type MeetingDetailViewProps = {
   projectOptions?: MeetingPropertiesInlineChipsProps["projectOptions"];
   onCreateOrganizationFromQuery?: (query: string) => void;
   onCreateContactFromQuery?: (query: string) => void;
+  onSendMeetingInvite?: (contactId: string) => void | Promise<void>;
+  onSendMeetingReminder?: (contactId: string) => void | Promise<void>;
+  resolveContactHref?: (contactId: string) => string | null;
+  onNavigateHref?: (href: string) => void;
   layout?: "page" | "panel";
   propertyTriggerVariant?: PropertyDropdownTriggerVariant;
   /**
@@ -242,6 +253,10 @@ export function MeetingDetailView({
   projectOptions,
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
+  onSendMeetingInvite,
+  onSendMeetingReminder,
+  resolveContactHref,
+  onNavigateHref,
   layout = "panel",
   propertyTriggerVariant,
   contentTabShortcutsEnabled,
@@ -255,12 +270,33 @@ export function MeetingDetailView({
   const [pendingSummaryEdit, setPendingSummaryEdit] = useState(false);
   const tabShortcutsEnabled =
     contentTabShortcutsEnabled ?? layout === "panel";
+  const meetingFormat = format ?? meeting?.format ?? "video_call";
+  const isVideoCall = isVideoCallMeetingFormat(meetingFormat);
+  const visibleTabOrder = useMemo(
+    () => buildMeetingContentTabOrder({ isVideoCall }),
+    [isVideoCall],
+  );
+  const contentTabs = useMemo(
+    (): { id: MeetingContentTab; label: string }[] =>
+      visibleTabOrder.map((id) => ({
+        id,
+        label: MEETING_CONTENT_TAB_LABELS[id],
+      })),
+    [visibleTabOrder],
+  );
 
   useMeetingContentTabShortcuts({
     enabled: tabShortcutsEnabled,
     activeTab,
     onTabChange: setActiveTab,
+    visibleTabs: visibleTabOrder,
   });
+
+  useEffect(() => {
+    if (!visibleTabOrder.includes(activeTab)) {
+      setActiveTab("summary");
+    }
+  }, [activeTab, visibleTabOrder]);
 
   const handleLeaveTitleForSummary = useCallback(() => {
     setActiveTab("summary");
@@ -271,12 +307,16 @@ export function MeetingDetailView({
     setPendingSummaryEdit(false);
   }, []);
 
+  const isMarkdownTab = activeTab !== MEETING_DETAILS_TAB;
+
   const tabValue =
     activeTab === "summary"
       ? summary
       : activeTab === "notes"
         ? notes
-        : transcription;
+        : activeTab === "transcription"
+          ? transcription
+          : "";
 
   const onTabSave =
     activeTab === "summary"
@@ -290,7 +330,9 @@ export function MeetingDetailView({
       ? "Meeting summary"
       : activeTab === "notes"
         ? "Meeting notes"
-        : "Meeting transcription";
+        : activeTab === "transcription"
+          ? "Meeting transcription"
+          : "Meeting details";
 
   const triggerVariant =
     propertyTriggerVariant ?? (layout === "panel" ? "inlineChip" : "default");
@@ -349,12 +391,12 @@ export function MeetingDetailView({
     />
   );
 
-  const contentTabs = (
+  const contentTabNav = (
     <div className="meeting-detail-view__tabs">
       <PillNav
         className="meeting-detail-view__tabs-nav"
         ariaLabel="Meeting content"
-        items={MEETING_CONTENT_TABS.map((tab) => ({
+        items={contentTabs.map((tab) => ({
           value: tab.id,
           label: tab.label,
         }))}
@@ -400,23 +442,41 @@ export function MeetingDetailView({
       </button>
     ) : null;
 
+  useEffect(() => {
+    if (!isMarkdownTab) {
+      setDockToggle(null);
+    }
+  }, [isMarkdownTab]);
+
   const contentEditor = (
     <div
       className="meeting-detail-view__editor-shell"
       role="region"
       aria-label={tabAriaLabel}
     >
-      <MeetingContentTabEditor
-        key={activeTab}
-        tab={activeTab}
-        value={tabValue}
-        ariaLabel={tabAriaLabel}
-        onSave={onTabSave}
-        dockToggle
-        onToggleDock={setDockToggle}
-        enterEdit={activeTab === "summary" && pendingSummaryEdit}
-        onEnterEditHandled={handleSummaryEnterEditHandled}
-      />
+      {activeTab === MEETING_DETAILS_TAB ? (
+        <MeetingPortalEmailActions
+          attendeeContactIds={meeting?.attendeeContactIds ?? []}
+          attendeePortalEmails={meeting?.attendeePortalEmails}
+          attendeeOptions={contactOptions ?? []}
+          onSendInvite={onSendMeetingInvite}
+          onSendReminder={onSendMeetingReminder}
+          resolveContactHref={resolveContactHref}
+          onNavigateHref={onNavigateHref}
+        />
+      ) : (
+        <MeetingContentTabEditor
+          key={activeTab}
+          tab={activeTab}
+          value={tabValue}
+          ariaLabel={tabAriaLabel}
+          onSave={onTabSave}
+          dockToggle
+          onToggleDock={setDockToggle}
+          enterEdit={activeTab === "summary" && pendingSummaryEdit}
+          onEnterEditHandled={handleSummaryEnterEditHandled}
+        />
+      )}
     </div>
   );
 
@@ -481,7 +541,7 @@ export function MeetingDetailView({
                   {formatToggle}
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
-                  {contentTabs}
+                  {contentTabNav}
                   {contentEditor}
                 </div>
                 {bottomChrome}
@@ -520,7 +580,7 @@ export function MeetingDetailView({
         triggerVariant={triggerVariant}
       />
       <div className="meeting-detail-view__content meeting-detail-view__content--page">
-        {contentTabs}
+        {contentTabNav}
         {contentEditor}
       </div>
       {bottomChrome}

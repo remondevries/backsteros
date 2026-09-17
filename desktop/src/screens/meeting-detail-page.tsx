@@ -10,6 +10,8 @@ import {
 
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
+import { useMeetingContactNavigation } from "../lib/use-meeting-contact-navigation";
+import { useMeetingPortalEmailActions } from "../lib/use-meeting-portal-email-actions";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 
@@ -79,6 +81,20 @@ export function MeetingDetailPage({
     workspace,
     patchMeeting,
   );
+  const mergeMeetingLocalFields = useCallback(
+    (fields: Record<string, unknown>) => {
+      if (!meeting) return;
+      workspace.mergeMeetingLocalFields(meeting.id, fields);
+    },
+    [meeting, workspace],
+  );
+  const meetingEmailActions = useMeetingPortalEmailActions(
+    meeting?.id,
+    mergeMeetingLocalFields,
+  );
+  const meetingContactNavigation = useMeetingContactNavigation(
+    workspace.contacts,
+  );
 
   const handleDeleteMeeting = useCallback(async () => {
     if (!meeting) {
@@ -138,6 +154,8 @@ export function MeetingDetailPage({
           patchMeeting({ transcription })
         }
         {...detailProps}
+        {...meetingEmailActions}
+        {...meetingContactNavigation}
       />
     </div>
   );

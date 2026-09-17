@@ -1252,7 +1252,12 @@ export {
 } from "./components/meetings/meeting-detail-view.js";
 
 export {
+  MEETING_BASE_CONTENT_TAB_ORDER,
   MEETING_CONTENT_TAB_ORDER,
+  MEETING_DETAILS_TAB,
+  MEETING_VIDEO_CALL_CONTENT_TAB_ORDER,
+  buildMeetingContentTabOrder,
+  isVideoCallMeetingFormat,
   resolveMeetingContentTabFromShortcutKey,
 } from "./meetings/meeting-content-tab-shortcuts.js";
 
@@ -3385,6 +3390,11 @@ export {
 } from "./components/contacts/contact-portal-tab-view.js";
 
 export {
+  ContactPortalLogsTabView,
+  type ContactPortalLogsTabViewProps,
+} from "./components/contacts/contact-portal-logs-tab-view.js";
+
+export {
   ContactsOverviewView,
   type ContactsOverviewViewProps,
 } from "./components/contacts/contacts-overview-view.js";
@@ -3564,6 +3574,7 @@ export {
 export {
   CONTACT_CARD_SECTIONS,
   CONTACT_PORTAL_SECTION,
+  CONTACT_PORTAL_LOGS_SECTION,
   CONTACT_SECTIONS,
   CONTACT_SECTION_IDS,
   getActiveContactSection,

@@ -46,6 +46,10 @@ export type MeetingPropertiesMeeting = {
   organizationId?: string | null;
   organizationName?: string | null;
   attendeeContactIds: string[];
+  attendeePortalEmails?: Record<
+    string,
+    { inviteSentAt?: string; reminderSentAt?: string }
+  >;
   trackedDurationSeconds?: number | null;
   trackedMinutes?: number | null;
 };

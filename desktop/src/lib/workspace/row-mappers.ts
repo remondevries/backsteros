@@ -10,6 +10,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   coerceContactLanguages,
+  normalizeMeetingAttendeePortalEmails,
   normalizeOrganizationEmailsInput,
   normalizeOrganizationPhonesInput,
 } from "@backsteros/contracts";
@@ -53,6 +54,14 @@ export function parseMeetingAttendeeContactIdsFromRow(
 ): string[] {
   return parseStringIdArray(
     row.attendee_contact_ids ?? row.attendeeContactIds,
+  );
+}
+
+export function parseMeetingAttendeePortalEmailsFromRow(
+  row: Record<string, unknown>,
+): MeetingListItem["attendeePortalEmails"] {
+  return normalizeMeetingAttendeePortalEmails(
+    row.attendee_portal_emails ?? row.attendeePortalEmails,
   );
 }
 
@@ -257,11 +266,14 @@ export function mapMeeting(
   meeting: ApiMeeting,
   projectsById: Map<string, ApiProject>,
 ): MeetingListItem {
+  const meetingRow = meeting as unknown as Record<string, unknown>;
   const attendeeContactIds = Array.isArray(meeting.attendeeContactIds)
     ? meeting.attendeeContactIds
-    : parseMeetingAttendeeContactIdsFromRow(
-        meeting as unknown as Record<string, unknown>,
-      );
+    : parseMeetingAttendeeContactIdsFromRow(meetingRow);
+  const attendeePortalEmails =
+    meeting.attendeePortalEmails !== undefined
+      ? normalizeMeetingAttendeePortalEmails(meeting.attendeePortalEmails)
+      : parseMeetingAttendeePortalEmailsFromRow(meetingRow);
   const project = meeting.projectId
     ? projectsById.get(meeting.projectId) ?? null
     : null;
@@ -280,6 +292,7 @@ export function mapMeeting(
     projectName: project?.name ?? null,
     organizationId: meeting.organizationId ?? null,
     attendeeContactIds,
+    attendeePortalEmails,
     startAt: meeting.startAt,
     endAt: meeting.endAt,
     trackedMinutes: meeting.trackedMinutes ?? null,

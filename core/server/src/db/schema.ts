@@ -794,6 +794,10 @@ export const meetings = pgTable(
     attendeeContactIds: jsonb("attendee_contact_ids")
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /** Per-attendee portal invite/reminder send timestamps (server-written). */
+    attendeePortalEmails: jsonb("attendee_portal_emails")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     /** video_call | in_person | phone_call */
@@ -864,6 +868,36 @@ export const crmActivities = pgTable(
     index("crm_activities_occurred_at_idx").on(table.occurredAt),
     index("crm_activities_meeting_id_idx").on(table.meetingId),
     index("crm_activities_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+/** Portal client login and project view events (staff-facing contact Logs tab). */
+export const contactPortalLogs = pgTable(
+  "contact_portal_logs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    /** login | project_view */
+    kind: text("kind").notNull(),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("contact_portal_logs_contact_occurred_idx").on(
+      table.workspaceId,
+      table.contactId,
+      table.occurredAt,
+    ),
   ],
 );
 

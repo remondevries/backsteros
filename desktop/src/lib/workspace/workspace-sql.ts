@@ -225,6 +225,7 @@ export const MEETING_LIST_COLUMNS = [
   "project_id",
   "organization_id",
   "attendee_contact_ids",
+  "attendee_portal_emails",
   "start_at",
   "end_at",
   "tracked_minutes",

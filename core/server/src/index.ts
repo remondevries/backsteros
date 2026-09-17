@@ -11,6 +11,7 @@ import {
   getCoreReplicationConfig,
 } from "./services/core-replication/config.js";
 import { startCoreReplicationWorker } from "./services/core-replication/worker.js";
+import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 
 assertPowerSyncSecrets();
@@ -55,6 +56,7 @@ serve(
     console.log(`backsteros-server listening on http://${host}:${info.port}`);
     console.log(`OpenAPI: http://${host}:${info.port}/api/v1/openapi.json`);
     startRecurringTaskRunner();
+    startMeetingPortalReminderScheduler();
     startCoreReplicationWorker();
   },
 );

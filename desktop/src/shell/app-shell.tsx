@@ -74,6 +74,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       updateActiveTabTitle={tabs.updateActiveTabTitle}
       setTabsState={tabs.setTabsState}
       onNavigate={tabs.navigateTo}
+      openHrefInNewTab={tabs.openHrefInNewTab}
     >
       <ShellShortcutHost
         tabs={tabs}

@@ -18,6 +18,7 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
+import { rethrowPortalUsernameConflict } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword } from "../lib/portal-password.js";
 import {
   assertPrivateStorageKey,
@@ -497,21 +498,25 @@ export async function createContact(
     portalSettingsInput === null || portalSettingsInput === undefined
       ? {}
       : portalSettingsInput;
-  const [row] = await executor
-    .insert(contacts)
-    .values({
-      id,
-      workspaceId,
-      ...rest,
-      ...names,
-      ...emailFields,
-      ...phoneFields,
-      number,
-      portalPasswordHash,
-      portalSettings,
-    } as typeof contacts.$inferInsert)
-    .returning();
-  return row!;
+  try {
+    const [row] = await executor
+      .insert(contacts)
+      .values({
+        id,
+        workspaceId,
+        ...rest,
+        ...names,
+        ...emailFields,
+        ...phoneFields,
+        number,
+        portalPasswordHash,
+        portalSettings,
+      } as typeof contacts.$inferInsert)
+      .returning();
+    return row!;
+  } catch (error) {
+    rethrowPortalUsernameConflict(error);
+  }
 }
 
 export async function getContactByPortalUsername(
@@ -533,6 +538,42 @@ export async function getContactByPortalUsername(
     )
     .limit(1);
   return row ?? null;
+}
+
+/** Resolve a portal login identifier — username first, then a unique email match. */
+export async function getContactForPortalLogin(
+  workspaceId: string,
+  username: string,
+  executor: DbExecutor = db,
+) {
+  const byUsername = await getContactByPortalUsername(
+    workspaceId,
+    username,
+    executor,
+  );
+  if (byUsername) return byUsername;
+
+  const normalized = username.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const rows = await executor
+    .select()
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        isNull(contacts.deletedAt),
+        sql`${contacts.portalPasswordHash} is not null`,
+        or(
+          sql`lower(${contacts.email}) = ${normalized}`,
+          sql`exists (
+            select 1 from jsonb_array_elements(${contacts.emails}) as e(value)
+            where lower(coalesce(e.value->>'address', e.value #>> '{}')) = ${normalized}
+          )`,
+        ),
+      ),
+    );
+  return rows.length === 1 ? rows[0]! : null;
 }
 
 export async function getContactById(
@@ -694,22 +735,26 @@ export async function updateContact(
   }
   const portalSettings =
     portalSettingsInput === null ? {} : portalSettingsInput;
-  const [row] = await executor
-    .update(contacts)
-    .set({
-      ...rest,
-      ...(namePatch ?? {}),
-      ...(emailPatch ?? {}),
-      ...(phonePatch ?? {}),
-      ...(portalPasswordHash !== undefined ? { portalPasswordHash } : {}),
-      ...(portalSettingsInput !== undefined ? { portalSettings } : {}),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, id), isNull(contacts.deletedAt)),
-    )
-    .returning();
-  return row ?? null;
+  try {
+    const [row] = await executor
+      .update(contacts)
+      .set({
+        ...rest,
+        ...(namePatch ?? {}),
+        ...(emailPatch ?? {}),
+        ...(phonePatch ?? {}),
+        ...(portalPasswordHash !== undefined ? { portalPasswordHash } : {}),
+        ...(portalSettingsInput !== undefined ? { portalSettings } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, id), isNull(contacts.deletedAt)),
+      )
+      .returning();
+    return row ?? null;
+  } catch (error) {
+    rethrowPortalUsernameConflict(error);
+  }
 }
 
 export async function deleteContact(

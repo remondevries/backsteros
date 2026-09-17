@@ -18,6 +18,7 @@ import { MeetingSchedulingSettingsProvider } from "../lib/use-meeting-scheduling
 import { DesktopOverlayComposeContextPublisher } from "../components/desktop-overlay-compose-context-publisher";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
 import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
+import { ModClickNewTabListener } from "../components/mod-click-new-tab-listener";
 import { AppShellMentionCatalog } from "./app-shell-mention-catalog";
 import { AppShellTaskSideEffects } from "./app-shell-task-side-effects";
 import { DesktopClientLink } from "./app-shell-links";
@@ -55,6 +56,7 @@ type ShellRuntimeProvidersProps = {
     typeof AppShellTaskSideEffects
   >["setTabsState"];
   onNavigate: (href: string) => void;
+  openHrefInNewTab: (href: string) => void;
 };
 
 export function ShellRuntimeProviders({
@@ -68,6 +70,7 @@ export function ShellRuntimeProviders({
   updateActiveTabTitle,
   setTabsState,
   onNavigate,
+  openHrefInNewTab,
 }: ShellRuntimeProvidersProps) {
   return (
     <ClientLinkProvider Link={DesktopClientLink}>
@@ -82,6 +85,7 @@ export function ShellRuntimeProviders({
               <DesktopOverlayMainNavigationListener />
               <DesktopOverlayComposeContextPublisher />
               <ExternalOpenHrefListener />
+              <ModClickNewTabListener onOpenHrefInNewTab={openHrefInNewTab} />
               <RegisterPageTitleProvider
                 pathname={pathname}
                 registerPageIcon={registerPageIcon}

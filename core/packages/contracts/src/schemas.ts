@@ -1045,6 +1045,36 @@ export const portalAuthLoginSchema = z.object({
   password: z.string().min(8).max(256),
 });
 
+export const portalContactLogKindSchema = z.enum(["login", "project_view"]);
+export type PortalContactLogKind = z.infer<typeof portalContactLogKindSchema>;
+
+export const createPortalContactLogSchema = z.object({
+  kind: portalContactLogKindSchema,
+  projectId: z.string().trim().min(1).optional(),
+  occurredAt: isoDateSchema.optional(),
+});
+
+export type CreatePortalContactLogInput = z.infer<
+  typeof createPortalContactLogSchema
+>;
+
+export const portalContactLogSchema = z.object({
+  id: z.string(),
+  contactId: z.string(),
+  kind: portalContactLogKindSchema,
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable().optional(),
+  projectKey: z.string().nullable().optional(),
+  occurredAt: z.string(),
+  createdAt: z.string(),
+});
+
+export type PortalContactLog = z.infer<typeof portalContactLogSchema>;
+
+export const portalContactLogListSchema = z.object({
+  logs: z.array(portalContactLogSchema),
+});
+
 const contactWritableFieldsSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
@@ -3142,6 +3172,57 @@ export const updateMeetingSchema = z
     },
   );
 
+export const meetingAttendeePortalEmailStatusSchema = z.object({
+  inviteSentAt: isoDateSchema.optional(),
+  reminderSentAt: isoDateSchema.optional(),
+});
+
+export const meetingAttendeePortalEmailsSchema = z.record(
+  z.string(),
+  meetingAttendeePortalEmailStatusSchema,
+);
+
+export type MeetingAttendeePortalEmailStatus = z.infer<
+  typeof meetingAttendeePortalEmailStatusSchema
+>;
+export type MeetingAttendeePortalEmails = z.infer<
+  typeof meetingAttendeePortalEmailsSchema
+>;
+
+export function normalizeMeetingAttendeePortalEmails(
+  raw: unknown,
+): MeetingAttendeePortalEmails {
+  if (typeof raw === "string") {
+    try {
+      return normalizeMeetingAttendeePortalEmails(JSON.parse(raw));
+    } catch {
+      return {};
+    }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  const result: MeetingAttendeePortalEmails = {};
+  for (const [contactId, entry] of Object.entries(raw)) {
+    if (!contactId.trim() || !entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const status: MeetingAttendeePortalEmailStatus = {};
+    if (typeof record.inviteSentAt === "string" && record.inviteSentAt.trim()) {
+      status.inviteSentAt = record.inviteSentAt;
+    }
+    if (
+      typeof record.reminderSentAt === "string" &&
+      record.reminderSentAt.trim()
+    ) {
+      status.reminderSentAt = record.reminderSentAt;
+    }
+    if (status.inviteSentAt || status.reminderSentAt) {
+      result[contactId] = status;
+    }
+  }
+  return result;
+}
+
 export const meetingSchema = z.object({
   id: z.string(),
   number: z.number().int(),
@@ -3153,6 +3234,8 @@ export const meetingSchema = z.object({
   projectId: z.string().nullable(),
   organizationId: z.string().nullable(),
   attendeeContactIds: z.array(z.string()),
+  /** Server-recorded portal invite/reminder sends per attendee contact id. */
+  attendeePortalEmails: meetingAttendeePortalEmailsSchema.default({}),
   startAt: isoDateSchema,
   endAt: isoDateSchema,
   format: z.enum(["video_call", "in_person", "phone_call"]).optional(),

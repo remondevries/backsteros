@@ -2,6 +2,7 @@ export const CONTACT_SECTION_IDS = [
   "overview",
   "details",
   "portal",
+  "logs",
   "tasks",
   "letters",
 ] as const;
@@ -37,10 +38,18 @@ export const CONTACT_PORTAL_SECTION: ContactSectionConfig = {
   supportsDetail: false,
 };
 
+export const CONTACT_PORTAL_LOGS_SECTION: ContactSectionConfig = {
+  id: "logs",
+  label: "Logs",
+  segment: "logs",
+  supportsDetail: false,
+};
+
 /** All contact sections including tasks/letters (routing + org-scoped card). */
 export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
   ...CONTACT_CARD_SECTIONS,
   CONTACT_PORTAL_SECTION,
+  CONTACT_PORTAL_LOGS_SECTION,
   { id: "tasks", label: "Tasks", segment: "tasks", supportsDetail: true },
   { id: "letters", label: "Letters", segment: "letters", supportsDetail: true },
 ];
@@ -51,18 +60,31 @@ export function isContactSectionId(value: string): value is ContactSectionId {
 
 export function isContactCardSectionId(
   value: string,
-): value is "overview" | "details" | "portal" {
-  return value === "overview" || value === "details" || value === "portal";
+): value is "overview" | "details" | "portal" | "logs" {
+  return (
+    value === "overview" ||
+    value === "details" ||
+    value === "portal" ||
+    value === "logs"
+  );
 }
 
-/** Card tabs for a contact — inserts Portal between Details and More when Clients. */
+/** Card tabs for a contact — Portal (+ Logs when configured) before More. */
 export function resolveContactCardSections(options?: {
   showPortal?: boolean;
+  showPortalLogs?: boolean;
 }): ContactSectionConfig[] {
   if (!options?.showPortal) {
     return [...CONTACT_CARD_SECTIONS];
   }
-  return [...CONTACT_CARD_SECTIONS, CONTACT_PORTAL_SECTION];
+  const sections: ContactSectionConfig[] = [
+    ...CONTACT_CARD_SECTIONS,
+    CONTACT_PORTAL_SECTION,
+  ];
+  if (options.showPortalLogs) {
+    sections.push(CONTACT_PORTAL_LOGS_SECTION);
+  }
+  return sections;
 }
 
 /** Parse a URL segment (`tasks`, `letters`, …). Empty / missing → overview. */

@@ -338,6 +338,7 @@ const meetings = new Table({
   project_id: column.text,
   organization_id: column.text,
   attendee_contact_ids: column.text,
+  attendee_portal_emails: column.text,
   start_at: column.text,
   end_at: column.text,
   tracked_minutes: column.integer,

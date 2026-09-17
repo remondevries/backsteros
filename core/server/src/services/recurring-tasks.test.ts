@@ -10,13 +10,8 @@ describe("recurring task runner hybrid", () => {
     "utf8",
   );
 
-  it("does not spawn on local-core (cloud leader owns due ticks)", () => {
-    assert.ok(src.includes("shouldRunRecurringTaskSpawner"));
-    assert.ok(
-      src.includes(
-        'process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local"',
-      ),
-    );
+  it("uses hybrid scheduled-job leadership (local-primary, cloud fallback)", () => {
+    assert.ok(src.includes("shouldRunHybridScheduledJob"));
   });
 
   it("emits ordered task + recurring_task sync_events when a template spawns", () => {

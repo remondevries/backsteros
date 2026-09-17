@@ -16,6 +16,13 @@ import { ContactLanguageFlagIcon } from "./contact-language-flag-icon.js";
 export type ContactLanguagesEditorProps = {
   languages: ContactLanguage[];
   disabled?: boolean;
+  /**
+   * `multiple` (default) — Details spoken languages.
+   * `single` — one preferred language (Portal UI locale).
+   */
+  selectionMode?: "multiple" | "single";
+  /** Restrict selectable codes (Portal uses `nl` | `en`). */
+  allowedLanguages?: readonly ContactLanguage[];
   onChange: (languages: ContactLanguage[]) => void;
   onSave: (languages: ContactLanguage[]) => void;
 };
@@ -37,8 +44,17 @@ function committedFrom(rows: LanguageRow[]): ContactLanguage[] {
   );
 }
 
-function rowsFromRemote(languages: ContactLanguage[]): LanguageRow[] {
-  return coerceContactLanguages(languages).map((code) => ({
+function rowsFromRemote(
+  languages: ContactLanguage[],
+  selectionMode: "multiple" | "single",
+): LanguageRow[] {
+  const codes = coerceContactLanguages(languages);
+  const limited =
+    selectionMode === "single" ? codes.slice(0, 1) : codes;
+  if (limited.length === 0 && selectionMode === "single") {
+    return [{ id: "lang-draft:portal", code: null }];
+  }
+  return limited.map((code) => ({
     id: `lang:${code}`,
     code,
   }));
@@ -51,42 +67,77 @@ function createDraftRowId(): string {
 }
 
 /**
- * Multi language chips for contact Details — value-only dropdowns.
- * Plus adds a local “Select language” draft (no save) until a value is chosen,
- * matching email/phone chip stability while editing.
+ * Language chips for contact Details (multi) or Portal tab (single).
+ * Plus adds a local “Select language” draft (no save) until a value is chosen.
  */
 export function ContactLanguagesEditor({
   languages: remoteLanguages,
   disabled = false,
+  selectionMode = "multiple",
+  allowedLanguages,
   onChange,
   onSave,
 }: ContactLanguagesEditorProps) {
-  const remote = useMemo(
-    () => coerceContactLanguages(remoteLanguages),
-    [remoteLanguages],
-  );
+  const catalog = useMemo(() => {
+    if (!allowedLanguages || allowedLanguages.length === 0) {
+      return [...CONTACT_LANGUAGES];
+    }
+    const allowed = new Set(allowedLanguages);
+    return CONTACT_LANGUAGES.filter((code) => allowed.has(code));
+  }, [allowedLanguages]);
+
+  const remote = useMemo(() => {
+    const codes = coerceContactLanguages(remoteLanguages).filter((code) =>
+      catalog.includes(code),
+    );
+    return selectionMode === "single" ? codes.slice(0, 1) : codes;
+  }, [remoteLanguages, catalog, selectionMode]);
+
   const remoteKey = languagesKey(remote);
-  const [rows, setRows] = useState<LanguageRow[]>(() => rowsFromRemote(remote));
+  const [rows, setRows] = useState<LanguageRow[]>(() =>
+    rowsFromRemote(remote, selectionMode),
+  );
   const [rowsSource, setRowsSource] = useState(remoteKey);
 
   if (remoteKey !== rowsSource) {
     setRowsSource(remoteKey);
     // Adopt remote only when local committed values still match the prior
-    // source (no in-flight edits). Keep trailing draft chips.
+    // source (no in-flight edits). Keep trailing draft chips in multi mode.
     if (languagesKey(committedFrom(rows)) === rowsSource) {
-      const drafts = rows.filter((row) => row.code == null);
-      setRows([...rowsFromRemote(remote), ...drafts]);
+      if (selectionMode === "single") {
+        setRows(rowsFromRemote(remote, selectionMode));
+      } else {
+        const drafts = rows.filter((row) => row.code == null);
+        setRows([...rowsFromRemote(remote, selectionMode), ...drafts]);
+      }
     }
+  }
+
+  function persistCommitted(committed: ContactLanguage[]) {
+    const next =
+      selectionMode === "single" ? committed.slice(0, 1) : committed;
+    onChange(next);
+    onSave(next);
   }
 
   function commitRows(next: LanguageRow[]) {
     const committed = committedFrom(next);
-    setRows(next);
-    onChange(committed);
-    onSave(committed);
+    setRows(
+      selectionMode === "single"
+        ? committed.length > 0
+          ? [{ id: `lang:${committed[0]}`, code: committed[0]! }]
+          : [{ id: createDraftRowId(), code: null }]
+        : next,
+    );
+    persistCommitted(committed);
   }
 
   function updateAt(index: number, nextCode: ContactLanguage) {
+    if (!catalog.includes(nextCode)) return;
+    if (selectionMode === "single") {
+      commitRows([{ id: `lang:${nextCode}`, code: nextCode }]);
+      return;
+    }
     const usedElsewhere = new Set(
       rows
         .filter((_, entryIndex) => entryIndex !== index)
@@ -102,48 +153,58 @@ export function ContactLanguagesEditor({
 
   function removeAt(index: number) {
     const removed = rows[index];
+    if (selectionMode === "single") {
+      setRows([{ id: createDraftRowId(), code: null }]);
+      if (removed?.code != null) {
+        persistCommitted([]);
+      }
+      return;
+    }
     const next = rows.filter((_, entryIndex) => entryIndex !== index);
     setRows(next);
     // Draft-only remove: no persist. Removing a saved language: persist.
     if (removed?.code != null) {
-      const committed = committedFrom(next);
-      onChange(committed);
-      onSave(committed);
+      persistCommitted(committedFrom(next));
     }
   }
 
   function addLanguage() {
-    if (disabled) return;
+    if (disabled || selectionMode === "single") return;
     const committed = committedFrom(rows);
     const draftCount = rows.filter((row) => row.code == null).length;
-    if (committed.length + draftCount >= CONTACT_LANGUAGES.length) return;
+    if (committed.length + draftCount >= catalog.length) return;
     // Local draft only — do not save until the user picks a language.
     setRows([...rows, { id: createDraftRowId(), code: null }]);
   }
 
   const canAdd =
+    selectionMode === "multiple" &&
     !disabled &&
     committedFrom(rows).length +
       rows.filter((row) => row.code == null).length <
-      CONTACT_LANGUAGES.length;
+      catalog.length;
 
   return (
     <div className="contact-detail-chips">
       <div className="contact-detail-chips__row">
         {rows.map((row, index) => {
           const usedElsewhere = new Set(
-            rows
-              .filter((_, entryIndex) => entryIndex !== index)
-              .map((entry) => entry.code)
-              .filter((code): code is ContactLanguage => code != null),
+            selectionMode === "single"
+              ? []
+              : rows
+                  .filter((_, entryIndex) => entryIndex !== index)
+                  .map((entry) => entry.code)
+                  .filter((code): code is ContactLanguage => code != null),
           );
-          const options = CONTACT_LANGUAGES.filter(
-            (option) => option === row.code || !usedElsewhere.has(option),
-          ).map((option) => ({
-            value: option,
-            label: contactLanguageLabel(option),
-            icon: <ContactLanguageFlagIcon code={option} size={14} />,
-          }));
+          const options = catalog
+            .filter(
+              (option) => option === row.code || !usedElsewhere.has(option),
+            )
+            .map((option) => ({
+              value: option,
+              label: contactLanguageLabel(option),
+              icon: <ContactLanguageFlagIcon code={option} size={14} />,
+            }));
           const label = row.code
             ? contactLanguageLabel(row.code)
             : "Select language";
@@ -222,16 +283,18 @@ export function ContactLanguagesEditor({
             </div>
           );
         })}
-        <button
-          type="button"
-          className="contact-detail-chips__add"
-          disabled={!canAdd}
-          aria-label="Add language"
-          title="Add language"
-          onClick={addLanguage}
-        >
-          <SidePanelPlusIcon />
-        </button>
+        {selectionMode === "multiple" ? (
+          <button
+            type="button"
+            className="contact-detail-chips__add"
+            disabled={!canAdd}
+            aria-label="Add language"
+            title="Add language"
+            onClick={addLanguage}
+          >
+            <SidePanelPlusIcon />
+          </button>
+        ) : null}
       </div>
     </div>
   );

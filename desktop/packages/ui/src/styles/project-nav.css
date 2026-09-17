@@ -1909,6 +1909,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   height: 24px;
   margin: 0;
   padding: 0 8px;
@@ -1931,6 +1932,17 @@
   cursor: default;
 }
 
+.contact-portal-tab__password-spinner {
+  flex-shrink: 0;
+  animation: contact-portal-tab-spin 0.8s linear infinite;
+}
+
+@keyframes contact-portal-tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .contact-portal-tab__password-saved {
   display: inline-flex;
   align-items: center;
@@ -1938,6 +1950,143 @@
   width: 24px;
   height: 24px;
   color: #2f9e44;
+}
+
+/* Portal tab — integrations-02 style staff email actions. */
+.contact-portal-email-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-portal-email-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-portal-email-list__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  padding: 10px 12px;
+}
+
+.contact-portal-email-list__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.contact-portal-email-list__copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.contact-portal-email-list__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.contact-portal-email-list__description {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.contact-portal-email-list__sent-at {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
+.contact-portal-email-list__connect {
+  flex-shrink: 0;
+  min-width: 6.5rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer !important;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 6px 12px;
+}
+
+.contact-portal-email-list__connect:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.contact-portal-email-list__connect:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.45;
+}
+
+/* Contact Portal tab — client activity logs. */
+.contact-portal-logs-tab__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-portal-logs-tab__row {
+  display: flex;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  padding: 10px 12px;
+}
+
+.contact-portal-logs-tab__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contact-portal-logs-tab__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.contact-portal-logs-tab__when {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+}
+
+.contact-portal-logs-tab__hint {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.contact-portal-logs-tab__error {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--destructive, #e03131);
 }
 
 .contact-portal-tab__credential-action:hover {

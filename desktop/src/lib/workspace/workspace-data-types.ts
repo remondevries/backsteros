@@ -85,6 +85,11 @@ export type DesktopWorkspaceData = {
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchMeeting: (id: string, values: Record<string, unknown>) => Promise<void>;
+  /** Merge server-written meeting fields locally (no REST/PowerSync upload). */
+  mergeMeetingLocalFields: (
+    id: string,
+    values: Record<string, unknown>,
+  ) => void;
   patchContact: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchOrganization: (
     id: string,

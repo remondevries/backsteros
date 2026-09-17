@@ -729,6 +729,20 @@
     "when": 1793900000000,
     "tag": "0112_file_task_callbacks",
     "breakpoints": true
+  },
+  {
+    "idx": 104,
+    "version": "7",
+    "when": 1794000000000,
+    "tag": "0113_meeting_attendee_portal_emails",
+    "breakpoints": true
+  },
+  {
+    "idx": 105,
+    "version": "7",
+    "when": 1794100000000,
+    "tag": "0114_contact_portal_logs",
+    "breakpoints": true
   }
 ]
 }

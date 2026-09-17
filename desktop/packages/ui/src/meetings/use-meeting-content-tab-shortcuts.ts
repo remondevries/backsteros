@@ -11,17 +11,19 @@ import {
 } from "./meeting-content-tab-shortcuts.js";
 
 /**
- * `1` / `2` / `3` → Summary / Notes / Transcription on the open meeting panel.
+ * Digit keys switch among the visible meeting content tabs on the open panel.
  * Calendar page-mode digit shortcuts must be disabled while this is active.
  */
 export function useMeetingContentTabShortcuts({
   enabled = true,
   activeTab,
   onTabChange,
+  visibleTabs,
 }: {
   enabled?: boolean;
   activeTab: MeetingContentTab;
   onTabChange: (tab: MeetingContentTab) => void;
+  visibleTabs: readonly MeetingContentTab[];
 }) {
   const { openRef } = useCommandPaletteRuntimeRefs();
 
@@ -34,7 +36,11 @@ export function useMeetingContentTabShortcuts({
       if (isSearchableDropdownPanelOpen()) return;
       if (event.repeat) return;
 
-      const nextTab = resolveMeetingContentTabFromShortcutKey(event.key, event);
+      const nextTab = resolveMeetingContentTabFromShortcutKey(
+        event.key,
+        event,
+        visibleTabs,
+      );
       if (!nextTab) return;
       if (nextTab === activeTab) return;
 
@@ -46,5 +52,5 @@ export function useMeetingContentTabShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activeTab, enabled, onTabChange, openRef]);
+  }, [activeTab, enabled, onTabChange, openRef, visibleTabs]);
 }

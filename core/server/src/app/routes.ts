@@ -83,6 +83,7 @@ import {
   createCrmActivityNoteSchema,
   crmActivityFeedQuerySchema,
   portalAuthLoginSchema,
+  createPortalContactLogSchema,
   avatarSignedUrlQuerySchema,
   publicAvatarQuerySchema,
 } from "@backsteros/contracts";
@@ -105,7 +106,9 @@ import {
   toTaskComment,
 } from "../lib/mappers.js";
 import { toPublicContact } from "../lib/public-contact.js";
+import { PortalUsernameConflictError } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword, verifyPortalPassword } from "../lib/portal-password.js";
+import { proxyErrorStatus } from "../lib/proxy-http-status.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
 import {
@@ -174,6 +177,7 @@ import * as meetingSchedulingService from "../services/meeting-scheduling.js";
 import * as crmGroupsService from "../services/crm-groups.js";
 import * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 import * as crmActivitiesService from "../services/crm-activities.js";
+import * as portalContactLogsService from "../services/portal-contact-logs.js";
 import * as githubService from "../services/github.js";
 import { resolveGithubAccessToken } from "../services/github-auth.js";
 import * as projectFsService from "../services/project-fs.js";
@@ -4147,6 +4151,126 @@ export function registerApiRoutes(app: Hono) {
     },
   );
 
+  app.post("/api/v1/meetings/:id/send-invite", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const meetingId = c.req.param("id");
+    const body = (await c.req.json().catch(() => null)) as {
+      contactId?: string;
+    } | null;
+    const contactId = body?.contactId?.trim() ?? "";
+    if (!contactId) {
+      return c.json({ error: "contactId is required" }, 400);
+    }
+    const meeting = await meetingService.getMeetingById(
+      auth.workspaceId,
+      meetingId,
+    );
+    if (!meeting) return c.json(notFound("Meeting"), 404);
+    if (meeting.format !== "video_call") {
+      return c.json(
+        {
+          error: "Meeting emails are only supported for video calls",
+          code: "meeting_not_video_call",
+        },
+        400,
+      );
+    }
+    if (!meeting.attendeeContactIds.includes(contactId)) {
+      return c.json(
+        {
+          error: "Contact is not an attendee on this meeting",
+          code: "contact_not_attendee",
+        },
+        400,
+      );
+    }
+    const { sendMeetingPortalEmailToAttendee } = await import(
+      "../services/meeting-portal-emails.js"
+    );
+    const result = await sendMeetingPortalEmailToAttendee({
+      workspaceId: auth.workspaceId,
+      meetingId,
+      contactId,
+      kind: "invite",
+    });
+    if (!result.ok) {
+      if (result.code === "not_found") {
+        return c.json(notFound("Meeting"), 404);
+      }
+      return c.json(
+        { error: result.error, code: result.code },
+        proxyErrorStatus(result.status),
+      );
+    }
+    return c.json({
+      ok: true,
+      email: result.email,
+      message: result.message,
+      attendeePortalEmails: result.attendeePortalEmails,
+    });
+  });
+
+  app.post("/api/v1/meetings/:id/send-reminder", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const meetingId = c.req.param("id");
+    const body = (await c.req.json().catch(() => null)) as {
+      contactId?: string;
+    } | null;
+    const contactId = body?.contactId?.trim() ?? "";
+    if (!contactId) {
+      return c.json({ error: "contactId is required" }, 400);
+    }
+    const meeting = await meetingService.getMeetingById(
+      auth.workspaceId,
+      meetingId,
+    );
+    if (!meeting) return c.json(notFound("Meeting"), 404);
+    if (meeting.format !== "video_call") {
+      return c.json(
+        {
+          error: "Meeting emails are only supported for video calls",
+          code: "meeting_not_video_call",
+        },
+        400,
+      );
+    }
+    if (!meeting.attendeeContactIds.includes(contactId)) {
+      return c.json(
+        {
+          error: "Contact is not an attendee on this meeting",
+          code: "contact_not_attendee",
+        },
+        400,
+      );
+    }
+    const { sendMeetingPortalEmailToAttendee } = await import(
+      "../services/meeting-portal-emails.js"
+    );
+    const result = await sendMeetingPortalEmailToAttendee({
+      workspaceId: auth.workspaceId,
+      meetingId,
+      contactId,
+      kind: "reminder",
+    });
+    if (!result.ok) {
+      if (result.code === "not_found") {
+        return c.json(notFound("Meeting"), 404);
+      }
+      return c.json(
+        { error: result.error, code: result.code },
+        proxyErrorStatus(result.status),
+      );
+    }
+    return c.json({
+      ok: true,
+      email: result.email,
+      message: result.message,
+      attendeePortalEmails: result.attendeePortalEmails,
+    });
+  });
+
   app.delete("/api/v1/meetings/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
@@ -4457,7 +4581,7 @@ export function registerApiRoutes(app: Hono) {
       const auth = getAuth(c);
       if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
       const body = c.req.valid("json");
-      const row = await circleService.getContactByPortalUsername(
+      const row = await circleService.getContactForPortalLogin(
         auth.workspaceId,
         body.username,
       );
@@ -4506,40 +4630,61 @@ export function registerApiRoutes(app: Hono) {
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
     const body = await prepareContactWriteBody(c.req.valid("json"));
     if (isRestLeaderFirstWrite()) {
-      const contactId = newId();
-      await commitRestEntityWrite({
-        workspaceId: auth.workspaceId,
-        entity: "contact",
-        entityId: contactId,
-        operation: "upsert",
-        payload: buildContactRestPayload(contactId, body),
-      });
-      const row = await circleService.getContactById(auth.workspaceId, contactId);
-      if (!row) return c.json({ error: "Contact create failed", code: "internal" }, 500);
-      await crmGroupsService.inheritOrganizationGroupMemberships(
-        auth.workspaceId,
-        row.id,
-      );
-      return c.json(toPublicContact(row), 201);
-    }
-    const row = await circleService.createContact(auth.workspaceId, body);
-    await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
-    nudgeContactLive(auth, row.id, "upsert");
-    for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
-      auth.workspaceId,
-      row.id,
-    )) {
-      const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
-      if (dbRow) {
-        await recordCrmGroupMemberRestSyncEvent(
+      try {
+        const contactId = newId();
+        await commitRestEntityWrite({
+          workspaceId: auth.workspaceId,
+          entity: "contact",
+          entityId: contactId,
+          operation: "upsert",
+          payload: buildContactRestPayload(contactId, body),
+        });
+        const row = await circleService.getContactById(auth.workspaceId, contactId);
+        if (!row) return c.json({ error: "Contact create failed", code: "internal" }, 500);
+        await crmGroupsService.inheritOrganizationGroupMemberships(
           auth.workspaceId,
-          dbRow,
-          "upsert",
+          row.id,
         );
-        nudgeCrmGroupMemberLive(auth, dbRow.id, "upsert");
+        nudgeContactLive(auth, row.id, "upsert");
+        return c.json(toPublicContact(row), 201);
+      } catch (error) {
+        if (error instanceof PortalUsernameConflictError) {
+          return c.json(
+            { error: error.message, code: error.code },
+            409,
+          );
+        }
+        throw error;
       }
     }
-    return c.json(toPublicContact(row), 201);
+    try {
+      const row = await circleService.createContact(auth.workspaceId, body);
+      await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+      nudgeContactLive(auth, row.id, "upsert");
+      for (const member of await crmGroupsService.inheritOrganizationGroupMemberships(
+        auth.workspaceId,
+        row.id,
+      )) {
+        const dbRow = await loadCrmGroupMemberRow(auth.workspaceId, member.id);
+        if (dbRow) {
+          await recordCrmGroupMemberRestSyncEvent(
+            auth.workspaceId,
+            dbRow,
+            "upsert",
+          );
+          nudgeCrmGroupMemberLive(auth, dbRow.id, "upsert");
+        }
+      }
+      return c.json(toPublicContact(row), 201);
+    } catch (error) {
+      if (error instanceof PortalUsernameConflictError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          409,
+        );
+      }
+      throw error;
+    }
   });
   app.patch("/api/v1/contacts/:id", zValidator("json", contactSchema.partial()), async (c) => {
     const auth = getAuth(c);
@@ -4553,45 +4698,68 @@ export function registerApiRoutes(app: Hono) {
     }
     const patch = await prepareContactWriteBody(raw);
     if (isRestLeaderFirstWrite()) {
-      const existing = await circleService.getContactById(auth.workspaceId, contactId);
-      await commitRestEntityWrite({
-        workspaceId: auth.workspaceId,
-        entity: "contact",
-        entityId: contactId,
-        operation: "upsert",
-        payload: buildContactRestPayload(
-          contactId,
-          existing ? patch : { ...patch, firstName: patch.firstName ?? patch.name ?? "Contact" },
-        ),
-      });
-      const row = await circleService.getContactById(auth.workspaceId, contactId);
-      if (row && patch.organizationId !== undefined) {
-        await crmGroupsService.inheritOrganizationGroupMemberships(
-          auth.workspaceId,
-          row.id,
-        );
-      }
-      return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
-    }
-    let row = await circleService.updateContact(auth.workspaceId, contactId, patch);
-    if (!row) {
-      // Heal local-only PowerSync contacts that never uploaded: create with the
-      // client id so membership / relationship writes can proceed.
       try {
-        row = await circleService.createContact(
-          auth.workspaceId,
-          {
-            ...patch,
-            firstName:
-              patch.firstName ??
-              (typeof patch.name === "string" ? patch.name : null) ??
-              "Contact",
-          } as Parameters<typeof circleService.createContact>[1],
-          contactId,
-        );
-      } catch {
-        return c.json(notFound("Contact"), 404);
+        const existing = await circleService.getContactById(auth.workspaceId, contactId);
+        await commitRestEntityWrite({
+          workspaceId: auth.workspaceId,
+          entity: "contact",
+          entityId: contactId,
+          operation: "upsert",
+          payload: buildContactRestPayload(
+            contactId,
+            existing ? patch : { ...patch, firstName: patch.firstName ?? patch.name ?? "Contact" },
+          ),
+        });
+        const row = await circleService.getContactById(auth.workspaceId, contactId);
+        if (row && patch.organizationId !== undefined) {
+          await crmGroupsService.inheritOrganizationGroupMemberships(
+            auth.workspaceId,
+            row.id,
+          );
+        }
+        if (row) nudgeContactLive(auth, row.id, "upsert");
+        return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
+      } catch (error) {
+        if (error instanceof PortalUsernameConflictError) {
+          return c.json(
+            { error: error.message, code: error.code },
+            409,
+          );
+        }
+        throw error;
       }
+    }
+    let row: Awaited<ReturnType<typeof circleService.updateContact>>;
+    try {
+      row = await circleService.updateContact(auth.workspaceId, contactId, patch);
+      if (!row) {
+        // Heal local-only PowerSync contacts that never uploaded: create with the
+        // client id so membership / relationship writes can proceed.
+        try {
+          row = await circleService.createContact(
+            auth.workspaceId,
+            {
+              ...patch,
+              firstName:
+                patch.firstName ??
+                (typeof patch.name === "string" ? patch.name : null) ??
+                "Contact",
+            } as Parameters<typeof circleService.createContact>[1],
+            contactId,
+          );
+        } catch (error) {
+          if (error instanceof PortalUsernameConflictError) throw error;
+          return c.json(notFound("Contact"), 404);
+        }
+      }
+    } catch (error) {
+      if (error instanceof PortalUsernameConflictError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          409,
+        );
+      }
+      throw error;
     }
     await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
     nudgeContactLive(auth, row.id, "upsert");
@@ -4613,6 +4781,50 @@ export function registerApiRoutes(app: Hono) {
     }
     return c.json(toPublicContact(row));
   });
+  app.post("/api/v1/contacts/:id/send-portal-password-reset", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+    const contactId = c.req.param("id");
+    const row = await circleService.getContactById(auth.workspaceId, contactId);
+    if (!row) return c.json(notFound("Contact"), 404);
+    const { sendPortalPasswordResetViaPortal } = await import(
+      "../lib/portal-password-reset-proxy.js"
+    );
+    const result = await sendPortalPasswordResetViaPortal(contactId);
+    if (!result.ok) {
+      return c.json(
+        { error: result.error, code: "portal_password_reset_failed" },
+        proxyErrorStatus(result.status),
+      );
+    }
+    return c.json({
+      ok: true,
+      email: result.email,
+      message: result.message,
+    });
+  });
+  app.post("/api/v1/contacts/:id/send-portal-invite", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+    const contactId = c.req.param("id");
+    const row = await circleService.getContactById(auth.workspaceId, contactId);
+    if (!row) return c.json(notFound("Contact"), 404);
+    const { sendPortalInviteViaPortal } = await import(
+      "../lib/portal-password-reset-proxy.js"
+    );
+    const result = await sendPortalInviteViaPortal(contactId);
+    if (!result.ok) {
+      return c.json(
+        { error: result.error, code: "portal_invite_failed" },
+        proxyErrorStatus(result.status),
+      );
+    }
+    return c.json({
+      ok: true,
+      email: result.email,
+      message: result.message,
+    });
+  });
   app.delete("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
@@ -4627,6 +4839,7 @@ export function registerApiRoutes(app: Hono) {
         operation: "delete",
         payload: { id: contactId },
       });
+      nudgeContactLive(auth, contactId, "delete");
       return c.body(null, 204);
     }
     const row = await circleService.deleteContact(auth.workspaceId, contactId);
@@ -5419,6 +5632,63 @@ export function registerApiRoutes(app: Hono) {
     );
     return c.json(feed);
   });
+  app.get("/api/v1/contacts/:id/portal-logs", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const contactId = c.req.param("id");
+    const contact = await circleService.getContactById(auth.workspaceId, contactId);
+    if (!contact) return c.json(notFound("Contact"), 404);
+    const rawLimit = c.req.query("limit");
+    const parsedLimit =
+      rawLimit != null ? Number.parseInt(String(rawLimit), 10) : undefined;
+    const logs = await portalContactLogsService.listPortalContactLogs(
+      auth.workspaceId,
+      contactId,
+      {
+        limit:
+          parsedLimit != null && Number.isFinite(parsedLimit)
+            ? parsedLimit
+            : undefined,
+      },
+    );
+    return c.json({ logs });
+  });
+  app.post(
+    "/api/v1/contacts/:id/portal-logs",
+    zValidator("json", createPortalContactLogSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      const contactId = c.req.param("id");
+      const contact = await circleService.getContactById(
+        auth.workspaceId,
+        contactId,
+      );
+      if (!contact) return c.json(notFound("Contact"), 404);
+      if (!contact.portalUsername?.trim()) {
+        return c.json(
+          {
+            error: "Contact has no portal account",
+            code: "portal_account_missing",
+          },
+          400,
+        );
+      }
+      const body = c.req.valid("json");
+      if (body.kind === "project_view" && !body.projectId?.trim()) {
+        return c.json(
+          { error: "projectId is required for project_view", code: "invalid" },
+          400,
+        );
+      }
+      const log = await portalContactLogsService.appendPortalContactLog(
+        auth.workspaceId,
+        contactId,
+        body,
+      );
+      return c.json(log, 201);
+    },
+  );
   app.post(
     "/api/v1/contacts/:id/activity",
     zValidator("json", createCrmActivityNoteSchema),

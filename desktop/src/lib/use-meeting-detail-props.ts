@@ -128,6 +128,7 @@ export function useMeetingDetailViewProps(
       organizationId: meeting.organizationId ?? null,
       organizationName: organization?.name ?? null,
       attendeeContactIds: meeting.attendeeContactIds ?? [],
+      attendeePortalEmails: meeting.attendeePortalEmails ?? {},
       trackedMinutes: meeting.trackedMinutes ?? null,
       trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
     };

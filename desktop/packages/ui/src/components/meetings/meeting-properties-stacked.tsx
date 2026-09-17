@@ -366,6 +366,7 @@ export function MeetingPropertiesStacked({
             </button>
           )}
         </PropertyFieldGroup>
+
       </EntityPropertiesSection>
     </div>
   );
