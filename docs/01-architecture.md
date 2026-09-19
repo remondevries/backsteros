@@ -51,7 +51,7 @@ All paths write to the same Postgres rows and object storage keys.
 
 ## Repository layout
 
-Single workspace: **`~/code/backsteros/`** (see [STRUCTURE.md](../STRUCTURE.md))
+Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (see [STRUCTURE.md](../STRUCTURE.md))
 
 ```text
 backsteros/

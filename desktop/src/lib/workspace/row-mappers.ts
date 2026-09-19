@@ -155,6 +155,7 @@ export function mapTask(
     assigneeId: task.assigneeId,
     relatedContactIds: parseStringIdArray(task.relatedContactIds),
     relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
+    labelIds: parseStringIdArray(task.labelIds),
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
@@ -179,6 +180,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   cloudflareZoneId?: string | null;
   provider?: string | null;
   category?: string | null;
+  healthCheckMode?: "simple" | "advanced" | null;
+  healthCheckDomain?: string | null;
 } {
   return {
     id: project.id,
@@ -196,6 +199,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     cloudflareZoneId: project.cloudflareZoneId ?? null,
     provider: project.provider ?? null,
     category: project.category ?? null,
+    healthCheckMode: project.healthCheckMode ?? null,
+    healthCheckDomain: project.healthCheckDomain ?? null,
     startDate: asEpoch(project.startDate),
     dueDate: asEpoch(project.dueDate),
     sortOrder: project.sortOrder,
@@ -297,6 +302,7 @@ export function mapMeeting(
     endAt: meeting.endAt,
     trackedMinutes: meeting.trackedMinutes ?? null,
     trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
+    createdAt: meeting.createdAt ?? null,
   };
 }
 

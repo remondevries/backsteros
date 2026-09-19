@@ -167,6 +167,60 @@ export function formatTimetrackingPeriodLabel(period: TimetrackingPeriod): strin
   return period.monthLabel;
 }
 
+/**
+ * Calendar days plotted on the Timetracking hours chart.
+ * Day selection expands to the containing ISO week so the line has shape.
+ */
+export function listTimetrackingChartDayYmds(
+  period: TimetrackingPeriod | null | undefined,
+): string[] {
+  if (!period) return [];
+  if (period.kind === "day") {
+    return listWeekDayYmds(startOfWeekYmd(period.ymd));
+  }
+  if (period.kind === "week") {
+    return listWeekDayYmds(period.weekKey);
+  }
+  return listMonthDayYmds(period.monthKey);
+}
+
+/**
+ * Period used for the hours chart. Day selection expands to the containing
+ * ISO week so daily points form a readable line.
+ */
+export function resolveTimetrackingChartPeriod(
+  period: TimetrackingPeriod | null | undefined,
+): TimetrackingPeriod | null {
+  if (!period) return null;
+  if (period.kind !== "day") return period;
+  const weekKey = startOfWeekYmd(period.ymd);
+  return {
+    kind: "week",
+    weekKey,
+    weekNumber: isoWeekNumber(weekKey),
+  };
+}
+
+function listWeekDayYmds(weekKey: string): string[] {
+  if (!parseYmd(weekKey)) return [];
+  const days: string[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    days.push(addDaysYmd(weekKey, i));
+  }
+  return days;
+}
+
+function listMonthDayYmds(monthKey: string): string[] {
+  const parsed = parseMonthKey(monthKey);
+  if (!parsed) return [];
+  const daysInMonth = new Date(parsed.year, parsed.month, 0).getDate();
+  const days: string[] = [];
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    days.push(formatYmd(parsed.year, parsed.month, day));
+  }
+  return days;
+}
+
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 const MONTH_SHORT = [

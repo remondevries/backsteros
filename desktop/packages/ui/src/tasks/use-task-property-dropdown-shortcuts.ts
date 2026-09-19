@@ -20,12 +20,16 @@ import {
 } from "./task-property-dropdown-keys.js";
 
 /**
- * S/P/A/D/R (and shift variants) open property dropdowns on the highlighted row
+ * S/P/A/T/W/D/R/L (and shift variants) open property dropdowns on the highlighted row
  * or compose modal — matches Next useTaskPropertyDropdownShortcuts.
+ * Plain S opens health on codebase projects, otherwise status.
+ * Plain T opens project type. Plain W opens the codebase workspace folder.
+ * Shift+A opens project area (finance account still wins when finance chrome is open).
  * On finance lists: plain C/A/O/M/R open tx fields (detail preferred when open);
  * P/G open project/goal only while the transaction detail panel is open;
  * Shift+A/C/O/G/R/M open filter or bulk chrome.
  * Plain R opens Related on tasks (or Received date on letters).
+ * Plain L opens Labels when that property is on screen.
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,

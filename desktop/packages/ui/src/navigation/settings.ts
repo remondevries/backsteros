@@ -1,6 +1,7 @@
 export type SettingsTabId =
   | "general"
   | "account"
+  | "labels"
   | "api"
   | "integrations"
   | "storage";
@@ -50,6 +51,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Sign-in details and your default assignee",
     group: "general",
     href: "/settings/account",
+  },
+  {
+    id: "labels",
+    label: "Labels",
+    description: "Tags you can attach to any task. Groups only organize this list.",
+    group: "general",
+    href: "/settings/labels",
   },
   {
     id: "integrations",

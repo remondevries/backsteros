@@ -20,6 +20,7 @@ import {
 } from "react";
 
 import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-nav/list-keyboard-nav-zone.js";
+import { TASK_PROPERTY_DROPDOWN_ATTRIBUTE } from "../../tasks/task-property-dropdown-keys.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
@@ -37,9 +38,7 @@ import {
   useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
-import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
-import { ProjectOverviewIcon } from "../projects/project-overview-icon.js";
 import { ProjectPanelDetailView } from "../projects/project-panel-detail-view.js";
 import type { ProjectDetailNestedArea } from "../projects/project-detail-view.js";
 import { ProjectPanelOverviewSkeleton } from "../skeletons/project-panel-overview-skeleton.js";
@@ -79,13 +78,16 @@ const NONE_REPO_VALUE = "__none__";
 const CODEBASE_LIST_TAB_OPTIONS = [
   { value: "tasks" as const, label: "Tasks" },
   { value: "files" as const, label: "Files" },
-  { value: "docs" as const, label: "Docs" },
+  { value: "docs" as const, label: "Documents" },
   { value: "commits" as const, label: "Commits" },
   { value: "pulls" as const, label: "PRs" },
+  { value: "updates" as const, label: "Updates" },
 ];
 
+export { CODEBASE_LIST_TAB_OPTIONS };
+
 const GITHUB_LIST_TAB_ICONS: Record<
-  Exclude<CodebaseGithubListTab, "tasks" | "files" | "docs">,
+  Exclude<CodebaseGithubListTab, "tasks" | "files" | "docs" | "updates">,
   string
 > = {
   commits: "git-commit",
@@ -102,6 +104,9 @@ function ProjectListTabIcon({ tab }: { tab: CodebaseGithubListTab }) {
   }
   if (tab === "docs") {
     return <DocumentIcon size={14} className="project-github-list-toggle__folder-icon" />;
+  }
+  if (tab === "updates") {
+    return <ProjectOcticon icon="megaphone" size={14} />;
   }
   return <ProjectOcticon icon={GITHUB_LIST_TAB_ICONS[tab]} size={14} />;
 }
@@ -135,6 +140,8 @@ function mapProjectForDetail(
     description: project.description,
     startDate: project.startDate ? new Date(project.startDate) : null,
     dueDate: project.dueDate ? new Date(project.dueDate) : null,
+    healthCheckMode: project.healthCheckMode ?? null,
+    healthCheckDomain: project.healthCheckDomain ?? null,
     taskProgress,
   };
 }
@@ -205,6 +212,7 @@ function ProjectWorkingDirectoryField({
   return (
     <button
       type="button"
+      {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "workspace" }}
       className={[
         "property-dropdown-trigger",
         "property-dropdown-trigger--inline-chip",
@@ -266,7 +274,156 @@ function ProjectWorkingDirectoryField({
   );
 }
 
-function ProjectCommitHistory({
+function ProjectGithubRepositoryField({
+  project,
+  onProjectUpdated,
+  requestJson,
+  githubRefreshToken = 0,
+}: {
+  project: ApiProject;
+  onProjectUpdated: (project: ApiProject) => void;
+  requestJson: CodebaseRequestJson;
+  githubRefreshToken?: number;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
+  const refreshToken = githubRefreshToken + retryToken;
+
+  const loadRepositories = useCallback(
+    async (api: CodebaseRequestJson, signal: AbortSignal) => {
+      if (refreshToken === 0) {
+        const cached = getCachedRepositories();
+        if (cached) return cached;
+      }
+      const result = await api<{
+        repositories: GithubRepository[];
+      }>("/api/v1/github/repositories", { signal });
+      setCachedRepositories(result.repositories);
+      return result.repositories;
+    },
+    [refreshToken],
+  );
+
+  const {
+    data: repositories,
+    error: repositoriesError,
+    loading: repositoriesLoading,
+  } = useRequestResource(requestJson, loadRepositories, [
+    project.id,
+    refreshToken,
+  ]);
+
+  useEffect(() => {
+    if (refreshToken === 0) return;
+    clearCachedRepositories();
+    setError(null);
+  }, [refreshToken]);
+
+  useEffect(() => {
+    if (repositories) setCachedRepositories(repositories);
+  }, [repositories]);
+
+  useEffect(() => {
+    function onFocus() {
+      if (document.visibilityState === "hidden") return;
+      if (!repositoriesError && !error) return;
+      setRetryToken((token) => token + 1);
+    }
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [error, repositoriesError]);
+
+  const repositoryOptions = useMemo((): SearchableDropdownOption<string>[] => {
+    const repoIcon = <ProjectOcticon icon="mark-github" size={14} />;
+    const rows = (repositories ?? getCachedRepositories() ?? []).map(
+      (repo) => ({
+        value: repo.fullName,
+        label: repo.fullName,
+        searchTerms: `${repo.fullName} ${repo.description ?? ""}`,
+        icon: repoIcon,
+      }),
+    );
+    if (
+      project.githubRepository &&
+      !rows.some((row) => row.value === project.githubRepository)
+    ) {
+      rows.unshift({
+        value: project.githubRepository,
+        label: project.githubRepository,
+        searchTerms: project.githubRepository,
+        icon: repoIcon,
+      });
+    }
+    return [
+      {
+        value: NONE_REPO_VALUE,
+        label: "No repository",
+        searchTerms: "none clear unlink",
+        icon: repoIcon,
+      },
+      ...rows,
+    ];
+  }, [project.githubRepository, repositories]);
+
+  const saveGithubRepository = useCallback(
+    async (fullName: string | null) => {
+      setSaving(true);
+      setError(null);
+      try {
+        const updated = await requestJson<ApiProject>(
+          `/api/v1/projects/${encodeURIComponent(project.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ githubRepository: fullName }),
+          },
+        );
+        onProjectUpdated(updated);
+      } catch (err) {
+        setError(apiErrorMessage(err) || "Could not save repository.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [onProjectUpdated, project.id, requestJson],
+  );
+
+  const listError = repositoriesError
+    ? apiErrorMessage(repositoriesError)
+    : null;
+  const message = error ?? listError;
+  const showLoading =
+    repositoriesLoading && !repositories && !getCachedRepositories();
+
+  return (
+    <span title={message ?? undefined}>
+      <PropertyDropdown
+        ariaLabel="GitHub repository"
+        value={project.githubRepository ?? NONE_REPO_VALUE}
+        options={repositoryOptions}
+        disabled={saving || showLoading}
+        searchPlaceholder="Search repositories…"
+        panelWidth={320}
+        panelAlign="start"
+        triggerVariant="inlineChip"
+        fallbackIcon={<ProjectOcticon icon="mark-github" size={14} />}
+        fallbackLabel={project.githubRepository ?? "Select repository…"}
+        mutedFallback={!project.githubRepository}
+        mutedSelected={!project.githubRepository}
+        onChange={(value) => {
+          void saveGithubRepository(value === NONE_REPO_VALUE ? null : value);
+        }}
+      />
+    </span>
+  );
+}
+
+export function ProjectCommitHistory({
   project,
   onProjectUpdated,
   requestJson,
@@ -320,8 +477,6 @@ function ProjectCommitHistory({
   /** True while commit/PR detail owns keyboard (Enter/Space/Tab) — hide list orange ring. */
   githubDetailEngaged?: boolean;
 }) {
-  const [repoSaving, setRepoSaving] = useState(false);
-  const [repoError, setRepoError] = useState<string | null>(null);
   const cachedSelectedBranch = getCachedSelectedBranch(
     project.id,
     project.githubRepository,
@@ -382,30 +537,6 @@ function ProjectCommitHistory({
   const [errorRefreshToken, setErrorRefreshToken] = useState(0);
   const refreshToken = githubRefreshToken + errorRefreshToken;
 
-  const loadRepositories = useCallback(
-    async (api: CodebaseRequestJson, signal: AbortSignal) => {
-      if (refreshToken === 0) {
-        const cached = getCachedRepositories();
-        if (cached) return cached;
-      }
-      const result = await api<{
-        repositories: GithubRepository[];
-      }>("/api/v1/github/repositories", { signal });
-      setCachedRepositories(result.repositories);
-      return result.repositories;
-    },
-    [refreshToken],
-  );
-
-  const {
-    data: repositories,
-    error: repositoriesError,
-    loading: repositoriesLoading,
-  } = useRequestResource(requestJson, loadRepositories, [
-    project.id,
-    refreshToken,
-  ]);
-
   useEffect(() => {
     if (refreshToken === 0) return;
     clearCachedRepositories();
@@ -414,56 +545,7 @@ function ProjectCommitHistory({
     loadedPullsKeyRef.current = null;
     setCommitsError(null);
     setPullsError(null);
-    setRepoError(null);
   }, [refreshToken, project.id]);
-
-  useEffect(() => {
-    if (repositories) setCachedRepositories(repositories);
-  }, [repositories]);
-
-  const repositoryOptions = useMemo((): SearchableDropdownOption<string>[] => {
-    const repoIcon = <ProjectOcticon icon="mark-github" size={14} />;
-    const rows = (repositories ?? getCachedRepositories() ?? []).map(
-      (repo) => ({
-        value: repo.fullName,
-        label: repo.fullName,
-        searchTerms: `${repo.fullName} ${repo.description ?? ""}`,
-        icon: repoIcon,
-      }),
-    );
-    return [
-      {
-        value: NONE_REPO_VALUE,
-        label: "No repository",
-        searchTerms: "none clear unlink",
-        icon: repoIcon,
-      },
-      ...rows,
-    ];
-  }, [repositories]);
-
-  const saveGithubRepository = useCallback(
-    async (fullName: string | null) => {
-      setRepoSaving(true);
-      setRepoError(null);
-      try {
-        const updated = await requestJson<ApiProject>(
-          `/api/v1/projects/${encodeURIComponent(project.id)}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ githubRepository: fullName }),
-          },
-        );
-        onProjectUpdated(updated);
-      } catch (error) {
-        setRepoError(apiErrorMessage(error));
-      } finally {
-        setRepoSaving(false);
-      }
-    },
-    [requestJson, onProjectUpdated, project.id],
-  );
 
   const loadBranches = useCallback(
     async (api: CodebaseRequestJson, signal: AbortSignal) => {
@@ -502,7 +584,7 @@ function ProjectCommitHistory({
   useEffect(() => {
     function onFocus() {
       if (document.visibilityState === "hidden") return;
-      if (!repositoriesError && !branchesError && !commitsError && !pullsError) {
+      if (!branchesError && !commitsError && !pullsError) {
         return;
       }
       setErrorRefreshToken((token) => token + 1);
@@ -513,7 +595,7 @@ function ProjectCommitHistory({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [branchesError, commitsError, pullsError, repositoriesError]);
+  }, [branchesError, commitsError, pullsError]);
 
   useEffect(() => {
     if (branchPayload && project.githubRepository) {
@@ -784,8 +866,6 @@ function ProjectCommitHistory({
     }));
   }, [resolvedBranchPayload?.branches]);
 
-  const showRepositoriesLoading =
-    repositoriesLoading && !repositories && !getCachedRepositories();
   const showBranchesLoading =
     Boolean(project.githubRepository) &&
     branchesLoading &&
@@ -1003,69 +1083,33 @@ function ProjectCommitHistory({
           : "project-panel-list-body"
       }
     >
-      {!minimized && listTab !== "docs" && listTab !== "files" ? (
+      {!minimized && listTab === "commits" && project.githubRepository ? (
         <div className="console-github-pane-toolbar project-details-github-toolbar">
-          <div className="project-github-repo-chip">
+          <div className="project-github-branch-chip">
             <PropertyDropdown
-              ariaLabel="GitHub repository"
-              value={project.githubRepository ?? NONE_REPO_VALUE}
-              options={repositoryOptions}
-              disabled={repoSaving || showRepositoriesLoading}
-              searchPlaceholder="Search repositories…"
-              panelWidth={320}
+              ariaLabel="Git branch"
+              value={selectedBranch}
+              options={branchOptions}
+              disabled={showBranchesLoading || branchOptions.length === 0}
+              searchPlaceholder="Search branches…"
+              panelWidth={260}
               panelAlign="start"
               triggerVariant="inlineChip"
-              fallbackIcon={<ProjectOcticon icon="mark-github" size={14} />}
-              fallbackLabel="Select repository…"
+              fallbackIcon={<ProjectOcticon icon="git-branch" size={14} />}
+              fallbackLabel="Select branch…"
               mutedFallback
-              mutedSelected={!project.githubRepository}
               onChange={(value) => {
-                void saveGithubRepository(
-                  value === NONE_REPO_VALUE ? null : value,
+                setSelectedBranch(value);
+                setCachedSelectedBranch(
+                  project.id,
+                  project.githubRepository,
+                  value,
                 );
+                loadedCommitsKeyRef.current = null;
               }}
             />
           </div>
-          {project.githubRepository ? (
-            <div className="project-github-branch-chip">
-              <PropertyDropdown
-                ariaLabel="Git branch"
-                value={selectedBranch}
-                options={branchOptions}
-                disabled={showBranchesLoading || branchOptions.length === 0}
-                searchPlaceholder="Search branches…"
-                panelWidth={260}
-                panelAlign="start"
-                triggerVariant="inlineChip"
-                fallbackIcon={<ProjectOcticon icon="git-branch" size={14} />}
-                fallbackLabel="Select branch…"
-                mutedFallback
-                onChange={(value) => {
-                  setSelectedBranch(value);
-                  setCachedSelectedBranch(
-                    project.id,
-                    project.githubRepository,
-                    value,
-                  );
-                  loadedCommitsKeyRef.current = null;
-                }}
-              />
-            </div>
-          ) : null}
         </div>
-      ) : null}
-      {!minimized &&
-      listTab !== "docs" &&
-      listTab !== "files" &&
-      repositoriesError ? (
-        <p className="console-github-pane-error" role="alert">
-          {apiErrorMessage(repositoriesError)}
-        </p>
-      ) : null}
-      {!minimized && listTab !== "docs" && listTab !== "files" && repoError ? (
-        <p className="console-github-pane-error" role="alert">
-          {repoError}
-        </p>
       ) : null}
 
       {showTabs && minimized ? (
@@ -1196,7 +1240,9 @@ function ProjectCommitHistory({
               ) : null}
 
               {!minimized && commitsLoading && commits.length === 0 ? (
-                <p className="console-github-pane-status">Loading commits…</p>
+                <div className="console-fs-tree-status">
+                  <p className="console-github-pane-status">Loading commits…</p>
+                </div>
               ) : null}
 
               {!minimized &&
@@ -1313,9 +1359,11 @@ function ProjectCommitHistory({
               ) : null}
 
               {!minimized && pullsLoading && pullRequests.length === 0 ? (
-                <p className="console-github-pane-status">
-                  Loading pull requests…
-                </p>
+                <div className="console-fs-tree-status">
+                  <p className="console-github-pane-status">
+                    Loading pull requests…
+                  </p>
+                </div>
               ) : null}
 
               {!minimized &&
@@ -1487,6 +1535,8 @@ export type CodebaseProjectOverviewPaneProps = {
   taskProgress?: { total: number; completed: number } | null;
   /** Bumped after Settings GitHub token connect so fetches retry. */
   githubRefreshToken?: number;
+  /** Activity / comments rendered under the description. */
+  belowDescription?: ReactNode;
 };
 
 export function CodebaseProjectOverviewPane({
@@ -1517,6 +1567,7 @@ export function CodebaseProjectOverviewPane({
   tasks: tasksProp = null,
   taskProgress: taskProgressProp = null,
   githubRefreshToken = 0,
+  belowDescription = null,
 }: CodebaseProjectOverviewPaneProps) {
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
@@ -1797,63 +1848,36 @@ export function CodebaseProjectOverviewPane({
   }
 
   return (
-    <>
-      {showHeader ? (
-        <div className="console-pane-header">
-          <div className="console-pane-header-title console-project-pane-title">
-            <ProjectOverviewIcon
-              icon={project.icon}
-              name={project.name}
-              size={14}
-              variant="bare"
-              onIconChange={(icon) => {
-                void patchProject({ icon });
-              }}
-            />
-            <OverviewNameEditor
-              value={project.name}
-              entityLabel="Project"
-              resetKey={project.id}
-              titleClassName="console-project-pane-name"
-              onSave={saveName}
-            />
-          </div>
-          {tasksPanelToggle ? (
-            <div className="console-pane-header-actions">{tasksPanelToggle}</div>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="console-pane-body">
-        <div
-          key={project.id}
-          className="console-project-overview console-content-swap"
-        >
-          <div className="project-panel-repositories">
-            <div className="project-github-list-toggle">
-              <SegmentedPillToggle
-                value={githubListTab}
-                options={CODEBASE_LIST_TAB_OPTIONS}
-                onChange={(value) => {
-                  onGithubListTabChange?.(value);
-                }}
-                ariaLabel="Project lists"
-              />
-            </div>
-            {githubListTab === "tasks" ? (
-              <ProjectPanelDetailView
-                project={detailProject}
-                section="overview"
-                showHeader={false}
-                nestedAreas={nestedAreas}
-                organizationOptions={organizationOptions}
+    <div className="console-pane-body">
+      <div
+        key={project.id}
+        className="console-project-overview console-content-swap project-panel-identity-host"
+      >
+        <ProjectPanelDetailView
+          project={detailProject}
+          section="overview"
+          nestedAreas={nestedAreas}
+          organizationOptions={organizationOptions}
+          belowDescription={belowDescription}
                 propertiesExtra={
-                  <ProjectWorkingDirectoryField
-                    project={project}
-                    onProjectUpdated={onProjectUpdated}
-                    requestJson={requestJson}
-                    fs={fs}
-                  />
+                  <>
+                    <ProjectWorkingDirectoryField
+                      project={project}
+                      onProjectUpdated={onProjectUpdated}
+                      requestJson={requestJson}
+                      fs={fs}
+                    />
+                    <ProjectGithubRepositoryField
+                      project={project}
+                      onProjectUpdated={onProjectUpdated}
+                      requestJson={requestJson}
+                      githubRefreshToken={githubRefreshToken}
+                    />
+                  </>
                 }
+                onHealthCheckChange={(next) => {
+                  void patchProject(next);
+                }}
                 onSaveName={saveName}
                 onSaveKey={async (key) => {
                   const trimmed = key.trim();
@@ -1906,9 +1930,18 @@ export function CodebaseProjectOverviewPane({
                   void patchProject({ priority }).catch(() => undefined);
                 }}
                 onTypeChange={(type) => {
-                  const patch: { type: string; category?: null } = { type };
+                  const patch: {
+                    type: string;
+                    category?: null;
+                    healthCheckMode?: null;
+                    healthCheckDomain?: null;
+                  } = { type };
                   if (type !== "email") {
                     patch.category = null;
+                  }
+                  if (type !== "codebase") {
+                    patch.healthCheckMode = null;
+                    patch.healthCheckDomain = null;
                   }
                   void patchProject(patch).catch(() => undefined);
                 }}
@@ -1955,31 +1988,7 @@ export function CodebaseProjectOverviewPane({
                   }).catch(() => undefined);
                 }}
               />
-            ) : (
-              <ProjectCommitHistory
-                project={project}
-                onProjectUpdated={onProjectUpdated}
-                requestJson={requestJson}
-                fs={fs}
-                githubListTab={githubListTab}
-                onGithubListTabChange={onGithubListTabChange}
-                selectedCommitSha={selectedCommitSha}
-                onSelectCommit={onSelectCommit}
-                selectedPullNumber={selectedPullNumber}
-                onSelectPullRequest={onSelectPullRequest}
-                selectedFilePath={selectedFilePath}
-                onSelectFile={onSelectFile}
-                onFileEntryDeleted={onFileEntryDeleted}
-                fileTreeRefreshToken={fileTreeRefreshToken}
-                docsListPanel={docsListPanel}
-                githubRefreshToken={githubRefreshToken}
-                showTabs={false}
-                githubDetailEngaged={githubDetailEngaged}
-              />
-            )}
-          </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }

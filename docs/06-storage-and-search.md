@@ -1,9 +1,14 @@
 # Storage and search
 
-## Local vault (v2 primary)
+## Target (ADR-035) — not implemented
 
-BacksterOS stores document bodies and letter PDFs in an **Obsidian-style local
-vault** on the core computer. Postgres keeps metadata + `storage_key` only.
+**Private Cloudflare R2** is the shared file store: markdown, letter PDFs, task attachments, avatars, space covers, and other `.backsteros` blobs. Postgres keeps metadata + `storage_key` only. Do not use the public WordPress bucket `ld-wp-media`.
+
+The desktop keeps the vault layout below as a **local working copy** and syncs changes. Opening an area must not re-download every file. PowerSync does not move file bytes. iOS fetches an object when it opens it, via cloud-core.
+
+## Local vault (desktop working copy; source of truth today)
+
+Until ADR-035 is built, document bodies and letter PDFs still live only in an **Obsidian-style local vault** on the Mac. Cloud-core twins `.md` files onto its own disk and returns `503 pdf_requires_local_core` for PDF and attachment bytes.
 
 Configure via desktop **Settings → Storage** or `BACKSTEROS_VAULT_PATH`.
 
@@ -44,7 +49,9 @@ so the folder + `.cursor` skills are created on the fly if missing. When
 `localWorkingDirectory` is empty, it is set to the vault project root so agent
 sessions start inside that folder.
 
-## Object storage (optional / future remote)
+## Object storage
+
+**Target:** private R2, ADR-035. The notes below are the older “optional remote” plan. v2 code still uses the local vault.
 
 ### Primary remote option: Backblaze B2 or Cloudflare R2
 

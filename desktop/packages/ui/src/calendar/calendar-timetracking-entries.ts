@@ -2,6 +2,7 @@ import { formatTrackedTimeInput } from "@backsteros/contracts";
 
 import { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
 import {
+  todayYmd,
   timetrackingPeriodIncludesYmd,
   type TimetrackingPeriod,
 } from "./calendar-timetracking-days.js";
@@ -20,6 +21,19 @@ export type TimetrackingEntry = {
   href: string;
   /** Timer is currently running; row shows live chrome, totals ignore live delta. */
   isLive?: boolean;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  /** Area resolved via the entry's project: nested `areaId` when set, else top-level `area` (personal/business/clients). */
+  areaId?: string | null;
+  areaName?: string | null;
+  /** Optional area accent color from the Areas entity. */
+  areaColor?: string | null;
+  /**
+   * Related contacts for breakdown:
+   * task `relatedContactIds`, meeting `attendeeContactIds`.
+   */
+  relatedContactIds?: readonly string[];
 };
 
 export type TimetrackingEntrySource = {
@@ -33,6 +47,13 @@ export type TimetrackingEntrySource = {
    * task `dueDate` or meeting `startAt`.
    */
   scheduleAt?: Date | number | string | null;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  areaId?: string | null;
+  areaName?: string | null;
+  areaColor?: string | null;
+  relatedContactIds?: readonly string[] | null;
 };
 
 /**
@@ -93,6 +114,13 @@ export function collectTimetrackingEntries(input: {
       trackedDurationSeconds: seconds,
       groupDateYmd,
       href: input.taskHref?.(task.id) ?? `/tasks/${task.id}`,
+      projectId: task.projectId ?? null,
+      projectKey: task.projectKey ?? null,
+      projectName: task.projectName ?? null,
+      areaId: task.areaId ?? null,
+      areaName: task.areaName ?? null,
+      areaColor: task.areaColor ?? null,
+      relatedContactIds: normalizeContactIds(task.relatedContactIds),
     });
   }
 
@@ -118,6 +146,13 @@ export function collectTimetrackingEntries(input: {
       trackedDurationSeconds: seconds,
       groupDateYmd,
       href: input.meetingHref?.(meeting.id) ?? `/calendar?meeting=${meeting.id}`,
+      projectId: meeting.projectId ?? null,
+      projectKey: meeting.projectKey ?? null,
+      projectName: meeting.projectName ?? null,
+      areaId: meeting.areaId ?? null,
+      areaName: meeting.areaName ?? null,
+      areaColor: meeting.areaColor ?? null,
+      relatedContactIds: normalizeContactIds(meeting.relatedContactIds),
     });
   }
 
@@ -149,16 +184,36 @@ export type LiveTimetrackingSource = {
   trackedDurationSeconds?: number;
 };
 
+export type WithLiveTimetrackingEntriesOptions = {
+  /**
+   * Selected Timetracking period. Live timers are only merged when this range
+   * includes “today” (or when omitted / null).
+   */
+  period?: TimetrackingPeriod | null;
+  /** Override for tests; defaults to local today. */
+  todayYmd?: string;
+};
+
 /**
  * Mark matching rows as live and prepend any running timers missing from the
  * period list (e.g. freshly started with 0 persisted seconds).
  * Live elapsed must not be written into `trackedDurationSeconds`.
+ *
+ * Live chrome is limited to periods that include today — past days/weeks/months
+ * keep only historically tracked rows.
  */
 export function withLiveTimetrackingEntries(
   entries: readonly TimetrackingEntry[],
   liveSources: readonly LiveTimetrackingSource[],
+  options?: WithLiveTimetrackingEntriesOptions,
 ): TimetrackingEntry[] {
-  if (liveSources.length === 0) {
+  const today = options?.todayYmd ?? todayYmd();
+  const period = options?.period;
+  const includeLive =
+    liveSources.length > 0 &&
+    (period == null || timetrackingPeriodIncludesYmd(period, today));
+
+  if (!includeLive) {
     return entries.map((entry) =>
       entry.isLive ? { ...entry, isLive: false } : entry,
     );
@@ -219,4 +274,19 @@ export function formatTimetrackingLeadingStamp(
 function displayTitle(title: string, fallback: string): string {
   const trimmed = title.trim();
   return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function normalizeContactIds(
+  ids: readonly string[] | null | undefined,
+): string[] {
+  if (!ids || ids.length === 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    const trimmed = id?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }

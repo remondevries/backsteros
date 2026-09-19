@@ -312,14 +312,16 @@ function textMissing(value: unknown): boolean {
 
 /**
  * When local wins by updatedAt but still omits codebase binding fields
- * (stale PowerSync schema / sync), copy them from the API row so repo and
- * working directory survive restart.
+ * (stale PowerSync schema / sync), copy them from the API row so repo,
+ * working directory, and health-check settings survive restart.
  */
 export function fillMissingCodebaseFieldsFromApi<
   T extends {
     id: string;
     githubRepository?: string | null;
     localWorkingDirectory?: string | null;
+    healthCheckMode?: "simple" | "advanced" | null;
+    healthCheckDomain?: string | null;
   },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
   if (!apiRows?.length) return mergedRows;
@@ -339,6 +341,18 @@ export function fillMissingCodebaseFieldsFromApi<
       !textMissing(api.localWorkingDirectory)
     ) {
       next = { ...next, localWorkingDirectory: api.localWorkingDirectory };
+    }
+    if (
+      textMissing(row.healthCheckMode) &&
+      !textMissing(api.healthCheckMode)
+    ) {
+      next = { ...next, healthCheckMode: api.healthCheckMode };
+    }
+    if (
+      textMissing(row.healthCheckDomain) &&
+      !textMissing(api.healthCheckDomain)
+    ) {
+      next = { ...next, healthCheckDomain: api.healthCheckDomain };
     }
     return next;
   });

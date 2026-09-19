@@ -15,6 +15,8 @@ export type SegmentedPillToggleOption<T extends string> = {
   label: string;
   /** Optional digit/key hint for the button tooltip. */
   shortcut?: string;
+  /** When set, renders instead of the text label (label stays on title/aria). */
+  icon?: ReactNode;
 };
 
 type IndicatorStyle = {
@@ -124,6 +126,9 @@ export function SegmentedPillToggle<T extends string>({
       />
       {options.map((option, index) => {
         const active = option.value === value;
+        const title = option.shortcut
+          ? `${option.label} (${option.shortcut})`
+          : option.label;
         return (
           <button
             key={option.value}
@@ -131,17 +136,20 @@ export function SegmentedPillToggle<T extends string>({
               buttonRefs.current[index] = element;
             }}
             type="button"
-            className={`segmented-pill-toggle-btn${active ? " is-active" : ""}`}
+            className={[
+              "segmented-pill-toggle-btn",
+              option.icon ? "segmented-pill-toggle-btn--icon" : null,
+              active ? "is-active" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             aria-pressed={active}
+            aria-label={option.label}
             disabled={disabled}
-            title={
-              option.shortcut
-                ? `${option.label} (${option.shortcut})`
-                : option.label
-            }
+            title={title}
             onClick={() => onChange(option.value)}
           >
-            {option.label}
+            {option.icon ?? option.label}
           </button>
         );
       })}

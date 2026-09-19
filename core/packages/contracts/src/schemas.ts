@@ -180,6 +180,13 @@ export const projectSchema = z.object({
   cloudflareZoneId: z.string().max(64).nullable(),
   /** Absolute local folder for agent/PTY (machine-specific; Development console). */
   localWorkingDirectory: z.string().max(4096).nullable(),
+  /**
+   * Status probe mode for codebase projects.
+   * `simple` = HTTPS ping of `healthCheckDomain`; `advanced` = `/healthz` later.
+   */
+  healthCheckMode: z.enum(["simple", "advanced"]).nullable(),
+  /** Hostname for simple health checks (no scheme/path), e.g. `quarrymill.com`. */
+  healthCheckDomain: z.string().max(253).nullable(),
   status: projectStatusSchema,
   priority: z.number().int().min(0).max(4),
   sortOrder: z.number().int(),
@@ -206,6 +213,8 @@ export const createProjectSchema = z.object({
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
   cloudflareZoneId: z.string().max(64).nullable().optional(),
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
+  healthCheckMode: z.enum(["simple", "advanced"]).nullable().optional(),
+  healthCheckDomain: z.string().max(253).nullable().optional(),
   status: projectStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
@@ -395,6 +404,8 @@ export const taskSchema = z.object({
   relatedContactIds: z.array(z.string()).default([]),
   /** Organizations this task is about / for (same Related UI field as contacts). */
   relatedOrganizationIds: z.array(z.string()).default([]),
+  /** Workspace label ids. Managed in Settings; not created from the task dropdown. */
+  labelIds: z.array(z.string()).default([]),
   number: z.number().int().positive(),
   title: z.string(),
   description: z.string().nullable(),
@@ -450,6 +461,7 @@ export const createTaskSchema = z.object({
   assigneeId: z.string().nullable().optional(),
   relatedContactIds: z.array(z.string()).optional(),
   relatedOrganizationIds: z.array(z.string()).optional(),
+  labelIds: z.array(z.string().min(1).max(64)).max(32).optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(10000).nullable().optional(),
   status: taskStatusSchema.optional(),
@@ -599,6 +611,11 @@ export const createTaskActivitySchema = z.discriminatedUnion("type", [
     data: timerStoppedActivityDataSchema,
   }),
 ]);
+
+/** Reassign the contact on a timer session (start + stop pair). */
+export const updateTaskTimerSessionActorSchema = z.object({
+  actorContactId: z.string().min(1),
+});
 
 export const taskActivitySchema = z.object({
   id: z.string(),
@@ -1073,6 +1090,173 @@ export type PortalContactLog = z.infer<typeof portalContactLogSchema>;
 
 export const portalContactLogListSchema = z.object({
   logs: z.array(portalContactLogSchema),
+});
+
+/** Project Updates tab — changelog / incident / maintenance posts. */
+export const PROJECT_UPDATE_KINDS = [
+  "update",
+  "incident",
+  "maintenance",
+] as const;
+export const projectUpdateKindSchema = z.enum(PROJECT_UPDATE_KINDS);
+export type ProjectUpdateKind = z.infer<typeof projectUpdateKindSchema>;
+
+/** Visibility for update / maintenance posts. */
+export const PROJECT_UPDATE_VISIBILITY_STATUSES = [
+  "internal",
+  "published",
+] as const;
+/** Lifecycle for incident posts. */
+export const PROJECT_UPDATE_INCIDENT_STATUSES = ["open", "resolved"] as const;
+export const PROJECT_UPDATE_STATUSES = [
+  ...PROJECT_UPDATE_VISIBILITY_STATUSES,
+  ...PROJECT_UPDATE_INCIDENT_STATUSES,
+] as const;
+export const projectUpdateStatusSchema = z.enum(PROJECT_UPDATE_STATUSES);
+export type ProjectUpdateStatus = z.infer<typeof projectUpdateStatusSchema>;
+export type ProjectUpdateVisibilityStatus =
+  (typeof PROJECT_UPDATE_VISIBILITY_STATUSES)[number];
+export type ProjectUpdateIncidentStatus =
+  (typeof PROJECT_UPDATE_INCIDENT_STATUSES)[number];
+
+export const PROJECT_UPDATE_DEFAULT_STATUS: ProjectUpdateStatus = "internal";
+export const PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS: ProjectUpdateIncidentStatus =
+  "open";
+
+export function projectUpdateStatusesForKind(
+  kind: ProjectUpdateKind,
+): readonly ProjectUpdateStatus[] {
+  return kind === "incident"
+    ? PROJECT_UPDATE_INCIDENT_STATUSES
+    : PROJECT_UPDATE_VISIBILITY_STATUSES;
+}
+
+export function defaultProjectUpdateStatusForKind(
+  kind: ProjectUpdateKind,
+): ProjectUpdateStatus {
+  return kind === "incident"
+    ? PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS
+    : PROJECT_UPDATE_DEFAULT_STATUS;
+}
+
+/** Map / clamp a status to one valid for the given kind. */
+export function coerceProjectUpdateStatusForKind(
+  kind: ProjectUpdateKind,
+  status: string | null | undefined,
+): ProjectUpdateStatus {
+  const allowed = projectUpdateStatusesForKind(kind);
+  if (status != null && (allowed as readonly string[]).includes(status)) {
+    return status as ProjectUpdateStatus;
+  }
+  if (kind === "incident") {
+    if (status === "published") return "resolved";
+    if (status === "internal") return "open";
+    return PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS;
+  }
+  if (status === "resolved") return "published";
+  if (status === "open") return "internal";
+  return PROJECT_UPDATE_DEFAULT_STATUS;
+}
+
+/** Incident severity — only meaningful when kind is `incident`. */
+export const PROJECT_UPDATE_SEVERITIES = [
+  "high_risk",
+  "degraded",
+  "low_risk",
+] as const;
+export const projectUpdateSeveritySchema = z.enum(PROJECT_UPDATE_SEVERITIES);
+export type ProjectUpdateSeverity = z.infer<typeof projectUpdateSeveritySchema>;
+
+export const PROJECT_UPDATE_DEFAULT_SEVERITY: ProjectUpdateSeverity = "degraded";
+
+function refineProjectUpdateKindStatus(
+  value: { kind?: ProjectUpdateKind; status?: ProjectUpdateStatus },
+  ctx: z.RefinementCtx,
+) {
+  if (value.status == null || value.kind == null) return;
+  const allowed = projectUpdateStatusesForKind(value.kind);
+  if (!(allowed as readonly string[]).includes(value.status)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["status"],
+      message:
+        value.kind === "incident"
+          ? "Incidents use Open / Resolved"
+          : "Updates and maintenance use Internal / Published",
+    });
+  }
+}
+
+export const createProjectUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(500),
+    body: z.string().trim().min(1).max(50_000),
+    kind: projectUpdateKindSchema,
+    status: projectUpdateStatusSchema.optional(),
+    severity: projectUpdateSeveritySchema.nullable().optional(),
+    relatedTaskIds: z.array(z.string().min(1)).max(100).optional(),
+  })
+  .superRefine((value, ctx) => {
+    refineProjectUpdateKindStatus(value, ctx);
+    if (value.kind === "incident") {
+      if (value.severity == null) {
+        // Default applied server-side; allow omit.
+        return;
+      }
+      return;
+    }
+    if (value.severity != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["severity"],
+        message: "Severity is only allowed for incidents",
+      });
+    }
+  });
+
+export type CreateProjectUpdateInput = z.infer<typeof createProjectUpdateSchema>;
+
+export const updateProjectUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(500).optional(),
+    body: z.string().trim().min(1).max(50_000).optional(),
+    kind: projectUpdateKindSchema.optional(),
+    status: projectUpdateStatusSchema.optional(),
+    severity: projectUpdateSeveritySchema.nullable().optional(),
+    relatedTaskIds: z.array(z.string().min(1)).max(100).optional(),
+  })
+  .superRefine((value, ctx) => {
+    refineProjectUpdateKindStatus(value, ctx);
+    if (value.kind != null && value.kind !== "incident" && value.severity != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["severity"],
+        message: "Severity is only allowed for incidents",
+      });
+    }
+  });
+
+export type UpdateProjectUpdateInput = z.infer<typeof updateProjectUpdateSchema>;
+
+export const projectUpdateSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  projectId: z.string(),
+  title: z.string(),
+  body: z.string(),
+  kind: projectUpdateKindSchema,
+  status: projectUpdateStatusSchema,
+  severity: projectUpdateSeveritySchema.nullable(),
+  relatedTaskIds: z.array(z.string()),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+export type ProjectUpdate = z.infer<typeof projectUpdateSchema>;
+
+export const projectUpdateListSchema = z.object({
+  updates: z.array(projectUpdateSchema),
 });
 
 const contactWritableFieldsSchema = z.object({
@@ -3133,8 +3317,9 @@ export const createMeetingSchema = z.object({
   projectId: z.string().nullable().optional(),
   organizationId: z.string().nullable().optional(),
   attendeeContactIds: z.array(z.string()).optional(),
-  startAt: isoDateSchema,
-  endAt: isoDateSchema,
+  /** Omit or null = unscheduled / all-day until the host opens the room. */
+  startAt: isoDateSchema.nullable().optional(),
+  endAt: isoDateSchema.nullable().optional(),
   format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
   location: z.string().max(2000).nullable().optional(),
   locationOrganizationId: z.string().nullable().optional(),
@@ -3152,8 +3337,8 @@ export const updateMeetingSchema = z
     projectId: z.string().nullable().optional(),
     organizationId: z.string().nullable().optional(),
     attendeeContactIds: z.array(z.string()).optional(),
-    startAt: isoDateSchema.optional(),
-    endAt: isoDateSchema.optional(),
+    startAt: isoDateSchema.nullable().optional(),
+    endAt: isoDateSchema.nullable().optional(),
     format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
     location: z.string().max(2000).nullable().optional(),
     locationOrganizationId: z.string().nullable().optional(),
@@ -3236,8 +3421,8 @@ export const meetingSchema = z.object({
   attendeeContactIds: z.array(z.string()),
   /** Server-recorded portal invite/reminder sends per attendee contact id. */
   attendeePortalEmails: meetingAttendeePortalEmailsSchema.default({}),
-  startAt: isoDateSchema,
-  endAt: isoDateSchema,
+  startAt: isoDateSchema.nullable(),
+  endAt: isoDateSchema.nullable(),
   format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
   location: z.string().nullable().optional(),
   locationOrganizationId: z.string().nullable().optional(),
@@ -3373,6 +3558,9 @@ export type UpsertTaskAgentPresenceInput = z.infer<
 >;
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
 export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;
+export type UpdateTaskTimerSessionActorInput = z.infer<
+  typeof updateTaskTimerSessionActorSchema
+>;
 export type AgentWorkedActivityData = z.infer<
   typeof agentWorkedActivityDataSchema
 >;
@@ -3526,6 +3714,7 @@ export type AreaParent = z.infer<typeof areaParentSchema>;
 export type AreaInput = z.infer<typeof areaInputSchema>;
 export type Letter = z.infer<typeof letterSchema>;
 export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
+export type ProjectUpdateInput = CreateProjectUpdateInput;
 export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
 export type AvatarSignedUrl = z.infer<typeof avatarSignedUrlSchema>;

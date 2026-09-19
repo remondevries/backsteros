@@ -703,7 +703,17 @@ export function useWorkspaceEntityPatching({
           // Status patches used to dual-write REST "because PowerSync stranded"
           // — that re-fought SQLite. Await flush above; fall through to REST
           // only when the upload queue was empty or flush failed.
-          if (shouldSkipRestAfterCrudFlush(uploaded)) return;
+          // Health-check columns are new: always dual-write REST so Postgres
+          // (status page / portal) gets the domain even if local SQLite lags.
+          const healthCheckPatch =
+            table === "projects" &&
+            ("healthCheckMode" in values || "healthCheckDomain" in values);
+          if (
+            shouldSkipRestAfterCrudFlush(uploaded) &&
+            !healthCheckPatch
+          ) {
+            return;
+          }
         }
         try {
           const updated =
@@ -800,6 +810,8 @@ export function useWorkspaceEntityPatching({
           ("agentChatId" in values ||
             "linkedCommitShas" in values ||
             "moneybirdContactId" in values ||
+            "healthCheckMode" in values ||
+            "healthCheckDomain" in values ||
             (table === "tasks" && typeof values.status === "string") ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));
@@ -807,6 +819,12 @@ export function useWorkspaceEntityPatching({
           const result = await persistLocalAndMaybeRest();
           if ("linkedCommitShas" in values) {
             void softRefreshApiTasks();
+          }
+          if (
+            table === "projects" &&
+            ("healthCheckMode" in values || "healthCheckDomain" in values)
+          ) {
+            void softRefreshApiProjects();
           }
           return result;
         }
@@ -851,7 +869,9 @@ export function useWorkspaceEntityPatching({
         if (
           "type" in values ||
           "githubRepository" in values ||
-          "localWorkingDirectory" in values
+          "localWorkingDirectory" in values ||
+          "healthCheckMode" in values ||
+          "healthCheckDomain" in values
         ) {
           void softRefreshApiProjects();
         }

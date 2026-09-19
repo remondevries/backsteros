@@ -167,6 +167,7 @@ export async function runDueMeetingPortalReminders(): Promise<number> {
   for (const row of rows) {
     const status = row.status?.trim().toLowerCase() ?? "";
     if (SKIP_MEETING_STATUSES.has(status)) continue;
+    if (!row.startAt) continue;
 
     const dueContactIds = contactIdsDueForPortalReminder(
       {

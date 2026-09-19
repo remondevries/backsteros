@@ -6,7 +6,7 @@ BacksterOS v2 runs **core** on a **local computer** (any always-on workstation y
 
 ```text
 local computer
-  · hub/ (menu-bar start/stop — recommended)
+  · hub/ (optional menu-bar stop, plus PTY and Expo)
   · core/server (API)
   · Postgres
   · files / object storage
@@ -20,16 +20,11 @@ shells (UI only)
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
 
+**Target (ADR-035):** iOS talks only to cloud-core (not switched yet). Local-core stays on the Mac for the desktop app. Opening desktop starts Docker (Postgres + local PowerSync) and the core API on `:8788` if they are down, and leaves them running after quit. Shared files live in private R2; this computer keeps a local working copy. Hub is optional: it can still start and stop the stack, and it still owns PTY and Expo.
+
 ### Starting local services
 
-Prefer the **BacksterOS Hub** menu-bar app ([`hub/`](../hub/README.md)):
-
-```bash
-pnpm --filter @backsteros/hub dev          # develop
-# or build/install: pnpm --filter @backsteros/hub build → BacksterOS Hub.app
-```
-
-Use **Start all** to bring up Docker (Postgres + PowerSync), core API (`:8788`), and PTY (`:3101`). Product desktop does **not** embed the API — start hub (or run `pnpm dev` / `pnpm --filter @backsteros/desktop pty` manually) before clients.
+Opening the desktop app starts Docker (Postgres + PowerSync) and the core API (`:8788`) when they are not already up. Hub ([`hub/`](../hub/README.md)) can still start and stop that stack, and it still starts PTY (`:3101`) and Expo. Product desktop does **not** embed the API process inside the UI, and it does not start PTY or Metro.
 
 ## Layout
 

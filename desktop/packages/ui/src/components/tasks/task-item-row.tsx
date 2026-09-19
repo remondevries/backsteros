@@ -77,6 +77,8 @@ export type TaskItemRowTask = {
   relatedContactIds?: string[] | null;
   /** Organizations this task is about / for (Related property). */
   relatedOrganizationIds?: string[] | null;
+  /** Workspace label ids. */
+  labelIds?: string[] | null;
   /** Client support ticket (portal Support / Communication). */
   support?: boolean | null;
   /** Notification-style task (triage workflow; distinct UI filter). */

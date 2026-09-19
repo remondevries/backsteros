@@ -548,6 +548,31 @@ test("fillMissingCodebaseFieldsFromApi copies repo and cwd when local is empty",
   assert.equal(filled[0]?.localWorkingDirectory, "/Users/me/code/app");
 });
 
+test("fillMissingCodebaseFieldsFromApi copies health check when local is empty", () => {
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        githubRepository: null,
+        localWorkingDirectory: null,
+        healthCheckMode: null,
+        healthCheckDomain: null,
+      },
+    ],
+    [
+      {
+        id: "1",
+        githubRepository: null,
+        localWorkingDirectory: null,
+        healthCheckMode: "simple",
+        healthCheckDomain: "quarrymill.com",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.healthCheckMode, "simple");
+  assert.equal(filled[0]?.healthCheckDomain, "quarrymill.com");
+});
+
 test("fillMissingCodebaseFieldsFromApi keeps local repo and cwd when present", () => {
   const filled = fillMissingCodebaseFieldsFromApi(
     [

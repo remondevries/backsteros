@@ -43,6 +43,8 @@ export {
 export {
   TrackedTimerProvider,
   useTrackedTimer,
+  useTrackedTimerOptional,
+  type RemoteRunningTimerAdoption,
 } from "../tracked-timer/tracked-timer-context.js";
 
 export {

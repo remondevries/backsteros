@@ -68,6 +68,11 @@ export type PropertyDropdownProps<T extends string> = {
    * Menu option labels are unchanged (e.g. contact name in the list, Name (email) on the chip).
    */
   selectedDisplayLabel?: string | null;
+  /**
+   * Override icon shown on the closed trigger when a value is selected.
+   * Menu option icons are unchanged.
+   */
+  selectedDisplayIcon?: ReactNode | null;
   shortcutAnchor?: boolean;
   onTabFromSearch?: () => void;
   onShiftTabFromSearch?: () => void;
@@ -103,6 +108,7 @@ export function PropertyDropdown<T extends string>({
   mutedFallback = false,
   mutedSelected = false,
   selectedDisplayLabel = null,
+  selectedDisplayIcon = null,
   shortcutAnchor = false,
   onTabFromSearch,
   onShiftTabFromSearch,
@@ -176,7 +182,9 @@ export function PropertyDropdown<T extends string>({
             : (selected?.label ?? fallbackLabel);
         const icon = hideTriggerIcon
           ? null
-          : (selected?.icon ?? fallbackIcon);
+          : selected && selectedDisplayIcon != null
+            ? selectedDisplayIcon
+            : (selected?.icon ?? fallbackIcon);
         return (
           <button
             type="button"

@@ -55,7 +55,7 @@ export function buildTaskRestPayload(
   },
 ): Record<string, unknown> {
   const payload = restFieldsToSyncPayload(taskId, body, {
-    jsonStringify: ["links", "related_contact_ids", "related_organization_ids"],
+    jsonStringify: ["links", "related_contact_ids", "related_organization_ids", "label_ids"],
   });
   applyAcknowledgeInboxUpdate(payload, body);
   if (

@@ -24,6 +24,7 @@ import {
   type SettingsTabId,
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
+import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
@@ -532,7 +533,7 @@ export function SettingsPage() {
   }
 
   return (
-    <SettingsDetailLayout>
+    <SettingsDetailLayout wide={activeTab === "labels"}>
       {activeTab === "storage" ? (
         <SettingsStorageTab title={meta.label} description={meta.description} />
       ) : (
@@ -569,6 +570,7 @@ export function SettingsPage() {
               onSettingsSaved={() => void reloadSettings()}
             />
           ) : null}
+          {activeTab === "labels" ? <SettingsLabelsTab /> : null}
           {activeTab === "api" ? <SettingsApiTab /> : null}
           {activeTab === "integrations" ? (
             <SettingsIntegrationsTab

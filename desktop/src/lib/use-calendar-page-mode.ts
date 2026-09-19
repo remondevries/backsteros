@@ -8,6 +8,8 @@ import {
   CALENDAR_TASK_OVERLAY_LAYOUT_PARAM,
   CALENDAR_TASK_OVERLAY_PARAM,
   CALENDAR_TIMETRACKING_DATE_PARAM,
+  CALENDAR_TIMETRACKING_MONTH_PARAM,
+  CALENDAR_TIMETRACKING_WEEK_PARAM,
   CALENDAR_VIEW_MODE_PARAM,
   DEFAULT_CALENDAR_PAGE_MODE,
   buildCalendarPageHref,
@@ -87,6 +89,8 @@ export function useCalendarPageModeControls() {
       }
       if (mode !== "timetracking") {
         next.delete(CALENDAR_TIMETRACKING_DATE_PARAM);
+        next.delete(CALENDAR_TIMETRACKING_WEEK_PARAM);
+        next.delete(CALENDAR_TIMETRACKING_MONTH_PARAM);
       }
       if (next.toString() === searchParams.toString()) return;
       const query = next.toString();

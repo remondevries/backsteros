@@ -20,6 +20,7 @@ export type TaskPropertyDropdownId =
   | "startDate"
   | "assignee"
   | "related"
+  | "labels"
   | "area"
   | "areaId"
   | "project"
@@ -27,6 +28,10 @@ export type TaskPropertyDropdownId =
   | "contact"
   | "receivedDate"
   | "format"
+  /** Project identity: type (T), health (S, codebase), workspace (W). */
+  | "type"
+  | "health"
+  | "workspace"
   /** Finance transaction row / detail / filter / bulk fields */
   | "category"
   | "account"
@@ -45,7 +50,8 @@ export type TaskPropertyDropdownShortcutKey =
   | "r"
   | "m"
   | "g"
-  | "f";
+  | "f"
+  | "l";
 
 function matchesShortcutLetter(
   event: Pick<KeyboardEvent, "key" | "code">,
@@ -215,11 +221,27 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
       return ["dueDate"];
     }
 
+    // Project overview area. Finance chrome Shift+A (account) wins first when
+    // the finance filter/bulk bar is mounted.
+    if (matchesShortcutLetter(event, "a", "KeyA")) {
+      return ["area"];
+    }
+
     return [];
   }
 
   if (matchesShortcutLetter(event, "s", "KeyS")) {
-    return ["status"];
+    // Health is codebase-only and mounted only there, so it wins on those
+    // panels. Task rows and other projects still open status.
+    return ["health", "status"];
+  }
+
+  if (matchesShortcutLetter(event, "t", "KeyT")) {
+    return ["type"];
+  }
+
+  if (matchesShortcutLetter(event, "w", "KeyW")) {
+    return ["workspace"];
   }
 
   if (matchesShortcutLetter(event, "p", "KeyP")) {
@@ -242,6 +264,11 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
   // Meetings: format (video / phone / in person). Only present on meeting detail.
   if (matchesShortcutLetter(event, "f", "KeyF")) {
     return ["format"];
+  }
+
+  // Tasks: labels. Only present where the labels property is mounted.
+  if (matchesShortcutLetter(event, "l", "KeyL")) {
+    return ["labels"];
   }
 
   return [];

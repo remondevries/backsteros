@@ -36,6 +36,7 @@ import { useDesktopApi } from "../lib/api-context";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
+import { useTaskLabelDropdownOptions } from "../lib/task-label-options";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import {
   buildDocumentLinkOptions,
@@ -314,6 +315,7 @@ function InboxPageBody() {
       }),
     [assigneeOptions, organizationAvatarSrc, organizations],
   );
+  const labelOptions = useTaskLabelDropdownOptions();
 
   const projectOptions = useMemo(
     () =>
@@ -649,6 +651,10 @@ function InboxPageBody() {
             relatedOrganizationIds: related.organizationIds,
           });
         }}
+        onLabelChange={(labelIds) => {
+          void workspace.patchTask(selectedTask.id, { labelIds });
+        }}
+        labelOptions={labelOptions}
         onProjectChange={handleProjectChange}
         onSaveDescription={(description) => {
           rememberDescription(description);

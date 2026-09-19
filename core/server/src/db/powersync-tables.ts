@@ -28,6 +28,7 @@ export const POWERSYNC_PUBLICATION_TABLES = [
   "crm_groups",
   "crm_group_members",
   "crm_activities",
+  "task_labels",
 ] as const;
 
 export type PowerSyncPublicationTable =

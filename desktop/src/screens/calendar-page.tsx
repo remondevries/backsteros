@@ -35,8 +35,9 @@ import {
   getUniqueListItemRouteParam,
   getContactSectionHref,
   getEmailComposeHref,
+  getProjectTaskHref,
+  isDefinedProjectArea,
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
-  MeetingDetailView,
   meetingCalendarEventClassNames,
   mergeCalendarGridEvents,
   parseCalendarMeetingOverlayId,
@@ -45,7 +46,9 @@ import {
   parseCalendarTaskOverlayId,
   parseCalendarTaskOverlayLayout,
   parseCalendarViewModeParam,
+  PROJECT_AREA_LABELS,
   readTimetrackingPeriodFromSearch,
+  resolveTimetrackingChartPeriod,
   RegisterEntityDeleteAction,
   EntityHeaderActionsSlot,
   RegisterPageTitle,
@@ -71,6 +74,7 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { TimetrackingSessionsDetail } from "../components/timetracking-sessions-detail";
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -189,6 +193,23 @@ function CalendarPageBody() {
   const [rangeTitle, setRangeTitle] = useState("");
   const [meetingDraft, setMeetingDraft] =
     useState<CalendarMeetingDraft | null>(null);
+  /** Drives open-ended / currently-active meeting blocks on the grid. */
+  const [calendarNowMs, setCalendarNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!keepAliveActive || keepAliveFrozen) return;
+    const tick = () => setCalendarNowMs(Date.now());
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [keepAliveActive, keepAliveFrozen]);
 
   useEffect(() => {
     if (!keepAliveActive) {
@@ -681,7 +702,7 @@ function CalendarPageBody() {
     const next = mergeCalendarGridEvents(
       tasksWithHabitIcons,
       workspace.meetings,
-      new Date(),
+      new Date(calendarNowMs),
       workspace.contacts.map((contact) => ({
         id: contact.id,
         name: contact.name,
@@ -691,6 +712,7 @@ function CalendarPageBody() {
     frozenEventsRef.current = next;
     return next;
   }, [
+    calendarNowMs,
     keepAliveFrozen,
     workspace.allTasks,
     workspace.habits,
@@ -903,10 +925,59 @@ function CalendarPageBody() {
     void workspace.patchMeeting(meetingId, patch);
   };
 
-  const timetrackingEntries = useMemo(
-    () =>
-      collectTimetrackingEntries({
-        tasks: workspace.allTasks.map((task) => ({
+  const handleMeetingDuplicate = (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => {
+    void workspace.duplicateMeeting(meetingId, patch);
+  };
+
+  const timetrackingEntrySources = useMemo(() => {
+    const taskHref = (id: string) =>
+      `/calendar?${CALENDAR_PAGE_MODE_PARAM}=timetracking&${CALENDAR_TASK_OVERLAY_PARAM}=${encodeURIComponent(id)}`;
+    const meetingHref = (id: string) =>
+      `/calendar?${CALENDAR_PAGE_MODE_PARAM}=timetracking&${CALENDAR_MEETING_OVERLAY_PARAM}=${encodeURIComponent(id)}`;
+
+    const areaById = new Map(
+      workspace.areas.map((area) => [area.id, area] as const),
+    );
+    const projectById = new Map(
+      workspace.projects.map((project) => [project.id, project] as const),
+    );
+    const resolveArea = (projectId: string | null | undefined) => {
+      if (!projectId) return { areaId: null, areaName: null, areaColor: null };
+      const project = projectById.get(projectId);
+      if (!project) return { areaId: null, areaName: null, areaColor: null };
+
+      // Nested custom area under Personal / Business / Clients.
+      const nestedId = project.areaId?.trim() || null;
+      if (nestedId) {
+        const nested = areaById.get(nestedId);
+        return {
+          areaId: nestedId,
+          areaName: nested?.name?.trim() || "Untitled area",
+          areaColor: nested?.color ?? null,
+        };
+      }
+
+      // Top-level project.area (personal | business | clients) — most projects
+      // only set this; nested areaId stays null.
+      const topLevel = project.area ?? null;
+      if (isDefinedProjectArea(topLevel)) {
+        return {
+          areaId: topLevel,
+          areaName: PROJECT_AREA_LABELS[topLevel],
+          areaColor: null,
+        };
+      }
+
+      return { areaId: null, areaName: null, areaColor: null };
+    };
+
+    return {
+      tasks: workspace.allTasks.map((task) => {
+        const area = resolveArea(task.projectId);
+        return {
           id: task.id,
           title: task.title,
           number: task.number,
@@ -919,26 +990,126 @@ function CalendarPageBody() {
           ),
           trackedDurationSeconds: task.trackedDurationSeconds ?? null,
           scheduleAt: task.dueDate,
-        })),
-        meetings: workspace.meetings.map((meeting) => ({
+          projectId: task.projectId ?? null,
+          projectKey: task.projectKey ?? null,
+          projectName: task.projectName ?? null,
+          areaId: area.areaId,
+          areaName: area.areaName,
+          areaColor: area.areaColor,
+          relatedContactIds: task.relatedContactIds ?? null,
+        };
+      }),
+      meetings: workspace.meetings.map((meeting) => {
+        const area = resolveArea(meeting.projectId);
+        return {
           id: meeting.id,
           title: meeting.title,
           number: meeting.number,
           displayId: formatMeetingDisplayId(meeting.number),
           trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
           scheduleAt: meeting.startAt,
-        })),
-        taskHref: (id) => `/calendar?${CALENDAR_PAGE_MODE_PARAM}=timetracking&${CALENDAR_TASK_OVERLAY_PARAM}=${encodeURIComponent(id)}`,
-        meetingHref: (id) =>
-          `/calendar?${CALENDAR_PAGE_MODE_PARAM}=timetracking&${CALENDAR_MEETING_OVERLAY_PARAM}=${encodeURIComponent(id)}`,
+          projectId: meeting.projectId ?? null,
+          projectKey: meeting.projectKey ?? null,
+          projectName: meeting.projectName ?? null,
+          areaId: area.areaId,
+          areaName: area.areaName,
+          areaColor: area.areaColor,
+          relatedContactIds: meeting.attendeeContactIds ?? null,
+        };
+      }),
+      taskHref,
+      meetingHref,
+    };
+  }, [workspace.allTasks, workspace.areas, workspace.meetings, workspace.projects]);
+
+  const timetrackingEntries = useMemo(
+    () =>
+      collectTimetrackingEntries({
+        ...timetrackingEntrySources,
         period: selectedTimetrackingPeriod,
       }),
-    [
-      selectedTimetrackingPeriod,
-      workspace.allTasks,
-      workspace.meetings,
-    ],
+    [selectedTimetrackingPeriod, timetrackingEntrySources],
   );
+
+  /** Day list → chart uses the containing week so the line has daily points. */
+  const timetrackingChartEntries = useMemo(() => {
+    if (
+      !selectedTimetrackingPeriod ||
+      selectedTimetrackingPeriod.kind !== "day"
+    ) {
+      return timetrackingEntries;
+    }
+    const chartPeriod = resolveTimetrackingChartPeriod(
+      selectedTimetrackingPeriod,
+    );
+    if (!chartPeriod) return timetrackingEntries;
+    return collectTimetrackingEntries({
+      ...timetrackingEntrySources,
+      period: chartPeriod,
+    });
+  }, [
+    selectedTimetrackingPeriod,
+    timetrackingEntries,
+    timetrackingEntrySources,
+  ]);
+
+  const timetrackingContactNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const contact of workspace.contacts) {
+      const name = contact.name?.trim();
+      if (name) map.set(contact.id, name);
+    }
+    return map;
+  }, [workspace.contacts]);
+
+  const timetrackingContactAvatarSrc = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const contact of workspace.contacts) {
+      map.set(
+        contact.id,
+        contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
+      );
+    }
+    return map;
+  }, [contactAvatarSrc, workspace.contacts]);
+
+  const timetrackingActorAvatarSrc = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const contact of workspace.contacts) {
+      const src =
+        contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null;
+      if (!src) continue;
+      const fullName = contact.name?.trim().toLowerCase();
+      if (fullName) {
+        map.set(fullName, src);
+        const firstToken = fullName.split(/\s+/)[0];
+        if (firstToken && !map.has(firstToken)) {
+          map.set(firstToken, src);
+        }
+      }
+      const firstName = contact.firstName?.trim().toLowerCase();
+      if (firstName && !map.has(firstName)) {
+        map.set(firstName, src);
+      }
+    }
+    return map;
+  }, [contactAvatarSrc, workspace.contacts]);
+
+  const timetrackingActorEmailAvatarSrc = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const contact of workspace.contacts) {
+      const src =
+        contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null;
+      if (!src) continue;
+      const email = contact.email?.trim().toLowerCase();
+      if (email) map.set(email, src);
+      for (const entry of contact.emails ?? []) {
+        const address = entry.address?.trim().toLowerCase();
+        if (address) map.set(address, src);
+      }
+    }
+    return map;
+  }, [contactAvatarSrc, workspace.contacts]);
 
   const closeTimetrackingDetail = useCallback(() => {
     setSearchParams(
@@ -1098,6 +1269,7 @@ function CalendarPageBody() {
       }
       onTaskReschedule={handleTaskReschedule}
       onMeetingReschedule={handleMeetingReschedule}
+      onMeetingDuplicate={handleMeetingDuplicate}
       onCreateMeetingFromSelect={handleCreateMeetingFromSelect}
       resolveTask={resolveTask}
       onTaskPopoverChange={setPopoverTaskId}
@@ -1153,6 +1325,9 @@ function CalendarPageBody() {
             <CalendarTimetrackingView
               key="timetracking-detail-side-panel"
               entries={timetrackingEntries}
+              chartEntries={timetrackingChartEntries}
+              contactNames={timetrackingContactNames}
+              contactAvatarSrc={timetrackingContactAvatarSrc}
               tasks={workspace.allTasks}
               meetings={workspace.meetings}
               period={selectedTimetrackingPeriod}
@@ -1191,27 +1366,69 @@ function CalendarPageBody() {
               </div>
               <div className="desktop-journal-day-layout__calendar-body calendar-timetracking-detail-panel__body">
                 {meeting ? (
-                  <MeetingDetailView
-                    layout="panel"
-                    displayId={displayId ?? "M-?"}
+                  <TimetrackingSessionsDetail
+                    kind="meeting"
+                    entityId={meeting.id}
+                    displayId={displayId}
                     title={meeting.title}
-                    summary={meeting.summary ?? ""}
-                    notes={meeting.notes ?? ""}
-                    transcription={meeting.transcription ?? ""}
-                    onTitleChange={(title) => patchMeeting({ title })}
-                    onSummaryChange={(summary) => patchMeeting({ summary })}
-                    onNotesChange={(notes) => patchMeeting({ notes })}
-                    onTranscriptionChange={(transcription) =>
-                      patchMeeting({ transcription })
+                    trackedDurationSeconds={
+                      meeting.trackedDurationSeconds ?? null
                     }
-                    {...meetingDetailProps}
-                    {...meetingEmailActions}
-                    {...meetingContactNavigation}
+                    avatarSrcByContactId={timetrackingContactAvatarSrc}
+                    avatarSrcByActorName={timetrackingActorAvatarSrc}
+                    avatarSrcByActorEmail={timetrackingActorEmailAvatarSrc}
+                    onOpenEntity={() => {
+                      setMeetingOverlayLayout("page");
+                    }}
                   />
                 ) : openTask ? (
-                  <TaskDetailPage
-                    taskRouteParam={openTask.id}
-                    overlayMode
+                  <TimetrackingSessionsDetail
+                    kind="task"
+                    entityId={openTask.id}
+                    displayId={getTaskDisplayId(
+                      {
+                        number: openTask.number,
+                        projectId: openTask.projectId,
+                      },
+                      openTask.projectKey,
+                    )}
+                    title={openTask.title}
+                    trackedDurationSeconds={
+                      openTask.trackedDurationSeconds ?? null
+                    }
+                    boardTask={{
+                      id: openTask.id,
+                      number: openTask.number,
+                      title: openTask.title,
+                      status: openTask.status,
+                      priority: openTask.priority,
+                      dueDate: openTask.dueDate,
+                      projectId: openTask.projectId,
+                      projectKey: openTask.projectKey,
+                      assigneeId: openTask.assigneeId,
+                      support: openTask.support,
+                      notification: openTask.notification,
+                    }}
+                    assigneeOptions={assigneeOptions}
+                    avatarSrcByContactId={timetrackingContactAvatarSrc}
+                    avatarSrcByActorName={timetrackingActorAvatarSrc}
+                    avatarSrcByActorEmail={timetrackingActorEmailAvatarSrc}
+                    onOpenEntity={() => {
+                      if (
+                        openTask.projectKey &&
+                        openTask.number != null
+                      ) {
+                        navigateToHref(
+                          navigate,
+                          getProjectTaskHref(
+                            openTask.projectKey,
+                            openTask.number,
+                          ),
+                        );
+                        return;
+                      }
+                      setTaskOverlayLayout("page");
+                    }}
                   />
                 ) : null}
               </div>

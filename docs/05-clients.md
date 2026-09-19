@@ -4,14 +4,15 @@
 
 | Surface | Folder | How you reach it | Role |
 | --- | --- | --- | --- |
-| **Desktop** | `desktop/` | Tauri app → local-core `http://127.0.0.1:8788` | Day-to-day product UI |
+| **Desktop** | `desktop/` | Tauri app → local-core `http://127.0.0.1:8788` | Day-to-day product UI. Starts Docker + local-core if they are down. |
 | **Mobile** | `mobile/` | Expo (iPhone / iPad) → local-core | Same product concepts; native layouts |
-| **Hub** | `hub/` | macOS menu bar | Start/stop Docker, core, PTY |
+| **Hub** | `hub/` | macOS menu bar | Optional stop, plus PTY and Expo |
 | **CLI** | `core/packages/cli/` | `pnpm cli -- …` | Task/project/comment CRUD |
 | **API agents** | (external) | `https://agent.backsteros.com` + `sk_live_…` | Always-on writes via cloud-core door |
 
 See [11-urls-and-routing.md](11-urls-and-routing.md), [12-v2-local-computer.md](12-v2-local-computer.md),
 [13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md). Desktop decision: ADR-019.
+**Target routing:** ADR-035 — iOS → cloud-core, desktop → local-core, files in private R2. The table above is what ships today.
 
 ## Desktop — Tauri (`desktop/`)
 

@@ -27,6 +27,15 @@ export type TaskRelatedChipsProps = {
    * `inline` — task header chip row (same chrome as other property chips).
    */
   variant?: "rail" | "inline";
+  /** When false, only the add control is shown (selected chips rendered elsewhere). */
+  showSelectedChips?: boolean;
+  /**
+   * `label` (default) — muted labeled chip when empty, plus when values exist.
+   * `plus` — always the compact plus button (e.g. timeline add).
+   */
+  addTrigger?: "label" | "plus";
+  /** Icon on the empty trigger and unknown chips. */
+  emptyIcon?: ReactNode;
   /** Read-only activate (e.g. when edits are not wired). */
   onActivate?: () => void;
 };
@@ -34,6 +43,7 @@ export type TaskRelatedChipsProps = {
 function resolveSelected(
   values: readonly string[],
   options: SearchableDropdownOption<string>[],
+  emptyIcon: ReactNode,
 ): SearchableDropdownOption<string>[] {
   const byValue = new Map(options.map((option) => [option.value, option]));
   return values.map((value) => {
@@ -42,7 +52,7 @@ function resolveSelected(
     return {
       value,
       label: "Unknown",
-      icon: <ContactPersonIcon size={14} />,
+      icon: emptyIcon,
     };
   });
 }
@@ -63,16 +73,55 @@ export function TaskRelatedChips({
   taskPropertyDropdownId = "related",
   onCreateFromQuery,
   variant = "rail",
+  showSelectedChips = true,
+  addTrigger = "label",
+  emptyIcon,
   onActivate,
 }: TaskRelatedChipsProps) {
   const canEdit = Boolean(onChange) && options.length > 0;
-  const selected = resolveSelected(values, options);
+  const fallbackIcon = emptyIcon ?? <ContactPersonIcon size={14} />;
+  const selected = resolveSelected(values, options, fallbackIcon);
   const isInline = variant === "inline";
+  const visibleSelected = showSelectedChips ? selected : [];
+  const hasSelectedValues = values.length > 0;
+  const usePlusTrigger = addTrigger === "plus" || hasSelectedValues;
 
   function removeValue(value: string) {
     if (!onChange || disabled) return;
     onChange(values.filter((entry) => entry !== value));
   }
+
+  const plusButton = ({
+    open,
+    isDisabled,
+    triggerId,
+    onToggle,
+  }: {
+    open: boolean;
+    isDisabled: boolean;
+    triggerId: string;
+    onToggle: () => void;
+  }) => (
+    <button
+      type="button"
+      id={triggerId}
+      className={["contact-detail-chips__add", open ? "is-open" : null]
+        .filter(Boolean)
+        .join(" ")}
+      data-task-property-dropdown={taskPropertyDropdownId}
+      disabled={isDisabled}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      aria-label={`Add ${ariaLabel.toLowerCase()}`}
+      title="Add related"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <SidePanelPlusIcon />
+    </button>
+  );
 
   const addControl = canEdit ? (
     <SearchableDropdown
@@ -105,48 +154,18 @@ export function TaskRelatedChips({
         triggerId,
         onToggle,
       }) => {
-        if (values.length === 0) {
-          return (
-            <button
-              type="button"
-              id={triggerId}
-              className={[
-                "property-dropdown-trigger",
-                isInline ? "property-dropdown-trigger--inline-chip" : null,
-                open ? "is-open" : null,
-                "is-muted",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              data-task-property-dropdown={taskPropertyDropdownId}
-              disabled={isDisabled}
-              aria-haspopup="listbox"
-              aria-expanded={open}
-              aria-label={ariaLabel}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggle();
-              }}
-            >
-              <span
-                className="property-dropdown-trigger__icon"
-                aria-hidden="true"
-              >
-                <ContactPersonIcon size={14} />
-              </span>
-              <span className="property-dropdown-trigger__label">
-                {emptyLabel}
-              </span>
-            </button>
-          );
+        if (usePlusTrigger) {
+          return plusButton({ open, isDisabled, triggerId, onToggle });
         }
         return (
           <button
             type="button"
             id={triggerId}
             className={[
-              "contact-detail-chips__add",
+              "property-dropdown-trigger",
+              isInline ? "property-dropdown-trigger--inline-chip" : null,
               open ? "is-open" : null,
+              "is-muted",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -154,19 +173,38 @@ export function TaskRelatedChips({
             disabled={isDisabled}
             aria-haspopup="listbox"
             aria-expanded={open}
-            aria-label={`Add ${ariaLabel.toLowerCase()}`}
-            title="Add related"
+            aria-label={ariaLabel}
             onClick={(event) => {
               event.stopPropagation();
               onToggle();
             }}
           >
-            <SidePanelPlusIcon />
+            <span
+              className="property-dropdown-trigger__icon"
+              aria-hidden="true"
+            >
+              {fallbackIcon}
+            </span>
+            <span className="property-dropdown-trigger__label">
+              {emptyLabel}
+            </span>
           </button>
         );
       }}
     />
-  ) : values.length === 0 ? (
+  ) : addTrigger === "plus" ? (
+    <button
+      type="button"
+      className="contact-detail-chips__add"
+      data-task-property-dropdown={taskPropertyDropdownId}
+      disabled={disabled}
+      aria-label={`Add ${ariaLabel.toLowerCase()}`}
+      title="Add related"
+      onClick={() => onActivate?.()}
+    >
+      <SidePanelPlusIcon />
+    </button>
+  ) : !hasSelectedValues ? (
     <button
       type="button"
       className={[
@@ -181,7 +219,7 @@ export function TaskRelatedChips({
       onClick={() => onActivate?.()}
     >
       <span className="property-dropdown-trigger__icon" aria-hidden="true">
-        <ContactPersonIcon size={14} />
+        {fallbackIcon}
       </span>
       <span className="property-dropdown-trigger__label">{emptyLabel}</span>
     </button>
@@ -198,10 +236,8 @@ export function TaskRelatedChips({
         .join(" ")}
     >
       <div className="contact-detail-chips__row">
-        {selected.map((option) => {
-          const icon: ReactNode = option.icon ?? (
-            <ContactPersonIcon size={14} />
-          );
+        {visibleSelected.map((option) => {
+          const icon: ReactNode = option.icon ?? fallbackIcon;
           return (
             <div
               key={option.value}

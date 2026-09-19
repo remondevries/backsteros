@@ -9,6 +9,7 @@ export type CrmGroupColorPickerProps = {
   value: string;
   onChange: (color: string) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 };
 
 /** Compact preset swatch row for CRM group create/edit. */
@@ -16,10 +17,11 @@ export function CrmGroupColorPicker({
   value,
   onChange,
   disabled = false,
+  ariaLabel = "Group color",
 }: CrmGroupColorPickerProps) {
   const selected = resolveCrmGroupColor(value);
   return (
-    <div className="crm-group-color-picker" role="group" aria-label="Group color">
+    <div className="crm-group-color-picker" role="group" aria-label={ariaLabel}>
       {CRM_GROUP_COLOR_PRESETS.map((color) => {
         const isSelected = selected.toLowerCase() === color.toLowerCase();
         return (

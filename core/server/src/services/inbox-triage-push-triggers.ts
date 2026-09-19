@@ -65,7 +65,10 @@ export async function pushInboxTriageForMeeting(
   workspaceId: string,
   meeting: Meeting,
 ): Promise<void> {
-  const scheduleLabel = formatMeetingScheduleLabel(meeting.startAt, meeting.endAt);
+  const scheduleLabel = formatMeetingScheduleLabel(
+    meeting.startAt ?? "",
+    meeting.endAt ?? "",
+  );
   const payload = buildServerInboxTriageMeetingNotification({
     id: meeting.id,
     title: meeting.title,

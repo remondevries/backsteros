@@ -11,6 +11,26 @@ import {
 } from "./optimistic-local-metadata-create";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
+const MEETING_CREATE_FORMATS = [
+  "video_call",
+  "in_person",
+  "phone_call",
+] as const;
+
+type MeetingCreateFormat = (typeof MEETING_CREATE_FORMATS)[number];
+
+function normalizeMeetingCreateFormat(
+  value: unknown,
+): MeetingCreateFormat | undefined {
+  if (
+    typeof value === "string" &&
+    (MEETING_CREATE_FORMATS as readonly string[]).includes(value)
+  ) {
+    return value as MeetingCreateFormat;
+  }
+  return undefined;
+}
+
 /** Letter and meeting creation flows. */
 export function useWorkspaceLetterMeetingActions({
   authenticated,
@@ -19,6 +39,7 @@ export function useWorkspaceLetterMeetingActions({
   toSnakeFields,
   setApiLetters,
   setApiMeetings,
+  rawMeetings,
 }: {
   authenticated: boolean;
   client: BacksterosApiClient;
@@ -26,6 +47,7 @@ export function useWorkspaceLetterMeetingActions({
   toSnakeFields: (values: Record<string, unknown>) => Record<string, unknown>;
   setApiLetters: ApiRowsSetter<ApiLetter>;
   setApiMeetings: ApiRowsSetter<ApiMeeting>;
+  rawMeetings: readonly ApiMeeting[];
 }) {
   const createLetter = useCallback(
     async (input: {
@@ -127,8 +149,15 @@ export function useWorkspaceLetterMeetingActions({
       status?: string;
       startAt: string;
       endAt: string;
+      projectId?: string | null;
+      organizationId?: string | null;
+      attendeeContactIds?: string[];
+      format?: MeetingCreateFormat;
+      location?: string | null;
+      locationOrganizationId?: string | null;
     }) => {
       if (!authenticated) throw new Error("Sign in to create meetings.");
+      const format = normalizeMeetingCreateFormat(input.format);
       const meetingBody = {
         title: input.title?.trim() || "New meeting",
         summary: input.summary ?? null,
@@ -137,6 +166,20 @@ export function useWorkspaceLetterMeetingActions({
         ...(input.status ? { status: input.status } : {}),
         startAt: input.startAt,
         endAt: input.endAt,
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
+        ...(input.organizationId !== undefined
+          ? { organizationId: input.organizationId }
+          : {}),
+        ...(input.attendeeContactIds !== undefined
+          ? { attendeeContactIds: input.attendeeContactIds }
+          : {}),
+        ...(format ? { format } : {}),
+        ...(input.location !== undefined ? { location: input.location } : {}),
+        ...(input.locationOrganizationId !== undefined
+          ? { locationOrganizationId: input.locationOrganizationId }
+          : {}),
       };
       if (powerSync.ready && powerSync.createMetadata) {
         const id = crypto.randomUUID().replace(/-/g, "");
@@ -202,5 +245,39 @@ export function useWorkspaceLetterMeetingActions({
     [authenticated, client, powerSync, setApiMeetings, toSnakeFields],
   );
 
-  return { createLetter, createMeeting };
+  const duplicateMeeting = useCallback(
+    async (
+      sourceId: string,
+      schedule: { startAt: string; endAt: string; status?: string },
+    ) => {
+      if (!authenticated) throw new Error("Sign in to duplicate meetings.");
+      const source = rawMeetings.find((entry) => entry.id === sourceId) ?? null;
+      if (!source) {
+        throw new Error("Meeting not found.");
+      }
+      const title = source.title.trim();
+      if (!title) throw new Error("Meeting title is required.");
+
+      return createMeeting({
+        title,
+        summary: source.summary ?? null,
+        notes: source.notes ?? null,
+        ...(schedule.status ? { status: schedule.status } : {}),
+        startAt: schedule.startAt,
+        endAt: schedule.endAt,
+        projectId: source.projectId ?? null,
+        organizationId: source.organizationId ?? null,
+        ...(Array.isArray(source.attendeeContactIds) &&
+        source.attendeeContactIds.length > 0
+          ? { attendeeContactIds: source.attendeeContactIds }
+          : {}),
+        format: normalizeMeetingCreateFormat(source.format),
+        location: source.location ?? null,
+        locationOrganizationId: source.locationOrganizationId ?? null,
+      });
+    },
+    [authenticated, createMeeting, rawMeetings],
+  );
+
+  return { createLetter, createMeeting, duplicateMeeting };
 }

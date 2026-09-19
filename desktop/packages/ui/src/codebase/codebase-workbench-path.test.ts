@@ -49,3 +49,24 @@ test("isCodebaseWorkbenchPath treats documents as a workbench route", () => {
   );
   assert.equal(isCodebaseWorkbenchPath("/projects/demo", "demo"), false);
 });
+
+test("parseCodebaseWorkbenchPath maps updates to Updates tab", () => {
+  assert.deepEqual(parseCodebaseWorkbenchPath("/projects/demo/updates", "demo"), {
+    tab: "updates",
+    commitSha: null,
+    pullNumber: null,
+    filePath: null,
+    documentPath: null,
+  });
+});
+
+test("getCodebaseWorkbenchHref builds Updates routes", () => {
+  assert.equal(
+    getCodebaseWorkbenchHref("demo", { tab: "updates" }),
+    "/projects/demo/updates",
+  );
+});
+
+test("isCodebaseWorkbenchPath treats updates as a workbench route", () => {
+  assert.equal(isCodebaseWorkbenchPath("/projects/demo/updates", "demo"), true);
+});

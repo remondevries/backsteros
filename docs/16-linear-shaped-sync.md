@@ -2,7 +2,7 @@
 
 **Status:** Target — replaces peer-twin LWW + desktop dual-hydrate as the product strategy.  
 **Revokes:** Phase 6.3 “keep dual-hydrate until gates pass” ([`04-api-and-sync.md`](04-api-and-sync.md)).  
-**Related:** LSE reverse-engineering ([SUMMARY](https://github.com/wzhudev/reverse-linear-sync-engine/blob/main/SUMMARY.md)), hybrid topology ([`13-hybrid-cloud-local-core.md`](13-hybrid-cloud-local-core.md)), ADR tiers ([`03-data-model.md`](03-data-model.md)).
+**Related:** LSE reverse-engineering ([SUMMARY](https://github.com/wzhudev/reverse-linear-sync-engine/blob/main/SUMMARY.md)), hybrid topology ([`13-hybrid-cloud-local-core.md`](13-hybrid-cloud-local-core.md)), file store ([ADR-035](10-decisions-log.md)), ADR tiers ([`03-data-model.md`](03-data-model.md)).
 
 ## Product call
 
@@ -10,9 +10,10 @@
 | --- | --- |
 | Leader / clock | **Cloud-core** is the elected leader for the shared workspace clock when hybrid is on. It assigns monotonic sync ids and is reachable when the Mac sleeps (door, portal, phone). |
 | Desktop / iOS | **Caches**, not a second brain. Optimistic UI → queued mutations → server executes → ordered deltas. LWW is safe because the **server already ordered** writes. |
-| local-core | Replica that **applies the same ordered deltas** (and hosts the fat Mac vault for PDFs / PTY). Not a peer that invents its own wall-clock fork against cloud. |
-| Speed | Local SQLite reads + optimistic writes + bootstrap-then-delta — **not** REST fan-out or `mergeLocalAndApiByUpdatedAt`. |
-| Vault path | **Machine-local.** Never authority across cores. Each host uses `BACKSTEROS_VAULT_PATH` / env; `workspace_settings.vaultPath` is denylisted from replication. |
+| local-core | Mac **replica** that applies the same ordered deltas. Lifecycle belongs to the desktop app (ADR-035). Not a peer that invents its own wall-clock fork against cloud, and not something iOS depends on. |
+| iOS | Client of **cloud-core** only. Not a core. PowerSync against cloud Postgres. |
+| Speed | Local SQLite reads + optimistic writes + bootstrap-then-delta — **not** REST fan-out or `mergeLocalAndApiByUpdatedAt`. Desktop file reads hit the local working copy, not R2, on every open. |
+| Files | **R2** is the shared store (markdown + letter PDFs + attachments + avatars + other `.backsteros` blobs). The Mac vault is the desktop working copy and syncs changes (ADR-035). `workspace_settings.vaultPath` stays denylisted from replication. |
 | Tier C/D | Unchanged ADR-010: no bulk PDF / full bodies in client SQLite. |
 
 Until cloud is fully the single total-order authority, we still harden the twin (split cursors, empty-body guards) so we do not lose rows or empty documents while migrating.
@@ -22,34 +23,38 @@ Until cloud is fully the single total-order authority, we still harden the twin 
 ```mermaid
 flowchart TB
   subgraph clients [Product shells — caches]
-    Desktop[Desktop Tauri\nSQLite working set]
-    Mobile[Mobile later\nscoped subset]
+    Desktop[Desktop Tauri\nSQLite + local file copy]
+    Mobile[iOS\nSQLite cache]
   end
 
   subgraph leader [Leader — cloud-core]
     CloudAPI[core/server]
     CloudPG[(Postgres + lastSyncId)]
-    CloudVault["Vault markdown twin\nBACKSTEROS_VAULT_PATH"]
+    CloudPS[PowerSync]
+    R2["Private R2\nmarkdown + blobs"]
     Door[door / portal]
   end
 
-  subgraph replica [Replica — local-core Mac]
-    LocalAPI[core/server]
+  subgraph replica [Replica — local-core on the Mac]
+    LocalAPI[core/server\nstarted by desktop]
     LocalPG[(Postgres applies deltas)]
     LocalPS[PowerSync]
-    LocalVault["Fat vault PDFs + markdown"]
+    LocalVault["Local working copy\nvault layout"]
   end
 
   Door --> CloudAPI
   CloudAPI --> CloudPG
-  CloudAPI --> CloudVault
+  CloudAPI --> R2
+  CloudPS --> CloudPG
   CloudAPI -->|"ordered deltas / sync id"| LocalAPI
   LocalAPI --> LocalPG
   LocalPS --> LocalPG
-  Desktop -->|"read SQLite / PS"| LocalPS
+  Desktop -->|"read SQLite"| LocalPS
   Desktop -->|"optimistic tx upload"| LocalAPI
-  Mobile -->|"later"| LocalPS
-  LocalVault -.->|"markdown twin only"| CloudVault
+  Desktop -->|"read files"| LocalVault
+  LocalVault <-->|"sync changes only"| R2
+  Mobile -->|"read SQLite"| CloudPS
+  Mobile -->|"writes + open file"| CloudAPI
 ```
 
 ## Client model (desktop)
@@ -58,14 +63,14 @@ flowchart TB
 2. **Read path** = local SQLite only for list/detail metadata.
 3. **Write path** = optimistic local patch → mutation queue (`mutation_id`) → `/powersync/write` → wait for server ack / delta containing that sync id. (`/sync/push` is DEAD — storage-health only.)
 4. **No** `mergeLocalAndApiByUpdatedAt` for product lists. REST may remain for one-shot Tier C/D fetches and cold-start rescue **only until** PowerSync download is proven — not as a second source of truth.
-5. Open markdown bodies stay on-demand (Tier C); PDFs stay local-vault (Tier D).
+5. Open markdown and blobs stay out of client SQLite (Tier C/D). **Desktop** reads them from the local working copy. **iOS** fetches the object from cloud-core / R2 when opened. PowerSync does not sync file bytes.
 
 ## Core model
 
 1. **One write pipeline** — REST, agent, and PowerSync uploads all bump versions and append `sync_events` (or the future `lastSyncId` log) with the same shape.
 2. **Mutation receipts** — idempotent `mutation_id`; duplicates ack without re-apply.
 3. **Ordered deltas** — clients and local-core advance a monotonic cursor; gaps are detectable.
-4. **Vault** — markdown twin with empty-body invariant (never empty-over-nonempty); metadata cannot LWW-win a zero body over richer peer bytes.
+4. **Files** — R2 is shared authority (ADR-035). Desktop syncs a local working copy (changes only; empty-body invariant: never empty-over-nonempty). Metadata cannot LWW-win a zero body over richer bytes.
 5. **Replication** — pull and push watermarks are **split** so peer tip cannot skip local rows.
 
 ## What we are deleting as strategy

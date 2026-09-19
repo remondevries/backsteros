@@ -743,6 +743,83 @@
     "when": 1794100000000,
     "tag": "0114_contact_portal_logs",
     "breakpoints": true
-  }
-]
+  },
+  {
+    "idx": 106,
+    "version": "7",
+    "when": 1794200000000,
+    "tag": "0115_project_health_check",
+    "breakpoints": true
+  },
+  {
+    "idx": 107,
+    "version": "7",
+    "when": 1794300000000,
+    "tag": "0116_project_updates",
+    "breakpoints": true
+  },
+  {
+    "idx": 108,
+    "version": "7",
+    "when": 1794400000000,
+    "tag": "0117_project_update_task_status",
+    "breakpoints": true
+  },
+  {
+    "idx": 109,
+    "version": "7",
+    "when": 1794500000000,
+    "tag": "0118_project_update_visibility_status",
+    "breakpoints": true
+  },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1794600000000,
+      "tag": "0119_project_update_severity",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1794700000000,
+      "tag": "0120_project_update_related_task_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1794800000000,
+      "tag": "0121_project_update_kind_statuses",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0122_meeting_nullable_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0123_task_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1795100000000,
+      "tag": "0124_task_label_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1795200000000,
+      "tag": "0125_task_label_groups",
+      "breakpoints": true
+    }
+  ]
 }

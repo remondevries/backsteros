@@ -13,6 +13,7 @@ import {
 import { resolveHistoryEntryDisplay } from "@backsteros/ui/navigation";
 
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
+import { DevTrafficLights } from "../components/dev-traffic-lights";
 import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
@@ -96,57 +97,61 @@ function ShellChromeInner({
   );
 
   return (
-    <ProductAppShell
-      className={windowFullscreen ? "is-window-fullscreen" : undefined}
-      sidebar={sidebar}
-      sidebarCollapsed={sidebarCollapsed}
-      sidebarAnimating={sidebarAnimating}
-      tabs={tabsState.tabs}
-      activeTabId={tabsState.activeTabId}
-      onActivateTab={activateTab}
-      onCloseTab={closeTab}
-      onOpenNewTab={openNewTab}
-      historyToolbar={
-        sidebarCollapsed
-          ? {
-              onBack: history.goBack,
-              onForward: history.goForward,
-              canGoBack: history.canGoBack,
-              canGoForward: history.canGoForward,
-              recentPages: history.recentPages.map(
-                (page): ProductSidebarRecentPage => {
-                  const display = resolveHistoryEntryDisplay(
-                    page.href,
-                    page.title,
-                  );
-                  return {
-                    id: page.href,
-                    href: page.href,
-                    title: display.title,
-                    badge: display.badgeLabel,
-                    icon: createElement(HistoryEntryIcon, {
-                      display,
-                      icon: page.icon,
-                    }),
-                  };
-                },
-              ),
-              onSelectRecentPage: (href) =>
-                history.navigateToHistoryEntry(href),
-            }
-          : null
-      }
-      renderTabIcon={renderAppShellTabIcon}
-      showSidePanel={showSidePanelSlot}
-      sidePanel={sidePanel}
-      sidePanelCollapsed={sidePanelCollapsed && !financeRail}
-      sidePanelAnimating={sidePanelAnimating && !financeRail}
-      chromeHeader={
-        chromeHeader ?? (showSidePanelSlot ? <BreadcrumbChromeSkeleton /> : null)
-      }
-    >
-      {children}
-    </ProductAppShell>
+    <>
+      <DevTrafficLights hidden={windowFullscreen} />
+      <ProductAppShell
+        className={windowFullscreen ? "is-window-fullscreen" : undefined}
+        sidebar={sidebar}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarAnimating={sidebarAnimating}
+        tabs={tabsState.tabs}
+        activeTabId={tabsState.activeTabId}
+        onActivateTab={activateTab}
+        onCloseTab={closeTab}
+        onOpenNewTab={openNewTab}
+        historyToolbar={
+          sidebarCollapsed
+            ? {
+                onBack: history.goBack,
+                onForward: history.goForward,
+                canGoBack: history.canGoBack,
+                canGoForward: history.canGoForward,
+                recentPages: history.recentPages.map(
+                  (page): ProductSidebarRecentPage => {
+                    const display = resolveHistoryEntryDisplay(
+                      page.href,
+                      page.title,
+                    );
+                    return {
+                      id: page.href,
+                      href: page.href,
+                      title: display.title,
+                      badge: display.badgeLabel,
+                      icon: createElement(HistoryEntryIcon, {
+                        display,
+                        icon: page.icon,
+                      }),
+                    };
+                  },
+                ),
+                onSelectRecentPage: (href) =>
+                  history.navigateToHistoryEntry(href),
+              }
+            : null
+        }
+        renderTabIcon={renderAppShellTabIcon}
+        showSidePanel={showSidePanelSlot}
+        sidePanel={sidePanel}
+        sidePanelCollapsed={sidePanelCollapsed && !financeRail}
+        sidePanelAnimating={sidePanelAnimating && !financeRail}
+        chromeHeader={
+          chromeHeader ??
+          (showSidePanelSlot ? <BreadcrumbChromeSkeleton /> : null)
+        }
+      >
+        {children}
+      </ProductAppShell>
+    </>
   );
 }
 

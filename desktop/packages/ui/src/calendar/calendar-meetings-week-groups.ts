@@ -25,9 +25,10 @@ function formatLocalYmd(date: Date): string {
 }
 
 function meetingStartYmd(
-  startAt: number | Date | string,
+  startAt: number | Date | string | null | undefined,
   fallback: Date,
 ): string {
+  if (startAt == null || startAt === "") return formatLocalYmd(fallback);
   const date = new Date(startAt);
   if (Number.isNaN(date.getTime())) return formatLocalYmd(fallback);
   return formatLocalYmd(date);
@@ -154,7 +155,7 @@ function daysBetweenYmd(a: string, b: string): number {
  * day, then by wall-clock distance). Used to land j/k and scroll anchors.
  */
 export function findMeetingClosestToReference<
-  T extends { id: string; startAt: number | Date | string },
+  T extends { id: string; startAt: number | Date | string | null },
 >(meetings: readonly T[], options?: { now?: Date }): T | null {
   if (meetings.length === 0) return null;
   const now = options?.now ?? new Date();
@@ -167,6 +168,7 @@ export function findMeetingClosestToReference<
   let bestIsFuture = false;
 
   for (const meeting of meetings) {
+    if (meeting.startAt == null || meeting.startAt === "") continue;
     const start = new Date(meeting.startAt);
     if (Number.isNaN(start.getTime())) continue;
     const startYmd = formatLocalYmd(start);
@@ -221,7 +223,7 @@ export function groupScheduledMeetingsByPeriod<T extends MeetingListItem>(
 
   for (const meeting of sorted) {
     const groupKey = groupKeyForMeeting(
-      meetingStartYmd(meeting.startAt, now),
+      meetingStartYmd(meeting.startAt ?? meeting.createdAt, now),
       options.granularity,
     );
     let bucket = groups.get(groupKey);

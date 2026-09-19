@@ -141,6 +141,8 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // os.local.backsteros.com is the tailnet name for this dev server.
+    allowedHosts: [".local.backsteros.com"],
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
     proxy: {

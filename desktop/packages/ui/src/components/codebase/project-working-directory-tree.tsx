@@ -619,7 +619,11 @@ export function ProjectWorkingDirectoryTree({
   }
 
   if (loading && entries.length === 0 && !pendingCreate) {
-    return <p className="console-github-pane-status">Loading files…</p>;
+    return (
+      <div className="console-fs-tree-status">
+        <p className="console-github-pane-status">Loading files…</p>
+      </div>
+    );
   }
 
   if (error && entries.length === 0 && !pendingCreate) {

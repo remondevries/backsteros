@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app.js";
+import { loadBacksterosR2Env } from "./lib/load-backsteros-r2-env.js";
 import { assertPowerSyncSecrets } from "./lib/secrets.js";
 import {
   ensureVaultStructure,
@@ -14,6 +15,7 @@ import { startCoreReplicationWorker } from "./services/core-replication/worker.j
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 
+loadBacksterosR2Env();
 assertPowerSyncSecrets();
 
 const envVault = process.env.BACKSTEROS_VAULT_PATH?.trim();

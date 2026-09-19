@@ -100,6 +100,9 @@ export type TaskCalendarEvent = {
         status?: string | null;
         endAt?: string;
         finished?: boolean;
+        openEnded?: boolean;
+        /** Happening now (started, not yet ended). */
+        active?: boolean;
         /** Local-only meeting draft; never resolve it as a persisted entity. */
         draft?: boolean;
       }
@@ -120,17 +123,31 @@ export type MeetingCalendarPatch = {
   status: string;
 };
 
+/**
+ * Alt/Option held at drop → duplicate the meeting (Google Calendar / Outlook).
+ * Intent is read at drop time only: releasing Alt mid-drag before drop moves.
+ */
+export function isCalendarMeetingDuplicateModifier(
+  jsEvent: { altKey?: boolean } | null | undefined,
+): boolean {
+  return Boolean(jsEvent?.altKey);
+}
+
 export type MeetingCalendarLike = {
   id: string;
   title: string;
-  startAt: number | Date | string;
-  endAt: number | Date | string;
+  startAt: number | Date | string | null;
+  endAt: number | Date | string | null;
+  createdAt?: number | Date | string | null;
   status?: string | null;
   projectName?: string | null;
 };
 
 /** Timed blocks at least this long show project name + extra top padding. */
 export const CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS = 45 * 60 * 1000;
+
+/** Open-ended live meetings (start only) render this long with a fade-out. */
+export const OPEN_ENDED_MEETING_VISUAL_MS = 60 * 60 * 1000;
 
 export function calendarEventDurationMs(
   start: Date | null,
@@ -322,12 +339,54 @@ export function unscheduledCalendarTasks<T extends CalendarTaskLike>(
   );
 }
 
-export function meetingCalendarEventClassNames(finished = false): string[] {
+export function meetingCalendarEventClassNames(
+  finished = false,
+  openEnded = false,
+): string[] {
   const classNames = ["task-calendar-event", "meeting-calendar-event"];
   if (finished) {
     classNames.push("meeting-calendar-event--finished");
   }
+  if (openEnded) {
+    classNames.push("meeting-calendar-event--open-ended");
+  }
   return classNames;
+}
+
+/** Meeting has started and has not ended yet (open-ended or within the window). */
+export function isMeetingCurrentlyActive(
+  meeting: Pick<MeetingCalendarLike, "startAt" | "endAt" | "status">,
+  now = new Date(),
+): boolean {
+  const stored = (meeting.status ?? "").trim().toLowerCase();
+  if (
+    stored === "canceled" ||
+    stored === "completed" ||
+    stored === "duplicated"
+  ) {
+    return false;
+  }
+  const start = toValidDate(meeting.startAt);
+  if (!start || start.getTime() > now.getTime()) return false;
+  const end = toValidDate(meeting.endAt);
+  if (end && end.getTime() <= now.getTime()) return false;
+  return true;
+}
+
+/**
+ * Visual end for start-only meetings: at least 1h from start, and while live
+ * always stretch at least 1h past `now` so the block covers the current time.
+ */
+export function openEndedMeetingVisualEnd(
+  start: Date,
+  now = new Date(),
+): Date {
+  const fromStart = start.getTime() + OPEN_ENDED_MEETING_VISUAL_MS;
+  if (start.getTime() > now.getTime()) {
+    return new Date(fromStart);
+  }
+  const fromNow = now.getTime() + OPEN_ENDED_MEETING_VISUAL_MS;
+  return new Date(Math.max(fromStart, fromNow));
 }
 
 export function meetingToCalendarEvent(
@@ -336,15 +395,64 @@ export function meetingToCalendarEvent(
 ): TaskCalendarEvent | null {
   const start = toValidDate(meeting.startAt);
   const end = toValidDate(meeting.endAt);
+  const title = meeting.title || "Untitled meeting";
+  const active = isMeetingCurrentlyActive(meeting, now);
+
+  // No schedule yet — all-day on the created day (or today).
+  if (!start && !end) {
+    const daySource = toValidDate(meeting.createdAt) ?? now;
+    return {
+      id: `meeting:${meeting.id}`,
+      title,
+      start: formatLocalYmd(daySource),
+      allDay: true,
+      classNames: [
+        ...meetingCalendarEventClassNames(false, false),
+        "meeting-calendar-event--all-day",
+      ],
+      extendedProps: {
+        entityType: "meeting",
+        meetingId: meeting.id,
+        projectName: meeting.projectName?.trim() || null,
+        status: meeting.status ?? null,
+        finished: false,
+        openEnded: false,
+        active: false,
+      },
+    };
+  }
+
+  // Live / open-ended: start only — timed block that fades out visually.
+  if (start && !end) {
+    const visualEnd = openEndedMeetingVisualEnd(start, now);
+    return {
+      id: `meeting:${meeting.id}`,
+      title,
+      start: start.toISOString(),
+      end: visualEnd.toISOString(),
+      allDay: false,
+      classNames: meetingCalendarEventClassNames(false, true),
+      extendedProps: {
+        entityType: "meeting",
+        meetingId: meeting.id,
+        projectName: meeting.projectName?.trim() || null,
+        status: meeting.status ?? null,
+        finished: false,
+        openEnded: true,
+        active,
+      },
+    };
+  }
+
   if (!start || !end || end.getTime() <= start.getTime()) return null;
   const finished = isPastCompletedMeeting(meeting, now);
   return {
     id: `meeting:${meeting.id}`,
-    title: meeting.title || "Untitled meeting",
+    title,
     start: start.toISOString(),
     end: end.toISOString(),
     allDay: false,
-    classNames: meetingCalendarEventClassNames(finished),
+    classNames: meetingCalendarEventClassNames(finished, false),
     extendedProps: {
       entityType: "meeting",
       meetingId: meeting.id,
@@ -352,6 +460,8 @@ export function meetingToCalendarEvent(
       status: meeting.status ?? null,
       endAt: end.toISOString(),
       finished,
+      openEnded: false,
+      active,
     },
   };
 }
@@ -376,10 +486,19 @@ export function meetingsToCalendarEventsForDate(
   now = new Date(),
 ): TaskCalendarEvent[] {
   return meetingsToCalendarEvents(
-    meetings.filter(
-      (meeting) =>
-        getTaskDueDateYmd(meeting.startAt, calendarTimeZone) === dateSlug,
-    ),
+    meetings.filter((meeting) => {
+      const startYmd = getTaskDueDateYmd(meeting.startAt, calendarTimeZone);
+      if (startYmd === dateSlug) return true;
+      // Unscheduled (all-day) meetings: place on created day.
+      if (toValidDate(meeting.startAt) == null && toValidDate(meeting.endAt) == null) {
+        const createdYmd = getTaskDueDateYmd(
+          meeting.createdAt ?? now,
+          calendarTimeZone,
+        );
+        return createdYmd === dateSlug;
+      }
+      return false;
+    }),
     now,
   );
 }

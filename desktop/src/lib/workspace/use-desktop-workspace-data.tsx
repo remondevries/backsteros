@@ -141,6 +141,7 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
       number: coerceTaskDisplayNumber(task.number) ?? 0,
       relatedContactIds: parseStringIdArray(task.relatedContactIds),
       relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
+      labelIds: parseStringIdArray(task.labelIds),
     };
   });
   return {
@@ -441,6 +442,8 @@ function useDesktopWorkspaceDataImpl(): {
     return applyLiveEntityOverlay(
       fillMissingProjectDatesFromApi(
         fillMissingLongTextFromApi(
+          // Codebase bindings (repo, cwd, health check) may lag in SQLite when
+          // PowerSync schema/sync trails Postgres — always allow API fill-in.
           fillMissingCodebaseFieldsFromApi(
             fillMissingTypeFromApi(
               // Shell creates still land in apiProjects before the watch mirrors.
@@ -450,7 +453,7 @@ function useDesktopWorkspaceDataImpl(): {
               ),
               fillFrom,
             ),
-            fillFrom,
+            apiProjects,
           ),
           fillFrom,
           ["summary", "description"],
@@ -991,14 +994,16 @@ function useDesktopWorkspaceDataImpl(): {
       setApiProjects,
     });
 
-  const { createLetter, createMeeting } = useWorkspaceLetterMeetingActions({
-    authenticated,
-    client,
-    powerSync,
-    toSnakeFields,
-    setApiLetters,
-    setApiMeetings,
-  });
+  const { createLetter, createMeeting, duplicateMeeting } =
+    useWorkspaceLetterMeetingActions({
+      authenticated,
+      client,
+      powerSync,
+      toSnakeFields,
+      setApiLetters,
+      setApiMeetings,
+      rawMeetings,
+    });
 
   const {
     createKnowledgeDocument,
@@ -1186,6 +1191,7 @@ function useDesktopWorkspaceDataImpl(): {
     return map;
   }, [rawProjects]);
 
+  // List SQL omits context. Open letters read it via useDesktopLetterContext.
   const letterBodies = useMemo(() => {
     const map: Record<string, string> = {};
     for (const letter of rawLetters) {
@@ -1473,6 +1479,7 @@ function useDesktopWorkspaceDataImpl(): {
       duplicateProject,
       createLetter,
       createMeeting,
+      duplicateMeeting,
       createKnowledgeDocument,
       createProjectDocument,
       createKnowledgeFolder,
@@ -1501,6 +1508,7 @@ function useDesktopWorkspaceDataImpl(): {
       createProjectFolder,
       createProjectTask,
       deleteDocument,
+      duplicateMeeting,
       duplicateProject,
       duplicateTask,
       mergeMeetingLocalFieldsBound,

@@ -143,12 +143,15 @@ export type TaskDetailViewProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
+  onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
+  labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
+  relatedUpdates?: readonly import("./task-related-update-links.js").TaskRelatedUpdateLink[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
@@ -197,12 +200,15 @@ export function TaskDetailView({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
+  onLabelChange,
   onProjectChange,
   assigneeOptions,
   relatedOptions,
+  labelOptions,
   projectOptions,
   assigneeNavigateHref,
   projectNavigateHref,
+  relatedUpdates = [],
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
   onAgentInboxApprove,
@@ -501,9 +507,11 @@ export function TaskDetailView({
                     onDueDateChange={onDueDateChange}
                     onAssigneeChange={onAssigneeChange}
                     onRelatedChange={onRelatedChange}
+                    onLabelChange={onLabelChange}
                     onProjectChange={onProjectChange}
                     assigneeOptions={assigneeOptions}
                     relatedOptions={relatedOptions}
+                    labelOptions={labelOptions}
                     projectOptions={projectOptions}
                     onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
                     onCreateRelatedContactFromQuery={
@@ -579,12 +587,15 @@ export function TaskDetailView({
                 onDueDateChange={onDueDateChange}
                 onAssigneeChange={onAssigneeChange}
                 onRelatedChange={onRelatedChange}
+                onLabelChange={onLabelChange}
                 onProjectChange={onProjectChange}
                 assigneeOptions={assigneeOptions}
                 relatedOptions={relatedOptions}
+                labelOptions={labelOptions}
                 projectOptions={projectOptions}
                 assigneeNavigateHref={assigneeNavigateHref}
                 projectNavigateHref={projectNavigateHref}
+                relatedUpdates={relatedUpdates}
                 onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
                 onCreateRelatedContactFromQuery={
                   onCreateRelatedContactFromQuery

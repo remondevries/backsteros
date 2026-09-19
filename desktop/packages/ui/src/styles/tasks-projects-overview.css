@@ -270,6 +270,17 @@
   cursor: pointer;
 }
 
+.segmented-pill-toggle-btn--icon {
+  padding: 6px;
+  width: 28px;
+  height: 28px;
+}
+
+.segmented-pill-toggle-btn--icon svg {
+  display: block;
+  flex: none;
+}
+
 .segmented-pill-toggle-btn:hover {
   color: var(--foreground);
 }

@@ -23,6 +23,7 @@ export const SYNC_ENTITIES = [
   "crm_group",
   "crm_group_member",
   "crm_activity",
+  "task_label",
   "task_activity",
   "email_thread",
   "email_thread_comment",
@@ -56,6 +57,7 @@ export const POWERSYNC_TABLES = [
   "crm_groups",
   "crm_group_members",
   "crm_activities",
+  "task_labels",
 ] as const;
 export type PowerSyncTable = (typeof POWERSYNC_TABLES)[number];
 

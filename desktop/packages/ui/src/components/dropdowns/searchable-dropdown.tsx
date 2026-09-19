@@ -2,6 +2,7 @@
 
 import { XIcon } from "@primer/octicons-react";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -37,6 +38,11 @@ export type SearchableDropdownOption<T extends string = string> = {
   avatarSrc?: string | null;
   shortcut?: string;
   searchTerms?: string;
+  /**
+   * Parent group name. The first option in a group renders a labeled rule
+   * (group separator) above the row. Ungrouped options omit this.
+   */
+  group?: string;
   /** Indentation level for hierarchical options (e.g. subcategories). */
   depth?: number;
   /**
@@ -74,6 +80,19 @@ function CheckIcon() {
   );
 }
 
+function showsGroupSeparator<T extends string>(
+  options: SearchableDropdownOption<T>[],
+  index: number,
+  pinnedCount: number,
+): boolean {
+  const group = options[index]?.group?.trim();
+  if (!group) return false;
+  if (pinnedCount > 0 && index < pinnedCount) return false;
+  const sectionStart = pinnedCount > 0 ? pinnedCount : 0;
+  if (index === sectionStart) return true;
+  return options[index - 1]?.group?.trim() !== group;
+}
+
 function filterOptions<T extends string>(
   options: SearchableDropdownOption<T>[],
   query: string,
@@ -100,7 +119,7 @@ export type SearchableDropdownProps<T extends string> = {
   onChange?: (value: T) => void;
   /** Fired when an option is toggled in multi-select mode. */
   onValuesChange?: (values: T[]) => void;
-  /** Enable checkbox multi-select; panel stays open while toggling. */
+  /** Multi-select. The panel stays open; selected options pin above a divider. */
   multiple?: boolean;
   /**
    * Trigger label when `multiple` and nothing is selected.
@@ -249,6 +268,31 @@ export function SearchableDropdown<T extends string>({
     () => filterOptions(options, query),
     [options, query],
   );
+
+  const orderedOptions = useMemo(() => {
+    if (!multiple || selectedValues.length === 0) return filteredOptions;
+    const selectedSet = new Set(selectedValues);
+    const selected = [];
+    const rest = [];
+    for (const option of filteredOptions) {
+      if (selectedSet.has(option.value)) selected.push(option);
+      else rest.push(option);
+    }
+    if (selected.length === 0 || rest.length === 0) return filteredOptions;
+    return [...selected, ...rest];
+  }, [filteredOptions, multiple, selectedValues]);
+
+  const multiSeparatorAt = useMemo(() => {
+    if (!multiple || orderedOptions.length === 0) return -1;
+    const selectedSet = new Set(selectedValues);
+    let count = 0;
+    for (const option of orderedOptions) {
+      if (!selectedSet.has(option.value)) break;
+      count += 1;
+    }
+    if (count === 0 || count === orderedOptions.length) return -1;
+    return count;
+  }, [multiple, orderedOptions, selectedValues]);
 
   const queryPreview = useMemo(
     () => (query.trim() ? (queryPreviewLabel?.(query) ?? null) : null),
@@ -638,7 +682,7 @@ export function SearchableDropdown<T extends string>({
         selectCreateFromQuery();
         return;
       }
-      const option = filteredOptions[safeActiveIndex];
+      const option = orderedOptions[safeActiveIndex];
       if (option) selectOption(option);
     }
   }
@@ -685,7 +729,7 @@ export function SearchableDropdown<T extends string>({
         selectCreateFromQuery();
         return;
       }
-      const option = filteredOptions[safeActiveIndex];
+      const option = orderedOptions[safeActiveIndex];
       if (option) {
         selectOption(option);
       }
@@ -693,10 +737,10 @@ export function SearchableDropdown<T extends string>({
     }
 
     const shortcutIndex = searchableDropdownShortcutIndex(event.key);
-    if (shortcutIndex != null && shortcutIndex < filteredOptions.length) {
+    if (shortcutIndex != null && shortcutIndex < orderedOptions.length) {
       event.preventDefault();
       event.stopPropagation();
-      selectOption(filteredOptions[shortcutIndex]!);
+      selectOption(orderedOptions[shortcutIndex]!);
     }
   }
 
@@ -831,8 +875,8 @@ export function SearchableDropdown<T extends string>({
                   listFocusActive && navigableOptionCount > 0
                     ? hasCreateOption
                       ? `${triggerId}-option-create`
-                      : filteredOptions[safeActiveIndex]
-                        ? `${triggerId}-option-${filteredOptions[safeActiveIndex]!.value}`
+                      : orderedOptions[safeActiveIndex]
+                        ? `${triggerId}-option-${orderedOptions[safeActiveIndex]!.value}`
                         : undefined
                     : undefined
                 }
@@ -882,7 +926,7 @@ export function SearchableDropdown<T extends string>({
                     {queryPreview ? "Press Enter to apply" : "No matches"}
                   </li>
                 ) : (
-                  filteredOptions.map((option, index) => {
+                  orderedOptions.map((option, index) => {
                     const isSelected = selectedValues.includes(option.value);
                     const isActive = index === safeActiveIndex;
                     const showKeyboardHighlight = listFocusActive && isActive;
@@ -898,9 +942,37 @@ export function SearchableDropdown<T extends string>({
                         ? option.action
                         : null;
 
+                    const pinnedCount =
+                      multiSeparatorAt > 0 ? multiSeparatorAt : 0;
+                    const groupLabel = option.group?.trim();
+
                     return (
-                      <li
-                        key={option.value}
+                      <Fragment key={option.value}>
+                        {index === multiSeparatorAt ? (
+                          <li
+                            className="searchable-dropdown-panel__separator"
+                            role="separator"
+                          />
+                        ) : null}
+                        {showsGroupSeparator(
+                          orderedOptions,
+                          index,
+                          pinnedCount,
+                        ) ? (
+                          <li
+                            className="searchable-dropdown-panel__group-separator"
+                            role="presentation"
+                          >
+                            <span className="searchable-dropdown-panel__group-separator-label">
+                              {groupLabel}
+                            </span>
+                            <span
+                              className="searchable-dropdown-panel__group-separator-rule"
+                              aria-hidden="true"
+                            />
+                          </li>
+                        ) : null}
+                        <li
                         role="presentation"
                         className={[
                           "searchable-dropdown-panel__option-row",
@@ -954,9 +1026,6 @@ export function SearchableDropdown<T extends string>({
                           }
                           className={[
                             "searchable-dropdown-panel__option",
-                            multiple
-                              ? "searchable-dropdown-panel__option--multi"
-                              : null,
                             trailingAction
                               ? "searchable-dropdown-panel__option--with-action"
                               : null,
@@ -984,19 +1053,6 @@ export function SearchableDropdown<T extends string>({
                           }}
                         >
                           <span className="searchable-dropdown-panel__option-main">
-                            {multiple ? (
-                              <span
-                                className={[
-                                  "searchable-dropdown-panel__checkbox",
-                                  isSelected ? "is-checked" : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ")}
-                                aria-hidden="true"
-                              >
-                                {isSelected ? <CheckIcon /> : null}
-                              </span>
-                            ) : null}
                             {!iconAction && option.icon ? (
                               <span
                                 className="searchable-dropdown-panel__option-icon"
@@ -1051,6 +1107,7 @@ export function SearchableDropdown<T extends string>({
                           </button>
                         ) : null}
                       </li>
+                      </Fragment>
                     );
                   })
                 )}

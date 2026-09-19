@@ -9,6 +9,9 @@ dist/
 node_modules/
 tmp/
 
+# Cloud PowerSync config rendered from secrets.
+deploy/cloud/powersync.generated.yaml
+
 # Accidental tsc emit into src shadows .ts under Vite (.js wins).
 desktop/packages/ui/src/**/*.js
 

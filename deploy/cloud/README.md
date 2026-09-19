@@ -92,9 +92,12 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `CORE_REPLICATION_PEER_URL` | local-core URL (Tailscale or tunnel) |
 | `CORE_REPLICATION_SECRET` | shared bearer for `/api/v1/internal/replication/*` |
 | `CORE_REPLICATION_WORKSPACE_IDS` | comma-separated workspace ids to sync |
-| `BACKSTEROS_VAULT_PATH` | `/data/vault` (markdown twin; no PDFs) |
+| `BACKSTEROS_VAULT_PATH` | `/data/vault` (desktop-style cache; shared bytes are in R2 when configured) |
+| `BACKSTEROS_R2_*` | Private file bucket. When set, cloud serves markdown and blobs from R2 instead of `503 pdf_requires_local_core` |
 | `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
 | `PORT` | `8788` |
+
+PowerSync is optional on cloud until the iOS cutover (ADR-035). It is behind the `powersync` compose profile so a normal `docker compose up` does not start it. After `pnpm db:powersync-setup` on the cloud database, render `deploy/cloud/powersync.generated.yaml` with `node deploy/cloud/render-powersync-config.mjs`, then `docker compose --profile powersync up -d`. Do not point the iOS app at it yet.
 
 PowerSync and Clerk are **not** required for portal meeting booking (API key auth only).
 

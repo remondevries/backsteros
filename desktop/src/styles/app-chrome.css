@@ -196,3 +196,38 @@
   content-visibility: hidden;
   pointer-events: none;
 }
+
+/*
+ * Vite browser preview has no overlay titlebar. Match tauri.conf.json
+ * trafficLightPosition { x: 16, y: 24 }: 12px dots, 8px gaps, faded so they
+ * read as layout guides rather than live window controls.
+ */
+.bos-dev-traffic-lights {
+  position: fixed;
+  z-index: 80;
+  top: 24px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.bos-dev-traffic-lights span {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.28);
+  opacity: 0.45;
+}
+
+.bos-dev-traffic-lights__close {
+  background: #ff5f57;
+}
+
+.bos-dev-traffic-lights__minimize {
+  background: #febc2e;
+}
+
+.bos-dev-traffic-lights__zoom {
+  background: #28c840;
+}

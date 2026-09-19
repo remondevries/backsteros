@@ -61,8 +61,8 @@ export function deriveMeetingStatusForSchedule(
 export function resolveMeetingEffectiveStatus(
   meeting: {
     status?: string | null;
-    startAt: number | Date | string;
-    endAt: number | Date | string;
+    startAt: number | Date | string | null | undefined;
+    endAt: number | Date | string | null | undefined;
   },
   now = new Date(),
 ): string {
@@ -80,7 +80,7 @@ export function resolveMeetingEffectiveStatus(
 export function isPastCompletedMeeting(
   meeting: {
     status?: string | null;
-    endAt: number | Date | string;
+    endAt: number | Date | string | null | undefined;
   },
   now = new Date(),
 ): boolean {
@@ -93,8 +93,8 @@ export function meetingStatusNeedsReconcile(
   meeting: {
     id?: string;
     status?: string | null;
-    startAt: number | Date | string;
-    endAt: number | Date | string;
+    startAt: number | Date | string | null | undefined;
+    endAt: number | Date | string | null | undefined;
   },
   now = new Date(),
 ): string | null {

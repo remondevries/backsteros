@@ -68,6 +68,7 @@ import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import { ProjectHealthCheckProperty } from "../codebase/project-health-check-property.js";
 
 export type ProjectDetailViewProject = {
   id: string;
@@ -91,6 +92,10 @@ export type ProjectDetailViewProject = {
   dueDate?: number | Date | null;
   /** Linked Cloudflare zone when Catalog Domains matched this hostname. */
   cloudflareZoneId?: string | null;
+  /** Status probe mode when `type = codebase`. */
+  healthCheckMode?: "simple" | "advanced" | null;
+  /** Hostname for simple health checks (no scheme), e.g. quarrymill.com. */
+  healthCheckDomain?: string | null;
   taskProgress?: ProjectTaskProgress;
 };
 
@@ -124,6 +129,10 @@ export type ProjectDetailViewProps = {
   onTypeChange?: (type: ProjectType) => void;
   onProviderChange?: (provider: ProjectProvider | null) => void;
   onCategoryChange?: (category: ProjectEmailCategory | null) => void;
+  onHealthCheckChange?: (next: {
+    healthCheckMode: "simple" | "advanced";
+    healthCheckDomain: string | null;
+  }) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
@@ -159,6 +168,7 @@ export function ProjectDetailView({
   onTypeChange,
   onProviderChange,
   onCategoryChange,
+  onHealthCheckChange,
   onAreaChange,
   onAreaIdChange,
   onOrganizationChange,
@@ -519,8 +529,9 @@ export function ProjectDetailView({
                     options={typeOptions}
                     onChange={(next) => onTypeChange?.(next as ProjectType)}
                     searchPlaceholder="Change type…"
-                    searchShortcutLabel="Y"
+                    searchShortcutLabel="T"
                     ariaLabel="Type"
+                    taskPropertyDropdownId="type"
                     fallbackIcon={
                       projectType === "codebase" ? (
                         <TerminalConsoleIcon size={14} />
@@ -576,6 +587,13 @@ export function ProjectDetailView({
                           : "No category"
                       }
                       mutedFallback={!projectCategory}
+                    />
+                  ) : null}
+                  {projectType === "codebase" ? (
+                    <ProjectHealthCheckProperty
+                      mode={project.healthCheckMode}
+                      domain={project.healthCheckDomain}
+                      onChange={onHealthCheckChange}
                     />
                   ) : null}
                   {organizationOptions.length > 0 || onOrganizationChange ? (
@@ -669,7 +687,7 @@ export function ProjectDetailView({
                       onAreaIdChange?.(null);
                     }}
                     searchPlaceholder="Change area…"
-                    searchShortcutLabel="A"
+                    searchShortcutLabel="⇧A"
                     ariaLabel="Area"
                     taskPropertyDropdownId="area"
                     fallbackIcon={null}

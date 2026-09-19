@@ -379,6 +379,41 @@ export const crmGroups = pgTable(
   ],
 );
 
+/** Workspace-wide task tags. Tasks store ids in `tasks.label_ids`. */
+export const taskLabels = pgTable(
+  "task_labels",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** Preset or custom hex shown as the label’s color dot. Groups ignore this. */
+    color: text("color"),
+    /** Set when this row is a container. Groups are not attached to tasks. */
+    isGroup: boolean("is_group").notNull().default(false),
+    /** Parent group. One level only — groups themselves have no parent. */
+    parentId: text("parent_id"),
+    /** Last time this label was newly attached to a task. */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("task_labels_workspace_id_idx").on(table.workspaceId),
+    index("task_labels_deleted_at_idx").on(table.deletedAt),
+    index("task_labels_parent_id_idx").on(table.parentId),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "task_labels_parent_id_fk",
+    }).onDelete("set null"),
+  ],
+);
+
 export const crmGroupMembers = pgTable(
   "crm_group_members",
   {
@@ -533,6 +568,10 @@ export const projects = pgTable(
      * Not multi-device; stored so the Development console persists across reloads.
      */
     localWorkingDirectory: text("local_working_directory"),
+    /** `simple` | `advanced` — codebase status probes (portal / Prometheus). */
+    healthCheckMode: text("health_check_mode"),
+    /** Hostname for simple probes (no scheme), e.g. quarrymill.com. */
+    healthCheckDomain: text("health_check_domain"),
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -581,6 +620,11 @@ export const tasks = pgTable(
       .default(sql`'[]'::jsonb`),
     /** Organizations this task is about / for (CRM Related; same UI field as contacts). */
     relatedOrganizationIds: jsonb("related_organization_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Workspace task label ids (`task_labels.id`). Rename does not rewrite tasks. */
+    labelIds: jsonb("label_ids")
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
@@ -798,8 +842,8 @@ export const meetings = pgTable(
     attendeePortalEmails: jsonb("attendee_portal_emails")
       .notNull()
       .default(sql`'{}'::jsonb`),
-    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
-    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }),
+    endAt: timestamp("end_at", { withTimezone: true }),
     /** video_call | in_person | phone_call */
     format: text("format").notNull().default("video_call"),
     /** Free-text place snapshot (optional; prefer locationOrganizationId). */
@@ -1250,6 +1294,51 @@ export const letterAttachments = pgTable(
     index("letter_attachments_workspace_id_idx").on(table.workspaceId),
     index("letter_attachments_letter_id_idx").on(table.letterId),
     index("letter_attachments_letter_sort_idx").on(table.letterId, table.sortOrder),
+  ],
+);
+
+/** Project Updates tab posts (update / incident / maintenance). */
+export const projectUpdates = pgTable(
+  "project_updates",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    /** update | incident | maintenance */
+    kind: text("kind").notNull().default("update"),
+    /** internal | published */
+    status: text("status").notNull().default("internal"),
+    /** high_risk | degraded | low_risk — incidents only */
+    severity: text("severity"),
+    /** Tasks linked from this update (Related UI on the Updates tab). */
+    relatedTaskIds: jsonb("related_task_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("project_updates_workspace_id_idx").on(table.workspaceId),
+    index("project_updates_project_id_idx").on(table.projectId),
+    index("project_updates_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+    index("project_updates_kind_idx").on(table.workspaceId, table.kind),
+    index("project_updates_deleted_at_idx").on(table.deletedAt),
   ],
 );
 

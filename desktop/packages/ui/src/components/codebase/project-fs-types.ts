@@ -60,7 +60,8 @@ export type CodebaseGithubListTab =
   | "files"
   | "docs"
   | "commits"
-  | "pulls";
+  | "pulls"
+  | "updates";
 
 export type CodebaseRequestJson = <T>(
   path: string,

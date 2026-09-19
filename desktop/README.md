@@ -34,13 +34,10 @@ pnpm --filter @backsteros/ui build
 cp desktop/.env.example desktop/.env
 # Edit .env: VITE_API_URL=http://127.0.0.1:8788
 
-# Recommended — menu-bar hub starts Docker + core API + PTY
-pnpm --filter @backsteros/hub dev
-# In the tray: Start all
-
-# Then the product shell (from repo root or `cd desktop`)
+# Desktop starts Docker (Postgres + PowerSync) and local-core on :8788
+# if they are not already running. Quitting the app leaves that stack up.
 pnpm --filter @backsteros/desktop dev
-# Or Vite-only UI on :1420:
+# Or Vite-only UI on :1420 (does not start local-core):
 pnpm --filter @backsteros/desktop dev:vite
 ```
 
@@ -61,7 +58,7 @@ Tests are `node:test` + `node:assert/strict` (no vitest). UI tests import from
 
 Vite HMR can remount providers while PowerSync holds an IndexedDB SQLite handle. The desktop shell reuses that handle across Fast Refresh, surfaces a connect timeout as a recoverable error, and wraps the tree in an ErrorBoundary plus a boot-splash watchdog (Continue / Reload) so a bad hot update does not require killing the Tauri process.
 
-Manual alternative (without hub):
+Manual alternative (without the desktop app starting the stack):
 
 ```bash
 # Terminal 1 — local core API
@@ -85,7 +82,7 @@ Task list / status-bar presence still reflects Research and shared `agent-presen
 
 ### PTY sidecar (mobile Agent Chat)
 
-Hub Start still runs the desktop package PTY sidecar (`ws` / HTTP on port 3101). Desktop Settings → Cursor → Agents can list/kill sessions. Desktop itself does not spawn ACP Chat.
+Hub Start still runs the desktop package PTY sidecar (`ws` / HTTP on port 3101) for mobile Chat. Desktop itself does not start PTY or Expo. Desktop Settings → Cursor → Agents can list and kill sessions.
 
 - Default bind is loopback. For **iPad over Tailscale**:
 

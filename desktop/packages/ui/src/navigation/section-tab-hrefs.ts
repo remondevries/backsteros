@@ -52,13 +52,14 @@ import {
   TASKS_DUE_FILTERS,
 } from "../tasks/tasks-due-filters.js";
 
-/** 1 = Tasks, 2 = Files, 3 = Docs, 4 = Commits, 5 = PRs (codebase layout). */
+/** 1 = Tasks, 2 = Files, 3 = Docs, 4 = Commits, 5 = PRs, 6 = Updates. */
 const CODEBASE_LIST_TABS: readonly CodebaseGithubListTab[] = [
   "tasks",
   "files",
   "docs",
   "commits",
   "pulls",
+  "updates",
 ];
 
 function parseViewFromSearch(search = ""): ListBoardView {
@@ -85,12 +86,14 @@ function resolveCodebaseListTabHrefs(
 
 /**
  * Prefer development-layout tabs when the path is a workbench route
- * (files/docs/commits/pulls) or the codebase workbench is mounted on the bare
- * project overview. Otherwise keep the default Overview/Tasks/Documents/…
+ * (files/docs/commits/pulls/updates) or the codebase workbench is mounted on
+ * the bare project overview. Otherwise keep the default Overview/Tasks/Documents/…
  * section tabs.
  *
  * `/documents` parses as the Docs workbench tab, but on general projects the
  * workbench is not mounted — keep the standard Documents section tabs there.
+ * `/updates` is a workbench tab on codebase projects; general projects keep the
+ * Updates section chrome.
  */
 function resolveProjectSectionTabHrefs(
   pathname: string,
@@ -101,9 +104,12 @@ function resolveProjectSectionTabHrefs(
   if (workbench != null) {
     const docsWithoutWorkbench =
       workbench.tab === "docs" && !isCodebaseWorkbenchMounted();
-    // files / docs / commits / pulls are codebase-only routes (when mounted).
+    const updatesWithoutWorkbench =
+      workbench.tab === "updates" && !isCodebaseWorkbenchMounted();
+    // files / docs / commits / pulls / updates are codebase-only routes (when mounted).
     if (
       !docsWithoutWorkbench &&
+      !updatesWithoutWorkbench &&
       (workbench.tab !== "tasks" || isCodebaseWorkbenchMounted())
     ) {
       return resolveCodebaseListTabHrefs(projectKey, scope);
@@ -111,7 +117,7 @@ function resolveProjectSectionTabHrefs(
   }
 
   // Board/list on `/tasks` (or other non-workbench path segments) still
-  // mounts the codebase workbench — keep 1–5 on Tasks/Files/Docs/Commits/PRs.
+  // mounts the codebase workbench — keep 1–6 on Tasks/Files/Docs/Commits/PRs/Updates.
   if (isCodebaseWorkbenchMounted()) {
     return resolveCodebaseListTabHrefs(projectKey, scope);
   }

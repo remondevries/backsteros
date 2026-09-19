@@ -26,6 +26,7 @@
     "vault:pull-until-done": "tsx --env-file=.env src/scripts/vault-pull-until-done.ts",
     "vault:reconcile-check": "tsx --env-file=.env src/scripts/vault-reconcile-check.ts",
     "vault:reconcile-metadata": "tsx --env-file=.env src/scripts/vault-reconcile-metadata.ts",
+    "vault:upload-r2": "tsx --env-file=.env src/scripts/vault-upload-r2.ts",
     "postinstall": "node ./scripts/whoop/build-totem.mjs"
   },
   "dependencies": {

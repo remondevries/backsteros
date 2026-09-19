@@ -117,8 +117,12 @@ export async function getDesktopVaultRoot(
     }
 
     // When the active API is cloud, still probe local-core for the Mac vault.
-    const localPath = await fetchStorageVaultPath(LOCAL_CORE_API_URL);
-    if (localPath) candidates.push(localPath);
+    // Browser vault reads go through the Vite proxy and do not need this path.
+    // An unauthenticated probe only produces a 401 in the console.
+    if (isTauriRuntime()) {
+      const localPath = await fetchStorageVaultPath(LOCAL_CORE_API_URL);
+      if (localPath) candidates.push(localPath);
+    }
 
     for (const candidate of candidates) {
       if (!isUsableAbsolutePath(candidate)) continue;

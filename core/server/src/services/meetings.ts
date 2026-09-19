@@ -93,8 +93,8 @@ export function toMeeting(row: DbMeeting): Meeting {
     attendeePortalEmails: normalizeMeetingAttendeePortalEmails(
       row.attendeePortalEmails,
     ),
-    startAt: row.startAt.toISOString(),
-    endAt: row.endAt.toISOString(),
+    startAt: row.startAt ? row.startAt.toISOString() : null,
+    endAt: row.endAt ? row.endAt.toISOString() : null,
     format: (row.format ?? "video_call") as Meeting["format"],
     location: row.location ?? null,
     locationOrganizationId: row.locationOrganizationId ?? null,
@@ -157,13 +157,25 @@ export async function createMeetingRow(
   executor: DbExecutor = db,
   number?: number,
 ): Promise<DbMeeting> {
-  const startAt = new Date(input.startAt);
-  const endAt = new Date(input.endAt);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+  const startAt =
+    input.startAt === undefined || input.startAt === null
+      ? null
+      : new Date(input.startAt);
+  const endAt =
+    input.endAt === undefined || input.endAt === null
+      ? null
+      : new Date(input.endAt);
+  if (startAt && Number.isNaN(startAt.getTime())) {
     throw new Error("INVALID_MEETING_DATES");
   }
-  if (endAt <= startAt) {
+  if (endAt && Number.isNaN(endAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (startAt && endAt && endAt <= startAt) {
     throw new Error("MEETING_END_BEFORE_START");
+  }
+  if (!startAt && endAt) {
+    throw new Error("INVALID_MEETING_DATES");
   }
   const assignedNumber = number ?? (await nextMeetingNumber(workspaceId, executor));
   const [row] = await executor
@@ -228,13 +240,28 @@ export async function updateMeeting(
   if (!existing) return null;
 
   const startAt =
-    input.startAt != null ? new Date(input.startAt) : existing.startAt;
-  const endAt = input.endAt != null ? new Date(input.endAt) : existing.endAt;
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+    input.startAt === undefined
+      ? existing.startAt
+      : input.startAt === null
+        ? null
+        : new Date(input.startAt);
+  const endAt =
+    input.endAt === undefined
+      ? existing.endAt
+      : input.endAt === null
+        ? null
+        : new Date(input.endAt);
+  if (startAt && Number.isNaN(startAt.getTime())) {
     throw new Error("INVALID_MEETING_DATES");
   }
-  if (endAt <= startAt) {
+  if (endAt && Number.isNaN(endAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (startAt && endAt && endAt <= startAt) {
     throw new Error("MEETING_END_BEFORE_START");
+  }
+  if (!startAt && endAt) {
+    throw new Error("INVALID_MEETING_DATES");
   }
 
   let inboxUpdatedAt: Date | null | undefined = undefined;

@@ -1,9 +1,9 @@
 # BacksterOS — folder structure
 
-Single workspace: **`~/code/backsteros/`** (branch `v2`)
+Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (branch `production`)
 
 ```text
-~/code/backsteros/
+~/BacksterOS/Projects/OS/Codebase/
 ├── AGENTS.md
 ├── README.md
 ├── STRUCTURE.md
@@ -46,7 +46,8 @@ v1 Next apps (app/admin/development/sync-demo) were moved out to
 
 ## Runtime model
 
-**Core** runs on a **local computer** (Postgres, files, API, PowerSync).  
-**Hub** (menu bar) starts/stops that stack.  
-**Shells** (mobile, desktop) talk to core over localhost / Tailscale.  
+**Today:** local-core on this computer (Postgres, vault files, API, PowerSync). Hub starts and stops that stack. Desktop and mobile talk to it over localhost / Tailscale.
+
+**Target (ADR-035):** cloud-core is the center. iOS talks only to cloud-core. Local-core is the Mac replica for the desktop app. Shared files live in private R2; this computer keeps a working copy. See [docs/10-decisions-log.md](docs/10-decisions-log.md).
+
 No shared visual UI package between mobile and desktop.

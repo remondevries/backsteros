@@ -1,7 +1,12 @@
 "use client";
 
-import { useMemo, useRef, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
+import {
+  buildTimetrackingAreaBreakdown,
+  buildTimetrackingContactBreakdown,
+  buildTimetrackingProjectBreakdown,
+} from "../../calendar/calendar-timetracking-breakdown.js";
 import {
   formatTimetrackingDuration,
   resolveTimetrackingGroupDateYmd,
@@ -33,12 +38,27 @@ import {
   type TaskItemRowTask,
 } from "../tasks/task-item-row.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
+import { TimetrackingAreaBreakdown } from "./timetracking-area-breakdown.js";
+import { TimetrackingContactBreakdown } from "./timetracking-contact-breakdown.js";
+import { TimetrackingHoursChart } from "./timetracking-hours-chart.js";
 import { TimetrackingLeadingStamp } from "./timetracking-leading-stamp.js";
+import { TimetrackingProjectPieChart } from "./timetracking-project-pie-chart.js";
+
+export type CalendarTimetrackingViewTab = "timeline" | "projects" | "distribution";
 
 export type CalendarTimetrackingViewProps = {
   entries: readonly TimetrackingEntry[];
+  /**
+   * Entries for the hours chart. Defaults to `entries`. Pass a wider period
+   * (e.g. week) when the list is filtered to a single day.
+   */
+  chartEntries?: readonly TimetrackingEntry[];
   tasks?: readonly TaskItemRowTask[];
   meetings?: readonly MeetingListItem[];
+  /** Contact id → display name for the Related contacts breakdown. */
+  contactNames?: ReadonlyMap<string, string> | Record<string, string>;
+  /** Contact id → avatar URL for the Related contacts breakdown. */
+  contactAvatarSrc?: ReadonlyMap<string, string | null> | Record<string, string | null | undefined>;
   period?: TimetrackingPeriod | null;
   /** @deprecated Prefer `period`. */
   selectedDateYmd?: string | null;
@@ -65,13 +85,21 @@ const TIMETRACKING_ROW_PROPS = {
  * Timetracking main pane — tracked totals for the selected schedule day,
  * week, or month (task due date / meeting start).
  *
- * Live running timers appear in the list with green chrome; their live
- * elapsed time is display-only and is not added to period totals.
+ * Chart tabs (Timeline / Projects / Distribution) only swap the graph
+ * region; the time-entry list always stays below.
+ *
+ * Live running timers appear in the list with green chrome when the selected
+ * period includes today; their live elapsed time is display-only and is not
+ * added to period totals. Past days/weeks/months only show historically
+ * tracked entries.
  */
 export function CalendarTimetrackingView({
   entries,
+  chartEntries,
   tasks = [],
   meetings = [],
+  contactNames = {},
+  contactAvatarSrc = {},
   period = null,
   selectedDateYmd = null,
   selectedEntryId = null,
@@ -87,6 +115,8 @@ export function CalendarTimetrackingView({
 }: CalendarTimetrackingViewProps) {
   const timer = useTrackedTimerOptional();
   const timerTick = timer?.timerTick ?? 0;
+  const [activeTab, setActiveTab] =
+    useState<CalendarTimetrackingViewTab>("timeline");
 
   const resolvedPeriod: TimetrackingPeriod | null =
     period ??
@@ -142,8 +172,31 @@ export function CalendarTimetrackingView({
           trackedDurationSeconds: meeting?.trackedDurationSeconds ?? 0,
         };
       });
-    return withLiveTimetrackingEntries(entries, liveSources);
-  }, [entries, meetingsById, tasksById, timer?.recentTimers, timerTick]);
+    return withLiveTimetrackingEntries(entries, liveSources, {
+      period: resolvedPeriod,
+    });
+  }, [
+    entries,
+    meetingsById,
+    resolvedPeriod,
+    tasksById,
+    timer?.recentTimers,
+    timerTick,
+  ]);
+
+  const breakdownEntries = chartEntries ?? entries;
+  const projectSlices = useMemo(
+    () => buildTimetrackingProjectBreakdown(entries),
+    [entries],
+  );
+  const contactSlices = useMemo(
+    () => buildTimetrackingContactBreakdown(entries, contactNames),
+    [contactNames, entries],
+  );
+  const areaSlices = useMemo(
+    () => buildTimetrackingAreaBreakdown(entries),
+    [entries],
+  );
 
   const dayTotalSeconds = sumTimetrackingDurationSeconds(displayEntries);
   const periodLabel = resolvedPeriod
@@ -190,6 +243,7 @@ export function CalendarTimetrackingView({
       data-selected-month={
         resolvedPeriod?.kind === "month" ? resolvedPeriod.monthKey : undefined
       }
+      data-tab={activeTab}
     >
       <header className="calendar-timetracking-view__header">
         <h1 className="calendar-timetracking-view__title">Time entries</h1>
@@ -213,6 +267,110 @@ export function CalendarTimetrackingView({
           </p>
         )}
       </header>
+
+      <section
+        className="calendar-timetracking-view__charts"
+        aria-label="Timetracking charts"
+      >
+        <div
+          className="calendar-timetracking-view__tabs"
+          role="tablist"
+          aria-label="Timetracking chart views"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="timetracking-tab-timeline"
+            aria-selected={activeTab === "timeline"}
+            aria-controls="timetracking-panel-timeline"
+            className={[
+              "calendar-timetracking-view__tab",
+              activeTab === "timeline" ? "is-active" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => setActiveTab("timeline")}
+          >
+            Timeline
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="timetracking-tab-projects"
+            aria-selected={activeTab === "projects"}
+            aria-controls="timetracking-panel-projects"
+            className={[
+              "calendar-timetracking-view__tab",
+              activeTab === "projects" ? "is-active" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => setActiveTab("projects")}
+          >
+            Projects
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="timetracking-tab-distribution"
+            aria-selected={activeTab === "distribution"}
+            aria-controls="timetracking-panel-distribution"
+            className={[
+              "calendar-timetracking-view__tab",
+              activeTab === "distribution" ? "is-active" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => setActiveTab("distribution")}
+          >
+            Distribution
+          </button>
+        </div>
+
+        <div className="calendar-timetracking-view__chart-stage">
+          {activeTab === "timeline" ? (
+            <div
+              id="timetracking-panel-timeline"
+              role="tabpanel"
+              aria-labelledby="timetracking-tab-timeline"
+              className="calendar-timetracking-view__panel"
+            >
+              {resolvedPeriod ? (
+                <TimetrackingHoursChart
+                  entries={breakdownEntries}
+                  period={resolvedPeriod}
+                />
+              ) : (
+                <p className="calendar-timetracking-view__chart-empty">
+                  Select a day, week, or month to see the hours chart.
+                </p>
+              )}
+            </div>
+          ) : activeTab === "projects" ? (
+            <div
+              id="timetracking-panel-projects"
+              role="tabpanel"
+              aria-labelledby="timetracking-tab-projects"
+              className="calendar-timetracking-view__panel"
+            >
+              <TimetrackingProjectPieChart slices={projectSlices} />
+            </div>
+          ) : (
+            <div
+              id="timetracking-panel-distribution"
+              role="tabpanel"
+              aria-labelledby="timetracking-tab-distribution"
+              className="calendar-timetracking-view__panel calendar-timetracking-view__panel--distribution"
+            >
+              <TimetrackingContactBreakdown
+                slices={contactSlices}
+                avatarSrcByContactId={contactAvatarSrc}
+              />
+              <TimetrackingAreaBreakdown slices={areaSlices} />
+            </div>
+          )}
+        </div>
+      </section>
 
       {displayEntries.length === 0 ? (
         <p className="calendar-timetracking-view__empty">{resolvedEmptyLabel}</p>

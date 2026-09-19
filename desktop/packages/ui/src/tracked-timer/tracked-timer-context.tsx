@@ -17,6 +17,7 @@ import {
 
 import {
   buildTrackedTimerKey,
+  type RemoteRunningTimerAdoption,
   type TrackedTimerListItem,
   type TrackedTimerRegistration,
   type TrackedTimerSessionMeta,
@@ -33,6 +34,10 @@ type TimerEntry = TrackedTimerSessionMeta & {
   sessionStartAt: number | null;
   lastActiveAt: number;
   startedAt: number | null;
+  /** True when this running session was mirrored from another client. */
+  adoptedFromRemote: boolean;
+  /** Remote `timer_started` wall time; used for accurate stop activity duration. */
+  remoteStartedAtMs: number | null;
   onPersist: ((seconds: number | null, fromTimerPause?: boolean) => void) | null;
   onSessionChange: ((
     action: "started" | "stopped",
@@ -155,6 +160,12 @@ type TrackedTimerContextValue = {
     trackedMinutes?: number | null,
     scheduleMinutes?: number | null,
   ) => void;
+  /**
+   * Mirror open timers from synced activities (other apps / processes).
+   * Does not post start activities. Silently drops adopted sessions that
+   * are no longer in the open set (stopped elsewhere).
+   */
+  syncRemoteRunningTimers: (adoptions: RemoteRunningTimerAdoption[]) => void;
   isTimerRunning: (key: string) => boolean;
   startTimer: (key: string) => void;
   pauseTimer: (key: string) => void;
@@ -219,9 +230,10 @@ export function TrackedTimerProvider({
 
   const commitEntry = useCallback((entry: TimerEntry) => {
     const wasRunning = entry.sessionStartAt != null;
+    const sessionAnchorMs = entry.remoteStartedAtMs ?? entry.sessionStartAt;
     const sessionSeconds =
-      entry.sessionStartAt != null
-        ? Math.max(0, Math.floor((Date.now() - entry.sessionStartAt) / 1000))
+      sessionAnchorMs != null
+        ? Math.max(0, Math.floor((Date.now() - sessionAnchorMs) / 1000))
         : 0;
     const seconds = secondsFromEntry(entry);
     const committed = seconds ?? 0;
@@ -230,6 +242,8 @@ export function TrackedTimerProvider({
       entry.accumulatedSeconds > 0 ? entry.accumulatedSeconds : null;
     entry.baseSeconds = entry.accumulatedSeconds;
     entry.sessionStartAt = null;
+    entry.adoptedFromRemote = false;
+    entry.remoteStartedAtMs = null;
     entry.onPersist?.(seconds, wasRunning);
     if (wasRunning) {
       entry.onSessionChange?.("stopped", sessionSeconds);
@@ -320,6 +334,8 @@ export function TrackedTimerProvider({
         sessionStartAt: Date.now(),
         startedAt: entry.startedAt ?? Date.now(),
         trackedDurationSeconds: seconds > 0 ? seconds : null,
+        adoptedFromRemote: false,
+        remoteStartedAtMs: null,
       };
       entriesRef.current.set(key, entry);
       entry.onSessionChange?.("started");
@@ -408,6 +424,8 @@ export function TrackedTimerProvider({
           (isRunningEntry || existing?.sessionStartAt != null
             ? Date.now()
             : null),
+        adoptedFromRemote: existing?.adoptedFromRemote ?? false,
+        remoteStartedAtMs: existing?.remoteStartedAtMs ?? null,
         onPersist: registration.onPersist,
         onSessionChange: registration.onSessionChange ?? null,
       };
@@ -429,6 +447,111 @@ export function TrackedTimerProvider({
         });
         bumpEntries();
       };
+    },
+    [bumpEntries, syncRunningState],
+  );
+
+  const syncRemoteRunningTimers = useCallback(
+    (adoptions: RemoteRunningTimerAdoption[]) => {
+      const remoteKeys = new Set<string>();
+      let changed = false;
+
+      for (const adoption of adoptions) {
+        const key = buildTrackedTimerKey(adoption.kind, adoption.entityId);
+        remoteKeys.add(key);
+        const existing = entriesRef.current.get(key);
+        const isLocallyOwnedRunning =
+          existing?.sessionStartAt != null && !existing.adoptedFromRemote;
+
+        if (isLocallyOwnedRunning) {
+          // This process started the timer — keep local clock; refresh meta only.
+          if (
+            existing.title !== adoption.title ||
+            existing.subtitle !== (adoption.subtitle ?? null) ||
+            existing.statusKey !== (adoption.statusKey ?? null) ||
+            existing.href !== adoption.href
+          ) {
+            entriesRef.current.set(key, {
+              ...existing,
+              title: adoption.title,
+              subtitle: adoption.subtitle ?? null,
+              statusKey: adoption.statusKey ?? null,
+              href: adoption.href,
+            });
+            changed = true;
+          }
+          continue;
+        }
+
+        const propSeconds = registrationSecondsFromProps(adoption);
+        const rememberedSeconds = memorySeconds(existing);
+        const seededSeconds = Math.max(propSeconds, rememberedSeconds);
+
+        if (existing?.sessionStartAt != null && existing.adoptedFromRemote) {
+          // Already mirroring — refresh callbacks/meta; do not reset the clock
+          // (would double-count soft-checkpointed tracked duration).
+          entriesRef.current.set(key, {
+            ...existing,
+            title: adoption.title,
+            subtitle: adoption.subtitle ?? null,
+            statusKey: adoption.statusKey ?? null,
+            href: adoption.href,
+            remoteStartedAtMs:
+              existing.remoteStartedAtMs ?? adoption.remoteStartedAtMs,
+            onPersist: adoption.onPersist,
+            onSessionChange: adoption.onSessionChange ?? null,
+          });
+          changed = true;
+          continue;
+        }
+
+        const next: TimerEntry = {
+          key,
+          kind: adoption.kind,
+          entityId: adoption.entityId,
+          title: adoption.title,
+          subtitle: adoption.subtitle ?? null,
+          statusKey: adoption.statusKey ?? null,
+          href: adoption.href,
+          trackedDurationSeconds: seededSeconds > 0 ? seededSeconds : null,
+          trackedMinutes: adoption.trackedMinutes ?? null,
+          scheduleMinutes: adoption.scheduleMinutes ?? null,
+          accumulatedSeconds: seededSeconds,
+          baseSeconds: seededSeconds,
+          // Anchor at adopt time with current tracked total so soft checkpoints
+          // from the remote client do not double-count against activity created_at.
+          sessionStartAt: Date.now(),
+          lastActiveAt: Date.now(),
+          startedAt: existing?.startedAt ?? adoption.remoteStartedAtMs,
+          adoptedFromRemote: true,
+          remoteStartedAtMs: adoption.remoteStartedAtMs,
+          onPersist: adoption.onPersist,
+          onSessionChange: adoption.onSessionChange ?? null,
+        };
+        entriesRef.current.set(key, next);
+        changed = true;
+      }
+
+      for (const entry of entriesRef.current.values()) {
+        if (!entry.adoptedFromRemote || entry.sessionStartAt == null) continue;
+        if (remoteKeys.has(entry.key)) continue;
+        // Stopped elsewhere — fold elapsed into base without re-posting stop.
+        const elapsed = elapsedSecondsForEntry(entry);
+        entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, elapsed);
+        entry.trackedDurationSeconds =
+          entry.accumulatedSeconds > 0 ? entry.accumulatedSeconds : null;
+        entry.baseSeconds = entry.accumulatedSeconds;
+        entry.sessionStartAt = null;
+        entry.adoptedFromRemote = false;
+        entry.remoteStartedAtMs = null;
+        entriesRef.current.set(entry.key, entry);
+        changed = true;
+      }
+
+      if (!changed) return;
+      syncRunningState(primaryRunningKeyRef.current);
+      bumpEntries();
+      setTick((value) => value + 1);
     },
     [bumpEntries, syncRunningState],
   );
@@ -542,6 +665,7 @@ export function TrackedTimerProvider({
       getElapsedSeconds,
       registerTimer,
       syncTimerDurationSeconds,
+      syncRemoteRunningTimers,
       isTimerRunning: (key) => isEntryRunning(entriesRef.current.get(key)),
       startTimer,
       pauseTimer,
@@ -561,6 +685,7 @@ export function TrackedTimerProvider({
       runningKeys,
       selectTimer,
       startTimer,
+      syncRemoteRunningTimers,
       syncTimerDurationSeconds,
       tick,
       toggleTimer,
@@ -578,5 +703,6 @@ export {
   buildTrackedTimerKey,
   type TrackedTimerSessionMeta,
   type TrackedTimerRegistration,
+  type RemoteRunningTimerAdoption,
   type TrackedTimerListItem,
 } from "./tracked-timer-types.js";

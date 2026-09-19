@@ -31,6 +31,8 @@ const projects = new Table(
     github_repository: column.text,
     cloudflare_zone_id: column.text,
     local_working_directory: column.text,
+    health_check_mode: column.text,
+    health_check_domain: column.text,
     status: column.text,
     priority: column.integer,
     sort_order: column.integer,
@@ -46,6 +48,7 @@ const tasks = new Table(
     assignee_id: column.text,
     related_contact_ids: column.text,
     related_organization_ids: column.text,
+    label_ids: column.text,
     number: column.integer,
     title: column.text,
     description: column.text,
@@ -404,6 +407,17 @@ const crm_relationship_labels = new Table({
   ...commonDates,
 });
 
+const task_labels = new Table({
+  name: column.text,
+  description: column.text,
+  color: column.text,
+  is_group: column.integer,
+  parent_id: column.text,
+  last_used_at: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 const crm_groups = new Table({
   name: column.text,
   description: column.text,
@@ -452,6 +466,7 @@ const crm_activities = new Table(
 export const appSchema = new Schema({
   projects,
   tasks,
+  task_labels,
   documents,
   organizations,
   contacts,

@@ -213,6 +213,8 @@ export { OverlayScrollbarRoot } from "./components/shell/overlay-scrollbar-root.
 export {
   TrackedTimerProvider,
   useTrackedTimer,
+  useTrackedTimerOptional,
+  type RemoteRunningTimerAdoption,
 } from "./tracked-timer/tracked-timer-context.js";
 
 export {
@@ -559,7 +561,11 @@ export {
   calendarChangeToMeetingPatch,
   calendarSelectionToMeetingRange,
   calendarEntityFromEvent,
+  isCalendarMeetingDuplicateModifier,
   meetingCalendarEventClassNames,
+  isMeetingCurrentlyActive,
+  openEndedMeetingVisualEnd,
+  OPEN_ENDED_MEETING_VISUAL_MS,
   meetingToCalendarEvent,
   meetingsToCalendarEvents,
   meetingsToCalendarEventsForDate,
@@ -643,11 +649,13 @@ export {
   CALENDAR_TIMETRACKING_DETAIL_PANEL_WIDTH_KEY,
   buildTimetrackingDayGroups,
   formatTimetrackingPeriodLabel,
+  listTimetrackingChartDayYmds,
   parseTimetrackingDateParam,
   parseTimetrackingWeekParam,
   parseTimetrackingMonthParam,
   readTimetrackingDateFromSearch,
   readTimetrackingPeriodFromSearch,
+  resolveTimetrackingChartPeriod,
   timetrackingPeriodIncludesYmd,
   todayYmd,
   type TimetrackingDayItem,
@@ -681,6 +689,30 @@ export {
 } from "./calendar/calendar-timetracking-entries.js";
 
 export {
+  buildTimetrackingHoursChartSeries,
+  formatTimetrackingChartHours,
+  timetrackingHoursChartHasActivity,
+  type TimetrackingHoursChartPoint,
+  type TimetrackingHoursChartSeries,
+} from "./calendar/calendar-timetracking-hours-chart-series.js";
+
+export {
+  buildTimetrackingContactBreakdown,
+  buildTimetrackingAreaBreakdown,
+  buildTimetrackingProjectBreakdown,
+  formatTimetrackingHumanDuration,
+  sumBreakdownSeconds,
+  TIMETRACKING_BREAKDOWN_COLORS,
+  type TimetrackingBreakdownSlice,
+} from "./calendar/calendar-timetracking-breakdown.js";
+
+export {
+  buildTimetrackingSessionsFromActivities,
+  sumTimetrackingSessionSeconds,
+  type TimetrackingSession,
+} from "./calendar/calendar-timetracking-sessions.js";
+
+export {
   CalendarTimetrackingSidePanelView,
   type CalendarTimetrackingSidePanelViewProps,
 } from "./components/calendar/calendar-timetracking-side-panel-view.js";
@@ -688,7 +720,33 @@ export {
 export {
   CalendarTimetrackingView,
   type CalendarTimetrackingViewProps,
+  type CalendarTimetrackingViewTab,
 } from "./components/calendar/calendar-timetracking-view.js";
+
+export {
+  TimetrackingHoursChart,
+  type TimetrackingHoursChartProps,
+} from "./components/calendar/timetracking-hours-chart.js";
+
+export {
+  TimetrackingProjectPieChart,
+  type TimetrackingProjectPieChartProps,
+} from "./components/calendar/timetracking-project-pie-chart.js";
+
+export {
+  TimetrackingContactBreakdown,
+  type TimetrackingContactBreakdownProps,
+} from "./components/calendar/timetracking-contact-breakdown.js";
+
+export {
+  TimetrackingAreaBreakdown,
+  type TimetrackingAreaBreakdownProps,
+} from "./components/calendar/timetracking-area-breakdown.js";
+
+export {
+  TimetrackingSessionsPanel,
+  type TimetrackingSessionsPanelProps,
+} from "./components/calendar/timetracking-sessions-panel.js";
 
 export {
   TimetrackingLeadingStamp,
@@ -696,6 +754,31 @@ export {
 } from "./components/calendar/timetracking-leading-stamp.js";
 
 export { TrackedTimeIcon, type TrackedTimeIconProps } from "./components/icons/tracked-time-icon.js";
+
+export {
+  HealthCheckIcon,
+  type HealthCheckIconProps,
+} from "./components/icons/health-check-icon.js";
+
+export {
+  HealthCheckSimpleIcon,
+  type HealthCheckSimpleIconProps,
+} from "./components/icons/health-check-simple-icon.js";
+
+export {
+  HealthCheckConfirmIcon,
+  type HealthCheckConfirmIconProps,
+} from "./components/icons/health-check-confirm-icon.js";
+
+export {
+  TimetrackingModeIcon,
+  type TimetrackingModeIconProps,
+} from "./components/icons/timetracking-mode-icon.js";
+
+export {
+  AvailabilityModeIcon,
+  type AvailabilityModeIconProps,
+} from "./components/icons/availability-mode-icon.js";
 
 export { calendarTaskDragEventData, taskDueEpochAttribute } from "./calendar/calendar-task-drag.js";
 
@@ -990,6 +1073,11 @@ export {
   TaskDueDateIcon,
   type TaskDueDateIconProps,
 } from "./components/tasks/task-due-date-icon.js";
+
+export {
+  MeetingCalendarStatusIcon,
+  type MeetingCalendarStatusIconProps,
+} from "./components/calendar/meeting-calendar-status-icon.js";
 
 export {
   CalendarIcon,
@@ -2593,6 +2681,29 @@ export {
   ProjectLettersView,
   type ProjectLettersViewProps,
 } from "./components/projects/project-letters-view.js";
+export {
+  ProjectUpdatesView,
+  type ProjectUpdatesViewProps,
+  type ProjectUpdateRelatedTaskOption,
+} from "./components/projects/project-updates-view.js";
+export {
+  ProjectUpdateRelatedTimeline,
+  type ProjectUpdateRelatedTimelineItem,
+  type ProjectUpdateRelatedTimelineProps,
+} from "./components/projects/project-update-related-timeline.js";
+export {
+  PROJECT_UPDATE_KIND_LABELS,
+  PROJECT_UPDATE_STATUS_LABELS,
+  PROJECT_UPDATE_STATUS_OPTIONS,
+  PROJECT_UPDATE_INCIDENT_STATUS_OPTIONS,
+  PROJECT_UPDATE_SEVERITY_LABELS,
+  PROJECT_UPDATE_SEVERITY_OPTIONS,
+  coerceProjectUpdateStatusForKind,
+  defaultProjectUpdateStatus,
+  defaultProjectUpdateStatusForKind,
+  defaultProjectUpdateSeverity,
+  projectUpdateStatusOptionsForKind,
+} from "./projects/project-updates.js";
 
 export {
   ProjectDocumentsSectionView,
@@ -3759,6 +3870,17 @@ export {
   TaskRelatedChips,
   type TaskRelatedChipsProps,
 } from "./components/tasks/task-related-chips.js";
+export {
+  TaskLabelColorDot,
+  TaskLabelIcon,
+  type TaskLabelColorDotProps,
+  type TaskLabelIconProps,
+} from "./components/tasks/task-label-icon.js";
+export {
+  TaskRelatedUpdateLinks,
+  type TaskRelatedUpdateLink,
+  type TaskRelatedUpdateLinksProps,
+} from "./components/tasks/task-related-update-links.js";
 
 export {
   encodeTaskRelatedValue,
@@ -4399,8 +4521,17 @@ export {
 
 export {
   CodebaseProjectOverviewPane,
+  ProjectCommitHistory,
+  CODEBASE_LIST_TAB_OPTIONS,
   type CodebaseProjectOverviewPaneProps,
 } from "./components/codebase/codebase-project-overview-pane.js";
+
+export {
+  ProjectHealthCheckProperty,
+  normalizeHealthCheckDomain,
+  type ProjectHealthCheckMode,
+  type ProjectHealthCheckValue,
+} from "./components/codebase/project-health-check-property.js";
 
 export { apiErrorMessage as codebaseApiErrorMessage } from "./components/codebase/api-error-message.js";
 export {

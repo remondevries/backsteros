@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, ChevronLeftIcon, MailIcon, ProjectIcon } from "@primer/octicons-react";
+import { MailIcon, ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -64,6 +64,7 @@ import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import { ProjectHealthCheckProperty } from "../codebase/project-health-check-property.js";
 
 import {
   type ProjectDetailNestedArea,
@@ -94,6 +95,10 @@ export type ProjectPanelDetailViewProps = {
   onTypeChange?: (type: ProjectType) => void;
   onProviderChange?: (provider: ProjectProvider | null) => void;
   onCategoryChange?: (category: ProjectEmailCategory | null) => void;
+  onHealthCheckChange?: (next: {
+    healthCheckMode: "simple" | "advanced";
+    healthCheckDomain: string | null;
+  }) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
@@ -112,13 +117,13 @@ export type ProjectPanelDetailViewProps = {
   renderSection?: (sectionId: ProjectSectionId) => ReactNode;
   /** Extra controls under Properties (e.g. working directory). */
   propertiesExtra?: ReactNode;
+  /** Rendered under the description (activity feed). */
+  belowDescription?: ReactNode;
   /**
    * When set, replaces description + properties as the sole overview body
    * (e.g. Files / Commits / PRs tab content).
    */
   repositoriesSection?: ReactNode;
-  /** When false, skip the in-view icon/name header (host chrome shows it). Default false. */
-  showHeader?: boolean;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -135,13 +140,13 @@ export function ProjectPanelDetailView({
   nestedAreas = [],
   onSaveName,
   onSaveKey,
-  onSaveSummary,
   onSaveDescription,
   onStatusChange,
   onPriorityChange,
   onTypeChange,
   onProviderChange,
   onCategoryChange,
+  onHealthCheckChange,
   onAreaChange,
   onAreaIdChange,
   onOrganizationChange,
@@ -155,35 +160,22 @@ export function ProjectPanelDetailView({
   initialSection = "overview",
   renderSection,
   propertiesExtra,
+  belowDescription,
   repositoriesSection,
-  showHeader = false,
 }: ProjectPanelDetailViewProps) {
-  const renderHeader = showHeader;
   const [uncontrolledSection] = useState<ProjectSectionId>(initialSection);
   const section = controlledSection ?? uncontrolledSection;
 
   const [name, setName] = useState(project.name);
   const [nameSource, setNameSource] = useState(project.name);
-  const remoteSummary = project.summary ?? "";
-  const [summary, setSummary] = useState(remoteSummary);
-  const [summarySource, setSummarySource] = useState(remoteSummary);
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(project.id);
   if (project.id !== prevId) {
     setPrevId(project.id);
     setName(project.name);
     setNameSource(project.name);
-    setSummary(remoteSummary);
-    setSummarySource(remoteSummary);
   } else {
     adoptRemoteField(project.name, name, nameSource, setName, setNameSource);
-    adoptRemoteField(
-      remoteSummary,
-      summary,
-      summarySource,
-      setSummary,
-      setSummarySource,
-    );
   }
 
   useTitleRenameShortcut(
@@ -373,7 +365,6 @@ export function ProjectPanelDetailView({
   // Panel layout hosts its own chrome (no product section pills).
   const propertyTriggerVariant = "inlineChip" as const;
   const propertyPanelAlign = "start" as const;
-  const [propertiesExpanded, setPropertiesExpanded] = useState(false);
 
   const statusControl = (
     <PropertyDropdown
@@ -438,14 +429,6 @@ export function ProjectPanelDetailView({
 
   const morePropertyControls = (
     <>
-      {onSaveKey ? (
-        <ProjectKeyEditor value={project.key} onSave={onSaveKey} />
-      ) : (
-        <span className="project-detail__key">
-          <span className="project-detail__key-label">ID</span>
-          <span className="project-detail__key-value">{project.key}</span>
-        </span>
-      )}
       <PropertyDropdown
         value={String(project.priority)}
         options={priorityOptions}
@@ -466,8 +449,9 @@ export function ProjectPanelDetailView({
         options={typeOptions}
         onChange={(next) => onTypeChange?.(next as ProjectType)}
         searchPlaceholder="Change type…"
-        searchShortcutLabel="Y"
+        searchShortcutLabel="T"
         ariaLabel="Type"
+        taskPropertyDropdownId="type"
         fallbackIcon={
           projectType === "codebase" ? (
             <TerminalConsoleIcon size={14} />
@@ -525,6 +509,15 @@ export function ProjectPanelDetailView({
           panelAlign={propertyPanelAlign}
         />
       ) : null}
+      {projectType === "codebase" ? (
+        <ProjectHealthCheckProperty
+          mode={project.healthCheckMode}
+          domain={project.healthCheckDomain}
+          onChange={onHealthCheckChange}
+          triggerVariant={propertyTriggerVariant}
+          panelAlign={propertyPanelAlign}
+        />
+      ) : null}
       <span
         className={[
           "project-detail__meta-dates",
@@ -574,9 +567,9 @@ export function ProjectPanelDetailView({
           onAreaChange?.(next === "__none__" ? null : (next as ProjectArea));
           onAreaIdChange?.(null);
         }}
-        searchPlaceholder="Change area…"
-        searchShortcutLabel="A"
-        ariaLabel="Area"
+                    searchPlaceholder="Change area…"
+                    searchShortcutLabel="⇧A"
+                    ariaLabel="Area"
         taskPropertyDropdownId="area"
         fallbackIcon={null}
         fallbackLabel={
@@ -630,153 +623,115 @@ export function ProjectPanelDetailView({
         </div>
       ) : (
         <div className="project-detail__overview">
-          <div className="project-detail__overview-top">
-            {renderHeader ? (
-              <header className="project-detail__header">
-                <span className="project-detail__icon">
-                  <ProjectOverviewIcon
-                    icon={project.icon}
-                    type={project.type}
-                    name={project.name}
-                    onIconChange={onIconChange}
-                  />
-                </span>
-                <OverviewNameEditor
-                  value={name}
-                  entityLabel="Project"
-                  resetKey={project.id}
-                  renameFocusRequest={renameFocusRequest}
-                  onSave={async (next) => {
-                    if (!onSaveName) {
-                      setName(next);
-                      setNameSource(next);
-                      return { ok: true };
-                    }
-                    const result = await onSaveName(next);
-                    if (result.ok) {
-                      // Keep source on the last confirmed remote until the patched
-                      // project lands — bumping source early lets adoptRemoteField
-                      // briefly revert the field.
-                      setName(next);
-                    }
-                    return result;
-                  }}
+          <div className="project-panel-identity">
+            <div className="project-panel-identity__code">
+              {onSaveKey ? (
+                <ProjectKeyEditor
+                  value={project.key}
+                  onSave={onSaveKey}
+                  variant="displayId"
                 />
-                <input
-                  type="text"
-                  className="project-detail__summary"
-                  value={summary}
-                  placeholder="Add a short summary…"
-                  aria-label="Project summary"
-                  onChange={(event) => setSummary(event.target.value)}
-                  onBlur={() => {
-                    void onSaveSummary?.(summary.trim());
-                  }}
-                />
-              </header>
-            ) : null}
-
-            <div className="project-panel-tab-body" aria-label="Project details">
-              {repositoriesSection ? (
-                <div className="project-panel-tab-body__custom">
-                  {repositoriesSection}
-                </div>
               ) : (
-                <>
-                  <div
-                    className="project-detail__description-body project-panel-tab-body__description"
-                    data-content-view-mode={mode}
-                  >
-                    <ContentMarkdownViewLayout
-                      mode={mode}
-                      editorActivated={editorActivated}
-                      onToggleMode={toggleViewMode}
-                      editor={
-                        <DocumentMarkdownEditor
-                          value={value}
-                          onChange={handleChange}
-                          onBlur={handleBlurSave}
-                          focusRequest={editorFocusRequest}
-                          ariaLabel="Project description"
-                        />
-                      }
-                      preview={
-                        <ContentMarkdownPreviewColumn includeTopInset={false}>
-                          {value.trim() ? (
-                            <DocumentMarkdownPreview
-                              body={value}
-                              onChange={handleChange}
-                            />
-                          ) : (
-                            <p className="project-detail__description-empty">
-                              Add a project description…
-                            </p>
-                          )}
-                        </ContentMarkdownPreviewColumn>
-                      }
-                      toggle={
-                        <FloatingPillToggleDock>
-                          <SegmentedPillToggle
-                            value={mode}
-                            options={[
-                              { value: "edit", label: "Edit" },
-                              { value: "preview", label: "Preview" },
-                            ]}
-                            onChange={setViewMode}
-                            ariaLabel="Project description view mode"
-                          />
-                        </FloatingPillToggleDock>
-                      }
-                    />
-                  </div>
-                  {error ? (
-                    <p className="project-detail__description-error" role="alert">
-                      {error}
-                    </p>
-                  ) : null}
-                  <div className="project-panel-tab-body__properties task-properties-inline">
-                    <div className="task-properties-inline__primary">
-                      <div className="task-properties-inline__fields">
-                        {statusControl}
-                        {organizationControl}
-                        {progressControl}
-                      </div>
-                      <button
-                        type="button"
-                        className="project-detail__properties-more"
-                        aria-expanded={propertiesExpanded}
-                        aria-label={
-                          propertiesExpanded
-                            ? "Hide more properties"
-                            : "Show more properties"
-                        }
-                        onClick={() =>
-                          setPropertiesExpanded((current) => !current)
-                        }
-                      >
-                        {propertiesExpanded ? (
-                          <ChevronDownIcon size={14} />
-                        ) : (
-                          <ChevronLeftIcon size={14} />
-                        )}
-                      </button>
-                    </div>
-                    {propertiesExpanded ? (
-                      <div className="task-properties-inline__fields task-properties-inline__more">
-                        {morePropertyControls}
-                      </div>
-                    ) : null}
-                    <div className="project-detail__meta-row project-panel-tab-body__areas">
-                      <span className="project-detail__meta-label">Areas</span>
-                      <div className="project-detail__meta-fields">
-                        {areaPropertyControls}
-                      </div>
-                    </div>
-                  </div>
-                </>
+                <p className="content-detail-display-id">{project.key}</p>
               )}
+              {progressControl}
             </div>
-
+            <div className="project-panel-identity__title">
+              <ProjectOverviewIcon
+                icon={project.icon}
+                type={project.type}
+                name={project.name}
+                size={18}
+                onIconChange={onIconChange}
+              />
+              <OverviewNameEditor
+                value={name}
+                entityLabel="Project"
+                resetKey={project.id}
+                renameFocusRequest={renameFocusRequest}
+                onSave={async (next) => {
+                  if (!onSaveName) {
+                    setName(next);
+                    setNameSource(next);
+                    return { ok: true };
+                  }
+                  const result = await onSaveName(next);
+                  if (result.ok) {
+                    setName(next);
+                  }
+                  return result;
+                }}
+              />
+            </div>
+            <div className="project-panel-identity__properties task-properties-inline">
+              <div className="task-properties-inline__fields">
+                {statusControl}
+                {morePropertyControls}
+                {organizationControl}
+                {areaPropertyControls}
+              </div>
+            </div>
+            <div
+              className="project-detail__description-body project-panel-identity__description"
+              data-content-view-mode={mode}
+            >
+              <ContentMarkdownViewLayout
+                mode={mode}
+                editorActivated={editorActivated}
+                onToggleMode={toggleViewMode}
+                editor={
+                  <DocumentMarkdownEditor
+                    value={value}
+                    onChange={handleChange}
+                    onBlur={handleBlurSave}
+                    focusRequest={editorFocusRequest}
+                    ariaLabel="Project description"
+                  />
+                }
+                preview={
+                  <ContentMarkdownPreviewColumn includeTopInset={false}>
+                    {value.trim() ? (
+                      <DocumentMarkdownPreview
+                        body={value}
+                        onChange={handleChange}
+                      />
+                    ) : (
+                      <p className="project-detail__description-empty">
+                        Add a project description…
+                      </p>
+                    )}
+                  </ContentMarkdownPreviewColumn>
+                }
+                toggle={
+                  <FloatingPillToggleDock>
+                    <SegmentedPillToggle
+                      value={mode}
+                      options={[
+                        { value: "edit", label: "Edit" },
+                        { value: "preview", label: "Preview" },
+                      ]}
+                      onChange={setViewMode}
+                      ariaLabel="Project description view mode"
+                    />
+                  </FloatingPillToggleDock>
+                }
+              />
+            </div>
+            {error ? (
+              <p className="project-detail__description-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {belowDescription ? (
+              <div className="project-panel-identity__activity">
+                {belowDescription}
+              </div>
+            ) : null}
+            {repositoriesSection ? (
+              <div className="project-panel-tab-body__custom">
+                {repositoriesSection}
+              </div>
+            ) : null}
           </div>
         </div>
       )}

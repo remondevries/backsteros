@@ -9,6 +9,8 @@ import type {
   EventDropArg,
 } from "@fullcalendar/core";
 import interactionPlugin, {
+  type EventDragStartArg,
+  type EventDragStopArg,
   type EventReceiveArg,
   type EventResizeDoneArg,
 } from "@fullcalendar/interaction";
@@ -20,6 +22,7 @@ import {
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
   calendarEntityFromEvent,
+  isCalendarMeetingDuplicateModifier,
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
@@ -42,6 +45,14 @@ export type CalendarDayTimelineProps = {
     meetingId: string,
     patch: MeetingCalendarPatch,
   ) => void | Promise<void>;
+  /**
+   * Alt/Option + drag-drop a meeting → create a copy at the new slot.
+   * Copy only when Alt is held at drop (releasing mid-drag moves instead).
+   */
+  onMeetingDuplicate?: (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => void | Promise<void>;
   resolveTask?: (taskId: string) => CalendarTaskPopoverTask | null | undefined;
   onTaskOpen?: (taskId: string) => void;
   onMeetingOpen?: (meetingId: string) => void;
@@ -57,12 +68,14 @@ export function CalendarDayTimeline({
   events,
   onTaskReschedule,
   onMeetingReschedule,
+  onMeetingDuplicate,
   resolveTask,
   onTaskOpen,
   onMeetingOpen,
 }: CalendarDayTimelineProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const calendarApiRef = useRef<CalendarApi | null>(null);
+  const meetingDragCopyCleanupRef = useRef<(() => void) | null>(null);
   const [openPopover, setOpenPopover] = useState<OpenPopoverState | null>(null);
   const initialDate = parseYmdLocal(dateSlug) ?? new Date();
   const fixedMirrorParent =
@@ -107,7 +120,21 @@ export function CalendarDayTimeline({
     return () => cancelAnimationFrame(frame);
   }, [dateSlug, initialDate]);
 
+  useEffect(() => {
+    return () => {
+      meetingDragCopyCleanupRef.current?.();
+      meetingDragCopyCleanupRef.current = null;
+      document.body.classList.remove("calendar-event-drag-copy");
+    };
+  }, []);
+
   const closePopover = () => setOpenPopover(null);
+
+  const clearMeetingDragCopyAffordance = () => {
+    meetingDragCopyCleanupRef.current?.();
+    meetingDragCopyCleanupRef.current = null;
+    document.body.classList.remove("calendar-event-drag-copy");
+  };
 
   const handleDatesSet = (info: DatesSetArg) => {
     const viewStart = info.view.currentStart;
@@ -131,6 +158,7 @@ export function CalendarDayTimeline({
       extendedProps: Record<string, unknown>;
     },
     revert: () => void,
+    options?: { duplicate?: boolean },
   ) => {
     const entity = calendarEntityFromEvent(event);
     if (entity.entityType === "meeting") {
@@ -139,11 +167,26 @@ export function CalendarDayTimeline({
         end: event.end,
         allDay: event.allDay,
       });
-      if (!patch || !onMeetingReschedule) {
+      if (!patch) {
         revert();
         return;
       }
-      onMeetingReschedule(entity.entityId, patch);
+      if (options?.duplicate) {
+        if (!onMeetingDuplicate) {
+          revert();
+          return;
+        }
+        revert();
+        void Promise.resolve(onMeetingDuplicate(entity.entityId, patch));
+        return;
+      }
+      if (!onMeetingReschedule) {
+        revert();
+        return;
+      }
+      void Promise.resolve(
+        onMeetingReschedule(entity.entityId, patch),
+      ).catch(() => revert());
       return;
     }
     const patch = calendarChangeToTaskPatch({
@@ -155,12 +198,44 @@ export function CalendarDayTimeline({
       revert();
       return;
     }
-    onTaskReschedule(entity.entityId, patch);
+    void Promise.resolve(onTaskReschedule(entity.entityId, patch)).catch(() =>
+      revert(),
+    );
+  };
+
+  const handleEventDragStart = (info: EventDragStartArg) => {
+    clearMeetingDragCopyAffordance();
+    if (
+      !onMeetingDuplicate ||
+      info.event.extendedProps.entityType !== "meeting"
+    ) {
+      return;
+    }
+    const setCopyCursor = (copy: boolean) => {
+      document.body.classList.toggle("calendar-event-drag-copy", copy);
+    };
+    setCopyCursor(isCalendarMeetingDuplicateModifier(info.jsEvent));
+    const onModifierChange = (event: KeyboardEvent) => {
+      setCopyCursor(event.altKey);
+    };
+    window.addEventListener("keydown", onModifierChange);
+    window.addEventListener("keyup", onModifierChange);
+    meetingDragCopyCleanupRef.current = () => {
+      window.removeEventListener("keydown", onModifierChange);
+      window.removeEventListener("keyup", onModifierChange);
+    };
+  };
+
+  const handleEventDragStop = (_info: EventDragStopArg) => {
+    clearMeetingDragCopyAffordance();
   };
 
   const handleEventDrop = (info: EventDropArg) => {
     closePopover();
-    applyScheduleChange(info.event, () => info.revert());
+    clearMeetingDragCopyAffordance();
+    applyScheduleChange(info.event, () => info.revert(), {
+      duplicate: isCalendarMeetingDuplicateModifier(info.jsEvent),
+    });
   };
 
   const handleEventResize = (info: EventResizeDoneArg) => {
@@ -240,6 +315,8 @@ export function CalendarDayTimeline({
           eventAllow={handleEventAllow}
           events={events}
           datesSet={handleDatesSet}
+          eventDragStart={handleEventDragStart}
+          eventDragStop={handleEventDragStop}
           eventDrop={handleEventDrop}
           eventResize={handleEventResize}
           eventReceive={handleEventReceive}

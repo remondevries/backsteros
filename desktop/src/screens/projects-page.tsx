@@ -73,6 +73,7 @@ import {
   taskReorderPatches,
 } from "@backsteros/ui";
 
+import { DesktopProjectUpdatesPanel } from "../components/desktop-project-updates-panel";
 import { LetterPdfPreview } from "../components/letter-pdf-viewer";
 import {
   buildWorkingProjectIdSet,
@@ -99,6 +100,7 @@ import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
+import { useDesktopLetterContext } from "../lib/use-letter-context";
 import {
   useKeepAliveActive,
   useShellLocation,
@@ -402,6 +404,9 @@ function ProjectsPageBody({
   const selectedLetterRecord = selectedLetter
     ? workspace.letterRecords[selectedLetter.id] ?? null
     : null;
+  const { context: letterContext } = useDesktopLetterContext(selectedLetter?.id, {
+    enabled: keepAliveActive && Boolean(selectedLetter),
+  });
   const hasLivePdf = Boolean(
     selectedLetterRecord?.storageKey && selectedLetterRecord.byteSize > 0);
   const pdfPanel = useLetterPdfPanel(selectedLetter?.id, {
@@ -974,13 +979,14 @@ function ProjectsPageBody({
         ? "domeinname"
         : (project.type ?? navType ?? cachedType ?? "general");
   // Tasks (list or board) and Docs stay in the codebase workbench so the left
-  // Tasks/Files/Docs/Commits/PRs sidebar remains; only letters/updates use the
+  // Tasks/Files/Docs/Commits/PRs/Updates sidebar remains; only letters use the
   // default project section chrome.
   const isCodebaseWorkbench =
     effectiveType === "codebase" &&
     (activeSection === "overview" ||
       activeSection === "tasks" ||
       activeSection === "documents" ||
+      activeSection === "updates" ||
       isCodebaseWorkbenchPath(location.pathname, projectKey));
   const isDomainWorkbench = effectiveType === "domeinname";
 
@@ -1260,9 +1266,7 @@ function ProjectsPageBody({
                     : null,
                   projectKey,
                   projectName: project.name,
-                  body:
-                    workspace.letterBodies[selectedLetter.id] ??
-                    "",
+                  body: letterContext,
                   displayId: selectedLetterDisplayId,
                 }}
                 showPdfDock
@@ -1543,11 +1547,7 @@ function ProjectsPageBody({
     }
 
     if (sectionId === "updates") {
-      return (
-        <div className="project-detail__updates">
-          <p>Project updates will live here.</p>
-        </div>
-      );
+      return <DesktopProjectUpdatesPanel projectId={project.id} />;
     }
 
     return null;
@@ -1579,6 +1579,8 @@ function ProjectsPageBody({
             areaId: project.areaId ?? null,
             localWorkingDirectory: project.localWorkingDirectory ?? null,
             githubRepository: project.githubRepository ?? null,
+            healthCheckMode: project.healthCheckMode ?? null,
+            healthCheckDomain: project.healthCheckDomain ?? null,
             summary: workspace.projectSummaries[project.id] ?? "",
             description: workspace.projectDescriptions[project.id] ?? "",
           }}
@@ -1589,6 +1591,8 @@ function ProjectsPageBody({
             type: entry.type ?? "general",
             localWorkingDirectory: entry.localWorkingDirectory ?? null,
             githubRepository: entry.githubRepository ?? null,
+            healthCheckMode: entry.healthCheckMode ?? null,
+            healthCheckDomain: entry.healthCheckDomain ?? null,
           }))}
           organizations={Object.values(workspace.organizationDetails)}
           nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
@@ -1598,6 +1602,7 @@ function ProjectsPageBody({
           pathname={location.pathname}
           tasksPanel={renderSection("tasks")}
           docsPanel={renderSection("documents")}
+          updatesPanel={<DesktopProjectUpdatesPanel projectId={project.id} />}
           docsListPanel={
             <DesktopCodebaseDocsListPanel
               keyboardEnabled={activeSection === "documents"}
@@ -1753,6 +1758,14 @@ function ProjectsPageBody({
             if ("githubRepository" in patch) {
               localPatch.githubRepository =
                 (patch.githubRepository as string | null) ?? null;
+            }
+            if ("healthCheckMode" in patch) {
+              localPatch.healthCheckMode =
+                (patch.healthCheckMode as "simple" | "advanced" | null) ?? null;
+            }
+            if ("healthCheckDomain" in patch) {
+              localPatch.healthCheckDomain =
+                (patch.healthCheckDomain as string | null) ?? null;
             }
             if ("provider" in patch) {
               localPatch.provider = (patch.provider as string | null) ?? null;
@@ -1954,6 +1967,8 @@ function ProjectsPageBody({
           ...project,
           organizationId: project.organizationId ?? null,
           type: project.type ?? "general",
+          healthCheckMode: project.healthCheckMode ?? null,
+          healthCheckDomain: project.healthCheckDomain ?? null,
           summary:
             workspace.projectSummaries[project.id] ??
             "",
@@ -2040,9 +2055,18 @@ function ProjectsPageBody({
           void workspace.patchProject(project.id, { priority });
         }}
         onTypeChange={(type) => {
-          const patch: { type: string; category?: null } = { type };
+          const patch: {
+            type: string;
+            category?: null;
+            healthCheckMode?: null;
+            healthCheckDomain?: null;
+          } = { type };
           if (type !== "email") {
             patch.category = null;
+          }
+          if (type !== "codebase") {
+            patch.healthCheckMode = null;
+            patch.healthCheckDomain = null;
           }
           patchSelected(patch);
           void workspace.patchProject(project.id, patch);
@@ -2068,6 +2092,10 @@ function ProjectsPageBody({
           }
           patchSelected(patch);
           void workspace.patchProject(project.id, patch);
+        }}
+        onHealthCheckChange={(next) => {
+          patchSelected(next);
+          void workspace.patchProject(project.id, next);
         }}
         onAreaChange={(area: ProjectArea | null) => {
           patchSelected({ area, areaId: null });

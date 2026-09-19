@@ -247,7 +247,7 @@ fork of the Next deployment pipeline.
 | Q-001 | Domains: product + API host | **Resolved (v2):** local core `127.0.0.1:8788` (+ Tailscale); no cloud API |
 | Q-002 | B2 vs R2 after measuring PDF egress | Deferred — v2 uses local vault (ADR-021) |
 | Q-003 | Clerk vs Supabase Auth | **Resolved:** Clerk |
-| Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/code/backsteros/` with subfolders |
+| Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/BacksterOS/Projects/OS/Codebase/` with subfolders |
 | Q-005 | Self-host PowerSync vs PowerSync Cloud | **Resolved (v2):** self-host Docker PowerSync locally |
 | Q-006 | Postgres host | **Resolved (v2):** Docker only — Neon / cloud Postgres retired |
 | Q-007 | Desktop client stack | **Resolved:** Tauri 2 + Vite/React (ADR-019); UI near-identical to web |
@@ -284,6 +284,8 @@ fork of the Next deployment pipeline.
 - Avatars and other system blobs under `.backsteros/`
 
 **Supersedes for v2:** ADR-007 cloud-first default. Remote B2/R2 remains an optional future backend.
+
+**File authority:** superseded by ADR-035. The local vault stays the desktop working copy. It is no longer the only copy of markdown or blobs.
 
 ---
 
@@ -514,6 +516,29 @@ fork of the Next deployment pipeline.
 - Settings → Integrations → Mapbox for token save/test. Address autocomplete and meeting locations are deferred; reuse the geocode/place contracts when added.
 
 **Consequences:** Re-run migrate + PowerSync setup so clients receive lat/lng. Prefer a URL-restricted `pk.` token or a server `sk.` token; both work server-side.
+
+---
+
+## ADR-035: Cloud-core center, desktop-owned local-core, R2 files
+
+**Status:** Accepted (2026-09-18). R2 file store and desktop-owned local-core startup are in place. Cloud PowerSync and the iOS cutover are not.
+
+**Context:** iOS should work while the MacBook is off. Agents stay outside both product shells (task updates still arrive through the API). Local-core should not need a separate menu-bar app just so the phone can reach the Mac.
+
+**Decision:**
+
+- **Cloud-core is the center.** Workspace rows live in cloud Postgres. API agents and the portal already use this host.
+- **Local-core is the Mac workstation replica**, not a second source of truth. It applies cloud ordered deltas (see [16-linear-shaped-sync.md](16-linear-shaped-sync.md)). Its lifecycle belongs to the **desktop app**. The Hub is current ops, not the target. iOS must not depend on it.
+- **iOS is a client of cloud-core**, not a core. It syncs through PowerSync against **cloud** Postgres. It does not run a server and does not talk to the Mac for day-to-day work.
+- **PowerSync runs beside each Postgres a shell syncs with.** Cloud PowerSync for iOS (new). Local PowerSync for desktop (already in Docker). The two services do not sync with each other. Cloud ↔ local Postgres replication is the bridge.
+- **R2 is the shared file store** for markdown and for bytes that are Mac-only today: letter PDFs, task attachments, avatars, space covers, and other `.backsteros` blobs. Postgres keeps metadata + `storage_key` only. Use a **private** BacksterOS bucket. Do not reuse the public WordPress bucket `ld-wp-media`.
+- **Desktop keeps a local working copy** of those files (the existing vault layout) and syncs changes. Opening an area must not re-download every markdown from R2. The phone may fetch a file when it opens it.
+- **Auth:** cloud-core rejects the `local` shell token. iOS needs a real cloud owner credential.
+- **Agents** are not started from desktop or iOS. Seeing an agent work is a task/presence update, not an in-app agent process. PTY stays off the iOS critical path.
+
+**Consequences:** Lift cloud `pdf_requires_local_core` once bytes are on R2. Deploy PowerSync next to cloud Postgres. Point the iOS app at cloud-core only. Desktop may start Docker + local API + local PowerSync itself. Markdown sync moves from the VPS vault twin to R2; the Mac folder remains the fast copy.
+
+**Does not change:** Tier rules (no bulk PDF or full bodies in client SQLite). WordPress media stays on `ld-wp-media`.
 
 ---
 

@@ -107,10 +107,37 @@ export async function resolveWriteActorProfile(
     .from(users)
     .where(eq(users.id, actor.userId))
     .limit(1);
-  const email = user?.email ?? null;
+  const email = user?.email?.trim() || null;
   const name =
     user?.displayName?.trim() || (email ? authorDisplayName(email) : null);
-  return { userId: actor.userId, contactId: null, email, name };
+
+  // Prefer the workspace contact that shares this user's email so avatars /
+  // CRM attribution stay linked when the desktop posts as a user.
+  let contactId: string | null = null;
+  if (email) {
+    const [matched] = await executor
+      .select({ id: contacts.id, name: contacts.name })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.workspaceId, workspaceId),
+          eq(contacts.email, email),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (matched) {
+      contactId = matched.id;
+      return {
+        userId: actor.userId,
+        contactId,
+        email,
+        name: matched.name.trim() || name,
+      };
+    }
+  }
+
+  return { userId: actor.userId, contactId, email, name };
 }
 
 export async function listTaskComments(

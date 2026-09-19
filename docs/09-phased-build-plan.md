@@ -4,7 +4,7 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 ## Phase 0 — Planning
 
-**Workspace:** `~/code/backsteros/` (planning at root + code subfolders)
+**Workspace:** `~/BacksterOS/Projects/OS/Codebase/` (planning at root + code subfolders)
 
 - [x] Architecture docs
 - [x] User reviews and approves stack (Clerk, local Docker Postgres, monorepo)

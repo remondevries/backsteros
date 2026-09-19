@@ -26,6 +26,7 @@ import { listReplicatedTableSpecs } from "./tables.js";
 describe("core-replication constants", () => {
   it("live sync covers full Tier A/B twin stack", () => {
     assert.ok(REPLICATED_TABLES.includes("projects"));
+    assert.ok(REPLICATED_TABLES.includes("project_updates"));
     assert.ok(REPLICATED_TABLES.includes("tasks"));
     assert.ok(REPLICATED_TABLES.includes("documents"));
     assert.ok(REPLICATED_TABLES.includes("space_publish_settings"));

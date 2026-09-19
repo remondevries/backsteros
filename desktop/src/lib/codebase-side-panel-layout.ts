@@ -98,6 +98,8 @@ export function useCodebaseSidePanelWidth(projectId: string): {
   /** Nudge left-panel width by `delta` px (clamped + persisted). Returns whether width changed. */
   nudgePanelWidth: (delta: number) => boolean;
   isResizing: boolean;
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 } {
   const containerElRef = useRef<HTMLDivElement | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(
@@ -114,12 +116,16 @@ export function useCodebaseSidePanelWidth(projectId: string): {
   const projectIdRef = useRef(projectId);
   const persistTimerRef = useRef<number | null>(null);
   const nudgerRef = useRef<PanelWidthNudger | null>(null);
+  const collapsedRef = useRef(false);
+  const seenProjectIdRef = useRef(projectId);
+  const [collapsed, setCollapsed] = useState(false);
 
   projectIdRef.current = projectId;
   containerWidthRef.current = containerWidth;
 
   const applyVisualWidth = useCallback((width: number) => {
     panelWidthRef.current = width;
+    if (collapsedRef.current) return;
     const container = containerElRef.current;
     if (container) {
       container.style.setProperty(
@@ -139,7 +145,7 @@ export function useCodebaseSidePanelWidth(projectId: string): {
     setContainerWidth(Math.round(node.getBoundingClientRect().width));
     node.style.setProperty(
       "--desktop-codebase-side-panel-width",
-      `${panelWidthRef.current}px`,
+      `${collapsedRef.current ? 0 : panelWidthRef.current}px`,
     );
   }, []);
 
@@ -207,6 +213,11 @@ export function useCodebaseSidePanelWidth(projectId: string): {
 
   // Apply per-project memory (or default) when project / size changes.
   useEffect(() => {
+    if (seenProjectIdRef.current !== projectId) {
+      seenProjectIdRef.current = projectId;
+      collapsedRef.current = false;
+      setCollapsed(false);
+    }
     const next = clampCodebaseSidePanelWidth(
       readCodebaseSidePanelWidth(projectId),
       containerWidth,
@@ -214,10 +225,29 @@ export function useCodebaseSidePanelWidth(projectId: string): {
     applyVisualWidth(next);
     setPanelWidthState(next);
     nudgerRef.current?.sync(next);
+    if (collapsedRef.current) {
+      containerElRef.current?.style.setProperty(
+        "--desktop-codebase-side-panel-width",
+        "0px",
+      );
+    }
   }, [projectId, containerWidth, applyVisualWidth]);
+
+  const toggleCollapsed = useCallback(() => {
+    const next = !collapsedRef.current;
+    collapsedRef.current = next;
+    setCollapsed(next);
+    const container = containerElRef.current;
+    if (!container) return;
+    container.style.setProperty(
+      "--desktop-codebase-side-panel-width",
+      next ? "0px" : `${panelWidthRef.current}px`,
+    );
+  }, []);
 
   const beginResize = useCallback(
     (clientX: number) => {
+      if (collapsedRef.current) return;
       nudgerRef.current?.cancel();
       nudgerRef.current?.sync(panelWidthRef.current);
       dragRef.current = {
@@ -260,6 +290,7 @@ export function useCodebaseSidePanelWidth(projectId: string): {
   );
 
   const nudgePanelWidth = useCallback((delta: number) => {
+    if (collapsedRef.current) return false;
     return nudgerRef.current?.nudge(delta) ?? false;
   }, []);
 
@@ -268,6 +299,188 @@ export function useCodebaseSidePanelWidth(projectId: string): {
     panelWidth,
     beginResize,
     nudgePanelWidth,
+    isResizing,
+    collapsed,
+    toggleCollapsed,
+  };
+}
+
+/** List column beside a file, document, commit, or pull request. */
+export const CODEBASE_TAB_LIST_MIN_WIDTH = 220;
+export const CODEBASE_TAB_LIST_DEFAULT_WIDTH = 340;
+/** Keep the open item readable while the list is dragged wider. */
+export const CODEBASE_TAB_LIST_DETAIL_MIN_WIDTH = 280;
+
+const CODEBASE_TAB_LIST_WIDTH_KEY_PREFIX =
+  "backsteros-desktop.codebase-tab-list-width.project.";
+
+export function codebaseTabListWidthKey(projectId: string, tab: string): string {
+  return `${CODEBASE_TAB_LIST_WIDTH_KEY_PREFIX}${projectId}.${tab}`;
+}
+
+export function clampCodebaseTabListWidth(
+  width: number,
+  containerWidth: number,
+): number {
+  if (!(Number.isFinite(containerWidth) && containerWidth > 0)) {
+    return Math.max(width, CODEBASE_TAB_LIST_MIN_WIDTH);
+  }
+  const maxWidth = Math.max(
+    CODEBASE_TAB_LIST_MIN_WIDTH,
+    containerWidth - CODEBASE_TAB_LIST_DETAIL_MIN_WIDTH,
+  );
+  return clamp(width, CODEBASE_TAB_LIST_MIN_WIDTH, maxWidth);
+}
+
+function readTabListWidth(projectId: string, tab: string): number {
+  if (!projectId || !tab) return CODEBASE_TAB_LIST_DEFAULT_WIDTH;
+  if (typeof window === "undefined") return CODEBASE_TAB_LIST_DEFAULT_WIDTH;
+  try {
+    const raw = window.localStorage.getItem(
+      codebaseTabListWidthKey(projectId, tab),
+    );
+    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    if (!Number.isFinite(parsed)) return CODEBASE_TAB_LIST_DEFAULT_WIDTH;
+    return Math.max(parsed, CODEBASE_TAB_LIST_MIN_WIDTH);
+  } catch {
+    return CODEBASE_TAB_LIST_DEFAULT_WIDTH;
+  }
+}
+
+function writeTabListWidth(projectId: string, tab: string, width: number): void {
+  if (typeof window === "undefined" || !projectId || !tab) return;
+  try {
+    window.localStorage.setItem(
+      codebaseTabListWidthKey(projectId, tab),
+      String(Math.round(Math.max(width, CODEBASE_TAB_LIST_MIN_WIDTH))),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/**
+ * Drag-resizable width for the file / document / commit / pull-request list.
+ * Remembers width per project and tab.
+ */
+export function useCodebaseTabListWidth(
+  projectId: string,
+  tab: string,
+): {
+  containerRef: (node: HTMLDivElement | null) => void;
+  panelWidth: number;
+  beginResize: (clientX: number) => void;
+  isResizing: boolean;
+} {
+  const containerElRef = useRef<HTMLDivElement | null>(null);
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [panelWidth, setPanelWidthState] = useState(() =>
+    readTabListWidth(projectId, tab),
+  );
+  const [isResizing, setIsResizing] = useState(false);
+  const panelWidthRef = useRef(panelWidth);
+  const containerWidthRef = useRef(containerWidth);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const scopeRef = useRef({ projectId, tab });
+
+  scopeRef.current = { projectId, tab };
+  containerWidthRef.current = containerWidth;
+
+  const applyVisualWidth = useCallback((width: number) => {
+    panelWidthRef.current = width;
+    containerElRef.current?.style.setProperty(
+      "--desktop-codebase-tab-list-width",
+      `${width}px`,
+    );
+  }, []);
+
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    containerElRef.current = node;
+    setContainerNode(node);
+    if (!node) {
+      setContainerWidth(0);
+      return;
+    }
+    setContainerWidth(Math.round(node.getBoundingClientRect().width));
+    node.style.setProperty(
+      "--desktop-codebase-tab-list-width",
+      `${panelWidthRef.current}px`,
+    );
+  }, []);
+
+  useEffect(() => {
+    panelWidthRef.current = panelWidth;
+  }, [panelWidth]);
+
+  useEffect(() => {
+    const node = containerNode;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      setContainerWidth(Math.round(node.getBoundingClientRect().width));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [containerNode]);
+
+  useEffect(() => {
+    const next = clampCodebaseTabListWidth(
+      readTabListWidth(projectId, tab),
+      containerWidth,
+    );
+    applyVisualWidth(next);
+    setPanelWidthState(next);
+  }, [projectId, tab, containerWidth, applyVisualWidth]);
+
+  const beginResize = useCallback(
+    (clientX: number) => {
+      dragRef.current = {
+        startX: clientX,
+        startWidth: panelWidthRef.current,
+      };
+      setIsResizing(true);
+      document.body.classList.add("is-resizing");
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.userSelect = "none";
+
+      const onMove = (event: PointerEvent) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const next = clampCodebaseTabListWidth(
+          drag.startWidth + (event.clientX - drag.startX),
+          containerElRef.current?.clientWidth ?? containerWidthRef.current,
+        );
+        applyVisualWidth(next);
+        setPanelWidthState(next);
+      };
+
+      const onUp = () => {
+        dragRef.current = null;
+        setIsResizing(false);
+        document.body.classList.remove("is-resizing");
+        document.body.style.userSelect = previousUserSelect;
+        const { projectId: projectIdNow, tab: tabNow } = scopeRef.current;
+        writeTabListWidth(projectIdNow, tabNow, panelWidthRef.current);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [applyVisualWidth],
+  );
+
+  return {
+    containerRef,
+    panelWidth,
+    beginResize,
     isResizing,
   };
 }

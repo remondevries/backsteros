@@ -20,6 +20,8 @@ export const REPLICATED_TABLES = [
   "crm_group_members",
   "crm_activities",
   "projects",
+  /** Changelog / incident / maintenance posts shown on the client portal status page. */
+  "project_updates",
   "habits",
   "bank_accounts",
   "financial_categories",
@@ -27,6 +29,7 @@ export const REPLICATED_TABLES = [
   "financial_recurrings",
   "cashflow_planner_entries",
   "tasks",
+  "task_labels",
   "documents",
   /** Site keys / public base URL for Spaces publish (after documents FK parent). */
   "space_publish_settings",

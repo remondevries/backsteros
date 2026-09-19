@@ -489,6 +489,9 @@ export function useWorkspaceApiRows({
   }, [authenticated, client]);
 
   // CLI/agent project SSE → sparse liveProjectsById overlay.
+  // A status PATCH emits several workspace.updated events. Keep the newer
+  // row (same as tasks) and skip the HTTP cache so a stale WKWebView GET
+  // cannot pin the previous status until the next replication tick.
   useEffect(() => {
     if (!authenticated) return;
 
@@ -503,6 +506,7 @@ export function useWorkspaceApiRows({
         void client
           .requestJson<ApiProject>(
             `/api/v1/projects/${encodeURIComponent(projectId)}`,
+            { cache: "no-store" },
           )
           .then((row) => {
             if (cancelled) return;
@@ -513,8 +517,12 @@ export function useWorkspaceApiRows({
               return next;
             });
             setLiveProjectsById((current) => {
+              const previous = current.get(row.id);
               const next = new Map(current);
-              next.set(row.id, row);
+              next.set(
+                row.id,
+                previous ? preferNewerByUpdatedAt(previous, row) : row,
+              );
               return next;
             });
           })

@@ -1,4 +1,5 @@
 mod cursor_usage;
+mod local_core;
 mod overlay;
 mod system_stats;
 mod whoop;
@@ -375,6 +376,7 @@ pub fn run() {
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
             start_external_open_href_watcher(app.handle().clone());
+            local_core::spawn_ensure_local_core();
 
             Ok(())
         })

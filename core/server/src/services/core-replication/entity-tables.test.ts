@@ -31,6 +31,9 @@ describe("replicatedTablesForEntity", () => {
       "avatars",
     ]);
     assert.deepEqual(replicatedTablesForEntity("api_key"), ["api_keys"]);
+    assert.deepEqual(replicatedTablesForEntity("project_update"), [
+      "project_updates",
+    ]);
   });
 
   it("returns empty for unknown entities", () => {

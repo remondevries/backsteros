@@ -9,14 +9,18 @@ import type {
 } from "@backsteros/contracts";
 import {
   CodebaseProjectOverviewPane,
+  CODEBASE_LIST_TAB_OPTIONS,
   CommitDetailPane,
   FileDetailPane,
+  PillNav,
+  ProjectCommitHistory,
   PullRequestDetailPane,
   getCodebaseWorkbenchHref,
   normalizeWorkingDirectory,
   parseCodebaseWorkbenchPath,
   isCodebaseDetailEditorFocused,
   isBlockingModalOpen,
+  isContentSidePanelToggleShortcut,
   requestCodebaseDetailEnterFocus,
   requestCodebaseDetailLeaveFocus,
   shouldHandleGlobalShortcut,
@@ -29,15 +33,21 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
 import {
   CODEBASE_SIDE_PANEL_MIN_WIDTH,
   CODEBASE_SIDE_PANEL_NUDGE_STEP,
+  CODEBASE_TAB_LIST_MIN_WIDTH,
   useCodebaseSidePanelWidth,
+  useCodebaseTabListWidth,
 } from "../lib/codebase-side-panel-layout";
 import { resolvePanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
+import { createRestProjectFs } from "../lib/project-fs-rest";
+import { isTauriRuntime } from "../lib/tauri-runtime";
 import { navigateToHref } from "../router/navigate-href";
+import { CodebaseProjectActivityPanel } from "../components/codebase-project-activity-panel";
 
 export type CodebaseWorkbenchProject = {
   id: string;
@@ -52,6 +62,8 @@ export type CodebaseWorkbenchProject = {
   organizationId?: string | null;
   localWorkingDirectory?: string | null;
   githubRepository?: string | null;
+  healthCheckMode?: "simple" | "advanced" | null;
+  healthCheckDomain?: string | null;
   summary?: string;
   description?: string;
   startDate?: number | Date | null;
@@ -77,6 +89,8 @@ type Props = {
   docsListPanel?: ReactNode;
   /** Document detail / empty-create shown in the main pane on the Docs tab. */
   docsPanel?: ReactNode;
+  /** Project updates feed shown in the main pane on the Updates tab. */
+  updatesPanel?: ReactNode;
   fs?: ProjectFsClient;
 };
 
@@ -109,6 +123,8 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: null,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
+    healthCheckMode: project.healthCheckMode ?? null,
+    healthCheckDomain: project.healthCheckDomain ?? null,
     status: project.status as ApiProject["status"],
     priority: project.priority,
     sortOrder: project.sortOrder ?? 0,
@@ -132,6 +148,7 @@ export function CodebaseProjectWorkbench({
   tasksPanel,
   docsListPanel,
   docsPanel,
+  updatesPanel,
   fs = projectFs,
 }: Props) {
   const routerNavigate = useNavigate();
@@ -174,17 +191,50 @@ export function CodebaseProjectWorkbench({
       const currentCwd = normalizeWorkingDirectory(
         current.localWorkingDirectory,
       );
+      let next = mapped;
       if (currentCwd && !mappedCwd) {
-        return {
-          ...mapped,
+        next = {
+          ...next,
           localWorkingDirectory: current.localWorkingDirectory,
         };
       }
-      return mapped;
+      // Same for health check — REST save can land before PowerSync mirrors.
+      if (
+        current.healthCheckDomain &&
+        !mapped.healthCheckDomain
+      ) {
+        next = {
+          ...next,
+          healthCheckMode: current.healthCheckMode ?? "simple",
+          healthCheckDomain: current.healthCheckDomain,
+        };
+      } else if (
+        current.healthCheckMode &&
+        !mapped.healthCheckMode
+      ) {
+        next = {
+          ...next,
+          healthCheckMode: current.healthCheckMode,
+          healthCheckDomain: current.healthCheckDomain ?? null,
+        };
+      }
+      return next;
     });
   }, [project]);
 
   const apiProjects = useMemo(() => projects.map(toApiProject), [projects]);
+
+  const workingDirectory = normalizeWorkingDirectory(
+    apiProject.localWorkingDirectory,
+  );
+  const resolvedFs = useMemo(() => {
+    if (isTauriRuntime() || !workingDirectory) return fs;
+    return createRestProjectFs({
+      projectId: project.id,
+      workingDirectory,
+      requestJson,
+    });
+  }, [fs, project.id, requestJson, workingDirectory]);
 
   const [selectedCommit, setSelectedCommit] = useState<{
     commit: GithubCommit;
@@ -583,17 +633,26 @@ export function CodebaseProjectWorkbench({
     selection.tab,
   ]);
 
-  const workingDirectory = normalizeWorkingDirectory(
-    apiProject.localWorkingDirectory,
-  );
-
   const {
     containerRef,
     panelWidth: sidePanelWidth,
     beginResize: beginSidePanelResize,
     nudgePanelWidth: nudgeSidePanelWidth,
     isResizing: isSidePanelResizing,
+    collapsed: sidePanelCollapsed,
+    toggleCollapsed: toggleSidePanelCollapsed,
   } = useCodebaseSidePanelWidth(project.id);
+  const keepAliveActive = useKeepAliveActive();
+  const [sidePanelCollapseAnimating, setSidePanelCollapseAnimating] =
+    useState(false);
+  const sidePanelCollapseTimerRef = useRef<number | null>(null);
+
+  const {
+    containerRef: tabListContainerRef,
+    panelWidth: tabListWidth,
+    beginResize: beginTabListResize,
+    isResizing: isTabListResizing,
+  } = useCodebaseTabListWidth(project.id, selection.tab);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -612,6 +671,39 @@ export function CodebaseProjectWorkbench({
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [nudgeSidePanelWidth]);
+
+  useEffect(() => {
+    if (!keepAliveActive) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!isContentSidePanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setSidePanelCollapseAnimating(true);
+      if (sidePanelCollapseTimerRef.current != null) {
+        window.clearTimeout(sidePanelCollapseTimerRef.current);
+      }
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          toggleSidePanelCollapsed();
+          sidePanelCollapseTimerRef.current = window.setTimeout(() => {
+            sidePanelCollapseTimerRef.current = null;
+            setSidePanelCollapseAnimating(false);
+          }, 220);
+        });
+      });
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      if (sidePanelCollapseTimerRef.current != null) {
+        window.clearTimeout(sidePanelCollapseTimerRef.current);
+        sidePanelCollapseTimerRef.current = null;
+      }
+    };
+  }, [keepAliveActive, toggleSidePanelCollapsed]);
 
   const showCommitDetail =
     selection.tab === "commits" && Boolean(selectedCommit);
@@ -661,7 +753,7 @@ export function CodebaseProjectWorkbench({
         workingDirectory={workingDirectory}
         openPaths={openFilePaths}
         activePath={activeFilePath}
-        fs={fs}
+        fs={resolvedFs}
         editorFocusRequest={editorFocusRequest}
         onActivatePath={(path) => {
           setActiveFilePath(path);
@@ -721,8 +813,7 @@ export function CodebaseProjectWorkbench({
           ) : !apiProject.githubRepository ? (
             <div className="console-github-pane-status">
               <p>
-                Select a GitHub repository in the project header to load
-                history.
+                Select a GitHub repository above the list to load history.
               </p>
             </div>
           ) : (
@@ -771,7 +862,55 @@ export function CodebaseProjectWorkbench({
         )}
       </div>
     );
+  } else if (selection.tab === "updates") {
+    detail = (
+      <div className="codebase-project-workbench__updates">
+        {updatesPanel ?? (
+          <div className="console-pane">
+            <div className="console-pane-body">
+              <div className="console-github-pane-status">
+                <p>No updates to show.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
+
+  const handleProjectUpdated = (updated: ApiProject) => {
+    setApiProject(updated);
+    onProjectPatched({
+      name: updated.name,
+      key: updated.key,
+      status: updated.status,
+      priority: updated.priority,
+      area: updated.area,
+      areaId: updated.areaId,
+      organizationId: updated.organizationId,
+      icon: updated.icon,
+      type: updated.type,
+      githubRepository: updated.githubRepository,
+      localWorkingDirectory: updated.localWorkingDirectory,
+      healthCheckMode: updated.healthCheckMode,
+      healthCheckDomain: updated.healthCheckDomain,
+      startDate: updated.startDate,
+      dueDate: updated.dueDate,
+      summary: updated.summary,
+      description: updated.description,
+    });
+  };
+
+  const contentListTab =
+    selection.tab === "files" ||
+    selection.tab === "docs" ||
+    selection.tab === "commits" ||
+    selection.tab === "pulls";
+  const itemDetailOpen =
+    (selection.tab === "files" && Boolean(activeFilePath)) ||
+    (selection.tab === "docs" && Boolean(selection.documentPath)) ||
+    (selection.tab === "commits" && Boolean(selection.commitSha)) ||
+    (selection.tab === "pulls" && selection.pullNumber != null);
 
   return (
     <div
@@ -779,55 +918,32 @@ export function CodebaseProjectWorkbench({
       className={[
         "codebase-project-workbench",
         isSidePanelResizing ? "is-resizing" : null,
+        sidePanelCollapsed ? "is-side-panel-collapsed" : null,
+        sidePanelCollapseAnimating ? "is-collapse-animating" : null,
       ]
         .filter(Boolean)
         .join(" ")}
       data-codebase-workbench
       data-content-detail
     >
-      <div className="codebase-project-workbench__list">
+      <div
+        className="codebase-project-workbench__list"
+        aria-hidden={sidePanelCollapsed || undefined}
+        {...(sidePanelCollapsed ? { inert: true } : {})}
+      >
         <div className="console-pane console-pane--overview">
           <CodebaseProjectOverviewPane
             project={apiProject}
             projects={apiProjects}
-            onProjectUpdated={(updated) => {
-              setApiProject(updated);
-              onProjectPatched({
-                name: updated.name,
-                key: updated.key,
-                status: updated.status,
-                priority: updated.priority,
-                area: updated.area,
-                areaId: updated.areaId,
-                organizationId: updated.organizationId,
-                icon: updated.icon,
-                type: updated.type,
-                githubRepository: updated.githubRepository,
-                localWorkingDirectory: updated.localWorkingDirectory,
-                startDate: updated.startDate,
-                dueDate: updated.dueDate,
-                summary: updated.summary,
-                description: updated.description,
-              });
-            }}
+            onProjectUpdated={handleProjectUpdated}
             requestJson={requestJson}
-            fs={fs}
-            githubListTab={selection.tab}
-            onGithubListTabChange={handleTabChange}
-            selectedCommitSha={selection.commitSha}
-            onSelectCommit={handleSelectCommit}
-            selectedPullNumber={selection.pullNumber}
-            onSelectPullRequest={handleSelectPull}
-            githubDetailEngaged={detailFocusEngaged}
-            selectedFilePath={activeFilePath}
-            onSelectFile={handleSelectFile}
-            onFileEntryDeleted={() => {
-              setFileTreeRefreshToken((token) => token + 1);
-            }}
-            fileTreeRefreshToken={fileTreeRefreshToken}
-            docsListPanel={docsListPanel}
-            githubRefreshToken={githubRefreshToken}
-            showHeader
+            fs={resolvedFs}
+            belowDescription={
+              <CodebaseProjectActivityPanel
+                projectId={project.id}
+                projectKey={project.key}
+              />
+            }
             organizations={organizations}
             nestedAreas={nestedAreas}
             onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
@@ -849,7 +965,88 @@ export function CodebaseProjectWorkbench({
           }}
         />
       </div>
-      <div className="codebase-project-workbench__detail">{detail}</div>
+      <div className="codebase-project-workbench__detail">
+        <div className="projects-overview__area-nav codebase-project-workbench__tabs">
+          <PillNav
+            ariaLabel="Project contents"
+            className="projects-overview__area-pills"
+            items={CODEBASE_LIST_TAB_OPTIONS}
+            value={selection.tab}
+            onChange={handleTabChange}
+          />
+        </div>
+        <div className="codebase-project-workbench__tab-body">
+          {contentListTab ? (
+            <div
+              ref={tabListContainerRef}
+              className={[
+                "codebase-project-workbench__list-detail",
+                itemDetailOpen
+                  ? null
+                  : "codebase-project-workbench__list-detail--list-only",
+                selection.tab === "docs" ||
+                selection.tab === "commits" ||
+                selection.tab === "files"
+                  ? "codebase-project-workbench__list-detail--framed"
+                  : null,
+                selection.tab === "files"
+                  ? "codebase-project-workbench__list-detail--files"
+                  : null,
+                isTabListResizing ? "is-resizing" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <div className="codebase-project-workbench__tab-list">
+                <ProjectCommitHistory
+                  project={apiProject}
+                  onProjectUpdated={handleProjectUpdated}
+                  requestJson={requestJson}
+                  fs={resolvedFs}
+                  githubListTab={selection.tab}
+                  onGithubListTabChange={handleTabChange}
+                  selectedCommitSha={selection.commitSha}
+                  onSelectCommit={handleSelectCommit}
+                  selectedPullNumber={selection.pullNumber}
+                  onSelectPullRequest={handleSelectPull}
+                  githubDetailEngaged={detailFocusEngaged}
+                  selectedFilePath={activeFilePath}
+                  onSelectFile={handleSelectFile}
+                  onFileEntryDeleted={() => {
+                    setFileTreeRefreshToken((token) => token + 1);
+                  }}
+                  fileTreeRefreshToken={fileTreeRefreshToken}
+                  docsListPanel={docsListPanel}
+                  githubRefreshToken={githubRefreshToken}
+                  showTabs={false}
+                />
+                {itemDetailOpen ? (
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize list"
+                    aria-valuemin={CODEBASE_TAB_LIST_MIN_WIDTH}
+                    aria-valuenow={tabListWidth}
+                    title="Drag to resize"
+                    className="desktop-codebase-tab-list-resize"
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      beginTabListResize(event.clientX);
+                    }}
+                  />
+                ) : null}
+              </div>
+              {itemDetailOpen ? (
+                <div className="codebase-project-workbench__tab-detail">
+                  {detail}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            detail
+          )}
+        </div>
+      </div>
     </div>
   );
 }

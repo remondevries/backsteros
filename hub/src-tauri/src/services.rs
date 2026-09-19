@@ -270,7 +270,7 @@ pub fn save_default_config_if_missing(repo_root: &Path) {
     }
 }
 
-/// Resolve monorepo root: hub.json → walk from this crate → ~/code/backsteros.
+/// Resolve monorepo root: hub.json → walk from this crate → ~/BacksterOS/Projects/OS/Codebase.
 pub fn resolve_repo_root() -> PathBuf {
     let cfg = load_config();
     if let Some(root) = cfg.repo_root.as_deref() {
@@ -289,7 +289,7 @@ pub fn resolve_repo_root() -> PathBuf {
     }
 
     if let Some(home) = dirs::home_dir() {
-        let candidate = home.join("code/backsteros");
+        let candidate = home.join("BacksterOS/Projects/OS/Codebase");
         if looks_like_repo(&candidate) {
             return candidate;
         }

@@ -32,6 +32,7 @@ import {
   readPgError,
 } from "./soft-unique-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
+import { publishProjectUpdateWorkspaceUpdated } from "../../lib/workspace-events.js";
 import type {
   ReplicationApplyResponse,
   ReplicationChange,
@@ -635,8 +636,23 @@ async function applyRow(
       return applyEntityCounterRow(row);
     case "api_keys":
       return applyApiKeyRow(row, localRole);
-    default:
-      return applyGenericRow(spec, row, localRole);
+    default: {
+      const result = await applyGenericRow(spec, row, localRole);
+      if (result === "applied" && spec.name === "project_updates") {
+        const updateId = typeof row.id === "string" ? row.id : "";
+        const workspaceId =
+          typeof row.workspace_id === "string" ? row.workspace_id : "";
+        const projectId =
+          typeof row.project_id === "string" ? row.project_id : null;
+        if (updateId && workspaceId) {
+          publishProjectUpdateWorkspaceUpdated(workspaceId, updateId, {
+            projectId,
+            operation: row.deleted_at ? "delete" : "upsert",
+          });
+        }
+      }
+      return result;
+    }
   }
 }
 

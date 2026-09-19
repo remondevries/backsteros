@@ -35,6 +35,11 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
+  assertTaskLabelIds,
+  normalizeTaskLabelIds,
+  touchTaskLabelsUsed,
+} from "./task-labels.js";
+import {
   ensureProjectVaultFolders,
   renameProjectVaultFolder,
   rewriteProjectStorageKeyPrefix,
@@ -340,6 +345,8 @@ export async function createProject(
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
       localWorkingDirectory: input.localWorkingDirectory ?? null,
+      healthCheckMode: input.healthCheckMode ?? null,
+      healthCheckDomain: input.healthCheckDomain ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
@@ -415,6 +422,16 @@ export async function updateProject(
       ? null
       : input.githubRepository;
 
+  // Leaving codebase type clears health-check probe settings.
+  const healthCheckMode =
+    input.type !== undefined && input.type !== "codebase"
+      ? null
+      : input.healthCheckMode;
+  const healthCheckDomain =
+    input.type !== undefined && input.type !== "codebase"
+      ? null
+      : input.healthCheckDomain;
+
   // Leaving email type clears the provider category.
   const category =
     input.type !== undefined && input.type !== "email"
@@ -447,6 +464,8 @@ export async function updateProject(
       githubRepository,
       cloudflareZoneId: input.cloudflareZoneId,
       localWorkingDirectory: input.localWorkingDirectory,
+      healthCheckMode,
+      healthCheckDomain,
       status: input.status,
       priority: input.priority,
       sortOrder: input.sortOrder,
@@ -741,6 +760,8 @@ async function createTaskWithExecutor(
     relatedOrganizationIds,
     executor,
   );
+  const labelIds = normalizeTaskLabelIds(input.labelIds);
+  await assertTaskLabelIds(workspaceId, labelIds, executor);
   await assertWorkspaceReference(
     workspaceId,
     input.habitId,
@@ -787,6 +808,7 @@ async function createTaskWithExecutor(
       assigneeId: input.assigneeId ?? null,
       relatedContactIds,
       relatedOrganizationIds,
+      labelIds,
       number,
       title: input.title,
       description: input.description ?? null,
@@ -816,6 +838,9 @@ async function createTaskWithExecutor(
     .returning();
 
   if (row) {
+    if (labelIds.length > 0) {
+      await touchTaskLabelsUsed(workspaceId, labelIds, executor);
+    }
     await taskActivityService.recordTaskActivity(
       workspaceId,
       row.id,
@@ -948,6 +973,13 @@ export async function updateTask(
       executor,
     );
   }
+  const nextLabelIds =
+    input.labelIds === undefined
+      ? undefined
+      : normalizeTaskLabelIds(input.labelIds);
+  if (nextLabelIds !== undefined) {
+    await assertTaskLabelIds(workspaceId, nextLabelIds, executor);
+  }
   await assertWorkspaceReference(
     workspaceId,
     input.habitId,
@@ -1018,6 +1050,7 @@ export async function updateTask(
       ...(nextRelatedOrganizationIds !== undefined
         ? { relatedOrganizationIds: nextRelatedOrganizationIds }
         : {}),
+      ...(nextLabelIds !== undefined ? { labelIds: nextLabelIds } : {}),
       number,
       title: input.title,
       description: input.description,
@@ -1064,6 +1097,13 @@ export async function updateTask(
     .returning();
 
   if (row) {
+    if (nextLabelIds !== undefined) {
+      const previous = new Set(normalizeTaskLabelIds(existing.labelIds));
+      const added = nextLabelIds.filter((labelId) => !previous.has(labelId));
+      if (added.length > 0) {
+        await touchTaskLabelsUsed(workspaceId, added, executor);
+      }
+    }
     if (input.status !== undefined && input.status !== existing.status) {
       await taskActivityService.recordTaskActivity(
         workspaceId,

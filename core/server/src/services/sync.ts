@@ -90,6 +90,7 @@ import * as recurringTaskService from "./recurring-tasks.js";
 import * as taskCommentService from "./task-comments.js";
 import * as taskActivityService from "./task-activities.js";
 import * as taskProjectService from "./tasks-projects.js";
+import * as taskLabelService from "./task-labels.js";
 import * as crmGroupsService from "./crm-groups.js";
 import * as crmRelationshipLabelsService from "./crm-relationship-labels.js";
 import * as crmActivitiesService from "./crm-activities.js";
@@ -141,6 +142,8 @@ function projectSnapshot(row: typeof projects.$inferSelect) {
     github_repository: row.githubRepository,
     cloudflare_zone_id: row.cloudflareZoneId,
     local_working_directory: row.localWorkingDirectory,
+    health_check_mode: row.healthCheckMode,
+    health_check_domain: row.healthCheckDomain,
     status: row.status,
     priority: row.priority,
     sort_order: row.sortOrder,
@@ -168,6 +171,13 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     assignee_id: row.assigneeId,
     related_contact_ids: JSON.stringify(relatedContactIds),
     related_organization_ids: JSON.stringify(relatedOrganizationIds),
+    label_ids: JSON.stringify(
+      Array.isArray(row.labelIds)
+        ? row.labelIds.filter(
+            (id): id is string => typeof id === "string" && id.trim().length > 0,
+          )
+        : [],
+    ),
     number: row.number,
     title: row.title,
     description: row.description,
@@ -1140,6 +1150,9 @@ const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   // Stale local assignee / contact ids should not block the upload queue.
   "ASSIGNEE_NOT_FOUND",
   "RELATED_CONTACT_NOT_FOUND",
+  "TASK_LABEL_NOT_FOUND",
+  "TASK_LABEL_NAME_TAKEN",
+  "INVALID_TASK_LABEL",
   "CONTACT_NOT_FOUND",
   "PROJECT_NOT_FOUND",
   "HABIT_NOT_FOUND",
@@ -1168,6 +1181,13 @@ const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   "SELF_RELATIONSHIP",
   "RELATIONSHIP_EXISTS",
 ]);
+
+/** Permanent client/data errors must not 500 the upload queue. */
+export function isPowerSyncSkippableError(error: unknown): error is Error {
+  return (
+    error instanceof Error && POWERSYNC_SKIPPABLE_ERRORS.has(error.message)
+  );
+}
 
 function camelizePayload(
   payload: Record<string, unknown>,
@@ -1751,8 +1771,8 @@ function meetingSnapshot(row: typeof meetings.$inferSelect) {
     attendee_portal_emails: JSON.stringify(
       normalizeMeetingAttendeePortalEmails(row.attendeePortalEmails),
     ),
-    start_at: row.startAt.toISOString(),
-    end_at: row.endAt.toISOString(),
+    start_at: row.startAt?.toISOString() ?? null,
+    end_at: row.endAt?.toISOString() ?? null,
     tracked_minutes: row.trackedMinutes ?? null,
     tracked_duration_seconds: row.trackedDurationSeconds ?? null,
     inbox_updated_at: row.inboxUpdatedAt?.toISOString() ?? null,
@@ -1912,6 +1932,12 @@ function mapProjectUpsert(
     localWorkingDirectory: asNullableString(
       payload.local_working_directory ?? payload.localWorkingDirectory,
     ),
+    healthCheckMode: asNullableString(
+      payload.health_check_mode ?? payload.healthCheckMode,
+    ) as Project["healthCheckMode"] | undefined,
+    healthCheckDomain: asNullableString(
+      payload.health_check_domain ?? payload.healthCheckDomain,
+    ),
     status: asString(payload.status) as Project["status"] | undefined,
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
@@ -1974,6 +2000,7 @@ function mapTaskUpsert(
     relatedOrganizationIds: parseStringIdArray(
       payload.related_organization_ids ?? payload.relatedOrganizationIds,
     ),
+    labelIds: parseStringIdArray(payload.label_ids ?? payload.labelIds),
     title: asString(payload.title),
     description: asString(payload.description),
     status: asString(payload.status) as Task["status"] | undefined,
@@ -2084,6 +2111,8 @@ export async function applySyncChange(
           githubRepository: input.githubRepository,
           cloudflareZoneId: input.cloudflareZoneId,
           localWorkingDirectory: input.localWorkingDirectory,
+          healthCheckMode: input.healthCheckMode,
+          healthCheckDomain: input.healthCheckDomain,
           status: input.status,
           priority: input.priority,
           sortOrder: input.sortOrder,
@@ -3591,6 +3620,83 @@ export async function applySyncChange(
       );
       return mentionSnapshot(row);
     }
+
+    case "task_label": {
+      const payload = change.payload ?? {};
+      if (change.operation === "delete" || isSoftDeletePayload(payload)) {
+        const row = await taskLabelService.deleteTaskLabel(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        if (!row) return null;
+        const dbRow = await taskLabelService.getTaskLabelById(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return dbRow ? taskLabelService.taskLabelSyncSnapshot(dbRow) : null;
+      }
+      const name = asString(payload.name);
+      const color = asString(payload.color);
+      const description =
+        payload.description === undefined
+          ? undefined
+          : asNullableString(payload.description);
+      const parentSource =
+        payload.parent_id !== undefined ? payload.parent_id : payload.parentId;
+      const parentId =
+        parentSource === undefined ? undefined : asNullableString(parentSource);
+      const isGroup = asBoolean(
+        payload.is_group !== undefined ? payload.is_group : payload.isGroup,
+      );
+      const fields = {
+        ...(name !== undefined ? { name } : {}),
+        ...(color !== undefined ? { color } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(parentId !== undefined ? { parentId } : {}),
+      };
+      const existing = await taskLabelService.getTaskLabelById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      if (existing && !existing.deletedAt) {
+        const row = await taskLabelService.updateTaskLabel(
+          workspaceId,
+          change.entity_id,
+          fields,
+          executor,
+        );
+        if (!row) return null;
+        const dbRow = await taskLabelService.getTaskLabelById(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return dbRow ? taskLabelService.taskLabelSyncSnapshot(dbRow) : null;
+      }
+      if (!name) throw new Error("INVALID_TASK_LABEL");
+      const created = await taskLabelService.createTaskLabel(
+        workspaceId,
+        {
+          id: change.entity_id,
+          name,
+          ...(color !== undefined ? { color } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(parentId !== undefined ? { parentId } : {}),
+          ...(isGroup !== undefined ? { isGroup } : {}),
+        },
+        executor,
+      );
+      if (!created) throw new Error("INVALID_TASK_LABEL");
+      const dbRow = await taskLabelService.getTaskLabelById(
+        workspaceId,
+        created.id,
+        executor,
+      );
+      return dbRow ? taskLabelService.taskLabelSyncSnapshot(dbRow) : null;
+    }
   }
 }
 
@@ -3739,6 +3845,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "crm_group_member";
     case "crm_activities":
       return "crm_activity";
+    case "task_labels":
+      return "task_label";
     default:
       return null;
   }

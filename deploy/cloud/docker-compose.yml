@@ -36,6 +36,11 @@ services:
       CORE_REPLICATION_WORKSPACE_IDS: ${CORE_REPLICATION_WORKSPACE_IDS:-}
       CORE_REPLICATION_INTERVAL_MS: ${CORE_REPLICATION_INTERVAL_MS:-15000}
       BACKSTEROS_VAULT_PATH: ${BACKSTEROS_VAULT_PATH:-/data/vault}
+      BACKSTEROS_R2_BUCKET: ${BACKSTEROS_R2_BUCKET:-}
+      BACKSTEROS_R2_ENDPOINT: ${BACKSTEROS_R2_ENDPOINT:-}
+      BACKSTEROS_R2_ACCESS_KEY_ID: ${BACKSTEROS_R2_ACCESS_KEY_ID:-}
+      BACKSTEROS_R2_SECRET_ACCESS_KEY: ${BACKSTEROS_R2_SECRET_ACCESS_KEY:-}
+      BACKSTEROS_R2_REGION: ${BACKSTEROS_R2_REGION:-auto}
       GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       TRANSIP_LOGIN: ${TRANSIP_LOGIN:-}
@@ -50,8 +55,48 @@ services:
     volumes:
       - cloud_vault:/data/vault
 
+  # iOS cutover (ADR-035). Not started by a normal `docker compose up`.
+  # Render config first: node deploy/cloud/render-powersync-config.mjs
+  # Then: docker compose --profile powersync up -d
+  mongo:
+    profiles: ["powersync"]
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - cloud_powersync_mongo:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"mongo:27017\"}]}).ok }" | grep 1',
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 5s
+
+  powersync:
+    profiles: ["powersync"]
+    image: journeyapps/powersync-service:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["start", "-r", "unified"]
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+    volumes:
+      - ./powersync.generated.yaml:/config/service.yaml:ro
+      - ../powersync/sync-config.yaml:/config/sync-config.yaml:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+
 volumes:
   cloud_core_pg:
   cloud_vault:
     external: true
     name: cloud_cloud_vault
+  cloud_powersync_mongo:

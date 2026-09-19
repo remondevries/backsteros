@@ -6,7 +6,7 @@
  */
 import { SYNC_ENTITIES, type SyncEntity } from "./sync-constants.js";
 
-export type WorkspaceUpdatedKind = SyncEntity;
+export type WorkspaceUpdatedKind = SyncEntity | "project_update";
 
 export type WorkspaceUpdatedOperation = "upsert" | "delete";
 
@@ -26,7 +26,10 @@ type WorkspaceUpdatedListener = (event: WorkspaceUpdatedEvent) => void;
 
 const listenersByWorkspace = new Map<string, Set<WorkspaceUpdatedListener>>();
 
-const WORKSPACE_UPDATED_KIND_SET = new Set<string>(SYNC_ENTITIES);
+const WORKSPACE_UPDATED_KIND_SET = new Set<string>([
+  ...SYNC_ENTITIES,
+  "project_update",
+]);
 
 export function isWorkspaceUpdatedKind(
   value: string,
@@ -124,6 +127,20 @@ export function publishProjectWorkspaceUpdated(
 ): void {
   publishEntityWorkspaceUpdated(workspaceId, "project", projectId, {
     projectId,
+    operation: input?.operation ?? "upsert",
+  });
+}
+
+export function publishProjectUpdateWorkspaceUpdated(
+  workspaceId: string,
+  updateId: string,
+  input?: {
+    projectId?: string | null;
+    operation?: WorkspaceUpdatedOperation;
+  },
+): void {
+  publishEntityWorkspaceUpdated(workspaceId, "project_update", updateId, {
+    projectId: input?.projectId ?? null,
     operation: input?.operation ?? "upsert",
   });
 }

@@ -286,6 +286,76 @@
   gap: 0.5rem;
 }
 
+.project-health-check-panel__simple-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  min-height: 32px;
+}
+
+.project-health-check-panel__domain-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  border-radius: 6px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  outline: none;
+}
+
+.project-health-check-panel__domain-input:focus {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.project-health-check-panel__icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.project-health-check-panel__icon-btn:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.property-dropdown-trigger.is-active .property-dropdown-trigger__icon {
+  color: var(--success, #3fb950);
+  animation: project-health-check-icon-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes project-health-check-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.project-health-check-panel__error {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--destructive, #ef4444);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .project-detail--panel {
   display: flex;
   flex: 1 1 auto;
@@ -346,6 +416,38 @@
 
 .project-detail--panel .project-detail__key-button:hover .project-detail__key {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.project-detail--panel .project-detail__key-editor--display-id .project-detail__key,
+.project-detail--panel
+  .project-detail__key-editor--display-id
+  .project-detail__key-button:hover
+  .project-detail__key {
+  min-height: 0;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.project-detail--panel
+  .project-detail__key-editor--display-id
+  .project-detail__key-button:hover
+  .project-detail__key {
+  color: var(--foreground);
+}
+
+.project-detail--panel .project-detail__key-editor--display-id .project-detail__key-input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.875rem;
 }
 
 .project-detail--panel .project-detail__progress {

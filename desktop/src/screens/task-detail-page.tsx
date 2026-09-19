@@ -1,3 +1,4 @@
+import type { ProjectUpdate } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -8,6 +9,7 @@ import {
   TaskDetailSkeleton,
   TaskDetailView,
   TaskLinkedCommitSection,
+  type TaskRelatedUpdateLink,
   buildAssigneeDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
@@ -18,6 +20,8 @@ import {
   composeSpellcheckText,
   encodeTaskSlug,
   getInboxTaskRouteSlugForTask,
+  getProjectRouteScopeFromPathname,
+  getScopedProjectSectionHref,
   getTaskDisplayId,
   getTasksDueFilterLabel,
   INBOX_TASK_KEY,
@@ -54,6 +58,7 @@ import {
 } from "../lib/avatar-src";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
+import { useTaskLabelDropdownOptions } from "../lib/task-label-options";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { useDesktopApi } from "../lib/api-context";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
@@ -406,6 +411,59 @@ export function TaskDetailPage({
     };
   }, [detailVisible, base?.id]);
 
+  const [relatedUpdates, setRelatedUpdates] = useState<
+    TaskRelatedUpdateLink[]
+  >([]);
+
+  useEffect(() => {
+    if (!detailVisible || !base?.id) {
+      setRelatedUpdates([]);
+      return;
+    }
+    const taskId = base.id;
+    let cancelled = false;
+    void requestJson<{ updates: ProjectUpdate[] }>(
+      `/api/v1/tasks/${encodeURIComponent(taskId)}/project-updates`,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        const scope = getProjectRouteScopeFromPathname(location.pathname);
+        const projectKeyById = new Map(
+          projects.map((project) => [project.id, project.key] as const),
+        );
+        const links: TaskRelatedUpdateLink[] = [];
+        for (const update of result.updates ?? []) {
+          const projectKey =
+            projectKeyById.get(update.projectId) ??
+            (base.projectId === update.projectId ? base.projectKey : null) ??
+            null;
+          if (!projectKey) continue;
+          links.push({
+            id: update.id,
+            title: update.title,
+            kind: update.kind,
+            severity: update.severity,
+            href: getScopedProjectSectionHref(projectKey, "updates", scope),
+          });
+        }
+        setRelatedUpdates(links);
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedUpdates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    base?.id,
+    base?.projectId,
+    base?.projectKey,
+    detailVisible,
+    location.pathname,
+    projects,
+    requestJson,
+  ]);
+
   const applySpellcheckComposition = useCallback(
     async (session: TaskSpellcheckHighlight) => {
       if (!base) return;
@@ -501,6 +559,7 @@ export function TaskDetailPage({
       }),
     [assigneeOptions, organizationAvatarSrc, organizations],
   );
+  const labelOptions = useTaskLabelDropdownOptions();
 
   const projectOptions = useMemo(
     () =>
@@ -796,6 +855,9 @@ export function TaskDetailPage({
       relatedOrganizationIds: related.organizationIds,
     });
   };
+  const patchLabels = (labelIds: string[]) => {
+    void workspace.patchTask(task.id, { labelIds });
+  };
   const patchProjectKey = (next: string | null) => {
     const previousProjectKey = task.projectKey ?? INBOX_TASK_KEY;
     const nextProject = next
@@ -999,6 +1061,8 @@ export function TaskDetailPage({
           onDueDateChange={patchDueDate}
           onAssigneeChange={patchAssignee}
           onRelatedChange={patchRelated}
+          onLabelChange={patchLabels}
+          labelOptions={labelOptions}
           onProjectChange={patchProjectKey}
           onSaveDescription={saveDescription}
           onChangeLinks={changeLinks}
@@ -1031,6 +1095,7 @@ export function TaskDetailPage({
           projectNavigateHref={
             task.projectKey ? `/projects/${task.projectKey}` : null
           }
+          relatedUpdates={relatedUpdates}
           onCreateAssigneeFromQuery={createAssigneeFromQuery}
           onCreateRelatedContactFromQuery={createRelatedContactFromQuery}
           onAgentInboxApprove={() => {

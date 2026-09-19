@@ -15,6 +15,7 @@ import {
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  updateTaskTimerSessionActorSchema,
   documentContentSchema,
   documentSchema,
   documentTypeSchema,
@@ -941,6 +942,35 @@ export const apiContract: AppRouter = c.router(
         404: errorSchema,
       },
       summary: "Record a client-reported activity event (e.g. agent turn)",
+    },
+    deleteTaskActivity: {
+      method: "DELETE",
+      path: "/api/v1/tasks/:taskId/activities/:id",
+      pathParams: z.object({ taskId: z.string(), id: z.string() }),
+      body: c.noBody(),
+      responses: {
+        204: c.noBody(),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Delete a timer session activity (paired start/stop) and adjust tracked time",
+    },
+    updateTaskTimerSessionActor: {
+      method: "PATCH",
+      path: "/api/v1/tasks/:taskId/activities/:id",
+      pathParams: z.object({ taskId: z.string(), id: z.string() }),
+      body: updateTaskTimerSessionActorSchema,
+      responses: {
+        200: taskActivitySchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Change the contact on a timer session (updates paired start/stop)",
     },
     createTaskComment: {
       method: "POST",

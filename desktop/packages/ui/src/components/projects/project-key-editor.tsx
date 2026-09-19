@@ -15,13 +15,20 @@ export type ProjectKeyEditorProps = {
     | Promise<{ ok: true; key?: string } | { ok: false; error: string }>
     | { ok: true; key?: string }
     | { ok: false; error: string };
+  /** `displayId` matches the task code above a title (no ID pill). */
+  variant?: "pill" | "displayId";
 };
 
 /**
  * Inline project ID (key) editor — click pill to edit, Enter/blur to save.
  * Mirrors Next `ProjectOverviewKeyEditor`.
  */
-export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
+export function ProjectKeyEditor({
+  value,
+  onSave,
+  variant = "pill",
+}: ProjectKeyEditorProps) {
+  const displayId = variant === "displayId";
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -77,9 +84,17 @@ export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
 
   if (editing) {
     return (
-      <div className="project-detail__key-editor">
+      <div
+        className={
+          displayId
+            ? "project-detail__key-editor project-detail__key-editor--display-id"
+            : "project-detail__key-editor"
+        }
+      >
         <span className="project-detail__key project-detail__key--editing">
-          <span className="project-detail__key-label">ID</span>
+          {displayId ? null : (
+            <span className="project-detail__key-label">ID</span>
+          )}
           <input
             ref={inputRef}
             type="text"
@@ -119,7 +134,13 @@ export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
   }
 
   return (
-    <div className="project-detail__key-editor">
+    <div
+      className={
+        displayId
+          ? "project-detail__key-editor project-detail__key-editor--display-id"
+          : "project-detail__key-editor"
+      }
+    >
       <button
         type="button"
         className="project-detail__key-button"
@@ -130,7 +151,9 @@ export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
         aria-label={`Edit project ID: ${value}`}
       >
         <span className="project-detail__key">
-          <span className="project-detail__key-label">ID</span>
+          {displayId ? null : (
+            <span className="project-detail__key-label">ID</span>
+          )}
           <span className="project-detail__key-value">{value}</span>
         </span>
       </button>

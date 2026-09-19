@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   getPowerSyncUrl,
+  isDevGatewayOrigin,
   preferLocalPowerSyncEndpoint,
 } from "./powersync-auth.js";
 
@@ -34,6 +35,20 @@ describe("preferLocalPowerSyncEndpoint", () => {
     assert.equal(preferLocalPowerSyncEndpoint({ host: "localhost:8788" }), true);
   });
 
+  it("treats the dev gateway as a remote client", () => {
+    assert.equal(
+      isDevGatewayOrigin("https://os.local.backsteros.com"),
+      true,
+    );
+    assert.equal(
+      preferLocalPowerSyncEndpoint({
+        origin: "https://os.local.backsteros.com",
+        host: "api.local.backsteros.com",
+      }),
+      false,
+    );
+  });
+
   it("leaves Tailscale / LAN clients on the public endpoint", () => {
     assert.equal(
       preferLocalPowerSyncEndpoint({
@@ -58,6 +73,13 @@ describe("getPowerSyncUrl", () => {
       assert.equal(
         getPowerSyncUrl({ host: "macbook.tailc7e057.ts.net:8788" }),
         "http://macbook.tailc7e057.ts.net:8080",
+      );
+      assert.equal(
+        getPowerSyncUrl({
+          origin: "https://os.local.backsteros.com",
+          host: "api.local.backsteros.com",
+        }),
+        "https://sync.local.backsteros.com",
       );
     } finally {
       if (previous === undefined) delete process.env.POWERSYNC_URL;

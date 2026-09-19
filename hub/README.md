@@ -1,6 +1,6 @@
 # BacksterOS Hub
 
-macOS **menu-bar** app to start and stop local BacksterOS services (Docker, core API, PTY, Expo). Product desktop stays a client; this hub owns process lifecycle.
+macOS **menu-bar** app to start and stop local BacksterOS services (Docker, core API, PTY, Expo). The product desktop starts Docker and the core API on launch and leaves them running; Hub still owns PTY, Expo, and an explicit stop.
 
 ## Develop
 
@@ -28,7 +28,7 @@ Written on first launch:
 
 ```json
 {
-  "repo_root": "/Users/you/code/backsteros"
+  "repo_root": "/Users/you/BacksterOS/Projects/OS/Codebase"
 }
 ```
 

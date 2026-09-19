@@ -10,6 +10,24 @@ function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+/** Tailnet names Caddy serves for this Mac. Not a loopback client. */
+export const DEV_GATEWAY_HOST_SUFFIX = ".local.backsteros.com";
+export const DEV_GATEWAY_SYNC_URL = "https://sync.local.backsteros.com";
+
+export function isDevGatewayHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().split(":")[0] ?? "";
+  return host === "local.backsteros.com" || host.endsWith(DEV_GATEWAY_HOST_SUFFIX);
+}
+
+export function isDevGatewayOrigin(origin: string | null | undefined): boolean {
+  if (!origin?.trim()) return false;
+  try {
+    return isDevGatewayHostname(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Prefer loopback PowerSync for desktop Tauri / local Vite.
  * WKWebView often never opens a sync stream to a Tailscale hostname even when
@@ -47,6 +65,14 @@ export function getPowerSyncUrl(request?: {
   const publicUrl = process.env.POWERSYNC_URL?.trim();
   const localUrl =
     process.env.POWERSYNC_LOCAL_URL?.trim() || "http://127.0.0.1:8080";
+
+  if (
+    request &&
+    (isDevGatewayOrigin(request.origin) ||
+      (request.host ? isDevGatewayHostname(request.host) : false))
+  ) {
+    return DEV_GATEWAY_SYNC_URL;
+  }
 
   if (request && preferLocalPowerSyncEndpoint(request)) {
     return stripTrailingSlash(localUrl);

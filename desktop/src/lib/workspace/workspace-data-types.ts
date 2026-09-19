@@ -46,6 +46,8 @@ export type DesktopWorkspaceData = {
       organizationId?: string | null;
       type?: string;
       localWorkingDirectory?: string | null;
+      healthCheckMode?: "simple" | "advanced" | null;
+      healthCheckDomain?: string | null;
       githubRepository?: string | null;
       cloudflareZoneId?: string | null;
       provider?: string | null;
@@ -205,7 +207,21 @@ export type DesktopWorkspaceData = {
     status?: string;
     startAt: string;
     endAt: string;
+    projectId?: string | null;
+    organizationId?: string | null;
+    attendeeContactIds?: string[];
+    format?: "video_call" | "in_person" | "phone_call";
+    location?: string | null;
+    locationOrganizationId?: string | null;
   }) => Promise<{ id: string; number: number | null }>;
+  /**
+   * Copy a meeting to a new time slot (e.g. calendar Alt-drag).
+   * Does not mark the source `duplicated`; status comes from the new schedule.
+   */
+  duplicateMeeting: (
+    sourceId: string,
+    schedule: { startAt: string; endAt: string; status?: string },
+  ) => Promise<{ id: string; number: number | null }>;
   createKnowledgeDocument: (input: {
     title: string;
     content?: string;

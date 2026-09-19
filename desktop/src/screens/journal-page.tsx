@@ -108,7 +108,8 @@ function JournalDayCalendarColumn({
   const { allTasks } = useDesktopWorkspaceTasks();
   const { contacts } = useDesktopWorkspacePeople();
   const { habits, meetings } = useDesktopWorkspaceMeta();
-  const { patchTask, patchMeeting } = useDesktopWorkspaceActions();
+  const { patchTask, patchMeeting, duplicateMeeting } =
+    useDesktopWorkspaceActions();
   const calendarTimeZone = JOURNAL_CALENDAR_TIME_ZONE;
 
   const events = useMemo(() => {
@@ -144,6 +145,13 @@ function JournalDayCalendarColumn({
     void patchMeeting(meetingId, patch);
   };
 
+  const handleMeetingDuplicate = (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => {
+    void duplicateMeeting(meetingId, patch);
+  };
+
   const handleTaskOpen = useCallback(
     (taskId: string) => {
       const task = allTasks.find((entry) => entry.id === taskId);
@@ -176,6 +184,7 @@ function JournalDayCalendarColumn({
       events={events}
       onTaskReschedule={handleReschedule}
       onMeetingReschedule={handleMeetingReschedule}
+      onMeetingDuplicate={handleMeetingDuplicate}
       onTaskOpen={handleTaskOpen}
       onMeetingOpen={handleMeetingOpen}
     />

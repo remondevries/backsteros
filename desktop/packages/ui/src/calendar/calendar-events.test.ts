@@ -4,9 +4,11 @@ import { test } from "node:test";
 import {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
   MIN_CALENDAR_MEETING_DURATION_MINUTES,
+  OPEN_ENDED_MEETING_VISUAL_MS,
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
   calendarSelectionToMeetingRange,
+  isCalendarMeetingDuplicateModifier,
   taskCalendarEventClassNames,
   taskCalendarEventColors,
   taskCalendarEventNeutralColors,
@@ -240,6 +242,13 @@ test("formatCalendarTaskScheduleLabel formats all-day and timed schedules", () =
   assert.match(timed!, /10/);
 });
 
+test("isCalendarMeetingDuplicateModifier reads altKey at drop", () => {
+  assert.equal(isCalendarMeetingDuplicateModifier({ altKey: true }), true);
+  assert.equal(isCalendarMeetingDuplicateModifier({ altKey: false }), false);
+  assert.equal(isCalendarMeetingDuplicateModifier(null), false);
+  assert.equal(isCalendarMeetingDuplicateModifier(undefined), false);
+});
+
 test("calendarChangeToMeetingPatch derives status from schedule", () => {
   const now = new Date("2026-08-23T12:00:00.000Z");
   const futureStart = new Date("2026-08-23T14:00:00.000Z");
@@ -309,6 +318,92 @@ test("meetingToCalendarEvent maps timed meetings", () => {
   assert.equal(event.extendedProps.entityType, "meeting");
   assert.equal(event.extendedProps.meetingId, "m-1");
   assert.equal(event.extendedProps.finished, false);
+});
+
+test("meetingToCalendarEvent maps unscheduled meetings as all-day", () => {
+  const createdAt = new Date(2026, 7, 24, 8, 0);
+  const event = meetingToCalendarEvent({
+    id: "m-all-day",
+    title: "Quick call",
+    startAt: null,
+    endAt: null,
+    createdAt,
+  });
+  assert.ok(event);
+  assert.equal(event.allDay, true);
+  assert.equal(event.start, "2026-08-24");
+  assert.equal(event.extendedProps.openEnded, false);
+  assert.ok(event.classNames?.includes("meeting-calendar-event--all-day"));
+});
+
+test("meetingToCalendarEvent maps start-only meetings as open-ended fade blocks", () => {
+  const start = new Date(2026, 7, 24, 9, 0);
+  const now = new Date(2026, 7, 24, 9, 5);
+  const event = meetingToCalendarEvent(
+    {
+      id: "m-live",
+      title: "Live call",
+      startAt: start,
+      endAt: null,
+    },
+    now,
+  );
+  assert.ok(event);
+  assert.equal(event.allDay, false);
+  assert.equal(event.start, start.toISOString());
+  assert.equal(
+    new Date(event.end!).getTime(),
+    now.getTime() + OPEN_ENDED_MEETING_VISUAL_MS,
+  );
+  assert.equal(event.extendedProps.openEnded, true);
+  assert.equal(event.extendedProps.active, true);
+  assert.ok(event.classNames?.includes("meeting-calendar-event--open-ended"));
+  assert.equal(
+    event.classNames?.includes("meeting-calendar-event--active"),
+    false,
+  );
+});
+
+test("meetingToCalendarEvent keeps open-ended blocks covering now while still live", () => {
+  const start = new Date(2026, 7, 24, 9, 0);
+  const now = new Date(2026, 7, 24, 11, 0);
+  const event = meetingToCalendarEvent(
+    {
+      id: "m-live-long",
+      title: "Long live call",
+      startAt: start,
+      endAt: null,
+      status: "in_progress",
+    },
+    now,
+  );
+  assert.ok(event);
+  assert.equal(event.extendedProps.active, true);
+  assert.equal(
+    new Date(event.end!).getTime(),
+    now.getTime() + OPEN_ENDED_MEETING_VISUAL_MS,
+  );
+});
+
+test("meetingToCalendarEvent marks timed in-window meetings as active", () => {
+  const start = new Date("2026-08-23T14:00:00.000Z");
+  const end = new Date("2026-08-23T15:00:00.000Z");
+  const now = new Date("2026-08-23T14:30:00.000Z");
+  const event = meetingToCalendarEvent(
+    {
+      id: "m-active",
+      title: "Standup",
+      startAt: start,
+      endAt: end,
+    },
+    now,
+  );
+  assert.ok(event);
+  assert.equal(event.extendedProps.active, true);
+  assert.equal(
+    event.classNames?.includes("meeting-calendar-event--active"),
+    false,
+  );
 });
 
 test("meetingToCalendarEvent marks past completed meetings as finished", () => {

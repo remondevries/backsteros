@@ -3,7 +3,11 @@ import { useNavigate } from "@tanstack/react-router";
 
 import {
   CalendarTimetrackingSidePanelView,
+  CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
+  CALENDAR_MEETING_OVERLAY_PARAM,
   CALENDAR_PAGE_MODE_PARAM,
+  CALENDAR_TASK_OVERLAY_LAYOUT_PARAM,
+  CALENDAR_TASK_OVERLAY_PARAM,
   CALENDAR_TIMETRACKING_DATE_PARAM,
   CALENDAR_TIMETRACKING_WEEK_PARAM,
   CALENDAR_TIMETRACKING_MONTH_PARAM,
@@ -17,6 +21,7 @@ import {
 
 import { useDesktopSidePanelListNav } from "../../lib/use-desktop-side-panel-list-nav";
 import { useShellLocation } from "../../lib/shell-route-keep-alive";
+import { navigateToHref } from "../../router/navigate-href";
 
 function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
   return new URLSearchParams(
@@ -49,9 +54,10 @@ export function DesktopCalendarTimetrackingSidePanel({
       const prev = searchParamsFromSearchStr(searchStr);
       const next = nextInit(prev);
       if (next.toString() === prev.toString()) return;
-      navigate({
-        to: ".",
-        search: Object.fromEntries(next.entries()),
+      // Absolute /calendar?... so keep-alive lastHref + address bar stay in sync
+      // (same pattern as CalendarPage) — relative navigate() misses warm flips.
+      const query = next.toString();
+      navigateToHref(navigate, query ? `/calendar?${query}` : "/calendar", {
         replace: navigateOpts?.replace ?? false,
       });
     },
@@ -84,6 +90,11 @@ export function DesktopCalendarTimetrackingSidePanel({
         next.delete(CALENDAR_TIMETRACKING_DATE_PARAM);
         next.delete(CALENDAR_TIMETRACKING_WEEK_PARAM);
         next.delete(CALENDAR_TIMETRACKING_MONTH_PARAM);
+        // Period picks show the overview list — dismiss any open entry detail.
+        next.delete(CALENDAR_MEETING_OVERLAY_PARAM);
+        next.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
+        next.delete(CALENDAR_TASK_OVERLAY_PARAM);
+        next.delete(CALENDAR_TASK_OVERLAY_LAYOUT_PARAM);
         updater(next);
         return next;
       },

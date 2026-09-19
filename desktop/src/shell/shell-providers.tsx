@@ -22,6 +22,7 @@ import { ModClickNewTabListener } from "../components/mod-click-new-tab-listener
 import { AppShellMentionCatalog } from "./app-shell-mention-catalog";
 import { AppShellTaskSideEffects } from "./app-shell-task-side-effects";
 import { DesktopClientLink } from "./app-shell-links";
+import { SyncRemoteRunningTimers } from "./sync-remote-running-timers";
 
 type ShellOuterProvidersProps = {
   children: ReactNode;
@@ -94,6 +95,7 @@ export function ShellRuntimeProviders({
                 updateActiveTabTitle={updateActiveTabTitle}
               >
                 <TrackedTimerProvider onNavigate={onNavigate}>
+                  <SyncRemoteRunningTimers />
                   {children}
                 </TrackedTimerProvider>
               </RegisterPageTitleProvider>

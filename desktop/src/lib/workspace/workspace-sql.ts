@@ -4,8 +4,7 @@
  *
  * Long text (`description` / `summary` / `context` / `notes` / `transcription`)
  * is omitted from list watches. Task descriptions load via one-row PowerSync
- * (`useDesktopTaskDescription`); other entities may still use REST hydrate +
- * fill-missing helpers for detail / preview surfaces.
+ * (`useDesktopTaskDescription`). Letter notes load via `useDesktopLetterContext`.
  */
 
 import { INBOX_TASKS_WHERE_SQL } from "./inbox-task-query";
@@ -23,6 +22,7 @@ export const TASK_LIST_COLUMNS = [
   "assignee_id",
   "related_contact_ids",
   "related_organization_ids",
+  "label_ids",
   "sort_order",
   "updated_at",
   "created_at",
@@ -59,6 +59,8 @@ export const PROJECT_LIST_COLUMNS = [
   "provider",
   "category",
   "local_working_directory",
+  "health_check_mode",
+  "health_check_domain",
   "status",
   "priority",
   "sort_order",

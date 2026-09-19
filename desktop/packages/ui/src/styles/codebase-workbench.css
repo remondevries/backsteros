@@ -1748,7 +1748,8 @@
   margin-top: 0;
 }
 
-.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)) {
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)),
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-repo-chip)) {
   grid-template-columns: minmax(0, max-content);
 }
 
@@ -2206,7 +2207,8 @@
 }
 
 /* When only the repo chip is present, let it size to content. */
-.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)) {
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)),
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-repo-chip)) {
   grid-template-columns: minmax(0, max-content);
 }
 
@@ -2261,6 +2263,15 @@
   flex-direction: column;
   margin-top: 4px;
   overflow: auto;
+}
+
+.console-fs-tree-status {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .console-fs-tree-pane--docs {
@@ -3011,7 +3022,16 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 
 .codebase-project-workbench__list {
   position: relative;
-  border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.codebase-project-workbench.is-collapse-animating {
+  transition: grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.codebase-project-workbench.is-side-panel-collapsed:not(.is-collapse-animating)
+  .codebase-project-workbench__list {
+  border-right-width: 0;
 }
 
 .codebase-project-workbench__detail {
@@ -3026,7 +3046,8 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 }
 
 .codebase-project-workbench__docs,
-.codebase-project-workbench__tasks {
+.codebase-project-workbench__tasks,
+.codebase-project-workbench__updates {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -3060,5 +3081,171 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 .codebase-project-workbench .console-pane--overview .project-panel-repositories > .project-detail {
   flex: 1;
   min-height: 0;
+  overflow: auto;
+}
+
+.project-panel-identity-host {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-panel-identity-host > .project-detail--panel,
+.project-detail--panel:has(.project-panel-identity),
+.project-detail--panel:has(.project-panel-identity) .project-detail__overview {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-panel-identity {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 24px;
+  overflow: auto;
+}
+
+.project-panel-identity__code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-panel-identity__code .project-detail__progress {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.project-panel-identity__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-panel-identity__title .overview-name-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-panel-identity__title .content-detail-title {
+  font-size: 20px;
+}
+
+.project-panel-identity .project-detail__description-body,
+.project-panel-identity .content-markdown-view-layout,
+.project-panel-identity .content-markdown-view-layout__edit,
+.project-panel-identity .content-markdown-view-layout__preview,
+.project-panel-identity .content-markdown-editor-column,
+.project-panel-identity .cm-editor {
+  flex: none;
+  height: auto;
+  min-height: 96px;
+  overflow: visible;
+}
+
+.project-panel-identity__activity {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+}
+
+.project-panel-identity__activity .task-activity {
+  max-width: none;
+}
+
+.codebase-project-workbench__tabs {
+  flex-shrink: 0;
+  padding: 8px 8px 0;
+}
+
+.codebase-project-workbench__tab-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.codebase-project-workbench__tab-body > .codebase-project-workbench__tasks,
+.codebase-project-workbench__tab-body > .codebase-project-workbench__updates,
+.codebase-project-workbench__tab-body > .codebase-project-workbench__docs {
+  flex: 1;
+  min-height: 0;
+}
+
+.codebase-project-workbench__list-detail {
+  --desktop-codebase-tab-list-width: 340px;
+  display: grid;
+  grid-template-columns: var(--desktop-codebase-tab-list-width) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.codebase-project-workbench__list-detail--list-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.codebase-project-workbench__tab-list,
+.codebase-project-workbench__tab-detail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.codebase-project-workbench__tab-list {
+  position: relative;
+}
+
+.codebase-project-workbench__list-detail:not(
+    .codebase-project-workbench__list-detail--list-only
+  )
+  .codebase-project-workbench__tab-list {
+  border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.codebase-project-workbench__list-detail--framed:not(
+    .codebase-project-workbench__list-detail--list-only
+  )
+  .codebase-project-workbench__tab-list {
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-top-right-radius: 8px;
+}
+
+.codebase-project-workbench__list-detail--files:not(
+    .codebase-project-workbench__list-detail--list-only
+  )
+  .codebase-project-workbench__tab-list {
+  border-top-right-radius: 0;
+}
+
+.codebase-project-workbench__list-detail--framed:not(
+    .codebase-project-workbench__list-detail--list-only
+  )
+  .codebase-project-workbench__tab-list
+  > .project-panel-list-body {
+  padding: 8px;
+}
+
+.codebase-project-workbench__tab-list > .project-panel-list-body,
+.codebase-project-workbench__tab-list > .project-panel-repositories {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
   overflow: auto;
 }

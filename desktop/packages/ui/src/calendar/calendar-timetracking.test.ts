@@ -193,6 +193,57 @@ test("withLiveTimetrackingEntries prepends live-only rows and marks matches", ()
   assert.equal(merged[1]?.trackedDurationSeconds, 60);
 });
 
+test("withLiveTimetrackingEntries skips live chrome outside periods that include today", () => {
+  const base = collectTimetrackingEntries({
+    tasks: [
+      {
+        id: "stored",
+        title: "Stored",
+        trackedDurationSeconds: 60,
+        scheduleAt: "2026-08-25",
+      },
+    ],
+  });
+  const live = [
+    {
+      id: "stored",
+      kind: "task" as const,
+      title: "Stored",
+      href: "/calendar?task=stored",
+      trackedDurationSeconds: 60,
+    },
+    {
+      id: "fresh",
+      kind: "task" as const,
+      title: "Fresh",
+      href: "/calendar?task=fresh",
+      trackedDurationSeconds: 0,
+    },
+  ];
+
+  const pastDay = withLiveTimetrackingEntries(base, live, {
+    period: { kind: "day", ymd: "2026-08-25" },
+    todayYmd: "2026-09-17",
+  });
+  assert.equal(pastDay.length, 1);
+  assert.equal(pastDay[0]?.id, "stored");
+  assert.equal(Boolean(pastDay[0]?.isLive), false);
+
+  const thisWeek = withLiveTimetrackingEntries(base, live, {
+    period: { kind: "week", weekKey: "2026-09-14", weekNumber: 38 },
+    todayYmd: "2026-09-17",
+  });
+  assert.equal(thisWeek.some((entry) => entry.id === "fresh" && entry.isLive), true);
+  assert.equal(thisWeek.find((entry) => entry.id === "stored")?.isLive, true);
+
+  const pastMonth = withLiveTimetrackingEntries(base, live, {
+    period: { kind: "month", monthKey: "2026-08", monthLabel: "August 2026" },
+    todayYmd: "2026-09-17",
+  });
+  assert.equal(pastMonth.length, 1);
+  assert.equal(Boolean(pastMonth[0]?.isLive), false);
+});
+
 test("readTimetrackingPeriodFromSearch prefers week then month then day", () => {
   assert.deepEqual(readTimetrackingPeriodFromSearch("?week=2026-08-24"), {
     kind: "week",

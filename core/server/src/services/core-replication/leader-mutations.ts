@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { mutationReceipts, syncEvents } from "../../db/schema.js";
 import type { SyncEntity, SyncOperation } from "../../lib/sync-constants.js";
-import { applySyncChange, mergeHabitDerivedTaskChanges, type SyncChange } from "../sync.js";
+import { applySyncChange, isPowerSyncSkippableError, mergeHabitDerivedTaskChanges, type SyncChange } from "../sync.js";
 import {
   crmActivityToSyncPayload,
   listCrmActivitiesForMeeting,
@@ -22,6 +22,7 @@ import {
   getWorkspaceLastSyncId,
   type SyncEventRow,
 } from "../sync-log.js";
+import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import { getCoreReplicationConfig } from "./config.js";
 import {
   applyPeerSyncEvent,
@@ -141,9 +142,40 @@ export async function acceptLeaderMutations(input: {
       }
 
       const habitTaskChangesOut: HabitTaskSyncChange[] = [];
-      await applySyncChange(input.workspaceId, toSyncChange(change), tx, {
-        habitTaskChangesOut,
-      });
+      try {
+        await applySyncChange(input.workspaceId, toSyncChange(change), tx, {
+          habitTaskChangesOut,
+        });
+      } catch (error) {
+        // Same set as the local PowerSync apply path. A 500 makes the client
+        // retry this CRUD row forever (stale label ids, missing assignee, …).
+        if (!isPowerSyncSkippableError(error)) throw error;
+        console.warn(
+          `[powersync] skipping ${change.operation} ${change.entity}/${change.entityId}: ${error.message}`,
+        );
+        appendOpsLog(
+          "warn",
+          "powersync skipped permanent validation error",
+          `${change.operation} ${change.entity}/${change.entityId}: ${error.message}`,
+        );
+        await tx
+          .update(mutationReceipts)
+          .set({
+            result: {
+              accepted: true,
+              skipped: error.message,
+              source: "leader_mutation",
+              parent_mutation_id: input.mutationId,
+            },
+          })
+          .where(
+            and(
+              eq(mutationReceipts.workspaceId, input.workspaceId),
+              eq(mutationReceipts.mutationId, eventMutationId),
+            ),
+          );
+        return;
+      }
       await appendSyncEvent(
         {
           workspaceId: input.workspaceId,

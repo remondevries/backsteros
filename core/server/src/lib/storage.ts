@@ -10,6 +10,7 @@ import {
   rmdir,
   stat,
   unlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -18,6 +19,15 @@ import {
   PROJECT_VAULT_WORKFLOW_SKILL_ID,
   PROJECT_VAULT_WORKFLOW_SKILL_MARKDOWN,
 } from "./project-vault-skill.js";
+import {
+  copyR2Object,
+  deleteR2Object,
+  getR2Object,
+  headR2Object,
+  isR2Configured,
+  putR2Object,
+  shouldRefreshLocalFromRemote,
+} from "./r2-object-store.js";
 
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 const SNIPPET_LENGTH = 500;
@@ -913,6 +923,65 @@ export async function assertVaultPathUsable(vaultPath: string): Promise<void> {
   await ensureVaultStructure(root);
 }
 
+function r2ObjectKey(key: string): string {
+  return normalizeVaultRelativeKey(key).replace(/\\/g, "/");
+}
+
+async function refreshLocalFromR2(
+  key: string,
+  absolute: string,
+  local: Buffer | null,
+): Promise<Buffer | null> {
+  if (!isR2Configured()) return local;
+  const remoteKey = r2ObjectKey(key);
+  let remote: { lastModifiedMs: number } | null = null;
+  try {
+    remote = await headR2Object(remoteKey);
+  } catch (error) {
+    console.warn("[storage] R2 head failed", remoteKey, error);
+    return local;
+  }
+  if (!remote) return local;
+  let localMtime: number | null = null;
+  if (local) {
+    try {
+      localMtime = (await stat(absolute)).mtimeMs;
+    } catch {
+      localMtime = null;
+    }
+  }
+  if (!shouldRefreshLocalFromRemote(localMtime, remote.lastModifiedMs)) {
+    return local;
+  }
+  const downloaded = await getR2Object(remoteKey);
+  if (!downloaded) return local;
+  await mkdir(path.dirname(absolute), { recursive: true });
+  await writeFile(absolute, downloaded.bytes);
+  const stamped = new Date(remote.lastModifiedMs || Date.now());
+  await utimes(absolute, stamped, stamped);
+  return downloaded.bytes;
+}
+
+async function mirrorMoveToR2(
+  fromKey: string,
+  toKey: string,
+  toAbsolute: string,
+): Promise<void> {
+  if (!isR2Configured()) return;
+  const from = r2ObjectKey(fromKey);
+  const to = r2ObjectKey(toKey);
+  const copied = await copyR2Object(from, to);
+  if (copied && from !== to) {
+    await deleteR2Object(from);
+    return;
+  }
+  const bytes = await readFile(toAbsolute);
+  const contentType = toAbsolute.toLowerCase().endsWith(".pdf")
+    ? "application/pdf"
+    : "text/markdown; charset=utf-8";
+  await putR2Object(to, bytes, contentType);
+}
+
 export async function putObject(
   key: string,
   body: string | Uint8Array,
@@ -925,6 +994,11 @@ export async function putObject(
   const bytes =
     typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body);
   await writeFile(absolute, bytes);
+  if (isR2Configured()) {
+    await putR2Object(r2ObjectKey(key), bytes, contentType);
+    const now = new Date();
+    await utimes(absolute, now, now);
+  }
   return {
     etag: checksumForContent(bytes).slice(0, 32),
     byteSize: bytes.byteLength,
@@ -943,7 +1017,7 @@ export async function getObject(
 }> {
   const absolute = await absolutePathForKey(key, settingsVaultPath);
   const preferred = await absolutePathForKey(key, settingsVaultPath, "write");
-  let bytes: Buffer;
+  let bytes: Buffer | null = null;
   try {
     bytes = await readFile(absolute);
   } catch (error) {
@@ -951,14 +1025,11 @@ export async function getObject(
       error && typeof error === "object" && "code" in error
         ? String((error as { code?: unknown }).code)
         : "";
-    if (code === "ENOENT") {
-      throw new Error("STORAGE_OBJECT_NOT_FOUND");
-    }
-    throw error;
+    if (code !== "ENOENT") throw error;
   }
 
   // Heal path drift (e.g. Portal under Support while bytes stay in Second brain).
-  if (absolute !== preferred) {
+  if (bytes && absolute !== preferred) {
     try {
       await mkdir(path.dirname(preferred), { recursive: true });
       try {
@@ -988,6 +1059,10 @@ export async function getObject(
     }
   }
 
+  const refreshed = await refreshLocalFromR2(key, preferred, bytes);
+  if (refreshed) bytes = refreshed;
+  if (!bytes) throw new Error("STORAGE_OBJECT_NOT_FOUND");
+
   const isPdf = preferred.toLowerCase().endsWith(".pdf");
   return {
     body: bytes.toString("utf8"),
@@ -1010,9 +1085,13 @@ export async function deleteObject(
       error && typeof error === "object" && "code" in error
         ? String((error as { code?: unknown }).code)
         : "";
-    if (code === "ENOENT") return;
+    if (code === "ENOENT") {
+      if (isR2Configured()) await deleteR2Object(r2ObjectKey(key));
+      return;
+    }
     throw error;
   }
+  if (isR2Configured()) await deleteR2Object(r2ObjectKey(key));
 }
 
 /**
@@ -1091,8 +1170,10 @@ export async function moveObject(
       const bytes = await readFile(fromAbsolute);
       await writeFile(toAbsolute, bytes);
       await unlink(fromAbsolute);
+      await mirrorMoveToR2(fromKey, toKey, toAbsolute);
       return;
     }
     throw error;
   }
+  await mirrorMoveToR2(fromKey, toKey, toAbsolute);
 }

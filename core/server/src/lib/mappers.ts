@@ -16,6 +16,8 @@ import type {
   TaskComment,
 } from "@backsteros/contracts";
 
+import { normalizeTaskLabelIds } from "../services/task-labels.js";
+
 import type {
   DbApiKey,
   DbArea,
@@ -65,6 +67,9 @@ export function toProject(row: DbProject): Project {
     githubRepository: row.githubRepository ?? null,
     cloudflareZoneId: row.cloudflareZoneId ?? null,
     localWorkingDirectory: row.localWorkingDirectory ?? null,
+    healthCheckMode:
+      (row.healthCheckMode as Project["healthCheckMode"]) ?? null,
+    healthCheckDomain: row.healthCheckDomain ?? null,
     status: row.status as Project["status"],
     priority: row.priority,
     sortOrder: row.sortOrder,
@@ -92,6 +97,7 @@ export function toTask(row: DbTask): Task {
     assigneeId: row.assigneeId,
     relatedContactIds,
     relatedOrganizationIds,
+    labelIds: normalizeTaskLabelIds(row.labelIds),
     number: row.number,
     title: row.title,
     description: row.description,

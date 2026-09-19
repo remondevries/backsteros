@@ -55,18 +55,15 @@ export type TaskBoardCardProps = {
   agentWorking?: boolean;
   /** Optional trailing content beside the title (e.g. agent bound badge). */
   titleTrailing?: ReactNode;
+  /**
+   * When true, property chips are display-only (no dropdowns) so the whole
+   * card stays a single open-target — used in timetracking sessions panel.
+   */
+  readOnly?: boolean;
 };
 
 function stopFieldEvent(event: SyntheticEvent) {
   event.stopPropagation();
-}
-
-function OwnerPlaceholder({ initials }: { initials?: string | null }) {
-  return (
-    <span className="task-kanban-card-owner" aria-hidden="true">
-      {initials?.trim() ? initials.trim().slice(0, 2).toUpperCase() : "·"}
-    </span>
-  );
 }
 
 export function TaskBoardCardComponent({
@@ -80,6 +77,7 @@ export function TaskBoardCardComponent({
   ownerSlot,
   agentWorking = false,
   titleTrailing = null,
+  readOnly = false,
 }: TaskBoardCardProps) {
   const displayId = getTaskDisplayId(
     {
@@ -91,6 +89,7 @@ export function TaskBoardCardComponent({
   );
   const status = migrateLegacyTaskStatus(task.status);
   const isEmail = task.listKind === "email";
+  const canEditFields = !readOnly;
 
   const statusOptions = useMemo(
     () =>
@@ -117,7 +116,12 @@ export function TaskBoardCardComponent({
     <div
       role="button"
       tabIndex={0}
-      className="task-kanban-card"
+      className={[
+        "task-kanban-card",
+        readOnly ? "task-kanban-card--readonly" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onClick={() => onOpen?.(task.id)}
       onKeyDown={(event) => {
         if (!isDirectRoleButtonActivationKey(event)) return;
@@ -143,7 +147,9 @@ export function TaskBoardCardComponent({
           )}
         </span>
         {ownerSlot ??
-          (assigneeOptions.length > 0 && onAssigneeChange ? (
+          (canEditFields &&
+          assigneeOptions.length > 0 &&
+          onAssigneeChange ? (
             <span
               onMouseDown={stopFieldEvent}
               onClick={stopFieldEvent}
@@ -191,52 +197,85 @@ export function TaskBoardCardComponent({
               />
             </span>
           ) : (
-            <OwnerPlaceholder initials={task.ownerInitials} />
+            <span
+              className="task-kanban-card-owner"
+              title={
+                assigneeOptions.find(
+                  (entry) => entry.value === (task.assigneeId ?? "__none__"),
+                )?.label ?? "Unassigned"
+              }
+              aria-hidden="true"
+            >
+              {assigneeOptions.find(
+                (entry) => entry.value === (task.assigneeId ?? "__none__"),
+              )?.icon ??
+                (task.ownerInitials?.trim()
+                  ? task.ownerInitials.trim().slice(0, 2).toUpperCase()
+                  : (
+                      <ContactPersonIcon size={14} />
+                    ))}
+            </span>
           ))}
       </span>
       <span className="task-kanban-card-title-row">
         <span
           className="task-kanban-card-status"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
+          onMouseDown={canEditFields ? stopFieldEvent : undefined}
+          onClick={canEditFields ? stopFieldEvent : undefined}
         >
-          <DeferredSearchableDropdown
-            value={status}
-            options={statusOptions}
-            onChange={onStatusChange}
-            searchPlaceholder="Change status…"
-            searchShortcutLabel="S"
-            ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
-            taskPropertyDropdownId="status"
-            className="task-item-row__dropdown"
-            panelAlign="start"
-            renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className="task-item-row__icon-trigger"
-                title={getTaskStatusLabel(status)}
-                tabIndex={-1}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label={`Change status: ${getTaskStatusLabel(status)}`}
-                onMouseDown={stopFieldEvent}
-                onClick={(event) => {
-                  stopFieldEvent(event);
-                  onToggle();
-                }}
-              >
-                <TaskStatusIcon
-                  status={status}
-                  size={14}
-                  working={agentWorking}
-                  support={Boolean(task.support)}
-                  notification={Boolean(task.notification)}
-                />
-              </button>
-            )}
-          />
+          {canEditFields ? (
+            <DeferredSearchableDropdown
+              value={status}
+              options={statusOptions}
+              onChange={onStatusChange}
+              searchPlaceholder="Change status…"
+              searchShortcutLabel="S"
+              ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
+              taskPropertyDropdownId="status"
+              className="task-item-row__dropdown"
+              panelAlign="start"
+              renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                <button
+                  type="button"
+                  id={triggerId}
+                  className="task-item-row__icon-trigger"
+                  title={getTaskStatusLabel(status)}
+                  tabIndex={-1}
+                  disabled={disabled}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-label={`Change status: ${getTaskStatusLabel(status)}`}
+                  onMouseDown={stopFieldEvent}
+                  onClick={(event) => {
+                    stopFieldEvent(event);
+                    onToggle();
+                  }}
+                >
+                  <TaskStatusIcon
+                    status={status}
+                    size={14}
+                    working={agentWorking}
+                    support={Boolean(task.support)}
+                    notification={Boolean(task.notification)}
+                  />
+                </button>
+              )}
+            />
+          ) : (
+            <span
+              className="task-item-row__icon-trigger"
+              title={getTaskStatusLabel(status)}
+              aria-label={getTaskStatusLabel(status)}
+            >
+              <TaskStatusIcon
+                status={status}
+                size={14}
+                working={agentWorking}
+                support={Boolean(task.support)}
+                notification={Boolean(task.notification)}
+              />
+            </span>
+          )}
         </span>
         <span className="task-kanban-card-title-wrap">
           {isEmail ? (
@@ -270,52 +309,71 @@ export function TaskBoardCardComponent({
       <span className="task-kanban-card-meta">
         <span
           className="task-kanban-card-meta-pill"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
+          onMouseDown={canEditFields ? stopFieldEvent : undefined}
+          onClick={canEditFields ? stopFieldEvent : undefined}
         >
-          <DeferredSearchableDropdown
-            value={String(task.priority)}
-            options={priorityOptions}
-            onChange={(next) => onPriorityChange?.(Number(next))}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-            taskPropertyDropdownId="priority"
-            className="task-item-row__dropdown"
-            panelAlign="start"
-            renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className="task-item-row__icon-trigger"
-                title={getTaskPriorityLabel(task.priority)}
-                tabIndex={-1}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-                onMouseDown={stopFieldEvent}
-                onClick={(event) => {
-                  stopFieldEvent(event);
-                  onToggle();
-                }}
-              >
-                <TaskPriorityIcon priority={task.priority} size={12} />
-              </button>
-            )}
-          />
+          {canEditFields ? (
+            <DeferredSearchableDropdown
+              value={String(task.priority)}
+              options={priorityOptions}
+              onChange={(next) => onPriorityChange?.(Number(next))}
+              searchPlaceholder="Change priority…"
+              searchShortcutLabel="P"
+              ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
+              taskPropertyDropdownId="priority"
+              className="task-item-row__dropdown"
+              panelAlign="start"
+              renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                <button
+                  type="button"
+                  id={triggerId}
+                  className="task-item-row__icon-trigger"
+                  title={getTaskPriorityLabel(task.priority)}
+                  tabIndex={-1}
+                  disabled={disabled}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-label={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
+                  onMouseDown={stopFieldEvent}
+                  onClick={(event) => {
+                    stopFieldEvent(event);
+                    onToggle();
+                  }}
+                >
+                  <TaskPriorityIcon priority={task.priority} size={12} />
+                </button>
+              )}
+            />
+          ) : (
+            <span
+              className="task-item-row__icon-trigger"
+              title={getTaskPriorityLabel(task.priority)}
+              aria-label={getTaskPriorityLabel(task.priority)}
+            >
+              <TaskPriorityIcon priority={task.priority} size={12} />
+            </span>
+          )}
         </span>
         <span
           className="task-kanban-card-meta-pill"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
+          onMouseDown={canEditFields ? stopFieldEvent : undefined}
+          onClick={canEditFields ? stopFieldEvent : undefined}
         >
-          <DeferredTaskDueDateDropdown
-            dueDate={task.dueDate}
-            status={task.status}
-            variant="list"
-            onDueDateChange={onDueDateChange}
-          />
+          {canEditFields ? (
+            <DeferredTaskDueDateDropdown
+              dueDate={task.dueDate}
+              status={task.status}
+              variant="list"
+              onDueDateChange={onDueDateChange}
+            />
+          ) : (
+            <DeferredTaskDueDateDropdown
+              dueDate={task.dueDate}
+              status={task.status}
+              variant="list"
+              disabled
+            />
+          )}
         </span>
       </span>
     </div>

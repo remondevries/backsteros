@@ -592,6 +592,8 @@ function TrailProjectLeaf({
         organizationId: project.organizationId ?? null,
         startDate: project.startDate ?? null,
         dueDate: project.dueDate ?? null,
+        healthCheckMode: project.healthCheckMode ?? null,
+        healthCheckDomain: project.healthCheckDomain ?? null,
         taskProgress: { total, completed },
       }}
       onSaveName={async (name) => {
@@ -646,9 +648,18 @@ function TrailProjectLeaf({
         void workspace.patchProject(project.id, { priority });
       }}
       onTypeChange={(type) => {
-        const patch: { type: string; category?: null } = { type };
+        const patch: {
+          type: string;
+          category?: null;
+          healthCheckMode?: null;
+          healthCheckDomain?: null;
+        } = { type };
         if (type !== "email") {
           patch.category = null;
+        }
+        if (type !== "codebase") {
+          patch.healthCheckMode = null;
+          patch.healthCheckDomain = null;
         }
         void workspace.patchProject(project.id, patch);
       }}
@@ -671,6 +682,9 @@ function TrailProjectLeaf({
           patch.icon = getProjectEmailCategoryDefaultIcon(category);
         }
         void workspace.patchProject(project.id, patch);
+      }}
+      onHealthCheckChange={(next) => {
+        void workspace.patchProject(project.id, next);
       }}
       organizationOptions={buildOrganizationDropdownOptions(
         withAvatarSrc(workspace.organizations, organizationAvatarSrc),

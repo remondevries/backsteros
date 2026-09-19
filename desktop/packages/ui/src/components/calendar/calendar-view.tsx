@@ -15,6 +15,8 @@ import type {
 } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, {
+  type EventDragStartArg,
+  type EventDragStopArg,
   type EventReceiveArg,
   type EventResizeDoneArg,
 } from "@fullcalendar/interaction";
@@ -35,6 +37,7 @@ import {
   calendarChangeToTaskPatch,
   calendarEntityFromEvent,
   calendarSelectionToMeetingRange,
+  isCalendarMeetingDuplicateModifier,
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
@@ -107,6 +110,14 @@ export type CalendarViewProps = {
     patch: MeetingCalendarPatch,
   ) => void | Promise<void>;
   /**
+   * Alt/Option + drag-drop a meeting → create a copy at the new slot.
+   * Copy only when Alt is held at drop (releasing mid-drag moves instead).
+   */
+  onMeetingDuplicate?: (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => void | Promise<void>;
+  /**
    * Drag-select on week/day time grid → create a Triage meeting for that range.
    */
   onCreateMeetingFromSelect?: (range: {
@@ -158,6 +169,7 @@ export function CalendarView({
   events,
   onTaskReschedule,
   onMeetingReschedule,
+  onMeetingDuplicate,
   onCreateMeetingFromSelect,
   resolveTask,
   onTaskPopoverChange,
@@ -184,6 +196,7 @@ export function CalendarView({
   const monthStripRef = useRef<HTMLDivElement>(null);
   const dayStripRef = useRef<HTMLDivElement>(null);
   const calendarApiRef = useRef<CalendarApi | null>(null);
+  const meetingDragCopyCleanupRef = useRef<(() => void) | null>(null);
   const weekApisRef = useRef<(CalendarApi | null)[]>(
     Array.from({ length: CALENDAR_WEEK_STRIP_PANE_COUNT }, () => null),
   );
@@ -285,6 +298,14 @@ export function CalendarView({
       new Date();
     setWeekAnchorYmd(formatLocalYmd(startOfWeekMondayDate(base)));
   }, [isWeekStrip]);
+
+  useEffect(() => {
+    return () => {
+      meetingDragCopyCleanupRef.current?.();
+      meetingDragCopyCleanupRef.current = null;
+      document.body.classList.remove("calendar-event-drag-copy");
+    };
+  }, []);
 
   // FullCalendar's gotoDate uses flushSync. Queue it outside React's layout
   // lifecycle while keeping it in the same frame, before the next paint.
@@ -996,6 +1017,7 @@ export function CalendarView({
   const applyCalendarChange = (
     event: EventDropArg["event"] | EventResizeDoneArg["event"],
     revert: () => void,
+    options?: { duplicate?: boolean },
   ) => {
     const entity = calendarEntityFromEvent(event);
     if (entity.entityType === "birthday") {
@@ -1008,7 +1030,21 @@ export function CalendarView({
         end: event.end,
         allDay: event.allDay,
       });
-      if (!patch || !onMeetingReschedule) {
+      if (!patch) {
+        revert();
+        return;
+      }
+      if (options?.duplicate) {
+        if (!onMeetingDuplicate) {
+          revert();
+          return;
+        }
+        // Restore the source immediately; create the copy at the drop slot.
+        revert();
+        void Promise.resolve(onMeetingDuplicate(entity.entityId, patch));
+        return;
+      }
+      if (!onMeetingReschedule) {
         revert();
         return;
       }
@@ -1031,9 +1067,45 @@ export function CalendarView({
     );
   };
 
+  const clearMeetingDragCopyAffordance = () => {
+    meetingDragCopyCleanupRef.current?.();
+    meetingDragCopyCleanupRef.current = null;
+    document.body.classList.remove("calendar-event-drag-copy");
+  };
+
+  const handleEventDragStart = (info: EventDragStartArg) => {
+    clearMeetingDragCopyAffordance();
+    if (
+      !onMeetingDuplicate ||
+      info.event.extendedProps.entityType !== "meeting"
+    ) {
+      return;
+    }
+    const setCopyCursor = (copy: boolean) => {
+      document.body.classList.toggle("calendar-event-drag-copy", copy);
+    };
+    setCopyCursor(isCalendarMeetingDuplicateModifier(info.jsEvent));
+    const onModifierChange = (event: KeyboardEvent) => {
+      setCopyCursor(event.altKey);
+    };
+    window.addEventListener("keydown", onModifierChange);
+    window.addEventListener("keyup", onModifierChange);
+    meetingDragCopyCleanupRef.current = () => {
+      window.removeEventListener("keydown", onModifierChange);
+      window.removeEventListener("keyup", onModifierChange);
+    };
+  };
+
+  const handleEventDragStop = (_info: EventDragStopArg) => {
+    clearMeetingDragCopyAffordance();
+  };
+
   const handleEventDrop = (info: EventDropArg) => {
     closePopovers();
-    applyCalendarChange(info.event, () => info.revert());
+    clearMeetingDragCopyAffordance();
+    applyCalendarChange(info.event, () => info.revert(), {
+      duplicate: isCalendarMeetingDuplicateModifier(info.jsEvent),
+    });
   };
 
   const handleEventResize = (info: EventResizeDoneArg) => {
@@ -1162,6 +1234,8 @@ export function CalendarView({
     selectable: selectEnabled,
     selectMirror: selectEnabled,
     select: selectEnabled ? handleDateSelect : undefined,
+    eventDragStart: handleEventDragStart,
+    eventDragStop: handleEventDragStop,
     eventDrop: handleEventDrop,
     eventResize: handleEventResize,
     eventReceive: handleEventReceive,

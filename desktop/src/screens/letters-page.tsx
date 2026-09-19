@@ -32,6 +32,7 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useDesktopLetterContext } from "../lib/use-letter-context";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
 import {
   useDesktopWorkspaceActions,
@@ -116,7 +117,6 @@ function LettersPageBody({
   const {
     letters: workspaceLetters,
     letterRecords,
-    letterBodies,
     projects,
   } = useDesktopWorkspaceProjects();
   const { organizations, contacts } = useDesktopWorkspacePeople();
@@ -158,6 +158,10 @@ function LettersPageBody({
   const selected = slug
     ? letters.find((letter) => letterMatchesSlug(letter, slug)) ?? null
     : null;
+
+  const { context: letterContext } = useDesktopLetterContext(selected?.id, {
+    enabled: keepAliveActive && Boolean(selected),
+  });
 
   const record = selected
     ? letterRecords[selected.id] ?? null
@@ -260,9 +264,7 @@ function LettersPageBody({
             : null,
       projectKey: project?.key ?? projectKey,
       projectName: project?.name ?? null,
-      body:
-        letterBodies[selected.id] ??
-        "",
+      body: letterContext,
       displayId:
         selected.number != null
           ? formatLetterDisplayId(selected.number)
@@ -281,7 +283,7 @@ function LettersPageBody({
     selected,
     statusOverride,
     titleOverride,
-    letterBodies,
+    letterContext,
   ]);
 
   const hasLivePdf = Boolean(record?.storageKey && record.byteSize > 0);

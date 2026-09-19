@@ -18,6 +18,7 @@ import { registerSyncRoutes } from "./app/sync-routes.js";
 import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
 import { installOpsLogConsoleCapture } from "./lib/ops-log-buffer.js";
 import { isSpacesConfigured } from "./lib/storage.js";
+import { isDevGatewayOrigin } from "./lib/powersync-auth.js";
 import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
 
 installOpsLogConsoleCapture();
@@ -41,7 +42,12 @@ export function createApp() {
   app.use(
     "*",
     cors({
-      origin: corsOrigins,
+      origin: (origin) => {
+        if (corsOrigins.includes(origin) || isDevGatewayOrigin(origin)) {
+          return origin;
+        }
+        return undefined;
+      },
       allowHeaders: ["Authorization", "Content-Type", "X-Filename"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),

@@ -28,8 +28,13 @@ import {
   type TaskRelatedSelection,
 } from "../../tasks/task-related-entities.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
+import { TaskLabelIcon } from "./task-label-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskRelatedChips } from "./task-related-chips.js";
+import {
+  TaskRelatedUpdateLinks,
+  type TaskRelatedUpdateLink,
+} from "./task-related-update-links.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { SupportContactCard } from "./support-contact-card.js";
 import { SupportOrganizationCard } from "./support-organization-card.js";
@@ -51,6 +56,7 @@ export type TaskPropertiesDisplayTask = {
   assigneeName?: string | null;
   relatedContactIds?: string[] | null;
   relatedOrganizationIds?: string[] | null;
+  labelIds?: string[] | null;
   /** Fallback when related contacts are empty (support tickets). */
   contactId?: string | null;
   projectKey?: string | null;
@@ -74,13 +80,17 @@ export type TaskPropertiesDisplayProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: TaskRelatedSelection) => void;
+  onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
+  labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
+  /** Project updates that list this task in relatedTaskIds. */
+  relatedUpdates?: readonly TaskRelatedUpdateLink[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
   /** Support tickets: resolved client contact for the Contact card. */
@@ -115,13 +125,16 @@ export function TaskPropertiesDisplay({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
+  onLabelChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
   relatedOptions = [],
+  labelOptions = [],
   projectOptions = [],
   assigneeNavigateHref,
   projectNavigateHref,
+  relatedUpdates = [],
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
   supportContact = null,
@@ -294,6 +307,29 @@ export function TaskPropertiesDisplay({
                 onActivate={() => onFieldActivate?.("related")}
               />
             </PropertyFieldGroup>
+            {onLabelChange ? (
+              <PropertyFieldGroup label="Labels">
+                <TaskRelatedChips
+                  values={task?.labelIds ?? []}
+                  options={labelOptions}
+                  onChange={(next) => onLabelChange(next)}
+                  disabled={disabled}
+                  emptyLabel="No labels"
+                  searchPlaceholder="Add labels…"
+                  searchShortcutLabel="L"
+                  ariaLabel="Labels"
+                  taskPropertyDropdownId="labels"
+                  variant="rail"
+                  emptyIcon={<TaskLabelIcon size={14} />}
+                />
+              </PropertyFieldGroup>
+            ) : null}
+          </EntityPropertiesSection>
+        )}
+
+        {supportPartiesOnly || relatedUpdates.length === 0 ? null : (
+          <EntityPropertiesSection title="Update">
+            <TaskRelatedUpdateLinks updates={relatedUpdates} />
           </EntityPropertiesSection>
         )}
 

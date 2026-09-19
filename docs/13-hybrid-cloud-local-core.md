@@ -2,10 +2,11 @@
 
 ## Status
 
-**Phase B live** (full workspace table twin + vault markdown) — code is ahead of older
-“Phase A only” notes below. **Direction change (2026-08):** peer LWW twin is **not** the
-end state. Target is Linear-shaped sync with **cloud-core as leader** and shells as caches —
-see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md).
+**Shell routing and files (target):** [ADR-035](10-decisions-log.md). Cloud-core is the center. iOS is a client of cloud-core (its own PowerSync). Local-core is the Mac replica and belongs to the desktop app. Shared files live in private R2; the Mac vault is the desktop working copy. That target is **not** what the code does today.
+
+**Rows (in progress):** Phase B live (full workspace table twin + vault markdown) — code is ahead of older “Phase A only” notes below. **Direction change (2026-08):** peer LWW twin is **not** the end state. Target is Linear-shaped sync with **cloud-core as leader** and shells as caches — see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md).
+
+Sections below that say shells never use cloud-core, or that PDFs stay Mac-only, describe **current code**, not ADR-035.
 
 Live routes: `/internal/core-replication/*` (not the retired outbox paths).
 `REPLICATED_TABLES` is the Phase B full twin set.
@@ -13,7 +14,7 @@ Live routes: `/internal/core-replication/*` (not the retired outbox paths).
 Earlier narrative (Phase A meeting booking MVP) remains historically true for the first
 ship, but do not use this doc alone for replication correctness.
 
-## Goals
+## Goals (shipped behavior — not ADR-035)
 
 | Goal | How |
 | --- | --- |
@@ -21,8 +22,8 @@ ship, but do not use this doc alone for replication correctness.
 | **Always-on portal** | **cloud-core** on a VPS serves external consumers when the laptop is off |
 | **BacksterOS as portal foundation** | Full Tier A/B Postgres on cloud; portal filters what clients see |
 | **Full API on cloud** | `sk_live_…` keys can access the full workspace API on cloud-core |
-| **Markdown available offline from cloud** | Vault markdown replicated local → cloud |
-| **PDFs local-primary** | PDF bytes stay on local vault; graceful API fallback when local is offline |
+| **Markdown available when Mac is off** | Vault markdown replicated local → cloud disk (target: private R2, ADR-035) |
+| **PDFs local-primary** | PDF bytes stay on local vault; cloud returns `503` (target: private R2, ADR-035) |
 
 ## Topology
 
@@ -241,17 +242,17 @@ Internal routes: `POST/GET /api/v1/internal/replication/push|pull`.
 
 | Repo | Role |
 | --- | --- |
-| `~/code/backsteros/` | Core, desktop, mobile, hub, specs |
+| `~/BacksterOS/Projects/OS/Codebase/` | Core, desktop, mobile, hub, specs |
 | `~/code/client.lemo-design.com/` | Client portal (Next.js, Kamal) — external shell |
 
 Portal env: `BACKSTEROS_API_URL`, `BACKSTEROS_API_KEY` (server-only).
 
 ## Non-goals
 
-- Running PTY/agents on cloud-core
-- Bulk-syncing PDFs to VPS
-- Desktop/mobile depending on cloud-core for sync
-- Replacing local-core as the operator’s primary environment
+- Running PTY/agents on cloud-core, or starting agents inside desktop or iOS
+- Putting BacksterOS files in the public WordPress R2 bucket (`ld-wp-media`)
+- iOS depending on the Mac being awake (ADR-035 — opposite of the old “both shells stay on local-core” rule)
+- Treating local-core as a second source of truth next to cloud-core
 
 ## Leader-first vs intentional twin-only
 

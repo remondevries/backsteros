@@ -136,8 +136,9 @@ export function createPowerSyncDatabase(userId: string) {
   });
 }
 
-/** How long connect+waitForReady may block before we surface an error (HMR / IDB hangs). */
-export const POWER_SYNC_CONNECT_TIMEOUT_MS = 10_000;
+/** How long connect+waitForReady may block before we surface an error.
+ * Long enough for desktop to start Docker + local-core on a cold launch. */
+export const POWER_SYNC_CONNECT_TIMEOUT_MS = 60_000;
 
 const GLOBAL_SLOT_KEY = "__backsteros_desktop_powersync__";
 
@@ -168,16 +169,19 @@ export function setPowerSyncGlobalSlot(slot: PowerSyncGlobalSlot | null) {
   globalStore().slot = slot;
 }
 
-/** Disconnect and close; ignores races from HMR / StrictMode double-mount. */
+/** Disconnect and close; ignores a second call from HMR / StrictMode. */
+const closedPowerSyncDatabases = new WeakSet<PowerSyncDatabase>();
+
 export async function closePowerSyncDatabase(
   database: PowerSyncDatabase,
   options?: { clear?: boolean },
 ): Promise<void> {
+  if (closedPowerSyncDatabases.has(database)) return;
+  closedPowerSyncDatabases.add(database);
   try {
     if (options?.clear) {
       await database.disconnectAndClear();
-    } else {
-      await database.disconnect();
+      return;
     }
     await database.close({ disconnect: true });
   } catch {
@@ -186,8 +190,10 @@ export async function closePowerSyncDatabase(
 }
 
 /**
- * Close the global singleton when present. Used on sign-out, retry, and
- * Vite `import.meta.hot.dispose` so IDB is not left locked across reloads.
+ * Close the global singleton when present. Used on sign-out and retry.
+ * Not called from Vite dispose: the singleton lives on `globalThis` and is
+ * reused across reloads. Closing it there makes PowerSync log
+ * "Trying to close for the second time".
  */
 export async function disposePowerSyncGlobalSlot(options?: {
   clear?: boolean;
@@ -199,10 +205,4 @@ export async function disposePowerSyncGlobalSlot(options?: {
   if (options?.onlyUserId && current.userId !== options.onlyUserId) return;
   store.slot = null;
   await closePowerSyncDatabase(current.database, { clear: options?.clear });
-}
-
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
-    void disposePowerSyncGlobalSlot();
-  });
 }

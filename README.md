@@ -1,6 +1,6 @@
 # BacksterOS
 
-Everything under **`~/code/backsteros/`** (v2).
+Everything under **`~/BacksterOS/Projects/OS/Codebase/`**.
 
 ## Workspace layout
 

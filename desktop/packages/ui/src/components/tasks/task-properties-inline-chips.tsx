@@ -31,6 +31,7 @@ import {
 } from "../../tasks/task-related-entities.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
+import { TaskLabelIcon } from "./task-label-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import {
   type TaskPropertiesDisplayTask,
@@ -46,10 +47,12 @@ export type TaskPropertiesInlineChipsProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: TaskRelatedSelection) => void;
+  onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
+  labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
@@ -115,10 +118,12 @@ export function TaskPropertiesInlineChips({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
+  onLabelChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
   relatedOptions = [],
+  labelOptions = [],
   projectOptions = [],
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
@@ -256,6 +261,21 @@ export function TaskPropertiesInlineChips({
             onActivate={() => onFieldActivate?.("related")}
           />
         )}
+        {onLabelChange ? (
+          <TaskRelatedChips
+            values={task?.labelIds ?? []}
+            options={labelOptions}
+            onChange={(next) => onLabelChange(next)}
+            disabled={disabled}
+            emptyLabel="Labels"
+            searchPlaceholder="Add labels…"
+            searchShortcutLabel="L"
+            ariaLabel="Labels"
+            taskPropertyDropdownId="labels"
+            variant="inline"
+            emptyIcon={<TaskLabelIcon size={14} />}
+          />
+        ) : null}
         {canEditProject ? (
           <PropertyDropdown
             value={task?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}

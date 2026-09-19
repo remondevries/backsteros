@@ -31,6 +31,7 @@ import {
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
+import { useTaskLabelDropdownOptions } from "../lib/task-label-options";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
@@ -209,6 +210,7 @@ function CommunicationPageBody() {
       }),
     [assigneeOptions, organizationAvatarSrc, workspace.organizations],
   );
+  const labelOptions = useTaskLabelDropdownOptions();
   const documentLinkOptions = useMemo(
     () => buildDocumentLinkOptions(workspace.documents),
     [workspace.documents],
@@ -341,6 +343,8 @@ function CommunicationPageBody() {
             relatedOrganizationIds: related.organizationIds,
           })
         }
+        onLabelChange={(labelIds) => patchTask({ labelIds })}
+        labelOptions={labelOptions}
         onProjectChange={(projectKey) => patchTask({ projectKey })}
         onSaveDescription={(description) => {
           rememberDescription(description);

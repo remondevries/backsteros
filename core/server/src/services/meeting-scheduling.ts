@@ -208,6 +208,7 @@ async function listBusyIntervals(
 
   const intervals: TimeInterval[] = [];
   for (const row of meetingRows) {
+    if (!row.startAt || !row.endAt) continue;
     intervals.push({
       startMs: row.startAt.getTime(),
       endMs: row.endAt.getTime(),

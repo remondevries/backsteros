@@ -44,7 +44,10 @@ export async function pushInboxUpdatedForMeeting(
   workspaceId: string,
   meeting: Meeting,
 ): Promise<void> {
-  const scheduleLabel = formatMeetingScheduleLabel(meeting.startAt, meeting.endAt);
+  const scheduleLabel = formatMeetingScheduleLabel(
+    meeting.startAt ?? "",
+    meeting.endAt ?? "",
+  );
   const payload = buildServerInboxUpdatedMeetingNotification({
     id: meeting.id,
     title: meeting.title,

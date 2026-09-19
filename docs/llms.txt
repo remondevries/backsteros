@@ -17,18 +17,18 @@
 - [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Meilisearch, Hono
 - [docs/03-data-model.md](03-data-model.md): Sync tiers A/B/C/D, entities, version fields
 - [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API (dual-hydrate **deprecated** — see 16)
-- [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, desktop as cache, kill dual-hydrate
+- [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, iOS on cloud PowerSync, desktop on local-core, R2 files (ADR-035)
+- [docs/06-storage-and-search.md](06-storage-and-search.md): Vault layout today; private R2 target (ADR-035)
+- [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Current hybrid behavior; target routing is ADR-035 / 16
 - [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
 - [docs/15-tauri-ipc-profiling.md](15-tauri-ipc-profiling.md): Desktop invoke/event inventory, batching gate, system-stats watch
 - [docs/05-clients.md](05-clients.md): Desktop, mobile, agents door, portal
 - [docs/11-urls-and-routing.md](11-urls-and-routing.md): Local-core, agent.backsteros.com, retired 410 hosts
-- [docs/06-storage-and-search.md](06-storage-and-search.md): B2/R2, Meilisearch, PDF/markdown layout
 - [docs/07-performance.md](07-performance.md): iPhone 16, M1 MacBook, lightweight rules
 - [docs/08-legacy-circle.md](08-legacy-circle.md): Circle monolith reference, migration notes
 - [docs/09-phased-build-plan.md](09-phased-build-plan.md): Implementation phases 0–9
 - [docs/10-decisions-log.md](10-decisions-log.md): ADRs
-- [docs/12-v2-local-computer.md](12-v2-local-computer.md): v2 local-computer core + Expo/Tauri shells
-- [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Hybrid local/cloud cores (superseded direction → 16)
+- [docs/12-v2-local-computer.md](12-v2-local-computer.md): v2 local-computer core + Expo/Tauri shells (current ops; target is ADR-035)
 
 ## Task routing (quick)
 
@@ -39,7 +39,7 @@
 | PowerSync / offline | 03-data-model, **16-linear-shaped-sync**, 04-api-and-sync, 07-performance |
 | Expo mobile | 05-clients, 07-performance, 04-api-and-sync, 12-v2-local-computer, 14-client-logic-inventory |
 | Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020), **16-linear-shaped-sync**, 15-tauri-ipc-profiling |
-| PDFs / markdown / search | 06-storage-and-search, 03-data-model |
+| PDFs / markdown / search | 06-storage-and-search, 10-decisions-log (ADR-035), 03-data-model |
 | Changing stack choices | 10-decisions-log, 02-tech-stack |
 
 ## Conventions

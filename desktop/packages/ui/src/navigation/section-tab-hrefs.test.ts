@@ -36,13 +36,14 @@ test("project overview uses default section tabs when workbench is not mounted",
   ]);
 });
 
-test("codebase workbench routes use Tasks/Files/Docs/Commits/PRs tabs", () => {
+test("codebase workbench routes use Tasks/Files/Docs/Commits/PRs/Updates tabs", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/files"), [
     "/projects/demo",
     "/projects/demo/files",
     "/projects/demo/documents",
     "/projects/demo/commits",
     "/projects/demo/pulls",
+    "/projects/demo/updates",
   ]);
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/commits/abc"), [
     "/projects/demo",
@@ -50,6 +51,7 @@ test("codebase workbench routes use Tasks/Files/Docs/Commits/PRs tabs", () => {
     "/projects/demo/documents",
     "/projects/demo/commits",
     "/projects/demo/pulls",
+    "/projects/demo/updates",
   ]);
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/pulls/12"), [
     "/projects/demo",
@@ -57,6 +59,17 @@ test("codebase workbench routes use Tasks/Files/Docs/Commits/PRs tabs", () => {
     "/projects/demo/documents",
     "/projects/demo/commits",
     "/projects/demo/pulls",
+    "/projects/demo/updates",
+  ]);
+});
+
+test("standard project updates stay on default tabs when workbench is not mounted", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/updates"), [
+    "/projects/demo",
+    "/projects/demo/tasks",
+    "/projects/demo/documents",
+    "/projects/demo/letters",
+    "/projects/demo/updates",
   ]);
 });
 
@@ -179,6 +192,7 @@ test("org-scoped codebase workbench routes use scoped tab hrefs", () => {
       "/organizations/acme/projects/demo/documents",
       "/organizations/acme/projects/demo/commits",
       "/organizations/acme/projects/demo/pulls",
+      "/organizations/acme/projects/demo/updates",
     ],
   );
 });
@@ -197,6 +211,7 @@ test("mounted codebase workbench maps bare project path to list tabs", () => {
       "/projects/demo/documents",
       "/projects/demo/commits",
       "/projects/demo/pulls",
+      "/projects/demo/updates",
     ]);
   } finally {
     globalThis.document = previousDocument;
@@ -217,6 +232,7 @@ test("mounted codebase workbench maps documents to Docs tab", () => {
       "/projects/demo/documents",
       "/projects/demo/commits",
       "/projects/demo/pulls",
+      "/projects/demo/updates",
     ]);
     assert.deepEqual(
       resolveDesktopSectionTabHrefs("/projects/demo/documents/readme"),
@@ -226,8 +242,17 @@ test("mounted codebase workbench maps documents to Docs tab", () => {
         "/projects/demo/documents",
         "/projects/demo/commits",
         "/projects/demo/pulls",
+        "/projects/demo/updates",
       ],
     );
+    assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/updates"), [
+      "/projects/demo",
+      "/projects/demo/files",
+      "/projects/demo/documents",
+      "/projects/demo/commits",
+      "/projects/demo/pulls",
+      "/projects/demo/updates",
+    ]);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -247,6 +272,7 @@ test("mounted codebase workbench keeps Tasks/Files/Docs tabs on /tasks board rou
       "/projects/demo/documents",
       "/projects/demo/commits",
       "/projects/demo/pulls",
+      "/projects/demo/updates",
     ]);
     assert.deepEqual(
       resolveDesktopSectionTabHrefs("/projects/demo/tasks", "?view=board"),
@@ -256,6 +282,7 @@ test("mounted codebase workbench keeps Tasks/Files/Docs tabs on /tasks board rou
         "/projects/demo/documents",
         "/projects/demo/commits",
         "/projects/demo/pulls",
+        "/projects/demo/updates",
       ],
     );
   } finally {

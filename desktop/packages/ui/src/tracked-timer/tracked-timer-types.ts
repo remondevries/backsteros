@@ -23,6 +23,16 @@ export type TrackedTimerRegistration = TrackedTimerSessionMeta & {
   ) => void;
 };
 
+/**
+ * Open timer discovered outside this process (e.g. PowerSync `timer_started`
+ * with no later `timer_stopped`). Adopted into the header chrome without
+ * posting another start activity.
+ */
+export type RemoteRunningTimerAdoption = TrackedTimerRegistration & {
+  /** Wall-clock ms of the remote `timer_started` activity (for stop duration). */
+  remoteStartedAtMs: number;
+};
+
 export type TrackedTimerListItem = TrackedTimerSessionMeta & {
   key: string;
   elapsedSeconds: number;

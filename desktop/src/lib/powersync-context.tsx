@@ -19,7 +19,10 @@ import {
   setPowerSyncGlobalSlot,
 } from "./powersync";
 import { useDesktopApi } from "./api-context";
-import { LOCAL_SHELL_USER_ID } from "./local-shell-auth";
+import {
+  LOCAL_SHELL_USER_ID,
+  createDesktopTokenProvider,
+} from "./local-shell-auth";
 import type { PowerSyncRowComparator } from "./powersync-row-comparators";
 export type { PowerSyncRowComparator } from "./powersync-row-comparators";
 
@@ -67,6 +70,7 @@ export const SYNCED_METADATA_TABLES = [
   "crm_groups",
   "crm_group_members",
   "crm_activities",
+  "task_labels",
 ] as const;
 
 export type SyncedMetadataTable = (typeof SYNCED_METADATA_TABLES)[number];
@@ -252,17 +256,17 @@ function AuthenticatedPowerSyncProvider({
 
         const connector = new BacksterPowerSyncConnector(
           apiUrl,
-          async () => null,
+          createDesktopTokenProvider(),
           deviceId(),
           async () => {
-            for (let attempt = 0; attempt < 8; attempt++) {
+            for (let attempt = 0; attempt < 40; attempt++) {
               try {
                 return await clientRef.current.getPowerSyncCredentials();
               } catch (reason) {
                 console.warn("[desktop] PowerSync credentials failed", reason);
               }
               await new Promise((resolve) =>
-                setTimeout(resolve, 120 * (attempt + 1)),
+                setTimeout(resolve, Math.min(1000, 250 * (attempt + 1))),
               );
             }
             throw new Error("Could not fetch PowerSync credentials");
@@ -329,7 +333,7 @@ function AuthenticatedPowerSyncProvider({
     return () => {
       cancelled = true;
       // Do not close the global singleton here — HMR / StrictMode remounts reuse
-      // it. Module hot dispose and retry paths close explicitly.
+      // it. Sign-out and retry close it explicitly.
       disposeListenerRef.current?.();
       disposeListenerRef.current = null;
     };

@@ -23,6 +23,7 @@ const CODEBASE_TABS: readonly CodebaseGithubListTab[] = [
   "docs",
   "commits",
   "pulls",
+  "updates",
 ];
 
 export function isCodebaseGithubListTab(
@@ -45,8 +46,8 @@ function emptySelection(
 
 /**
  * Parse codebase workbench selection from a project pathname.
- * Recognizes `/projects/:slug/{files,documents,commits,pulls}` (and org-scoped
- * equivalents). Overview / Tasks tab is the bare project path.
+ * Recognizes `/projects/:slug/{files,documents,commits,pulls,updates}` (and
+ * org-scoped equivalents). Overview / Tasks tab is the bare project path.
  *
  * `/documents` is a workbench Docs tab on codebase projects; section-tab
  * shortcuts still treat it as a standard project section when the workbench
@@ -77,14 +78,14 @@ export function parseCodebaseWorkbenchPath(
 
   const head = segments[0]!;
 
-  // Standard project sections — not workbench tabs (except documents → Docs).
-  if (
-    head === "tasks" ||
-    head === "letters" ||
-    head === "updates" ||
-    head === "overview"
-  ) {
+  // Standard project sections — not workbench tabs (except documents → Docs,
+  // updates → Updates on codebase projects).
+  if (head === "tasks" || head === "letters" || head === "overview") {
     return null;
+  }
+
+  if (head === "updates") {
+    return emptySelection("updates");
   }
 
   if (head === "documents") {
@@ -176,10 +177,14 @@ export function getCodebaseWorkbenchHref(
     return `${base}/pulls`;
   }
 
+  if (tab === "updates") {
+    return `${base}/updates`;
+  }
+
   return base;
 }
 
-/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls). */
+/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls/updates). */
 export function isCodebaseWorkbenchPath(
   pathname: string,
   projectRouteParam: string,

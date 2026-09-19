@@ -9,7 +9,9 @@ const ENTITY_REPLICATION_TABLES: Partial<
   Record<SyncEntity | string, readonly ReplicatedTable[]>
 > = {
   project: ["projects"],
+  project_update: ["project_updates"],
   task: ["tasks"],
+  task_label: ["task_labels"],
   document: ["documents"],
   area: ["areas"],
   organization: ["organizations", "avatars"],

@@ -24,6 +24,7 @@ import {
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  updateTaskTimerSessionActorSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
@@ -84,6 +85,8 @@ import {
   crmActivityFeedQuerySchema,
   portalAuthLoginSchema,
   createPortalContactLogSchema,
+  createProjectUpdateSchema,
+  updateProjectUpdateSchema,
   avatarSignedUrlQuerySchema,
   publicAvatarQuerySchema,
 } from "@backsteros/contracts";
@@ -111,6 +114,7 @@ import { hashPortalPassword, verifyPortalPassword } from "../lib/portal-password
 import { proxyErrorStatus } from "../lib/proxy-http-status.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
+import { registerTaskLabelRoutes } from "./task-label-routes.js";
 import {
   normalizeAvatarMimeType,
   resolveAvatarContentType,
@@ -144,6 +148,7 @@ import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { MapboxApiError } from "../lib/mapbox-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
 import { TransipApiError } from "../lib/transip-client.js";
+import { blobReadsRequireLocalCore } from "../lib/r2-object-store.js";
 import { CloudflareApiError } from "../lib/cloudflare-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
@@ -153,10 +158,14 @@ import {
   publishEntityWorkspaceUpdated,
   publishMeetingWorkspaceUpdated,
   publishProjectWorkspaceUpdated,
+  publishProjectUpdateWorkspaceUpdated,
   publishTaskWorkspaceUpdated,
   subscribeWorkspaceUpdated,
 } from "../lib/workspace-events.js";
-import { notifyPeerOfDocumentWrite } from "../services/core-replication/nudge.js";
+import {
+  notifyPeerOfDocumentWrite,
+  notifyPeerOfEntityWrite,
+} from "../services/core-replication/nudge.js";
 import {
   handleAgentMailWebhookDelivery,
   svixHeadersFromRequest,
@@ -178,6 +187,7 @@ import * as crmGroupsService from "../services/crm-groups.js";
 import * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 import * as crmActivitiesService from "../services/crm-activities.js";
 import * as portalContactLogsService from "../services/portal-contact-logs.js";
+import * as projectUpdatesService from "../services/project-updates.js";
 import * as githubService from "../services/github.js";
 import { resolveGithubAccessToken } from "../services/github-auth.js";
 import * as projectFsService from "../services/project-fs.js";
@@ -786,6 +796,7 @@ async function emitBackfilledHabitSync(
 
 export function registerApiRoutes(app: Hono) {
   app.use("/api/v1/*", withAuth);
+  registerTaskLabelRoutes(app);
 
   app.get("/api/v1/projects", async (c) => {
     const auth = getAuth(c);
@@ -823,6 +834,7 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Project"), 404);
     }
 
+    c.header("Cache-Control", "no-store");
     return c.json(toProject(row));
   });
 
@@ -1055,6 +1067,143 @@ export function registerApiRoutes(app: Hono) {
     }
     await recordProjectRestSyncEvent(auth.workspaceId, row, "delete");
     publishProjectLive(auth, row.id, "delete");
+    return c.body(null, 204);
+  });
+
+  app.get("/api/v1/projects/:id/updates", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const projectId = c.req.param("id");
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    const updates = await projectUpdatesService.listProjectUpdates(
+      auth.workspaceId,
+      projectId,
+    );
+    return c.json({ updates });
+  });
+
+  app.post(
+    "/api/v1/projects/:id/updates",
+    zValidator("json", createProjectUpdateSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("projects:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const projectId = c.req.param("id");
+      try {
+        const row = await projectUpdatesService.createProjectUpdate(
+          auth.workspaceId,
+          projectId,
+          c.req.valid("json"),
+        );
+        if (!row) {
+          return c.json(notFound("Project"), 404);
+        }
+        notifyPeerOfEntityWrite({
+          workspaceId: auth.workspaceId,
+          reason: "rest",
+          entity: "project_update",
+          entityId: row.id,
+          projectId,
+          operation: "upsert",
+        });
+        publishProjectUpdateWorkspaceUpdated(auth.workspaceId, row.id, {
+          projectId,
+          operation: "upsert",
+        });
+        return c.json(row, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_TASK_NOT_FOUND"
+        ) {
+          return c.json({ error: "Related task not found" }, 400);
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.patch(
+    "/api/v1/project-updates/:id",
+    zValidator("json", updateProjectUpdateSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("projects:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      try {
+        const row = await projectUpdatesService.updateProjectUpdate(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        if (!row) {
+          return c.json(notFound("Project update"), 404);
+        }
+        notifyPeerOfEntityWrite({
+          workspaceId: auth.workspaceId,
+          reason: "rest",
+          entity: "project_update",
+          entityId: row.id,
+          projectId: row.projectId,
+          operation: "upsert",
+        });
+        publishProjectUpdateWorkspaceUpdated(auth.workspaceId, row.id, {
+          projectId: row.projectId,
+          operation: "upsert",
+        });
+        return c.json(row);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_TASK_NOT_FOUND"
+        ) {
+          return c.json({ error: "Related task not found" }, 400);
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.delete("/api/v1/project-updates/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const updateId = c.req.param("id");
+    const existing = await projectUpdatesService.getProjectUpdateById(
+      auth.workspaceId,
+      updateId,
+    );
+    const ok = await projectUpdatesService.softDeleteProjectUpdate(
+      auth.workspaceId,
+      updateId,
+    );
+    if (!ok) {
+      return c.json(notFound("Project update"), 404);
+    }
+    notifyPeerOfEntityWrite({
+      workspaceId: auth.workspaceId,
+      reason: "rest",
+      entity: "project_update",
+      entityId: updateId,
+      projectId: existing?.projectId ?? null,
+      operation: "delete",
+    });
+    publishProjectUpdateWorkspaceUpdated(auth.workspaceId, updateId, {
+      projectId: existing?.projectId ?? null,
+      operation: "delete",
+    });
     return c.body(null, 204);
   });
 
@@ -2306,6 +2455,23 @@ export function registerApiRoutes(app: Hono) {
     return result ? c.json(result) : c.json(notFound("Task"), 404);
   });
 
+  app.get("/api/v1/tasks/:id/project-updates", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth) && !requireScope("projects:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskId = c.req.param("id");
+    const task = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+    if (!task) {
+      return c.json(notFound("Task"), 404);
+    }
+    const updates = await projectUpdatesService.listProjectUpdatesForRelatedTask(
+      auth.workspaceId,
+      taskId,
+    );
+    return c.json({ updates });
+  });
+
   app.get("/api/v1/tasks/:id/comments", async (c) => {
     const auth = getAuth(c);
     if (!requireScope("tasks:read")(auth)) {
@@ -2330,6 +2496,29 @@ export function registerApiRoutes(app: Hono) {
     );
     if (!rows) return c.json(notFound("Task"), 404);
     return c.json({ activities: rows.map(toTaskActivity) });
+  });
+
+  /** Open task timers across the workspace (latest activity is timer_started). */
+  app.get("/api/v1/running-timers", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const timers = await taskActivityService.listOpenRunningTaskTimers(
+      auth.workspaceId,
+    );
+    return c.json({
+      timers: timers.map((timer) => ({
+        taskId: timer.taskId,
+        startedAt: timer.startedAt.toISOString(),
+        title: timer.title,
+        number: timer.number,
+        status: timer.status,
+        trackedDurationSeconds: timer.trackedDurationSeconds,
+        trackedMinutes: timer.trackedMinutes,
+        projectKey: timer.projectKey,
+      })),
+    });
   });
 
   app.get(
@@ -2497,6 +2686,137 @@ export function registerApiRoutes(app: Hono) {
       if (!row) return c.json(notFound("Task"), 404);
       await recordTaskActivityRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toTaskActivity(row), 201);
+    },
+  );
+
+  app.delete("/api/v1/tasks/:taskId/activities/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskId = c.req.param("taskId");
+    const activityId = c.req.param("id");
+    const existing = await taskActivityService.getTaskActivityRow(
+      auth.workspaceId,
+      activityId,
+    );
+    if (
+      !existing ||
+      existing.taskId !== taskId ||
+      (existing.type !== "timer_started" && existing.type !== "timer_stopped")
+    ) {
+      return c.json(notFound("Activity"), 404);
+    }
+
+    const deleted = await taskActivityService.deleteTaskTimerSession(
+      auth.workspaceId,
+      taskId,
+      activityId,
+    );
+    if (!deleted) return c.json(notFound("Activity"), 404);
+    await recordTaskActivityRestSyncEvent(
+      auth.workspaceId,
+      deleted.start,
+      "delete",
+    );
+    if (deleted.stop) {
+      await recordTaskActivityRestSyncEvent(
+        auth.workspaceId,
+        deleted.stop,
+        "delete",
+      );
+    }
+    const { notifyPeerOfEntityWrite } = await import(
+      "../services/core-replication/nudge.js"
+    );
+    const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+      "../services/core-replication/sync-event-live-publish.js"
+    );
+    publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+      entity: "task_activity",
+      entityId: deleted.start.id,
+      operation: "delete",
+      payload: { task_id: taskId },
+    });
+    if (deleted.stop) {
+      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+        entity: "task_activity",
+        entityId: deleted.stop.id,
+        operation: "delete",
+        payload: { task_id: taskId },
+      });
+    }
+    notifyPeerOfEntityWrite({
+      workspaceId: auth.workspaceId,
+      reason: "rest",
+      entity: "task_activity",
+      entityId: deleted.start.id,
+      taskId,
+      operation: "delete",
+    });
+    return c.body(null, 204);
+  });
+
+  app.patch(
+    "/api/v1/tasks/:taskId/activities/:id",
+    zValidator("json", updateTaskTimerSessionActorSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const taskId = c.req.param("taskId");
+      const activityId = c.req.param("id");
+      const body = c.req.valid("json");
+      const updated = await taskActivityService.updateTaskTimerSessionActor(
+        auth.workspaceId,
+        taskId,
+        activityId,
+        body.actorContactId,
+      );
+      if (!updated) return c.json(notFound("Activity"), 404);
+
+      await recordTaskActivityRestSyncEvent(
+        auth.workspaceId,
+        updated.start,
+        "upsert",
+      );
+      if (updated.stop) {
+        await recordTaskActivityRestSyncEvent(
+          auth.workspaceId,
+          updated.stop,
+          "upsert",
+        );
+      }
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+        "../services/core-replication/sync-event-live-publish.js"
+      );
+      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+        entity: "task_activity",
+        entityId: updated.start.id,
+        operation: "upsert",
+        payload: { task_id: taskId },
+      });
+      if (updated.stop) {
+        publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+          entity: "task_activity",
+          entityId: updated.stop.id,
+          operation: "upsert",
+          payload: { task_id: taskId },
+        });
+      }
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "rest",
+        entity: "task_activity",
+        entityId: updated.start.id,
+        taskId,
+        operation: "upsert",
+      });
+      return c.json(toTaskActivity(updated.stop ?? updated.start));
     },
   );
 
@@ -2804,6 +3124,15 @@ export function registerApiRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "TASK_LABEL_NOT_FOUND"
+        ) {
+          return c.json(
+            { error: "Label not found", code: "task_label_not_found" },
+            400,
+          );
+        }
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
         }
@@ -2897,6 +3226,15 @@ export function registerApiRoutes(app: Hono) {
               error: "Related organization not found",
               code: "related_organization_not_found",
             },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "TASK_LABEL_NOT_FOUND"
+        ) {
+          return c.json(
+            { error: "Label not found", code: "task_label_not_found" },
             400,
           );
         }
@@ -3030,7 +3368,7 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/tasks/:id/attachments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Task attachments can only be stored on local-core",
@@ -3105,7 +3443,7 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Task attachments are only available from local-core",
@@ -6076,7 +6414,7 @@ export function registerApiRoutes(app: Hono) {
   app.put("/api/v1/letters/:id/pdf", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Letter PDFs can only be stored on local-core",
@@ -6100,7 +6438,7 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/letters/:id/pdf", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Letter PDFs are only available from local-core",
@@ -6139,7 +6477,7 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/letters/:id/attachments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Letter PDFs can only be stored on local-core",
@@ -6196,7 +6534,7 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
-    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    if (blobReadsRequireLocalCore()) {
       return c.json(
         {
           error: "Letter PDFs are only available from local-core",

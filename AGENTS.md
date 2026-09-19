@@ -1,11 +1,11 @@
 # BacksterOS — Agent entry point
 
-Read this file first when working in **`~/code/backsteros/`**. Specs live at the repo root (`docs/`). Application code goes in **subfolders** below — not in `docs/`.
+Read this file first when working in **`~/BacksterOS/Projects/OS/Codebase/`**. Specs live at the repo root (`docs/`). Application code goes in **subfolders** below — not in `docs/`.
 
 ## Workspace root (v2)
 
 ```text
-~/code/backsteros/
+~/BacksterOS/Projects/OS/Codebase/
 ├── docs/                 ← specs
 ├── core/
 │   ├── server/           ← API (Hono + Postgres + OpenAPI)
@@ -27,10 +27,11 @@ BacksterOS is a personal / company ops system:
 - **Shells:** Expo (mobile), Tauri + Vite/React (desktop)
 - **Linear-style sync:** offline-first, cursor deltas, batch mutations
 - **Agent-friendly API:** search, read/write markdown, lazy PDF fetch
-- **API agents → cloud-core** (`https://agent.backsteros.com` + `sk_live_…`);
-  desktop/mobile stay on local-core and receive cloud writes via replication
-  nudge + workspace SSE (see `docs/13-hybrid-cloud-local-core.md`,
-  `docs/04-api-and-sync.md` live documents)
+- **API agents → cloud-core** (`https://agent.backsteros.com` + `sk_live_…`).
+  **Today:** desktop and mobile stay on local-core and receive cloud writes via replication.
+  **Target (ADR-035):** iOS uses cloud-core only; local-core is the desktop Mac replica; shared files go to private R2 with a local desktop working copy.
+  See `docs/10-decisions-log.md` (ADR-035), `docs/16-linear-shaped-sync.md`,
+  `docs/13-hybrid-cloud-local-core.md`.
 
 Public Next.js product/admin and hosting portals are **out of scope** for active v2 work
 (archived at `~/code/archive/backsteros-legacy/`).

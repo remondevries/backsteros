@@ -1,6 +1,7 @@
 import { shouldHandleContentPreviewArrowScroll } from "../content/content-preview-scroll.js";
 import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js";
 import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
+import { getTaskPropertyDropdownTrigger } from "../tasks/open-task-property-dropdown.js";
 
 function isListKeyboardNavigationKey(key: string): boolean {
   return listKeyboardNavDirection(key) !== null;
@@ -170,9 +171,30 @@ export function boardKeyboardNavDirection(
   return listKeyboardNavDirection(key);
 }
 
+/**
+ * Plain L opens the labels property when that dropdown is on screen.
+ * Board columns still move with L when no labels trigger is visible.
+ */
+function labelsPropertyOwnsPlainL(event: KeyboardEvent): boolean {
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+  if (event.key.length !== 1 || event.key.toLowerCase() !== "l") {
+    return false;
+  }
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return getTaskPropertyDropdownTrigger("labels") !== null;
+}
+
 export function shouldHandleBoardKeyboardNavigation(
   event: KeyboardEvent,
 ): boolean {
+  if (labelsPropertyOwnsPlainL(event)) {
+    return false;
+  }
+
   const key = event.key;
   if (isBoardHorizontalNavigationKey(key)) {
     return shouldHandleListKeyboardShortcut(event);

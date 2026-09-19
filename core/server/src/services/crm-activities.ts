@@ -212,7 +212,7 @@ export async function listCrmActivityFeed(
 
 type MeetingActivitySyncInput = {
   meetingId: string;
-  startAt: Date;
+  startAt: Date | null;
   attendeeContactIds: string[];
   organizationId: string | null;
 };
@@ -220,12 +220,29 @@ type MeetingActivitySyncInput = {
 /**
  * Materialize kind=meeting feed rows for attendees + org.
  * Soft-deletes stale subject rows when attendees/org change.
+ * Unscheduled meetings (no start) clear existing meeting feed rows.
  */
 export async function syncMeetingCrmActivities(
   workspaceId: string,
   input: MeetingActivitySyncInput,
   executor: DbExecutor = db,
 ): Promise<void> {
+  if (!input.startAt) {
+    const now = new Date();
+    await executor
+      .update(crmActivities)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(crmActivities.workspaceId, workspaceId),
+          eq(crmActivities.meetingId, input.meetingId),
+          eq(crmActivities.kind, "meeting"),
+          isNull(crmActivities.deletedAt),
+        ),
+      );
+    return;
+  }
+
   const subjects: CrmActivitySubject[] = [];
   const seen = new Set<string>();
   for (const contactId of input.attendeeContactIds) {

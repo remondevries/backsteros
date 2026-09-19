@@ -154,11 +154,12 @@ export type MeetingListItem = {
     string,
     { inviteSentAt?: string; reminderSentAt?: string }
   >;
-  startAt: number | Date | string;
-  endAt: number | Date | string;
+  startAt: number | Date | string | null;
+  endAt: number | Date | string | null;
   trackedMinutes?: number | null;
   trackedDurationSeconds?: number | null;
   inboxUpdatedAt?: number | Date | string | null;
+  createdAt?: number | Date | string | null;
 };
 
 export function getCalendarMeetingOverlayHref(meetingId: string): string {
@@ -199,9 +200,11 @@ export function defaultNewMeetingTimes(now = new Date()): {
 
 export function sortMeetingsByStart<T extends MeetingListItem>(items: T[]): T[] {
   return [...items].sort((a, b) => {
-    const aStart = new Date(a.startAt).getTime();
-    const bStart = new Date(b.startAt).getTime();
-    if (aStart !== bStart) return aStart - bStart;
+    const aStart = a.startAt != null ? new Date(a.startAt).getTime() : Number.POSITIVE_INFINITY;
+    const bStart = b.startAt != null ? new Date(b.startAt).getTime() : Number.POSITIVE_INFINITY;
+    const aOk = Number.isFinite(aStart) ? aStart : Number.POSITIVE_INFINITY;
+    const bOk = Number.isFinite(bStart) ? bStart : Number.POSITIVE_INFINITY;
+    if (aOk !== bOk) return aOk - bOk;
     return a.number - b.number;
   });
 }

@@ -100,4 +100,64 @@ describe("resolveTaskPropertyDropdownOpenCandidatesFromEvent", () => {
       ["related", "receivedDate"],
     );
   });
+
+  it("maps T to project type and W to workspace", () => {
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "t",
+        code: "KeyT",
+        shiftKey: false,
+      }),
+      ["type"],
+    );
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "w",
+        code: "KeyW",
+        shiftKey: false,
+      }),
+      ["workspace"],
+    );
+  });
+
+  it("maps S to health then status", () => {
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "s",
+        code: "KeyS",
+        shiftKey: false,
+      }),
+      ["health", "status"],
+    );
+  });
+
+  it("maps Shift+A to project area", () => {
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "A",
+        code: "KeyA",
+        shiftKey: true,
+      }),
+      ["area"],
+    );
+  });
+
+  it("maps L to labels", () => {
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "l",
+        code: "KeyL",
+        shiftKey: false,
+      }),
+      ["labels"],
+    );
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "L",
+        code: "KeyL",
+        shiftKey: false,
+      }),
+      ["labels"],
+    );
+  });
 });

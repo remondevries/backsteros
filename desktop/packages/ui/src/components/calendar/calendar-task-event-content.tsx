@@ -8,13 +8,12 @@ import {
   calendarEventHasExpandedContent,
 } from "../../calendar/calendar-events.js";
 import { MEETINGS_AVAILABILITY_MARKER_TYPE } from "../../calendar/calendar-availability-events.js";
-import { meetingBelongsInInbox } from "../../inbox/inbox-items.js";
 import { isPastCompletedMeeting } from "../../meetings/meeting-status.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
-import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { BirthdayCalendarIcon } from "./birthday-calendar-icon.js";
+import { MeetingCalendarStatusIcon } from "./meeting-calendar-status-icon.js";
 
 function readMeetingFinished(
   extendedProps: Record<string, unknown>,
@@ -83,9 +82,6 @@ export function CalendarTaskEventContent({
     typeof arg.event.extendedProps.status === "string"
       ? arg.event.extendedProps.status
       : null;
-  const meetingInTriage =
-    entity.entityType === "meeting" &&
-    meetingBelongsInInbox({ status: meetingStatus });
 
   const statusIcon =
     entity.entityType === "birthday" ? (
@@ -94,12 +90,18 @@ export function CalendarTaskEventContent({
         className="task-calendar-event__status-icon birthday-calendar-event__icon"
       />
     ) : entity.entityType === "meeting" ? (
-      <TaskDueDateIcon
-        active={!meetingFinished}
-        // Triage → orange (due_soon); scheduled → red today accent.
-        urgency={
-          meetingFinished ? null : meetingInTriage ? "due_soon" : "due_today"
+      <MeetingCalendarStatusIcon
+        startAt={arg.event.start}
+        endAt={
+          arg.event.extendedProps.openEnded === true
+            ? null
+            : typeof arg.event.extendedProps.endAt === "string"
+              ? arg.event.extendedProps.endAt
+              : arg.event.end
         }
+        status={meetingStatus}
+        finished={meetingFinished}
+        now={new Date()}
         size={12}
         className="task-calendar-event__status-icon"
       />

@@ -779,6 +779,7 @@
 }
 
 .desktop-codebase-side-panel-resize,
+.desktop-codebase-tab-list-resize,
 .desktop-task-layout-side-panel-resize {
   position: absolute;
   z-index: 5;
@@ -791,6 +792,7 @@
 }
 
 .desktop-codebase-side-panel-resize::after,
+.desktop-codebase-tab-list-resize::after,
 .desktop-task-layout-side-panel-resize::after {
   position: absolute;
   top: 12px;
@@ -803,9 +805,11 @@
 }
 
 .desktop-codebase-side-panel-resize:hover::after,
+.desktop-codebase-tab-list-resize:hover::after,
 .desktop-task-layout-side-panel-resize:hover::after,
 .desktop-task-layout.is-resizing .desktop-task-layout-side-panel-resize::after,
-.codebase-project-workbench.is-resizing .desktop-codebase-side-panel-resize::after {
+.codebase-project-workbench.is-resizing .desktop-codebase-side-panel-resize::after,
+.codebase-project-workbench__list-detail.is-resizing .desktop-codebase-tab-list-resize::after {
   background: rgb(255 255 255 / 0.15);
 }
 

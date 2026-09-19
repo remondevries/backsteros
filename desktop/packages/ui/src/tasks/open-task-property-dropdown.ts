@@ -23,6 +23,7 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
   "[data-calendar-meeting-overlay]",
   ".finance-transactions-view__detail",
   ".finance-categories-view__detail",
+  ".project-detail",
 ] as const;
 
 function isInertSubtree(element: Element): boolean {
@@ -247,6 +248,16 @@ export function openTaskPropertyDropdown(
   const meetingScope = resolveMeetingDetailPropertyScope();
   if (meetingScope && tryOpenInScope(meetingScope, ids)) {
     return true;
+  }
+
+  // Codebase project health owns plain S while that chip is visible.
+  // Task rows still get status everywhere health is not mounted.
+  if (ids.includes("health")) {
+    for (const scope of resolveTaskDetailPropertyScopes()) {
+      if (tryOpenInScope(scope, ["health"])) {
+        return true;
+      }
+    }
   }
 
   // Prefer the keyboard-highlighted / active list row when it exposes the field.

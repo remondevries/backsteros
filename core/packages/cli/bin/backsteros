@@ -2,7 +2,7 @@
 # Launcher for @backsteros/cli — installed to ~/.local/bin/backsteros
 set -euo pipefail
 
-ROOT="${BACKSTEROS_ROOT:-$HOME/code/backsteros}"
+ROOT="${BACKSTEROS_ROOT:-$HOME/BacksterOS/Projects/OS/Codebase}"
 CLI="$ROOT/core/packages/cli/dist/index.js"
 
 if [[ ! -f "$CLI" ]]; then
