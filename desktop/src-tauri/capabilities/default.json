@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window and compose overlay",
-  "windows": ["main", "overlay"],
+  "windows": [
+    "main",
+    "overlay"
+  ],
   "remote": {
     "urls": [
       "http://localhost:1420",
@@ -22,15 +25,33 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$HOME" },
-        { "path": "$HOME/**" },
-        { "path": "/tmp/dynamic-island-tasks-refresh" },
-        { "path": "/tmp/dynamic-island-agents-working.json" },
-        { "path": "/tmp/backsteros-open-href" },
-        { "path": "/Volumes" },
-        { "path": "/Volumes/**" },
-        { "path": "/Users" },
-        { "path": "/Users/**" }
+        {
+          "path": "$HOME"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "/tmp/dynamic-island-tasks-refresh"
+        },
+        {
+          "path": "/tmp/dynamic-island-agents-working.json"
+        },
+        {
+          "path": "/tmp/backsteros-open-href"
+        },
+        {
+          "path": "/Volumes"
+        },
+        {
+          "path": "/Volumes/**"
+        },
+        {
+          "path": "/Users"
+        },
+        {
+          "path": "/Users/**"
+        }
       ]
     },
     "global-shortcut:allow-is-registered",
@@ -39,6 +60,7 @@
     "allow-desktop-overlay",
     "allow-whoop",
     "allow-system-stats",
-    "allow-cursor-usage"
+    "allow-cursor-usage",
+    "allow-owner-api-key"
   ]
 }

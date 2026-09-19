@@ -13,3 +13,7 @@ identifier = "allow-cursor-usage"
 description = "Allows reading local Cursor session usage for the sidebar credits bar."
 commands.allow = ["cursor_usage"]
 
+[[permission]]
+identifier = "allow-owner-api-key"
+description = "Allows reading the owner sk_live_ key from ~/.config/backsteros/cli.env for cloud API auth."
+commands.allow = ["owner_api_key"]

@@ -16,6 +16,25 @@ export { appSchema, mapCrudBatch, powerSyncMutationId } from "@backsteros/powers
 
 export type TokenProvider = () => Promise<string | null>;
 
+
+/** Packaged Tauri is https://tauri.localhost — cleartext PowerSync URLs are mixed-content blocked. */
+function rewritePowerSyncEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(trimmed);
+    const loopback =
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname.startsWith("100.");
+    if (url.protocol === "http:" && loopback) {
+      return "https://sync.local.backsteros.com";
+    }
+  } catch {
+    // keep original
+  }
+  return trimmed;
+}
+
 export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   constructor(
     private readonly apiUrl: string,
@@ -43,7 +62,7 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
         throw new Error("PowerSync credentials response missing endpoint/token");
       }
       return {
-        endpoint: body.endpoint.replace(/\/+$/, ""),
+        endpoint: rewritePowerSyncEndpoint(body.endpoint),
         token: body.token,
       };
     }
@@ -79,7 +98,7 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
     }
     // PowerSync rejects endpoints with a trailing slash.
     return {
-      endpoint: body.endpoint.replace(/\/+$/, ""),
+      endpoint: rewritePowerSyncEndpoint(body.endpoint),
       token: body.token,
     };
   }

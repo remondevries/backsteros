@@ -13,14 +13,18 @@ test("shouldDesktopRestHydrateColdStart matches mobile empty/offline gate", () =
   assert.equal(shouldDesktopRestHydrateColdStart(false, false), true);
 });
 
-test("shouldDesktopSkipRestHydrateAfterSync when ready with lastSyncedAt", () => {
+test("shouldDesktopSkipRestHydrateAfterSync only when ready, synced, and local rows exist", () => {
   assert.equal(
-    shouldDesktopSkipRestHydrateAfterSync(true, new Date()),
+    shouldDesktopSkipRestHydrateAfterSync(true, new Date(), true),
     true,
   );
-  assert.equal(shouldDesktopSkipRestHydrateAfterSync(true, null), false);
   assert.equal(
-    shouldDesktopSkipRestHydrateAfterSync(false, new Date()),
+    shouldDesktopSkipRestHydrateAfterSync(true, new Date(), false),
+    false,
+  );
+  assert.equal(shouldDesktopSkipRestHydrateAfterSync(true, null, true), false);
+  assert.equal(
+    shouldDesktopSkipRestHydrateAfterSync(false, new Date(), true),
     false,
   );
 });

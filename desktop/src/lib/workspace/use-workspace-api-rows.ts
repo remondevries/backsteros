@@ -363,6 +363,7 @@ export function useWorkspaceApiRows({
       shouldDesktopSkipRestHydrateAfterSync(
         powerSync.ready,
         powerSync.lastSyncedAt,
+        hasLocalRows,
       )
     ) {
       hasHydratedOnceRef.current = true;

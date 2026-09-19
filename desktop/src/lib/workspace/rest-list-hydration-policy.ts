@@ -13,13 +13,18 @@ export function shouldDesktopRestHydrateColdStart(
 }
 
 /**
- * Skip the entire REST wave when PowerSync already completed a sync download.
- * Stronger than {@link shouldDesktopRestHydrateColdStart}: even empty SQLite
- * after a successful sync stays local-primary (no rescue fan-out).
+ * Skip the entire REST wave when PowerSync already completed a sync download
+ * *and* SQLite has membership rows.
+ *
+ * Empty SQLite after a "successful" sync must still REST-rescue — otherwise a
+ * connected-but-empty local DB (new user key, failed apply, schema mismatch)
+ * leaves the UI blank forever.
  */
 export function shouldDesktopSkipRestHydrateAfterSync(
   ready: boolean,
   lastSyncedAt: Date | string | number | null | undefined,
+  hasLocalRows: boolean,
 ): boolean {
+  if (!hasLocalRows) return false;
   return Boolean(ready && lastSyncedAt);
 }
