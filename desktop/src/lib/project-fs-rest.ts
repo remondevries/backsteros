@@ -188,8 +188,10 @@ export function createRestProjectFs(options: {
       };
     },
 
-    async pickDirectory() {
-      return null;
+    async pickDirectory(defaultPath?: string) {
+      const entered = window.prompt("Working directory", defaultPath ?? "");
+      const trimmed = entered?.trim();
+      return trimmed ? trimmed : null;
     },
 
     async readRawUrl() {

@@ -188,10 +188,24 @@ function labelsPropertyOwnsPlainL(event: KeyboardEvent): boolean {
   return getTaskPropertyDropdownTrigger("labels") !== null;
 }
 
+/** Plain H opens health on a codebase project when that chip is visible. */
+function healthPropertyOwnsPlainH(event: KeyboardEvent): boolean {
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+  if (event.key.length !== 1 || event.key.toLowerCase() !== "h") {
+    return false;
+  }
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return getTaskPropertyDropdownTrigger("health") !== null;
+}
+
 export function shouldHandleBoardKeyboardNavigation(
   event: KeyboardEvent,
 ): boolean {
-  if (labelsPropertyOwnsPlainL(event)) {
+  if (labelsPropertyOwnsPlainL(event) || healthPropertyOwnsPlainH(event)) {
     return false;
   }
 

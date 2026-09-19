@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { XIcon } from "@primer/octicons-react";
 
 import type { PropertyDropdownTriggerVariant } from "../dropdowns/property-dropdown.js";
+import { SEARCHABLE_DROPDOWN_REQUEST_CLOSE } from "../../dropdowns/searchable-dropdown-events.js";
 import { TASK_PROPERTY_DROPDOWN_ATTRIBUTE } from "../../tasks/task-property-dropdown-keys.js";
 import { HealthCheckConfirmIcon } from "../icons/health-check-confirm-icon.js";
 import { HealthCheckIcon } from "../icons/health-check-icon.js";
@@ -157,6 +158,23 @@ export function ProjectHealthCheckProperty({
     const frame = window.requestAnimationFrame(() => updatePosition());
     return () => window.cancelAnimationFrame(frame);
   }, [editingSimple, error, open, updatePosition]);
+
+  useEffect(() => {
+    function handleRequestClose() {
+      setOpen(false);
+      setEditingSimple(false);
+    }
+
+    window.addEventListener(
+      SEARCHABLE_DROPDOWN_REQUEST_CLOSE,
+      handleRequestClose,
+    );
+    return () =>
+      window.removeEventListener(
+        SEARCHABLE_DROPDOWN_REQUEST_CLOSE,
+        handleRequestClose,
+      );
+  }, []);
 
   useEffect(() => {
     if (!open) return;

@@ -82,14 +82,14 @@ describe("resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent", () => {
 });
 
 describe("resolveTaskPropertyDropdownOpenCandidatesFromEvent", () => {
-  it("maps R to related contacts then letter received date", () => {
+  it("maps R to repository, then related contacts, then letter received date", () => {
     assert.deepEqual(
       resolveTaskPropertyDropdownOpenCandidatesFromEvent({
         key: "r",
         code: "KeyR",
         shiftKey: false,
       }),
-      ["related", "receivedDate"],
+      ["repository", "related", "receivedDate"],
     );
     assert.deepEqual(
       resolveTaskPropertyDropdownOpenCandidatesFromEvent({
@@ -97,7 +97,7 @@ describe("resolveTaskPropertyDropdownOpenCandidatesFromEvent", () => {
         code: "KeyR",
         shiftKey: false,
       }),
-      ["related", "receivedDate"],
+      ["repository", "related", "receivedDate"],
     );
   });
 
@@ -120,14 +120,22 @@ describe("resolveTaskPropertyDropdownOpenCandidatesFromEvent", () => {
     );
   });
 
-  it("maps S to health then status", () => {
+  it("maps S to status and H to health", () => {
     assert.deepEqual(
       resolveTaskPropertyDropdownOpenCandidatesFromEvent({
         key: "s",
         code: "KeyS",
         shiftKey: false,
       }),
-      ["health", "status"],
+      ["status"],
+    );
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "h",
+        code: "KeyH",
+        shiftKey: false,
+      }),
+      ["health"],
     );
   });
 

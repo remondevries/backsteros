@@ -28,10 +28,11 @@ export type TaskPropertyDropdownId =
   | "contact"
   | "receivedDate"
   | "format"
-  /** Project identity: type (T), health (S, codebase), workspace (W). */
+  /** Project identity: type (T), health (H), workspace (W), repository (R). */
   | "type"
   | "health"
   | "workspace"
+  | "repository"
   /** Finance transaction row / detail / filter / bulk fields */
   | "category"
   | "account"
@@ -51,7 +52,10 @@ export type TaskPropertyDropdownShortcutKey =
   | "m"
   | "g"
   | "f"
-  | "l";
+  | "l"
+  | "t"
+  | "w"
+  | "h";
 
 function matchesShortcutLetter(
   event: Pick<KeyboardEvent, "key" | "code">,
@@ -231,9 +235,11 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
   }
 
   if (matchesShortcutLetter(event, "s", "KeyS")) {
-    // Health is codebase-only and mounted only there, so it wins on those
-    // panels. Task rows and other projects still open status.
-    return ["health", "status"];
+    return ["status"];
+  }
+
+  if (matchesShortcutLetter(event, "h", "KeyH")) {
+    return ["health"];
   }
 
   if (matchesShortcutLetter(event, "t", "KeyT")) {
@@ -256,9 +262,10 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
     return ["organization"];
   }
 
-  // Tasks: Related contacts. Letters: Received date (whichever trigger exists).
+  // Tasks: Related contacts. Letters: Received date. Codebase: repository
+  // (whichever trigger exists; the project panel is tried first).
   if (matchesShortcutLetter(event, "r", "KeyR")) {
-    return ["related", "receivedDate"];
+    return ["repository", "related", "receivedDate"];
   }
 
   // Meetings: format (video / phone / in person). Only present on meeting detail.

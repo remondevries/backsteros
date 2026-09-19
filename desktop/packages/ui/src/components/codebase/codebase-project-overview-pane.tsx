@@ -404,10 +404,12 @@ function ProjectGithubRepositoryField({
     <span title={message ?? undefined}>
       <PropertyDropdown
         ariaLabel="GitHub repository"
+        taskPropertyDropdownId="repository"
         value={project.githubRepository ?? NONE_REPO_VALUE}
         options={repositoryOptions}
         disabled={saving || showLoading}
         searchPlaceholder="Search repositories…"
+        searchShortcutLabel="R"
         panelWidth={320}
         panelAlign="start"
         triggerVariant="inlineChip"

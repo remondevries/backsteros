@@ -27,7 +27,7 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
 ] as const;
 
 function isInertSubtree(element: Element): boolean {
-  return element.closest("[inert]") !== null;
+  return element.closest("[inert], [data-keep-alive-hidden]") !== null;
 }
 
 export function getTaskPropertyDropdownTrigger(
@@ -198,6 +198,32 @@ function resolveMeetingDetailPropertyScope(): HTMLElement | null {
   return null;
 }
 
+const PROJECT_IDENTITY_PROPERTY_IDS = [
+  "type",
+  "health",
+  "workspace",
+  "repository",
+] as const satisfies readonly TaskPropertyDropdownId[];
+
+/** Project identity chips sit next to task lists; open them before a row can. */
+function tryOpenProjectIdentityProperties(
+  ids: TaskPropertyDropdownId[],
+): boolean {
+  const projectIds = ids.filter((id) =>
+    (PROJECT_IDENTITY_PROPERTY_IDS as readonly string[]).includes(id),
+  );
+  if (projectIds.length === 0) return false;
+
+  for (const scope of document.querySelectorAll(
+    ".project-panel-identity, .project-detail__meta",
+  )) {
+    if (!(scope instanceof HTMLElement) || isInertSubtree(scope)) continue;
+    if (tryOpenInScope(scope, projectIds)) return true;
+  }
+
+  return false;
+}
+
 /**
  * Finance transaction property hotkeys: prefer the open right detail panel,
  * otherwise the keyboard-highlighted list row.
@@ -250,14 +276,10 @@ export function openTaskPropertyDropdown(
     return true;
   }
 
-  // Codebase project health owns plain S while that chip is visible.
-  // Task rows still get status everywhere health is not mounted.
-  if (ids.includes("health")) {
-    for (const scope of resolveTaskDetailPropertyScopes()) {
-      if (tryOpenInScope(scope, ["health"])) {
-        return true;
-      }
-    }
+  // Codebase identity chips (health, workspace, repository, type) live beside
+  // the task list. Open those before a highlighted task row can claim the key.
+  if (tryOpenProjectIdentityProperties(ids)) {
+    return true;
   }
 
   // Prefer the keyboard-highlighted / active list row when it exposes the field.
