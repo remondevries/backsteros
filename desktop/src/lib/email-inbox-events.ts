@@ -37,6 +37,7 @@ export async function subscribeEmailInboxEvents(input: {
   client: EmailInboxEventsClient;
   signal: AbortSignal;
   onUpdated: (payload: EmailInboxUpdatedPayload) => void;
+  onConnection?: (status: "live") => void;
   onError?: (error: unknown) => void;
 }): Promise<void> {
   // Connect with a timeout so a hung open cannot stall the reconnect loop.
@@ -72,6 +73,10 @@ export async function subscribeEmailInboxEvents(input: {
         reject(error);
       });
   });
+  if (!response.ok) {
+    throw new Error(`Email events failed (${response.status})`);
+  }
+  input.onConnection?.("live");
   const reader = response.body?.getReader();
   if (!reader) {
     throw new Error("Email events stream has no body");
@@ -150,6 +155,7 @@ export function startEmailInboxEventsLoop(input: {
   client: EmailInboxEventsClient;
   signal: AbortSignal;
   onUpdated: (payload: EmailInboxUpdatedPayload) => void;
+  onConnection?: (status: "connecting" | "live" | "disconnected") => void;
   enabled?: boolean;
 }): void {
   if (input.enabled === false) return;
@@ -157,14 +163,17 @@ export function startEmailInboxEventsLoop(input: {
   const run = async () => {
     while (!input.signal.aborted) {
       try {
+        input.onConnection?.("connecting");
         await subscribeEmailInboxEvents({
           client: input.client,
           signal: input.signal,
           onUpdated: input.onUpdated,
+          onConnection: () => input.onConnection?.("live"),
         });
         attempt = 0;
       } catch {
         if (input.signal.aborted) return;
+        input.onConnection?.("disconnected");
         attempt += 1;
         // Prefer quick retries after WebKit "Load failed" (core restart / dropped stream).
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));

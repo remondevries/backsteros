@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { AuthContext } from "../middleware/auth.js";
 import { resolveAuth } from "../middleware/auth.js";
 import {
+  canMintPowerSyncToken,
   getPowerSyncAudience,
   getPowerSyncUrl,
   signPowerSyncToken,
@@ -59,14 +60,6 @@ const powerSyncWriteSchema = z.object({
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
-}
-
-function canMintPowerSyncToken(auth: AuthContext | null): boolean {
-  if (!auth) return false;
-  if (auth.kind === "local_shell") {
-    return Boolean(auth.clerkUserId || auth.userId);
-  }
-  return false;
 }
 
 function powerSyncSubject(auth: AuthContext): string {

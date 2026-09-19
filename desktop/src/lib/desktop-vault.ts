@@ -8,7 +8,8 @@
 
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import { LOCAL_CORE_API_URL } from "./env";
+import { getDesktopPublicEnvironment } from "./env";
+import { localOnlyRestFailClosed } from "./workspace/powersync-write-path";
 import { isTauriRuntime } from "./tauri-runtime";
 
 const VAULT_ROOT_STORAGE_KEY = "backsteros:desktop-vault-root-v1";
@@ -58,6 +59,34 @@ function isUsableAbsolutePath(path: string): boolean {
   return isUsableAbsoluteVaultPath(path);
 }
 
+/** Shown when this Mac has no working-copy folder yet. Does not start Docker. */
+export const DESKTOP_VAULT_MISSING_MESSAGE =
+  "No vault folder on this Mac. Choose one to open local markdown and PDFs. Lists still sync, and cloud files open from storage when they are there. This does not start Docker.";
+
+export type DesktopVaultRootInput = {
+  persisted: string | null;
+  envPath: string | null;
+  /** Settings path from the API. Ignored unless `adoptApiPath` (local-core only). */
+  apiPath: string | null;
+  adoptApiPath: boolean;
+};
+
+/**
+ * Machine path only. Cloud-core's `vaultPath` is the server folder, not this Mac,
+ * and must not be cached as the working copy.
+ */
+export function selectDesktopVaultRoot(
+  input: DesktopVaultRootInput,
+): string | null {
+  const ordered = [input.persisted, input.envPath];
+  if (input.adoptApiPath) ordered.push(input.apiPath);
+  for (const candidate of ordered) {
+    const trimmed = candidate?.trim() ?? "";
+    if (trimmed && isUsableAbsolutePath(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 async function pathExists(absolutePath: string): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   try {
@@ -68,27 +97,23 @@ async function pathExists(absolutePath: string): Promise<boolean> {
   }
 }
 
-async function fetchStorageVaultPath(
-  baseUrl: string,
-  headers?: HeadersInit,
-): Promise<string | null> {
-  try {
-    const response = await fetch(
-      `${baseUrl.replace(/\/$/, "")}/api/v1/settings/storage`,
-      { headers, cache: "no-store" },
-    );
-    if (!response.ok) return null;
-    const body = (await response.json()) as StorageStatus;
-    const path = body.vaultPath?.trim();
-    return path && isUsableAbsolutePath(path) ? path : null;
-  } catch {
-    return null;
-  }
+/** Cached Mac working-copy path. Never calls local-core. */
+export function peekPersistedDesktopVaultRoot(): string | null {
+  return selectDesktopVaultRoot({
+    persisted: readPersistedRoot(),
+    envPath: (
+      import.meta.env?.VITE_BACKSTEROS_VAULT_PATH as string | undefined
+    )?.trim() ?? null,
+    apiPath: null,
+    adoptApiPath: false,
+  });
 }
 
 /**
  * Resolve the machine-local vault root (cached). Used by Tauri FS reads.
  * Browser vault opens use the Vite proxy and do not need this root.
+ * Cloud-core is not asked for `vaultPath` (denylisted; it is not this Mac).
+ * Local-core is not probed when the product API is cloud.
  */
 export async function getDesktopVaultRoot(
   client: BacksterosApiClient,
@@ -97,46 +122,39 @@ export async function getDesktopVaultRoot(
   if (resolveInflight) return resolveInflight;
 
   resolveInflight = (async () => {
-    const candidates: string[] = [];
-    const persisted = readPersistedRoot();
-    if (persisted) candidates.push(persisted);
-
-    const fromEnv = (
-      import.meta.env.VITE_BACKSTEROS_VAULT_PATH as string | undefined
-    )?.trim();
-    if (fromEnv) candidates.push(fromEnv);
-
-    try {
-      const status = await client.requestJson<StorageStatus>(
-        "/api/v1/settings/storage",
-      );
-      const fromApi = status.vaultPath?.trim();
-      if (fromApi) candidates.push(fromApi);
-    } catch {
-      // API may be cloud-core (no Mac path).
-    }
-
-    // When the active API is cloud, still probe local-core for the Mac vault.
-    // Browser vault reads go through the Vite proxy and do not need this path.
-    // An unauthenticated probe only produces a 401 in the console.
-    if (isTauriRuntime()) {
-      const localPath = await fetchStorageVaultPath(LOCAL_CORE_API_URL);
-      if (localPath) candidates.push(localPath);
-    }
-
-    for (const candidate of candidates) {
-      if (!isUsableAbsolutePath(candidate)) continue;
-      // Browser: trust persisted/env/API paths without Tauri exists().
-      if (isTauriRuntime()) {
-        if (!(await pathExists(candidate))) continue;
+    const apiUrl = getDesktopPublicEnvironment().apiUrl;
+    const adoptApiPath = !localOnlyRestFailClosed(apiUrl);
+    let apiPath: string | null = null;
+    if (adoptApiPath) {
+      try {
+        const status = await client.requestJson<StorageStatus>(
+          "/api/v1/settings/storage",
+        );
+        apiPath = status.vaultPath?.trim() || null;
+      } catch {
+        apiPath = null;
       }
-      memoryRoot = candidate;
-      persistRoot(candidate);
-      return candidate;
     }
 
-    memoryRoot = null;
-    return null;
+    const selected = selectDesktopVaultRoot({
+      persisted: readPersistedRoot(),
+      envPath: (
+        import.meta.env?.VITE_BACKSTEROS_VAULT_PATH as string | undefined
+      )?.trim() ?? null,
+      apiPath,
+      adoptApiPath,
+    });
+    if (!selected) {
+      memoryRoot = null;
+      return null;
+    }
+    if (isTauriRuntime() && !(await pathExists(selected))) {
+      memoryRoot = null;
+      return null;
+    }
+    memoryRoot = selected;
+    persistRoot(selected);
+    return selected;
   })().finally(() => {
     resolveInflight = null;
   });

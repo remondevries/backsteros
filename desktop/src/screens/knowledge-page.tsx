@@ -393,7 +393,7 @@ function KnowledgePageBody() {
             doc.path === decodeURIComponent(documentPath),
         ) ?? firstDoc);
 
-  const { initialBody, onSave } = useDesktopDocumentContent(
+  const { initialBody, onSave, loadError } = useDesktopDocumentContent(
     selected?.id ?? null,
     { enabled: keepAliveActive && !onOverview },
   );
@@ -1191,6 +1191,9 @@ function KnowledgePageBody() {
             onDelete={handleDeleteDocument}
           />
         </>
+      ) : null}
+      {loadError ? (
+        <p role="status">{loadError}</p>
       ) : null}
       {isPublishableArticle ? (
         <HelpArticleDetailView

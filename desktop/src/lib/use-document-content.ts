@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useDesktopApi } from "./api-context";
 import {
   discardDocumentContentCache,
+  documentOpenUnavailableMessage,
   fetchDocumentContent,
   peekDocumentContentCache,
   writeDocumentContentCache,
@@ -76,6 +77,7 @@ export function useDesktopDocumentContent(
     Boolean(documentId) && (skeletonUntilFetched || !cached),
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState(documentId);
   const contentVersionRef = useRef(contentVersion);
   contentVersionRef.current = contentVersion;
@@ -97,6 +99,7 @@ export function useDesktopDocumentContent(
 
   if (documentId !== activeId) {
     setActiveId(documentId);
+    setLoadError(null);
     if (!documentId) {
       setInitialBody("");
       setContentVersion(undefined);
@@ -162,8 +165,10 @@ export function useDesktopDocumentContent(
       if (!data) {
         setLoading(false);
         setRefreshing(false);
+        setLoadError(documentOpenUnavailableMessage());
         return;
       }
+      setLoadError(null);
       setInitialBody(data.content);
       setContentVersion(data.contentVersion);
       setLoading(false);
@@ -308,6 +313,7 @@ export function useDesktopDocumentContent(
     ready: !loading,
     loading,
     refreshing,
+    loadError,
     contentVersion,
   };
 }

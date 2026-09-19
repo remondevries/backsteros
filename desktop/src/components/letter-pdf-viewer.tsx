@@ -16,7 +16,10 @@ import {
   letterPdfLoadErrorMessage,
 } from "../lib/letter-pdf-load-error";
 import { useLocalCoreHealth } from "../lib/use-local-core-health";
-import { shouldAttemptLetterPdfFetch } from "../lib/workspace/powersync-write-path";
+import {
+  localOnlyRestFailClosed,
+  shouldAttemptLetterPdfFetch,
+} from "../lib/workspace/powersync-write-path";
 import "./letter-pdf-viewer.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -241,7 +244,8 @@ export function LetterPdfPreview({
   /** Bump after upload to force reload. */
   revision?: number;
 }) {
-  const { client } = useDesktopApi();
+  const { client, apiUrl } = useDesktopApi();
+  const cloudFiles = localOnlyRestFailClosed(apiUrl);
   const localCoreReachable = useLocalCoreHealth();
   const [pdf, setPdf] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -268,12 +272,12 @@ export function LetterPdfPreview({
         }
       }
 
-      if (localCoreReachable === false) {
+      if (!cloudFiles && localCoreReachable === false) {
         setError(LOCAL_CORE_PDF_OFFLINE_MESSAGE);
         return;
       }
 
-      if (!shouldAttemptLetterPdfFetch(localCoreReachable, useApi)) {
+      if (!shouldAttemptLetterPdfFetch(localCoreReachable, useApi, apiUrl)) {
         return;
       }
 
@@ -287,7 +291,7 @@ export function LetterPdfPreview({
       } catch (reason) {
         if (!controller.signal.aborted) {
           setPdf(null);
-          setError(letterPdfLoadErrorMessage(reason));
+          setError(letterPdfLoadErrorMessage(reason, cloudFiles));
         }
       }
     })();
@@ -295,7 +299,9 @@ export function LetterPdfPreview({
     return () => controller.abort();
   }, [
     attachmentId,
+    apiUrl,
     client,
+    cloudFiles,
     letterId,
     localCoreReachable,
     revision,

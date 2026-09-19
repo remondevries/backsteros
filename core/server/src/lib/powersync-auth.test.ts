@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  canMintPowerSyncToken,
   getPowerSyncUrl,
+  isDesktopShellOrigin,
   isDevGatewayOrigin,
   preferLocalPowerSyncEndpoint,
 } from "./powersync-auth.js";
@@ -61,9 +63,11 @@ describe("preferLocalPowerSyncEndpoint", () => {
 });
 
 describe("getPowerSyncUrl", () => {
-  it("returns loopback for desktop even when POWERSYNC_URL is Tailscale", () => {
-    const previous = process.env.POWERSYNC_URL;
+  it("returns loopback for desktop on local-core even when POWERSYNC_URL is Tailscale", () => {
+    const previousUrl = process.env.POWERSYNC_URL;
+    const previousRole = process.env.CORE_REPLICATION_ROLE;
     process.env.POWERSYNC_URL = "http://macbook.tailc7e057.ts.net:8080";
+    process.env.CORE_REPLICATION_ROLE = "local";
     delete process.env.POWERSYNC_LOCAL_URL;
     try {
       assert.equal(
@@ -82,8 +86,80 @@ describe("getPowerSyncUrl", () => {
         "https://sync.local.backsteros.com",
       );
     } finally {
-      if (previous === undefined) delete process.env.POWERSYNC_URL;
-      else process.env.POWERSYNC_URL = previous;
+      if (previousUrl === undefined) delete process.env.POWERSYNC_URL;
+      else process.env.POWERSYNC_URL = previousUrl;
+      if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+      else process.env.CORE_REPLICATION_ROLE = previousRole;
     }
+  });
+
+  it("returns the cloud sync URL for Tauri when this process is cloud-core", () => {
+    const previousUrl = process.env.POWERSYNC_URL;
+    const previousRole = process.env.CORE_REPLICATION_ROLE;
+    process.env.POWERSYNC_URL = "http://100.75.45.22:8080";
+    process.env.CORE_REPLICATION_ROLE = "cloud";
+    try {
+      assert.equal(isDesktopShellOrigin("http://localhost:1420"), true);
+      assert.equal(
+        getPowerSyncUrl({
+          origin: "http://localhost:1420",
+          host: "100.75.45.22:8788",
+        }),
+        "http://100.75.45.22:8080",
+      );
+      assert.equal(
+        getPowerSyncUrl({ origin: "tauri://localhost" }),
+        "http://100.75.45.22:8080",
+      );
+    } finally {
+      if (previousUrl === undefined) delete process.env.POWERSYNC_URL;
+      else process.env.POWERSYNC_URL = previousUrl;
+      if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+      else process.env.CORE_REPLICATION_ROLE = previousRole;
+    }
+  });
+});
+
+describe("canMintPowerSyncToken", () => {
+  it("allows local-shell and owner API keys, not portal keys", () => {
+    assert.equal(
+      canMintPowerSyncToken({
+        kind: "local_shell",
+        userId: "user-1",
+        clerkUserId: "local_shell",
+        apiKeyId: null,
+        contactId: null,
+        workspaceId: "ws",
+        membershipRole: "owner",
+        scopes: [],
+      }),
+      true,
+    );
+    assert.equal(
+      canMintPowerSyncToken({
+        kind: "api_key",
+        userId: "user-1",
+        clerkUserId: null,
+        apiKeyId: "key-1",
+        contactId: "contact-1",
+        workspaceId: "ws",
+        membershipRole: null,
+        scopes: ["settings:write", "tasks:write", "tasks:read"],
+      }),
+      true,
+    );
+    assert.equal(
+      canMintPowerSyncToken({
+        kind: "api_key",
+        userId: "user-1",
+        clerkUserId: null,
+        apiKeyId: "key-1",
+        contactId: "contact-1",
+        workspaceId: "ws",
+        membershipRole: null,
+        scopes: ["tasks:read"],
+      }),
+      false,
+    );
   });
 });

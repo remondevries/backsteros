@@ -1,5 +1,7 @@
 import { SignJWT } from "jose";
 
+import type { AuthContext } from "../middleware/auth.js";
+import { hasScope } from "./crypto.js";
 import { assertPowerSyncSecrets } from "./secrets.js";
 
 export function getPowerSyncAudience(): string {
@@ -28,10 +30,47 @@ export function isDevGatewayOrigin(origin: string | null | undefined): boolean {
   }
 }
 
+/** Tauri dev (`localhost:1420`) and packaged shell origins. */
+export function isDesktopShellOrigin(origin: string | null | undefined): boolean {
+  if (!origin?.trim()) return false;
+  const value = origin.trim().toLowerCase();
+  return (
+    value.startsWith("tauri://") ||
+    value === "http://tauri.localhost" ||
+    value === "https://tauri.localhost" ||
+    value === "http://localhost:1420" ||
+    value === "http://127.0.0.1:1420"
+  );
+}
+
+export function isCloudCoreRole(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
+}
+
 /**
- * Prefer loopback PowerSync for desktop Tauri / local Vite.
- * WKWebView often never opens a sync stream to a Tailscale hostname even when
- * REST to core works — mobile over Tailscale still needs POWERSYNC_URL.
+ * Who may download the workspace into a PowerSync client.
+ * Local-shell on local-core, or an owner API key (`settings:write` + `tasks:write`).
+ */
+export function canMintPowerSyncToken(auth: AuthContext | null): boolean {
+  if (!auth?.workspaceId) return false;
+  if (auth.kind === "local_shell") {
+    return Boolean(auth.userId || auth.clerkUserId);
+  }
+  if (auth.kind === "api_key") {
+    return (
+      Boolean(auth.userId) &&
+      hasScope(auth.scopes, "settings:write") &&
+      hasScope(auth.scopes, "tasks:write")
+    );
+  }
+  return false;
+}
+
+/**
+ * Prefer loopback PowerSync for desktop Tauri / local Vite **on local-core**.
+ * Cloud-core must not do this: the product shell syncs to cloud PowerSync,
+ * and loopback on the VPS is not a client endpoint.
+ * WKWebView used to fail Tailscale hostnames; the tailnet IP is the client URL.
  */
 export function preferLocalPowerSyncEndpoint(input: {
   origin?: string | null;
@@ -65,6 +104,12 @@ export function getPowerSyncUrl(request?: {
   const publicUrl = process.env.POWERSYNC_URL?.trim();
   const localUrl =
     process.env.POWERSYNC_LOCAL_URL?.trim() || "http://127.0.0.1:8080";
+
+  // Product shells talk to cloud PowerSync. Do not rewrite Tauri to loopback.
+  if (isCloudCoreRole()) {
+    if (!publicUrl) return null;
+    return stripTrailingSlash(publicUrl);
+  }
 
   if (
     request &&

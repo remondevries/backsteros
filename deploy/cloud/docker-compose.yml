@@ -8,6 +8,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-backsteros}
     volumes:
       - cloud_core_pg:/var/lib/postgresql/data
+    # PowerSync logical replication. Changing this recreates the container; the data volume stays.
+    command: ["postgres", "-c", "wal_level=logical"]
     ports:
       - "127.0.0.1:5434:5432"
     healthcheck:
@@ -47,6 +49,9 @@ services:
       TRANSIP_PRIVATE_KEY: ${TRANSIP_PRIVATE_KEY:-}
       TRANSIP_ACCESS_TOKEN: ${TRANSIP_ACCESS_TOKEN:-}
       POWERSYNC_JWT_SECRET: ${POWERSYNC_JWT_SECRET:?set POWERSYNC_JWT_SECRET}
+      # Token endpoint returns this to non-loopback clients. Loopback rewrite is still in powersync-auth.ts.
+      POWERSYNC_URL: ${POWERSYNC_URL:-http://100.75.45.22:8080}
+      POWERSYNC_AUDIENCE: ${POWERSYNC_AUDIENCE:-backsteros-powersync}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8788}
       AVATAR_URL_SIGNING_SECRET: ${AVATAR_URL_SIGNING_SECRET:-}
@@ -55,9 +60,8 @@ services:
     volumes:
       - cloud_vault:/data/vault
 
-  # iOS cutover (ADR-035). Not started by a normal `docker compose up`.
-  # Render config first: node deploy/cloud/render-powersync-config.mjs
-  # Then: docker compose --profile powersync up -d
+  # Product client sync (ADR-035 addendum). Not started by a normal `docker compose up`.
+  # Setup: deploy/cloud/README.md → PowerSync. Then: docker compose --profile powersync up -d
   mongo:
     profiles: ["powersync"]
     image: mongo:7
@@ -92,7 +96,9 @@ services:
       - ./powersync.generated.yaml:/config/service.yaml:ro
       - ../powersync/sync-config.yaml:/config/sync-config.yaml:ro
     ports:
+      # Loopback for on-box probes. Tailnet IP so desktop/iOS can sync. Not 0.0.0.0.
       - "127.0.0.1:8080:8080"
+      - "100.75.45.22:8080:8080"
 
 volumes:
   cloud_core_pg:

@@ -20,11 +20,13 @@ shells (UI only)
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
 
-**Target (ADR-035):** iOS talks only to cloud-core (not switched yet). Local-core stays on the Mac for the desktop app. Opening desktop starts Docker (Postgres + local PowerSync) and the core API on `:8788` if they are down, and leaves them running after quit. Shared files live in private R2; this computer keeps a local working copy. Hub is optional: it can still start and stop the stack, and it still owns PTY and Expo.
+**Today:** Opening desktop does **not** start Docker. The optional replica starts from Hub, or from the desktop process only when `BACKSTEROS_START_LOCAL_REPLICA=1`. iOS is not on cloud-core yet.
+
+**Target (ADR-035 addendum, 2026-09-19):** Product desktop syncs its PowerSync client SQLite to cloud PowerSync and does not start Docker. The compose stack is an optional replica (Hub or an explicit flag). iOS talks only to cloud-core. Shared files live in private R2; this computer keeps a local working copy. Hub still owns PTY and Expo. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 ### Starting local services
 
-Opening the desktop app starts Docker (Postgres + PowerSync) and the core API (`:8788`) when they are not already up. Hub ([`hub/`](../hub/README.md)) can still start and stop that stack, and it still starts PTY (`:3101`) and Expo. Product desktop does **not** embed the API process inside the UI, and it does not start PTY or Metro.
+**Current code:** Opening the desktop app does **not** start Docker. Hub ([`hub/`](../hub/README.md)) can still start and stop that stack, and it still starts PTY (`:3101`) and Expo. Set `BACKSTEROS_START_LOCAL_REPLICA=1` if the desktop process itself should bring compose and `:8788` up. Product desktop does **not** embed the API process inside the UI, and it does not start PTY or Metro.
 
 ## Layout
 

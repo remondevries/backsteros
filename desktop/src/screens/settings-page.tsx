@@ -39,7 +39,8 @@ import {
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
-import { rememberDesktopVaultRoot } from "../lib/desktop-vault";
+import { rememberDesktopVaultRoot, peekPersistedDesktopVaultRoot } from "../lib/desktop-vault";
+import { localOnlyRestFailClosed } from "../lib/workspace/powersync-write-path";
 import { SettingsIntegrationsTab } from "../components/settings-integrations-tab";
 
 function SettingsAccountTab({
@@ -316,6 +317,17 @@ function SettingsStorageTab({
   }, []);
 
   const refresh = useCallback(async (): Promise<StorageStatusResult> => {
+    const cloudClient = localOnlyRestFailClosed(apiUrl);
+    if (cloudClient) {
+      const local = peekPersistedDesktopVaultRoot();
+      const fallback: StorageStatus = {
+        configured: Boolean(local),
+        provider: "local-vault",
+        vaultPath: local,
+      };
+      applyStatus(fallback);
+      return fallback;
+    }
     try {
       const body = await client.requestJson<StorageStatus>(
         "/api/v1/settings/storage",
@@ -373,6 +385,19 @@ function SettingsStorageTab({
         setSaving(false);
         return;
       }
+      if (localOnlyRestFailClosed(apiUrl)) {
+        rememberDesktopVaultRoot(next);
+        applyStatus({
+          configured: true,
+          provider: "local-vault",
+          vaultPath: next,
+        });
+        setTestOk(true);
+        setTestMessage(
+          "Saved on this Mac. Cloud-core does not store this path, and Docker was not started.",
+        );
+        return;
+      }
       const body = await client.requestJson<StorageStatus>(
         "/api/v1/settings/storage",
         {
@@ -392,7 +417,7 @@ function SettingsStorageTab({
     } finally {
       setSaving(false);
     }
-  }, [applyStatus, client, vaultPath]);
+  }, [apiUrl, applyStatus, client, vaultPath]);
 
   return (
     <IntegrationConnectionSettingsView
@@ -402,10 +427,9 @@ function SettingsStorageTab({
       body={
         <>
           <p>
-            Documents, journal notes, and letter PDFs live in a local Obsidian-style
-            vault on the computer running the API. Pick a folder once; BacksterOS
-            creates <code>Journal</code>, <code>Projects</code>,{" "}
-            <code>Letters</code>, and <code>Spaces</code> automatically.
+            Documents and letter PDFs can open from a folder on this Mac, or from
+            cloud storage when the file is there. The folder stays on this computer.
+            Choosing it does not start Docker or local-core.
           </p>
           <div className="settings-field" style={{ marginTop: "1rem" }}>
             <button

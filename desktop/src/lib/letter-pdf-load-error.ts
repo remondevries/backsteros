@@ -46,9 +46,21 @@ function isLocalCorePdfUnavailable(reason: unknown): boolean {
  * Prefer "Mac / local-core offline" over "file missing" when the API is down
  * or returns 503 `pdf_requires_local_core` (cloud never holds .pdf bytes).
  */
-export function letterPdfLoadErrorMessage(reason: unknown): string {
-  if (isLocalCorePdfUnavailable(reason)) {
+export function letterPdfLoadErrorMessage(
+  reason: unknown,
+  cloudClient = false,
+): string {
+  if (
+    !cloudClient &&
+    isLocalCorePdfUnavailable(reason)
+  ) {
     return LOCAL_CORE_PDF_OFFLINE_MESSAGE;
+  }
+  if (reason instanceof ApiClientError && reason.code === "pdf_requires_local_core") {
+    return LOCAL_CORE_PDF_OFFLINE_MESSAGE;
+  }
+  if (cloudClient && isLocalCorePdfUnavailable(reason)) {
+    return "Could not load this PDF from cloud storage.";
   }
   if (reason instanceof Error) {
     return reason.message;

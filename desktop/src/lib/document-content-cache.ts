@@ -1,6 +1,10 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import { readDesktopVaultText } from "./desktop-vault";
+import {
+  DESKTOP_VAULT_MISSING_MESSAGE,
+  peekPersistedDesktopVaultRoot,
+  readDesktopVaultText,
+} from "./desktop-vault";
 import { createPersistedSessionLruCache } from "./session-lru-cache";
 
 export type CachedDocumentContent = {
@@ -145,6 +149,12 @@ async function resolveDocumentContent(
   }
 
   return fetchDocumentContentViaRest(client, documentId);
+}
+
+export function documentOpenUnavailableMessage(): string {
+  return peekPersistedDesktopVaultRoot()
+    ? "Could not open this file from the working copy or cloud storage."
+    : DESKTOP_VAULT_MISSING_MESSAGE;
 }
 
 /**

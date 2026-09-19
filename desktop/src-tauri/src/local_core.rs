@@ -1,9 +1,9 @@
-//! Start local-core when the desktop app opens.
+//! Optional local-core replica.
 //!
-//! Desktop is still a client of `http://127.0.0.1:8788`. This module only
-//! makes sure Docker (Postgres + PowerSync) and the core API are up. It does
-//! not start the PTY sidecar or Expo, and it does not stop the stack when
-//! the app quits.
+//! Product desktop does **not** start Docker. Set
+//! `BACKSTEROS_START_LOCAL_REPLICA=1` to bring up compose + the API on `:8788`.
+//! Hub can still start that stack itself. This module does not start PTY or
+//! Expo, and it does not stop the stack when the app quits.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -26,9 +26,25 @@ static ENSURE_LOCK: Mutex<()> = Mutex::new(());
 pub enum EnsureOutcome {
     AlreadyRunning,
     Started,
+    Skipped,
+}
+
+/// Product default is off. Hub starts the replica; this flag is the explicit path.
+pub fn local_replica_requested() -> bool {
+    match std::env::var("BACKSTEROS_START_LOCAL_REPLICA") {
+        Ok(value) => {
+            let value = value.trim();
+            value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+        }
+        Err(_) => false,
+    }
 }
 
 pub fn spawn_ensure_local_core() {
+    if !local_replica_requested() {
+        log_line("local replica not requested; not starting Docker");
+        return;
+    }
     std::thread::spawn(|| match ensure_local_core() {
         Ok(outcome) => log_line(&format!("local-core {outcome:?}")),
         Err(err) => log_line(&format!("local-core ensure failed: {err}")),
@@ -36,6 +52,11 @@ pub fn spawn_ensure_local_core() {
 }
 
 pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
+    if !local_replica_requested() {
+        log_line("local replica not requested; not starting Docker");
+        return Ok(EnsureOutcome::Skipped);
+    }
+
     let _guard = ENSURE_LOCK
         .lock()
         .map_err(|_| "local-core ensure lock poisoned".to_string())?;
@@ -529,6 +550,34 @@ fn clip(text: &str) -> String {
     text.chars().take(240).collect()
 }
 
+/// Owner credential for cloud-core. Reads `~/.config/backsteros/cli.env`.
+/// Does not log the secret.
+#[tauri::command]
+pub fn owner_api_key() -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    let path = PathBuf::from(home).join(".config/backsteros/cli.env");
+    let text = fs::read_to_string(&path)
+        .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "BACKSTEROS_API_KEY" {
+            continue;
+        }
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if !value.starts_with("sk_live_") {
+            return Err("BACKSTEROS_API_KEY must be an sk_live_ owner key".into());
+        }
+        return Ok(value.to_string());
+    }
+    Err("BACKSTEROS_API_KEY is missing from ~/.config/backsteros/cli.env".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,13 +636,14 @@ mod tests {
     }
 
     #[test]
-    fn ensure_does_not_restart_a_healthy_api() {
-        if !api_healthy() {
-            eprintln!("skip: local API is not up");
-            return;
-        }
+    fn ensure_skips_docker_unless_replica_flag() {
+        let previous = std::env::var("BACKSTEROS_START_LOCAL_REPLICA").ok();
+        std::env::remove_var("BACKSTEROS_START_LOCAL_REPLICA");
         let outcome = ensure_local_core().expect("ensure");
-        assert_eq!(outcome, EnsureOutcome::AlreadyRunning);
-        assert!(api_healthy());
+        assert_eq!(outcome, EnsureOutcome::Skipped);
+        match previous {
+            Some(value) => std::env::set_var("BACKSTEROS_START_LOCAL_REPLICA", value),
+            None => std::env::remove_var("BACKSTEROS_START_LOCAL_REPLICA"),
+        }
     }
 }

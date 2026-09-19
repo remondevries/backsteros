@@ -2,7 +2,9 @@
 
 **Status:** Target — replaces peer-twin LWW + desktop dual-hydrate as the product strategy.  
 **Revokes:** Phase 6.3 “keep dual-hydrate until gates pass” ([`04-api-and-sync.md`](04-api-and-sync.md)).  
-**Related:** LSE reverse-engineering ([SUMMARY](https://github.com/wzhudev/reverse-linear-sync-engine/blob/main/SUMMARY.md)), hybrid topology ([`13-hybrid-cloud-local-core.md`](13-hybrid-cloud-local-core.md)), file store ([ADR-035](10-decisions-log.md)), ADR tiers ([`03-data-model.md`](03-data-model.md)).
+**Related:** LSE reverse-engineering ([SUMMARY](https://github.com/wzhudev/reverse-linear-sync-engine/blob/main/SUMMARY.md)), hybrid topology ([`13-hybrid-cloud-local-core.md`](13-hybrid-cloud-local-core.md)), file store ([ADR-035](10-decisions-log.md)), Docker-not-default ([`17-desktop-without-docker.md`](17-desktop-without-docker.md)), ADR tiers ([`03-data-model.md`](03-data-model.md)).
+
+**Shell sync (2026-09-19):** Product desktop and iOS sync client SQLite to **cloud** PowerSync. The Mac compose stack is an optional replica, not the desktop sync peer. The diagram below matches that. Code still starts local Docker — see doc 17.
 
 ## Product call
 
@@ -10,7 +12,7 @@
 | --- | --- |
 | Leader / clock | **Cloud-core** is the elected leader for the shared workspace clock when hybrid is on. It assigns monotonic sync ids and is reachable when the Mac sleeps (door, portal, phone). |
 | Desktop / iOS | **Caches**, not a second brain. Optimistic UI → queued mutations → server executes → ordered deltas. LWW is safe because the **server already ordered** writes. |
-| local-core | Mac **replica** that applies the same ordered deltas. Lifecycle belongs to the desktop app (ADR-035). Not a peer that invents its own wall-clock fork against cloud, and not something iOS depends on. |
+| local-core | Optional Mac **replica** (Docker compose). Not required to open desktop. Not a second writer while the product shell is a cloud client. Not something iOS depends on. See [17-desktop-without-docker.md](17-desktop-without-docker.md). |
 | iOS | Client of **cloud-core** only. Not a core. PowerSync against cloud Postgres. |
 | Speed | Local SQLite reads + optimistic writes + bootstrap-then-delta — **not** REST fan-out or `mergeLocalAndApiByUpdatedAt`. Desktop file reads hit the local working copy, not R2, on every open. |
 | Files | **R2** is the shared store (markdown + letter PDFs + attachments + avatars + other `.backsteros` blobs). The Mac vault is the desktop working copy and syncs changes (ADR-035). `workspace_settings.vaultPath` stays denylisted from replication. |
@@ -35,8 +37,8 @@ flowchart TB
     Door[door / portal]
   end
 
-  subgraph replica [Replica — local-core on the Mac]
-    LocalAPI[core/server\nstarted by desktop]
+  subgraph replica [Optional replica — not required to open desktop]
+    LocalAPI[core/server\nHub or explicit flag]
     LocalPG[(Postgres applies deltas)]
     LocalPS[PowerSync]
     LocalVault["Local working copy\nvault layout"]
@@ -46,11 +48,11 @@ flowchart TB
   CloudAPI --> CloudPG
   CloudAPI --> R2
   CloudPS --> CloudPG
-  CloudAPI -->|"ordered deltas / sync id"| LocalAPI
+  CloudAPI -.->|"optional replica apply"| LocalAPI
   LocalAPI --> LocalPG
   LocalPS --> LocalPG
-  Desktop -->|"read SQLite"| LocalPS
-  Desktop -->|"optimistic tx upload"| LocalAPI
+  Desktop -->|"sync stream"| CloudPS
+  Desktop -->|"optimistic tx upload"| CloudAPI
   Desktop -->|"read files"| LocalVault
   LocalVault <-->|"sync changes only"| R2
   Mobile -->|"read SQLite"| CloudPS

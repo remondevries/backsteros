@@ -54,7 +54,7 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
       if (authToken) break;
       await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
     }
-    if (!authToken) throw new Error("Missing local-shell token");
+    if (!authToken) throw new Error("Missing owner API key");
 
     const headers = new Headers();
     headers.set("Authorization", `Bearer ${authToken}`);
@@ -136,9 +136,8 @@ export function createPowerSyncDatabase(userId: string) {
   });
 }
 
-/** How long connect+waitForReady may block before we surface an error.
- * Long enough for desktop to start Docker + local-core on a cold launch. */
-export const POWER_SYNC_CONNECT_TIMEOUT_MS = 60_000;
+/** How long connect+waitForReady may block before we surface an error. */
+export const POWER_SYNC_CONNECT_TIMEOUT_MS = 120_000;
 
 const GLOBAL_SLOT_KEY = "__backsteros_desktop_powersync__";
 

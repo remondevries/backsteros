@@ -53,6 +53,7 @@ export async function subscribeAgentPresenceEvents(input: {
   client: AgentPresenceEventsClient;
   signal: AbortSignal;
   onPresence: (payload: AgentPresenceLivePayload) => void;
+  onConnection?: (status: "live") => void;
   onError?: (error: unknown) => void;
 }): Promise<void> {
   const response = await new Promise<Response>((resolve, reject) => {
@@ -86,6 +87,10 @@ export async function subscribeAgentPresenceEvents(input: {
         reject(error);
       });
   });
+  if (!response.ok) {
+    throw new Error(`Agent presence events failed (${response.status})`);
+  }
+  input.onConnection?.("live");
   const reader = response.body?.getReader();
   if (!reader) {
     throw new Error("Agent presence events stream has no body");
@@ -147,6 +152,7 @@ export function startAgentPresenceEventsLoop(input: {
   client: AgentPresenceEventsClient;
   signal: AbortSignal;
   onPresence: (payload: AgentPresenceLivePayload) => void;
+  onConnection?: (status: "connecting" | "live" | "disconnected") => void;
   enabled?: boolean;
 }): void {
   if (input.enabled === false) return;
@@ -154,14 +160,17 @@ export function startAgentPresenceEventsLoop(input: {
   const run = async () => {
     while (!input.signal.aborted) {
       try {
+        input.onConnection?.("connecting");
         await subscribeAgentPresenceEvents({
           client: input.client,
           signal: input.signal,
           onPresence: input.onPresence,
+          onConnection: () => input.onConnection?.("live"),
         });
         attempt = 0;
       } catch {
         if (input.signal.aborted) return;
+        input.onConnection?.("disconnected");
         attempt += 1;
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));
         await new Promise<void>((resolve) => {

@@ -20,7 +20,7 @@ import {
 } from "./powersync";
 import { useDesktopApi } from "./api-context";
 import {
-  LOCAL_SHELL_USER_ID,
+  CLOUD_OWNER_USER_ID,
   createDesktopTokenProvider,
 } from "./local-shell-auth";
 import type { PowerSyncRowComparator } from "./powersync-row-comparators";
@@ -167,8 +167,8 @@ function AuthenticatedPowerSyncProvider({
   apiUrl: string;
   children: ReactNode;
 }) {
-  // Single-owner local shell: stable SQLite key.
-  const userId = LOCAL_SHELL_USER_ID;
+  // Cloud client SQLite. Not the old local-replica checkpoint.
+  const userId = CLOUD_OWNER_USER_ID;
   const { client } = useDesktopApi();
   const clientRef = useRef(client);
   clientRef.current = client;

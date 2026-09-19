@@ -154,6 +154,8 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 **Historical:** Neon Free + droplet Kamal were evaluated and later removed from the deploy surface.
 
+**Do not read the Postgres line as the product path (2026-09-19).** Cloud Postgres is the leader. Local Docker Compose is an optional replica, not what desktop needs in order to open. See the ADR-035 addendum and [17-desktop-without-docker.md](17-desktop-without-docker.md). Homebrew Postgres is not the replacement.
+
 ---
 
 ## ADR-017: API host (local core)
@@ -521,7 +523,7 @@ fork of the Next deployment pipeline.
 
 ## ADR-035: Cloud-core center, desktop-owned local-core, R2 files
 
-**Status:** Accepted (2026-09-18). R2 file store and desktop-owned local-core startup are in place. Cloud PowerSync and the iOS cutover are not.
+**Status:** Accepted (2026-09-18). **Addendum 2026-09-19:** product shells sync to cloud PowerSync; local Docker is optional, not required to open desktop. R2 file store is in place. Cloud PowerSync is running on the VPS tailnet (`http://100.75.45.22:8080`). Desktop slice 1 points at it and does not start Docker on launch (`BACKSTEROS_START_LOCAL_REPLICA=1` opts in). iOS cutover is not done. Proof: [17-desktop-without-docker.md](17-desktop-without-docker.md). Ops: [deploy/cloud/README.md](../deploy/cloud/README.md).
 
 **Context:** iOS should work while the MacBook is off. Agents stay outside both product shells (task updates still arrive through the API). Local-core should not need a separate menu-bar app just so the phone can reach the Mac.
 
@@ -537,6 +539,20 @@ fork of the Next deployment pipeline.
 - **Agents** are not started from desktop or iOS. Seeing an agent work is a task/presence update, not an in-app agent process. PTY stays off the iOS critical path.
 
 **Consequences:** Lift cloud `pdf_requires_local_core` once bytes are on R2. Deploy PowerSync next to cloud Postgres. Point the iOS app at cloud-core only. Desktop may start Docker + local API + local PowerSync itself. Markdown sync moves from the VPS vault twin to R2; the Mac folder remains the fast copy.
+
+The sentence “Desktop may start Docker + local API + local PowerSync itself” is superseded by the addendum below. The fourth decision bullet (“PowerSync runs beside each Postgres a shell syncs with”) is amended the same way. “Lifecycle belongs to the desktop app” means the optional replica is not a second product core — it does **not** mean opening desktop starts Docker.
+
+### Addendum (2026-09-19): Docker is not the default
+
+Product shells (desktop first, iOS at cutover) already keep a PowerSync **client** SQLite. That client syncs to **one** cloud PowerSync beside cloud Postgres. Desktop does not need its own PowerSync service, Postgres, or Mongo on the Mac in order to open.
+
+`docker-compose.yml` (Postgres 17 + Mongo replica set + local PowerSync) stays as an **optional replica** for development and power users. Hub, or an explicit flag, starts it. Opening the desktop app must not. While the product shell is a cloud client, that replica must not be a second writer.
+
+The desktop working-copy path is machine-local (`localStorage` or `VITE_BACKSTEROS_VAULT_PATH`). It is not read from cloud-core settings and not replicated (`vaultPath` stays denylisted). iOS cutover is deferred.
+
+This does not replace the rest of this ADR. Cloud-core remains the center. R2 remains the shared file store. The Mac vault remains the desktop working copy. Agents stay on the door. PTY stays on the Mac. Tier C/D stays out of client SQLite. Running Postgres via Homebrew is not a substitute: PowerSync’s service (and its bucket store) is the hard part, and that service belongs next to **cloud** Postgres for product shells.
+
+Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 **Does not change:** Tier rules (no bulk PDF or full bodies in client SQLite). WordPress media stays on `ld-wp-media`.
 

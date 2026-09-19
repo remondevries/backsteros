@@ -12,11 +12,14 @@ import type {
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
+import { reportLocalOnlyRest } from "../cloud-client-notices";
+import { getDesktopPublicEnvironment } from "../env";
 import { preservePendingApiRows } from "../merge-local-and-api";
 import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
 import {
   shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
+  localOnlyRestFailClosed,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
@@ -648,6 +651,27 @@ export function useWorkspaceEntityPatching({
           }
         }
         if (!authenticated) return;
+        // Cloud client: queue in SQLite only. Do not call local-only REST.
+        if (
+          shouldSkipRestEntityWrite(powerSync) &&
+          localOnlyRestFailClosed(getDesktopPublicEnvironment().apiUrl)
+        ) {
+          if (table === "tasks" && taskPatchChangesTaskScope(values)) {
+            reportLocalOnlyRest("scope");
+          }
+          if (table === "letters" && letterPatchRequiresVaultRelocate(values)) {
+            reportLocalOnlyRest("relocate");
+          }
+          try {
+            await powerSync.flushCrudUpload?.();
+          } catch (error) {
+            console.warn(
+              "[desktop] PowerSync upload flush failed; not falling back to REST",
+              error,
+            );
+          }
+          return;
+        }
         // PowerSync upload is primary. Extra REST only for:
         // - agentInboxApproved (replication race) via queueSoleRest…
         // - project/contact scope moves (server renumbers; URL needs the number)

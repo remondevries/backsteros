@@ -310,6 +310,7 @@ pub fn run() {
             system_stats::system_stats,
             system_stats::set_system_stats_disk_path,
             cursor_usage::cursor_usage,
+            local_core::owner_api_key,
             hide_desktop_overlay,
             resize_desktop_overlay,
             focus_main_window,

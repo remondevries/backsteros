@@ -17,7 +17,8 @@
 - [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Meilisearch, Hono
 - [docs/03-data-model.md](03-data-model.md): Sync tiers A/B/C/D, entities, version fields
 - [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API (dual-hydrate **deprecated** — see 16)
-- [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, iOS on cloud PowerSync, desktop on local-core, R2 files (ADR-035)
+- [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, product shells on cloud PowerSync, optional Mac replica, R2 files (ADR-035)
+- [docs/17-desktop-without-docker.md](17-desktop-without-docker.md): Why Docker is not the default to open desktop; boot graph, gaps, slice 1 (ADR-035 addendum)
 - [docs/06-storage-and-search.md](06-storage-and-search.md): Vault layout today; private R2 target (ADR-035)
 - [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Current hybrid behavior; target routing is ADR-035 / 16
 - [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
@@ -36,9 +37,9 @@
 | --- | --- |
 | Starting implementation | 00-vision, 12-v2-local-computer, 09-phased-build-plan |
 | API routes / OpenAPI | 04-api-and-sync, 03-data-model, 02-tech-stack |
-| PowerSync / offline | 03-data-model, **16-linear-shaped-sync**, 04-api-and-sync, 07-performance |
+| PowerSync / offline | 03-data-model, **16-linear-shaped-sync**, **17-desktop-without-docker**, 04-api-and-sync, 07-performance |
 | Expo mobile | 05-clients, 07-performance, 04-api-and-sync, 12-v2-local-computer, 14-client-logic-inventory |
-| Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020), **16-linear-shaped-sync**, 15-tauri-ipc-profiling |
+| Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020, ADR-035), **16-linear-shaped-sync**, **17-desktop-without-docker**, 15-tauri-ipc-profiling |
 | PDFs / markdown / search | 06-storage-and-search, 10-decisions-log (ADR-035), 03-data-model |
 | Changing stack choices | 10-decisions-log, 02-tech-stack |
 

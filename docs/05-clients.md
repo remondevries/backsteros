@@ -12,12 +12,12 @@
 
 See [11-urls-and-routing.md](11-urls-and-routing.md), [12-v2-local-computer.md](12-v2-local-computer.md),
 [13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md). Desktop decision: ADR-019.
-**Target routing:** ADR-035 — iOS → cloud-core, desktop → local-core, files in private R2. The table above is what ships today.
+**Target routing:** ADR-035 addendum — desktop and iOS sync client SQLite to cloud PowerSync; local Docker is an optional replica, not required to open desktop. Files in private R2. The table above is what ships today. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 ## Desktop — Tauri (`desktop/`)
 
-**Stack:** Tauri 2 + Vite + React SPA. Talks to **local-core** only for day-to-day work
-(PowerSync + REST). Does **not** load a Next.js build.
+**Stack:** Tauri 2 + Vite + React SPA. **Today** it talks to **local-core** for day-to-day work
+(PowerSync + REST) and starts Docker if that stack is down. **Target:** read local SQLite, sync to cloud PowerSync, do not start Docker ([17-desktop-without-docker.md](17-desktop-without-docker.md)). Does **not** load a Next.js build.
 
 ```text
 desktop/

@@ -16,6 +16,19 @@ export function shouldSkipRestEntityWrite(
 }
 
 /**
+ * Cloud-client mode. Local-only REST (scope move, letter vault relocate,
+ * flush-empty fallback) must not run — and must not start Docker.
+ */
+export function localOnlyRestFailClosed(apiUrl: string): boolean {
+  try {
+    const host = new URL(apiUrl).hostname.toLowerCase();
+    return host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
+  } catch {
+    return true;
+  }
+}
+
+/**
  * After a local write + flushCrudUpload, keep skipping REST only when at least
  * one CRUD batch was uploaded (`true`). `false` means the queue was empty —
  * fall through to REST. `void` keeps create-path callers that ignore the return.
@@ -26,10 +39,13 @@ export function shouldSkipRestAfterCrudFlush(
   return uploaded !== false;
 }
 
-/** Letter PDF bytes are Mac-only; skip fetch when local-core health is not OK. */
+/** Letter PDF bytes: cloud R2 when the product API is not loopback; else local-core health. */
 export function shouldAttemptLetterPdfFetch(
   localCoreReachable: boolean | null,
   useApi: boolean,
+  apiUrl?: string,
 ): boolean {
-  return useApi && localCoreReachable === true;
+  if (!useApi) return false;
+  if (apiUrl && localOnlyRestFailClosed(apiUrl)) return true;
+  return localCoreReachable === true;
 }

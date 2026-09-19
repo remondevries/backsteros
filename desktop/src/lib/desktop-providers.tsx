@@ -10,6 +10,7 @@ import { createDesktopTokenProvider } from "./local-shell-auth";
 import { PowerSyncProvider } from "./powersync-context";
 import { DesktopWorkspaceDataProvider } from "./workspace-data";
 import { BootSplashWatchdog } from "../components/boot-splash-watchdog";
+import { DesktopCloudClientNotices } from "../components/desktop-cloud-client-notices";
 
 function WorkspaceProviders({
   children,
@@ -28,9 +29,10 @@ function WorkspaceProviders({
         <DesktopWorkspaceDataProvider>
           <WorkspaceEventsProvider>
             <AgentMailProvider>
-              <DesktopAgentStatusProvider>
-                {children}
-              </DesktopAgentStatusProvider>
+            <DesktopAgentStatusProvider>
+              <DesktopCloudClientNotices />
+              {children}
+            </DesktopAgentStatusProvider>
             </AgentMailProvider>
           </WorkspaceEventsProvider>
         </DesktopWorkspaceDataProvider>

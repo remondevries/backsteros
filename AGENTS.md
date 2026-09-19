@@ -29,9 +29,9 @@ BacksterOS is a personal / company ops system:
 - **Agent-friendly API:** search, read/write markdown, lazy PDF fetch
 - **API agents → cloud-core** (`https://agent.backsteros.com` + `sk_live_…`).
   **Today:** desktop and mobile stay on local-core and receive cloud writes via replication.
-  **Target (ADR-035):** iOS uses cloud-core only; local-core is the desktop Mac replica; shared files go to private R2 with a local desktop working copy.
-  See `docs/10-decisions-log.md` (ADR-035), `docs/16-linear-shaped-sync.md`,
-  `docs/13-hybrid-cloud-local-core.md`.
+  **Target (ADR-035 addendum):** desktop and iOS sync a local PowerSync SQLite to cloud-core; the Docker compose replica is optional, not required to open the app; shared files go to private R2 with a local desktop working copy.
+  See `docs/10-decisions-log.md` (ADR-035), `docs/17-desktop-without-docker.md`,
+  `docs/16-linear-shaped-sync.md`, `docs/13-hybrid-cloud-local-core.md`.
 
 Public Next.js product/admin and hosting portals are **out of scope** for active v2 work
 (archived at `~/code/archive/backsteros-legacy/`).

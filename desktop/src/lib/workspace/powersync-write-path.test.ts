@@ -2,11 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  localOnlyRestFailClosed,
   shouldAttemptLetterPdfFetch,
   shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path.ts";
+
+test("localOnlyRestFailClosed for cloud API, not loopback", () => {
+  assert.equal(localOnlyRestFailClosed("http://100.75.45.22:8788"), true);
+  assert.equal(localOnlyRestFailClosed("https://agent.backsteros.com"), true);
+  assert.equal(localOnlyRestFailClosed("http://127.0.0.1:8788"), false);
+  assert.equal(localOnlyRestFailClosed("http://localhost:8788"), false);
+});
 
 test("shouldSkipRestEntityWrite when PowerSync ready and connected", () => {
   assert.equal(
@@ -27,6 +35,17 @@ test("shouldSkipRestAfterCrudFlush only when upload drained work", () => {
   assert.equal(shouldSkipRestAfterCrudFlush(true), true);
   assert.equal(shouldSkipRestAfterCrudFlush(undefined), true);
   assert.equal(shouldSkipRestAfterCrudFlush(false), false);
+});
+
+test("shouldAttemptLetterPdfFetch on cloud even when local-core is down", () => {
+  assert.equal(
+    shouldAttemptLetterPdfFetch(false, true, "http://100.75.45.22:8788"),
+    true,
+  );
+  assert.equal(
+    shouldAttemptLetterPdfFetch(null, true, "http://127.0.0.1:8788"),
+    false,
+  );
 });
 
 test("shouldAttemptLetterPdfFetch only when local-core is reachable", () => {

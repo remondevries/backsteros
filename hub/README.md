@@ -1,6 +1,6 @@
 # BacksterOS Hub
 
-macOS **menu-bar** app to start and stop local BacksterOS services (Docker, core API, PTY, Expo). The product desktop starts Docker and the core API on launch and leaves them running; Hub still owns PTY, Expo, and an explicit stop.
+macOS **menu-bar** app to start and stop local BacksterOS services (Docker, core API, PTY, Expo). Product desktop does **not** start Docker. Set `BACKSTEROS_START_LOCAL_REPLICA=1` only if you want the desktop process itself to bring the replica up. Hub remains the explicit start/stop for that stack, and it still owns PTY and Expo. See [docs/17-desktop-without-docker.md](../docs/17-desktop-without-docker.md).
 
 ## Develop
 

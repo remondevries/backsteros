@@ -13,6 +13,7 @@ import {
   type AgentActivitySummary,
   type StatusBarAgentItem,
 } from "./agent-activity";
+import { setPresenceStreamStatus } from "../cloud-client-notices";
 import {
   applyAgentPresenceLiveEvent,
   startAgentPresenceEventsLoop,
@@ -223,9 +224,11 @@ export function DesktopAgentStatusProvider({
           applyAgentPresenceLiveEvent(current, payload),
         );
       },
+      onConnection: setPresenceStreamStatus,
     });
     return () => {
       controller.abort();
+      setPresenceStreamStatus("off");
     };
   }, [client]);
 

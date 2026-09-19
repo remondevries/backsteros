@@ -56,5 +56,7 @@ client_auth:
 `;
 
 const out = path.join(dir, "powersync.generated.yaml");
-writeFileSync(out, yaml, { mode: 0o600 });
+// 0644, not 0600. The file sits under /root (mode 0700), so host users cannot
+// traverse to it. The PowerSync container runs as non-root and cannot read 0600.
+writeFileSync(out, yaml, { mode: 0o644 });
 console.log(`wrote ${out}`);

@@ -23,6 +23,7 @@ import {
   peekAgentMailListCache,
   writeAgentMailListCache,
 } from "./agentmail-list-cache";
+import { setEmailStreamStatus } from "./cloud-client-notices";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
 import { WORKSPACE_EMAIL_UPDATED_EVENT } from "./workspace-events";
 
@@ -406,9 +407,11 @@ export function useAgentMailMailboxes(
         );
         scheduleDebouncedReload();
       },
+      onConnection: setEmailStreamStatus,
     });
     return () => {
       controller.abort();
+      setEmailStreamStatus("off");
       if (sseReloadTimerRef.current != null) {
         window.clearTimeout(sseReloadTimerRef.current);
         sseReloadTimerRef.current = null;

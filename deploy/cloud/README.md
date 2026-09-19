@@ -96,10 +96,77 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `BACKSTEROS_R2_*` | Private file bucket. When set, cloud serves markdown and blobs from R2 instead of `503 pdf_requires_local_core` |
 | `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
 | `PORT` | `8788` |
+| `POWERSYNC_JWT_SECRET` | Signs `GET /api/v1/powersync/token`. Same value is rendered into the PowerSync JWKS. Already required. |
+| `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.75.45.22:8080` (tailnet only). |
+| `POWERSYNC_DB_PASSWORD` | `powersync_role` password. Not the API secret. Min 16 characters. Lives only in the VPS `.env`. |
 
-PowerSync is optional on cloud until the iOS cutover (ADR-035). It is behind the `powersync` compose profile so a normal `docker compose up` does not start it. After `pnpm db:powersync-setup` on the cloud database, render `deploy/cloud/powersync.generated.yaml` with `node deploy/cloud/render-powersync-config.mjs`, then `docker compose --profile powersync up -d`. Do not point the iOS app at it yet.
+## PowerSync (product clients)
 
-PowerSync and Clerk are **not** required for portal meeting booking (API key auth only).
+**Enabled 2026-09-19.** The `powersync` profile is up beside cloud Postgres. A normal `docker compose up` still does not start it; use `--profile powersync`.
+
+Health proof from a tailnet Mac:
+
+- `GET http://100.75.45.22:8080/probes/liveness` → `200`, `ready: true`
+- `GET http://100.75.45.22:8080/probes/startup` → `200`, `started: true`
+- Replication lag `0s` after initial sync
+- `GET http://100.75.45.22:8788/health` → `ok: true`
+- `http://46.225.171.3:8080` does not answer (not published on the public interface)
+
+**Ready for desktop slice 1 wiring.** Do not point the apps yet. Still blocked on the client, not on this service: desktop still calls `ensure_docker`, cloud-core still rejects `Bearer local`, and `preferLocalPowerSyncEndpoint` still rewrites Tauri/localhost token requests to `http://127.0.0.1:8080`. iOS is not cut over.
+
+**Client-facing (tailnet, not the public door):**
+
+| Use | URL / env |
+| --- | --- |
+| Cloud API (uploads, `GET /api/v1/powersync/token`) | `http://100.75.45.22:8788` — `VITE_API_URL` |
+| Same API via the agents door (REST only — not the sync socket) | `https://agent.backsteros.com` |
+| PowerSync sync stream | `http://100.75.45.22:8080` — cloud `POWERSYNC_URL` |
+
+Desktop slice 1 should set `VITE_API_URL` to the tailnet API (or the door for REST) and take the sync URL from the token response once the loopback rewrite is fixed. Tokens are signed with the cloud `POWERSYNC_JWT_SECRET`. Do not reuse the Mac's local PowerSync JWT. Audience is `backsteros-powersync`, kid `backsteros-powersync-1`.
+
+`:8080` is published on `127.0.0.1` and `100.75.45.22` only.
+
+The running `backsteros-cloud:latest` image's drizzle folder stops at `0122`. Migrations `0123`–`0125` (`task_labels`, including `tasks.label_ids`) were applied on the database and recorded in `drizzle.__drizzle_migrations`. Do not re-run `powersync-setup` from that image; its table list would drop `task_labels` from the publication. The next image deploy already contains those migrations (hashes match) and the current table list. Re-run setup after that deploy.
+
+### Enable or repair
+
+The VPS checkout is `/root/backsteros` (not a git clone). `deploy` cannot `cd` there; use `sudo` and `--project-directory`.
+
+1. Postgres must run with `wal_level=logical` (set in this compose file). Recreating the postgres container keeps the `cloud_core_pg` volume.
+2. Put `POWERSYNC_DB_PASSWORD` in `deploy/cloud/.env` if it is missing (`openssl rand -hex 24`). Do not print it. `POWERSYNC_URL=http://100.75.45.22:8080` if you do not want the compose default.
+3. Apply the role, grants, and `powersync` publication. Pass the password with `-e`. Use `pnpm exec tsx` so you are not depending on `--env-file=.env` inside the image:
+
+```bash
+sudo docker exec -e POWERSYNC_DB_PASSWORD="$(sudo awk -F= '/^POWERSYNC_DB_PASSWORD=/{print substr($0,index($0,"=")+1)}' /root/backsteros/deploy/cloud/.env)" \
+  -w /app/core/server cloud-backsteros-1 \
+  pnpm exec tsx src/db/powersync-setup.ts
+```
+
+4. Render the service config (writes `powersync.generated.yaml`, mode `0644`, gitignored). The file lives under `/root` (mode `0700`), so other host users cannot traverse to it. `0600` makes the non-root PowerSync process fail with `EACCES`.
+
+```bash
+sudo bash -c 'set -a; source /root/backsteros/deploy/cloud/.env; set +a; node /root/backsteros/deploy/cloud/render-powersync-config.mjs'
+```
+
+5. Start the profile (pulls Mongo 7 and `journeyapps/powersync-service` the first time):
+
+```bash
+sudo docker compose -f /root/backsteros/deploy/cloud/docker-compose.yml \
+  --project-directory /root/backsteros/deploy/cloud \
+  --profile powersync up -d
+```
+
+6. Health, from the VPS or from a tailnet machine:
+
+```bash
+curl -sf http://127.0.0.1:8080/probes/liveness
+curl -sf http://100.75.45.22:8080/probes/liveness
+curl -sf http://100.75.45.22:8080/probes/startup
+```
+
+`sync-config.yaml` is mounted from `deploy/powersync/sync-config.yaml` (same rules as local). After sync-table changes, re-run setup from a source that lists those tables, re-render only if the JWT or DB password changed, and restart `cloud-powersync-1`.
+
+PowerSync on the VPS is the product sync target (profile `powersync`, tailnet `:8080`). It is **not** required for portal meeting booking (API key auth only). Clerk is not required for that either. See the PowerSync section above.
 
 ### Tailscale (instant cloud → local push)
 

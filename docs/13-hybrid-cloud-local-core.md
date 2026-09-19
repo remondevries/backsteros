@@ -2,7 +2,7 @@
 
 ## Status
 
-**Shell routing and files (target):** [ADR-035](10-decisions-log.md). Cloud-core is the center. iOS is a client of cloud-core (its own PowerSync). Local-core is the Mac replica and belongs to the desktop app. Shared files live in private R2; the Mac vault is the desktop working copy. That target is **not** what the code does today.
+**Shell routing and files (target):** [ADR-035](10-decisions-log.md) addendum (2026-09-19). Cloud-core is the center. Desktop and iOS sync client SQLite to **cloud** PowerSync. Local Docker (Postgres + Mongo + PowerSync) is an optional replica, not required to open desktop. Shared files live in private R2; the Mac vault is the desktop working copy. That target is **not** what the code does today. Plan: [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 **Rows (in progress):** Phase B live (full workspace table twin + vault markdown) — code is ahead of older “Phase A only” notes below. **Direction change (2026-08):** peer LWW twin is **not** the end state. Target is Linear-shaped sync with **cloud-core as leader** and shells as caches — see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md).
 

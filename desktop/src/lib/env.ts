@@ -5,8 +5,11 @@ function required(name: string, value: string | undefined): string {
   return value.trim().replace(/\/$/, "");
 }
 
-/** Default local core origin (v2 — never production). */
+/** Default local core origin (optional replica — not the product shell). */
 export const LOCAL_CORE_API_URL = "http://127.0.0.1:8788";
+
+/** Product desktop API. Tailnet cloud-core. Override with VITE_API_URL. */
+export const CLOUD_CORE_API_URL = "http://100.75.45.22:8788";
 
 /**
  * HTTP/1.1 browsers cap ~6 connections per host. Desktop keeps several SSE
@@ -58,7 +61,7 @@ export function getDesktopPublicEnvironment(): DesktopPublicEnvironment {
   const apiUrl = (
     devGatewayApiUrl() ??
     import.meta.env.VITE_API_URL ??
-    LOCAL_CORE_API_URL
+    CLOUD_CORE_API_URL
   )
     .trim()
     .replace(/\/$/, "");
