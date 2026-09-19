@@ -118,11 +118,11 @@ Health proof from a tailnet Mac:
 
 | Use | URL / env |
 | --- | --- |
-| Cloud API (uploads, `GET /api/v1/powersync/token`) | `http://100.75.45.22:8788` — `VITE_API_URL` |
+| Cloud API (uploads, `GET /api/v1/powersync/token`) | Ops bind `http://100.75.45.22:8788`. Product desktop uses `https://api.local.backsteros.com` (`VITE_API_URL`). |
 | Same API via the agents door (REST only — not the sync socket) | `https://agent.backsteros.com` |
 | PowerSync sync stream | `http://100.75.45.22:8080` — cloud `POWERSYNC_URL` |
 
-Desktop slice 1 should set `VITE_API_URL` to the tailnet API (or the door for REST) and take the sync URL from the token response once the loopback rewrite is fixed. Tokens are signed with the cloud `POWERSYNC_JWT_SECRET`. Do not reuse the Mac's local PowerSync JWT. Audience is `backsteros-powersync`, kid `backsteros-powersync-1`.
+Product desktop sets `VITE_API_URL` to `https://api.local.backsteros.com`. The token still returns the ops sync bind; the client rewrites cleartext `100.*` and loopback endpoints to `https://sync.local.backsteros.com`. Tokens are signed with the cloud `POWERSYNC_JWT_SECRET`. Do not reuse the Mac's local PowerSync JWT. Audience is `backsteros-powersync`, kid `backsteros-powersync-1`.
 
 `:8080` is published on `127.0.0.1` and `100.75.45.22` only.
 

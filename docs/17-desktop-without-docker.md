@@ -125,7 +125,7 @@ Normal use: OrbStack quit, nothing required on `127.0.0.1:8788` or `:8080`, clou
 
 ### Enable cloud PowerSync for product clients
 
-Done (2026-09-19). The `powersync` profile is up beside cloud Postgres. Sync URL `http://100.75.45.22:8080`. API `http://100.75.45.22:8788`. Probes return ready. Ops steps and the `task_labels` migration note are in [deploy/cloud/README.md](../deploy/cloud/README.md). Desktop points at those URLs. iOS is deferred.
+Done (2026-09-19). The `powersync` profile is up beside cloud Postgres. Ops bind stays `http://100.75.45.22:8080` / `http://100.75.45.22:8788`. The product desktop does not use those cleartext URLs: `VITE_API_URL` and the code fallback are `https://api.local.backsteros.com`, and the client rewrites the token's cleartext sync endpoint to `https://sync.local.backsteros.com` (including `tauri dev` on `http://localhost:1420`). iOS is deferred.
 
 ### Desktop owner credential against cloud-core
 

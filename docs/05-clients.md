@@ -4,7 +4,7 @@
 
 | Surface | Folder | How you reach it | Role |
 | --- | --- | --- | --- |
-| **Desktop** | `desktop/` | Tauri app → local-core `http://127.0.0.1:8788` | Day-to-day product UI. Starts Docker + local-core if they are down. |
+| **Desktop** | `desktop/` | Tauri app → `https://api.local.backsteros.com` | Day-to-day product UI. Does not start Docker. |
 | **Mobile** | `mobile/` | Expo (iPhone / iPad) → local-core | Same product concepts; native layouts |
 | **Hub** | `hub/` | macOS menu bar | Optional stop, plus PTY and Expo |
 | **CLI** | `core/packages/cli/` | `pnpm cli -- …` | Task/project/comment CRUD |
@@ -12,12 +12,13 @@
 
 See [11-urls-and-routing.md](11-urls-and-routing.md), [12-v2-local-computer.md](12-v2-local-computer.md),
 [13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md). Desktop decision: ADR-019.
-**Target routing:** ADR-035 addendum — desktop and iOS sync client SQLite to cloud PowerSync; local Docker is an optional replica, not required to open desktop. Files in private R2. The table above is what ships today. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
+**Target routing:** ADR-035 addendum — desktop and iOS sync client SQLite to cloud PowerSync; local Docker is an optional replica, not required to open desktop. Files in private R2. Product desktop uses the Mac HTTPS gateway (`https://api.local.backsteros.com` / `https://sync.local.backsteros.com`). See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 ## Desktop — Tauri (`desktop/`)
 
-**Stack:** Tauri 2 + Vite + React SPA. **Today** it talks to **local-core** for day-to-day work
-(PowerSync + REST) and starts Docker if that stack is down. **Target:** read local SQLite, sync to cloud PowerSync, do not start Docker ([17-desktop-without-docker.md](17-desktop-without-docker.md)). Does **not** load a Next.js build.
+**Stack:** Tauri 2 + Vite + React SPA. Product desktop talks to cloud-core through
+`https://api.local.backsteros.com` and syncs via `https://sync.local.backsteros.com`.
+It does not start Docker. See [17-desktop-without-docker.md](17-desktop-without-docker.md). Does **not** load a Next.js build.
 
 ```text
 desktop/

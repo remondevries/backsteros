@@ -2,9 +2,7 @@
 
 Tauri 2 + Vite + React product client for macOS/Windows/Linux.
 
-**Status:** Product UI via `@backsteros/ui` + local-core API/PowerSync.
-Opens with local-shell bearer auth (no sign-in). GitHub commits/PRs use a
-Settings PAT or `GITHUB_API_TOKEN` on local core.
+**Status:** Product UI via `@backsteros/ui`. API and PowerSync go through the Mac HTTPS gateway (`https://api.local.backsteros.com`, sync `https://sync.local.backsteros.com`). Owner key from `~/.config/backsteros/cli.env`. Docker is not started on launch.
 
 ## Intent
 
@@ -23,7 +21,7 @@ Settings PAT or `GITHUB_API_TOKEN` on local core.
 | Shared UI | `@backsteros/ui` |
 | API | `VITE_API_URL` → `@backsteros/api-client` |
 | Offline | `@powersync/web` local SQLite (Tier A/B) |
-| Auth | Local-shell bearer (`local`) |
+| Auth | Owner API key (`sk_live_…` via Tauri `owner_api_key`) |
 | PDF | `react-pdf` + `pdfjs-dist` (workers copied to `public/`) |
 
 ## Develop
@@ -32,12 +30,12 @@ Settings PAT or `GITHUB_API_TOKEN` on local core.
 pnpm install
 pnpm --filter @backsteros/ui build
 cp desktop/.env.example desktop/.env
-# Edit .env: VITE_API_URL=http://127.0.0.1:8788
+# Product default is already https://api.local.backsteros.com.
+# Optional replica only: VITE_API_URL=http://127.0.0.1:8788
 
-# Desktop starts Docker (Postgres + PowerSync) and local-core on :8788
-# if they are not already running. Quitting the app leaves that stack up.
+# Does not start Docker. Lists come from client SQLite; sync uses the HTTPS gateway.
 pnpm --filter @backsteros/desktop dev
-# Or Vite-only UI on :1420 (does not start local-core):
+# Or Vite-only UI on :1420 (same gateway URLs):
 pnpm --filter @backsteros/desktop dev:vite
 ```
 
@@ -100,8 +98,8 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 ### Auth / API smoke
 
-1. Start API locally (`8788`). Local-shell auth (`Bearer local`) is on by default
-   for local-core — desktop opens straight into the workspace.
+1. Start API is cloud-core behind `https://api.local.backsteros.com`. Desktop
+   uses the owner key (`sk_live_…`), not `Bearer local`.
 2. Optional: set `GITHUB_API_TOKEN` in `core/server/.env` (PAT with `repo`) or
    paste a token under Settings → GitHub.
 3. Command palette (⌘K) uses live global search; lists use PowerSync local SQLite.
@@ -116,8 +114,10 @@ pnpm --filter @backsteros/desktop build
 ```
 
 Packaged builds always use compile-time `VITE_*` from `.env` (or CI env).
-Icons live in `src-tauri/icons/`. Desktop always targets **local core**
-(`VITE_API_URL`, default `http://127.0.0.1:8788`).
+Icons live in `src-tauri/icons/`. Product default is the HTTPS gateway
+(`https://api.local.backsteros.com`). Cleartext Tailscale API URLs are rewritten
+to that gateway; PowerSync cleartext endpoints become
+`https://sync.local.backsteros.com`.
 
 ### CI signing / notarization
 
@@ -154,14 +154,15 @@ rm -f apple-codesign.p12 certificate-base64.txt
 
 Then re-run **Desktop release** (Actions → workflow_dispatch) or push a `desktop-v*` tag.
 
-### Local core
+### API and PowerSync
 
-Desktop always talks to local core via `VITE_API_URL` (default
-`http://127.0.0.1:8788`). There is no Dev/Prod backend switch in v2.
+Product desktop talks to `https://api.local.backsteros.com` (override with
+`VITE_API_URL`). `GET /api/v1/powersync/token` may still return the cleartext
+tailnet sync URL; the client rewrites that to `https://sync.local.backsteros.com`
+so `tauri dev` (`http://localhost:1420`) and the packaged shell both sync.
+An explicit `http://127.0.0.1:8788` is the optional local replica, not the default.
 
-### PowerSync
-
-Connects via local-shell bearer on `GET /api/v1/powersync/token`. Tier A/B metadata syncs into local SQLite; Tier C/D bodies load on demand via REST.
+Tier A/B metadata syncs into local SQLite; Tier C/D bodies load on demand via REST.
 
 ### IPC profiling
 

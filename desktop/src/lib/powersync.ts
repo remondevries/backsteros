@@ -1,10 +1,10 @@
 import {
-  AbstractPowerSyncDatabase,
   PowerSyncBackendConnector,
   PowerSyncDatabase,
   WASQLiteOpenFactory,
   WASQLiteVFS,
 } from "@powersync/web";
+import { rewritePowerSyncEndpoint } from "./env";
 import {
   appSchema,
   mapCrudBatch,
@@ -15,25 +15,6 @@ export type { UploadEntry } from "@backsteros/powersync-schema";
 export { appSchema, mapCrudBatch, powerSyncMutationId } from "@backsteros/powersync-schema";
 
 export type TokenProvider = () => Promise<string | null>;
-
-
-/** Packaged Tauri is https://tauri.localhost — cleartext PowerSync URLs are mixed-content blocked. */
-function rewritePowerSyncEndpoint(endpoint: string): string {
-  const trimmed = endpoint.trim().replace(/\/+$/, "");
-  try {
-    const url = new URL(trimmed);
-    const loopback =
-      url.hostname === "127.0.0.1" ||
-      url.hostname === "localhost" ||
-      url.hostname.startsWith("100.");
-    if (url.protocol === "http:" && loopback) {
-      return "https://sync.local.backsteros.com";
-    }
-  } catch {
-    // keep original
-  }
-  return trimmed;
-}
 
 export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   constructor(

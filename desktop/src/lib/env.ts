@@ -8,8 +8,11 @@ function required(name: string, value: string | undefined): string {
 /** Default local core origin (optional replica — not the product shell). */
 export const LOCAL_CORE_API_URL = "http://127.0.0.1:8788";
 
-/** Product desktop API. Tailnet cloud-core. Override with VITE_API_URL. */
-export const CLOUD_CORE_API_URL = "http://100.75.45.22:8788";
+/** Product desktop API. Caddy HTTPS gateway to cloud-core. Override with VITE_API_URL. */
+export const CLOUD_CORE_API_URL = "https://api.local.backsteros.com";
+
+/** Product PowerSync stream. Cleartext tailnet/loopback endpoints are rewritten here. */
+export const CLOUD_SYNC_URL = "https://sync.local.backsteros.com";
 
 /**
  * HTTP/1.1 browsers cap ~6 connections per host. Desktop keeps several SSE
@@ -56,15 +59,51 @@ export type DesktopPublicEnvironment = {
   appUrl: string;
 };
 
+/**
+ * Product API URL. An explicit loopback URL stays (optional replica).
+ * Cleartext Tailscale (`100.*`) is the old fallback and is sent through the HTTPS gateway.
+ */
+export function resolveDesktopApiUrl(
+  configured: string | null | undefined,
+): string {
+  const raw = (configured?.trim() || CLOUD_CORE_API_URL).replace(/\/$/, "");
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" && url.hostname.startsWith("100.")) {
+      return CLOUD_CORE_API_URL;
+    }
+  } catch {
+    return CLOUD_CORE_API_URL;
+  }
+  return raw;
+}
+
+/**
+ * WKWebView blocks cleartext sync. Tailnet `100.*` and loopback PowerSync
+ * both become the Caddy HTTPS gateway, including when the page is
+ * `http://localhost:1420` (tauri dev).
+ */
+export function rewritePowerSyncEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(trimmed);
+    const cleartextCloud =
+      url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" ||
+        url.hostname === "localhost" ||
+        url.hostname.startsWith("100."));
+    if (cleartextCloud) return CLOUD_SYNC_URL;
+  } catch {
+    // keep original
+  }
+  return trimmed;
+}
+
 /** Soft read for the product shell (local-shell auth). */
 export function getDesktopPublicEnvironment(): DesktopPublicEnvironment {
-  const apiUrl = (
-    devGatewayApiUrl() ??
-    import.meta.env.VITE_API_URL ??
-    CLOUD_CORE_API_URL
-  )
-    .trim()
-    .replace(/\/$/, "");
+  const apiUrl = resolveDesktopApiUrl(
+    devGatewayApiUrl() ?? import.meta.env.VITE_API_URL ?? CLOUD_CORE_API_URL,
+  );
   const appUrl = (import.meta.env.VITE_APP_URL ?? "")
     .trim()
     .replace(/\/$/, "");
@@ -74,7 +113,9 @@ export function getDesktopPublicEnvironment(): DesktopPublicEnvironment {
 
 export function requireDesktopPublicEnvironment(): DesktopPublicEnvironment {
   return {
-    apiUrl: required("VITE_API_URL", import.meta.env.VITE_API_URL),
+    apiUrl: resolveDesktopApiUrl(
+      required("VITE_API_URL", import.meta.env.VITE_API_URL),
+    ),
     appUrl: (import.meta.env.VITE_APP_URL ?? "").trim().replace(/\/$/, ""),
   };
 }
