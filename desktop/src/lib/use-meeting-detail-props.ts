@@ -91,8 +91,9 @@ export function useMeetingDetailViewProps(
 
   const meetingProperties = useMemo((): MeetingPropertiesMeeting | null => {
     if (!meeting) return null;
-    const startAt = new Date(meeting.startAt);
-    const endAt = new Date(meeting.endAt);
+    const startAt =
+      meeting.startAt == null ? null : new Date(meeting.startAt);
+    const endAt = meeting.endAt == null ? null : new Date(meeting.endAt);
     const project = meeting.projectId
       ? workspace.projects.find((entry) => entry.id === meeting.projectId)
       : null;
@@ -121,8 +122,9 @@ export function useMeetingDetailViewProps(
       locationOrganizationId: meeting.locationOrganizationId ?? null,
       locationOrganizationName: locationOrganization?.name ?? null,
       locationOrganizationAddress,
-      startAt: Number.isNaN(startAt.getTime()) ? null : startAt,
-      endAt: Number.isNaN(endAt.getTime()) ? null : endAt,
+      startAt:
+        startAt == null || Number.isNaN(startAt.getTime()) ? null : startAt,
+      endAt: endAt == null || Number.isNaN(endAt.getTime()) ? null : endAt,
       projectKey: project?.key ?? null,
       projectName: project?.name ?? null,
       organizationId: meeting.organizationId ?? null,

@@ -95,7 +95,7 @@ function describeActivity(
   if (type === "timer_started") return "started a timer";
   if (type === "timer_stopped") return "stopped a timer";
   if (type === "agent_worked") return "worked on the task";
-  return type.replaceAll("_", " ");
+  return type.replace(/_/g, " ");
 }
 
 function formatRelativeTime(iso: string): string {

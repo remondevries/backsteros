@@ -433,7 +433,7 @@ export type ProjectBrandIconKey = (typeof PROJECT_BRAND_ICON_KEYS)[number];
 const PROJECT_BRAND_ICON_KEY_SET = new Set<string>(PROJECT_BRAND_ICON_KEYS);
 
 export function formatProjectIconLabel(key: ProjectIconKey): string {
-  return key.replaceAll("-", " ");
+  return key.replace(/-/g, " ");
 }
 
 export function isProjectIconKey(value: string): value is ProjectIconKey {

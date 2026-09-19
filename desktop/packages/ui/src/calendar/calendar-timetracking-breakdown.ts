@@ -143,16 +143,20 @@ export function buildTimetrackingAreaBreakdown(
  * Splits each entry's tracked seconds equally across its related contact ids
  * so period totals stay consistent.
  */
+function readContactName(
+  contactNames: ReadonlyMap<string, string> | Record<string, string>,
+  id: string,
+): string | undefined {
+  if (contactNames instanceof Map) return contactNames.get(id);
+  return (contactNames as Record<string, string>)[id];
+}
+
 export function buildTimetrackingContactBreakdown(
   entries: readonly TimetrackingEntry[],
   contactNames: ReadonlyMap<string, string> | Record<string, string>,
 ): TimetrackingBreakdownSlice[] {
-  const nameOf = (id: string): string => {
-    if (contactNames instanceof Map) {
-      return contactNames.get(id)?.trim() || "Unknown contact";
-    }
-    return contactNames[id]?.trim() || "Unknown contact";
-  };
+  const nameOf = (id: string): string =>
+    readContactName(contactNames, id)?.trim() || "Unknown contact";
 
   const buckets = new Map<string, { label: string; seconds: number; order: number }>();
 

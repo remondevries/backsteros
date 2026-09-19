@@ -96,7 +96,7 @@ export function TaskBoardCardComponent({
       TASK_STATUS_ORDER.map((value) => ({
         value,
         label: getTaskStatusLabel(value),
-        searchTerms: value.replaceAll("_", " "),
+        searchTerms: value.replace(/_/g, " "),
         icon: <TaskStatusIcon status={value} size={18} />,
       })),
     [],

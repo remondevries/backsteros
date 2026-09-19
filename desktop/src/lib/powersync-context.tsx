@@ -254,9 +254,10 @@ function AuthenticatedPowerSyncProvider({
         setPowerSyncGlobalSlot({ userId, database: next });
         databaseRef.current = next;
 
+        const getOwnerToken = createDesktopTokenProvider();
         const connector = new BacksterPowerSyncConnector(
           apiUrl,
-          createDesktopTokenProvider(),
+          async () => (await getOwnerToken()) ?? null,
           deviceId(),
           async () => {
             for (let attempt = 0; attempt < 40; attempt++) {

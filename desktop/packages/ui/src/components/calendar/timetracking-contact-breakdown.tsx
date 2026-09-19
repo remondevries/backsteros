@@ -26,7 +26,7 @@ function resolveAvatarSrc(
 ): string | null {
   if (!map) return null;
   if (map instanceof Map) return map.get(contactId) ?? null;
-  return map[contactId] ?? null;
+  return (map as Record<string, string | null | undefined>)[contactId] ?? null;
 }
 
 /**

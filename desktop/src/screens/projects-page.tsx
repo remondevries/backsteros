@@ -28,12 +28,10 @@ import {
   TASKS_LIST_BOARD_STORAGE_KEY,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
-  buildDocumentTree,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildProjectKeyRenameRedirectPath,
   buildTransipDomainProjectIcon,
-  findDocumentTreeNodeById,
   formatLetterDisplayId,
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
@@ -66,7 +64,6 @@ import {
   type ProjectSectionId,
   type ProjectStatus,
   type TaskStatus,
-  type TreeReorderRequest,
   getProjectProviderDefaultIcon,
   getProjectEmailCategoryDefaultIcon,
   projectReorderPatches,
@@ -135,6 +132,8 @@ type WorkspaceProject = ProjectOverviewRowProject & {
   githubRepository?: string | null;
   provider?: string | null;
   category?: string | null;
+  healthCheckMode?: "simple" | "advanced" | null;
+  healthCheckDomain?: string | null;
 };
 
 export type ProjectsPageProps = {
