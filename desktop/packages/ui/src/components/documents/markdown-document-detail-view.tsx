@@ -61,6 +61,8 @@ export type MarkdownDocumentDetailViewProps = {
   previewTitleEditable?: boolean;
   /** When false, title is read-only in both edit and preview (journal date titles). */
   titleEditable?: boolean;
+  /** When false, hide Edit/Preview and ignore edit shortcuts (repo docs browse). */
+  readOnly?: boolean;
   /** When false, skip ⌘E / ⌘P (keep-alive pane not visible). */
   shortcutsEnabled?: boolean;
   onSave?: (
@@ -91,6 +93,7 @@ export function MarkdownDocumentDetailView({
   embedded = false,
   previewTitleEditable = true,
   titleEditable = true,
+  readOnly = false,
   shortcutsEnabled = true,
   onSave,
   onSaveTitle,
@@ -144,21 +147,21 @@ export function MarkdownDocumentDetailView({
             reason instanceof Error ? reason.message : "Could not save document.",
         }));
     },
-    shortcutsEnabled,
+    shortcutsEnabled: shortcutsEnabled && !readOnly,
     hostRef: shellRef,
   });
 
   const { setActiveZone } = useListKeyboardNavigationZone();
 
   useEffect(() => {
-    if (!shortcutsEnabled) return;
+    if (!shortcutsEnabled || readOnly) return;
     return registerCodebaseDetailEnterFocus(() => {
       const root = shellRef.current;
       if (!root?.closest("[data-codebase-workbench]")) return false;
       activateEditMode({ focusEditor: true });
       return true;
     });
-  }, [activateEditMode, shortcutsEnabled]);
+  }, [activateEditMode, readOnly, shortcutsEnabled]);
 
   useEffect(() => {
     if (!shortcutsEnabled) return;
@@ -181,10 +184,10 @@ export function MarkdownDocumentDetailView({
   }, [mode, setActiveZone, setViewMode, shortcutsEnabled]);
 
   useEffect(() => {
-    if (!startInEditMode || startedInEditRef.current) return;
+    if (!startInEditMode || readOnly || startedInEditRef.current) return;
     startedInEditRef.current = true;
     activateEditMode();
-  }, [activateEditMode, startInEditMode]);
+  }, [activateEditMode, readOnly, startInEditMode]);
 
   const {
     titleRenameFocusRequest,
@@ -301,7 +304,7 @@ export function MarkdownDocumentDetailView({
 
   void sectionLabel;
 
-  const canEditTitle = titleEditable;
+  const canEditTitle = titleEditable && !readOnly;
   const canEditPreviewTitle = titleEditable && previewTitleEditable;
 
   const renderTitleEditor = (previewStatic: boolean) =>
@@ -370,7 +373,7 @@ export function MarkdownDocumentDetailView({
               {value.trim() ? (
                 <DocumentMarkdownPreview
                   body={value}
-                  onChange={handleChange}
+                  onChange={readOnly ? undefined : handleChange}
                 />
               ) : (
                 <p className="content-markdown-empty-hint">
@@ -394,7 +397,7 @@ export function MarkdownDocumentDetailView({
     <div className="markdown-document-leading">{leading}</div>
   ) : null;
 
-  const viewModeDock = (
+  const viewModeDock = readOnly ? null : (
     <FloatingPillToggleDock>
       <SegmentedPillToggle
         value={mode}

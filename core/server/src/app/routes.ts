@@ -2210,6 +2210,34 @@ export function registerApiRoutes(app: Hono) {
     return { project };
   }
 
+  app.get("/api/v1/projects/:id/docs", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const loaded = await loadCodebaseFsProject(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if ("error" in loaded) {
+      return c.json(loaded.error, loaded.status);
+    }
+    try {
+      const result = await projectFsService.listRepoDocs(
+        loaded.project.localWorkingDirectory!,
+      );
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof projectFsService.ProjectFsError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/projects/:id/fs/entries", async (c) => {
     const auth = getAuth(c);
     if (!requireScope("projects:read")(auth)) {

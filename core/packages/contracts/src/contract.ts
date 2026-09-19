@@ -32,6 +32,7 @@ import {
   projectFsDeleteEntryResponseSchema,
   projectFsFileSchema,
   projectFsListEntriesResponseSchema,
+  projectRepoDocsResponseSchema,
   projectFsWriteFileSchema,
   projectSchema,
   searchResultSchema,
@@ -316,6 +317,20 @@ export const apiContract: AppRouter = c.router(
       },
       summary:
         "List changed files (with patches) on a pull request for the project's linked repository",
+    },
+    listProjectRepoDocs: {
+      method: "GET",
+      path: "/api/v1/projects/:id/docs",
+      pathParams: z.object({ id: z.string() }),
+      responses: {
+        200: projectRepoDocsResponseSchema,
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "List markdown under a codebase project's docs/ plus root AGENTS.md",
     },
     listProjectFsEntries: {
       method: "GET",

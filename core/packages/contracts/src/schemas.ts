@@ -337,6 +337,21 @@ export const projectFsListEntriesResponseSchema = z.object({
   entries: z.array(projectFsEntrySchema),
 });
 
+export const projectRepoDocEntrySchema = z.object({
+  name: z.string(),
+  /** Relative path from the working directory (`docs/…` or root `AGENTS.md`). */
+  path: z.string(),
+  kind: projectFsEntryKindSchema,
+  /** Root `AGENTS.md` is pinned even though it sits outside `docs/`. */
+  pinned: z.boolean(),
+});
+
+export const projectRepoDocsResponseSchema = z.object({
+  /** True when `{localWorkingDirectory}/docs` exists as a directory. */
+  docsPresent: z.boolean(),
+  entries: z.array(projectRepoDocEntrySchema),
+});
+
 export const projectFsFileSchema = z.object({
   path: z.string(),
   name: z.string(),
@@ -3591,6 +3606,10 @@ export type ProjectFsCreateEntryInput = z.infer<
 >;
 export type ProjectFsListEntriesResponse = z.infer<
   typeof projectFsListEntriesResponseSchema
+>;
+export type ProjectRepoDocEntry = z.infer<typeof projectRepoDocEntrySchema>;
+export type ProjectRepoDocsResponse = z.infer<
+  typeof projectRepoDocsResponseSchema
 >;
 export type ProjectFsCreateEntryResponse = z.infer<
   typeof projectFsCreateEntryResponseSchema

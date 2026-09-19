@@ -135,4 +135,65 @@ describe("project-fs", () => {
     assert.equal(read.binary, true);
     assert.equal(read.content, null);
   });
+
+  it("lists markdown under docs/ and pins root AGENTS.md", async () => {
+    const wd = await makeRoot();
+    await writeFile(path.join(wd, "AGENTS.md"), "# agents\n");
+    await writeFile(path.join(wd, "README.md"), "# readme\n");
+    await mkdir(path.join(wd, "docs", "adr"), { recursive: true });
+    await writeFile(path.join(wd, "docs", "00-vision.md"), "# vision\n");
+    await writeFile(path.join(wd, "docs", "notes.txt"), "skip\n");
+    await writeFile(path.join(wd, "docs", "adr", "001.md"), "# adr\n");
+    await mkdir(path.join(wd, "src"));
+    await writeFile(path.join(wd, "src", "hidden.md"), "# no\n");
+
+    const listed = await projectFs.listRepoDocs(wd);
+    assert.equal(listed.docsPresent, true);
+    assert.deepEqual(
+      listed.entries.map((entry) => ({
+        path: entry.path,
+        kind: entry.kind,
+        pinned: entry.pinned,
+      })),
+      [
+        { path: "AGENTS.md", kind: "file", pinned: true },
+        { path: "docs", kind: "directory", pinned: false },
+        { path: "docs/00-vision.md", kind: "file", pinned: false },
+        { path: "docs/adr", kind: "directory", pinned: false },
+        { path: "docs/adr/001.md", kind: "file", pinned: false },
+      ],
+    );
+  });
+
+  it("returns an empty tree when docs/ is missing and does not include other root files", async () => {
+    const wd = await makeRoot();
+    await writeFile(path.join(wd, "README.md"), "# readme\n");
+    await mkdir(path.join(wd, "Documents"));
+    await writeFile(path.join(wd, "Documents", "note.md"), "# vault\n");
+
+    const listed = await projectFs.listRepoDocs(wd);
+    assert.equal(listed.docsPresent, false);
+    assert.deepEqual(listed.entries, []);
+  });
+
+  it("pins AGENTS.md when docs/ is missing", async () => {
+    const wd = await makeRoot();
+    await writeFile(path.join(wd, "AGENTS.md"), "# agents\n");
+
+    const listed = await projectFs.listRepoDocs(wd);
+    assert.equal(listed.docsPresent, false);
+    assert.equal(listed.entries.length, 1);
+    assert.equal(listed.entries[0]?.path, "AGENTS.md");
+    assert.equal(listed.entries[0]?.pinned, true);
+  });
+
+  it("treats an empty docs/ folder as present with no entries", async () => {
+    const wd = await makeRoot();
+    await mkdir(path.join(wd, "docs"));
+    await writeFile(path.join(wd, "docs", "diagram.png"), "not markdown");
+
+    const listed = await projectFs.listRepoDocs(wd);
+    assert.equal(listed.docsPresent, true);
+    assert.deepEqual(listed.entries, []);
+  });
 });

@@ -635,7 +635,6 @@ export function ProjectCommitHistory({
     setPullsHasMore(nextPulls?.hasMore ?? false);
     setPullsLoading(false);
     setPullsError(null);
-    setRepoError(null);
     if (nextCommits && nextSelected) {
       loadedCommitsKeyRef.current = `${project.id}\0${project.githubRepository ?? ""}\0${nextSelected}`;
     }

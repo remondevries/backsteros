@@ -36,6 +36,8 @@ type Props = Omit<
 > & {
   /** When false, unregister j/k (other workbench tabs own content). */
   keyboardEnabled: boolean;
+  /** Vault document prefetch. Off for repo `docs/` rows, whose ids are paths. */
+  prefetchDocuments?: boolean;
 };
 
 /**
@@ -44,6 +46,7 @@ type Props = Omit<
  */
 export function DesktopCodebaseDocsListPanel({
   keyboardEnabled,
+  prefetchDocuments = true,
   getDocumentHref,
   pathname,
   items,
@@ -66,9 +69,10 @@ export function DesktopCodebaseDocsListPanel({
   const prefetchItemId = useCallback(
     (itemId: string) => {
       if (parseFolderNavId(itemId) !== null) return;
+      if (!prefetchDocuments) return;
       prefetchKnowledgeDocumentContent(client, itemId);
     },
-    [client],
+    [client, prefetchDocuments],
   );
 
   const { listRef, highlightedId, listContainerProps } =
@@ -119,17 +123,21 @@ export function DesktopCodebaseDocsListPanel({
           to={to}
           {...rest}
           onMouseEnter={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
+            if (prefetchDocuments && item) {
+              prefetchKnowledgeDocumentContent(client, item.id);
+            }
             onMouseEnter?.(event);
           }}
           onFocus={(event: FocusEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
+            if (prefetchDocuments && item) {
+              prefetchKnowledgeDocumentContent(client, item.id);
+            }
             onFocus?.(event);
           }}
         />
       );
     };
-  }, [client, getDocumentHref, items]);
+  }, [client, getDocumentHref, items, prefetchDocuments]);
 
   return (
     <ProjectDocumentsSidePanelView

@@ -98,6 +98,7 @@ import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
 import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
+import { useCodebaseRepoDocs } from "../lib/codebase-repo-docs";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
 import { useDesktopLetterContext } from "../lib/use-letter-context";
@@ -111,6 +112,7 @@ import { useDomainProjectApi } from "../lib/use-domain-project-api";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
 import { DomainProjectWorkbench } from "./domain-project-workbench";
 import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
+import { CodebaseRepoDocsDetail } from "./codebase-repo-docs-detail";
 import {
   projectTypeFromLocationState,
   projectNavFromLocationState,
@@ -311,6 +313,33 @@ function ProjectsPageBody({
     );
   }, [projects, routeSlug]);
 
+  const navTypeForDocs = projectTypeFromLocationState(location.state);
+  const selectedIsCodebase = Boolean(
+    selected &&
+      (selected.type === "codebase" ||
+        navTypeForDocs === "codebase" ||
+        recalledProjectType(selected.id) === "codebase" ||
+        recalledProjectType(selected.key) === "codebase"),
+  );
+  const repoDocs = useCodebaseRepoDocs({
+    projectId: selected?.id ?? null,
+    enabled:
+      selectedIsCodebase &&
+      Boolean(selected?.localWorkingDirectory?.trim()),
+  });
+  const getCodebaseRepoDocHref = useCallback(
+    (pathOrId: string) => {
+      if (!selected) return pathOrId;
+      return getScopedProjectDocumentHref(selected.key, pathOrId, routeScope);
+    },
+    [routeScope, selected],
+  );
+  const codebaseDocsEmptyLabel = !selected?.localWorkingDirectory?.trim()
+    ? "Set a working directory to browse repository docs."
+    : repoDocs.loading
+      ? "Loading documents…"
+      : (repoDocs.error ?? "No docs in this repository.");
+
   useEnsureProjectVault(selected?.id);
 
   // Prefer pathname over :section — `/projects/:slug/documents/*` does not set
@@ -436,6 +465,18 @@ function ProjectsPageBody({
   useEffect(() => {
     if (!selected || activeSection !== "documents" || documentPath) return;
     if (composingDocument) return;
+    if (selectedIsCodebase) {
+      if (!selected.localWorkingDirectory?.trim() || repoDocs.loading) return;
+      const first = repoDocs.items.find((item) => item.kind !== "folder");
+      if (!first) return;
+      navigate(
+        getScopedProjectDocumentHref(
+          selected.key,
+          first.path || first.id,
+          routeScope),
+        { replace: true });
+      return;
+    }
     const first = readableProjectDocuments[0];
     if (!first) return;
     navigate(
@@ -450,8 +491,11 @@ function ProjectsPageBody({
     documentPath,
     navigate,
     readableProjectDocuments,
+    repoDocs.items,
+    repoDocs.loading,
     routeScope,
     selected,
+    selectedIsCodebase,
   ]);
 
   // Match web: open first project letter when landing on Letters index.
@@ -1601,120 +1645,25 @@ function ProjectsPageBody({
           routeScope={routeScope}
           pathname={location.pathname}
           tasksPanel={renderSection("tasks")}
-          docsPanel={renderSection("documents")}
+          docsPanel={
+            <CodebaseRepoDocsDetail
+              projectId={project.id}
+              documentPath={documentPath}
+              items={repoDocs.items}
+              loading={repoDocs.loading}
+              error={repoDocs.error}
+              workingDirectoryMissing={!project.localWorkingDirectory?.trim()}
+            />
+          }
           updatesPanel={<DesktopProjectUpdatesPanel projectId={project.id} />}
           docsListPanel={
             <DesktopCodebaseDocsListPanel
               keyboardEnabled={activeSection === "documents"}
+              prefetchDocuments={false}
               pathname={location.pathname}
-              items={projectDocuments}
-              getDocumentHref={(pathOrId) =>
-                getScopedProjectDocumentHref(projectKey, pathOrId, routeScope)
-              }
-              onAdd={(parentFolderId) => {
-                void workspace
-                  .createProjectDocument({
-                    projectId: project.id,
-                    title: "Untitled",
-                    parentId: parentFolderId,
-                  })
-                  .then((created) => {
-                    const item: KnowledgeListItem = {
-                      id: created.id,
-                      title: "Untitled",
-                      path: created.path,
-                      projectId: project.id,
-                      kind: "document",
-                      parentId: parentFolderId,
-                    };
-                    setLocalDocuments((current) =>
-                      current.some((entry) => entry.id === created.id)
-                        ? current
-                        : [...current, item]);
-                    setPendingEditDocumentId(created.id);
-                    setOmittedDocumentIds([]);
-                    setComposingDocument(false);
-                    navigate(
-                      getScopedProjectDocumentHref(
-                        projectKey,
-                        created.path || created.id,
-                        routeScope));
-                  });
-              }}
-              onCreateFolder={async ({ title, parentId }) => {
-                try {
-                  const created = await workspace.createProjectFolder({
-                    projectId: project.id,
-                    title,
-                    parentId,
-                  });
-                  const item: KnowledgeListItem = {
-                    id: created.id,
-                    title,
-                    path: created.path,
-                    projectId: project.id,
-                    kind: "folder",
-                    parentId,
-                  };
-                  setLocalDocuments((current) =>
-                    current.some((entry) => entry.id === created.id)
-                      ? current
-                      : [...current, item]);
-                  return { ok: true as const };
-                } catch (error) {
-                  return {
-                    ok: false as const,
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : "Could not create folder.",
-                  };
-                }
-              }}
-              onRename={(id, title) => workspace.renameDocument(id, title)}
-              onDelete={(id) => workspace.deleteDocument(id)}
-              onReorderTreeItem={(request: TreeReorderRequest) => {
-                const tree = buildDocumentTree(
-                  projectDocuments.map((item) => ({
-                    id: item.id,
-                    title: item.title,
-                    path: item.path ?? item.id,
-                    kind:
-                      item.kind === "folder"
-                        ? ("folder" as const)
-                        : ("document" as const),
-                    parentId: item.parentId ?? null,
-                    sortOrder: item.sortOrder ?? 0,
-                    icon: item.icon ?? null,
-                  })));
-                void (async () => {
-                  if (request.fromParentId !== request.toParentId) {
-                    await workspace.moveDocument(
-                      request.itemId,
-                      request.toParentId);
-                    return;
-                  }
-                  const parent =
-                    request.toParentId === null
-                      ? null
-                      : findDocumentTreeNodeById(tree, request.toParentId);
-                  const siblings =
-                    parent === null
-                      ? tree
-                      : parent.type === "folder"
-                        ? parent.children
-                        : [];
-                  const ids = siblings
-                    .filter((node) => node.id !== request.itemId)
-                    .map((node) => node.id);
-                  const insertAt = request.beforeId
-                    ? ids.indexOf(request.beforeId)
-                    : -1;
-                  if (insertAt === -1) ids.push(request.itemId);
-                  else ids.splice(insertAt, 0, request.itemId);
-                  await workspace.reorderDocuments(ids);
-                })();
-              }}
+              items={repoDocs.items}
+              getDocumentHref={getCodebaseRepoDocHref}
+              emptyLabel={codebaseDocsEmptyLabel}
             />
           }
           onCreateOrganizationFromQuery={(query) => {

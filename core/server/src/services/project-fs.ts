@@ -217,6 +217,185 @@ export async function listEntries(
   return { path: relative, entries };
 }
 
+const MARKDOWN_FILE = /\.(md|mdx|markdown)$/i;
+const MAX_REPO_DOCS_DEPTH = 12;
+const MAX_REPO_DOCS_ENTRIES = 2_000;
+
+export type ProjectRepoDocEntry = {
+  name: string;
+  path: string;
+  kind: ProjectFsEntryKind;
+  pinned: boolean;
+};
+
+function isMarkdownName(name: string): boolean {
+  return MARKDOWN_FILE.test(name);
+}
+
+async function findRootAgentsMd(
+  rootReal: string,
+): Promise<ProjectRepoDocEntry | null> {
+  let dirents;
+  try {
+    dirents = await readdir(rootReal, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const match = dirents.find(
+    (dirent) => dirent.name.toLowerCase() === "agents.md",
+  );
+  if (!match) return null;
+  const joined = path.join(rootReal, match.name);
+  let real: string;
+  try {
+    real = await realpath(joined);
+  } catch {
+    return null;
+  }
+  if (!isPathInsideRoot(rootReal, real)) return null;
+  const info = await stat(real);
+  if (!info.isFile()) return null;
+  return {
+    name: match.name,
+    path: match.name,
+    kind: "file",
+    pinned: true,
+  };
+}
+
+/**
+ * Walk `docs/` for markdown (and the folders that contain it).
+ * Returns whether this directory contributed any markdown.
+ */
+async function collectDocsMarkdown(
+  rootReal: string,
+  dirAbs: string,
+  relative: string,
+  entries: ProjectRepoDocEntry[],
+  depth: number,
+): Promise<boolean> {
+  if (depth > MAX_REPO_DOCS_DEPTH || entries.length >= MAX_REPO_DOCS_ENTRIES) {
+    return false;
+  }
+  let dirents;
+  try {
+    dirents = await readdir(dirAbs, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  let hasMarkdown = false;
+  const sorted = [...dirents].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  for (const dirent of sorted) {
+    if (entries.length >= MAX_REPO_DOCS_ENTRIES) break;
+    const name = dirent.name;
+    if (!name || SKIP_NAMES.has(name) || name.startsWith(".")) continue;
+    const childAbs = path.join(dirAbs, name);
+    let childReal: string;
+    try {
+      childReal = await realpath(childAbs);
+    } catch {
+      continue;
+    }
+    if (!isPathInsideRoot(rootReal, childReal)) continue;
+
+    let kind: ProjectFsEntryKind | null = null;
+    try {
+      if (dirent.isDirectory()) kind = "directory";
+      else if (dirent.isFile()) kind = "file";
+      else {
+        const info = await stat(childReal);
+        if (info.isDirectory()) kind = "directory";
+        else if (info.isFile()) kind = "file";
+      }
+    } catch {
+      continue;
+    }
+    if (!kind) continue;
+
+    const childRel = `${relative}/${name}`;
+    if (kind === "directory") {
+      const nested = await collectDocsMarkdown(
+        rootReal,
+        childReal,
+        childRel,
+        entries,
+        depth + 1,
+      );
+      if (nested) {
+        entries.push({
+          name,
+          path: childRel,
+          kind: "directory",
+          pinned: false,
+        });
+        hasMarkdown = true;
+      }
+      continue;
+    }
+    if (!isMarkdownName(name)) continue;
+    entries.push({
+      name,
+      path: childRel,
+      kind: "file",
+      pinned: false,
+    });
+    hasMarkdown = true;
+  }
+  return hasMarkdown;
+}
+
+/**
+ * Documents source for codebase projects: markdown under `docs/`, plus root
+ * `AGENTS.md` when present. Missing `docs/` is an empty tree, not an error.
+ */
+export async function listRepoDocs(workingDirectory: string): Promise<{
+  docsPresent: boolean;
+  entries: ProjectRepoDocEntry[];
+}> {
+  const rootReal = await resolveRoot(workingDirectory);
+  const entries: ProjectRepoDocEntry[] = [];
+  const agents = await findRootAgentsMd(rootReal);
+  if (agents) entries.push(agents);
+
+  let docsPresent = false;
+  const docsJoined = path.join(rootReal, "docs");
+  try {
+    const docsReal = await realpath(docsJoined);
+    if (isPathInsideRoot(rootReal, docsReal)) {
+      const info = await stat(docsReal);
+      if (info.isDirectory()) {
+        docsPresent = true;
+        const hasMarkdown = await collectDocsMarkdown(
+          rootReal,
+          docsReal,
+          "docs",
+          entries,
+          0,
+        );
+        if (hasMarkdown) {
+          entries.push({
+            name: "docs",
+            path: "docs",
+            kind: "directory",
+            pinned: false,
+          });
+        }
+      }
+    }
+  } catch {
+    docsPresent = false;
+  }
+
+  entries.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return a.path.localeCompare(b.path, undefined, { sensitivity: "base" });
+  });
+  return { docsPresent, entries };
+}
+
 export async function readTextFile(
   workingDirectory: string,
   relativePath: string,

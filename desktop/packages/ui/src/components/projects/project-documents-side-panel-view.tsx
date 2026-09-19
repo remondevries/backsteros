@@ -73,6 +73,10 @@ export type ProjectDocumentsSidePanelViewProps = {
   onVisibleNavItemIdsChange?: (ids: string[]) => void;
   onFolderActivateRef?: Ref<(folderId: string) => void>;
   /**
+   * Shown when the tree has no rows. Defaults to the vault create hint.
+   */
+  emptyLabel?: string;
+  /**
    * `chrome` — app content side panel (default).
    * `embedded` — codebase workbench Docs tab (matches Files tree chrome).
    */
@@ -110,6 +114,7 @@ export function ProjectDocumentsSidePanelView({
   listContainerProps,
   onVisibleNavItemIdsChange,
   onFolderActivateRef,
+  emptyLabel = "No documents yet. Use the plus button to add one.",
   variant = "chrome",
 }: ProjectDocumentsSidePanelViewProps) {
   const embedded = variant === "embedded";
@@ -266,9 +271,7 @@ export function ProjectDocumentsSidePanelView({
         </div>
       ) : null}
       {!showList ? (
-        <ContentSidePanelEmpty>
-          No documents yet. Use the plus button to add one.
-        </ContentSidePanelEmpty>
+        <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
       ) : (
         <ContentSidePanelList
           aria-label="Project documents"
