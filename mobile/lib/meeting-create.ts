@@ -9,7 +9,7 @@ export type MobileMeetingCreatePowerSync = {
   ready: boolean;
   connected?: boolean;
   preferRestWrites?: boolean;
-  flushCrudUpload?: () => Promise<void>;
+  flushCrudUpload?: () => Promise<boolean | void>;
   patchMeeting?: (id: string, values: Record<string, unknown>) => Promise<void>;
   createMetadata?: (
     table: "meetings",
