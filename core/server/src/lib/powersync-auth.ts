@@ -67,6 +67,23 @@ export function canMintPowerSyncToken(auth: AuthContext | null): boolean {
 }
 
 /**
+ * Who may administer `/api/v1/api-keys` (Settings → API keys).
+ * Local-shell on local-core, or an owner-grade `sk_live_…` with `settings:write`.
+ * Contact-bound agent keys are rejected even if overscoped.
+ */
+export function canManageApiKeys(auth: AuthContext | null | undefined): boolean {
+  if (!auth?.workspaceId) return false;
+  if (auth.kind === "local_shell") {
+    return Boolean(auth.userId);
+  }
+  if (auth.kind === "api_key") {
+    if (auth.contactId) return false;
+    return hasScope(auth.scopes, "settings:write");
+  }
+  return false;
+}
+
+/**
  * Prefer loopback PowerSync for desktop Tauri / local Vite **on local-core**.
  * Cloud-core must not do this: the product shell syncs to cloud PowerSync,
  * and loopback on the VPS is not a client endpoint.

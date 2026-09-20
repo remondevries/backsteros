@@ -114,6 +114,7 @@ import { hashPortalPassword, verifyPortalPassword } from "../lib/portal-password
 import { proxyErrorStatus } from "../lib/proxy-http-status.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
+import { canManageApiKeys } from "../lib/powersync-auth.js";
 import { registerTaskLabelRoutes } from "./task-label-routes.js";
 import {
   normalizeAvatarMimeType,
@@ -9658,8 +9659,11 @@ export function registerApiRoutes(app: Hono) {
 
   app.get("/api/v1/api-keys", async (c) => {
     const auth = getAuth(c);
-    if (!isOwnerShellAuth(auth)) {
-      return c.json(unauthorized(), 401);
+    if (!canManageApiKeys(auth)) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
     }
 
     const rows = await apiKeyService.listApiKeys(auth.workspaceId);
@@ -9671,8 +9675,11 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", createApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!isOwnerShellAuth(auth)) {
-        return c.json(unauthorized(), 401);
+      if (!canManageApiKeys(auth)) {
+        return c.json(
+          auth.kind === "api_key" ? forbidden() : unauthorized(),
+          auth.kind === "api_key" ? 403 : 401,
+        );
       }
 
       try {
@@ -9706,8 +9713,11 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", updateApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!isOwnerShellAuth(auth)) {
-        return c.json(unauthorized(), 401);
+      if (!canManageApiKeys(auth)) {
+        return c.json(
+          auth.kind === "api_key" ? forbidden() : unauthorized(),
+          auth.kind === "api_key" ? 403 : 401,
+        );
       }
 
       try {
@@ -9741,8 +9751,11 @@ export function registerApiRoutes(app: Hono) {
 
   app.delete("/api/v1/api-keys/:id", async (c) => {
     const auth = getAuth(c);
-    if (!isOwnerShellAuth(auth)) {
-      return c.json(unauthorized(), 401);
+    if (!canManageApiKeys(auth)) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
     }
 
     const row = await apiKeyService.revokeApiKey(
