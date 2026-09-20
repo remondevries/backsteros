@@ -19,10 +19,7 @@ import {
 } from "@backsteros/ui";
 
 import { type PendingPageSurface } from "./pending-navigation-routes";
-import {
-  isJournalDayPath,
-  isRoutePathActive,
-} from "./shell-route-path-match";
+import { isRoutePathActive } from "./shell-route-path-match";
 import {
   getVisibleKeepAliveSurface,
   getWarmKeepAliveEpoch,
