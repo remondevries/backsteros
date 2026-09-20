@@ -128,36 +128,40 @@ export function TaskDueDateDropdown({
   }
 
   // Committed due date from props — trigger label must not drift ahead of a
-  // slow/failed save (optimistic ymdValue alone used to show "Tomorrow").
+  // slow/failed save when *setting* a date (optimistic ymdValue alone used to
+  // show "Tomorrow"). Clearing is safe to show immediately so "No due date"
+  // does not bounce back to "Today" while the patch lands.
   const committedYmd = formatDueDateInputValue(dueDate);
+  const displayYmd =
+    ymdValue === "" && committedYmd ? "" : committedYmd || ymdValue;
   const options = useMemo(
     () =>
       buildTaskDueDateDropdownOptions(
-        committedYmd || ymdValue || null,
+        displayYmd || null,
         new Date(),
         noDueDateLabel,
         { allowClear },
       ),
-    [allowClear, committedYmd, noDueDateLabel, ymdValue],
+    [allowClear, displayYmd, noDueDateLabel],
   );
-  const selectedValue = taskDueDateDropdownValue(committedYmd || null);
-  const displayLabel = committedYmd
+  const selectedValue = taskDueDateDropdownValue(displayYmd || null);
+  const displayLabel = displayYmd
     ? labelFormat === "ymd-time"
-      ? formatDueDateTimeStamp(dueDate) || committedYmd
+      ? formatDueDateTimeStamp(dueDate) || displayYmd
       : labelFormat === "ymd"
-        ? committedYmd
+        ? displayYmd
         : labelFormat === "long"
-          ? (formatBirthdayLabel(committedYmd) ?? committedYmd)
+          ? (formatBirthdayLabel(displayYmd) ?? displayYmd)
           : labelFormat === "calendar"
-            ? (formatTaskDueMetaLabel(committedYmd, {
+            ? (formatTaskDueMetaLabel(displayYmd, {
                 alwaysIncludeYear: true,
-              }) ?? committedYmd)
-            : (formatTaskDueMetaLabel(committedYmd) ?? committedYmd)
+              }) ?? displayYmd)
+            : (formatTaskDueMetaLabel(displayYmd) ?? displayYmd)
     : noDueDateLabel;
-  const hasDueDate = Boolean(committedYmd);
+  const hasDueDate = Boolean(displayYmd);
   const dueDateUrgency = useMemo(
-    () => getTaskDueDateUrgency(committedYmd || null, new Date(), { status }),
-    [committedYmd, status],
+    () => getTaskDueDateUrgency(displayYmd || null, new Date(), { status }),
+    [displayYmd, status],
   );
   const colorScheme = useSyncExternalStore(
     subscribeToPreferredColorScheme,

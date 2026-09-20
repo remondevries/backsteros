@@ -183,6 +183,29 @@ test("applyLiveEntityOverlay keeps newer local optimistic edits", () => {
   assert.equal(merged[0]?.title, "Local rename");
 });
 
+test("applyLiveEntityOverlay prefers live clear on equal updatedAt", () => {
+  const stamp = "2026-01-02T00:00:00.000Z";
+  const localTasks = [
+    {
+      id: "task-1",
+      dueDate: "2026-09-20T00:00:00.000Z",
+      updatedAt: stamp,
+    },
+  ];
+  const overlay = new Map([
+    [
+      "task-1",
+      {
+        id: "task-1",
+        dueDate: null as string | null,
+        updatedAt: stamp,
+      },
+    ],
+  ]);
+  const merged = applyLiveEntityOverlay(localTasks, overlay);
+  assert.equal(merged[0]?.dueDate, null);
+});
+
 test("applyLiveEntityOverlay hides deleted ids until PowerSync drops them", () => {
   const localDocs = [
     { id: "doc-1", title: "Gone", updatedAt: "2026-01-01T00:00:00.000Z" },

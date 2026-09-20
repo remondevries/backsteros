@@ -39,6 +39,38 @@ export function shouldSkipRestAfterCrudFlush(
   return uploaded !== false;
 }
 
+/**
+ * Fields that must dual-write REST even after a successful PowerSync flush
+ * (e.g. clears that may be dropped from PATCH JSON nulls, or new columns).
+ * Also used on the cloud-client path, which otherwise returns before REST.
+ */
+export function mustDualWriteRestAfterCrudFlush(
+  table: string,
+  values: Record<string, unknown>,
+): boolean {
+  if (
+    table === "projects" &&
+    ("healthCheckMode" in values || "healthCheckDomain" in values)
+  ) {
+    return true;
+  }
+  if (
+    (table === "tasks" || table === "projects" || table === "letters") &&
+    Object.prototype.hasOwnProperty.call(values, "dueDate") &&
+    values.dueDate == null
+  ) {
+    return true;
+  }
+  if (
+    table === "projects" &&
+    Object.prototype.hasOwnProperty.call(values, "startDate") &&
+    values.startDate == null
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** Letter PDF bytes: cloud R2 when the product API is not loopback; else local-core health. */
 export function shouldAttemptLetterPdfFetch(
   localCoreReachable: boolean | null,

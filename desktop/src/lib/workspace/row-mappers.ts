@@ -83,6 +83,24 @@ export function asEpoch(value: string | null | undefined): number | null {
   return Number.isNaN(date.getTime()) ? null : date.getTime();
 }
 
+/**
+ * Normalize a live/workspace due date (epoch, Date, or ISO) to epoch ms.
+ * Explicit `null` stays `null` — callers must not fall back to a stale snapshot.
+ */
+export function dueDateValueToEpochMs(
+  value: number | Date | string | null | undefined,
+): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return asEpoch(value);
+}
+
 export function parseTaskLinks(value: unknown): TaskLink[] {
   let raw: unknown = value;
   if (typeof raw === "string") {

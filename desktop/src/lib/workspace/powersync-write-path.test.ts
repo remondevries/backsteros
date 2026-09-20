@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   localOnlyRestFailClosed,
+  mustDualWriteRestAfterCrudFlush,
   shouldAttemptLetterPdfFetch,
   shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
@@ -35,6 +36,48 @@ test("shouldSkipRestAfterCrudFlush only when upload drained work", () => {
   assert.equal(shouldSkipRestAfterCrudFlush(true), true);
   assert.equal(shouldSkipRestAfterCrudFlush(undefined), true);
   assert.equal(shouldSkipRestAfterCrudFlush(false), false);
+});
+
+test("mustDualWriteRestAfterCrudFlush for due-date clears and health checks", () => {
+  assert.equal(mustDualWriteRestAfterCrudFlush("tasks", { dueDate: null }), true);
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("tasks", { dueDate: "2026-09-20T00:00:00.000Z" }),
+    false,
+  );
+  assert.equal(mustDualWriteRestAfterCrudFlush("tasks", { title: "x" }), false);
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("projects", { healthCheckMode: "domain" }),
+    true,
+  );
+  assert.equal(mustDualWriteRestAfterCrudFlush("projects", { dueDate: null }), true);
+  assert.equal(mustDualWriteRestAfterCrudFlush("projects", { startDate: null }), true);
+  assert.equal(mustDualWriteRestAfterCrudFlush("projects", { name: "x" }), false);
+  assert.equal(mustDualWriteRestAfterCrudFlush("letters", { dueDate: null }), true);
+});
+
+test("connected PowerSync still RESTs due-date clears after flush", () => {
+  const uploaded = true;
+  const values = { dueDate: null };
+  const skip =
+    shouldSkipRestAfterCrudFlush(uploaded) &&
+    !mustDualWriteRestAfterCrudFlush("tasks", values);
+  assert.equal(skip, false);
+});
+
+test("cloud fail-closed path still dual-writes due-date clears", () => {
+  const powerSync = { ready: true, connected: true };
+  const apiUrl = "https://api.local.backsteros.com";
+  assert.equal(shouldSkipRestEntityWrite(powerSync), true);
+  assert.equal(localOnlyRestFailClosed(apiUrl), true);
+  // Cloud path flushes PowerSync then must still REST when this is true.
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("tasks", { dueDate: null }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("tasks", { priority: 2 }),
+    false,
+  );
 });
 
 test("shouldAttemptLetterPdfFetch on cloud even when local-core is down", () => {

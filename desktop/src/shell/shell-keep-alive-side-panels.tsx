@@ -64,6 +64,7 @@ import { buildMailboxByIdMap } from "../lib/email-list-tasks";
 import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
 import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
 import { habitsWithTodayTasks } from "../lib/habit-today-tasks";
+import { dueDateValueToEpochMs } from "../lib/workspace/row-mappers";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -275,12 +276,9 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
               // Side panel + detail must show the same scheduling fields.
               status: live.status ?? item.status,
               priority: live.priority ?? item.priority,
-              dueDate:
-                typeof live.dueDate === "number"
-                  ? live.dueDate
-                  : live.dueDate
-                    ? live.dueDate.getTime()
-                    : item.dueDate,
+              // Explicit null is an intentional clear — never fall back to the
+              // stale inbox snapshot date (that made “No due date” bounce).
+              dueDate: dueDateValueToEpochMs(live.dueDate),
               assigneeId: live.assigneeId ?? item.assigneeId,
             }
           : item;

@@ -104,7 +104,9 @@ export function applyLiveEntityOverlay<
   const merged = base.map((local) => {
     const live = overlayById.get(local.id);
     if (!live) return local;
-    if (updatedAtMs(live.updatedAt) > updatedAtMs(local.updatedAt)) {
+    // Prefer live on ties so optimistic clears (dueDate → null) win over a
+    // same-ms SQLite watch that still has the previous date.
+    if (updatedAtMs(live.updatedAt) >= updatedAtMs(local.updatedAt)) {
       return live;
     }
     return local;

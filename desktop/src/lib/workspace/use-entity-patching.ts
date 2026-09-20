@@ -20,6 +20,7 @@ import {
   shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   localOnlyRestFailClosed,
+  mustDualWriteRestAfterCrudFlush,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
@@ -686,7 +687,10 @@ export function useWorkspaceEntityPatching({
           }
         }
         if (!authenticated) return;
-        // Cloud client: queue in SQLite only. Do not call local-only REST.
+        // Cloud client: PowerSync upload is the normal write path. Do not fall
+        // through to loopback-only REST (scope move / vault relocate).
+        // Exception: patches that must dual-write REST (due-date clears,
+        // health-check columns) — PowerSync PATCH opData can omit JSON nulls.
         if (
           shouldSkipRestEntityWrite(powerSync) &&
           localOnlyRestFailClosed(getDesktopPublicEnvironment().apiUrl)
@@ -705,12 +709,14 @@ export function useWorkspaceEntityPatching({
               error,
             );
           }
-          return;
-        }
-        // PowerSync upload is primary. Extra REST only for:
-        // - agentInboxApproved (replication race) via queueSoleRest…
-        // - project/contact scope moves (server renumbers; URL needs the number)
-        if (shouldSkipRestEntityWrite(powerSync)) {
+          if (!mustDualWriteRestAfterCrudFlush(table, values)) {
+            return;
+          }
+          // Fall through to REST dual-write below.
+        } else if (shouldSkipRestEntityWrite(powerSync)) {
+          // Local-core / loopback: PowerSync upload is primary; REST only for
+          // exceptions (agent inbox, scope move, vault relocate, empty flush,
+          // must-dual-write clears).
           queueSoleRestDualWriteAgentInboxApproval({
             client,
             path,
@@ -759,17 +765,9 @@ export function useWorkspaceEntityPatching({
               error,
             );
           }
-          // Status patches used to dual-write REST "because PowerSync stranded"
-          // — that re-fought SQLite. Await flush above; fall through to REST
-          // only when the upload queue was empty or flush failed.
-          // Health-check columns are new: always dual-write REST so Postgres
-          // (status page / portal) gets the domain even if local SQLite lags.
-          const healthCheckPatch =
-            table === "projects" &&
-            ("healthCheckMode" in values || "healthCheckDomain" in values);
           if (
             shouldSkipRestAfterCrudFlush(uploaded) &&
-            !healthCheckPatch
+            !mustDualWriteRestAfterCrudFlush(table, values)
           ) {
             return;
           }

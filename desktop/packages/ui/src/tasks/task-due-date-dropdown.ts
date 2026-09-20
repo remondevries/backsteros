@@ -79,7 +79,7 @@ export function buildTaskDueDateDropdownOptions(
       value: TASK_NO_DUE_DATE_VALUE,
       label: noDueDateLabel,
       shortcut: searchableDropdownShortcut(result.length),
-      searchTerms: "none clear remove",
+      searchTerms: "none clear remove no date no due",
     });
   }
 
