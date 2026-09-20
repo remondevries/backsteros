@@ -2,11 +2,9 @@ import {
   initClient,
   type ApiFetcher,
   type ApiFetcherArgs,
-  type InitClientReturn,
 } from "@ts-rest/core";
 import {
   fullApiContract,
-  type FullApiContract,
   type Avatar,
   type Document,
   type FinancialImportResult,
@@ -504,11 +502,15 @@ async function putBinaryWithProgress(
   );
 }
 
+function initBacksterosContract(baseUrl: string, api: ApiFetcher) {
+  return initClient(fullApiContract, { baseUrl, api });
+}
+
+/** Inferred from `initClient` — explicit `InitClientReturn<FullApiContract>` collapses to `never` under tsc. */
+export type BacksterosContractClient = ReturnType<typeof initBacksterosContract>;
+
 export type BacksterosApiClient = {
-  contract: InitClientReturn<FullApiContract, {
-    baseUrl: string;
-    api: ApiFetcher;
-  }>;
+  contract: BacksterosContractClient;
   requestJson<T>(path: string, init?: RequestInit): Promise<T>;
   requestBinary(path: string, init?: RequestInit): Promise<Blob>;
   /** Long-lived fetch (SSE). Does not apply the default request timeout. */
@@ -596,10 +598,7 @@ export type BacksterosApiClient = {
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
   const normalized = { ...options, baseUrl: trimBaseUrl(options.baseUrl) };
   const fetcher = createFetcher(normalized);
-  const contract = initClient(fullApiContract, {
-    baseUrl: normalized.baseUrl,
-    api: fetcher,
-  });
+  const contract = initBacksterosContract(normalized.baseUrl, fetcher);
   const requestJson = <T>(path: string, init?: RequestInit) =>
     rawRequest(normalized, path, init) as Promise<T>;
   const requestBinary = (path: string, init?: RequestInit) =>

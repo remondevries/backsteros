@@ -7,6 +7,16 @@ import {
   createClerkTokenProvider,
 } from "./index.js";
 
+/** Merged `fullApiContract` makes ts-rest client methods `never` in tsc; runtime calls work. */
+type ContractTestClient = {
+  listProjects: (args: { query: Record<string, never> }) => Promise<{ status: number }>;
+  createTask: (args: { body: { title: string } }) => Promise<unknown>;
+};
+
+function contract(client: ReturnType<typeof createApiClient>): ContractTestClient {
+  return client.contract as unknown as ContractTestClient;
+}
+
 test("awaits the token provider and authenticates contract requests", async () => {
   let requestedAuthorization: string | null = null;
   const client = createApiClient({
@@ -21,7 +31,7 @@ test("awaits the token provider and authenticates contract requests", async () =
     },
   });
 
-  const response = await client.contract.listProjects({ query: {} });
+  const response = await contract(client).listProjects({ query: {} });
 
   assert.equal(response.status, 200);
   assert.equal(requestedAuthorization, "Bearer session-token");
@@ -55,7 +65,7 @@ test("throws a structured error for non-2xx JSON responses", async () => {
   });
 
   await assert.rejects(
-    () => client.contract.listProjects({ query: {} }),
+    () => contract(client).listProjects({ query: {} }),
     (error: unknown) => {
       assert.ok(error instanceof ApiClientError);
       assert.equal(error.status, 403);
@@ -139,7 +149,7 @@ test("serializes typed JSON requests and preserves route headers", async () => {
     },
   });
 
-  await client.contract.createTask({ body: { title: "Typed request" } });
+  await contract(client).createTask({ body: { title: "Typed request" } });
 
   assert.deepEqual(observed, {
     contentType: "application/json",
