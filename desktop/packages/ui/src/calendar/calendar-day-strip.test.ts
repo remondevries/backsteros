@@ -6,7 +6,6 @@ import {
   CALENDAR_DAY_STRIP_CENTER_INDEX,
   CALENDAR_DAY_STRIP_PANE_COUNT,
   formatCalendarDayStripHeaderLabel,
-  formatDayAnchorYmd,
   startOfLocalDayDate,
 } from "./calendar-day-strip.js";
 import { formatLocalYmd } from "./calendar-week-strip.js";

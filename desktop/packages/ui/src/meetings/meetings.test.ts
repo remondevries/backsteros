@@ -7,7 +7,6 @@ import {
   getCalendarMeetingOverlayHref,
   MEETING_CURRENT_WEEK_ICON_COLOR,
   MEETING_MUTED_WEEK_ICON_COLOR,
-  MEETING_NEXT_WEEK_ICON_COLOR,
   meetingScheduleIconTone,
   parseCalendarMeetingOverlayId,
   parseMeetingDisplayId,
