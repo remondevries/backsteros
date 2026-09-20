@@ -10,12 +10,11 @@ import {
   rememberSectionEntryHrefs,
 } from "./section-entry-hrefs";
 import {
-  isJournalDayPath,
-  isRoutePathActive,
   keepAliveSidePanelSurface,
   shouldKeepAliveSidePanelSurface,
   shouldKeepAliveSurface,
-} from "./shell-route-keep-alive";
+} from "./shell-warm-keep-alive";
+import { isJournalDayPath, isRoutePathActive } from "./shell-route-path-match";
 
 afterEach(() => {
   rememberSectionEntryHrefs({

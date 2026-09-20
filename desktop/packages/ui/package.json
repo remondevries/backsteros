@@ -35,6 +35,11 @@
       "import": "./dist/entry/navigation.js",
       "default": "./dist/entry/navigation.js"
     },
+    "./section-seeds": {
+      "types": "./dist/entry/section-seeds.d.ts",
+      "import": "./dist/entry/section-seeds.js",
+      "default": "./dist/entry/section-seeds.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./tailwind.css": "./src/tailwind.css"
   },
