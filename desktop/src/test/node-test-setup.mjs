@@ -8,7 +8,7 @@
 //    files to a static test env object so modules that read e.g.
 //    `import.meta.env.DEV` at module top level can be imported under Node.
 import * as nodeModule from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 
 const TEST_IMPORT_META_ENV = Object.freeze({
   DEV: false,

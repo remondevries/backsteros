@@ -1,6 +1,4 @@
-import { createRequire } from "node:module";
-
-const requireExpoCrypto = createRequire(import.meta.url);
+import * as Crypto from "expo-crypto";
 
 /**
  * UUID v4 for React Native. Hermes does not expose `globalThis.crypto`, so
@@ -10,7 +8,7 @@ export function randomUuid(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
   }
-  return requireExpoCrypto("expo-crypto").randomUUID() as string;
+  return Crypto.randomUUID();
 }
 
 /** UUID without hyphens — PowerSync / SQLite row ids. */
