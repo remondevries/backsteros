@@ -28,6 +28,7 @@ import { hetznerRouteLayer } from "./hetzner/http.ts";
 import {
   backsterosAgentProfileRouteLayer,
   backsterosFileTaskRouteLayer,
+  backsterosControlRouteLayer,
 } from "./backsteros/http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -560,6 +561,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     hetznerRouteLayer,
     backsterosAgentProfileRouteLayer,
     backsterosFileTaskRouteLayer,
+    backsterosControlRouteLayer,
     backsterosApiProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,

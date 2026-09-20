@@ -12,6 +12,7 @@ import { readThreadShell } from "~/state/entities";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import type { Project } from "~/types";
 import { fetchBacksterosTask } from "./client";
+import { pushControlBinding } from "./controlApi";
 import { requestBacksterosComposerFocusSoon } from "./composerFocusStore";
 import { resolveT3ProjectRefForBacksterosProject } from "./resolveT3Project";
 import {
@@ -224,6 +225,19 @@ export async function openBacksterosTaskChat(input: {
       displayId: getBacksterosTaskDisplayId(input.task, input.backsterosProject.key),
     };
     useBacksterosTaskChatStore.getState().setBinding(input.task.id, next);
+    // Best-effort: keep the localhost control API binding index in sync.
+    if (next.kind === "thread") {
+      void pushControlBinding({
+        taskId: input.task.id,
+        threadId: next.threadId,
+        environmentId: next.environmentId,
+        t3ProjectId: next.t3ProjectId,
+        backsterosProjectId: next.backsterosProjectId,
+        projectTitle: next.projectTitle,
+        title: next.title,
+        displayId: next.displayId,
+      });
+    }
     await navigateToBinding(input.navigate, next);
     requestBacksterosComposerFocusSoon();
     return;

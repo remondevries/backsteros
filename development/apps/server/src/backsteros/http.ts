@@ -3,6 +3,13 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 import { readBacksterosAgentProfile, writeBacksterosAgentProfile } from "./agent-profile.ts";
 import {
+  controlBindingsGetHandler,
+  controlBindingsPutHandler,
+  controlMessageHandler,
+  controlStartHandler,
+  controlStatusHandler,
+} from "./control.ts";
+import {
   authorizationHeaderFromWebhookKey,
   readFileTaskCallbackResult,
   registerFileTaskRequest,
@@ -380,4 +387,46 @@ export const backsterosFileTaskRouteLayer = Layer.mergeAll(
   backsterosFileTaskCallbackGetRouteLayer,
   backsterosCloudFileTaskMailboxPostRouteLayer,
   backsterosCloudFileTaskMailboxGetRouteLayer,
+);
+
+const CONTROL_SESSIONS_PATH = "/api/backsteros/control/sessions";
+const CONTROL_BINDINGS_PATH = "/api/backsteros/control/bindings";
+const CONTROL_MESSAGE_PATH = "/api/backsteros/control/message";
+
+export const backsterosControlStartRouteLayer = HttpRouter.add(
+  "POST",
+  CONTROL_SESSIONS_PATH,
+  controlStartHandler,
+);
+
+export const backsterosControlStatusRouteLayer = HttpRouter.add(
+  "GET",
+  CONTROL_SESSIONS_PATH,
+  controlStatusHandler,
+);
+
+export const backsterosControlMessageRouteLayer = HttpRouter.add(
+  "POST",
+  CONTROL_MESSAGE_PATH,
+  controlMessageHandler,
+);
+
+export const backsterosControlBindingsGetRouteLayer = HttpRouter.add(
+  "GET",
+  CONTROL_BINDINGS_PATH,
+  controlBindingsGetHandler,
+);
+
+export const backsterosControlBindingsPutRouteLayer = HttpRouter.add(
+  "PUT",
+  CONTROL_BINDINGS_PATH,
+  controlBindingsPutHandler,
+);
+
+export const backsterosControlRouteLayer = Layer.mergeAll(
+  backsterosControlStartRouteLayer,
+  backsterosControlStatusRouteLayer,
+  backsterosControlMessageRouteLayer,
+  backsterosControlBindingsGetRouteLayer,
+  backsterosControlBindingsPutRouteLayer,
 );
