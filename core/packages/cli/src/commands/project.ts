@@ -1,4 +1,8 @@
-import type { CreateProjectInput, UpdateProjectInput } from "@backsteros/contracts";
+import type {
+  CreateProjectInput,
+  Project,
+  UpdateProjectInput,
+} from "@backsteros/contracts";
 import type { CliClient, CliConfig } from "../config.js";
 import { emitResult } from "../output.js";
 import { resolveProjectId } from "../resolve.js";
@@ -62,7 +66,7 @@ export async function runProjectCommand(
         config.json,
         { projects },
         projects
-          .map((p) => `${p.key}\t${p.status}\t${p.name}\t${p.id}`)
+          .map((p: Project) => `${p.key}\t${p.status}\t${p.name}\t${p.id}`)
           .join("\n") || "(no projects)",
       );
       return;

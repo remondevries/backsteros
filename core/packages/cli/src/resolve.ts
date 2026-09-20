@@ -1,3 +1,4 @@
+import type { Project, Task } from "@backsteros/contracts";
 import type { CliClient } from "./config.js";
 
 const DISPLAY_ID_RE = /^([A-Za-z0-9]{2,3})-(\d+)$/;
@@ -17,7 +18,7 @@ export async function listAllProjects(client: CliClient): Promise<ProjectRef[]> 
   if (res.status !== 200) {
     throw new Error(`listProjects failed with status ${res.status}`);
   }
-  return res.body.projects.map((p) => ({
+  return res.body.projects.map((p: Project) => ({
     id: p.id,
     key: p.key,
     name: p.name,
@@ -68,7 +69,7 @@ export async function resolveTaskId(
     if (res.status !== 200) {
       throw new Error(`listTasks failed with status ${res.status}`);
     }
-    const task = res.body.tasks.find((t) => t.number === number);
+    const task = res.body.tasks.find((t: Task) => t.number === number);
     if (!task) {
       throw new Error(`Task not found: ${projectKey}-${number}`);
     }

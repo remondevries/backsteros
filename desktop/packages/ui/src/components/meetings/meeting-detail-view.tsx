@@ -263,7 +263,7 @@ export function MeetingDetailView({
   onClose,
   onExpand,
   onCollapse,
-  headerMoreAction,
+  headerMoreAction: _headerMoreAction,
 }: MeetingDetailViewProps) {
   const [activeTab, setActiveTab] = useState<MeetingContentTab>("summary");
   const [dockToggle, setDockToggle] = useState<ReactNode>(null);

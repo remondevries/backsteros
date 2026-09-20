@@ -140,5 +140,23 @@ console.log(
   `[@backsteros/ui] Copied styles.css + ${styleCount} styles/ files to dist/`,
 );
 
+// Colocated component CSS (e.g. meeting-calendar-status-icon.css) — tsc emits JS
+// imports but does not copy sidecar stylesheets into dist/.
+let colocatedCssCount = 0;
+for (const file of walk(srcRoot)) {
+  if (extname(file) !== ".css") continue;
+  const rel = relative(srcRoot, file);
+  if (rel.startsWith("styles/")) continue;
+  const target = join(distRoot, rel);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, readFileSync(file));
+  colocatedCssCount += 1;
+}
+if (colocatedCssCount > 0) {
+  console.log(
+    `[@backsteros/ui] Copied ${colocatedCssCount} colocated component CSS files to dist/`,
+  );
+}
+
 preserveUseClientDirectives();
 writeServerEntry();

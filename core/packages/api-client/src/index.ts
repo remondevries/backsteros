@@ -2,11 +2,14 @@ import {
   initClient,
   type ApiFetcher,
   type ApiFetcherArgs,
+  type ClientArgs,
   type InitClientReturn,
 } from "@ts-rest/core";
 import {
   fullApiContract,
-  type FullApiContract,
+  fileTaskCallbackContract,
+  type CloudflareContract,
+  type TransipContract,
   type Avatar,
   type Document,
   type FinancialImportResult,
@@ -504,11 +507,34 @@ async function putBinaryWithProgress(
   );
 }
 
+function initBacksterosContract(baseUrl: string, api: ApiFetcher) {
+  return initClient(fullApiContract, { baseUrl, api });
+}
+
+/**
+ * Merged `fullApiContract` and `apiContract: AppRouter` erase ts-rest route types (TS7056).
+ * Satellite routers stay fully typed; main API routes use a callable index signature.
+ */
+type BacksterosContractInitArgs = ClientArgs;
+
+type ContractRouteResult = {
+  status: number;
+  /** AppRouter-erased routes — bodies are validated at runtime via status + Zod on the server. */
+  body: any;
+  headers: Headers;
+};
+
+type MainApiContractClient = {
+  [route: string]: (args: unknown) => Promise<ContractRouteResult>;
+};
+
+export type BacksterosContractClient = MainApiContractClient &
+  InitClientReturn<CloudflareContract, BacksterosContractInitArgs> &
+  InitClientReturn<typeof fileTaskCallbackContract, BacksterosContractInitArgs> &
+  InitClientReturn<TransipContract, BacksterosContractInitArgs>;
+
 export type BacksterosApiClient = {
-  contract: InitClientReturn<FullApiContract, {
-    baseUrl: string;
-    api: ApiFetcher;
-  }>;
+  contract: BacksterosContractClient;
   requestJson<T>(path: string, init?: RequestInit): Promise<T>;
   requestBinary(path: string, init?: RequestInit): Promise<Blob>;
   /** Long-lived fetch (SSE). Does not apply the default request timeout. */
@@ -596,10 +622,10 @@ export type BacksterosApiClient = {
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
   const normalized = { ...options, baseUrl: trimBaseUrl(options.baseUrl) };
   const fetcher = createFetcher(normalized);
-  const contract = initClient(fullApiContract, {
-    baseUrl: normalized.baseUrl,
-    api: fetcher,
-  });
+  const contract = initBacksterosContract(
+    normalized.baseUrl,
+    fetcher,
+  ) as unknown as BacksterosContractClient;
   const requestJson = <T>(path: string, init?: RequestInit) =>
     rawRequest(normalized, path, init) as Promise<T>;
   const requestBinary = (path: string, init?: RequestInit) =>

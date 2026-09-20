@@ -3,7 +3,7 @@ import { ApiClientError } from "@backsteros/api-client";
 
 export type MobileNumberResolvePowerSync = {
   connected: boolean;
-  flushCrudUpload?: () => Promise<void>;
+  flushCrudUpload?: () => Promise<boolean | void>;
 };
 
 /**

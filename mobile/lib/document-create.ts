@@ -21,7 +21,7 @@ type MobileDocumentPowerSync = {
     values: Record<string, unknown>,
     id?: string,
   ) => Promise<string>;
-  flushCrudUpload?: () => Promise<void>;
+  flushCrudUpload?: () => Promise<boolean | void>;
 };
 
 export function folderPathFromTitle(title: string): string {

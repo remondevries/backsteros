@@ -93,13 +93,13 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
 
   const forbidden = await json(app, "/api/v1/projects", readSecret, {
     method: "POST",
-    body: JSON.stringify({ key: "blocked", name: "Blocked" }),
+    body: JSON.stringify({ key: "BK", name: "Blocked" }),
   });
   assert.equal(forbidden.response.status, 403);
 
   const project = await json(app, "/api/v1/projects", fullSecret, {
     method: "POST",
-    body: JSON.stringify({ key: "integration", name: "Integration project", status: "active" }),
+    body: JSON.stringify({ key: "IG", name: "Integration project", status: "active" }),
   });
   assert.equal(project.response.status, 201);
   assert.equal(project.body.name, "Integration project");

@@ -9,7 +9,7 @@ import {
   resolveLetterDetailHref,
   type InboxListItem,
   type KnowledgeListItem,
-} from "@backsteros/ui";
+} from "@backsteros/ui/section-seeds";
 
 import {
   peekSectionEntryHref,

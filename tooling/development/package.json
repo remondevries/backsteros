@@ -10,8 +10,8 @@
     "dev:web": "pnpm --dir ../../development dev:web",
     "dev:desktop": "pnpm --dir ../../development dev:desktop",
     "build": "pnpm --dir ../../development build",
-    "typecheck": "pnpm --dir ../../development typecheck",
-    "lint": "pnpm --dir ../../development lint",
-    "test": "pnpm --dir ../../development test"
+    "typecheck": "node ./scripts/run-if-installed.mjs typecheck",
+    "lint": "node ./scripts/run-if-installed.mjs lint",
+    "test": "node ./scripts/run-if-installed.mjs test"
   }
 }

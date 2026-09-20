@@ -119,6 +119,10 @@ export function getTabTitleForHref(href: string): string {
     return primed;
   }
 
+  if (normalized === "/calendar") {
+    return "Calendar";
+  }
+
   const navMatch = navigation.find((item) => item.href === normalized);
   if (navMatch) {
     return navMatch.label;
