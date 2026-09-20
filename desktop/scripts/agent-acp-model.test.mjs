@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   normalizeAcpModelId,
+  parseAcpPromptResponseUsage,
+  parseAcpUsageUpdateFromSessionUpdate,
   resolveAcpModelForPrompt,
   shouldApplyAcpModelConfig,
 } from "./agent-acp-model.mjs";
@@ -46,5 +48,48 @@ test("resolveAcpModelForPrompt forceRequested overrides pin", () => {
       forceRequested: true,
     }),
     "gpt-5.4",
+  );
+});
+
+test("parseAcpUsageUpdateFromSessionUpdate accepts usage_update", () => {
+  const usage = parseAcpUsageUpdateFromSessionUpdate({
+    sessionUpdate: "usage_update",
+    used: 42_000,
+    size: 272_000,
+  });
+  assert.equal(usage?.usedTokens, 42_000);
+  assert.equal(usage?.maxTokens, 272_000);
+});
+
+test("parseAcpUsageUpdateFromSessionUpdate drops empty zero-only updates", () => {
+  assert.equal(
+    parseAcpUsageUpdateFromSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 0,
+    }),
+    null,
+  );
+});
+
+test("parseAcpPromptResponseUsage maps prompt turn usage", () => {
+  const usage = parseAcpPromptResponseUsage({
+    stopReason: "end_turn",
+    usage: {
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+    },
+  });
+  assert.equal(usage?.inputTokens, 100);
+  assert.equal(usage?.outputTokens, 50);
+  assert.equal(usage?.totalTokens, 150);
+});
+
+test("parseAcpPromptResponseUsage drops all-zero turn usage", () => {
+  assert.equal(
+    parseAcpPromptResponseUsage({
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    }),
+    null,
   );
 });

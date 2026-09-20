@@ -33,6 +33,8 @@ import {
 } from "./agent-acp-mcp.mjs";
 import {
   normalizeAcpModelId,
+  parseAcpPromptResponseUsage,
+  parseAcpUsageUpdateFromSessionUpdate,
   resolveAcpModelForPrompt,
   shouldApplyAcpModelConfig,
 } from "./agent-acp-model.mjs";
@@ -45,6 +47,8 @@ export {
 } from "./agent-acp-mcp.mjs";
 export {
   normalizeAcpModelId,
+  parseAcpPromptResponseUsage,
+  parseAcpUsageUpdateFromSessionUpdate,
   resolveAcpModelForPrompt,
   shouldApplyAcpModelConfig,
 } from "./agent-acp-model.mjs";
@@ -1195,6 +1199,15 @@ function handleStdoutMessage(msg) {
           }
         }
       }
+      const usageFromUpdate = parseAcpUsageUpdateFromSessionUpdate(u);
+      if (usageFromUpdate && taskId) {
+        emit({
+          type: "usage-update",
+          taskId,
+          sessionId,
+          usage: usageFromUpdate,
+        });
+      }
       if (
         u.sessionUpdate === "current_mode_update" ||
         u.sessionUpdate === "currentModeUpdate"
@@ -1997,33 +2010,21 @@ export async function acpPrompt(options) {
     if (session.promptsInFlight === 0) {
       session.busy = false;
       if (completedOk) {
-        const promptUsage =
-          result &&
-          typeof result === "object" &&
-          result.usage &&
-          typeof result.usage === "object"
-            ? result.usage
-            : null;
+        const usageFromPrompt = parseAcpPromptResponseUsage(result);
+        if (usageFromPrompt) {
+          emit({
+            type: "usage-update",
+            taskId,
+            sessionId: session.sessionId,
+            usage: usageFromPrompt,
+          });
+        }
         emit({
           type: "prompt-complete",
           taskId,
           sessionId: session.sessionId,
           result,
         });
-        // Optional PromptResponse.usage (also missing from Cursor ACP today).
-        if (
-          promptUsage &&
-          typeof promptUsage.inputTokens === "number" &&
-          Number.isFinite(promptUsage.inputTokens) &&
-          promptUsage.inputTokens > 0
-        ) {
-          emit({
-            type: "usage-update",
-            taskId,
-            sessionId: session.sessionId,
-            usage: promptUsage,
-          });
-        }
       } else if (terminalError) {
         emit({
           type: "prompt-error",

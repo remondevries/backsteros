@@ -2,6 +2,10 @@
  * Cursor ACP model preference helpers (session pin vs global request).
  */
 
+import { asNonNegativeInt, normalizeAgentHookUsage } from "./agent-hook-usage.mjs";
+
+export { asNonNegativeInt } from "./agent-hook-usage.mjs";
+
 /**
  * @param {string | null | undefined} modelId
  * @returns {string}
@@ -41,4 +45,64 @@ export function resolveAcpModelForPrompt(input) {
     return pinned;
   }
   return normalizeAcpModelId(input.requestedModelId);
+}
+
+/**
+ * Parse ACP `session/update` usage_update (context window meter).
+ * Drops empty/invalid payloads; never invents token counts.
+ *
+ * @param {unknown} update
+ * @returns {ReturnType<typeof normalizeAgentHookUsage> | null}
+ */
+export function parseAcpUsageUpdateFromSessionUpdate(update) {
+  if (!update || typeof update !== "object") return null;
+  const record = /** @type {Record<string, unknown>} */ (update);
+  const sessionUpdate = record.sessionUpdate ?? record.session_update;
+  if (sessionUpdate !== "usage_update" && sessionUpdate !== "usageUpdate") {
+    return null;
+  }
+  const usedTokens = asNonNegativeInt(
+    record.used ?? record.usedTokens ?? record.used_tokens,
+  );
+  const maxTokens = asNonNegativeInt(
+    record.size ?? record.maxTokens ?? record.max_tokens,
+  );
+  if (usedTokens == null && maxTokens == null) return null;
+  if (usedTokens === 0 && maxTokens == null) return null;
+  return normalizeAgentHookUsage({
+    usedTokens,
+    ...(maxTokens != null ? { maxTokens } : {}),
+  });
+}
+
+/**
+ * Optional token usage on session/prompt result.
+ *
+ * @param {unknown} result
+ * @returns {ReturnType<typeof normalizeAgentHookUsage> | null}
+ */
+export function parseAcpPromptResponseUsage(result) {
+  if (!result || typeof result !== "object") return null;
+  const usage = /** @type {Record<string, unknown>} */ (result).usage;
+  if (!usage || typeof usage !== "object") return null;
+  const normalized = normalizeAgentHookUsage({ usage });
+  if (!normalized) return null;
+  const hasTurnTokens =
+    normalized.inputTokens != null ||
+    normalized.outputTokens != null ||
+    normalized.totalTokens != null ||
+    normalized.cacheReadTokens != null ||
+    normalized.cacheWriteTokens != null;
+  const hasContextWindow =
+    normalized.usedTokens != null || normalized.maxTokens != null;
+  if (!hasTurnTokens && !hasContextWindow) return null;
+  if (
+    !hasContextWindow &&
+    normalized.inputTokens === 0 &&
+    normalized.outputTokens === 0 &&
+    normalized.totalTokens === 0
+  ) {
+    return null;
+  }
+  return normalized;
 }

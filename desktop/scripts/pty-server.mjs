@@ -53,6 +53,8 @@ import {
   upsertAssistantTurnTimeline,
 } from "./agent-chat-transcript-store.mjs";
 import { stripTransientAgentStreamError } from "./agent-stream-errors.mjs";
+import { normalizeAgentHookUsage } from "./agent-hook-usage.mjs";
+import { agentHookMessageFromAcpUsageEvent } from "./agent-acp-usage-forward.mjs";
 import {
   acpCancel,
   acpPrompt,
@@ -368,6 +370,18 @@ onAcpEvent((event) => {
       activity,
       source: "acp",
     });
+    return;
+  }
+
+  if (event.type === "usage-update") {
+    const hookMessage = agentHookMessageFromAcpUsageEvent(event);
+    if (hookMessage) {
+      broadcastAcpUsageHook(
+        taskId,
+        event.sessionId ?? chatId ?? null,
+        hookMessage,
+      );
+    }
     return;
   }
 
@@ -707,79 +721,23 @@ function extractHookTurnDetails(payload, event) {
  * Prefer explicit usage object, then top-level fields.
  */
 function extractHookUsage(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  const usage =
-    payload.usage && typeof payload.usage === "object"
-      ? payload.usage
-      : payload.token_usage && typeof payload.token_usage === "object"
-        ? payload.token_usage
-        : payload.tokenUsage && typeof payload.tokenUsage === "object"
-          ? payload.tokenUsage
-          : payload;
+  return normalizeAgentHookUsage(payload);
+}
 
-  const inputTokens = asNonNegativeInt(
-    usage.inputTokens ?? usage.input_tokens,
-  );
-  const outputTokens = asNonNegativeInt(
-    usage.outputTokens ?? usage.output_tokens,
-  );
-  const cacheReadTokens = asNonNegativeInt(
-    usage.cacheReadTokens ?? usage.cache_read_tokens,
-  );
-  const cacheWriteTokens = asNonNegativeInt(
-    usage.cacheWriteTokens ?? usage.cache_write_tokens,
-  );
-  const durationMs = asNonNegativeInt(
-    payload.duration_ms ??
-      payload.durationMs ??
-      usage.duration_ms ??
-      usage.durationMs ??
-      usage.duration,
-  );
-  const status =
-    typeof payload.status === "string"
-      ? payload.status
-      : typeof usage.status === "string"
-        ? usage.status
-        : null;
-  const conversationId =
-    (typeof payload.conversation_id === "string" && payload.conversation_id) ||
-    (typeof payload.conversationId === "string" && payload.conversationId) ||
-    null;
-
-  if (
-    inputTokens == null &&
-    outputTokens == null &&
-    cacheReadTokens == null &&
-    cacheWriteTokens == null &&
-    durationMs == null &&
-    !status &&
-    !conversationId
-  ) {
-    return null;
+/**
+ * @param {string} taskId
+ * @param {string | null | undefined} sessionId
+ * @param {NonNullable<ReturnType<typeof normalizeAgentHookUsage>>} usage
+ */
+function broadcastAcpUsageHook(taskId, sessionId, hookMessage) {
+  broadcastChat(taskId, hookMessage);
+  const sid =
+    typeof sessionId === "string" && sessionId.trim()
+      ? sessionId.trim()
+      : resolveAcpChatId(taskId, sessionId);
+  if (sid && sessionSocketCount(sid) > 0) {
+    broadcast(sid, hookMessage);
   }
-
-  let totalTokens = asNonNegativeInt(
-    usage.totalTokens ?? usage.total_tokens,
-  );
-  if (totalTokens == null) {
-    const parts = [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]
-      .filter((value) => value != null);
-    if (parts.length > 0) {
-      totalTokens = parts.reduce((sum, value) => sum + value, 0);
-    }
-  }
-
-  return {
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    totalTokens,
-    durationMs,
-    status,
-    conversationId,
-  };
 }
 
 function extractAssistantContentText(content) {
