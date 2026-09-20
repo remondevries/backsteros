@@ -27,6 +27,9 @@ import {
 } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer } from "effect/unstable/observability";
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
 
 import * as ServerConfig from "./config.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
@@ -59,7 +62,7 @@ import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./ht
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const BACKSTEROS_API_PATH_PREFIX = "/backsteros-api";
-const DEFAULT_BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = [
   "t3code://app",
@@ -76,12 +79,30 @@ const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inlin
 // out of reach. Relative sibling assets still load through their signed URLs.
 const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
 
+function readBacksterosCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): string {
+  try {
+    const filePath = NodePath.join(NodeOs.homedir(), ".config", "backsteros", "cli.env");
+    if (!NodeFs.existsSync(filePath)) return "";
+    const text = NodeFs.readFileSync(filePath, "utf8");
+    const match = new RegExp(`^(?:export\\s+)?${key}=(.+)$`, "m").exec(text);
+    return match?.[1]?.trim().replace(/^['"]|['"]$/g, "") || "";
+  } catch {
+    return "";
+  }
+}
+
 function resolveBacksterosApiOrigin(): string {
-  return (process.env.BACKSTEROS_API_URL?.trim() || DEFAULT_BACKSTEROS_API_URL).replace(/\/$/, "");
+  const fromEnv = process.env.BACKSTEROS_API_URL?.trim() || "";
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
+  if (fromCli) return fromCli.replace(/\/$/, "");
+  return DEFAULT_BACKSTEROS_API_URL;
 }
 
 function resolveBacksterosApiKey(): string {
-  return process.env.BACKSTEROS_API_KEY?.trim() || "";
+  const fromEnv = process.env.BACKSTEROS_API_KEY?.trim() || "";
+  if (fromEnv) return fromEnv;
+  return readBacksterosCliEnvValue("BACKSTEROS_API_KEY");
 }
 
 export function isBacksterosApiPath(pathname: string): boolean {
@@ -515,11 +536,10 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
         headers.set(name, value);
       }
     }
-    if (!headers.has("authorization")) {
-      const apiKey = resolveBacksterosApiKey();
-      if (apiKey) {
-        headers.set("Authorization", `Bearer ${apiKey}`);
-      }
+    // Prefer the server/env owner key over a stale browser Settings key.
+    const apiKey = resolveBacksterosApiKey();
+    if (apiKey) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
     }
 
     const init: RequestInit = {

@@ -169,7 +169,7 @@ export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env)
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
   if (fromCli) return fromCli.replace(/\/$/, "");
-  return "http://127.0.0.1:8788";
+  return "https://api.local.backsteros.com";
 }
 
 function resolveBacksterosApiKey(env: NodeJS.ProcessEnv = process.env): string {
@@ -179,14 +179,17 @@ function resolveBacksterosApiKey(env: NodeJS.ProcessEnv = process.env): string {
   const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_KEY");
   if (fromCli) return fromCli;
 
-  // Desktop Dev often inherits a shell without `.env.local`; load it once so
-  // `/backsteros-api` proxy can authorize against local-core.
+  // Desktop Dev often inherits a shell without repo env; load `.env` / `.env.local`
+  // once so `/backsteros-api` can authorize when process env is unset.
   if (env.T3CODE_DESKTOP_DEV !== "1") return "";
   try {
     const candidates = [
       NodePath.resolve(process.cwd(), ".env.local"),
+      NodePath.resolve(process.cwd(), ".env"),
       NodePath.resolve(process.cwd(), "../../.env.local"),
+      NodePath.resolve(process.cwd(), "../../.env"),
       NodePath.resolve(process.cwd(), "../.env.local"),
+      NodePath.resolve(process.cwd(), "../.env"),
     ];
     for (const filePath of candidates) {
       if (!NodeFs.existsSync(filePath)) continue;
@@ -287,11 +290,10 @@ async function proxyBacksterosRequest(
   const suffix = requestUrl.pathname.slice(BACKSTEROS_API_PATH_PREFIX.length) || "/";
   const targetUrl = `${resolveBacksterosApiOrigin()}${suffix}${requestUrl.search}`;
   const headers = stripHopByHopHeaders(request.headers);
-  if (!headers.get("authorization")) {
-    const apiKey = resolveBacksterosApiKey();
-    if (apiKey) {
-      headers.set("Authorization", `Bearer ${apiKey}`);
-    }
+  // Prefer env/cli owner key over a stale renderer Settings key.
+  const apiKey = resolveBacksterosApiKey();
+  if (apiKey) {
+    headers.set("Authorization", `Bearer ${apiKey}`);
   }
 
   const init: RequestInit = {

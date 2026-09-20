@@ -1,12 +1,17 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import {
+  DEFAULT_BACKSTEROS_API_URL,
+  normalizePersistedBacksterosApiUrl,
+} from "./backsterosApiProxy";
 import { resolveStorage } from "~/lib/storage";
 
 const BACKSTEROS_SETTINGS_STORAGE_KEY = "t3code:backsteros-settings";
-const BACKSTEROS_SETTINGS_STORAGE_VERSION = 2;
+/** v3: migrate pasted HTTPS gateway URLs back to the local `/backsteros-api` sentinel. */
+const BACKSTEROS_SETTINGS_STORAGE_VERSION = 3;
 
-export const DEFAULT_BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+export { DEFAULT_BACKSTEROS_API_URL };
 
 export interface BacksterosSettingsState {
   readonly apiUrl: string;
@@ -25,11 +30,12 @@ export const useBacksterosSettingsStore = create<BacksterosSettingsState>()(
       apiUrl: DEFAULT_BACKSTEROS_API_URL,
       apiKey: "",
       agentContactId: null,
-      setApiUrl: (apiUrl) => set({ apiUrl }),
+      setApiUrl: (apiUrl) => set({ apiUrl: normalizePersistedBacksterosApiUrl(apiUrl) }),
       setApiKey: (apiKey) => set({ apiKey }),
       setAgentContactId: (agentContactId) =>
         set({ agentContactId: agentContactId?.trim() || null }),
-      setConnection: ({ apiUrl, apiKey }) => set({ apiUrl, apiKey }),
+      setConnection: ({ apiUrl, apiKey }) =>
+        set({ apiUrl: normalizePersistedBacksterosApiUrl(apiUrl), apiKey }),
     }),
     {
       name: BACKSTEROS_SETTINGS_STORAGE_KEY,
@@ -40,7 +46,9 @@ export const useBacksterosSettingsStore = create<BacksterosSettingsState>()(
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<BacksterosSettingsState>;
         return {
-          apiUrl: typeof state.apiUrl === "string" ? state.apiUrl : DEFAULT_BACKSTEROS_API_URL,
+          apiUrl: normalizePersistedBacksterosApiUrl(
+            typeof state.apiUrl === "string" ? state.apiUrl : DEFAULT_BACKSTEROS_API_URL,
+          ),
           apiKey: typeof state.apiKey === "string" ? state.apiKey : "",
           agentContactId:
             typeof state.agentContactId === "string" && state.agentContactId.trim()
@@ -64,7 +72,7 @@ export function readBacksterosConnectionSettings(): {
 } {
   const { apiUrl, apiKey, agentContactId } = useBacksterosSettingsStore.getState();
   return {
-    apiUrl: apiUrl.trim() || DEFAULT_BACKSTEROS_API_URL,
+    apiUrl: normalizePersistedBacksterosApiUrl(apiUrl.trim() || DEFAULT_BACKSTEROS_API_URL),
     apiKey: apiKey.trim(),
     agentContactId: agentContactId?.trim() || null,
   };

@@ -31,7 +31,7 @@ type NotificationsFile = {
   readonly settings: AppNotificationsRecord[];
 };
 
-const DEFAULT_BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
 
 function notificationsFilePath(): string {
   return path.join(os.homedir(), ".config", "backsteros", "app-notifications.json");
@@ -149,6 +149,20 @@ export async function updateAppNotifications(input: {
 function resolveBacksterosApiOrigin(): string {
   const fromEnv = process.env.BACKSTEROS_API_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/u, "");
+  try {
+    const cliEnv = path.join(os.homedir(), ".config", "backsteros", "cli.env");
+    const text = fs.readFileSync(cliEnv, "utf8");
+    for (const line of text.split("\n")) {
+      const match = /^(?:export\s+)?BACKSTEROS_API_URL=(.+)$/u.exec(line.trim());
+      if (!match) continue;
+      return match[1]!
+        .trim()
+        .replace(/^['"]|['"]$/gu, "")
+        .replace(/\/$/u, "");
+    }
+  } catch {
+    // Fall through.
+  }
   return DEFAULT_BACKSTEROS_API_URL;
 }
 

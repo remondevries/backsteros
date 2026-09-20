@@ -227,7 +227,7 @@ export default defineConfig(() => {
       },
       ...(() => {
         const backsterosApiUrl = (
-          process.env.BACKSTEROS_API_URL?.trim() || "http://127.0.0.1:8788"
+          process.env.BACKSTEROS_API_URL?.trim() || "https://api.local.backsteros.com"
         ).replace(/\/$/, "");
         const backsterosApiKey = process.env.BACKSTEROS_API_KEY?.trim() || "";
         const backsterosProxy = {
@@ -245,12 +245,17 @@ export default defineConfig(() => {
               ) => void;
             }) => {
               proxy.on("proxyReq", (proxyReq, req) => {
+                // Prefer the server/env owner key. A stale key in browser
+                // Settings (localStorage) used to win here and 401 the whole
+                // BacksterOS rail while unauthenticated proxy curls still worked.
+                if (backsterosApiKey) {
+                  proxyReq.setHeader("Authorization", `Bearer ${backsterosApiKey}`);
+                  return;
+                }
                 const incoming = req.headers?.authorization;
                 const fromClient = Array.isArray(incoming) ? incoming[0] : incoming;
                 if (typeof fromClient === "string" && fromClient.trim().length > 0) {
                   proxyReq.setHeader("Authorization", fromClient);
-                } else if (backsterosApiKey) {
-                  proxyReq.setHeader("Authorization", `Bearer ${backsterosApiKey}`);
                 }
               });
             },

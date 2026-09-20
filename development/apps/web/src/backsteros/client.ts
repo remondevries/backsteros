@@ -1,3 +1,4 @@
+import { isBacksterosApiProxyUrl } from "./backsterosApiProxy";
 import { BACKSTEROS_INBOX_ATTENTION_STATUSES, backsterosInboxDueBeforeIso } from "./inboxDue";
 import { resolveFileTaskMailboxBaseUrl } from "./fileTaskAgentsStore";
 import { DEFAULT_BACKSTEROS_API_URL, readBacksterosConnectionSettings } from "./settingsStore";
@@ -24,22 +25,10 @@ function normalizeApiUrl(apiUrl: string): string {
   return apiUrl.trim().replace(/\/$/, "") || DEFAULT_BACKSTEROS_API_URL;
 }
 
-function isLocalBacksterosUrl(apiUrl: string): boolean {
-  try {
-    const url = new URL(apiUrl);
-    return (
-      (url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
-      (url.port === "8788" || url.port === "")
-    );
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Local default URL goes through `/backsteros-api` (Vite `server.proxy` in web
- * dev; Electron protocol + T3 server proxy in packaged desktop). Custom URLs
- * call BacksterOS directly with the key from settings.
+ * Local sentinel + Mac HTTPS gateway go through `/backsteros-api` (Vite
+ * `server.proxy` in web; Electron protocol + T3 server proxy in packaged
+ * desktop). Other custom URLs call BacksterOS directly with the settings key.
  */
 function resolveBacksterosRequest(pathWithQuery: string): {
   readonly url: string;
@@ -54,7 +43,7 @@ function resolveBacksterosRequest(pathWithQuery: string): {
 
   const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
 
-  if (isLocalBacksterosUrl(apiUrl)) {
+  if (isBacksterosApiProxyUrl(apiUrl)) {
     return { url: `/backsteros-api${normalizedPath}`, headers };
   }
 
