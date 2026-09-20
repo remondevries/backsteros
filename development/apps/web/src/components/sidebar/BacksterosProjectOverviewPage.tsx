@@ -24,10 +24,13 @@ import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
+import { BacksterosCodebaseProjectWorkbench } from "./BacksterosCodebaseProjectWorkbench";
 import { BacksterosProjectTasksOverview } from "./BacksterosProjectTasksOverview";
 
 /**
- * BacksterOS project home: desktop-style task list in the main pane.
+ * BacksterOS project home.
+ * Codebase projects use the desktop-parity workbench (overview + tabs).
+ * Other / unknown types keep the tasks-only overview.
  * Create/detail lives in the shared task side panel (left-rail New task / C).
  */
 export function BacksterosProjectOverviewPage({
@@ -42,7 +45,7 @@ export function BacksterosProjectOverviewPage({
   const router = useRouter();
   const projects = useProjects();
   const ensureT3Project = useEnsureBacksterosT3Project();
-  const { state: projectsState } = useBacksterosCodebaseProjects(true);
+  const { state: projectsState, patchLocalProject } = useBacksterosCodebaseProjects(true);
   const selection = useBacksterosTaskDetailUiStore((store) => store.selection);
   const openTaskDetail = useBacksterosTaskDetailUiStore((store) => store.openTaskDetail);
   const {
@@ -88,6 +91,8 @@ export function BacksterosProjectOverviewPage({
     return fallbackTitle?.trim() || "Project";
   }, [fallbackTitle, project]);
 
+  const isCodebaseProject = (project?.type ?? "codebase") === "codebase";
+
   const activeRoute = useMemo(() => {
     if (!routeTarget) return null;
     if (routeTarget.kind === "draft") {
@@ -121,6 +126,13 @@ export function BacksterosProjectOverviewPage({
       });
     },
     [ensureT3Project, openTaskDetail, project, projects, router],
+  );
+
+  const handleProjectUpdated = useCallback(
+    (updated: BacksterosCodebaseProject) => {
+      patchLocalProject(updated.id, updated);
+    },
+    [patchLocalProject],
   );
 
   const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
@@ -200,6 +212,22 @@ export function BacksterosProjectOverviewPage({
   const keyboardFocusTaskId =
     listKeyboardActiveZone === "main" && composeProject == null ? keyboardHighlightId : null;
 
+  const tasksPanel = (
+    <BacksterosProjectTasksOverview
+      state={tasksState}
+      projectKey={project?.key ?? null}
+      project={project}
+      selectedTaskId={selectedTaskId}
+      keyboardFocusTaskId={keyboardFocusTaskId}
+      onRetry={reloadTasks}
+      onSelectTask={handleSelectTask}
+      onReorderTasks={handleReorderTasks}
+    />
+  );
+
+  const tasksForWorkbench =
+    tasksState.status === "ready" ? tasksState.tasks : ([] as readonly BacksterosTask[]);
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground">
       <WorkspacePageHeader
@@ -212,16 +240,16 @@ export function BacksterosProjectOverviewPage({
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </WorkspacePageHeader>
-      <BacksterosProjectTasksOverview
-        state={tasksState}
-        projectKey={project?.key ?? null}
-        project={project}
-        selectedTaskId={selectedTaskId}
-        keyboardFocusTaskId={keyboardFocusTaskId}
-        onRetry={reloadTasks}
-        onSelectTask={handleSelectTask}
-        onReorderTasks={handleReorderTasks}
-      />
+      {isCodebaseProject && project ? (
+        <BacksterosCodebaseProjectWorkbench
+          project={project}
+          tasks={tasksForWorkbench}
+          tasksPanel={tasksPanel}
+          onProjectUpdated={handleProjectUpdated}
+        />
+      ) : (
+        tasksPanel
+      )}
     </div>
   );
 }

@@ -52,6 +52,11 @@ export function BacksterosDueDatePropertyMenu(props: {
   readonly dueDate: string | null;
   readonly status?: string | null | undefined;
   readonly disabled?: boolean | undefined;
+  /** Override empty chip label (desktop start date uses “No start date”). */
+  readonly emptyLabel?: string | undefined;
+  readonly ariaLabel?: string | undefined;
+  /** Chip icon size — project overview uses 14 to match desktop. */
+  readonly iconSize?: number | undefined;
   /** Desktop `data-task-property-dropdown` — Shift+D opens due date. */
   readonly taskPropertyDropdownId?: string;
   readonly onChange: (dueDateIso: string | null) => void;
@@ -72,7 +77,9 @@ export function BacksterosDueDatePropertyMenu(props: {
     () => getTaskDueDateUrgency(ymdValue || null, new Date(), { status: props.status }),
     [props.status, ymdValue],
   );
-  const displayLabel = ymdValue ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue) : "No due date";
+  const displayLabel = ymdValue
+    ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+    : (props.emptyLabel ?? "No due date");
   const options = useMemo(() => buildTaskDueDateDropdownOptions(ymdValue || null), [ymdValue]);
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -118,7 +125,7 @@ export function BacksterosDueDatePropertyMenu(props: {
       <MenuTrigger
         disabled={props.disabled}
         className="bos-task-property-chip"
-        aria-label="Change due date"
+        aria-label={props.ariaLabel ?? "Change due date"}
         data-task-property-dropdown={props.taskPropertyDropdownId ?? "dueDate"}
         style={
           urgency === "overdue"
@@ -129,7 +136,11 @@ export function BacksterosDueDatePropertyMenu(props: {
         }
       >
         <span className="bos-task-property-chip__icon">
-          <BacksterosTaskDueDateIcon active={hasDueDate} urgency={urgency} size={12} />
+          <BacksterosTaskDueDateIcon
+            active={hasDueDate}
+            urgency={urgency}
+            size={props.iconSize ?? 12}
+          />
         </span>
         <span className="bos-task-property-chip__label">{displayLabel}</span>
       </MenuTrigger>

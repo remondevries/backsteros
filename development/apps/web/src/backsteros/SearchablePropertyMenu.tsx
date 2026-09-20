@@ -35,6 +35,9 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   readonly ariaLabel?: string;
   readonly disabled?: boolean | undefined;
   readonly muted?: boolean;
+  /** Hide the label text — icon-only trigger (e.g. timeline +). */
+  readonly hideLabel?: boolean;
+  readonly triggerClassName?: string;
   /** Desktop `data-task-property-dropdown` target for S/P/A/… hotkeys. */
   readonly taskPropertyDropdownId?: string;
   readonly onChange: (value: T) => void;
@@ -79,14 +82,21 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
     >
       <MenuTrigger
         disabled={props.disabled}
-        className={cn("bos-task-property-chip", props.muted && "bos-task-property-chip--muted")}
+        className={cn(
+          props.triggerClassName ?? "bos-task-property-chip",
+          !props.triggerClassName && props.muted && "bos-task-property-chip--muted",
+          props.hideLabel && !props.triggerClassName && "bos-task-property-chip--icon-only",
+        )}
         aria-label={props.ariaLabel ?? props.label}
+        title={props.hideLabel ? props.label : undefined}
         {...(props.taskPropertyDropdownId
           ? { "data-task-property-dropdown": props.taskPropertyDropdownId }
           : {})}
       >
-        <span className="bos-task-property-chip__icon">{props.icon}</span>
-        <span className="bos-task-property-chip__label">{props.label}</span>
+        {props.icon ? <span className="bos-task-property-chip__icon">{props.icon}</span> : null}
+        {props.hideLabel ? null : (
+          <span className="bos-task-property-chip__label">{props.label}</span>
+        )}
       </MenuTrigger>
       <MenuPopup
         align="start"

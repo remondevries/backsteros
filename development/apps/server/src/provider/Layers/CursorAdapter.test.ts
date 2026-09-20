@@ -1593,4 +1593,60 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       // hang until the suite timeout instead of failing here.
     }).pipe(TestClock.withLive),
   );
+
+  it.effect("emits thread token usage when ACP sends usage_update", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-usage-update");
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_USAGE_UPDATE: "1" }),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const runtimeEvents: ProviderRuntimeEvent[] = [];
+      const sawUsage = yield* Deferred.make<void>();
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }).pipe(
+          Effect.andThen(
+            event.type === "thread.token-usage.updated" &&
+              String(event.threadId) === String(threadId)
+              ? Deferred.succeed(sawUsage, undefined).pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+
+      yield* adapter.sendTurn({ threadId, input: "hello mock", attachments: [] });
+      yield* Deferred.await(sawUsage).pipe(Effect.timeout("10 seconds"));
+
+      const usageEvent = runtimeEvents.find(
+        (event) =>
+          event.type === "thread.token-usage.updated" &&
+          String(event.threadId) === String(threadId),
+      );
+      assert.equal(usageEvent?.type, "thread.token-usage.updated");
+      if (usageEvent?.type === "thread.token-usage.updated") {
+        assert.deepStrictEqual(usageEvent.payload.usage, {
+          usedTokens: 12_345,
+          lastUsedTokens: 12_345,
+          maxTokens: 200_000,
+        });
+      }
+
+      yield* Fiber.interrupt(runtimeEventsFiber);
+      yield* adapter.stopSession(threadId);
+    }).pipe(TestClock.withLive),
+  );
 });

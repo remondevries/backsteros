@@ -1,0 +1,399 @@
+/* Shallow port of desktop codebase project workbench layout for BacksterDEV. */
+
+.bos-codebase-workbench {
+  --bos-codebase-side-panel-width: 360px;
+  display: grid;
+  grid-template-columns: var(--bos-codebase-side-panel-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__side,
+.bos-codebase-workbench__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__side {
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--background) 92%, var(--foreground) 4%);
+}
+
+.bos-codebase-workbench__side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 14px 20px;
+}
+
+.bos-codebase-workbench__tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.bos-codebase-workbench__tab-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 20px 18px;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.bos-codebase-workbench__empty p {
+  margin: 0;
+  max-width: 36rem;
+  text-wrap: pretty;
+}
+
+.bos-codebase-workbench__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 12px;
+}
+
+.bos-codebase-workbench__row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.bos-codebase-workbench__row--link {
+  cursor: pointer;
+}
+
+.bos-codebase-workbench__row--link:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.bos-codebase-workbench__row-meta {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bos-codebase-workbench__row-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.bos-codebase-workbench__row-sub {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 11px;
+}
+
+.bos-codebase-overview__key {
+  margin: 0 0 4px;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.bos-codebase-overview__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.bos-codebase-overview__section-label {
+  margin: 18px 0 8px;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bos-codebase-overview__meta-line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.bos-codebase-overview__meta-line strong {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-weight: 500;
+}
+
+.bos-codebase-overview__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bos-codebase-overview__activity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.bos-codebase-overview__activity-item:last-child {
+  border-bottom: 0;
+}
+
+.bos-codebase-overview__activity-task {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 11px;
+}
+
+.bos-codebase-overview__activity-body {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.bos-codebase-overview__activity-time {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-size: 11px;
+}
+
+/* Desktop project panel uses 14px property icons. */
+.bos-codebase-workbench .bos-task-property-chip__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.bos-codebase-workbench .bos-task-property-chip__icon img,
+.bos-codebase-workbench .bos-task-property-chip__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.bos-codebase-overview__key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+.bos-codebase-overview__key-row .bos-codebase-overview__key {
+  margin: 0;
+}
+
+.bos-codebase-overview__progress {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.bos-codebase-overview__cwd-edit {
+  display: inline-flex;
+  min-width: 10rem;
+  max-width: 100%;
+}
+
+.bos-codebase-overview__cwd-input {
+  width: 100%;
+  min-width: 12rem;
+  margin: 0;
+  padding: 3px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.bos-codebase-overview__cwd-input:focus {
+  outline: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  outline-offset: 1px;
+}
+
+.bos-codebase-workbench__list-detail {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__list-detail--split {
+  flex-direction: row;
+}
+
+.bos-codebase-workbench__tab-list {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__list-detail--split .bos-codebase-workbench__tab-list {
+  flex: 0 0 42%;
+  max-width: 520px;
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.bos-codebase-workbench__tab-detail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__branch-bar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.bos-codebase-workbench__branch-repo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 11px;
+}
+
+.bos-codebase-workbench__row.is-selected {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.bos-codebase-workbench__commit-row {
+  flex-wrap: wrap;
+}
+
+.bos-codebase-workbench__commit-row .bos-codebase-workbench__row-title {
+  flex: 1 1 100%;
+  white-space: normal;
+}
+
+.bos-codebase-workbench__fs-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.bos-codebase-workbench__file-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  font-size: 12px;
+}
+
+.bos-codebase-workbench__file-pre {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 86%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.bos-codebase-workbench__file-pre--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bos-codebase-workbench__detail-card {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-codebase-workbench__detail-title {
+  margin: 0;
+  padding: 12px 16px 4px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.bos-codebase-workbench__detail-meta {
+  margin: 0;
+  padding: 0 16px 10px;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  font-size: 12px;
+}

@@ -51,6 +51,12 @@ import "~/backsteros/backsteros-file-task-modal.css";
 
 type FileTaskPhase = "brief" | "error";
 
+/** Grow the brief with its content so the modal expands instead of clipping. */
+function resizeBriefField(el: HTMLTextAreaElement) {
+  el.style.height = "0px";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 function FileTaskSendIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -130,6 +136,7 @@ export function BacksterosFileTaskModal() {
       const el = textareaRef.current;
       if (!el) return false;
       pendingBriefFocusRef.current = false;
+      resizeBriefField(el);
       el.focus({ preventScroll: true });
       const len = el.value.length;
       el.setSelectionRange(len, len);
@@ -143,6 +150,14 @@ export function BacksterosFileTaskModal() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [initialProject, selectedProject]);
+
+  // Keep height in sync when the draft changes (typing, restore, clear after send).
+  useLayoutEffect(() => {
+    if (!initialProject || !selectedProject) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    resizeBriefField(el);
+  }, [brief, initialProject, selectedProject]);
 
   const focusBrief = useCallback(() => {
     const el = textareaRef.current;
@@ -522,10 +537,13 @@ export function BacksterosFileTaskModal() {
                   ref={textareaRef}
                   className="bos-file-task-textarea"
                   value={brief}
-                  onChange={(event) => setBrief(event.target.value)}
+                  onChange={(event) => {
+                    setBrief(event.target.value);
+                    resizeBriefField(event.currentTarget);
+                  }}
                   onKeyDown={handleBriefKeyDown}
                   placeholder="Describe the work to file…"
-                  rows={5}
+                  rows={1}
                   aria-label="Task brief"
                   disabled={submitting}
                 />

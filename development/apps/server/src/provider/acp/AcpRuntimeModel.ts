@@ -123,6 +123,12 @@ export type AcpParsedSessionEvent =
       readonly _tag: "ThoughtDelta";
       readonly text: string;
       readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "UsageUpdated";
+      readonly used: number;
+      readonly size: number;
+      readonly rawPayload: unknown;
     };
 
 type AcpSessionSetupResponse =
@@ -879,9 +885,107 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       }
       break;
     }
+    case "usage_update": {
+      // ACP session usage: `used` = tokens currently in context, `size` = window.
+      // Skip non-positive `used` so we never invent a meter reading from an empty report.
+      if (Number.isFinite(upd.used) && upd.used > 0 && Number.isFinite(upd.size) && upd.size >= 0) {
+        events.push({
+          _tag: "UsageUpdated",
+          used: Math.trunc(upd.used),
+          size: Math.trunc(upd.size),
+          rawPayload: params,
+        });
+      }
+      break;
+    }
     default:
       break;
   }
 
   return { ...(modeId !== undefined ? { modeId } : {}), events };
+}
+
+/**
+ * Map an ACP `usage_update` into the shared thread token-usage snapshot used by
+ * the composer context-window meter. Returns undefined when the report is empty
+ * or invalid so callers never emit a fake reading.
+ */
+export function normalizeAcpUsageUpdate(input: { readonly used: number; readonly size: number }):
+  | {
+      readonly usedTokens: number;
+      readonly lastUsedTokens: number;
+      readonly maxTokens?: number;
+    }
+  | undefined {
+  if (!Number.isFinite(input.used) || input.used <= 0) {
+    return undefined;
+  }
+  const used = Math.trunc(input.used);
+  const size = Number.isFinite(input.size) && input.size > 0 ? Math.trunc(input.size) : undefined;
+  const usedTokens = size !== undefined ? Math.min(used, size) : used;
+  return {
+    usedTokens,
+    lastUsedTokens: usedTokens,
+    ...(size !== undefined ? { maxTokens: size } : {}),
+  };
+}
+
+/**
+ * Map optional ACP `PromptResponse.usage` into a context-meter snapshot.
+ * Cursor's ACP agent currently omits this field; keep the mapper ready so a
+ * future CLI fix lights the meter without inventing numbers.
+ */
+export function normalizeAcpPromptUsage(usage: {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly cachedReadTokens?: number | null;
+  readonly cachedWriteTokens?: number | null;
+  readonly thoughtTokens?: number | null;
+}):
+  | {
+      readonly usedTokens: number;
+      readonly lastUsedTokens: number;
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+      readonly totalProcessedTokens?: number;
+      readonly cachedInputTokens?: number;
+      readonly reasoningOutputTokens?: number;
+    }
+  | undefined {
+  if (!Number.isFinite(usage.inputTokens) || usage.inputTokens <= 0) {
+    return undefined;
+  }
+  const inputTokens = Math.trunc(usage.inputTokens);
+  const outputTokens = Number.isFinite(usage.outputTokens)
+    ? Math.max(0, Math.trunc(usage.outputTokens))
+    : 0;
+  const cachedRead =
+    typeof usage.cachedReadTokens === "number" && Number.isFinite(usage.cachedReadTokens)
+      ? Math.max(0, Math.trunc(usage.cachedReadTokens))
+      : undefined;
+  // Prefer reported total when present; otherwise treat input (+ cache read) as
+  // the best available stand-in for tokens currently in context.
+  const reportedTotal =
+    Number.isFinite(usage.totalTokens) && usage.totalTokens > 0
+      ? Math.trunc(usage.totalTokens)
+      : undefined;
+  const usedTokens =
+    reportedTotal ?? (cachedRead !== undefined ? inputTokens + cachedRead : inputTokens);
+  if (usedTokens <= 0) {
+    return undefined;
+  }
+  const thought =
+    typeof usage.thoughtTokens === "number" && Number.isFinite(usage.thoughtTokens)
+      ? Math.max(0, Math.trunc(usage.thoughtTokens))
+      : undefined;
+  return {
+    usedTokens,
+    lastUsedTokens: usedTokens,
+    inputTokens,
+    outputTokens,
+    ...(reportedTotal !== undefined ? { totalProcessedTokens: reportedTotal } : {}),
+    ...(cachedRead !== undefined ? { cachedInputTokens: cachedRead } : {}),
+    ...(thought !== undefined ? { reasoningOutputTokens: thought } : {}),
+  };
 }

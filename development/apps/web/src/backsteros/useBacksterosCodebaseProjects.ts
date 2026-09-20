@@ -31,6 +31,10 @@ export function useBacksterosCodebaseProjects(enabled: boolean): {
   readonly state: BacksterosCodebaseProjectsState;
   readonly reload: () => void;
   readonly applySortOrderPatches: (patches: readonly BacksterosProjectSortPatch[]) => void;
+  readonly patchLocalProject: (
+    projectId: string,
+    patch: Partial<BacksterosCodebaseProject>,
+  ) => void;
 } {
   const snapshot = useBacksterosSharedQuery(projectsQuery, enabled);
   const reload = useCallback(() => projectsQuery.reload(), []);
@@ -38,11 +42,20 @@ export function useBacksterosCodebaseProjects(enabled: boolean): {
     if (patches.length === 0) return;
     projectsQuery.patchReadyData((projects) => applyProjectSortOrderPatches(projects, patches));
   }, []);
+  const patchLocalProject = useCallback(
+    (projectId: string, patch: Partial<BacksterosCodebaseProject>) => {
+      projectsQuery.patchReadyData((projects) =>
+        projects.map((project) => (project.id === projectId ? { ...project, ...patch } : project)),
+      );
+    },
+    [],
+  );
 
   return {
     state: toProjectsState(snapshot),
     reload,
     applySortOrderPatches,
+    patchLocalProject,
   };
 }
 
