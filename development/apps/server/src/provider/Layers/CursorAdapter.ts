@@ -63,6 +63,8 @@ import {
 import {
   type AcpSessionMode,
   type AcpSessionModeState,
+  normalizeAcpPromptUsage,
+  normalizeAcpUsageUpdate,
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
@@ -881,6 +883,30 @@ export function makeCursorAdapter(
                       }),
                     );
                     return;
+                  case "UsageUpdated": {
+                    const usage = normalizeAcpUsageUpdate({
+                      used: event.used,
+                      size: event.size,
+                    });
+                    if (!usage) {
+                      return;
+                    }
+                    yield* logNative(
+                      ctx.threadId,
+                      "session/update",
+                      event.rawPayload,
+                      "acp.jsonrpc",
+                    );
+                    yield* offerRuntimeEvent({
+                      type: "thread.token-usage.updated",
+                      ...(yield* makeEventStamp()),
+                      provider: PROVIDER,
+                      threadId: ctx.threadId,
+                      ...(ctx.activeTurnId !== undefined ? { turnId: ctx.activeTurnId } : {}),
+                      payload: { usage },
+                    });
+                    return;
+                  }
                 }
               }),
             ),
@@ -1090,6 +1116,22 @@ export function makeCursorAdapter(
             updatedAt: yield* nowIso,
             model: resolvedModel,
           };
+
+          // Cursor today usually omits PromptResponse.usage; when the CLI
+          // starts returning it, feed the composer meter the same way as
+          // usage_update. Never invent a reading from an empty result.
+          const promptUsage =
+            result.usage != null ? normalizeAcpPromptUsage(result.usage) : undefined;
+          if (promptUsage) {
+            yield* offerRuntimeEvent({
+              type: "thread.token-usage.updated",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              threadId: input.threadId,
+              turnId,
+              payload: { usage: promptUsage },
+            });
+          }
 
           // Only the last remaining prompt settles the turn — a steer-
           // superseded prompt resolving (usually cancelled) while another is

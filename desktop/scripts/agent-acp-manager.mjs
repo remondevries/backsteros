@@ -1222,6 +1222,22 @@ function handleStdoutMessage(msg) {
           });
         }
       }
+      // Cursor ACP does not emit usage_update today (upstream gap). When it
+      // does, surface {used,size} so Chat can drive a context meter without
+      // inventing numbers from an empty report.
+      if (u.sessionUpdate === "usage_update") {
+        const used = typeof u.used === "number" && Number.isFinite(u.used) ? u.used : null;
+        const size = typeof u.size === "number" && Number.isFinite(u.size) ? u.size : null;
+        if (used != null && used > 0 && size != null && size >= 0) {
+          emit({
+            type: "usage-update",
+            taskId,
+            sessionId,
+            used: Math.trunc(used),
+            size: Math.trunc(size),
+          });
+        }
+      }
     }
 
     emit({
@@ -1981,12 +1997,33 @@ export async function acpPrompt(options) {
     if (session.promptsInFlight === 0) {
       session.busy = false;
       if (completedOk) {
+        const promptUsage =
+          result &&
+          typeof result === "object" &&
+          result.usage &&
+          typeof result.usage === "object"
+            ? result.usage
+            : null;
         emit({
           type: "prompt-complete",
           taskId,
           sessionId: session.sessionId,
           result,
         });
+        // Optional PromptResponse.usage (also missing from Cursor ACP today).
+        if (
+          promptUsage &&
+          typeof promptUsage.inputTokens === "number" &&
+          Number.isFinite(promptUsage.inputTokens) &&
+          promptUsage.inputTokens > 0
+        ) {
+          emit({
+            type: "usage-update",
+            taskId,
+            sessionId: session.sessionId,
+            usage: promptUsage,
+          });
+        }
       } else if (terminalError) {
         emit({
           type: "prompt-error",

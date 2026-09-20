@@ -6,6 +6,8 @@ import {
   decideToolCallUpdateEmission,
   extractModelConfigId,
   mergeToolCallState,
+  normalizeAcpPromptUsage,
+  normalizeAcpUsageUpdate,
   parsePermissionRequest,
   parseSessionModeState,
   parseSessionUpdateEvent,
@@ -704,6 +706,91 @@ describe("AcpRuntimeModel", () => {
     ).update;
     expect(rawUpdate.content[0]?.content.text).toBe("ok");
     expect(JSON.stringify(event).length).toBeLessThan(padded.length);
+  });
+
+  it("parses usage_update into UsageUpdated and skips empty reports", () => {
+    const params = {
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "usage_update",
+        used: 12_345,
+        size: 200_000,
+      },
+    } satisfies EffectAcpSchema.SessionNotification;
+
+    expect(parseSessionUpdateEvent(params).events).toEqual([
+      {
+        _tag: "UsageUpdated",
+        used: 12_345,
+        size: 200_000,
+        rawPayload: params,
+      },
+    ]);
+
+    expect(
+      parseSessionUpdateEvent({
+        sessionId: "session-1",
+        update: { sessionUpdate: "usage_update", used: 0, size: 200_000 },
+      } satisfies EffectAcpSchema.SessionNotification).events,
+    ).toEqual([]);
+  });
+
+  it("normalizes ACP usage into a thread token-usage snapshot without inventing size", () => {
+    expect(normalizeAcpUsageUpdate({ used: 1_500, size: 100_000 })).toEqual({
+      usedTokens: 1_500,
+      lastUsedTokens: 1_500,
+      maxTokens: 100_000,
+    });
+    expect(normalizeAcpUsageUpdate({ used: 250_000, size: 200_000 })).toEqual({
+      usedTokens: 200_000,
+      lastUsedTokens: 200_000,
+      maxTokens: 200_000,
+    });
+    expect(normalizeAcpUsageUpdate({ used: 42, size: 0 })).toEqual({
+      usedTokens: 42,
+      lastUsedTokens: 42,
+    });
+    expect(normalizeAcpUsageUpdate({ used: 0, size: 100_000 })).toBeUndefined();
+  });
+
+  it("normalizes PromptResponse.usage without inventing a context window size", () => {
+    expect(
+      normalizeAcpPromptUsage({
+        inputTokens: 7_676,
+        outputTokens: 27,
+        totalTokens: 11_543,
+        cachedReadTokens: 3_840,
+        cachedWriteTokens: 0,
+      }),
+    ).toEqual({
+      usedTokens: 11_543,
+      lastUsedTokens: 11_543,
+      inputTokens: 7_676,
+      outputTokens: 27,
+      totalProcessedTokens: 11_543,
+      cachedInputTokens: 3_840,
+    });
+    expect(
+      normalizeAcpPromptUsage({
+        inputTokens: 100,
+        outputTokens: 10,
+        totalTokens: 0,
+        cachedReadTokens: 50,
+      }),
+    ).toEqual({
+      usedTokens: 150,
+      lastUsedTokens: 150,
+      inputTokens: 100,
+      outputTokens: 10,
+      cachedInputTokens: 50,
+    });
+    expect(
+      normalizeAcpPromptUsage({
+        inputTokens: 0,
+        outputTokens: 10,
+        totalTokens: 10,
+      }),
+    ).toBeUndefined();
   });
 
   describe("decideToolCallUpdateEmission", () => {
