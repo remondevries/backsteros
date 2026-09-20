@@ -62,6 +62,15 @@ Body fields:
 | `projectId`           | no       | T3 project id override                                                |
 | `modelSelection`      | no       | `{ "instanceId": "cursor", "model": "…" }`                            |
 
+**Project resolution:** when `workspaceRoot` / `projectId` are omitted, the
+server reads the BacksterOS task's project `localWorkingDirectory`, matches it
+to a linked T3 project (same normalized-path comparison the rail uses), and
+creates/links a T3 project when none exists yet — same behavior as opening a
+task chat in the UI. Callers only need `taskRef` for the happy path.
+
+If the BacksterOS project has no cwd and `workspaceRoot` was not provided, the
+response is JSON `409` with `code: "no_workspace"` (not a 500).
+
 Response includes `threadId`, `taskId`, `taskRef`, `status`
 (`idle` \| `working` \| `blocked` \| `done`), `created`, `started`.
 
@@ -91,6 +100,11 @@ curl -sS -X POST "$ORIGIN/api/backsteros/control/message" \
 Bindings live under the environment state dir as
 `backsteros-task-threads.json`. The BacksterOS rail polls this so chats started
 from the control API stay linked in the UI.
+
+**Inbox / rail open:** Opening a task prefers the control/server thread binding
+over a local “Start working” kickoff draft. `healBinding` keeps `kind:"thread"`
+bindings even when the thread shell is not hydrated yet, so the route can load
+the live thread instead of creating a fresh draft.
 
 ## Smoke checklist
 

@@ -1,17 +1,20 @@
 /**
  * Localhost control plane: bind BacksterOS tasks to T3 threads and start agents.
  */
+import path from "node:path";
 import {
   AuthOrchestrationOperateScope,
   CommandId,
   MessageId,
   type ModelSelection,
+  type OrchestrationProjectShell,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -233,34 +236,128 @@ const findThreadShell = Effect.fn("backsteros.control.findThreadShell")(function
   return shell.threads.find((thread) => thread.id === threadId) ?? null;
 });
 
-const findProjectByWorkspaceRoot = Effect.fn("backsteros.control.findProject")(function* (
+/** Resolve workspace root from an explicit override or BacksterOS project cwd. */
+export function resolveControlWorkspaceRoot(input: {
+  readonly workspaceRootOverride: string | null;
+  readonly localWorkingDirectory: string | null | undefined;
+}): { readonly workspaceRoot: string } | { readonly error: ControlHttpError } {
+  const fromOverride = input.workspaceRootOverride;
+  if (fromOverride) return { workspaceRoot: fromOverride };
+  const fromProject = input.localWorkingDirectory?.trim() ?? "";
+  if (fromProject.length > 0) return { workspaceRoot: fromProject };
+  return {
+    error: {
+      status: 409,
+      error: "BacksterOS project has no localWorkingDirectory and workspaceRoot was not provided",
+      code: "no_workspace",
+    },
+  };
+}
+
+/**
+ * Match a T3 project the same way the BacksterOS rail does (normalized path),
+ * or by explicit project id override.
+ */
+export function matchControlT3Project<
+  T extends { readonly id: string; readonly workspaceRoot: string },
+>(
+  projects: ReadonlyArray<T>,
+  input: {
+    readonly workspaceRoot: string;
+    readonly projectIdOverride: string | null;
+  },
+):
+  | { readonly kind: "found"; readonly project: T }
+  | { readonly kind: "missing_id"; readonly projectId: string }
+  | { readonly kind: "unlinked" } {
+  if (input.projectIdOverride) {
+    const byId = projects.find((project) => project.id === input.projectIdOverride);
+    if (!byId) return { kind: "missing_id", projectId: input.projectIdOverride };
+    return { kind: "found", project: byId };
+  }
+  const normalized = normalizeProjectPathForComparison(input.workspaceRoot);
+  if (normalized.length === 0) return { kind: "unlinked" };
+  const match = projects.find(
+    (project) => normalizeProjectPathForComparison(project.workspaceRoot) === normalized,
+  );
+  return match ? { kind: "found", project: match } : { kind: "unlinked" };
+}
+
+function controlProjectTitle(
+  preferredTitle: string | null | undefined,
+  workspaceRoot: string,
+): string {
+  const trimmed = preferredTitle?.trim() ?? "";
+  if (trimmed.length > 0) return trimmed;
+  const basename = path.basename(workspaceRoot.replace(/[\\/]+$/, "")).trim();
+  return basename.length > 0 ? basename : "project";
+}
+
+/**
+ * Find a linked T3 project for the BacksterOS cwd, or create one (same as the
+ * rail's ensureT3Project) when only a workspace root is known.
+ */
+const resolveOrCreateT3Project = Effect.fn("backsteros.control.resolveOrCreateProject")(function* (
   workspaceRoot: string,
   projectIdOverride: string | null,
+  preferredTitle: string | null | undefined,
 ) {
   const projection = yield* ProjectionSnapshotQuery;
   const shell = yield* projection.getShellSnapshot();
-  const active = shell.projects;
-  if (projectIdOverride) {
-    const byId = active.find((project) => project.id === projectIdOverride);
-    if (!byId) {
-      return yield* Effect.fail({
-        status: 404,
-        error: `T3 project not found: ${projectIdOverride}`,
-        code: "project_not_found",
-      } satisfies ControlHttpError);
-    }
-    return byId;
-  }
-  const normalized = workspaceRoot.replace(/\/+$/, "");
-  const match = active.find((project) => project.workspaceRoot.replace(/\/+$/, "") === normalized);
-  if (!match) {
+  const matched = matchControlT3Project(shell.projects, { workspaceRoot, projectIdOverride });
+  if (matched.kind === "found") return matched.project;
+  if (matched.kind === "missing_id") {
     return yield* Effect.fail({
       status: 404,
-      error: `No T3 project linked to workspace ${workspaceRoot}. Add it in Development first.`,
-      code: "project_not_linked",
+      error: `T3 project not found: ${matched.projectId}`,
+      code: "project_not_found",
     } satisfies ControlHttpError);
   }
-  return match;
+
+  // No linked project yet — create one, matching the BacksterOS rail.
+  const orchestrationEngine = yield* OrchestrationEngineService;
+  const projectId = ProjectId.make(yield* newId());
+  const createdAt = DateTime.formatIso(yield* DateTime.now);
+  const title = controlProjectTitle(preferredTitle, workspaceRoot);
+  const command = yield* normalizeDispatchCommand({
+    type: "project.create",
+    commandId: CommandId.make(yield* newId()),
+    projectId,
+    title,
+    workspaceRoot,
+    createWorkspaceRootIfMissing: false,
+    createdAt,
+  }).pipe(
+    Effect.mapError((cause): ControlHttpError => ({
+      status: 400,
+      error: cause instanceof Error ? cause.message : "Invalid project.create command",
+      code: "invalid_command",
+    })),
+  );
+
+  yield* orchestrationEngine.dispatch(command).pipe(
+    Effect.mapError((cause): ControlHttpError => ({
+      status: 500,
+      error: cause instanceof Error ? cause.message : "Failed to create T3 project for workspace",
+      code: "project_create_failed",
+    })),
+  );
+
+  const afterCreate = yield* projection.getShellSnapshot();
+  const created = afterCreate.projects.find((project) => project.id === projectId);
+  if (created) return created;
+
+  const rematch = matchControlT3Project(afterCreate.projects, {
+    workspaceRoot,
+    projectIdOverride: null,
+  });
+  if (rematch.kind === "found") return rematch.project;
+
+  return yield* Effect.fail({
+    status: 500,
+    error: `Created T3 project ${projectId} but it is not visible in the shell snapshot yet`,
+    code: "project_create_failed",
+  } satisfies ControlHttpError);
 });
 
 function catchControlErrors<A, E, R>(
@@ -323,14 +420,14 @@ export const controlStartHandler = catchControlErrors(
     });
 
     const { task, project } = resolved;
-    const workspaceRoot = workspaceRootOverride ?? project?.localWorkingDirectory?.trim() ?? null;
-    if (!workspaceRoot) {
-      return yield* Effect.fail({
-        status: 409,
-        error: "BacksterOS project has no localWorkingDirectory and workspaceRoot was not provided",
-        code: "no_workspace",
-      } satisfies ControlHttpError);
+    const workspaceResolved = resolveControlWorkspaceRoot({
+      workspaceRootOverride,
+      localWorkingDirectory: project?.localWorkingDirectory,
+    });
+    if ("error" in workspaceResolved) {
+      return yield* Effect.fail(workspaceResolved.error);
     }
+    const { workspaceRoot } = workspaceResolved;
 
     const config = yield* ServerConfig.ServerConfig;
     const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -347,7 +444,11 @@ export const controlStartHandler = catchControlErrors(
       }
     }
 
-    const t3Project = yield* findProjectByWorkspaceRoot(workspaceRoot, projectIdOverride);
+    const t3Project: OrchestrationProjectShell = yield* resolveOrCreateT3Project(
+      workspaceRoot,
+      projectIdOverride,
+      project?.name,
+    );
 
     if (!threadId) {
       threadId = ThreadId.make(yield* newId());

@@ -8,7 +8,28 @@ describe("mergeControlBindingsIntoTaskChatStore", () => {
     useBacksterosTaskChatStore.setState({ byTaskId: {}, retiredThreadKeys: [] });
   });
 
-  it("applies missing server bindings and skips drafts", () => {
+  it("applies missing server bindings", () => {
+    const applied = mergeControlBindingsIntoTaskChatStore([
+      {
+        taskId: "task-api",
+        kind: "thread",
+        threadId: "thread-api",
+        environmentId: "env-1",
+        t3ProjectId: "proj-1",
+        backsterosProjectId: "bos-1",
+        projectTitle: "BDV",
+        title: "API",
+        displayId: "BDV-2",
+      },
+    ]);
+
+    expect(applied).toBe(1);
+    expect(useBacksterosTaskChatStore.getState().getBinding("task-api")?.threadId).toBe(
+      "thread-api",
+    );
+  });
+
+  it("upgrades a local kickoff draft to the server thread binding", () => {
     useBacksterosTaskChatStore.getState().setBinding("task-draft", {
       kind: "draft",
       draftId: "draft-1",
@@ -33,23 +54,40 @@ describe("mergeControlBindingsIntoTaskChatStore", () => {
         title: "Draft",
         displayId: "BDV-1",
       },
+    ]);
+
+    expect(applied).toBe(1);
+    const binding = useBacksterosTaskChatStore.getState().getBinding("task-draft");
+    expect(binding?.kind).toBe("thread");
+    expect(binding?.threadId).toBe("thread-server");
+  });
+
+  it("skips identical thread bindings", () => {
+    useBacksterosTaskChatStore.getState().setBinding("task-same", {
+      kind: "thread",
+      threadId: "thread-1",
+      environmentId: "env-1",
+      t3ProjectId: "proj-1",
+      backsterosProjectId: "bos-1",
+      projectTitle: "BDV",
+      title: "Same",
+      displayId: "BDV-3",
+    });
+
+    const applied = mergeControlBindingsIntoTaskChatStore([
       {
-        taskId: "task-api",
+        taskId: "task-same",
         kind: "thread",
-        threadId: "thread-api",
+        threadId: "thread-1",
         environmentId: "env-1",
         t3ProjectId: "proj-1",
         backsterosProjectId: "bos-1",
         projectTitle: "BDV",
-        title: "API",
-        displayId: "BDV-2",
+        title: "Same",
+        displayId: "BDV-3",
       },
     ]);
 
-    expect(applied).toBe(1);
-    expect(useBacksterosTaskChatStore.getState().getBinding("task-draft")?.kind).toBe("draft");
-    expect(useBacksterosTaskChatStore.getState().getBinding("task-api")?.threadId).toBe(
-      "thread-api",
-    );
+    expect(applied).toBe(0);
   });
 });

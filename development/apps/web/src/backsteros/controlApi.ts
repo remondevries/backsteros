@@ -32,8 +32,10 @@ function toLocalBinding(entry: ControlSessionBinding): BacksterosTaskChatBinding
 }
 
 /**
- * Merge server bindings into the local store. Existing local draft bindings
- * win (user may be mid-kickoff); otherwise server fills missing task links.
+ * Merge server bindings into the local store. A server thread binding replaces
+ * a local kickoff draft for the same task (the draft is only the pre-start
+ * gate; a live control thread is authoritative). Keep a draft only when there
+ * is no server thread binding for that task.
  */
 export function mergeControlBindingsIntoTaskChatStore(
   bindings: ReadonlyArray<ControlSessionBinding>,
@@ -42,7 +44,6 @@ export function mergeControlBindingsIntoTaskChatStore(
   let applied = 0;
   for (const entry of bindings) {
     const existing = store.getBinding(entry.taskId);
-    if (existing?.kind === "draft") continue;
     if (
       existing?.kind === "thread" &&
       existing.threadId === entry.threadId &&

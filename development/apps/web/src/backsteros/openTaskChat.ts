@@ -12,7 +12,11 @@ import { readThreadShell } from "~/state/entities";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import type { Project } from "~/types";
 import { fetchBacksterosTask } from "./client";
-import { pushControlBinding } from "./controlApi";
+import {
+  fetchControlBindings,
+  mergeControlBindingsIntoTaskChatStore,
+  pushControlBinding,
+} from "./controlApi";
 import { requestBacksterosComposerFocusSoon } from "./composerFocusStore";
 import { resolveT3ProjectRefForBacksterosProject } from "./resolveT3Project";
 import {
@@ -45,8 +49,11 @@ function bindingIdentityKey(binding: BacksterosTaskChatBinding): string {
  * Promote/clear stale task→chat bindings.
  * Pass `{ persist: false }` from render-time resolvers — store writes are deferred
  * so React does not see a setState during render (BacksterosPanel / ChatView).
+ *
+ * Thread bindings are kept even when `readThreadShell` is missing: control-API
+ * threads can exist on the server before the client entity cache hydrates.
  */
-function healBinding(
+export function healBinding(
   taskId: string,
   binding: BacksterosTaskChatBinding,
   options?: { readonly persist?: boolean },
@@ -111,13 +118,8 @@ function healBinding(
     return binding;
   }
 
-  const shell = readThreadShell(
-    scopeThreadRef(binding.environmentId as EnvironmentId, binding.threadId as ThreadId),
-  );
-  if (!shell) {
-    commit(null);
-    return null;
-  }
+  // Keep kind:"thread" bindings even without a hydrated shell so Inbox can
+  // navigate to the live control-API thread and let the route load it.
   return binding;
 }
 
@@ -216,30 +218,19 @@ export async function openBacksterosTaskChat(input: {
 
   const existing = useBacksterosTaskChatStore.getState().getBinding(input.task.id);
   const healed = existing ? healBinding(input.task.id, existing) : null;
-  if (healed) {
-    // Refresh display names when reopening from the sidebar.
-    const next: BacksterosTaskChatBinding = {
-      ...healed,
-      projectTitle: input.backsterosProject.name,
-      title: input.task.title,
-      displayId: getBacksterosTaskDisplayId(input.task, input.backsterosProject.key),
-    };
-    useBacksterosTaskChatStore.getState().setBinding(input.task.id, next);
-    // Best-effort: keep the localhost control API binding index in sync.
-    if (next.kind === "thread") {
-      void pushControlBinding({
-        taskId: input.task.id,
-        threadId: next.threadId,
-        environmentId: next.environmentId,
-        t3ProjectId: next.t3ProjectId,
-        backsterosProjectId: next.backsterosProjectId,
-        projectTitle: next.projectTitle,
-        title: next.title,
-        displayId: next.displayId,
-      });
+
+  // Prefer a live control/server thread over a local kickoff draft (or empty).
+  // Local drafts are only the pre-start gate; the control API thread is authoritative.
+  if (!healed || healed.kind === "draft") {
+    const controlThread = await resolveControlThreadBindingForTask(input.task.id);
+    if (controlThread) {
+      await commitAndNavigateTaskBinding(input, controlThread);
+      return;
     }
-    await navigateToBinding(input.navigate, next);
-    requestBacksterosComposerFocusSoon();
+  }
+
+  if (healed) {
+    await commitAndNavigateTaskBinding(input, healed);
     return;
   }
 
@@ -251,6 +242,60 @@ export async function openBacksterosTaskChat(input: {
   });
   // Fresh drafts show the Start / Advanced kickoff gate — do not focus the
   // composer (that would skip the polished first-chat page).
+}
+
+/**
+ * Resolve a server/control thread binding for a task before creating a kickoff
+ * draft. Uses the local store when already synced; otherwise fetches bindings.
+ */
+async function resolveControlThreadBindingForTask(
+  taskId: string,
+): Promise<BacksterosTaskChatBinding | null> {
+  const local = useBacksterosTaskChatStore.getState().getBinding(taskId);
+  if (local?.kind === "thread") return local;
+
+  try {
+    const result = await fetchControlBindings();
+    if (!result.ok) return null;
+    mergeControlBindingsIntoTaskChatStore(result.bindings);
+    const after = useBacksterosTaskChatStore.getState().getBinding(taskId);
+    return after?.kind === "thread" ? after : null;
+  } catch {
+    return null;
+  }
+}
+
+async function commitAndNavigateTaskBinding(
+  input: {
+    readonly task: BacksterosTask;
+    readonly backsterosProject: BacksterosCodebaseProject;
+    readonly navigate: NavigateFn;
+  },
+  binding: BacksterosTaskChatBinding,
+): Promise<void> {
+  // Refresh display names when reopening from the sidebar.
+  const next: BacksterosTaskChatBinding = {
+    ...binding,
+    projectTitle: input.backsterosProject.name,
+    title: input.task.title,
+    displayId: getBacksterosTaskDisplayId(input.task, input.backsterosProject.key),
+  };
+  useBacksterosTaskChatStore.getState().setBinding(input.task.id, next);
+  // Best-effort: keep the localhost control API binding index in sync.
+  if (next.kind === "thread") {
+    void pushControlBinding({
+      taskId: input.task.id,
+      threadId: next.threadId,
+      environmentId: next.environmentId,
+      t3ProjectId: next.t3ProjectId,
+      backsterosProjectId: next.backsterosProjectId,
+      projectTitle: next.projectTitle,
+      title: next.title,
+      displayId: next.displayId,
+    });
+  }
+  await navigateToBinding(input.navigate, next);
+  requestBacksterosComposerFocusSoon();
 }
 
 async function createBacksterosTaskDraft(input: {

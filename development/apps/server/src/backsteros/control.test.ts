@@ -5,7 +5,11 @@ import path from "node:path";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vitest";
 
-import { isControlLoopbackRemote } from "./control.ts";
+import {
+  isControlLoopbackRemote,
+  matchControlT3Project,
+  resolveControlWorkspaceRoot,
+} from "./control.ts";
 import { buildControlKickoffPrompt, parseBacksterosDisplayId } from "./control-backsteros.ts";
 import {
   findBacksterosTaskThreadBinding,
@@ -74,5 +78,84 @@ describe("backsteros control helpers", () => {
     assert.equal(isControlLoopbackRemote(Option.some("::1")), true);
     assert.equal(isControlLoopbackRemote(Option.some("::ffff:127.0.0.1")), true);
     assert.equal(isControlLoopbackRemote(Option.some("192.168.1.10")), false);
+  });
+});
+
+describe("backsteros control workspace resolve", () => {
+  it("prefers workspaceRoot override over BacksterOS cwd", () => {
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: "/override",
+        localWorkingDirectory: "/from-backsteros",
+      }),
+    ).toEqual({ workspaceRoot: "/override" });
+  });
+
+  it("uses BacksterOS localWorkingDirectory when override is omitted", () => {
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "  /Users/me/dev  ",
+      }),
+    ).toEqual({ workspaceRoot: "/Users/me/dev" });
+  });
+
+  it("returns a clear no_workspace JSON error when cwd is missing", () => {
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: null,
+      }),
+    ).toEqual({
+      error: {
+        status: 409,
+        error: "BacksterOS project has no localWorkingDirectory and workspaceRoot was not provided",
+        code: "no_workspace",
+      },
+    });
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "   ",
+      }),
+    ).toMatchObject({ error: { code: "no_workspace", status: 409 } });
+  });
+
+  it("matches a linked T3 project by normalized workspace path", () => {
+    const projects = [
+      { id: "other", workspaceRoot: "/Users/me/other" },
+      { id: "dev", workspaceRoot: "/Users/me/dev" },
+    ];
+    expect(
+      matchControlT3Project(projects, {
+        workspaceRoot: "/Users/me/dev/",
+        projectIdOverride: null,
+      }),
+    ).toEqual({ kind: "found", project: projects[1] });
+  });
+
+  it("reports unlinked when no T3 project matches the cwd", () => {
+    expect(
+      matchControlT3Project([{ id: "other", workspaceRoot: "/Users/me/other" }], {
+        workspaceRoot: "/Users/me/dev",
+        projectIdOverride: null,
+      }),
+    ).toEqual({ kind: "unlinked" });
+  });
+
+  it("honors projectId override and missing-id errors", () => {
+    const projects = [{ id: "dev", workspaceRoot: "/Users/me/dev" }];
+    expect(
+      matchControlT3Project(projects, {
+        workspaceRoot: "/ignored",
+        projectIdOverride: "dev",
+      }),
+    ).toEqual({ kind: "found", project: projects[0] });
+    expect(
+      matchControlT3Project(projects, {
+        workspaceRoot: "/Users/me/dev",
+        projectIdOverride: "missing",
+      }),
+    ).toEqual({ kind: "missing_id", projectId: "missing" });
   });
 });
