@@ -88,6 +88,134 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
+  it.effect("proxies local-core paths to BACKSTEROS_LOCAL_CORE_URL while product API stays separate", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const previousApiUrl = process.env.BACKSTEROS_API_URL;
+      const previousLocalCoreUrl = process.env.BACKSTEROS_LOCAL_CORE_URL;
+      const previousKey = process.env.BACKSTEROS_API_KEY;
+      process.env.BACKSTEROS_API_URL = "https://agent.backsteros.com";
+      process.env.BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
+      process.env.BACKSTEROS_API_KEY = "sk_live_test";
+
+      try {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const protocol = yield* ElectronProtocol.ElectronProtocol;
+            yield* protocol.registerDesktopProtocol({
+              scheme: "t3code",
+              targetOrigin: new URL("http://127.0.0.1:3773/"),
+              backendOrigin: new URL("http://127.0.0.1:3773/"),
+              clerkFrontendApiHostname: undefined,
+            });
+            assert.isDefined(handler);
+
+            const fsResponse = yield* Effect.promise(() =>
+              handler!(
+                new Request(
+                  "t3code://app/backsteros-local-core/api/v1/projects/p1/fs/entries",
+                  { headers: { accept: "application/json" } },
+                ),
+              ),
+            );
+            assert.equal(fsResponse.status, 200);
+
+            const productResponse = yield* Effect.promise(() =>
+              handler!(
+                new Request("t3code://app/backsteros-api/api/v1/projects?type=codebase", {
+                  headers: { accept: "application/json" },
+                }),
+              ),
+            );
+            assert.equal(productResponse.status, 200);
+          }),
+        );
+      } finally {
+        if (previousApiUrl === undefined) {
+          delete process.env.BACKSTEROS_API_URL;
+        } else {
+          process.env.BACKSTEROS_API_URL = previousApiUrl;
+        }
+        if (previousLocalCoreUrl === undefined) {
+          delete process.env.BACKSTEROS_LOCAL_CORE_URL;
+        } else {
+          process.env.BACKSTEROS_LOCAL_CORE_URL = previousLocalCoreUrl;
+        }
+        if (previousKey === undefined) {
+          delete process.env.BACKSTEROS_API_KEY;
+        } else {
+          process.env.BACKSTEROS_API_KEY = previousKey;
+        }
+      }
+
+      assert.equal(
+        netFetchMock.mock.calls[0]?.[0],
+        "http://127.0.0.1:8788/api/v1/projects/p1/fs/entries",
+      );
+      assert.equal(
+        netFetchMock.mock.calls[1]?.[0],
+        "https://agent.backsteros.com/api/v1/projects?type=codebase",
+      );
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("returns 502 with local-core origin when local-core is unreachable", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+      const previousLocalCoreUrl = process.env.BACKSTEROS_LOCAL_CORE_URL;
+      process.env.BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
+
+      try {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const protocol = yield* ElectronProtocol.ElectronProtocol;
+            yield* protocol.registerDesktopProtocol({
+              scheme: "t3code",
+              targetOrigin: new URL("http://127.0.0.1:3773/"),
+              backendOrigin: new URL("http://127.0.0.1:3773/"),
+              clerkFrontendApiHostname: undefined,
+            });
+            assert.isDefined(handler);
+
+            const response = yield* Effect.promise(() =>
+              handler!(
+                new Request("t3code://app/backsteros-local-core/api/v1/projects/p1/docs", {
+                  headers: { accept: "application/json" },
+                }),
+              ),
+            );
+            assert.equal(response.status, 502);
+            const body = JSON.parse(yield* Effect.promise(() => response.text())) as {
+              origin?: string;
+            };
+            assert.equal(body.origin, "http://127.0.0.1:8788");
+          }),
+        );
+      } finally {
+        if (previousLocalCoreUrl === undefined) {
+          delete process.env.BACKSTEROS_LOCAL_CORE_URL;
+        } else {
+          process.env.BACKSTEROS_LOCAL_CORE_URL = previousLocalCoreUrl;
+        }
+      }
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
   it.effect("proxies BacksterOS API paths to the local BacksterOS origin", () =>
     Effect.gen(function* () {
       let handler: ((request: Request) => Promise<Response>) | undefined;

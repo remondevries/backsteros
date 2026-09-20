@@ -229,36 +229,47 @@ export default defineConfig(() => {
         const backsterosApiUrl = (
           process.env.BACKSTEROS_API_URL?.trim() || "https://api.local.backsteros.com"
         ).replace(/\/$/, "");
+        const backsterosLocalCoreUrl = (
+          process.env.BACKSTEROS_LOCAL_CORE_URL?.trim() || "http://127.0.0.1:8788"
+        ).replace(/\/$/, "");
         const backsterosApiKey = process.env.BACKSTEROS_API_KEY?.trim() || "";
+        const attachBacksterosAuth = (proxy: {
+          on: (
+            event: "proxyReq",
+            listener: (
+              proxyReq: { setHeader: (name: string, value: string) => void },
+              req: { headers?: { authorization?: string | string[] } },
+            ) => void,
+          ) => void;
+        }) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            // Prefer the server/env owner key. A stale key in browser
+            // Settings (localStorage) used to win here and 401 the whole
+            // BacksterOS rail while unauthenticated proxy curls still worked.
+            if (backsterosApiKey) {
+              proxyReq.setHeader("Authorization", `Bearer ${backsterosApiKey}`);
+              return;
+            }
+            const incoming = req.headers?.authorization;
+            const fromClient = Array.isArray(incoming) ? incoming[0] : incoming;
+            if (typeof fromClient === "string" && fromClient.trim().length > 0) {
+              proxyReq.setHeader("Authorization", fromClient);
+            }
+          });
+        };
         const backsterosProxy = {
           "/backsteros-api": {
             target: backsterosApiUrl,
             changeOrigin: true,
             rewrite: (path: string) => path.replace(/^\/backsteros-api/, ""),
-            configure: (proxy: {
-              on: (
-                event: "proxyReq",
-                listener: (
-                  proxyReq: { setHeader: (name: string, value: string) => void },
-                  req: { headers?: { authorization?: string | string[] } },
-                ) => void,
-              ) => void;
-            }) => {
-              proxy.on("proxyReq", (proxyReq, req) => {
-                // Prefer the server/env owner key. A stale key in browser
-                // Settings (localStorage) used to win here and 401 the whole
-                // BacksterOS rail while unauthenticated proxy curls still worked.
-                if (backsterosApiKey) {
-                  proxyReq.setHeader("Authorization", `Bearer ${backsterosApiKey}`);
-                  return;
-                }
-                const incoming = req.headers?.authorization;
-                const fromClient = Array.isArray(incoming) ? incoming[0] : incoming;
-                if (typeof fromClient === "string" && fromClient.trim().length > 0) {
-                  proxyReq.setHeader("Authorization", fromClient);
-                }
-              });
-            },
+            configure: attachBacksterosAuth,
+          },
+          // BDV-37: Files/Documents must hit Mac local-core, not the product gateway.
+          "/backsteros-local-core": {
+            target: backsterosLocalCoreUrl,
+            changeOrigin: true,
+            rewrite: (path: string) => path.replace(/^\/backsteros-local-core/, ""),
+            configure: attachBacksterosAuth,
           },
         } as any;
 

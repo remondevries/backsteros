@@ -18,6 +18,19 @@ export interface BacksterosProjectsResponse {
   readonly projects: readonly BacksterosCodebaseProject[];
 }
 
+export type BacksterosProjectFsEntry = {
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory";
+};
+
+export type BacksterosProjectRepoDocEntry = {
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory";
+  readonly pinned: boolean;
+};
+
 /** Subset of BacksterOS `Task` used by the T3 sidebar overlay list. */
 export interface BacksterosTask {
   readonly id: string;
