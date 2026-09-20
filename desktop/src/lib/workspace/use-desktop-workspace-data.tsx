@@ -275,6 +275,7 @@ function useDesktopWorkspaceDataImpl(): {
     liveLettersById,
     liveDeletedLetterIds,
     liveTasksById,
+    setLiveTasksById,
     liveDeletedTaskIds,
     apiHabits,
     setApiHabits,
@@ -919,6 +920,17 @@ function useDesktopWorkspaceDataImpl(): {
     [liveMeetingsById, rawMeetings],
   );
 
+  const getTaskById = useCallback(
+    (id: string) => {
+      const fromLive = liveTasksById.get(id);
+      if (fromLive) return fromLive;
+      const fromList = localTasks?.find((task) => task.id === id);
+      if (fromList) return fromList;
+      return localInboxTasks?.find((task) => task.id === id) ?? null;
+    },
+    [liveTasksById, localInboxTasks, localTasks],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -945,6 +957,8 @@ function useDesktopWorkspaceDataImpl(): {
     getProjectById,
     setLiveMeetingsById,
     getMeetingById,
+    setLiveTasksById,
+    getTaskById,
     getLocalTaskStatus,
   });
 

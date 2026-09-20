@@ -70,6 +70,22 @@ export function toApiDueDateIso(dueDate: Date | string | null | undefined): stri
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+/**
+ * When clearing `dueDate`, also clear `dueEndDate` unless the caller set it
+ * explicitly — matches desktop `buildTaskDueDatePatch(null)`.
+ */
+export function withClearedDueEndDateWhenDueDateCleared<
+  T extends {
+    readonly dueDate?: string | null | undefined;
+    readonly dueEndDate?: string | null | undefined;
+  },
+>(patch: T): T {
+  if (!Object.prototype.hasOwnProperty.call(patch, "dueDate")) return patch;
+  if (patch.dueDate != null) return patch;
+  if (Object.prototype.hasOwnProperty.call(patch, "dueEndDate")) return patch;
+  return { ...patch, dueEndDate: null };
+}
+
 export function formatTaskDueMetaLabel(
   dueDate: Date | number | string | null | undefined,
 ): string | null {

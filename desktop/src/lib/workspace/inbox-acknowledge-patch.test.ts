@@ -32,3 +32,20 @@ test("normalizeTaskPatchForLocalState maps acknowledgeInboxUpdate to inboxUpdate
   assert.equal(result.inboxUpdatedAt, null);
   assert.equal(result.status, "in_progress");
 });
+
+test("normalizeTaskPatchForLocalState clears dueEndDate when dueDate is cleared", () => {
+  const result = normalizeTaskPatchForLocalState({
+    dueDate: null,
+  });
+  assert.equal(result.dueDate, null);
+  assert.equal(result.dueEndDate, null);
+});
+
+test("normalizeTaskPatchForLocalState keeps explicit dueEndDate when clearing dueDate", () => {
+  const result = normalizeTaskPatchForLocalState({
+    dueDate: null,
+    dueEndDate: "2026-08-24T10:00:00.000Z",
+  });
+  assert.equal(result.dueDate, null);
+  assert.equal(result.dueEndDate, "2026-08-24T10:00:00.000Z");
+});

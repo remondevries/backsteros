@@ -2330,33 +2330,6 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          {...searchableSetting("context-window-meter")}
-          description="Shows context window usage as a circular indicator in the composer when the agent reports usage."
-          resetAction={
-            settings.contextWindowMeterEnabled !==
-            DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled ? (
-              <SettingResetButton
-                label="context window meter"
-                onClick={() =>
-                  updateSettings({
-                    contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.contextWindowMeterEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ contextWindowMeterEnabled: Boolean(checked) })
-              }
-              aria-label="Context window meter"
-            />
-          }
-        />
-
-        <SettingsRow
           {...searchableSetting("composer-collapse")}
           description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
           resetAction={
@@ -2385,7 +2358,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("composer-context-window")}
-          description="Show a circular context-window meter in the bottom-left composer when the provider reports live usage. Hidden when no usage is available."
+          description="Show a circular context-window meter in the bottom-left composer when the provider reports live usage. Hidden when no usage is available (Cursor ACP does not report usage today)."
           resetAction={
             settings.contextWindowMeterEnabled !==
             DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled ? (

@@ -236,6 +236,8 @@ export type BacksterosTaskUpdatePatch = {
   readonly priority?: number;
   readonly sortOrder?: number;
   readonly dueDate?: string | null | undefined;
+  /** End of a timed calendar block; cleared automatically when dueDate is cleared. */
+  readonly dueEndDate?: string | null | undefined;
   readonly assigneeId?: string | null;
   readonly projectId?: string | null;
   readonly inbox?: boolean;

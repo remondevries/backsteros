@@ -8,6 +8,7 @@ import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
   toApiDueDateIso,
+  withClearedDueEndDateWhenDueDateCleared,
 } from "./taskDueDate";
 
 describe("taskDueDate", () => {
@@ -37,5 +38,28 @@ describe("taskDueDate", () => {
     expect(toApiDueDateIso("2026-09-04")?.startsWith("2026-09-0")).toBe(true);
     expect(getTaskDueDateUrgency("2020-01-01")).toBe("overdue");
     expect(getTaskDueDateUrgency(formatLocalYmd(new Date()))).toBe("due_today");
+  });
+
+  it("clears dueEndDate when dueDate is cleared", () => {
+    expect(withClearedDueEndDateWhenDueDateCleared({ dueDate: null })).toEqual({
+      dueDate: null,
+      dueEndDate: null,
+    });
+    expect(
+      withClearedDueEndDateWhenDueDateCleared({
+        dueDate: null,
+        dueEndDate: "2026-08-24T10:00:00.000Z",
+      }),
+    ).toEqual({
+      dueDate: null,
+      dueEndDate: "2026-08-24T10:00:00.000Z",
+    });
+    expect(
+      withClearedDueEndDateWhenDueDateCleared({
+        dueDate: "2026-08-24T09:00:00.000Z",
+      }),
+    ).toEqual({
+      dueDate: "2026-08-24T09:00:00.000Z",
+    });
   });
 });

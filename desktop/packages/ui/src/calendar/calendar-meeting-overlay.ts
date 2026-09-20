@@ -122,6 +122,10 @@ export function buildTaskDueDatePatch(
 ): { dueDate: string | null; dueEndDate?: string | null } {
   const start = toApiDueDateIso(dueDate ?? null);
   if (dueEndDate === undefined) {
+    // Clearing the start also drops a timed end block.
+    if (start == null) {
+      return { dueDate: null, dueEndDate: null };
+    }
     return { dueDate: start };
   }
   return {

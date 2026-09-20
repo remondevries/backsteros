@@ -101,6 +101,8 @@ export function useWorkspaceEntityPatching({
   getProjectById,
   setLiveMeetingsById,
   getMeetingById,
+  setLiveTasksById,
+  getTaskById,
   getLocalTaskStatus,
 }: {
   authenticated: boolean;
@@ -123,6 +125,10 @@ export function useWorkspaceEntityPatching({
     updater: (current: Map<string, ApiMeeting>) => Map<string, ApiMeeting>,
   ) => void;
   getMeetingById?: (id: string) => ApiMeeting | null | undefined;
+  setLiveTasksById?: (
+    updater: (current: Map<string, ApiTask>) => Map<string, ApiTask>,
+  ) => void;
+  getTaskById?: (id: string) => ApiTask | null | undefined;
   /**
    * PowerSync-local status for optimistic API cache merges. Due-date (and
    * other non-status) patches must not re-base onto a stale REST row that
@@ -216,6 +222,35 @@ export function useWorkspaceEntityPatching({
       setApiInboxTasks(patchRows);
     },
     [setApiInboxTasks, setApiTasks],
+  );
+
+  /**
+   * Optimistic task fields that win over lagging PowerSync via live overlay.
+   * Due-date clears must land here immediately — otherwise a stale SSE GET or
+   * fill-from-API race can resurrect the previous date before SQLite catches up.
+   */
+  const applyLiveTaskOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      if (!setLiveTasksById) {
+        applyApiTaskPatch(id, values);
+        return;
+      }
+      const nextUpdatedAt = new Date().toISOString();
+      const base = getTaskById?.(id) ?? null;
+      setLiveTasksById((current) => {
+        const previous = current.get(id) ?? base;
+        if (!previous) return current;
+        const next = new Map(current);
+        next.set(id, {
+          ...previous,
+          ...values,
+          updatedAt: nextUpdatedAt,
+        } as ApiTask);
+        return next;
+      });
+      applyApiTaskPatch(id, values);
+    },
+    [applyApiTaskPatch, getTaskById, setLiveTasksById],
   );
 
   const applyApiProjectPatch = useCallback(
@@ -391,7 +426,7 @@ export function useWorkspaceEntityPatching({
         applyApiDocumentPatch(id, values);
       }
       if (table === "tasks") {
-        applyApiTaskPatch(id, localValues);
+        applyLiveTaskOptimisticPatch(id, localValues);
         if (typeof localValues.status === "string") {
           nudgeDynamicIslandTasksRefresh();
         }
@@ -404,7 +439,7 @@ export function useWorkspaceEntityPatching({
       applyLiveMeetingOptimisticPatch,
       applyApiOrganizationPatch,
       applyLiveProjectOptimisticPatch,
-      applyApiTaskPatch,
+      applyLiveTaskOptimisticPatch,
     ],
   );
 
@@ -513,7 +548,7 @@ export function useWorkspaceEntityPatching({
         };
         delete serverValues.agentInboxApproved;
         delete serverValues.acknowledgeInboxUpdate;
-        applyApiTaskPatch(id, serverValues);
+        applyLiveTaskOptimisticPatch(id, serverValues);
         // Scope moves renumber server-side; keep local SQLite in sync so the
         // display id / route slug match before PowerSync pull catches up.
         if (
@@ -803,7 +838,7 @@ export function useWorkspaceEntityPatching({
         // PowerSync already has in_progress — that made due-date edits flip the
         // status label (BOD-62). Inject local status into the optimistic cache
         // only; SQLite / upload still use `values` without a status write.
-        let optimisticValues = values;
+        let optimisticValues = localValues;
         if (
           table === "tasks" &&
           values.status === undefined &&
@@ -811,7 +846,7 @@ export function useWorkspaceEntityPatching({
         ) {
           const localStatus = getLocalTaskStatus(id);
           if (typeof localStatus === "string" && localStatus.trim()) {
-            optimisticValues = { ...values, status: localStatus };
+            optimisticValues = { ...localValues, status: localStatus };
           }
         }
         if (table === "documents") {
@@ -826,8 +861,13 @@ export function useWorkspaceEntityPatching({
           // Push live overlay immediately so drag/title/property edits stick
           // before the watch / agent SSE round-trip.
           applyLiveMeetingOptimisticPatch(id, optimisticValues);
-        } else if (table === "tasks" && typeof values.status === "string") {
-          nudgeDynamicIslandTasksRefresh();
+        } else if (table === "tasks") {
+          // Property clears (due date → null) must win over a lagging SSE GET
+          // that still has the old date. Inject local status for BOD-62.
+          applyLiveTaskOptimisticPatch(id, optimisticValues);
+          if (typeof values.status === "string") {
+            nudgeDynamicIslandTasksRefresh();
+          }
         }
         const mustAwaitRest =
           authenticated &&
@@ -917,7 +957,7 @@ export function useWorkspaceEntityPatching({
       applyOptimisticEntityPatch,
       applyApiOrganizationPatch,
       applyLiveProjectOptimisticPatch,
-      applyApiTaskPatch,
+      applyLiveTaskOptimisticPatch,
       authenticated,
       client,
       entityPatchPath,

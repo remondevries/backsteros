@@ -2,9 +2,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  buildTaskDueDatePatch,
   parseCalendarMeetingOverlayLayout,
   withCalendarMeetingSearch,
 } from "./calendar-meeting-overlay.js";
+
+test("buildTaskDueDatePatch clears dueEndDate when dueDate is cleared", () => {
+  assert.deepEqual(buildTaskDueDatePatch(null), {
+    dueDate: null,
+    dueEndDate: null,
+  });
+});
+
+test("buildTaskDueDatePatch leaves dueEndDate unset when setting a start only", () => {
+  const patch = buildTaskDueDatePatch("2026-08-24T09:00:00.000Z");
+  assert.equal(patch.dueDate, "2026-08-24T09:00:00.000Z");
+  assert.equal(patch.dueEndDate, undefined);
+});
 
 test("withCalendarMeetingSearch preserves page layout when switching meetings", () => {
   const href = withCalendarMeetingSearch(

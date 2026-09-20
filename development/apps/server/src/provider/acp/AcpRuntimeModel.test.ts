@@ -793,6 +793,22 @@ describe("AcpRuntimeModel", () => {
     ).toBeUndefined();
   });
 
+  it("accepts snake_case PromptResponse.usage aliases without inventing size", () => {
+    expect(
+      normalizeAcpPromptUsage({
+        input_tokens: 7_568,
+        output_tokens: 29,
+        cache_read_tokens: 3_840,
+      }),
+    ).toEqual({
+      usedTokens: 11_408,
+      lastUsedTokens: 11_408,
+      inputTokens: 7_568,
+      outputTokens: 29,
+      cachedInputTokens: 3_840,
+    });
+  });
+
   describe("decideToolCallUpdateEmission", () => {
     const toolCall = (detail: string | undefined, status?: AcpToolCallState["status"]) =>
       ({

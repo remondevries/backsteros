@@ -11,10 +11,19 @@ export function normalizeTaskPatchForLocalState(
 
   if (next.agentInboxApproved === true) {
     const { agentInboxApproved: _approved, ...rest } = next;
-    return {
+    next = {
       ...rest,
       agentInboxApprovedAt: new Date().toISOString(),
     };
+  }
+
+  // Clearing dueDate without an explicit dueEndDate also clears a timed end.
+  if (
+    Object.prototype.hasOwnProperty.call(next, "dueDate") &&
+    next.dueDate == null &&
+    !Object.prototype.hasOwnProperty.call(next, "dueEndDate")
+  ) {
+    next = { ...next, dueEndDate: null };
   }
 
   return next;

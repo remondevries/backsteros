@@ -1046,8 +1046,31 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   );
 });
 
+const ComposerContextWindowMeterSlot = memo(function ComposerContextWindowMeterSlot(props: {
+  activeContextWindow: ContextWindowSnapshot | null;
+  activeThreadModelDisplayName: string | null;
+  onCompactContext?: (() => void) | undefined;
+  compactDisabled: boolean;
+  compactDisabledReason: string | null;
+}) {
+  if (!props.activeContextWindow) {
+    return null;
+  }
+  return (
+    <ContextWindowMeter
+      usage={props.activeContextWindow}
+      modelDisplayName={props.activeThreadModelDisplayName}
+      onCompact={props.onCompactContext}
+      compactDisabled={props.compactDisabled}
+      compactDisabledReason={props.compactDisabledReason}
+    />
+  );
+});
+
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
+  /** When true, meter sits with send (resting layout hides the left footer). */
+  showContextWindowMeter: boolean;
   activeContextWindow: ContextWindowSnapshot | null;
   activeThreadModelDisplayName: string | null;
   isPreparingWorktree: boolean;
@@ -1078,11 +1101,11 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          modelDisplayName={props.activeThreadModelDisplayName}
-          onCompact={props.onCompactContext}
+      {props.showContextWindowMeter ? (
+        <ComposerContextWindowMeterSlot
+          activeContextWindow={props.activeContextWindow}
+          activeThreadModelDisplayName={props.activeThreadModelDisplayName}
+          onCompactContext={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
         />
@@ -5638,6 +5661,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isComposerResting && "hidden",
                   )}
                 >
+                  {/* Expanded footer: meter lives bottom-left (settings copy + product expectation). */}
+                  {!isComposerResting ? (
+                    <ComposerContextWindowMeterSlot
+                      activeContextWindow={
+                        settings.contextWindowMeterEnabled ? activeContextWindow : null
+                      }
+                      activeThreadModelDisplayName={activeThreadModelDisplayName}
+                      compactDisabled={
+                        compactDisabled || noProviderAvailable || isSendBusy || isConnecting
+                      }
+                      compactDisabledReason={resolvedCompactDisabledReason}
+                      {...(compactCommandAvailable
+                        ? { onCompactContext: compactThreadContext }
+                        : {})}
+                    />
+                  ) : null}
                   {composerControlsInStrip ? null : composerControls}
                 </div>
 
@@ -5685,6 +5724,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
+                    // Resting layout hides the left footer, so keep the meter next to send.
+                    showContextWindowMeter={isComposerResting}
                     activeContextWindow={
                       settings.contextWindowMeterEnabled ? activeContextWindow : null
                     }

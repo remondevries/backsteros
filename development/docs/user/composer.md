@@ -224,6 +224,8 @@ use the skills and commands from the selected environment and provider.
 
 In a thread with prior conversation context, send `/compact` to reduce context usage. Web and desktop also offer this action from the context meter, and the work log records token counts when the provider reports them.
 
+The context-window meter (Settings → General → Context window indicator) sits in the bottom-left of the composer when a provider reports live usage. It stays hidden when no usage is available — T3 Code never invents token counts. Codex and Claude report usage today; Cursor's ACP agent does not yet send `usage_update` or `PromptResponse.usage`, so Cursor threads keep the meter hidden until that upstream gap closes.
+
 By default, the `/` menu includes skills. To keep this menu command-only, turn off **Show skills in
 slash menu** in **Settings → General**. Skill results use the `/skill:Skill Name` label and add the
 same `$name` skill token to your message. The original skill name remains searchable. If the provider

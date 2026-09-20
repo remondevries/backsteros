@@ -59,19 +59,19 @@ describe("cursor-usage formatting", () => {
   it("builds a tooltip title", () => {
     const title = cursorUsageTitle(usage());
     assert.match(title, /Auto 3%/);
-    assert.match(title, /API 0%/);
+    assert.match(title, /Premium 0%/);
     assert.match(title, /\$339\.76 of \$400 left/);
     assert.match(title, /You've used 10%/);
   });
 
-  it("includes Grok Bot weekly usage in the tooltip", () => {
+  it("includes Grok weekly usage in the tooltip", () => {
     const title = cursorUsageTitle(
       usage({
         grokBotPercentUsed: 5.22,
         grokBotResetMs: Date.parse("2026-08-25T04:17:33.882Z"),
       }),
     );
-    assert.match(title, /Grok Bot 5%/);
-    assert.match(title, /Grok Bot resets/);
+    assert.match(title, /Grok 5%/);
+    assert.match(title, /Grok resets/);
   });
 });

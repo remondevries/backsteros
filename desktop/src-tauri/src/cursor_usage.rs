@@ -1,9 +1,10 @@
 //! Cursor monthly included-usage for the sidebar credits bar.
 //!
-//! Reads the signed-in Cursor access token from the local IDE state DB and
-//! calls Cursor's dashboard usage endpoints. Mirrors
-//! `legacy/backsteros-development/lib/cursor-plan-usage.ts`, plus Grok Bot
-//! weekly quota from `GetSandUsageStatus` ("Sand" is Cursor's Grok Bot
+//! Resolves the signed-in Cursor access token from (in order): env
+//! (`CURSOR_ACCESS_TOKEN` / `CURSOR_API_KEY`), the IDE `state.vscdb`, then the
+//! Cursor CLI macOS Keychain entry used by `agent login`. Calls Cursor's
+//! dashboard usage endpoints. Mirrors Development `apps/server/src/cursorUsage.ts`,
+//! plus Grok weekly quota from `GetSandUsageStatus` ("Sand" is Cursor's Grok
 //! product).
 
 use std::path::{Path, PathBuf};
@@ -14,6 +15,9 @@ use serde::Serialize;
 use serde_json::Value;
 
 const ACCESS_KEY: &str = "cursorAuth/accessToken";
+/// macOS Keychain item written by Cursor CLI (`agent login`).
+const CLI_KEYCHAIN_SERVICE: &str = "cursor-access-token";
+const CLI_KEYCHAIN_ACCOUNT: &str = "cursor-user";
 const USAGE_URL: &str =
     "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
 const GROK_BOT_USAGE_URL: &str =
@@ -100,7 +104,7 @@ fn cursor_state_db_path() -> Option<PathBuf> {
     }
 }
 
-fn read_access_token(db_path: &Path) -> Result<String, String> {
+fn read_access_token_from_db(db_path: &Path) -> Result<String, String> {
     if !db_path.is_file() {
         return Err("Cursor is not signed in on this machine.".into());
     }
@@ -123,6 +127,59 @@ fn read_access_token(db_path: &Path) -> Result<String, String> {
         return Err("Sign in to Cursor on this machine.".into());
     }
     Ok(token)
+}
+
+/// Cursor CLI (`agent login`) stores the session token in the macOS Keychain
+/// when the IDE `state.vscdb` is absent (common for CLI-only / settings-symlink
+/// setups). Without this, the sidebar bars stay stuck on "Sign in to Cursor".
+fn read_access_token_from_cli_keychain() -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let output = Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s",
+            CLI_KEYCHAIN_SERVICE,
+            "-a",
+            CLI_KEYCHAIN_ACCOUNT,
+            "-w",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+fn resolve_access_token() -> Result<String, String> {
+    if let Ok(token) = std::env::var("CURSOR_ACCESS_TOKEN") {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Ok(token) = std::env::var("CURSOR_API_KEY") {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Some(db_path) = cursor_state_db_path() {
+        if let Ok(token) = read_access_token_from_db(&db_path) {
+            return Ok(token);
+        }
+    }
+    if let Some(token) = read_access_token_from_cli_keychain() {
+        return Ok(token);
+    }
+    Err("Sign in to Cursor on this machine.".into())
 }
 
 fn curl_dashboard(token: &str, url: &str) -> Result<Value, String> {
@@ -317,10 +374,7 @@ pub(crate) fn apply_grok_bot_usage(usage: &mut CursorUsage, json: &Value) {
 
 #[tauri::command]
 pub fn cursor_usage() -> CursorUsage {
-    let Some(db_path) = cursor_state_db_path() else {
-        return unavailable("Could not resolve Cursor state path.");
-    };
-    let token = match read_access_token(&db_path) {
+    let token = match resolve_access_token() {
         Ok(token) => token,
         Err(err) => return unavailable(err),
     };
@@ -424,5 +478,19 @@ mod tests {
             parse_iso8601_utc_ms("2026-08-25T04:17:33.882Z"),
             Some(1_787_631_453_882)
         );
+    }
+
+    #[test]
+    fn resolve_access_token_prefers_env_over_missing_ide_db() {
+        // SAFETY: test-only; serial within this module's unit tests.
+        unsafe {
+            std::env::set_var("CURSOR_ACCESS_TOKEN", "test-token-from-env");
+            std::env::remove_var("CURSOR_API_KEY");
+        }
+        let token = resolve_access_token().expect("env token");
+        assert_eq!(token, "test-token-from-env");
+        unsafe {
+            std::env::remove_var("CURSOR_ACCESS_TOKEN");
+        }
     }
 }

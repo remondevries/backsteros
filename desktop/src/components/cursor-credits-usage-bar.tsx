@@ -101,17 +101,17 @@ function CursorCreditsBody({
         ) : null}
       </div>
       <UsageBar label="Auto" percent={usage.autoPercentUsed} />
-      <UsageBar label="API" percent={usage.apiPercentUsed} />
+      <UsageBar label="Premium" percent={usage.apiPercentUsed} />
       {usage.grokBotPercentUsed != null ? (
-        <UsageBar label="Grok Bot" percent={usage.grokBotPercentUsed} />
+        <UsageBar label="Grok" percent={usage.grokBotPercentUsed} />
       ) : null}
     </div>
   );
 }
 
 /**
- * Sidebar footer: Cursor monthly included Auto / API usage toward the plan
- * allowance, plus weekly Grok Bot quota when the account includes it.
+ * Sidebar footer: Cursor monthly included Auto / Premium usage toward the plan
+ * allowance, plus weekly Grok quota when the account includes it.
  * Shows a red AgentMail alert above the credits when mail sync has degraded.
  */
 export function CursorCreditsUsageBar() {

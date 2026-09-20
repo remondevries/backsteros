@@ -1,7 +1,9 @@
 /**
  * Cursor subscription usage for the sidebar credits bar.
- * Reads the signed-in Cursor access token from the local IDE state DB
- * (or CURSOR_ACCESS_TOKEN / CURSOR_API_KEY) and calls Cursor's dashboard APIs.
+ * Resolves the signed-in Cursor access token from (in order):
+ * env (`CURSOR_ACCESS_TOKEN` / `CURSOR_API_KEY`), the IDE `state.vscdb`,
+ * then the Cursor CLI keychain entry used by `agent login` on macOS.
+ * Then calls Cursor's dashboard APIs for Auto / API (Premium) / Grok Bot %.
  */
 import { execFile } from "node:child_process";
 import os from "node:os";
@@ -9,6 +11,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+/** macOS Keychain item written by Cursor CLI (`agent login`). */
+const CURSOR_CLI_KEYCHAIN_SERVICE = "cursor-access-token";
+const CURSOR_CLI_KEYCHAIN_ACCOUNT = "cursor-user";
 
 const USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
 const GROK_BOT_USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus";
@@ -102,14 +108,44 @@ async function readAccessTokenFromCursorDb(): Promise<string | null> {
   }
 }
 
+/**
+ * Cursor CLI (`agent login`) stores the session token in the macOS Keychain
+ * when the IDE `state.vscdb` is absent (common for CLI-only / settings-symlink
+ * setups). Without this, the sidebar bars stay stuck on "Sign in to Cursor".
+ */
+async function readAccessTokenFromCursorCliKeychain(): Promise<string | null> {
+  if (process.platform !== "darwin") return null;
+  try {
+    const { stdout } = await execFileAsync(
+      "security",
+      [
+        "find-generic-password",
+        "-s",
+        CURSOR_CLI_KEYCHAIN_SERVICE,
+        "-a",
+        CURSOR_CLI_KEYCHAIN_ACCOUNT,
+        "-w",
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    const token = stdout.trim();
+    return token.length > 0 ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveCursorAccessToken(): Promise<string | null> {
   const fromEnv =
     process.env.CURSOR_ACCESS_TOKEN?.trim() || process.env.CURSOR_API_KEY?.trim() || null;
   if (fromEnv) return fromEnv;
-  return readAccessTokenFromCursorDb();
+  const fromIde = await readAccessTokenFromCursorDb();
+  if (fromIde) return fromIde;
+  return readAccessTokenFromCursorCliKeychain();
 }
 
-function parsePlanUsage(payload: unknown): CursorUsage | null {
+/** @internal Exported for unit tests. */
+export function parsePlanUsage(payload: unknown): CursorUsage | null {
   if (!payload || typeof payload !== "object") return null;
   const raw = payload as Record<string, unknown>;
   const plan =

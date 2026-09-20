@@ -1249,6 +1249,7 @@ export function useWorkspaceApiRows({
     liveLettersById,
     liveDeletedLetterIds,
     liveTasksById,
+    setLiveTasksById,
     liveDeletedTaskIds,
     apiHabits,
     setApiHabits,

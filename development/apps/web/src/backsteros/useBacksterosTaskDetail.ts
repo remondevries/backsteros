@@ -28,6 +28,10 @@ import {
 import { backsterosTaskDetailRevisionFingerprint } from "./backsterosEntityFingerprint";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
+import { withClearedDueEndDateWhenDueDateCleared } from "./taskDueDate";
+import { backsterosTaskListRowFromDetail } from "./taskListUpsert";
+import { upsertBacksterosInboxTaskLocal } from "./useBacksterosInboxAttentionTasks";
+import { upsertBacksterosProjectTaskLocal } from "./useBacksterosProjectTasks";
 import { useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export type BacksterosTaskDetailState =
@@ -307,6 +311,8 @@ export function useBacksterosTaskDetail(taskId: string | null): {
     async (patch: BacksterosTaskUpdatePatch) => {
       if (!taskId) return;
 
+      const normalizedPatch = withClearedDueEndDateWhenDueDateCleared(patch);
+
       // Capture before setState: nested assignments are invisible to CFA/tsgo.
       const rollback =
         stateRef.current.status === "ready" && stateRef.current.task.id === taskId
@@ -321,19 +327,21 @@ export function useBacksterosTaskDetail(taskId: string | null): {
       setState((current) => {
         if (current.status !== "ready" || current.task.id !== taskId) return current;
         const nextAssigneeId =
-          "assigneeId" in patch ? (patch.assigneeId ?? null) : current.task.assigneeId;
+          "assigneeId" in normalizedPatch
+            ? (normalizedPatch.assigneeId ?? null)
+            : current.task.assigneeId;
         const optimisticAssignee =
           nextAssigneeId == null
             ? null
             : (current.contacts.find((contact) => contact.id === nextAssigneeId) ??
               (current.assignee?.id === nextAssigneeId ? current.assignee : null));
-        const { activityActor: _activityActor, ...taskPatch } = patch;
+        const { activityActor: _activityActor, ...taskPatch } = normalizedPatch;
         const nextTask = normalizeTask({
           ...current.task,
           ...taskPatch,
           assigneeId: nextAssigneeId,
         });
-        if (patch.title != null || patch.description !== undefined) {
+        if (normalizedPatch.title != null || normalizedPatch.description !== undefined) {
           optimisticKickoffSync.push({
             number: nextTask.number,
             title: nextTask.title,
@@ -343,7 +351,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         return {
           ...current,
           task: nextTask,
-          assignee: "assigneeId" in patch ? optimisticAssignee : current.assignee,
+          assignee: "assigneeId" in normalizedPatch ? optimisticAssignee : current.assignee,
         };
       });
 
@@ -357,16 +365,19 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         });
       }
 
-      if (patch.status != null) {
+      if (normalizedPatch.status != null) {
         notifyBacksterosTaskStatusChanged({
           taskId,
-          status: migrateBacksterosTaskStatus(patch.status),
+          status: migrateBacksterosTaskStatus(normalizedPatch.status),
           projectId: rollback?.task.projectId ?? null,
         });
       }
 
       try {
-        const updated = normalizeTask(await updateBacksterosTask(taskId, patch));
+        const updated = normalizeTask(await updateBacksterosTask(taskId, normalizedPatch));
+        const listRow = backsterosTaskListRowFromDetail(updated);
+        upsertBacksterosProjectTaskLocal(listRow);
+        upsertBacksterosInboxTaskLocal(listRow);
         const [activities, assignee] = await Promise.all([
           fetchBacksterosTaskActivities(taskId),
           updated.assigneeId ? fetchBacksterosContact(updated.assigneeId) : Promise.resolve(null),
@@ -385,7 +396,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
             assignee: resolvedAssignee,
           };
         });
-        if (patch.title != null || patch.description !== undefined) {
+        if (normalizedPatch.title != null || normalizedPatch.description !== undefined) {
           syncBacksterosTaskKickoffDraftPrompt({
             taskId,
             number: updated.number,
@@ -393,7 +404,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
             description: updated.description,
           });
         }
-        if (patch.status != null) {
+        if (normalizedPatch.status != null) {
           notifyBacksterosTaskStatusChanged({
             taskId,
             status: migrateBacksterosTaskStatus(updated.status),
@@ -403,7 +414,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
       } catch (error) {
         if (rollback) {
           setState(rollback);
-          if (patch.status != null) {
+          if (normalizedPatch.status != null) {
             notifyBacksterosTaskStatusChanged({
               taskId,
               status: migrateBacksterosTaskStatus(rollback.task.status),

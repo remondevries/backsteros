@@ -422,8 +422,7 @@ test("fillMissingDueDatesFromApi copies scheduling when local omitted due date",
     [
       {
         id: "1",
-        dueDate: null,
-        dueEndDate: null,
+        // Property omitted (stale schema) — not an intentional clear.
         updatedAt: "2026-01-02T00:00:00.000Z",
       },
     ],
@@ -438,6 +437,29 @@ test("fillMissingDueDatesFromApi copies scheduling when local omitted due date",
   );
   assert.equal(filled[0]?.dueDate, "2026-08-24T09:00:00.000Z");
   assert.equal(filled[0]?.dueEndDate, "2026-08-24T10:00:00.000Z");
+});
+
+test("fillMissingDueDatesFromApi keeps explicit local null after clear", () => {
+  const filled = fillMissingDueDatesFromApi(
+    [
+      {
+        id: "1",
+        dueDate: null,
+        dueEndDate: null,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        dueDate: "2026-08-24T09:00:00.000Z",
+        dueEndDate: "2026-08-24T10:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.dueDate, null);
+  assert.equal(filled[0]?.dueEndDate, null);
 });
 
 test("fillMissingLinksFromApi copies API links when local is empty", () => {

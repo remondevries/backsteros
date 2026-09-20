@@ -387,7 +387,7 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
 const CURSOR_PLAN_USAGE_PATH = "/api/cursor-plan-usage";
 const CURSOR_PREPAID_USAGE_PATH = "/api/cursor-prepaid-usage";
 
-/** Local Cursor subscription usage (Auto / API / Grok Bot) for the sidebar. */
+/** Local Cursor subscription usage (Auto / Premium / Grok) for the sidebar. */
 export const cursorPlanUsageRouteLayer = HttpRouter.add(
   "GET",
   CURSOR_PLAN_USAGE_PATH,
@@ -809,10 +809,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 
-    if (
-      isBacksterosApiPath(url.value.pathname) ||
-      isBacksterosLocalCorePath(url.value.pathname)
-    ) {
+    if (isBacksterosApiPath(url.value.pathname) || isBacksterosLocalCorePath(url.value.pathname)) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 

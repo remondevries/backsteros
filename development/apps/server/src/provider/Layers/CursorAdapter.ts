@@ -1117,9 +1117,11 @@ export function makeCursorAdapter(
             model: resolvedModel,
           };
 
-          // Cursor today usually omits PromptResponse.usage; when the CLI
-          // starts returning it, feed the composer meter the same way as
-          // usage_update. Never invent a reading from an empty result.
+          // Cursor ACP (probed 2026.09.18-9a7762b) does not emit usage_update and
+          // returns PromptResponse without a usage field. Stream-json print mode
+          // does report turn usage, but this adapter is ACP-only; hooks under ACP
+          // also omit token counts. When Cursor starts sending either shape,
+          // feed the composer meter the same way — never invent a reading.
           const promptUsage =
             result.usage != null ? normalizeAcpPromptUsage(result.usage) : undefined;
           if (promptUsage) {

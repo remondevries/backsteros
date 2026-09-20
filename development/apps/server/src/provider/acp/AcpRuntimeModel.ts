@@ -932,16 +932,25 @@ export function normalizeAcpUsageUpdate(input: { readonly used: number; readonly
 
 /**
  * Map optional ACP `PromptResponse.usage` into a context-meter snapshot.
- * Cursor's ACP agent currently omits this field; keep the mapper ready so a
- * future CLI fix lights the meter without inventing numbers.
+ * Cursor's ACP agent currently omits this field (probed 2026.09.18); keep the
+ * mapper ready so a future CLI fix lights the meter without inventing numbers.
+ * Accepts camelCase ACP fields; also tolerates snake_case aliases used by
+ * Cursor print/stream-json payloads if they ever appear on the ACP path.
  */
 export function normalizeAcpPromptUsage(usage: {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly totalTokens: number;
+  readonly inputTokens?: number | null;
+  readonly outputTokens?: number | null;
+  readonly totalTokens?: number | null;
   readonly cachedReadTokens?: number | null;
   readonly cachedWriteTokens?: number | null;
   readonly thoughtTokens?: number | null;
+  readonly input_tokens?: number | null;
+  readonly output_tokens?: number | null;
+  readonly total_tokens?: number | null;
+  readonly cache_read_tokens?: number | null;
+  readonly cacheReadTokens?: number | null;
+  readonly cache_write_tokens?: number | null;
+  readonly cacheWriteTokens?: number | null;
 }):
   | {
       readonly usedTokens: number;
@@ -953,22 +962,27 @@ export function normalizeAcpPromptUsage(usage: {
       readonly reasoningOutputTokens?: number;
     }
   | undefined {
-  if (!Number.isFinite(usage.inputTokens) || usage.inputTokens <= 0) {
+  const rawInput = usage.inputTokens ?? usage.input_tokens;
+  if (typeof rawInput !== "number" || !Number.isFinite(rawInput) || rawInput <= 0) {
     return undefined;
   }
-  const inputTokens = Math.trunc(usage.inputTokens);
-  const outputTokens = Number.isFinite(usage.outputTokens)
-    ? Math.max(0, Math.trunc(usage.outputTokens))
-    : 0;
+  const inputTokens = Math.trunc(rawInput);
+  const rawOutput = usage.outputTokens ?? usage.output_tokens;
+  const outputTokens =
+    typeof rawOutput === "number" && Number.isFinite(rawOutput)
+      ? Math.max(0, Math.trunc(rawOutput))
+      : 0;
+  const rawCached = usage.cachedReadTokens ?? usage.cacheReadTokens ?? usage.cache_read_tokens;
   const cachedRead =
-    typeof usage.cachedReadTokens === "number" && Number.isFinite(usage.cachedReadTokens)
-      ? Math.max(0, Math.trunc(usage.cachedReadTokens))
+    typeof rawCached === "number" && Number.isFinite(rawCached)
+      ? Math.max(0, Math.trunc(rawCached))
       : undefined;
   // Prefer reported total when present; otherwise treat input (+ cache read) as
   // the best available stand-in for tokens currently in context.
+  const rawTotal = usage.totalTokens ?? usage.total_tokens;
   const reportedTotal =
-    Number.isFinite(usage.totalTokens) && usage.totalTokens > 0
-      ? Math.trunc(usage.totalTokens)
+    typeof rawTotal === "number" && Number.isFinite(rawTotal) && rawTotal > 0
+      ? Math.trunc(rawTotal)
       : undefined;
   const usedTokens =
     reportedTotal ?? (cachedRead !== undefined ? inputTokens + cachedRead : inputTokens);

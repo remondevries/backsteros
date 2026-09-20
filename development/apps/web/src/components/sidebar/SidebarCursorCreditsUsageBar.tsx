@@ -85,17 +85,17 @@ function CursorCreditsBody({
         ) : null}
       </div>
       <UsageBar label="Auto" percent={usage.autoPercentUsed} />
-      <UsageBar label="API" percent={usage.apiPercentUsed} />
+      <UsageBar label="Premium" percent={usage.apiPercentUsed} />
       {usage.grokBotPercentUsed != null ? (
-        <UsageBar label="Grok Bot" percent={usage.grokBotPercentUsed} />
+        <UsageBar label="Grok" percent={usage.grokBotPercentUsed} />
       ) : null}
     </div>
   );
 }
 
 /**
- * Sidebar footer: Cursor monthly included Auto / API usage toward the plan
- * allowance, plus weekly Grok Bot quota when the account includes it.
+ * Sidebar footer: Cursor monthly included Auto / Premium usage toward the plan
+ * allowance, plus weekly Grok quota when the account includes it.
  * Usage is shared across Code/Servers sidebar remounts to avoid flicker.
  */
 export function SidebarCursorCreditsUsageBar() {

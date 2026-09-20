@@ -464,10 +464,18 @@ function dueDateMissing(value: unknown): boolean {
   return value == null || value === "";
 }
 
+/** Field was never set on the row (stale schema) — not an intentional clear. */
+function dueDateOmitted(row: { dueDate?: string | null }): boolean {
+  return row.dueDate === undefined;
+}
+
 /**
  * When local omits `dueDate` / `dueEndDate` (stale PowerSync schema / failed
  * local patch), copy scheduling fields from the API row so calendar drops
  * survive navigation.
+ *
+ * Explicit `null` (or `""`) is an intentional clear — do not resurrect a stale
+ * API due date. Only `undefined` (property omitted) is treated as missing.
  */
 export function fillMissingDueDatesFromApi<
   T extends {
@@ -483,9 +491,12 @@ export function fillMissingDueDatesFromApi<
     const api = apiById.get(row.id);
     if (!api) return row;
     const apiHasDue = !dueDateMissing(api.dueDate);
-    const localHasDue = !dueDateMissing(row.dueDate);
     if (!apiHasDue) return row;
-    if (!localHasDue) {
+    // Intentional clear must survive a lagging API snapshot.
+    if (dueDateMissing(row.dueDate) && !dueDateOmitted(row)) {
+      return row;
+    }
+    if (dueDateOmitted(row)) {
       return {
         ...row,
         dueDate: api.dueDate,
