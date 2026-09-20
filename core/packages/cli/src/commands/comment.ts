@@ -1,5 +1,6 @@
 import type {
   CreateTaskCommentInput,
+  TaskComment,
   UpdateTaskCommentInput,
 } from "@backsteros/contracts";
 import type { CliClient, CliConfig } from "../config.js";
@@ -48,7 +49,7 @@ export async function runCommentCommand(
         { comments },
         comments
           .map(
-            (c) =>
+            (c: TaskComment) =>
               `${c.id}\t${c.authorName}\t${preview(c.body)}\t${c.createdAt}`,
           )
           .join("\n") || "(no comments)",
@@ -68,7 +69,9 @@ export async function runCommentCommand(
         params: { id: taskId },
       });
       if (res.status !== 200) throw new Error(`list failed (${res.status})`);
-      const comment = res.body.comments.find((c) => c.id === commentId);
+      const comment = res.body.comments.find(
+        (c: TaskComment) => c.id === commentId,
+      );
       if (!comment) throw new Error(`Comment not found: ${commentId}`);
       emitResult(
         config.json,

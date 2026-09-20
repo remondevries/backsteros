@@ -1,4 +1,4 @@
-import type { CreateTaskInput, UpdateTaskInput } from "@backsteros/contracts";
+import type { CreateTaskInput, Task, UpdateTaskInput } from "@backsteros/contracts";
 import type { CliClient, CliConfig } from "../config.js";
 import { emitResult } from "../output.js";
 import { resolveProjectId, resolveTaskId } from "../resolve.js";
@@ -84,7 +84,7 @@ export async function runTaskCommand(
         { tasks },
         tasks
           .map(
-            (t) =>
+            (t: Task) =>
               `${t.number}\t${t.status}\t${t.title}\t${t.id}\t${t.projectId ?? ""}`,
           )
           .join("\n") || "(no tasks)",

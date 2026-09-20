@@ -2,9 +2,14 @@ import {
   initClient,
   type ApiFetcher,
   type ApiFetcherArgs,
+  type ClientArgs,
+  type InitClientReturn,
 } from "@ts-rest/core";
 import {
   fullApiContract,
+  fileTaskCallbackContract,
+  type CloudflareContract,
+  type TransipContract,
   type Avatar,
   type Document,
   type FinancialImportResult,
@@ -506,8 +511,27 @@ function initBacksterosContract(baseUrl: string, api: ApiFetcher) {
   return initClient(fullApiContract, { baseUrl, api });
 }
 
-/** Inferred from `initClient` — explicit `InitClientReturn<FullApiContract>` collapses to `never` under tsc. */
-export type BacksterosContractClient = ReturnType<typeof initBacksterosContract>;
+/**
+ * Merged `fullApiContract` and `apiContract: AppRouter` erase ts-rest route types (TS7056).
+ * Satellite routers stay fully typed; main API routes use a callable index signature.
+ */
+type BacksterosContractInitArgs = ClientArgs;
+
+type ContractRouteResult = {
+  status: number;
+  /** AppRouter-erased routes — bodies are validated at runtime via status + Zod on the server. */
+  body: any;
+  headers: Headers;
+};
+
+type MainApiContractClient = {
+  [route: string]: (args: unknown) => Promise<ContractRouteResult>;
+};
+
+export type BacksterosContractClient = MainApiContractClient &
+  InitClientReturn<CloudflareContract, BacksterosContractInitArgs> &
+  InitClientReturn<typeof fileTaskCallbackContract, BacksterosContractInitArgs> &
+  InitClientReturn<TransipContract, BacksterosContractInitArgs>;
 
 export type BacksterosApiClient = {
   contract: BacksterosContractClient;
@@ -598,7 +622,10 @@ export type BacksterosApiClient = {
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
   const normalized = { ...options, baseUrl: trimBaseUrl(options.baseUrl) };
   const fetcher = createFetcher(normalized);
-  const contract = initBacksterosContract(normalized.baseUrl, fetcher);
+  const contract = initBacksterosContract(
+    normalized.baseUrl,
+    fetcher,
+  ) as unknown as BacksterosContractClient;
   const requestJson = <T>(path: string, init?: RequestInit) =>
     rawRequest(normalized, path, init) as Promise<T>;
   const requestBinary = (path: string, init?: RequestInit) =>
