@@ -18,9 +18,14 @@ import type {
   BacksterosContact,
   BacksterosCreateTaskActivityInput,
   BacksterosCreateTaskInput,
+  BacksterosGithubCommit,
+  BacksterosGithubPullRequest,
+  BacksterosGithubPullRequestFile,
   BacksterosOrganization,
   BacksterosProjectFsEntry,
   BacksterosProjectRepoDocEntry,
+  BacksterosProjectUpdate,
+  BacksterosProjectUpdatePatch,
   BacksterosProjectsResponse,
   BacksterosTask,
   BacksterosTaskActivitiesResponse,
@@ -407,9 +412,19 @@ export async function deleteBacksterosTask(taskId: string): Promise<void> {
   });
 }
 
+export async function fetchBacksterosProject(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<BacksterosCodebaseProject> {
+  return backsterosFetchJson<BacksterosCodebaseProject>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}`,
+    optionalSignalInit(signal),
+  );
+}
+
 export async function updateBacksterosProject(
   projectId: string,
-  patch: { readonly sortOrder: number },
+  patch: BacksterosProjectUpdatePatch,
 ): Promise<BacksterosCodebaseProject> {
   return backsterosFetchJson<BacksterosCodebaseProject>(
     `/api/v1/projects/${encodeURIComponent(projectId)}`,
@@ -418,6 +433,104 @@ export async function updateBacksterosProject(
       body: patch,
     },
   );
+}
+
+export async function fetchBacksterosGithubStatus(
+  signal?: AbortSignal,
+): Promise<{ readonly connected: boolean; readonly reason?: string | null }> {
+  return backsterosFetchJson<{ readonly connected: boolean; readonly reason?: string | null }>(
+    "/api/v1/github/status",
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectGithubBranches(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly repository: string;
+  readonly defaultBranch: string;
+  readonly branches: readonly { readonly name: string }[];
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/branches`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectGithubCommits(
+  projectId: string,
+  branch: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly commits: readonly BacksterosGithubCommit[];
+  readonly hasMore: boolean;
+  readonly branch: string;
+}> {
+  const params = new URLSearchParams({ branch, page: "1" });
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/commits?${params.toString()}`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectGithubPulls(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{ readonly pullRequests: readonly BacksterosGithubPullRequest[] }> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectUpdates(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<readonly BacksterosProjectUpdate[]> {
+  const payload = await backsterosFetchJson<{
+    readonly updates: readonly BacksterosProjectUpdate[];
+  }>(`/api/v1/projects/${encodeURIComponent(projectId)}/updates`, optionalSignalInit(signal));
+  return payload.updates ?? [];
+}
+
+export async function createBacksterosProjectUpdate(
+  projectId: string,
+  input: {
+    readonly title: string;
+    readonly body: string;
+    readonly kind: string;
+    readonly status: string;
+    readonly severity: string | null;
+  },
+): Promise<BacksterosProjectUpdate> {
+  return backsterosFetchJson(`/api/v1/projects/${encodeURIComponent(projectId)}/updates`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function patchBacksterosProjectUpdate(
+  updateId: string,
+  patch: Partial<{
+    title: string;
+    body: string;
+    kind: string;
+    status: string;
+    severity: string | null;
+    relatedTaskIds: readonly string[];
+  }>,
+): Promise<BacksterosProjectUpdate> {
+  return backsterosFetchJson(`/api/v1/project-updates/${encodeURIComponent(updateId)}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function deleteBacksterosProjectUpdate(updateId: string): Promise<void> {
+  await backsterosFetchJson<undefined>(`/api/v1/project-updates/${encodeURIComponent(updateId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function fetchBacksterosProjectFsEntries(
@@ -464,6 +577,64 @@ export async function fetchBacksterosProjectFsFile(
   const params = new URLSearchParams({ path });
   return backsterosFetchJson(
     `/api/v1/projects/${encodeURIComponent(projectId)}/fs/file?${params.toString()}`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosGithubRepositories(
+  signal?: AbortSignal,
+): Promise<readonly { readonly fullName: string; readonly description: string | null }[]> {
+  const payload = await backsterosFetchJson<{
+    readonly repositories: readonly {
+      readonly fullName: string;
+      readonly description: string | null;
+    }[];
+  }>("/api/v1/github/repositories", optionalSignalInit(signal));
+  return payload.repositories ?? [];
+}
+
+export async function fetchBacksterosProjectGithubCommit(
+  projectId: string,
+  sha: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly commit: BacksterosGithubCommit;
+  readonly repository?: string;
+  readonly files: readonly BacksterosGithubPullRequestFile[];
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/commits/${encodeURIComponent(sha)}`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectGithubPull(
+  projectId: string,
+  number: number,
+  signal?: AbortSignal,
+): Promise<{
+  readonly pullRequest: BacksterosGithubPullRequest;
+  readonly repository?: string;
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${number}`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectGithubPullFiles(
+  projectId: string,
+  number: number,
+  page = 1,
+  signal?: AbortSignal,
+): Promise<{
+  readonly files: readonly BacksterosGithubPullRequestFile[];
+  readonly page: number;
+  readonly hasMore: boolean;
+}> {
+  const params = new URLSearchParams({ page: String(page) });
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${number}/files?${params.toString()}`,
     optionalSignalInit(signal),
   );
 }

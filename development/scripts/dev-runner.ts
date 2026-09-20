@@ -388,6 +388,15 @@ export function createDevRunnerEnv({
       delete output.T3CODE_MODE;
       delete output.T3CODE_NO_BROWSER;
       delete output.T3CODE_HOST;
+      // Electron loads the renderer through the t3code-dev:// custom protocol,
+      // which proxies every Vite module request. Unbundled lucide/icon graphs
+      // open thousands of concurrent protocol fetches and surface as
+      // net::ERR_UNEXPECTED / Failed to fetch main.tsx. Bundled dev collapses
+      // that to a few chunks (same rationale as --share). Opt out with
+      // T3CODE_BUNDLED_DEV=0.
+      if (output.T3CODE_BUNDLED_DEV === undefined) {
+        output.T3CODE_BUNDLED_DEV = "1";
+      }
     }
 
     if (!isDesktopMode && host !== undefined) {

@@ -162,7 +162,7 @@ export function BacksterosConnectionSetting() {
       .finally(() => setProfileSaving(false));
   };
 
-  const onAgentContactChange = (value: string) => {
+  const onAgentContactChange = (value: string | null) => {
     const next = value && value !== NONE_VALUE ? value : null;
     setAgentContactId(next);
     setProfileError(null);

@@ -4,6 +4,7 @@
  */
 import type { BacksterosTaskChatBinding } from "./taskChatStore";
 import { useBacksterosTaskChatStore } from "./taskChatStore";
+import { readBacksterosConnectionSettings } from "./settingsStore";
 
 export type ControlSessionBinding = {
   readonly taskId: string;
@@ -57,6 +58,15 @@ export function mergeControlBindingsIntoTaskChatStore(
   return applied;
 }
 
+function controlAuthHeaders(): HeadersInit {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const { apiKey } = readBacksterosConnectionSettings();
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return headers;
+}
+
 export async function fetchControlBindings(signal?: AbortSignal): Promise<{
   readonly ok: boolean;
   readonly bindings: ReadonlyArray<ControlSessionBinding>;
@@ -64,7 +74,7 @@ export async function fetchControlBindings(signal?: AbortSignal): Promise<{
   const response = await fetch("/api/backsteros/control/bindings", {
     method: "GET",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: controlAuthHeaders(),
     signal,
     cache: "no-store",
   });
@@ -96,7 +106,7 @@ export async function pushControlBinding(binding: {
       method: "PUT",
       credentials: "include",
       headers: {
-        Accept: "application/json",
+        ...controlAuthHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(binding),

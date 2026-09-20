@@ -176,11 +176,30 @@ function readBacksterosCliEnvValue(
   }
 }
 
+/** True when origin is Mac local-core (:8788) — never a product/gateway upstream. */
+function isBacksterosLocalCoreOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    return port === "8788";
+  } catch {
+    return false;
+  }
+}
+
 export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env): string {
-  const fromEnv = env.BACKSTEROS_API_URL?.trim() || "";
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
-  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
-  if (fromCli) return fromCli.replace(/\/$/, "");
+  // BDV-37: product / gateway only. A stale shell export pointing at local-core
+  // (:8788 / docker bridge) must not win over cli.env or the HTTPS gateway.
+  for (const candidate of [
+    env.BACKSTEROS_API_URL?.trim() || "",
+    readBacksterosCliEnvValue("BACKSTEROS_API_URL"),
+  ]) {
+    if (!candidate) continue;
+    const cleaned = candidate.replace(/\/$/, "");
+    if (isBacksterosLocalCoreOrigin(cleaned)) continue;
+    return cleaned;
+  }
   return "https://api.local.backsteros.com";
 }
 
@@ -372,6 +391,23 @@ async function proxyRequest(
 
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = stripHopByHopHeaders(request.headers);
+  // Localhost control plane (`/api/backsteros/control/*`) accepts either a
+  // pairing-session cookie or a BacksterOS API key Bearer. The renderer fetch
+  // only sends credentials:include — under t3code-dev:// there is often no
+  // pairing cookie, which surfaces as a noisy 401 on bindings sync. When the
+  // desktop shell has an owner key (env / ~/.config/backsteros/cli.env), attach
+  // it the same way `/backsteros-api` does.
+  if (
+    requestUrl.pathname === "/api/backsteros/control" ||
+    requestUrl.pathname.startsWith("/api/backsteros/control/")
+  ) {
+    // Prefer env/cli owner key over a stale renderer Settings key (same as
+    // /backsteros-api) — otherwise a mismatched Settings Bearer 401s bindings.
+    const apiKey = resolveBacksterosApiKey();
+    if (apiKey) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
+    }
+  }
   const init: RequestInit = {
     method: request.method,
     headers,

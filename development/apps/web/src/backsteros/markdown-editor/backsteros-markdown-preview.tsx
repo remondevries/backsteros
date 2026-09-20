@@ -18,6 +18,7 @@ import {
   splitMarkdownPreviewParagraphs,
   withSoftLineHardBreaks,
 } from "./markdown-preview-paragraphs";
+import "./markdown-editor.css";
 
 export type BacksterosMarkdownPreviewProps = {
   body: string;

@@ -88,85 +88,86 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
-  it.effect("proxies local-core paths to BACKSTEROS_LOCAL_CORE_URL while product API stays separate", () =>
-    Effect.gen(function* () {
-      let handler: ((request: Request) => Promise<Response>) | undefined;
-      handleMock.mockImplementation((_scheme, nextHandler) => {
-        handler = nextHandler;
-      });
-      netFetchMock.mockResolvedValue(
-        new Response(JSON.stringify({ entries: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-
-      const previousApiUrl = process.env.BACKSTEROS_API_URL;
-      const previousLocalCoreUrl = process.env.BACKSTEROS_LOCAL_CORE_URL;
-      const previousKey = process.env.BACKSTEROS_API_KEY;
-      process.env.BACKSTEROS_API_URL = "https://agent.backsteros.com";
-      process.env.BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
-      process.env.BACKSTEROS_API_KEY = "sk_live_test";
-
-      try {
-        yield* Effect.scoped(
-          Effect.gen(function* () {
-            const protocol = yield* ElectronProtocol.ElectronProtocol;
-            yield* protocol.registerDesktopProtocol({
-              scheme: "t3code",
-              targetOrigin: new URL("http://127.0.0.1:3773/"),
-              backendOrigin: new URL("http://127.0.0.1:3773/"),
-              clerkFrontendApiHostname: undefined,
-            });
-            assert.isDefined(handler);
-
-            const fsResponse = yield* Effect.promise(() =>
-              handler!(
-                new Request(
-                  "t3code://app/backsteros-local-core/api/v1/projects/p1/fs/entries",
-                  { headers: { accept: "application/json" } },
-                ),
-              ),
-            );
-            assert.equal(fsResponse.status, 200);
-
-            const productResponse = yield* Effect.promise(() =>
-              handler!(
-                new Request("t3code://app/backsteros-api/api/v1/projects?type=codebase", {
-                  headers: { accept: "application/json" },
-                }),
-              ),
-            );
-            assert.equal(productResponse.status, 200);
+  it.effect(
+    "proxies local-core paths to BACKSTEROS_LOCAL_CORE_URL while product API stays separate",
+    () =>
+      Effect.gen(function* () {
+        let handler: ((request: Request) => Promise<Response>) | undefined;
+        handleMock.mockImplementation((_scheme, nextHandler) => {
+          handler = nextHandler;
+        });
+        netFetchMock.mockResolvedValue(
+          new Response(JSON.stringify({ entries: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
           }),
         );
-      } finally {
-        if (previousApiUrl === undefined) {
-          delete process.env.BACKSTEROS_API_URL;
-        } else {
-          process.env.BACKSTEROS_API_URL = previousApiUrl;
-        }
-        if (previousLocalCoreUrl === undefined) {
-          delete process.env.BACKSTEROS_LOCAL_CORE_URL;
-        } else {
-          process.env.BACKSTEROS_LOCAL_CORE_URL = previousLocalCoreUrl;
-        }
-        if (previousKey === undefined) {
-          delete process.env.BACKSTEROS_API_KEY;
-        } else {
-          process.env.BACKSTEROS_API_KEY = previousKey;
-        }
-      }
 
-      assert.equal(
-        netFetchMock.mock.calls[0]?.[0],
-        "http://127.0.0.1:8788/api/v1/projects/p1/fs/entries",
-      );
-      assert.equal(
-        netFetchMock.mock.calls[1]?.[0],
-        "https://agent.backsteros.com/api/v1/projects?type=codebase",
-      );
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+        const previousApiUrl = process.env.BACKSTEROS_API_URL;
+        const previousLocalCoreUrl = process.env.BACKSTEROS_LOCAL_CORE_URL;
+        const previousKey = process.env.BACKSTEROS_API_KEY;
+        process.env.BACKSTEROS_API_URL = "https://agent.backsteros.com";
+        process.env.BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
+        process.env.BACKSTEROS_API_KEY = "sk_live_test";
+
+        try {
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const protocol = yield* ElectronProtocol.ElectronProtocol;
+              yield* protocol.registerDesktopProtocol({
+                scheme: "t3code",
+                targetOrigin: new URL("http://127.0.0.1:3773/"),
+                backendOrigin: new URL("http://127.0.0.1:3773/"),
+                clerkFrontendApiHostname: undefined,
+              });
+              assert.isDefined(handler);
+
+              const fsResponse = yield* Effect.promise(() =>
+                handler!(
+                  new Request("t3code://app/backsteros-local-core/api/v1/projects/p1/fs/entries", {
+                    headers: { accept: "application/json" },
+                  }),
+                ),
+              );
+              assert.equal(fsResponse.status, 200);
+
+              const productResponse = yield* Effect.promise(() =>
+                handler!(
+                  new Request("t3code://app/backsteros-api/api/v1/projects?type=codebase", {
+                    headers: { accept: "application/json" },
+                  }),
+                ),
+              );
+              assert.equal(productResponse.status, 200);
+            }),
+          );
+        } finally {
+          if (previousApiUrl === undefined) {
+            delete process.env.BACKSTEROS_API_URL;
+          } else {
+            process.env.BACKSTEROS_API_URL = previousApiUrl;
+          }
+          if (previousLocalCoreUrl === undefined) {
+            delete process.env.BACKSTEROS_LOCAL_CORE_URL;
+          } else {
+            process.env.BACKSTEROS_LOCAL_CORE_URL = previousLocalCoreUrl;
+          }
+          if (previousKey === undefined) {
+            delete process.env.BACKSTEROS_API_KEY;
+          } else {
+            process.env.BACKSTEROS_API_KEY = previousKey;
+          }
+        }
+
+        assert.equal(
+          netFetchMock.mock.calls[0]?.[0],
+          "http://127.0.0.1:8788/api/v1/projects/p1/fs/entries",
+        );
+        assert.equal(
+          netFetchMock.mock.calls[1]?.[0],
+          "https://agent.backsteros.com/api/v1/projects?type=codebase",
+        );
+      }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
   it.effect("returns 502 with local-core origin when local-core is unreachable", () =>
@@ -231,7 +232,7 @@ describe("ElectronProtocol", () => {
 
       const previousUrl = process.env.BACKSTEROS_API_URL;
       const previousKey = process.env.BACKSTEROS_API_KEY;
-      process.env.BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+      process.env.BACKSTEROS_API_URL = "http://127.0.0.1:18788";
       process.env.BACKSTEROS_API_KEY = "sk_live_test";
 
       try {
@@ -275,7 +276,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(
         netFetchMock.mock.calls[0]?.[0],
-        "http://127.0.0.1:8788/api/v1/projects?type=codebase",
+        "http://127.0.0.1:18788/api/v1/projects?type=codebase",
       );
       const forwardedHeaders = new Headers(netFetchMock.mock.calls[0]?.[1]?.headers);
       assert.equal(forwardedHeaders.get("authorization"), "Bearer sk_live_test");
@@ -362,7 +363,7 @@ describe("ElectronProtocol", () => {
       globalThis.fetch = nodeFetchMock as typeof fetch;
 
       const previousUrl = process.env.BACKSTEROS_API_URL;
-      process.env.BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+      process.env.BACKSTEROS_API_URL = "http://127.0.0.1:18788";
 
       try {
         yield* Effect.scoped(
@@ -401,7 +402,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(
         nodeFetchMock.mock.calls[0]?.[0],
-        "http://127.0.0.1:8788/api/v1/projects?type=codebase",
+        "http://127.0.0.1:18788/api/v1/projects?type=codebase",
       );
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );

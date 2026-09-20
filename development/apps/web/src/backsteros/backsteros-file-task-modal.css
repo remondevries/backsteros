@@ -59,14 +59,15 @@
   gap: 10px;
   min-width: 0;
   padding-inline: 8px;
-  padding-bottom: 4px;
+  padding-bottom: 12px;
 }
 
 .bos-file-task-textarea {
+  box-sizing: border-box;
   min-height: 96px;
-  max-height: 280px;
   flex: 1;
   resize: none;
+  overflow: hidden;
   border: none;
   background: transparent;
   color: var(--foreground);
@@ -74,6 +75,7 @@
   font-size: 14px;
   line-height: 1.45;
   outline: none;
+  field-sizing: content;
 }
 
 .bos-file-task-textarea::placeholder {

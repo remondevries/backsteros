@@ -1,22 +1,113 @@
-/** Subset of BacksterOS `Project` used by the T3 sidebar overlay. */
+/** Subset of BacksterOS `Project` used by the T3 sidebar overlay / workbench. */
 export interface BacksterosCodebaseProject {
   readonly id: string;
   readonly key: string | null;
   readonly name: string;
   readonly summary: string | null;
+  readonly description?: string | null;
   readonly type: string;
   readonly status: string;
+  readonly priority?: number;
   readonly sortOrder?: number;
   /** Serialized entity icon (`octicon` key, emoji JSON, or null for type default). */
   readonly icon?: string | null;
+  readonly organizationId?: string | null;
+  readonly areaId?: string | null;
+  readonly area?: "personal" | "business" | "clients" | string | null;
+  readonly startDate?: string | null;
+  readonly dueDate?: string | null;
   readonly githubRepository: string | null;
   readonly localWorkingDirectory: string | null;
+  readonly healthCheckMode?: "simple" | "advanced" | null;
+  readonly healthCheckDomain?: string | null;
   readonly updatedAt: string;
 }
 
-export interface BacksterosProjectsResponse {
-  readonly projects: readonly BacksterosCodebaseProject[];
-}
+/** Fields accepted by `PATCH /api/v1/projects/:id`. */
+export type BacksterosProjectUpdatePatch = {
+  readonly name?: string;
+  readonly key?: string;
+  readonly summary?: string | null;
+  readonly description?: string | null;
+  readonly status?: string;
+  readonly priority?: number;
+  readonly sortOrder?: number;
+  readonly organizationId?: string | null;
+  readonly areaId?: string | null;
+  readonly area?: "personal" | "business" | "clients" | null;
+  readonly startDate?: string | null;
+  readonly dueDate?: string | null;
+  readonly icon?: string | null;
+  readonly githubRepository?: string | null;
+  readonly localWorkingDirectory?: string | null;
+  readonly healthCheckMode?: "simple" | "advanced" | null;
+  readonly healthCheckDomain?: string | null;
+};
+
+export type BacksterosGithubCommit = {
+  readonly sha: string;
+  readonly shortSha: string;
+  readonly message: string;
+  readonly authorName: string | null;
+  readonly authorLogin: string | null;
+  readonly authoredAt: string | null;
+  readonly htmlUrl: string;
+};
+
+export type BacksterosGithubPullRequestFileStatus =
+  | "added"
+  | "removed"
+  | "modified"
+  | "renamed"
+  | "copied"
+  | "changed"
+  | "unchanged";
+
+export type BacksterosGithubPullRequestFile = {
+  readonly filename: string;
+  readonly previousFilename: string | null;
+  readonly status: BacksterosGithubPullRequestFileStatus;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly changes: number;
+  readonly patch: string | null;
+  readonly blobUrl: string | null;
+  readonly rawUrl: string | null;
+};
+
+export type BacksterosGithubPullRequest = {
+  readonly number: number;
+  readonly title: string;
+  readonly state: "open" | "closed" | "merged";
+  readonly draft: boolean;
+  readonly body?: string | null;
+  readonly authorLogin: string | null;
+  readonly createdAt?: string | null;
+  readonly updatedAt: string | null;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
+  readonly htmlUrl: string;
+  readonly headRef: string | null;
+  readonly baseRef: string | null;
+  readonly commitsCount?: number | null;
+  readonly commentsCount?: number | null;
+  readonly changedFilesCount?: number | null;
+  readonly additions?: number | null;
+  readonly deletions?: number | null;
+};
+
+export type BacksterosProjectUpdate = {
+  readonly id: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly kind: import("./projectUpdates").BacksterosProjectUpdateKind | string;
+  readonly status: import("./projectUpdates").BacksterosProjectUpdateStatus | string;
+  readonly severity: import("./projectUpdates").BacksterosProjectUpdateSeverity | string | null;
+  readonly relatedTaskIds: readonly string[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
 
 export type BacksterosProjectFsEntry = {
   readonly name: string;
@@ -30,6 +121,10 @@ export type BacksterosProjectRepoDocEntry = {
   readonly kind: "file" | "directory";
   readonly pinned: boolean;
 };
+
+export interface BacksterosProjectsResponse {
+  readonly projects: readonly BacksterosCodebaseProject[];
+}
 
 /** Subset of BacksterOS `Task` used by the T3 sidebar overlay list. */
 export interface BacksterosTask {
