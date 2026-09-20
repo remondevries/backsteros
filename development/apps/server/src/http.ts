@@ -62,7 +62,9 @@ import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./ht
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const BACKSTEROS_API_PATH_PREFIX = "/backsteros-api";
+const BACKSTEROS_LOCAL_CORE_PATH_PREFIX = "/backsteros-local-core";
 const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
+const DEFAULT_BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = [
   "t3code://app",
@@ -79,7 +81,9 @@ const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inlin
 // out of reach. Relative sibling assets still load through their signed URLs.
 const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
 
-function readBacksterosCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): string {
+function readBacksterosCliEnvValue(
+  key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL" | "BACKSTEROS_LOCAL_CORE_URL",
+): string {
   try {
     const filePath = NodePath.join(NodeOs.homedir(), ".config", "backsteros", "cli.env");
     if (!NodeFs.existsSync(filePath)) return "";
@@ -99,6 +103,15 @@ function resolveBacksterosApiOrigin(): string {
   return DEFAULT_BACKSTEROS_API_URL;
 }
 
+/** Mac local-core for Files/Documents FS. Independent of the product gateway. */
+function resolveBacksterosLocalCoreOrigin(): string {
+  const fromEnv = process.env.BACKSTEROS_LOCAL_CORE_URL?.trim() || "";
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_LOCAL_CORE_URL");
+  if (fromCli) return fromCli.replace(/\/$/, "");
+  return DEFAULT_BACKSTEROS_LOCAL_CORE_URL;
+}
+
 function resolveBacksterosApiKey(): string {
   const fromEnv = process.env.BACKSTEROS_API_KEY?.trim() || "";
   if (fromEnv) return fromEnv;
@@ -108,6 +121,13 @@ function resolveBacksterosApiKey(): string {
 export function isBacksterosApiPath(pathname: string): boolean {
   return (
     pathname === BACKSTEROS_API_PATH_PREFIX || pathname.startsWith(`${BACKSTEROS_API_PATH_PREFIX}/`)
+  );
+}
+
+export function isBacksterosLocalCorePath(pathname: string): boolean {
+  return (
+    pathname === BACKSTEROS_LOCAL_CORE_PATH_PREFIX ||
+    pathname.startsWith(`${BACKSTEROS_LOCAL_CORE_PATH_PREFIX}/`)
   );
 }
 
@@ -501,13 +521,15 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
 );
 
 /**
- * Same rewrite Vite exposes as `/backsteros-api` in web dev. Packaged desktop
- * and production static hosting otherwise SPA-fallback `index.html` for that
- * path, which the BacksterOS client then fails to parse as JSON.
+ * Same rewrite Vite exposes for `/backsteros-api` and `/backsteros-local-core`.
+ * Packaged desktop and production static hosting otherwise SPA-fallback
+ * `index.html` for those paths, which the BacksterOS client fails to parse.
+ * Product and local-core must stay separate upstreams (BDV-37).
  */
-export const backsterosApiProxyRouteLayer = HttpRouter.add(
-  "*",
-  `${BACKSTEROS_API_PATH_PREFIX}/*`,
+const proxyBacksterosHttpRequest = (options: {
+  readonly pathPrefix: string;
+  readonly resolveOrigin: () => string;
+}) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
@@ -515,8 +537,9 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
-    const suffix = url.value.pathname.slice(BACKSTEROS_API_PATH_PREFIX.length) || "/";
-    const targetUrl = `${resolveBacksterosApiOrigin()}${suffix}${url.value.search}`;
+    const origin = options.resolveOrigin();
+    const suffix = url.value.pathname.slice(options.pathPrefix.length) || "/";
+    const targetUrl = `${origin}${suffix}${url.value.search}`;
 
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) {
@@ -566,7 +589,7 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
             JSON.stringify({
               error: "BacksterOS is unreachable",
               detail,
-              origin: resolveBacksterosApiOrigin(),
+              origin,
             }),
             {
               status: 502,
@@ -596,7 +619,7 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
             JSON.stringify({
               error: "BacksterOS response could not be read",
               detail,
-              origin: resolveBacksterosApiOrigin(),
+              origin,
             }),
           ),
         );
@@ -620,6 +643,24 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
       status: response.status || 502,
       headers: responseHeaders,
     });
+  });
+
+export const backsterosApiProxyRouteLayer = HttpRouter.add(
+  "*",
+  `${BACKSTEROS_API_PATH_PREFIX}/*`,
+  proxyBacksterosHttpRequest({
+    pathPrefix: BACKSTEROS_API_PATH_PREFIX,
+    resolveOrigin: resolveBacksterosApiOrigin,
+  }),
+);
+
+/** BDV-37: Files/Documents FS → Mac local-core (never the product gateway). */
+export const backsterosLocalCoreProxyRouteLayer = HttpRouter.add(
+  "*",
+  `${BACKSTEROS_LOCAL_CORE_PATH_PREFIX}/*`,
+  proxyBacksterosHttpRequest({
+    pathPrefix: BACKSTEROS_LOCAL_CORE_PATH_PREFIX,
+    resolveOrigin: resolveBacksterosLocalCoreOrigin,
   }),
 );
 
@@ -768,7 +809,10 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 
-    if (isBacksterosApiPath(url.value.pathname)) {
+    if (
+      isBacksterosApiPath(url.value.pathname) ||
+      isBacksterosLocalCorePath(url.value.pathname)
+    ) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 

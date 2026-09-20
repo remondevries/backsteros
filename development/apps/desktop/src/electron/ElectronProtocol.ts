@@ -146,13 +146,25 @@ export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePr
 /** Same prefix as Vite `server.proxy` and the web BacksterOS client. */
 export const BACKSTEROS_API_PATH_PREFIX = "/backsteros-api";
 
+/** BDV-37: Files/Documents FS — must not reuse the product/gateway upstream. */
+export const BACKSTEROS_LOCAL_CORE_PATH_PREFIX = "/backsteros-local-core";
+
 export function isBacksterosApiPath(pathname: string): boolean {
   return (
     pathname === BACKSTEROS_API_PATH_PREFIX || pathname.startsWith(`${BACKSTEROS_API_PATH_PREFIX}/`)
   );
 }
 
-function readBacksterosCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): string {
+export function isBacksterosLocalCorePath(pathname: string): boolean {
+  return (
+    pathname === BACKSTEROS_LOCAL_CORE_PATH_PREFIX ||
+    pathname.startsWith(`${BACKSTEROS_LOCAL_CORE_PATH_PREFIX}/`)
+  );
+}
+
+function readBacksterosCliEnvValue(
+  key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL" | "BACKSTEROS_LOCAL_CORE_URL",
+): string {
   try {
     const filePath = NodePath.join(NodeOs.homedir(), ".config", "backsteros", "cli.env");
     if (!NodeFs.existsSync(filePath)) return "";
@@ -170,6 +182,15 @@ export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env)
   const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
   if (fromCli) return fromCli.replace(/\/$/, "");
   return "https://api.local.backsteros.com";
+}
+
+/** Mac local-core for working-copy FS (`/fs/*`, `/docs`). Default loopback :8788. */
+export function resolveBacksterosLocalCoreOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env.BACKSTEROS_LOCAL_CORE_URL?.trim() || "";
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_LOCAL_CORE_URL");
+  if (fromCli) return fromCli.replace(/\/$/, "");
+  return "http://127.0.0.1:8788";
 }
 
 function resolveBacksterosApiKey(env: NodeJS.ProcessEnv = process.env): string {
@@ -227,14 +248,17 @@ function stripHopByHopHeaders(headers: Headers): Headers {
   return next;
 }
 
-function backsterosUnreachableResponse(cause: unknown): Response {
+function backsterosUnreachableResponse(
+  cause: unknown,
+  origin: string = resolveBacksterosApiOrigin(),
+): Response {
   const detail =
     cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "unknown error";
   return new Response(
     JSON.stringify({
       error: "BacksterOS is unreachable",
       detail,
-      origin: resolveBacksterosApiOrigin(),
+      origin,
     }),
     {
       status: 502,
@@ -279,16 +303,22 @@ async function fetchBacksterosUpstream(
 }
 
 /**
- * Packaged desktop has no Vite proxy. Without this, `/backsteros-api/*` is
- * forwarded to the T3 static host and returns `index.html` (JSON parse errors).
+ * Packaged desktop has no Vite proxy. Without this, `/backsteros-api/*` and
+ * `/backsteros-local-core/*` are forwarded to the T3 static host and return
+ * `index.html` (JSON parse errors). Product and local-core use separate
+ * upstreams (BDV-37) — cloud cannot realpath Mac working copies.
  */
 async function proxyBacksterosRequest(
   request: Request,
   requestUrl: URL,
   contentSecurityPolicy: string,
+  options: {
+    readonly pathPrefix: string;
+    readonly origin: string;
+  },
 ): Promise<Response> {
-  const suffix = requestUrl.pathname.slice(BACKSTEROS_API_PATH_PREFIX.length) || "/";
-  const targetUrl = `${resolveBacksterosApiOrigin()}${suffix}${requestUrl.search}`;
+  const suffix = requestUrl.pathname.slice(options.pathPrefix.length) || "/";
+  const targetUrl = `${options.origin}${suffix}${requestUrl.search}`;
   const headers = stripHopByHopHeaders(request.headers);
   // Prefer env/cli owner key over a stale renderer Settings key.
   const apiKey = resolveBacksterosApiKey();
@@ -309,7 +339,10 @@ async function proxyBacksterosRequest(
     const response = await fetchBacksterosUpstream(targetUrl, init, request.method);
     return withContentSecurityPolicy(response, contentSecurityPolicy);
   } catch (cause) {
-    return withContentSecurityPolicy(backsterosUnreachableResponse(cause), contentSecurityPolicy);
+    return withContentSecurityPolicy(
+      backsterosUnreachableResponse(cause, options.origin),
+      contentSecurityPolicy,
+    );
   }
 }
 
@@ -324,7 +357,17 @@ async function proxyRequest(
   }
 
   if (isBacksterosApiPath(requestUrl.pathname)) {
-    return proxyBacksterosRequest(request, requestUrl, contentSecurityPolicy);
+    return proxyBacksterosRequest(request, requestUrl, contentSecurityPolicy, {
+      pathPrefix: BACKSTEROS_API_PATH_PREFIX,
+      origin: resolveBacksterosApiOrigin(),
+    });
+  }
+
+  if (isBacksterosLocalCorePath(requestUrl.pathname)) {
+    return proxyBacksterosRequest(request, requestUrl, contentSecurityPolicy, {
+      pathPrefix: BACKSTEROS_LOCAL_CORE_PATH_PREFIX,
+      origin: resolveBacksterosLocalCoreOrigin(),
+    });
   }
 
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);

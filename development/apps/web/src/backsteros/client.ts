@@ -1,13 +1,26 @@
-import { isBacksterosApiProxyUrl } from "./backsterosApiProxy";
+import {
+  BACKSTEROS_API_PROXY_PATH,
+  BACKSTEROS_LOCAL_CORE_PROXY_PATH,
+  formatBacksterosLocalCoreError,
+  isBacksterosApiProxyUrl,
+  isBacksterosLocalCorePath,
+  isBacksterosLocalCoreProxyUrl,
+} from "./backsterosApiProxy";
 import { BACKSTEROS_INBOX_ATTENTION_STATUSES, backsterosInboxDueBeforeIso } from "./inboxDue";
 import { resolveFileTaskMailboxBaseUrl } from "./fileTaskAgentsStore";
-import { DEFAULT_BACKSTEROS_API_URL, readBacksterosConnectionSettings } from "./settingsStore";
+import {
+  DEFAULT_BACKSTEROS_API_URL,
+  DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
+  readBacksterosConnectionSettings,
+} from "./settingsStore";
 import type {
   BacksterosCodebaseProject,
   BacksterosContact,
   BacksterosCreateTaskActivityInput,
   BacksterosCreateTaskInput,
   BacksterosOrganization,
+  BacksterosProjectFsEntry,
+  BacksterosProjectRepoDocEntry,
   BacksterosProjectsResponse,
   BacksterosTask,
   BacksterosTaskActivitiesResponse,
@@ -21,30 +34,35 @@ import type {
   BacksterosTaskUpdatePatch,
 } from "./types";
 
-function normalizeApiUrl(apiUrl: string): string {
-  return apiUrl.trim().replace(/\/$/, "") || DEFAULT_BACKSTEROS_API_URL;
+export { formatBacksterosLocalCoreError, isBacksterosLocalCorePath } from "./backsterosApiProxy";
+
+function normalizeApiUrl(apiUrl: string, fallback: string): string {
+  return apiUrl.trim().replace(/\/$/, "") || fallback;
+}
+
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return headers;
 }
 
 /**
- * Local sentinel + Mac HTTPS gateway go through `/backsteros-api` (Vite
- * `server.proxy` in web; Electron protocol + T3 server proxy in packaged
- * desktop). Other custom URLs call BacksterOS directly with the settings key.
+ * Product / gateway API (tasks, projects metadata, GitHub). Local sentinel +
+ * Mac HTTPS gateway go through `/backsteros-api` (Vite / Electron / T3 proxy).
  */
-function resolveBacksterosRequest(pathWithQuery: string): {
+function resolveBacksterosProductRequest(pathWithQuery: string): {
   readonly url: string;
   readonly headers: Record<string, string>;
 } {
   const settings = readBacksterosConnectionSettings();
-  const apiUrl = normalizeApiUrl(settings.apiUrl);
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (settings.apiKey) {
-    headers.Authorization = `Bearer ${settings.apiKey}`;
-  }
-
+  const apiUrl = normalizeApiUrl(settings.apiUrl, DEFAULT_BACKSTEROS_API_URL);
+  const headers = buildAuthHeaders(settings.apiKey);
   const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
 
   if (isBacksterosApiProxyUrl(apiUrl)) {
-    return { url: `/backsteros-api${normalizedPath}`, headers };
+    return { url: `${BACKSTEROS_API_PROXY_PATH}${normalizedPath}`, headers };
   }
 
   if (!settings.apiKey) {
@@ -52,6 +70,42 @@ function resolveBacksterosRequest(pathWithQuery: string): {
   }
 
   return { url: `${apiUrl}${normalizedPath}`, headers };
+}
+
+/**
+ * Local-core only — Files / Documents working-copy FS. Never the cloud product
+ * API (cloud cannot realpath Mac paths). Uses `/backsteros-local-core` so the
+ * product `/backsteros-api` gateway upstream is not reused.
+ */
+function resolveBacksterosLocalCoreRequest(pathWithQuery: string): {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+} {
+  const settings = readBacksterosConnectionSettings();
+  const localCoreUrl = normalizeApiUrl(settings.localCoreUrl, DEFAULT_BACKSTEROS_LOCAL_CORE_URL);
+  const headers = buildAuthHeaders(settings.apiKey);
+  const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+
+  if (isBacksterosLocalCoreProxyUrl(localCoreUrl)) {
+    return { url: `${BACKSTEROS_LOCAL_CORE_PROXY_PATH}${normalizedPath}`, headers };
+  }
+
+  if (!settings.apiKey) {
+    throw new Error("Add a BacksterOS API key in Settings → Integrations.");
+  }
+
+  return { url: `${localCoreUrl}${normalizedPath}`, headers };
+}
+
+function resolveBacksterosRequest(pathWithQuery: string): {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+} {
+  const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  if (isBacksterosLocalCorePath(normalizedPath)) {
+    return resolveBacksterosLocalCoreRequest(normalizedPath);
+  }
+  return resolveBacksterosProductRequest(normalizedPath);
 }
 
 /** File-task mailbox via same-origin T3 proxy → Cloud Core (avoids browser CORS). */
@@ -115,22 +169,38 @@ async function backsterosFetchJson<T>(
     readonly mailbox?: boolean;
   },
 ): Promise<T> {
-  const request = init?.mailbox
-    ? resolveFileTaskMailboxRequest(pathWithQuery)
-    : resolveBacksterosRequest(pathWithQuery);
+  const normalizedPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  const usesLocalCore = !init?.mailbox && isBacksterosLocalCorePath(normalizedPath);
+
+  let request: { readonly url: string; readonly headers: Record<string, string> };
+  try {
+    request = init?.mailbox
+      ? resolveFileTaskMailboxRequest(pathWithQuery)
+      : resolveBacksterosRequest(pathWithQuery);
+  } catch (error) {
+    if (usesLocalCore) throw new Error(formatBacksterosLocalCoreError(error));
+    throw error;
+  }
+
   const method = init?.method ?? "GET";
   const headers: Record<string, string> = { ...request.headers };
   if (init?.body !== undefined) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(request.url, {
-    method,
-    headers,
-    cache: "no-store",
-    ...(init?.signal ? { signal: init.signal } : {}),
-    ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(request.url, {
+      method,
+      headers,
+      cache: "no-store",
+      ...(init?.signal ? { signal: init.signal } : {}),
+      ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    });
+  } catch (error) {
+    if (usesLocalCore) throw new Error(formatBacksterosLocalCoreError(error));
+    throw error;
+  }
 
   if (!response.ok) {
     const body = await readBacksterosJsonBody<{ error?: unknown } | null>(response).catch(
@@ -143,6 +213,7 @@ async function backsterosFetchJson<T>(
         : bodyError
           ? bodyError
           : `BacksterOS request failed (${response.status})`;
+    if (usesLocalCore) throw new Error(formatBacksterosLocalCoreError(new Error(message)));
     throw new Error(message);
   }
 
@@ -346,6 +417,54 @@ export async function updateBacksterosProject(
       method: "PATCH",
       body: patch,
     },
+  );
+}
+
+export async function fetchBacksterosProjectFsEntries(
+  projectId: string,
+  path = "",
+  signal?: AbortSignal,
+): Promise<readonly BacksterosProjectFsEntry[]> {
+  const params = new URLSearchParams();
+  if (path) params.set("path", path);
+  const query = params.toString();
+  const payload = await backsterosFetchJson<{
+    readonly entries: readonly BacksterosProjectFsEntry[];
+  }>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/fs/entries${query ? `?${query}` : ""}`,
+    optionalSignalInit(signal),
+  );
+  return payload.entries ?? [];
+}
+
+export async function fetchBacksterosProjectDocs(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly docsPresent: boolean;
+  readonly entries: readonly BacksterosProjectRepoDocEntry[];
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/docs`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function fetchBacksterosProjectFsFile(
+  projectId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<{
+  readonly path: string;
+  readonly name: string;
+  readonly size: number;
+  readonly binary: boolean;
+  readonly content: string | null;
+}> {
+  const params = new URLSearchParams({ path });
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/fs/file?${params.toString()}`,
+    optionalSignalInit(signal),
   );
 }
 

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchBacksterosContacts } from "~/backsteros/client";
-import { DEFAULT_BACKSTEROS_API_URL, useBacksterosSettingsStore } from "~/backsteros/settingsStore";
+import {
+  DEFAULT_BACKSTEROS_API_URL,
+  DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
+  useBacksterosSettingsStore,
+} from "~/backsteros/settingsStore";
 import type { BacksterosContact } from "~/backsteros/types";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -36,11 +40,13 @@ async function persistAgentProfile(contactId: string | null): Promise<void> {
 
 export function BacksterosConnectionSetting() {
   const apiUrl = useBacksterosSettingsStore((state) => state.apiUrl);
+  const localCoreUrl = useBacksterosSettingsStore((state) => state.localCoreUrl);
   const apiKey = useBacksterosSettingsStore((state) => state.apiKey);
   const agentContactId = useBacksterosSettingsStore((state) => state.agentContactId);
   const setConnection = useBacksterosSettingsStore((state) => state.setConnection);
   const setAgentContactId = useBacksterosSettingsStore((state) => state.setAgentContactId);
   const [draftUrl, setDraftUrl] = useState(apiUrl);
+  const [draftLocalCoreUrl, setDraftLocalCoreUrl] = useState(localCoreUrl);
   const [draftKey, setDraftKey] = useState(apiKey);
   const [contacts, setContacts] = useState<readonly BacksterosContact[]>([]);
   const [contactsError, setContactsError] = useState<string | null>(null);
@@ -50,8 +56,9 @@ export function BacksterosConnectionSetting() {
 
   useEffect(() => {
     setDraftUrl(apiUrl);
+    setDraftLocalCoreUrl(localCoreUrl);
     setDraftKey(apiKey);
-  }, [apiKey, apiUrl]);
+  }, [apiKey, apiUrl, localCoreUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,9 +124,13 @@ export function BacksterosConnectionSetting() {
     [agentContactId, sortedContacts],
   );
 
-  const isDirty = draftUrl.trim() !== apiUrl.trim() || draftKey !== apiKey;
+  const isDirty =
+    draftUrl.trim() !== apiUrl.trim() ||
+    draftLocalCoreUrl.trim() !== localCoreUrl.trim() ||
+    draftKey !== apiKey;
   const canReset =
     apiUrl.trim() !== DEFAULT_BACKSTEROS_API_URL ||
+    localCoreUrl.trim() !== DEFAULT_BACKSTEROS_LOCAL_CORE_URL ||
     apiKey.trim().length > 0 ||
     agentContactId != null ||
     isDirty;
@@ -127,14 +138,20 @@ export function BacksterosConnectionSetting() {
   const save = () => {
     setConnection({
       apiUrl: draftUrl.trim() || DEFAULT_BACKSTEROS_API_URL,
+      localCoreUrl: draftLocalCoreUrl.trim() || DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
       apiKey: draftKey.trim(),
     });
   };
 
   const reset = () => {
     setDraftUrl(DEFAULT_BACKSTEROS_API_URL);
+    setDraftLocalCoreUrl(DEFAULT_BACKSTEROS_LOCAL_CORE_URL);
     setDraftKey("");
-    setConnection({ apiUrl: DEFAULT_BACKSTEROS_API_URL, apiKey: "" });
+    setConnection({
+      apiUrl: DEFAULT_BACKSTEROS_API_URL,
+      localCoreUrl: DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
+      apiKey: "",
+    });
     setAgentContactId(null);
     setProfileError(null);
     setProfileSaving(true);
@@ -161,14 +178,14 @@ export function BacksterosConnectionSetting() {
     <>
       <SettingsRow
         {...searchableSetting("backsteros-connection")}
-        description="Used by the sidebar BacksterOS project list. Packaged desktop needs the API key here (or BACKSTEROS_API_KEY in the process env). The key stays on this device."
+        description="Product API for tasks, projects, and GitHub. Files and Documents use local-core separately so the cloud gateway never has to read this Mac's disk."
         resetAction={
           canReset ? <SettingResetButton label="BacksterOS connection" onClick={reset} /> : null
         }
       >
         <div className="grid max-w-lg gap-3 pb-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="backsteros-api-url">API URL</Label>
+            <Label htmlFor="backsteros-api-url">Product API URL</Label>
             <Input
               id="backsteros-api-url"
               autoComplete="off"
@@ -177,6 +194,21 @@ export function BacksterosConnectionSetting() {
               value={draftUrl}
               onChange={(event) => setDraftUrl(event.target.value)}
             />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="backsteros-local-core-url">Local-core URL (Files & Documents)</Label>
+            <Input
+              id="backsteros-local-core-url"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={DEFAULT_BACKSTEROS_LOCAL_CORE_URL}
+              value={draftLocalCoreUrl}
+              onChange={(event) => setDraftLocalCoreUrl(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Default {DEFAULT_BACKSTEROS_LOCAL_CORE_URL}. Loopback uses the same-origin
+              /backsteros-local-core proxy (separate from the product API gateway).
+            </p>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="backsteros-api-key">API key</Label>
