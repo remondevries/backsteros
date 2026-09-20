@@ -1,4 +1,5 @@
 import {
+  AbstractPowerSyncDatabase,
   PowerSyncBackendConnector,
   PowerSyncDatabase,
   WASQLiteOpenFactory,
