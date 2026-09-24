@@ -91,11 +91,7 @@ export function isBacksterosLocalCorePath(pathWithQuery: string): boolean {
 /** User-facing copy when local-core cannot serve Files / Documents. */
 export function formatBacksterosLocalCoreError(error: unknown): string {
   const message =
-    error instanceof Error
-      ? error.message.trim()
-      : typeof error === "string"
-        ? error.trim()
-        : "";
+    error instanceof Error ? error.message.trim() : typeof error === "string" ? error.trim() : "";
   const lower = message.toLowerCase();
   if (
     lower.includes("working directory was not found") ||
@@ -112,6 +108,14 @@ export function formatBacksterosLocalCoreError(error: unknown): string {
     lower.includes("network request failed")
   ) {
     return "Local-core is unreachable. Start local-core (or the Mac API gateway) to browse Files and Documents — the product API cannot read this Mac's disk.";
+  }
+  if (
+    lower.includes("internal server error") ||
+    lower.includes("internal_error") ||
+    lower.includes("502") ||
+    lower.includes("503")
+  ) {
+    return "Local-core is up but cannot read the project database (Postgres on :5433). Start the local replica (Hub → Docker, or `docker compose up -d postgres`) so Files and Documents can list this Mac's working copy.";
   }
   if (message) return message;
   return "Local-core is unavailable for Files and Documents.";

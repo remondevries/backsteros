@@ -88,12 +88,13 @@ export function EmailComposeView({
                 onSubjectChange={setComposeSubject}
                 body={conceptBodyDraft}
                 bodyMode={conceptBodyMode}
-                onBodyChange={composeDraft ? setConceptBodyDraft : undefined}
+                onBodyChange={setConceptBodyDraft}
                 replyGreeting={composeDraft?.greeting}
                 replySignOff={composeDraft?.signOff}
                 replySignOffAvatarSrc={mailboxSignOffAvatarSrc(composeInboxId)}
                 fieldsDisabled={conceptSaving || conceptBodySaving}
                 agentWorking={false}
+                emptyBodyLabel="Write the message body…"
                 composer={null}
                 actions={
                   <EmailDraftActions

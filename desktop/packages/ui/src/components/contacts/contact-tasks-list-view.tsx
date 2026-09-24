@@ -32,6 +32,7 @@ import { useOptimisticTaskList } from "../../tasks/use-optimistic-task-list.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import {
@@ -44,6 +45,9 @@ import {
 } from "../tasks/task-item-row.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { isHabitLinkedTask } from "../journal/journal-due-tasks-section.js";
+import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
+import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
+import { getTaskDisplayId } from "../../tasks/task-display-id.js";
 
 export type ContactTasksListViewProps = {
   contactId: string;
@@ -64,6 +68,8 @@ export type ContactTasksListViewProps = {
    * Prefer the global workspace max; defaults from the unscoped `tasks` prop.
    */
   taskIdColumnCh?: number;
+  /** Plain D deletes the keyboard-highlighted task (confirm modal). */
+  onDeleteTask?: (task: TaskItemRowTask) => Promise<EntityDeleteResult>;
 };
 
 /**
@@ -83,6 +89,7 @@ export function ContactTasksListView({
   emptyMessage = "No tasks for this contact",
   emptyHint = "Tasks assigned to or related to this contact will show up here.",
   taskIdColumnCh: taskIdColumnChProp,
+  onDeleteTask,
 }: ContactTasksListViewProps) {
   const scopedTasks = useMemo(
     () =>
@@ -254,6 +261,7 @@ export function ContactTasksListView({
       extendSelectionAlongStepRef.current(fromId, toId);
     },
   });
+  const { activeZone } = useListKeyboardNavigationZone();
 
   const {
     selectedIds,
@@ -267,6 +275,17 @@ export function ContactTasksListView({
     highlightedId,
   });
   extendSelectionAlongStepRef.current = extendSelectionAlongStep;
+
+  const highlightedTask = useMemo((): TaskItemRowTask | null => {
+    if (!highlightedId || !onDeleteTask) return null;
+    return localTasks.find((entry) => entry.id === highlightedId) ?? null;
+  }, [highlightedId, localTasks, onDeleteTask]);
+
+  const taskDeleteEnabled =
+    Boolean(highlightedTask) &&
+    itemIds.length > 0 &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_MAIN &&
+    !hasBulkSelection;
 
   const selectedTasks = useMemo(
     () => localTasks.filter((task) => selectedIds.has(task.id)),
@@ -299,6 +318,18 @@ export function ContactTasksListView({
 
   return (
     <div className="contact-tasks-list-host">
+      {taskDeleteEnabled && highlightedTask && onDeleteTask ? (
+        <RegisterEntityDeleteAction
+          entityLabel={
+            getTaskDisplayId(highlightedTask, highlightedTask.projectKey) ||
+            highlightedTask.title.trim() ||
+            "this task"
+          }
+          confirmLabel="Delete task"
+          actionVerb="Delete"
+          onDelete={() => onDeleteTask(highlightedTask)}
+        />
+      ) : null}
       <ul
         className={[
           "contact-tasks-list",

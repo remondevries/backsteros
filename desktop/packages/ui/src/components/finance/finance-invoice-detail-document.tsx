@@ -53,7 +53,7 @@ const COPY_EN: InvoiceCopy = {
   subtotal: "Subtotal",
   total: "Total",
   phone: "Phone",
-  email: "Email",
+  email: "E-mail",
   kvk: "CoC",
   vatNumber: "VAT",
   bank: "Bank",

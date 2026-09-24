@@ -1,6 +1,7 @@
 /* Overview pages — tasks + projects (web screens use p-2 outer inset) */
 .tasks-overview,
-.projects-overview {
+.projects-overview,
+.communication-overview {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -325,6 +326,7 @@
    while keeping DOM nodes for keyboard-nav querySelector scroll-into-view. */
 .overview-grouped-list .task-item-row,
 .overview-grouped-list .finance-tx-row,
+.overview-grouped-list .inbox-list-item,
 .finance-tx-list .finance-tx-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 36px;
@@ -620,6 +622,16 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+  overflow: visible;
+}
+
+.task-item-row__status {
+  overflow: visible;
+}
+
+.task-item-row__icon-trigger .inbox-item-type-icon--unread {
+  /* Keep the unread badge inside the 16×16 hit target (no clip). */
+  overflow: visible;
 }
 
 .task-due-date-dropdown {
@@ -995,15 +1007,27 @@
 }
 
 .task-item-row__email-party {
+  display: inline-flex;
   min-width: 0;
   flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 13px;
   font-weight: 400;
   line-height: 16px;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.task-item-row__email-party-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-item-row__email-direction {
+  flex: 0 0 auto;
 }
 
 .task-item-row__title-wrap {
@@ -1076,6 +1100,73 @@
   overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+/* Keep a 1×1 hotkey target when no project is set (⇧P still works). */
+.task-item-row__project--hotkey-only {
+  position: relative;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  max-width: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.task-item-row__project--hotkey-only .task-item-row__project-trigger {
+  display: block;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Same pattern for unset due dates (⇧D still works). */
+.task-item-row__due--hotkey-only {
+  position: relative;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  max-width: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.task-item-row__due--hotkey-only .task-due-date-dropdown__list-trigger,
+.task-item-row__due--hotkey-only .searchable-dropdown-root {
+  display: block;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.task-item-row__age {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 
 .projects-overview-list {
@@ -2790,3 +2881,130 @@
 }
 
 
+
+.communication-overview__list,
+.communication-overview__list-shell {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.communication-overview__empty {
+  margin: 24px 8px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 14px;
+}
+
+.communication-side-panel-nav .app-side-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+}
+
+.communication-side-panel-nav .app-side-panel-item {
+  gap: 8px;
+}
+
+.communication-side-panel-nav__mailbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.communication-side-panel-nav__mailbox-item {
+  min-height: 22px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
+.communication-side-panel-nav__mailbox-item.app-side-panel-item-active,
+.communication-side-panel-nav__mailbox-item:hover {
+  color: var(--foreground);
+}
+
+.communication-side-panel-nav__email-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0;
+}
+
+.communication-side-panel-nav__email-row > .app-side-panel-item {
+  flex: 1;
+  min-width: 0;
+  /* Toggle owns the leading inset; keep only the icon→label gap. */
+  padding-left: 8px;
+}
+
+.communication-side-panel-nav__email-toggle-slot {
+  position: relative;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+}
+
+.communication-side-panel-nav__email-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.communication-side-panel-nav__email-toggle-icon,
+.communication-side-panel-nav__email-toggle-chevron {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 150ms ease;
+}
+
+.communication-side-panel-nav__email-toggle-chevron {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  opacity: 0;
+}
+
+.communication-side-panel-nav__email-toggle-chevron[data-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.communication-side-panel-nav__email-toggle-chevron svg {
+  transition: transform 150ms ease;
+}
+
+.communication-side-panel-nav__email-row:hover .communication-side-panel-nav__email-toggle-icon,
+.communication-side-panel-nav__email-row:focus-within .communication-side-panel-nav__email-toggle-icon {
+  opacity: 0;
+}
+
+.communication-side-panel-nav__email-row:hover .communication-side-panel-nav__email-toggle-chevron,
+.communication-side-panel-nav__email-row:focus-within .communication-side-panel-nav__email-toggle-chevron {
+  opacity: 1;
+}
+
+.communication-side-panel-nav__channel-ancestor {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}

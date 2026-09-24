@@ -62,6 +62,7 @@ import {
   updateEmailThreadCommentSchema,
   updateAgentMailDraftSchema,
   emailConceptReplyInputSchema,
+  emailAgentDraftInputSchema,
   emailComposeDraftInputSchema,
   updateProjectSchema,
   updateTaskSchema,
@@ -497,7 +498,8 @@ async function withAuth(c: Context, next: Next) {
     c.req.path === "/api/v1/webhooks/agentmail" ||
     c.req.path.startsWith("/api/v1/public/avatars/") ||
     c.req.path.startsWith("/api/v1/public/spaces/") ||
-    c.req.path.startsWith("/api/v1/public/file-task-callbacks/")
+    c.req.path.startsWith("/api/v1/public/file-task-callbacks/") ||
+    c.req.path.startsWith("/api/v1/public/email-agent-callbacks/")
   ) {
     await next();
     return;
@@ -7767,6 +7769,33 @@ export function registerApiRoutes(app: Hono) {
       }
     },
   );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/mark-read",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.markAgentMailMessageRead(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not mark AgentMail message read";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/email/inboxes/:inboxId/drafts/:draftId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
@@ -7842,6 +7871,67 @@ export function registerApiRoutes(app: Hono) {
         }
         const message =
           error instanceof Error ? error.message : "Could not save reply concept";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+      }
+      const parsed = emailAgentDraftInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { error: parsed.error.message, code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await agentmailSettingsService.startEmailAgentDraft(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+            parsed.data.prompt,
+            parsed.data.intent,
+            parsed.data.currentDraftBody,
+          ),
+        );
+      } catch (error) {
+        console.error("[email] agent-draft failed:", {
+          inboxId,
+          messageId,
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  status: (error as { status?: number }).status,
+                }
+              : error,
+        });
+        if (error instanceof AgentMailApiError) {
+          return c.json(
+            {
+              error: error.message,
+              code: error.status === 404 ? "not_found" : "bad_request",
+            },
+            error.status === 404 ? 404 : 400,
+          );
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not start email agent draft";
         return c.json({ error: message, code: "bad_request" }, 400);
       }
     },
@@ -8026,6 +8116,14 @@ export function registerApiRoutes(app: Hono) {
           if (!row) {
             return c.json({ error: "Thread not found", code: "not_found" }, 404);
           }
+          if (patch.status) {
+            void agentmailSettingsService.syncAgentMailEmailStatusLabel(
+              auth.workspaceId,
+              inboxId,
+              threadKey,
+              patch.status,
+            );
+          }
           return c.json(
             await emailThreadsService.toEmailThreadMetadata(
               auth.workspaceId,
@@ -8051,6 +8149,14 @@ export function registerApiRoutes(app: Hono) {
             auth.workspaceId,
             dbRow,
             "upsert",
+          );
+        }
+        if (patch.status) {
+          void agentmailSettingsService.syncAgentMailEmailStatusLabel(
+            auth.workspaceId,
+            inboxId,
+            threadKey,
+            patch.status,
           );
         }
         return c.json(row);

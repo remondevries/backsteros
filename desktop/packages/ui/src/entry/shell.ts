@@ -3,6 +3,13 @@ export {
   type ProductAppShellProps,
 } from "../components/shell/product-app-shell.js";
 
+export { AppToastHost } from "../components/shell/app-toast-host.js";
+export {
+  APP_TOAST_EVENT,
+  showAppToast,
+  type AppToastDetail,
+} from "../toast/app-toast.js";
+
 export {
   ContentLayoutTransitionProvider,
   useContentLayoutTransition,
@@ -149,5 +156,13 @@ export {
   installTitleRenameShortcutListeners,
   useTitleRenameShortcut,
 } from "../shortcuts/title-rename-shortcut.js";
+
+export {
+  COPY_ENTITY_ID_EVENT,
+  isCopyEntityIdShortcut,
+  installCopyEntityIdShortcutListeners,
+  resolveCopyEntityId,
+  useCopyEntityIdShortcut,
+} from "../shortcuts/copy-entity-id-shortcut.js";
 
 export { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";

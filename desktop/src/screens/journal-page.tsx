@@ -6,7 +6,7 @@ import {
   buildJournalDayTaskModel,
   buildJournalTaskTrailHref,
   formatJournalEntryTitle,
-  getCalendarMeetingOverlayHref,
+  getCalendarMeetingHref,
   getTodayJournalDateSlug,
   meetingsToCalendarEventsForDate,
   tasksToCalendarEvents,
@@ -173,7 +173,7 @@ function JournalDayCalendarColumn({
 
   const handleMeetingOpen = useCallback(
     (meetingId: string) => {
-      navigate(getCalendarMeetingOverlayHref(meetingId));
+      navigate(getCalendarMeetingHref(meetingId));
     },
     [navigate],
   );

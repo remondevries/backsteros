@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
@@ -89,6 +90,11 @@ export type DomainOverviewViewProps = {
       >
     | { ok: true; contacts?: DomainRegistrarContact[] }
     | { ok: false; error: string };
+  /**
+   * When false, ⌘. does not copy this project's key (hidden keep-alive).
+   * Defaults to true.
+   */
+  copyIdShortcutEnabled?: boolean;
 };
 
 function DetailsField({
@@ -168,6 +174,7 @@ export function DomainOverviewView({
   onIconChange,
   onTagsChange,
   onContactsChange,
+  copyIdShortcutEnabled = true,
 }: DomainOverviewViewProps) {
   const [name, setName] = useState(project.name);
   const [nameSource, setNameSource] = useState(project.name);
@@ -224,6 +231,11 @@ export function DomainOverviewView({
     if (detail?.tags) return;
     setTags(parseTransipDomainTagsFromIcon(project.icon));
   }, [project.id, project.icon, detail?.tags]);
+
+  useCopyEntityIdShortcut(
+    () => project.key?.trim() || null,
+    { enabled: copyIdShortcutEnabled },
+  );
 
   useTitleRenameShortcut(
     useCallback(() => {

@@ -12,6 +12,7 @@ import type {
   EmailThreadComment,
 } from "@backsteros/contracts";
 import {
+  applyAgentMailReadStateLabels,
   getEmailComposeHref,
   type EmailMessageSourceDetail,
   type EntityExtraMenuItem,
@@ -19,8 +20,12 @@ import {
 
 import { useDesktopApi } from "../../lib/api-context";
 import { writeEmailComposeSession } from "../../lib/email-compose-session";
+import { deleteEmailMessage } from "../../lib/delete-email-message";
 import { discardEmailMessageDetailCache } from "../../lib/email-message-detail-cache";
-import { dispatchEmailListRemove } from "../../lib/use-agentmail-mailboxes";
+import {
+  dispatchEmailListPatch,
+  dispatchEmailListRemove,
+} from "../../lib/use-agentmail-mailboxes";
 
 import { requestMailboxReload } from "./email-page-helpers";
 import { navigateToHref } from "../../router/navigate-href";
@@ -35,6 +40,9 @@ export function useEmailMessageActions({
   setConceptError,
   reloadMessageDetail,
   toEmailDetailHref,
+  /** Where to go after delete / report-spam (Inbox vs Communication list). */
+  listReturnHref = "/inbox",
+  suppressAutoMarkRead,
 }: {
   inboxId: string | undefined;
   messageId: string | undefined;
@@ -51,6 +59,9 @@ export function useEmailMessageActions({
     targetInboxId: string,
     targetMessageId: string,
   ) => string;
+  listReturnHref?: string;
+  /** Keep auto mark-read from undoing an explicit mark-unread. */
+  suppressAutoMarkRead?: () => void;
 }) {
   const { client } = useDesktopApi();
   const routerNavigate = useNavigate();
@@ -65,33 +76,22 @@ export function useEmailMessageActions({
     setMessage(null);
     setDraft(null);
     setThreadComments([]);
-    navigate("/inbox", { replace: true });
-  }, [navigate]);
+    // Replace the removed thread with the list we came from (Inbox /
+    // Communication / Tasks) so report-spam and delete leave the detail page.
+    navigate(listReturnHref, { replace: true });
+  }, [listReturnHref, navigate, setDraft, setMessage, setThreadComments]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!inboxId || !messageId) {
       return { ok: false as const, error: "Message is required." };
     }
-    const threadId = message?.threadId?.trim() || null;
-
-    // Optimistic: drop from list + leave detail immediately.
-    dispatchEmailListRemove({
+    // Optimistic leave; API runs in background (same as pre-helper behavior).
+    leaveMessageAfterRemoval();
+    void deleteEmailMessage(client, {
       inboxId,
       messageId,
-      threadId,
+      threadId: message?.threadId ?? null,
     });
-    leaveMessageAfterRemoval();
-
-    void client
-      .requestJson(
-        `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
-        { method: "DELETE" },
-      )
-      .catch((error) => {
-        console.warn("[email] delete message failed:", error);
-        requestMailboxReload();
-      });
-
     return { ok: true as const };
   }, [
     client,
@@ -140,6 +140,34 @@ export function useEmailMessageActions({
   const markMessagesUnread = useCallback(
     (ids: string[]) => {
       if (!inboxId || ids.length === 0) return;
+      suppressAutoMarkRead?.();
+      const idSet = new Set(ids);
+      setMessage((current) => {
+        if (!current) return current;
+        const nextThreadMessages = current.threadMessages?.map((entry) =>
+          idSet.has(entry.messageId)
+            ? {
+                ...entry,
+                labels: applyAgentMailReadStateLabels(entry.labels, true),
+              }
+            : entry,
+        );
+        return {
+          ...current,
+          labels: idSet.has(current.messageId)
+            ? applyAgentMailReadStateLabels(current.labels, true)
+            : current.labels,
+          ...(nextThreadMessages ? { threadMessages: nextThreadMessages } : {}),
+        };
+      });
+      for (const id of ids) {
+        dispatchEmailListPatch({
+          inboxId,
+          messageId: id,
+          threadId: message?.threadId ?? null,
+          unread: true,
+        });
+      }
       void Promise.allSettled(
         ids.map((id) =>
           client.requestJson(
@@ -157,7 +185,7 @@ export function useEmailMessageActions({
         requestMailboxReload();
       });
     },
-    [client, inboxId],
+    [client, inboxId, message?.threadId, setMessage, suppressAutoMarkRead],
   );
 
   const messageSourceCacheRef = useRef(

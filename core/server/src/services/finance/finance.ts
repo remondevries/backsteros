@@ -1958,6 +1958,179 @@ export async function commitFinancialTransactionCreates(
   return inserted;
 }
 
+/**
+ * Refresh Moneybird-owned ledger columns on existing rows (amount / settlement /
+ * payee / raw version). Preserves user classification fields.
+ */
+export async function refreshTransactionLedgerFromSync(
+  workspaceId: string,
+  id: string,
+  payload: Record<string, unknown>,
+  executor: DbExecutor = db,
+): Promise<DbFinancialTransaction | null> {
+  const bookedOn = asSyncString(payload.bookedOn)?.trim();
+  const amountCents = asSyncNumber(payload.amountCents);
+  if (!bookedOn || amountCents === undefined) return null;
+
+  const currency = asSyncString(payload.currency)?.trim() || "EUR";
+  const payee = asSyncString(payload.payee) ?? "";
+  const counterparty = asSyncNullableString(payload.counterparty);
+  const memo = asSyncNullableString(payload.memo);
+  const sourceType = asSyncNullableString(payload.sourceType);
+  const settlementState = asSyncNullableString(payload.settlementState);
+  const raw =
+    payload.raw && typeof payload.raw === "object" && !Array.isArray(payload.raw)
+      ? payload.raw
+      : undefined;
+
+  const [row] = await executor
+    .update(financialTransactions)
+    .set({
+      bookedOn,
+      amountCents,
+      currency,
+      payee,
+      ...(counterparty !== undefined ? { counterparty } : {}),
+      ...(memo !== undefined ? { memo } : {}),
+      ...(sourceType !== undefined ? { sourceType } : {}),
+      ...(settlementState !== undefined ? { settlementState } : {}),
+      ...(raw !== undefined ? { raw } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(financialTransactions.workspaceId, workspaceId),
+        eq(financialTransactions.id, id),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Leader-first refresh of Moneybird ledger fields on existing transaction ids.
+ */
+export async function commitFinancialTransactionLedgerRefreshes(
+  workspaceId: string,
+  rows: Array<{ id: string } & FinancialTransactionSyncCreateInput>,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "../core-replication/leader-mutations.js"
+  );
+  if (shouldForwardMutationsToLeader()) {
+    const { commitRestEntityWriteBatch } = await import(
+      "../rest-leader-write.js"
+    );
+    for (let i = 0; i < rows.length; i += FINANCIAL_TX_LEADER_CHUNK) {
+      const chunk = rows.slice(i, i + FINANCIAL_TX_LEADER_CHUNK);
+      await commitRestEntityWriteBatch({
+        workspaceId,
+        changes: chunk.map((row) => ({
+          entity: "financial_transaction" as const,
+          entityId: row.id,
+          operation: "upsert" as const,
+          payload: {
+            ...financialTransactionCreateSyncPayload(row.id, row),
+            moneybird_ledger_refresh: true,
+          },
+        })),
+      });
+    }
+    let updated = 0;
+    for (const row of rows) {
+      const found = await getTransactionById(workspaceId, row.id);
+      if (found) updated += 1;
+    }
+    return updated;
+  }
+
+  const { recordFinancialTransactionRestSyncEvent } = await import(
+    "../sync.js"
+  );
+  let updated = 0;
+  for (const row of rows) {
+    const refreshed = await refreshTransactionLedgerFromSync(workspaceId, row.id, {
+      bookedOn: row.bookedOn,
+      amountCents: row.amountCents,
+      currency: row.currency,
+      payee: row.payee,
+      counterparty: row.counterparty,
+      memo: row.memo,
+      sourceType: row.sourceType,
+      settlementState: row.settlementState,
+      raw: row.raw,
+    });
+    if (refreshed) {
+      updated += 1;
+      await recordFinancialTransactionRestSyncEvent(
+        workspaceId,
+        refreshed,
+        "upsert",
+      );
+    }
+  }
+  return updated;
+}
+
+/**
+ * Leader-first hard-delete of ledger rows (Moneybird sync orphans).
+ */
+export async function commitFinancialTransactionDeletes(
+  workspaceId: string,
+  ids: string[],
+): Promise<number> {
+  if (ids.length === 0) return 0;
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "../core-replication/leader-mutations.js"
+  );
+  if (shouldForwardMutationsToLeader()) {
+    const existing = await Promise.all(
+      ids.map((id) => getTransactionById(workspaceId, id)),
+    );
+    const toDelete = existing.filter(
+      (row): row is DbFinancialTransaction => row != null,
+    );
+    if (toDelete.length === 0) return 0;
+    const { commitRestEntityWriteBatch } = await import(
+      "../rest-leader-write.js"
+    );
+    for (let i = 0; i < toDelete.length; i += FINANCIAL_TX_LEADER_CHUNK) {
+      const chunk = toDelete.slice(i, i + FINANCIAL_TX_LEADER_CHUNK);
+      await commitRestEntityWriteBatch({
+        workspaceId,
+        changes: chunk.map((row) => ({
+          entity: "financial_transaction" as const,
+          entityId: row.id,
+          operation: "delete" as const,
+          payload: { id: row.id },
+        })),
+      });
+    }
+    return toDelete.length;
+  }
+
+  const { recordFinancialTransactionRestSyncEvent } = await import(
+    "../sync.js"
+  );
+  const before = await Promise.all(
+    ids.map((id) => getTransactionById(workspaceId, id)),
+  );
+  const deleted = await batchDeleteTransactions(workspaceId, ids);
+  for (const row of before) {
+    if (row) {
+      await recordFinancialTransactionRestSyncEvent(
+        workspaceId,
+        row,
+        "delete",
+      );
+    }
+  }
+  return deleted;
+}
+
 async function resolveBankAccountPatch(
   workspaceId: string,
   bankAccountId: string | undefined,

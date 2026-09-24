@@ -9,23 +9,40 @@ import type {
   AgentMailMessageDetail,
   EmailThreadComment,
 } from "@backsteros/contracts";
-import type { EmailDraftBodyMode } from "@backsteros/ui";
+import { replySubject as formatReplySubject, type EmailDraftBodyMode } from "@backsteros/ui";
 
 import { useDesktopApi } from "../../lib/api-context";
+import { resolveEditableEmailDraftBody } from "../../lib/email-draft-body";
 
 import { resolveEmailThreadKey } from "./email-page-helpers";
+
+/** Fast then back off so we notice Grok finishing without hammering forever. */
+const AGENT_DRAFT_POLL_INTERVALS_MS = [
+  400, 400, 400, 400, 400, 600, 800, 1000, 1500,
+] as const;
+
+function agentDraftPollDelayMs(attempt: number): number {
+  const last = AGENT_DRAFT_POLL_INTERVALS_MS.length - 1;
+  return AGENT_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, last)]!;
+}
 
 export function useEmailThreadComments({
   inboxId,
   messageId,
   message,
+  setMessage,
   setConceptError,
+  setConceptBodyDraft,
+  setReplyComposeOpen,
+  setDraftStageWorking,
   promoteEmailThreadStatus,
+  reloadMessageDetail,
 }: {
   inboxId: string | undefined;
   messageId: string | undefined;
   isCompose: boolean;
   message: AgentMailMessageDetail | null;
+  setMessage: Dispatch<SetStateAction<AgentMailMessageDetail | null>>;
   conceptBodyDraft: string;
   conceptBodyMode: EmailDraftBodyMode;
   replyComposeOpen: boolean;
@@ -42,6 +59,10 @@ export function useEmailThreadComments({
   promoteEmailThreadStatus: (
     next: "in_progress" | "in_review" | "on_hold",
   ) => void;
+  reloadMessageDetail?: (
+    messageInboxId?: string,
+    reloadMessageId?: string,
+  ) => void | Promise<unknown>;
   organizationId: string | null;
   contactId: string | null;
   assigneeId: string | null;
@@ -182,24 +203,203 @@ export function useEmailThreadComments({
     setSelectedCommentId(null);
   }, [messageId]);
 
-  const handleSubmitThreadComment = useCallback(
+  const handleSubmitThreadNote = useCallback(
     async (body: string) => {
-      if (!message) return;
+      if (!message || !inboxId) return;
+      const prompt = body.trim();
+      if (!prompt) return;
       setCommentSending(true);
       setConceptError(null);
-      promoteEmailThreadStatus("in_progress");
       try {
-        // Desktop Agent Chat / email ACP removed (BOD-49) — comments stay user-authored.
-        await postThreadComment(body, "user");
+        await postThreadComment(prompt, "user");
       } catch (caught) {
         setConceptError(
-          caught instanceof Error ? caught.message : "Could not post comment.",
+          caught instanceof Error
+            ? caught.message
+            : "Could not save note.",
         );
       } finally {
         setCommentSending(false);
       }
     },
-    [message, postThreadComment, promoteEmailThreadStatus, setConceptError],
+    [inboxId, message, postThreadComment, setConceptError],
+  );
+
+  const handleSubmitThreadComment = useCallback(
+    async (
+      body: string,
+      options?: { intent?: "reply_draft" | "task" | "calendar" | "note" },
+    ) => {
+      if (!message || !inboxId || !messageId) return;
+      const prompt = body.trim();
+      if (!prompt) return;
+      setCommentSending(true);
+      setConceptError(null);
+      setDraftStageWorking(true);
+      promoteEmailThreadStatus("in_progress");
+      try {
+        // Wake Grok immediately — do not wait for the thread comment round-trip.
+        void postThreadComment(prompt, "user").catch((caught) => {
+          console.warn("[email] agent prompt comment failed:", caught);
+        });
+
+        const currentDraftBody =
+          resolveEditableEmailDraftBody(message.conceptDraft).trim() || null;
+
+        const started = await client.requestJson<{
+          requestId: string;
+          language: "en" | "nl";
+        }>(
+          `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/agent-draft`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt,
+              currentDraftBody,
+              ...(options?.intent ? { intent: options.intent } : {}),
+            }),
+          },
+        );
+
+        const deadline = Date.now() + 10 * 60 * 1000;
+        let pollAttempt = 0;
+        while (Date.now() < deadline) {
+          const poll = await client.requestJson<{
+            pending: boolean;
+            result?: {
+              ok: boolean;
+              requestId: string;
+              intent?: "reply_draft" | "task" | "calendar" | "note";
+              body?: string;
+              draftId?: string;
+              inboxId?: string;
+              greeting?: string | null;
+              signOff?: string | null;
+              subject?: string | null;
+              to?: string[];
+              task?: { title?: string; taskId?: string };
+              event?: { title?: string; meetingId?: string };
+              message?: string;
+              error?: string;
+            };
+          }>(
+            `/api/v1/email/agent-draft-callbacks/${encodeURIComponent(started.requestId)}`,
+          );
+          if (!poll.pending && poll.result) {
+            if (poll.result.ok === false) {
+              throw new Error(
+                poll.result.error?.trim() ||
+                  "Agent could not complete that request.",
+              );
+            }
+            const intent =
+              poll.result.intent ??
+              (poll.result.body?.trim() ? "reply_draft" : null);
+            if (intent === "reply_draft") {
+              const nextBody = poll.result.body?.trim() || "";
+              const draftId = poll.result.draftId?.trim() || "";
+              const draftInboxId =
+                poll.result.inboxId?.trim() || inboxId;
+              // Body + letter shell first so greeting/sign-off paint with the
+              // draft — don't wait for a later message reload / SSE.
+              if (nextBody) {
+                setConceptBodyDraft(nextBody);
+              }
+              if (draftId && draftInboxId) {
+                const greeting = poll.result.greeting?.trim() || null;
+                const signOff = poll.result.signOff?.trim() || null;
+                const subject =
+                  poll.result.subject?.trim() ||
+                  formatReplySubject(message.subject);
+                const to =
+                  poll.result.to?.filter((entry) => entry.trim()) ??
+                  message.conceptDraft?.to ??
+                  [];
+                setMessage((current) => {
+                  if (!current) return current;
+                  return {
+                    ...current,
+                    conceptDraftId: draftId,
+                    conceptDraft: {
+                      draftId,
+                      inboxId: draftInboxId,
+                      subject,
+                      from: message.conceptDraft?.from ?? null,
+                      to,
+                      text: message.conceptDraft?.text ?? null,
+                      body: nextBody || message.conceptDraft?.body || null,
+                      greeting,
+                      signOff,
+                      preview:
+                        (nextBody || message.conceptDraft?.preview || "").slice(
+                          0,
+                          160,
+                        ) || null,
+                      updatedAt: new Date().toISOString(),
+                    },
+                  };
+                });
+              }
+              setDraftStageWorking(false);
+              setCommentSending(false);
+              setReplyComposeOpen(true);
+              // Refine from AgentMail in the background (ids already painted).
+              void (async () => {
+                try {
+                  const reloaded = await reloadMessageDetail?.(
+                    inboxId,
+                    messageId,
+                  );
+                  if (
+                    reloaded &&
+                    typeof reloaded === "object" &&
+                    "messageId" in reloaded
+                  ) {
+                    setMessage(reloaded as AgentMailMessageDetail);
+                  }
+                } catch (caught) {
+                  console.warn("[email] post-agent reload failed:", caught);
+                }
+              })();
+              return;
+            }
+            // task / calendar / note: server already applied side effects +
+            // agent thread notes; refresh before clearing the working state.
+            await reloadMessageDetail?.(inboxId, messageId);
+            return;
+          }
+          await new Promise((resolve) =>
+            setTimeout(resolve, agentDraftPollDelayMs(pollAttempt)),
+          );
+          pollAttempt += 1;
+        }
+        throw new Error("Timed out waiting for the agent.");
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not complete agent request.",
+        );
+      } finally {
+        setCommentSending(false);
+        setDraftStageWorking(false);
+      }
+    },
+    [
+      client,
+      inboxId,
+      message,
+      messageId,
+      postThreadComment,
+      promoteEmailThreadStatus,
+      reloadMessageDetail,
+      setConceptBodyDraft,
+      setConceptError,
+      setDraftStageWorking,
+      setMessage,
+      setReplyComposeOpen,
+    ],
   );
 
   return {
@@ -211,8 +411,10 @@ export function useEmailThreadComments({
     setSelectedCommentId,
     deleteThreadComment,
     updateThreadComment,
-    commentAgentWorking: false,
+    postThreadComment,
+    commentAgentWorking: commentSending,
     draftAgentWorking: false,
+    handleSubmitThreadNote,
     handleSubmitThreadComment,
   };
 }

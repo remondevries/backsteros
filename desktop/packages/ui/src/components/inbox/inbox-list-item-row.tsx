@@ -15,6 +15,7 @@ import {
   subscribeToPreferredColorScheme,
 } from "../../tasks/task-status-color.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
+import { EmailDirectionMark } from "../../email/email-direction.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -250,7 +251,7 @@ export function InboxListItemRowComponent({
                 ? "inbox-list-item-email-mark"
                 : "task-item-row__icon-trigger"
             }
-            title={isEmail ? "Email" : getTaskStatusLabel(status)}
+            title={isEmail ? "E-mail" : getTaskStatusLabel(status)}
             tabIndex={-1}
             disabled={disabled}
             aria-haspopup="listbox"
@@ -267,6 +268,7 @@ export function InboxListItemRowComponent({
                 kind="email"
                 size={14}
                 style={emailIconStyle}
+                unread={item.kind === "email" && item.unread === true}
               />
             ) : (
               <TaskStatusIcon
@@ -284,10 +286,15 @@ export function InboxListItemRowComponent({
   ) : isEmail ? (
     <span
       className="inbox-list-item-email-mark"
-      title="Email"
-      aria-label="Email"
+      title="E-mail"
+      aria-label="E-mail"
     >
-      <InboxItemTypeIcon kind="email" size={14} style={emailIconStyle} />
+      <InboxItemTypeIcon
+        kind="email"
+        size={14}
+        style={emailIconStyle}
+        unread={item.kind === "email" && item.unread === true}
+      />
     </span>
   ) : (
     <TaskStatusIcon
@@ -346,10 +353,19 @@ export function InboxListItemRowComponent({
               </span>
             ) : emailPartyLabel ? (
               <span
-                className="email-side-panel-org-label"
+                className="email-side-panel-org-label inbox-list-item-email-party-line"
                 title={emailPartyLabel}
               >
-                {emailPartyLabel}
+                {item.kind === "email" && item.direction ? (
+                  <EmailDirectionMark
+                    direction={item.direction}
+                    size={13}
+                    className="inbox-list-item-email-direction"
+                  />
+                ) : null}
+                <span className="inbox-list-item-email-party-text">
+                  {emailPartyLabel}
+                </span>
               </span>
             ) : null}
             <span className="inbox-list-item-title" title={item.title}>

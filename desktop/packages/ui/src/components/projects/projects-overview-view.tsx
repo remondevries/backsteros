@@ -72,6 +72,7 @@ import { AddProjectInline } from "./add-project-inline.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { mapProjectStatusToTaskStatusIcon } from "../../projects/project-status-icon-model.js";
 import { migrateLegacyProjectStatus } from "../../projects/project-status.js";
@@ -81,7 +82,10 @@ import {
 } from "../../projects/project-key-column-width.js";
 import { useListTypeToFilter } from "../../list-nav/use-list-type-to-filter.js";
 import { listItemMatchesTypeToFilter } from "../../list-nav/list-type-to-filter.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
+import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
 
 type SecondaryBucket = {
   id: string | null;
@@ -207,6 +211,10 @@ export type ProjectsOverviewViewProps = {
    * Defaults to true.
    */
   typeToFilterEnabled?: boolean;
+  /** Plain D deletes the keyboard-highlighted project (confirm modal). */
+  onDeleteProject?: (
+    project: ProjectOverviewRowProject,
+  ) => Promise<EntityDeleteResult>;
 };
 
 export function ProjectsOverviewView({
@@ -244,6 +252,7 @@ export function ProjectsOverviewView({
   projectKeyColumnCh: projectKeyColumnChProp,
   listColumns = "default",
   typeToFilterEnabled = true,
+  onDeleteProject,
 }: ProjectsOverviewViewProps) {
   const listTypeToFilter = useListTypeToFilter({ enabled: typeToFilterEnabled });
   const [uncontrolledArea, setUncontrolledArea] =
@@ -599,6 +608,17 @@ export function ProjectsOverviewView({
       extendSelectionAlongStepRef.current(fromId, toId);
     },
   });
+  const { activeZone } = useListKeyboardNavigationZone();
+
+  useCopyEntityIdShortcut(
+    () => {
+      const itemId = highlightedId ?? selectedProjectId;
+      if (!itemId) return null;
+      const project = localProjects.find((entry) => entry.id === itemId);
+      return project?.key?.trim() || null;
+    },
+    { enabled: typeToFilterEnabled },
+  );
 
   const {
     selectedIds,
@@ -614,6 +634,18 @@ export function ProjectsOverviewView({
     toggleHighlightedShortcutEnabled: view === "list",
   });
   extendSelectionAlongStepRef.current = extendSelectionAlongStep;
+
+  const highlightedProject = useMemo((): ProjectOverviewRowProject | null => {
+    if (!highlightedId || !onDeleteProject) return null;
+    return localProjects.find((entry) => entry.id === highlightedId) ?? null;
+  }, [highlightedId, localProjects, onDeleteProject]);
+
+  const projectDeleteEnabled =
+    Boolean(highlightedProject) &&
+    view === "list" &&
+    itemIds.length > 0 &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_MAIN &&
+    !hasBulkSelection;
 
   const selectedProjects = useMemo(
     () => filtered.filter((project) => selectedIds.has(project.id)),
@@ -902,6 +934,18 @@ export function ProjectsOverviewView({
 
   return (
     <div className="projects-overview">
+      {projectDeleteEnabled && highlightedProject && onDeleteProject ? (
+        <RegisterEntityDeleteAction
+          entityLabel={
+            highlightedProject.name.trim()
+              ? `project "${highlightedProject.name.trim()}"`
+              : highlightedProject.key.trim() || "this project"
+          }
+          confirmLabel="Delete project"
+          actionVerb="Delete"
+          onDelete={() => onDeleteProject(highlightedProject)}
+        />
+      ) : null}
       {showTypeFilters ? (
         <div className="projects-overview__area-nav">
           <PillNav

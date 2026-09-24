@@ -7,6 +7,7 @@ import {
 
 import {
   InboxSidePanelView,
+  RegisterEntityDeleteAction,
   findInboxItemBySlugOrId,
   getInboxAttentionKeyboardItemIds,
   getInboxItemHref,
@@ -21,6 +22,10 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  deleteEmailMessage,
+  emailDeleteEntityLabel,
+} from "../lib/delete-email-message";
 import {
   prefetchEmailDraftDetail,
   prefetchEmailMessageDetail,
@@ -48,7 +53,7 @@ export function DesktopInboxSidePanel({
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const { setActiveZone } = useListKeyboardNavigationZone();
+  const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
   const emailPath = parseEmailMessagePath(pathname);
   const draftPath = parseEmailDraftPath(pathname);
@@ -88,8 +93,8 @@ export function DesktopInboxSidePanel({
   ]);
 
   // When Inbox becomes the visible surface, claim the side-panel zone and land
-  // keyboard highlight on the first row (reset — do not restore last j/k row).
-  const landingId = itemIds[0] ?? null;
+  // keyboard highlight on the open row (or first when nothing is selected).
+  const landingId = selectedId ?? itemIds[0] ?? null;
   const lastLandingKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!keepAliveActive || itemIds.length === 0 || landingId == null) return;
@@ -139,21 +144,55 @@ export function DesktopInboxSidePanel({
     }
   }, [client, highlightedId, items]);
 
+  // When an email is open in the main pane, detail owns D — avoid stealing it.
+  const highlightedEmailItem =
+    !emailPath &&
+    highlightedId &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL
+      ? (() => {
+          const item = items.find((entry) => entry.id === highlightedId);
+          if (
+            !item ||
+            item.kind !== "email" ||
+            item.draftId?.trim()
+          ) {
+            return null;
+          }
+          return item;
+        })()
+      : null;
+
   return (
-    <InboxSidePanelView
-      {...viewProps}
-      collapsedGroups={collapsedGroups}
-      onToggleGroup={(status) => {
-        setCollapsedGroups((current) => {
-          const next = new Set(current);
-          if (next.has(status)) next.delete(status);
-          else next.add(status);
-          return next;
-        });
-      }}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
+    <>
+      {keepAliveActive && highlightedEmailItem ? (
+        <RegisterEntityDeleteAction
+          entityLabel={emailDeleteEntityLabel(highlightedEmailItem.title)}
+          confirmLabel="Delete email"
+          actionVerb="Delete"
+          onDelete={() =>
+            deleteEmailMessage(client, {
+              inboxId: highlightedEmailItem.inboxId,
+              messageId: highlightedEmailItem.messageId,
+              threadId: highlightedEmailItem.threadId,
+            })
+          }
+        />
+      ) : null}
+      <InboxSidePanelView
+        {...viewProps}
+        collapsedGroups={collapsedGroups}
+        onToggleGroup={(status) => {
+          setCollapsedGroups((current) => {
+            const next = new Set(current);
+            if (next.has(status)) next.delete(status);
+            else next.add(status);
+            return next;
+          });
+        }}
+        listRef={listRef}
+        listContainerProps={listContainerProps}
+        highlightedId={highlightedId}
+      />
+    </>
   );
 }

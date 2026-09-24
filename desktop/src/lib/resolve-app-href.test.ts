@@ -21,16 +21,27 @@ afterEach(() => {
 test("resolveAppHref expands section roots from the entry store", () => {
   rememberSectionEntryHrefs({
     inbox: "/inbox/in-1",
-    communication: "/communication/sup-1",
+    communication: "/communication?channel=email",
     contacts: "/contacts/1",
     organizations: "/organizations/2",
     letters: "/letters/l-3",
     knowledge: "/spaces/note",
   });
   assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
+  // Communication list root only — never an item detail seed.
   assert.equal(
     formatResolvedAppHref(resolveAppHref("/communication")),
-    "/communication/sup-1",
+    "/communication?channel=email",
+  );
+  // Explicit Everything must not be rewritten to the last channel.
+  assert.equal(
+    formatResolvedAppHref(resolveAppHref("/communication?channel=all")),
+    "/communication?channel=all",
+  );
+  rememberSectionEntryHrefs({ communication: "/communication/sup-1" });
+  assert.equal(
+    formatResolvedAppHref(resolveAppHref("/communication")),
+    "/communication",
   );
   // Contacts / organizations catalogs stay on the list root.
   assert.equal(formatResolvedAppHref(resolveAppHref("/contacts")), "/contacts");

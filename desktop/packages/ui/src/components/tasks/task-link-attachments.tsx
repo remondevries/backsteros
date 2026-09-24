@@ -532,7 +532,7 @@ export function TaskLinkAttachments({
       ? ([
           { value: "url" as const, label: "URL" },
           { value: "document" as const, label: "Document" },
-          { value: "email" as const, label: "Email" },
+          { value: "email" as const, label: "E-mail" },
         ] as const)
       : []),
     ...(canUploadFiles

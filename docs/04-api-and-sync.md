@@ -182,6 +182,35 @@ BDV (API key, `tasks:write` / `tasks:read`) mints a tokenized `callbackUrl` on
 `https://agent.backsteros.com`. The agent POSTs the fixed result JSON to that
 URL. Unknown tokens 401; expired rows are pruned.
 
+## Email agent command (Grok Bot / Judith)
+
+Desktop email-thread bottom box wakes one webhook (`email_grok_webhook_*`) with
+`kind: "email.agent_command"`. The open email is **context**; the agent classifies
+intent from `userPrompt`.
+
+```http
+POST /api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft
+GET  /api/v1/email/agent-draft-callbacks/:requestId
+POST /api/v1/public/email-agent-callbacks/:requestId?token=…
+```
+
+**Wake (core → Judith):** `requestId`, `callbackUrl`, `userPrompt`, inbox/message/thread
+ids, `email { from, to, subject, text }`, `language`, optional `currentDraftBody`,
+`allowedIntents: ["reply_draft","task","calendar","note"]`.
+
+**Callback (Judith → core)** — echo `requestId` exactly:
+
+| Intent | Body shape | Core side effect |
+| --- | --- | --- |
+| `reply_draft` | `{ ok, requestId, intent, body }` | Concept reply draft (composer opens) |
+| `task` | `{ ok, requestId, intent, task: { title, description?, projectKey?, dueDate? } }` | Creates BacksterOS task |
+| `calendar` | `{ ok, requestId, intent, event: { title, start, end, notes? } }` | Creates meeting/agenda event |
+| `note` | `{ ok, requestId, intent, message }` | Agent thread comment only |
+| failure | `{ ok:false, requestId, error }` | Stored for poll; no side effects |
+
+Legacy `{ ok, requestId, body }` (no `intent`) is treated as `reply_draft`.
+External send is never done on this path — human review before send remains.
+
 Repo files outside the vault (e.g. git `docs/*.md`) are not BacksterOS documents and will not appear in the desktop app.
 
 ### Conflict policy (v1)

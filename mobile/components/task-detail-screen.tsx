@@ -622,6 +622,22 @@ export function TaskDetailScreen({ taskId }: Props) {
       value: assigneeLabel || "No assignee",
       icon: <ContactAvatarIcon src={assigneeAvatarSrc} size={14} />,
     },
+  ];
+
+  const projectRows = [
+    {
+      key: "project",
+      label: "Project",
+      value: projectLabel || "No project",
+      icon: <ProjectIcon size={14} />,
+      navigateHref: projectId ? projectDetailHref(projectId) : null,
+      navigateLabel: projectLabel
+        ? `Open ${projectLabel}`
+        : "Open project",
+    },
+  ];
+
+  const relatedRows = [
     {
       key: "related",
       label: "Related",
@@ -657,20 +673,7 @@ export function TaskDetailScreen({ taskId }: Props) {
     },
   ];
 
-  const projectRows = [
-    {
-      key: "project",
-      label: "Project",
-      value: projectLabel || "No project",
-      icon: <ProjectIcon size={14} />,
-      navigateHref: projectId ? projectDetailHref(projectId) : null,
-      navigateLabel: projectLabel
-        ? `Open ${projectLabel}`
-        : "Open project",
-    },
-  ];
-
-  const allPropertyRows = [...propertyRows, ...projectRows];
+  const allPropertyRows = [...propertyRows, ...projectRows, ...relatedRows];
 
   const propertyChips = [
     {

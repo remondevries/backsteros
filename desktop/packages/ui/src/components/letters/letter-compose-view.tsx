@@ -62,10 +62,10 @@ export type LetterComposeViewProps = {
     | Promise<{ id: string } | void>
     | { id: string }
     | void;
-  /** Called with the currently selected organization id (required to create). */
+  /** Optional organization id when one is selected on the letter. */
   onCreateContactFromQuery?: (
     query: string,
-    organizationId: string,
+    organizationId?: string | null,
   ) =>
     | Promise<{ id: string } | void>
     | { id: string }
@@ -176,7 +176,7 @@ export function LetterComposeView({
     if (!contacts) return contactOptions;
     const scoped = organizationId
       ? contacts.filter((contact) => contact.organizationId === organizationId)
-      : [];
+      : contacts;
     return buildContactDropdownOptions(scoped);
   }, [contactOptions, contacts, organizationId]);
 
@@ -401,7 +401,7 @@ export function LetterComposeView({
                 : undefined
             }
             onCreateContactFromQuery={
-              onCreateContactFromQuery && organizationId
+              onCreateContactFromQuery
                 ? (query) => {
                     void Promise.resolve(
                       onCreateContactFromQuery(query, organizationId),

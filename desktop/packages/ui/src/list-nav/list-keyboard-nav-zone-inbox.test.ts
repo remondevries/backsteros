@@ -197,4 +197,35 @@ describe("tasks list zone policy", () => {
     assert.equal(resolveZonePolicy("/projects").defaultZone, "main");
     assert.equal(resolveZonePolicy("/projects/CA").defaultZone, "sidepanel");
   });
+
+  it("communication defaults to main and Tab can pin sidepanel", () => {
+    const policy = resolveZonePolicy("/communication");
+    assert.equal(policy.defaultZone, "main");
+    assert.equal(policy.autoSwitchJkToMain, true);
+    assert.equal(
+      resolveZonePolicy("/communication", {
+        activeZone: "main",
+        hasMainList: true,
+      }).jkZone,
+      "main",
+    );
+    assert.equal(
+      resolveZonePolicy("/communication", {
+        activeZone: "sidepanel",
+        preferSidepanelForJk: true,
+        hasMainList: true,
+      }).jkZone,
+      "sidepanel",
+    );
+  });
+});
+
+describe("communication surface key", () => {
+  it("treats communication as its own surface", () => {
+    assert.equal(getListKeyboardNavSurfaceKey("/communication"), "communication");
+    assert.notEqual(
+      getListKeyboardNavSurfaceKey("/communication"),
+      getListKeyboardNavSurfaceKey("/inbox"),
+    );
+  });
 });

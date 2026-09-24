@@ -26,6 +26,7 @@ import {
 import {
   KeepAlivePane,
   StableKeepAliveTree,
+  markKeepAliveSurfaceMounted,
   snapshotFor,
   type RouteSnapshot,
 } from "../lib/shell-route-keep-alive";
@@ -90,6 +91,7 @@ export function useShellSidePanelHost({
 
   let visibleKeepAlivePanels = visitedKeepAlivePanels;
   if (currentKeepSurface) {
+    markKeepAliveSurfaceMounted(currentKeepSurface);
     const nextSnap = snapshotFor(
       currentKeepSurface,
       panelPathname,

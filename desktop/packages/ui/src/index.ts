@@ -201,6 +201,13 @@ export {
   type ProductAppShellProps,
 } from "./components/shell/product-app-shell.js";
 
+export { AppToastHost } from "./components/shell/app-toast-host.js";
+export {
+  APP_TOAST_EVENT,
+  showAppToast,
+  type AppToastDetail,
+} from "./toast/app-toast.js";
+
 export {
   ContentLayoutTransitionProvider,
   useContentLayoutTransition,
@@ -298,6 +305,7 @@ export {
   buildInboxEmailListItem,
   buildInboxTaskListItem,
   buildTaskListEmailItem,
+  inboxListItemToTaskItemRowTask,
   emailInboxItemId,
   encodeTaskSlug,
   findInboxItemBySlugOrId,
@@ -360,6 +368,7 @@ export {
 export {
   emailListItemIsSelected,
   emailMailboxFromDisplay,
+  emailMailboxFromParts,
   emailMailboxLabel,
   getEmailComposeHref,
   getEmailDraftHref,
@@ -401,6 +410,8 @@ export {
   EMAIL_PROJECT_LIST_VALUE,
   EMAIL_TASKS_LIST_VALUE,
   EMAIL_STATUS_ORDER,
+  isAgentMailMessageUnread,
+  applyAgentMailReadStateLabels,
   type EmailDraftPath,
   type EmailListContext,
   type EmailListItem,
@@ -410,6 +421,13 @@ export {
   type EmailMessagePath,
   type EmailStatusGroup,
 } from "./email/email.js";
+
+export {
+  resolveEmailMessageDirection,
+  EmailDirectionArrowIcon,
+  EmailDirectionMark,
+  type EmailMessageDirection,
+} from "./email/email-direction.js";
 
 export { resolveDuplicatedTaskHref } from "./tasks/duplicated-task-href.js";
 
@@ -462,6 +480,12 @@ export {
   type TaskMentionBlockChipTask,
 } from "./components/tasks/task-mention-block-chip.js";
 export {
+  MeetingMentionBlockChip,
+  formatMeetingWhenBadge,
+  type MeetingMentionBlockChipProps,
+  type MeetingMentionBlockChipMeeting,
+} from "./components/meetings/meeting-mention-block-chip.js";
+export {
   EmailMentionBlockChip,
   type EmailMentionBlockChipProps,
   type EmailMentionBlockChipEmail,
@@ -486,7 +510,17 @@ export {
 export {
   EmailThreadCommentComposer,
   type EmailThreadCommentComposerProps,
+  type EmailComposerTaskSubmit,
+  type EmailComposerMeetingSubmit,
 } from "./components/email/email-thread-comment-composer.js";
+
+export {
+  EmailAgentActionCards,
+  EMAIL_AGENT_ACTION_CARDS,
+  type EmailAgentActionCard,
+  type EmailAgentActionCardId,
+  type EmailAgentActionCardsProps,
+} from "./components/email/email-agent-action-cards.js";
 
 export {
   EmailAddressContactField,
@@ -1966,6 +2000,11 @@ export {
 } from "./components/projects/project-status-icon.js";
 
 export {
+  ProjectStatusWorkingPulse,
+  type ProjectStatusWorkingPulseProps,
+} from "./components/projects/project-status-working-pulse.js";
+
+export {
   ProjectProgressRing,
   type ProjectProgressRingProps,
 } from "./components/projects/project-progress-ring.js";
@@ -3358,6 +3397,8 @@ export {
   stripStructuralLinePrefix,
   matchListItemOpener,
   listItemLeadingNewlinesContinueList,
+  shouldOmitBlockMentionSeparatorWhitespace,
+  trimTrailingNewlinesBeforeBlockMention,
   type MentionChipLayout,
 } from "./mentions/mention-layout.js";
 
@@ -3453,15 +3494,70 @@ export {
 
 export {
   COMMUNICATION_LIST_PATH,
+  COMMUNICATION_CHANNEL_PARAM,
+  COMMUNICATION_INBOX_PARAM,
+  COMMUNICATION_STATUS_PARAM,
+  COMMUNICATION_LIST_FILTER_OPTIONS,
+  DEFAULT_COMMUNICATION_LIST_FILTER,
   buildCommunicationItemHrefById,
+  communicationChannelLabel,
+  communicationListFilterEmptyLabel,
+  communicationListFilters,
+  filterCommunicationListItems,
   findCommunicationItemBySlugOrId,
+  getCommunicationChannelHref,
   getCommunicationHref,
   getCommunicationItemHref,
   getCommunicationTaskRouteHref,
   getFirstCommunicationItemHref,
   getSelectedCommunicationSlugFromPathname,
+  hasCommunicationChannelParam,
+  isCommunicationListFilter,
   isCommunicationSectionPath,
+  parseCommunicationChannelFromSearch,
+  parseCommunicationInboxIdFromSearch,
+  parseCommunicationStatusFromSearch,
+  parseCommunicationListFilter,
+  resolveActiveCommunicationChannel,
+  resolveActiveCommunicationInboxId,
+  resolveActiveCommunicationStatus,
+  withCommunicationListContext,
+  type CommunicationChannel,
+  type CommunicationListContextOptions,
+  type CommunicationListFilter,
 } from "./communication/communication.js";
+
+export {
+  useCommunicationListFilter,
+} from "./communication/use-communication-list-filter.js";
+
+export {
+  readCommunicationListFilter,
+  writeCommunicationListFilter,
+} from "./communication/communication-list-filter-storage.js";
+
+export {
+  CommunicationSidePanelFilterFooter,
+  type CommunicationSidePanelFilterFooterProps,
+} from "./components/communication/communication-side-panel-filter-footer.js";
+
+export {
+  CommunicationSidePanelNavView,
+  communicationSidePanelInboxKeyboardId,
+  parseCommunicationSidePanelKeyboardId,
+  resolveCommunicationSidePanelHref,
+  uniqueCommunicationSidePanelMailboxes,
+  buildCommunicationSidePanelKeyboardItemIds,
+  readCommunicationEmailAccountsExpanded,
+  writeCommunicationEmailAccountsExpanded,
+  type CommunicationSidePanelNavViewProps,
+  type CommunicationSidePanelLinkComponent,
+} from "./components/communication/communication-side-panel-nav-view.js";
+
+export {
+  CommunicationOverviewView,
+  type CommunicationOverviewViewProps,
+} from "./components/communication/communication-overview-view.js";
 
 export {
   ContactEmailsEditor,
@@ -4201,6 +4297,14 @@ export {
 } from "./shortcuts/title-rename-shortcut.js";
 
 export {
+  COPY_ENTITY_ID_EVENT,
+  isCopyEntityIdShortcut,
+  installCopyEntityIdShortcutListeners,
+  resolveCopyEntityId,
+  useCopyEntityIdShortcut,
+} from "./shortcuts/copy-entity-id-shortcut.js";
+
+export {
   deferFocusAfterTitleLeave,
   useContentTitleEditorNavigation,
 } from "./content/use-content-title-editor-navigation.js";
@@ -4366,6 +4470,7 @@ export {
   isEntitySectionListPathname,
   isInboxPathname,
   isInboxListKeyboardPathname,
+  isCommunicationListKeyboardPathname,
   getDefaultListKeyboardNavZone,
   getListKeyboardNavSurfaceKey,
   isTasksListKeyboardPathname,

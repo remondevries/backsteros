@@ -13,7 +13,7 @@ export type CachedAgentMailList = {
 
 const agentMailListCache = createPersistedSessionLruCache<CachedAgentMailList>({
   limit: 1,
-  storageKey: "backsteros:agentmail-list-v1",
+  storageKey: "backsteros:agentmail-list-v3",
 });
 
 /** Last inbox email list — paints on first frame before REST/SSE. */
@@ -43,7 +43,7 @@ export function agentMailMessagesSignature(
   return messages
     .map(
       (message) =>
-        `${message.inboxId}\0${message.id}\0${message.receivedAt}\0${message.status ?? ""}\0${message.priority ?? ""}\0${message.dueDate ?? ""}`,
+        `${message.inboxId}\0${message.id}\0${message.receivedAt}\0${message.status ?? ""}\0${message.priority ?? ""}\0${message.dueDate ?? ""}\0${message.unread === true ? "1" : "0"}`,
     )
     .join("\n");
 }

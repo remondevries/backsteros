@@ -1808,6 +1808,20 @@ export function OrganizationsPage() {
               });
             }
           }}
+          onDeleteProject={async (project) => {
+            try {
+              await workspace.softDeleteProject(project.id);
+              return { ok: true as const };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to delete project.",
+              };
+            }
+          }}
         />
       );
     }

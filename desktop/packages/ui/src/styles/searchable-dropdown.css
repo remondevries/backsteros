@@ -306,6 +306,11 @@
   line-height: 1.375;
 }
 
+.property-dropdown-trigger__secondary {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 400;
+}
+
 .property-dropdown-fallback.is-muted .property-dropdown-trigger__label,
 .property-dropdown-trigger.is-muted .property-dropdown-trigger__label {
   color: color-mix(in srgb, var(--foreground) 50%, transparent);
@@ -455,6 +460,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.375;
+}
+
+.searchable-dropdown-panel__option-secondary {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 400;
 }
 
 .searchable-dropdown-panel__option-label--muted {

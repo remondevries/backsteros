@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { BacksterosCodebaseDocsPanel } from "~/backsteros/CodebaseDocsPanel";
+import { CodebaseFileCodeViewer } from "~/backsteros/CodebaseFileCodeViewer";
+import {
+  CodebaseFsTreeChevron,
+  CodebaseFsTreeChevronSpacer,
+  CodebaseFsTreeEntryIcon,
+} from "~/backsteros/CodebaseFsTreeChrome";
 import {
   createBacksterosProjectUpdate,
   deleteBacksterosProjectUpdate,
@@ -175,6 +181,14 @@ function FilesTab(props: { readonly project: BacksterosCodebaseProject }) {
     return () => controller.abort();
   }, [cwd, project.id, reloadToken]);
 
+  // Desktop parity: landing on Files always opens the first file so the list
+  // is never shown alone.
+  useEffect(() => {
+    if (selectedPath || loading || rootEntries.length === 0) return;
+    const firstFile = rootEntries.find((entry) => entry.kind === "file");
+    if (firstFile) setSelectedPath(firstFile.path);
+  }, [loading, rootEntries, selectedPath]);
+
   const loadFolder = useCallback(
     async (path: string) => {
       setFolderState((current) => ({
@@ -261,71 +275,137 @@ function FilesTab(props: { readonly project: BacksterosCodebaseProject }) {
   }
 
   const visible = flattenFsTree(rootEntries, expanded, folderState);
+  const selectedName = selectedPath?.split("/").pop() ?? selectedPath;
 
   return (
     <div
       className={cn(
         "bos-codebase-workbench__list-detail",
-        selectedPath && "bos-codebase-workbench__list-detail--split",
+        "bos-codebase-workbench__list-detail--framed",
+        "bos-codebase-workbench__list-detail--files",
+        selectedPath
+          ? "bos-codebase-workbench__list-detail--split"
+          : "bos-codebase-workbench__list-detail--list-only",
       )}
     >
       <div className="bos-codebase-workbench__tab-list">
-        <div className="bos-codebase-workbench__list">
+        <div className="bos-fs-tree-pane">
           {visible.length === 0 ? (
-            <EmptyPanel>
-              <p>This folder is empty.</p>
-            </EmptyPanel>
+            <p className="bos-fs-tree-status">This folder is empty.</p>
           ) : (
-            visible.map((node) => {
-              const isExpanded = expanded.has(node.path);
-              const folder = folderState[node.path];
-              return (
-                <button
-                  key={node.path}
-                  type="button"
-                  className={cn(
-                    "bos-codebase-workbench__row bos-codebase-workbench__row--link bos-codebase-workbench__fs-row",
-                    selectedPath === node.path && "is-selected",
-                  )}
-                  style={{ paddingLeft: 12 + node.depth * 14 }}
-                  onClick={() => {
-                    if (node.kind === "directory") {
-                      toggleDirectory(node.path);
-                      return;
-                    }
-                    setSelectedPath(node.path);
-                  }}
-                >
-                  <span className="bos-codebase-workbench__row-meta">
-                    {node.kind === "directory" ? (isExpanded ? "▾" : "▸") : "·"}
-                  </span>
-                  <span className="bos-codebase-workbench__row-title">{node.name}</span>
-                  {folder?.loading ? (
-                    <span className="bos-codebase-workbench__row-sub">…</span>
-                  ) : null}
-                </button>
-              );
-            })
+            <ul className="bos-fs-tree" role="tree" aria-label="Working directory">
+              {visible.map((node) => {
+                const isExpanded = expanded.has(node.path);
+                const folder = folderState[node.path];
+                const selected = selectedPath === node.path;
+                return (
+                  <li key={node.path} className="bos-fs-tree-item">
+                    <button
+                      type="button"
+                      className={cn(
+                        "bos-fs-tree-row",
+                        node.kind === "file" && "is-file",
+                        selected && "is-selected",
+                      )}
+                      style={{ paddingLeft: 8 + node.depth * 14 }}
+                      aria-expanded={node.kind === "directory" ? isExpanded : undefined}
+                      onClick={() => {
+                        if (node.kind === "directory") {
+                          toggleDirectory(node.path);
+                          return;
+                        }
+                        setSelectedPath(node.path);
+                      }}
+                    >
+                      {node.kind === "directory" ? (
+                        <CodebaseFsTreeChevron expanded={isExpanded} />
+                      ) : (
+                        <CodebaseFsTreeChevronSpacer />
+                      )}
+                      <CodebaseFsTreeEntryIcon path={node.path} kind={node.kind} />
+                      <span className="bos-fs-tree-name">{node.name}</span>
+                    </button>
+                    {node.kind === "directory" &&
+                    isExpanded &&
+                    folder?.loading &&
+                    folder.children == null ? (
+                      <p
+                        className="bos-fs-tree-status"
+                        style={{ paddingLeft: 24 + node.depth * 14 }}
+                      >
+                        Loading…
+                      </p>
+                    ) : null}
+                    {node.kind === "directory" && isExpanded && folder?.error ? (
+                      <p
+                        className="bos-fs-tree-status is-error"
+                        style={{ paddingLeft: 24 + node.depth * 14 }}
+                      >
+                        {folder.error}
+                      </p>
+                    ) : null}
+                    {node.kind === "directory" &&
+                    isExpanded &&
+                    folder?.children &&
+                    folder.children.length === 0 &&
+                    !folder.loading ? (
+                      <p
+                        className="bos-fs-tree-status"
+                        style={{ paddingLeft: 24 + node.depth * 14 }}
+                      >
+                        Empty
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>
       {selectedPath ? (
-        <div className="bos-codebase-workbench__tab-detail">
-          <div className="bos-codebase-workbench__file-header">
-            <span className="truncate">{selectedPath}</span>
-            <Button type="button" size="xs" variant="ghost" onClick={() => setSelectedPath(null)}>
-              Close
-            </Button>
+        <div className="bos-codebase-workbench__tab-detail bos-file-detail">
+          <div className="bos-file-tab-bar" role="tablist" aria-label="Open files">
+            <div className="bos-file-tab-width">
+              <div className="bos-file-tab is-active" role="tab" aria-selected="true">
+                <span className="bos-file-tab-icon" aria-hidden="true">
+                  <CodebaseFsTreeEntryIcon path={selectedPath} kind="file" />
+                </span>
+                <span className="bos-file-tab-label" title={selectedPath}>
+                  {selectedName}
+                </span>
+                <button
+                  type="button"
+                  className="bos-file-tab-close is-active-tab"
+                  aria-label={`Close ${selectedName}`}
+                  onClick={() => {
+                    const files = rootEntries.filter((entry) => entry.kind === "file");
+                    if (files.length === 0) {
+                      setSelectedPath(null);
+                      return;
+                    }
+                    const currentIndex = files.findIndex((entry) => entry.path === selectedPath);
+                    const next = files.find((entry, index) => index !== currentIndex) ?? files[0]!;
+                    setSelectedPath(next.path);
+                  }}
+                >
+                  ×
+                </button>
+                <span className="bos-file-tab-active-bar" aria-hidden="true" />
+              </div>
+            </div>
           </div>
-          {fileLoading && !fileContent ? (
-            <LoadingPanel />
-          ) : fileContent?.binary ? (
-            <EmptyPanel>
-              <p>Binary file — preview unavailable.</p>
-            </EmptyPanel>
-          ) : (
-            <pre className="bos-codebase-workbench__file-pre">{fileContent?.content ?? ""}</pre>
-          )}
+          <div className="bos-file-detail-body">
+            {fileLoading && !fileContent ? (
+              <p className="bos-fs-tree-status">Loading…</p>
+            ) : fileContent?.binary ? (
+              <p className="bos-fs-tree-status">Binary file — preview unavailable.</p>
+            ) : fileContent?.content != null ? (
+              <CodebaseFileCodeViewer path={fileContent.path} content={fileContent.content} />
+            ) : (
+              <p className="bos-fs-tree-status">Could not load file.</p>
+            )}
+          </div>
         </div>
       ) : null}
     </div>
@@ -346,6 +426,8 @@ function DocsTab(props: { readonly project: BacksterosCodebaseProject }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setEntries([]);
+    setDocsPresent(false);
     void fetchBacksterosProjectDocs(project.id, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;

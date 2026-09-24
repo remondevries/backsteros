@@ -1490,6 +1490,7 @@ const financialTransactionKeys = {
   settlement_state: "settlementState",
   raw: "raw",
   import_batch_id: "importBatchId",
+  moneybird_ledger_refresh: "moneybirdLedgerRefresh",
 };
 const emailThreadKeys = {
   inbox_id: "inboxId",
@@ -2805,6 +2806,22 @@ export async function applySyncChange(
         );
         if (!row) throw new Error("INVALID_FINANCIAL_TRANSACTION");
         return financialTransactionSnapshot(row);
+      }
+      // Moneybird sync refreshes amount/settlement/version while keeping
+      // user classification (category / org / project / …).
+      if (
+        payload.moneybirdLedgerRefresh === true ||
+        (typeof payload.amountCents === "number" &&
+          (payload.sourceCode === "moneybird" ||
+            existing.sourceCode === "moneybird"))
+      ) {
+        const row = await financeService.refreshTransactionLedgerFromSync(
+          workspaceId,
+          change.entity_id,
+          payload,
+          executor,
+        );
+        return row ? financialTransactionSnapshot(row) : null;
       }
       const parsed = updateFinancialTransactionSchema.safeParse(payload);
       if (!parsed.success) throw new Error("INVALID_FINANCIAL_TRANSACTION");

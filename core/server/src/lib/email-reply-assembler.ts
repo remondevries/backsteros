@@ -249,8 +249,10 @@ export function renderEmailReplyShell(
 const GREETING_LINE =
   /^(?:hi|hello|hey|dear|aan|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
 
+// Whole-line sign-offs only ("Thank you," / "Best regards,") — never
+// "Thank you for your interest…" body sentences.
 const SIGN_OFF_LINE =
-  /^(?:best|thanks|thank you|sincerely|regards|cheers|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards)(?:,|\s|$)/i;
+  /^(?:best|thanks|thank you|sincerely|regards|cheers|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards),?\s*$/i;
 
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -404,12 +406,21 @@ export function extractReplyBodyFromAssembled(
   from: string,
   templates: EmailReplyTemplateSettings,
 ): string {
+  const trimmed = fullText.replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return "";
+
   for (const language of ["en", "nl"] as const) {
     const resolved = resolveTemplatesForLanguage(templates, language);
-    const body = extractReplyBodyWithTemplates(fullText, from, resolved);
+    const { greeting, signOff } = renderEmailReplyShell(from, resolved);
+    // Template shell matched (even with an empty middle) — do not fall through
+    // to sanitize, which can promote the greeting line into a fake body.
+    if (trimmed.startsWith(greeting) && trimmed.endsWith(signOff)) {
+      return extractReplyBodyWithTemplates(trimmed, from, resolved);
+    }
+    const body = extractReplyBodyWithTemplates(trimmed, from, resolved);
     if (body) return body;
   }
-  return sanitizeAgentReplyBody(fullText.replace(/\r\n/g, "\n").trim());
+  return sanitizeAgentReplyBody(trimmed);
 }
 
 /**
@@ -423,6 +434,17 @@ export function resolveEditableDraftBody(
 ): string {
   const trimmed = fullText.replace(/\r\n/g, "\n").trim();
   if (!trimmed) return "";
+
+  for (const language of ["en", "nl"] as const) {
+    const resolved = resolveTemplatesForLanguage(templates, language);
+    const { greeting, signOff } = renderEmailReplyShell(from, resolved);
+    if (trimmed.startsWith(greeting) && trimmed.endsWith(signOff)) {
+      // Shell matched — empty middle stays empty (don't sanitize the greeting
+      // line into a fake body).
+      return extractReplyBodyWithTemplates(trimmed, from, resolved);
+    }
+  }
+
   const extracted = extractReplyBodyFromAssembled(trimmed, from, templates).trim();
   if (extracted) return extracted;
   return sanitizeAgentReplyBody(trimmed);
@@ -490,7 +512,14 @@ export function assembleReplyEmail(input: {
     input.languageHint ??
     detectEmailLanguage(input.body, input.contextText);
   const templates = resolveTemplatesForLanguage(baseTemplates, language);
-  const body = sanitizeAgentReplyBody(input.body);
+  const rawBody = input.body.trim();
+  const sanitized = sanitizeAgentReplyBody(rawBody);
+  // Never silently drop agent text — if sanitize over-strips, keep a light clean.
+  const body =
+    sanitized ||
+    (rawBody
+      ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
+      : "");
   const { greeting, signOff } = renderEmailReplyShell(input.from, templates);
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
@@ -522,7 +551,13 @@ export function assembleComposeEmail(input: {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language = input.languageHint ?? detectEmailLanguage(input.body);
   const templates = resolveTemplatesForLanguage(baseTemplates, language);
-  const body = sanitizeAgentReplyBody(input.body);
+  const rawBody = input.body.trim();
+  const sanitized = sanitizeAgentReplyBody(rawBody);
+  const body =
+    sanitized ||
+    (rawBody
+      ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
+      : "");
   const toAddresses = normalizeComposeRecipients(input.to);
   const primaryTo = Array.isArray(input.to)
     ? (input.to[0]?.trim() ?? "")

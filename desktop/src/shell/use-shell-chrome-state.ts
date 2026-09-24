@@ -15,6 +15,7 @@ import {
   useSettingsShortcut,
   installSelectAllShortcutListeners,
   installClearSelectionShortcutListeners,
+  installCopyEntityIdShortcutListeners,
 } from "@backsteros/ui/shell";
 import {
   getTodayJournalDateSlug,
@@ -154,6 +155,7 @@ export function useShellChromeState() {
   useEffect(() => {
     installSelectAllShortcutListeners();
     installClearSelectionShortcutListeners();
+    installCopyEntityIdShortcutListeners();
   }, []);
 
   useEffect(() => {

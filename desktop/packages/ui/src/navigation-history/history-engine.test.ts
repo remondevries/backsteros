@@ -81,11 +81,6 @@ describe("per-tab navigation history store", () => {
   it("replaces auto-landing section roots instead of pushing the empty root", () => {
     const cases: Array<{ from: string; to: string; label: string }> = [
       { from: "/inbox", to: "/inbox/task-1", label: "Inbox" },
-      {
-        from: "/communication",
-        to: "/communication/task-1",
-        label: "Communication",
-      },
       { from: "/social", to: "/social/alice", label: "Network" },
       { from: "/letters", to: "/letters/12", label: "Letters" },
       {
@@ -145,6 +140,52 @@ describe("per-tab navigation history store", () => {
     assert.deepEqual(
       stack.entries.map((entry) => entry.href),
       ["/catalog", "/inbox/task-1"],
+    );
+  });
+
+  it("pushes Communication ticket so Escape returns to the channel list", () => {
+    assert.equal(
+      isRedirectContinuation("/communication", "/communication/task-1"),
+      false,
+    );
+    assert.equal(
+      isRedirectContinuation(
+        "/communication?channel=all",
+        "/communication/task-1?channel=all",
+      ),
+      false,
+    );
+
+    let store = createInitialHistoryStore(
+      "tab-a",
+      "/communication?channel=email&inbox=sander",
+      "Sander",
+    );
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/communication?channel=all",
+      "Everything",
+      null,
+    );
+    store = applyPathnameChangeForTab(
+      store,
+      "tab-a",
+      "/communication/task-1?channel=all",
+      "Ticket",
+      null,
+    );
+
+    const stack = getActiveStack(store, "tab-a");
+    assert.ok(stack);
+    assert.equal(stack.index, 2);
+    assert.deepEqual(
+      stack.entries.map((entry) => entry.href),
+      [
+        "/communication?channel=email&inbox=sander",
+        "/communication?channel=all",
+        "/communication/task-1?channel=all",
+      ],
     );
   });
 

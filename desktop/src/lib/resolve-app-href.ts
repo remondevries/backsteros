@@ -194,8 +194,16 @@ export function resolveAppHref(href: string): ResolvedAppHref {
     const first = peekSectionEntryHref("inbox");
     if (first) withEntry(first);
   } else if (pathname === "/communication") {
+    // List overview lives in main content (channels in the side panel).
+    // Only restore a list-root entry (`/communication` or `?channel=`), never
+    // an item detail seed from older builds.
     const first = peekSectionEntryHref("communication");
-    if (first) withEntry(first);
+    if (first) {
+      const entry = splitHref(first);
+      if (entry.pathname === "/communication") {
+        withEntry(first);
+      }
+    }
   } else if (pathname === "/contacts") {
     // Contacts catalog lives in main content (no auto-open of last contact).
   } else if (pathname === "/organizations") {

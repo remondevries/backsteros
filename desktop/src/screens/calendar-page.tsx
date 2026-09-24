@@ -65,6 +65,7 @@ import {
   type CalendarTaskPopoverTask,
   type CalendarViewMode,
   type MeetingCalendarPatch,
+  type MeetingContentTab,
   type TaskCalendarPatch,
   type TaskStatus,
   type TimetrackingEntry,
@@ -166,6 +167,12 @@ function CalendarPageBody() {
   const taskOverlayLayout = parseCalendarTaskOverlayLayout(
     searchParams.toString(),
   );
+  // Shared across panel + page overlays so expand/collapse keeps the tab.
+  const [meetingContentTab, setMeetingContentTab] =
+    useState<MeetingContentTab>("summary");
+  useEffect(() => {
+    setMeetingContentTab("summary");
+  }, [openMeetingId]);
   const viewMode = parseCalendarViewModeParam(
     searchParams.get(CALENDAR_VIEW_MODE_PARAM),
   );
@@ -1584,6 +1591,8 @@ function CalendarPageBody() {
                 summary={meeting?.summary ?? ""}
                 notes={meeting?.notes ?? ""}
                 transcription={meeting?.transcription ?? ""}
+                contentTab={meetingContentTab}
+                onContentTabChange={setMeetingContentTab}
                 onTitleChange={
                   meetingDraft
                     ? saveMeetingDraftTitle
@@ -1642,6 +1651,8 @@ function CalendarPageBody() {
         summary={meeting?.summary ?? ""}
         notes={meeting?.notes ?? ""}
         transcription={meeting?.transcription ?? ""}
+        contentTab={meetingContentTab}
+        onContentTabChange={setMeetingContentTab}
         onTitleChange={(title) => patchMeeting({ title })}
         onSummaryChange={(summary) => patchMeeting({ summary })}
         onNotesChange={(notes) => patchMeeting({ notes })}

@@ -216,7 +216,21 @@ export async function openBacksterosTaskChat(input: {
     if (!projectRef) return;
   }
 
-  const existing = useBacksterosTaskChatStore.getState().getBinding(input.task.id);
+  let existing = useBacksterosTaskChatStore.getState().getBinding(input.task.id);
+  // Drafts bound to a previous T3 project (BacksterOS cwd remapped) must not be
+  // reused — they keep the old working directory / empty providers. Thread
+  // bindings with a mismatched t3ProjectId are left alone so we never destroy a
+  // live server thread; control/API thread reuse still wins below.
+  if (
+    existing?.kind === "draft" &&
+    (existing.t3ProjectId !== projectRef.projectId ||
+      existing.environmentId !== projectRef.environmentId)
+  ) {
+    useBacksterosTaskChatStore.getState().clearBinding(input.task.id);
+    useBacksterosTaskKickoffGateStore.getState().clear(input.task.id);
+    existing = null;
+  }
+
   const healed = existing ? healBinding(input.task.id, existing) : null;
 
   // Prefer a live control/server thread over a local kickoff draft (or empty).

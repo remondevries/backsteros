@@ -76,11 +76,16 @@ describe("hybrid write bar", () => {
   it("creates financial_transactions via sync apply (CSV / Moneybird leader-first)", () => {
     const sync = readSrc("sync.ts");
     assert.ok(sync.includes("insertTransactionFromSync"));
+    assert.ok(sync.includes("refreshTransactionLedgerFromSync"));
     const finance = readSrc("finance/finance.ts");
     assert.ok(finance.includes("commitFinancialTransactionCreates"));
+    assert.ok(finance.includes("commitFinancialTransactionDeletes"));
+    assert.ok(finance.includes("commitFinancialTransactionLedgerRefreshes"));
     assert.ok(finance.includes("financialTransactionCreateSyncPayload"));
     const moneybird = readSrc("finance/moneybird-sync.ts");
     assert.ok(moneybird.includes("commitFinancialTransactionCreates"));
+    assert.ok(moneybird.includes("commitFinancialTransactionDeletes"));
+    assert.ok(moneybird.includes("commitFinancialTransactionLedgerRefreshes"));
     assert.ok(
       (REPLICATED_TABLES as readonly string[]).includes(
         "financial_transactions",

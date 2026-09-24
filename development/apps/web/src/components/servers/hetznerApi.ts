@@ -716,6 +716,73 @@ export async function updateAppEnv(input: {
   return readJson(response);
 }
 
+export type ProjectSecretsFileInfo = {
+  readonly name: string;
+  readonly size: number;
+  readonly updatedAt: string | null;
+};
+
+export type ProjectInfisicalConfig = {
+  readonly infisicalProjectId: string;
+  readonly path: string;
+  readonly env: string;
+};
+
+export type ProjectSecretsResponse = {
+  readonly ok: boolean;
+  readonly projectId?: string;
+  readonly folderPath?: string;
+  readonly files?: readonly ProjectSecretsFileInfo[];
+  readonly fileName?: string;
+  readonly content?: string;
+  readonly infisical?: ProjectInfisicalConfig | null;
+  readonly infisicalConfigured?: boolean;
+  readonly pullHint?: string;
+  readonly push?: {
+    readonly ok: boolean;
+    readonly message: string;
+    readonly fileName?: string;
+  };
+  readonly error?: string;
+};
+
+/** Local disk only — never sent to BacksterOS cloud / PowerSync. */
+export async function fetchProjectSecrets(
+  projectId: string,
+  opts?: { readonly fileName?: string; readonly content?: boolean },
+): Promise<ProjectSecretsResponse> {
+  const params = new URLSearchParams({ projectId });
+  if (opts?.fileName) params.set("fileName", opts.fileName);
+  if (opts?.content === false) params.set("content", "0");
+  const response = await fetch(`/api/hetzner/project-secrets?${params.toString()}`);
+  return readJson(response);
+}
+
+export async function saveProjectSecrets(input: {
+  readonly projectId: string;
+  readonly fileName?: string;
+  readonly content: string;
+}): Promise<ProjectSecretsResponse> {
+  const response = await fetch("/api/hetzner/project-secrets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "save", ...input }),
+  });
+  return readJson(response);
+}
+
+export async function pushProjectSecretsToInfisical(input: {
+  readonly projectId: string;
+  readonly fileName?: string;
+}): Promise<ProjectSecretsResponse> {
+  const response = await fetch("/api/hetzner/project-secrets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "push", ...input }),
+  });
+  return readJson(response);
+}
+
 export type AppNotificationsSettings = {
   readonly serverId: string;
   readonly service: string;

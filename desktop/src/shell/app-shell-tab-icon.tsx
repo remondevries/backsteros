@@ -38,7 +38,7 @@ function AppShellTabIcon({ tab }: { tab: ProductTab }) {
       display: {
         kind: "navigate",
         navId: "email",
-        badgeLabel: "Email",
+        badgeLabel: "E-mail",
         title: tab.title,
       },
     });

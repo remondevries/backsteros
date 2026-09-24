@@ -74,10 +74,14 @@ import {
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { useListTypeToFilter } from "../../list-nav/use-list-type-to-filter.js";
 import { listItemMatchesTypeToFilter } from "../../list-nav/list-type-to-filter.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
+import { getTaskDisplayId } from "../../tasks/task-display-id.js";
 import {
   TasksTodayHabitsChips,
   type HabitCheckChipItem,
 } from "./tasks-today-habits-chips.js";
+import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
+import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
 
 type TaskVirtualRow =
   | (VirtualizedOverviewRow & {
@@ -160,6 +164,8 @@ export type TasksOverviewViewProps = {
    * When false, Shift+F type-to-filter is off. Defaults to `listKeyboardEnabled`.
    */
   typeToFilterEnabled?: boolean;
+  /** Plain D deletes the keyboard-highlighted task (confirm modal). */
+  onDeleteTask?: (task: TaskItemRowTask) => Promise<EntityDeleteResult>;
 };
 
 export function TasksOverviewView({
@@ -191,6 +197,7 @@ export function TasksOverviewView({
   taskIdColumnCh: taskIdColumnChProp,
   listKeyboardEnabled = true,
   typeToFilterEnabled,
+  onDeleteTask,
 }: TasksOverviewViewProps) {
   const listTypeToFilter = useListTypeToFilter({
     enabled: typeToFilterEnabled ?? listKeyboardEnabled,
@@ -466,7 +473,7 @@ export function TasksOverviewView({
 
   const listKeyboardActive =
     listKeyboardEnabled && view === "list" && itemIds.length > 0;
-  const { setActiveZone } = useListKeyboardNavigationZone();
+  const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
   const lastLandingKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!listKeyboardActive) {
@@ -504,6 +511,17 @@ export function TasksOverviewView({
     },
   });
 
+  useCopyEntityIdShortcut(
+    () => {
+      const itemId = highlightedId ?? selectedTaskId;
+      if (!itemId) return null;
+      const task = localTasks.find((entry) => entry.id === itemId);
+      if (!task) return null;
+      return getTaskDisplayId(task, task.projectKey);
+    },
+    { enabled: listKeyboardEnabled },
+  );
+
   const {
     selectedIds,
     hasBulkSelection,
@@ -518,6 +536,17 @@ export function TasksOverviewView({
     toggleHighlightedShortcutEnabled: view === "list",
   });
   extendSelectionAlongStepRef.current = extendSelectionAlongStep;
+
+  const highlightedTask = useMemo((): TaskItemRowTask | null => {
+    if (!highlightedId || !onDeleteTask) return null;
+    return localTasks.find((entry) => entry.id === highlightedId) ?? null;
+  }, [highlightedId, localTasks, onDeleteTask]);
+
+  const taskDeleteEnabled =
+    Boolean(highlightedTask) &&
+    listKeyboardActive &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_MAIN &&
+    !hasBulkSelection;
 
   const selectedTasks = useMemo(
     () => filtered.filter((task) => selectedIds.has(task.id)),
@@ -922,6 +951,18 @@ export function TasksOverviewView({
 
   return (
     <div className="tasks-overview">
+      {taskDeleteEnabled && highlightedTask && onDeleteTask ? (
+        <RegisterEntityDeleteAction
+          entityLabel={
+            getTaskDisplayId(highlightedTask, highlightedTask.projectKey) ||
+            highlightedTask.title.trim() ||
+            "this task"
+          }
+          confirmLabel="Delete task"
+          actionVerb="Delete"
+          onDelete={() => onDeleteTask(highlightedTask)}
+        />
+      ) : null}
       <PillNav
         ariaLabel="Task due date"
         items={pillItems}

@@ -18,6 +18,8 @@ import {
   getEmailListItemHref,
   groupEmailItemsByMailbox,
   groupEmailItemsByStatus,
+  applyAgentMailReadStateLabels,
+  isAgentMailMessageUnread,
   isEmailInboxListContext,
   isEmailPath,
   parseEmailDraftPath,
@@ -291,6 +293,56 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
   assert.equal(collapsed[0]?.receivedAt, 200);
   assert.equal(collapsed[0]?.firstReceivedAt, 100);
   assert.equal(collapsed[0]?.subject, "Factuur 8959599");
+});
+
+test("collapseEmailListItemsByThread keeps unread when any message in the thread is unread", () => {
+  const items = [
+    {
+      kind: "message" as const,
+      id: "msg_reply",
+      inboxId: "in_1",
+      subject: "Re: Hello",
+      from: "Them",
+      receivedAt: 200,
+      threadId: "thread_1",
+      status: "triage" as const,
+      unread: true,
+    },
+    {
+      kind: "message" as const,
+      id: "msg_root",
+      inboxId: "in_1",
+      subject: "Hello",
+      from: "Them",
+      receivedAt: 100,
+      threadId: "thread_1",
+      status: "triage" as const,
+      unread: false,
+    },
+  ];
+  const collapsed = collapseEmailListItemsByThread(items);
+  assert.equal(collapsed.length, 1);
+  assert.equal(collapsed[0]?.id, "msg_root");
+  assert.equal(collapsed[0]?.unread, true);
+});
+
+test("isAgentMailMessageUnread requires unread and lets read win", () => {
+  assert.equal(isAgentMailMessageUnread(["received", "unread"]), true);
+  assert.equal(isAgentMailMessageUnread(["received", "read"]), false);
+  assert.equal(isAgentMailMessageUnread(["received", "unread", "read"]), false);
+  assert.equal(isAgentMailMessageUnread(["received"]), false);
+  assert.equal(isAgentMailMessageUnread(null), false);
+});
+
+test("applyAgentMailReadStateLabels swaps unread/read without dropping others", () => {
+  assert.deepEqual(applyAgentMailReadStateLabels(["received", "unread"], false), [
+    "received",
+    "read",
+  ]);
+  assert.deepEqual(applyAgentMailReadStateLabels(["received", "read"], true), [
+    "received",
+    "unread",
+  ]);
 });
 
 test("firstReceivedEmailAtMs prefers inbound over sent", () => {

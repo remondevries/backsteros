@@ -1538,6 +1538,11 @@ export type CodebaseProjectOverviewPaneProps = {
   githubRefreshToken?: number;
   /** Activity / comments rendered under the description. */
   belowDescription?: ReactNode;
+  /**
+   * When false, ⌘. does not copy this project's key (hidden keep-alive).
+   * Defaults to true.
+   */
+  copyIdShortcutEnabled?: boolean;
 };
 
 export function CodebaseProjectOverviewPane({
@@ -1569,6 +1574,7 @@ export function CodebaseProjectOverviewPane({
   taskProgress: taskProgressProp = null,
   githubRefreshToken = 0,
   belowDescription = null,
+  copyIdShortcutEnabled = true,
 }: CodebaseProjectOverviewPaneProps) {
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
@@ -1857,6 +1863,7 @@ export function CodebaseProjectOverviewPane({
         <ProjectPanelDetailView
           project={detailProject}
           section="overview"
+          copyIdShortcutEnabled={copyIdShortcutEnabled}
           nestedAreas={nestedAreas}
           organizationOptions={organizationOptions}
           belowDescription={belowDescription}

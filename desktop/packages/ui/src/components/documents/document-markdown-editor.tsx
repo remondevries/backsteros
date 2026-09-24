@@ -119,18 +119,34 @@ function ensureDocumentEditorInsertMode(view: EditorView) {
   Vim.handleKey(cm as Parameters<typeof Vim.handleKey>[0], "i", "user");
 }
 
+function findVerticalScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const style = window.getComputedStyle(el);
+    const overflowY = style.overflowY;
+    if (
+      (overflowY === "auto" ||
+        overflowY === "scroll" ||
+        overflowY === "overlay") &&
+      el.scrollHeight > el.clientHeight + 1
+    ) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 function focusEditorView(view: EditorView, vimEnabled: boolean): void {
   const wasAlreadyFocused = view.hasFocus;
-  view.focus();
-  if (!view.hasFocus) {
-    view.contentDOM.focus({ preventScroll: true });
-  }
-  // view.focus() can set activeElement before CodeMirror's focus observer
-  // runs (~10ms). Force an update so `.cm-focused` applies immediately.
+  // preventScroll avoids yanking ancestor scrollports (email thread with
+  // scrollWithContent has no inner scroller). Preview ↔ Edit also pins via
+  // pinEmailThreadScrollDuringUpdate.
+  view.contentDOM.focus({ preventScroll: true });
+  // Force `.cm-focused` immediately — focus observer can lag ~10ms.
   if (view.hasFocus && !view.dom.classList.contains("cm-focused")) {
     view.update([]);
   }
-  // Prose editors should open ready to type (thin caret), not vim normal block.
   if (!wasAlreadyFocused && vimEnabled) {
     ensureDocumentEditorInsertMode(view);
   }
@@ -144,14 +160,25 @@ function scheduleEditorFocusAttempts(
 ): () => void {
   let cancelled = false;
   let attempts = 0;
+  let pinnedScrollParent: HTMLElement | null = null;
+  let pinnedScrollTop: number | null = null;
+
+  const captureScroll = (view: EditorView) => {
+    if (pinnedScrollParent) return;
+    pinnedScrollParent = findVerticalScrollParent(view.dom);
+    pinnedScrollTop = pinnedScrollParent?.scrollTop ?? null;
+  };
+
+  const restoreScroll = () => {
+    if (pinnedScrollParent && pinnedScrollTop != null) {
+      pinnedScrollParent.scrollTop = pinnedScrollTop;
+    }
+  };
 
   const tryFocus = () => {
-    if (cancelled) {
-      return;
-    }
+    if (cancelled) return;
 
     const view = getView();
-
     if (!view) {
       if (attempts < EDITOR_FOCUS_MAX_ATTEMPTS) {
         attempts += 1;
@@ -159,6 +186,8 @@ function scheduleEditorFocusAttempts(
       }
       return;
     }
+
+    captureScroll(view);
 
     const shellHidden =
       view.dom.closest(".content-markdown-view-layout__edit--preparing") !=
@@ -170,6 +199,7 @@ function scheduleEditorFocusAttempts(
       (!view.hasFocus || !view.dom.classList.contains("cm-focused"))
     ) {
       focusEditorView(view, vimEnabled);
+      restoreScroll();
     }
 
     const focusedReady =
@@ -180,7 +210,10 @@ function scheduleEditorFocusAttempts(
     if (!focusedReady && attempts < EDITOR_FOCUS_MAX_ATTEMPTS) {
       attempts += 1;
       requestAnimationFrame(tryFocus);
+      return;
     }
+
+    restoreScroll();
   };
 
   tryFocus();

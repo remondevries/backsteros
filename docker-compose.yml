@@ -59,5 +59,9 @@ services:
       - "8080:8080"
 
 volumes:
+  # Pin names so a repo path / compose-project rename does not orphan the
+  # populated DB (Hub Files/Documents + local-core need :5433 with schema).
   backsteros_pg_data:
+    name: backsteros_backsteros_pg_data
   backsteros_powersync_mongo:
+    name: backsteros_backsteros_powersync_mongo

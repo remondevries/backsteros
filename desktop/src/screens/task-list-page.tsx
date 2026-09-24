@@ -43,6 +43,7 @@ import {
   mapEmailMessagesToTaskRows,
   patchEmailTaskListItem,
 } from "../lib/email-list-tasks";
+import { deleteEmailMessage } from "../lib/delete-email-message";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useKeepAliveActive,
@@ -444,6 +445,30 @@ function TaskListPageBody({
             continue;
           }
           await workspace.softDeleteTask(taskId);
+        }
+      }}
+      onDeleteTask={async (task) => {
+        if (isEmailTaskListItem(task)) {
+          if (!task.emailInboxId || !task.emailMessageId) {
+            return { ok: false as const, error: "Message is required." };
+          }
+          return deleteEmailMessage(client, {
+            inboxId: task.emailInboxId,
+            messageId: task.emailMessageId,
+            threadId: task.emailThreadId ?? null,
+          });
+        }
+        try {
+          await workspace.softDeleteTask(task.id);
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to delete task.",
+          };
         }
       }}
       onReorder={(request) => {

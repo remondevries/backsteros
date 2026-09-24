@@ -1,13 +1,11 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
 
-import {
-  useBacksterosTaskChatStore,
-  type BacksterosTaskChatBinding,
-} from "./taskChatStore";
+import { useBacksterosTaskChatStore, type BacksterosTaskChatBinding } from "./taskChatStore";
+import { stabilizeWorkingTaskIdSet } from "./workingTaskIdSet";
 
 const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
@@ -41,8 +39,13 @@ export function collectBacksterosWorkingTaskIds(input: {
 export function useBacksterosWorkingTaskIds(): ReadonlySet<string> {
   const byTaskId = useBacksterosTaskChatStore((state) => state.byTaskId);
   const shells = useThreadShells();
-  return useMemo(
-    () => collectBacksterosWorkingTaskIds({ byTaskId, shells }),
-    [byTaskId, shells],
-  );
+  const previousRef = useRef<ReadonlySet<string>>(EMPTY_WORKING_TASK_IDS);
+  return useMemo(() => {
+    const live = collectBacksterosWorkingTaskIds({ byTaskId, shells });
+    // Keep Set identity when membership is unchanged so presence/promote
+    // effects do not tear down and briefly clear the working pulse (OS-15).
+    const stable = stabilizeWorkingTaskIdSet(previousRef.current, live);
+    previousRef.current = stable;
+    return stable;
+  }, [byTaskId, shells]);
 }

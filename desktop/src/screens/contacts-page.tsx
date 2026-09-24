@@ -1566,6 +1566,20 @@ export function ContactsPage({
               await workspace.softDeleteTask(taskId);
             }
           }}
+          onDeleteTask={async (task) => {
+            try {
+              await workspace.softDeleteTask(task.id);
+              return { ok: true as const };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to delete task.",
+              };
+            }
+          }}
           onReorder={(request) => {
             const patches = taskReorderPatches(tasks, request);
             for (const patch of patches) {

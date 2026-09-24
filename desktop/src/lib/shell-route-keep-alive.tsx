@@ -287,6 +287,21 @@ function snapshotsMatch(left: RouteSnapshot, right: RouteSnapshot): boolean {
   return left.pathname === right.pathname && left.searchStr === right.searchStr;
 }
 
+/**
+ * Whether a keep-alive pane should treat itself as shown.
+ * Outlet email clears `visibleKeepAliveSurface` so router-driven `activeProp`
+ * owns side-panel visibility for `/email/…?list=communication|inbox`.
+ */
+function isKeepAlivePaneShown(
+  surface: PendingPageSurface | undefined,
+  activeProp: boolean,
+): boolean {
+  if (surface == null) return activeProp;
+  const visible = getVisibleKeepAliveSurface();
+  if (visible == null) return activeProp;
+  return visible === surface;
+}
+
 export const KeepAlivePane = memo(function KeepAlivePane({
   surface,
   active: activeProp,
@@ -318,12 +333,7 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     [surface],
   );
   const isThisSurfaceShown = useCallback(() => {
-    if (surface == null) return activeProp;
-    const visible = getVisibleKeepAliveSurface();
-    // First-visit / Outlet dismiss clears `visible` so the router-driven
-    // activeProp can win on that commit (see dismissKeepAliveForOutletNavigation).
-    if (visible == null) return activeProp;
-    return visible === surface;
+    return isKeepAlivePaneShown(surface, activeProp);
   }, [surface, activeProp]);
   const active = useSyncExternalStore(
     subscribeVisible,
@@ -343,31 +353,31 @@ export const KeepAlivePane = memo(function KeepAlivePane({
           cancelled = true;
         };
       }
+      // Main panes thaw immediately — deferring one frame left Communication
+      // returning from email/spam with an empty main pane (`active === false`).
+      if (role === "main") {
+        if (isKeepAlivePaneShown(surface, activeProp)) {
+          setTreeActive(true);
+        }
+        return () => {
+          cancelled = true;
+        };
+      }
       const thaw = () => {
         if (cancelled) return;
-        // Never activate a pane that is no longer the visible surface.
-        if (surface != null && getVisibleKeepAliveSurface() !== surface) {
-          return;
-        }
-        if (surface == null && !activeProp) return;
+        // Match `isKeepAlivePaneShown`: Outlet email clears `visible`, so
+        // activeProp owns side-panel show — do not refuse thaw when visible
+        // is null (Communication list stayed empty after inbox → email return).
+        if (!isKeepAlivePaneShown(surface, activeProp)) return;
         setTreeActive(true);
       };
-      // Main thaws next frame; sidepanel waits one more so main paints first.
-      let frame2 = 0;
+      // Sidepanel waits one frame so main paints first.
       const frame1 = requestAnimationFrame(() => {
-        if (cancelled) return;
-        if (role === "sidepanel") {
-          frame2 = requestAnimationFrame(() => {
-            if (!cancelled) thaw();
-          });
-          return;
-        }
-        thaw();
+        if (!cancelled) thaw();
       });
       return () => {
         cancelled = true;
         cancelAnimationFrame(frame1);
-        if (frame2) cancelAnimationFrame(frame2);
       };
     }
     if (!treeActive) return;
@@ -375,8 +385,7 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     // first. Skip if this surface is visible again (stale freeze guard).
     const frame = requestAnimationFrame(() => {
       if (cancelled) return;
-      if (surface != null && getVisibleKeepAliveSurface() === surface) return;
-      if (surface == null && activeProp) return;
+      if (isKeepAlivePaneShown(surface, activeProp)) return;
       setTreeActive(false);
     });
     return () => {
@@ -399,8 +408,12 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     getWarmKeepAliveEpoch,
     getWarmKeepAliveEpoch,
   );
+  // Main panes follow the warm lastHref store (pushState without TanStack).
+  // Side panels use the host snapshot instead: chrome already resolves the live
+  // router location for Outlet email (`/email/…?list=communication|inbox`), so
+  // list selection stays on the open message even when lastHref is briefly stale.
   let nextSnapshot = snapshot;
-  if (surface != null) {
+  if (surface != null && role === "main") {
     const parts = partsFromKeepAliveHref(lastHrefForKeepAliveSurface(surface));
     nextSnapshot = snapshotFor(surface, parts.pathname, parts.searchStr);
   }

@@ -40,11 +40,13 @@ import {
 } from "./hetznerApi";
 import { WordpressComponentsSettings } from "./WordpressComponentsSettings";
 import { NotificationsSettings } from "./NotificationsSettings";
+import { ProjectSecretsSettings } from "./ProjectSecretsSettings";
 
 export type SettingsSectionId =
   | "general"
   | "deployments"
   | "environment"
+  | "secrets"
   | "notifications"
   | "integrations";
 
@@ -53,6 +55,7 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
     value === "general" ||
     value === "deployments" ||
     value === "environment" ||
+    value === "secrets" ||
     value === "notifications" ||
     value === "integrations"
   );
@@ -62,6 +65,7 @@ const SETTINGS_NAV = [
   { id: "general", label: "General" },
   { id: "deployments", label: "Deployments" },
   { id: "environment", label: "Environment" },
+  { id: "secrets", label: "Secrets" },
   { id: "notifications", label: "Notifications" },
   { id: "integrations", label: "Integrations" },
 ] as const;
@@ -1126,6 +1130,9 @@ export function AppSettingsTab({
         ) : null}
         {section === "environment" ? (
           <EnvironmentSettings serverId={serverId} service={service} />
+        ) : null}
+        {section === "secrets" ? (
+          <ProjectSecretsSettings serverId={serverId} service={service} />
         ) : null}
         {section === "notifications" ? (
           <NotificationsSettings serverId={serverId} service={service} />

@@ -2240,6 +2240,38 @@ export const apiContract: AppRouter = c.router(
       summary:
         "Assemble agent body-only text into a reply draft and upsert in AgentMail",
     },
+    startEmailAgentDraft: {
+      method: "POST",
+      path: "/api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft",
+      pathParams: z.object({
+        inboxId: z.string().min(1),
+        messageId: z.string().min(1),
+      }),
+      body: s.emailAgentDraftInputSchema,
+      responses: {
+        200: s.emailAgentDraftStartedSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Wake Grok Bot webhook for an email-thread agent command (reply draft, task, calendar, note)",
+    },
+    getEmailAgentDraftCallback: {
+      method: "GET",
+      path: "/api/v1/email/agent-draft-callbacks/:requestId",
+      pathParams: z.object({
+        requestId: z.string().min(1),
+      }),
+      responses: {
+        200: s.emailAgentCallbackPollSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Poll Grok Bot email agent command callback mailbox",
+    },
     createEmailComposeDraft: {
       method: "POST",
       path: "/api/v1/email/inboxes/:inboxId/compose-draft",

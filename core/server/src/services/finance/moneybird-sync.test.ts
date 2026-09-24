@@ -6,7 +6,8 @@ import {
   mapMoneybirdMutationToLedgerRow,
   moneybirdMutationFingerprint,
   parseMoneybirdAmountToCents,
-} from "./moneybird-sync-map.js";
+  parseMoneybirdPeriodBounds,
+} from "./moneybird-sync.js";
 
 function sampleMutation(
   overrides: Partial<MoneybirdFinancialMutation> = {},
@@ -69,5 +70,13 @@ describe("moneybird-sync mapping", () => {
       "credit_card",
     );
     assert.equal(charge.amountCents, -2500);
+  });
+
+  it("parses YYYYMMDD..YYYYMMDD sync period bounds", () => {
+    assert.deepEqual(parseMoneybirdPeriodBounds("20240101..20261231"), {
+      from: "2024-01-01",
+      to: "2026-12-31",
+    });
+    assert.equal(parseMoneybirdPeriodBounds("this_year"), null);
   });
 });

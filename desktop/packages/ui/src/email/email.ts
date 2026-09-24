@@ -59,12 +59,50 @@ export type EmailListItem = {
   displayId?: string | null;
   /** External update flag — surfaces in the Updated inbox group. */
   inboxUpdatedAt?: number | Date | string | null;
+  /** Incoming vs outgoing for the list-row party line. */
+  direction?: "sent" | "received" | null;
+  /** True when AgentMail still has the `unread` label. */
+  unread?: boolean;
 };
 
 export type EmailMessagePath = {
   inboxId: string;
   messageId: string;
 };
+
+/**
+ * AgentMail read state is label-based (`unread` / `read`).
+ * Explicit `read` wins if both are present; otherwise require `unread`.
+ */
+export function isAgentMailMessageUnread(
+  labels: readonly string[] | null | undefined,
+): boolean {
+  let hasUnread = false;
+  let hasRead = false;
+  for (const label of labels ?? []) {
+    const normalized = label.trim().toLowerCase();
+    if (normalized === "unread") hasUnread = true;
+    else if (normalized === "read") hasRead = true;
+  }
+  if (hasRead) return false;
+  return hasUnread;
+}
+
+/** Apply AgentMail read/unread labels without dropping other tags. */
+export function applyAgentMailReadStateLabels(
+  labels: readonly string[] | null | undefined,
+  unread: boolean,
+): string[] {
+  const next = (labels ?? [])
+    .map((label) => label.trim())
+    .filter((label) => {
+      if (!label) return false;
+      const normalized = label.toLowerCase();
+      return normalized !== "unread" && normalized !== "read";
+    });
+  next.push(unread ? "unread" : "read");
+  return next;
+}
 
 export type EmailDraftPath = {
   inboxId: string;
@@ -141,7 +179,19 @@ export function preserveEmailInboxListContext(
 ): string {
   const context = getEmailListContext(currentSearch);
   if (!context) return href;
-  return withEmailListContext(href, context);
+  let next = withEmailListContext(href, context);
+  if (context === "communication") {
+    const params = emailListSearchParams(currentSearch);
+    const channel = params.get("channel");
+    const inbox = params.get("inbox");
+    if (channel || inbox) {
+      const url = new URL(next, "http://local.invalid");
+      if (channel) url.searchParams.set("channel", channel);
+      if (inbox) url.searchParams.set("inbox", inbox);
+      next = `${url.pathname}${url.search}${url.hash}`;
+    }
+  }
+  return next;
 }
 
 export const EMAIL_COMPOSE_PATH = "/email/compose";
@@ -277,15 +327,29 @@ export function emailMailboxLabel(mailbox: EmailMailbox): string {
   );
 }
 
-/** Read-only From line for replies — `Name (address@domain)`. */
-export function emailMailboxFromDisplay(mailbox: EmailMailbox): string {
+/** Split mailbox identity for UI: primary name + muted `(email)`. */
+export function emailMailboxFromParts(mailbox: EmailMailbox): {
+  primary: string;
+  secondary: string | null;
+  title: string;
+} {
   const email = mailbox.email.trim();
   const name =
     mailbox.contactName?.trim() || mailbox.displayName?.trim() || null;
   if (name && email && name !== email) {
-    return `${name} (${email})`;
+    return {
+      primary: name,
+      secondary: `(${email})`,
+      title: `${name} (${email})`,
+    };
   }
-  return email || name || mailbox.inboxId;
+  const primary = email || name || mailbox.inboxId;
+  return { primary, secondary: null, title: primary };
+}
+
+/** Read-only From line for replies — `Name (address@domain)`. */
+export function emailMailboxFromDisplay(mailbox: EmailMailbox): string {
+  return emailMailboxFromParts(mailbox).title;
 }
 
 /** `Contact Name (address@domain)` when both are known; otherwise whichever exists. */
@@ -530,6 +594,8 @@ export function collapseEmailListItemsByThread(
       preview: newest.preview ?? preferred.preview,
       receivedAt: newest.receivedAt,
       firstReceivedAt,
+      // Any unread message in the thread keeps the list badge on.
+      unread: bucket.some((item) => item.unread === true),
       conceptDraftId:
         withConcept?.conceptDraftId ?? preferred.conceptDraftId ?? null,
     });

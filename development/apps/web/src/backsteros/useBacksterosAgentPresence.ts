@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useThreadShells } from "~/state/entities";
 
@@ -11,6 +11,7 @@ import {
 } from "./client";
 import { collectBacksterosWorkingTaskIds, useBacksterosWorkingTaskIds } from "./taskChatWorking";
 import { useBacksterosTaskChatStore } from "./taskChatStore";
+import { workingTaskIdsKey } from "./workingTaskIdSet";
 
 const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
@@ -19,6 +20,12 @@ const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
  * (covers core DELETE lag + presence TTL). Fresh local working clears it.
  */
 const PRESENCE_CLEAR_SUPPRESS_MS = 60_000;
+/**
+ * Quiet gaps between tools / shell identity churn should not DELETE presence
+ * (that made the in-progress pulse stop for a beat then restart — OS-15).
+ * Match desktop AGENT_WORKING_IDLE_FALLBACK_MS order of magnitude.
+ */
+export const BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS = 15_000;
 const presenceClearSuppressedUntil = new Map<string, number>();
 
 function suppressRemotePresenceReadd(taskId: string): void {
@@ -140,9 +147,13 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
     () => collectBacksterosWorkingTaskIds({ byTaskId, shells }),
     [byTaskId, shells],
   );
+  const localWorkingRef = useRef(localWorkingTaskIds);
+  localWorkingRef.current = localWorkingTaskIds;
+  const localWorkingKey = workingTaskIdsKey(localWorkingTaskIds);
   const setRemoteWorkingTaskIds = useBacksterosAgentPresenceStore(
     (state) => state.setRemoteWorkingTaskIds,
   );
+  const syncNowRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!enabled) return;
@@ -150,7 +161,11 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
     const published = new Set<string>();
     /** Skip further PUTs after a definitive "task missing" 404 (avoids console spam). */
     const missingTasks = new Set<string>();
+    /** Pending leave-grace clears — cancelled if the task resumes working. */
+    const leaveClearTimers = new Map<string, number>();
     let inFlight: Promise<void> | null = null;
+    /** Membership changed while a tick was in flight — run again after. */
+    let pendingSync = false;
 
     const heartbeat = async (taskId: string) => {
       if (missingTasks.has(taskId)) return;
@@ -164,37 +179,85 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
       }
     };
 
-    const sync = () => {
-      // Serialize ticks so overlapping intervals cannot stampede the API.
-      if (inFlight) return;
-      inFlight = (async () => {
-        for (const taskId of localWorkingTaskIds) {
-          if (missingTasks.has(taskId)) continue;
-          clearPresenceReaddSuppression(taskId);
-          published.add(taskId);
-          await heartbeat(taskId);
-        }
-        for (const taskId of [...published]) {
-          if (localWorkingTaskIds.has(taskId)) continue;
+    const cancelLeaveClear = (taskId: string) => {
+      const timer = leaveClearTimers.get(taskId);
+      if (timer == null) return;
+      window.clearTimeout(timer);
+      leaveClearTimers.delete(taskId);
+    };
+
+    const scheduleLeaveClear = (taskId: string) => {
+      if (leaveClearTimers.has(taskId)) return;
+      leaveClearTimers.set(
+        taskId,
+        window.setTimeout(() => {
+          leaveClearTimers.delete(taskId);
+          if (localWorkingRef.current.has(taskId)) return;
+          if (!published.has(taskId)) return;
           published.delete(taskId);
           missingTasks.delete(taskId);
-          // Optimistic: stop the pulse now; DELETE may still be in flight.
           clearBacksterosDisplayedAgentPresence(taskId);
-        }
+        }, BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS),
+      );
+    };
+
+    const sync = () => {
+      // Serialize ticks so overlapping intervals cannot stampede the API.
+      if (inFlight) {
+        pendingSync = true;
+        return;
+      }
+      inFlight = (async () => {
+        do {
+          pendingSync = false;
+          const live = localWorkingRef.current;
+          for (const taskId of live) {
+            if (missingTasks.has(taskId)) continue;
+            cancelLeaveClear(taskId);
+            clearPresenceReaddSuppression(taskId);
+            published.add(taskId);
+            await heartbeat(taskId);
+          }
+          // Keep heartbeating published ids still in leave-grace so TTL/SSE
+          // do not drop the pulse during quiet tool gaps.
+          for (const taskId of published) {
+            if (live.has(taskId)) continue;
+            if (!leaveClearTimers.has(taskId)) continue;
+            await heartbeat(taskId);
+          }
+          for (const taskId of [...published]) {
+            if (live.has(taskId)) continue;
+            scheduleLeaveClear(taskId);
+          }
+        } while (pendingSync);
       })().finally(() => {
         inFlight = null;
       });
     };
 
+    syncNowRef.current = sync;
     sync();
     const timer = window.setInterval(sync, BACKSTEROS_AGENT_PRESENCE_HEARTBEAT_MS);
     return () => {
       window.clearInterval(timer);
+      syncNowRef.current = () => {};
+      for (const leaveTimer of leaveClearTimers.values()) {
+        window.clearTimeout(leaveTimer);
+      }
+      leaveClearTimers.clear();
+      // Only clear on unmount / disable — never on working-set identity churn.
       for (const taskId of published) {
         clearBacksterosDisplayedAgentPresence(taskId);
       }
     };
-  }, [enabled, localWorkingTaskIds]);
+  }, [enabled]);
+
+  // Kick an immediate reconcile when membership changes (without tearing down
+  // the heartbeat effect — that used to DELETE+PUT and flicker the pulse).
+  useEffect(() => {
+    if (!enabled) return;
+    syncNowRef.current();
+  }, [enabled, localWorkingKey]);
 
   useEffect(() => {
     if (!enabled) {

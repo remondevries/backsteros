@@ -28,10 +28,12 @@
 }
 
 .inbox-item-type-icon {
+  position: relative;
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
+  overflow: visible;
   color: color-mix(in srgb, var(--foreground) 70%, transparent);
 }
 
@@ -39,6 +41,22 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Halo must stay inside the icon box — content-visibility rows clip overflow.
+   White ring keeps the badge readable on the orange plane. */
+.inbox-item-type-icon__unread-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  border: 1.5px solid #fff;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--background, #000) 55%, transparent);
+  pointer-events: none;
 }
 
 .inbox-detail-layout {

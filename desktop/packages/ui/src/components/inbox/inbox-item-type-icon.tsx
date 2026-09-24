@@ -8,6 +8,8 @@ export type InboxItemTypeIconProps = {
   className?: string;
   size?: number;
   style?: CSSProperties;
+  /** Orange corner dot for unread AgentMail messages. */
+  unread?: boolean;
 };
 
 export function InboxItemTypeIcon({
@@ -15,19 +17,28 @@ export function InboxItemTypeIcon({
   className = "",
   size = 12,
   style,
+  unread = false,
 }: InboxItemTypeIconProps) {
   const label =
     kind === "letter"
       ? "Letter"
       : kind === "email"
-        ? "Email"
+        ? unread
+          ? "Unread e-mail"
+          : "E-mail"
         : kind === "meeting"
           ? "Meeting"
           : "Task";
 
   return (
     <span
-      className={`inbox-item-type-icon ${className}`.trim()}
+      className={[
+        "inbox-item-type-icon",
+        unread && kind === "email" ? "inbox-item-type-icon--unread" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       title={label}
       style={{ width: size, height: size, ...style }}
       aria-hidden="true"
@@ -42,6 +53,9 @@ export function InboxItemTypeIcon({
       ) : (
         <TasksNavIcon className="size-full" />
       )}
+      {unread && kind === "email" ? (
+        <span className="inbox-item-type-icon__unread-dot" />
+      ) : null}
     </span>
   );
 }

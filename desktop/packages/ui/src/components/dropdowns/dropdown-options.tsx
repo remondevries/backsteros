@@ -10,6 +10,7 @@ import { ProjectOcticon } from "../projects/project-octicon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import type { EmailMailbox } from "../../email/email.js";
+import { emailMailboxFromParts } from "../../email/email.js";
 
 /** Sentinel for unassigned / none rows (assignee, contact, organization, area). */
 export const DROPDOWN_NONE_VALUE = "__none__";
@@ -213,11 +214,7 @@ export function buildEmailMailboxDropdownOptions(
 ): SearchableDropdownOption<string>[] {
   const iconSize = options?.iconSize ?? 14;
   return mailboxes.map((mailbox) => {
-    const label =
-      mailbox.contactName?.trim() ||
-      mailbox.displayName?.trim() ||
-      mailbox.email ||
-      mailbox.inboxId;
+    const parts = emailMailboxFromParts(mailbox);
     const icon = mailbox.avatarSrc ? (
       <EntityAvatarIcon
         src={mailbox.avatarSrc}
@@ -229,7 +226,8 @@ export function buildEmailMailboxDropdownOptions(
     );
     return {
       value: mailbox.inboxId,
-      label,
+      label: parts.primary,
+      ...(parts.secondary ? { secondaryLabel: parts.secondary } : {}),
       icon,
       avatarSrc: mailbox.avatarSrc ?? null,
       searchTerms: [
@@ -237,6 +235,7 @@ export function buildEmailMailboxDropdownOptions(
         mailbox.displayName ?? "",
         mailbox.contactName ?? "",
         mailbox.inboxId,
+        parts.title,
       ]
         .filter(Boolean)
         .join(" "),

@@ -237,4 +237,48 @@ describe("email-reply-assembler", () => {
       "We'll review the invoice this week.",
     );
   });
+
+  it("keeps Thank you for… body sentences (not only Thank you, sign-offs)", () => {
+    const templates = resolveEmailReplyTemplates({
+      greetingTemplateEn: "To {firstName},",
+      greetingTemplateNl: "Aan {firstName},",
+      signOffTemplateEn: "Sincerely,\n{name}\nLemo-Design",
+      signOffTemplateNl: "Met vriendelijke groet,\n{name}\nLemo-Design",
+      signOffName: "Eva",
+    });
+    const from = "campbellaworker582791@gmail.com";
+    const body =
+      "Thank you for your interest in Lemo-Design. We would be happy to discuss your project.";
+    const assembled = assembleReplyEmail({
+      from,
+      subject: "Lemo-Design",
+      body,
+      templates,
+    });
+    assert.equal(assembled.body, body);
+    assert.equal(
+      resolveEditableDraftBody(assembled.text, from, templates),
+      body,
+    );
+  });
+
+  it("returns empty body for greeting+sign-off shell with no middle", () => {
+    const templates = resolveEmailReplyTemplates({
+      greetingTemplateEn: "To {firstName},",
+      signOffTemplateEn: "Sincerely,\n{name}\nLemo-Design",
+      signOffName: "Eva",
+    });
+    const from = "campbellaworker582791@gmail.com";
+    const assembled = assembleReplyEmail({
+      from,
+      subject: "Lemo-Design",
+      body: "",
+      templates,
+    });
+    assert.equal(assembled.body, "");
+    assert.equal(
+      resolveEditableDraftBody(assembled.text, from, templates),
+      "",
+    );
+  });
 });

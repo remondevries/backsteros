@@ -155,3 +155,57 @@ export function resolveMentionLayout(
 
   return isMentionOnOwnLine(segments, mentionIndex) ? "block" : "inline";
 }
+
+function isWhitespaceOnlyMarkdown(segment: MentionSegment): boolean {
+  return segment.type === "markdown" && segment.content.trim() === "";
+}
+
+/** True when the next non-whitespace segment is a block-layout mention. */
+export function nextSignificantIsBlockMention(
+  segments: MentionSegment[],
+  fromIndex: number,
+): boolean {
+  for (let i = fromIndex; i < segments.length; i += 1) {
+    const segment = segments[i];
+    if (!segment) {
+      return false;
+    }
+    if (isWhitespaceOnlyMarkdown(segment)) {
+      continue;
+    }
+    return (
+      segment.type === "mention" &&
+      resolveMentionLayout(segments, i) === "block"
+    );
+  }
+  return false;
+}
+
+/**
+ * Single newlines inside a paragraph only separate stacked block chips (or
+ * preceding text from the stack). Emitting them as pre-wrap rows piles empty
+ * space above the stack; true blank lines are already split into separate
+ * paragraphs.
+ */
+export function shouldOmitBlockMentionSeparatorWhitespace(
+  segments: MentionSegment[],
+  whitespaceIndex: number,
+  hasOpenBlockGroup: boolean,
+): boolean {
+  if (hasOpenBlockGroup) {
+    return true;
+  }
+  return nextSignificantIsBlockMention(segments, whitespaceIndex + 1);
+}
+
+/** Drop trailing newlines on text that immediately precedes a block chip stack. */
+export function trimTrailingNewlinesBeforeBlockMention(
+  content: string,
+  segments: MentionSegment[],
+  segmentIndex: number,
+): string {
+  if (!nextSignificantIsBlockMention(segments, segmentIndex + 1)) {
+    return content;
+  }
+  return content.replace(/\n+$/, "");
+}

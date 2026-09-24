@@ -230,16 +230,16 @@ function isCanonicalEntityRedirect(fromHref: string, toHref: string): boolean {
  * Escape returns to the list:
  * - `/tasks`, `/projects`, `/catalog`, `/spaces` (+ legacy `/knowledge`)
  * - `/contacts`, `/organizations` (CRM catalogs in main content)
+ * - `/communication` (channel list in main; channels in the side panel)
  * - `/journal/habits` (habit list; only bare `/journal` auto-lands on today)
  *
  * Keep in sync with `resolveAppHref` / page `replace: true` first-item effects
- * (`inbox`, `communication`, `letters`, `social`, `finance`, `settings`,
- * journal→today, project documents/letters indexes).
+ * (`inbox`, `letters`, `social`, `finance`, `settings`, journal→today, project
+ * documents/letters indexes).
  */
 const AUTO_LANDING_SECTION_ROOTS = [
   "/",
   "/inbox",
-  "/communication",
   "/social",
   "/journal",
   "/letters",

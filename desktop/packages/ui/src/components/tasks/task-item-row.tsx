@@ -12,6 +12,7 @@ import {
 import type { GroupedListPointerItemBind } from "../../list-nav/use-grouped-list-pointer-reorder.js";
 import { resolveInboxEmailIconColor } from "../../inbox/inbox-items.js";
 import { formatEmailDisplayId } from "../../email/email-display-id.js";
+import { EmailDirectionMark } from "../../email/email-direction.js";
 import { iconSvgColorStyle } from "../../entity/icon-color.js";
 import {
   formatMeetingDisplayId,
@@ -28,6 +29,7 @@ import {
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { stopFieldEvent } from "../../shared/stop-field-event.js";
+import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
@@ -109,12 +111,16 @@ export type TaskItemRowTask = {
   emailThreadId?: string | null;
   /** `Name (email@domain)` shown beside the subject on email rows. */
   emailPartyLabel?: string | null;
+  /** Incoming vs outgoing — party-line direction arrow. */
+  emailDirection?: "sent" | "received" | null;
   /** Our mailbox label for the ID-column slot on email rows. */
   emailMailboxLabel?: string | null;
   /** Avatar for the mailbox shown in the ID-column slot. */
   emailMailboxAvatarSrc?: string | null;
   emailNumber?: number | null;
   emailDisplayId?: string | null;
+  /** AgentMail unread — orange dot on the email status icon. */
+  emailUnread?: boolean;
   /** Meeting display id (`M-n`) when `listKind` is `"meeting"`. */
   meetingDisplayId?: string | null;
   /** Meeting schedule chip label when `listKind` is `"meeting"`. */
@@ -143,6 +149,11 @@ export type TaskItemRowProps = {
    * (e.g. Timetracking list). Default true.
    */
   showCheckbox?: boolean;
+  /**
+   * When true, show a relative age label on the far left
+   * (“1 day ago”, “2 weeks ago”, …) from `updatedAt`.
+   */
+  showRelativeAge?: boolean;
   /** Toggle multi-select; receives the originating event for shift-range later. */
   onToggleSelected?: (
     taskId: string,
@@ -233,6 +244,7 @@ function TaskItemRowComponent({
   selected = false,
   forceShowCheckbox = false,
   showCheckbox = true,
+  showRelativeAge = false,
   onToggleSelected,
   showDueMeta = true,
   dueDatePlacement = "trailing",
@@ -317,14 +329,45 @@ function TaskItemRowComponent({
   const iconBeforeId = chromeOrder === "timetracking";
   const statusOptions = TASK_ROW_STATUS_OPTIONS;
   const isNotificationTask = Boolean(task.notification);
+  const isSupportTask = Boolean(task.support);
+  const hasProject = Boolean(
+    task.projectKey?.trim() || task.projectName?.trim(),
+  );
+  const dueDateEpoch =
+    task.dueDate == null
+      ? null
+      : typeof task.dueDate === "number"
+        ? task.dueDate
+        : task.dueDate instanceof Date
+          ? task.dueDate.getTime()
+          : Date.parse(String(task.dueDate));
+  const hasDueDate =
+    dueDateEpoch != null && Number.isFinite(dueDateEpoch) && !Number.isNaN(dueDateEpoch);
+  const ageLabel = showRelativeAge
+    ? formatRelativeAgeLabel(task.updatedAt ?? null)
+    : "";
+  const ageTitle =
+    showRelativeAge && task.updatedAt != null
+      ? new Date(
+          typeof task.updatedAt === "number"
+            ? task.updatedAt
+            : task.updatedAt,
+        ).toLocaleString()
+      : undefined;
 
   const projectChip =
     showProject ? (
       projectOptions.length > 0 && onProjectChange && !isMeeting ? (
         <span
-          className={`task-item-row__project${
-            isNotificationTask ? " task-item-row__project--inline" : ""
-          }`}
+          className={[
+            "task-item-row__project",
+            isNotificationTask || isSupportTask
+              ? "task-item-row__project--inline"
+              : null,
+            !hasProject ? "task-item-row__project--hotkey-only" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
@@ -339,7 +382,9 @@ function TaskItemRowComponent({
             ariaLabel="Change project"
             taskPropertyDropdownId="project"
             className="task-item-row__dropdown"
-            panelAlign={isNotificationTask ? "start" : "end"}
+            panelAlign={
+              isNotificationTask || isSupportTask ? "start" : "end"
+            }
             panelWidth={280}
             renderTrigger={({ open, disabled, triggerId, onToggle }) => {
               const projectLabel = task.projectName ?? "No project";
@@ -348,31 +393,43 @@ function TaskItemRowComponent({
                   type="button"
                   id={triggerId}
                   className="task-item-row__project-trigger"
-                  title={projectLabel}
+                  title={hasProject ? projectLabel : "Assign project"}
                   tabIndex={-1}
                   disabled={disabled}
                   aria-haspopup="listbox"
                   aria-expanded={open}
-                  aria-label={`Change project: ${projectLabel}`}
+                  aria-label={
+                    hasProject
+                      ? `Change project: ${projectLabel}`
+                      : "Assign project"
+                  }
                   onMouseDown={stopFieldEvent}
                   onClick={(event) => {
                     stopFieldEvent(event);
                     onToggle();
                   }}
                 >
-                  {isNotificationTask ? null : <DefaultProjectIcon size={12} />}
-                  <span className="task-item-row__project-name">
-                    {projectLabel}
-                  </span>
+                  {hasProject ? (
+                    <>
+                      {isNotificationTask ? null : (
+                        <DefaultProjectIcon size={12} />
+                      )}
+                      <span className="task-item-row__project-name">
+                        {projectLabel}
+                      </span>
+                    </>
+                  ) : null}
                 </button>
               );
             }}
           />
         </span>
-      ) : task.projectName ? (
+      ) : hasProject && task.projectName ? (
         <span
           className={`task-item-row__project${
-            isNotificationTask ? " task-item-row__project--inline" : ""
+            isNotificationTask || isSupportTask
+              ? " task-item-row__project--inline"
+              : ""
           }`}
         >
           {isNotificationTask ? null : <DefaultProjectIcon size={12} />}
@@ -530,6 +587,12 @@ function TaskItemRowComponent({
           </span>
         ) : null}
 
+        {ageLabel ? (
+          <span className="task-item-row__age" title={ageTitle}>
+            {ageLabel}
+          </span>
+        ) : null}
+
         {leadingDue && showDueMeta ? (
           <span
             className="task-item-row__priority task-item-row__due-leading"
@@ -622,7 +685,7 @@ function TaskItemRowComponent({
                       type="button"
                       id={triggerId}
                       className="task-item-row__icon-trigger"
-                      title={isEmail ? "Email" : getTaskStatusLabel(status)}
+                      title={isEmail ? "E-mail" : getTaskStatusLabel(status)}
                       tabIndex={-1}
                       disabled={disabled}
                       aria-haspopup="listbox"
@@ -639,6 +702,7 @@ function TaskItemRowComponent({
                           kind="email"
                           size={14}
                           style={emailIconStyle}
+                          unread={task.emailUnread === true}
                         />
                       ) : (
                         <TaskStatusIcon
@@ -676,7 +740,7 @@ function TaskItemRowComponent({
           <span className="task-item-row__status-trailing">{titleTrailing}</span>
         ) : null}
 
-        {isNotificationTask ? projectChip : null}
+        {isNotificationTask && !isSupportTask ? projectChip : null}
 
         <span
           className={`task-item-row__title-wrap${
@@ -694,9 +758,19 @@ function TaskItemRowComponent({
           </span>
           {isEmail && task.emailPartyLabel ? (
             <span className="task-item-row__email-party">
-              {task.emailPartyLabel}
+              {task.emailDirection ? (
+                <EmailDirectionMark
+                  direction={task.emailDirection}
+                  size={13}
+                  className="task-item-row__email-direction"
+                />
+              ) : null}
+              <span className="task-item-row__email-party-text">
+                {task.emailPartyLabel}
+              </span>
             </span>
           ) : null}
+          {isSupportTask ? projectChip : null}
           {titleTrailing &&
           titleTrailingAlign !== "before-status" &&
           titleTrailingAlign !== "after-status" ? (
@@ -722,7 +796,12 @@ function TaskItemRowComponent({
               ) : null
             ) : (
               <span
-                className="task-item-row__due"
+                className={[
+                  "task-item-row__due",
+                  !hasDueDate ? "task-item-row__due--hotkey-only" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onMouseDown={stopFieldEvent}
                 onClick={stopFieldEvent}
               >
@@ -736,7 +815,7 @@ function TaskItemRowComponent({
               </span>
             )
           ) : null}
-          {isNotificationTask ? null : projectChip}
+          {isNotificationTask || isSupportTask ? null : projectChip}
           {assigneeChip}
         </span>
       </div>

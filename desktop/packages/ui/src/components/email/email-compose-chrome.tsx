@@ -5,8 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PencilIcon, XIcon } from "@primer/octicons-react";
 
 import {
-  emailMailboxFromDisplay,
-  emailMailboxLabel,
+  emailMailboxFromParts,
   stripEmailDraftShell,
   type EmailMailbox,
 } from "../../email/email.js";
@@ -99,6 +98,9 @@ export function EmailComposeChrome({
     editing;
   const selectedMailbox =
     mailboxes.find((mailbox) => mailbox.inboxId === inboxId) ?? null;
+  const selectedMailboxParts = selectedMailbox
+    ? emailMailboxFromParts(selectedMailbox)
+    : null;
   const inboxOptions = useMemo(
     () => buildEmailMailboxDropdownOptions(mailboxes),
     [mailboxes],
@@ -147,9 +149,10 @@ export function EmailComposeChrome({
             {mailboxes.length === 0 ? (
               "—"
             ) : fromLocked ? (
-              selectedMailbox ? (
+              selectedMailboxParts ? (
                 <PropertyInlineChip
-                  label={emailMailboxFromDisplay(selectedMailbox)}
+                  label={selectedMailboxParts.primary}
+                  secondaryLabel={selectedMailboxParts.secondary}
                   ariaLabel="From"
                 />
               ) : (
@@ -164,8 +167,8 @@ export function EmailComposeChrome({
                 searchPlaceholder="Choose inbox…"
                 ariaLabel="From inbox"
                 fallbackLabel={
-                  selectedMailbox
-                    ? emailMailboxLabel(selectedMailbox)
+                  selectedMailboxParts
+                    ? selectedMailboxParts.title
                     : "Choose inbox"
                 }
                 mutedFallback={!selectedMailbox}

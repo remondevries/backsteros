@@ -477,8 +477,13 @@ export function ListKeyboardNavigationProvider({
           pendingActivateHighlightItemIdRef.current = null;
           pendingActivateLandAtStartRef.current = false;
           pendingActivateFocusContainerOnlyRef.current = false;
+          // landAtStart: prefer the open/selected row, then first — never force
+          // itemIds[0] over an already-selected detail (email list highlight bug).
           const highlightItemId = landAtStart
-            ? (registration.getItemIds()[0] ?? null)
+            ? (options.highlightItemId ??
+              registration.getSelectedId() ??
+              registration.getItemIds()[0] ??
+              null)
             : options.highlightItemId;
           activateListKeyboardRegistration(
             registrationsRef.current,
@@ -490,9 +495,8 @@ export function ListKeyboardNavigationProvider({
           pendingActivateZoneRef.current = zone;
           pendingActivateLandAtStartRef.current = landAtStart;
           pendingActivateFocusContainerOnlyRef.current = focusContainerOnly;
-          pendingActivateHighlightItemIdRef.current = landAtStart
-            ? null
-            : (options.highlightItemId ?? null);
+          pendingActivateHighlightItemIdRef.current =
+            options.highlightItemId ?? null;
         }
       } else {
         pendingActivateZoneRef.current = null;
@@ -633,7 +637,10 @@ export function ListKeyboardNavigationProvider({
           );
           if (pendingRegistration) {
             const highlightItemId = landAtStart
-              ? (pendingRegistration.getItemIds()[0] ?? null)
+              ? (pendingHighlightItemId ??
+                pendingRegistration.getSelectedId() ??
+                pendingRegistration.getItemIds()[0] ??
+                null)
               : pendingHighlightItemId;
             activateListKeyboardRegistration(
               registrationsRef.current,

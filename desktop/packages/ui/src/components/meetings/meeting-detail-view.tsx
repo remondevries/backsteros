@@ -214,6 +214,12 @@ export type MeetingDetailViewProps = {
    * Defaults to on for the narrow panel so calendar mode digits yield.
    */
   contentTabShortcutsEnabled?: boolean;
+  /**
+   * Controlled content tab. When set with `onContentTabChange`, survives
+   * remounts (e.g. calendar panel ↔ fullscreen page overlays).
+   */
+  contentTab?: MeetingContentTab;
+  onContentTabChange?: (tab: MeetingContentTab) => void;
   /** Panel overlay — close control beside the title. */
   onClose?: () => void;
   /** Expand narrow calendar panel to full-width page layout. */
@@ -260,12 +266,17 @@ export function MeetingDetailView({
   layout = "panel",
   propertyTriggerVariant,
   contentTabShortcutsEnabled,
+  contentTab,
+  onContentTabChange,
   onClose,
   onExpand,
   onCollapse,
   headerMoreAction: _headerMoreAction,
 }: MeetingDetailViewProps) {
-  const [activeTab, setActiveTab] = useState<MeetingContentTab>("summary");
+  const [uncontrolledTab, setUncontrolledTab] =
+    useState<MeetingContentTab>("summary");
+  const activeTab = contentTab ?? uncontrolledTab;
+  const setActiveTab = onContentTabChange ?? setUncontrolledTab;
   const [dockToggle, setDockToggle] = useState<ReactNode>(null);
   const [pendingSummaryEdit, setPendingSummaryEdit] = useState(false);
   const tabShortcutsEnabled =

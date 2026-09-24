@@ -1,33 +1,54 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
+  COMMUNICATION_LIST_FILTER_OPTIONS,
+  CommunicationOverviewView,
+  FinanceSyncIcon,
   TaskDetailView,
   buildAssigneeDropdownOptions,
   buildInboxTaskListItem,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  buildTaskDueDatePatch,
   buildTaskRelatedDropdownOptions,
+  emailMailboxLabel,
   encodeTaskSlug,
+  filterCommunicationListItems,
   findCommunicationItemBySlugOrId,
-  getCommunicationHref,
-  getFirstCommunicationItemHref,
+  getCommunicationChannelHref,
   getInboxItemDisplayId,
   getInboxTaskRouteSlugForTask,
+  inboxListItemToTaskItemRowTask,
+  parseCommunicationChannelFromSearch,
+  parseCommunicationInboxIdFromSearch,
+  parseCommunicationStatusFromSearch,
   resolveSupportParties,
-  routeCopy,
+  type InboxEmailListItem,
+  type InboxListItem,
   type InboxTaskListItem,
+  type TaskStatus,
+  getTaskStatusLabel,
 } from "@backsteros/ui";
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
+import { useDesktopApi } from "../lib/api-context";
+import {
+  deleteEmailMessage,
+} from "../lib/delete-email-message";
+import {
+  prefetchEmailDraftDetail,
+  prefetchEmailMessageDetail,
+} from "../lib/email-message-detail-cache";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { patchEmailTaskListItem } from "../lib/email-list-tasks";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
@@ -46,10 +67,12 @@ import {
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { parseTaskLinks } from "../lib/workspace/row-mappers";
+import { RouterLink } from "../shell/app-shell-links";
 
 export function CommunicationPage() {
-  const active = useKeepAliveActive();
-  if (!active) return null;
+  // Stay mounted while the keep-alive pane is frozen. Returning null here
+  // unmounted the list (and wiped its cache) so returning from email/spam
+  // often painted a blank Everything pane until a full remount/refetch.
   return <CommunicationPageBody />;
 }
 
@@ -60,6 +83,7 @@ function CommunicationPageBody() {
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
   const workspace = useDesktopWorkspaceData();
+  const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const communicationItems = useCommunicationListItems();
 
@@ -129,39 +153,120 @@ function CommunicationPageBody() {
     [supportTask, workspace.allTasks],
   );
 
-  useEffect(() => {
-    if (!keepAliveActive) return;
-    if (routeItemId) return;
-    if (location.pathname.startsWith("/email/")) return;
-    const firstHref = getFirstCommunicationItemHref(communicationItems);
-    if (firstHref) {
-      navigateToHref(navigate, firstHref, { replace: true });
-    }
-  }, [
-    communicationItems,
-    keepAliveActive,
-    location.pathname,
-    navigate,
-    routeItemId,
-  ]);
+  const channel = useMemo(
+    () => parseCommunicationChannelFromSearch(location.searchStr),
+    [location.searchStr],
+  );
+  const inboxId = useMemo(
+    () => parseCommunicationInboxIdFromSearch(location.searchStr),
+    [location.searchStr],
+  );
+  const statusFilter = useMemo(
+    () => parseCommunicationStatusFromSearch(location.searchStr),
+    [location.searchStr],
+  );
+  const activeMailbox = useMemo(
+    () =>
+      inboxId
+        ? (agentMail.mailboxes.find((mailbox) => mailbox.inboxId === inboxId) ??
+          null)
+        : null,
+    [agentMail.mailboxes, inboxId],
+  );
+  const inboxLabel = activeMailbox
+    ? activeMailbox.email.trim() || emailMailboxLabel(activeMailbox)
+    : null;
+
+  const filteredItems = useMemo(
+    () =>
+      filterCommunicationListItems(
+        communicationItems,
+        channel,
+        inboxId,
+        statusFilter,
+      ),
+    [channel, communicationItems, inboxId, statusFilter],
+  );
+
+  const listLoading =
+    (agentMail.messagesLoading || agentMail.loading) &&
+    filteredItems.length === 0;
+
+  const statusLabel = statusFilter ? getTaskStatusLabel(statusFilter) : null;
+  const channelLabel =
+    inboxLabel && statusLabel
+      ? `${inboxLabel} · ${statusLabel}`
+      : (inboxLabel ??
+        COMMUNICATION_LIST_FILTER_OPTIONS.find(
+          (option) => option.value === channel,
+        )?.label ??
+        "Everything");
 
   const displayId = supportTask ? getInboxItemDisplayId(supportTask) : null;
-  useDesktopSectionBreadcrumb(
-    supportTask
-      ? [
-          {
-            label: routeCopy.communication.title,
-            href: getCommunicationHref(),
-          },
-          {
-            label: displayId
-              ? `${displayId} ${supportTask.title}`
-              : supportTask.title,
-          },
-        ]
-      : [{ label: routeCopy.communication.title }],
-    { enabled: keepAliveActive },
+  // Refresh belongs on Email / a specific mailbox — not Everything or Support.
+  const showEmailBoxRefresh = channel === "email" || Boolean(inboxId);
+  const messagesBusy = agentMail.messagesLoading || agentMail.loading;
+  const breadcrumbItems = useMemo(
+    () =>
+      supportTask
+        ? [
+            {
+              label: channelLabel,
+              href: getCommunicationChannelHref(channel, {
+                inboxId,
+                status: statusFilter,
+              }),
+            },
+            {
+              label: displayId
+                ? `${displayId} ${supportTask.title}`
+                : supportTask.title,
+            },
+          ]
+        : [{ label: channelLabel }],
+    [
+      channel,
+      channelLabel,
+      displayId,
+      inboxId,
+      statusFilter,
+      supportTask,
+    ],
   );
+  // Must be referentially stable — useRegisterChromeHeader setStates on every
+  // new header node, and inline JSX here caused an infinite update loop (ANR).
+  const reloadMail = agentMail.reload;
+  const breadcrumbActions = useMemo(
+    () =>
+      showEmailBoxRefresh ? (
+        <div className="catalog-chrome-actions">
+          <button
+            type="button"
+            className="catalog-chrome-actions__icon-button"
+            aria-label="Refresh mailbox"
+            title="Refresh mailbox"
+            disabled={messagesBusy}
+            onClick={() => {
+              void reloadMail();
+            }}
+          >
+            <FinanceSyncIcon
+              size={14}
+              className={
+                messagesBusy
+                  ? "catalog-chrome-actions__sync-icon is-spinning"
+                  : "catalog-chrome-actions__sync-icon"
+              }
+            />
+          </button>
+        </div>
+      ) : null,
+    [messagesBusy, reloadMail, showEmailBoxRefresh],
+  );
+  useDesktopSectionBreadcrumb(breadcrumbItems, {
+    enabled: keepAliveActive,
+    actions: breadcrumbActions,
+  });
 
   const { description: fetchedDescription, rememberDescription } =
     useDesktopTaskDescription(supportTask?.id, {
@@ -196,7 +301,8 @@ function CommunicationPageBody() {
     [contactAvatarSrc, workspace.contacts],
   );
   const projectOptions = useMemo(
-    () => buildProjectDropdownOptions(workspace.projects),
+    () =>
+      buildProjectDropdownOptions(workspace.projects, { includeNone: true }),
     [workspace.projects],
   );
   const relatedOptions = useMemo(
@@ -263,16 +369,126 @@ function CommunicationPageBody() {
     [supportTask, workspace],
   );
 
+  const findListItemTaskRow = useCallback(
+    (itemId: string) => {
+      const item = communicationItems.find((entry) => entry.id === itemId);
+      return item ? inboxListItemToTaskItemRowTask(item) : null;
+    },
+    [communicationItems],
+  );
+
+  const handleStatusChange = useCallback(
+    (itemId: string, status: TaskStatus) => {
+      const task = findListItemTaskRow(itemId);
+      if (task?.listKind === "email") {
+        void patchEmailTaskListItem(client, task, { status });
+        return;
+      }
+      void workspace.patchTask(itemId, { status });
+    },
+    [client, findListItemTaskRow, workspace],
+  );
+
+  const handlePriorityChange = useCallback(
+    (itemId: string, priority: number) => {
+      const task = findListItemTaskRow(itemId);
+      if (task?.listKind === "email") {
+        void patchEmailTaskListItem(client, task, { priority });
+        return;
+      }
+      void workspace.patchTask(itemId, { priority });
+    },
+    [client, findListItemTaskRow, workspace],
+  );
+
+  const handleDueDateChange = useCallback(
+    (itemId: string, dueDate: Date | null) => {
+      const task = findListItemTaskRow(itemId);
+      if (task?.listKind === "email") {
+        void patchEmailTaskListItem(client, task, {
+          dueDate: dueDate ? dueDate.toISOString() : null,
+        });
+        return;
+      }
+      void workspace.patchTask(itemId, buildTaskDueDatePatch(dueDate));
+    },
+    [client, findListItemTaskRow, workspace],
+  );
+
+  const handleProjectChange = useCallback(
+    (itemId: string, projectKey: string | null) => {
+      const project = projectKey
+        ? (workspace.projects.find((entry) => entry.key === projectKey) ?? null)
+        : null;
+      const task = findListItemTaskRow(itemId);
+      if (task?.listKind === "email") {
+        void patchEmailTaskListItem(
+          client,
+          task,
+          { projectId: project?.id ?? null },
+          {
+            projectName: project?.name ?? null,
+            projectKey: project?.key ?? null,
+          },
+        );
+        return;
+      }
+      void workspace.patchTask(itemId, {
+        projectId: project?.id ?? null,
+        projectKey: project?.key ?? null,
+      });
+    },
+    [client, findListItemTaskRow, workspace],
+  );
+
+  const handleDeleteEmail = useCallback(
+    async (item: InboxEmailListItem) =>
+      deleteEmailMessage(client, {
+        inboxId: item.inboxId,
+        messageId: item.messageId,
+        threadId: item.threadId,
+      }),
+    [client],
+  );
+
+  const handleHighlightChange = useCallback(
+    (item: InboxListItem | null) => {
+      if (!item || item.kind !== "email") return;
+      if (item.draftId?.trim()) {
+        prefetchEmailDraftDetail(client, item.inboxId, item.draftId);
+        return;
+      }
+      prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
+    },
+    [client],
+  );
+
   if (location.pathname.startsWith("/email/")) {
     return null;
   }
 
   if (!supportTask) {
     return (
-      <div className="app-empty-state">
-        <p>Select a support ticket or email from Communication.</p>
-        <Link to="/communication">Back to Communication</Link>
-      </div>
+      <CommunicationOverviewView
+        items={filteredItems}
+        channel={channel}
+        title={channelLabel}
+        inboxLabel={inboxLabel}
+        inboxId={inboxId}
+        status={statusFilter}
+        Link={RouterLink}
+        loading={listLoading}
+        listKeyboardEnabled={keepAliveActive}
+        onNavigate={(href) => navigateToHref(navigate, href)}
+        assigneeOptions={assigneeOptions}
+        projectOptions={projectOptions}
+        onStatusChange={handleStatusChange}
+        onPriorityChange={handlePriorityChange}
+        onDueDateChange={handleDueDateChange}
+        onProjectChange={handleProjectChange}
+        onDeleteEmail={handleDeleteEmail}
+        onHighlightChange={handleHighlightChange}
+      />
     );
   }
 
@@ -283,6 +499,7 @@ function CommunicationPageBody() {
     >
       <TaskDetailView
         sectionLabel="Communication"
+        copyIdShortcutEnabled={keepAliveActive}
         task={{
           id: supportTask.id,
           title: supportTask.title,

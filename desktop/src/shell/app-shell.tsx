@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AppToastHost } from "@backsteros/ui";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { AppShellOverlays } from "./app-shell-overlays";
@@ -107,6 +108,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       >
         {children}
       </ShellChrome>
+      <AppToastHost />
       <AppShellOverlays
         composeOpen={composeOpen}
         onComposeOpenChange={(open) => {

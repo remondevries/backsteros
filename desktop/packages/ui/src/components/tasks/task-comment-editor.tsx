@@ -152,10 +152,9 @@ export function TaskCommentEditor({
       focus: () => {
         const view = cmRef.current?.view ?? editorView;
         if (!view) return;
-        view.focus();
-        if (!view.hasFocus) {
-          view.contentDOM.focus({ preventScroll: true });
-        }
+        // Always preventScroll — view.focus() jumps ancestor scrollports
+        // (email thread when the dock autofocuses after mode change).
+        view.contentDOM.focus({ preventScroll: true });
       },
       blur: () => {
         const view = cmRef.current?.view ?? editorView;
@@ -241,7 +240,7 @@ export function TaskCommentEditor({
             setEditorView(view);
             if (autoFocus) {
               requestAnimationFrame(() => {
-                view.focus();
+                view.contentDOM.focus({ preventScroll: true });
               });
             }
           }}

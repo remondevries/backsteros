@@ -24,10 +24,10 @@ import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
+import { ProjectStatusWorkingPulse } from "./project-status-working-pulse.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
-import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 
 export type ProjectOverviewRowProject = {
   id: string;
@@ -251,7 +251,7 @@ export function ProjectOverviewRow({
                   }}
                 >
                   {agentWorking ? (
-                    <TaskStatusWorkingPulse
+                    <ProjectStatusWorkingPulse
                       size={14}
                       aria-label={`${project.name} — agent working`}
                     />

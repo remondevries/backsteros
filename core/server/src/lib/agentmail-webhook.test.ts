@@ -57,7 +57,7 @@ describe("agentmail-webhook", () => {
     assert.equal(result.published, false);
   });
 
-  it("publishes for selected inbox message.received", () => {
+  it("publishes for any inbox on message.received", () => {
     const secret = "whsec_testsecretvaluetestsecretvalue12";
     const payload = {
       type: "event",
@@ -100,7 +100,7 @@ describe("agentmail-webhook", () => {
     assert.deepEqual(published, [{ inboxId: "inbox_1", messageId: "msg_1" }]);
   });
 
-  it("does not publish for unselected inboxes", () => {
+  it("publishes for inboxes not listed on the stored secret row", () => {
     const secret = "whsec_testsecretvaluetestsecretvalue12";
     const payload = {
       event_type: "message.received",
@@ -136,8 +136,8 @@ describe("agentmail-webhook", () => {
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.published, false);
-    assert.equal(count, 0);
+    assert.equal(result.published, true);
+    assert.equal(count, 1);
   });
 
   it("dedupes repeated delivery ids", () => {

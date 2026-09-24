@@ -61,6 +61,7 @@ export function useEmailThreadView({
   const followEndCleanupRef = useRef<(() => void) | null>(null);
   const previousDraftFingerprintRef = useRef("");
   const previousThreadMessageCountRef = useRef(0);
+  const wasDraftWorkingRef = useRef(false);
 
   useEffect(() => {
     const el = propertiesRailRef.current;
@@ -81,6 +82,7 @@ export function useEmailThreadView({
     wasReplyChromeVisibleRef.current = false;
     previousDraftFingerprintRef.current = "";
     previousThreadMessageCountRef.current = 0;
+    wasDraftWorkingRef.current = false;
     followEndCleanupRef.current?.();
     followEndCleanupRef.current = null;
     setFreshCommentIds(new Set());
@@ -112,11 +114,12 @@ export function useEmailThreadView({
 
   const replyChromeVisible =
     replyComposeOpen || Boolean(message?.conceptDraft);
+  // Identity only — do not include updatedAt. Saving on Preview/Edit toggle
+  // bumps updatedAt and must not yank the thread scroll to the end.
   const conceptDraftKey =
     message?.conceptDraft?.draftId?.trim() ||
     message?.conceptDraftId?.trim() ||
     "";
-  const conceptDraftUpdatedAt = message?.conceptDraft?.updatedAt ?? "";
   const threadMessageCount =
     message?.threadMessages && message.threadMessages.length > 0
       ? message.threadMessages.length
@@ -132,9 +135,8 @@ export function useEmailThreadView({
       replyChromeVisible && !wasReplyChromeVisibleRef.current;
     wasReplyChromeVisibleRef.current = replyChromeVisible;
 
-    // Fingerprint server draft identity — not local body length (typing).
-    const draftFingerprint = `${conceptDraftKey}|${conceptDraftUpdatedAt}`;
-    const draftContentChanged =
+    const draftFingerprint = conceptDraftKey;
+    const draftIdentityChanged =
       replyChromeVisible &&
       draftFingerprint !== previousDraftFingerprintRef.current;
     previousDraftFingerprintRef.current = draftFingerprint;
@@ -145,6 +147,11 @@ export function useEmailThreadView({
       threadMessageCount > previousThreadCount;
     previousThreadMessageCountRef.current = threadMessageCount;
 
+    const wasDraftWorking = wasDraftWorkingRef.current;
+    wasDraftWorkingRef.current = draftStageWorking || draftAgentWorking;
+    const draftWorkingJustFinished =
+      wasDraftWorking && !draftStageWorking && !draftAgentWorking;
+
     const followEnd =
       !didInitialThreadScrollRef.current ||
       commentAgentWorking ||
@@ -152,7 +159,8 @@ export function useEmailThreadView({
       replyChromeJustShown ||
       draftStageWorking ||
       draftAgentWorking ||
-      draftContentChanged ||
+      draftWorkingJustFinished ||
+      draftIdentityChanged ||
       inboundMailArrived;
 
     if (!followEnd) return;
@@ -205,7 +213,6 @@ export function useEmailThreadView({
   }, [
     commentAgentWorking,
     conceptDraftKey,
-    conceptDraftUpdatedAt,
     draftAgentWorking,
     draftStageWorking,
     freshCommentIds,

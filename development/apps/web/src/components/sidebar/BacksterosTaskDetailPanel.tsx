@@ -609,6 +609,28 @@ export function BacksterosTaskDetailPanel() {
       {titleLabel}
     </span>
   );
+  const trackedTimeField =
+    state.status === "ready" ? (
+      <div className="shrink-0 no-drag">
+        <BacksterosTrackedTimeField
+          timerKey={state.task.id}
+          trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
+          trackedMinutes={state.task.trackedMinutes ?? null}
+          onTrackedDurationSecondsChange={(seconds) => {
+            const trackedMinutes =
+              seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+            void applyPatch(
+              {
+                trackedDurationSeconds: seconds,
+                trackedMinutes,
+              },
+              "Could not update tracked time",
+            );
+          }}
+          onTimerSessionChange={postTimerActivity}
+        />
+      </div>
+    ) : null;
 
   return (
     <aside
@@ -643,12 +665,18 @@ export function BacksterosTaskDetailPanel() {
               {navCollapsed ? (
                 <>
                   {taskIdLabel}
-                  <div className="ml-auto flex shrink-0">{hideTaskButton}</div>
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {trackedTimeField}
+                    {hideTaskButton}
+                  </div>
                 </>
               ) : (
                 <>
                   {hideTaskButton}
                   {taskIdLabel}
+                  {trackedTimeField ? (
+                    <div className="ml-auto flex shrink-0 items-center">{trackedTimeField}</div>
+                  ) : null}
                 </>
               )}
             </div>
@@ -741,24 +769,6 @@ export function BacksterosTaskDetailPanel() {
                       }}
                     />
 
-                    <BacksterosRelatedPropertyChips
-                      contactIds={state.task.relatedContactIds}
-                      organizationIds={state.task.relatedOrganizationIds}
-                      contacts={contacts}
-                      organizations={organizations}
-                      contactAvatarSrcById={avatarSrcById}
-                      organizationAvatarSrcById={organizationAvatarSrcById}
-                      onChange={(related) => {
-                        void applyPatch(
-                          {
-                            relatedContactIds: related.contactIds,
-                            relatedOrganizationIds: related.organizationIds,
-                          },
-                          "Could not update related",
-                        );
-                      }}
-                    />
-
                     <BacksterosSearchablePropertyMenu
                       label={project?.name ?? "No project"}
                       muted={!project}
@@ -783,22 +793,22 @@ export function BacksterosTaskDetailPanel() {
                       }}
                     />
 
-                    <BacksterosTrackedTimeField
-                      timerKey={state.task.id}
-                      trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
-                      trackedMinutes={state.task.trackedMinutes ?? null}
-                      onTrackedDurationSecondsChange={(seconds) => {
-                        const trackedMinutes =
-                          seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+                    <BacksterosRelatedPropertyChips
+                      contactIds={state.task.relatedContactIds}
+                      organizationIds={state.task.relatedOrganizationIds}
+                      contacts={contacts}
+                      organizations={organizations}
+                      contactAvatarSrcById={avatarSrcById}
+                      organizationAvatarSrcById={organizationAvatarSrcById}
+                      onChange={(related) => {
                         void applyPatch(
                           {
-                            trackedDurationSeconds: seconds,
-                            trackedMinutes,
+                            relatedContactIds: related.contactIds,
+                            relatedOrganizationIds: related.organizationIds,
                           },
-                          "Could not update tracked time",
+                          "Could not update related",
                         );
                       }}
-                      onTimerSessionChange={postTimerActivity}
                     />
                   </div>
 

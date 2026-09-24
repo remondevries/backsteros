@@ -37,6 +37,13 @@ import { loadAppDeploySettings, triggerAppDeploy, updateAppDeploySettings } from
 import { loadAppEnv, updateAppEnv } from "./env.ts";
 import { loadAppNotifications, updateAppNotifications } from "./notifications.ts";
 import { loadAppProjectLink, updateAppProjectLink } from "./app-project-link.ts";
+import {
+  listProjectSecrets,
+  projectSecretsPullHint,
+  pushProjectSecretToInfisical,
+  readProjectSecretFile,
+  writeProjectSecretFile,
+} from "./project-secrets.ts";
 import { listGithubRepoRefs } from "./github-refs.ts";
 import {
   deleteWordpressComponent,
@@ -87,6 +94,8 @@ const HETZNER_APP_DEPLOY_HOOK_PATH = "/api/hetzner/app-deploy-hook";
 const HETZNER_APP_ENV_PATH = "/api/hetzner/app-env";
 const HETZNER_APP_NOTIFICATIONS_PATH = "/api/hetzner/app-notifications";
 const HETZNER_APP_PROJECT_LINK_PATH = "/api/hetzner/app-project-link";
+/** Local ~/.config/secrets/environments/<projectId> — never cloud-core / PowerSync. */
+const HETZNER_PROJECT_SECRETS_PATH = "/api/hetzner/project-secrets";
 const HETZNER_GITHUB_REFS_PATH = "/api/hetzner/github-refs";
 const HETZNER_APP_WP_COMPONENTS_PATH = "/api/hetzner/app-wp-components";
 const HETZNER_WORDPRESS_DEPLOY_WEBHOOK_PATH = "/api/hetzner/wordpress-deploy-webhook";
@@ -1011,6 +1020,94 @@ export const hetznerUpdateAppProjectLinkRouteLayer = HttpRouter.add(
   }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
 );
 
+/**
+ * Local project secrets (loopback host only). Bytes stay on disk under
+ * ~/.config/secrets/environments/<projectId>/ — never forwarded to BacksterOS cloud.
+ */
+export const hetznerListProjectSecretsRouteLayer = HttpRouter.add(
+  "GET",
+  HETZNER_PROJECT_SECRETS_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const projectId = url.value.searchParams.get("projectId")?.trim() ?? "";
+    if (!projectId) return jsonError("projectId is required", 400);
+    const fileName = url.value.searchParams.get("fileName")?.trim() || ".env";
+    const withContent = url.value.searchParams.get("content") !== "0";
+
+    const payload = yield* Effect.tryPromise({
+      try: () =>
+        withContent
+          ? readProjectSecretFile(projectId, fileName)
+          : Promise.resolve(listProjectSecrets(projectId)),
+      catch: (cause) => cause,
+    });
+    return HttpServerResponse.jsonUnsafe({
+      ok: true,
+      ...payload,
+      pullHint: projectSecretsPullHint("infisical" in payload ? (payload.infisical ?? null) : null),
+    });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
+export const hetznerUpdateProjectSecretsRouteLayer = HttpRouter.add(
+  "POST",
+  HETZNER_PROJECT_SECRETS_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    if (!bodyJson || typeof bodyJson !== "object") {
+      return jsonError("Expected JSON body", 400);
+    }
+    const body = bodyJson as Record<string, unknown>;
+    const projectId = typeof body.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) return jsonError("projectId is required", 400);
+    const action = typeof body.action === "string" ? body.action.trim() : "save";
+    const fileName =
+      typeof body.fileName === "string" && body.fileName.trim() ? body.fileName.trim() : ".env";
+
+    if (action === "push") {
+      const push = yield* Effect.tryPromise({
+        try: () => pushProjectSecretToInfisical({ projectId, fileName }),
+        catch: (cause) => cause,
+      });
+      const folder = listProjectSecrets(projectId);
+      return HttpServerResponse.jsonUnsafe({
+        ok: push.ok,
+        ...folder,
+        fileName: push.fileName,
+        push,
+        pullHint: projectSecretsPullHint(folder.infisical),
+        ...(push.ok ? {} : { error: push.message }),
+      });
+    }
+
+    if (action === "list" || action === "ensure") {
+      const folder = listProjectSecrets(projectId);
+      return HttpServerResponse.jsonUnsafe({
+        ok: true,
+        ...folder,
+        pullHint: projectSecretsPullHint(folder.infisical),
+      });
+    }
+
+    // Default: save local file (never to cloud-core).
+    const content = typeof body.content === "string" ? body.content : "";
+    const written = yield* Effect.tryPromise({
+      try: () => writeProjectSecretFile({ projectId, fileName, content }),
+      catch: (cause) => cause,
+    });
+    return HttpServerResponse.jsonUnsafe({
+      ok: true,
+      ...written,
+      pullHint: projectSecretsPullHint(written.infisical),
+    });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
 export const hetznerGithubRefsRouteLayer = HttpRouter.add(
   "GET",
   HETZNER_GITHUB_REFS_PATH,
@@ -1883,6 +1980,8 @@ export const hetznerRouteLayer = Layer.mergeAll(
   hetznerUpdateAppNotificationsRouteLayer,
   hetznerListAppProjectLinkRouteLayer,
   hetznerUpdateAppProjectLinkRouteLayer,
+  hetznerListProjectSecretsRouteLayer,
+  hetznerUpdateProjectSecretsRouteLayer,
   hetznerGithubRefsRouteLayer,
   hetznerListWordpressComponentsRouteLayer,
   hetznerMutateWordpressComponentsRouteLayer,

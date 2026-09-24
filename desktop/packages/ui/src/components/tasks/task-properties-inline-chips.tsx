@@ -2,8 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
-
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import {
@@ -12,7 +10,6 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../../tasks/task-status.js";
-import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -29,7 +26,6 @@ import {
   encodeTaskRelatedValues,
   type TaskRelatedSelection,
 } from "../../tasks/task-related-entities.js";
-import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskLabelIcon } from "./task-label-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
@@ -56,12 +52,6 @@ export type TaskPropertiesInlineChipsProps = {
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
-  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
-  onTimerSessionChange?: (
-    action: "start" | "pause",
-    seconds?: number | null,
-  ) => void;
-  timerSession?: TrackedTimerSessionMeta | null;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -127,9 +117,6 @@ export function TaskPropertiesInlineChips({
   projectOptions = [],
   onCreateAssigneeFromQuery,
   onCreateRelatedContactFromQuery,
-  onTrackedDurationSecondsChange,
-  onTimerSessionChange,
-  timerSession = null,
 }: TaskPropertiesInlineChipsProps) {
   const disabled = task == null;
   const status = migrateLegacyTaskStatus(task?.status ?? "triage");
@@ -241,26 +228,6 @@ export function TaskPropertiesInlineChips({
             onClick={() => onFieldActivate?.("assignee")}
           />
         )}
-        {task?.support ? null : (
-          <TaskRelatedChips
-            values={relatedValues}
-            options={relatedOptions}
-            onChange={
-              canEditRelated
-                ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
-                : undefined
-            }
-            disabled={disabled}
-            emptyLabel="Related"
-            searchPlaceholder="Add related…"
-            searchShortcutLabel="R"
-            ariaLabel="Related"
-            taskPropertyDropdownId="related"
-            onCreateFromQuery={onCreateRelatedContactFromQuery}
-            variant="inline"
-            onActivate={() => onFieldActivate?.("related")}
-          />
-        )}
         {onLabelChange ? (
           <TaskRelatedChips
             values={task?.labelIds ?? []}
@@ -304,21 +271,26 @@ export function TaskPropertiesInlineChips({
             onClick={() => onFieldActivate?.("project")}
           />
         )}
-        <div className="task-properties-inline__tracked-time">
-          <TrackedTimeField
-            variant="pill"
-            trackedDurationSeconds={task?.trackedDurationSeconds ?? null}
-            trackedMinutes={task?.trackedMinutes ?? null}
-            scheduleMinutes={trackedMinutesFromTaskSchedule(
-              toDate(task?.dueDate),
-              toDate(task?.dueEndDate),
-            )}
+        {task?.support ? null : (
+          <TaskRelatedChips
+            values={relatedValues}
+            options={relatedOptions}
+            onChange={
+              canEditRelated
+                ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+                : undefined
+            }
             disabled={disabled}
-            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-            onTimerSessionChange={onTimerSessionChange}
-            timerSession={timerSession}
+            emptyLabel="Related"
+            searchPlaceholder="Add related…"
+            searchShortcutLabel="R"
+            ariaLabel="Related"
+            taskPropertyDropdownId="related"
+            onCreateFromQuery={onCreateRelatedContactFromQuery}
+            variant="inline"
+            onActivate={() => onFieldActivate?.("related")}
           />
-        </div>
+        )}
       </div>
     </div>
   );

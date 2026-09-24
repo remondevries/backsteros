@@ -2,13 +2,21 @@ import { useCallback, useMemo } from "react";
 import { Link, useLocation, useParams } from "@tanstack/react-router";
 import {
   EmailDraftActions,
+  FinanceSyncIcon,
   RegisterPageTitle,
   RegisterEntityDeleteAction,
   RegisterEntityMenuItems,
   EmailThreadMessageCard,
+  communicationChannelLabel,
+  emailMailboxLabel,
   getEmailItemHref,
   getEmailListContext,
+  getCommunicationChannelHref,
+  getPrimedTabTitle,
   getScopedProjectSectionHref,
+  parseCommunicationChannelFromSearch,
+  parseCommunicationInboxIdFromSearch,
+  parseCommunicationStatusFromSearch,
   preserveEmailInboxListContext,
   isEmailComposePath,
   useEmailDraftBodyModeShortcuts,
@@ -17,6 +25,7 @@ import { parseEmailDraftPath } from "@backsteros/ui";
 
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import { emailDeleteEntityLabel } from "../lib/delete-email-message";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useAgentMail } from "../lib/agentmail-context";
 import {
@@ -72,6 +81,24 @@ export function EmailPage({
       ),
     [location.searchStr],
   );
+  const listReturnHref = useMemo(() => {
+    const listContext = getEmailListContext(location.searchStr);
+    if (listContext === "communication") {
+      const channel = parseCommunicationChannelFromSearch(location.searchStr);
+      const scopedInboxId = parseCommunicationInboxIdFromSearch(
+        location.searchStr,
+      );
+      const status = parseCommunicationStatusFromSearch(location.searchStr);
+      return getCommunicationChannelHref(channel, {
+        inboxId: scopedInboxId,
+        status,
+      });
+    }
+    if (listContext === "tasks") return "/tasks?due=today";
+    if (listContext === "inbox") return "/inbox";
+    // No list context (deep link) — still leave the removed thread.
+    return "/inbox";
+  }, [location.searchStr]);
   // Shared Provider owns list fetch + SSE; detail only needs mailboxes.
   const agentMail = useAgentMail();
   const { contacts, projects } = useDesktopWorkspaceData();
@@ -84,6 +111,7 @@ export function EmailPage({
     loading,
     error,
     reloadMessageDetail,
+    suppressAutoMarkRead,
   } = useEmailMessageDetail({ inboxId, messageId, draftId, isCompose });
 
   const metadataState = useEmailThreadMetadata({
@@ -140,6 +168,7 @@ export function EmailPage({
     messageId,
     isCompose,
     message,
+    setMessage,
     conceptBodyDraft,
     conceptBodyMode,
     replyComposeOpen,
@@ -150,6 +179,7 @@ export function EmailPage({
     saveConceptDraftBody,
     saveConceptReply,
     promoteEmailThreadStatus,
+    reloadMessageDetail,
     organizationId,
     contactId,
     assigneeId,
@@ -172,6 +202,8 @@ export function EmailPage({
     setConceptError,
     reloadMessageDetail,
     toEmailDetailHref,
+    listReturnHref,
+    suppressAutoMarkRead,
   });
   const { handleDeleteMessage, emailExtraMenuItems } = actions;
 
@@ -210,12 +242,45 @@ export function EmailPage({
     enabled: emailDraftModeShortcutsEnabled,
   });
 
-  const title =
-    isCompose
-      ? composeSubject.trim() || composeDraft?.subject?.trim() || "New email"
-      : draft?.subject?.trim() ||
-        message?.subject?.trim() ||
-        (draftId ? "Reply concept" : "Email");
+  // Prefer detail only when it matches the open route — otherwise the previous
+  // thread's subject sticks in the breadcrumb while the next message loads.
+  const detailSubject = (() => {
+    if (draftId) {
+      if (draft?.draftId === draftId) {
+        return draft.subject?.trim() || null;
+      }
+      return null;
+    }
+    if (messageId && message?.messageId === messageId) {
+      return message.subject?.trim() || null;
+    }
+    return null;
+  })();
+  const listSubject = (() => {
+    if (!inboxId) return null;
+    if (draftId) {
+      return (
+        agentMail.messages.find(
+          (entry) =>
+            entry.kind === "draft" &&
+            entry.inboxId === inboxId &&
+            entry.id === draftId,
+        )?.subject.trim() || null
+      );
+    }
+    if (!messageId) return null;
+    return (
+      agentMail.messages.find(
+        (entry) => entry.inboxId === inboxId && entry.id === messageId,
+      )?.subject.trim() || null
+    );
+  })();
+  const title = isCompose
+    ? composeSubject.trim() || composeDraft?.subject?.trim() || "New email"
+    : detailSubject ||
+      listSubject ||
+      getPrimedTabTitle(locationPath) ||
+      (draftId ? "Reply concept" : "E-mail");
 
   const breadcrumbItems = useMemo(() => {
     if (breadcrumbItemsProp) {
@@ -234,8 +299,26 @@ export function EmailPage({
     }
 
     if (listContext === "communication") {
+      const channel = parseCommunicationChannelFromSearch(location.searchStr);
+      const scopedInboxId = parseCommunicationInboxIdFromSearch(
+        location.searchStr,
+      );
+      const mailbox =
+        scopedInboxId != null
+          ? agentMail.mailboxes.find(
+              (entry) => entry.inboxId === scopedInboxId,
+            )
+          : null;
+      const channelCrumbLabel = mailbox
+        ? mailbox.email.trim() || emailMailboxLabel(mailbox)
+        : communicationChannelLabel(channel);
       return [
-        { label: "Communication", href: "/communication" },
+        {
+          label: channelCrumbLabel,
+          href: getCommunicationChannelHref(channel, {
+            inboxId: scopedInboxId,
+          }),
+        },
         { label: currentLabel },
       ];
     }
@@ -296,6 +379,7 @@ export function EmailPage({
       { label: currentLabel },
     ];
   }, [
+    agentMail.mailboxes,
     breadcrumbItemsProp,
     composeSubject,
     isCompose,
@@ -308,8 +392,66 @@ export function EmailPage({
     title,
   ]);
 
+  const listContext = getEmailListContext(location.searchStr);
+  const communicationChannel = parseCommunicationChannelFromSearch(
+    location.searchStr,
+  );
+  const communicationInboxId = parseCommunicationInboxIdFromSearch(
+    location.searchStr,
+  );
+  // Same as Communication Email / mailbox list — not Inbox-sourced threads.
+  const showEmailBoxRefresh =
+    listContext === "communication" &&
+    (communicationChannel === "email" || Boolean(communicationInboxId));
+
+  const messagesBusy = agentMail.messagesLoading;
+  const reloadMail = agentMail.reload;
+  // Stable actions node — inline JSX recreated every render and infinite-looped
+  // chrome header registration (Application Not Responding).
+  const breadcrumbActions = useMemo(
+    () =>
+      showEmailBoxRefresh ? (
+        <div className="catalog-chrome-actions">
+          <button
+            type="button"
+            className="catalog-chrome-actions__icon-button"
+            aria-label="Refresh mailbox"
+            title="Refresh mailbox"
+            disabled={messagesBusy}
+            onClick={() => {
+              void reloadMail();
+              if (inboxId && messageId) {
+                void reloadMessageDetail(inboxId, messageId);
+              } else if (inboxId && draftId) {
+                void reloadMessageDetail(inboxId, draftId);
+              }
+            }}
+          >
+            <FinanceSyncIcon
+              size={14}
+              className={
+                messagesBusy
+                  ? "catalog-chrome-actions__sync-icon is-spinning"
+                  : "catalog-chrome-actions__sync-icon"
+              }
+            />
+          </button>
+        </div>
+      ) : null,
+    [
+      draftId,
+      inboxId,
+      messageId,
+      messagesBusy,
+      reloadMail,
+      reloadMessageDetail,
+      showEmailBoxRefresh,
+    ],
+  );
+
   useDesktopSectionBreadcrumb(breadcrumbItems, {
     enabled: breadcrumbItemsProp == null || breadcrumbItemsProp.length > 0,
+    actions: breadcrumbActions,
   });
 
   const composeMailboxes = useMemo(
@@ -450,11 +592,7 @@ export function EmailPage({
       {message && inboxId && messageId ? (
         <>
           <RegisterEntityDeleteAction
-            entityLabel={
-              message.subject.trim()
-                ? `${message.subject.trim()} (entire thread)`
-                : "this conversation"
-            }
+            entityLabel={emailDeleteEntityLabel(message.subject)}
             confirmLabel="Delete thread"
             actionVerb="Delete"
             onDelete={handleDeleteMessage}

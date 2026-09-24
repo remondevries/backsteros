@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useMemo } from "react";
-import type { AgentMailMessageDetail } from "@backsteros/contracts";
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { AgentMailMessageDetail, TaskLink } from "@backsteros/contracts";
 import {
   contactMatchesEmailAddress,
   getContactEmailAddresses,
@@ -11,8 +11,10 @@ import {
   EmailThreadMessageCard,
   EmailThreadCommentBubble,
   EmailThreadCommentComposer,
+  EmailAgentActionCards,
   EmailThreadMinimap,
   TaskMentionBlockChip,
+  MeetingMentionBlockChip,
   EmailPropertiesDisplay,
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
   ResizableSidePanel,
@@ -29,13 +31,30 @@ import {
   emailMessageBody,
   emailMessageHtmlBody,
   firstReceivedEmailAtMs,
+  getEmailItemHref,
+  getInboxTaskRouteHref,
+  getScopedProjectTaskHref,
+  getDisplayProjectIcon,
+  getCalendarMeetingHref,
+  formatMeetingDisplayId,
+  ProjectOcticon,
+  COMPOSE_NO_PROJECT_VALUE,
+  DefaultProjectIcon,
+  type EmailAgentActionCardId,
+  type EmailComposerMeetingSubmit,
+  type EmailComposerTaskSubmit,
   type EmailMailbox,
+  type SearchableDropdownOption,
 } from "@backsteros/ui";
 
 import {
   formatEmailAgentTaskCardComment,
   parseEmailAgentTaskCard,
 } from "../../lib/email-task-card";
+import {
+  formatEmailAgentMeetingCardComment,
+  parseEmailAgentMeetingCard,
+} from "../../lib/email-meeting-card";
 import { useDesktopApi } from "../../lib/api-context";
 import { useAgentMail } from "../../lib/agentmail-context";
 import {
@@ -50,6 +69,7 @@ import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
 import { useDesktopWorkspaceData } from "../../lib/workspace-data";
 
 import { resolveAgentTaskMentionChip } from "./email-page-helpers";
+import { scheduleEmailThreadScrollRestore } from "./email-thread-scroll-pin";
 import type { useEmailDraftActions } from "./use-email-draft-actions";
 import type { useEmailMessageActions } from "./use-email-message-actions";
 import type { useEmailThreadComments } from "./use-email-thread-comments";
@@ -92,7 +112,7 @@ export function EmailThreadDetail({
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
-  const { organizations, contacts, projects } = workspace;
+  const { organizations, contacts, projects, meetings } = workspace;
   const mentionCatalog = useMentionCatalogOptional()?.catalog;
   const {
     statusOverride,
@@ -113,6 +133,7 @@ export function EmailThreadDetail({
   } = metadataState;
   const {
     conceptError,
+    setConceptError,
     sendError,
     sending,
     deleting,
@@ -142,8 +163,10 @@ export function EmailThreadDetail({
     setSelectedCommentId,
     deleteThreadComment,
     updateThreadComment,
+    postThreadComment,
     commentAgentWorking,
     draftAgentWorking,
+    handleSubmitThreadNote,
     handleSubmitThreadComment,
   } = comments;
   const {
@@ -168,6 +191,48 @@ export function EmailThreadDetail({
     minimapInViewIds,
     jumpToEmailMinimapItem,
   } = view;
+  const [agentActionMode, setAgentActionMode] =
+    useState<EmailAgentActionCardId>("reply_draft");
+  const [entityCreateSending, setEntityCreateSending] = useState(false);
+  // Dock mode changes grow clearance + autofocus — pin until layout settles.
+  const pinnedThreadScrollTopRef = useRef<number | null>(null);
+  const editingConceptDraft =
+    conceptBodyMode === "edit" &&
+    Boolean(
+      message?.conceptDraft ||
+        message?.conceptDraftId ||
+        replyComposeOpen,
+    );
+  // While editing the reply body, lock the dock to reply-draft (no task/agenda/note).
+  const composerActionMode: EmailAgentActionCardId = editingConceptDraft
+    ? "reply_draft"
+    : agentActionMode;
+
+  const handleAgentActionSelect = useCallback(
+    (card: { id: EmailAgentActionCardId }) => {
+      if (card.id === agentActionMode) return;
+      pinnedThreadScrollTopRef.current =
+        threadScrollportRef.current?.scrollTop ?? null;
+      setAgentActionMode(card.id);
+    },
+    [agentActionMode, threadScrollportRef],
+  );
+
+  useLayoutEffect(() => {
+    const top = pinnedThreadScrollTopRef.current;
+    if (top == null) return;
+    const cancel = scheduleEmailThreadScrollRestore(
+      () => threadScrollportRef.current,
+      top,
+    );
+    const clearPin = window.setTimeout(() => {
+      pinnedThreadScrollTopRef.current = null;
+    }, 280);
+    return () => {
+      cancel();
+      window.clearTimeout(clearPin);
+    };
+  }, [composerActionMode, threadScrollportRef]);
 
   const fetchInlineAttachment = useCallback(
     (messageInboxId: string, messageRowId: string, attachmentId: string) =>
@@ -227,6 +292,203 @@ export function EmailThreadDetail({
     [projects],
   );
 
+  const taskProjectIdOptions = useMemo((): SearchableDropdownOption<string>[] => {
+    return [
+      {
+        value: COMPOSE_NO_PROJECT_VALUE,
+        label: "No project",
+        searchTerms: "inbox triage none",
+        icon: <DefaultProjectIcon size={14} />,
+      },
+      ...projects.map((project) => ({
+        value: project.id,
+        label: project.name,
+        searchTerms: `${project.key} ${project.name}`,
+        icon: (
+          <ProjectOcticon
+            icon={getDisplayProjectIcon(project.icon, project.type)}
+            type={project.type}
+            size={14}
+            className="text-foreground/70"
+          />
+        ),
+      })),
+    ];
+  }, [projects]);
+
+  const assigneeContacts = useMemo(
+    () =>
+      contacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        avatarSrc: contactAvatarSrc[contact.id] ?? null,
+      })),
+    [contactAvatarSrc, contacts],
+  );
+
+  const defaultComposerProjectId = useMemo(() => {
+    if (!projectKey) return null;
+    return projects.find((entry) => entry.key === projectKey)?.id ?? null;
+  }, [projectKey, projects]);
+
+  const handleComposerSubmit = useCallback(
+    async (body: string) => {
+      if (composerActionMode === "note") {
+        await handleSubmitThreadNote(body);
+        return;
+      }
+      if (composerActionMode === "reply_draft") {
+        await handleSubmitThreadComment(body, { intent: "reply_draft" });
+        return;
+      }
+      await handleSubmitThreadComment(body);
+    },
+    [composerActionMode, handleSubmitThreadComment, handleSubmitThreadNote],
+  );
+
+  const handleComposerCreateTask = useCallback(
+    async (input: EmailComposerTaskSubmit) => {
+      if (!inboxId || !messageId) return;
+      setEntityCreateSending(true);
+      setConceptError(null);
+      try {
+        const emailLink: TaskLink = {
+          id: crypto.randomUUID().replace(/-/g, "").slice(0, 32),
+          url: getEmailItemHref(inboxId, messageId),
+          createdAt: new Date().toISOString(),
+        };
+        const relatedContactIds = contactId ? [contactId] : undefined;
+        const created = input.projectId
+          ? await workspace.createProjectTask({
+              projectId: input.projectId,
+              title: input.title,
+              description: input.description || undefined,
+              status: input.status,
+              priority: input.priority,
+              dueDate: input.dueDate,
+              assigneeId: input.assigneeId,
+              relatedContactIds,
+              links: [emailLink],
+            })
+          : await workspace.createInboxTask({
+              title: input.title,
+              description: input.description || undefined,
+              status: input.status,
+              priority: input.priority,
+              dueDate: input.dueDate,
+              assigneeId: input.assigneeId,
+              relatedContactIds,
+              links: [emailLink],
+            });
+
+        const project = input.projectId
+          ? projects.find((entry) => entry.id === input.projectId) ?? null
+          : null;
+        const href =
+          project && created.number != null
+            ? getScopedProjectTaskHref(project.key, created.number)
+            : created.number != null
+              ? getInboxTaskRouteHref({ number: created.number })
+              : `/tasks/${created.id}`;
+        const displayId =
+          project && created.number != null
+            ? `${project.key}-${created.number}`
+            : created.number != null
+              ? `IN-${created.number}`
+              : null;
+
+        await postThreadComment(
+          formatEmailAgentTaskCardComment({
+            taskId: created.id,
+            number: created.number,
+            title: input.title,
+            displayId,
+            projectKey: project?.key ?? null,
+            projectName: project?.name ?? null,
+            projectIcon: project?.icon ?? null,
+            dueDate: input.dueDate,
+            status: input.status,
+            priority: input.priority,
+            href,
+          }),
+          "agent",
+        );
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not create task.",
+        );
+      } finally {
+        setEntityCreateSending(false);
+      }
+    },
+    [
+      contactId,
+      inboxId,
+      messageId,
+      postThreadComment,
+      projects,
+      organizations,
+      setConceptError,
+      workspace,
+    ],
+  );
+
+  const handleComposerCreateMeeting = useCallback(
+    async (input: EmailComposerMeetingSubmit) => {
+      setEntityCreateSending(true);
+      setConceptError(null);
+      try {
+        const project = input.projectKey
+          ? projects.find((entry) => entry.key === input.projectKey) ?? null
+          : null;
+        const created = await workspace.createMeeting({
+          title: input.title,
+          notes: input.notes || null,
+          status: input.status,
+          startAt: input.startAt.toISOString(),
+          endAt: input.endAt.toISOString(),
+          projectId: project?.id ?? null,
+          organizationId: input.organizationId,
+          attendeeContactIds: input.attendeeContactIds,
+        });
+        const organization = input.organizationId
+          ? organizations.find((entry) => entry.id === input.organizationId) ??
+            null
+          : null;
+        await postThreadComment(
+          formatEmailAgentMeetingCardComment({
+            meetingId: created.id,
+            title: input.title,
+            href: getCalendarMeetingHref(created.id),
+            displayId:
+              created.number != null
+                ? formatMeetingDisplayId(created.number)
+                : null,
+            number: created.number,
+            startAt: input.startAt.toISOString(),
+            endAt: input.endAt.toISOString(),
+            projectName: project?.name ?? null,
+            projectIcon: project?.icon ?? null,
+            organizationName: organization?.name ?? null,
+            status: input.status,
+          }),
+          "agent",
+        );
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not create meeting.",
+        );
+      } finally {
+        setEntityCreateSending(false);
+      }
+    },
+    [postThreadComment, projects, setConceptError, workspace],
+  );
+
   const threadMessages =
     message.threadMessages && message.threadMessages.length > 0
       ? message.threadMessages
@@ -277,6 +539,11 @@ export function EmailThreadDetail({
   const draftInboxId = message.conceptDraft?.inboxId?.trim() || inboxId || "";
   const replyActive =
     replyComposeOpen || Boolean(message.conceptDraft);
+  // While Grok is working on a first draft, hide the empty From/To/Subject shell
+  // so we don't freeze the "Message the agent…" placeholder for the whole wait.
+  const replyHasBody = Boolean(conceptBodyDraft.trim());
+  const showReplyChrome =
+    replyActive && !(showDraftWorking && !replyHasBody);
   const resolvedReplyInboxId =
     replyInboxId || draftInboxId || inboxId || composeMailboxes[0]?.inboxId || "";
   const resolvedReplyTo =
@@ -375,7 +642,7 @@ export function EmailThreadDetail({
       savingBody={conceptBodySaving}
     />
   );
-  const replyChrome = replyActive ? (
+  const replyChrome = showReplyChrome ? (
     <EmailComposeChrome
       variant="reply"
       mailboxes={composeMailboxes}
@@ -409,7 +676,7 @@ export function EmailThreadDetail({
         draftAgentWorking ||
         draftStageWorking
       }
-      agentWorking={showDraftWorking}
+      agentWorking={showDraftWorking && replyHasBody}
       actions={replyDraftActions}
     />
   ) : null;
@@ -590,6 +857,9 @@ export function EmailThreadDetail({
       const parsed = Date.parse(comment.createdAt);
       const at = Number.isFinite(parsed) ? parsed : 0;
       const taskCard = parseEmailAgentTaskCard(comment.body);
+      const meetingCard = taskCard
+        ? null
+        : parseEmailAgentMeetingCard(comment.body);
       const bubbleProps = {
         author: comment.author,
         timestamp: comment.createdAt,
@@ -641,6 +911,68 @@ export function EmailThreadDetail({
                   <TaskMentionBlockChip
                     task={chip.task}
                     href={chip.href}
+                  />
+                </div>
+              </div>
+            ),
+          },
+        ];
+      }
+
+      if (meetingCard) {
+        const note = meetingCard.note.trim();
+        const live =
+          meetings.find((entry) => entry.id === meetingCard.card.meetingId) ??
+          null;
+        const liveProject = live?.projectId
+          ? projects.find((entry) => entry.id === live.projectId) ?? null
+          : null;
+        const displayId =
+          meetingCard.card.displayId?.trim() ||
+          (live && live.number > 0
+            ? formatMeetingDisplayId(live.number)
+            : meetingCard.card.number != null && meetingCard.card.number > 0
+              ? formatMeetingDisplayId(meetingCard.card.number)
+              : null);
+        return [
+          {
+            key: `comment-meeting:${comment.id}`,
+            at,
+            node: (
+              <div className="email-thread-agent-task">
+                {note ? (
+                  <EmailThreadCommentBubble
+                    {...bubbleProps}
+                    body={note}
+                    onSaveEdit={(nextBody) =>
+                      updateThreadComment(
+                        comment.id,
+                        formatEmailAgentMeetingCardComment(
+                          meetingCard.card,
+                          nextBody,
+                        ),
+                      )
+                    }
+                  />
+                ) : null}
+                <div className="mention-task-block">
+                  <MeetingMentionBlockChip
+                    meeting={{
+                      title: live?.title?.trim() || meetingCard.card.title,
+                      displayId,
+                      startAt: live?.startAt ?? meetingCard.card.startAt,
+                      endAt: live?.endAt ?? meetingCard.card.endAt,
+                      projectName:
+                        live?.projectName ??
+                        liveProject?.name ??
+                        meetingCard.card.projectName,
+                      projectIcon:
+                        liveProject?.icon ?? meetingCard.card.projectIcon,
+                      organizationName:
+                        live?.organizationName ??
+                        meetingCard.card.organizationName,
+                    }}
+                    href={getCalendarMeetingHref(meetingCard.card.meetingId)}
                   />
                 </div>
               </div>
@@ -716,6 +1048,7 @@ export function EmailThreadDetail({
       className="email-detail-split"
       data-content-detail
       data-detail-split=""
+      data-agent-composer-mode={composerActionMode}
     >
       <div className="email-detail-scroll-shell" ref={threadScrollShellRef}>
         <EmailThreadMinimap
@@ -940,29 +1273,52 @@ export function EmailThreadDetail({
         <div className="email-thread-composer-dock">
           <div className="email-thread-composer-dock__main">
             <div className="email-thread-composer-dock__inner">
+              {editingConceptDraft ? null : (
+                <EmailAgentActionCards
+                  selectedId={agentActionMode}
+                  disabled={
+                    conceptSaving ||
+                    conceptBodySaving ||
+                    commentSending ||
+                    entityCreateSending
+                  }
+                  onSelect={handleAgentActionSelect}
+                />
+              )}
               <EmailThreadCommentComposer
-                onSubmit={handleSubmitThreadComment}
+                mode={composerActionMode}
+                onSubmit={handleComposerSubmit}
+                onSubmitTask={handleComposerCreateTask}
+                onSubmitMeeting={handleComposerCreateMeeting}
                 disabled={conceptSaving || conceptBodySaving}
-                sending={commentSending || commentAgentWorking}
-                contextLabel={
-                  conceptBodyMode === "edit" &&
-                  Boolean(
-                    message.conceptDraft ||
-                      message.conceptDraftId ||
-                      replyComposeOpen,
-                  )
-                    ? "Concept draft"
-                    : null
+                sending={
+                  commentSending ||
+                  commentAgentWorking ||
+                  draftStageWorking ||
+                  draftAgentWorking ||
+                  entityCreateSending
                 }
+                contacts={assigneeContacts}
+                projectIdOptions={taskProjectIdOptions}
+                projectKeyOptions={projectOptions}
+                organizationOptions={organizationOptions}
+                contactOptions={contactOptions}
+                defaultProjectId={defaultComposerProjectId}
+                defaultProjectKey={projectKey}
+                defaultAssigneeId={assigneeId}
+                defaultOrganizationId={organizationId}
+                defaultAttendeeContactIds={contactId ? [contactId] : []}
+                contextLabel={editingConceptDraft ? "Concept draft" : null}
                 placeholder={
-                  conceptBodyMode === "edit" &&
-                  Boolean(
-                    message.conceptDraft ||
-                      message.conceptDraftId ||
-                      replyComposeOpen,
-                  )
-                    ? "Ask AI to update this draft…"
-                    : "Message the agent about this email…"
+                  composerActionMode === "note"
+                    ? "Add a note on this email…"
+                    : composerActionMode === "task"
+                      ? "Add a description…"
+                      : composerActionMode === "calendar"
+                        ? "Add notes…"
+                        : editingConceptDraft
+                          ? "Ask AI to update this draft…"
+                          : "Ask AI to draft a reply…"
                 }
               />
             </div>

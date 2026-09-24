@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import {
   buildInboxEmailListItem,
@@ -17,6 +17,9 @@ import {
   useDesktopWorkspaceTasks,
 } from "../workspace-data";
 
+/** Survives keep-alive freeze so thaw never starts from an empty list. */
+let cachedCommunicationListItems: InboxListItem[] = [];
+
 /**
  * Communication list = support tasks + AgentMail messages (inbox-style rows).
  */
@@ -25,6 +28,7 @@ export function useCommunicationListItems(): InboxListItem[] {
   const { allTasks } = useDesktopWorkspaceTasks();
   const { contacts, organizations } = useDesktopWorkspacePeople();
   const agentMail = useAgentMail();
+  const lastItemsRef = useRef<InboxListItem[]>(cachedCommunicationListItems);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -41,7 +45,14 @@ export function useCommunicationListItems(): InboxListItem[] {
   );
 
   return useMemo(() => {
-    if (frozen) return [];
+    // Keep the last painted list while the keep-alive pane is hidden — returning
+    // [] made Communication flash empty when thaw lagged (e.g. after spam →
+    // return via `/email/…?list=communication`).
+    if (frozen) {
+      return lastItemsRef.current.length > 0
+        ? lastItemsRef.current
+        : cachedCommunicationListItems;
+    }
 
     const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
     const organizationsById = new Map(
@@ -119,16 +130,22 @@ export function useCommunicationListItems(): InboxListItem[] {
         emailThreadId: item.emailThreadId,
         number: item.number,
         displayId: item.displayId,
+        direction: item.direction ?? null,
+        mailboxEmail: mailbox?.email ?? null,
         mailboxLabel: mailbox?.displayName || mailbox?.email || null,
         mailboxAvatarSrc: item.contactId
           ? (contactAvatarSrc[item.contactId] ?? null)
           : item.organizationId
             ? (organizationAvatarSrc[item.organizationId] ?? null)
             : null,
+        unread: item.unread === true,
       });
     });
 
-    return sortInboxItemsByAttentionStatus([...supportTasks, ...emails]);
+    const next = sortInboxItemsByAttentionStatus([...supportTasks, ...emails]);
+    lastItemsRef.current = next;
+    cachedCommunicationListItems = next;
+    return next;
     // Signature tracks AgentMail message field changes without depending on array identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

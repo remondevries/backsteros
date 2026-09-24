@@ -1,6 +1,7 @@
 "use client";
 
 import type { TaskLink } from "@backsteros/contracts";
+import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
 import { useState, type ReactNode } from "react";
 
 import { useContentTitleEditorNavigation } from "../../content/use-content-title-editor-navigation.js";
@@ -14,6 +15,7 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import {
   TaskPropertiesInlineChips,
@@ -26,6 +28,11 @@ import {
   type TaskFileAttachmentItem,
 } from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
+
+function toDate(value: number | Date | null | undefined): Date | null {
+  if (value == null) return null;
+  return value instanceof Date ? value : new Date(value);
+}
 
 export type TaskStackedDetailViewProps = {
   task: TaskDetailViewTask;
@@ -185,8 +192,32 @@ export function TaskStackedDetailView({
     >
       <div className="task-detail-stacked__scroll">
         <ContentDetailTitleHeader>
-          {showDisplayId && task.displayId ? (
-            <p className="content-detail-display-id">{task.displayId}</p>
+          {(showDisplayId && task.displayId) || !task.support ? (
+            <div className="content-detail-display-id-row">
+              {showDisplayId && task.displayId ? (
+                <p className="content-detail-display-id">{task.displayId}</p>
+              ) : (
+                <span />
+              )}
+              {task.support ? null : (
+                <div className="content-detail-display-id-row__timer">
+                  <TrackedTimeField
+                    variant="pill"
+                    trackedDurationSeconds={task.trackedDurationSeconds ?? null}
+                    trackedMinutes={task.trackedMinutes ?? null}
+                    scheduleMinutes={trackedMinutesFromTaskSchedule(
+                      toDate(task.dueDate),
+                      toDate(task.dueEndDate),
+                    )}
+                    onTrackedDurationSecondsChange={
+                      onTrackedDurationSecondsChange
+                    }
+                    onTimerSessionChange={onTimerSessionChange}
+                    timerSession={timerSession}
+                  />
+                </div>
+              )}
+            </div>
           ) : null}
           <OverviewNameEditor
             value={title}
@@ -233,9 +264,6 @@ export function TaskStackedDetailView({
             projectOptions={projectOptions}
             onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
             onCreateRelatedContactFromQuery={onCreateRelatedContactFromQuery}
-            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-            onTimerSessionChange={onTimerSessionChange}
-            timerSession={timerSession}
           />
         </div>
         <div className="task-detail-stacked__content">

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
@@ -11,7 +11,10 @@ import {
 import { useBacksterosTaskChatStore, type BacksterosTaskChatBinding } from "./taskChatStore";
 import { migrateBacksterosTaskStatus, type BacksterosTaskStatus } from "./taskStatus";
 import { useBacksterosWorkingTaskIds } from "./taskChatWorking";
-import { clearBacksterosDisplayedAgentPresence } from "./useBacksterosAgentPresence";
+import {
+  BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS,
+  clearBacksterosDisplayedAgentPresence,
+} from "./useBacksterosAgentPresence";
 import { patchBacksterosInboxTaskStatusLocal } from "./useBacksterosInboxAttentionTasks";
 import { patchBacksterosProjectTaskStatusLocal } from "./useBacksterosProjectTasks";
 
@@ -19,6 +22,15 @@ const promoteInFlight = new Set<string>();
 const reviewInFlight = new Set<string>();
 /** Tasks that entered a working stretch (for one-shot promote + later review). */
 const promoteHandledWhileWorking = new Set<string>();
+/** Debounce ready→in_review so brief session gaps do not flip status (OS-15). */
+const reviewLeaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelReviewLeaveTimer(taskId: string): void {
+  const timer = reviewLeaveTimers.get(taskId);
+  if (timer == null) return;
+  clearTimeout(timer);
+  reviewLeaveTimers.delete(taskId);
+}
 
 export type BacksterosTaskStatusChange = {
   readonly taskId: string;
@@ -144,9 +156,14 @@ export function usePromoteWorkingBacksterosTasks() {
   const workingTaskIds = useBacksterosWorkingTaskIds();
   const byTaskId = useBacksterosTaskChatStore((state) => state.byTaskId);
   const shells = useThreadShells();
+  const workingTaskIdsRef = useRef(workingTaskIds);
+  workingTaskIdsRef.current = workingTaskIds;
+  const byTaskIdRef = useRef(byTaskId);
+  byTaskIdRef.current = byTaskId;
 
   useEffect(() => {
     for (const taskId of workingTaskIds) {
+      cancelReviewLeaveTimer(taskId);
       if (promoteHandledWhileWorking.has(taskId) || promoteInFlight.has(taskId)) {
         continue;
       }
@@ -184,26 +201,38 @@ export function usePromoteWorkingBacksterosTasks() {
         })
       ) {
         // Approval / input / monitoring / missing shell: keep the stretch open.
+        cancelReviewLeaveTimer(taskId);
         continue;
       }
 
-      promoteHandledWhileWorking.delete(taskId);
-      if (reviewInFlight.has(taskId)) continue;
-      reviewInFlight.add(taskId);
-      // Stop the pulse and move the group immediately; persist in the background.
-      clearBacksterosDisplayedAgentPresence(taskId);
-      publishBacksterosTaskStatusChanged({
+      if (reviewLeaveTimers.has(taskId) || reviewInFlight.has(taskId)) continue;
+
+      reviewLeaveTimers.set(
         taskId,
-        status: "in_review",
-        projectId: byTaskId[taskId]?.backsterosProjectId ?? null,
-      });
-      void markBacksterosTaskInReviewForAgent(taskId)
-        .catch(() => {
-          void restoreBacksterosTaskStatusFromServer(taskId);
-        })
-        .finally(() => {
-          reviewInFlight.delete(taskId);
-        });
+        setTimeout(() => {
+          reviewLeaveTimers.delete(taskId);
+          if (workingTaskIdsRef.current.has(taskId)) return;
+          if (!promoteHandledWhileWorking.has(taskId)) return;
+          if (reviewInFlight.has(taskId)) return;
+          const projectId = byTaskIdRef.current[taskId]?.backsterosProjectId ?? null;
+          promoteHandledWhileWorking.delete(taskId);
+          reviewInFlight.add(taskId);
+          // Stop the pulse and move the group; persist in the background.
+          clearBacksterosDisplayedAgentPresence(taskId);
+          publishBacksterosTaskStatusChanged({
+            taskId,
+            status: "in_review",
+            projectId,
+          });
+          void markBacksterosTaskInReviewForAgent(taskId)
+            .catch(() => {
+              void restoreBacksterosTaskStatusFromServer(taskId);
+            })
+            .finally(() => {
+              reviewInFlight.delete(taskId);
+            });
+        }, BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS),
+      );
     }
   }, [byTaskId, shells, workingTaskIds]);
 }

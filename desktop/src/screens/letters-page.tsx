@@ -203,7 +203,7 @@ function LettersPageBody({
   const contactOptions = useMemo(() => {
     const scoped = organizationId
       ? contacts.filter((contact) => contact.organizationId === organizationId)
-      : [];
+      : contacts;
     return buildContactDropdownOptions(
       withAvatarSrc(scoped, contactAvatarSrc));
   }, [contactAvatarSrc, contacts, organizationId]);
@@ -383,7 +383,7 @@ function LettersPageBody({
         onCreateContactFromQuery={(query, organizationId) =>
           workspace.createContact({
             name: query,
-            organizationId,
+            organizationId: organizationId ?? undefined,
           })
         }
         pdfUploading={composePdfUploading}
@@ -607,9 +607,11 @@ function LettersPageBody({
           });
         }}
         onCreateContactFromQuery={(query) => {
-          if (!organizationId) return;
           void workspace
-            .createContact({ name: query, organizationId })
+            .createContact({
+              name: query,
+              organizationId: organizationId ?? undefined,
+            })
             .then((created) => {
               setContactId(created.id);
               void workspace.patchLetter(letter.id, { contactId: created.id });

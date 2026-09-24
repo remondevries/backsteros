@@ -34,6 +34,41 @@ const HOUR_LABELS = [
 ];
 
 /**
+ * FullCalendar + expandRows often makes the first slot a hair shorter than the
+ * rest. Averaging table height / hour count keeps the fixed axis labels on the
+ * hour lines instead of drifting ~30 minutes by evening.
+ */
+export function measureCalendarStripHourPitchPx(
+  pane: HTMLElement,
+): number | null {
+  const table = pane.querySelector<HTMLElement>(".fc-timegrid-slots table");
+  const rows = pane.querySelectorAll(".fc-timegrid-slots tr").length;
+  if (table && rows >= 2) {
+    const hours = rows / 2;
+    if (hours > 0) {
+      return table.getBoundingClientRect().height / hours;
+    }
+  }
+
+  const midnight = pane.querySelector<HTMLElement>(
+    '.fc-timegrid-slot[data-time="00:00:00"]',
+  );
+  const oneAm = pane.querySelector<HTMLElement>(
+    '.fc-timegrid-slot[data-time="01:00:00"]',
+  );
+  if (midnight && oneAm) {
+    const pitch =
+      oneAm.getBoundingClientRect().top - midnight.getBoundingClientRect().top;
+    if (pitch > 0) return pitch;
+  }
+
+  const slot = pane.querySelector<HTMLElement>(".fc-timegrid-slot");
+  const slotHeight = slot?.getBoundingClientRect().height;
+  if (slotHeight && slotHeight > 0) return slotHeight * 2;
+  return null;
+}
+
+/**
  * Mirror FullCalendar's hour labels in a fixed rail so the timeline stays put
  * while a week (horizontal) or day (vertical) strip scrolls. Also equalizes
  * all-day lane heights across panes — but only on resize / anchor change, not
@@ -78,12 +113,10 @@ export function useCalendarWeekStripAxisRail({
       );
       if (!middle) return;
 
-      const slot = middle.querySelector<HTMLElement>(".fc-timegrid-slot");
+      const hourPitch = measureCalendarStripHourPitchPx(middle) ?? 48;
       const liquid = middle.querySelector<HTMLElement>(
         ".fc-scroller-liquid-absolute",
       );
-      const slotHeight = slot?.getBoundingClientRect().height ?? 24;
-      const hourPitch = slotHeight * 2;
       const topSpacer = [
         ...middle.querySelectorAll<HTMLElement>(".fc-timegrid .fc-scroller"),
       ]

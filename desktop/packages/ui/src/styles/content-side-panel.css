@@ -608,6 +608,40 @@ body.is-resizing {
   padding-bottom: 52px;
 }
 
+/* Communication: Everything / Email / Support toggle (calendar footer pattern). */
+.communication-side-panel--with-filter-footer {
+  position: relative;
+}
+
+.communication-side-panel__footer {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: auto;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.communication-side-panel__footer > * {
+  pointer-events: auto;
+}
+
+.communication-side-panel__footer .segmented-pill-toggle {
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--background) 72%, rgb(255 255 255 / 0.08));
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.communication-side-panel--with-filter-footer > .app-content-side-panel-main {
+  padding-bottom: 52px;
+}
+
 .help-article-status-dot {
   display: inline-block;
   flex-shrink: 0;

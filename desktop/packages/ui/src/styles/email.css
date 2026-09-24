@@ -20,7 +20,7 @@
   /* Clearance for the absolute composer dock + breathing room under the
      last timeline card (draft / comments). Larger than the dock itself so
      scroll-to-end leaves space above the prompt. */
-  --email-composer-dock-clearance: 8.75rem;
+  --email-composer-dock-clearance: 11rem;
   display: flex;
   min-height: 0;
   width: 100%;
@@ -31,6 +31,11 @@
   /* Near-black canvas (task chat contrast) so cards / comments / properties lift. */
   background: #000;
   color: var(--foreground);
+}
+
+.email-detail-split[data-agent-composer-mode="task"],
+.email-detail-split[data-agent-composer-mode="calendar"] {
+  --email-composer-dock-clearance: 17.5rem;
 }
 
 .email-detail-scroll-shell,
@@ -63,6 +68,9 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  /* Dock mode changes grow bottom padding — don't let the browser
+     re-anchor scroll when the composer expands (New Task / Agenda). */
+  overflow-anchor: none;
   container-type: size;
 }
 
@@ -234,10 +242,90 @@
 .email-thread-composer-dock__inner {
   position: relative;
   z-index: 10;
+  display: flex;
   width: 100%;
+  flex-direction: column;
+  gap: 0.55rem;
   /* Narrower than the thread so content/fade peeks beside the message box. */
   max-width: var(--email-composer-max-width, 36rem);
   pointer-events: auto;
+}
+
+.email-agent-action-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.4rem;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.email-agent-action-card {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background, #1a1a1a) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    border-style 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.email-agent-action-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--background, #1a1a1a) 88%, transparent);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.email-agent-action-card:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.email-agent-action-card--selected,
+.email-agent-action-card--selected:hover:not(:disabled) {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+  color: var(--foreground);
+}
+
+.email-agent-action-card:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.email-agent-action-card__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.email-agent-action-card__label {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .email-thread-composer-dock__rail-spacer {
@@ -300,9 +388,63 @@
   padding-top: 6px;
 }
 
+.email-thread-comment-composer .email-agent-prompt__title {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  outline: none;
+}
+
+.email-thread-comment-composer .email-agent-prompt__title::placeholder {
+  color: color-mix(in srgb, var(--foreground) 38%, transparent);
+  font-weight: 500;
+}
+
+.email-thread-comment-composer .email-agent-prompt--structured .email-agent-prompt__input-row {
+  padding-top: 4px;
+}
+
+.email-thread-comment-composer .email-agent-prompt__properties {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 8px;
+}
+
+.email-thread-comment-composer .email-agent-prompt__properties-spacer {
+  flex: 1 1 0.5rem;
+  min-width: 0.5rem;
+}
+
+.email-thread-comment-composer .email-agent-prompt__error {
+  margin: 0;
+  padding: 0 12px 6px;
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
 @media (min-width: 640px) {
   .email-thread-comment-composer .email-agent-prompt__input-row {
     padding: 10px 14px 4px;
+  }
+
+  .email-thread-comment-composer .email-agent-prompt__title {
+    padding-inline: 14px;
+  }
+
+  .email-thread-comment-composer .email-agent-prompt__properties {
+    padding-inline: 12px;
   }
 }
 
@@ -486,7 +628,13 @@
 
 .email-thread-agent-task .mention-chip-lite--block {
   width: 100%;
-  border-color: rgb(255 255 255 / 0.22);
+  border-color: #343434;
+  background: #212121;
+}
+
+.email-thread-agent-task .mention-chip-lite--block:hover,
+.email-thread-agent-task a.mention-chip-lite--block:hover {
+  background: #272727;
 }
 
 @keyframes email-thread-status-pulse {
@@ -1187,6 +1335,28 @@
   border-radius: 999px;
   background: rgb(255 255 255 / 0.06);
   color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
+/* Direction mark — green incoming, blue outgoing (list party line + thread avatar). */
+.email-direction-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #0a0a0a;
+}
+
+.email-direction-mark svg {
+  display: block;
+}
+
+.email-direction-mark--received {
+  background: #4ade80;
+}
+
+.email-direction-mark--sent {
+  background: #60a5fa;
 }
 
 /* Direction dot on the avatar — green incoming, blue outgoing. */

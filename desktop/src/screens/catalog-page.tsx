@@ -757,6 +757,20 @@ function CatalogPageBody() {
         });
       }
     },
+    onDeleteProject: async (project: ProjectOverviewRowProject) => {
+      try {
+        await workspace.softDeleteProject(project.id);
+        return { ok: true as const };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to delete project.",
+        };
+      }
+    },
   };
 
   if (!workspace.ready) {

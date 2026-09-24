@@ -98,6 +98,8 @@ export type AgentMailMessageSummary = {
   to: string[];
   preview: string | null;
   timestamp: string;
+  /** AgentMail labels (e.g. `unread` / `read`) when the list payload includes them. */
+  labels: string[];
 };
 
 export type AgentMailMessageAttachment = {
@@ -115,7 +117,6 @@ export type AgentMailMessageDetail = AgentMailMessageSummary & {
   extractedText: string | null;
   extractedHtml: string | null;
   to: string[];
-  labels: string[];
   inReplyTo: string | null;
   attachments: AgentMailMessageAttachment[];
 };
@@ -193,6 +194,9 @@ export function mapAgentMailMessageSummary(
     to: mapAddressList(raw.to),
     preview: asOptionalString(raw.preview),
     timestamp: asTimestamp(raw.timestamp, raw.created_at),
+    labels: Array.isArray(raw.labels)
+      ? raw.labels.filter((label): label is string => typeof label === "string")
+      : [],
   };
 }
 
@@ -206,9 +210,6 @@ export function mapAgentMailMessageDetail(
     extractedText: asOptionalString(raw.extracted_text),
     extractedHtml: asOptionalString(raw.extracted_html),
     to: mapAddressList(raw.to),
-    labels: Array.isArray(raw.labels)
-      ? raw.labels.filter((label): label is string => typeof label === "string")
-      : [],
     inReplyTo: asOptionalString(raw.in_reply_to),
     attachments: mapAgentMailAttachments(raw.attachments),
   };

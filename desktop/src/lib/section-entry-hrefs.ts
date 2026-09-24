@@ -1,5 +1,4 @@
 import {
-  getFirstCommunicationItemHref,
   getFirstInboxItemHref,
   getKnowledgeHref,
   getOrganizationsHref,
@@ -126,12 +125,8 @@ export function rememberWorkspaceSectionEntries(input: {
   if (peekSectionEntryHref("inbox") == null) {
     seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
   }
-  if (
-    peekSectionEntryHref("communication") == null &&
-    input.communicationItems
-  ) {
-    seed.communication =
-      getFirstCommunicationItemHref(input.communicationItems) ?? null;
+  if (peekSectionEntryHref("communication") == null) {
+    seed.communication = "/communication";
   }
   // Contacts / organizations catalogs live in main content — always list root.
   seed.contacts = "/contacts";

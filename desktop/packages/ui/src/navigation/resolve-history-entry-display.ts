@@ -98,7 +98,7 @@ const TOP_LEVEL_NAV: Record<
   { navId: NavigationItemIconId; badgeLabel: string }
 > = {
   "/inbox": { navId: "inbox", badgeLabel: "Inbox" },
-  "/email": { navId: "email", badgeLabel: "Email" },
+  "/email": { navId: "email", badgeLabel: "E-mail" },
   "/journal": { navId: "journal", badgeLabel: "Journal" },
   "/journal/habits": { navId: "habits", badgeLabel: "Habit Tracker" },
   "/journal-v2": { navId: "journal", badgeLabel: "Journal" },
@@ -263,7 +263,7 @@ export function resolveHistoryEntryDisplay(
     return {
       kind: "navigate",
       navId: list === "tasks" ? "tasks" : "email",
-      badgeLabel: list === "tasks" ? "Tasks" : "Email",
+      badgeLabel: list === "tasks" ? "Tasks" : "E-mail",
       title,
     };
   }

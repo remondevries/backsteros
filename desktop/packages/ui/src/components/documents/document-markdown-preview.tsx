@@ -36,6 +36,8 @@ import {
   listItemLeadingNewlinesContinueList,
   matchListItemOpener,
   resolveMentionLayout,
+  shouldOmitBlockMentionSeparatorWhitespace,
+  trimTrailingNewlinesBeforeBlockMention,
   type MentionChipLayout,
 } from "../../mentions/mention-layout.js";
 import {
@@ -1208,7 +1210,15 @@ function renderParagraphWithMentions(
     }
 
     if (isWhitespaceOnlyMarkdown(segment)) {
-      if (segment.type === "markdown" && segment.content.includes("\n")) {
+      if (
+        segment.type === "markdown" &&
+        segment.content.includes("\n") &&
+        !shouldOmitBlockMentionSeparatorWhitespace(
+          segments,
+          index,
+          blockGroup.length > 0,
+        )
+      ) {
         inlineRun.push(
           <span
             key={`${keyPrefix}-ws-${index}`}
@@ -1248,12 +1258,31 @@ function renderParagraphWithMentions(
 
     // Headings/lists/code must not land inside the inline <p> run — that
     // produces invalid <p><h2>… nesting and hydration errors.
-    if (segment.type === "markdown" && hasBlockMarkdown(segment.content)) {
-      flushInlineRun();
-      elements.push(
-        <MarkdownBlockSegment
-          key={`${keyPrefix}-block-md-${index}`}
-          content={segment.content}
+    if (segment.type === "markdown") {
+      const content = trimTrailingNewlinesBeforeBlockMention(
+        segment.content,
+        segments,
+        index,
+      );
+      if (content.length === 0) {
+        index += 1;
+        continue;
+      }
+      if (hasBlockMarkdown(content)) {
+        flushInlineRun();
+        elements.push(
+          <MarkdownBlockSegment
+            key={`${keyPrefix}-block-md-${index}`}
+            content={content}
+          />,
+        );
+        index += 1;
+        continue;
+      }
+      inlineRun.push(
+        <InlineMarkdownSegment
+          key={`${keyPrefix}-seg-${index}`}
+          content={content}
         />,
       );
       index += 1;

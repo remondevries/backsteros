@@ -34,6 +34,7 @@ import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
 
 import { requestMailboxReload } from "./email-page-helpers";
 import { navigateToHref } from "../../router/navigate-href";
+import { pinEmailThreadScrollDuringUpdate } from "./email-thread-scroll-pin";
 
 export function useEmailDraftActions({
   inboxId,
@@ -84,7 +85,7 @@ export function useEmailDraftActions({
   const [deleting, setDeleting] = useState(false);
   const [conceptBodyDraft, setConceptBodyDraft] = useState("");
   const [conceptBodyMode, setConceptBodyMode] =
-    useState<EmailDraftBodyMode>("preview");
+    useState<EmailDraftBodyMode>(() => (isCompose ? "edit" : "preview"));
   const [conceptBodySaving, setConceptBodySaving] = useState(false);
   const [draftStageWorking, setDraftStageWorking] = useState(false);
   const conceptSavingRef = useRef(false);
@@ -112,7 +113,12 @@ export function useEmailDraftActions({
     const editableBody =
       resolveEditableEmailDraftBody(draft) ||
       resolveEditableEmailDraftBody(message?.conceptDraft);
-    setConceptBodyDraft(editableBody);
+    setConceptBodyDraft((current) => {
+      // Keep a locally painted agent body while message detail catches up —
+      // wiping to "" flashes the empty "Message the agent…" shell.
+      if (!editableBody.trim() && current.trim()) return current;
+      return editableBody;
+    });
     setConceptBodyMode("preview");
   }, [
     draft?.draftId,
@@ -213,7 +219,7 @@ export function useEmailDraftActions({
   useEffect(() => {
     if (!isCompose) return;
     setConceptBodyDraft(resolveEditableEmailDraftBody(composeDraft));
-    setConceptBodyMode("preview");
+    // Keep the user's Preview/Edit choice; only seed "edit" for a brand-new compose.
   }, [
     composeDraft?.draftId,
     composeDraft?.updatedAt,
@@ -279,51 +285,6 @@ export function useEmailDraftActions({
       }
     },
     [client, composeDraft?.draftId, draft, draftId, inboxId, messageId, reloadMessageDetail],
-  );
-
-  const handleConceptBodyModeChange = useCallback(
-    async (mode: EmailDraftBodyMode) => {
-      if (mode === conceptBodyMode) return;
-      if (mode === "preview" && conceptBodyMode === "edit") {
-        const savedBody = resolveEditableEmailDraftBody(draft)
-          || resolveEditableEmailDraftBody(message?.conceptDraft);
-        if (conceptBodyDraft !== savedBody) {
-          const targetInboxId =
-            draft?.inboxId ??
-            composeDraft?.inboxId ??
-            message?.conceptDraft?.inboxId ??
-            inboxId ??
-            "";
-          const targetDraftId =
-            draft?.draftId ??
-            composeDraft?.draftId ??
-            message?.conceptDraft?.draftId ??
-            message?.conceptDraftId ??
-            "";
-          if (targetInboxId && targetDraftId) {
-            try {
-              await saveConceptDraftBody(
-                targetInboxId,
-                targetDraftId,
-                conceptBodyDraft,
-              );
-            } catch {
-              return;
-            }
-          }
-        }
-      }
-      setConceptBodyMode(mode);
-    },
-    [
-      conceptBodyDraft,
-      conceptBodyMode,
-      composeDraft,
-      draft,
-      inboxId,
-      message,
-      saveConceptDraftBody,
-    ],
   );
 
   const saveConceptReply = useCallback(
@@ -465,6 +426,64 @@ export function useEmailDraftActions({
       composeSession.sessionId,
       composeSubject,
       composeTo,
+    ],
+  );
+
+  const handleConceptBodyModeChange = useCallback(
+    async (mode: EmailDraftBodyMode) => {
+      if (mode === conceptBodyMode) return;
+      if (mode === "preview" && conceptBodyMode === "edit") {
+        if (isCompose && !composeDraft?.draftId && conceptBodyDraft.trim()) {
+          await saveComposeDraft(conceptBodyDraft);
+          pinEmailThreadScrollDuringUpdate(() => {
+            setConceptBodyMode(mode);
+          });
+          return;
+        }
+        const savedBody =
+          resolveEditableEmailDraftBody(draft) ||
+          resolveEditableEmailDraftBody(composeDraft) ||
+          resolveEditableEmailDraftBody(message?.conceptDraft);
+        if (conceptBodyDraft !== savedBody) {
+          const targetInboxId =
+            draft?.inboxId ??
+            composeDraft?.inboxId ??
+            message?.conceptDraft?.inboxId ??
+            inboxId ??
+            "";
+          const targetDraftId =
+            draft?.draftId ??
+            composeDraft?.draftId ??
+            message?.conceptDraft?.draftId ??
+            message?.conceptDraftId ??
+            "";
+          if (targetInboxId && targetDraftId) {
+            try {
+              await saveConceptDraftBody(
+                targetInboxId,
+                targetDraftId,
+                conceptBodyDraft,
+              );
+            } catch {
+              return;
+            }
+          }
+        }
+      }
+      pinEmailThreadScrollDuringUpdate(() => {
+        setConceptBodyMode(mode);
+      });
+    },
+    [
+      conceptBodyDraft,
+      conceptBodyMode,
+      composeDraft,
+      draft,
+      inboxId,
+      isCompose,
+      message,
+      saveConceptDraftBody,
+      saveComposeDraft,
     ],
   );
 

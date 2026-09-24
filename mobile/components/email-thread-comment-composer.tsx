@@ -26,7 +26,7 @@ export function EmailThreadCommentComposer({
   working = false,
   disabled = false,
   error = null,
-  placeholder = "Message the agent about this email…",
+  placeholder = "Ask the agent about this email… (task, reply, agenda…)",
 }: Props) {
   const [draft, setDraft] = useState("");
   const busy = working;

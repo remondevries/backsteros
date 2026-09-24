@@ -41,6 +41,15 @@ export function isInboxPathname(pathname: string): boolean {
   return path === "/inbox" || path.startsWith("/inbox/");
 }
 
+/** Communication channels live in the side panel; items in main. */
+export function isCommunicationListKeyboardPathname(pathname: string): boolean {
+  const path = normalizeListKeyboardPathname(pathname);
+  return (
+    path === "/communication" ||
+    path.startsWith("/communication/")
+  );
+}
+
 /**
  * Inbox-sourced email detail keeps the warm inbox list mounted
  * (`/email/…?list=inbox`). Treat like inbox for j/k zone defaults.
@@ -145,6 +154,13 @@ const ZONE_POLICY_ROWS: readonly ZonePolicyRow[] = [
     autoSwitchJkToMain: false,
   },
   {
+    // Channel nav left + item list main — Tab toggles; j/k follows Tab.
+    match: isCommunicationListKeyboardPathname,
+    defaultZone: "main",
+    autoSwitchJkToMain: true,
+    allowSidepanelPreference: true,
+  },
+  {
     match: (path) => isJournalSectionPath(path) || isFinanceSectionPath(path),
     defaultZone: "sidepanel",
     autoSwitchJkToMain: false,
@@ -237,6 +253,7 @@ export function readCalendarPageModeFromDocument(
 export function getListKeyboardNavSurfaceKey(pathname: string): string {
   const path = normalizeListKeyboardPathname(pathname);
   if (isInboxListKeyboardPathname(path)) return "inbox";
+  if (isCommunicationListKeyboardPathname(path)) return "communication";
   if (isJournalSectionPath(path)) return "journal";
   if (isFinanceSectionPath(path)) return "finance";
   if (isCalendarListKeyboardPathname(path)) return "calendar";
@@ -280,6 +297,16 @@ export function shouldAutoSwitchJkToMainList(
 
 export function shouldHandleListKeyboardZoneTab(event: KeyboardEvent): boolean {
   if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+
+  // Email thread agent composer owns bare Tab to focus the prompt (Escape
+  // blurs so 1–4 hotkeys work). Shift+Tab still cycles list zones.
+  if (
+    !event.shiftKey &&
+    typeof document !== "undefined" &&
+    document.querySelector("[data-email-agent-composer]")
+  ) {
     return false;
   }
 

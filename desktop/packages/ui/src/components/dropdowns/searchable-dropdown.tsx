@@ -30,6 +30,11 @@ import type { TaskPropertyDropdownId } from "../../tasks/task-property-dropdown-
 export type SearchableDropdownOption<T extends string = string> = {
   value: T;
   label: string;
+  /**
+   * Optional muted trailing text (e.g. `(email@domain)` on mailbox options).
+   * Included in search via `searchTerms` / label filter.
+   */
+  secondaryLabel?: string;
   icon?: ReactNode;
   /**
    * Uploaded avatar URL for list-row marks (inbox / task lists).
@@ -100,7 +105,7 @@ function filterOptions<T extends string>(
   const normalized = query.trim().toLowerCase();
   if (!normalized) return options;
   return options.filter((option) => {
-    const haystack = `${option.label} ${option.searchTerms ?? ""}`
+    const haystack = `${option.label} ${option.secondaryLabel ?? ""} ${option.searchTerms ?? ""}`
       .trim()
       .toLowerCase();
     return haystack.includes(normalized);
@@ -1063,6 +1068,11 @@ export function SearchableDropdown<T extends string>({
                             ) : null}
                             <span className="searchable-dropdown-panel__option-label">
                               {option.label}
+                              {option.secondaryLabel?.trim() ? (
+                                <span className="searchable-dropdown-panel__option-secondary">
+                                  {` ${option.secondaryLabel.trim()}`}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
                           <span className="searchable-dropdown-panel__option-trailing">

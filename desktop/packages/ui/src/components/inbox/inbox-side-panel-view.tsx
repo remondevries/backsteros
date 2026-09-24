@@ -105,6 +105,8 @@ export type InboxSidePanelViewProps = {
   listRef?: Ref<HTMLElement>;
   /** Props from useListKeyboardNavigationContainerProps, spread on the list. */
   listContainerProps?: HTMLAttributes<HTMLElement>;
+  /** Optional footer (e.g. Communication Everything / Email / Support toggle). */
+  footer?: ReactNode;
 };
 
 /**
@@ -141,6 +143,7 @@ export function InboxSidePanelView({
   highlightedId = null,
   listRef,
   listContainerProps,
+  footer = null,
 }: InboxSidePanelViewProps) {
   const [composing, setComposing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -241,7 +244,9 @@ export function InboxSidePanelView({
 
   return (
     <div
-      className={`app-content-side-panel${minimized ? " is-minimized" : ""}`}
+      className={`app-content-side-panel${minimized ? " is-minimized" : ""}${
+        footer ? " communication-side-panel--with-filter-footer" : ""
+      }`}
     >
       {showHeader ? (
         <ContentSidePanelHeader
@@ -253,7 +258,7 @@ export function InboxSidePanelView({
                   <button
                     type="button"
                     className="app-side-panel-section-action"
-                    aria-label="Compose email"
+                    aria-label="Compose e-mail"
                     onClick={onComposeEmail}
                   >
                     <InboxItemTypeIcon kind="email" size={14} />
@@ -411,6 +416,7 @@ export function InboxSidePanelView({
           )
         ) : null}
       </div>
+      {footer}
     </div>
   );
 }

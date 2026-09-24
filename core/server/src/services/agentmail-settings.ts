@@ -7,6 +7,7 @@ import type {
   AgentMailMessageDetail,
   AgentMailSettings,
   AgentMailTestConnectionResult,
+  EmailAgentDraftStarted,
   EmailConceptReplyResponse,
   EmailComposeDraftResponse,
   EmailDeleteDraftResponse,
@@ -26,6 +27,7 @@ import {
   hydrateAgentMailThreadMessages,
   parseEmailSourceHeaders,
 } from "../lib/agentmail-client.js";
+import { emailStatusLabelPatch } from "../lib/email-status-labels.js";
 import {
   attachDraftThreadIds,
   composeClientId,
@@ -56,6 +58,13 @@ import {
 import { getAvatar } from "./circle-domain.js";
 import * as emailThreadsService from "./email-threads.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
+import { registerEmailAgentCallback } from "./email-agent-callbacks.js";
+import {
+  buildEmailGrokWakePayload,
+  counterpartEmailFromMessage,
+  resolveEmailAgentLanguage,
+  wakeEmailGrokWebhook,
+} from "../lib/email-grok-wake.js";
 
 const INBOX_EMAIL_CACHE_MS = 5 * 60 * 1000;
 const inboxEmailCache = new Map<
@@ -63,8 +72,67 @@ const inboxEmailCache = new Map<
   { email: string | null; expiresAt: number }
 >();
 
+/** Live AgentMail inbox list — BacksterOS always uses every inbox the key can see. */
+const INBOX_LIST_CACHE_MS = 60_000;
+const inboxListCache = new Map<
+  string,
+  {
+    inboxes: Array<{
+      inboxId: string;
+      email: string;
+      displayName: string | null;
+      podId: string | null;
+    }>;
+    expiresAt: number;
+  }
+>();
+
+function invalidateInboxListCache(apiKey?: string | null): void {
+  if (apiKey) {
+    inboxListCache.delete(apiKey);
+    return;
+  }
+  inboxListCache.clear();
+}
+
+function sameInboxIdSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
+}
+
+async function listLiveInboxesForApiKey(apiKey: string): Promise<
+  Array<{
+    inboxId: string;
+    email: string;
+    displayName: string | null;
+    podId: string | null;
+  }>
+> {
+  const cached = inboxListCache.get(apiKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.inboxes;
+  }
+  const client = new AgentMailClient({ apiKey });
+  const inboxes = await client.listInboxes({ limit: 100 });
+  inboxListCache.set(apiKey, {
+    inboxes,
+    expiresAt: Date.now() + INBOX_LIST_CACHE_MS,
+  });
+  return inboxes;
+}
+
 export function previewAgentMailApiKey(apiKey: string): string {
   return previewCursorApiKey(apiKey);
+}
+
+function previewUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname.length > 48 ? `${parsed.pathname.slice(0, 45)}…` : parsed.pathname}`;
+  } catch {
+    return url.length > 64 ? `${url.slice(0, 61)}…` : url;
+  }
 }
 
 function formatAgentMailSettingsError(error: unknown): string {
@@ -205,6 +273,10 @@ async function upsertAgentMailSecrets(
       webhookSecret: string | null;
       webhookUrl: string | null;
     };
+    grokWebhook?: {
+      webhookUrl: string | null;
+      webhookKey: string | null;
+    };
   },
 ): Promise<void> {
   const inboxId = inboxIds[0] ?? null;
@@ -244,6 +316,14 @@ async function upsertAgentMailSecrets(
           agentmailWebhookUrl: options.webhook.webhookUrl,
         };
 
+  const grokWebhookPatch =
+    options?.grokWebhook === undefined
+      ? {}
+      : {
+          emailGrokWebhookUrl: options.grokWebhook.webhookUrl,
+          emailGrokWebhookKey: options.grokWebhook.webhookKey,
+        };
+
   if (existing) {
     await db
       .update(workspaceIntegrationSecrets)
@@ -254,6 +334,7 @@ async function upsertAgentMailSecrets(
         ...templatePatch,
         ...contactsPatch,
         ...webhookPatch,
+        ...grokWebhookPatch,
         updatedAt: new Date(),
       })
       .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId));
@@ -268,6 +349,7 @@ async function upsertAgentMailSecrets(
     agentmailInboxContacts: options?.inboxContacts ?? {},
     ...templatePatch,
     ...webhookPatch,
+    ...grokWebhookPatch,
   });
 }
 
@@ -286,6 +368,8 @@ async function getSecretRow(workspaceId: string): Promise<{
   agentmailWebhookId: string | null;
   agentmailWebhookSecret: string | null;
   agentmailWebhookUrl: string | null;
+  emailGrokWebhookUrl: string | null;
+  emailGrokWebhookKey: string | null;
 } | null> {
   const [row] = await db
     .select({
@@ -310,6 +394,8 @@ async function getSecretRow(workspaceId: string): Promise<{
       agentmailWebhookId: workspaceIntegrationSecrets.agentmailWebhookId,
       agentmailWebhookSecret: workspaceIntegrationSecrets.agentmailWebhookSecret,
       agentmailWebhookUrl: workspaceIntegrationSecrets.agentmailWebhookUrl,
+      emailGrokWebhookUrl: workspaceIntegrationSecrets.emailGrokWebhookUrl,
+      emailGrokWebhookKey: workspaceIntegrationSecrets.emailGrokWebhookKey,
     })
     .from(workspaceIntegrationSecrets)
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
@@ -550,8 +636,36 @@ export async function getAgentMailCredentials(
 ): Promise<{ apiKey: string | null; inboxId: string | null; inboxIds: string[] }> {
   const row = await getSecretRow(workspaceId);
   const apiKey = row?.agentmailApiKey?.trim() || null;
-  const inboxIds = row ? inboxIdsFromRow(row) : [];
-  return { apiKey, inboxId: inboxIds[0] ?? null, inboxIds };
+  if (!apiKey) {
+    return { apiKey: null, inboxId: null, inboxIds: [] };
+  }
+  try {
+    const inboxIds = (await listLiveInboxesForApiKey(apiKey)).map(
+      (inbox) => inbox.inboxId,
+    );
+    return { apiKey, inboxId: inboxIds[0] ?? null, inboxIds };
+  } catch {
+    // AgentMail unreachable — fall back to last synced ids for webhooks/drafts.
+    const inboxIds = row ? inboxIdsFromRow(row) : [];
+    return { apiKey, inboxId: inboxIds[0] ?? null, inboxIds };
+  }
+}
+
+async function syncStoredInboxIdsFromLive(
+  workspaceId: string,
+  apiKey: string,
+  inboxIds: string[],
+): Promise<void> {
+  const row = await getSecretRow(workspaceId);
+  const stored = row ? inboxIdsFromRow(row) : [];
+  if (sameInboxIdSet(stored, inboxIds)) return;
+  const contacts = pruneInboxContacts(inboxContactsFromRow(row), inboxIds);
+  await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
+    inboxContacts: contacts,
+  });
+  await ensureAgentMailWebhook(workspaceId, apiKey, inboxIds, {
+    previousApiKey: apiKey,
+  });
 }
 
 function inboxLabel(inbox: AgentMailInboxSummary): string {
@@ -596,18 +710,31 @@ async function resolveInboxEmail(
 export async function getAgentMailSettings(
   workspaceId: string,
 ): Promise<AgentMailSettings> {
-  const { apiKey, inboxId, inboxIds } = await getAgentMailCredentials(
-    workspaceId,
-  );
+  const { apiKey } = await getAgentMailCredentials(workspaceId);
   let listed: AgentMailInboxSummary[] = [];
   let organizationId: string | null = null;
+  let inboxIds: string[] = [];
 
   if (apiKey) {
     try {
-      const client = new AgentMailClient({ apiKey });
-      listed = (await client.listInboxes({ limit: 100 })).map(toInboxSummary);
+      listed = (await listLiveInboxesForApiKey(apiKey)).map(toInboxSummary);
+      inboxIds = listed.map((inbox) => inbox.inboxId);
+      // Keep DB + AgentMail webhook inboxes aligned with the live org list.
+      void syncStoredInboxIdsFromLive(workspaceId, apiKey, inboxIds).catch(
+        (error) => {
+          console.error("Failed to sync AgentMail inbox ids:", error);
+        },
+      );
     } catch {
       // Keep settings readable even if AgentMail is unreachable.
+      const row = await getSecretRow(workspaceId);
+      inboxIds = row ? inboxIdsFromRow(row) : [];
+      listed = inboxIds.map((id) => ({
+        inboxId: id,
+        email: id,
+        displayName: null,
+        podId: null,
+      }));
     }
     try {
       const client = new AgentMailClient({ apiKey });
@@ -618,16 +745,6 @@ export async function getAgentMailSettings(
     }
   }
 
-  const listedById = new Map(listed.map((inbox) => [inbox.inboxId, inbox]));
-  const selected = inboxIds.map(
-    (id) =>
-      listedById.get(id) ?? {
-        inboxId: id,
-        email: id,
-        displayName: null,
-        podId: null,
-      },
-  );
   const secretRow = await getSecretRow(workspaceId);
   const inboxContacts = pruneInboxContacts(
     inboxContactsFromRow(secretRow),
@@ -638,7 +755,7 @@ export async function getAgentMailSettings(
     Object.values(inboxContacts),
   );
   const inboxesWithContacts = enrichInboxesWithContacts(
-    selected,
+    listed,
     inboxContacts,
     contactNames,
   );
@@ -648,20 +765,26 @@ export async function getAgentMailSettings(
   return {
     apiKeyConfigured: Boolean(apiKey),
     apiKeyPreview: apiKey ? previewAgentMailApiKey(apiKey) : null,
-    inboxId,
-    inboxEmail: first && listedById.has(first.inboxId) ? first.email : null,
-    inboxDisplayName:
-      first && listedById.has(first.inboxId) ? first.displayName : null,
+    inboxId: inboxIds[0] ?? null,
+    inboxEmail: first?.email ?? null,
+    inboxDisplayName: first?.displayName ?? null,
     inboxIds,
     inboxes: inboxesWithContacts,
     organizationId,
-    connected: Boolean(apiKey && inboxIds.length > 0),
+    connected: Boolean(apiKey),
     replyGreetingTemplate: replyTemplates.greetingTemplateEn,
     replyGreetingTemplateEn: replyTemplates.greetingTemplateEn,
     replyGreetingTemplateNl: replyTemplates.greetingTemplateNl,
     replySignOffTemplateEn: replyTemplates.signOffTemplateEn,
     replySignOffTemplateNl: replyTemplates.signOffTemplateNl,
     webhookConfigured: Boolean(secretRow?.agentmailWebhookId?.trim()),
+    grokWebhookConfigured: Boolean(
+      secretRow?.emailGrokWebhookUrl?.trim() &&
+        secretRow?.emailGrokWebhookKey?.trim(),
+    ),
+    grokWebhookUrlPreview: secretRow?.emailGrokWebhookUrl?.trim()
+      ? previewUrl(secretRow.emailGrokWebhookUrl.trim())
+      : null,
   };
 }
 
@@ -671,18 +794,24 @@ export async function updateAgentMailSettings(
 ): Promise<AgentMailSettings> {
   const current = await getAgentMailCredentials(workspaceId);
   let nextApiKey = current.apiKey;
-  let nextInboxIds = current.inboxIds;
 
   if (patch.apiKey !== undefined) {
     const trimmed = patch.apiKey.trim();
     nextApiKey = trimmed.length > 0 ? trimmed : null;
-    if (!nextApiKey) nextInboxIds = [];
+    invalidateInboxListCache(current.apiKey);
+    if (nextApiKey) invalidateInboxListCache(nextApiKey);
   }
-  if (patch.inboxIds !== undefined) {
-    nextInboxIds = normalizeInboxIds(patch.inboxIds);
-  } else if (patch.inboxId !== undefined) {
-    const trimmed = patch.inboxId?.trim() ?? "";
-    nextInboxIds = trimmed.length > 0 ? [trimmed] : [];
+
+  // Inbox selection was removed — always use every inbox the API key can list.
+  let nextInboxIds: string[] = [];
+  if (nextApiKey) {
+    try {
+      nextInboxIds = (await listLiveInboxesForApiKey(nextApiKey)).map(
+        (inbox) => inbox.inboxId,
+      );
+    } catch {
+      nextInboxIds = current.inboxIds;
+    }
   }
 
   const secretRow = await getSecretRow(workspaceId);
@@ -704,23 +833,6 @@ export async function updateAgentMailSettings(
       else delete nextInboxContacts[inboxId];
     }
     nextInboxContacts = pruneInboxContacts(nextInboxContacts, nextInboxIds);
-  }
-
-  if (patch.apiKey !== undefined && nextApiKey && nextInboxIds.length === 0) {
-    try {
-      const client = new AgentMailClient({ apiKey: nextApiKey });
-      const me = await client.authMe();
-      if (me.inboxId) {
-        nextInboxIds = [me.inboxId];
-      } else {
-        const inboxes = await client.listInboxes({ limit: 100 });
-        if (inboxes.length === 1) {
-          nextInboxIds = [inboxes[0]!.inboxId];
-        }
-      }
-    } catch {
-      // Leave inboxes unset; user can pick after fixing the key.
-    }
   }
 
   await upsertAgentMailSecrets(workspaceId, nextApiKey, nextInboxIds, {
@@ -761,6 +873,25 @@ export async function updateAgentMailSettings(
   await ensureAgentMailWebhook(workspaceId, nextApiKey, nextInboxIds, {
     previousApiKey: current.apiKey,
   });
+
+  if (patch.grokWebhookUrl !== undefined || patch.grokWebhookKey !== undefined) {
+    const currentSecrets = await getSecretRow(workspaceId);
+    const nextUrl =
+      patch.grokWebhookUrl !== undefined
+        ? patch.grokWebhookUrl.trim() || null
+        : currentSecrets?.emailGrokWebhookUrl?.trim() || null;
+    const nextKey =
+      patch.grokWebhookKey !== undefined
+        ? patch.grokWebhookKey.trim() || null
+        : currentSecrets?.emailGrokWebhookKey?.trim() || null;
+    await upsertAgentMailSecrets(workspaceId, nextApiKey, nextInboxIds, {
+      inboxContacts: nextInboxContacts,
+      grokWebhook: {
+        webhookUrl: nextUrl,
+        webhookKey: nextKey,
+      },
+    });
+  }
 
   return getAgentMailSettings(workspaceId);
 }
@@ -920,6 +1051,7 @@ function toApiMessage(message: {
   to?: string[];
   preview: string | null;
   timestamp: string;
+  labels?: string[];
 }): AgentMailMessage {
   return {
     kind: "message",
@@ -933,6 +1065,9 @@ function toApiMessage(message: {
     ...(message.to && message.to.length > 0 ? { to: message.to } : {}),
     preview: message.preview,
     timestamp: message.timestamp,
+    ...(message.labels && message.labels.length > 0
+      ? { labels: message.labels }
+      : {}),
   };
 }
 
@@ -1249,9 +1384,6 @@ export async function getAgentMailMessage(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
   const threadId = message.threadId?.trim() || "";
@@ -1391,9 +1523,6 @@ export async function getAgentMailMessageAttachment(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
   const client = new AgentMailClient({ apiKey });
   return client.getMessageAttachment(inboxId, messageId, attachmentId);
 }
@@ -1406,9 +1535,6 @@ export async function getAgentMailDraft(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
   const client = new AgentMailClient({ apiKey });
   const [draft, inboxEmail] = await Promise.all([
@@ -1439,9 +1565,6 @@ export async function upsertEmailConceptReply(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
 
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
@@ -1466,7 +1589,141 @@ export async function upsertEmailConceptReply(
     draftId: draft.draftId,
     inboxId: draft.inboxId,
     inReplyToMessageId: messageId,
+    body: assembled.body,
+    greeting: assembled.greeting,
+    signOff: assembled.signOff,
+    subject: assembled.subject,
+    to: assembled.to,
   };
+}
+
+export async function startEmailAgentDraft(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+  prompt: string,
+  intent?: "reply_draft" | "task" | "calendar" | "note" | null,
+  currentDraftBody?: string | null,
+): Promise<EmailAgentDraftStarted> {
+  const [credentials, secretRow] = await Promise.all([
+    getAgentMailCredentials(workspaceId),
+    getSecretRow(workspaceId),
+  ]);
+  const { apiKey, inboxIds } = credentials;
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+
+  const webhookUrl = secretRow?.emailGrokWebhookUrl?.trim() || "";
+  const webhookKey = secretRow?.emailGrokWebhookKey?.trim() || "";
+  if (!webhookUrl || !webhookKey) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "Grok Bot webhook is not configured. Add URL and key under Settings → E-mail.",
+    );
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const requestId = crypto.randomUUID();
+  const [message, registered] = await Promise.all([
+    client.getMessage(inboxId, messageId),
+    registerEmailAgentCallback({
+      workspaceId,
+      requestId,
+      inboxId,
+      messageId,
+    }),
+  ]);
+  if ("conflict" in registered) {
+    throw new AgentMailApiError(400, "", "Could not register email agent callback");
+  }
+
+  const threadKey = emailThreadsService.resolveEmailThreadKey({
+    threadId: message.threadId,
+    messageId,
+  });
+
+  const skipDraftScan = currentDraftBody !== undefined;
+  const [metadata, templates, conceptDraft] = await Promise.all([
+    emailThreadsService.getOrCreateEmailThreadMetadata(
+      workspaceId,
+      inboxId,
+      threadKey,
+    ),
+    skipDraftScan
+      ? Promise.resolve(null)
+      : getEmailReplyTemplatesForInbox(workspaceId, inboxId),
+    skipDraftScan
+      ? Promise.resolve(null)
+      : loadConceptDraftForThreadAcrossInboxes(client, inboxIds, [messageId]),
+  ]);
+
+  let contactLanguages: string[] = [];
+  if (metadata.contactId) {
+    const [contact] = await db
+      .select({ languages: contacts.languages })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.workspaceId, workspaceId),
+          eq(contacts.id, metadata.contactId),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (Array.isArray(contact?.languages)) {
+      contactLanguages = [...contact.languages];
+    }
+  }
+
+  const messageText =
+    message.text?.trim() ||
+    message.extractedText?.trim() ||
+    message.preview?.trim() ||
+    "";
+  const language = resolveEmailAgentLanguage({
+    contactLanguages,
+    counterpartEmail: counterpartEmailFromMessage(message.from),
+    messageText,
+  });
+
+  const resolvedCurrentDraftBody = skipDraftScan
+    ? currentDraftBody?.trim() || null
+    : conceptDraft?.text?.trim() && templates
+      ? resolveEditableDraftBody(
+          conceptDraft.text,
+          message.from ?? "",
+          templates,
+        )
+      : null;
+
+  const payload = buildEmailGrokWakePayload({
+    requestId,
+    callbackUrl: registered.callbackUrl,
+    language,
+    userPrompt: prompt,
+    inboxId,
+    messageId,
+    threadId: message.threadId ?? null,
+    currentDraftBody: resolvedCurrentDraftBody,
+    intent: intent ?? null,
+    from: message.from ?? "",
+    to: message.to ?? [],
+    subject: message.subject ?? "",
+    text: messageText,
+  });
+
+  const wake = await wakeEmailGrokWebhook({
+    webhookUrl,
+    webhookKey,
+    payload,
+  });
+  if (!wake.ok) {
+    throw new AgentMailApiError(400, "", wake.error);
+  }
+
+  return { requestId, language };
 }
 
 export async function upsertEmailComposeDraft(
@@ -1482,9 +1739,6 @@ export async function upsertEmailComposeDraft(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
 
   const client = new AgentMailClient({ apiKey });
@@ -1520,9 +1774,6 @@ export async function sendAgentMailDraft(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
 
   const client = new AgentMailClient({ apiKey });
@@ -1664,9 +1915,6 @@ export async function deleteAgentMailDraft(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
 
   const client = new AgentMailClient({ apiKey });
   const draft = await resolveDraftAcrossInboxes(
@@ -1701,9 +1949,6 @@ export async function updateAgentMailDraft(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
 
   const client = new AgentMailClient({ apiKey });
@@ -1774,7 +2019,7 @@ export async function updateAgentMailDraft(
 export async function testAgentMailConnection(
   workspaceId: string,
 ): Promise<AgentMailTestConnectionResult> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const { apiKey } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     return {
       ok: false,
@@ -1791,35 +2036,17 @@ export async function testAgentMailConnection(
       client.authMe(),
       client.listInboxes({ limit: 100 }),
     ]);
-
-    if (inboxIds.length === 0) {
-      return {
-        ok: true,
-        error: null,
-        organizationId: me.organizationId,
-        inboxEmail: null,
-        inboxCount: inboxes.length,
-      };
-    }
-
-    const known = new Set(inboxes.map((entry) => entry.inboxId));
-    const missing = inboxIds.filter((id) => !known.has(id));
-    if (missing.length > 0) {
-      return {
-        ok: false,
-        error: "One or more stored inbox ids were not found for this AgentMail API key.",
-        organizationId: me.organizationId,
-        inboxEmail: null,
-        inboxCount: inboxes.length,
-      };
-    }
-
-    const first = inboxes.find((entry) => entry.inboxId === inboxIds[0]);
+    const inboxIds = inboxes.map((entry) => entry.inboxId);
+    void syncStoredInboxIdsFromLive(workspaceId, apiKey, inboxIds).catch(
+      (error) => {
+        console.error("Failed to sync AgentMail inbox ids:", error);
+      },
+    );
     return {
       ok: true,
       error: null,
       organizationId: me.organizationId,
-      inboxEmail: first?.email ?? null,
+      inboxEmail: inboxes[0]?.email ?? null,
       inboxCount: inboxes.length,
     };
   } catch (error) {
@@ -1922,9 +2149,6 @@ export async function deleteAgentMailMessage(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
 
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
@@ -1954,9 +2178,6 @@ export async function deleteAgentMailThreadMessage(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
 
   const client = new AgentMailClient({ apiKey });
@@ -2023,9 +2244,6 @@ export async function reportAgentMailMessageSpam(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
 
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
@@ -2084,14 +2302,30 @@ export async function markAgentMailMessageUnread(
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
-  }
 
   const client = new AgentMailClient({ apiKey });
   await client.updateMessageLabels(inboxId, messageId, {
     addLabels: ["unread"],
     removeLabels: ["read"],
+  });
+  return { ok: true };
+}
+
+/** Clear AgentMail unread when a human opens the message. */
+export async function markAgentMailMessageRead(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{ ok: true }> {
+  const { apiKey } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  await client.updateMessageLabels(inboxId, messageId, {
+    addLabels: ["read"],
+    removeLabels: ["unread"],
   });
   return { ok: true };
 }
@@ -2103,6 +2337,45 @@ export type AgentMailMessageSource = {
   raw: string;
 };
 
+/**
+ * Move a thread into the AgentMail label folder that mirrors BacksterOS status.
+ * Best-effort: missing API key or AgentMail errors do not fail the local write.
+ */
+export async function syncAgentMailEmailStatusLabel(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  status: string,
+): Promise<void> {
+  const trimmedInbox = inboxId.trim();
+  const trimmedThread = threadKey.trim();
+  if (!trimmedInbox || !trimmedThread) return;
+
+  // Avoid getAgentMailCredentials() — it lists every live inbox over the network.
+  let apiKey: string | null = null;
+  try {
+    const row = await getSecretRow(workspaceId);
+    apiKey = row?.agentmailApiKey?.trim() || null;
+  } catch {
+    return;
+  }
+  if (!apiKey) return;
+
+  const client = new AgentMailClient({ apiKey });
+  const patch = emailStatusLabelPatch(status);
+  try {
+    await client.updateThreadLabels(trimmedInbox, trimmedThread, patch);
+  } catch (error) {
+    console.warn(
+      "[agentmail] status label sync failed",
+      trimmedInbox,
+      trimmedThread,
+      status,
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 /** Raw MIME source with the parsed header block — for the Source view. */
 export async function getAgentMailMessageSource(
   workspaceId: string,
@@ -2112,9 +2385,6 @@ export async function getAgentMailMessageSource(
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
-  }
-  if (!inboxIds.includes(inboxId)) {
-    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
   }
 
   const client = new AgentMailClient({ apiKey });

@@ -603,7 +603,4 @@
   background: color-mix(in srgb, #f85149 16%, transparent);
 }
 
-.bos-codebase-workbench__list-detail--split .bos-codebase-workbench__tab-list {
-  flex: 0 0 34%;
-  max-width: 420px;
-}
+/* Files/commits/PRs list width is owned by codebaseWorkbench.css grid. */

@@ -2475,10 +2475,12 @@ export default function ChatView(props: ChatViewProps) {
     selectedProvider: selectedProviderByThreadId,
     threadProvider,
   });
-  // Once a thread selects an environment, never substitute the primary
-  // environment's config while the selected environment is still loading.
+  // Prefer the active thread's environment. If that id is not registered
+  // (e.g. a stale local draft after BacksterOS cwd remapping), fall back to
+  // primary so providers are not empty. Do not treat "still loading" as null —
+  // missing from environmentById means the env is gone, not loading.
   const serverConfig = activeThread
-    ? (activeEnvironment?.serverConfig ?? null)
+    ? (activeEnvironment?.serverConfig ?? primaryEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;

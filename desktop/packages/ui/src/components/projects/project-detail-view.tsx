@@ -41,6 +41,7 @@ import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-prio
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { TransipIcon } from "../icons/transip-icon.js";
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
 import {
   ContentMarkdownPreviewColumn,
@@ -149,6 +150,11 @@ export type ProjectDetailViewProps = {
   initialSection?: ProjectSectionId;
   /** Host-provided pane for non-overview sections (tasks, letters, …). */
   renderSection?: (sectionId: ProjectSectionId) => ReactNode;
+  /**
+   * When false, ⌘. does not copy this project's key (hidden keep-alive).
+   * Defaults to true.
+   */
+  copyIdShortcutEnabled?: boolean;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -182,6 +188,7 @@ export function ProjectDetailView({
   onSectionChange,
   initialSection = "overview",
   renderSection,
+  copyIdShortcutEnabled = true,
 }: ProjectDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ProjectSectionId>(initialSection);
@@ -218,6 +225,11 @@ export function ProjectDetailView({
       setSummarySource,
     );
   }
+
+  useCopyEntityIdShortcut(
+    () => project.key?.trim() || null,
+    { enabled: copyIdShortcutEnabled },
+  );
 
   useTitleRenameShortcut(
     useCallback(() => {

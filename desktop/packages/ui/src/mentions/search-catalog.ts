@@ -14,7 +14,7 @@ const SECTION_HEADINGS: Record<MentionKind, string> = {
   organization: "Organizations",
   document: "Documents",
   letter: "Letters",
-  email: "Email",
+  email: "E-mail",
 };
 
 function normalizeQuery(query: string): string {

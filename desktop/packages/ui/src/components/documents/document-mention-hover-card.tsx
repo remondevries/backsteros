@@ -80,7 +80,7 @@ function MentionHoverDeletedPanel({ parsed }: { parsed: ParsedMentionToken }) {
       : parsed.kind === "letter"
         ? "Letter"
         : parsed.kind === "email"
-          ? "Email"
+          ? "E-mail"
           : parsed.kind === "project"
           ? "Project"
           : parsed.kind === "contact"

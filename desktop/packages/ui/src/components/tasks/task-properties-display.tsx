@@ -287,6 +287,23 @@ export function TaskPropertiesDisplay({
                 </button>
               )}
             </PropertyFieldGroup>
+            {onLabelChange ? (
+              <PropertyFieldGroup label="Labels">
+                <TaskRelatedChips
+                  values={task?.labelIds ?? []}
+                  options={labelOptions}
+                  onChange={(next) => onLabelChange(next)}
+                  disabled={disabled}
+                  emptyLabel="No labels"
+                  searchPlaceholder="Add labels…"
+                  searchShortcutLabel="L"
+                  ariaLabel="Labels"
+                  taskPropertyDropdownId="labels"
+                  variant="rail"
+                  emptyIcon={<TaskLabelIcon size={14} />}
+                />
+              </PropertyFieldGroup>
+            ) : null}
             <PropertyFieldGroup label="Related">
               <TaskRelatedChips
                 values={relatedValues}
@@ -307,23 +324,6 @@ export function TaskPropertiesDisplay({
                 onActivate={() => onFieldActivate?.("related")}
               />
             </PropertyFieldGroup>
-            {onLabelChange ? (
-              <PropertyFieldGroup label="Labels">
-                <TaskRelatedChips
-                  values={task?.labelIds ?? []}
-                  options={labelOptions}
-                  onChange={(next) => onLabelChange(next)}
-                  disabled={disabled}
-                  emptyLabel="No labels"
-                  searchPlaceholder="Add labels…"
-                  searchShortcutLabel="L"
-                  ariaLabel="Labels"
-                  taskPropertyDropdownId="labels"
-                  variant="rail"
-                  emptyIcon={<TaskLabelIcon size={14} />}
-                />
-              </PropertyFieldGroup>
-            ) : null}
           </EntityPropertiesSection>
         )}
 

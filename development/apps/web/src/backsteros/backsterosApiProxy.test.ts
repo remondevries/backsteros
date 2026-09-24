@@ -66,14 +66,8 @@ describe("normalizePersistedBacksterosLocalCoreUrl", () => {
 
 describe("isBacksterosLocalCorePath", () => {
   it("matches project FS and docs routes", () => {
-    assert.equal(
-      isBacksterosLocalCorePath("/api/v1/projects/abc/fs/entries"),
-      true,
-    );
-    assert.equal(
-      isBacksterosLocalCorePath("/api/v1/projects/abc/fs/file?path=docs/x.md"),
-      true,
-    );
+    assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/fs/entries"), true);
+    assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/fs/file?path=docs/x.md"), true);
     assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/docs"), true);
   });
 
@@ -97,5 +91,10 @@ describe("formatBacksterosLocalCoreError", () => {
   it("explains unreachable local-core", () => {
     const message = formatBacksterosLocalCoreError(new Error("BacksterOS is unreachable"));
     assert.match(message, /unreachable/i);
+  });
+
+  it("explains local-core DB / replica failures", () => {
+    const message = formatBacksterosLocalCoreError(new Error("Internal server error"));
+    assert.match(message, /postgres|:5433|replica/i);
   });
 });

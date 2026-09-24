@@ -1040,6 +1040,7 @@ export function TaskDetailPage({
   const detailView = (
         <TaskDetailView
           task={task}
+          copyIdShortcutEnabled={detailVisible && keepAliveActive}
           spellcheckHighlight={spellcheckHighlight}
           onSpellcheckHighlightClear={() => setSpellcheckHighlight(null)}
           onToggleSpellcheckTitleSegment={onToggleSpellcheckTitleSegment}

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { useBacksterosAgentPresenceStore } from "./agentPresenceStore";
 import {
   applyBacksterosAgentPresenceSseData,
+  BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS,
   mergeBacksterosDisplayedWorkingTaskIds,
 } from "./useBacksterosAgentPresence";
 
@@ -59,5 +60,12 @@ describe("applyBacksterosAgentPresenceSseData", () => {
     ]);
     applyBacksterosAgentPresenceSseData(JSON.stringify({ taskId: "task-9", live: false }));
     expect(useBacksterosAgentPresenceStore.getState().remoteWorkingTaskIds.size).toBe(0);
+  });
+});
+
+describe("BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS", () => {
+  it("is long enough to cover quiet tool gaps without feeling stuck", () => {
+    expect(BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS).toBeGreaterThanOrEqual(10_000);
+    expect(BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS).toBeLessThanOrEqual(60_000);
   });
 });

@@ -564,6 +564,7 @@ function InboxPageBody() {
       >
       <TaskDetailView
         sectionLabel="Inbox"
+        copyIdShortcutEnabled={keepAliveActive}
         headerMeta={
           movedNotice && projectTaskHref && !inList ? (
             <div className="inbox-moved-banner" role="status">

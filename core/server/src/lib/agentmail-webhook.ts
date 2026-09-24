@@ -127,7 +127,7 @@ export function handleAgentMailWebhookDelivery(input: {
   if (!parsed || parsed.eventType !== "message.received") {
     return { ok: true, published: false, workspaceId: matched.workspaceId };
   }
-  if (!parsed.inboxId || !matched.inboxIds.includes(parsed.inboxId)) {
+  if (!parsed.inboxId) {
     return { ok: true, published: false, workspaceId: matched.workspaceId };
   }
 

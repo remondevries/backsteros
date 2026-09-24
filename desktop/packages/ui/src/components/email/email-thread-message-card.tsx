@@ -38,6 +38,7 @@ import {
 } from "../../email/email-message-source.js";
 import { PropertyInlineChip } from "../dropdowns/property-dropdown.js";
 import type { EmailThreadBodyViewMode } from "../../email/email.js";
+import { EmailDirectionArrowIcon } from "../../email/email-direction.js";
 import { stripEmailDraftShell } from "../../email/email.js";
 
 export type { EmailThreadFromContactPicker };
@@ -397,32 +398,6 @@ const ATTACHMENT_KIND_ICONS: Record<AttachmentFileKind, ReactNode> = {
 };
 
 /** Diagonal arrows (GitHub octicon style) — incoming ↙ / outgoing ↗. */
-const DIRECTION_ARROW_PATHS = {
-  received:
-    "M11.78 4.22a.75.75 0 0 1 0 1.06l-5.26 5.26h4.2a.75.75 0 0 1 0 1.5H4.71a.75.75 0 0 1-.75-.75V5.28a.75.75 0 0 1 1.5 0v4.2l5.26-5.26a.75.75 0 0 1 1.06 0Z",
-  sent: "M4.53 4.75A.75.75 0 0 1 5.28 4h6.01a.75.75 0 0 1 .75.75v6.01a.75.75 0 0 1-1.5 0v-4.2l-5.26 5.261a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L9.48 5.5h-4.2a.75.75 0 0 1-.75-.75Z",
-} as const;
-
-function DirectionArrowIcon({
-  direction,
-  size = 9,
-}: {
-  direction: "sent" | "received";
-  size?: number;
-}) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width={size}
-      height={size}
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d={DIRECTION_ARROW_PATHS[direction]} />
-    </svg>
-  );
-}
-
 function sanitizeDownloadFilename(subject: string): string {
   const cleaned = subject
     .trim()
@@ -832,7 +807,7 @@ function EmailThreadMessageCardComponent({
           className={`email-source__direction email-source__direction--${sourceDirection}`}
           aria-label={sourceDirection === "sent" ? "Outgoing" : "Incoming"}
         >
-          <DirectionArrowIcon direction={sourceDirection} size={14} />
+          <EmailDirectionArrowIcon direction={sourceDirection} size={14} />
         </span>
         <span className="email-source__from">
           {fromParts.email || fromAddressLabel}
@@ -1040,7 +1015,7 @@ function EmailThreadMessageCardComponent({
             className={`email-thread-message__direction-dot email-thread-message__direction-dot--${partyAvatar.direction}`}
             aria-hidden="true"
           >
-            <DirectionArrowIcon direction={partyAvatar.direction} />
+            <EmailDirectionArrowIcon direction={partyAvatar.direction} />
           </span>
         </span>
       ) : null}

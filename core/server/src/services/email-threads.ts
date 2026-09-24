@@ -753,6 +753,16 @@ export async function patchEmailThreadMetadataLeaderAware(
       operation: "upsert",
       payload: buildEmailThreadRestPayload(id, inboxId, threadKey, patch),
     });
+    if (patch.status) {
+      void import("./agentmail-settings.js").then((mod) =>
+        mod.syncAgentMailEmailStatusLabel(
+          workspaceId,
+          inboxId,
+          threadKey,
+          patch.status!,
+        ),
+      );
+    }
     const row = await getEmailThreadRow(workspaceId, inboxId, threadKey);
     return row ? toEmailThreadMetadata(workspaceId, row) : null;
   }
@@ -769,6 +779,16 @@ export async function patchEmailThreadMetadataLeaderAware(
     if (row) {
       const { recordEmailThreadRestSyncEvent } = await import("./sync.js");
       await recordEmailThreadRestSyncEvent(workspaceId, row, "upsert");
+    }
+    if (patch.status) {
+      void import("./agentmail-settings.js").then((mod) =>
+        mod.syncAgentMailEmailStatusLabel(
+          workspaceId,
+          inboxId,
+          threadKey,
+          patch.status!,
+        ),
+      );
     }
   }
   return meta;

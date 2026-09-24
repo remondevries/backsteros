@@ -306,13 +306,13 @@ export function EmailSidePanelView({
   return (
     <div className="app-content-side-panel">
       <ContentSidePanelHeader
-        title="Email"
+        title="E-mail"
         actions={
           onCompose ? (
             <button
               type="button"
               className="app-side-panel-section-action"
-              aria-label="Compose email"
+              aria-label="Compose e-mail"
               onClick={onCompose}
             >
               <SidePanelPlusIcon />
@@ -321,7 +321,7 @@ export function EmailSidePanelView({
             <LinkComponent
               to={composeHref}
               className="app-side-panel-section-action"
-              aria-label="Compose email"
+              aria-label="Compose e-mail"
             >
               <SidePanelPlusIcon />
             </LinkComponent>

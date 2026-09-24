@@ -12,6 +12,8 @@ import type {
 } from "@backsteros/contracts";
 import {
   collapseEmailListItemsByThread,
+  isAgentMailMessageUnread,
+  resolveEmailMessageDirection,
   type EmailListItem,
   type EmailMailbox,
   type TaskStatus,
@@ -64,6 +66,8 @@ export type EmailListPatchDetail = {
   conceptDraftId?: string | null;
   /** Clear or set the Updated inbox flag. */
   inboxUpdatedAt?: number | Date | string | null;
+  /** AgentMail unread label. */
+  unread?: boolean;
 };
 
 export type EmailListRemoveDetail = {
@@ -86,7 +90,10 @@ export function dispatchEmailListRemove(detail: EmailListRemoveDetail): void {
   );
 }
 
-function toListItem(entry: AgentMailMessage): EmailListItem | null {
+function toListItem(
+  entry: AgentMailMessage,
+  mailboxEmails: ReadonlySet<string>,
+): EmailListItem | null {
   if (entry.kind === "draft") return null;
   return {
     kind: "message",
@@ -116,6 +123,8 @@ function toListItem(entry: AgentMailMessage): EmailListItem | null {
     number: entry.number ?? null,
     displayId: entry.displayId ?? null,
     inboxUpdatedAt: entry.inboxUpdatedAt ?? null,
+    direction: resolveEmailMessageDirection(entry.from, mailboxEmails),
+    unread: isAgentMailMessageUnread(entry.labels),
   };
 }
 
@@ -166,6 +175,7 @@ function applyListPatch(
       ...(patch.inboxUpdatedAt !== undefined
         ? { inboxUpdatedAt: patch.inboxUpdatedAt }
         : {}),
+      ...(patch.unread !== undefined ? { unread: patch.unread } : {}),
     };
   });
 }
@@ -271,9 +281,14 @@ export function useAgentMailMailboxes(
         }
         if (!mountedRef.current) return;
         startTransition(() => {
+          const mailboxEmails = new Set(
+            (body.inboxes ?? [])
+              .map((inbox) => inbox.email?.trim().toLowerCase())
+              .filter((email): email is string => Boolean(email)),
+          );
           const nextMessages = collapseEmailListItemsByThread(
             (listed.messages ?? [])
-              .map(toListItem)
+              .map((entry) => toListItem(entry, mailboxEmails))
               .filter((item): item is EmailListItem => item != null),
           );
           setMessages(nextMessages);
@@ -334,12 +349,16 @@ export function useAgentMailMailboxes(
       typeof cached.cachedAt === "number" &&
       Date.now() - cached.cachedAt < AGENTMAIL_CACHE_FRESH_MS;
     if (cacheFresh) {
+      // Paint cached rows immediately, but always refresh — an empty/stale
+      // cache within the fresh window previously skipped REST entirely, so
+      // Communication could show “No email yet” while a thread detail loaded.
       hydratedRef.current = true;
       setLoading(false);
       setMessagesLoading(false);
-    } else {
-      void reload();
+    } else if (!cached?.messages.length) {
+      setMessagesLoading(true);
     }
+    void reload();
     return () => {
       mountedRef.current = false;
       reloadAbortRef.current?.abort();

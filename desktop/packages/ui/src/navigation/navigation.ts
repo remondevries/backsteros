@@ -152,7 +152,7 @@ export const routeCopy: Record<
     accent: "#b68cff",
   },
   email: {
-    title: "Email",
+    title: "E-mail",
     description: "Incoming mail from connected inboxes",
     singular: "message",
     accent: "#6aa4e8",

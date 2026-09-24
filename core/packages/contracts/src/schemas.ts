@@ -2608,6 +2608,9 @@ export const agentMailSettingsSchema = z.object({
   replySignOffTemplateEn: z.string(),
   replySignOffTemplateNl: z.string(),
   webhookConfigured: z.boolean(),
+  /** Grok Bot webhook URL for email concept drafts. */
+  grokWebhookConfigured: z.boolean(),
+  grokWebhookUrlPreview: z.string().nullable(),
 });
 export const updateAgentMailSettingsSchema = z.object({
   /** Set to a new key, or empty string to clear. Omit to leave unchanged. */
@@ -2626,6 +2629,10 @@ export const updateAgentMailSettingsSchema = z.object({
   inboxContacts: z
     .record(z.string().min(1), z.string().min(1).nullable())
     .optional(),
+  /** Grok Bot routine URL. Empty string clears. Omit to leave unchanged. */
+  grokWebhookUrl: z.string().max(2000).optional(),
+  /** Grok Bot webhook key/token. Empty string clears. Omit to leave unchanged. */
+  grokWebhookKey: z.string().max(2000).optional(),
 });
 export const agentMailInboxesResponseSchema = z.object({
   inboxes: z.array(agentMailInboxSchema),
@@ -2688,6 +2695,8 @@ export const agentMailMessageSchema = z.object({
   projectKey: z.string().nullable().optional(),
   /** External update flag — surfaces in the Updated inbox group. */
   inboxUpdatedAt: z.string().datetime().nullable().optional(),
+  /** AgentMail labels (e.g. unread / read). */
+  labels: z.array(z.string()).optional(),
 });
 export const agentMailMessagesResponseSchema = z.object({
   messages: z.array(agentMailMessageSchema),
@@ -2815,6 +2824,149 @@ export const emailConceptReplyResponseSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
   inReplyToMessageId: z.string(),
+  /** Editable body without greeting/sign-off. */
+  body: z.string().nullable().optional(),
+  greeting: z.string().nullable().optional(),
+  signOff: z.string().nullable().optional(),
+  subject: z.string().nullable().optional(),
+  to: z.array(z.string()).optional(),
+});
+
+/** Intents the email-thread agent may return via callback. */
+export const emailAgentIntentSchema = z.enum([
+  "reply_draft",
+  "task",
+  "calendar",
+  "note",
+]);
+export type EmailAgentIntent = z.infer<typeof emailAgentIntentSchema>;
+
+export const emailAgentDraftInputSchema = z.object({
+  /** User instruction for Grok (not the finished email). */
+  prompt: z.string().min(1).max(20_000),
+  /**
+   * When set, Grok must use this intent (no classification).
+   * Reply UI always sends `reply_draft`.
+   */
+  intent: emailAgentIntentSchema.optional(),
+  /**
+   * Editable concept-draft body already known on the client.
+   * When present (including null), the server skips the AgentMail draft scan.
+   */
+  currentDraftBody: z.string().max(100_000).nullable().optional(),
+});
+export const emailAgentDraftStartedSchema = z.object({
+  requestId: z.string(),
+  language: z.enum(["en", "nl"]),
+});
+
+export const emailAgentCallbackTaskPayloadSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().max(10_000).nullable().optional(),
+  projectKey: z.string().min(1).max(64).nullable().optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+  /** Filled by core after create (poll response). */
+  taskId: z.string().min(1).max(64).optional(),
+});
+export const emailAgentCallbackEventPayloadSchema = z.object({
+  title: z.string().min(1).max(500),
+  start: z.string().datetime(),
+  end: z.string().datetime(),
+  notes: z.string().max(100_000).nullable().optional(),
+  /** Filled by core after create (poll response). */
+  meetingId: z.string().min(1).max(64).optional(),
+});
+
+/**
+ * Success callback from Judith / Grok Bot.
+ * Legacy `{ ok, requestId, body }` (no intent) is treated as `reply_draft`.
+ */
+export const emailAgentCallbackSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    requestId: z.string().min(1).max(128),
+    intent: emailAgentIntentSchema.optional(),
+    /** Body-only email text (no greeting/sign-off) for reply_draft. */
+    body: z.string().min(1).max(100_000).optional(),
+    draftId: z.string().min(1).max(200).optional(),
+    inboxId: z.string().min(1).max(200).optional(),
+    /** Filled by core after upserting the concept reply. */
+    greeting: z.string().max(2_000).nullable().optional(),
+    signOff: z.string().max(2_000).nullable().optional(),
+    subject: z.string().max(1_000).nullable().optional(),
+    to: z.array(z.string().min(1).max(320)).max(50).optional(),
+    task: emailAgentCallbackTaskPayloadSchema.optional(),
+    event: emailAgentCallbackEventPayloadSchema.optional(),
+    /** Agent-visible note for intent=note (posted as thread comment). */
+    message: z.string().min(1).max(20_000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const intent =
+      value.intent ?? (value.body?.trim() ? "reply_draft" : undefined);
+    if (!intent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "intent is required (or provide body for reply_draft)",
+      });
+      return;
+    }
+    if (intent === "reply_draft" && !value.body?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["body"],
+        message: "body is required for reply_draft",
+      });
+    }
+    if (intent === "task" && !value.task?.title?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["task", "title"],
+        message: "task.title is required for task intent",
+      });
+    }
+    if (intent === "calendar") {
+      if (!value.event?.title?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["event", "title"],
+          message: "event.title is required for calendar intent",
+        });
+      }
+      if (!value.event?.start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["event", "start"],
+          message: "event.start is required for calendar intent",
+        });
+      }
+      if (!value.event?.end) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["event", "end"],
+          message: "event.end is required for calendar intent",
+        });
+      }
+    }
+    if (intent === "note" && !value.message?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["message"],
+        message: "message is required for note intent",
+      });
+    }
+  });
+export const emailAgentCallbackFailureSchema = z.object({
+  ok: z.literal(false),
+  requestId: z.string().min(1).max(128),
+  error: z.string().min(1).max(2000),
+});
+export const emailAgentCallbackResultSchema = z.union([
+  emailAgentCallbackSuccessSchema,
+  emailAgentCallbackFailureSchema,
+]);
+export const emailAgentCallbackPollSchema = z.object({
+  pending: z.boolean(),
+  result: emailAgentCallbackResultSchema.optional(),
 });
 export const emailComposeDraftInputSchema = z.object({
   to: z.string().min(1).max(500),
@@ -2962,6 +3114,10 @@ export const moneybirdBankAccountSyncResultSchema = z.object({
   moneybirdFinancialAccountId: z.string(),
   fetched: z.number().int().nonnegative(),
   inserted: z.number().int().nonnegative(),
+  /** Mutations refreshed because Moneybird `version` advanced. */
+  updated: z.number().int().nonnegative(),
+  /** Local Moneybird rows removed after they disappeared from the sync set. */
+  removed: z.number().int().nonnegative(),
   duplicates: z.number().int().nonnegative(),
   lastSyncedAt: isoDateSchema,
 });
@@ -3848,6 +4004,18 @@ export type EmailConceptReplyInput = z.infer<
 >;
 export type EmailConceptReplyResponse = z.infer<
   typeof emailConceptReplyResponseSchema
+>;
+export type EmailAgentDraftInput = z.infer<typeof emailAgentDraftInputSchema>;
+export type EmailAgentDraftStarted = z.infer<typeof emailAgentDraftStartedSchema>;
+export type EmailAgentCallbackResult = z.infer<
+  typeof emailAgentCallbackResultSchema
+>;
+export type EmailAgentCallbackPoll = z.infer<typeof emailAgentCallbackPollSchema>;
+export type EmailAgentCallbackTaskPayload = z.infer<
+  typeof emailAgentCallbackTaskPayloadSchema
+>;
+export type EmailAgentCallbackEventPayload = z.infer<
+  typeof emailAgentCallbackEventPayloadSchema
 >;
 export type EmailComposeDraftInput = z.infer<
   typeof emailComposeDraftInputSchema

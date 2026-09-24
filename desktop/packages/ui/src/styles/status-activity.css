@@ -31,6 +31,31 @@
   animation: task-status-working-ring 1.85s ease-in-out infinite;
 }
 
+/* Hexagonal twin for project status (same motion, hex outline) */
+.project-status-working-pulse {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.project-status-working-pulse__halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: task-status-working-halo 1.85s ease-out infinite;
+}
+
+.project-status-working-pulse--compact .project-status-working-pulse__halo {
+  animation-name: task-status-working-halo-compact;
+}
+
+.project-status-working-pulse__wedge {
+  animation: task-status-working-wedge 1.85s ease-in-out infinite;
+}
+
+.project-status-working-pulse__ring {
+  animation: task-status-working-ring 1.85s ease-in-out infinite;
+}
+
 @keyframes task-status-working-halo {
   0% {
     opacity: 0.5;

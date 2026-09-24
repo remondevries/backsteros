@@ -41,6 +41,7 @@ import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-prio
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { TransipIcon } from "../icons/transip-icon.js";
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
 import {
   ContentMarkdownPreviewColumn,
@@ -124,6 +125,11 @@ export type ProjectPanelDetailViewProps = {
    * (e.g. Files / Commits / PRs tab content).
    */
   repositoriesSection?: ReactNode;
+  /**
+   * When false, ⌘. does not copy this project's key (hidden keep-alive).
+   * Defaults to true.
+   */
+  copyIdShortcutEnabled?: boolean;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -162,6 +168,7 @@ export function ProjectPanelDetailView({
   propertiesExtra,
   belowDescription,
   repositoriesSection,
+  copyIdShortcutEnabled = true,
 }: ProjectPanelDetailViewProps) {
   const [uncontrolledSection] = useState<ProjectSectionId>(initialSection);
   const section = controlledSection ?? uncontrolledSection;
@@ -177,6 +184,11 @@ export function ProjectPanelDetailView({
   } else {
     adoptRemoteField(project.name, name, nameSource, setName, setNameSource);
   }
+
+  useCopyEntityIdShortcut(
+    () => project.key?.trim() || null,
+    { enabled: copyIdShortcutEnabled },
+  );
 
   useTitleRenameShortcut(
     useCallback(() => {

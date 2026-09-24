@@ -91,6 +91,7 @@ import {
   mapEmailMessagesToTaskRows,
   patchEmailTaskListItem,
 } from "../lib/email-list-tasks";
+import { deleteEmailMessage } from "../lib/delete-email-message";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
 import { writeDocumentContentCache } from "../lib/document-content-cache";
@@ -990,6 +991,20 @@ function ProjectsPageBody({
             });
           }
         }}
+        onDeleteProject={async (project) => {
+          try {
+            await workspace.softDeleteProject(project.id);
+            return { ok: true as const };
+          } catch (error) {
+            return {
+              ok: false as const,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to delete project.",
+            };
+          }
+        }}
       />
     );
   }
@@ -1156,6 +1171,30 @@ function ProjectsPageBody({
               const task = projectTasks.find((entry) => entry.id === taskId);
               if (task && isEmailTaskListItem(task)) continue;
               await workspace.softDeleteTask(taskId);
+            }
+          }}
+          onDeleteTask={async (task) => {
+            if (isEmailTaskListItem(task)) {
+              if (!task.emailInboxId || !task.emailMessageId) {
+                return { ok: false as const, error: "Message is required." };
+              }
+              return deleteEmailMessage(client, {
+                inboxId: task.emailInboxId,
+                messageId: task.emailMessageId,
+                threadId: task.emailThreadId ?? null,
+              });
+            }
+            try {
+              await workspace.softDeleteTask(task.id);
+              return { ok: true as const };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to delete task.",
+              };
             }
           }}
           onReorder={(request) => {
@@ -1802,6 +1841,7 @@ function ProjectsPageBody({
       loadDetail: loadDomainRegistrarDetail,
       loadCloudflareDnsRecords,
       purgeCloudflareCache,
+      copyIdShortcutEnabled: keepAliveActive,
       onSaveName: saveDomainName,
       onSaveKey: saveDomainKey,
       onStatusChange: (status: ProjectStatus) => {
@@ -1925,6 +1965,7 @@ function ProjectsPageBody({
             "",
           taskProgress,
         }}
+        copyIdShortcutEnabled={keepAliveActive}
         nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
         section={activeSection}
         onSectionChange={handleSectionChange}

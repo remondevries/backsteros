@@ -18,11 +18,6 @@ import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap, withAvatarSrc } from "../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
-function inboxOptionLabel(inbox: AgentMailInboxSummary): string {
-  const name = inbox.displayName?.trim();
-  return name ? `${name} (${inbox.email})` : inbox.email;
-}
-
 export function SettingsEmailTab({
   title,
   description,
@@ -46,6 +41,8 @@ export function SettingsEmailTab({
   const [settings, setSettings] = useState<AgentMailSettings | null>(null);
   const [inboxes, setInboxes] = useState<AgentMailInboxSummary[]>([]);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [grokWebhookUrlDraft, setGrokWebhookUrlDraft] = useState("");
+  const [grokWebhookKeyDraft, setGrokWebhookKeyDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [linkingInboxId, setLinkingInboxId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -112,6 +109,8 @@ export function SettingsEmailTab({
       replySignOffTemplateEn?: string;
       replySignOffTemplateNl?: string;
       inboxContacts?: Record<string, string | null>;
+      grokWebhookUrl?: string;
+      grokWebhookKey?: string;
     }): Promise<AgentMailSettings | null> => {
       setSettingsError(null);
       try {
@@ -150,6 +149,8 @@ export function SettingsEmailTab({
     replySignOffTemplateEn?: string;
     replySignOffTemplateNl?: string;
     inboxContacts?: Record<string, string | null>;
+    grokWebhookUrl?: string;
+    grokWebhookKey?: string;
   }): Promise<AgentMailSettings | null> => {
     setSaving(true);
     try {
@@ -200,52 +201,64 @@ export function SettingsEmailTab({
   };
 
   const onClearKey = async () => {
-    await patchSettings({ apiKey: "", inboxIds: [] });
+    await patchSettings({ apiKey: "" });
     setApiKeyDraft("");
   };
 
+  const onSaveGrokWebhook = async () => {
+    const url = grokWebhookUrlDraft.trim();
+    const key = grokWebhookKeyDraft.trim();
+    if (!settings?.grokWebhookConfigured && (!url || !key)) {
+      setSettingsError(
+        "Paste both the Grok Bot webhook URL and key, then click Save Grok webhook.",
+      );
+      return;
+    }
+    if (!url && !key) return;
+    setSettingsError(null);
+    const patch: {
+      grokWebhookUrl?: string;
+      grokWebhookKey?: string;
+    } = {};
+    // Always send whatever was typed; omit only when updating key/url alone on an
+    // already-configured webhook.
+    if (url) patch.grokWebhookUrl = url;
+    else if (!settings?.grokWebhookConfigured) patch.grokWebhookUrl = "";
+    if (key) patch.grokWebhookKey = key;
+    else if (!settings?.grokWebhookConfigured) patch.grokWebhookKey = "";
+
+    const body = await patchSettings(patch);
+    if (!body) return;
+    setGrokWebhookUrlDraft("");
+    setGrokWebhookKeyDraft("");
+    if (!body.grokWebhookConfigured) {
+      setSettingsError(
+        "Saved, but Grok webhook is still incomplete — both URL and key are required.",
+      );
+    }
+  };
+
+  const onClearGrokWebhook = async () => {
+    await patchSettings({ grokWebhookUrl: "", grokWebhookKey: "" });
+    setGrokWebhookUrlDraft("");
+    setGrokWebhookKeyDraft("");
+  };
+
   const connected = settings?.connected ?? false;
-  const selectedIds = settings?.inboxIds ?? (settings?.inboxId ? [settings.inboxId] : []);
-  const selectedInboxes = useMemo(() => {
+  const allInboxes = useMemo(() => {
     if (!settings) return [];
-    const listedById = new Map(inboxes.map((inbox) => [inbox.inboxId, inbox]));
-    const stored = settings.inboxes ?? [];
-    return selectedIds
-      .map((id) => {
-        const listed = listedById.get(id);
-        const fromSettings = stored.find((inbox) => inbox.inboxId === id);
-        if (listed && fromSettings) {
-          return {
-            ...listed,
-            contactId: fromSettings.contactId ?? listed.contactId ?? null,
-            contactName: fromSettings.contactName ?? listed.contactName ?? null,
-          };
-        }
-        return listed ?? fromSettings ?? null;
-      })
-      .filter((inbox): inbox is AgentMailInboxSummary => inbox != null);
-  }, [inboxes, selectedIds, settings]);
+    if (settings.inboxes?.length) return settings.inboxes;
+    return inboxes;
+  }, [inboxes, settings]);
 
   const inboxLabel =
-    selectedInboxes.length === 0
+    allInboxes.length === 0
       ? "—"
-      : selectedInboxes.length === 1
-        ? selectedInboxes[0]!.displayName?.trim() ||
-          selectedInboxes[0]!.email ||
-          selectedInboxes[0]!.inboxId
-        : `${selectedInboxes.length} inboxes`;
-
-  const inboxOptions = useMemo(
-    () =>
-      inboxes.map((inbox) => ({
-        value: inbox.inboxId,
-        label: inboxOptionLabel(inbox),
-        searchTerms: [inbox.email, inbox.displayName ?? "", inbox.inboxId]
-          .filter(Boolean)
-          .join(" "),
-      })),
-    [inboxes],
-  );
+      : allInboxes.length === 1
+        ? allInboxes[0]!.displayName?.trim() ||
+          allInboxes[0]!.email ||
+          allInboxes[0]!.inboxId
+        : `${allInboxes.length} inboxes`;
 
   const contactOptions = useMemo(
     () => buildContactDropdownOptions(contacts),
@@ -278,22 +291,16 @@ export function SettingsEmailTab({
             ? "Loading…"
             : connected
               ? "Connected"
-              : settings.apiKeyConfigured
-                ? "API key saved — pick inboxes"
-                : "Not connected"
+              : "Not connected"
         }
         secondaryLabel="Inboxes"
         secondaryValue={inboxLabel}
-        reason={
-          !connected && settings?.apiKeyConfigured
-            ? "Select one or more inboxes below, then test the connection."
-            : null
-        }
+        reason={null}
         hint={
           connected
             ? settings?.webhookConfigured
-              ? "Inbound webhook connected — new mail refreshes open shells."
-              : "Inbox messages appear when shells fetch them. Set AGENTS_PUBLIC_URL on core for live inbound webhooks."
+              ? "All AgentMail inboxes are included. Inbound webhook connected — new mail refreshes open shells."
+              : "All AgentMail inboxes are included. Set AGENTS_PUBLIC_URL on core for live inbound webhooks."
             : null
         }
         testing={testing}
@@ -411,6 +418,74 @@ export function SettingsEmailTab({
       </section>
 
       <section className="settings-card">
+        <h2>Grok Bot (concept drafts)</h2>
+        <p>
+          When you message the agent from an email thread, BacksterOS wakes this
+          Grok Bot webhook with the thread and your instruction. The bot posts
+          the drafted body back; you review the concept and send yourself.
+        </p>
+        <label className="settings-field">
+          Webhook URL
+          <input
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={
+              settings?.grokWebhookConfigured
+                ? `Configured (${settings.grokWebhookUrlPreview ?? "••••"})`
+                : "https://…"
+            }
+            value={grokWebhookUrlDraft}
+            onChange={(event) => setGrokWebhookUrlDraft(event.target.value)}
+          />
+        </label>
+        <label className="settings-field">
+          Webhook key
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={
+              settings?.grokWebhookConfigured
+                ? "Configured (leave blank to keep)"
+                : "Paste Grok Bot webhook key…"
+            }
+            value={grokWebhookKeyDraft}
+            onChange={(event) => setGrokWebhookKeyDraft(event.target.value)}
+          />
+        </label>
+        <div className="settings-cursor-key-actions">
+          <button
+            type="button"
+            disabled={
+              saving ||
+              settings === null ||
+              (!settings.grokWebhookConfigured &&
+                (!grokWebhookUrlDraft.trim() || !grokWebhookKeyDraft.trim())) ||
+              (settings.grokWebhookConfigured &&
+                !grokWebhookUrlDraft.trim() &&
+                !grokWebhookKeyDraft.trim())
+            }
+            onClick={() => void onSaveGrokWebhook()}
+          >
+            {saving ? "Saving…" : "Save Grok webhook"}
+          </button>
+          <button
+            type="button"
+            disabled={saving || !settings?.grokWebhookConfigured}
+            onClick={() => void onClearGrokWebhook()}
+          >
+            Clear
+          </button>
+        </div>
+        <p className="settings-hint">
+          {settings?.grokWebhookConfigured
+            ? `Configured: ${settings.grokWebhookUrlPreview}`
+            : "Not configured — paste URL + key, then click Save Grok webhook."}
+        </p>
+      </section>
+
+      <section className="settings-card">
         <h2>API key</h2>
         <p>
           Create an API key in the{" "}
@@ -421,8 +496,8 @@ export function SettingsEmailTab({
           >
             AgentMail console
           </a>{" "}
-          and store it here. Organization-scoped keys can list all inboxes;
-          inbox-scoped keys auto-select that inbox.
+          and store it here. Organization-scoped keys include every inbox
+          automatically.
         </p>
         <label className="settings-field">
           AgentMail API key
@@ -475,65 +550,19 @@ export function SettingsEmailTab({
 
       {settings?.apiKeyConfigured ? (
         <section className="settings-card">
-          <h2>Inboxes</h2>
+          <h2>Inbox identities</h2>
           <p>
-            Choose which AgentMail inboxes Backsteros should read. If your key
-            is scoped to a single inbox, it is selected automatically. Later,
-            this choice will control which inboxes appear in the app.
+            Backsteros reads every AgentMail inbox for this API key. Link a
+            contact to each inbox for avatars and sender details when composing
+            email.
           </p>
-          <div className="settings-field">
-            <span>Inboxes</span>
-            <div className="settings-inbox-picker">
-              <SearchableDropdown
-                multiple
-                values={selectedIds}
-                options={inboxOptions}
-                disabled={saving || inboxes.length === 0}
-                emptySelectionLabel={
-                  inboxes.length === 0
-                    ? "Could not load inboxes"
-                    : "Select inboxes…"
-                }
-                searchPlaceholder="Search inboxes…"
-                ariaLabel="AgentMail inboxes"
-                onValuesChange={(next) => {
-                  void patchSettings({ inboxIds: next });
-                }}
-              />
-              {selectedInboxes.length > 0 ? (
-                <div className="settings-inbox-account-labels">
-                  {selectedInboxes.map((inbox) => {
-                    const label = inbox.email?.trim() || inbox.inboxId;
-                    return (
-                      <button
-                        key={inbox.inboxId}
-                        type="button"
-                        className="settings-inbox-account-label"
-                        title={`Remove ${label}`}
-                        disabled={saving}
-                        onClick={() => {
-                          void patchSettings({
-                            inboxIds: selectedIds.filter(
-                              (id) => id !== inbox.inboxId,
-                            ),
-                          });
-                        }}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          </div>
-          {selectedInboxes.length > 0 ? (
+          {allInboxes.length === 0 ? (
+            <p className="settings-hint">
+              No inboxes visible for this API key yet.
+            </p>
+          ) : null}
+          {allInboxes.length > 0 ? (
             <div className="settings-inbox-contact-links">
-              <h3>Inbox identities</h3>
-              <p>
-                Link a contact to each inbox for avatars and sender details when
-                composing email.
-              </p>
               {!workspace.ready && contacts.length === 0 ? (
                 <p className="settings-hint">Loading contacts…</p>
               ) : contacts.length === 0 ? (
@@ -542,7 +571,7 @@ export function SettingsEmailTab({
                 </p>
               ) : null}
               <ul className="settings-inbox-contact-list">
-                {selectedInboxes.map((inbox) => {
+                {allInboxes.map((inbox) => {
                   const linkedContactId = inbox.contactId?.trim() || null;
                   return (
                     <li

@@ -1,6 +1,9 @@
 "use client";
 
-import type { TaskLink } from "@backsteros/contracts";
+import {
+  trackedMinutesFromTaskSchedule,
+  type TaskLink,
+} from "@backsteros/contracts";
 import {
   useEffect,
   useLayoutEffect,
@@ -34,7 +37,9 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { SpellcheckSegmentText } from "../shared/spellcheck-segment-text.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { useContentLayoutTransition } from "../shell/content-layout-transition-context.js";
+import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import {
   TaskPropertiesDisplay,
   type TaskPropertiesDisplayTask,
@@ -67,6 +72,11 @@ function lockTaskDetailWidth(node: HTMLElement) {
   node.style.maxWidth = `${width}px`;
   node.style.minWidth = `${width}px`;
   return width;
+}
+
+function toDate(value: number | Date | null | undefined): Date | null {
+  if (value == null) return null;
+  return value instanceof Date ? value : new Date(value);
 }
 
 export type TaskDetailViewTask = TaskPropertiesDisplayTask & {
@@ -166,6 +176,11 @@ export type TaskDetailViewProps = {
     seconds?: number | null,
   ) => void;
   timerSession?: TrackedTimerSessionMeta | null;
+  /**
+   * When false, ⌘. does not copy this task's display id (hidden keep-alive
+   * detail). Defaults to true.
+   */
+  copyIdShortcutEnabled?: boolean;
 };
 
 export function TaskDetailView({
@@ -219,6 +234,7 @@ export function TaskDetailView({
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
+  copyIdShortcutEnabled = true,
 }: TaskDetailViewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [usePropertiesRail, setUsePropertiesRail] = useState(false);
@@ -227,6 +243,11 @@ export function TaskDetailView({
   layoutAnimatingRef.current = layoutAnimating;
   const widthLockedRef = useRef(false);
   const agentInboxPending = isAgentInboxPending(task);
+
+  useCopyEntityIdShortcut(
+    () => task.displayId?.trim() || null,
+    { enabled: copyIdShortcutEnabled },
+  );
 
   // Freeze pixel width the moment chrome/agent panels start interpolating so
   // chips ↔ rail cannot flip while available space is mid-slide.
@@ -403,6 +424,36 @@ export function TaskDetailView({
       <p className="content-detail-display-id">{task.displayId}</p>
     ) : null;
 
+  // Narrow (chips) only: timer shares the task-id row. Wide rail keeps it in
+  // the properties panel.
+  const narrowTimerNode =
+    !usePropertiesRail && !task.support ? (
+      <div className="content-detail-display-id-row__timer">
+        <TrackedTimeField
+          variant="pill"
+          trackedDurationSeconds={task.trackedDurationSeconds ?? null}
+          trackedMinutes={task.trackedMinutes ?? null}
+          scheduleMinutes={trackedMinutesFromTaskSchedule(
+            toDate(task.dueDate),
+            toDate(task.dueEndDate),
+          )}
+          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+          onTimerSessionChange={onTimerSessionChange}
+          timerSession={timerSession}
+        />
+      </div>
+    ) : null;
+
+  const titleMetaRow =
+    !usePropertiesRail && (displayIdNode || narrowTimerNode) ? (
+      <div className="content-detail-display-id-row">
+        {displayIdNode ?? <span />}
+        {narrowTimerNode}
+      </div>
+    ) : (
+      displayIdNode
+    );
+
   const descriptionPreview =
     hasSpellcheckHighlights && spellcheckHasChanges(descriptionSegments) ? (
       <ContentMarkdownPreviewColumn includeTopInset={false}>
@@ -481,7 +532,7 @@ export function TaskDetailView({
               style={usePropertiesRail ? undefined : { display: "contents" }}
             >
               <ContentDetailTitleHeader>
-                {displayIdNode}
+                {titleMetaRow}
                 {titleEditor}
               </ContentDetailTitleHeader>
               {!usePropertiesRail || task.support ? (
@@ -517,11 +568,6 @@ export function TaskDetailView({
                     onCreateRelatedContactFromQuery={
                       onCreateRelatedContactFromQuery
                     }
-                    onTrackedDurationSecondsChange={
-                      onTrackedDurationSecondsChange
-                    }
-                    onTimerSessionChange={onTimerSessionChange}
-                    timerSession={timerSession}
                   />
                 </div>
               ) : null}

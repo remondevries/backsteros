@@ -163,9 +163,11 @@ export type MeetingListItem = {
 };
 
 export function getCalendarMeetingOverlayHref(meetingId: string): string {
+  // Narrow panel on the Agenda/calendar surface only.
   return `/calendar?${CALENDAR_MEETING_OVERLAY_PARAM}=${encodeURIComponent(meetingId)}`;
 }
 
+/** Full-width meeting detail — default outside the Agenda calendar. */
 export function getCalendarMeetingHref(meetingId: string): string {
   return `/calendar/meetings/${encodeURIComponent(meetingId)}`;
 }

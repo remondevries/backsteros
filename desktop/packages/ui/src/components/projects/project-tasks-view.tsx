@@ -41,10 +41,6 @@ import {
   ListBoardViewShell,
   type ListBoardView,
 } from "../list-nav/list-board-view-shell.js";
-import {
-  useListKeyboardNavigation,
-  useListKeyboardNavigationContainerProps,
-} from "../list-nav/list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import { TaskBoardCard } from "../tasks/task-board-card.js";
 import {
@@ -56,6 +52,14 @@ import {
   type TaskItemRowTask,
 } from "../tasks/task-item-row.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
+import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
+import { getTaskDisplayId } from "../../tasks/task-display-id.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
+} from "../list-nav/list-keyboard-navigation-provider.js";
 
 export type ProjectTasksViewProps = {
   tasks: TaskItemRowTask[];
@@ -90,6 +94,8 @@ export type ProjectTasksViewProps = {
    * Defaults to the widest display id among this project's tasks.
    */
   taskIdColumnCh?: number;
+  /** Plain D deletes the keyboard-highlighted task (confirm modal). */
+  onDeleteTask?: (task: TaskItemRowTask) => Promise<EntityDeleteResult>;
 };
 
 /**
@@ -115,6 +121,7 @@ export function ProjectTasksView({
   renderTaskTitleTrailing,
   isTaskAgentWorking,
   taskIdColumnCh: taskIdColumnChProp,
+  onDeleteTask,
 }: ProjectTasksViewProps) {
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
@@ -329,6 +336,7 @@ export function ProjectTasksView({
       extendSelectionAlongStepRef.current(fromId, toId);
     },
   });
+  const { activeZone } = useListKeyboardNavigationZone();
 
   const {
     selectedIds,
@@ -344,6 +352,18 @@ export function ProjectTasksView({
     toggleHighlightedShortcutEnabled: view === "list",
   });
   extendSelectionAlongStepRef.current = extendSelectionAlongStep;
+
+  const highlightedTask = useMemo((): TaskItemRowTask | null => {
+    if (!highlightedId || !onDeleteTask) return null;
+    return localTasks.find((entry) => entry.id === highlightedId) ?? null;
+  }, [highlightedId, localTasks, onDeleteTask]);
+
+  const taskDeleteEnabled =
+    Boolean(highlightedTask) &&
+    view === "list" &&
+    itemIds.length > 0 &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_MAIN &&
+    !hasBulkSelection;
 
   const selectedTasks = useMemo(
     () => localTasks.filter((task) => selectedIds.has(task.id)),
@@ -534,6 +554,18 @@ export function ProjectTasksView({
 
   return (
     <div className="project-tasks">
+      {taskDeleteEnabled && highlightedTask && onDeleteTask ? (
+        <RegisterEntityDeleteAction
+          entityLabel={
+            getTaskDisplayId(highlightedTask, highlightedTask.projectKey) ||
+            highlightedTask.title.trim() ||
+            "this task"
+          }
+          confirmLabel="Delete task"
+          actionVerb="Delete"
+          onDelete={() => onDeleteTask(highlightedTask)}
+        />
+      ) : null}
       <ListBoardViewShell
         view={view}
         onViewChange={setView}

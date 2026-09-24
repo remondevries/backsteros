@@ -16,6 +16,7 @@ import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dropdown.js";
 import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
+import { EmailDirectionMark } from "../../email/email-direction.js";
 import { ShimmerText } from "../shared/shimmer-text.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
@@ -34,8 +35,10 @@ export type TaskBoardCardTask = {
   /** Mirrors `TaskItemRowTask.listKind`; the card only styles `"email"`. */
   listKind?: "task" | "email" | "meeting";
   emailPartyLabel?: string | null;
+  emailDirection?: "sent" | "received" | null;
   emailMailboxLabel?: string | null;
   emailMailboxAvatarSrc?: string | null;
+  emailUnread?: boolean;
   /** Support ticket — support-ring glyph with status color. */
   support?: boolean | null;
   /** Notification-style task — bell glyph with status color. */
@@ -139,7 +142,7 @@ export function TaskBoardCardComponent({
                 size={14}
               />
               <span className="task-item-row__mailbox-name">
-                {task.emailMailboxLabel?.trim() || "Email"}
+                {task.emailMailboxLabel?.trim() || "E-mail"}
               </span>
             </span>
           ) : (
@@ -281,10 +284,14 @@ export function TaskBoardCardComponent({
           {isEmail ? (
             <span
               className="task-item-row__email-mark"
-              title="Email"
-              aria-label="Email"
+              title="E-mail"
+              aria-label="E-mail"
             >
-              <InboxItemTypeIcon kind="email" size={12} />
+              <InboxItemTypeIcon
+                kind="email"
+                size={12}
+                unread={task.emailUnread === true}
+              />
             </span>
           ) : null}
           <span className="task-kanban-card-title" title={task.title}>
@@ -296,7 +303,16 @@ export function TaskBoardCardComponent({
           </span>
           {isEmail && task.emailPartyLabel ? (
             <span className="task-item-row__email-party">
-              {task.emailPartyLabel}
+              {task.emailDirection ? (
+                <EmailDirectionMark
+                  direction={task.emailDirection}
+                  size={13}
+                  className="task-item-row__email-direction"
+                />
+              ) : null}
+              <span className="task-item-row__email-party-text">
+                {task.emailPartyLabel}
+              </span>
             </span>
           ) : null}
           {titleTrailing ? (

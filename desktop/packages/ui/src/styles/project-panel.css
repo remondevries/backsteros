@@ -570,6 +570,60 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Task id (left) + tracked-time timer (right) on one row. */
+.content-detail-display-id-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 0.5rem;
+  min-width: 0;
+}
+
+.content-detail-display-id-row .content-detail-display-id {
+  margin: 0;
+  min-width: 0;
+}
+
+.content-detail-display-id-row__timer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: auto;
+}
+
+.content-detail-display-id-row__timer .tracked-time-pill-wrap {
+  gap: 0;
+}
+
+.content-detail-display-id-row__timer .tracked-time-pill {
+  gap: 5px;
+  min-height: 0;
+  padding: 3px 8px 3px 3px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.content-detail-display-id-row__timer .tracked-time-pill.is-running {
+  border-color: color-mix(in srgb, #7ee2a8 45%, transparent);
+  background: color-mix(in srgb, #7ee2a8 8%, transparent);
+}
+
+.content-detail-display-id-row__timer .tracked-time-pill__toggle {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.content-detail-display-id-row__timer .tracked-time-pill__hint {
+  display: none;
+}
+
 .task-item-row__project-trigger {
   display: inline-flex;
   max-width: 100%;

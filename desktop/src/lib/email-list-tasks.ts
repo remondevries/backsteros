@@ -63,6 +63,7 @@ export function mapEmailMessagesToTaskRows(
     emailThreadId: item.emailThreadId,
     number: item.number,
     displayId: item.displayId,
+    unread: item.unread === true,
   });
   });
 }

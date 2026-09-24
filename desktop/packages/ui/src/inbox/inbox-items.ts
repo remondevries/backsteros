@@ -14,6 +14,10 @@ import {
   withEmailListContext,
 } from "../email/email.js";
 import {
+  resolveEmailMessageDirection,
+  type EmailMessageDirection,
+} from "../email/email-direction.js";
+import {
   INACTIVE_TASK_STATUSES,
   getTaskDueDateYmd,
   taskDueDateMatchesFilter,
@@ -135,6 +139,10 @@ export type InboxEmailListItem = {
   /** Our mailbox label (ID-column / mono mark). */
   mailboxLabel?: string | null;
   mailboxAvatarSrc?: string | null;
+  /** Incoming vs outgoing — drives the party-line direction arrow. */
+  direction?: "sent" | "received" | null;
+  /** AgentMail `unread` label — orange dot on the email status icon. */
+  unread?: boolean;
   /** External update flag — surfaces in the Updated inbox group. */
   inboxUpdatedAt?: number | Date | string | null;
 };
@@ -310,10 +318,15 @@ export function buildInboxEmailListItem(input: {
   contactName?: string | null;
   mailboxLabel?: string | null;
   mailboxAvatarSrc?: string | null;
+  /** Our mailbox address — used with `from` when `direction` is omitted. */
+  mailboxEmail?: string | null;
+  /** Explicit direction; defaults from `from` vs `mailboxEmail`. */
+  direction?: EmailMessageDirection | null;
   emailThreadId?: string | null;
   number?: number | null;
   displayId?: string | null;
   inboxUpdatedAt?: number | Date | string | null;
+  unread?: boolean;
 }): InboxEmailListItem {
   const dueDate =
     input.dueDate == null
@@ -327,6 +340,15 @@ export function buildInboxEmailListItem(input: {
   const inboxId = input.inboxId.trim();
   const threadId = input.threadId?.trim() || null;
   const draftId = input.draftId?.trim() || null;
+  const mailboxEmail = input.mailboxEmail?.trim() || null;
+  const direction =
+    input.direction ??
+    (mailboxEmail || input.from
+      ? resolveEmailMessageDirection(
+          input.from,
+          mailboxEmail ? [mailboxEmail] : [],
+        )
+      : null);
   return {
     kind: "email",
     id: emailInboxItemId(inboxId, threadId, messageId),
@@ -351,12 +373,14 @@ export function buildInboxEmailListItem(input: {
     contactName: input.contactName ?? null,
     mailboxLabel: input.mailboxLabel?.trim() || null,
     mailboxAvatarSrc: input.mailboxAvatarSrc ?? null,
+    direction,
     emailThreadId: input.emailThreadId ?? null,
     number: input.number ?? null,
     displayId: input.displayId?.trim() || (
       input.number != null ? formatEmailDisplayId(input.number) : null
     ),
     inboxUpdatedAt: input.inboxUpdatedAt ?? null,
+    unread: input.unread === true,
   };
 }
 
@@ -426,6 +450,7 @@ export function buildTaskListEmailItem(input: {
   emailThreadId?: string | null;
   number?: number | null;
   displayId?: string | null;
+  unread?: boolean;
 }): TaskItemRowTask {
   const email = buildInboxEmailListItem(input);
   return {
@@ -448,8 +473,10 @@ export function buildTaskListEmailItem(input: {
     emailPartyLabel: email.partyLabel,
     emailMailboxLabel: email.mailboxLabel,
     emailMailboxAvatarSrc: email.mailboxAvatarSrc,
+    emailDirection: email.direction ?? null,
     emailNumber: email.number,
     emailDisplayId: email.displayId,
+    emailUnread: email.unread === true,
   };
 }
 
@@ -457,6 +484,91 @@ export function isEmailTaskListItem(
   task: Pick<TaskItemRowTask, "listKind">,
 ): boolean {
   return task.listKind === "email";
+}
+
+/** Map a Communication / Inbox list row onto the shared Tasks list chrome. */
+export function inboxListItemToTaskItemRowTask(
+  item: InboxListItem,
+): TaskItemRowTask | null {
+  if (item.kind === "email") {
+    return {
+      id: item.id,
+      number: item.number ?? 0,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      dueDate: item.dueDate,
+      projectId: item.projectId,
+      projectKey: item.projectKey,
+      projectName: item.projectName,
+      assigneeId: item.assigneeId,
+      contactId: item.contactId ?? null,
+      updatedAt: item.updatedAt,
+      inboxUpdatedAt: item.inboxUpdatedAt ?? null,
+      listKind: "email",
+      emailInboxId: item.inboxId,
+      emailMessageId: item.messageId,
+      emailThreadId: item.emailThreadId ?? item.threadId,
+      emailPartyLabel: item.partyLabel,
+      emailMailboxLabel: item.mailboxLabel ?? null,
+      emailMailboxAvatarSrc: item.mailboxAvatarSrc ?? null,
+      emailDirection: item.direction ?? null,
+      emailNumber: item.number ?? null,
+      emailDisplayId: item.displayId ?? null,
+      emailUnread: item.unread === true,
+    };
+  }
+  if (item.kind === "task") {
+    return {
+      id: item.id,
+      number: item.number,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      dueDate: item.dueDate,
+      projectId: item.projectId,
+      projectKey: item.projectKey,
+      projectName: item.projectName,
+      assigneeId: item.assigneeId,
+      updatedAt: item.updatedAt,
+      support: item.support ?? null,
+      notification: item.notification ?? null,
+      agentCreatedAt: item.agentCreatedAt ?? null,
+      agentInboxApprovedAt: item.agentInboxApprovedAt ?? null,
+      inboxUpdatedAt: item.inboxUpdatedAt ?? null,
+      inbox: item.inbox ?? null,
+      listKind: "task",
+    };
+  }
+  if (item.kind === "meeting") {
+    return {
+      id: item.id,
+      number: item.number,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      dueDate:
+        typeof item.startAt === "number"
+          ? item.startAt
+          : item.startAt instanceof Date
+            ? item.startAt.getTime()
+            : Date.parse(String(item.startAt)) || null,
+      dueEndDate:
+        typeof item.endAt === "number"
+          ? item.endAt
+          : item.endAt instanceof Date
+            ? item.endAt.getTime()
+            : Date.parse(String(item.endAt)) || null,
+      projectId: item.projectId ?? null,
+      projectKey: item.projectKey ?? null,
+      projectName: item.projectName ?? null,
+      updatedAt: item.updatedAt,
+      inboxUpdatedAt: item.inboxUpdatedAt ?? null,
+      listKind: "meeting",
+      meetingScheduleLabel: item.scheduleLabel ?? null,
+    };
+  }
+  return null;
 }
 
 export function getEmailTaskListHref(
@@ -657,7 +769,7 @@ export function getInboxItemDisplayId(item: InboxListItem): string {
   }
   if (item.kind === "email") {
     return item.displayId?.trim() || (
-      item.number != null ? formatEmailDisplayId(item.number) : "Email"
+      item.number != null ? formatEmailDisplayId(item.number) : "E-mail"
     );
   }
   if (item.kind === "meeting") {

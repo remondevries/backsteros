@@ -147,6 +147,11 @@ export function SegmentedPillToggle<T extends string>({
             aria-label={option.label}
             disabled={disabled}
             title={title}
+            // Keep focus where it was — button focus scrolls ancestor
+            // scrollports (email Preview ↔ Edit jumps the thread).
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
             onClick={() => onChange(option.value)}
           >
             {option.icon ?? option.label}

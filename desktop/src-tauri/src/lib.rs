@@ -57,6 +57,11 @@ const FORCE_CONTENT_PREVIEW_JS: &str =
 const TITLE_RENAME_JS: &str =
     "window.dispatchEvent(new CustomEvent('backsteros:title-rename'))";
 
+/// Dispatched when ⌘. / Ctrl+. fires. AppKit treats ⌘. as Cancel and WKWebView
+/// often never delivers the keydown to JS — same class of bug as ⌘K / ⌘R.
+const COPY_ENTITY_ID_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsteros:copy-entity-id'))";
+
 fn is_app_origin(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" | "asset" | "data" | "blob" => true,
@@ -129,6 +134,12 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+R")
         .build(handle)?;
 
+    // Claim ⌘. so AppKit/WKWebView cannot swallow it as Cancel before JS sees it.
+    let copy_entity_id_item =
+        MenuItemBuilder::with_id("copy-entity-id", "Copy Task/Project ID")
+            .accelerator("CmdOrCtrl+.")
+            .build(handle)?;
+
     let edit_submenu = SubmenuBuilder::new(handle, "Edit")
         .item(&search_item)
         .item(&search_item_shift)
@@ -136,6 +147,7 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
         .item(&toggle_view_mode_item)
         .item(&force_preview_item)
         .item(&title_rename_item)
+        .item(&copy_entity_id_item)
         .separator()
         .undo()
         .redo()
@@ -207,6 +219,13 @@ fn dispatch_title_rename(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
         let _ = window.eval(TITLE_RENAME_JS);
+    }
+}
+
+fn dispatch_copy_entity_id(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+        let _ = window.eval(COPY_ENTITY_ID_JS);
     }
 }
 
@@ -330,6 +349,8 @@ pub fn run() {
                 dispatch_force_content_preview(app);
             } else if event.id() == "title-rename" {
                 dispatch_title_rename(app);
+            } else if event.id() == "copy-entity-id" {
+                dispatch_copy_entity_id(app);
             }
         })
         .setup(|app| {

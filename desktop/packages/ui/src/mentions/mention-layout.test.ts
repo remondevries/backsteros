@@ -6,6 +6,8 @@ import {
   listItemLeadingNewlinesContinueList,
   matchListItemOpener,
   resolveMentionLayout,
+  shouldOmitBlockMentionSeparatorWhitespace,
+  trimTrailingNewlinesBeforeBlockMention,
 } from "./mention-layout.js";
 
 function layoutFor(markdown: string) {
@@ -66,6 +68,55 @@ describe("matchListItemOpener / listItemLeadingNewlinesContinueList", () => {
     assert.equal(
       listItemLeadingNewlinesContinueList(opener.leadingNewlines),
       false,
+    );
+  });
+});
+
+describe("block mention separator whitespace", () => {
+  it("omits single newlines that only separate stacked block chips", () => {
+    const segments = segmentMarkdownWithMentions(
+      "Plugin updates:\n[@task:QM-24]\n[@task:QM-25]",
+    );
+    const firstWs = segments.findIndex(
+      (segment, index) =>
+        index > 0 &&
+        segment.type === "markdown" &&
+        segment.content.trim() === "",
+    );
+    assert.ok(firstWs >= 0);
+    assert.equal(
+      shouldOmitBlockMentionSeparatorWhitespace(segments, firstWs, true),
+      true,
+    );
+    assert.equal(
+      shouldOmitBlockMentionSeparatorWhitespace(segments, firstWs, false),
+      true,
+    );
+  });
+
+  it("trims trailing newlines on text that precedes a block chip stack", () => {
+    const segments = segmentMarkdownWithMentions(
+      "Plugin updates (in review):\n[@task:QM-24]\n[@task:QM-25]",
+    );
+    assert.equal(segments[0]?.type, "markdown");
+    const content =
+      segments[0]?.type === "markdown" ? segments[0].content : "";
+    assert.equal(
+      trimTrailingNewlinesBeforeBlockMention(content, segments, 0),
+      "Plugin updates (in review):",
+    );
+  });
+
+  it("keeps trailing newlines when the next mention stays inline", () => {
+    const segments = segmentMarkdownWithMentions(
+      "See note\n[@task:IN-1] later",
+    );
+    assert.equal(segments[0]?.type, "markdown");
+    const content =
+      segments[0]?.type === "markdown" ? segments[0].content : "";
+    assert.equal(
+      trimTrailingNewlinesBeforeBlockMention(content, segments, 0),
+      content,
     );
   });
 });

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchBacksterosProjectFsFile } from "~/backsteros/client";
-import { BacksterosDocumentIcon } from "~/backsteros/DocumentIcon";
+import {
+  CodebaseFsTreeChevron,
+  CodebaseFsTreeChevronSpacer,
+  CodebaseFsTreeEntryIcon,
+} from "~/backsteros/CodebaseFsTreeChrome";
 import {
   buildDocumentTree,
   codebaseRepoDocsToTreeSources,
@@ -12,27 +16,6 @@ import type { BacksterosProjectRepoDocEntry } from "~/backsteros/types";
 import { cn } from "~/lib/utils";
 import "~/backsteros/codebaseDocs.css";
 
-function ChevronIcon(props: { readonly expanded: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      width="12"
-      height="12"
-      aria-hidden="true"
-      className={cn("bos-codebase-docs__chevron", props.expanded && "is-expanded")}
-    >
-      <path
-        d="M4 2.5L8 6L4 9.5"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
-  );
-}
-
 function DocsTreeNodeView(props: {
   readonly node: DocumentTreeNode;
   readonly depth: number;
@@ -42,28 +25,25 @@ function DocsTreeNodeView(props: {
   readonly onSelectDocument: (path: string) => void;
 }) {
   const { node, depth, selectedPath, collapsedFolderIds, onToggleFolder, onSelectDocument } = props;
-  const paddingLeft = depth > 0 ? depth * 12 : undefined;
 
   if (node.type === "folder") {
     const collapsed = collapsedFolderIds.has(node.id);
     return (
-      <li className="bos-codebase-docs__tree-item">
-        <div style={paddingLeft != null ? { paddingLeft } : undefined}>
-          <button
-            type="button"
-            className="bos-codebase-docs__row bos-codebase-docs__row--folder"
-            aria-expanded={!collapsed}
-            title="Click to expand or collapse"
-            onClick={() => onToggleFolder(node.id)}
-          >
-            <span className="bos-codebase-docs__row-icon" aria-hidden="true">
-              <ChevronIcon expanded={!collapsed} />
-            </span>
-            <span className="bos-codebase-docs__row-label">{node.title}</span>
-          </button>
-        </div>
+      <li className="bos-fs-tree-item">
+        <button
+          type="button"
+          className="bos-fs-tree-row"
+          style={{ paddingLeft: 8 + depth * 14 }}
+          aria-expanded={!collapsed}
+          title="Click to expand or collapse"
+          onClick={() => onToggleFolder(node.id)}
+        >
+          <CodebaseFsTreeChevron expanded={!collapsed} />
+          <CodebaseFsTreeEntryIcon path={node.id} kind="directory" />
+          <span className="bos-fs-tree-name">{node.title}</span>
+        </button>
         {!collapsed && node.children.length > 0 ? (
-          <ul className="bos-codebase-docs__tree-children">
+          <ul className="bos-fs-tree-children">
             {node.children.map((child) => (
               <DocsTreeNodeView
                 key={child.id}
@@ -83,19 +63,17 @@ function DocsTreeNodeView(props: {
 
   const isSelected = node.path === selectedPath;
   return (
-    <li className="bos-codebase-docs__tree-item">
-      <div style={paddingLeft != null ? { paddingLeft } : undefined}>
-        <button
-          type="button"
-          className={cn("bos-codebase-docs__row", isSelected && "is-selected")}
-          onClick={() => onSelectDocument(node.path)}
-        >
-          <span className="bos-codebase-docs__row-icon" aria-hidden="true">
-            <BacksterosDocumentIcon size={14} />
-          </span>
-          <span className="bos-codebase-docs__row-label">{node.title}</span>
-        </button>
-      </div>
+    <li className="bos-fs-tree-item">
+      <button
+        type="button"
+        className={cn("bos-fs-tree-row is-file", isSelected && "is-selected")}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        onClick={() => onSelectDocument(node.path)}
+      >
+        <CodebaseFsTreeChevronSpacer />
+        <CodebaseFsTreeEntryIcon path={node.path} kind="file" />
+        <span className="bos-fs-tree-name">{node.title}</span>
+      </button>
     </li>
   );
 }
@@ -106,6 +84,17 @@ function findDocumentTitle(nodes: readonly DocumentTreeNode[], path: string): st
     if (node.type === "folder") {
       const found = findDocumentTitle(node.children, path);
       if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findFirstDocumentPath(nodes: readonly DocumentTreeNode[]): string | null {
+  for (const node of nodes) {
+    if (node.type === "document") return node.path;
+    if (node.type === "folder") {
+      const nested = findFirstDocumentPath(node.children);
+      if (nested) return nested;
     }
   }
   return null;
@@ -160,6 +149,24 @@ export function BacksterosCodebaseDocsPanel(props: {
     setFileError(null);
     setCollapsedFolderIds(new Set());
   }, [projectId]);
+
+  // Desktop parity: landing on Documents opens the first doc so the list is
+  // never shown alone. Re-pick when the selection is missing or stale.
+  useEffect(() => {
+    if (loading) return;
+    if (entries.length === 0) {
+      if (selectedPath) setSelectedPath(null);
+      return;
+    }
+    const first = findFirstDocumentPath(tree);
+    if (!first) {
+      if (selectedPath) setSelectedPath(null);
+      return;
+    }
+    const selectionStillValid =
+      selectedPath != null && findDocumentTitle(tree, selectedPath) != null;
+    if (!selectionStillValid) setSelectedPath(first);
+  }, [entries.length, loading, selectedPath, tree]);
 
   const toggleFolder = useCallback((folderId: string) => {
     setCollapsedFolderIds((current) => {
@@ -230,7 +237,11 @@ export function BacksterosCodebaseDocsPanel(props: {
       )}
     >
       <div className="bos-codebase-docs__tree-pane">
-        <div className="bos-codebase-docs__tree" role="navigation" aria-label="Project documents">
+        <div
+          className="bos-fs-tree-pane bos-fs-tree-pane--docs"
+          role="navigation"
+          aria-label="Project documents"
+        >
           {treeEmptyMessage ? (
             <div className="bos-codebase-docs__empty">
               <p>{treeEmptyMessage}</p>
@@ -251,7 +262,7 @@ export function BacksterosCodebaseDocsPanel(props: {
               ) : null}
             </div>
           ) : (
-            <ul className="bos-codebase-docs__tree-list">
+            <ul className="bos-fs-tree" role="tree" aria-label="Project documents">
               {tree.map((node) => (
                 <DocsTreeNodeView
                   key={node.id}

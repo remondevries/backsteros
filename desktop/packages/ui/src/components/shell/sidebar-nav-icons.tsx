@@ -49,11 +49,11 @@ export function EmailNavIcon({ className, size = 16 }: SidebarNavIconProps) {
   );
 }
 
-export function TasksNavIcon({ className }: SidebarNavIconProps) {
+export function TasksNavIcon({ className, size = 16 }: SidebarNavIconProps) {
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 16 16"
       fill="none"
       aria-hidden="true"

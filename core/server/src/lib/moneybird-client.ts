@@ -641,6 +641,90 @@ export class MoneybirdClient {
       .map(mapMoneybirdFinancialAccount);
   }
 
+  /**
+   * Paginated ledger accounts — used to map financial_account_id → ledger id
+   * when reading balance-sheet values.
+   */
+  async listLedgerAccounts(options?: {
+    stopWhenFinancialAccountId?: string;
+  }): Promise<
+    Array<{ id: string; financialAccountId: string | null; name: string }>
+  > {
+    const administrationId = this.requireAdministrationId();
+    const stopId = options?.stopWhenFinancialAccountId?.trim() || null;
+    const out: Array<{
+      id: string;
+      financialAccountId: string | null;
+      name: string;
+    }> = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const path = `/${encodeURIComponent(administrationId)}/ledger_accounts.json?per_page=100&page=${page}`;
+      const raw = await this.requestJson<unknown[]>(path);
+      if (!Array.isArray(raw) || raw.length === 0) break;
+      for (const row of raw) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+        const id = asStringId((row as Record<string, unknown>).id);
+        if (!id) continue;
+        const financialAccountId = asStringId(
+          (row as Record<string, unknown>).financial_account_id,
+        );
+        out.push({
+          id,
+          financialAccountId,
+          name:
+            asOptionalString((row as Record<string, unknown>).name) ??
+            "Ledger account",
+        });
+        if (stopId && financialAccountId === stopId) {
+          return out;
+        }
+      }
+      if (raw.length < 100) break;
+    }
+    return out;
+  }
+
+  /**
+   * Trial / balance-sheet report values keyed by ledger_account_id.
+   * Moneybird's bank UI saldo matches these — not always the raw mutation sum
+   * (e.g. provider interest / opening differences).
+   */
+  async getBalanceSheetLedgerValues(options?: {
+    period?: string;
+  }): Promise<Map<string, number>> {
+    const administrationId = this.requireAdministrationId();
+    const period = options?.period?.trim() || "this_year";
+    const params = new URLSearchParams();
+    params.set("period", period);
+    const path = `/${encodeURIComponent(administrationId)}/reports/balance_sheet.json?${params.toString()}`;
+    const raw = await this.requestJson<Record<string, unknown>>(path);
+    const values = new Map<string, number>();
+    const walk = (node: unknown): void => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        for (const child of node) walk(child);
+        return;
+      }
+      const row = node as Record<string, unknown>;
+      const ledgerId = asStringId(row.ledger_account_id);
+      const valueRaw = row.value;
+      if (ledgerId && valueRaw != null) {
+        const n =
+          typeof valueRaw === "number"
+            ? valueRaw
+            : typeof valueRaw === "string"
+              ? Number(valueRaw)
+              : NaN;
+        if (Number.isFinite(n)) {
+          values.set(ledgerId, Math.round(n * 100));
+        }
+      }
+      for (const child of Object.values(row)) walk(child);
+    };
+    walk(raw);
+    return values;
+  }
+
   async listFinancialMutationSyncIds(options?: {
     financialAccountId?: string;
     period?: string;

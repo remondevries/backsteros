@@ -155,7 +155,6 @@ export function LetterPropertiesDisplay({
         onChange={(next) =>
           onContactChange?.(next === "__none__" ? null : next)
         }
-        disabled={!letter.organizationId}
         searchPlaceholder="Change contact…"
         searchShortcutLabel="⇧C"
         ariaLabel="Contact"
@@ -164,13 +163,11 @@ export function LetterPropertiesDisplay({
         fallbackLabel="No contact"
         mutedFallback
         createFromQueryLabel={
-          onCreateContactFromQuery && letter.organizationId
+          onCreateContactFromQuery
             ? (query) => getCreateEntityFromQueryLabel("contact", query)
             : undefined
         }
-        onCreateFromQuery={
-          letter.organizationId ? onCreateContactFromQuery : undefined
-        }
+        onCreateFromQuery={onCreateContactFromQuery}
       />
     </PropertyDropdownNavigateRow>
   ) : (

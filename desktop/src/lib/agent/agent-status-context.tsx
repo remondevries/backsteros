@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -160,14 +161,28 @@ export function DesktopAgentStatusProvider({
 
   const workingTaskIds = useMemo(() => {
     if (remoteWorkingTaskIds.size === 0) return mergedLocalWorking;
+    if (mergedLocalWorking.size === 0) return remoteWorkingTaskIds;
+    let changed = false;
+    for (const id of remoteWorkingTaskIds) {
+      if (!mergedLocalWorking.has(id)) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed && remoteWorkingTaskIds.size <= mergedLocalWorking.size) {
+      return mergedLocalWorking;
+    }
     const merged = new Set(mergedLocalWorking);
     for (const id of remoteWorkingTaskIds) merged.add(id);
     return merged;
   }, [mergedLocalWorking, remoteWorkingTaskIds]);
 
+  const mergedLocalWorkingRef = useRef(mergedLocalWorking);
+  mergedLocalWorkingRef.current = mergedLocalWorking;
+
   useEffect(() => {
     const heartbeat = () => {
-      for (const taskId of mergedLocalWorking) {
+      for (const taskId of mergedLocalWorkingRef.current) {
         void client
           .requestJson(
             `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
@@ -186,6 +201,22 @@ export function DesktopAgentStatusProvider({
       SHARED_AGENT_PRESENCE_HEARTBEAT_MS,
     );
     return () => window.clearInterval(timer);
+  }, [client]);
+
+  useEffect(() => {
+    // Kick an immediate heartbeat when local membership changes.
+    for (const taskId of mergedLocalWorking) {
+      void client
+        .requestJson(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ source: "desktop" }),
+          },
+        )
+        .catch(() => {});
+    }
   }, [client, mergedLocalWorking]);
 
   useEffect(() => {
@@ -202,7 +233,16 @@ export function DesktopAgentStatusProvider({
             setRemoteWorkingTaskIds(EMPTY_WORKING_TASK_IDS);
             return;
           }
-          setRemoteWorkingTaskIds(new Set(rows.map((row) => row.taskId)));
+          setRemoteWorkingTaskIds((current) => {
+            const next = new Set(rows.map((row) => row.taskId));
+            if (
+              current.size === next.size &&
+              [...next].every((id) => current.has(id))
+            ) {
+              return current;
+            }
+            return next;
+          });
         })
         .catch(() => {});
     };

@@ -721,6 +721,12 @@
   animation: desktop-agent-chat-spin 0.9s linear infinite;
 }
 
+@keyframes desktop-agent-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .desktop-agent-chat--composer-only {
   display: block;
   width: 100%;

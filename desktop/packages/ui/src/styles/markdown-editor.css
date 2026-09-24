@@ -918,7 +918,7 @@ a.mention-chip-lite--deleted:hover {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0;
 }
 
 .mention-task-stack .mention-task-block {
@@ -968,7 +968,7 @@ a.mention-chip-lite--deleted:hover {
 }
 
 .content-markdown-preview-body--rendered .mention-task-stack {
-  margin-bottom: 0.85rem;
+  margin-bottom: 0;
 }
 
 @media (prefers-color-scheme: light) {

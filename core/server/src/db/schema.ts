@@ -120,6 +120,10 @@ export const workspaceIntegrationSecrets = pgTable(
     agentmailWebhookId: text("agentmail_webhook_id"),
     agentmailWebhookSecret: text("agentmail_webhook_secret"),
     agentmailWebhookUrl: text("agentmail_webhook_url"),
+    /** Grok Bot routine URL for email concept drafts (desktop agent prompt). */
+    emailGrokWebhookUrl: text("email_grok_webhook_url"),
+    /** Bearer/token for the Grok Bot webhook Authorization header. */
+    emailGrokWebhookKey: text("email_grok_webhook_key"),
     mapboxAccessToken: text("mapbox_access_token"),
     githubApiToken: text("github_api_token"),
     transipAccessToken: text("transip_access_token"),
@@ -1967,3 +1971,31 @@ export const fileTaskCallbacks = pgTable(
 );
 
 export type DbFileTaskCallback = typeof fileTaskCallbacks.$inferSelect;
+
+/**
+ * Cloud-only TTL mailbox for Grok Bot email concept-draft receipts.
+ * Not in REPLICATED_TABLES — the public door is cloud-core.
+ */
+export const emailAgentCallbacks = pgTable(
+  "email_agent_callbacks",
+  {
+    requestId: text("request_id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    inboxId: text("inbox_id").notNull(),
+    messageId: text("message_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    result: jsonb("result"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("email_agent_callbacks_workspace_id_idx").on(table.workspaceId),
+    index("email_agent_callbacks_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export type DbEmailAgentCallback = typeof emailAgentCallbacks.$inferSelect;

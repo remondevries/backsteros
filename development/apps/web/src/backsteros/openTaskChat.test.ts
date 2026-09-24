@@ -24,7 +24,14 @@ import {
   resolveActiveBacksterosTaskChatBinding,
   resolveActiveBacksterosTaskId,
 } from "./openTaskChat";
-import { useBacksterosTaskChatStore, type BacksterosTaskChatBinding } from "./taskChatStore";
+import {
+  backsterosTaskLogicalProjectKey,
+  useBacksterosTaskChatStore,
+  type BacksterosTaskChatBinding,
+} from "./taskChatStore";
+import { useBacksterosTaskKickoffGateStore } from "./taskKickoffGateStore";
+import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { BacksterosCodebaseProject, BacksterosTask } from "./types";
 
 const fetchControlBindingsMock = vi.mocked(fetchControlBindings);
@@ -90,6 +97,7 @@ const t3Project = {
 describe("openTaskChat helpers", () => {
   beforeEach(() => {
     useBacksterosTaskChatStore.setState({ byTaskId: {}, retiredThreadKeys: [] });
+    useBacksterosTaskKickoffGateStore.setState({ byTaskId: {} });
     fetchControlBindingsMock.mockReset();
     fetchControlBindingsMock.mockResolvedValue({ ok: false, bindings: [] });
   });
@@ -265,6 +273,100 @@ describe("openTaskChat helpers", () => {
         to: "/draft/$draftId",
         params: { draftId: next?.kind === "draft" ? next.draftId : undefined },
         replace: true,
+      },
+    ]);
+  });
+
+  it("clears a stale draft bound to the wrong t3ProjectId and creates a fresh one", async () => {
+    useBacksterosTaskChatStore.getState().setBinding(task.id, {
+      ...draftBinding,
+      t3ProjectId: "project-old-wordpress",
+      draftId: "draft-stale",
+      threadId: "thread-stale",
+    });
+    useBacksterosTaskKickoffGateStore.getState().setGate(task.id, {
+      mode: "gate",
+      kickoffPrompt:
+        "Working directory: /Users/remondevries/code/quarrymill.com/wordpress\n\nstale",
+    });
+
+    const navigations: Array<{
+      to: string;
+      params?: Record<string, string>;
+    }> = [];
+
+    await openBacksterosTaskChat({
+      task,
+      backsterosProject,
+      projects: [t3Project],
+      navigate: async (opts) => {
+        navigations.push(opts);
+      },
+    });
+
+    const next = useBacksterosTaskChatStore.getState().getBinding(task.id);
+    expect(next?.kind).toBe("draft");
+    expect(next?.t3ProjectId).toBe("project-1");
+    expect(next?.environmentId).toBe("env-1");
+    expect(next?.kind === "draft" ? next.draftId : null).not.toBe("draft-stale");
+    expect(next?.threadId).not.toBe("thread-stale");
+
+    const gate = useBacksterosTaskKickoffGateStore.getState().getGate(task.id);
+    expect(gate?.mode).toBe("gate");
+    expect(gate?.kickoffPrompt).toContain("/tmp/bdv");
+    expect(gate?.kickoffPrompt).not.toContain("quarrymill.com/wordpress");
+
+    expect(navigations).toEqual([
+      {
+        to: "/draft/$draftId",
+        params: { draftId: next?.kind === "draft" ? next.draftId : undefined },
+      },
+    ]);
+  });
+
+  it("reuses a matching draft binding without recreating", async () => {
+    const matching: BacksterosTaskChatBinding = {
+      ...draftBinding,
+      t3ProjectId: "project-1",
+      environmentId: "env-1",
+    };
+    useBacksterosTaskChatStore.getState().setBinding(task.id, matching);
+    useComposerDraftStore
+      .getState()
+      .setLogicalProjectDraftThreadId(
+        backsterosTaskLogicalProjectKey(task.id),
+        scopeProjectRef("env-1" as never, "project-1" as never),
+        DraftId.make("draft-1"),
+        {
+          threadId: "thread-1" as never,
+          createdAt: "2026-09-20T00:00:00.000Z",
+          branch: null,
+          worktreePath: null,
+        },
+      );
+
+    const navigations: Array<{
+      to: string;
+      params?: Record<string, string>;
+    }> = [];
+
+    await openBacksterosTaskChat({
+      task,
+      backsterosProject,
+      projects: [t3Project],
+      navigate: async (opts) => {
+        navigations.push(opts);
+      },
+    });
+
+    const next = useBacksterosTaskChatStore.getState().getBinding(task.id);
+    expect(next?.kind).toBe("draft");
+    expect(next?.kind === "draft" ? next.draftId : null).toBe("draft-1");
+    expect(next?.t3ProjectId).toBe("project-1");
+    expect(navigations).toEqual([
+      {
+        to: "/draft/$draftId",
+        params: { draftId: "draft-1" },
       },
     ]);
   });

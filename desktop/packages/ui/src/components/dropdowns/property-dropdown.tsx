@@ -18,26 +18,38 @@ export type PropertyDropdownTriggerVariant =
 export type PropertyInlineChipProps = {
   icon?: ReactNode;
   label: string;
+  /** Muted trailing text (e.g. `(email@domain)`). */
+  secondaryLabel?: string | null;
   ariaLabel?: string;
 };
 
 export function PropertyInlineChip({
   icon = null,
   label,
+  secondaryLabel = null,
   ariaLabel,
 }: PropertyInlineChipProps) {
+  const secondary = secondaryLabel?.trim() || null;
+  const title = secondary ? `${label} ${secondary}` : label;
   return (
     <span
       className="property-dropdown-trigger property-dropdown-trigger--inline-chip property-dropdown-trigger--static"
-      title={label}
-      aria-label={ariaLabel ?? label}
+      title={title}
+      aria-label={ariaLabel ?? title}
     >
       {icon != null ? (
         <span className="property-dropdown-trigger__icon" aria-hidden="true">
           {icon}
         </span>
       ) : null}
-      <span className="property-dropdown-trigger__label">{label}</span>
+      <span className="property-dropdown-trigger__label">
+        {label}
+        {secondary ? (
+          <span className="property-dropdown-trigger__secondary">
+            {` ${secondary}`}
+          </span>
+        ) : null}
+      </span>
     </span>
   );
 }
@@ -180,6 +192,11 @@ export function PropertyDropdown<T extends string>({
           selected && displayOverride
             ? displayOverride
             : (selected?.label ?? fallbackLabel);
+        const secondary =
+          selected && !displayOverride
+            ? selected.secondaryLabel?.trim() || null
+            : null;
+        const title = secondary ? `${label} ${secondary}` : label;
         const icon = hideTriggerIcon
           ? null
           : selected && selectedDisplayIcon != null
@@ -203,7 +220,7 @@ export function PropertyDropdown<T extends string>({
             ]
               .filter(Boolean)
               .join(" ")}
-            title={label}
+            title={title}
             disabled={isDisabled}
             aria-haspopup="listbox"
             aria-expanded={open}
@@ -219,7 +236,14 @@ export function PropertyDropdown<T extends string>({
               </span>
             ) : null}
             {!hideTriggerLabel ? (
-              <span className="property-dropdown-trigger__label">{label}</span>
+              <span className="property-dropdown-trigger__label">
+                {label}
+                {secondary ? (
+                  <span className="property-dropdown-trigger__secondary">
+                    {` ${secondary}`}
+                  </span>
+                ) : null}
+              </span>
             ) : null}
           </button>
         );

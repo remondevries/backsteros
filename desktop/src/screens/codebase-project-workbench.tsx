@@ -938,6 +938,7 @@ export function CodebaseProjectWorkbench({
             onProjectUpdated={handleProjectUpdated}
             requestJson={requestJson}
             fs={resolvedFs}
+            copyIdShortcutEnabled={keepAliveActive}
             belowDescription={
               <CodebaseProjectActivityPanel
                 projectId={project.id}
