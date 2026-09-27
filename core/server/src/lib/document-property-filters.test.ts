@@ -5,8 +5,10 @@ import {
   camelToKebab,
   documentMatchesPropertyFilters,
   parseDocumentListTypeFilter,
+  parseExactMultiQueryValues,
   parseMultiQueryValues,
   propertiesLinkTask,
+  resolveSectionIfMatchVersion,
 } from "./document-property-filters.ts";
 
 describe("document property filters", () => {
@@ -16,6 +18,13 @@ describe("document property filters", () => {
       "house-rule",
       "runbook",
     ]);
+  });
+
+  it("keeps project keys uppercase (project=OS survives unchanged)", () => {
+    assert.deepEqual(parseExactMultiQueryValues("OS"), ["OS"]);
+    assert.deepEqual(parseExactMultiQueryValues(["OS", "BDV"]), ["OS", "BDV"]);
+    // Property-style normalize would wrongly lower-case — do not use it for project.
+    assert.deepEqual(parseMultiQueryValues("OS"), ["os"]);
   });
 
   it("parses repeated and comma-separated values", () => {
@@ -82,5 +91,12 @@ describe("document property filters", () => {
     assert.equal(propertiesLinkTask(props, "OS-30"), true);
     assert.equal(propertiesLinkTask(props, "OS-99"), false);
     assert.equal(propertiesLinkTask({}, "OS-30"), false);
+    assert.equal(propertiesLinkTask({ linkedTasks: "OS-30" }, "OS-30"), true);
+    assert.equal(propertiesLinkTask({ linkedTasks: "OS-30" }, "OS-99"), false);
+  });
+
+  it("defaults section ifMatchVersion to the version just read", () => {
+    assert.equal(resolveSectionIfMatchVersion(undefined, 7), 7);
+    assert.equal(resolveSectionIfMatchVersion(3, 7), 3);
   });
 });

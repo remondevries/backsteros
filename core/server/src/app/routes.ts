@@ -148,7 +148,9 @@ import {
 } from "../services/document-properties.js";
 import {
   parseDocumentListTypeFilter,
+  parseExactMultiQueryValues,
   parseMultiQueryValues,
+  resolveSectionIfMatchVersion,
 } from "../lib/document-property-filters.js";
 import {
   readDocumentSection,
@@ -2504,6 +2506,7 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("documents:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
 
     const rows = await documentService.listDocumentsForTask(
       auth.workspaceId,
@@ -3650,7 +3653,7 @@ export function registerApiRoutes(app: Hono) {
         propertyType: parseMultiQueryValues(query.type),
         audience: parseMultiQueryValues(query.audience),
         status: parseMultiQueryValues(query.status),
-        project: parseMultiQueryValues(query.project),
+        project: parseExactMultiQueryValues(query.project),
         budget: query.budget,
         limit: query.limit,
       });
@@ -4232,7 +4235,10 @@ export function registerApiRoutes(app: Hono) {
             workspaceId: auth.workspaceId,
             documentId,
             content: nextContent,
-            ifMatchVersion: body.ifMatchVersion,
+            ifMatchVersion: resolveSectionIfMatchVersion(
+              body.ifMatchVersion,
+              existing.row.contentVersion,
+            ),
           });
           const row = await documentService.getDocumentById(
             auth.workspaceId,

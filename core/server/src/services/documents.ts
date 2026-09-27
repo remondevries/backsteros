@@ -11,6 +11,7 @@ import { db } from "../db/index.js";
 import { documents, projects, tasks } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { bodyForSnippet } from "../lib/document-frontmatter.js";
+import { resolveSectionIfMatchVersion } from "../lib/document-property-filters.js";
 import {
   clampRetrievalBudget,
   retrieveDocumentSections,
@@ -1101,7 +1102,10 @@ export async function listDocumentsForTask(
         eq(documents.workspaceId, workspaceId),
         isNull(documents.deletedAt),
         eq(documents.kind, "document"),
-        sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([displayKey])}::jsonb`,
+        or(
+          sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([displayKey])}::jsonb`,
+          sql`${documents.properties}->>'linkedTasks' = ${displayKey}`,
+        ),
       ),
     )
     .orderBy(desc(documents.updatedAt));
@@ -1160,7 +1164,10 @@ export async function updateDocumentSection(
     id,
     {
       content: nextContent,
-      ifMatchVersion: input.ifMatchVersion,
+      ifMatchVersion: resolveSectionIfMatchVersion(
+        input.ifMatchVersion,
+        existing.row.contentVersion,
+      ),
     },
     options,
   );

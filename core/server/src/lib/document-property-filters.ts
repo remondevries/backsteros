@@ -40,6 +40,25 @@ export function parseMultiQueryValues(
   return [...new Set(out)];
 }
 
+/**
+ * Multi-value query parse that only trims — no kebab/lowercase.
+ * Use for project keys (OS, BDV) stored uppercase in the properties index.
+ */
+export function parseExactMultiQueryValues(
+  raw: string | string[] | undefined | null,
+): string[] {
+  if (raw == null) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const entry of list) {
+    for (const part of entry.split(",")) {
+      const trimmed = part.trim();
+      if (trimmed) out.push(trimmed);
+    }
+  }
+  return [...new Set(out)];
+}
+
 export type ParsedDocumentListTypeFilter =
   | { kind: "documentType"; values: DocumentType[] }
   | { kind: "propertyType"; values: string[] }
@@ -91,10 +110,25 @@ export function propertiesLinkTask(
   displayKey: string,
 ): boolean {
   const linked = properties.linkedTasks;
+  if (typeof linked === "string") {
+    return linked.trim() === displayKey;
+  }
   if (!Array.isArray(linked)) return false;
   return linked.some(
     (entry) => typeof entry === "string" && entry.trim() === displayKey,
   );
+}
+
+/**
+ * Section PUT is read-modify-write: default CAS to the version just read so a
+ * concurrent save between read and write returns 409 instead of clobbering.
+ * Caller-supplied ifMatchVersion still wins.
+ */
+export function resolveSectionIfMatchVersion(
+  callerIfMatch: number | undefined,
+  readContentVersion: number,
+): number {
+  return callerIfMatch ?? readContentVersion;
 }
 
 export function parseDocumentListTypeFilter(
