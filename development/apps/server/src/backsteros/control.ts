@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -31,12 +32,17 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import {
-  backsterosStatusForControlSession,
   buildControlKickoffPrompt,
   patchBacksterosControlTaskStatus,
   resolveBacksterosControlApiKey,
   resolveBacksterosControlTask,
 } from "./control-backsteros.ts";
+import {
+  CONTROL_PENDING_DISPATCH_TIMEOUT_MS,
+  clearControlPendingDispatch,
+  getControlPendingDispatch,
+  recordControlPendingDispatch,
+} from "./control-pending-dispatch.ts";
 import {
   findBacksterosTaskThreadBinding,
   listBacksterosTaskThreadBindings,
@@ -124,8 +130,44 @@ function hasTurnInFlight(thread: ControlStatusThreadInput): boolean {
   return Number.isNaN(requestedAt) || latestUserMessageAt > requestedAt;
 }
 
-export function mapSessionStatus(thread: ControlStatusThreadInput | null): ControlSessionStatus {
-  if (!thread) return "idle";
+export type ControlSessionStatusOptions = {
+  /** Epoch ms of a control-API turn dispatch that may not have started its turn yet. */
+  readonly pendingDispatchAt: number | null;
+  /** Epoch ms used for the pending-dispatch timeout. */
+  readonly now: number;
+};
+
+/**
+ * A control-API dispatch counts as pending (and therefore `working`) until a
+ * turn requested at/after the dispatch exists, the session errors, or
+ * {@link CONTROL_PENDING_DISPATCH_TIMEOUT_MS} passes. This closes the gap where
+ * a message sent to a stopped session briefly read as `idle` before the
+ * provider session started.
+ */
+export function isControlDispatchPending(
+  thread: ControlStatusThreadInput | null,
+  pendingDispatchAt: number | null | undefined,
+  now: number,
+): boolean {
+  if (pendingDispatchAt == null || !Number.isFinite(pendingDispatchAt)) return false;
+  if (now - pendingDispatchAt >= CONTROL_PENDING_DISPATCH_TIMEOUT_MS) return false;
+  if (thread?.session?.status === "error") return false;
+  const latestTurn = thread?.latestTurn ?? null;
+  if (latestTurn) {
+    const requestedAt = Date.parse(latestTurn.requestedAt);
+    if (!Number.isNaN(requestedAt) && requestedAt >= pendingDispatchAt) return false;
+  }
+  return true;
+}
+
+export function mapSessionStatus(
+  thread: ControlStatusThreadInput | null,
+  options?: ControlSessionStatusOptions,
+): ControlSessionStatus {
+  const dispatchPending =
+    options !== undefined &&
+    isControlDispatchPending(thread, options.pendingDispatchAt, options.now);
+  if (!thread) return dispatchPending ? "working" : "idle";
   const settled =
     thread.settledOverride === "settled" ||
     (thread.settledAt != null && thread.settledOverride !== "active");
@@ -136,6 +178,7 @@ export function mapSessionStatus(thread: ControlStatusThreadInput | null): Contr
     sessionStatus === "starting" ||
     sessionStatus === "running" ||
     (sessionStatus === "ready" && hasTurnInFlight(thread)) ||
+    dispatchPending ||
     thread.backgroundLiveness === "working" ||
     thread.backgroundLiveness === "monitoring"
   ) {
@@ -145,10 +188,27 @@ export function mapSessionStatus(thread: ControlStatusThreadInput | null): Contr
   return "idle";
 }
 
+/**
+ * Session status for a bound thread, including any pending control dispatch.
+ * Only prunes the in-memory pending-dispatch record; never writes task state.
+ */
+export function resolveControlSessionStatus(
+  threadId: string,
+  thread: ControlStatusThreadInput | null,
+  now: number,
+): ControlSessionStatus {
+  const pendingDispatchAt = getControlPendingDispatch(threadId);
+  if (pendingDispatchAt != null && !isControlDispatchPending(thread, pendingDispatchAt, now)) {
+    clearControlPendingDispatch(threadId, pendingDispatchAt);
+  }
+  return mapSessionStatus(thread, { pendingDispatchAt, now });
+}
+
 function toSessionView(input: {
   readonly taskId: string;
   readonly binding: BacksterosTaskThreadBinding;
   readonly thread: OrchestrationThreadShell | null;
+  readonly now: number;
 }): ControlSessionView {
   return {
     ok: true,
@@ -158,7 +218,7 @@ function toSessionView(input: {
     environmentId: input.binding.environmentId,
     projectId: input.binding.t3ProjectId,
     title: input.binding.title,
-    status: mapSessionStatus(input.thread),
+    status: resolveControlSessionStatus(input.binding.threadId, input.thread, input.now),
     sessionStatus: input.thread?.session?.status ?? null,
     hasPendingApprovals: input.thread?.hasPendingApprovals ?? false,
     hasPendingUserInput: input.thread?.hasPendingUserInput ?? false,
@@ -525,6 +585,7 @@ export const controlStartHandler = catchControlErrors(
 
     const orchestrationEngine = yield* OrchestrationEngineService;
     const createdAt = DateTime.formatIso(yield* DateTime.now);
+    const dispatchedAtMs = Date.parse(createdAt);
     const commandId = CommandId.make(yield* newId());
     const messageId = MessageId.make(yield* newId());
 
@@ -568,7 +629,14 @@ export const controlStartHandler = catchControlErrors(
         })),
       );
 
+      // Record before dispatch so a status read racing the dispatch already
+      // sees `working`; dropped again if the dispatch fails.
+      const pendingThreadId = threadId;
+      recordControlPendingDispatch(pendingThreadId, dispatchedAtMs);
       yield* orchestrationEngine.dispatch(command).pipe(
+        Effect.onError(() =>
+          Effect.sync(() => clearControlPendingDispatch(pendingThreadId, dispatchedAtMs)),
+        ),
         Effect.mapError((cause): ControlHttpError => ({
           status: 500,
           error: cause instanceof Error ? cause.message : "Failed to start agent turn",
@@ -615,13 +683,17 @@ export const controlStartHandler = catchControlErrors(
     });
 
     if (start) {
-      // Do not wait on BacksterOS — UI promote + status GET also reconcile.
+      // Status write #1 (OS-38 audit): explicit POST /sessions start → In Progress.
+      // Guarded in patchBacksterosControlTaskStatus (re-reads the task and never
+      // reopens completed/canceled/duplicated). Fire-and-forget; the web turn-start
+      // promote is the other writer.
       void patchBacksterosControlTaskStatus(task.id, "in_progress");
     }
 
     const thread = yield* findThreadShell(threadId);
+    const now = yield* Clock.currentTimeMillis;
     return HttpServerResponse.jsonUnsafe({
-      ...toSessionView({ taskId: task.id, binding, thread }),
+      ...toSessionView({ taskId: task.id, binding, thread, now }),
       created,
       started: start,
     });
@@ -679,16 +751,16 @@ export const controlStatusHandler = catchControlErrors(
     }
 
     const thread = yield* findThreadShell(found.binding.threadId);
+    const now = yield* Clock.currentTimeMillis;
+    // Read-only (OS-38): a status GET never writes BacksterOS task status or
+    // updatedAt. In Review after agent work is owned by the web leave timer
+    // (markBacksterosTaskInReviewForAgent), which is guarded against closed tasks.
     const view = toSessionView({
       taskId: found.taskId,
       binding: found.binding,
       thread,
+      now,
     });
-    // Only push In Review from status polls (`done`). In Progress is set on
-    // session start + by the always-mounted web lifecycle (ready≠done here).
-    if (backsterosStatusForControlSession(view.status) === "in_review") {
-      void patchBacksterosControlTaskStatus(found.taskId, "in_review");
-    }
     return HttpServerResponse.jsonUnsafe(view);
   }),
 );
@@ -748,6 +820,7 @@ export const controlMessageHandler = catchControlErrors(
 
     const orchestrationEngine = yield* OrchestrationEngineService;
     const createdAt = DateTime.formatIso(yield* DateTime.now);
+    const dispatchedAtMs = Date.parse(createdAt);
     const command = yield* normalizeDispatchCommand({
       type: "thread.turn.start",
       commandId: CommandId.make(yield* newId()),
@@ -770,7 +843,13 @@ export const controlMessageHandler = catchControlErrors(
       })),
     );
 
+    // A message to a stopped session is accepted before the provider session
+    // starts; track it so the response and following GETs read `working`.
+    recordControlPendingDispatch(threadId, dispatchedAtMs);
     yield* orchestrationEngine.dispatch(command).pipe(
+      Effect.onError(() =>
+        Effect.sync(() => clearControlPendingDispatch(threadId, dispatchedAtMs)),
+      ),
       Effect.mapError((cause): ControlHttpError => ({
         status: 500,
         error: cause instanceof Error ? cause.message : "Failed to send message",
@@ -779,8 +858,9 @@ export const controlMessageHandler = catchControlErrors(
     );
 
     const thread = yield* findThreadShell(threadId);
+    const now = yield* Clock.currentTimeMillis;
     return HttpServerResponse.jsonUnsafe({
-      ...toSessionView({ taskId: found.taskId, binding: found.binding, thread }),
+      ...toSessionView({ taskId: found.taskId, binding: found.binding, thread, now }),
       sent: true,
     });
   }),

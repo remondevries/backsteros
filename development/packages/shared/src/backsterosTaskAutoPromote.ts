@@ -1,15 +1,16 @@
 /**
  * Shared rules for agent-driven BacksterOS task status auto-promote.
  * Used by Development web turn-start / leave-timer writes and the localhost
- * control API (session start + status GET).
+ * control API session start. The control status GET is read-only (OS-38) and
+ * never writes task status.
  */
 
 export type BacksterosControlSessionStatus = "idle" | "working" | "blocked" | "done";
 
 /**
- * Map control / session lifecycle → BacksterOS task status when a write is needed.
+ * Map control / session lifecycle → the BacksterOS task status it implies.
  * Only a real `done` (turn settled after work) maps to `in_review` — bare `idle`
- * must not yank backlog tasks on status polls.
+ * never does. Pure mapping; status polls must not act on it (OS-38).
  */
 export function backsterosStatusForControlSession(
   sessionStatus: BacksterosControlSessionStatus,

@@ -245,7 +245,8 @@ export function usePromoteWorkingBacksterosTasks() {
           promoteHandledWhileWorking.delete(taskId);
           reviewInFlight.add(taskId);
           // Stop the pulse; only move to In Review after a status re-read
-          // confirms the task is still open (matches control API done-only).
+          // confirms the task is still open. This leave timer is the only
+          // agent In Review writer — the control status GET is read-only (OS-38).
           clearBacksterosDisplayedAgentPresence(taskId);
           void markBacksterosTaskInReviewForAgent(taskId)
             .then((promoted) => {
