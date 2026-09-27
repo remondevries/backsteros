@@ -913,6 +913,52 @@ export const putDocumentPropertiesResponseSchema =
     contentVersion: z.number().int().positive(),
   });
 
+/** Comma-separated or repeated multi-value query string. */
+export const multiValueQuerySchema = z.string().min(1).optional();
+
+export const documentSectionResponseSchema = z.object({
+  heading: z.string(),
+  headingPath: z.array(z.string()),
+  slug: z.string(),
+  text: z.string(),
+  contentVersion: z.number().int().positive(),
+});
+
+export const updateDocumentSectionSchema = z.object({
+  heading: z.string().min(1).max(500),
+  body: z.string().max(5_000_000),
+  ifMatchVersion: z.number().int().positive().optional(),
+});
+
+export const documentRetrievalHitSchema = z.object({
+  documentId: z.string(),
+  docKey: z.string().nullable(),
+  title: z.string(),
+  heading: z.string(),
+  headingPath: z.array(z.string()),
+  slug: z.string(),
+  text: z.string(),
+  score: z.number(),
+});
+
+export const documentRetrievalResponseSchema = z.object({
+  results: z.array(documentRetrievalHitSchema),
+  budget: z.number().int().positive(),
+  truncated: z.boolean(),
+});
+
+export const documentRetrievalQuerySchema = z.object({
+  q: z.string().min(1).max(2000),
+  /** Semantic property type (comma-separated or repeated). */
+  type: multiValueQuerySchema,
+  audience: multiValueQuerySchema,
+  status: multiValueQuerySchema,
+  /** Project key from the properties index. */
+  project: multiValueQuerySchema,
+  budget: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+});
+
 export const spaceSeoAddressSchema = z.object({
   streetAddress: z.string().max(500).optional(),
   addressLocality: z.string().max(200).optional(),

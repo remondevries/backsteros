@@ -20,7 +20,10 @@ import {
   updateTaskTimerSessionActorSchema,
   documentContentSchema,
   documentPropertiesResponseSchema,
+  documentRetrievalQuerySchema,
+  documentRetrievalResponseSchema,
   documentSchema,
+  documentSectionResponseSchema,
   documentTypeSchema,
   errorSchema,
   githubBranchSchema,
@@ -45,6 +48,7 @@ import {
   putDocumentPropertiesResponseSchema,
   putDocumentPropertiesSchema,
   updateDocumentContentSchema,
+  updateDocumentSectionSchema,
   updateDocumentSchema,
   updateProjectSchema,
   updateTaskSchema,
@@ -649,15 +653,38 @@ export const apiContract: AppRouter = c.router(
       method: "GET",
       path: "/api/v1/documents",
       query: z.object({
-        type: documentTypeSchema.optional(),
+        /**
+         * Structural document type (knowledge|project|journal) or, when the
+         * value is not one of those, semantic property type from the index
+         * (e.g. house-rule). Comma-separated / repeated for multi-value.
+         */
+        type: z.string().optional(),
         projectId: z.string().optional(),
+        /** Property audience filter (comma-separated or repeated). */
+        audience: z.string().optional(),
+        /** Property status filter (comma-separated or repeated). */
+        status: z.string().optional(),
       }),
       responses: {
         200: z.object({ documents: z.array(documentSchema) }),
+        400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
       },
       summary: "List documents",
+    },
+    retrieveDocuments: {
+      method: "GET",
+      path: "/api/v1/documents/retrieve",
+      query: documentRetrievalQuerySchema,
+      responses: {
+        200: documentRetrievalResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "Lexical section retrieval over documents (property filters + char budget)",
     },
     getDocument: {
       method: "GET",
@@ -670,6 +697,52 @@ export const apiContract: AppRouter = c.router(
         404: errorSchema,
       },
       summary: "Get document metadata",
+    },
+    getDocumentSection: {
+      method: "GET",
+      path: "/api/v1/documents/:id/sections",
+      pathParams: z.object({ id: z.string() }),
+      query: z.object({
+        heading: z.string().min(1).max(500),
+      }),
+      responses: {
+        200: documentSectionResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+        409: errorSchema,
+      },
+      summary: "Read one markdown section by heading path or slug",
+    },
+    updateDocumentSection: {
+      method: "PUT",
+      path: "/api/v1/documents/:id/sections",
+      pathParams: z.object({ id: z.string() }),
+      body: updateDocumentSectionSchema,
+      responses: {
+        200: documentSectionResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+        409: errorSchema,
+        422: errorSchema,
+        503: errorSchema,
+      },
+      summary: "Replace one markdown section body by heading path or slug",
+    },
+    listTaskDocuments: {
+      method: "GET",
+      path: "/api/v1/tasks/:id/documents",
+      pathParams: z.object({ id: z.string() }),
+      responses: {
+        200: z.object({ documents: z.array(documentSchema) }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "List documents linked to a task via front matter linkedTasks",
     },
     createDocument: {
       method: "POST",

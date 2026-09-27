@@ -8,9 +8,19 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { documents } from "../db/schema.js";
+import { documents, projects, tasks } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { bodyForSnippet } from "../lib/document-frontmatter.js";
+import {
+  clampRetrievalBudget,
+  retrieveDocumentSections,
+  type RetrievalHit,
+} from "../lib/document-retrieval.js";
+import {
+  DocumentSectionError,
+  readDocumentSection,
+  replaceDocumentSectionBody,
+} from "../lib/document-sections.js";
 import {
   buildStorageKey,
   checksumForContent,
@@ -133,15 +143,42 @@ async function findDocumentByPath(
   return row ?? null;
 }
 
+function propertyScalarIn(
+  key: "type" | "audience" | "status" | "project",
+  values: string[],
+) {
+  if (values.length === 1) {
+    return sql`${documents.properties}->>${key} = ${values[0]}`;
+  }
+  return or(
+    ...values.map((value) => sql`${documents.properties}->>${key} = ${value}`),
+  )!;
+}
+
 export async function listDocuments(
   workspaceId: string,
   filters?: {
-    type?: DocumentType;
+    type?: DocumentType | DocumentType[];
     projectId?: string;
+    /** Semantic type from the OS-26 properties index (front matter `type`). */
+    propertyType?: string[];
+    /** Property audience from the OS-26 properties index. */
+    audience?: string[];
+    /** Property status from the OS-26 properties index. */
+    status?: string[];
   },
   executor: DbExecutor = db,
 ) {
-  if (!filters?.type || filters.type === "knowledge") {
+  const structuralTypes = filters?.type
+    ? Array.isArray(filters.type)
+      ? filters.type
+      : [filters.type]
+    : [];
+
+  if (
+    structuralTypes.length === 0 ||
+    structuralTypes.includes("knowledge")
+  ) {
     await ensureSpacesHierarchy(workspaceId, executor);
   }
 
@@ -150,12 +187,24 @@ export async function listDocuments(
     isNull(documents.deletedAt),
   ];
 
-  if (filters?.type) {
-    conditions.push(eq(documents.type, filters.type));
+  if (structuralTypes.length === 1) {
+    conditions.push(eq(documents.type, structuralTypes[0]!));
+  } else if (structuralTypes.length > 1) {
+    conditions.push(inArray(documents.type, structuralTypes));
   }
 
   if (filters?.projectId) {
     conditions.push(eq(documents.projectId, filters.projectId));
+  }
+
+  if (filters?.propertyType?.length) {
+    conditions.push(propertyScalarIn("type", filters.propertyType));
+  }
+  if (filters?.audience?.length) {
+    conditions.push(propertyScalarIn("audience", filters.audience));
+  }
+  if (filters?.status?.length) {
+    conditions.push(propertyScalarIn("status", filters.status));
   }
 
   return executor
@@ -991,3 +1040,212 @@ export async function purgeDocumentObject(workspaceId: string, id: string) {
 
   await deleteObject(row.storageKey);
 }
+
+async function taskDisplayKey(
+  workspaceId: string,
+  taskId: string,
+  executor: DbExecutor = db,
+): Promise<string | null> {
+  const [row] = await executor
+    .select({
+      number: tasks.number,
+      projectKey: projects.key,
+    })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.id, taskId),
+        isNull(tasks.deletedAt),
+        isNull(projects.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row?.projectKey) return null;
+  return `${row.projectKey}-${row.number}`;
+}
+
+/**
+ * Documents whose properties index `linkedTasks` lists this task's display key.
+ * Returns null when the task does not exist (caller should 404).
+ */
+export async function listDocumentsForTask(
+  workspaceId: string,
+  taskId: string,
+  executor: DbExecutor = db,
+) {
+  const [task] = await executor
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.id, taskId),
+        isNull(tasks.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!task) return null;
+
+  const displayKey = await taskDisplayKey(workspaceId, taskId, executor);
+  if (!displayKey) {
+    return [];
+  }
+
+  return executor
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+        eq(documents.kind, "document"),
+        sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([displayKey])}::jsonb`,
+      ),
+    )
+    .orderBy(desc(documents.updatedAt));
+}
+
+export async function getDocumentSection(
+  workspaceId: string,
+  id: string,
+  heading: string,
+) {
+  const result = await getDocumentContent(workspaceId, id);
+  if (!result) return null;
+  try {
+    const { section, text } = readDocumentSection(result.content, heading);
+    return {
+      row: result.row,
+      heading: section.heading,
+      headingPath: section.path,
+      slug: section.slug,
+      text,
+      contentVersion: result.row.contentVersion,
+    };
+  } catch (error) {
+    if (error instanceof DocumentSectionError) throw error;
+    throw error;
+  }
+}
+
+export async function updateDocumentSection(
+  workspaceId: string,
+  id: string,
+  input: {
+    heading: string;
+    body: string;
+    ifMatchVersion?: number;
+  },
+  options?: { mutationId?: string; deviceId?: string },
+) {
+  const existing = await getDocumentContent(workspaceId, id);
+  if (!existing) return null;
+
+  let nextContent: string;
+  try {
+    nextContent = replaceDocumentSectionBody(
+      existing.content,
+      input.heading,
+      input.body,
+    ).content;
+  } catch (error) {
+    if (error instanceof DocumentSectionError) throw error;
+    throw error;
+  }
+
+  const row = await updateDocumentContent(
+    workspaceId,
+    id,
+    {
+      content: nextContent,
+      ifMatchVersion: input.ifMatchVersion,
+    },
+    options,
+  );
+  if (!row) return null;
+
+  const { section, text } = readDocumentSection(nextContent, input.heading);
+  return {
+    row,
+    content: nextContent,
+    heading: section.heading,
+    headingPath: section.path,
+    slug: section.slug,
+    text,
+  };
+}
+
+export async function retrieveDocuments(input: {
+  workspaceId: string;
+  q: string;
+  propertyType?: string[];
+  audience?: string[];
+  status?: string[];
+  /** Project key from the properties index (front matter `project`). */
+  project?: string[];
+  budget?: number;
+  limit?: number;
+  /** Cap how many candidate documents are loaded from storage. */
+  candidateLimit?: number;
+}): Promise<{
+  results: RetrievalHit[];
+  budget: number;
+  truncated: boolean;
+}> {
+  const conditions = [
+    eq(documents.workspaceId, input.workspaceId),
+    isNull(documents.deletedAt),
+    eq(documents.kind, "document"),
+  ];
+  if (input.propertyType?.length) {
+    conditions.push(propertyScalarIn("type", input.propertyType));
+  }
+  if (input.audience?.length) {
+    conditions.push(propertyScalarIn("audience", input.audience));
+  }
+  if (input.status?.length) {
+    conditions.push(propertyScalarIn("status", input.status));
+  }
+  if (input.project?.length) {
+    conditions.push(propertyScalarIn("project", input.project));
+  }
+
+  const rows = await db
+    .select()
+    .from(documents)
+    .where(and(...conditions))
+    .orderBy(desc(documents.updatedAt))
+    .limit(input.candidateLimit ?? 100);
+
+  const candidates: {
+    id: string;
+    docKey: string | null;
+    title: string;
+    content: string;
+  }[] = [];
+
+  for (const row of rows) {
+    try {
+      const object = await getObject(row.storageKey);
+      candidates.push({
+        id: row.id,
+        docKey: row.docKey,
+        title: row.title,
+        content: object.body,
+      });
+    } catch {
+      // Skip missing vault objects; same as search not inventing content.
+    }
+  }
+
+  return retrieveDocumentSections({
+    query: input.q,
+    candidates,
+    budget: clampRetrievalBudget(input.budget),
+    limit: input.limit,
+  });
+}
+
+export { DocumentSectionError };

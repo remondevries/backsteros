@@ -41,6 +41,8 @@ import {
   updateBankAccountSchema,
   updateCursorSettingsSchema,
   updateDocumentContentSchema,
+  updateDocumentSectionSchema,
+  documentRetrievalQuerySchema,
   putDocumentPropertiesSchema,
   updateDocumentSchema,
   updateFinancialCategorySchema,
@@ -144,6 +146,14 @@ import {
   getDocumentProperties,
   putDocumentProperties,
 } from "../services/document-properties.js";
+import {
+  parseDocumentListTypeFilter,
+  parseMultiQueryValues,
+} from "../lib/document-property-filters.js";
+import {
+  readDocumentSection,
+  replaceDocumentSectionBody,
+} from "../lib/document-sections.js";
 import * as circleService from "../services/circle-domain.js";
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
@@ -2489,6 +2499,22 @@ export function registerApiRoutes(app: Hono) {
     return c.json(toTask(row));
   });
 
+  app.get("/api/v1/tasks/:id/documents", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("documents:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+
+    const rows = await documentService.listDocumentsForTask(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (rows === null) {
+      return c.json(notFound("Task"), 404);
+    }
+    return c.json({ documents: rows.map(toDocument) });
+  });
+
   app.get("/api/v1/tasks/:id/relations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
@@ -3582,14 +3608,59 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const type = c.req.query("type");
+    const typeFilter = parseDocumentListTypeFilter([
+      ...(c.req.queries("type") ?? []),
+    ]);
+    if (typeFilter.kind === "mixed") {
+      return c.json(
+        { error: typeFilter.message, code: "bad_request" },
+        400,
+      );
+    }
+
+    const audience = parseMultiQueryValues(c.req.queries("audience") ?? []);
+    const status = parseMultiQueryValues(c.req.queries("status") ?? []);
     const projectId = c.req.query("projectId");
+
     const rows = await documentService.listDocuments(auth.workspaceId, {
-      type: type as "project" | "knowledge" | "journal" | undefined,
+      type:
+        typeFilter.kind === "documentType" ? typeFilter.values : undefined,
+      propertyType:
+        typeFilter.kind === "propertyType" ? typeFilter.values : undefined,
+      audience: audience.length ? audience : undefined,
+      status: status.length ? status : undefined,
       projectId,
     });
     return c.json({ documents: rows.map(toDocument) });
   });
+
+  app.get(
+    "/api/v1/documents/retrieve",
+    zValidator("query", documentRetrievalQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("documents:read")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+
+      const query = c.req.valid("query");
+      const result = await documentService.retrieveDocuments({
+        workspaceId: auth.workspaceId,
+        q: query.q,
+        propertyType: parseMultiQueryValues(query.type),
+        audience: parseMultiQueryValues(query.audience),
+        status: parseMultiQueryValues(query.status),
+        project: parseMultiQueryValues(query.project),
+        budget: query.budget,
+        limit: query.limit,
+      });
+      return c.json({
+        results: result.results,
+        budget: result.budget,
+        truncated: result.truncated,
+      });
+    },
+  );
 
   app.get("/api/v1/documents/:id", async (c) => {
     const auth = getAuth(c);
@@ -4071,6 +4142,190 @@ export function registerApiRoutes(app: Hono) {
               code: "storage_access_denied",
             },
             503,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get("/api/v1/documents/:id/sections", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("documents:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+
+    const heading = c.req.query("heading");
+    if (!heading?.trim()) {
+      return c.json(
+        { error: "Query parameter heading is required", code: "bad_request" },
+        400,
+      );
+    }
+
+    try {
+      const result = await documentService.getDocumentSection(
+        auth.workspaceId,
+        c.req.param("id"),
+        heading,
+      );
+      if (!result) {
+        return c.json(notFound("Document"), 404);
+      }
+      return c.json({
+        heading: result.heading,
+        headingPath: result.headingPath,
+        slug: result.slug,
+        text: result.text,
+        contentVersion: result.contentVersion,
+      });
+    } catch (error) {
+      if (error instanceof documentService.DocumentSectionError) {
+        if (error.code === "SECTION_NOT_FOUND") {
+          return c.json(
+            { error: error.message, code: "section_not_found" },
+            404,
+          );
+        }
+        return c.json(
+          { error: error.message, code: "section_ambiguous" },
+          409,
+        );
+      }
+      if (error instanceof Error && error.message === "STORAGE_OBJECT_NOT_FOUND") {
+        return c.json(
+          { error: "Document content not found in storage", code: "storage_not_found" },
+          404,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.put(
+    "/api/v1/documents/:id/sections",
+    zValidator("json", updateDocumentSectionSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("documents:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+
+      try {
+        const body = c.req.valid("json");
+        const documentId = c.req.param("id");
+
+        if (isRestLeaderFirstWrite()) {
+          const existing = await documentService.getDocumentContent(
+            auth.workspaceId,
+            documentId,
+          );
+          if (!existing) {
+            return c.json(notFound("Document"), 404);
+          }
+          const nextContent = replaceDocumentSectionBody(
+            existing.content,
+            body.heading,
+            body.body,
+          ).content;
+          const leaderResult = await commitDocumentContentLeaderFirst({
+            workspaceId: auth.workspaceId,
+            documentId,
+            content: nextContent,
+            ifMatchVersion: body.ifMatchVersion,
+          });
+          const row = await documentService.getDocumentById(
+            auth.workspaceId,
+            documentId,
+          );
+          if (!row) {
+            return c.json(notFound("Document"), 404);
+          }
+          publishDocumentLiveFromAgent(auth, documentId, {
+            projectId: row.projectId,
+            contentVersion: leaderResult.contentVersion,
+            storageKey: row.storageKey,
+          });
+          const { section, text } = readDocumentSection(
+            nextContent,
+            body.heading,
+          );
+          return c.json({
+            heading: section.heading,
+            headingPath: section.path,
+            slug: section.slug,
+            text,
+            contentVersion: leaderResult.contentVersion,
+          });
+        }
+
+        const result = await documentService.updateDocumentSection(
+          auth.workspaceId,
+          documentId,
+          body,
+        );
+        if (!result) {
+          return c.json(notFound("Document"), 404);
+        }
+        publishDocumentLiveFromAgent(auth, result.row.id, {
+          projectId: result.row.projectId,
+          contentVersion: result.row.contentVersion,
+          storageKey: result.row.storageKey,
+        });
+        return c.json({
+          heading: result.heading,
+          headingPath: result.headingPath,
+          slug: result.slug,
+          text: result.text,
+          contentVersion: result.row.contentVersion,
+        });
+      } catch (error) {
+        if (error instanceof documentService.DocumentSectionError) {
+          if (error.code === "SECTION_NOT_FOUND") {
+            return c.json(
+              { error: error.message, code: "section_not_found" },
+              404,
+            );
+          }
+          return c.json(
+            { error: error.message, code: "section_ambiguous" },
+            409,
+          );
+        }
+        if (error instanceof Error && error.message === "CONTENT_VERSION_CONFLICT") {
+          return c.json(
+            {
+              error: "Document content version conflict",
+              code: "content_version_conflict",
+            },
+            409,
+          );
+        }
+        if (error instanceof Error && error.message === "EMPTY_BODY_OVER_NONEMPTY") {
+          return c.json(
+            {
+              error: "Refusing to overwrite non-empty document with empty body",
+              code: "empty_body_over_nonempty",
+            },
+            409,
+          );
+        }
+        if (error instanceof Error && error.message === "STORAGE_ACCESS_DENIED") {
+          return c.json(
+            {
+              error: "Local vault access denied — check vault folder permissions",
+              code: "storage_access_denied",
+            },
+            503,
+          );
+        }
+        if (error instanceof Error && error.message === "DOCUMENT_NOT_FOUND") {
+          return c.json(notFound("Document"), 404);
+        }
+        if (error instanceof Error && error.message === "INVALID_YAML") {
+          return c.json(
+            { error: "Invalid YAML front matter", code: "invalid_yaml" },
+            422,
           );
         }
         throw error;
