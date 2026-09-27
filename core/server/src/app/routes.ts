@@ -4205,6 +4205,8 @@ export function registerApiRoutes(app: Hono) {
     }
   });
 
+  // Section body = after heading → next same/higher heading (or EOF).
+  // Nested subsections are included; PUT replaces/removes them with the body.
   app.put(
     "/api/v1/documents/:id/sections",
     zValidator("json", updateDocumentSectionSchema),

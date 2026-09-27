@@ -713,7 +713,8 @@ export const apiContract: AppRouter = c.router(
         404: errorSchema,
         409: errorSchema,
       },
-      summary: "Read one markdown section by heading path or slug",
+      summary:
+        "Read one markdown section by heading path or slug (includes nested subsections through the next same/higher heading)",
     },
     updateDocumentSection: {
       method: "PUT",
@@ -730,7 +731,10 @@ export const apiContract: AppRouter = c.router(
         422: errorSchema,
         503: errorSchema,
       },
-      summary: "Replace one markdown section body by heading path or slug",
+      summary:
+        "Replace one markdown section body by heading path or slug (body runs through the next same/higher heading, so nested subsections are replaced/removed with it)",
+      description:
+        "The section body is everything after the matched heading until the next heading of the same or higher level (or EOF). Nested deeper headings are part of that body: GET returns them, and PUT replaces or deletes them when writing the parent. Target a nested heading's own slug/path to edit it alone. Front matter and content outside the range stay byte-for-byte unchanged.",
     },
     listTaskDocuments: {
       method: "GET",

@@ -2,6 +2,13 @@
  * Markdown ATX heading section parse / replace.
  * Replacements splice only the matched section body so front matter and
  * every other byte of the file stay unchanged.
+ *
+ * Section bounds: `end` is the next same-or-higher-level heading (or EOF).
+ * Nested subsections (deeper headings) therefore lie inside the parent
+ * section's body. GET returns them as part of that section's text, and
+ * replaceDocumentSectionBody replaces/deletes them when the parent body
+ * is written. To edit a nested heading alone, target that heading's slug
+ * or path instead of the parent.
  */
 
 const ATX_HEADING = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/;
@@ -17,7 +24,10 @@ export type DocumentSection = {
   headingStart: number;
   /** Absolute offset of the first body byte after the heading line. */
   bodyStart: number;
-  /** Absolute exclusive end of this section (next same/higher heading or EOF). */
+  /**
+   * Absolute exclusive end of this section (next same/higher heading or EOF).
+   * Nested deeper headings are included in this range.
+   */
   end: number;
 };
 
@@ -214,6 +224,10 @@ export function findDocumentSection(
   return matches[0]!;
 }
 
+/**
+ * Returns the heading line plus body through the next same/higher heading.
+ * Nested subsection headings and their bodies are included in `text`.
+ */
 export function readDocumentSection(
   content: string,
   headingQuery: string,
@@ -226,8 +240,10 @@ export function readDocumentSection(
 }
 
 /**
- * Replace only the body under the matched heading. Front matter and all
- * other sections are preserved byte-for-byte.
+ * Replace the body under the matched heading (from after the heading line
+ * through the next same/higher heading). Nested subsections inside that
+ * range are replaced or removed with the new body. Front matter and all
+ * sibling/ancestor sections outside the range stay byte-for-byte the same.
  */
 export function replaceDocumentSectionBody(
   content: string,
