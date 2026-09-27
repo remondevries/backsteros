@@ -27,12 +27,12 @@ export function documentPropertiesFromApiDocument(document: {
   docKey?: string | null;
   properties?: Record<string, unknown> | null;
   frontMatterValid?: boolean | null;
-  contentVersion: number;
+  contentVersion?: number;
 }) {
   return {
     docKey: document.docKey ?? null,
     properties: document.properties ?? {},
     frontMatterValid: document.frontMatterValid ?? true,
-    contentVersion: document.contentVersion,
+    contentVersion: document.contentVersion ?? 1,
   };
 }

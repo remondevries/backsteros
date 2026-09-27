@@ -65,7 +65,12 @@ export function parseMeetingAttendeePortalEmailsFromRow(
   );
 }
 
-const SQLITE_BOOL_KEYS = new Set(["inbox", "support", "notification"]);
+const SQLITE_BOOL_KEYS = new Set([
+  "inbox",
+  "support",
+  "notification",
+  "front_matter_valid",
+]);
 
 export function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -293,6 +298,25 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseDocumentProperties(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (isPlainObject(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (isPlainObject(parsed)) return parsed;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function mapDocument(document: ApiDocument): KnowledgeListItem {
   const contactIdsRaw = (document as { contactIds?: unknown }).contactIds;
   let contactIds: string[] | null = null;
@@ -308,6 +332,12 @@ export function mapDocument(document: ApiDocument): KnowledgeListItem {
       contactIds = null;
     }
   }
+
+  const contentVersion =
+    typeof document.contentVersion === "number" &&
+    Number.isFinite(document.contentVersion)
+      ? document.contentVersion
+      : 1;
 
   return {
     id: document.id,
@@ -331,6 +361,10 @@ export function mapDocument(document: ApiDocument): KnowledgeListItem {
     trackedDurationSeconds: document.trackedDurationSeconds ?? null,
     trackedMinutes: document.trackedMinutes ?? null,
     lastTrackedAt: asEpoch(document.lastTrackedAt ?? null),
+    docKey: document.docKey ?? null,
+    properties: parseDocumentProperties(document.properties),
+    frontMatterValid: document.frontMatterValid ?? true,
+    contentVersion,
   };
 }
 

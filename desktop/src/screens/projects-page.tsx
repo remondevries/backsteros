@@ -1863,6 +1863,7 @@ function ProjectsPageBody({
                     path: created.path,
                     projectId: project.id,
                     kind: "document",
+                    contentVersion: created.contentVersion,
                   };
                   setLocalDocuments((current) =>
                     current.some((entry) => entry.id === created.id)
