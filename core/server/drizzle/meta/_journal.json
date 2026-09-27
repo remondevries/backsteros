@@ -918,6 +918,13 @@
       "when": 1795650000000,
       "tag": "0127_unified_activities",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1795660000000,
+      "tag": "0130_document_properties",
+      "breakpoints": true
     }
   ]
 }
