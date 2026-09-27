@@ -139,6 +139,14 @@ type InboxNavRow = {
   agent_inbox_approved_at?: string | null;
 };
 
+/** Closed outcomes an agent session start must not reopen. */
+const CLOSED_FOR_AGENT_PROMOTE = new Set([
+  "completed",
+  "canceled",
+  "duplicated",
+  "done",
+]);
+
 function asTaskStatus(value: string | null | undefined): TaskStatus {
   if (value && (TASK_STATUS_ORDER as readonly string[]).includes(value)) {
     return value as TaskStatus;
@@ -495,10 +503,14 @@ export function TaskDetailScreen({ taskId }: Props) {
       if (!task) return;
       setLocalAgentChatId(chatId);
       applyTaskRowOverride(task.id, { agent_chat_id: chatId });
+      // Starting an agent session promotes the task to In Progress, but never
+      // reopens a closed task (same rule as Development / control API, OS-38).
+      const promoteToInProgress =
+        chatId !== null && !CLOSED_FOR_AGENT_PROMOTE.has(task.status ?? "");
       const apiValues = {
         agentChatId: chatId,
         activityActor: "agent",
-        ...(chatId ? { status: "in_progress" } : {}),
+        ...(promoteToInProgress ? { status: "in_progress" } : {}),
       };
       await patchEntityViaPowerSyncOrApi(
         client,
@@ -508,7 +520,7 @@ export function TaskDetailScreen({ taskId }: Props) {
         apiValues,
         {
           agent_chat_id: chatId,
-          ...(chatId ? { status: "in_progress" } : {}),
+          ...(promoteToInProgress ? { status: "in_progress" } : {}),
         },
       );
       setActivityFeedRevision((current) => current + 1);
