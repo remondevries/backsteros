@@ -741,9 +741,10 @@ export async function putDocumentProperties(
         ifMatchVersion: input.ifMatchVersion ?? initial.row.contentVersion,
       },
       {
-        putObject,
-        checksumForContent,
-        snippetForContent,
+        putObject: (key, _content) => putObject(key, contentForWrite),
+        checksumForContent: (_content) => checksumForContent(contentForWrite),
+        snippetForContent: (_content) =>
+          snippetForContent(bodyForSnippet(contentForWrite)),
         beforePutObject: awaitDocumentContentSaveTestGate,
         withLockedRow: async (fn) =>
           withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
@@ -783,7 +784,7 @@ export async function putDocumentProperties(
                     properties: metaPatch.properties,
                     frontMatterValid: true,
                     byteSize: meta.byteSize,
-                    checksum: metaPatch.checksum,
+                    checksum: meta.checksum,
                     snippet: metaPatch.snippet,
                     contentVersion: observedVersion + 1,
                     contentEtag: meta.contentEtag,

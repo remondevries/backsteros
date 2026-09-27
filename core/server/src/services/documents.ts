@@ -10,6 +10,7 @@ import type {
 import { db } from "../db/index.js";
 import { documents } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import { bodyForSnippet } from "../lib/document-frontmatter.js";
 import {
   buildStorageKey,
   checksumForContent,
@@ -801,21 +802,21 @@ export async function updateDocumentContent(
         }
       | undefined;
 
-    const casInput: UpdateDocumentContentInput & {
-      get content(): string;
-    } = {
-      ifMatchVersion: input.ifMatchVersion,
-      get content() {
-        return contentForWrite;
-      },
-    };
-
     const cas = await compareAndSwapDocumentContent(
-      casInput as UpdateDocumentContentInput,
       {
-        putObject,
-        checksumForContent,
-        snippetForContent,
+        // Bytes come from contentForWrite (set under the lock after property sync).
+        get content() {
+          return contentForWrite;
+        },
+        ifMatchVersion: input.ifMatchVersion,
+      },
+      {
+        // Close over contentForWrite so put/hash always use the post-sync body
+        // (plain `input.content` strings must not win over the getter).
+        putObject: (key, _content) => putObject(key, contentForWrite),
+        checksumForContent: (_content) => checksumForContent(contentForWrite),
+        snippetForContent: (_content) =>
+          snippetForContent(bodyForSnippet(contentForWrite)),
         beforePutObject: awaitDocumentContentSaveTestGate,
         withLockedRow: async (fn) =>
           withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
@@ -861,7 +862,8 @@ export async function updateDocumentContent(
                   .update(documents)
                   .set({
                     byteSize: meta.byteSize,
-                    checksum: propertyPatch?.checksum ?? meta.checksum,
+                    // meta.checksum is hashed from contentForWrite (same bytes put).
+                    checksum: meta.checksum,
                     snippet: propertyPatch?.snippet ?? meta.snippet,
                     contentVersion: observedVersion + 1,
                     contentEtag: meta.contentEtag,
