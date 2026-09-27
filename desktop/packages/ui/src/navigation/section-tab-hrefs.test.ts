@@ -33,6 +33,7 @@ test("project overview uses default section tabs when workbench is not mounted",
     "/projects/demo/documents",
     "/projects/demo/letters",
     "/projects/demo/updates",
+    "/projects/demo/timetracking",
   ]);
 });
 
@@ -70,6 +71,7 @@ test("standard project updates stay on default tabs when workbench is not mounte
     "/projects/demo/documents",
     "/projects/demo/letters",
     "/projects/demo/updates",
+    "/projects/demo/timetracking",
   ]);
 });
 
@@ -80,6 +82,7 @@ test("standard project documents stay on default tabs when workbench is not moun
     "/projects/demo/documents",
     "/projects/demo/letters",
     "/projects/demo/updates",
+    "/projects/demo/timetracking",
   ]);
 });
 
@@ -180,6 +183,7 @@ test("project tasks list section still exposes section tabs", () => {
     "/projects/demo/documents",
     "/projects/demo/letters",
     "/projects/demo/updates",
+    "/projects/demo/timetracking",
   ]);
 });
 

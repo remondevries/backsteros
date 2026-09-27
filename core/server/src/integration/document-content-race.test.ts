@@ -18,6 +18,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db, sqlClient } from "../db/index.js";
 import { documents, syncEvents, users, workspaces } from "../db/schema.js";
+import { splitDocumentMarkdown } from "../lib/document-frontmatter.js";
 import {
   checksumForContent,
   setVaultPathCache,
@@ -138,16 +139,23 @@ test("real updateDocumentContent: concurrent same-ifMatch — one wins, loser ne
   assert.equal(failures.length, 1, "exactly one save must lose");
   assert.equal(failures[0]!.error.message, "CONTENT_VERSION_CONFLICT");
 
-  const winnerBody =
-    successes[0]!.value!.checksum === checksumForContent(bodyA)
-      ? bodyA
-      : bodyB;
+  // OS-26 may wrap the body with YAML front matter (docKey / audience).
+  const winnerBody = resultA.ok ? bodyA : bodyB;
   const loserBody = winnerBody === bodyA ? bodyB : bodyA;
   assert.equal(successes[0]!.value!.contentVersion, N + 1);
 
   const onDisk = await readFile(path.join(vaultRoot, storageKey), "utf8");
-  assert.equal(onDisk, winnerBody, "vault must match the winning save");
-  assert.notEqual(onDisk, loserBody);
+  assert.equal(
+    splitDocumentMarkdown(onDisk).body.trim(),
+    winnerBody,
+    "vault must match the winning save body",
+  );
+  assert.notEqual(splitDocumentMarkdown(onDisk).body.trim(), loserBody);
+  assert.equal(
+    successes[0]!.value!.checksum,
+    checksumForContent(onDisk),
+    "CAS result checksum must match vault bytes",
+  );
 
   const [row] = await db
     .select()
@@ -158,8 +166,8 @@ test("real updateDocumentContent: concurrent same-ifMatch — one wins, loser ne
     .limit(1);
   assert.ok(row);
   assert.equal(row.contentVersion, N + 1);
-  assert.equal(row.checksum, checksumForContent(winnerBody));
-  assert.equal(row.byteSize, Buffer.byteLength(winnerBody, "utf8"));
+  assert.equal(row.checksum, checksumForContent(onDisk));
+  assert.equal(row.byteSize, Buffer.byteLength(onDisk, "utf8"));
 });
 
 test("real updateDocumentContent: lock held through putObject — newer content wins", async (context) => {
@@ -285,8 +293,9 @@ test("real updateDocumentContent: lock held through putObject — newer content 
   });
   assert.ok(newerResult);
   assert.equal(newerResult.contentVersion, N + 2);
+  const onDisk = await readFile(path.join(vaultRoot, storageKey), "utf8");
   assert.equal(
-    await readFile(path.join(vaultRoot, storageKey), "utf8"),
+    splitDocumentMarkdown(onDisk).body.trim(),
     newBody,
     "newer content must win after the locked race",
   );
@@ -298,5 +307,5 @@ test("real updateDocumentContent: lock held through putObject — newer content 
     .limit(1);
   assert.ok(row);
   assert.equal(row.contentVersion, N + 2);
-  assert.equal(row.checksum, checksumForContent(newBody));
+  assert.equal(row.checksum, checksumForContent(onDisk));
 });

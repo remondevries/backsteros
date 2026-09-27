@@ -276,6 +276,14 @@ export type KnowledgeListItem = {
   trackedMinutes?: number | null;
   /** Epoch ms when tracked duration was last set. */
   lastTrackedAt?: number | null;
+  /** Stable document key from YAML front matter (OS-26). */
+  docKey?: string | null;
+  /** Parsed YAML front-matter properties index (OS-26). */
+  properties?: Record<string, unknown> | null;
+  /** False when front matter is present but invalid (OS-26). */
+  frontMatterValid?: boolean | null;
+  /** Monotonic content revision; required for property writes. */
+  contentVersion?: number;
 };
 
 /** Canonical in-app Spaces section path (formerly `/knowledge`). */
