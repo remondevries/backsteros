@@ -14,7 +14,12 @@ SELECT
   actor_email,
   actor_name,
   data,
-  created_at
+  body,
+  parent_id,
+  resolved_at,
+  created_at,
+  updated_at,
+  deleted_at
 FROM task_activities
 WHERE task_id = ?
 `;
@@ -50,7 +55,12 @@ const ACTIVITY_TYPES = new Set<TaskActivityType>([
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "comment",
 ]);
+
+const SYSTEM_ACTIVITY_TYPES = new Set<TaskActivityType>(
+  [...ACTIVITY_TYPES].filter((type) => type !== "comment"),
+);
 
 type ActivityRow = {
   id: string;
@@ -61,7 +71,12 @@ type ActivityRow = {
   actor_email: string | null;
   actor_name: string | null;
   data: string | Record<string, unknown> | null;
+  body?: string | null;
+  parent_id?: string | null;
+  resolved_at?: string | null;
   created_at: string;
+  updated_at?: string | null;
+  deleted_at?: string | null;
 };
 
 type CommentRow = {
@@ -82,7 +97,9 @@ type CommentRow = {
 const ACTIVITY_ROW_COMPARATOR: PowerSyncRowComparator<ActivityRow> = {
   keyBy: (row) => String(row.id ?? ""),
   compareBy: (row) =>
-    `${row.type ?? ""}\0${row.created_at ?? ""}\0${
+    `${row.type ?? ""}\0${row.created_at ?? ""}\0${row.updated_at ?? ""}\0${
+      row.deleted_at ?? ""
+    }\0${row.body ?? ""}\0${
       typeof row.data === "string" ? row.data : JSON.stringify(row.data ?? {})
     }`,
 };
@@ -121,7 +138,10 @@ function asActivityType(value: string): TaskActivityType | null {
 
 export function sqliteRowToTaskActivity(row: ActivityRow): TaskActivity | null {
   const type = asActivityType(row.type);
-  if (!type || !row.id || !row.task_id || !row.created_at) return null;
+  if (!type || type === "comment" || !row.id || !row.task_id || !row.created_at) {
+    return null;
+  }
+  if (row.deleted_at) return null;
   const actorName =
     row.actor_name?.trim() ||
     row.actor_email?.trim().split("@")[0]?.trim() ||
@@ -135,7 +155,44 @@ export function sqliteRowToTaskActivity(row: ActivityRow): TaskActivity | null {
     actorEmail: row.actor_email,
     actorName,
     data: parseActivityData(row.data),
+    body: row.body ?? null,
+    parentId: row.parent_id ?? null,
+    resolvedAt: row.resolved_at ?? null,
     createdAt: row.created_at,
+    updatedAt: row.updated_at ?? row.created_at,
+    deletedAt: row.deleted_at ?? null,
+  };
+}
+
+/** Map a unified `type=comment` activity row into the TaskComment shape. */
+export function sqliteActivityRowToTaskComment(
+  row: ActivityRow,
+): TaskComment | null {
+  if (row.type !== "comment" || !row.id || !row.task_id || !row.created_at) {
+    return null;
+  }
+  if (row.deleted_at) return null;
+  const body = typeof row.body === "string" ? row.body : "";
+  if (!body) return null;
+  const authorContactId = row.actor_contact_id;
+  const isGenericAgent = !row.actor_user_id && !authorContactId;
+  const actorName =
+    row.actor_name?.trim() ||
+    row.actor_email?.trim().split("@")[0]?.trim() ||
+    (isGenericAgent ? "Agent" : "User");
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    parentCommentId: row.parent_id ?? null,
+    authorUserId: row.actor_user_id,
+    authorContactId,
+    authorEmail: row.actor_email,
+    authorName: actorName,
+    body,
+    resolvedAt: row.resolved_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? row.created_at,
+    deletedAt: row.deleted_at ?? null,
   };
 }
 
@@ -295,13 +352,35 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     if (!activityQuery.data) return null;
     return activityQuery.data
       .map(sqliteRowToTaskActivity)
-      .filter((row): row is TaskActivity => row != null);
+      .filter((row): row is TaskActivity => row != null)
+      .filter((row) => SYSTEM_ACTIVITY_TYPES.has(row.type));
+  }, [activityQuery.data]);
+
+  const commentsFromActivities = useMemo(() => {
+    if (!activityQuery.data) return null;
+    return activityQuery.data
+      .map(sqliteActivityRowToTaskComment)
+      .filter((row): row is TaskComment => row != null);
   }, [activityQuery.data]);
 
   const sqliteComments = useMemo(() => {
-    if (!commentQuery.data) return null;
-    return commentQuery.data.map(sqliteRowToTaskComment);
-  }, [commentQuery.data]);
+    const fromCommentsTable = commentQuery.data
+      ? commentQuery.data.map(sqliteRowToTaskComment)
+      : null;
+    // Prefer unified activity rows when present; fall back to legacy table
+    // while PowerSync catches up on the new columns / backfill.
+    if (commentsFromActivities && commentsFromActivities.length > 0) {
+      const byId = new Map(commentsFromActivities.map((c) => [c.id, c]));
+      for (const comment of fromCommentsTable ?? []) {
+        const existing = byId.get(comment.id);
+        if (!existing || existing.updatedAt < comment.updatedAt) {
+          byId.set(comment.id, comment);
+        }
+      }
+      return [...byId.values()];
+    }
+    return fromCommentsTable;
+  }, [commentQuery.data, commentsFromActivities]);
 
   useEffect(() => {
     if (!taskId || !sqliteComments) return;

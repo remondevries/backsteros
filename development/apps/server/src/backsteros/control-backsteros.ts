@@ -129,9 +129,7 @@ export async function resolveBacksterosControlProjectByKey(
   return match;
 }
 
-export async function resolveBacksterosControlTask(
-  taskRefOrId: string,
-): Promise<{
+export async function resolveBacksterosControlTask(taskRefOrId: string): Promise<{
   readonly task: BacksterosControlTask;
   readonly project: BacksterosControlProject | null;
 }> {
@@ -199,6 +197,51 @@ export async function resolveBacksterosControlTask(
     },
     project,
   };
+}
+
+type ControlSessionStatusLike = "idle" | "working" | "blocked" | "done";
+
+/**
+ * Best-effort BacksterOS status write for control-API sessions. Failures are
+ * swallowed — the web lifecycle hook is still the primary path when the UI is open.
+ */
+export async function patchBacksterosControlTaskStatus(
+  taskId: string,
+  status: "in_progress" | "in_review",
+): Promise<boolean> {
+  const origin = resolveBacksterosControlApiOrigin();
+  const apiKey = resolveBacksterosControlApiKey();
+  if (!apiKey) return false;
+  try {
+    const response = await fetch(`${origin}/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status, activityActor: "agent" }),
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Map control session status → BacksterOS task status when a write is needed. */
+export function backsterosStatusForControlSession(
+  sessionStatus: ControlSessionStatusLike,
+): "in_progress" | "in_review" | null {
+  if (sessionStatus === "working" || sessionStatus === "blocked") {
+    return "in_progress";
+  }
+  // `done` = turn settled after work. Do not treat bare `idle` (never started /
+  // unbound shell) as In Review — that would yank backlog tasks on status polls.
+  if (sessionStatus === "done") {
+    return "in_review";
+  }
+  return null;
 }
 
 export function buildControlKickoffPrompt(input: {

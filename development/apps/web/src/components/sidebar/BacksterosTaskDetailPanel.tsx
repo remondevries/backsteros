@@ -61,6 +61,7 @@ import {
 } from "~/backsteros/types";
 import { useBacksterosTaskDetail } from "~/backsteros/useBacksterosTaskDetail";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
+import { useBacksterosSettingsStore } from "~/backsteros/settingsStore";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import {
   BACKSTEROS_TASK_STATUS_ORDER,
@@ -512,6 +513,23 @@ export function BacksterosTaskDetailPanel() {
   const organizationAvatarSrcById = useBacksterosAvatarSrcMap("organization", organizations);
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
   const agentWorking = selection?.taskId != null && workingTaskIds.has(selection.taskId);
+  const agentContactId = useBacksterosSettingsStore((state) => state.agentContactId);
+  const workingActorName = useMemo(() => {
+    const agentId = agentContactId?.trim() || null;
+    if (agentId) {
+      const fromList = contacts.find((contact) => contact.id === agentId);
+      if (fromList?.name.trim()) return fromList.name.trim();
+      if (
+        state.status === "ready" &&
+        state.assignee?.id === agentId &&
+        state.assignee.name.trim()
+      ) {
+        return state.assignee.name.trim();
+      }
+    }
+    const assigneeName = state.status === "ready" ? state.assignee?.name?.trim() : null;
+    return assigneeName || null;
+  }, [agentContactId, contacts, state]);
   const assigneeAvatarSrc =
     state.status === "ready" && state.assignee ? (avatarSrcById[state.assignee.id] ?? null) : null;
 
@@ -827,6 +845,7 @@ export function BacksterosTaskDetailPanel() {
                       activities={state.activities}
                       avatarSrcByContactId={avatarSrcById}
                       working={agentWorking}
+                      workingActorName={workingActorName}
                     />
                   </div>
 

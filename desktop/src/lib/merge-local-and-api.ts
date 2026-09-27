@@ -313,6 +313,65 @@ function textMissing(value: unknown): boolean {
 }
 
 /**
+ * When local omits billing fields (stale PowerSync schema / sync SELECT),
+ * copy them from API or live overlay so Hourly rate / Budget stick in the UI.
+ */
+export function fillMissingProjectBillingFields<
+  T extends {
+    id: string;
+    hourlyRateCents?: number | null;
+    budgets?: unknown;
+  },
+>(
+  mergedRows: T[],
+  sourceRows: ReadonlyMap<string, T> | T[] | null | undefined,
+): T[] {
+  if (!sourceRows || (Array.isArray(sourceRows) && sourceRows.length === 0)) {
+    return mergedRows;
+  }
+  if (sourceRows instanceof Map && sourceRows.size === 0) return mergedRows;
+
+  const sourceById = Array.isArray(sourceRows)
+    ? new Map(sourceRows.map((row) => [row.id, row]))
+    : sourceRows;
+
+  return mergedRows.map((row) => {
+    const source = sourceById.get(row.id);
+    if (!source) return row;
+    let next = row;
+
+    const localRate = row.hourlyRateCents;
+    const sourceRate = source.hourlyRateCents;
+    if (
+      (localRate == null ||
+        (typeof localRate === "number" && !Number.isFinite(localRate))) &&
+      typeof sourceRate === "number" &&
+      Number.isFinite(sourceRate)
+    ) {
+      next = { ...next, hourlyRateCents: sourceRate };
+    }
+
+    const localBudgets = row.budgets;
+    const localEmpty =
+      localBudgets == null ||
+      localBudgets === "" ||
+      localBudgets === "[]" ||
+      (Array.isArray(localBudgets) && localBudgets.length === 0);
+    const sourceBudgets = source.budgets;
+    const sourceHas =
+      (Array.isArray(sourceBudgets) && sourceBudgets.length > 0) ||
+      (typeof sourceBudgets === "string" &&
+        sourceBudgets.trim() !== "" &&
+        sourceBudgets.trim() !== "[]");
+    if (localEmpty && sourceHas) {
+      next = { ...next, budgets: sourceBudgets as T["budgets"] };
+    }
+
+    return next;
+  });
+}
+
+/**
  * When local wins by updatedAt but still omits codebase binding fields
  * (stale PowerSync schema / sync), copy them from the API row so repo,
  * working directory, and health-check settings survive restart.

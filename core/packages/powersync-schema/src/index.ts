@@ -33,6 +33,8 @@ const projects = new Table(
     local_working_directory: column.text,
     health_check_mode: column.text,
     health_check_domain: column.text,
+    hourly_rate_cents: column.integer,
+    budgets: column.text,
     status: column.text,
     priority: column.integer,
     sort_order: column.integer,
@@ -368,7 +370,7 @@ const task_comments = new Table(
   { indexes: { task: ["task_id"], parent: ["parent_comment_id"] } },
 );
 
-/** System activity rows (status/assignee/timer/agent) — Tier A metadata, no blobs. */
+/** System activity rows (status/assignee/timer/agent/comment) — Tier A metadata. */
 const task_activities = new Table(
   {
     task_id: column.text,
@@ -379,9 +381,14 @@ const task_activities = new Table(
     actor_name: column.text,
     /** JSON object stored as text (same as tasks.links). */
     data: column.text,
+    body: column.text,
+    parent_id: column.text,
+    resolved_at: column.text,
     created_at: column.text,
+    updated_at: column.text,
+    deleted_at: column.text,
   },
-  { indexes: { task: ["task_id"], type: ["type"] } },
+  { indexes: { task: ["task_id"], type: ["type"], parent: ["parent_id"] } },
 );
 
 const contact_relationships = new Table(

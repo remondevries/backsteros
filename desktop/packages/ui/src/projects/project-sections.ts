@@ -4,6 +4,7 @@ export const PROJECT_SECTION_IDS = [
   "documents",
   "letters",
   "updates",
+  "timetracking",
 ] as const;
 
 export type ProjectSectionId = (typeof PROJECT_SECTION_IDS)[number];
@@ -19,6 +20,7 @@ export const PROJECT_SECTIONS: readonly ProjectSectionConfig[] = [
   { id: "documents", label: "Documents" },
   { id: "letters", label: "Letters" },
   { id: "updates", label: "Updates" },
+  { id: "timetracking", label: "Timetracking" },
 ];
 
 export function isProjectSectionId(value: string): value is ProjectSectionId {

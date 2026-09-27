@@ -18,6 +18,7 @@ import {
   ProjectDocumentsView,
   ProjectLettersView,
   ProjectTasksView,
+  ProjectTimetrackingView,
   ProjectsOverviewView,
   DomainDetailView,
   RegisterEntityDeleteAction,
@@ -26,6 +27,8 @@ import {
   primeTabTitle,
   LIST_BOARD_VIEW_SEARCH_PARAM,
   TASKS_LIST_BOARD_STORAGE_KEY,
+  CALENDAR_TIMETRACKING_MONTH_PARAM,
+  CALENDAR_TIMETRACKING_WEEK_PARAM,
   TrackedTimeField,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
@@ -33,7 +36,11 @@ import {
   buildProjectDropdownOptions,
   buildProjectKeyRenameRedirectPath,
   buildTransipDomainProjectIcon,
+  collectTimetrackingEntries,
   formatLetterDisplayId,
+  formatMeetingDisplayId,
+  formatMonthLong,
+  getCalendarMeetingHref,
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
   getOrganizationSectionHref,
@@ -46,16 +53,22 @@ import {
   getActiveProjectSection,
   getDocumentEditorBody,
   getSelectedProjectDocumentPathFromPathname,
+  getTaskDisplayId,
   isCodebaseWorkbenchPath,
+  isDefinedProjectArea,
   isProjectSectionId,
   letterMatchesSlug,
   letterPdfSubjectFromFilename,
+  localMonthKey,
+  localWeekKey,
   organizationMatchesSlug,
   parseListBoardViewFromLocation,
   parseProjectAreaFilterFromLocation,
   persistListBoardView,
+  PROJECT_AREA_LABELS,
   resolveLetterDetailHref,
   serializeDocumentBody,
+  timetrackingWeekPeriod,
   type DomainRegistrarContact,
   type KnowledgeListItem,
   type ListBoardView,
@@ -65,6 +78,8 @@ import {
   type ProjectSectionId,
   type ProjectStatus,
   type TaskStatus,
+  type TimetrackingEntry,
+  type TimetrackingPeriod,
   getProjectProviderDefaultIcon,
   getProjectEmailCategoryDefaultIcon,
   projectReorderPatches,
@@ -832,6 +847,195 @@ function ProjectsPageBody({
     tasks,
   ]);
 
+  const projectMeetings = useMemo(() => {
+    if (!selected) return [];
+    return workspace.meetings.filter(
+      (meeting) =>
+        meeting.projectId === selected.id ||
+        (meeting.projectKey &&
+          meeting.projectKey.toLowerCase() === selected.key.toLowerCase()),
+    );
+  }, [selected, workspace.meetings]);
+
+  const projectTimetrackingPeriod = useMemo((): Extract<
+    TimetrackingPeriod,
+    { kind: "month" | "week" }
+  > => {
+    const raw = (location.searchStr ?? "").startsWith("?")
+      ? (location.searchStr ?? "").slice(1)
+      : (location.searchStr ?? "");
+    const params = new URLSearchParams(raw);
+    const week = params.get(CALENDAR_TIMETRACKING_WEEK_PARAM);
+    if (week && /^\d{4}-\d{2}-\d{2}$/.test(week)) {
+      return timetrackingWeekPeriod(week);
+    }
+    const month = params.get(CALENDAR_TIMETRACKING_MONTH_PARAM);
+    const monthKey =
+      month && /^\d{4}-\d{2}$/.test(month) ? month : localMonthKey();
+    return {
+      kind: "month",
+      monthKey,
+      monthLabel: formatMonthLong(monthKey),
+    };
+  }, [location.searchStr]);
+
+  const setProjectTimetrackingPeriod = useCallback(
+    (
+      nextPeriod: Extract<TimetrackingPeriod, { kind: "month" | "week" }>,
+    ) => {
+      const prev = new URLSearchParams(
+        (location.searchStr ?? "").startsWith("?")
+          ? (location.searchStr ?? "").slice(1)
+          : (location.searchStr ?? ""),
+      );
+      const next = new URLSearchParams(prev);
+      next.delete(CALENDAR_TIMETRACKING_MONTH_PARAM);
+      next.delete(CALENDAR_TIMETRACKING_WEEK_PARAM);
+      if (nextPeriod.kind === "week") {
+        next.set(CALENDAR_TIMETRACKING_WEEK_PARAM, nextPeriod.weekKey);
+      } else {
+        next.set(CALENDAR_TIMETRACKING_MONTH_PARAM, nextPeriod.monthKey);
+      }
+      const query = next.toString();
+      navigate(
+        query ? `${location.pathname}?${query}` : location.pathname,
+        { replace: true },
+      );
+    },
+    [location.pathname, location.searchStr, navigate],
+  );
+
+  const projectTimetrackingEntrySources = useMemo(() => {
+    const emptyHref = (_id: string): string => "";
+    if (!selected) {
+      return {
+        tasks: [] as const,
+        meetings: [] as const,
+        documents: [] as const,
+        taskHref: emptyHref,
+        meetingHref: emptyHref,
+        documentHref: emptyHref,
+      };
+    }
+    const projectId = selected.id;
+    const projectKey = selected.key;
+    const areaById = new Map(
+      workspace.areas.map((area) => [area.id, area] as const),
+    );
+    const nestedId = selected.areaId?.trim() || null;
+    let areaId: string | null = null;
+    let areaName: string | null = null;
+    let areaColor: string | null = null;
+    if (nestedId) {
+      const nested = areaById.get(nestedId);
+      areaId = nestedId;
+      areaName = nested?.name?.trim() || "Untitled area";
+      areaColor = nested?.color ?? null;
+    } else if (isDefinedProjectArea(selected.area)) {
+      areaId = selected.area;
+      areaName = PROJECT_AREA_LABELS[selected.area];
+    }
+
+    const taskHref = (id: string): string => {
+      const task = projectTasks.find((entry) => entry.id === id);
+      if (task?.number != null) {
+        return getScopedProjectTaskHref(projectKey, task.number, routeScope);
+      }
+      return `${getScopedProjectSectionHref(projectKey, "tasks", routeScope)}/${id}`;
+    };
+    const meetingHref = (id: string): string => getCalendarMeetingHref(id);
+    const documentHref = (id: string): string => {
+      const doc = readableProjectDocuments.find((entry) => entry.id === id);
+      const pathOrId = doc?.path?.trim() || id;
+      return getScopedProjectDocumentHref(projectKey, pathOrId, routeScope);
+    };
+
+    return {
+      tasks: projectTasks
+        .filter((task) => {
+          if (isEmailTaskListItem(task)) return false;
+          const seconds = task.trackedDurationSeconds ?? 0;
+          if (seconds > 0) return true;
+          // Project report also lists completed work left untimed.
+          return task.status === "completed";
+        })
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          number: task.number,
+          displayId: getTaskDisplayId(
+            {
+              number: task.number,
+              projectId: task.projectId ?? projectId,
+            },
+            task.projectKey ?? projectKey,
+          ),
+          trackedDurationSeconds: task.trackedDurationSeconds ?? null,
+          scheduleAt: task.dueDate,
+          projectId,
+          projectKey,
+          projectName: selected.name,
+          areaId,
+          areaName,
+          areaColor,
+          relatedContactIds: task.relatedContactIds ?? null,
+        })),
+      meetings: projectMeetings.map((meeting) => ({
+        id: meeting.id,
+        title: meeting.title,
+        number: meeting.number,
+        displayId: formatMeetingDisplayId(meeting.number),
+        trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
+        scheduleAt: meeting.startAt,
+        projectId,
+        projectKey,
+        projectName: selected.name,
+        areaId,
+        areaName,
+        areaColor,
+        relatedContactIds: meeting.attendeeContactIds ?? null,
+      })),
+      documents: readableProjectDocuments.map((document) => ({
+        id: document.id,
+        title: document.title,
+        trackedDurationSeconds: document.trackedDurationSeconds ?? null,
+        scheduleAt:
+          document.lastTrackedAt != null
+            ? new Date(document.lastTrackedAt)
+            : document.updatedAt != null
+              ? new Date(document.updatedAt)
+              : null,
+        projectId,
+        projectKey,
+        projectName: selected.name,
+        areaId,
+        areaName,
+        areaColor,
+        relatedContactIds: document.contactIds ?? null,
+      })),
+      taskHref,
+      meetingHref,
+      documentHref,
+    };
+  }, [
+    projectMeetings,
+    projectTasks,
+    readableProjectDocuments,
+    routeScope,
+    selected,
+    workspace.areas,
+  ]);
+
+  const projectTimetrackingEntries = useMemo(
+    () =>
+      collectTimetrackingEntries({
+        ...projectTimetrackingEntrySources,
+        period: projectTimetrackingPeriod,
+        includeZeroDurationTasks: true,
+      }),
+    [projectTimetrackingEntrySources, projectTimetrackingPeriod],
+  );
+
   const projectList = workspace.projects;
 
   const assigneeOptions = useMemo(
@@ -1044,6 +1248,7 @@ function ProjectsPageBody({
     effectiveType === "codebase" &&
     (activeSection === "overview" ||
       activeSection === "tasks" ||
+      activeSection === "timetracking" ||
       activeSection === "documents" ||
       activeSection === "updates" ||
       isCodebaseWorkbenchPath(location.pathname, projectKey));
@@ -1081,6 +1286,80 @@ function ProjectsPageBody({
   }
 
   function renderSection(sectionId: ProjectSectionId) {
+    if (sectionId === "timetracking") {
+      return (
+        <ProjectTimetrackingView
+          entries={projectTimetrackingEntries}
+          tasks={projectTasks}
+          meetings={projectMeetings}
+          period={projectTimetrackingPeriod}
+          onPeriodChange={setProjectTimetrackingPeriod}
+          latestMonth={localMonthKey()}
+          latestWeek={localWeekKey()}
+          hourlyRateCents={project.hourlyRateCents ?? null}
+          budgets={project.budgets ?? []}
+          onEntryOpen={(entry: TimetrackingEntry) => {
+            if (entry.href) {
+              if (entry.title) primeTabTitle(entry.href, entry.title);
+              navigate(entry.href);
+            }
+          }}
+          emptyLabel="No tracked time or completed tasks on this project for the selected period."
+          projectOptions={projectOptions}
+          assigneeOptions={assigneeOptions}
+          onTaskStatusChange={(taskId, status) => {
+            void workspace.patchTask(taskId, { status });
+          }}
+          onTaskPriorityChange={(taskId, priority) => {
+            void workspace.patchTask(taskId, { priority });
+          }}
+          onTaskDueDateChange={(taskId, dueDate) => {
+            void workspace.patchTask(taskId, {
+              dueDate: dueDate ? dueDate.toISOString() : null,
+            });
+          }}
+          onTaskAssigneeChange={(taskId, assigneeId) => {
+            void workspace.patchTask(taskId, { assigneeId });
+          }}
+          onTaskProjectChange={(taskId, projectKeyValue) => {
+            const nextProject = projectKeyValue
+              ? workspace.projects.find(
+                  (entry) =>
+                    entry.key.toLowerCase() === projectKeyValue.toLowerCase(),
+                )
+              : null;
+            void workspace.patchTask(taskId, {
+              projectId: nextProject?.id ?? null,
+            });
+          }}
+          onTrackedDurationSecondsChange={(entry, seconds) => {
+            const trackedMinutes =
+              seconds != null && seconds >= 60
+                ? Math.floor(seconds / 60)
+                : null;
+            const patch = {
+              trackedDurationSeconds: seconds,
+              trackedMinutes,
+              ...(entry.kind === "document" &&
+              seconds != null &&
+              seconds > 0
+                ? { lastTrackedAt: new Date().toISOString() }
+                : {}),
+            };
+            if (entry.kind === "task") {
+              void workspace.patchTask(entry.id, patch);
+              return;
+            }
+            if (entry.kind === "meeting") {
+              void workspace.patchMeeting(entry.id, patch);
+              return;
+            }
+            void workspace.patchDocument(entry.id, patch);
+          }}
+        />
+      );
+    }
+
     if (sectionId === "tasks") {
       return (
         <ProjectTasksView
@@ -1732,6 +2011,7 @@ function ProjectsPageBody({
             />
           }
           updatesPanel={<DesktopProjectUpdatesPanel projectId={project.id} />}
+          timetrackingPanel={renderSection("timetracking")}
           docsListPanel={
             <DesktopCodebaseDocsListPanel
               keyboardEnabled={activeSection === "documents"}
@@ -1791,6 +2071,17 @@ function ProjectsPageBody({
             if ("healthCheckDomain" in patch) {
               localPatch.healthCheckDomain =
                 (patch.healthCheckDomain as string | null) ?? null;
+            }
+            if ("hourlyRateCents" in patch) {
+              localPatch.hourlyRateCents =
+                typeof patch.hourlyRateCents === "number"
+                  ? patch.hourlyRateCents
+                  : null;
+            }
+            if ("budgets" in patch) {
+              localPatch.budgets = Array.isArray(patch.budgets)
+                ? (patch.budgets as NonNullable<WorkspaceProject["budgets"]>)
+                : [];
             }
             if ("provider" in patch) {
               localPatch.provider = (patch.provider as string | null) ?? null;
@@ -1961,7 +2252,25 @@ function ProjectsPageBody({
           entityLabel={`project "${project.name}"`}
           onDelete={handleDeleteProject}
         />
-        <DomainProjectWorkbench tasksPanel={renderSection("tasks")}>
+        <DomainProjectWorkbench
+          tasksPanel={renderSection("tasks")}
+          timetrackingPanel={renderSection("timetracking")}
+          activeTab={
+            activeSection === "timetracking" ? "timetracking" : "tasks"
+          }
+          onTabChange={(tab) => {
+            navigate(
+              tab === "timetracking"
+                ? getScopedProjectSectionHref(
+                    projectKey,
+                    "timetracking",
+                    routeScope,
+                  )
+                : getScopedProjectBasePath(projectKey, routeScope),
+              { replace: true },
+            );
+          }}
+        >
           <DomainDetailView {...domainDetailProps} />
         </DomainProjectWorkbench>
       </>
@@ -2123,6 +2432,14 @@ function ProjectsPageBody({
         onHealthCheckChange={(next) => {
           patchSelected(next);
           void workspace.patchProject(project.id, next);
+        }}
+        onHourlyRateChange={(hourlyRateCents) => {
+          patchSelected({ hourlyRateCents });
+          void workspace.patchProject(project.id, { hourlyRateCents });
+        }}
+        onBudgetsChange={(budgets) => {
+          patchSelected({ budgets });
+          void workspace.patchProject(project.id, { budgets });
         }}
         onAreaChange={(area: ProjectArea | null) => {
           patchSelected({ area, areaId: null });

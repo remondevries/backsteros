@@ -1,10 +1,23 @@
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { taskActivities, tasks, users } from "../db/schema.js";
+import { taskActivities, tasks, users, projects } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import type { TaskWriteActor } from "../lib/write-actor.js";
 import { resolveWriteActorProfile } from "./task-comments.js";
+import {
+  nextTrackedDurationAfterAutoStop,
+  shouldAutoStartTaskTimer,
+  shouldAutoStopTaskTimer,
+  timerActorFromAssignee,
+} from "./task-auto-timer.js";
+
+export {
+  nextTrackedDurationAfterAutoStop,
+  shouldAutoStartTaskTimer,
+  shouldAutoStopTaskTimer,
+  timerActorFromAssignee,
+};
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -19,7 +32,8 @@ export type TaskActivityType =
   | "project_changed"
   | "agent_worked"
   | "timer_started"
-  | "timer_stopped";
+  | "timer_stopped"
+  | "comment";
 
 /** Property updates coalesce into one row when repeated quickly. */
 const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
@@ -32,6 +46,21 @@ const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
   "project_changed",
 ]);
 
+/** System event types (excludes discussion comments). */
+export const SYSTEM_ACTIVITY_TYPES = [
+  "created",
+  "status_changed",
+  "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
+  "priority_changed",
+  "due_date_changed",
+  "project_changed",
+  "agent_worked",
+  "timer_started",
+  "timer_stopped",
+] as const satisfies readonly TaskActivityType[];
+
 /** Rapid edits of the same property within this window update the prior row. */
 export const ACTIVITY_COALESCE_WINDOW_MS = 30_000;
 
@@ -40,6 +69,9 @@ export type { TaskWriteActor } from "../lib/write-actor.js";
 export type TaskActivityListRow = typeof taskActivities.$inferSelect & {
   userDisplayName: string | null;
   userEmail: string | null;
+  projectId?: string | null;
+  taskNumber?: number | null;
+  taskTitle?: string | null;
 };
 
 function asDataRecord(value: unknown): Record<string, unknown> {
@@ -130,6 +162,7 @@ export async function recordTaskActivity(
           actorName: resolved.name ?? recent.actorName,
           actorContactId: resolved.contactId ?? recent.actorContactId,
           createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .where(eq(taskActivities.id, recent.id))
         .returning();
@@ -149,6 +182,7 @@ export async function recordTaskActivity(
       actorEmail: resolved.email,
       actorName: resolved.name,
       data,
+      updatedAt: new Date(),
     })
     .returning();
   return row ?? null;
@@ -237,7 +271,12 @@ export async function listTaskActivities(
       actorEmail: taskActivities.actorEmail,
       actorName: taskActivities.actorName,
       data: taskActivities.data,
+      body: taskActivities.body,
+      parentId: taskActivities.parentId,
+      resolvedAt: taskActivities.resolvedAt,
       createdAt: taskActivities.createdAt,
+      updatedAt: taskActivities.updatedAt,
+      deletedAt: taskActivities.deletedAt,
       userDisplayName: users.displayName,
       userEmail: users.email,
     })
@@ -247,11 +286,177 @@ export async function listTaskActivities(
       and(
         eq(taskActivities.taskId, taskId),
         eq(taskActivities.workspaceId, workspaceId),
+        // Legacy per-task /activities endpoint: system events only.
+        inArray(taskActivities.type, [...SYSTEM_ACTIVITY_TYPES]),
+        isNull(taskActivities.deletedAt),
       ),
     )
     .orderBy(asc(taskActivities.createdAt));
 
   return rows;
+}
+
+export type ListActivitiesFilter = {
+  taskId?: string;
+  projectId?: string;
+  types?: string[];
+  includeDeleted?: boolean;
+  limit?: number;
+  cursor?: string | null;
+};
+
+function encodeActivitiesCursor(createdAt: Date, id: string): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: createdAt.toISOString(), id }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeActivitiesCursor(
+  cursor: string | undefined | null,
+): { createdAt: Date; id: string } | null {
+  if (!cursor?.trim()) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as { createdAt?: string; id?: string };
+    if (!parsed.createdAt || !parsed.id) return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Unified activity feed for clients (desktop, portal, mobile).
+ * Scope with taskId or projectId; dial types to include comments and/or events.
+ */
+export async function listActivities(
+  workspaceId: string,
+  filter: ListActivitiesFilter,
+  executor: DbExecutor = db,
+): Promise<{ rows: TaskActivityListRow[]; nextCursor: string | null } | null> {
+  const taskId = filter.taskId?.trim() || null;
+  const projectId = filter.projectId?.trim() || null;
+  if (!taskId && !projectId) return null;
+
+  if (taskId) {
+    const [task] = await executor
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          eq(tasks.workspaceId, workspaceId),
+          isNull(tasks.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!task) return null;
+  } else if (projectId) {
+    const [project] = await executor
+      .select({ id: tasks.projectId })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.projectId, projectId),
+          eq(tasks.workspaceId, workspaceId),
+          isNull(tasks.deletedAt),
+        ),
+      )
+      .limit(1);
+    // Empty project is still valid — return empty feed rather than 404 when
+    // the project exists. Check projects table when no tasks match.
+    if (!project) {
+      const [exists] = await executor
+        .select({ id: projects.id })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.id, projectId),
+            eq(projects.workspaceId, workspaceId),
+            isNull(projects.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!exists) return null;
+    }
+  }
+
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+  const types = (filter.types ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const cursor = decodeActivitiesCursor(filter.cursor);
+
+  const conditions = [
+    eq(taskActivities.workspaceId, workspaceId),
+    ...(taskId ? [eq(taskActivities.taskId, taskId)] : []),
+    ...(projectId
+      ? [
+          eq(tasks.projectId, projectId),
+          eq(tasks.workspaceId, workspaceId),
+          isNull(tasks.deletedAt),
+        ]
+      : []),
+    ...(types.length > 0 ? [inArray(taskActivities.type, types)] : []),
+    ...(filter.includeDeleted ? [] : [isNull(taskActivities.deletedAt)]),
+  ];
+
+  if (cursor) {
+    conditions.push(
+      or(
+        lt(taskActivities.createdAt, cursor.createdAt),
+        and(
+          eq(taskActivities.createdAt, cursor.createdAt),
+          lt(taskActivities.id, cursor.id),
+        ),
+      )!,
+    );
+  }
+
+  const baseQuery = executor
+    .select({
+      id: taskActivities.id,
+      workspaceId: taskActivities.workspaceId,
+      taskId: taskActivities.taskId,
+      type: taskActivities.type,
+      actorUserId: taskActivities.actorUserId,
+      actorContactId: taskActivities.actorContactId,
+      actorEmail: taskActivities.actorEmail,
+      actorName: taskActivities.actorName,
+      data: taskActivities.data,
+      body: taskActivities.body,
+      parentId: taskActivities.parentId,
+      resolvedAt: taskActivities.resolvedAt,
+      createdAt: taskActivities.createdAt,
+      updatedAt: taskActivities.updatedAt,
+      deletedAt: taskActivities.deletedAt,
+      userDisplayName: users.displayName,
+      userEmail: users.email,
+      projectId: tasks.projectId,
+      taskNumber: tasks.number,
+      taskTitle: tasks.title,
+    })
+    .from(taskActivities)
+    .leftJoin(users, eq(taskActivities.actorUserId, users.id))
+    .innerJoin(tasks, eq(taskActivities.taskId, tasks.id))
+    .where(and(...conditions))
+    .orderBy(desc(taskActivities.createdAt), desc(taskActivities.id))
+    .limit(limit + 1);
+
+  const rows = await baseQuery;
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeActivitiesCursor(last.createdAt, last.id)
+      : null;
+
+  return { rows: page, nextCursor };
 }
 
 export type OpenRunningTaskTimer = {
@@ -581,6 +786,169 @@ export async function updateTaskTimerSessionActor(
   }
 
   return { taskId, start, stop };
+}
+
+function durationSecondsFromStopData(data: unknown): number {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return 0;
+  const value = (data as { durationSeconds?: unknown }).durationSeconds;
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.round(value));
+}
+
+export async function findOpenTaskTimerStart(
+  workspaceId: string,
+  taskId: string,
+  executor: DbExecutor = db,
+): Promise<typeof taskActivities.$inferSelect | null> {
+  const timerRows = await executor
+    .select()
+    .from(taskActivities)
+    .where(
+      and(
+        eq(taskActivities.workspaceId, workspaceId),
+        eq(taskActivities.taskId, taskId),
+        inArray(taskActivities.type, ["timer_started", "timer_stopped"]),
+      ),
+    )
+    .orderBy(asc(taskActivities.createdAt));
+
+  let open: typeof taskActivities.$inferSelect | null = null;
+  for (const row of timerRows) {
+    if (row.type === "timer_started") {
+      open = row;
+      continue;
+    }
+    open = null;
+  }
+  return open;
+}
+
+async function sumStoppedTimerDurationSeconds(
+  workspaceId: string,
+  taskId: string,
+  executor: DbExecutor,
+): Promise<number> {
+  const stops = await executor
+    .select({ data: taskActivities.data })
+    .from(taskActivities)
+    .where(
+      and(
+        eq(taskActivities.workspaceId, workspaceId),
+        eq(taskActivities.taskId, taskId),
+        eq(taskActivities.type, "timer_stopped"),
+      ),
+    );
+  let total = 0;
+  for (const row of stops) {
+    total += durationSecondsFromStopData(row.data);
+  }
+  return total;
+}
+
+/**
+ * Start a timer session when status enters `in_progress`, attributed to the
+ * assignee contact (not the agent/user who flipped the status).
+ */
+export async function autoStartTaskTimerOnStatus(
+  workspaceId: string,
+  taskId: string,
+  assigneeId: string | null | undefined,
+  executor: DbExecutor = db,
+): Promise<typeof taskActivities.$inferSelect | null> {
+  const open = await findOpenTaskTimerStart(workspaceId, taskId, executor);
+  if (open) return open;
+  return createClientTaskActivity(
+    workspaceId,
+    taskId,
+    "timer_started",
+    {},
+    timerActorFromAssignee(assigneeId),
+    executor,
+  );
+}
+
+/**
+ * Pause a running timer when status leaves `in_progress`, attributed to the
+ * assignee contact, and bump `tracked_duration_seconds` when needed.
+ */
+export async function autoStopTaskTimerOnStatus(
+  workspaceId: string,
+  taskId: string,
+  assigneeId: string | null | undefined,
+  executor: DbExecutor = db,
+  now: Date = new Date(),
+): Promise<{
+  stop: typeof taskActivities.$inferSelect | null;
+  trackedDurationSeconds: number | null;
+} | null> {
+  const open = await findOpenTaskTimerStart(workspaceId, taskId, executor);
+  if (!open) return null;
+
+  const startedMs = open.createdAt.getTime();
+  const sessionSeconds =
+    Number.isFinite(startedMs) && startedMs > 0
+      ? Math.max(0, Math.floor((now.getTime() - startedMs) / 1000))
+      : 0;
+
+  const previousStoppedSecondsSum = await sumStoppedTimerDurationSeconds(
+    workspaceId,
+    taskId,
+    executor,
+  );
+
+  const stop = await createClientTaskActivity(
+    workspaceId,
+    taskId,
+    "timer_stopped",
+    { durationSeconds: sessionSeconds },
+    timerActorFromAssignee(assigneeId),
+    executor,
+  );
+
+  const [task] = await executor
+    .select({
+      trackedDurationSeconds: tasks.trackedDurationSeconds,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.id, taskId),
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!task) {
+    return { stop, trackedDurationSeconds: null };
+  }
+
+  const nextSeconds = nextTrackedDurationAfterAutoStop({
+    currentTrackedSeconds: task.trackedDurationSeconds,
+    previousStoppedSecondsSum,
+    sessionSeconds,
+  });
+  const trackedDurationSeconds = nextSeconds > 0 ? nextSeconds : null;
+  const trackedMinutes =
+    trackedDurationSeconds != null && trackedDurationSeconds >= 60
+      ? Math.floor(trackedDurationSeconds / 60)
+      : null;
+
+  if (
+    (task.trackedDurationSeconds ?? null) !== trackedDurationSeconds
+  ) {
+    await executor
+      .update(tasks)
+      .set({
+        trackedDurationSeconds,
+        trackedMinutes,
+        updatedAt: now,
+      })
+      .where(
+        and(eq(tasks.id, taskId), eq(tasks.workspaceId, workspaceId)),
+      );
+  }
+
+  return { stop, trackedDurationSeconds };
 }
 
 export { activityActorName, authorDisplayName } from "./task-comments.js";

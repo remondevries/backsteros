@@ -8,6 +8,8 @@ import {
 import {
   collectTimetrackingEntries,
   formatTimetrackingLeadingStamp,
+  groupTimetrackingEntriesByDay,
+  groupTimetrackingEntriesByWeek,
   withLiveTimetrackingEntries,
 } from "./calendar-timetracking-entries.js";
 
@@ -57,6 +59,47 @@ test("collectTimetrackingEntries keeps only positive tracked totals", () => {
   assert.deepEqual(
     entries.map((entry) => entry.id),
     ["m1", "t1"],
+  );
+});
+
+test("collectTimetrackingEntries can include zero-duration tasks", () => {
+  const entries = collectTimetrackingEntries({
+    includeZeroDurationTasks: true,
+    period: {
+      kind: "month",
+      monthKey: "2026-08",
+      monthLabel: "August 2026",
+    },
+    tasks: [
+      {
+        id: "timed",
+        title: "Timed",
+        trackedDurationSeconds: 90,
+        scheduleAt: "2026-08-25",
+      },
+      {
+        id: "untimed",
+        title: "Untimed completed",
+        trackedDurationSeconds: 0,
+        scheduleAt: "2026-08-20",
+      },
+    ],
+    meetings: [
+      {
+        id: "zero-meeting",
+        title: "No time meeting",
+        trackedDurationSeconds: 0,
+        scheduleAt: "2026-08-20",
+      },
+    ],
+  });
+  assert.deepEqual(
+    entries.map((entry) => entry.id),
+    ["timed", "untimed"],
+  );
+  assert.equal(
+    entries.find((entry) => entry.id === "untimed")?.trackedDurationSeconds,
+    0,
   );
 });
 
@@ -259,4 +302,90 @@ test("readTimetrackingPeriodFromSearch prefers week then month then day", () => 
     kind: "day",
     ymd: "2026-08-25",
   });
+});
+
+test("groupTimetrackingEntriesByWeek buckets by ISO week newest first", () => {
+  const groups = groupTimetrackingEntriesByWeek([
+    {
+      id: "a",
+      kind: "task",
+      title: "A",
+      trackedDurationSeconds: 60,
+      groupDateYmd: "2026-08-25",
+      href: "/a",
+    },
+    {
+      id: "b",
+      kind: "meeting",
+      title: "B",
+      trackedDurationSeconds: 120,
+      groupDateYmd: "2026-08-18",
+      href: "/b",
+    },
+    {
+      id: "c",
+      kind: "document",
+      title: "C",
+      trackedDurationSeconds: 30,
+      groupDateYmd: null,
+      href: "/c",
+    },
+  ]);
+  assert.equal(groups.length, 3);
+  assert.equal(groups[0]?.weekKey, "2026-08-24");
+  assert.match(groups[0]?.label ?? "", /^Week /);
+  assert.equal(groups[0]?.entries.length, 1);
+  assert.equal(groups[1]?.weekKey, "2026-08-17");
+  assert.equal(groups[2]?.weekKey, "__unscheduled__");
+  assert.equal(groups[2]?.label, "Unscheduled");
+  assert.equal(groups[2]?.totalSeconds, 30);
+});
+
+test("groupTimetrackingEntriesByDay buckets by schedule day newest first", () => {
+  const groups = groupTimetrackingEntriesByDay(
+    [
+      {
+        id: "a",
+        kind: "task",
+        title: "A",
+        trackedDurationSeconds: 60,
+        groupDateYmd: "2026-09-16",
+        href: "/a",
+      },
+      {
+        id: "b",
+        kind: "meeting",
+        title: "B",
+        trackedDurationSeconds: 120,
+        groupDateYmd: "2026-09-15",
+        href: "/b",
+      },
+      {
+        id: "c",
+        kind: "document",
+        title: "C",
+        trackedDurationSeconds: 45,
+        groupDateYmd: "2026-09-16",
+        href: "/c",
+      },
+      {
+        id: "d",
+        kind: "task",
+        title: "D",
+        trackedDurationSeconds: 10,
+        groupDateYmd: null,
+        href: "/d",
+      },
+    ],
+    { todayYmd: "2026-09-16" },
+  );
+  assert.equal(groups.length, 3);
+  assert.equal(groups[0]?.dayKey, "2026-09-16");
+  assert.equal(groups[0]?.label, "Today");
+  assert.equal(groups[0]?.entries.length, 2);
+  assert.equal(groups[0]?.totalSeconds, 105);
+  assert.equal(groups[1]?.dayKey, "2026-09-15");
+  assert.equal(groups[1]?.label, "Yesterday");
+  assert.equal(groups[2]?.dayKey, "__unscheduled__");
+  assert.equal(groups[2]?.label, "Unscheduled");
 });

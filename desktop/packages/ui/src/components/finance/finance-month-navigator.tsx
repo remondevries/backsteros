@@ -2,6 +2,9 @@
 
 import { ChevronLeftIcon, ChevronRightIcon } from "@primer/octicons-react";
 
+import { shiftWeekKey } from "../../calendar/calendar-timetracking-days.js";
+import { isoWeekNumber } from "../../habits/habit-month-grid.js";
+
 export function formatMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -103,6 +106,68 @@ export function FinanceMonthNavigator({
         onClick={() => {
           if (!canGoNext) return;
           onChange?.(shiftMonthKey(current, 1));
+        }}
+      >
+        <ChevronRightIcon size={16} />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Same chrome as {@link FinanceMonthNavigator}, stepped by ISO week (Monday).
+ */
+export function FinanceWeekNavigator({
+  weekKey,
+  latestWeekKey,
+  onChange,
+  "aria-label": ariaLabel = "Report week",
+  className,
+  formatLabel,
+}: {
+  weekKey: string;
+  /** Furthest week the next-arrow may reach (usually the current local week). */
+  latestWeekKey: string;
+  onChange?: (weekKey: string) => void;
+  "aria-label"?: string;
+  className?: string;
+  /** Override the center label (defaults to `Week N`). */
+  formatLabel?: (weekKey: string) => string;
+}) {
+  const current =
+    weekKey && /^\d{4}-\d{2}-\d{2}$/.test(weekKey) ? weekKey : latestWeekKey;
+  const canGoNext = current < latestWeekKey;
+  const disabled = !onChange;
+  const label = formatLabel?.(current) ?? `Week ${isoWeekNumber(current)}`;
+
+  return (
+    <div
+      className={["finance-categories-view__month-nav", className]
+        .filter(Boolean)
+        .join(" ")}
+      role="group"
+      aria-label={ariaLabel}
+    >
+      <button
+        type="button"
+        className="finance-categories-view__month-nav-btn"
+        aria-label="Previous week"
+        disabled={disabled}
+        onClick={() => onChange?.(shiftWeekKey(current, -1))}
+      >
+        <ChevronLeftIcon size={16} />
+      </button>
+      <span className="finance-categories-view__month-nav-label">{label}</span>
+      <button
+        type="button"
+        className="finance-categories-view__month-nav-btn"
+        aria-label="Next week"
+        disabled={disabled || !canGoNext}
+        onClick={() => {
+          if (!canGoNext) return;
+          const next = shiftWeekKey(current, 1);
+          if (next > latestWeekKey) return;
+          onChange?.(next);
         }}
       >
         <ChevronRightIcon size={16} />

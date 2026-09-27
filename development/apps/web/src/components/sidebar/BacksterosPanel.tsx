@@ -26,15 +26,9 @@ import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeMo
 import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
-import {
-  usePromoteWorkingBacksterosTasks,
-  subscribeBacksterosTaskStatusChanged,
-} from "~/backsteros/promoteWorkingTask";
+import { subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
 import type { BacksterosProjectSortPatch } from "~/backsteros/project-reorder";
 import type { BacksterosTaskSortPatch } from "~/backsteros/task-reorder";
-import { useSettleBacksterosTaskChatOnComplete } from "~/backsteros/useSettleBacksterosTaskChatOnComplete";
-import { useSyncBacksterosAgentPresence } from "~/backsteros/useBacksterosAgentPresence";
-import { useSyncBacksterosControlBindings } from "~/backsteros/useSyncBacksterosControlBindings";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
@@ -218,10 +212,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   sidepanelHighlightIdRef.current = sidepanelHighlightId;
   const lastProjectsRailHighlightRef = useRef<string | null>(null);
 
-  usePromoteWorkingBacksterosTasks();
-  useSyncBacksterosAgentPresence(true);
-  useSyncBacksterosControlBindings(true);
-  useSettleBacksterosTaskChatOnComplete();
+  // Working→In Progress / idle→In Review lifecycle lives in
+  // BacksterosWorkingLifecycle (always mounted) so vibe mode still promotes.
   useEffect(() => {
     return subscribeBacksterosTaskStatusChanged(({ taskId, status }) => {
       patchLocalTask(taskId, { status });

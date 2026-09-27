@@ -3047,7 +3047,8 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 
 .codebase-project-workbench__docs,
 .codebase-project-workbench__tasks,
-.codebase-project-workbench__updates {
+.codebase-project-workbench__updates,
+.codebase-project-workbench__timetracking {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -3179,6 +3180,7 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 
 .codebase-project-workbench__tab-body > .codebase-project-workbench__tasks,
 .codebase-project-workbench__tab-body > .codebase-project-workbench__updates,
+.codebase-project-workbench__tab-body > .codebase-project-workbench__timetracking,
 .codebase-project-workbench__tab-body > .codebase-project-workbench__docs {
   flex: 1;
   min-height: 0;

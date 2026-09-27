@@ -6,11 +6,108 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { contacts, taskComments, tasks, users } from "../db/schema.js";
+import { contacts, taskActivities, taskComments, tasks, users } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import type { TaskWriteActor } from "../lib/write-actor.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
+
+/**
+ * Keep the unified `task_activities` stream in sync with `task_comments`.
+ * Same id so PowerSync / portal / desktop stay aligned during the cutover.
+ */
+async function upsertCommentActivity(
+  workspaceId: string,
+  input: {
+    id: string;
+    taskId: string;
+    body: string;
+    parentId: string | null;
+    resolvedAt?: Date | null;
+    actorUserId: string | null;
+    actorContactId: string | null;
+    actorEmail: string | null;
+    actorName: string | null;
+    deletedAt?: Date | null;
+    createdAt?: Date;
+    updatedAt?: Date;
+  },
+  executor: DbExecutor,
+) {
+  const now = input.updatedAt ?? new Date();
+  const [existing] = await executor
+    .select({ id: taskActivities.id })
+    .from(taskActivities)
+    .where(
+      and(
+        eq(taskActivities.workspaceId, workspaceId),
+        eq(taskActivities.id, input.id),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await executor
+      .update(taskActivities)
+      .set({
+        type: "comment",
+        taskId: input.taskId,
+        actorUserId: input.actorUserId,
+        actorContactId: input.actorContactId,
+        actorEmail: input.actorEmail,
+        actorName: input.actorName,
+        body: input.body,
+        parentId: input.parentId,
+        resolvedAt: input.resolvedAt ?? null,
+        deletedAt: input.deletedAt ?? null,
+        updatedAt: now,
+        data: {},
+      })
+      .where(eq(taskActivities.id, input.id));
+    return;
+  }
+
+  await executor.insert(taskActivities).values({
+    id: input.id,
+    workspaceId,
+    taskId: input.taskId,
+    type: "comment",
+    actorUserId: input.actorUserId,
+    actorContactId: input.actorContactId,
+    actorEmail: input.actorEmail,
+    actorName: input.actorName,
+    data: {},
+    body: input.body,
+    parentId: input.parentId,
+    resolvedAt: input.resolvedAt ?? null,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
+    deletedAt: input.deletedAt ?? null,
+  });
+}
+
+async function softDeleteCommentActivities(
+  workspaceId: string,
+  taskId: string,
+  ids: string[],
+  now: Date,
+  executor: DbExecutor,
+) {
+  if (ids.length === 0) return;
+  for (const id of ids) {
+    await executor
+      .update(taskActivities)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(taskActivities.workspaceId, workspaceId),
+          eq(taskActivities.taskId, taskId),
+          eq(taskActivities.id, id),
+          eq(taskActivities.type, "comment"),
+        ),
+      );
+  }
+}
 
 export type TaskCommentListRow = typeof taskComments.$inferSelect & {
   userDisplayName: string | null;
@@ -232,11 +329,12 @@ export async function createTaskComment(
   }
 
   const profile = await resolveWriteActorProfile(workspaceId, author, executor);
+  const id = newId();
 
   const [row] = await executor
     .insert(taskComments)
     .values({
-      id: newId(),
+      id,
       workspaceId,
       taskId,
       parentCommentId,
@@ -248,6 +346,24 @@ export async function createTaskComment(
     .returning();
 
   if (!row) return null;
+
+  await upsertCommentActivity(
+    workspaceId,
+    {
+      id: row.id,
+      taskId,
+      body: row.body,
+      parentId: row.parentCommentId ?? null,
+      resolvedAt: row.resolvedAt,
+      actorUserId: profile.userId,
+      actorContactId: profile.contactId,
+      actorEmail: profile.email,
+      actorName: profile.name,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
+    executor,
+  );
 
   return {
     ...row,
@@ -321,6 +437,25 @@ export async function updateTaskComment(
     },
     executor,
   );
+
+  await upsertCommentActivity(
+    workspaceId,
+    {
+      id: row.id,
+      taskId,
+      body: row.body,
+      parentId: row.parentCommentId ?? null,
+      resolvedAt: row.resolvedAt,
+      actorUserId: row.authorUserId,
+      actorContactId: row.authorContactId,
+      actorEmail: row.authorEmail,
+      actorName: profile.name,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
+    executor,
+  );
+
   return {
     ...row,
     userDisplayName: profile.userId ? profile.name : null,
@@ -374,6 +509,34 @@ export async function deleteTaskComment(
         match,
       ),
     );
+
+  const deletedIds =
+    existing.parentCommentId == null
+      ? (
+          await executor
+            .select({ id: taskComments.id })
+            .from(taskComments)
+            .where(
+              and(
+                eq(taskComments.taskId, taskId),
+                eq(taskComments.workspaceId, workspaceId),
+                or(
+                  eq(taskComments.id, commentId),
+                  eq(taskComments.parentCommentId, commentId),
+                ),
+              ),
+            )
+        ).map((row) => row.id)
+      : [commentId];
+  // Always include the root id even if the select raced.
+  if (!deletedIds.includes(commentId)) deletedIds.push(commentId);
+  await softDeleteCommentActivities(
+    workspaceId,
+    taskId,
+    deletedIds,
+    now,
+    executor,
+  );
 
   return true;
 }
@@ -456,7 +619,41 @@ export async function createTaskCommentRow(
     })
     .returning();
 
-  return row ?? null;
+  if (!row) return null;
+
+  const profile = await resolveWriteActorProfile(
+    workspaceId,
+    {
+      userId: row.authorUserId,
+      contactId: row.authorContactId,
+      kind: row.authorContactId
+        ? "contact"
+        : row.authorUserId
+          ? "user"
+          : "agent",
+    },
+    executor,
+  );
+
+  await upsertCommentActivity(
+    workspaceId,
+    {
+      id: row.id,
+      taskId: row.taskId,
+      body: row.body,
+      parentId: row.parentCommentId ?? null,
+      resolvedAt: row.resolvedAt,
+      actorUserId: row.authorUserId,
+      actorContactId: row.authorContactId,
+      actorEmail: row.authorEmail,
+      actorName: profile.name,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
+    executor,
+  );
+
+  return row;
 }
 
 export async function softDeleteTaskCommentRow(

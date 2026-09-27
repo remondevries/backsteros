@@ -24,6 +24,7 @@ import {
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  listActivitiesQuerySchema,
   updateTaskTimerSessionActorSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
@@ -2502,6 +2503,42 @@ export function registerApiRoutes(app: Hono) {
     );
     return c.json({ updates });
   });
+
+  app.get(
+    "/api/v1/activities",
+    zValidator("query", listActivitiesQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:read")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const query = c.req.valid("query");
+      const types = query.types
+        ? query.types
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : undefined;
+      const result = await taskActivityService.listActivities(auth.workspaceId, {
+        taskId: query.taskId,
+        projectId: query.projectId,
+        types,
+        includeDeleted: query.includeDeleted,
+        limit: query.limit,
+        cursor: query.cursor,
+      });
+      if (!result) {
+        return c.json(
+          notFound(query.taskId ? "Task" : "Project"),
+          404,
+        );
+      }
+      return c.json({
+        activities: result.rows.map(toTaskActivity),
+        nextCursor: result.nextCursor,
+      });
+    },
+  );
 
   app.get("/api/v1/tasks/:id/comments", async (c) => {
     const auth = getAuth(c);

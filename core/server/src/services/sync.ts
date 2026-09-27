@@ -144,6 +144,8 @@ function projectSnapshot(row: typeof projects.$inferSelect) {
     local_working_directory: row.localWorkingDirectory,
     health_check_mode: row.healthCheckMode,
     health_check_domain: row.healthCheckDomain,
+    hourly_rate_cents: row.hourlyRateCents,
+    budgets: JSON.stringify(row.budgets ?? []),
     status: row.status,
     priority: row.priority,
     sort_order: row.sortOrder,
@@ -1433,6 +1435,11 @@ const taskActivityKeys = {
   actor_email: "actorEmail",
   actor_name: "actorName",
   data: "data",
+  body: "body",
+  parent_id: "parentId",
+  resolved_at: "resolvedAt",
+  updated_at: "updatedAt",
+  deleted_at: "deletedAt",
 };
 const contactRelationshipKeys = {
   type: "type",
@@ -1816,7 +1823,12 @@ function taskActivitySnapshot(row: typeof taskActivities.$inferSelect) {
       typeof row.data === "string"
         ? row.data
         : JSON.stringify(row.data ?? {}),
+    body: row.body ?? null,
+    parent_id: row.parentId ?? null,
+    resolved_at: row.resolvedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
+    updated_at: (row.updatedAt ?? row.createdAt).toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
   };
 }
 
@@ -1942,10 +1954,46 @@ function mapProjectUpsert(
     healthCheckDomain: asNullableString(
       payload.health_check_domain ?? payload.healthCheckDomain,
     ),
+    hourlyRateCents: asNullableNumber(
+      payload.hourly_rate_cents ?? payload.hourlyRateCents,
+    ),
+    budgets: parseProjectBudgets(payload.budgets),
     status: asString(payload.status) as Project["status"] | undefined,
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
   };
+}
+
+function parseProjectBudgets(
+  value: unknown,
+): CreateProjectInput["budgets"] | undefined {
+  if (value === undefined) return undefined;
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  const out: NonNullable<CreateProjectInput["budgets"]> = [];
+  for (const item of raw) {
+    if (item == null || typeof item !== "object") continue;
+    const period = (item as { period?: unknown }).period;
+    const amountCents = (item as { amountCents?: unknown }).amountCents;
+    if (
+      (period === "monthly" ||
+        period === "weekly" ||
+        period === "quarterly") &&
+      typeof amountCents === "number" &&
+      Number.isFinite(amountCents) &&
+      amountCents > 0
+    ) {
+      out.push({ period, amountCents: Math.round(amountCents) });
+    }
+  }
+  return out;
 }
 
 function parseTaskLinks(

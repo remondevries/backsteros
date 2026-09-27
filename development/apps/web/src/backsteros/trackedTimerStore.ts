@@ -181,7 +181,11 @@ export function syncTrackedTimerDuration(key: string, trackedDurationSeconds: nu
   emit();
 }
 
-export function startTrackedTimer(key: string, baseSeconds: number): void {
+export function startTrackedTimer(
+  key: string,
+  baseSeconds: number,
+  options?: { readonly silent?: boolean; readonly startedAtMs?: number },
+): void {
   const entry = ensureEntry(key);
   if (entry.sessionStartAt != null) {
     ensureHeartbeat();
@@ -191,14 +195,23 @@ export function startTrackedTimer(key: string, baseSeconds: number): void {
   const seconds = Math.max(0, Math.floor(baseSeconds), entry.accumulatedSeconds, entry.baseSeconds);
   entry.baseSeconds = seconds;
   entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, seconds);
-  entry.sessionStartAt = Date.now();
+  entry.sessionStartAt =
+    options?.startedAtMs != null && Number.isFinite(options.startedAtMs)
+      ? options.startedAtMs
+      : Date.now();
   entries.set(key, entry);
-  entry.onSessionChange?.("start");
+  // Silent = server (or another client) already recorded timer_started.
+  if (!options?.silent) {
+    entry.onSessionChange?.("start");
+  }
   ensureHeartbeat();
   emit();
 }
 
-export function pauseTrackedTimer(key: string): {
+export function pauseTrackedTimer(
+  key: string,
+  options?: { readonly silent?: boolean },
+): {
   totalSeconds: number;
   sessionSeconds: number;
 } | null {
@@ -214,8 +227,10 @@ export function pauseTrackedTimer(key: string): {
   entry.sessionStartAt = null;
   entries.set(key, entry);
 
-  entry.onPersist?.(seconds);
-  entry.onSessionChange?.("pause", sessionSeconds);
+  if (!options?.silent) {
+    entry.onPersist?.(seconds);
+    entry.onSessionChange?.("pause", sessionSeconds);
+  }
   ensureHeartbeat();
   emit();
 

@@ -163,6 +163,7 @@ import { useBacksterosFileTaskShortcut } from "~/backsteros/useBacksterosFileTas
 import { resolveBacksterosComposeProject } from "~/backsteros/resolveBacksterosComposeProject";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
+import { BacksterosWorkingLifecycle } from "~/backsteros/BacksterosWorkingLifecycle";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import {
   applyComposerColorMenuAction,
@@ -4219,6 +4220,7 @@ export default function Sidebar() {
     : "Search threads";
   return (
     <>
+      <BacksterosWorkingLifecycle />
       <SidebarChromeHeader
         isElectron={isElectron}
         logModeEnabled={logModeEnabled}

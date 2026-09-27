@@ -31,7 +31,9 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import {
+  backsterosStatusForControlSession,
   buildControlKickoffPrompt,
+  patchBacksterosControlTaskStatus,
   resolveBacksterosControlApiKey,
   resolveBacksterosControlTask,
 } from "./control-backsteros.ts";
@@ -578,6 +580,11 @@ export const controlStartHandler = catchControlErrors(
       displayId,
     });
 
+    if (start) {
+      // Do not wait on BacksterOS — UI promote + status GET also reconcile.
+      void patchBacksterosControlTaskStatus(task.id, "in_progress");
+    }
+
     const thread = yield* findThreadShell(threadId);
     return HttpServerResponse.jsonUnsafe({
       ...toSessionView({ taskId: task.id, binding, thread }),
@@ -638,9 +645,17 @@ export const controlStatusHandler = catchControlErrors(
     }
 
     const thread = yield* findThreadShell(found.binding.threadId);
-    return HttpServerResponse.jsonUnsafe(
-      toSessionView({ taskId: found.taskId, binding: found.binding, thread }),
-    );
+    const view = toSessionView({
+      taskId: found.taskId,
+      binding: found.binding,
+      thread,
+    });
+    // Only push In Review from status polls (`done`). In Progress is set on
+    // session start + by the always-mounted web lifecycle (ready≠done here).
+    if (backsterosStatusForControlSession(view.status) === "in_review") {
+      void patchBacksterosControlTaskStatus(found.taskId, "in_review");
+    }
+    return HttpServerResponse.jsonUnsafe(view);
   }),
 );
 

@@ -70,3 +70,27 @@ test("getCodebaseWorkbenchHref builds Updates routes", () => {
 test("isCodebaseWorkbenchPath treats updates as a workbench route", () => {
   assert.equal(isCodebaseWorkbenchPath("/projects/demo/updates", "demo"), true);
 });
+
+test("parseCodebaseWorkbenchPath maps timetracking to Timetracking tab", () => {
+  assert.deepEqual(
+    parseCodebaseWorkbenchPath("/projects/demo/timetracking", "demo"),
+    {
+      tab: "timetracking",
+      commitSha: null,
+      pullNumber: null,
+      filePath: null,
+      documentPath: null,
+    },
+  );
+  assert.equal(
+    isCodebaseWorkbenchPath("/projects/demo/timetracking", "demo"),
+    true,
+  );
+});
+
+test("getCodebaseWorkbenchHref builds Timetracking routes", () => {
+  assert.equal(
+    getCodebaseWorkbenchHref("demo", { tab: "timetracking" }),
+    "/projects/demo/timetracking",
+  );
+});

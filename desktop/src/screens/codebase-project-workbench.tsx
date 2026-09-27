@@ -64,6 +64,11 @@ export type CodebaseWorkbenchProject = {
   githubRepository?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
   healthCheckDomain?: string | null;
+  hourlyRateCents?: number | null;
+  budgets?: Array<{
+    period: "monthly" | "weekly" | "quarterly";
+    amountCents: number;
+  }>;
   summary?: string;
   description?: string;
   startDate?: number | Date | null;
@@ -91,6 +96,8 @@ type Props = {
   docsPanel?: ReactNode;
   /** Project updates feed shown in the main pane on the Updates tab. */
   updatesPanel?: ReactNode;
+  /** Project-scoped time report shown on the Timetracking tab. */
+  timetrackingPanel?: ReactNode;
   fs?: ProjectFsClient;
 };
 
@@ -125,6 +132,8 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     healthCheckMode: project.healthCheckMode ?? null,
     healthCheckDomain: project.healthCheckDomain ?? null,
+    hourlyRateCents: project.hourlyRateCents ?? null,
+    budgets: Array.isArray(project.budgets) ? project.budgets : [],
     status: project.status as ApiProject["status"],
     priority: project.priority,
     sortOrder: project.sortOrder ?? 0,
@@ -149,6 +158,7 @@ export function CodebaseProjectWorkbench({
   docsListPanel,
   docsPanel,
   updatesPanel,
+  timetrackingPanel,
   fs = projectFs,
 }: Props) {
   const routerNavigate = useNavigate();
@@ -217,6 +227,21 @@ export function CodebaseProjectWorkbench({
           healthCheckMode: current.healthCheckMode,
           healthCheckDomain: current.healthCheckDomain ?? null,
         };
+      }
+      // Billing fields — keep optimistic Hourly rate / Budget while the parent
+      // list row still lags (PowerSync schema / overlay).
+      if (
+        current.hourlyRateCents != null &&
+        mapped.hourlyRateCents == null
+      ) {
+        next = { ...next, hourlyRateCents: current.hourlyRateCents };
+      }
+      const mappedBudgets = Array.isArray(mapped.budgets) ? mapped.budgets : [];
+      const currentBudgets = Array.isArray(current.budgets)
+        ? current.budgets
+        : [];
+      if (currentBudgets.length > 0 && mappedBudgets.length === 0) {
+        next = { ...next, budgets: currentBudgets };
       }
       return next;
     });
@@ -876,6 +901,20 @@ export function CodebaseProjectWorkbench({
         )}
       </div>
     );
+  } else if (selection.tab === "timetracking") {
+    detail = (
+      <div className="codebase-project-workbench__timetracking">
+        {timetrackingPanel ?? (
+          <div className="console-pane">
+            <div className="console-pane-body">
+              <div className="console-github-pane-status">
+                <p>No tracked time to show.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   const handleProjectUpdated = (updated: ApiProject) => {
@@ -894,6 +933,8 @@ export function CodebaseProjectWorkbench({
       localWorkingDirectory: updated.localWorkingDirectory,
       healthCheckMode: updated.healthCheckMode,
       healthCheckDomain: updated.healthCheckDomain,
+      hourlyRateCents: updated.hourlyRateCents,
+      budgets: updated.budgets,
       startDate: updated.startDate,
       dueDate: updated.dueDate,
       summary: updated.summary,
@@ -943,6 +984,7 @@ export function CodebaseProjectWorkbench({
               <CodebaseProjectActivityPanel
                 projectId={project.id}
                 projectKey={project.key}
+                requestJson={requestJson}
               />
             }
             organizations={organizations}

@@ -2,6 +2,7 @@
 
 import type { TaskActivity, TaskComment } from "@backsteros/contracts";
 import { formatTrackedDuration } from "@backsteros/contracts";
+import { splitTaskActivityFeed } from "@backsteros/contracts";
 import {
   useCallback,
   useEffect,
@@ -954,36 +955,35 @@ export function TaskActivityPanel({
     const isStale = () =>
       loadId !== feedLoadIdRef.current || controller.signal.aborted;
 
-    const fetchComments = () =>
-      requestJsonRef.current<{ comments: TaskComment[] }>(
-        `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+    const fetchUnifiedFeed = () =>
+      requestJsonRef.current<{
+        activities: TaskActivity[];
+        nextCursor: string | null;
+      }>(
+        `/api/v1/activities?taskId=${encodeURIComponent(taskId)}&limit=200`,
         { signal: controller.signal },
       );
 
-    const fetchFeed = () =>
-      Promise.all([
-        fetchComments(),
-        requestJsonRef.current<{ activities: TaskActivity[] }>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
-          { signal: controller.signal },
-        ),
-      ]);
+    const applyUnifiedFeed = (activities: TaskActivity[]) => {
+      const { events, comments } = splitTaskActivityFeed(activities);
+      setRestComments(comments);
+      setRestActivities(events);
+    };
 
     void (async () => {
       try {
         if (localFeedActive) {
-          // PowerSync owns activities; still REST-pull comments so portal/peer
-          // rows appear before SQLite catches up.
-          const commentsResult = await fetchComments();
+          // PowerSync owns the stream; still REST-pull so portal/peer rows
+          // appear before SQLite catches up.
+          const feed = await fetchUnifiedFeed();
           if (isStale()) return;
-          setRestComments(commentsResult.comments ?? []);
+          applyUnifiedFeed(feed.activities ?? []);
           return;
         }
 
-        let commentsResult: { comments: TaskComment[] };
-        let activitiesResult: { activities: TaskActivity[] };
+        let feed: { activities: TaskActivity[]; nextCursor: string | null };
         try {
-          [commentsResult, activitiesResult] = await fetchFeed();
+          feed = await fetchUnifiedFeed();
         } catch (firstErr) {
           // Task switches abort the prior request; WebKit often reports that as
           // "Load failed". Wait out one transient miss instead of painting red.
@@ -1005,11 +1005,10 @@ export function TaskActivityPanel({
             );
           });
           if (isStale()) return;
-          [commentsResult, activitiesResult] = await fetchFeed();
+          feed = await fetchUnifiedFeed();
         }
         if (isStale()) return;
-        setRestComments(commentsResult.comments ?? []);
-        setRestActivities(activitiesResult.activities ?? []);
+        applyUnifiedFeed(feed.activities ?? []);
         hasLoadedFeedRef.current = true;
         setError(null);
         setLoadingFeed(false);

@@ -48,6 +48,24 @@ export function toIso(date: Date | null | undefined): string | null {
 }
 
 export function toProject(row: DbProject): Project {
+  const budgets = Array.isArray(row.budgets)
+    ? row.budgets.filter(
+        (
+          entry,
+        ): entry is {
+          period: "monthly" | "weekly" | "quarterly";
+          amountCents: number;
+        } =>
+          entry != null &&
+          typeof entry === "object" &&
+          (entry.period === "monthly" ||
+            entry.period === "weekly" ||
+            entry.period === "quarterly") &&
+          typeof entry.amountCents === "number" &&
+          Number.isFinite(entry.amountCents) &&
+          entry.amountCents > 0,
+      )
+    : [];
   return {
     id: row.id,
     key: row.key,
@@ -70,6 +88,11 @@ export function toProject(row: DbProject): Project {
     healthCheckMode:
       (row.healthCheckMode as Project["healthCheckMode"]) ?? null,
     healthCheckDomain: row.healthCheckDomain ?? null,
+    hourlyRateCents:
+      row.hourlyRateCents == null || !Number.isFinite(row.hourlyRateCents)
+        ? null
+        : Math.max(0, Math.round(row.hourlyRateCents)),
+    budgets,
     status: row.status as Project["status"],
     priority: row.priority,
     sortOrder: row.sortOrder,
@@ -179,7 +202,24 @@ export function toTaskActivity(
       userDisplayName: listRow.userDisplayName ?? null,
     }),
     data,
+    body: row.body ?? null,
+    parentId: row.parentId ?? null,
+    resolvedAt: toIso(row.resolvedAt),
     createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt
+      ? row.updatedAt.toISOString()
+      : row.createdAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+    projectId:
+      listRow.projectId !== undefined ? (listRow.projectId ?? null) : undefined,
+    taskNumber:
+      listRow.taskNumber !== undefined
+        ? listRow.taskNumber == null
+          ? null
+          : Number(listRow.taskNumber)
+        : undefined,
+    taskTitle:
+      listRow.taskTitle !== undefined ? (listRow.taskTitle ?? null) : undefined,
   };
 }
 

@@ -49,6 +49,13 @@ export type ProjectOverviewRowProject = {
   provider?: string | null;
   /** Email provider category when `type = email`. */
   category?: string | null;
+  /** Billable hourly rate in euro cents. */
+  hourlyRateCents?: number | null;
+  /** Budget rows (monthly / weekly / quarterly). */
+  budgets?: Array<{
+    period: "monthly" | "weekly" | "quarterly";
+    amountCents: number;
+  }>;
   startDate?: number | Date | null;
   dueDate?: number | Date | null;
   sortOrder?: number;

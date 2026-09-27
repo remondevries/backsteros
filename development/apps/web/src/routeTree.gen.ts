@@ -33,6 +33,7 @@ import { Route as ServersServerIdRouteImport } from './routes/servers.$serverId'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as ServersLocalProjectIdRouteImport } from './routes/servers.local.$projectId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatBacksterosProjectsRouteImport } from './routes/_chat.backsteros.projects'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
@@ -158,6 +159,11 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
 } as any)
+const ServersLocalProjectIdRoute = ServersLocalProjectIdRouteImport.update({
+  id: '/local/$projectId',
+  path: '/local/$projectId',
+  getParentRoute: () => ServersRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -214,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/servers/local/$projectId': typeof ServersLocalProjectIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
   '/servers/$serverId/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/servers/local/$projectId': typeof ServersLocalProjectIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
   '/servers/$serverId/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
@@ -275,6 +283,7 @@ export interface FileRoutesById {
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/servers/local/$projectId': typeof ServersLocalProjectIdRoute
   '/_chat/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
   '/servers/$serverId_/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
@@ -307,6 +316,7 @@ export interface FileRouteTypes {
     | '/$environmentId/$threadId'
     | '/backsteros/projects'
     | '/draft/$draftId'
+    | '/servers/local/$projectId'
     | '/backsteros/project/$projectId'
     | '/servers/$serverId/apps/$service'
   fileRoutesByTo: FileRoutesByTo
@@ -336,6 +346,7 @@ export interface FileRouteTypes {
     | '/$environmentId/$threadId'
     | '/backsteros/projects'
     | '/draft/$draftId'
+    | '/servers/local/$projectId'
     | '/backsteros/project/$projectId'
     | '/servers/$serverId/apps/$service'
   id:
@@ -367,6 +378,7 @@ export interface FileRouteTypes {
     | '/_chat/$environmentId/$threadId'
     | '/_chat/backsteros/projects'
     | '/_chat/draft/$draftId'
+    | '/servers/local/$projectId'
     | '/_chat/backsteros/project/$projectId'
     | '/servers/$serverId_/apps/$service'
   fileRoutesById: FileRoutesById
@@ -553,6 +565,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/servers/local/$projectId': {
+      id: '/servers/local/$projectId'
+      path: '/local/$projectId'
+      fullPath: '/servers/local/$projectId'
+      preLoaderRoute: typeof ServersLocalProjectIdRouteImport
+      parentRoute: typeof ServersRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -615,6 +634,7 @@ interface ServersRouteChildren {
   ServersServerIdRoute: typeof ServersServerIdRoute
   ServersServersRoute: typeof ServersServersRoute
   ServersIndexRoute: typeof ServersIndexRoute
+  ServersLocalProjectIdRoute: typeof ServersLocalProjectIdRoute
   ServersServerIdAppsServiceRoute: typeof ServersServerIdAppsServiceRoute
 }
 
@@ -622,6 +642,7 @@ const ServersRouteChildren: ServersRouteChildren = {
   ServersServerIdRoute: ServersServerIdRoute,
   ServersServersRoute: ServersServersRoute,
   ServersIndexRoute: ServersIndexRoute,
+  ServersLocalProjectIdRoute: ServersLocalProjectIdRoute,
   ServersServerIdAppsServiceRoute: ServersServerIdAppsServiceRoute,
 }
 

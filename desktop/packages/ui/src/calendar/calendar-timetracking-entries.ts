@@ -1,13 +1,15 @@
 import { formatTrackedTimeInput } from "@backsteros/contracts";
 
+import { isoWeekNumber, startOfWeekYmd } from "../habits/habit-month-grid.js";
 import { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
+import { meetingDayGroupLabel } from "./calendar-meetings-week-groups.js";
 import {
   todayYmd,
   timetrackingPeriodIncludesYmd,
   type TimetrackingPeriod,
 } from "./calendar-timetracking-days.js";
 
-export type TimetrackingEntryKind = "task" | "meeting";
+export type TimetrackingEntryKind = "task" | "meeting" | "document";
 
 export type TimetrackingEntry = {
   id: string;
@@ -16,7 +18,7 @@ export type TimetrackingEntry = {
   displayId?: string | null;
   /** Persisted tracked total only — never live session elapsed. */
   trackedDurationSeconds: number;
-  /** Local `YYYY-MM-DD` from task due date or meeting start; null when unset. */
+  /** Local `YYYY-MM-DD` from task due date, meeting start, or document stamp. */
   groupDateYmd: string | null;
   href: string;
   /** Timer is currently running; row shows live chrome, totals ignore live delta. */
@@ -67,14 +69,21 @@ export function resolveTimetrackingGroupDateYmd(
 }
 
 /**
- * Collect a flat list of tracked-time entries from tasks and meetings.
- * Day grouping uses schedule dates (task due / meeting start), not timer sessions.
+ * Collect a flat list of tracked-time entries from tasks, meetings, and notes.
+ * Day grouping uses schedule dates (task due / meeting start / document stamp),
+ * not timer sessions.
+ *
+ * By default only positive tracked totals are included. Pass
+ * `includeZeroDurationTasks` to also keep tasks with 0 tracked seconds
+ * (e.g. project reports that show completed work left untimed).
  */
 export function collectTimetrackingEntries(input: {
   tasks?: readonly TimetrackingEntrySource[];
   meetings?: readonly TimetrackingEntrySource[];
+  documents?: readonly TimetrackingEntrySource[];
   taskHref?: (id: string) => string;
   meetingHref?: (id: string) => string;
+  documentHref?: (id: string) => string;
   formatTaskDisplayId?: (number: number) => string;
   formatMeetingDisplayId?: (number: number) => string;
   /**
@@ -84,6 +93,11 @@ export function collectTimetrackingEntries(input: {
   /** Day / week / month filter for the main list. */
   period?: TimetrackingPeriod | null;
   timeZone?: string;
+  /**
+   * When true, tasks with `trackedDurationSeconds <= 0` are kept (meetings and
+   * documents still require a positive total).
+   */
+  includeZeroDurationTasks?: boolean;
 }): TimetrackingEntry[] {
   const entries: TimetrackingEntry[] = [];
   const period: TimetrackingPeriod | null =
@@ -92,68 +106,79 @@ export function collectTimetrackingEntries(input: {
       ? { kind: "day", ymd: input.selectedDateYmd.trim() }
       : null);
 
-  for (const task of input.tasks ?? []) {
-    const seconds = task.trackedDurationSeconds ?? 0;
-    if (seconds <= 0) continue;
+  function pushSource(
+    kind: TimetrackingEntryKind,
+    source: TimetrackingEntrySource,
+    href: string,
+    fallbackTitle: string,
+    displayId: string | null,
+  ) {
+    const seconds = Math.max(0, source.trackedDurationSeconds ?? 0);
+    if (
+      seconds <= 0 &&
+      !(kind === "task" && input.includeZeroDurationTasks)
+    ) {
+      return;
+    }
     const groupDateYmd = resolveTimetrackingGroupDateYmd(
-      task.scheduleAt,
+      source.scheduleAt,
       input.timeZone,
     );
     if (period && !timetrackingPeriodIncludesYmd(period, groupDateYmd)) {
-      continue;
+      return;
     }
     entries.push({
-      id: task.id,
-      kind: "task",
-      title: displayTitle(task.title, "Untitled task"),
-      displayId:
-        task.displayId ??
-        (task.number != null && input.formatTaskDisplayId
-          ? input.formatTaskDisplayId(task.number)
-          : null),
+      id: source.id,
+      kind,
+      title: displayTitle(source.title, fallbackTitle),
+      displayId,
       trackedDurationSeconds: seconds,
       groupDateYmd,
-      href: input.taskHref?.(task.id) ?? `/tasks/${task.id}`,
-      projectId: task.projectId ?? null,
-      projectKey: task.projectKey ?? null,
-      projectName: task.projectName ?? null,
-      areaId: task.areaId ?? null,
-      areaName: task.areaName ?? null,
-      areaColor: task.areaColor ?? null,
-      relatedContactIds: normalizeContactIds(task.relatedContactIds),
+      href,
+      projectId: source.projectId ?? null,
+      projectKey: source.projectKey ?? null,
+      projectName: source.projectName ?? null,
+      areaId: source.areaId ?? null,
+      areaName: source.areaName ?? null,
+      areaColor: source.areaColor ?? null,
+      relatedContactIds: normalizeContactIds(source.relatedContactIds),
     });
   }
 
-  for (const meeting of input.meetings ?? []) {
-    const seconds = meeting.trackedDurationSeconds ?? 0;
-    if (seconds <= 0) continue;
-    const groupDateYmd = resolveTimetrackingGroupDateYmd(
-      meeting.scheduleAt,
-      input.timeZone,
+  for (const task of input.tasks ?? []) {
+    pushSource(
+      "task",
+      task,
+      input.taskHref?.(task.id) ?? `/tasks/${task.id}`,
+      "Untitled task",
+      task.displayId ??
+        (task.number != null && input.formatTaskDisplayId
+          ? input.formatTaskDisplayId(task.number)
+          : null),
     );
-    if (period && !timetrackingPeriodIncludesYmd(period, groupDateYmd)) {
-      continue;
-    }
-    entries.push({
-      id: meeting.id,
-      kind: "meeting",
-      title: displayTitle(meeting.title, "Untitled meeting"),
-      displayId:
-        meeting.displayId ??
+  }
+
+  for (const meeting of input.meetings ?? []) {
+    pushSource(
+      "meeting",
+      meeting,
+      input.meetingHref?.(meeting.id) ?? `/calendar?meeting=${meeting.id}`,
+      "Untitled meeting",
+      meeting.displayId ??
         (meeting.number != null && input.formatMeetingDisplayId
           ? input.formatMeetingDisplayId(meeting.number)
           : null),
-      trackedDurationSeconds: seconds,
-      groupDateYmd,
-      href: input.meetingHref?.(meeting.id) ?? `/calendar?meeting=${meeting.id}`,
-      projectId: meeting.projectId ?? null,
-      projectKey: meeting.projectKey ?? null,
-      projectName: meeting.projectName ?? null,
-      areaId: meeting.areaId ?? null,
-      areaName: meeting.areaName ?? null,
-      areaColor: meeting.areaColor ?? null,
-      relatedContactIds: normalizeContactIds(meeting.relatedContactIds),
-    });
+    );
+  }
+
+  for (const document of input.documents ?? []) {
+    pushSource(
+      "document",
+      document,
+      input.documentHref?.(document.id) ?? `/knowledge/${document.id}`,
+      "Untitled note",
+      document.displayId ?? null,
+    );
   }
 
   return entries.sort((a, b) => {
@@ -254,6 +279,141 @@ export function withLiveTimetrackingEntries(
 export function formatTimetrackingDuration(seconds: number): string {
   const formatted = formatTrackedTimeInput(seconds);
   return formatted || "00:00:00";
+}
+
+export type TimetrackingEntryWeekGroup = {
+  /** Monday `YYYY-MM-DD`, or `__unscheduled__` when no stamp. */
+  weekKey: string;
+  weekNumber: number | null;
+  label: string;
+  entries: TimetrackingEntry[];
+  totalSeconds: number;
+};
+
+export type TimetrackingEntryDayGroup = {
+  /** Local `YYYY-MM-DD`, or `__unscheduled__` when no stamp. */
+  dayKey: string;
+  label: string;
+  entries: TimetrackingEntry[];
+  totalSeconds: number;
+};
+
+/** Shared shape for week/day list group headers. */
+export type TimetrackingEntryListGroup = {
+  key: string;
+  label: string;
+  entries: TimetrackingEntry[];
+  totalSeconds: number;
+};
+
+/**
+ * Group tracked entries by ISO week (Monday). Newest weeks first.
+ * Entries without a schedule stamp land in an "Unscheduled" group at the end.
+ */
+export function groupTimetrackingEntriesByWeek(
+  entries: readonly TimetrackingEntry[],
+): TimetrackingEntryWeekGroup[] {
+  const buckets = new Map<string, TimetrackingEntry[]>();
+
+  for (const entry of entries) {
+    const weekKey = entry.groupDateYmd
+      ? startOfWeekYmd(entry.groupDateYmd)
+      : "__unscheduled__";
+    const list = buckets.get(weekKey);
+    if (list) list.push(entry);
+    else buckets.set(weekKey, [entry]);
+  }
+
+  const weekKeys = [...buckets.keys()].sort((a, b) => {
+    if (a === "__unscheduled__") return 1;
+    if (b === "__unscheduled__") return -1;
+    return b.localeCompare(a);
+  });
+
+  return weekKeys.map((weekKey) => {
+    const groupEntries = buckets.get(weekKey) ?? [];
+    const totalSeconds = sumTimetrackingDurationSeconds(groupEntries);
+    if (weekKey === "__unscheduled__") {
+      return {
+        weekKey,
+        weekNumber: null,
+        label: "Unscheduled",
+        entries: groupEntries,
+        totalSeconds,
+      };
+    }
+    const weekNumber = isoWeekNumber(weekKey);
+    return {
+      weekKey,
+      weekNumber,
+      label: `Week ${weekNumber}`,
+      entries: groupEntries,
+      totalSeconds,
+    };
+  });
+}
+
+/**
+ * Group tracked entries by schedule day. Newest days first.
+ * Entries without a schedule stamp land in an "Unscheduled" group at the end.
+ */
+export function groupTimetrackingEntriesByDay(
+  entries: readonly TimetrackingEntry[],
+  options?: { todayYmd?: string; now?: Date },
+): TimetrackingEntryDayGroup[] {
+  const buckets = new Map<string, TimetrackingEntry[]>();
+
+  for (const entry of entries) {
+    const dayKey = entry.groupDateYmd?.trim() || "__unscheduled__";
+    const list = buckets.get(dayKey);
+    if (list) list.push(entry);
+    else buckets.set(dayKey, [entry]);
+  }
+
+  const dayKeys = [...buckets.keys()].sort((a, b) => {
+    if (a === "__unscheduled__") return 1;
+    if (b === "__unscheduled__") return -1;
+    return b.localeCompare(a);
+  });
+
+  const now = options?.now ?? new Date();
+
+  return dayKeys.map((dayKey) => {
+    const groupEntries = buckets.get(dayKey) ?? [];
+    const totalSeconds = sumTimetrackingDurationSeconds(groupEntries);
+    if (dayKey === "__unscheduled__") {
+      return {
+        dayKey,
+        label: "Unscheduled",
+        entries: groupEntries,
+        totalSeconds,
+      };
+    }
+    return {
+      dayKey,
+      label: meetingDayGroupLabel(dayKey, {
+        now: options?.todayYmd
+          ? parseTodayOverride(options.todayYmd, now)
+          : now,
+      }),
+      entries: groupEntries,
+      totalSeconds,
+    };
+  });
+}
+
+function parseTodayOverride(ymd: string, fallback: Date): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!match) return fallback;
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    fallback.getHours(),
+    fallback.getMinutes(),
+    fallback.getSeconds(),
+    fallback.getMilliseconds(),
+  );
 }
 
 /**

@@ -187,6 +187,20 @@ export const projectSchema = z.object({
   healthCheckMode: z.enum(["simple", "advanced"]).nullable(),
   /** Hostname for simple health checks (no scheme/path), e.g. `quarrymill.com`. */
   healthCheckDomain: z.string().max(253).nullable(),
+  /** Billable hourly rate in euro cents. Null means unset. */
+  hourlyRateCents: z.number().int().nonnegative().nullable(),
+  /**
+   * Budget rows (`{ period, amountCents }[]`) — period is monthly / weekly /
+   * quarterly. Empty when unset.
+   */
+  budgets: z
+    .array(
+      z.object({
+        period: z.enum(["monthly", "weekly", "quarterly"]),
+        amountCents: z.number().int().positive(),
+      }),
+    )
+    .max(20),
   status: projectStatusSchema,
   priority: z.number().int().min(0).max(4),
   sortOrder: z.number().int(),
@@ -215,6 +229,16 @@ export const createProjectSchema = z.object({
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
   healthCheckMode: z.enum(["simple", "advanced"]).nullable().optional(),
   healthCheckDomain: z.string().max(253).nullable().optional(),
+  hourlyRateCents: z.number().int().nonnegative().nullable().optional(),
+  budgets: z
+    .array(
+      z.object({
+        period: z.enum(["monthly", "weekly", "quarterly"]),
+        amountCents: z.number().int().positive(),
+      }),
+    )
+    .max(20)
+    .optional(),
   status: projectStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
@@ -593,6 +617,8 @@ export const taskActivityTypeSchema = z.enum([
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  /** Discussion body — first-class in the unified activities stream. */
+  "comment",
 ]);
 
 export const agentWorkedActivityDataSchema = z.object({
@@ -641,7 +667,56 @@ export const taskActivitySchema = z.object({
   actorEmail: z.string().nullable(),
   actorName: z.string(),
   data: z.record(z.unknown()),
+  /** Set when type = comment. */
+  body: z.string().nullable().optional(),
+  /** Comment reply parent when type = comment. */
+  parentId: z.string().nullable().optional(),
+  /** Root comment resolve timestamp when type = comment. */
+  resolvedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().optional(),
+  deletedAt: z.string().datetime().nullable().optional(),
+  /** Present when listing by project (joined from tasks). */
+  projectId: z.string().nullable().optional(),
+  /** Present on project-scoped lists (joined from tasks). */
+  taskNumber: z.number().int().nullable().optional(),
+  taskTitle: z.string().nullable().optional(),
+});
+
+/**
+ * Unified workspace activity feed — one collectable stream, dialed by filters.
+ * Prefer this over per-task /activities and /comments for new clients.
+ */
+export const listActivitiesQuerySchema = z
+  .object({
+    /** Activities for a single task (comments + system events). */
+    taskId: z.string().min(1).optional(),
+    /** All task activities under a project (joined via tasks.project_id). */
+    projectId: z.string().min(1).optional(),
+    /**
+     * Comma-separated activity types to include.
+     * Omit for all types. Example: `comment,status_changed`.
+     */
+    types: z.string().optional(),
+    /**
+     * When true, include soft-deleted comment rows (default false).
+     * System event rows are never soft-deleted today.
+     */
+    includeDeleted: z
+      .union([z.literal("true"), z.literal("false"), z.boolean()])
+      .optional()
+      .transform((value) => value === true || value === "true"),
+    limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+    /** Opaque cursor from a previous page (`createdAt|id`). */
+    cursor: z.string().optional(),
+  })
+  .refine((value) => Boolean(value.taskId) || Boolean(value.projectId), {
+    message: "taskId or projectId is required",
+  });
+
+export const listActivitiesResponseSchema = z.object({
+  activities: z.array(taskActivitySchema),
+  nextCursor: z.string().nullable(),
 });
 
 /**
@@ -3738,6 +3813,10 @@ export type UpsertTaskAgentPresenceInput = z.infer<
 >;
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
 export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;
+export type ListActivitiesQuery = z.infer<typeof listActivitiesQuerySchema>;
+export type ListActivitiesResponse = z.infer<
+  typeof listActivitiesResponseSchema
+>;
 export type UpdateTaskTimerSessionActorInput = z.infer<
   typeof updateTaskTimerSessionActorSchema
 >;

@@ -200,7 +200,72 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   category?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
   healthCheckDomain?: string | null;
+  hourlyRateCents?: number | null;
+  budgets?: Array<{
+    period: "monthly" | "weekly" | "quarterly";
+    amountCents: number;
+  }>;
 } {
+  const budgetsRaw = (project as { budgets?: unknown }).budgets;
+  let budgets: Array<{
+    period: "monthly" | "weekly" | "quarterly";
+    amountCents: number;
+  }> = [];
+  if (Array.isArray(budgetsRaw)) {
+    budgets = budgetsRaw.filter(
+      (
+        entry,
+      ): entry is {
+        period: "monthly" | "weekly" | "quarterly";
+        amountCents: number;
+      } =>
+        entry != null &&
+        typeof entry === "object" &&
+        ((entry as { period?: unknown }).period === "monthly" ||
+          (entry as { period?: unknown }).period === "weekly" ||
+          (entry as { period?: unknown }).period === "quarterly") &&
+        typeof (entry as { amountCents?: unknown }).amountCents === "number" &&
+        Number.isFinite((entry as { amountCents: number }).amountCents) &&
+        (entry as { amountCents: number }).amountCents > 0,
+    );
+  } else if (typeof budgetsRaw === "string" && budgetsRaw.trim()) {
+    try {
+      const parsed = JSON.parse(budgetsRaw) as unknown;
+      if (Array.isArray(parsed)) {
+        budgets = parsed.filter(
+          (
+            entry,
+          ): entry is {
+            period: "monthly" | "weekly" | "quarterly";
+            amountCents: number;
+          } =>
+            entry != null &&
+            typeof entry === "object" &&
+            ((entry as { period?: unknown }).period === "monthly" ||
+              (entry as { period?: unknown }).period === "weekly" ||
+              (entry as { period?: unknown }).period === "quarterly") &&
+            typeof (entry as { amountCents?: unknown }).amountCents ===
+              "number" &&
+            Number.isFinite((entry as { amountCents: number }).amountCents) &&
+            (entry as { amountCents: number }).amountCents > 0,
+        );
+      }
+    } catch {
+      budgets = [];
+    }
+  }
+
+  const hourlyRaw = (project as { hourlyRateCents?: unknown }).hourlyRateCents;
+  let hourlyRateCents: number | null = null;
+  if (typeof hourlyRaw === "number" && Number.isFinite(hourlyRaw)) {
+    hourlyRateCents = Math.max(0, Math.round(hourlyRaw));
+  } else if (typeof hourlyRaw === "string" && hourlyRaw.trim()) {
+    const parsed = Number(hourlyRaw);
+    if (Number.isFinite(parsed)) {
+      hourlyRateCents = Math.max(0, Math.round(parsed));
+    }
+  }
+
   return {
     id: project.id,
     key: project.key,
@@ -219,6 +284,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     category: project.category ?? null,
     healthCheckMode: project.healthCheckMode ?? null,
     healthCheckDomain: project.healthCheckDomain ?? null,
+    hourlyRateCents,
+    budgets,
     startDate: asEpoch(project.startDate),
     dueDate: asEpoch(project.dueDate),
     sortOrder: project.sortOrder,

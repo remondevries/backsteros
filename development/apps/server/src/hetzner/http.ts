@@ -44,6 +44,19 @@ import {
   readProjectSecretFile,
   writeProjectSecretFile,
 } from "./project-secrets.ts";
+import { listLocalProjects, syncLocalProjects } from "./local-projects.ts";
+import {
+  getLocalRuntimeDashboard,
+  getLocalRuntimeOverview,
+  setRuntimeAttachments,
+  startLocalContainers,
+  startProjectRuntime,
+  startRuntimeAttachment,
+  stopLocalContainers,
+  stopProjectRuntime,
+  stopRuntimeAttachment,
+  type RuntimeAttachment,
+} from "./local-runtime.ts";
 import { listGithubRepoRefs } from "./github-refs.ts";
 import {
   deleteWordpressComponent,
@@ -96,6 +109,10 @@ const HETZNER_APP_NOTIFICATIONS_PATH = "/api/hetzner/app-notifications";
 const HETZNER_APP_PROJECT_LINK_PATH = "/api/hetzner/app-project-link";
 /** Local ~/.config/secrets/environments/<projectId> — never cloud-core / PowerSync. */
 const HETZNER_PROJECT_SECRETS_PATH = "/api/hetzner/project-secrets";
+/** Local BacksterOS codebase registry for the ops sidebar (~/.config/backsteros/local-projects.json). */
+const HETZNER_LOCAL_PROJECTS_PATH = "/api/hetzner/local-projects";
+/** Local Docker/OrbStack runtime + attachments (~/.config/backsteros/local-runtime.json). */
+const HETZNER_LOCAL_RUNTIME_PATH = "/api/hetzner/local-runtime";
 const HETZNER_GITHUB_REFS_PATH = "/api/hetzner/github-refs";
 const HETZNER_APP_WP_COMPONENTS_PATH = "/api/hetzner/app-wp-components";
 const HETZNER_WORDPRESS_DEPLOY_WEBHOOK_PATH = "/api/hetzner/wordpress-deploy-webhook";
@@ -1040,9 +1057,9 @@ export const hetznerListProjectSecretsRouteLayer = HttpRouter.add(
 
     const payload = yield* Effect.tryPromise({
       try: () =>
-        withContent
-          ? readProjectSecretFile(projectId, fileName)
-          : Promise.resolve(listProjectSecrets(projectId)),
+        Promise.resolve(
+          withContent ? readProjectSecretFile(projectId, fileName) : listProjectSecrets(projectId),
+        ),
       catch: (cause) => cause,
     });
     return HttpServerResponse.jsonUnsafe({
@@ -1097,7 +1114,7 @@ export const hetznerUpdateProjectSecretsRouteLayer = HttpRouter.add(
     // Default: save local file (never to cloud-core).
     const content = typeof body.content === "string" ? body.content : "";
     const written = yield* Effect.tryPromise({
-      try: () => writeProjectSecretFile({ projectId, fileName, content }),
+      try: () => Promise.resolve(writeProjectSecretFile({ projectId, fileName, content })),
       catch: (cause) => cause,
     });
     return HttpServerResponse.jsonUnsafe({
@@ -1105,6 +1122,197 @@ export const hetznerUpdateProjectSecretsRouteLayer = HttpRouter.add(
       ...written,
       pullHint: projectSecretsPullHint(written.infisical),
     });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
+export const hetznerListLocalProjectsRouteLayer = HttpRouter.add(
+  "GET",
+  HETZNER_LOCAL_PROJECTS_PATH,
+  Effect.gen(function* () {
+    const projects = yield* Effect.tryPromise({
+      try: () => Promise.resolve(listLocalProjects()),
+      catch: (cause) => cause,
+    });
+    return HttpServerResponse.jsonUnsafe({ ok: true, projects });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
+export const hetznerSyncLocalProjectsRouteLayer = HttpRouter.add(
+  "POST",
+  HETZNER_LOCAL_PROJECTS_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    const body =
+      bodyJson && typeof bodyJson === "object" ? (bodyJson as Record<string, unknown>) : {};
+    const rawProjects = Array.isArray(body.projects) ? body.projects : [];
+    const enrichment = rawProjects.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const row = entry as Record<string, unknown>;
+      const projectId = typeof row.projectId === "string" ? row.projectId.trim() : "";
+      if (!projectId) return [];
+      return [
+        {
+          projectId,
+          ...(typeof row.key === "string" || row.key === null
+            ? { key: row.key as string | null }
+            : {}),
+          ...(typeof row.name === "string" ? { name: row.name } : {}),
+          ...(typeof row.localWorkingDirectory === "string" || row.localWorkingDirectory === null
+            ? { localWorkingDirectory: row.localWorkingDirectory as string | null }
+            : {}),
+          ...(typeof row.icon === "string" || row.icon === null
+            ? { icon: row.icon as string | null }
+            : {}),
+        },
+      ];
+    });
+
+    const projects = yield* Effect.tryPromise({
+      try: () => Promise.resolve(syncLocalProjects(enrichment)),
+      catch: (cause) => cause,
+    });
+    return HttpServerResponse.jsonUnsafe({ ok: true, projects });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
+/**
+ * Local Docker/OrbStack containers + start/stop attachments for a BacksterOS project.
+ * Mac host only — uses the Docker CLI on PATH (OrbStack-compatible).
+ * Omit projectId on GET for the Servers Dashboard all-containers view.
+ */
+export const hetznerGetLocalRuntimeRouteLayer = HttpRouter.add(
+  "GET",
+  HETZNER_LOCAL_RUNTIME_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const projectId = url.value.searchParams.get("projectId")?.trim() ?? "";
+    if (!projectId) {
+      const dashboard = yield* Effect.tryPromise({
+        try: () => getLocalRuntimeDashboard(),
+        catch: (cause) => cause,
+      });
+      return HttpServerResponse.jsonUnsafe({ ok: true, scope: "dashboard", ...dashboard });
+    }
+    const overview = yield* Effect.tryPromise({
+      try: () => getLocalRuntimeOverview(projectId),
+      catch: (cause) => cause,
+    });
+    return HttpServerResponse.jsonUnsafe({ ok: true, scope: "project", ...overview });
+  }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
+);
+
+export const hetznerMutateLocalRuntimeRouteLayer = HttpRouter.add(
+  "POST",
+  HETZNER_LOCAL_RUNTIME_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    if (!bodyJson || typeof bodyJson !== "object") {
+      return jsonError("Expected JSON body", 400);
+    }
+    const body = bodyJson as Record<string, unknown>;
+    const projectId = typeof body.projectId === "string" ? body.projectId.trim() : "";
+    const action = typeof body.action === "string" ? body.action.trim() : "";
+
+    if (action === "setAttachments") {
+      if (!projectId) return jsonError("projectId is required", 400);
+      const raw = Array.isArray(body.attachments) ? body.attachments : [];
+      const attachmentsInput = raw.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        return [entry as Partial<RuntimeAttachment>];
+      });
+      const attachments = yield* Effect.tryPromise({
+        try: () => Promise.resolve(setRuntimeAttachments(projectId, attachmentsInput)),
+        catch: (cause) => cause,
+      });
+      const overview = yield* Effect.tryPromise({
+        try: () => getLocalRuntimeOverview(projectId),
+        catch: (cause) => cause,
+      });
+      return HttpServerResponse.jsonUnsafe({ ok: true, attachments, ...overview });
+    }
+
+    if (action === "startProject" || action === "stopProject") {
+      if (!projectId) return jsonError("projectId is required", 400);
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          action === "startProject"
+            ? startProjectRuntime(projectId)
+            : stopProjectRuntime(projectId),
+        catch: (cause) => cause,
+      });
+      const dashboard = yield* Effect.tryPromise({
+        try: () => getLocalRuntimeDashboard(),
+        catch: (cause) => cause,
+      });
+      return HttpServerResponse.jsonUnsafe({ ...result, scope: "dashboard", ...dashboard });
+    }
+
+    if (action === "startContainer" || action === "stopContainer") {
+      const fromArray = Array.isArray(body.containers)
+        ? body.containers.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      const single =
+        typeof body.container === "string"
+          ? body.container.trim()
+          : typeof body.containerName === "string"
+            ? body.containerName.trim()
+            : "";
+      const containers = [
+        ...new Set([
+          ...fromArray.map((entry) => entry.trim()).filter(Boolean),
+          ...(single ? [single] : []),
+        ]),
+      ];
+      if (containers.length === 0) return jsonError("container or containers is required", 400);
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          action === "startContainer"
+            ? startLocalContainers(containers)
+            : stopLocalContainers(containers),
+        catch: (cause) => cause,
+      });
+      if (projectId) {
+        const overview = yield* Effect.tryPromise({
+          try: () => getLocalRuntimeOverview(projectId),
+          catch: (cause) => cause,
+        });
+        return HttpServerResponse.jsonUnsafe({ ...result, scope: "project", ...overview });
+      }
+      const dashboard = yield* Effect.tryPromise({
+        try: () => getLocalRuntimeDashboard(),
+        catch: (cause) => cause,
+      });
+      return HttpServerResponse.jsonUnsafe({ ...result, scope: "dashboard", ...dashboard });
+    }
+
+    if (action === "startAttachment" || action === "stopAttachment") {
+      if (!projectId) return jsonError("projectId is required", 400);
+      const attachmentId = typeof body.attachmentId === "string" ? body.attachmentId.trim() : "";
+      if (!attachmentId) return jsonError("attachmentId is required", 400);
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          action === "startAttachment"
+            ? startRuntimeAttachment(projectId, attachmentId)
+            : stopRuntimeAttachment(projectId, attachmentId),
+        catch: (cause) => cause,
+      });
+      const overview = yield* Effect.tryPromise({
+        try: () => getLocalRuntimeOverview(projectId),
+        catch: (cause) => cause,
+      });
+      return HttpServerResponse.jsonUnsafe({ ...result, ...overview });
+    }
+
+    return jsonError(
+      "action must be setAttachments, startProject, stopProject, startContainer, stopContainer, startAttachment, or stopAttachment",
+      400,
+    );
   }).pipe(Effect.catch((cause) => Effect.succeed(mapHetznerError(cause)))),
 );
 
@@ -1982,6 +2190,10 @@ export const hetznerRouteLayer = Layer.mergeAll(
   hetznerUpdateAppProjectLinkRouteLayer,
   hetznerListProjectSecretsRouteLayer,
   hetznerUpdateProjectSecretsRouteLayer,
+  hetznerListLocalProjectsRouteLayer,
+  hetznerSyncLocalProjectsRouteLayer,
+  hetznerGetLocalRuntimeRouteLayer,
+  hetznerMutateLocalRuntimeRouteLayer,
   hetznerGithubRefsRouteLayer,
   hetznerListWordpressComponentsRouteLayer,
   hetznerMutateWordpressComponentsRouteLayer,

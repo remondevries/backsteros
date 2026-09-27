@@ -49,6 +49,16 @@ test("mustDualWriteRestAfterCrudFlush for due-date clears and health checks", ()
     mustDualWriteRestAfterCrudFlush("projects", { healthCheckMode: "domain" }),
     true,
   );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("projects", { hourlyRateCents: 7500 }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("projects", {
+      budgets: [{ period: "monthly", amountCents: 100_000 }],
+    }),
+    true,
+  );
   assert.equal(mustDualWriteRestAfterCrudFlush("projects", { dueDate: null }), true);
   assert.equal(mustDualWriteRestAfterCrudFlush("projects", { startDate: null }), true);
   assert.equal(mustDualWriteRestAfterCrudFlush("projects", { name: "x" }), false);

@@ -347,6 +347,8 @@ export async function createProject(
       localWorkingDirectory: input.localWorkingDirectory ?? null,
       healthCheckMode: input.healthCheckMode ?? null,
       healthCheckDomain: input.healthCheckDomain ?? null,
+      hourlyRateCents: input.hourlyRateCents ?? null,
+      budgets: input.budgets ?? [],
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
@@ -466,6 +468,8 @@ export async function updateProject(
       localWorkingDirectory: input.localWorkingDirectory,
       healthCheckMode,
       healthCheckDomain,
+      hourlyRateCents: input.hourlyRateCents,
+      budgets: input.budgets,
       status: input.status,
       priority: input.priority,
       sortOrder: input.sortOrder,
@@ -894,6 +898,14 @@ async function createTaskWithExecutor(
         executor,
       );
     }
+    if (taskActivityService.shouldAutoStartTaskTimer(null, row.status)) {
+      await taskActivityService.autoStartTaskTimerOnStatus(
+        workspaceId,
+        row.id,
+        row.assigneeId,
+        executor,
+      );
+    }
   }
 
   return row;
@@ -1116,6 +1128,40 @@ export async function updateTask(
       nudgeDynamicIslandTasksRefresh(
         `status:${existing.status}->${input.status}`,
       );
+    }
+    // Auto time tracking: start on in_progress, pause on leave — attribute
+    // to the assignee contact so agent status flips never show as "Agent".
+    // Ensure-start whenever the write sets `in_progress` (even if twin
+    // replication already flipped the row) so leader-first local apply cannot
+    // no-op the transition and skip the timer.
+    if (input.status === "in_progress") {
+      await taskActivityService.autoStartTaskTimerOnStatus(
+        workspaceId,
+        id,
+        row.assigneeId,
+        executor,
+      );
+    } else if (
+      input.status !== undefined &&
+      taskActivityService.shouldAutoStopTaskTimer(existing.status, input.status)
+    ) {
+      const stopped = await taskActivityService.autoStopTaskTimerOnStatus(
+        workspaceId,
+        id,
+        row.assigneeId,
+        executor,
+      );
+      if (
+        stopped &&
+        stopped.trackedDurationSeconds !== (row.trackedDurationSeconds ?? null)
+      ) {
+        row.trackedDurationSeconds = stopped.trackedDurationSeconds;
+        row.trackedMinutes =
+          stopped.trackedDurationSeconds != null &&
+          stopped.trackedDurationSeconds >= 60
+            ? Math.floor(stopped.trackedDurationSeconds / 60)
+            : null;
+      }
     }
     if (
       input.assigneeId !== undefined &&

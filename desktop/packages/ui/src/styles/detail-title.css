@@ -216,6 +216,32 @@
   padding: 2rem 1rem 0;
 }
 
+.markdown-document-detail__title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.markdown-document-detail__title-block--padded
+  > .content-detail-title-header--padded {
+  /* Keep title header padding; accessory aligns under title column. */
+  padding-bottom: 0;
+}
+
+.markdown-document-detail__title-block--padded
+  > .markdown-document-detail__header-accessory {
+  padding-inline: 1.5rem;
+  max-width: 800px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.markdown-document-detail__header-accessory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .inbox-detail-body--document .inbox-detail-meta {
   margin-top: 0.75rem;
   margin-bottom: 0;

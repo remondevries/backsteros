@@ -684,14 +684,19 @@ export {
   buildTimetrackingDayGroups,
   formatTimetrackingPeriodLabel,
   listTimetrackingChartDayYmds,
+  localWeekKey,
+  monthKeyForWeekKey,
   parseTimetrackingDateParam,
   parseTimetrackingWeekParam,
   parseTimetrackingMonthParam,
   readTimetrackingDateFromSearch,
   readTimetrackingPeriodFromSearch,
   resolveTimetrackingChartPeriod,
+  shiftWeekKey,
   timetrackingPeriodIncludesYmd,
+  timetrackingWeekPeriod,
   todayYmd,
+  weekKeyForMonthKey,
   type TimetrackingDayItem,
   type TimetrackingMonthGroup,
   type TimetrackingPeriod,
@@ -713,13 +718,18 @@ export {
   collectTimetrackingEntries,
   formatTimetrackingDuration,
   formatTimetrackingLeadingStamp,
+  groupTimetrackingEntriesByDay,
+  groupTimetrackingEntriesByWeek,
   resolveTimetrackingGroupDateYmd,
   sumTimetrackingDurationSeconds,
   withLiveTimetrackingEntries,
   type LiveTimetrackingSource,
   type TimetrackingEntry,
+  type TimetrackingEntryDayGroup,
   type TimetrackingEntryKind,
+  type TimetrackingEntryListGroup,
   type TimetrackingEntrySource,
+  type TimetrackingEntryWeekGroup,
 } from "./calendar/calendar-timetracking-entries.js";
 
 export {
@@ -734,6 +744,7 @@ export {
   buildTimetrackingContactBreakdown,
   buildTimetrackingAreaBreakdown,
   buildTimetrackingProjectBreakdown,
+  buildTimetrackingKindBreakdown,
   formatTimetrackingHumanDuration,
   sumBreakdownSeconds,
   TIMETRACKING_BREAKDOWN_COLORS,
@@ -1720,6 +1731,7 @@ export {
 
 export {
   FinanceMonthNavigator,
+  FinanceWeekNavigator,
   FinanceYearNavigator,
   asOfForMonthKey,
   formatMonthKey,
@@ -2344,6 +2356,7 @@ export {
   getProjectAreaFilterLabel,
   filterProjectsByArea,
   isDefinedProjectArea,
+  projectAreaShowsBilling,
   isProjectAreaFilter,
   parseProjectAreaFilter,
   getProjectsListAreaHref,
@@ -2425,6 +2438,12 @@ export {
   ProjectTasksView,
   type ProjectTasksViewProps,
 } from "./components/projects/project-tasks-view.js";
+
+export {
+  ProjectTimetrackingView,
+  type ProjectTimetrackingRangeMode,
+  type ProjectTimetrackingViewProps,
+} from "./components/projects/project-timetracking-view.js";
 
 export {
   ProjectTasksWorkbenchView,
@@ -2639,6 +2658,16 @@ export {
   type ProjectDetailViewProject,
   type ProjectDetailNestedArea,
 } from "./components/projects/project-detail-view.js";
+
+export {
+  ProjectHourlyRateEditor,
+  type ProjectHourlyRateEditorProps,
+} from "./components/projects/project-hourly-rate-editor.js";
+
+export {
+  ProjectBudgetsEditor,
+  type ProjectBudgetsEditorProps,
+} from "./components/projects/project-budgets-editor.js";
 
 export {
   ProjectPanelDetailView,

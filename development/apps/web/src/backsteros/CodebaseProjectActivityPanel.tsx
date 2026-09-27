@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatBacksterosActivityRelativeTime } from "~/backsteros/activityTime";
-import { fetchBacksterosTaskActivities } from "~/backsteros/client";
+import { fetchBacksterosProjectActivities } from "~/backsteros/client";
 import { getBacksterosTaskPriorityLabel } from "~/backsteros/taskDetailFormat";
 import {
   getBacksterosTaskStatusLabel,
   isBacksterosTaskStatus,
   migrateBacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
-import type { BacksterosTask, BacksterosTaskActivity } from "~/backsteros/types";
+import type { BacksterosTaskActivity } from "~/backsteros/types";
 import "~/backsteros/backsterosActivity.css";
 
 /** Matches desktop `CodebaseProjectActivityPanel`: show 5, load 5 more, up to 20. */
@@ -95,18 +95,15 @@ function keepElementInView(el: HTMLElement | null) {
   el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
 }
 
-function toRow(
-  activity: BacksterosTaskActivity,
-  task: Pick<BacksterosTask, "number" | "title">,
-): ProjectActivityRow {
+function toRow(activity: BacksterosTaskActivity): ProjectActivityRow {
   return {
     id: activity.id,
     type: activity.type,
     actorName: activity.actorName?.trim() || "Someone",
     data: activity.data ?? {},
     createdAt: activity.createdAt,
-    taskNumber: task.number,
-    taskTitle: task.title,
+    taskNumber: activity.taskNumber ?? 0,
+    taskTitle: activity.taskTitle?.trim() || "Untitled",
   };
 }
 
@@ -119,7 +116,7 @@ export function BacksterosCodebaseProjectActivityPanel(props: {
   readonly projectKey: string | null;
   readonly projectId: string;
 }) {
-  const { tasks, projectKey, projectId } = props;
+  const { projectKey, projectId } = props;
   const [rows, setRows] = useState<readonly ProjectActivityRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -139,37 +136,12 @@ export function BacksterosCodebaseProjectActivityPanel(props: {
 
   useEffect(() => {
     const controller = new AbortController();
-    const recent = [...tasks]
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .slice(0, 24);
-
-    if (recent.length === 0) {
-      setRows([]);
-      setLoading(false);
-      setError(false);
-      return;
-    }
-
     setLoading(true);
     setError(false);
-    void Promise.all(
-      recent.map(async (task) => {
-        try {
-          const activities = await fetchBacksterosTaskActivities(task.id, controller.signal);
-          return activities.map((activity) => toRow(activity, task));
-        } catch {
-          return [] as ProjectActivityRow[];
-        }
-      }),
-    )
-      .then((groups) => {
+    void fetchBacksterosProjectActivities(projectId, controller.signal)
+      .then((activities) => {
         if (controller.signal.aborted) return;
-        setRows(
-          groups
-            .flat()
-            .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-            .slice(0, ACTIVITY_MAX_ITEMS),
-        );
+        setRows(activities.map(toRow).slice(0, ACTIVITY_MAX_ITEMS));
       })
       .catch(() => {
         if (controller.signal.aborted) return;
@@ -181,7 +153,7 @@ export function BacksterosCodebaseProjectActivityPanel(props: {
       });
 
     return () => controller.abort();
-  }, [tasks]);
+  }, [projectId]);
 
   const keepTailInView = useCallback(() => {
     const more = moreRowRef.current;

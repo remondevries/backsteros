@@ -1,5 +1,6 @@
 "use client";
 
+import { projectSpendCentsFromTrackedSeconds } from "@backsteros/contracts";
 import { useAnimatedPath } from "@nivo/core";
 import {
   ResponsiveLine,
@@ -16,6 +17,7 @@ import {
 } from "../../calendar/calendar-timetracking-hours-chart-series.js";
 import type { TimetrackingEntry } from "../../calendar/calendar-timetracking-entries.js";
 import type { TimetrackingPeriod } from "../../calendar/calendar-timetracking-days.js";
+import { moneyCentsToInput } from "../../finance/money-input.js";
 import { FinanceChartTooltip } from "../finance/finance-chart-tooltip.js";
 import {
   FinanceChartEmpty,
@@ -27,10 +29,35 @@ export type TimetrackingHoursChartProps = {
   period: TimetrackingPeriod | null;
   className?: string;
   emptyMessage?: string;
+  /**
+   * Period budget expressed in hours (budget € ÷ hourly rate).
+   * Drawn as a dashed red horizontal reference; when set, the series is
+   * cumulative so the ceiling shares the same Y units.
+   */
+  budgetHours?: number | null;
+  /** Hourly rate in euro cents — when set, tooltips also show spend. */
+  hourlyRateCents?: number | null;
 };
+
+function formatEuroCents(cents: number): string {
+  return `€${moneyCentsToInput(cents, { alwaysFraction: true, allowZero: true })}`;
+}
+
+function spendCentsForChartHours(
+  hours: number,
+  hourlyRateCents: number | null | undefined,
+): number | null {
+  if (!Number.isFinite(hours) || hours < 0) return null;
+  return projectSpendCentsFromTrackedSeconds(
+    Math.round(hours * 3600),
+    hourlyRateCents,
+  );
+}
 
 /** Blue line/area — matches other desktop accent blues. */
 const HOURS_COLOR = "#3b82f6";
+/** Dashed budget ceiling — same red cue as overspend elsewhere. */
+const BUDGET_LINE_COLOR = "#ef4444";
 const SERIES_ID = "Hours";
 
 const CHART_MOTION = {
@@ -176,32 +203,6 @@ function HoursChartPoint({
   );
 }
 
-function HoursChartEndPoint({
-  series,
-}: LineCustomSvgLayerProps<DefaultSeries>) {
-  return (
-    <g>
-      {series.map((serie) => {
-        const last = [...serie.data]
-          .reverse()
-          .find(
-            (point) =>
-              point.data.y != null && Number.isFinite(Number(point.data.y)),
-          );
-        if (!last) return null;
-        return (
-          <HoursChartPoint
-            key={String(serie.id)}
-            x={last.position.x}
-            y={last.position.y}
-            color={serie.color ?? HOURS_COLOR}
-          />
-        );
-      })}
-    </g>
-  );
-}
-
 function HoursChartDayPoints({
   series,
 }: LineCustomSvgLayerProps<DefaultSeries>) {
@@ -235,6 +236,8 @@ export function TimetrackingHoursChart({
   period,
   className,
   emptyMessage,
+  budgetHours = null,
+  hourlyRateCents = null,
 }: TimetrackingHoursChartProps) {
   const gradientId = `timetracking-hours-area-${useId().replace(/:/g, "")}`;
 
@@ -243,6 +246,59 @@ export function TimetrackingHoursChart({
     [entries, period],
   );
   const hasActivity = timetrackingHoursChartHasActivity(series);
+
+  const budgetHoursValue =
+    budgetHours != null && Number.isFinite(budgetHours) && budgetHours > 0
+      ? budgetHours
+      : null;
+
+  /** Period budget is a total — plot cumulative hours so the ceiling matches. */
+  const plotSeries = useMemo(() => {
+    if (!series || budgetHoursValue == null) return series;
+    let running = 0;
+    return {
+      ...series,
+      data: series.data.map((point) => {
+        running += point.y;
+        return { ...point, y: running };
+      }),
+    };
+  }, [budgetHoursValue, series]);
+
+  const yMax = useMemo(() => {
+    if (!plotSeries) return undefined;
+    let dataMax = 0;
+    for (const point of plotSeries.data) {
+      if (Number.isFinite(point.y) && point.y > dataMax) dataMax = point.y;
+    }
+    const peak = Math.max(dataMax, budgetHoursValue ?? 0);
+    if (peak <= 0) return undefined;
+    return peak * 1.08;
+  }, [budgetHoursValue, plotSeries]);
+
+  const markers = useMemo(() => {
+    if (budgetHoursValue == null) return [];
+    return [
+      {
+        axis: "y" as const,
+        value: budgetHoursValue,
+        legend: "Budget",
+        legendPosition: "top-left" as const,
+        legendOrientation: "horizontal" as const,
+        lineStyle: {
+          stroke: BUDGET_LINE_COLOR,
+          strokeWidth: 1.5,
+          strokeDasharray: "6 5",
+          strokeOpacity: 0.95,
+        },
+        textStyle: {
+          fill: BUDGET_LINE_COLOR,
+          fontSize: 11,
+          fontWeight: 500,
+        },
+      },
+    ];
+  }, [budgetHoursValue]);
 
   const paints = useMemo(() => {
     const muted = readCssColor("--muted", "#888");
@@ -300,7 +356,7 @@ export function TimetrackingHoursChart({
     .filter(Boolean)
     .join(" ");
 
-  if (!period || !series) {
+  if (!period || !series || !plotSeries) {
     return null;
   }
 
@@ -318,22 +374,22 @@ export function TimetrackingHoursChart({
   }
 
   const labelByX = new Map(
-    series.data.map((point) => [point.x, point.label] as const),
+    plotSeries.data.map((point) => [point.x, point.label] as const),
   );
   const tooltipLabelByX = new Map(
-    series.data.map((point) => [point.x, point.tooltipLabel] as const),
+    plotSeries.data.map((point) => [point.x, point.tooltipLabel] as const),
   );
 
   const nivoData: DefaultSeries[] = [
     {
       id: SERIES_ID,
-      data: series.data.map((point) => ({ x: point.x, y: point.y })),
+      data: plotSeries.data.map((point) => ({ x: point.x, y: point.y })),
     },
   ];
 
-  const dense = series.data.length > 10;
+  const dense = plotSeries.data.length > 10;
   const tickValues = dense
-    ? series.data
+    ? plotSeries.data
         .filter((_, index, all) => {
           const step = Math.ceil(all.length / 7);
           return index % step === 0 || index === all.length - 1;
@@ -341,10 +397,13 @@ export function TimetrackingHoursChart({
         .map((point) => point.x)
     : undefined;
 
-  const showAllPoints = series.data.length <= 14;
+  const chartAriaLabel =
+    budgetHoursValue != null
+      ? "Cumulative tracked hours with budget"
+      : "Tracked hours by day";
 
   return (
-    <section className={sectionClass} aria-label="Tracked hours by day">
+    <section className={sectionClass} aria-label={chartAriaLabel}>
       <FinanceChartFadeIn className="calendar-timetracking-hours-chart__plot">
         <ResponsiveLine
           data={nivoData}
@@ -353,7 +412,7 @@ export function TimetrackingHoursChart({
           yScale={{
             type: "linear",
             min: 0,
-            max: "auto",
+            max: yMax ?? "auto",
             stacked: false,
             nice: true,
           }}
@@ -379,6 +438,7 @@ export function TimetrackingHoursChart({
           motionConfig={CHART_MOTION}
           useMesh
           enableSlices="x"
+          markers={markers}
           layers={[
             "grid",
             "markers",
@@ -388,7 +448,7 @@ export function TimetrackingHoursChart({
               <HoursChartAreas {...props} gradientId={gradientId} />
             ),
             HoursChartLines,
-            showAllPoints ? HoursChartDayPoints : HoursChartEndPoint,
+            HoursChartDayPoints,
             "slices",
             "mesh",
           ]}
@@ -406,24 +466,40 @@ export function TimetrackingHoursChart({
                     point.data.y != null &&
                     Number.isFinite(Number(point.data.y)),
                 )
-                .map((point) => (
-                  <div
-                    key={point.id}
-                    className="calendar-timetracking-hours-chart__tooltip-row"
-                  >
-                    <span
-                      className="calendar-timetracking-hours-chart__tooltip-swatch"
-                      style={{
-                        background: point.seriesColor,
-                        borderColor: point.seriesColor,
-                      }}
-                    />
-                    <span>Tracked</span>
-                    <strong>
-                      {formatTimetrackingChartHours(Number(point.data.y))}
-                    </strong>
-                  </div>
-                ))}
+                .map((point) => {
+                  const hours = Number(point.data.y);
+                  const spendCents = spendCentsForChartHours(
+                    hours,
+                    hourlyRateCents,
+                  );
+                  return (
+                    <div key={point.id}>
+                      <div className="calendar-timetracking-hours-chart__tooltip-row">
+                        <span
+                          className="calendar-timetracking-hours-chart__tooltip-swatch"
+                          style={{
+                            background: point.seriesColor,
+                            borderColor: point.seriesColor,
+                          }}
+                        />
+                        <span>
+                          {budgetHoursValue != null ? "Cumulative" : "Tracked"}
+                        </span>
+                        <strong>{formatTimetrackingChartHours(hours)}</strong>
+                      </div>
+                      {spendCents != null ? (
+                        <div className="calendar-timetracking-hours-chart__tooltip-row">
+                          <span
+                            className="calendar-timetracking-hours-chart__tooltip-swatch calendar-timetracking-hours-chart__tooltip-swatch--spacer"
+                            aria-hidden="true"
+                          />
+                          <span>Spend</span>
+                          <strong>{formatEuroCents(spendCents)}</strong>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
             </FinanceChartTooltip>
           )}
         />

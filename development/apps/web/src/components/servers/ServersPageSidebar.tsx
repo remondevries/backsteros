@@ -19,11 +19,22 @@ function parseServerIdFromPath(pathname: string): string | null {
   const match = /^\/servers\/([^/]+)/u.exec(pathname);
   if (!match) return null;
   const segment = match[1]!;
-  if (segment === "servers") return null;
+  if (segment === "servers" || segment === "local") return null;
   return segment;
 }
 
+function parseLocalProjectIdFromPath(pathname: string): string | null {
+  const match = /^\/servers\/local\/([^/]+)/u.exec(pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]!);
+  } catch {
+    return match[1]!;
+  }
+}
+
 function activeServersNavId(pathname: string): string {
+  if (pathname.startsWith("/servers/local")) return "local";
   if (parseServerIdFromPath(pathname)) return "servers";
   if (pathname === "/servers/servers" || pathname.startsWith("/servers/servers/")) {
     return "servers";
@@ -38,6 +49,7 @@ function activeServersNavId(pathname: string): string {
 export function ServersPageSidebar() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const selectedServerId = parseServerIdFromPath(pathname);
+  const selectedLocalProjectId = parseLocalProjectIdFromPath(pathname);
   const { isMobile, setOpenMobile } = useSidebar();
   const logModeEnabled = useSidebarModeStore((state) => state.logModeEnabled);
   const setLogModeEnabled = useSidebarModeStore((state) => state.setLogModeEnabled);
@@ -139,6 +151,7 @@ export function ServersPageSidebar() {
       <ServersSidebarNav
         activeId={activeServersNavId(pathname)}
         selectedServerId={selectedServerId}
+        selectedLocalProjectId={selectedLocalProjectId}
       />
       <SidebarChromeFooter />
     </>

@@ -1347,6 +1347,23 @@ function CalendarPageBody() {
               onTaskDueDateChange={handleTimetrackingTaskDueDateChange}
               onTaskAssigneeChange={handleTimetrackingTaskAssigneeChange}
               onTaskProjectChange={handleTimetrackingTaskProjectChange}
+              onTrackedDurationSecondsChange={(entry, seconds) => {
+                const trackedMinutes =
+                  seconds != null && seconds >= 60
+                    ? Math.floor(seconds / 60)
+                    : null;
+                const patch = {
+                  trackedDurationSeconds: seconds,
+                  trackedMinutes,
+                };
+                if (entry.kind === "task") {
+                  void workspace.patchTask(entry.id, patch);
+                  return;
+                }
+                if (entry.kind === "meeting") {
+                  void workspace.patchMeeting(entry.id, patch);
+                }
+              }}
             />
           </div>
           {timetrackingDetailOpen ? (

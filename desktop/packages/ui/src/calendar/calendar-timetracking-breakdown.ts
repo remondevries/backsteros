@@ -195,3 +195,40 @@ export function sumBreakdownSeconds(
 ): number {
   return slices.reduce((sum, slice) => sum + slice.seconds, 0);
 }
+
+const KIND_LABELS: Record<string, string> = {
+  task: "Tasks",
+  meeting: "Meetings",
+  document: "Notes",
+};
+
+const KIND_COLORS: Record<string, string> = {
+  task: "#2dd4bf",
+  meeting: "#6366f1",
+  document: "#fbbf24",
+};
+
+const KIND_ORDER = ["task", "meeting", "document"] as const;
+
+/**
+ * Hours grouped by entry kind (task / meeting / note) for the type pie.
+ */
+export function buildTimetrackingKindBreakdown(
+  entries: readonly TimetrackingEntry[],
+): TimetrackingBreakdownSlice[] {
+  const buckets = new Map<string, number>();
+  for (const entry of entries) {
+    const seconds = Math.max(0, entry.trackedDurationSeconds);
+    if (seconds <= 0) continue;
+    buckets.set(entry.kind, (buckets.get(entry.kind) ?? 0) + seconds);
+  }
+
+  return KIND_ORDER.filter((kind) => (buckets.get(kind) ?? 0) > 0).map(
+    (kind) => ({
+      id: kind,
+      label: KIND_LABELS[kind] ?? kind,
+      seconds: buckets.get(kind) ?? 0,
+      color: KIND_COLORS[kind] ?? colorForIndex(0),
+    }),
+  );
+}

@@ -45,6 +45,7 @@ import { ProjectPanelOverviewSkeleton } from "../skeletons/project-panel-overvie
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { TasksNavIcon } from "../shell/sidebar-nav-icons.js";
+import { TimetrackingModeIcon } from "../icons/timetracking-mode-icon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseGithubListTab } from "./codebase-github-list-tab.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
@@ -82,12 +83,16 @@ const CODEBASE_LIST_TAB_OPTIONS = [
   { value: "commits" as const, label: "Commits" },
   { value: "pulls" as const, label: "PRs" },
   { value: "updates" as const, label: "Updates" },
+  { value: "timetracking" as const, label: "Timetracking" },
 ];
 
 export { CODEBASE_LIST_TAB_OPTIONS };
 
 const GITHUB_LIST_TAB_ICONS: Record<
-  Exclude<CodebaseGithubListTab, "tasks" | "files" | "docs" | "updates">,
+  Exclude<
+    CodebaseGithubListTab,
+    "tasks" | "timetracking" | "files" | "docs" | "updates"
+  >,
   string
 > = {
   commits: "git-commit",
@@ -97,6 +102,9 @@ const GITHUB_LIST_TAB_ICONS: Record<
 function ProjectListTabIcon({ tab }: { tab: CodebaseGithubListTab }) {
   if (tab === "tasks") {
     return <TasksNavIcon className="project-github-list-toggle__tasks-icon" />;
+  }
+  if (tab === "timetracking") {
+    return <TimetrackingModeIcon size={14} />;
   }
   if (tab === "files") {
     // Same folder mark as compose / documents on web + desktop.
@@ -142,6 +150,8 @@ function mapProjectForDetail(
     dueDate: project.dueDate ? new Date(project.dueDate) : null,
     healthCheckMode: project.healthCheckMode ?? null,
     healthCheckDomain: project.healthCheckDomain ?? null,
+    hourlyRateCents: project.hourlyRateCents ?? null,
+    budgets: Array.isArray(project.budgets) ? project.budgets : [],
     taskProgress,
   };
 }
@@ -1885,6 +1895,15 @@ export function CodebaseProjectOverviewPane({
                 }
                 onHealthCheckChange={(next) => {
                   void patchProject(next);
+                }}
+                onHourlyRateChange={(hourlyRateCents) => {
+                  onProjectUpdated({ ...project, hourlyRateCents });
+                  void patchProject({ hourlyRateCents });
+                }}
+                onBudgetsChange={(budgets) => {
+                  const next = budgets.slice(0, 1);
+                  onProjectUpdated({ ...project, budgets: next });
+                  void patchProject({ budgets: next });
                 }}
                 onSaveName={saveName}
                 onSaveKey={async (key) => {

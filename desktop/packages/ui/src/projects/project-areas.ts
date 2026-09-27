@@ -34,6 +34,13 @@ export function isDefinedProjectArea(
   );
 }
 
+/** Hourly rate + Budget only apply to Business / Clients projects. */
+export function projectAreaShowsBilling(
+  area: string | null | undefined,
+): boolean {
+  return area === "business" || area === "clients";
+}
+
 export function filterProjectsByArea<T extends { area: ProjectArea | null }>(
   projects: readonly T[],
   area: ProjectAreaFilter,

@@ -786,6 +786,12 @@ export function useWorkspaceEntityPatching({
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify(apiValues),
                   })
+                : table === "projects"
+                  ? await client.requestJson<ApiProject>(path, {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify(apiValues),
+                    })
                 : await client.requestJson(path, {
                     method: "PATCH",
                     headers: { "content-type": "application/json" },
@@ -799,6 +805,9 @@ export function useWorkspaceEntityPatching({
           }
           if (table === "meetings") {
             await applyMeetingServerRow(updated as ApiMeeting);
+          }
+          if (table === "projects" && updated && typeof updated === "object") {
+            applyLiveProjectOptimisticPatch(id, updated as ApiProject);
           }
         } catch (error) {
           // Local write + upload queue remain the source of truth if REST fails —
@@ -874,6 +883,8 @@ export function useWorkspaceEntityPatching({
             "moneybirdContactId" in values ||
             "healthCheckMode" in values ||
             "healthCheckDomain" in values ||
+            "hourlyRateCents" in values ||
+            "budgets" in values ||
             (table === "tasks" && typeof values.status === "string") ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));
@@ -884,7 +895,10 @@ export function useWorkspaceEntityPatching({
           }
           if (
             table === "projects" &&
-            ("healthCheckMode" in values || "healthCheckDomain" in values)
+            ("healthCheckMode" in values ||
+              "healthCheckDomain" in values ||
+              "hourlyRateCents" in values ||
+              "budgets" in values)
           ) {
             void softRefreshApiProjects();
           }
@@ -933,7 +947,9 @@ export function useWorkspaceEntityPatching({
           "githubRepository" in values ||
           "localWorkingDirectory" in values ||
           "healthCheckMode" in values ||
-          "healthCheckDomain" in values
+          "healthCheckDomain" in values ||
+          "hourlyRateCents" in values ||
+          "budgets" in values
         ) {
           void softRefreshApiProjects();
         }

@@ -15,6 +15,8 @@ import {
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  listActivitiesQuerySchema,
+  listActivitiesResponseSchema,
   updateTaskTimerSessionActorSchema,
   documentContentSchema,
   documentSchema,
@@ -920,6 +922,20 @@ export const apiContract: AppRouter = c.router(
       responses: { 200: s.taskRelationsSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
       summary: "Get task relations",
     },
+    listActivities: {
+      method: "GET",
+      path: "/api/v1/activities",
+      query: listActivitiesQuerySchema,
+      responses: {
+        200: listActivitiesResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Unified activity feed (system events + comments). Filter by taskId or projectId; dial types=… for clients (desktop, portal, mobile).",
+    },
     listTaskComments: {
       method: "GET",
       path: "/api/v1/tasks/:id/comments",
@@ -930,7 +946,8 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "List comments on a task",
+      summary:
+        "List comments on a task (legacy alias — prefer GET /api/v1/activities?taskId=&types=comment)",
     },
     listTaskActivities: {
       method: "GET",
@@ -942,7 +959,8 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "List system activity events on a task (status changes, etc.)",
+      summary:
+        "List system activity events on a task (legacy alias — prefer GET /api/v1/activities?taskId=)",
     },
     createTaskActivity: {
       method: "POST",

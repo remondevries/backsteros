@@ -67,6 +67,113 @@
   font-size: 0.75rem;
 }
 
+.project-timetracking {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  overflow: auto;
+}
+
+.project-timetracking__toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.project-timetracking__period-nav {
+  flex-shrink: 0;
+}
+
+.project-timetracking__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.project-timetracking__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.project-timetracking__title-total {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+}
+
+.project-timetracking__subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.project-timetracking__subtitle-note {
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.project-timetracking__charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 16px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.project-timetracking__chart {
+  min-width: 0;
+  min-height: 260px;
+}
+
+.project-timetracking__chart--hours {
+  display: flex;
+  flex-direction: column;
+}
+
+.project-timetracking__chart--hours .calendar-timetracking-hours-chart,
+.project-timetracking__chart--hours .calendar-timetracking-view__chart-stage {
+  flex: 1;
+  min-height: 260px;
+}
+
+.project-timetracking__list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.project-timetracking__list .calendar-timetracking-view {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  gap: 12px;
+  overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .project-timetracking__charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Nested inside codebase/domain workbench — fill the tab body. */
+.codebase-project-workbench__timetracking > .project-timetracking,
+.domain-project-workbench__timetracking > .project-timetracking {
+  min-height: 0;
+  height: 100%;
+}
+
 .project-detail__meta-dates {
   display: inline-flex;
   align-items: center;
@@ -1219,6 +1326,102 @@
 .contact-detail-split-chip:has(.is-open) {
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.project-hourly-rate-chip__currency,
+.project-budget-chip__currency {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 8px 2px;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* Billing chips (Hourly rate + Budget): shared outline + divider. */
+.contact-detail-split-chip.project-billing-chip {
+  height: 32px;
+  min-height: 32px;
+  align-items: stretch;
+  border-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.contact-detail-split-chip.project-billing-chip
+  .project-hourly-rate-chip__label,
+.contact-detail-split-chip.project-billing-chip
+  .project-hourly-rate-chip__currency,
+.contact-detail-split-chip.project-billing-chip
+  .project-budget-chip__currency,
+.contact-detail-split-chip.project-billing-chip
+  .contact-detail-split-chip__value {
+  align-self: stretch;
+  height: 100%;
+  min-height: 100%;
+}
+
+.contact-detail-split-chip.project-billing-chip
+  .project-hourly-rate-chip__currency,
+.contact-detail-split-chip.project-billing-chip
+  .project-budget-chip__currency {
+  display: inline-flex;
+  align-items: center;
+}
+
+.contact-detail-split-chip.project-billing-chip:hover,
+.contact-detail-split-chip.project-billing-chip:focus-within,
+.contact-detail-split-chip.project-billing-chip:has(.is-open) {
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.contact-detail-split-chip.project-billing-chip
+  .contact-detail-split-chip__label,
+.contact-detail-split-chip.project-billing-chip
+  .project-hourly-rate-chip__label {
+  border-right-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+.contact-detail-split-chip.project-billing-chip:hover
+  .contact-detail-split-chip__label,
+.contact-detail-split-chip.project-billing-chip:focus-within
+  .contact-detail-split-chip__label,
+.contact-detail-split-chip.project-billing-chip:has(.is-open)
+  .contact-detail-split-chip__label,
+.contact-detail-split-chip.project-billing-chip:hover
+  .project-hourly-rate-chip__label,
+.contact-detail-split-chip.project-billing-chip:focus-within
+  .project-hourly-rate-chip__label {
+  border-right-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.contact-detail-split-chip.project-hourly-rate-chip
+  .project-hourly-rate-chip__label {
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+}
+
+.contact-detail-split-chip.project-billing-chip
+  .contact-detail-split-chip__value {
+  padding-inline: 4px 10px;
+}
+
+.project-panel-identity__billing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.project-panel-identity__billing > .contact-detail-chips,
+.project-detail__meta-fields > .contact-detail-chips {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .contact-detail-split-chip__dropdown {

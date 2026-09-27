@@ -9,10 +9,13 @@ import {
 } from "../../calendar/calendar-timetracking-breakdown.js";
 import {
   formatTimetrackingDuration,
+  groupTimetrackingEntriesByDay,
+  groupTimetrackingEntriesByWeek,
   resolveTimetrackingGroupDateYmd,
   sumTimetrackingDurationSeconds,
   withLiveTimetrackingEntries,
   type TimetrackingEntry,
+  type TimetrackingEntryListGroup,
 } from "../../calendar/calendar-timetracking-entries.js";
 import {
   formatTimetrackingPeriodLabel,
@@ -30,6 +33,7 @@ import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
 } from "../../list-nav/keyboard-nav-item.js";
+import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import { buildTrackedTimerKey } from "../../tracked-timer/tracked-timer-types.js";
 import { useTrackedTimerOptional } from "../../tracked-timer/tracked-timer-context.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -45,6 +49,12 @@ import { TimetrackingLeadingStamp } from "./timetracking-leading-stamp.js";
 import { TimetrackingProjectPieChart } from "./timetracking-project-pie-chart.js";
 
 export type CalendarTimetrackingViewTab = "timeline" | "projects" | "distribution";
+
+const DEFAULT_TIMETRACKING_CHART_TABS: readonly CalendarTimetrackingViewTab[] = [
+  "timeline",
+  "projects",
+  "distribution",
+];
 
 export type CalendarTimetrackingViewProps = {
   entries: readonly TimetrackingEntry[];
@@ -66,13 +76,37 @@ export type CalendarTimetrackingViewProps = {
   selectedEntryId?: string | null;
   onEntryOpen?: (entry: TimetrackingEntry) => void;
   emptyLabel?: string;
+  /**
+   * Chart tabs to show. Defaults to Timeline / Projects / Distribution.
+   * Pass an empty array to hide the chart region (list-only embed).
+   */
+  chartTabs?: readonly CalendarTimetrackingViewTab[];
+  /** When false, hides the "Time entries" header (host provides its own). */
+  showHeader?: boolean;
+  /**
+   * When true (default for month periods), list entries under collapsible
+   * ISO week groups. Ignored when `groupListByDay` is active.
+   */
+  groupListByWeek?: boolean;
+  /**
+   * When true (default for week periods), list entries under collapsible
+   * day groups.
+   */
+  groupListByDay?: boolean;
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeOptions?: SearchableDropdownOption<string>[];
+  /** When false, hides the project badge on rows (e.g. project-scoped report). */
+  showProject?: boolean;
   onTaskStatusChange?: (taskId: string, status: TaskStatus) => void;
   onTaskPriorityChange?: (taskId: string, priority: number) => void;
   onTaskDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onTaskAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
   onTaskProjectChange?: (taskId: string, projectKey: string | null) => void;
+  /** Persist an edited leading-stamp duration (task / meeting / note). */
+  onTrackedDurationSecondsChange?: (
+    entry: TimetrackingEntry,
+    seconds: number | null,
+  ) => void;
 };
 
 const TIMETRACKING_ROW_PROPS = {
@@ -105,24 +139,47 @@ export function CalendarTimetrackingView({
   selectedEntryId = null,
   onEntryOpen,
   emptyLabel,
+  chartTabs = DEFAULT_TIMETRACKING_CHART_TABS,
+  showHeader = true,
+  groupListByWeek: groupListByWeekProp,
+  groupListByDay: groupListByDayProp,
   projectOptions = [],
   assigneeOptions = [],
+  showProject = true,
   onTaskStatusChange,
   onTaskPriorityChange,
   onTaskDueDateChange,
   onTaskAssigneeChange,
   onTaskProjectChange,
+  onTrackedDurationSecondsChange,
 }: CalendarTimetrackingViewProps) {
   const timer = useTrackedTimerOptional();
   const timerTick = timer?.timerTick ?? 0;
-  const [activeTab, setActiveTab] =
-    useState<CalendarTimetrackingViewTab>("timeline");
+  const visibleTabs = useMemo(() => {
+    const allowed = new Set(chartTabs);
+    return DEFAULT_TIMETRACKING_CHART_TABS.filter((tab) => allowed.has(tab));
+  }, [chartTabs]);
+  const [activeTab, setActiveTab] = useState<CalendarTimetrackingViewTab>(
+    () => visibleTabs[0] ?? "timeline",
+  );
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({});
+  const resolvedTab = visibleTabs.includes(activeTab)
+    ? activeTab
+    : (visibleTabs[0] ?? "timeline");
 
   const resolvedPeriod: TimetrackingPeriod | null =
     period ??
     (selectedDateYmd?.trim()
       ? { kind: "day", ymd: selectedDateYmd.trim() }
       : null);
+
+  const groupListByDay =
+    groupListByDayProp ?? resolvedPeriod?.kind === "week";
+  const groupListByWeek =
+    groupListByWeekProp ??
+    (!groupListByDay && resolvedPeriod?.kind === "month");
 
   const tasksById = useMemo(() => {
     const map = new Map<string, TaskItemRowTask>();
@@ -159,6 +216,17 @@ export function CalendarTimetrackingView({
             href: entry.href,
             groupDateYmd: resolveTimetrackingGroupDateYmd(task?.dueDate),
             trackedDurationSeconds: task?.trackedDurationSeconds ?? 0,
+          };
+        }
+        if (entry.kind === "document") {
+          return {
+            id: entry.entityId,
+            kind: "document" as const,
+            title: entry.title,
+            displayId: entry.subtitle,
+            href: entry.href,
+            groupDateYmd: resolveTimetrackingGroupDateYmd(null),
+            trackedDurationSeconds: 0,
           };
         }
         const meeting = meetingsById.get(entry.entityId);
@@ -199,6 +267,25 @@ export function CalendarTimetrackingView({
   );
 
   const dayTotalSeconds = sumTimetrackingDurationSeconds(displayEntries);
+  const listGroups = useMemo((): TimetrackingEntryListGroup[] | null => {
+    if (groupListByDay) {
+      return groupTimetrackingEntriesByDay(displayEntries).map((group) => ({
+        key: group.dayKey,
+        label: group.label,
+        entries: group.entries,
+        totalSeconds: group.totalSeconds,
+      }));
+    }
+    if (groupListByWeek) {
+      return groupTimetrackingEntriesByWeek(displayEntries).map((group) => ({
+        key: group.weekKey,
+        label: group.label,
+        entries: group.entries,
+        totalSeconds: group.totalSeconds,
+      }));
+    }
+    return null;
+  }, [displayEntries, groupListByDay, groupListByWeek]);
   const periodLabel = resolvedPeriod
     ? formatTimetrackingPeriodLabel(resolvedPeriod)
     : null;
@@ -230,6 +317,127 @@ export function CalendarTimetrackingView({
     enabled: itemIds.length > 0,
   });
 
+  function renderEntry(entry: TimetrackingEntry) {
+    const displaySeconds =
+      entry.isLive && timer
+        ? timer.getElapsedSeconds(
+            buildTrackedTimerKey(entry.kind, entry.id),
+          )
+        : entry.trackedDurationSeconds;
+    const isUntracked =
+      !entry.isLive && Math.max(0, entry.trackedDurationSeconds) <= 0;
+    const leadingStamp = (
+      <TimetrackingLeadingStamp
+        scheduleAt={entry.groupDateYmd}
+        trackedDurationSeconds={displaySeconds}
+        isLive={Boolean(entry.isLive)}
+        onTrackedDurationSecondsChange={
+          onTrackedDurationSecondsChange
+            ? (seconds) => onTrackedDurationSecondsChange(entry, seconds)
+            : undefined
+        }
+      />
+    );
+    const rowClass = [
+      entry.isLive ? "is-live-timer" : null,
+      isUntracked ? "is-untracked-timer" : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+    const keyboardHighlighted = isKeyboardNavHighlighted(
+      highlightedId,
+      entry.id,
+    );
+
+    if (entry.kind === "task") {
+      const task = tasksById.get(entry.id);
+      const selected = selectedEntryId === entry.id;
+      if (!task) {
+        return (
+          <TimetrackingFallbackRow
+            key={`${entry.kind}:${entry.id}`}
+            entry={entry}
+            leadingStamp={leadingStamp}
+            selected={selected}
+            keyboardHighlighted={keyboardHighlighted}
+            isLive={Boolean(entry.isLive)}
+            isUntracked={isUntracked}
+            onOpen={() => onEntryOpen?.(entry)}
+          />
+        );
+      }
+      return (
+        <TaskItemRow
+          key={`${entry.kind}:${entry.id}`}
+          task={task}
+          selected={selected}
+          keyboardHighlighted={keyboardHighlighted}
+          className={rowClass}
+          onSelect={() => onEntryOpen?.(entry)}
+          {...TIMETRACKING_ROW_PROPS}
+          leadingStamp={leadingStamp}
+          showAssignee={showAssignee}
+          showProject={showProject}
+          projectOptions={projectOptions}
+          assigneeOptions={assigneeOptions}
+          onStatusChange={onTaskStatusChange}
+          onPriorityChange={onTaskPriorityChange}
+          onDueDateChange={onTaskDueDateChange}
+          onAssigneeChange={onTaskAssigneeChange}
+          onProjectChange={onTaskProjectChange}
+        />
+      );
+    }
+
+    if (entry.kind === "document") {
+      return (
+        <TimetrackingFallbackRow
+          key={`${entry.kind}:${entry.id}`}
+          entry={entry}
+          leadingStamp={leadingStamp}
+          selected={selectedEntryId === entry.id}
+          keyboardHighlighted={keyboardHighlighted}
+          isLive={Boolean(entry.isLive)}
+          isUntracked={isUntracked}
+          onOpen={() => onEntryOpen?.(entry)}
+        />
+      );
+    }
+
+    const meetingRow = meetingRowsById.get(entry.id);
+    const selected = selectedEntryId === entry.id;
+    if (!meetingRow) {
+      return (
+        <TimetrackingFallbackRow
+          key={`${entry.kind}:${entry.id}`}
+          entry={entry}
+          leadingStamp={leadingStamp}
+          selected={selected}
+          keyboardHighlighted={keyboardHighlighted}
+          isLive={Boolean(entry.isLive)}
+          isUntracked={isUntracked}
+          onOpen={() => onEntryOpen?.(entry)}
+        />
+      );
+    }
+
+    return (
+      <TaskItemRow
+        key={`${entry.kind}:${entry.id}`}
+        task={meetingRow}
+        selected={selected}
+        keyboardHighlighted={keyboardHighlighted}
+        className={rowClass}
+        onSelect={() => onEntryOpen?.(entry)}
+        {...TIMETRACKING_ROW_PROPS}
+        leadingStamp={leadingStamp}
+        showAssignee={false}
+        showProject={showProject}
+        projectOptions={projectOptions}
+      />
+    );
+  }
+
   return (
     <div
       className="calendar-timetracking-view"
@@ -243,92 +451,103 @@ export function CalendarTimetrackingView({
       data-selected-month={
         resolvedPeriod?.kind === "month" ? resolvedPeriod.monthKey : undefined
       }
-      data-tab={activeTab}
+      data-tab={resolvedTab}
     >
-      <header className="calendar-timetracking-view__header">
-        <h1 className="calendar-timetracking-view__title">Time entries</h1>
-        {resolvedPeriod ? (
-          <p className="calendar-timetracking-view__subtitle">
-            Scheduled for {periodLabel}
-            {displayEntries.length > 0 ? (
+      {showHeader ? (
+        <header className="calendar-timetracking-view__header">
+          <h1 className="calendar-timetracking-view__title">Time entries</h1>
+          {resolvedPeriod ? (
+            <p className="calendar-timetracking-view__subtitle">
+              Scheduled for {periodLabel}
+              {displayEntries.length > 0 ? (
+                <span className="calendar-timetracking-view__subtitle-note">
+                  {" "}
+                  · {formatTimetrackingDuration(dayTotalSeconds)} total
+                </span>
+              ) : null}
               <span className="calendar-timetracking-view__subtitle-note">
                 {" "}
-                · {formatTimetrackingDuration(dayTotalSeconds)} total
+                · by task due date / meeting start
               </span>
-            ) : null}
-            <span className="calendar-timetracking-view__subtitle-note">
-              {" "}
-              · by task due date / meeting start
-            </span>
-          </p>
-        ) : (
-          <p className="calendar-timetracking-view__subtitle">
-            All tasks and meetings with tracked time
-          </p>
-        )}
-      </header>
+            </p>
+          ) : (
+            <p className="calendar-timetracking-view__subtitle">
+              All tasks and meetings with tracked time
+            </p>
+          )}
+        </header>
+      ) : null}
 
+      {visibleTabs.length > 0 ? (
       <section
         className="calendar-timetracking-view__charts"
         aria-label="Timetracking charts"
       >
-        <div
-          className="calendar-timetracking-view__tabs"
-          role="tablist"
-          aria-label="Timetracking chart views"
-        >
-          <button
-            type="button"
-            role="tab"
-            id="timetracking-tab-timeline"
-            aria-selected={activeTab === "timeline"}
-            aria-controls="timetracking-panel-timeline"
-            className={[
-              "calendar-timetracking-view__tab",
-              activeTab === "timeline" ? "is-active" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => setActiveTab("timeline")}
+        {visibleTabs.length > 1 ? (
+          <div
+            className="calendar-timetracking-view__tabs"
+            role="tablist"
+            aria-label="Timetracking chart views"
           >
-            Timeline
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="timetracking-tab-projects"
-            aria-selected={activeTab === "projects"}
-            aria-controls="timetracking-panel-projects"
-            className={[
-              "calendar-timetracking-view__tab",
-              activeTab === "projects" ? "is-active" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => setActiveTab("projects")}
-          >
-            Projects
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="timetracking-tab-distribution"
-            aria-selected={activeTab === "distribution"}
-            aria-controls="timetracking-panel-distribution"
-            className={[
-              "calendar-timetracking-view__tab",
-              activeTab === "distribution" ? "is-active" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => setActiveTab("distribution")}
-          >
-            Distribution
-          </button>
-        </div>
+            {visibleTabs.includes("timeline") ? (
+              <button
+                type="button"
+                role="tab"
+                id="timetracking-tab-timeline"
+                aria-selected={resolvedTab === "timeline"}
+                aria-controls="timetracking-panel-timeline"
+                className={[
+                  "calendar-timetracking-view__tab",
+                  resolvedTab === "timeline" ? "is-active" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => setActiveTab("timeline")}
+              >
+                Timeline
+              </button>
+            ) : null}
+            {visibleTabs.includes("projects") ? (
+              <button
+                type="button"
+                role="tab"
+                id="timetracking-tab-projects"
+                aria-selected={resolvedTab === "projects"}
+                aria-controls="timetracking-panel-projects"
+                className={[
+                  "calendar-timetracking-view__tab",
+                  resolvedTab === "projects" ? "is-active" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => setActiveTab("projects")}
+              >
+                Projects
+              </button>
+            ) : null}
+            {visibleTabs.includes("distribution") ? (
+              <button
+                type="button"
+                role="tab"
+                id="timetracking-tab-distribution"
+                aria-selected={resolvedTab === "distribution"}
+                aria-controls="timetracking-panel-distribution"
+                className={[
+                  "calendar-timetracking-view__tab",
+                  resolvedTab === "distribution" ? "is-active" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => setActiveTab("distribution")}
+              >
+                Distribution
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="calendar-timetracking-view__chart-stage">
-          {activeTab === "timeline" ? (
+          {resolvedTab === "timeline" ? (
             <div
               id="timetracking-panel-timeline"
               role="tabpanel"
@@ -346,7 +565,7 @@ export function CalendarTimetrackingView({
                 </p>
               )}
             </div>
-          ) : activeTab === "projects" ? (
+          ) : resolvedTab === "projects" ? (
             <div
               id="timetracking-panel-projects"
               role="tabpanel"
@@ -371,6 +590,7 @@ export function CalendarTimetrackingView({
           )}
         </div>
       </section>
+      ) : null}
 
       {displayEntries.length === 0 ? (
         <p className="calendar-timetracking-view__empty">{resolvedEmptyLabel}</p>
@@ -381,95 +601,28 @@ export function CalendarTimetrackingView({
           aria-label="Time entries"
           {...listContainerProps}
         >
-          {displayEntries.map((entry) => {
-            const displaySeconds =
-              entry.isLive && timer
-                ? timer.getElapsedSeconds(
-                    buildTrackedTimerKey(entry.kind, entry.id),
-                  )
-                : entry.trackedDurationSeconds;
-            const leadingStamp = (
-              <TimetrackingLeadingStamp
-                scheduleAt={entry.groupDateYmd}
-                trackedDurationSeconds={displaySeconds}
-                isLive={Boolean(entry.isLive)}
-              />
-            );
-            const liveClass = entry.isLive ? "is-live-timer" : undefined;
-            const keyboardHighlighted = isKeyboardNavHighlighted(
-              highlightedId,
-              entry.id,
-            );
-
-            if (entry.kind === "task") {
-              const task = tasksById.get(entry.id);
-              const selected = selectedEntryId === entry.id;
-              if (!task) {
-                return (
-                  <TimetrackingFallbackRow
-                    key={`${entry.kind}:${entry.id}`}
-                    entry={entry}
-                    leadingStamp={leadingStamp}
-                    selected={selected}
-                    keyboardHighlighted={keyboardHighlighted}
-                    isLive={Boolean(entry.isLive)}
-                    onOpen={() => onEntryOpen?.(entry)}
-                  />
-                );
-              }
-              return (
-                <TaskItemRow
-                  key={`${entry.kind}:${entry.id}`}
-                  task={task}
-                  selected={selected}
-                  keyboardHighlighted={keyboardHighlighted}
-                  className={liveClass}
-                  onSelect={() => onEntryOpen?.(entry)}
-                  {...TIMETRACKING_ROW_PROPS}
-                  leadingStamp={leadingStamp}
-                  showAssignee={showAssignee}
-                  projectOptions={projectOptions}
-                  assigneeOptions={assigneeOptions}
-                  onStatusChange={onTaskStatusChange}
-                  onPriorityChange={onTaskPriorityChange}
-                  onDueDateChange={onTaskDueDateChange}
-                  onAssigneeChange={onTaskAssigneeChange}
-                  onProjectChange={onTaskProjectChange}
-                />
-              );
-            }
-
-            const meetingRow = meetingRowsById.get(entry.id);
-            const selected = selectedEntryId === entry.id;
-            if (!meetingRow) {
-              return (
-                <TimetrackingFallbackRow
-                  key={`${entry.kind}:${entry.id}`}
-                  entry={entry}
-                  leadingStamp={leadingStamp}
-                  selected={selected}
-                  keyboardHighlighted={keyboardHighlighted}
-                  isLive={Boolean(entry.isLive)}
-                  onOpen={() => onEntryOpen?.(entry)}
-                />
-              );
-            }
-
-            return (
-              <TaskItemRow
-                key={`${entry.kind}:${entry.id}`}
-                task={meetingRow}
-                selected={selected}
-                keyboardHighlighted={keyboardHighlighted}
-                className={liveClass}
-                onSelect={() => onEntryOpen?.(entry)}
-                {...TIMETRACKING_ROW_PROPS}
-                leadingStamp={leadingStamp}
-                showAssignee={false}
-                projectOptions={projectOptions}
-              />
-            );
-          })}
+          {listGroups
+            ? listGroups.map((group) => (
+                <ProjectTypeGroupSection
+                  key={group.key}
+                  title={group.label}
+                  collapsed={Boolean(collapsedGroups[group.key])}
+                  onToggle={() =>
+                    setCollapsedGroups((prev) => ({
+                      ...prev,
+                      [group.key]: !prev[group.key],
+                    }))
+                  }
+                  trailing={
+                    <span className="calendar-timetracking-view__week-total">
+                      {formatTimetrackingDuration(group.totalSeconds)}
+                    </span>
+                  }
+                >
+                  {group.entries.map((entry) => renderEntry(entry))}
+                </ProjectTypeGroupSection>
+              ))
+            : displayEntries.map((entry) => renderEntry(entry))}
         </ul>
       )}
     </div>
@@ -482,6 +635,7 @@ function TimetrackingFallbackRow({
   selected = false,
   keyboardHighlighted = false,
   isLive = false,
+  isUntracked = false,
   onOpen,
 }: {
   entry: TimetrackingEntry;
@@ -489,6 +643,7 @@ function TimetrackingFallbackRow({
   selected?: boolean;
   keyboardHighlighted?: boolean;
   isLive?: boolean;
+  isUntracked?: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -496,6 +651,7 @@ function TimetrackingFallbackRow({
       className={[
         "task-item-row-item",
         isLive ? "is-live-timer" : null,
+        isUntracked ? "is-untracked-timer" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -509,6 +665,7 @@ function TimetrackingFallbackRow({
           keyboardNavListItemClass(keyboardHighlighted),
           selected ? "is-selected" : null,
           isLive ? "is-live-timer" : null,
+          isUntracked ? "is-untracked-timer" : null,
         ]
           .filter(Boolean)
           .join(" ")}

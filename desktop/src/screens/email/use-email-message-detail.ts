@@ -103,7 +103,10 @@ export function useEmailMessageDetail({
   }, [inboxId, messageId]);
 
   const reloadMessageDetail = useCallback(
-    async (messageInboxId: string, reloadMessageId: string) => {
+    async (messageInboxId?: string, reloadMessageId?: string) => {
+      if (!messageInboxId || !reloadMessageId) {
+        throw new Error("Could not reload message.");
+      }
       const detail = await fetchEmailMessageDetail(
         client,
         messageInboxId,

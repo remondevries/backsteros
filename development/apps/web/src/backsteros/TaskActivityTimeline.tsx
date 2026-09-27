@@ -13,13 +13,18 @@ const VISIBLE_ACTIVITY_LIMIT = 12;
  * Newest-first activity timeline matching BacksterOS desktop `TaskActivityPanel`
  * feed chrome (rail, type markers, muted copy + strong accents, relative time).
  * Property edits coalesce; consecutive agent_worked rows group.
- * When `working`, shows a live "Agent is working…" row at the top (desktop parity).
+ * When `working`, shows a live "{name} is working…" row at the top (desktop parity).
  */
 export function BacksterosTaskActivityTimeline(props: {
   readonly activities: readonly BacksterosTaskActivity[];
   readonly avatarSrcByContactId?: Readonly<Record<string, string>> | undefined;
   /** Live agent presence for this task — mirrors desktop `working` prop. */
   readonly working?: boolean;
+  /**
+   * Display name for the live working row (settings agent contact, else assignee).
+   * Falls back to "Agent" when omitted/blank.
+   */
+  readonly workingActorName?: string | null;
 }) {
   const timeline = useMemo(
     () => buildBacksterosActivityTimeline(props.activities),
@@ -32,6 +37,7 @@ export function BacksterosTaskActivityTimeline(props: {
 
   const visible = timeline.slice(0, VISIBLE_ACTIVITY_LIMIT);
   const hidden = Math.max(0, timeline.length - visible.length);
+  const workingName = props.workingActorName?.trim() || "Agent";
 
   return (
     <div className="bos-task-activity">
@@ -48,14 +54,14 @@ export function BacksterosTaskActivityTimeline(props: {
                     <BacksterosTaskStatusWorkingPulse
                       size={12}
                       compact
-                      aria-label="Agent working"
+                      aria-label={`${workingName} working`}
                     />
                   </span>
                 </span>
               </span>
             </span>
             <div className="bos-task-activity-event__text">
-              <strong>Agent</strong> is working…
+              <strong>{workingName}</strong> is working…
             </div>
           </li>
         ) : null}

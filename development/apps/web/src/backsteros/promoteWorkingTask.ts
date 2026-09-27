@@ -11,6 +11,7 @@ import {
 import { useBacksterosTaskChatStore, type BacksterosTaskChatBinding } from "./taskChatStore";
 import { migrateBacksterosTaskStatus, type BacksterosTaskStatus } from "./taskStatus";
 import { useBacksterosWorkingTaskIds } from "./taskChatWorking";
+import { syncTrackedTimerWithTaskStatus } from "./syncTrackedTimerWithTaskStatus";
 import {
   BACKSTEROS_AGENT_WORKING_LEAVE_GRACE_MS,
   clearBacksterosDisplayedAgentPresence,
@@ -57,6 +58,12 @@ function publishBacksterosTaskStatusChanged(change: BacksterosTaskStatusChange) 
   // promote runs before the subscribe effect rebinds patchLocalTask).
   patchBacksterosProjectTaskStatusLocal(change.taskId, change.status, change.projectId);
   patchBacksterosInboxTaskStatusLocal(change.taskId, change.status);
+  // Mirror core auto time tracking in the local pill (server already wrote
+  // timer_started / timer_stopped — keep this silent).
+  syncTrackedTimerWithTaskStatus({
+    taskId: change.taskId,
+    status: change.status,
+  });
   for (const listener of statusChangedListeners) {
     listener(change);
   }

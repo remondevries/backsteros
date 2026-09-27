@@ -50,7 +50,10 @@ export function mustDualWriteRestAfterCrudFlush(
 ): boolean {
   if (
     table === "projects" &&
-    ("healthCheckMode" in values || "healthCheckDomain" in values)
+    ("healthCheckMode" in values ||
+      "healthCheckDomain" in values ||
+      "hourlyRateCents" in values ||
+      "budgets" in values)
   ) {
     return true;
   }

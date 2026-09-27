@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TaskActivity } from "@backsteros/contracts";
+import {
+  TASK_SYSTEM_ACTIVITY_TYPES,
+  activityTypesQuery,
+} from "@backsteros/contracts";
 import {
   getTaskPriorityLabel,
   getTaskStatusLabel,
@@ -17,6 +22,17 @@ type ActivityRow = {
   created_at: string;
   task_number: number | null;
   task_title: string | null;
+  body?: string | null;
+};
+
+type FeedItem = {
+  id: string;
+  type: string;
+  actorName: string;
+  data: Record<string, unknown>;
+  createdAt: string;
+  taskNumber: number | null;
+  taskTitle: string | null;
 };
 
 /** Matches the portal project page: show 5, then load 5 more, up to 20. */
@@ -25,6 +41,9 @@ const ACTIVITY_MAX_ITEMS = 20;
 const LOAD_MORE_PAUSE_MS = 520;
 const LOAD_MORE_STAGGER_MS = 95;
 
+const SYSTEM_TYPES_QUERY = activityTypesQuery([...TASK_SYSTEM_ACTIVITY_TYPES]);
+
+/** PowerSync fallback — exclude comments (those live on the task detail feed). */
 const PROJECT_ACTIVITY_SQL = `
 SELECT
   a.id,
@@ -38,6 +57,8 @@ FROM task_activities a
 INNER JOIN tasks t ON t.id = a.task_id
 WHERE t.project_id = ?
   AND IFNULL(t.deleted_at, '') = ''
+  AND a.type != 'comment'
+  AND IFNULL(a.deleted_at, '') = ''
 ORDER BY a.created_at DESC
 LIMIT ${ACTIVITY_MAX_ITEMS}
 `;
@@ -151,18 +172,98 @@ function keepElementInView(el: HTMLElement | null) {
   el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
 }
 
+function sqliteRowsToFeed(rows: ActivityRow[]): FeedItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    actorName: row.actor_name?.trim() || "Someone",
+    data: parseData(row.data),
+    createdAt: row.created_at,
+    taskNumber: row.task_number,
+    taskTitle: row.task_title,
+  }));
+}
+
+function apiActivitiesToFeed(activities: TaskActivity[]): FeedItem[] {
+  return activities.map((activity) => ({
+    id: activity.id,
+    type: activity.type,
+    actorName: activity.actorName?.trim() || "Someone",
+    data:
+      activity.data && typeof activity.data === "object"
+        ? activity.data
+        : {},
+    createdAt: activity.createdAt,
+    taskNumber: activity.taskNumber ?? null,
+    taskTitle: activity.taskTitle ?? null,
+  }));
+}
+
 export function CodebaseProjectActivityPanel({
   projectId,
   projectKey,
+  requestJson,
 }: {
   projectId: string;
   projectKey: string;
+  requestJson?: <T>(path: string, init?: RequestInit) => Promise<T>;
 }) {
-  const { data, loading, error } = usePowerSyncQuery<ActivityRow>(
+  const localQuery = usePowerSyncQuery<ActivityRow>(
     PROJECT_ACTIVITY_SQL,
     [projectId],
   );
-  const rows = data ?? [];
+  const [apiRows, setApiRows] = useState<FeedItem[] | null>(null);
+  const [apiLoading, setApiLoading] = useState(Boolean(requestJson));
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!requestJson) {
+      setApiRows(null);
+      setApiLoading(false);
+      setApiError(null);
+      return;
+    }
+    const controller = new AbortController();
+    setApiLoading(true);
+    setApiError(null);
+    const params = new URLSearchParams({
+      projectId,
+      limit: String(ACTIVITY_MAX_ITEMS),
+    });
+    if (SYSTEM_TYPES_QUERY) params.set("types", SYSTEM_TYPES_QUERY);
+    void requestJson<{ activities: TaskActivity[] }>(
+      `/api/v1/activities?${params.toString()}`,
+      { signal: controller.signal },
+    )
+      .then((body) => {
+        if (controller.signal.aborted) return;
+        setApiRows(apiActivitiesToFeed(body.activities ?? []));
+        setApiLoading(false);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setApiRows(null);
+        setApiLoading(false);
+        setApiError(
+          err instanceof Error ? err.message : "Could not load activity.",
+        );
+      });
+    return () => controller.abort();
+  }, [projectId, requestJson]);
+
+  const useApi = Boolean(requestJson);
+  const rows = useMemo(() => {
+    if (useApi && apiRows) return apiRows;
+    return sqliteRowsToFeed(localQuery.data ?? []);
+  }, [apiRows, localQuery.data, useApi]);
+
+  const loading = useApi ? apiLoading && !apiRows : localQuery.loading;
+  const error =
+    useApi && apiError && !apiRows
+      ? apiError
+      : !useApi
+        ? (localQuery.error?.message ?? null)
+        : null;
   const [visibleCount, setVisibleCount] = useState(ACTIVITY_PAGE_SIZE);
   const [loadingMore, setLoadingMore] = useState(false);
   const [revealingIds, setRevealingIds] = useState<Set<string>>(() => new Set());
@@ -217,65 +318,49 @@ export function CodebaseProjectActivityPanel({
     for (let i = 0; i < batchSize; i++) {
       if (generation !== loadMoreGenerationRef.current) return;
       const nextIndex = visibleCount + i;
-      const item = rows[nextIndex];
-      if (!item) break;
-
-      setRevealingIds((prev) => {
-        const next = new Set(prev);
-        next.add(item.id);
-        return next;
-      });
+      const row = rows[nextIndex];
+      if (!row) break;
+      setRevealingIds((prev) => new Set(prev).add(row.id));
       setVisibleCount(nextIndex + 1);
       await waitForPaint();
-      if (generation !== loadMoreGenerationRef.current) return;
       keepTailInView();
-
       if (i < batchSize - 1) {
-        await new Promise((resolve) => setTimeout(resolve, LOAD_MORE_STAGGER_MS));
-        if (generation !== loadMoreGenerationRef.current) return;
+        await new Promise((resolve) =>
+          setTimeout(resolve, LOAD_MORE_STAGGER_MS),
+        );
       }
     }
 
     if (generation !== loadMoreGenerationRef.current) return;
     setLoadingMore(false);
-    await waitForPaint();
-    if (generation !== loadMoreGenerationRef.current) return;
-    keepTailInView();
+    setRevealingIds(new Set());
   }, [keepTailInView, loadingMore, rows, visibleCount]);
 
-  const shown = rows.slice(0, visibleCount);
-  const remaining = Math.max(0, rows.length - visibleCount);
-  const nextBatch = Math.min(ACTIVITY_PAGE_SIZE, remaining);
-  const showLoadMore = nextBatch > 0 || loadingMore;
+  const visible = rows.slice(0, visibleCount);
+  const canLoadMore = visibleCount < rows.length;
 
   return (
-    <section
-      className="task-activity"
-      aria-label="Activity"
-      aria-busy={loadingMore || undefined}
-    >
+    <section className="task-activity" aria-label="Project activity">
       <header className="task-activity__header">
         <h3 className="task-activity__title">Activity</h3>
       </header>
       <div className="task-activity__feed">
         {loading ? <p className="task-activity__empty">Loading activity…</p> : null}
-        {error ? (
+        {!loading && error ? (
           <p className="task-activity__empty" role="alert">
-            Could not load activity.
+            {error}
           </p>
         ) : null}
-        {!loading && !error && rows.length === 0 ? (
+        {!loading && !error && visible.length === 0 ? (
           <p className="task-activity__empty">No activity yet.</p>
         ) : null}
-        {shown.length > 0 ? (
+        {!loading && !error && visible.length > 0 ? (
           <ul ref={listRef} className="task-activity-timeline">
-            {shown.map((row) => {
+            {visible.map((row) => {
               const taskLabel =
-                row.task_number != null
-                  ? `${projectKey}-${row.task_number}`
-                  : (row.task_title?.trim() || "Task");
-              const actor = row.actor_name?.trim() || "Someone";
-              const message = describeActivity(row.type, parseData(row.data));
+                row.taskNumber != null
+                  ? `${projectKey}-${row.taskNumber}`
+                  : row.taskTitle?.trim() || "a task";
               return (
                 <li
                   key={row.id}
@@ -295,36 +380,35 @@ export function CodebaseProjectActivityPanel({
                     </span>
                   </span>
                   <div className="task-activity-event__text">
-                    <strong>{actor}</strong> {message} on{" "}
+                    <strong>{row.actorName}</strong>{" "}
+                    {describeActivity(row.type, row.data)} on{" "}
                     <strong>{taskLabel}</strong>
                   </div>
                   <time
                     className="task-activity-event__time"
-                    dateTime={row.created_at}
+                    dateTime={row.createdAt}
                   >
-                    {formatRelativeTime(row.created_at)}
+                    {formatRelativeTime(row.createdAt)}
                   </time>
                 </li>
               );
             })}
-            {showLoadMore ? (
+            {canLoadMore ? (
               <li
                 ref={moreRowRef}
                 className="task-activity-more"
               >
                 {loadingMore ? (
                   <span className="task-activity-more__status" aria-live="polite">
-                    Loading activities…
+                    Loading…
                   </span>
                 ) : (
                   <button
                     type="button"
                     className="task-activity-more__btn"
-                    onClick={() => {
-                      void onLoadMore();
-                    }}
+                    onClick={() => void onLoadMore()}
                   >
-                    {nextBatch === 1 ? "Load 1 more" : `Load ${nextBatch} more`}
+                    Show more
                   </button>
                 )}
               </li>

@@ -167,6 +167,46 @@ export function formatTimetrackingPeriodLabel(period: TimetrackingPeriod): strin
   return period.monthLabel;
 }
 
+/** Monday `YYYY-MM-DD` for the local week containing `asOf`. */
+export function localWeekKey(asOf = new Date()): string {
+  return startOfWeekYmd(todayYmd(asOf));
+}
+
+/** Shift an ISO week key by whole weeks (keeps Monday). */
+export function shiftWeekKey(weekKey: string, deltaWeeks: number): string {
+  return startOfWeekYmd(addDaysYmd(weekKey, deltaWeeks * 7));
+}
+
+/** Build a week period from a Monday (or any day in the week). */
+export function timetrackingWeekPeriod(
+  weekKeyOrDay: string,
+): Extract<TimetrackingPeriod, { kind: "week" }> {
+  const weekKey = startOfWeekYmd(weekKeyOrDay);
+  return {
+    kind: "week",
+    weekKey,
+    weekNumber: isoWeekNumber(weekKey),
+  };
+}
+
+/** Month key (`YYYY-MM`) that contains the Monday of `weekKey`. */
+export function monthKeyForWeekKey(weekKey: string): string {
+  return weekKey.slice(0, 7);
+}
+
+/**
+ * Prefer the current week when `monthKey` is this month; otherwise the week
+ * containing the 1st of that month.
+ */
+export function weekKeyForMonthKey(
+  monthKey: string,
+  asOf = new Date(),
+): string {
+  const currentMonth = todayYmd(asOf).slice(0, 7);
+  if (monthKey === currentMonth) return localWeekKey(asOf);
+  return startOfWeekYmd(`${monthKey}-01`);
+}
+
 /**
  * Calendar days plotted on the Timetracking hours chart.
  * Day selection expands to the containing ISO week so the line has shape.

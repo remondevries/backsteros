@@ -61,6 +61,8 @@ export const PROJECT_LIST_COLUMNS = [
   "local_working_directory",
   "health_check_mode",
   "health_check_domain",
+  "hourly_rate_cents",
+  "budgets",
   "status",
   "priority",
   "sort_order",

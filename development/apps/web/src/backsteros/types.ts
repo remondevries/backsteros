@@ -185,7 +185,15 @@ export interface BacksterosTaskActivity {
   readonly actorEmail: string | null;
   readonly actorName: string;
   readonly data: Readonly<Record<string, unknown>>;
+  readonly body?: string | null;
+  readonly parentId?: string | null;
+  readonly resolvedAt?: string | null;
   readonly createdAt: string;
+  readonly updatedAt?: string;
+  readonly deletedAt?: string | null;
+  readonly projectId?: string | null;
+  readonly taskNumber?: number | null;
+  readonly taskTitle?: string | null;
 }
 
 export interface BacksterosTaskActivitiesResponse {

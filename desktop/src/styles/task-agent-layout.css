@@ -1104,7 +1104,23 @@
   min-height: 0;
 }
 
-.domain-project-workbench__tasks {
+.domain-project-workbench__main {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.domain-project-workbench__tabs {
+  flex-shrink: 0;
+}
+
+.domain-project-workbench__tasks,
+.domain-project-workbench__timetracking {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1113,6 +1129,7 @@
   height: 100%;
 }
 
+.journal-day-layout__main > .domain-project-workbench__main,
 .journal-day-layout__main > .domain-project-workbench__tasks {
   min-width: 0;
   width: 100%;

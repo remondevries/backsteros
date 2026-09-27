@@ -65,6 +65,8 @@ export type MarkdownDocumentDetailViewProps = {
   readOnly?: boolean;
   /** When false, skip ⌘E / ⌘P (keep-alive pane not visible). */
   shortcutsEnabled?: boolean;
+  /** Optional accessory below the title (e.g. tracked-time pill). */
+  headerAccessory?: ReactNode;
   onSave?: (
     value: string,
   ) =>
@@ -95,6 +97,7 @@ export function MarkdownDocumentDetailView({
   titleEditable = true,
   readOnly = false,
   shortcutsEnabled = true,
+  headerAccessory,
   onSave,
   onSaveTitle,
 }: MarkdownDocumentDetailViewProps) {
@@ -331,22 +334,51 @@ export function MarkdownDocumentDetailView({
 
   // Separate edit/preview title instances — sharing one element remounts on
   // mode switch and drops ⌘R focus into the body editor.
+  const wrapHeader = (header: ReactNode, inlinePadding: boolean) =>
+    headerAccessory ? (
+      <div
+        className={[
+          "markdown-document-detail__title-block",
+          inlinePadding
+            ? "markdown-document-detail__title-block--padded"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {header}
+        <div className="markdown-document-detail__header-accessory">
+          {headerAccessory}
+        </div>
+      </div>
+    ) : (
+      header
+    );
+
   const { editHeader, previewTitleHeader } = icon
-    ? buildContentIconTitleHeaders({
-        icon,
-        editTitle: renderTitleEditor(false),
-        previewTitle: renderTitleEditor(true),
-      })
+    ? (() => {
+        const built = buildContentIconTitleHeaders({
+          icon,
+          editTitle: renderTitleEditor(false),
+          previewTitle: renderTitleEditor(true),
+        });
+        return {
+          editHeader: wrapHeader(built.editHeader, true),
+          previewTitleHeader: wrapHeader(built.previewTitleHeader, false),
+        };
+      })()
     : {
-        editHeader: (
+        editHeader: wrapHeader(
           <ContentDetailTitleHeader>
             {renderTitleEditor(false)}
-          </ContentDetailTitleHeader>
+          </ContentDetailTitleHeader>,
+          true,
         ),
-        previewTitleHeader: (
+        previewTitleHeader: wrapHeader(
           <ContentDetailTitleHeader inlinePadding={false}>
             {renderTitleEditor(true)}
-          </ContentDetailTitleHeader>
+          </ContentDetailTitleHeader>,
+          false,
         ),
       };
 

@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   PROJECT_AREAS,
   PROJECT_AREA_LABELS,
+  projectAreaShowsBilling,
   type ProjectArea,
 } from "../../projects/project-areas.js";
 import {
@@ -70,6 +71,8 @@ import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import { ProjectHealthCheckProperty } from "../codebase/project-health-check-property.js";
+import { ProjectBudgetsEditor } from "./project-budgets-editor.js";
+import { ProjectHourlyRateEditor } from "./project-hourly-rate-editor.js";
 
 export type ProjectDetailViewProject = {
   id: string;
@@ -97,6 +100,13 @@ export type ProjectDetailViewProject = {
   healthCheckMode?: "simple" | "advanced" | null;
   /** Hostname for simple health checks (no scheme), e.g. quarrymill.com. */
   healthCheckDomain?: string | null;
+  /** Billable hourly rate in euro cents. */
+  hourlyRateCents?: number | null;
+  /** Budget rows (monthly / weekly / quarterly). */
+  budgets?: Array<{
+    period: "monthly" | "weekly" | "quarterly";
+    amountCents: number;
+  }>;
   taskProgress?: ProjectTaskProgress;
 };
 
@@ -134,6 +144,13 @@ export type ProjectDetailViewProps = {
     healthCheckMode: "simple" | "advanced";
     healthCheckDomain: string | null;
   }) => void;
+  onHourlyRateChange?: (hourlyRateCents: number | null) => void;
+  onBudgetsChange?: (
+    budgets: Array<{
+      period: "monthly" | "weekly" | "quarterly";
+      amountCents: number;
+    }>,
+  ) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onAreaIdChange?: (areaId: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
@@ -175,6 +192,8 @@ export function ProjectDetailView({
   onProviderChange,
   onCategoryChange,
   onHealthCheckChange,
+  onHourlyRateChange,
+  onBudgetsChange,
   onAreaChange,
   onAreaIdChange,
   onOrganizationChange,
@@ -737,6 +756,22 @@ export function ProjectDetailView({
                   ) : null}
                 </div>
               </div>
+              {projectAreaShowsBilling(project.area) ? (
+                <div className="project-detail__meta-row">
+                  <div className="project-detail__meta-fields">
+                    <ProjectHourlyRateEditor
+                      value={project.hourlyRateCents ?? null}
+                      disabled={!onHourlyRateChange}
+                      onSave={(next) => onHourlyRateChange?.(next)}
+                    />
+                    <ProjectBudgetsEditor
+                      budgets={project.budgets ?? []}
+                      disabled={!onBudgetsChange}
+                      onSave={(next) => onBudgetsChange?.(next)}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
 

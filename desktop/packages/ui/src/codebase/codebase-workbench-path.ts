@@ -19,6 +19,7 @@ export type CodebaseWorkbenchSelection = {
 
 const CODEBASE_TABS: readonly CodebaseGithubListTab[] = [
   "tasks",
+  "timetracking",
   "files",
   "docs",
   "commits",
@@ -46,8 +47,8 @@ function emptySelection(
 
 /**
  * Parse codebase workbench selection from a project pathname.
- * Recognizes `/projects/:slug/{files,documents,commits,pulls,updates}` (and
- * org-scoped equivalents). Overview / Tasks tab is the bare project path.
+ * Recognizes `/projects/:slug/{files,documents,commits,pulls,updates,timetracking}`
+ * (and org-scoped equivalents). Overview / Tasks tab is the bare project path.
  *
  * `/documents` is a workbench Docs tab on codebase projects; section-tab
  * shortcuts still treat it as a standard project section when the workbench
@@ -79,9 +80,13 @@ export function parseCodebaseWorkbenchPath(
   const head = segments[0]!;
 
   // Standard project sections — not workbench tabs (except documents → Docs,
-  // updates → Updates on codebase projects).
+  // updates → Updates, timetracking → Timetracking on codebase projects).
   if (head === "tasks" || head === "letters" || head === "overview") {
     return null;
+  }
+
+  if (head === "timetracking") {
+    return emptySelection("timetracking");
   }
 
   if (head === "updates") {
@@ -181,10 +186,14 @@ export function getCodebaseWorkbenchHref(
     return `${base}/updates`;
   }
 
+  if (tab === "timetracking") {
+    return `${base}/timetracking`;
+  }
+
   return base;
 }
 
-/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls/updates). */
+/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls/updates/timetracking). */
 export function isCodebaseWorkbenchPath(
   pathname: string,
   projectRouteParam: string,

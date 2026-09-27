@@ -576,6 +576,15 @@ export const projects = pgTable(
     healthCheckMode: text("health_check_mode"),
     /** Hostname for simple probes (no scheme), e.g. quarrymill.com. */
     healthCheckDomain: text("health_check_domain"),
+    /** Billable hourly rate in euro cents. */
+    hourlyRateCents: bigint("hourly_rate_cents", { mode: "number" }),
+    /**
+     * Budget rows: `{ period: monthly|weekly|quarterly, amountCents }[]`.
+     */
+    budgets: jsonb("budgets")
+      .$type<{ period: "monthly" | "weekly" | "quarterly"; amountCents: number }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -999,8 +1008,9 @@ export const taskComments = pgTable(
 );
 
 /**
- * System activity on a task (status changes, assignment, creation).
- * Shared across apps via GET /api/v1/tasks/:id/activities.
+ * Unified task activity stream (system events + comments).
+ * Filter via GET /api/v1/activities (?taskId | ?projectId | ?types=…).
+ * Legacy aliases: GET /api/v1/tasks/:id/activities and /comments.
  */
 export const taskActivities = pgTable(
   "task_activities",
@@ -1012,7 +1022,10 @@ export const taskActivities = pgTable(
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
-    /** created | status_changed | assignee_changed */
+    /**
+     * System: created | status_changed | … | timer_* | agent_worked
+     * Discussion: comment
+     */
     type: text("type").notNull(),
     actorUserId: text("actor_user_id").references(() => users.id, {
       onDelete: "set null",
@@ -1027,9 +1040,20 @@ export const taskActivities = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
+    /** Comment body when type = comment; null for system events. */
+    body: text("body"),
+    /** Reply parent when type = comment (root comments are null). */
+    parentId: text("parent_id"),
+    /** Root comment thread resolve timestamp. */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     index("task_activities_task_id_idx").on(table.taskId),
@@ -1037,6 +1061,13 @@ export const taskActivities = pgTable(
     index("task_activities_created_at_idx").on(table.createdAt),
     index("task_activities_type_idx").on(table.type),
     index("task_activities_actor_contact_id_idx").on(table.actorContactId),
+    index("task_activities_parent_id_idx").on(table.parentId),
+    index("task_activities_deleted_at_idx").on(table.deletedAt),
+    index("task_activities_task_type_created_idx").on(
+      table.taskId,
+      table.type,
+      table.createdAt,
+    ),
   ],
 );
 

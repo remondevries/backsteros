@@ -499,6 +499,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   will-change: var(--visible-animation-will-change, auto);
 }
 
+/** Local runtime start/stop busy spinner — always rotates (ignores reduced-motion). */
+@keyframes soft-runtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes live-activity-focus {
   from {
     transform: translateX(0);

@@ -783,6 +783,179 @@ export async function pushProjectSecretsToInfisical(input: {
   return readJson(response);
 }
 
+export type LocalProjectRecord = {
+  readonly projectId: string;
+  readonly key: string | null;
+  readonly name: string;
+  readonly localWorkingDirectory: string | null;
+  readonly accent: string;
+  readonly initial: string;
+  readonly icon: string | null;
+  readonly hasSecretsFolder: boolean;
+  readonly updatedAt: string;
+};
+
+export type LocalProjectsResponse = {
+  readonly ok: boolean;
+  readonly projects?: readonly LocalProjectRecord[];
+  readonly error?: string;
+};
+
+export async function fetchLocalProjects(): Promise<LocalProjectsResponse> {
+  const response = await fetch("/api/hetzner/local-projects");
+  return readJson(response);
+}
+
+export async function syncLocalProjects(
+  projects: readonly {
+    readonly projectId: string;
+    readonly key?: string | null;
+    readonly name?: string;
+    readonly localWorkingDirectory?: string | null;
+    readonly icon?: string | null;
+  }[],
+): Promise<LocalProjectsResponse> {
+  const response = await fetch("/api/hetzner/local-projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projects }),
+  });
+  return readJson(response);
+}
+
+export type RuntimeAttachmentKind = "compose" | "command";
+
+export type RuntimeAttachment = {
+  readonly id: string;
+  readonly kind: RuntimeAttachmentKind;
+  readonly label: string;
+  readonly composeFile: string | null;
+  readonly composeProjectName: string | null;
+  readonly startCommand: string | null;
+  readonly stopCommand: string | null;
+  readonly cwd: string | null;
+};
+
+export type LocalRuntimeContainer = {
+  readonly id: string;
+  readonly name: string;
+  readonly image: string;
+  readonly status: string;
+  readonly state: "running" | "exited" | "created" | "paused" | "restarting" | "other";
+  readonly composeProject: string | null;
+  readonly composeService: string | null;
+  readonly composeWorkingDir: string | null;
+  readonly composeConfigFiles: string | null;
+  readonly ports: string;
+  readonly matchedBy: readonly string[];
+};
+
+export type LocalRuntimeResponse = {
+  readonly ok: boolean;
+  readonly scope?: "project" | "dashboard";
+  readonly projectId?: string;
+  readonly dockerAvailable?: boolean;
+  readonly dockerError?: string | null;
+  readonly dockerEngine?: string | null;
+  readonly localWorkingDirectory?: string | null;
+  readonly attachments?: readonly RuntimeAttachment[];
+  readonly containers?: readonly LocalRuntimeContainer[];
+  readonly unmatchedRunningCount?: number;
+  readonly suggestedComposeFiles?: readonly string[];
+  readonly composeFile?: string | null;
+  readonly composeSource?: "attachment" | "auto" | null;
+  readonly canStart?: boolean;
+  readonly canStop?: boolean;
+  readonly projects?: readonly DashboardRuntimeProject[];
+  readonly unmatchedRunning?: readonly LocalRuntimeContainer[];
+  readonly runningCount?: number;
+  readonly projectCount?: number;
+  readonly activeProjectCount?: number;
+  readonly message?: string;
+  readonly error?: string;
+};
+
+export type DashboardRuntimeProjectRef = {
+  readonly projectId: string;
+  readonly key: string | null;
+  readonly name: string;
+  readonly accent: string;
+  readonly initial: string;
+  readonly icon: string | null;
+};
+
+export type DashboardRuntimeContainer = LocalRuntimeContainer & {
+  readonly projects: readonly DashboardRuntimeProjectRef[];
+};
+
+export type DashboardRuntimeProject = {
+  readonly projectId: string;
+  readonly key: string | null;
+  readonly name: string;
+  readonly accent: string;
+  readonly initial: string;
+  readonly icon: string | null;
+  readonly localWorkingDirectory: string | null;
+  readonly composeFile: string | null;
+  readonly composeSource: "attachment" | "auto" | null;
+  readonly attachments: readonly RuntimeAttachment[];
+  readonly containers: readonly LocalRuntimeContainer[];
+  readonly runningCount: number;
+  readonly stoppedCount: number;
+  readonly canStart: boolean;
+  readonly canStop: boolean;
+};
+
+export type LocalRuntimeDashboardResponse = {
+  readonly ok: boolean;
+  readonly scope?: "dashboard";
+  readonly dockerAvailable?: boolean;
+  readonly dockerError?: string | null;
+  readonly dockerEngine?: string | null;
+  readonly projects?: readonly DashboardRuntimeProject[];
+  readonly unmatchedRunning?: readonly LocalRuntimeContainer[];
+  readonly containers?: readonly DashboardRuntimeContainer[];
+  readonly runningCount?: number;
+  readonly projectCount?: number;
+  readonly activeProjectCount?: number;
+  readonly message?: string;
+  readonly error?: string;
+};
+
+export async function fetchLocalRuntime(projectId: string): Promise<LocalRuntimeResponse> {
+  const params = new URLSearchParams({ projectId });
+  const response = await fetch(`/api/hetzner/local-runtime?${params.toString()}`);
+  return readJson(response);
+}
+
+export async function fetchLocalRuntimeDashboard(): Promise<LocalRuntimeDashboardResponse> {
+  const response = await fetch("/api/hetzner/local-runtime");
+  return readJson(response);
+}
+
+export async function mutateLocalRuntime(body: {
+  readonly projectId?: string;
+  readonly action:
+    | "setAttachments"
+    | "startProject"
+    | "stopProject"
+    | "startContainer"
+    | "stopContainer"
+    | "startAttachment"
+    | "stopAttachment";
+  readonly attachments?: readonly Partial<RuntimeAttachment>[];
+  readonly container?: string;
+  readonly containers?: readonly string[];
+  readonly attachmentId?: string;
+}): Promise<LocalRuntimeResponse & LocalRuntimeDashboardResponse> {
+  const response = await fetch("/api/hetzner/local-runtime", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJson(response);
+}
+
 export type AppNotificationsSettings = {
   readonly serverId: string;
   readonly service: string;

@@ -8,6 +8,7 @@ import {
   sumBreakdownSeconds,
   type TimetrackingBreakdownSlice,
 } from "../../calendar/calendar-timetracking-breakdown.js";
+import { formatTimetrackingDuration } from "../../calendar/calendar-timetracking-entries.js";
 import { FinanceChartTooltip } from "../finance/finance-chart-tooltip.js";
 import { FinanceChartEmpty } from "../finance/finance-chart-status.js";
 
@@ -15,6 +16,18 @@ export type TimetrackingProjectPieChartProps = {
   slices: readonly TimetrackingBreakdownSlice[];
   className?: string;
   emptyMessage?: string;
+  /** Section heading. Defaults to "Projects". */
+  title?: string;
+  /** Accessible name for the section. */
+  "aria-label"?: string;
+  /** When false, hides the section heading. */
+  showTitle?: boolean;
+  /** When false, hides the “Total: …” line under the title. */
+  showTotal?: boolean;
+  /** When false, hides the color legend beside the donut. */
+  showLegend?: boolean;
+  /** When true, shows label:duration lines in the donut hole. */
+  showCenterSummary?: boolean;
 };
 
 const CHART_MOTION = {
@@ -38,6 +51,12 @@ export function TimetrackingProjectPieChart({
   slices,
   className,
   emptyMessage = "No tracked time by project in this period.",
+  title = "Projects",
+  "aria-label": ariaLabel,
+  showTitle = true,
+  showTotal = true,
+  showLegend = true,
+  showCenterSummary = false,
 }: TimetrackingProjectPieChartProps) {
   const totalSeconds = sumBreakdownSeconds(slices);
   const data = useMemo<PieDatum[]>(
@@ -55,17 +74,27 @@ export function TimetrackingProjectPieChart({
 
   const sectionClass = [
     "calendar-timetracking-project-pie",
+    showLegend ? null : "calendar-timetracking-project-pie--no-legend",
+    showCenterSummary
+      ? "calendar-timetracking-project-pie--center-summary"
+      : null,
     className,
   ]
     .filter(Boolean)
     .join(" ");
+  const sectionAria = ariaLabel ?? `Tracked time by ${title.toLowerCase()}`;
+  const showHeader = showTitle || showTotal;
 
   if (data.length === 0 || totalSeconds <= 0) {
     return (
-      <section className={sectionClass} aria-label="Tracked time by project">
-        <header className="calendar-timetracking-breakdown__header">
-          <h2 className="calendar-timetracking-breakdown__title">Projects</h2>
-        </header>
+      <section className={sectionClass} aria-label={sectionAria}>
+        {showHeader ? (
+          <header className="calendar-timetracking-breakdown__header">
+            {showTitle ? (
+              <h2 className="calendar-timetracking-breakdown__title">{title}</h2>
+            ) : null}
+          </header>
+        ) : null}
         <FinanceChartEmpty className="calendar-timetracking-project-pie__empty">
           {emptyMessage}
         </FinanceChartEmpty>
@@ -74,19 +103,25 @@ export function TimetrackingProjectPieChart({
   }
 
   return (
-    <section className={sectionClass} aria-label="Tracked time by project">
-      <header className="calendar-timetracking-breakdown__header">
-        <h2 className="calendar-timetracking-breakdown__title">Projects</h2>
-        <p className="calendar-timetracking-breakdown__total">
-          Total: {formatTimetrackingHumanDuration(totalSeconds)}
-        </p>
-      </header>
+    <section className={sectionClass} aria-label={sectionAria}>
+      {showHeader ? (
+        <header className="calendar-timetracking-breakdown__header">
+          {showTitle ? (
+            <h2 className="calendar-timetracking-breakdown__title">{title}</h2>
+          ) : null}
+          {showTotal ? (
+            <p className="calendar-timetracking-breakdown__total">
+              Total: {formatTimetrackingHumanDuration(totalSeconds)}
+            </p>
+          ) : null}
+        </header>
+      ) : null}
       <div className="calendar-timetracking-project-pie__body">
         <div className="calendar-timetracking-project-pie__plot">
           <ResponsivePie
             data={data}
             margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
-            innerRadius={0.58}
+            innerRadius={showCenterSummary ? 0.68 : 0.58}
             padAngle={1.2}
             cornerRadius={3}
             activeOuterRadiusOffset={4}
@@ -129,29 +164,54 @@ export function TimetrackingProjectPieChart({
               );
             }}
           />
-        </div>
-        <ul className="calendar-timetracking-breakdown__legend" role="list">
-          {data.map((slice) => (
-            <li
-              key={slice.id}
-              className="calendar-timetracking-breakdown__legend-item"
+          {showCenterSummary ? (
+            <div
+              className="calendar-timetracking-project-pie__center"
+              aria-hidden
             >
-              <span
-                className="calendar-timetracking-breakdown__swatch"
-                style={{ background: slice.color }}
-                aria-hidden
-              />
-              <span className="calendar-timetracking-breakdown__legend-copy">
-                <span className="calendar-timetracking-breakdown__legend-label">
-                  {slice.label}
+              {data.map((slice) => (
+                <div
+                  key={slice.id}
+                  className="calendar-timetracking-project-pie__center-row"
+                >
+                  <span className="calendar-timetracking-project-pie__center-label">
+                    {slice.label}
+                  </span>
+                  <span className="calendar-timetracking-project-pie__center-sep">
+                    :
+                  </span>{" "}
+                  <span className="calendar-timetracking-project-pie__center-value">
+                    {formatTimetrackingDuration(slice.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {showLegend ? (
+          <ul className="calendar-timetracking-breakdown__legend" role="list">
+            {data.map((slice) => (
+              <li
+                key={slice.id}
+                className="calendar-timetracking-breakdown__legend-item"
+              >
+                <span
+                  className="calendar-timetracking-breakdown__swatch"
+                  style={{ background: slice.color }}
+                  aria-hidden
+                />
+                <span className="calendar-timetracking-breakdown__legend-copy">
+                  <span className="calendar-timetracking-breakdown__legend-label">
+                    {slice.label}
+                  </span>
+                  <span className="calendar-timetracking-breakdown__legend-value">
+                    {formatTimetrackingHumanDuration(slice.value)}
+                  </span>
                 </span>
-                <span className="calendar-timetracking-breakdown__legend-value">
-                  {formatTimetrackingHumanDuration(slice.value)}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </section>
   );

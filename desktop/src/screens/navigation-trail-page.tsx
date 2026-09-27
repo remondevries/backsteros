@@ -598,6 +598,8 @@ function TrailProjectLeaf({
         dueDate: project.dueDate ?? null,
         healthCheckMode: project.healthCheckMode ?? null,
         healthCheckDomain: project.healthCheckDomain ?? null,
+        hourlyRateCents: project.hourlyRateCents ?? null,
+        budgets: project.budgets ?? [],
         taskProgress: { total, completed },
       }}
       onSaveName={async (name) => {
@@ -689,6 +691,12 @@ function TrailProjectLeaf({
       }}
       onHealthCheckChange={(next) => {
         void workspace.patchProject(project.id, next);
+      }}
+      onHourlyRateChange={(hourlyRateCents) => {
+        void workspace.patchProject(project.id, { hourlyRateCents });
+      }}
+      onBudgetsChange={(budgets) => {
+        void workspace.patchProject(project.id, { budgets });
       }}
       organizationOptions={buildOrganizationDropdownOptions(
         withAvatarSrc(workspace.organizations, organizationAvatarSrc),

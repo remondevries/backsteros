@@ -85,4 +85,20 @@ describe("trackedTimerStore", () => {
     expect(onPersist).toHaveBeenCalledWith(90);
     expect(getTrackedTimerElapsedSeconds("task-1")).toBe(90);
   });
+
+  it("silent start/pause skips session callbacks", () => {
+    const onPersist = vi.fn();
+    const onSessionChange = vi.fn();
+    bindTrackedTimerCallbacks("task-1", { onPersist, onSessionChange });
+
+    startTrackedTimer("task-1", 5, { silent: true });
+    expect(onSessionChange).not.toHaveBeenCalled();
+    expect(isTrackedTimerRunning("task-1")).toBe(true);
+
+    vi.advanceTimersByTime(2_000);
+    pauseTrackedTimer("task-1", { silent: true });
+    expect(onSessionChange).not.toHaveBeenCalled();
+    expect(onPersist).not.toHaveBeenCalled();
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+  });
 });

@@ -3178,6 +3178,30 @@ body.calendar-event-drag-copy
   gap: 2px;
 }
 
+.calendar-timetracking-view__week-total {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  white-space: nowrap;
+}
+
+/* Completed tasks left untimed — still listed, but visually quieter. */
+.calendar-timetracking-view__list .task-item-row-item.is-untracked-timer,
+.calendar-timetracking-view__list .task-item-row.is-untracked-timer {
+  opacity: 0.48;
+}
+
+.calendar-timetracking-view__list .task-item-row-item.is-untracked-timer:hover,
+.calendar-timetracking-view__list
+  .task-item-row-item.is-untracked-timer:focus-within,
+.calendar-timetracking-view__list .task-item-row.is-untracked-timer:hover,
+.calendar-timetracking-view__list .task-item-row.is-untracked-timer:focus-within {
+  opacity: 0.72;
+}
+
 .calendar-timetracking-view__duration {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -3390,16 +3414,69 @@ body.calendar-event-drag-copy
   align-items: center;
 }
 
+.calendar-timetracking-project-pie--no-legend
+  .calendar-timetracking-project-pie__body {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.calendar-timetracking-project-pie--no-legend
+  .calendar-timetracking-project-pie__plot {
+  max-width: 200px;
+}
+
+.calendar-timetracking-project-pie--center-summary
+  .calendar-timetracking-project-pie__plot {
+  max-width: 240px;
+}
+
 .calendar-timetracking-project-pie__plot {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   max-width: 220px;
   min-height: 160px;
 }
 
-.calendar-timetracking-project-pie__plot > div {
+.calendar-timetracking-project-pie__plot > div:not(.calendar-timetracking-project-pie__center) {
   width: 100% !important;
   height: 100% !important;
+}
+
+.calendar-timetracking-project-pie__center {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 22%;
+  pointer-events: none;
+  text-align: center;
+}
+
+.calendar-timetracking-project-pie__center-row {
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+  white-space: nowrap;
+}
+
+.calendar-timetracking-project-pie__center-label {
+  color: var(--foreground);
+  font-weight: 550;
+}
+
+.calendar-timetracking-project-pie__center-sep {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.calendar-timetracking-project-pie__center-value {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--muted) 92%, transparent);
 }
 
 .calendar-timetracking-project-pie__empty {
@@ -3505,8 +3582,14 @@ body.calendar-event-drag-copy
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  border: 1px solid transparent;
   flex: none;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.calendar-timetracking-hours-chart__tooltip-swatch--spacer {
+  visibility: hidden;
 }
 
 .calendar-timetracking-hours-chart .finance-chart-fade-in {

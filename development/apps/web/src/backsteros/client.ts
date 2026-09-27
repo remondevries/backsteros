@@ -323,23 +323,86 @@ export async function fetchBacksterosTask(
   );
 }
 
+const BACKSTEROS_SYSTEM_ACTIVITY_TYPES = [
+  "created",
+  "status_changed",
+  "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
+  "priority_changed",
+  "due_date_changed",
+  "project_changed",
+  "agent_worked",
+  "timer_started",
+  "timer_stopped",
+] as const;
+
+function backsterosActivityToComment(
+  activity: BacksterosTaskActivity,
+): BacksterosTaskComment | null {
+  if (activity.type !== "comment") return null;
+  const body = typeof activity.body === "string" ? activity.body : "";
+  if (!body.trim()) return null;
+  return {
+    id: activity.id,
+    taskId: activity.taskId,
+    parentCommentId: activity.parentId ?? null,
+    authorUserId: activity.actorUserId ?? null,
+    authorContactId: activity.actorContactId ?? null,
+    authorEmail: activity.actorEmail,
+    authorName: activity.actorName,
+    body,
+    resolvedAt: activity.resolvedAt ?? null,
+    createdAt: activity.createdAt,
+    updatedAt: activity.updatedAt ?? activity.createdAt,
+    deletedAt: activity.deletedAt ?? null,
+  };
+}
+
 export async function fetchBacksterosTaskComments(
   taskId: string,
   signal?: AbortSignal,
 ): Promise<readonly BacksterosTaskComment[]> {
-  const payload = await backsterosFetchJson<BacksterosTaskCommentsResponse>(
-    `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
-    optionalSignalInit(signal),
-  );
-  return payload.comments ?? [];
+  const params = new URLSearchParams({
+    taskId,
+    types: "comment",
+    limit: "200",
+  });
+  const payload = await backsterosFetchJson<{
+    activities?: readonly BacksterosTaskActivity[];
+  }>(`/api/v1/activities?${params.toString()}`, optionalSignalInit(signal));
+  return (payload.activities ?? [])
+    .map(backsterosActivityToComment)
+    .filter((row): row is BacksterosTaskComment => row != null);
 }
 
 export async function fetchBacksterosTaskActivities(
   taskId: string,
   signal?: AbortSignal,
 ): Promise<readonly BacksterosTaskActivity[]> {
+  const params = new URLSearchParams({
+    taskId,
+    types: BACKSTEROS_SYSTEM_ACTIVITY_TYPES.join(","),
+    limit: "200",
+  });
   const payload = await backsterosFetchJson<BacksterosTaskActivitiesResponse>(
-    `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
+    `/api/v1/activities?${params.toString()}`,
+    optionalSignalInit(signal),
+  );
+  return payload.activities ?? [];
+}
+
+export async function fetchBacksterosProjectActivities(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<readonly BacksterosTaskActivity[]> {
+  const params = new URLSearchParams({
+    projectId,
+    types: BACKSTEROS_SYSTEM_ACTIVITY_TYPES.join(","),
+    limit: "20",
+  });
+  const payload = await backsterosFetchJson<BacksterosTaskActivitiesResponse>(
+    `/api/v1/activities?${params.toString()}`,
     optionalSignalInit(signal),
   );
   return payload.activities ?? [];

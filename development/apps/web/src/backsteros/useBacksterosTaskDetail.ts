@@ -28,6 +28,7 @@ import {
 import { backsterosTaskDetailRevisionFingerprint } from "./backsterosEntityFingerprint";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
+import { syncTrackedTimerWithTaskStatus } from "./syncTrackedTimerWithTaskStatus";
 import { withClearedDueEndDateWhenDueDateCleared } from "./taskDueDate";
 import { backsterosTaskListRowFromDetail } from "./taskListUpsert";
 import { upsertBacksterosInboxTaskLocal } from "./useBacksterosInboxAttentionTasks";
@@ -145,14 +146,20 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         }
         if (controller.signal.aborted) return;
 
+        const normalized = normalizeTask(task);
         setState({
           status: "ready",
-          task: normalizeTask(task),
+          task: normalized,
           comments: comments.filter((comment) => comment.deletedAt == null),
           activities,
           assignee,
           contacts,
           organizations,
+        });
+        syncTrackedTimerWithTaskStatus({
+          taskId: normalized.id,
+          status: migrateBacksterosTaskStatus(normalized.status),
+          trackedDurationSeconds: normalized.trackedDurationSeconds ?? null,
         });
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
@@ -246,6 +253,9 @@ export function useBacksterosTaskDetail(taskId: string | null): {
           task: { ...current.task, status },
         };
       });
+      // publishBacksterosTaskStatusChanged already syncs the pill; this covers
+      // listeners that only update detail state without going through publish.
+      syncTrackedTimerWithTaskStatus({ taskId, status });
     });
   }, [taskId]);
 

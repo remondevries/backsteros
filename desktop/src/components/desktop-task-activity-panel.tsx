@@ -3,8 +3,9 @@ import type {
   CursorSettings,
   ResearchResponse,
   SpellcheckResponse,
-  TaskComment,
+  TaskActivity,
 } from "@backsteros/contracts";
+import { splitTaskActivityFeed } from "@backsteros/contracts";
 import {
   TaskActivityPanel,
   type TaskActivityCommentMutations,
@@ -147,13 +148,16 @@ export function DesktopTaskActivityPanel({
     const controller = new AbortController();
     void (async () => {
       try {
-        const result = await client.requestJson<{ comments: TaskComment[] }>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+        const result = await client.requestJson<{
+          activities: TaskActivity[];
+        }>(
+          `/api/v1/activities?taskId=${encodeURIComponent(taskId)}&types=comment&limit=200`,
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
         peerHydratedTaskRef.current = taskId;
-        mergePeerTaskComments(taskId, result.comments ?? []);
+        const { comments } = splitTaskActivityFeed(result.activities ?? []);
+        mergePeerTaskComments(taskId, comments);
       } catch {
         // Overlay hydrate is best-effort; PowerSync remains the source of truth.
       }

@@ -40,6 +40,7 @@ import {
   fillMissingHabitIdFromApi,
   dropStaleLocalHabitTasks,
   fillMissingCodebaseFieldsFromApi,
+  fillMissingProjectBillingFields,
   fillMissingLinksFromApi,
   fillMissingLinkedCommitShasFromApi,
   fillMissingLongTextFromApi,
@@ -440,29 +441,35 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localProjects.data?.map((row) => snakeRow(row) as ApiProject) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiProjects);
-    return applyLiveEntityOverlay(
-      fillMissingProjectDatesFromApi(
-        fillMissingLongTextFromApi(
-          // Codebase bindings (repo, cwd, health check) may lag in SQLite when
-          // PowerSync schema/sync trails Postgres — always allow API fill-in.
-          fillMissingCodebaseFieldsFromApi(
-            fillMissingTypeFromApi(
-              // Shell creates still land in apiProjects before the watch mirrors.
-              mergeLocalWithPendingApiCreates(
-                resolveLocalOrApiRows(localMapped, apiProjects),
+    return fillMissingProjectBillingFields(
+      fillMissingProjectBillingFields(
+        applyLiveEntityOverlay(
+          fillMissingProjectDatesFromApi(
+            fillMissingLongTextFromApi(
+              // Codebase bindings (repo, cwd, health check) may lag in SQLite when
+              // PowerSync schema/sync trails Postgres — always allow API fill-in.
+              fillMissingCodebaseFieldsFromApi(
+                fillMissingTypeFromApi(
+                  // Shell creates still land in apiProjects before the watch mirrors.
+                  mergeLocalWithPendingApiCreates(
+                    resolveLocalOrApiRows(localMapped, apiProjects),
+                    apiProjects,
+                  ),
+                  fillFrom,
+                ),
                 apiProjects,
               ),
               fillFrom,
+              ["summary", "description"],
             ),
-            apiProjects,
+            fillFrom,
           ),
-          fillFrom,
-          ["summary", "description"],
+          liveProjectsById,
+          { deletedIds: liveDeletedProjectIds },
         ),
-        fillFrom,
+        liveProjectsById,
       ),
-      liveProjectsById,
-      { deletedIds: liveDeletedProjectIds },
+      apiProjects,
     );
   }, [
     apiProjects,
@@ -1280,6 +1287,12 @@ function useDesktopWorkspaceDataImpl(): {
     },
     [patchViaPowerSyncOrApi],
   );
+  const patchDocument = useCallback(
+    async (id: string, values: Record<string, unknown>) => {
+      await patchViaPowerSyncOrApi("documents", id, values);
+    },
+    [patchViaPowerSyncOrApi],
+  );
   const mergeMeetingLocalFieldsBound = useCallback(
     (id: string, values: Record<string, unknown>) => {
       mergeMeetingLocalFields(id, values);
@@ -1467,6 +1480,7 @@ function useDesktopWorkspaceDataImpl(): {
       patchProject,
       patchLetter,
       patchMeeting,
+      patchDocument,
       mergeMeetingLocalFields: mergeMeetingLocalFieldsBound,
       patchContact,
       patchOrganization,
@@ -1528,6 +1542,7 @@ function useDesktopWorkspaceDataImpl(): {
       mergeMeetingLocalFieldsBound,
       moveDocument,
       patchContact,
+      patchDocument,
       patchLetter,
       patchMeeting,
       patchOrganization,

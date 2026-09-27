@@ -1,4 +1,4 @@
-export type TrackedTimerKind = "task" | "meeting";
+export type TrackedTimerKind = "task" | "meeting" | "document";
 
 export type TrackedTimerSessionMeta = {
   kind: TrackedTimerKind;

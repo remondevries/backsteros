@@ -34,8 +34,9 @@ import {
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 
 export type CalendarTimetrackingSidePanelViewProps = {
-  pageMode: CalendarPageMode;
-  onPageModeChange: (mode: CalendarPageMode) => void;
+  /** Required when not `embedded` (mode footer). */
+  pageMode?: CalendarPageMode;
+  onPageModeChange?: (mode: CalendarPageMode) => void;
   period: TimetrackingPeriod | null;
   onSelectDay: (ymd: string) => void;
   onSelectWeek: (weekKey: string, weekNumber: number) => void;
@@ -203,10 +204,12 @@ export function CalendarTimetrackingSidePanelView({
     <div className="app-content-side-panel calendar-side-panel calendar-timetracking-side-panel">
       <ContentSidePanelHeader title="Timetracking" />
       <div className="app-content-side-panel-main">{mainBody}</div>
-      <CalendarSidePanelModeFooter
-        pageMode={pageMode}
-        onPageModeChange={onPageModeChange}
-      />
+      {pageMode && onPageModeChange ? (
+        <CalendarSidePanelModeFooter
+          pageMode={pageMode}
+          onPageModeChange={onPageModeChange}
+        />
+      ) : null}
     </div>
   );
 }

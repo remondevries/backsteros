@@ -6,9 +6,16 @@ import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { DeploymentsList } from "./DeploymentListRow";
-import { fetchHetznerSites, type DiscoveredDeployment, type DiscoveredSite } from "./hetznerApi";
+import {
+  fetchHetznerSites,
+  type DiscoveredDeployment,
+  type DiscoveredSite,
+  type LocalProjectRecord,
+} from "./hetznerApi";
 import { NewServerDialog } from "./NewServerDialog";
+import { DashboardLocalRuntimeSection } from "./DashboardLocalRuntimeSection";
 import { listStaticServerProfiles, type StaticServerProfile } from "./staticServerProfiles";
+import { useLocalProjects } from "./useLocalProjects";
 
 function SectionCard({ children }: { readonly children: ReactNode }) {
   return (
@@ -144,13 +151,47 @@ function DashboardServerRow({ server }: { readonly server: StaticServerProfile }
   );
 }
 
+function LocalProjectRow({ project }: { readonly project: LocalProjectRecord }) {
+  const title = project.name.trim() || project.key || project.projectId;
+  const meta = [project.key, project.localWorkingDirectory].filter(Boolean).join(" · ");
+  const secretsLabel = project.hasSecretsFolder ? "Secrets ready" : "No secrets yet";
+
+  return (
+    <Link
+      to="/servers/local/$projectId"
+      params={{ projectId: project.projectId }}
+      search={{ section: "overview" }}
+      className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
+    >
+      <SiteGlyph accent={project.accent} initial={project.initial} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">{title}</div>
+        <div className="truncate text-xs text-muted-foreground">{meta || "Local codebase"}</div>
+      </div>
+      <div className="hidden shrink-0 text-xs text-muted-foreground sm:block">{secretsLabel}</div>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground"
+        aria-label={`Actions for ${title}`}
+        disabled
+        onClick={(event) => event.preventDefault()}
+      >
+        <EllipsisIcon className="size-4" />
+      </Button>
+    </Link>
+  );
+}
+
 /**
- * Servers dashboard overview — apps + deploy history.
+ * Servers dashboard overview — apps + local projects + deploy history.
  * Full server list lives under Servers nav (/servers/servers).
  */
 export function ServersDashboardPage() {
   const navigate = useNavigate();
   const servers = listStaticServerProfiles();
+  const { projects: localProjects, loading: localLoading } = useLocalProjects(true);
   const [sites, setSites] = useState<readonly DiscoveredSite[]>([]);
   const [deployments, setDeployments] = useState<readonly DiscoveredDeployment[]>([]);
   const [sitesError, setSitesError] = useState<string | null>(null);
@@ -237,6 +278,18 @@ export function ServersDashboardPage() {
 
   const recentDeployments = useMemo(() => deployments.slice(0, 5), [deployments]);
 
+  const dashboardLocalProjects = useMemo(
+    () =>
+      [...localProjects]
+        .sort((a, b) => {
+          const nameDelta = a.name.localeCompare(b.name);
+          if (nameDelta !== 0) return nameDelta;
+          return a.projectId.localeCompare(b.projectId);
+        })
+        .slice(0, 8),
+    [localProjects],
+  );
+
   function openDeployment(entry: DiscoveredDeployment) {
     const site = resolveSiteForDeployment(entry, sites);
     if (!site) {
@@ -263,7 +316,7 @@ export function ServersDashboardPage() {
             <div className="min-w-0">
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Overview of apps and recent deploy activity.
+                Overview of local runtime, apps, projects, and recent deploy activity.
               </p>
             </div>
             <Button
@@ -303,12 +356,45 @@ export function ServersDashboardPage() {
             </div>
           ) : null}
 
+          <DashboardLocalRuntimeSection />
+
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-muted-foreground">Recent servers</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">Deployments</h3>
             <SectionCard>
-              {servers.map((server) => (
-                <DashboardServerRow key={server.id} server={server} />
-              ))}
+              {loadingSites ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  Loading Kamal deploy history…
+                </div>
+              ) : recentDeployments.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  No Kamal deployments found in audit logs yet.
+                </div>
+              ) : (
+                <DeploymentsList
+                  deployments={recentDeployments}
+                  showSite
+                  onSelect={openDeployment}
+                />
+              )}
+            </SectionCard>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h3 className="text-sm font-medium text-muted-foreground">Local projects</h3>
+            <SectionCard>
+              {localLoading && dashboardLocalProjects.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  Loading local projects…
+                </div>
+              ) : dashboardLocalProjects.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  No local codebase projects yet.
+                </div>
+              ) : (
+                dashboardLocalProjects.map((project) => (
+                  <LocalProjectRow key={project.projectId} project={project} />
+                ))
+              )}
             </SectionCard>
           </section>
 
@@ -332,23 +418,11 @@ export function ServersDashboardPage() {
           </section>
 
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-muted-foreground">Deployments</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">Recent servers</h3>
             <SectionCard>
-              {loadingSites ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">
-                  Loading Kamal deploy history…
-                </div>
-              ) : recentDeployments.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">
-                  No Kamal deployments found in audit logs yet.
-                </div>
-              ) : (
-                <DeploymentsList
-                  deployments={recentDeployments}
-                  showSite
-                  onSelect={openDeployment}
-                />
-              )}
+              {servers.map((server) => (
+                <DashboardServerRow key={server.id} server={server} />
+              ))}
             </SectionCard>
           </section>
         </WorkspacePageContainer>

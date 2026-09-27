@@ -9,6 +9,7 @@ import {
 import { parseOrganizationProjectRoute } from "../projects/project-route-scope.js";
 import {
   getActiveProjectSection,
+  PROJECT_SECTIONS,
   type ProjectSectionId,
 } from "../projects/project-sections.js";
 import type { CommandPaletteFilterMode } from "./command-palette.js";
@@ -47,6 +48,8 @@ export type CommandPaletteSearchContext =
     };
 
 function sectionLabelFromId(sectionId: string): string {
+  const project = PROJECT_SECTIONS.find((entry) => entry.id === sectionId);
+  if (project) return project.label;
   return sectionId === "overview"
     ? "Overview"
     : sectionId.charAt(0).toUpperCase() + sectionId.slice(1);

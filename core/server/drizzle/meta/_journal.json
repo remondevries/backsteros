@@ -904,6 +904,20 @@
       "when": 1795500000000,
       "tag": "0128_document_tracked_duration",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0129_project_hourly_rate_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1795650000000,
+      "tag": "0127_unified_activities",
+      "breakpoints": true
     }
   ]
 }

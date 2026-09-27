@@ -958,6 +958,55 @@
   font-variant-numeric: tabular-nums;
 }
 
+.task-item-row__tracked-stamp-duration-btn {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+  border-radius: 0;
+}
+
+.task-item-row__tracked-stamp.is-editable
+  .task-item-row__tracked-stamp-duration-btn:hover
+  .task-item-row__tracked-stamp-duration,
+.task-item-row__tracked-stamp.is-editable
+  .task-item-row__tracked-stamp-duration-btn:focus-visible
+  .task-item-row__tracked-stamp-duration {
+  /* Same cue as the timer pill — editable text, not a control chrome. */
+  opacity: 0.85;
+}
+
+.task-item-row__tracked-stamp-input {
+  box-sizing: content-box;
+  width: 8ch;
+  min-width: 8ch;
+  max-width: 8ch;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0;
+  line-height: 1;
+  text-align: left;
+  cursor: text;
+}
+
+.task-item-row__tracked-stamp-input:focus {
+  outline: none;
+}
+
 .task-item-row__tracked-stamp.is-live {
   color: color-mix(in srgb, #7ee2a8 82%, transparent);
 }

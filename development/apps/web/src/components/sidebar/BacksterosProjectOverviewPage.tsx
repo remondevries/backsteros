@@ -6,10 +6,7 @@ import { updateBacksterosTask } from "~/backsteros/client";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { orderedBacksterosTaskIds } from "~/backsteros/listTraversal";
 import { useListKeyboardNavStore } from "~/backsteros/listKeyboardNavStore";
-import {
-  usePromoteWorkingBacksterosTasks,
-  subscribeBacksterosTaskStatusChanged,
-} from "~/backsteros/promoteWorkingTask";
+import { subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import type { BacksterosTaskSortPatch } from "~/backsteros/task-reorder";
@@ -201,7 +198,6 @@ export function BacksterosProjectOverviewPage({
     });
   }, [registerListKeyboardNav]);
 
-  usePromoteWorkingBacksterosTasks();
   useEffect(() => {
     return subscribeBacksterosTaskStatusChanged(({ taskId, status }) => {
       patchLocalTask(taskId, { status });
