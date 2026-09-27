@@ -4,7 +4,9 @@
 .env.*
 .migration-reports/
 .turbo/
-**/drizzle/meta/
+# Drizzle Kit writes snapshots under meta/; the migration journal must always be committed.
+**/drizzle/meta/*
+!**/drizzle/meta/_journal.json
 dist/
 node_modules/
 tmp/
