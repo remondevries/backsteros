@@ -968,9 +968,10 @@ export async function updateLetter(
         workspaceId,
         row.id,
         `${row.title.trim() || "Letter"}.pdf`,
+        executor,
       );
     }
-    await relocateLetterPdfAttachments(workspaceId, row);
+    await relocateLetterPdfAttachments(workspaceId, row, executor);
     return (await getLetterById(workspaceId, id, executor)) ?? row;
   }
   return row;
@@ -990,13 +991,14 @@ async function syncPrimaryLetterAttachmentFilename(
   workspaceId: string,
   letterId: string,
   originalFilename: string,
+  executor: DbExecutor = db,
 ) {
-  const attachments = await listLetterAttachments(workspaceId, letterId);
+  const attachments = await listLetterAttachments(workspaceId, letterId, executor);
   const primary = attachments?.[0];
   if (!primary) return;
   const filename = originalFilename.trim();
   if (!filename || primary.originalFilename === filename) return;
-  await db
+  await executor
     .update(letterAttachments)
     .set({ originalFilename: filename, updatedAt: new Date() })
     .where(
@@ -1012,6 +1014,7 @@ async function moveLetterAttachmentToKey(
   workspaceId: string,
   attachment: typeof letterAttachments.$inferSelect,
   nextKey: string,
+  executor: DbExecutor = db,
 ): Promise<typeof letterAttachments.$inferSelect | null> {
   if (nextKey === attachment.storageKey) return attachment;
   try {
@@ -1034,7 +1037,7 @@ async function moveLetterAttachmentToKey(
     }
     throw error;
   }
-  const [updated] = await db
+  const [updated] = await executor
     .update(letterAttachments)
     .set({ storageKey: nextKey, updatedAt: new Date() })
     .where(
@@ -1052,8 +1055,9 @@ async function moveLetterAttachmentToKey(
 async function relocateLetterPdfAttachments(
   workspaceId: string,
   letter: typeof letters.$inferSelect,
+  executor: DbExecutor = db,
 ) {
-  const attachments = await listLetterAttachments(workspaceId, letter.id);
+  const attachments = await listLetterAttachments(workspaceId, letter.id, executor);
   if (!attachments?.length) return;
 
   let movedPrimary: typeof letterAttachments.$inferSelect | null = null;
@@ -1068,15 +1072,17 @@ async function relocateLetterPdfAttachments(
       workspaceId,
       attachment,
       nextKey,
+      executor,
     );
     if (updated && !movedPrimary) movedPrimary = updated;
   }
 
-  const refreshed = await listLetterAttachments(workspaceId, letter.id);
+  const refreshed = await listLetterAttachments(workspaceId, letter.id, executor);
   await syncLetterPrimaryAttachment(
     workspaceId,
     letter.id,
     refreshed?.[0] ?? movedPrimary,
+    executor,
   );
 }
 
@@ -1110,10 +1116,14 @@ export async function deleteLetter(
   return row ?? null;
 }
 
-export async function listLetterAttachments(workspaceId: string, letterId: string) {
-  const letter = await getLetterById(workspaceId, letterId);
+export async function listLetterAttachments(
+  workspaceId: string,
+  letterId: string,
+  executor: DbExecutor = db,
+) {
+  const letter = await getLetterById(workspaceId, letterId, executor);
   if (!letter) return null;
-  return db
+  return executor
     .select()
     .from(letterAttachments)
     .where(
@@ -1130,8 +1140,9 @@ async function syncLetterPrimaryAttachment(
   workspaceId: string,
   letterId: string,
   attachment: typeof letterAttachments.$inferSelect | null,
+  executor: DbExecutor = db,
 ) {
-  await db
+  await executor
     .update(letters)
     .set({
       storageKey: attachment?.storageKey ?? "",
