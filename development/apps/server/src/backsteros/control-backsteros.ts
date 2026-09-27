@@ -4,6 +4,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  backsterosStatusForControlSession,
+  canAutoPromoteBacksterosTaskStatus,
+} from "@t3tools/shared/backsterosTaskAutoPromote";
+
+export { backsterosStatusForControlSession, canAutoPromoteBacksterosTaskStatus };
 
 const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
 const DISPLAY_ID_RE = /^([A-Za-z0-9]{2,3})-(\d+)$/;
@@ -199,11 +205,11 @@ export async function resolveBacksterosControlTask(taskRefOrId: string): Promise
   };
 }
 
-type ControlSessionStatusLike = "idle" | "working" | "blocked" | "done";
-
 /**
  * Best-effort BacksterOS status write for control-API sessions. Failures are
  * swallowed — the web lifecycle hook is still the primary path when the UI is open.
+ *
+ * Re-reads the task first so completed/canceled/duplicated stay closed.
  */
 export async function patchBacksterosControlTaskStatus(
   taskId: string,
@@ -213,6 +219,12 @@ export async function patchBacksterosControlTaskStatus(
   const apiKey = resolveBacksterosControlApiKey();
   if (!apiKey) return false;
   try {
+    const current = await backsterosFetchJson<{ status: string }>(
+      `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+    );
+    if (!canAutoPromoteBacksterosTaskStatus(current.status)) {
+      return false;
+    }
     const response = await fetch(`${origin}/api/v1/tasks/${encodeURIComponent(taskId)}`, {
       method: "PATCH",
       headers: {
@@ -227,21 +239,6 @@ export async function patchBacksterosControlTaskStatus(
   } catch {
     return false;
   }
-}
-
-/** Map control session status → BacksterOS task status when a write is needed. */
-export function backsterosStatusForControlSession(
-  sessionStatus: ControlSessionStatusLike,
-): "in_progress" | "in_review" | null {
-  if (sessionStatus === "working" || sessionStatus === "blocked") {
-    return "in_progress";
-  }
-  // `done` = turn settled after work. Do not treat bare `idle` (never started /
-  // unbound shell) as In Review — that would yank backlog tasks on status polls.
-  if (sessionStatus === "done") {
-    return "in_review";
-  }
-  return null;
 }
 
 export function buildControlKickoffPrompt(input: {

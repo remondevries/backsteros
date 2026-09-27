@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { canAutoPromoteBacksterosTaskStatus } from "@t3tools/shared/backsterosTaskAutoPromote";
 
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
@@ -18,6 +19,8 @@ import {
 } from "./useBacksterosAgentPresence";
 import { patchBacksterosInboxTaskStatusLocal } from "./useBacksterosInboxAttentionTasks";
 import { patchBacksterosProjectTaskStatusLocal } from "./useBacksterosProjectTasks";
+
+export { canAutoPromoteBacksterosTaskStatus };
 
 const promoteInFlight = new Set<string>();
 const reviewInFlight = new Set<string>();
@@ -112,12 +115,17 @@ export async function markBacksterosTaskInProgressForAgent(taskId: string): Prom
  * Move a task to `in_review` when agent work finishes — mirrors desktop
  * `reviewTaskForAgent` (status only; no assistant comment body yet).
  *
- * Skips a preliminary GET so a fast finish cannot race an in-flight
- * in_progress write and refuse the review transition.
+ * Re-reads status first (same closed-status rule as the control API) so a
+ * completed/canceled/duplicated task is never yanked back to In Review.
  *
  * @returns true when the status write was attempted successfully.
  */
 export async function markBacksterosTaskInReviewForAgent(taskId: string): Promise<boolean> {
+  const task = await fetchBacksterosTask(taskId);
+  const status = migrateBacksterosTaskStatus(task.status);
+  if (!canAutoPromoteBacksterosTaskStatus(status)) {
+    return false;
+  }
   await updateBacksterosTask(taskId, {
     status: "in_review",
     activityActor: "agent",
@@ -224,14 +232,21 @@ export function usePromoteWorkingBacksterosTasks() {
           const projectId = byTaskIdRef.current[taskId]?.backsterosProjectId ?? null;
           promoteHandledWhileWorking.delete(taskId);
           reviewInFlight.add(taskId);
-          // Stop the pulse and move the group; persist in the background.
+          // Stop the pulse; only move to In Review after a status re-read
+          // confirms the task is still open (matches control API done-only).
           clearBacksterosDisplayedAgentPresence(taskId);
-          publishBacksterosTaskStatusChanged({
-            taskId,
-            status: "in_review",
-            projectId,
-          });
           void markBacksterosTaskInReviewForAgent(taskId)
+            .then((promoted) => {
+              if (!promoted) {
+                void restoreBacksterosTaskStatusFromServer(taskId);
+                return;
+              }
+              publishBacksterosTaskStatusChanged({
+                taskId,
+                status: "in_review",
+                projectId,
+              });
+            })
             .catch(() => {
               void restoreBacksterosTaskStatusFromServer(taskId);
             })

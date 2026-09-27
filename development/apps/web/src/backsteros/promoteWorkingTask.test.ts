@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  canAutoPromoteBacksterosTaskStatus,
   markBacksterosTaskInProgressForAgent,
   markBacksterosTaskInReviewForAgent,
   shouldMarkBacksterosTaskInReviewAfterWorking,
@@ -37,18 +38,53 @@ describe("markBacksterosTaskInProgressForAgent", () => {
 });
 
 describe("markBacksterosTaskInReviewForAgent", () => {
-  it("patches tasks to in_review without a preliminary GET", async () => {
+  it("does not promote a completed task when the bound thread is idle", async () => {
+    fetchMock.mockResolvedValue({
+      id: "task-1",
+      status: "completed",
+    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+
+    await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith("task-1");
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("promotes an in_progress task to in_review when work is done", async () => {
+    fetchMock.mockResolvedValue({
+      id: "task-1",
+      status: "in_progress",
+    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_review",
     } as Awaited<ReturnType<typeof updateBacksterosTask>>);
 
     await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith("task-1");
     expect(updateMock).toHaveBeenCalledWith("task-1", {
       status: "in_review",
       activityActor: "agent",
     });
+  });
+
+  it("skips canceled and duplicated tasks", async () => {
+    for (const status of ["canceled", "duplicated"] as const) {
+      fetchMock.mockResolvedValue({
+        id: "task-1",
+        status,
+      } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+
+      await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
+      expect(updateMock).not.toHaveBeenCalled();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("canAutoPromoteBacksterosTaskStatus", () => {
+  it("matches the control API closed-status rule", () => {
+    expect(canAutoPromoteBacksterosTaskStatus("completed")).toBe(false);
+    expect(canAutoPromoteBacksterosTaskStatus("in_progress")).toBe(true);
   });
 });
 

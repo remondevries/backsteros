@@ -278,6 +278,10 @@
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
+    },
+    "./backsterosTaskAutoPromote": {
+      "types": "./src/backsterosTaskAutoPromote.ts",
+      "import": "./src/backsterosTaskAutoPromote.ts"
     }
   },
   "scripts": {
