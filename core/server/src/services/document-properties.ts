@@ -3,7 +3,13 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Document } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { contacts, documents, entityCounters, projects, tasks } from "../db/schema.js";
+import {
+  contacts,
+  documents,
+  entityCounters,
+  projects,
+  tasks,
+} from "../db/schema.js";
 import type { DbDocument } from "../db/schema.js";
 import {
   DOCUMENT_AUDIENCE_OPTIONS,
@@ -12,15 +18,30 @@ import {
   DOCUMENT_STATUS_OPTIONS,
   applyMirrorFrontMatter,
   buildPropertiesIndex,
+  coerceDocumentPropertyEnum,
+  formatDocKey,
+  parseDocKeyNumber,
+  shouldAllocateDocKeyLocally,
   type DocumentPropertiesIndex,
 } from "../lib/document-core-property-schema.js";
+
+export { shouldAllocateDocKeyLocally };
 import {
   bodyForSnippet,
   composeDocumentMarkdown,
   mergeFrontMatter,
   splitDocumentMarkdown,
 } from "../lib/document-frontmatter.js";
-import { checksumForContent, putObject, snippetForContent } from "../lib/storage.js";
+import {
+  checksumForContent,
+  getObject,
+  putObject,
+  snippetForContent,
+} from "../lib/storage.js";
+import { compareAndSwapDocumentContent } from "./document-content-cas-write.js";
+import { withDocumentContentRowLock } from "./document-content-row-lock.js";
+import { awaitDocumentContentSaveTestGate } from "./document-content-save-test-gate.js";
+import { recordDocumentContentSyncEvent } from "./sync.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -29,6 +50,8 @@ const AUDIENCE_TO_PUBLISH: Record<string, Document["audience"]> = {
   remon: "individual",
   client: "group",
   public: "group",
+  group: "group",
+  individual: "individual",
 };
 
 export class DocumentPropertyError extends Error {
@@ -39,22 +62,15 @@ export class DocumentPropertyError extends Error {
       | "INVALID_PROPERTY"
       | "CONTENT_VERSION_CONFLICT"
       | "DOCUMENT_NOT_FOUND"
-      | "REFERENCE_NOT_FOUND",
+      | "REFERENCE_NOT_FOUND"
+      | "STORAGE_NOT_FOUND",
   ) {
     super(message);
     this.name = "DocumentPropertyError";
   }
 }
 
-function parseDocKeyNumber(docKey: string): number | null {
-  const match = docKey.trim().match(/^DOC-(\d+)$/i);
-  if (!match) return null;
-  return Number(match[1]);
-}
-
-export function formatDocKey(number: number): string {
-  return `DOC-${number}`;
-}
+export { formatDocKey, parseDocKeyNumber };
 
 async function nextDocKeyNumber(
   workspaceId: string,
@@ -106,6 +122,9 @@ export async function ensureDocumentDocKey(
 ): Promise<string | null> {
   if (row.kind !== "document") return row.docKey;
   if (row.docKey) return row.docKey;
+  if (!shouldAllocateDocKeyLocally()) {
+    return null;
+  }
   const number = await nextDocKeyNumber(workspaceId, executor);
   const docKey = formatDocKey(number);
   await executor
@@ -130,20 +149,25 @@ function normalizeScalar(value: unknown): unknown {
   return value;
 }
 
-function assertEnum(
+function coerceEnum(
   key: string,
   value: unknown,
   allowed: readonly string[],
+  strict: boolean,
 ): string | null {
-  const normalized = normalizeScalar(value);
-  if (normalized == null) return null;
-  if (typeof normalized !== "string" || !allowed.includes(normalized)) {
+  try {
+    return coerceDocumentPropertyEnum(
+      key,
+      normalizeScalar(value),
+      allowed,
+      strict,
+    );
+  } catch {
     throw new DocumentPropertyError(
       `Invalid value for ${key}`,
       "INVALID_PROPERTY",
     );
   }
-  return normalized;
 }
 
 async function resolveProjectKey(
@@ -170,6 +194,7 @@ async function resolveProjectIdByKey(
   workspaceId: string,
   key: string | null,
   executor: DbExecutor,
+  strict: boolean,
 ): Promise<string | null> {
   if (!key?.trim()) return null;
   const [row] = await executor
@@ -184,6 +209,7 @@ async function resolveProjectIdByKey(
     )
     .limit(1);
   if (!row) {
+    if (!strict) return null;
     throw new DocumentPropertyError(
       `Unknown project key ${key}`,
       "REFERENCE_NOT_FOUND",
@@ -196,6 +222,7 @@ async function resolveDocIdByKey(
   workspaceId: string,
   docKey: string | null,
   executor: DbExecutor,
+  strict: boolean,
 ): Promise<string | null> {
   if (!docKey?.trim()) return null;
   const [row] = await executor
@@ -210,6 +237,7 @@ async function resolveDocIdByKey(
     )
     .limit(1);
   if (!row) {
+    if (!strict) return null;
     throw new DocumentPropertyError(
       `Unknown document key ${docKey}`,
       "REFERENCE_NOT_FOUND",
@@ -222,6 +250,7 @@ async function resolveContactId(
   workspaceId: string,
   contactRef: string | null,
   executor: DbExecutor,
+  strict: boolean,
 ): Promise<string | null> {
   if (!contactRef?.trim()) return null;
   const [row] = await executor
@@ -236,6 +265,7 @@ async function resolveContactId(
     )
     .limit(1);
   if (!row) {
+    if (!strict) return null;
     throw new DocumentPropertyError(
       `Unknown contact ${contactRef}`,
       "REFERENCE_NOT_FOUND",
@@ -248,6 +278,7 @@ async function resolveTaskIdsFromKeys(
   workspaceId: string,
   keys: unknown,
   executor: DbExecutor,
+  strict: boolean,
 ): Promise<string[]> {
   const list = normalizeScalar(keys);
   if (!Array.isArray(list) || list.length === 0) return [];
@@ -256,6 +287,7 @@ async function resolveTaskIdsFromKeys(
     if (typeof entry !== "string") continue;
     const match = entry.trim().match(/^([A-Za-z0-9_-]+)-(\d+)$/);
     if (!match) {
+      if (!strict) continue;
       throw new DocumentPropertyError(
         `Invalid task key ${entry}`,
         "INVALID_PROPERTY",
@@ -275,6 +307,7 @@ async function resolveTaskIdsFromKeys(
       )
       .limit(1);
     if (!project) {
+      if (!strict) continue;
       throw new DocumentPropertyError(
         `Unknown task key ${entry}`,
         "REFERENCE_NOT_FOUND",
@@ -293,6 +326,7 @@ async function resolveTaskIdsFromKeys(
       )
       .limit(1);
     if (!task) {
+      if (!strict) continue;
       throw new DocumentPropertyError(
         `Unknown task key ${entry}`,
         "REFERENCE_NOT_FOUND",
@@ -309,25 +343,39 @@ export async function validateAndNormalizeProperties(input: {
   frontMatter: Record<string, unknown>;
   projectKey: string | null;
   executor?: DbExecutor;
+  /**
+   * Keys that must match core enums / resolve references.
+   * Empty = preserve legacy (content index path).
+   */
+  strictKeys?: ReadonlySet<string>;
 }): Promise<{ frontMatter: Record<string, unknown>; index: DocumentPropertiesIndex }> {
   const executor = input.executor ?? db;
   const fm = { ...input.frontMatter };
+  const strictKeys = input.strictKeys ?? new Set<string>();
+  const strict = (key: string) => strictKeys.has(key);
 
-  const semanticType = assertEnum(
+  const semanticType = coerceEnum(
     "type",
     fm.type,
     DOCUMENT_SEMANTIC_TYPE_OPTIONS,
+    strict("type"),
   );
   if (semanticType != null) fm.type = semanticType;
 
-  const audience = assertEnum(
+  const audience = coerceEnum(
     "audience",
     fm.audience,
     DOCUMENT_AUDIENCE_OPTIONS,
+    strict("audience"),
   );
   if (audience != null) fm.audience = audience;
 
-  const status = assertEnum("status", fm.status, DOCUMENT_STATUS_OPTIONS);
+  const status = coerceEnum(
+    "status",
+    fm.status,
+    DOCUMENT_STATUS_OPTIONS,
+    strict("status"),
+  );
   if (status != null) fm.status = status;
 
   if (fm.project != null) {
@@ -335,6 +383,7 @@ export async function validateAndNormalizeProperties(input: {
       input.workspaceId,
       String(fm.project),
       executor,
+      strict("project"),
     );
   }
 
@@ -343,10 +392,11 @@ export async function validateAndNormalizeProperties(input: {
       input.workspaceId,
       String(fm.supersededBy),
       executor,
+      strict("supersededBy"),
     );
   }
 
-  if (status === "superseded" && !fm.supersededBy) {
+  if (status === "superseded" && !fm.supersededBy && strict("status")) {
     throw new DocumentPropertyError(
       "supersededBy is required when status is superseded",
       "INVALID_PROPERTY",
@@ -354,27 +404,44 @@ export async function validateAndNormalizeProperties(input: {
   }
 
   if (fm.owner != null) {
-    await resolveContactId(input.workspaceId, String(fm.owner), executor);
+    await resolveContactId(
+      input.workspaceId,
+      String(fm.owner),
+      executor,
+      strict("owner"),
+    );
   }
 
   if (fm.linkedContacts != null) {
     const list = normalizeScalar(fm.linkedContacts);
     if (Array.isArray(list)) {
       for (const entry of list) {
-        await resolveContactId(input.workspaceId, String(entry), executor);
+        await resolveContactId(
+          input.workspaceId,
+          String(entry),
+          executor,
+          strict("linkedContacts"),
+        );
       }
     }
   }
 
   if (fm.linkedTasks != null) {
-    await resolveTaskIdsFromKeys(input.workspaceId, fm.linkedTasks, executor);
+    await resolveTaskIdsFromKeys(
+      input.workspaceId,
+      fm.linkedTasks,
+      executor,
+      strict("linkedTasks"),
+    );
   }
 
   if (fm.reviewDate != null && typeof fm.reviewDate !== "string") {
-    throw new DocumentPropertyError(
-      "reviewDate must be an ISO date string",
-      "INVALID_PROPERTY",
-    );
+    if (strict("reviewDate")) {
+      throw new DocumentPropertyError(
+        "reviewDate must be an ISO date string",
+        "INVALID_PROPERTY",
+      );
+    }
   }
 
   const withMirrors = applyMirrorFrontMatter(
@@ -422,12 +489,14 @@ export async function syncDocumentContentProperties(input: {
     executor,
   );
 
+  // Preserve legacy Spaces status/audience (and other unknown keys) on index.
   const { frontMatter, index } = await validateAndNormalizeProperties({
     workspaceId: input.workspaceId,
     row: input.row,
     frontMatter: parsed.frontMatter,
     projectKey,
     executor,
+    strictKeys: new Set(),
   });
 
   if (docKey) {
@@ -483,12 +552,25 @@ export type PutDocumentPropertiesInput = {
   ifMatchVersion?: number;
 };
 
-export async function putDocumentProperties(
+export type PlanDocumentPropertiesResult = {
+  row: DbDocument;
+  content: string;
+  nextProjectId: string | null;
+  nextAudience: string;
+  properties: DocumentPropertiesIndex;
+  docKey: string | null;
+};
+
+/**
+ * Read + validate a properties PUT without writing. Throws when the vault
+ * object cannot be read (never invents an empty body over a missing file).
+ */
+export async function planDocumentPropertiesPut(
   workspaceId: string,
   id: string,
   input: PutDocumentPropertiesInput,
   executor: DbExecutor = db,
-) {
+): Promise<PlanDocumentPropertiesResult | null> {
   const [row] = await executor
     .select()
     .from(documents)
@@ -516,13 +598,21 @@ export async function putDocumentProperties(
     throw new DocumentPropertyError("Invalid YAML front matter", "INVALID_YAML");
   }
 
-  const { getObject } = await import("../lib/storage.js");
-  let content = "";
+  let content: string;
   try {
     const object = await getObject(row.storageKey);
     content = object.body;
-  } catch {
-    content = "";
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "STORAGE_OBJECT_NOT_FOUND"
+    ) {
+      throw new DocumentPropertyError(
+        "Document content not found in storage",
+        "STORAGE_NOT_FOUND",
+      );
+    }
+    throw error;
   }
 
   const parsed = splitDocumentMarkdown(content);
@@ -530,47 +620,75 @@ export async function putDocumentProperties(
     throw new DocumentPropertyError("Invalid YAML front matter", "INVALID_YAML");
   }
 
-  const merged = mergeFrontMatter(parsed.frontMatter, input.properties);
-  const projectKey = await resolveProjectKey(
-    workspaceId,
-    row.projectId,
-    executor,
-  );
-
-  const { frontMatter, index } = await validateAndNormalizeProperties({
-    workspaceId,
-    row,
-    frontMatter: merged,
-    projectKey,
-    executor,
-  });
-
   let nextProjectId = row.projectId;
   if (input.properties.project !== undefined) {
     nextProjectId = await resolveProjectIdByKey(
       workspaceId,
-      input.properties.project == null ? null : String(input.properties.project),
+      input.properties.project == null
+        ? null
+        : String(input.properties.project),
       executor,
+      true,
     );
   }
 
   let nextAudience = row.audience;
   if (input.properties.audience !== undefined) {
-    const audience = assertEnum(
+    const audience = coerceEnum(
       "audience",
       input.properties.audience,
       DOCUMENT_AUDIENCE_OPTIONS,
+      true,
     );
     if (audience) {
       nextAudience = AUDIENCE_TO_PUBLISH[audience] ?? row.audience;
     }
   }
 
-  const docKey =
-    row.docKey ??
-    (row.kind === "document"
-      ? await ensureDocumentDocKey(workspaceId, row, executor)
-      : null);
+  const nextProjectKey = await resolveProjectKey(
+    workspaceId,
+    nextProjectId,
+    executor,
+  );
+
+  const merged = mergeFrontMatter(parsed.frontMatter, input.properties);
+  const mirrorRow = {
+    ...row,
+    projectId: nextProjectId,
+    audience: nextAudience,
+  };
+
+  const strictKeys = new Set(
+    Object.keys(input.properties).filter((key) =>
+      (
+        [
+          "type",
+          "audience",
+          "status",
+          "project",
+          "supersededBy",
+          "owner",
+          "linkedTasks",
+          "linkedContacts",
+          "reviewDate",
+        ] as const
+      ).includes(key as never),
+    ),
+  );
+
+  const { frontMatter, index } = await validateAndNormalizeProperties({
+    workspaceId,
+    row: mirrorRow,
+    frontMatter: merged,
+    projectKey: nextProjectKey,
+    executor,
+    strictKeys,
+  });
+
+  let docKey = row.docKey;
+  if (!docKey && row.kind === "document") {
+    docKey = await ensureDocumentDocKey(workspaceId, row, executor);
+  }
   if (docKey) {
     frontMatter.docKey = docKey;
     index.docKey = docKey;
@@ -581,47 +699,173 @@ export async function putDocumentProperties(
     body: parsed.body,
   });
 
-  const stored = await putObject(row.storageKey, nextContent);
-  const snippet = snippetForContent(bodyForSnippet(nextContent));
-  const checksum = checksumForContent(nextContent);
-  const nextVersion = row.contentVersion + 1;
+  return {
+    row,
+    content: nextContent,
+    nextProjectId,
+    nextAudience,
+    properties: index,
+    docKey,
+  };
+}
 
-  const [updated] = await executor
-    .update(documents)
-    .set({
-      projectId: nextProjectId,
-      audience: nextAudience,
-      docKey,
-      properties: index,
-      frontMatterValid: true,
-      byteSize: stored.byteSize,
-      checksum,
-      snippet,
-      contentVersion: nextVersion,
-      contentEtag: stored.etag,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(documents.workspaceId, workspaceId),
-        eq(documents.id, id),
-        eq(documents.contentVersion, row.contentVersion),
-      ),
-    )
-    .returning();
+/**
+ * Properties PUT under the same row lock + CAS as updateDocumentContent.
+ * Rebuilds front matter / index from the post-update project + audience row.
+ */
+export async function putDocumentProperties(
+  workspaceId: string,
+  id: string,
+  input: PutDocumentPropertiesInput,
+  options?: { mutationId?: string; deviceId?: string },
+) {
+  const initial = await planDocumentPropertiesPut(workspaceId, id, input);
+  if (!initial) return null;
 
-  if (!updated) {
-    throw new DocumentPropertyError(
-      "Document content version conflict",
-      "CONTENT_VERSION_CONFLICT",
+  let contentForWrite = initial.content;
+  let metaPatch = {
+    projectId: initial.nextProjectId,
+    audience: initial.nextAudience,
+    docKey: initial.docKey,
+    properties: initial.properties,
+    checksum: checksumForContent(initial.content),
+    snippet: snippetForContent(bodyForSnippet(initial.content)),
+  };
+
+  try {
+    const cas = await compareAndSwapDocumentContent(
+      {
+        get content() {
+          return contentForWrite;
+        },
+        ifMatchVersion: input.ifMatchVersion ?? initial.row.contentVersion,
+      },
+      {
+        putObject,
+        checksumForContent,
+        snippetForContent,
+        beforePutObject: awaitDocumentContentSaveTestGate,
+        withLockedRow: async (fn) =>
+          withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
+            const observedVersion = locked.contentVersion;
+            const lockedPlan = await planDocumentPropertiesPut(
+              workspaceId,
+              id,
+              {
+                properties: input.properties,
+                ifMatchVersion: observedVersion,
+              },
+              tx,
+            );
+            if (!lockedPlan) return null;
+            contentForWrite = lockedPlan.content;
+            metaPatch = {
+              projectId: lockedPlan.nextProjectId,
+              audience: lockedPlan.nextAudience,
+              docKey: lockedPlan.docKey,
+              properties: lockedPlan.properties,
+              checksum: checksumForContent(lockedPlan.content),
+              snippet: snippetForContent(bodyForSnippet(lockedPlan.content)),
+            };
+            return fn({
+              existing: {
+                contentVersion: observedVersion,
+                storageKey: locked.storageKey,
+                byteSize: locked.byteSize,
+              },
+              writeMeta: async (meta) => {
+                const [updated] = await tx
+                  .update(documents)
+                  .set({
+                    projectId: metaPatch.projectId,
+                    audience: metaPatch.audience,
+                    docKey: metaPatch.docKey,
+                    properties: metaPatch.properties,
+                    frontMatterValid: true,
+                    byteSize: meta.byteSize,
+                    checksum: metaPatch.checksum,
+                    snippet: metaPatch.snippet,
+                    contentVersion: observedVersion + 1,
+                    contentEtag: meta.contentEtag,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(documents.workspaceId, workspaceId),
+                      eq(documents.id, id),
+                      eq(documents.contentVersion, observedVersion),
+                    ),
+                  )
+                  .returning();
+                if (!updated) return null;
+                return {
+                  contentVersion: updated.contentVersion,
+                  byteSize: updated.byteSize,
+                  checksum: updated.checksum ?? metaPatch.checksum,
+                  snippet: updated.snippet ?? metaPatch.snippet,
+                  contentEtag: updated.contentEtag,
+                };
+              },
+            });
+          }),
+      },
     );
+
+    if (!cas) {
+      throw new DocumentPropertyError(
+        "Document content version conflict",
+        "CONTENT_VERSION_CONFLICT",
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "CONTENT_VERSION_CONFLICT") {
+      throw new DocumentPropertyError(
+        "Document content version conflict",
+        "CONTENT_VERSION_CONFLICT",
+      );
+    }
+    throw error;
   }
 
+  const [row] = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
+    .limit(1);
+  if (!row) return null;
+
+  await recordDocumentContentSyncEvent({
+    workspaceId,
+    documentId: row.id,
+    mutationId:
+      options?.mutationId ??
+      `rest:document-properties:${row.id}:${row.contentVersion}`,
+    deviceId: options?.deviceId,
+    payload: {
+      id: row.id,
+      type: row.type,
+      project_id: row.projectId,
+      audience: row.audience,
+      path: row.path,
+      title: row.title,
+      storage_key: row.storageKey,
+      byte_size: row.byteSize,
+      checksum: row.checksum,
+      snippet: row.snippet,
+      content_version: row.contentVersion,
+      content_etag: row.contentEtag,
+      doc_key: row.docKey,
+      properties: row.properties,
+      front_matter_valid: row.frontMatterValid,
+      updated_at: row.updatedAt.toISOString(),
+    },
+  });
+
   return {
-    row: updated,
-    content: nextContent,
-    properties: index,
-    contentVersion: nextVersion,
+    row,
+    content: contentForWrite,
+    properties: (row.properties ?? {}) as DocumentPropertiesIndex,
+    contentVersion: row.contentVersion,
   };
 }
 
@@ -635,11 +879,78 @@ export async function indexDocumentFromContent(input: {
   try {
     return await syncDocumentContentProperties(input);
   } catch (error) {
-    if (error instanceof DocumentPropertyError && error.code === "INVALID_YAML") {
+    if (
+      error instanceof DocumentPropertyError &&
+      error.code === "INVALID_YAML"
+    ) {
       return { invalidYaml: true };
     }
     throw error;
   }
+}
+
+/** One-off: rebuild properties index (+ mirrors) from vault front matter. */
+export async function rebuildDocumentPropertiesFromVault(
+  workspaceId: string,
+  options?: { limit?: number },
+): Promise<{ scanned: number; updated: number; invalidYaml: number }> {
+  const rows = await db
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.kind, "document"),
+        isNull(documents.deletedAt),
+      ),
+    )
+    .limit(options?.limit ?? 100_000);
+
+  let updated = 0;
+  let invalidYaml = 0;
+  for (const row of rows) {
+    let content: string;
+    try {
+      content = (await getObject(row.storageKey)).body;
+    } catch {
+      continue;
+    }
+    const indexed = await indexDocumentFromContent({
+      workspaceId,
+      row,
+      content,
+      assignDocKey: true,
+    });
+    if ("invalidYaml" in indexed) {
+      invalidYaml += 1;
+      await db
+        .update(documents)
+        .set({
+          frontMatterValid: false,
+          properties: {},
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, row.id));
+      continue;
+    }
+    if (indexed.content !== content) {
+      await putObject(row.storageKey, indexed.content);
+    }
+    await db
+      .update(documents)
+      .set({
+        docKey: indexed.docKey,
+        properties: indexed.properties,
+        frontMatterValid: true,
+        checksum: indexed.checksum,
+        snippet: indexed.snippet,
+        byteSize: Buffer.byteLength(indexed.content, "utf8"),
+        updatedAt: new Date(),
+      })
+      .where(eq(documents.id, row.id));
+    updated += 1;
+  }
+  return { scanned: rows.length, updated, invalidYaml };
 }
 
 export function parseDocKeyNumberForTest(docKey: string): number | null {

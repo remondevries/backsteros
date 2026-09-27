@@ -437,10 +437,15 @@ export async function createDocument(
   return row;
 }
 
+type UpdateDocumentServiceInput = UpdateDocumentInput & {
+  /** Internal sync / properties path; not on the public PATCH schema. */
+  projectId?: string | null;
+};
+
 export async function updateDocument(
   workspaceId: string,
   id: string,
-  input: UpdateDocumentInput,
+  input: UpdateDocumentServiceInput,
   executor: DbExecutor = db,
 ) {
   const existing = await getDocumentRow(workspaceId, id, executor);
@@ -504,6 +509,7 @@ export async function updateDocument(
       audience: input.audience,
       contactIds: input.contactIds,
       placementFolderId: input.placementFolderId,
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.trackedMinutes !== undefined
         ? { trackedMinutes: input.trackedMinutes }
         : {}),
@@ -705,6 +711,21 @@ export async function patchDocumentContentMetadataFromSyncPayload(
   const updatedAt =
     updatedAtRaw != null ? new Date(String(updatedAtRaw)) : new Date();
 
+  const docKey =
+    payload.doc_key === undefined && payload.docKey === undefined
+      ? undefined
+      : ((payload.doc_key ?? payload.docKey) as string | null);
+  const properties =
+    payload.properties === undefined
+      ? undefined
+      : (payload.properties as Record<string, unknown> | null);
+  const frontMatterValidRaw =
+    payload.front_matter_valid ?? payload.frontMatterValid;
+  const frontMatterValid =
+    frontMatterValidRaw === undefined
+      ? undefined
+      : Boolean(frontMatterValidRaw);
+
   const [row] = await executor
     .update(documents)
     .set({
@@ -715,6 +736,9 @@ export async function patchDocumentContentMetadataFromSyncPayload(
       checksum,
       snippet,
       contentEtag,
+      ...(docKey !== undefined ? { docKey } : {}),
+      ...(properties !== undefined ? { properties } : {}),
+      ...(frontMatterValid !== undefined ? { frontMatterValid } : {}),
       updatedAt,
     })
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
@@ -813,11 +837,16 @@ export async function updateDocumentContent(
                 snippet: synced.snippet,
               };
             } catch (error) {
-              if (
-                error instanceof DocumentPropertyError &&
-                error.code === "INVALID_YAML"
-              ) {
-                throw new Error("INVALID_YAML");
+              if (error instanceof DocumentPropertyError) {
+                if (error.code === "INVALID_YAML") {
+                  throw new Error("INVALID_YAML");
+                }
+                if (
+                  error.code === "INVALID_PROPERTY" ||
+                  error.code === "REFERENCE_NOT_FOUND"
+                ) {
+                  throw new Error("INVALID_PROPERTY");
+                }
               }
               throw error;
             }
@@ -902,6 +931,9 @@ export async function updateDocumentContent(
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_YAML") {
       throw new Error("INVALID_YAML");
+    }
+    if (error instanceof Error && error.message === "INVALID_PROPERTY") {
+      throw new Error("INVALID_PROPERTY");
     }
     if (
       error &&

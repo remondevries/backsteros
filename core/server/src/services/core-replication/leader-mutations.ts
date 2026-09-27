@@ -18,6 +18,10 @@ import {
   updateDocumentContent,
 } from "../documents.js";
 import {
+  DocumentPropertyError,
+  putDocumentProperties,
+} from "../document-properties.js";
+import {
   appendSyncEvent,
   getWorkspaceLastSyncId,
   type SyncEventRow,
@@ -33,7 +37,13 @@ import {
   SYNC_OPERATIONS,
 } from "../../lib/sync-constants.js";
 
-const FORWARD_TIMEOUT_MS = 60_000;
+/**
+ * Match the core-replication worker page timeout (120s). Document content
+ * forwards can include large markdown bodies; the previous 60s budget produced
+ * AbortError under vault load (observed ~2 minutes wall-clock when queued
+ * behind peer sync).
+ */
+const FORWARD_TIMEOUT_MS = 120_000;
 
 export type LeaderMutationChange = {
   entity: SyncEntity;
@@ -800,4 +810,242 @@ export function shouldForwardMutationsToLeader(
 ): boolean {
   const config = getCoreReplicationConfig(env);
   return Boolean(config && config.role === "local");
+}
+
+export type DocumentPropertiesLeaderResult = LeaderMutationResult & {
+  contentVersion: number;
+  docKey: string | null;
+  properties: Record<string, unknown>;
+  frontMatterValid: boolean;
+  /** Markdown body written on the leader (includes allocated DOC-n). */
+  content: string;
+};
+
+export async function acceptDocumentPropertiesLeaderMutation(input: {
+  workspaceId: string;
+  documentId: string;
+  properties: Record<string, unknown>;
+  ifMatchVersion?: number;
+  mutationId: string;
+  deviceId?: string;
+}): Promise<DocumentPropertiesLeaderResult> {
+  const deviceId = input.deviceId ?? "replica";
+  const result = await putDocumentProperties(
+    input.workspaceId,
+    input.documentId,
+    {
+      properties: input.properties,
+      ifMatchVersion: input.ifMatchVersion,
+    },
+    { mutationId: input.mutationId, deviceId },
+  );
+  if (!result) {
+    throw new Error("DOCUMENT_NOT_FOUND");
+  }
+  const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+  const event = await loadEventByMutationId(
+    input.workspaceId,
+    input.mutationId,
+  );
+  return {
+    lastSyncId,
+    events: event ? [event] : [],
+    source: "leader",
+    contentVersion: result.contentVersion,
+    docKey: result.row.docKey,
+    properties: result.properties,
+    frontMatterValid: result.row.frontMatterValid,
+    content: result.content,
+  };
+}
+
+async function forwardDocumentPropertiesToLeader(input: {
+  workspaceId: string;
+  documentId: string;
+  properties: Record<string, unknown>;
+  ifMatchVersion?: number;
+  mutationId: string;
+  deviceId?: string;
+}): Promise<DocumentPropertiesLeaderResult> {
+  const config = getCoreReplicationConfig();
+  if (!config) {
+    throw new Error("CORE_REPLICATION_NOT_CONFIGURED");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FORWARD_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${config.peerUrl}/internal/core-replication/document-properties`,
+      {
+        method: "POST",
+        headers: replicationHeaders(config.secret),
+        signal: controller.signal,
+        body: JSON.stringify({
+          workspace_id: input.workspaceId,
+          document_id: input.documentId,
+          properties: input.properties,
+          if_match_version: input.ifMatchVersion,
+          mutation_id: input.mutationId,
+          device_id: input.deviceId ?? "rest",
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw leaderDocumentContentErrorFromResponse(response.status, body);
+    }
+
+    const payload = (await response.json()) as {
+      last_sync_id: number;
+      content_version: number;
+      doc_key: string | null;
+      properties: Record<string, unknown>;
+      front_matter_valid: boolean;
+      content: string;
+      events: Array<{
+        cursor: number;
+        mutation_id: string;
+        device_id: string | null;
+        entity: string;
+        entity_id: string;
+        operation: string;
+        payload: Record<string, unknown>;
+        created_at: string;
+      }>;
+    };
+
+    const events: SyncEventRow[] = (payload.events ?? []).map((raw) => {
+      const entity = parseEntity(raw.entity);
+      const operation = parseOperation(raw.operation);
+      if (!entity || !operation) {
+        throw new Error(`INVALID_LEADER_EVENT:${raw.entity}:${raw.operation}`);
+      }
+      return {
+        cursor: raw.cursor,
+        mutationId: raw.mutation_id,
+        deviceId: raw.device_id,
+        entity: raw.entity,
+        entityId: raw.entity_id,
+        operation: raw.operation,
+        payload: raw.payload ?? {},
+        createdAt: new Date(raw.created_at),
+      };
+    });
+
+    return {
+      lastSyncId: payload.last_sync_id,
+      events,
+      source: "leader",
+      contentVersion: payload.content_version,
+      docKey: payload.doc_key,
+      properties: payload.properties ?? {},
+      frontMatterValid: payload.front_matter_valid ?? true,
+      content: typeof payload.content === "string" ? payload.content : "",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function commitDocumentPropertiesLeaderFirst(input: {
+  workspaceId: string;
+  documentId: string;
+  properties: Record<string, unknown>;
+  ifMatchVersion?: number;
+  mutationId?: string;
+  deviceId?: string;
+}): Promise<DocumentPropertiesLeaderResult> {
+  const mutationId =
+    input.mutationId ??
+    `rest:document-properties:${input.documentId}:${Date.now()}:${crypto.randomUUID()}`;
+  const deviceId = input.deviceId ?? "rest";
+
+  if (!shouldForwardMutationsToLeader()) {
+    const result = await putDocumentProperties(
+      input.workspaceId,
+      input.documentId,
+      {
+        properties: input.properties,
+        ifMatchVersion: input.ifMatchVersion,
+      },
+      { mutationId, deviceId },
+    );
+    if (!result) {
+      throw new Error("DOCUMENT_NOT_FOUND");
+    }
+    const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+    const event = await loadEventByMutationId(input.workspaceId, mutationId);
+    return {
+      lastSyncId,
+      events: event ? [event] : [],
+      source: "local_fallback",
+      contentVersion: result.contentVersion,
+      docKey: result.row.docKey,
+      properties: result.properties,
+      frontMatterValid: result.row.frontMatterValid,
+      content: result.content,
+    };
+  }
+
+  try {
+    // Validate locally first (storage readable, YAML ok) before forwarding.
+    const { planDocumentPropertiesPut } = await import(
+      "../document-properties.js"
+    );
+    await planDocumentPropertiesPut(input.workspaceId, input.documentId, {
+      properties: input.properties,
+      ifMatchVersion: input.ifMatchVersion,
+    });
+    const forwarded = await forwardDocumentPropertiesToLeader({
+      ...input,
+      mutationId,
+      deviceId,
+    });
+    await applyLeaderEventsLocally(input.workspaceId, forwarded.events);
+    if (forwarded.content) {
+      await hydrateLocalDocumentVaultContent(
+        input.workspaceId,
+        input.documentId,
+        forwarded.content,
+      );
+    }
+    return forwarded;
+  } catch (error) {
+    if (error instanceof DocumentPropertyError) {
+      throw error;
+    }
+    if (isLeaderContentClientError(error)) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[leader-first] document properties forward failed (${message}); falling back to local clock`,
+    );
+    const result = await putDocumentProperties(
+      input.workspaceId,
+      input.documentId,
+      {
+        properties: input.properties,
+        ifMatchVersion: input.ifMatchVersion,
+      },
+      { mutationId, deviceId },
+    );
+    if (!result) {
+      throw new Error("DOCUMENT_NOT_FOUND");
+    }
+    const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+    const event = await loadEventByMutationId(input.workspaceId, mutationId);
+    return {
+      lastSyncId,
+      events: event ? [event] : [],
+      source: "local_fallback",
+      contentVersion: result.contentVersion,
+      docKey: result.row.docKey,
+      properties: result.properties,
+      frontMatterValid: result.row.frontMatterValid,
+      content: result.content,
+    };
+  }
 }
