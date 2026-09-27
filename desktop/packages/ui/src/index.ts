@@ -3094,6 +3094,8 @@ export {
   serializeDocumentBody,
   serializeSpacesDocumentBody,
   mergeJournalContent,
+  extractRawFrontmatterFence,
+  rejoinDocumentFrontmatter,
   type DocumentFrontmatter,
 } from "./documents/document-frontmatter.js";
 

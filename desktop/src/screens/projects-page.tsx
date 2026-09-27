@@ -1601,8 +1601,11 @@ function ProjectsPageBody({
                     documentContent.initialBody,
                     selectedDocument.title)}
                   onSave={async (nextEditorBody) => {
-                    await documentContent.onSave(
-                      serializeDocumentBody(nextEditorBody));
+                    return documentContent.onSave(
+                      serializeDocumentBody(nextEditorBody, {
+                        sourceContent: documentContent.initialBody,
+                      }),
+                    );
                   }}
                   onSaveTitle={async (title) => {
                     const result = await workspace.renameDocument(

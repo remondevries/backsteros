@@ -8,6 +8,7 @@ import {
   peekDocumentContentCache,
   writeDocumentContentCache,
 } from "./document-content-cache";
+import { saveVerifiedDocumentContent } from "./document-content-save";
 import { usePowerSyncQuery } from "./powersync-context";
 import { DOCUMENT_VERSION_ROW_COMPARATOR } from "./powersync-row-comparators";
 import {
@@ -42,10 +43,10 @@ function asOptionalString(value: unknown): string | null {
  * Load / save document markdown — local-first like task descriptions:
  * warm LRU → desktop vault file (storage_key) → REST cold fallback.
  *
- * - `loading` — no body for this id yet (cold open / day switch)
- * - `refreshing` — revalidate while showing cached body for the *same* id
- * - **live path:** workspace SSE / PowerSync content_version → refresh
- *   (vault first, REST if disk miss)
+ * - `loading` — no *verified* body for this id yet (cold open / day switch)
+ * - `refreshing` — revalidate while showing a previously verified body
+ * - **Never** paints LRU/vault bytes (or their contentVersion) until checksum
+ *   verification succeeds — poisoned cache cannot be edited or saved.
  *
  * By default, switching document ids never keeps the previous entry's body
  * (Knowledge). Pass `keepPreviousOnMiss` to keep prior body visible.
@@ -66,21 +67,18 @@ export function useDesktopDocumentContent(
   const skeletonUntilFetched = options?.skeletonUntilFetched === true;
   const enabled = options?.enabled !== false;
   const { client } = useDesktopApi();
-  const cached = documentId ? peekDocumentContentCache(documentId) : null;
-  const [initialBody, setInitialBody] = useState(
-    skeletonUntilFetched ? "" : (cached?.content ?? ""),
-  );
+  // Do not paint peek() synchronously — checksum verify is async.
+  const [initialBody, setInitialBody] = useState("");
   const [contentVersion, setContentVersion] = useState<number | undefined>(
-    skeletonUntilFetched ? undefined : cached?.contentVersion,
+    undefined,
   );
-  const [loading, setLoading] = useState(
-    Boolean(documentId) && (skeletonUntilFetched || !cached),
-  );
+  const [loading, setLoading] = useState(Boolean(documentId));
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState(documentId);
   const contentVersionRef = useRef(contentVersion);
   contentVersionRef.current = contentVersion;
+  const lastSavedBodyRef = useRef<string | null>(null);
 
   const metaRows = usePowerSyncQuery<Record<string, unknown>>(
     enabled && documentId ? DOCUMENT_CONTENT_META_SQL : null,
@@ -100,33 +98,22 @@ export function useDesktopDocumentContent(
   if (documentId !== activeId) {
     setActiveId(documentId);
     setLoadError(null);
+    lastSavedBodyRef.current = null;
     if (!documentId) {
       setInitialBody("");
       setContentVersion(undefined);
       setLoading(false);
       setRefreshing(false);
-    } else if (skeletonUntilFetched) {
-      // Always skeleton on switch; cache still makes the fetch settle quickly.
+    } else if (keepPreviousOnMiss && !skeletonUntilFetched) {
+      // Keep prior verified body visible while the next id loads.
+      setLoading(false);
+      setRefreshing(true);
+    } else {
+      // Never show unverified cache on first paint / id switch.
       setInitialBody("");
       setContentVersion(undefined);
       setLoading(true);
       setRefreshing(false);
-    } else {
-      const next = peekDocumentContentCache(documentId);
-      if (next) {
-        setInitialBody(next.content);
-        setContentVersion(next.contentVersion);
-        setLoading(false);
-        setRefreshing(true);
-      } else if (keepPreviousOnMiss) {
-        setLoading(false);
-        setRefreshing(true);
-      } else {
-        setInitialBody("");
-        setContentVersion(undefined);
-        setLoading(true);
-        setRefreshing(false);
-      }
     }
   }
 
@@ -134,23 +121,14 @@ export function useDesktopDocumentContent(
     if (!documentId || !enabled) {
       return;
     }
-    // Wait for PowerSync metadata so vault storage_key is available — same
-    // idea as task description (local row first, REST only after settle).
+    // Wait for PowerSync metadata so vault storage_key / checksum are known.
     if (!metaSettled && !peekDocumentContentCache(documentId)) {
       return;
     }
 
     let cancelled = false;
     const fetchId = documentId;
-    if (skeletonUntilFetched) {
-      setLoading(true);
-    } else if (peekDocumentContentCache(fetchId)) {
-      setRefreshing(true);
-    } else if (keepPreviousOnMiss) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+    setLoading(true);
 
     void fetchDocumentContent(client, fetchId, {
       storageKey,
@@ -158,8 +136,6 @@ export function useDesktopDocumentContent(
       knownChecksum,
     }).then((data) => {
       if (cancelled) {
-        // Keep the bounded session LRU — discarding here made every
-        // return visit wait on the network again (journal 1.6s + 510ms).
         return;
       }
       if (!data) {
@@ -171,6 +147,7 @@ export function useDesktopDocumentContent(
       setLoadError(null);
       setInitialBody(data.content);
       setContentVersion(data.contentVersion);
+      lastSavedBodyRef.current = data.content;
       setLoading(false);
       setRefreshing(false);
     });
@@ -182,10 +159,8 @@ export function useDesktopDocumentContent(
     client,
     documentId,
     enabled,
-    keepPreviousOnMiss,
     knownChecksum,
     metaSettled,
-    skeletonUntilFetched,
     storageKey,
     syncedContentVersion,
   ]);
@@ -228,6 +203,7 @@ export function useDesktopDocumentContent(
           }
           setInitialBody(data.content);
           setContentVersion(data.contentVersion);
+          lastSavedBodyRef.current = data.content;
           setRefreshing(false);
         });
       }, SSE_REFETCH_DEBOUNCE_MS);
@@ -265,6 +241,7 @@ export function useDesktopDocumentContent(
       }
       setInitialBody(data.content);
       setContentVersion(data.contentVersion);
+      lastSavedBodyRef.current = data.content;
       setRefreshing(false);
     });
 
@@ -283,28 +260,49 @@ export function useDesktopDocumentContent(
 
   const onSave = useCallback(
     async (content: string) => {
-      if (!documentId) return;
-      const data = await client.requestJson<{
-        content: string;
-        contentVersion: number;
-        checksum?: string | null;
-      }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          content,
-          ifMatchVersion: contentVersion,
-        }),
+      if (!documentId) {
+        return { ok: true as const };
+      }
+      const result = await saveVerifiedDocumentContent({
+        client,
+        documentId,
+        content,
+        contentVersion,
+        lastSavedContent: lastSavedBodyRef.current,
+        fetchOptions: {
+          storageKey,
+          contentVersion: syncedContentVersion,
+          knownChecksum,
+        },
       });
-      writeDocumentContentCache(documentId, {
-        content: data.content,
-        contentVersion: data.contentVersion,
-        checksum: data.checksum ?? null,
-      });
-      setInitialBody(data.content);
-      setContentVersion(data.contentVersion);
+      if (result.ok) {
+        if (!result.skipped) {
+          setInitialBody(result.content);
+          setContentVersion(result.contentVersion);
+          lastSavedBodyRef.current = result.content;
+        }
+        return { ok: true as const };
+      }
+      if (result.conflict && result.content != null && result.contentVersion != null) {
+        setInitialBody(result.content);
+        setContentVersion(result.contentVersion);
+        lastSavedBodyRef.current = result.content;
+        writeDocumentContentCache(documentId, {
+          content: result.content,
+          contentVersion: result.contentVersion,
+          checksum: result.checksum ?? null,
+        });
+      }
+      return { ok: false as const, error: result.error };
     },
-    [client, contentVersion, documentId],
+    [
+      client,
+      contentVersion,
+      documentId,
+      knownChecksum,
+      storageKey,
+      syncedContentVersion,
+    ],
   );
 
   return {

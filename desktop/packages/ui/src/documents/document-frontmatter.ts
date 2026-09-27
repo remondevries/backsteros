@@ -5,9 +5,20 @@ export type DocumentFrontmatter = {
   seoTitle?: string;
   seoDescription?: string;
   audience?: "group" | "individual";
+  /** Unknown YAML keys preserved on round-trip (room, material, …). */
+  extras?: Record<string, string>;
 };
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+const KNOWN_FRONTMATTER_KEYS = new Set([
+  "title",
+  "status",
+  "slug",
+  "seoTitle",
+  "seoDescription",
+  "audience",
+]);
 
 function unquote(raw: string): string {
   return raw.trim().replace(/^['"]|['"]$/g, "");
@@ -15,11 +26,12 @@ function unquote(raw: string): string {
 
 function parseFrontmatterBlock(block: string): DocumentFrontmatter {
   const result: DocumentFrontmatter = {};
+  const extras: Record<string, string> = {};
 
   for (const line of block.split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z]+):\s*(.*)$/);
+    const match = line.match(/^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/);
     if (!match) continue;
-    const key = match[1];
+    const key = match[1] ?? "";
     const value = unquote(match[2] ?? "");
     switch (key) {
       case "title":
@@ -49,11 +61,22 @@ function parseFrontmatterBlock(block: string): DocumentFrontmatter {
         }
         break;
       default:
+        if (key) extras[key] = value;
         break;
     }
   }
 
+  if (Object.keys(extras).length > 0) {
+    result.extras = extras;
+  }
   return result;
+}
+
+/** Raw `---` … `---` fence from source content, or null. */
+export function extractRawFrontmatterFence(content: string): string | null {
+  const match = content.match(FRONTMATTER_PATTERN);
+  if (!match) return null;
+  return `---\n${match[1]}\n---`;
 }
 
 export function parseMarkdownDocument(content: string): {
@@ -95,12 +118,33 @@ export function serializeMarkdownDocument(input: {
     lines.push(`seoDescription: ${yamlEscape(fm.seoDescription.trim())}`);
   }
   if (fm.audience) lines.push(`audience: ${fm.audience}`);
+  if (fm.extras) {
+    for (const [key, value] of Object.entries(fm.extras)) {
+      if (KNOWN_FRONTMATTER_KEYS.has(key)) continue;
+      if (!value.trim()) continue;
+      lines.push(`${key}: ${yamlEscape(value)}`);
+    }
+  }
 
   if (lines.length === 0) {
     return body;
   }
 
   return `---\n${lines.join("\n")}\n---\n\n${body}`;
+}
+
+/**
+ * Reattach the original YAML front matter fence verbatim onto an edited body.
+ * Unknown keys (room, material, dateNoted, source, …) are preserved.
+ */
+export function rejoinDocumentFrontmatter(
+  sourceContent: string,
+  editorBody: string,
+): string {
+  const fence = extractRawFrontmatterFence(sourceContent);
+  const body = editorBody.replace(/^\n+/, "");
+  if (!fence) return body;
+  return `${fence}\n\n${body}`;
 }
 
 /** Hide a leading `# title` in preview/editor when it matches the document title. */
@@ -132,8 +176,18 @@ export function getDocumentEditorBody(content: string, title: string): string {
   return stripDuplicateDocumentTitleHeading(body || content, title);
 }
 
-/** Persist non-journal document body without embedding the title in the file. */
-export function serializeDocumentBody(body: string): string {
+/**
+ * Persist non-journal document body. When `sourceContent` is provided, the
+ * original YAML front matter fence is kept verbatim (all keys).
+ */
+export function serializeDocumentBody(
+  body: string,
+  options?: { sourceContent?: string | null },
+): string {
+  const source = options?.sourceContent;
+  if (source && extractRawFrontmatterFence(source)) {
+    return rejoinDocumentFrontmatter(source, body);
+  }
   return body.replace(/^\n+/, "");
 }
 
@@ -146,7 +200,12 @@ export function serializeSpacesDocumentBody(input: {
   seoTitle?: string | null;
   seoDescription?: string | null;
   audience?: DocumentFrontmatter["audience"];
+  /** When set, unknown front-matter keys from the source file are kept. */
+  sourceContent?: string | null;
 }): string {
+  const fromSource = input.sourceContent
+    ? parseMarkdownDocument(input.sourceContent).frontmatter
+    : {};
   return serializeMarkdownDocument({
     frontmatter: {
       title: input.title,
@@ -155,6 +214,7 @@ export function serializeSpacesDocumentBody(input: {
       seoTitle: input.seoTitle?.trim() || undefined,
       seoDescription: input.seoDescription?.trim() || undefined,
       audience: input.audience,
+      extras: fromSource.extras,
     },
     body: input.body,
   });

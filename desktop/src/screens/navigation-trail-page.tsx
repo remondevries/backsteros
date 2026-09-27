@@ -382,7 +382,11 @@ function TrailDocumentLeaf({
       initialBody={editorBody}
       resetKey={documentId}
       onSave={async (nextEditorBody) => {
-        await onSave(serializeDocumentBody(nextEditorBody));
+        return onSave(
+          serializeDocumentBody(nextEditorBody, {
+            sourceContent: initialBody,
+          }),
+        );
       }}
     />
   );

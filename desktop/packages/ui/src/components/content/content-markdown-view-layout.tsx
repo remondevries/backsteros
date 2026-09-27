@@ -310,18 +310,31 @@ export function useMarkdownDetailEditor({
         valueRef.current = normalized;
         setValue(normalized);
       }
+      // No-op when nothing changed vs last adopted/saved body.
+      if (normalized === valueSource) {
+        return;
+      }
       const pendingResult = save(normalized);
       if (pendingResult === null) {
         return;
       }
 
       setError(null);
-      const result = await pendingResult;
-      if (!result.ok) {
-        setError(result.error);
+      try {
+        const result = await pendingResult;
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        // Treat successful persist as the new clean baseline.
+        setValueSource(normalized);
+      } catch (reason) {
+        setError(
+          reason instanceof Error ? reason.message : "Could not save document.",
+        );
       }
     },
-    [normalizeContactMentions, save],
+    [normalizeContactMentions, save, valueSource],
   );
 
   const clearScheduledSave = useCallback(() => {
@@ -369,10 +382,15 @@ export function useMarkdownDetailEditor({
     if (rewritten === current) {
       return;
     }
+    // Local-only normalize. Do not PATCH — mention rewrites must not bump
+    // contentVersion. If the draft was clean, keep it clean after rewrite.
+    const wasClean = current === valueSource;
     valueRef.current = rewritten;
     setValue(rewritten);
-    scheduleSave(rewritten);
-  }, [mentionCatalog, scheduleSave]);
+    if (wasClean) {
+      setValueSource(rewritten);
+    }
+  }, [mentionCatalog, valueSource]);
 
   const handleChange = useCallback(
     (nextValue: string) => {

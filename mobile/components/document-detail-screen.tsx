@@ -62,6 +62,17 @@ function stripFrontmatter(content: string): string {
     .replace(/\n+$/, "");
 }
 
+/** Keep the original YAML fence verbatim when persisting an edited body. */
+function rejoinFrontmatter(sourceContent: string, editorBody: string): string {
+  let source = sourceContent.replace(/^\uFEFF/, "");
+  const body = editorBody.replace(/^\n+/, "");
+  if (!source.startsWith("---")) return body;
+  const end = source.indexOf("\n---", 3);
+  if (end === -1) return body;
+  const fence = source.slice(0, end + 4);
+  return `${fence}\n\n${body}`;
+}
+
 function stripDuplicateTitleHeading(body: string, title: string): string {
   const withoutLeadingNewlines = body.replace(/^\n+/, "");
   const normalizedTitle = title.trim().toLowerCase();
@@ -107,6 +118,8 @@ export function DocumentDetailScreen({ documentId }: Props) {
   );
 
   const [body, setBody] = useState<string | null>(null);
+  /** Full Tier D payload including YAML — used to preserve front matter on save. */
+  const [rawContent, setRawContent] = useState<string | null>(null);
   const [contentVersion, setContentVersion] = useState<number | null>(null);
   const [bodyLoading, setBodyLoading] = useState(true);
   const [bodyError, setBodyError] = useState<string | null>(null);
@@ -144,12 +157,15 @@ export function DocumentDetailScreen({ documentId }: Props) {
     void fetchDocumentContent(client, documentId)
       .then((result) => {
         if (cancelled) return;
-        setBody(stripFrontmatter(result.content ?? ""));
+        const full = result.content ?? "";
+        setRawContent(full);
+        setBody(stripFrontmatter(full));
         setContentVersion(result.contentVersion);
       })
       .catch((reason) => {
         if (cancelled) return;
         setBody(null);
+        setRawContent(null);
         setContentVersion(null);
         setBodyError(
           reason instanceof Error ? reason.message : String(reason),
@@ -174,7 +190,9 @@ export function DocumentDetailScreen({ documentId }: Props) {
     void fetchDocumentContent(client, documentId)
       .then((result) => {
         if (cancelled) return;
-        setBody(stripFrontmatter(result.content ?? ""));
+        const full = result.content ?? "";
+        setRawContent(full);
+        setBody(stripFrontmatter(full));
         setContentVersion(result.contentVersion);
       })
       .catch((reason) => {
@@ -215,6 +233,23 @@ export function DocumentDetailScreen({ documentId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed on open / remote body
   }, [documentId, bodyReady, body, contentVersion, viewMode]);
 
+  const persistBody = useCallback(
+    async (nextEditorBody: string, version: number) => {
+      const payload = rejoinFrontmatter(rawContent ?? "", nextEditorBody);
+      const updated = await saveDocumentContent(
+        client,
+        documentId!,
+        payload,
+        version,
+      );
+      const full = updated.content ?? payload;
+      setRawContent(full);
+      setBody(stripFrontmatter(full));
+      setContentVersion(updated.contentVersion);
+    },
+    [client, documentId, rawContent],
+  );
+
   const saveEditing = useCallback(async () => {
     if (!documentId || saving || !bodyReady) return;
     const trimmedTitle = draftTitle.trim();
@@ -242,14 +277,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
         if (contentVersion == null) {
           throw new Error("Document content version is not loaded.");
         }
-        const updated = await saveDocumentContent(
-          client,
-          documentId,
-          nextBody,
-          contentVersion,
-        );
-        setBody(stripFrontmatter(updated.content ?? nextBody));
-        setContentVersion(updated.contentVersion);
+        await persistBody(nextBody, contentVersion);
       }
     } catch (reason) {
       if (reason instanceof DocumentContentEmptyBodyRejectedError) {
@@ -270,6 +298,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
     documentId,
     draftBody,
     draftTitle,
+    persistBody,
     powerSync,
     resolvedTitle,
     saving,
@@ -301,14 +330,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
           setSaving(true);
           setSaveError(null);
           try {
-            const updated = await saveDocumentContent(
-              client,
-              documentId,
-              nextBody,
-              contentVersion,
-            );
-            setBody(stripFrontmatter(updated.content ?? nextBody));
-            setContentVersion(updated.contentVersion);
+            await persistBody(nextBody, contentVersion);
           } catch (reason) {
             if (reason instanceof DocumentContentEmptyBodyRejectedError) {
               setSaveError(null);
@@ -327,11 +349,11 @@ export function DocumentDetailScreen({ documentId }: Props) {
     },
     [
       bodyReady,
-      client,
       contentVersion,
       displayBody,
       documentId,
       draftBody,
+      persistBody,
       saving,
     ],
   );

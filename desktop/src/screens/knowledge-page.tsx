@@ -1229,9 +1229,12 @@ function KnowledgePageBody() {
                   seoTitle: helpArticle.seoTitle,
                   seoDescription: helpArticle.seoDescription,
                   audience: helpArticle.audience,
+                  sourceContent: initialBody,
                 })
-              : serializeDocumentBody(nextEditorBody);
-            await onSave(content);
+              : serializeDocumentBody(nextEditorBody, {
+                  sourceContent: initialBody,
+                });
+            return onSave(content);
           }}
           onSaveTitle={async (title) =>
             workspace.renameDocument(selected.id, title)
@@ -1275,7 +1278,11 @@ function KnowledgePageBody() {
           }
           initialBody={editorBody}
           onSave={async (nextEditorBody) => {
-            await onSave(serializeDocumentBody(nextEditorBody));
+            return onSave(
+              serializeDocumentBody(nextEditorBody, {
+                sourceContent: initialBody,
+              }),
+            );
           }}
           onSaveTitle={async (title) =>
             workspace.renameDocument(selected.id, title)

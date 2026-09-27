@@ -418,6 +418,25 @@ export async function updateDocument(
       ? (nextJournalDate ?? existing.title)
       : input.title;
 
+  const trackedDurationTouched =
+    input.trackedDurationSeconds !== undefined ||
+    input.trackedMinutes !== undefined;
+  let nextLastTrackedAt: Date | null | undefined = undefined;
+  if (input.lastTrackedAt !== undefined) {
+    nextLastTrackedAt =
+      input.lastTrackedAt == null ? null : new Date(input.lastTrackedAt);
+  } else if (trackedDurationTouched) {
+    const nextSeconds =
+      input.trackedDurationSeconds !== undefined
+        ? input.trackedDurationSeconds
+        : input.trackedMinutes != null
+          ? input.trackedMinutes * 60
+          : null;
+    if (nextSeconds != null && nextSeconds > 0) {
+      nextLastTrackedAt = new Date();
+    }
+  }
+
   const [row] = await executor
     .update(documents)
     .set({
@@ -434,6 +453,15 @@ export async function updateDocument(
       audience: input.audience,
       contactIds: input.contactIds,
       placementFolderId: input.placementFolderId,
+      ...(input.trackedMinutes !== undefined
+        ? { trackedMinutes: input.trackedMinutes }
+        : {}),
+      ...(input.trackedDurationSeconds !== undefined
+        ? { trackedDurationSeconds: input.trackedDurationSeconds }
+        : {}),
+      ...(nextLastTrackedAt !== undefined
+        ? { lastTrackedAt: nextLastTrackedAt }
+        : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
@@ -678,13 +706,6 @@ export async function updateDocumentContent(
     existing = healed;
   }
 
-  if (
-    input.ifMatchVersion !== undefined &&
-    input.ifMatchVersion !== existing.contentVersion
-  ) {
-    throw new Error("CONTENT_VERSION_CONFLICT");
-  }
-
   // Same invariant as vault push: empty must never beat a non-empty body.
   const incomingBytes = Buffer.byteLength(input.content ?? "", "utf8");
   if (incomingBytes === 0 && (existing.byteSize ?? 0) > 0) {
@@ -695,7 +716,15 @@ export async function updateDocumentContent(
     const stored = await putObject(existing.storageKey, input.content);
     const checksum = checksumForContent(input.content);
     const snippet = snippetForContent(input.content);
-    const contentVersion = existing.contentVersion + 1;
+    const nextVersion = existing.contentVersion + 1;
+
+    const updateConditions = [
+      eq(documents.workspaceId, workspaceId),
+      eq(documents.id, id),
+    ];
+    if (input.ifMatchVersion !== undefined) {
+      updateConditions.push(eq(documents.contentVersion, input.ifMatchVersion));
+    }
 
     const [updated] = await db
       .update(documents)
@@ -703,39 +732,46 @@ export async function updateDocumentContent(
         byteSize: stored.byteSize,
         checksum,
         snippet,
-        contentVersion,
+        contentVersion: nextVersion,
         contentEtag: stored.etag,
         updatedAt: new Date(),
       })
-      .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
+      .where(and(...updateConditions))
       .returning();
 
-    if (updated) {
-      await recordDocumentContentSyncEvent({
-        workspaceId,
-        documentId: updated.id,
-        mutationId:
-          options?.mutationId ??
-          `rest:document-content:${updated.id}:${updated.contentVersion}`,
-        deviceId: options?.deviceId,
-        payload: {
-          id: updated.id,
-          type: updated.type,
-          project_id: updated.projectId,
-          path: updated.path,
-          title: updated.title,
-          storage_key: updated.storageKey,
-          byte_size: updated.byteSize,
-          checksum: updated.checksum,
-          snippet: updated.snippet,
-          content_version: updated.contentVersion,
-          content_etag: updated.contentEtag,
-          updated_at: updated.updatedAt.toISOString(),
-        },
-      });
+    if (!updated) {
+      // Lost the race (or row vanished). Atomic WHERE content_version failed.
+      const stillThere = await getDocumentRow(workspaceId, id);
+      if (!stillThere) {
+        return null;
+      }
+      throw new Error("CONTENT_VERSION_CONFLICT");
     }
 
-    return updated ?? null;
+    await recordDocumentContentSyncEvent({
+      workspaceId,
+      documentId: updated.id,
+      mutationId:
+        options?.mutationId ??
+        `rest:document-content:${updated.id}:${updated.contentVersion}`,
+      deviceId: options?.deviceId,
+      payload: {
+        id: updated.id,
+        type: updated.type,
+        project_id: updated.projectId,
+        path: updated.path,
+        title: updated.title,
+        storage_key: updated.storageKey,
+        byte_size: updated.byteSize,
+        checksum: updated.checksum,
+        snippet: updated.snippet,
+        content_version: updated.contentVersion,
+        content_etag: updated.contentEtag,
+        updated_at: updated.updatedAt.toISOString(),
+      },
+    });
+
+    return updated;
   } catch (error) {
     if (
       error &&
