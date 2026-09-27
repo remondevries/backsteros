@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isControlLoopbackRemote,
+  mapSessionStatus,
   matchControlT3Project,
   resolveControlWorkspaceRoot,
 } from "./control.ts";
@@ -157,5 +158,63 @@ describe("backsteros control workspace resolve", () => {
         projectIdOverride: "missing",
       }),
     ).toEqual({ kind: "missing_id", projectId: "missing" });
+  });
+});
+
+describe("mapSessionStatus", () => {
+  type StatusInput = NonNullable<Parameters<typeof mapSessionStatus>[0]>;
+  const turn = (state: "running" | "completed" | "interrupted" | "error") =>
+    ({
+      turnId: "turn-1",
+      state,
+      requestedAt: "2026-09-27T22:10:01.709Z",
+      startedAt: "2026-09-27T22:10:01.709Z",
+      completedAt: state === "running" ? null : "2026-09-27T22:10:10.071Z",
+      assistantMessageId: null,
+    }) as StatusInput["latestTurn"];
+  const thread = (overrides: Partial<StatusInput> = {}): StatusInput => ({
+    settledOverride: null,
+    settledAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    backgroundLiveness: null,
+    latestTurn: turn("completed"),
+    latestUserMessageAt: "2026-09-27T22:10:01.709Z",
+    session: { status: "ready", activeTurnId: null },
+    ...overrides,
+  });
+
+  it("reports idle once a turn has finished and the session is ready", () => {
+    expect(mapSessionStatus(thread())).toBe("idle");
+  });
+
+  it("reports working while a turn is active", () => {
+    expect(
+      mapSessionStatus(thread({ session: { status: "running", activeTurnId: "turn-1" as never } })),
+    ).toBe("working");
+    expect(
+      mapSessionStatus(thread({ session: { status: "ready", activeTurnId: "turn-1" as never } })),
+    ).toBe("working");
+    expect(mapSessionStatus(thread({ latestTurn: turn("running") }))).toBe("working");
+  });
+
+  it("reports working when a sent message has not started its turn yet", () => {
+    expect(mapSessionStatus(thread({ latestUserMessageAt: "2026-09-27T22:11:00.000Z" }))).toBe(
+      "working",
+    );
+    expect(mapSessionStatus(thread({ latestTurn: null }))).toBe("working");
+  });
+
+  it("keeps background work, blocked and settled mappings", () => {
+    expect(mapSessionStatus(thread({ backgroundLiveness: "monitoring" }))).toBe("working");
+    expect(mapSessionStatus(thread({ hasPendingApprovals: true }))).toBe("blocked");
+    expect(mapSessionStatus(thread({ session: { status: "error", activeTurnId: null } }))).toBe(
+      "blocked",
+    );
+    expect(mapSessionStatus(thread({ settledAt: "2026-09-27T22:12:00.000Z" }))).toBe("done");
+    expect(
+      mapSessionStatus(thread({ session: null, latestTurn: null, latestUserMessageAt: null })),
+    ).toBe("idle");
+    expect(mapSessionStatus(null)).toBe("idle");
   });
 });

@@ -90,7 +90,41 @@ export function isControlLoopbackRemote(remoteAddress: Option.Option<string>): b
   return isLoopbackHostname(normalized);
 }
 
-function mapSessionStatus(thread: OrchestrationThreadShell | null): ControlSessionStatus {
+type ControlStatusThreadInput = Pick<
+  OrchestrationThreadShell,
+  | "settledOverride"
+  | "settledAt"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "backgroundLiveness"
+  | "latestTurn"
+  | "latestUserMessageAt"
+> & {
+  readonly session: Pick<
+    NonNullable<OrchestrationThreadShell["session"]>,
+    "status" | "activeTurnId"
+  > | null;
+};
+
+/**
+ * `ready` is the provider's idle-and-waiting state, so it only counts as
+ * working while a turn is active or a dispatched message has not started its
+ * turn yet (latest user message newer than the latest turn request).
+ */
+function hasTurnInFlight(thread: ControlStatusThreadInput): boolean {
+  if (thread.session?.activeTurnId != null) return true;
+  const latestTurn = thread.latestTurn;
+  if (latestTurn?.state === "running") return true;
+  const latestUserMessageAt = thread.latestUserMessageAt
+    ? Date.parse(thread.latestUserMessageAt)
+    : Number.NaN;
+  if (Number.isNaN(latestUserMessageAt)) return false;
+  if (!latestTurn) return true;
+  const requestedAt = Date.parse(latestTurn.requestedAt);
+  return Number.isNaN(requestedAt) || latestUserMessageAt > requestedAt;
+}
+
+export function mapSessionStatus(thread: ControlStatusThreadInput | null): ControlSessionStatus {
   if (!thread) return "idle";
   const settled =
     thread.settledOverride === "settled" ||
@@ -101,7 +135,7 @@ function mapSessionStatus(thread: OrchestrationThreadShell | null): ControlSessi
   if (
     sessionStatus === "starting" ||
     sessionStatus === "running" ||
-    sessionStatus === "ready" ||
+    (sessionStatus === "ready" && hasTurnInFlight(thread)) ||
     thread.backgroundLiveness === "working" ||
     thread.backgroundLiveness === "monitoring"
   ) {
