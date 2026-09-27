@@ -2,6 +2,23 @@
 
 Read this file first when working in **`~/BacksterOS/Projects/OS/Codebase/`**. Specs live at the repo root (`docs/`). Application code goes in **subfolders** below — not in `docs/`.
 
+## Git workflow (non-negotiable)
+
+WORKFLOW RULE: Commit and push directly to the production branch. No pull requests. No feature branches or sub-branches. Before every push, run the full local test suite (typecheck, unit tests, integration tests) and only push if all pass. If tests fail, fix locally first. Never open a PR unless explicitly asked.
+
+1. **Commit and push directly to `production`.** It is the canonical branch of `remondevries/backsteros`. No pull requests, no feature branches, no sub-branches, no worktree branches.
+2. **Never open a PR or create a branch** unless the person who gave you the task explicitly asks for one in that session.
+3. **Run the full local test suite before every push**, from the repo root, and push only when all of it passes:
+   ```bash
+   pnpm typecheck
+   pnpm test
+   pnpm test:integration   # starts Docker Postgres via core/server/scripts/run-integration-tests.sh
+   ```
+   If you changed anything under `development/`, also run `vp run -r typecheck` and `vp run -r test` inside `development/`.
+4. **If anything fails, fix it locally and rerun the suite before pushing.** Never push red, never push "to see what CI says", and never skip or disable a failing test to get green.
+5. **Local runs are the only gate.** `.github/workflows/ci.yml` runs only on pushes to `main`/`v2` and on pull requests, so nothing checks a push to `production` after it lands.
+6. Before pushing, `git pull --rebase origin production` so history stays linear, then rerun the suite if the rebase brought in new commits.
+
 ## Workspace root (v2)
 
 ```text
