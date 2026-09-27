@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  DOCUMENT_SEMANTIC_TYPE_OPTIONS,
   DOCUMENT_STATUS_OPTIONS,
   applyMirrorFrontMatter,
   buildPropertiesIndex,
@@ -144,5 +145,21 @@ describe("panel edit vs file edit (version conflict contract)", () => {
     const status = 409;
     assert.equal(status, 409);
     assert.equal(code, "content_version_conflict");
+  });
+});
+
+describe("agent document types stay gated (OS-30 decision)", () => {
+  it("exposes a fixed semantic type allowlist with no create-type API", () => {
+    assert.ok(DOCUMENT_SEMANTIC_TYPE_OPTIONS.includes("house-rule"));
+    assert.throws(
+      () =>
+        coerceDocumentPropertyEnum(
+          "type",
+          "brandNewAgentType",
+          DOCUMENT_SEMANTIC_TYPE_OPTIONS,
+          true,
+        ),
+      /INVALID_PROPERTY/,
+    );
   });
 });
