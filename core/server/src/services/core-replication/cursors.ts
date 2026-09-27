@@ -4,6 +4,7 @@ import { db, sqlClient } from "../../db/index.js";
 import { coreReplicationCursors } from "../../db/schema.js";
 import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationCursor } from "./types.js";
+import { arrayElementTypeFromUdtName } from "./bind-values.js";
 import { compareCursor, maxCursor, toIso } from "./cursor-order.js";
 
 export type ReplicationCursorDirection = "pull" | "push";
@@ -24,6 +25,28 @@ export async function tableExists(tableName: string): Promise<boolean> {
     ) AS exists
   `;
   return Boolean(rows[0]?.exists);
+}
+
+/**
+ * Array columns of a public table → element type (`allowed_domains` → `text`).
+ * Generic replication apply must rebuild these instead of binding ::jsonb.
+ */
+export async function listTableArrayColumns(
+  tableName: string,
+): Promise<Map<string, string>> {
+  const rows = await sqlClient<{ column_name: string; udt_name: string }[]>`
+    SELECT column_name, udt_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = ${tableName}
+      AND data_type = 'ARRAY'
+  `;
+  const result = new Map<string, string>();
+  for (const row of rows) {
+    const element = arrayElementTypeFromUdtName(row.udt_name);
+    if (element) result.set(row.column_name, element);
+  }
+  return result;
 }
 
 /** Live column names for a public table (used to tolerate peer schema lag). */

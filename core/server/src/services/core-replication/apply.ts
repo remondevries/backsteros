@@ -15,6 +15,11 @@ import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import {
+  buildBindPlaceholder,
+  serializeBindValue,
+} from "./bind-values.js";
+import {
+  listTableArrayColumns,
   listTableColumns,
   setReplicationCursorsAfterBootstrap,
   tableExists,
@@ -174,6 +179,7 @@ async function applyGenericRowUnchecked(
   // newer local pushing to an older peer after deploy lag) does not 500 the
   // whole apply — e.g. mapbox_access_token before migration 0081 on cloud.
   const knownColumns = await listTableColumns(spec.name);
+  const arrayColumns = await listTableArrayColumns(spec.name);
   const pkConflict = spec.pk.map((col) => `"${col}"`).join(", ");
 
   // Generic tables keep an updated_at SQL gate. Documents already decided via
@@ -193,14 +199,12 @@ async function applyGenericRowUnchecked(
       return "skipped";
     }
     // postgres.js cannot bind plain JS arrays/objects as query params (they
-    // come from row_to_json / JSON transport for jsonb columns). Serialize and
-    // cast; text[] columns use dedicated apply paths (e.g. api_keys).
+    // come from row_to_json / JSON transport). Serialize as JSON; jsonb columns
+    // cast ::jsonb and Postgres array columns (text[] etc.) rebuild the array.
     const colList = columns.map((col) => `"${col}"`).join(", ");
     const placeholders = columns
       .map((col, index) =>
-        isJsonBindValue(attemptRow[col])
-          ? `$${index + 1}::jsonb`
-          : `$${index + 1}`,
+        buildBindPlaceholder(index + 1, attemptRow[col], arrayColumns.get(col)),
       )
       .join(", ");
     const values = columns.map((col) => serializeBindValue(attemptRow[col]));
@@ -412,22 +416,6 @@ async function sanitizeForeignKeyRow(
   }
 
   return null;
-}
-
-function isJsonBindValue(value: unknown): boolean {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !(value instanceof Date) &&
-    !Buffer.isBuffer(value)
-  );
-}
-
-function serializeBindValue(value: unknown): unknown {
-  if (isJsonBindValue(value)) {
-    return JSON.stringify(value);
-  }
-  return value;
 }
 
 async function applyEntityCounterRow(
