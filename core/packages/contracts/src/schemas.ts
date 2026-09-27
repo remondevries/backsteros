@@ -736,6 +736,12 @@ export const documentSchema = z.object({
   placementFolderId: z.string().nullable().optional(),
   coverStorageKey: z.string().nullable().optional(),
   coverContentType: z.string().nullable().optional(),
+  /** Manual / timer tracked duration (whole minutes; legacy). */
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  /** Manual / timer tracked duration (whole seconds). */
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** Last time tracked duration was set (time-report grouping stamp). */
+  lastTrackedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -786,6 +792,9 @@ export const updateDocumentSchema = z
     audience: z.enum(["group", "individual"]).optional(),
     contactIds: z.array(z.string()).nullable().optional(),
     placementFolderId: z.string().nullable().optional(),
+    trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+    trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+    lastTrackedAt: z.string().datetime().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",

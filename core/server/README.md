@@ -100,6 +100,15 @@ Health still exposes `spacesConfigured` as “storage configured” for older cl
 | `pnpm db:powersync-setup` | Create/update `powersync` publication + grants (Tier A/B tables) |
 | `pnpm db:powersync-verify` | Check publication + `powersync_role` SELECT match sync tables |
 | `pnpm powersync:up` | Start PowerSync + Mongo (docker compose) |
+| `pnpm test:integration` | Starts Docker Postgres, migrates, runs API integration tests |
+
+Integration tests (one command — uses committed `integration.env`):
+
+```bash
+pnpm test:integration
+```
+
+Or from this package: `pnpm --filter @backsteros/server test:integration`.
 
 After changing sync tables, re-run `db:powersync-setup` (or verify), then `docker restart backsteros-powersync`.
 

@@ -26,6 +26,7 @@ import {
   primeTabTitle,
   LIST_BOARD_VIEW_SEARCH_PARAM,
   TASKS_LIST_BOARD_STORAGE_KEY,
+  TrackedTimeField,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
   buildOrganizationDropdownOptions,
@@ -1595,6 +1596,40 @@ function ProjectsPageBody({
                       onSaveIcon={(icon) =>
                         workspace.updateDocumentIcon(selectedDocument.id, icon)
                       }
+                    />
+                  }
+                  headerAccessory={
+                    <TrackedTimeField
+                      variant="pill"
+                      trackedDurationSeconds={
+                        selectedDocument.trackedDurationSeconds ?? null
+                      }
+                      trackedMinutes={selectedDocument.trackedMinutes ?? null}
+                      onTrackedDurationSecondsChange={(seconds) => {
+                        const trackedMinutes =
+                          seconds != null && seconds >= 60
+                            ? Math.floor(seconds / 60)
+                            : null;
+                        void workspace.patchDocument(selectedDocument.id, {
+                          trackedDurationSeconds: seconds,
+                          trackedMinutes,
+                          ...(seconds != null && seconds > 0
+                            ? { lastTrackedAt: new Date().toISOString() }
+                            : {}),
+                        });
+                      }}
+                      timerSession={{
+                        kind: "document",
+                        entityId: selectedDocument.id,
+                        title: selectedDocument.title,
+                        subtitle: null,
+                        statusKey: null,
+                        href: getScopedProjectDocumentHref(
+                          projectKey,
+                          selectedDocument.path?.trim() || selectedDocument.id,
+                          routeScope,
+                        ),
+                      }}
                     />
                   }
                   initialBody={getDocumentEditorBody(

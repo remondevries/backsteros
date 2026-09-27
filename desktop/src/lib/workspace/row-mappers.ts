@@ -261,6 +261,9 @@ export function mapDocument(document: ApiDocument): KnowledgeListItem {
     placementFolderId: document.placementFolderId ?? null,
     coverStorageKey: document.coverStorageKey ?? null,
     coverContentType: document.coverContentType ?? null,
+    trackedDurationSeconds: document.trackedDurationSeconds ?? null,
+    trackedMinutes: document.trackedMinutes ?? null,
+    lastTrackedAt: asEpoch(document.lastTrackedAt ?? null),
   };
 }
 

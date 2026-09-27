@@ -25,7 +25,14 @@ import {
   SPACES_SECOND_BRAIN_RELATIVE,
   rewriteLegacyKnowledgeBaseStorageKey,
 } from "../lib/storage.js";
+import { compareAndSwapDocumentContent } from "./document-content-cas-write.js";
 import { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
+import { withDocumentContentRowLock } from "./document-content-row-lock.js";
+import { awaitDocumentContentSaveTestGate } from "./document-content-save-test-gate.js";
+import {
+  DOCUMENT_CONTENT_SAVE_TIMEOUT_MS,
+  withDocumentContentSaveTimeout,
+} from "./document-content-timeout.js";
 import { syncDocumentMetadataFromStorageKey } from "./vault-document-metadata.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
@@ -672,16 +679,24 @@ export async function patchDocumentContentMetadataFromSyncPayload(
   return row ?? null;
 }
 
-/** Mirror Tier-D bytes on local vault after cloud leader accepted content. */
+/**
+ * Mirror Tier-D bytes on local vault after cloud leader accepted content.
+ * Uses the same row lock as updateDocumentContent so a concurrent save cannot
+ * interleave putObject calls.
+ */
 export async function hydrateLocalDocumentVaultContent(
   workspaceId: string,
   id: string,
   content: string,
 ): Promise<void> {
   if (!content.length) return;
-  const row = await getDocumentRow(workspaceId, id);
-  if (!row?.storageKey) return;
-  await putObject(row.storageKey, content);
+  await withDocumentContentRowLock(workspaceId, id, async (locked) => {
+    if (!locked.storageKey) return;
+    await withDocumentContentSaveTimeout(
+      putObject(locked.storageKey, content),
+      DOCUMENT_CONTENT_SAVE_TIMEOUT_MS,
+    );
+  });
 }
 
 export async function updateDocumentContent(
@@ -706,46 +721,65 @@ export async function updateDocumentContent(
     existing = healed;
   }
 
-  // Same invariant as vault push: empty must never beat a non-empty body.
-  const incomingBytes = Buffer.byteLength(input.content ?? "", "utf8");
-  if (incomingBytes === 0 && (existing.byteSize ?? 0) > 0) {
-    throw new Error("EMPTY_BODY_OVER_NONEMPTY");
-  }
-
   try {
-    const stored = await putObject(existing.storageKey, input.content);
-    const checksum = checksumForContent(input.content);
-    const snippet = snippetForContent(input.content);
-    const nextVersion = existing.contentVersion + 1;
+    const cas = await compareAndSwapDocumentContent(
+      { content: input.content, ifMatchVersion: input.ifMatchVersion },
+      {
+        putObject,
+        checksumForContent,
+        snippetForContent,
+        beforePutObject: awaitDocumentContentSaveTestGate,
+        withLockedRow: async (fn) =>
+          withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
+            const observedVersion = locked.contentVersion;
+            return fn({
+              existing: {
+                contentVersion: observedVersion,
+                storageKey: locked.storageKey,
+                byteSize: locked.byteSize,
+              },
+              writeMeta: async (meta) => {
+                const [updated] = await tx
+                  .update(documents)
+                  .set({
+                    byteSize: meta.byteSize,
+                    checksum: meta.checksum,
+                    snippet: meta.snippet,
+                    contentVersion: observedVersion + 1,
+                    contentEtag: meta.contentEtag,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(documents.workspaceId, workspaceId),
+                      eq(documents.id, id),
+                      eq(documents.contentVersion, observedVersion),
+                    ),
+                  )
+                  .returning();
+                if (!updated) {
+                  return null;
+                }
+                return {
+                  contentVersion: updated.contentVersion,
+                  byteSize: updated.byteSize,
+                  checksum: updated.checksum ?? meta.checksum,
+                  snippet: updated.snippet ?? meta.snippet,
+                  contentEtag: updated.contentEtag,
+                };
+              },
+            });
+          }),
+      },
+    );
 
-    const updateConditions = [
-      eq(documents.workspaceId, workspaceId),
-      eq(documents.id, id),
-    ];
-    if (input.ifMatchVersion !== undefined) {
-      updateConditions.push(eq(documents.contentVersion, input.ifMatchVersion));
+    if (!cas) {
+      return null;
     }
 
-    const [updated] = await db
-      .update(documents)
-      .set({
-        byteSize: stored.byteSize,
-        checksum,
-        snippet,
-        contentVersion: nextVersion,
-        contentEtag: stored.etag,
-        updatedAt: new Date(),
-      })
-      .where(and(...updateConditions))
-      .returning();
-
+    const updated = await getDocumentRow(workspaceId, id);
     if (!updated) {
-      // Lost the race (or row vanished). Atomic WHERE content_version failed.
-      const stillThere = await getDocumentRow(workspaceId, id);
-      if (!stillThere) {
-        return null;
-      }
-      throw new Error("CONTENT_VERSION_CONFLICT");
+      return null;
     }
 
     await recordDocumentContentSyncEvent({

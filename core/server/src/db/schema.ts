@@ -1110,6 +1110,12 @@ export const documents = pgTable(
     /** Space folder OG/cover image (vault blob under .backsteros/space-covers). */
     coverStorageKey: text("cover_storage_key"),
     coverContentType: text("cover_content_type"),
+    /** Manual / timer tracked duration (whole minutes; legacy). */
+    trackedMinutes: integer("tracked_minutes"),
+    /** Manual / timer tracked duration (whole seconds). */
+    trackedDurationSeconds: integer("tracked_duration_seconds"),
+    /** Last time tracked duration was set (grouping stamp for time reports). */
+    lastTrackedAt: timestamp("last_tracked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

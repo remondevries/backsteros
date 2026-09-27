@@ -271,6 +271,11 @@ export type KnowledgeListItem = {
   placementFolderId?: string | null;
   coverStorageKey?: string | null;
   coverContentType?: string | null;
+  /** Manual / timer tracked duration (whole seconds). */
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+  /** Epoch ms when tracked duration was last set. */
+  lastTrackedAt?: number | null;
 };
 
 /** Canonical in-app Spaces section path (formerly `/knowledge`). */

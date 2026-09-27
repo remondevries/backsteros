@@ -112,6 +112,9 @@ const documents = new Table(
     placement_folder_id: column.text,
     cover_storage_key: column.text,
     cover_content_type: column.text,
+    tracked_minutes: column.integer,
+    tracked_duration_seconds: column.integer,
+    last_tracked_at: column.text,
     ...commonDates,
   },
   {

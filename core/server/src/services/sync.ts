@@ -236,6 +236,9 @@ function documentSnapshot(row: typeof documents.$inferSelect) {
     placement_folder_id: row.placementFolderId ?? null,
     cover_storage_key: row.coverStorageKey ?? null,
     cover_content_type: row.coverContentType ?? null,
+    tracked_minutes: row.trackedMinutes ?? null,
+    tracked_duration_seconds: row.trackedDurationSeconds ?? null,
+    last_tracked_at: row.lastTrackedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -2362,10 +2365,32 @@ export async function applySyncChange(
           change.payload,
           executor,
         );
+        const trackedMinutes = asNullableNumber(
+          change.payload.tracked_minutes ?? change.payload.trackedMinutes,
+        );
+        const trackedDurationSeconds = asNullableNumber(
+          change.payload.tracked_duration_seconds ??
+            change.payload.trackedDurationSeconds,
+        );
+        const lastTrackedAt = asNullableString(
+          change.payload.last_tracked_at ?? change.payload.lastTrackedAt,
+        );
         const row = await documentService.updateDocument(
           workspaceId,
           change.entity_id,
-          { title, path, parentId, icon, sortOrder, journalDate },
+          {
+            title,
+            path,
+            parentId,
+            icon,
+            sortOrder,
+            journalDate,
+            ...(trackedMinutes !== undefined ? { trackedMinutes } : {}),
+            ...(trackedDurationSeconds !== undefined
+              ? { trackedDurationSeconds }
+              : {}),
+            ...(lastTrackedAt !== undefined ? { lastTrackedAt } : {}),
+          },
           executor,
         );
         return row ? documentSnapshot(row) : null;
