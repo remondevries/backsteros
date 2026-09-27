@@ -817,6 +817,9 @@ export const documentSchema = z.object({
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   /** Last time tracked duration was set (time-report grouping stamp). */
   lastTrackedAt: z.string().datetime().nullable().optional(),
+  docKey: z.string().nullable().optional(),
+  properties: z.record(z.unknown()).optional(),
+  frontMatterValid: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -888,6 +891,27 @@ export const updateDocumentContentSchema = z.object({
   content: z.string().max(5_000_000),
   ifMatchVersion: z.number().int().positive().optional(),
 });
+
+export const documentPropertiesResponseSchema = z.object({
+  docKey: z.string().nullable(),
+  properties: z.record(z.unknown()),
+  frontMatterValid: z.boolean(),
+  contentVersion: z.number().int().positive(),
+});
+
+export const putDocumentPropertiesSchema = z
+  .object({
+    properties: z.record(z.unknown()),
+    ifMatchVersion: z.number().int().positive().optional(),
+  })
+  .refine((value) => Object.keys(value.properties).length > 0, {
+    message: "At least one property is required",
+  });
+
+export const putDocumentPropertiesResponseSchema =
+  documentPropertiesResponseSchema.extend({
+    contentVersion: z.number().int().positive(),
+  });
 
 export const spaceSeoAddressSchema = z.object({
   streetAddress: z.string().max(500).optional(),

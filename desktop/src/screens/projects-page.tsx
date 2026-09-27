@@ -99,6 +99,10 @@ import {
   withAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
+import {
+  documentPropertiesFromApiDocument,
+  putDocumentProperties,
+} from "../lib/document-properties-api";
 import { useAgentMail } from "../lib/agentmail-context";
 import {
   filterEmailTaskRowsForProject,
@@ -419,6 +423,40 @@ function ProjectsPageBody({
   const documentContent = useDesktopDocumentContent(
     selectedDocument?.id ?? null,
     { enabled: keepAliveActive },
+  );
+
+  const handleSaveDocumentProperties = useCallback(
+    async (input: {
+      properties: Record<string, unknown>;
+      ifMatchVersion: number;
+    }) => {
+      if (!selectedDocument) {
+        return { ok: false as const, error: "No document selected." };
+      }
+      try {
+        const result = await putDocumentProperties(
+          client,
+          selectedDocument.id,
+          input,
+        );
+        await workspace.patchDocument(selectedDocument.id, {
+          docKey: result.docKey,
+          properties: result.properties,
+          frontMatterValid: result.frontMatterValid,
+          contentVersion: result.contentVersion,
+        });
+        return { ok: true as const, contentVersion: result.contentVersion };
+      } catch (reason) {
+        return {
+          ok: false as const,
+          error:
+            reason instanceof Error
+              ? reason.message
+              : "Could not save properties.",
+        };
+      }
+    },
+    [client, selectedDocument, workspace],
   );
 
   const projectsListView = useMemo(
@@ -1933,6 +1971,10 @@ function ProjectsPageBody({
                             : doc));
                     }
                     return result;
+                  }}
+                  documentProperties={{
+                    ...documentPropertiesFromApiDocument(selectedDocument),
+                    onSave: handleSaveDocumentProperties,
                   }}
                 />
               </>

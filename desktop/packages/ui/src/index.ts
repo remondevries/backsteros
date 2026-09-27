@@ -3127,6 +3127,14 @@ export {
   rejoinDocumentFrontmatter,
   type DocumentFrontmatter,
 } from "./documents/document-frontmatter.js";
+export {
+  CORE_DOCUMENT_PROPERTY_FIELDS,
+  DocumentPropertiesDropdown,
+  DocumentPropertiesIconButton,
+  normalizeDocumentPropertiesForSave,
+  type DocumentPropertiesDropdownProps,
+  type DocumentPropertiesFieldConfig,
+} from "./components/documents/document-properties-dropdown.js";
 
 export {
   compactDocumentHeadingPreview,

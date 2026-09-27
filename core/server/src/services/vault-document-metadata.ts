@@ -10,6 +10,7 @@ import { documents } from "../db/schema.js";
 import {
   checksumForContent,
   getObject,
+  putObject,
   resolveVaultPath,
   snippetForContent,
 } from "../lib/storage.js";
@@ -71,8 +72,8 @@ export async function syncDocumentMetadataFromStorageKey(
     return "skipped";
   }
 
-  const checksum = byteSize > 0 ? checksumForContent(content) : null;
-  const snippet = byteSize > 0 ? snippetForContent(content) : null;
+  let checksum = byteSize > 0 ? checksumForContent(content) : null;
+  let snippet = byteSize > 0 ? snippetForContent(content) : null;
   const contentEtag =
     byteSize > 0 ? checksumForContent(content).slice(0, 32) : null;
 
@@ -90,8 +91,53 @@ export async function syncDocumentMetadataFromStorageKey(
     return "skipped";
   }
 
-  const contentChanged =
+  let contentChanged =
     row.byteSize !== byteSize || row.checksum !== checksum;
+
+  let propertyFields: {
+    properties?: Record<string, unknown>;
+    docKey?: string | null;
+    frontMatterValid?: boolean;
+    checksum?: string;
+    snippet?: string | null;
+  } = {};
+
+  if (byteSize > 0) {
+    const { indexDocumentFromContent } = await import(
+      "./document-properties.js"
+    );
+    const indexed = await indexDocumentFromContent({
+      workspaceId,
+      row,
+      content,
+      assignDocKey: true,
+    });
+    if ("invalidYaml" in indexed) {
+      propertyFields = {
+        frontMatterValid: false,
+        properties: {},
+      };
+    } else {
+      if (indexed.content !== content) {
+        await putObject(storageKey, indexed.content);
+        content = indexed.content;
+        byteSize = Buffer.byteLength(content, "utf8");
+        checksum = checksumForContent(content);
+        snippet = indexed.snippet;
+        contentChanged = true;
+      } else {
+        snippet = indexed.snippet;
+        checksum = indexed.checksum;
+      }
+      propertyFields = {
+        properties: indexed.properties,
+        docKey: indexed.docKey,
+        frontMatterValid: true,
+        checksum,
+        snippet,
+      };
+    }
+  }
 
   const nextContentVersion = contentChanged
     ? row.contentVersion + 1
@@ -101,10 +147,13 @@ export async function syncDocumentMetadataFromStorageKey(
     .update(documents)
     .set({
       byteSize,
-      checksum,
-      snippet,
+      checksum: propertyFields.checksum ?? checksum,
+      snippet: propertyFields.snippet ?? snippet,
       contentVersion: nextContentVersion,
       contentEtag,
+      properties: propertyFields.properties ?? row.properties,
+      docKey: propertyFields.docKey ?? row.docKey,
+      frontMatterValid: propertyFields.frontMatterValid ?? row.frontMatterValid,
       updatedAt: new Date(),
     })
     .where(eq(documents.id, row.id));

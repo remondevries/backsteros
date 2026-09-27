@@ -41,6 +41,7 @@ import {
   updateBankAccountSchema,
   updateCursorSettingsSchema,
   updateDocumentContentSchema,
+  putDocumentPropertiesSchema,
   updateDocumentSchema,
   updateFinancialCategorySchema,
   updateFinancialGoalSchema,
@@ -138,6 +139,11 @@ import {
 } from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
+import {
+  DocumentPropertyError,
+  getDocumentProperties,
+  putDocumentProperties,
+} from "../services/document-properties.js";
 import * as circleService from "../services/circle-domain.js";
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
@@ -3906,6 +3912,97 @@ export function registerApiRoutes(app: Hono) {
               code: "empty_body_over_nonempty",
             },
             409,
+          );
+        }
+        if (error instanceof Error && error.message === "STORAGE_ACCESS_DENIED") {
+          return c.json(
+            {
+              error: "Local vault access denied — check vault folder permissions",
+              code: "storage_access_denied",
+            },
+            503,
+          );
+        }
+        if (error instanceof Error && error.message === "INVALID_YAML") {
+          return c.json(
+            {
+              error: "Invalid YAML front matter",
+              code: "invalid_yaml",
+            },
+            422,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get("/api/v1/documents/:id/properties", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("documents:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+
+    const result = await getDocumentProperties(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!result) {
+      return c.json(notFound("Document"), 404);
+    }
+    return c.json(result);
+  });
+
+  app.put(
+    "/api/v1/documents/:id/properties",
+    zValidator("json", putDocumentPropertiesSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("documents:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+
+      try {
+        const body = c.req.valid("json");
+        const result = await putDocumentProperties(
+          auth.workspaceId,
+          c.req.param("id"),
+          body,
+        );
+        if (!result) {
+          return c.json(notFound("Document"), 404);
+        }
+        publishDocumentLiveFromAgent(auth, result.row.id, {
+          projectId: result.row.projectId,
+          contentVersion: result.contentVersion,
+          storageKey: result.row.storageKey,
+        });
+        return c.json({
+          docKey: result.row.docKey,
+          properties: result.properties,
+          frontMatterValid: result.row.frontMatterValid,
+          contentVersion: result.contentVersion,
+        });
+      } catch (error) {
+        if (error instanceof DocumentPropertyError) {
+          if (error.code === "CONTENT_VERSION_CONFLICT") {
+            return c.json(
+              {
+                error: "Document content version conflict",
+                code: "content_version_conflict",
+              },
+              409,
+            );
+          }
+          if (error.code === "INVALID_YAML") {
+            return c.json(
+              { error: "Invalid YAML front matter", code: "invalid_yaml" },
+              422,
+            );
+          }
+          return c.json(
+            { error: error.message, code: "invalid_property" },
+            422,
           );
         }
         if (error instanceof Error && error.message === "STORAGE_ACCESS_DENIED") {

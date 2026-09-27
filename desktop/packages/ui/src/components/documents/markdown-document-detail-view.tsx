@@ -28,6 +28,11 @@ import {
   buildContentIconTitleHeaders,
 } from "../content/content-detail-title-header.js";
 import { DocumentHeadingMinimap } from "./document-heading-minimap.js";
+import {
+  CORE_DOCUMENT_PROPERTY_FIELDS,
+  DocumentPropertiesDropdown,
+  normalizeDocumentPropertiesForSave,
+} from "./document-properties-dropdown.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
@@ -67,6 +72,21 @@ export type MarkdownDocumentDetailViewProps = {
   shortcutsEnabled?: boolean;
   /** Optional accessory below the title (e.g. tracked-time pill). */
   headerAccessory?: ReactNode;
+  /** Structured document properties (phase 1 front matter). */
+  documentProperties?: {
+    docKey: string | null;
+    properties: Record<string, unknown>;
+    frontMatterValid: boolean;
+    contentVersion: number;
+    onSave?: (
+      input: {
+        properties: Record<string, unknown>;
+        ifMatchVersion: number;
+      },
+    ) => Promise<
+      { ok: true; contentVersion: number } | { ok: false; error: string }
+    >;
+  };
   onSave?: (
     value: string,
   ) =>
@@ -98,6 +118,7 @@ export function MarkdownDocumentDetailView({
   readOnly = false,
   shortcutsEnabled = true,
   headerAccessory,
+  documentProperties,
   onSave,
   onSaveTitle,
 }: MarkdownDocumentDetailViewProps) {
@@ -124,6 +145,11 @@ export function MarkdownDocumentDetailView({
     setTitle(initialTitle);
   }
 
+  const yamlLocked =
+    documentProperties != null && documentProperties.frontMatterValid === false;
+
+  const effectiveReadOnly = readOnly || yamlLocked;
+
   const {
     value,
     mode,
@@ -139,7 +165,7 @@ export function MarkdownDocumentDetailView({
   } = useMarkdownDetailEditor({
     initialValue: initialBody,
     save: (next) => {
-      if (!onSave) {
+      if (!onSave || effectiveReadOnly) {
         return { ok: true };
       }
       return Promise.resolve(onSave(next))
@@ -150,7 +176,7 @@ export function MarkdownDocumentDetailView({
             reason instanceof Error ? reason.message : "Could not save document.",
         }));
     },
-    shortcutsEnabled: shortcutsEnabled && !readOnly,
+    shortcutsEnabled: shortcutsEnabled && !effectiveReadOnly,
     hostRef: shellRef,
   });
 
@@ -335,7 +361,7 @@ export function MarkdownDocumentDetailView({
   // Separate edit/preview title instances — sharing one element remounts on
   // mode switch and drops ⌘R focus into the body editor.
   const wrapHeader = (header: ReactNode, inlinePadding: boolean) =>
-    headerAccessory ? (
+    headerAccessory || documentProperties ? (
       <div
         className={[
           "markdown-document-detail__title-block",
@@ -348,6 +374,25 @@ export function MarkdownDocumentDetailView({
       >
         {header}
         <div className="markdown-document-detail__header-accessory">
+          {documentProperties ? (
+            <DocumentPropertiesDropdown
+              {...documentProperties}
+              fields={CORE_DOCUMENT_PROPERTY_FIELDS}
+              onSave={
+                documentProperties.onSave
+                  ? async (input) => {
+                      const result = await documentProperties.onSave!({
+                        properties: normalizeDocumentPropertiesForSave(
+                          input.properties,
+                        ),
+                        ifMatchVersion: input.ifMatchVersion,
+                      });
+                      return result;
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
           {headerAccessory}
         </div>
       </div>
@@ -355,12 +400,31 @@ export function MarkdownDocumentDetailView({
       header
     );
 
+  const propertiesPreview =
+    documentProperties && icon ? (
+      <div className="markdown-document-detail__properties-preview">
+        <DocumentPropertiesDropdown
+          {...documentProperties}
+          fields={CORE_DOCUMENT_PROPERTY_FIELDS}
+          previewOnly
+          readOnly
+        />
+      </div>
+    ) : null;
+
+  const wrapTitleWithPreview = (titleNode: ReactNode) => (
+    <>
+      {propertiesPreview}
+      {titleNode}
+    </>
+  );
+
   const { editHeader, previewTitleHeader } = icon
     ? (() => {
         const built = buildContentIconTitleHeaders({
           icon,
-          editTitle: renderTitleEditor(false),
-          previewTitle: renderTitleEditor(true),
+          editTitle: wrapTitleWithPreview(renderTitleEditor(false)),
+          previewTitle: wrapTitleWithPreview(renderTitleEditor(true)),
         });
         return {
           editHeader: wrapHeader(built.editHeader, true),
@@ -370,13 +434,13 @@ export function MarkdownDocumentDetailView({
     : {
         editHeader: wrapHeader(
           <ContentDetailTitleHeader>
-            {renderTitleEditor(false)}
+            {wrapTitleWithPreview(renderTitleEditor(false))}
           </ContentDetailTitleHeader>,
           true,
         ),
         previewTitleHeader: wrapHeader(
           <ContentDetailTitleHeader inlinePadding={false}>
-            {renderTitleEditor(true)}
+            {wrapTitleWithPreview(renderTitleEditor(true))}
           </ContentDetailTitleHeader>,
           false,
         ),
@@ -384,6 +448,12 @@ export function MarkdownDocumentDetailView({
 
   const markdown = (
     <>
+      {yamlLocked ? (
+        <p className="markdown-document-detail__yaml-banner" role="alert">
+          This document has invalid YAML front matter. Editing is disabled until
+          the file is fixed outside BacksterOS.
+        </p>
+      ) : null}
       <ContentMarkdownViewLayout
         mode={mode}
         editorActivated={editorActivated}

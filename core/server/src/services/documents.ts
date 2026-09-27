@@ -28,6 +28,10 @@ import {
 import { compareAndSwapDocumentContent } from "./document-content-cas-write.js";
 import { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
 import { withDocumentContentRowLock } from "./document-content-row-lock.js";
+import {
+  DocumentPropertyError,
+  syncDocumentContentProperties,
+} from "./document-properties.js";
 import { awaitDocumentContentSaveTestGate } from "./document-content-save-test-gate.js";
 import {
   DOCUMENT_CONTENT_SAVE_TIMEOUT_MS,
@@ -390,6 +394,46 @@ export async function createDocument(
     })
     .returning();
 
+  if (row && content.length > 0) {
+    try {
+      const synced = await syncDocumentContentProperties({
+        workspaceId,
+        row,
+        content,
+        assignDocKey: true,
+        executor,
+      });
+      if (synced.content !== content) {
+        await putObject(storageKey, synced.content);
+      }
+      const [indexed] = await executor
+        .update(documents)
+        .set({
+          docKey: synced.docKey,
+          properties: synced.properties,
+          frontMatterValid: true,
+          checksum: synced.checksum,
+          snippet: synced.snippet,
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, row.id))
+        .returning();
+      return indexed ?? row;
+    } catch (error) {
+      if (
+        error instanceof DocumentPropertyError &&
+        error.code === "INVALID_YAML"
+      ) {
+        await executor
+          .update(documents)
+          .set({ frontMatterValid: false, properties: {}, updatedAt: new Date() })
+          .where(eq(documents.id, row.id));
+      } else {
+        throw error;
+      }
+    }
+  }
+
   return row;
 }
 
@@ -722,8 +766,28 @@ export async function updateDocumentContent(
   }
 
   try {
+    let contentForWrite = input.content;
+    let propertyPatch:
+      | {
+          properties: Record<string, unknown>;
+          docKey: string | null;
+          frontMatterValid: boolean;
+          checksum: string;
+          snippet: string;
+        }
+      | undefined;
+
+    const casInput: UpdateDocumentContentInput & {
+      get content(): string;
+    } = {
+      ifMatchVersion: input.ifMatchVersion,
+      get content() {
+        return contentForWrite;
+      },
+    };
+
     const cas = await compareAndSwapDocumentContent(
-      { content: input.content, ifMatchVersion: input.ifMatchVersion },
+      casInput as UpdateDocumentContentInput,
       {
         putObject,
         checksumForContent,
@@ -732,6 +796,31 @@ export async function updateDocumentContent(
         withLockedRow: async (fn) =>
           withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
             const observedVersion = locked.contentVersion;
+            try {
+              const synced = await syncDocumentContentProperties({
+                workspaceId,
+                row: locked,
+                content: input.content,
+                assignDocKey: true,
+                executor: tx,
+              });
+              contentForWrite = synced.content;
+              propertyPatch = {
+                properties: synced.properties,
+                docKey: synced.docKey,
+                frontMatterValid: true,
+                checksum: synced.checksum,
+                snippet: synced.snippet,
+              };
+            } catch (error) {
+              if (
+                error instanceof DocumentPropertyError &&
+                error.code === "INVALID_YAML"
+              ) {
+                throw new Error("INVALID_YAML");
+              }
+              throw error;
+            }
             return fn({
               existing: {
                 contentVersion: observedVersion,
@@ -743,10 +832,14 @@ export async function updateDocumentContent(
                   .update(documents)
                   .set({
                     byteSize: meta.byteSize,
-                    checksum: meta.checksum,
-                    snippet: meta.snippet,
+                    checksum: propertyPatch?.checksum ?? meta.checksum,
+                    snippet: propertyPatch?.snippet ?? meta.snippet,
                     contentVersion: observedVersion + 1,
                     contentEtag: meta.contentEtag,
+                    docKey: propertyPatch?.docKey ?? locked.docKey,
+                    properties: propertyPatch?.properties ?? locked.properties,
+                    frontMatterValid:
+                      propertyPatch?.frontMatterValid ?? locked.frontMatterValid,
                     updatedAt: new Date(),
                   })
                   .where(
@@ -807,6 +900,9 @@ export async function updateDocumentContent(
 
     return updated;
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_YAML") {
+      throw new Error("INVALID_YAML");
+    }
     if (
       error &&
       typeof error === "object" &&

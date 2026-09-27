@@ -117,6 +117,9 @@ const documents = new Table(
     tracked_minutes: column.integer,
     tracked_duration_seconds: column.integer,
     last_tracked_at: column.text,
+    doc_key: column.text,
+    properties: column.text,
+    front_matter_valid: column.integer,
     ...commonDates,
   },
   {

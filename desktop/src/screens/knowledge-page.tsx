@@ -71,6 +71,10 @@ import {
   useDesktopSpaceCoverSrcMap,
 } from "../lib/space-cover-src";
 import { writeDocumentContentCache } from "../lib/document-content-cache";
+import {
+  documentPropertiesFromApiDocument,
+  putDocumentProperties,
+} from "../lib/document-properties-api";
 import { useDesktopApi } from "../lib/api-context";
 import {
   useKeepAliveActive,
@@ -396,6 +400,36 @@ function KnowledgePageBody() {
   const { initialBody, onSave, loadError } = useDesktopDocumentContent(
     selected?.id ?? null,
     { enabled: keepAliveActive && !onOverview },
+  );
+
+  const handleSaveDocumentProperties = useCallback(
+    async (input: {
+      properties: Record<string, unknown>;
+      ifMatchVersion: number;
+    }) => {
+      if (!selected) {
+        return { ok: false as const, error: "No document selected." };
+      }
+      try {
+        const result = await putDocumentProperties(client, selected.id, input);
+        await workspace.patchDocument(selected.id, {
+          docKey: result.docKey,
+          properties: result.properties,
+          frontMatterValid: result.frontMatterValid,
+          contentVersion: result.contentVersion,
+        });
+        return { ok: true as const, contentVersion: result.contentVersion };
+      } catch (reason) {
+        return {
+          ok: false as const,
+          error:
+            reason instanceof Error
+              ? reason.message
+              : "Could not save properties.",
+        };
+      }
+    },
+    [client, selected, workspace],
   );
 
   useEffect(() => {
@@ -1287,6 +1321,10 @@ function KnowledgePageBody() {
           onSaveTitle={async (title) =>
             workspace.renameDocument(selected.id, title)
           }
+          documentProperties={{
+            ...documentPropertiesFromApiDocument(selected),
+            onSave: handleSaveDocumentProperties,
+          }}
         />
       )}
     </>

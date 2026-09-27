@@ -1147,6 +1147,12 @@ export const documents = pgTable(
     trackedDurationSeconds: integer("tracked_duration_seconds"),
     /** Last time tracked duration was set (grouping stamp for time reports). */
     lastTrackedAt: timestamp("last_tracked_at", { withTimezone: true }),
+    /** Stable public key (DOC-1) for front-matter relations. */
+    docKey: text("doc_key"),
+    /** Derived searchable index of YAML front-matter properties. */
+    properties: jsonb("properties").notNull().default({}),
+    /** False when the markdown file has invalid YAML front matter. */
+    frontMatterValid: boolean("front_matter_valid").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
