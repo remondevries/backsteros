@@ -86,4 +86,78 @@ describe("document sections", () => {
     const fmEnd = SAMPLE.indexOf("# Overview");
     assert.equal(content.slice(0, fmEnd), SAMPLE.slice(0, fmEnd));
   });
+
+  it("does not treat # lines inside fenced code blocks as headings", () => {
+    const withFence = `---
+type: runbook
+---
+
+# Setup
+Intro.
+
+\`\`\`bash
+# comment inside fence
+echo hi
+\`\`\`
+
+## Steps
+Do the thing.
+
+~~~
+# also not a heading
+~~~
+`;
+    const sections = parseDocumentSections(withFence);
+    assert.deepEqual(
+      sections.map((s) => s.heading),
+      ["Setup", "Steps"],
+    );
+    assert.equal(
+      sections.find((s) => s.slug === "comment-inside-fence"),
+      undefined,
+    );
+    const setup = readDocumentSection(withFence, "setup");
+    assert.match(setup.text, /# comment inside fence/);
+  });
+
+  it("parses CRLF headings and preserves bytes on replace", () => {
+    const crlf = [
+      "---",
+      "type: runbook",
+      "---",
+      "",
+      "# Setup",
+      "Alpha.",
+      "",
+      "## Details",
+      "Beta.",
+      "",
+      "# Closing",
+      "Gamma.",
+      "",
+    ].join("\r\n");
+
+    const sections = parseDocumentSections(crlf);
+    assert.deepEqual(
+      sections.map((s) => s.heading),
+      ["Setup", "Details", "Closing"],
+    );
+
+    const { content } = replaceDocumentSectionBody(
+      crlf,
+      "details",
+      "Replaced.\r\n",
+    );
+    const detailsHeading = content.indexOf("## Details");
+    assert.ok(detailsHeading > 0);
+    assert.equal(
+      content.slice(0, detailsHeading + "## Details".length),
+      crlf.slice(0, crlf.indexOf("## Details") + "## Details".length),
+    );
+    assert.match(content, /## Details\r\nReplaced\.\r\n/);
+    assert.match(content, /# Closing\r\nGamma\./);
+    // Bytes before the replaced body (through Details heading line) unchanged.
+    const bodyStart = findDocumentSection(crlf, "details").bodyStart;
+    assert.equal(content.slice(0, bodyStart), crlf.slice(0, bodyStart));
+  });
 });

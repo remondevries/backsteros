@@ -12,6 +12,8 @@
  */
 
 const ATX_HEADING = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+/** Opening/closing fence: three or more backticks or tildes. */
+const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
 
 export type DocumentSection = {
   level: number;
@@ -120,9 +122,35 @@ export function parseDocumentSections(content: string): DocumentSection[] {
     lineIndex: number;
   }[] = [];
 
+  let fence: { marker: string; length: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    const match = line.text.match(ATX_HEADING);
+    // Strip trailing CR for matching only — offsets stay on the raw line
+    // (including \r\n) so replaces remain byte-exact on CRLF files.
+    const logical = line.text.endsWith("\r")
+      ? line.text.slice(0, -1)
+      : line.text;
+
+    if (fence) {
+      const close = logical.match(FENCE_LINE);
+      if (
+        close &&
+        close[1]!.startsWith(fence.marker) &&
+        close[1]!.length >= fence.length &&
+        close[2]!.trim() === ""
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+
+    const open = logical.match(FENCE_LINE);
+    if (open) {
+      fence = { marker: open[1]![0]!, length: open[1]!.length };
+      continue;
+    }
+
+    const match = logical.match(ATX_HEADING);
     if (!match) continue;
     const level = match[1]!.length;
     const heading = match[2]!.trim();
