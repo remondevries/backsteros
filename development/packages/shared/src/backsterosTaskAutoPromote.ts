@@ -1,6 +1,7 @@
 /**
  * Shared rules for agent-driven BacksterOS task status auto-promote.
- * Used by the Development web leave timer and the localhost control API.
+ * Used by Development web turn-start / leave-timer writes and the localhost
+ * control API (session start + status GET).
  */
 
 export type BacksterosControlSessionStatus = "idle" | "working" | "blocked" | "done";

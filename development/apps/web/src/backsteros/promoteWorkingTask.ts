@@ -98,12 +98,17 @@ async function restoreBacksterosTaskStatusFromServer(taskId: string): Promise<vo
  * Promote a task to `in_progress` when an agent starts working — mirrors
  * BacksterOS desktop `markTaskInProgressForAgent`.
  *
- * Skips a preliminary GET: the UI already moved optimistically, and a no-op
- * PATCH when already in progress is cheaper than a round-trip race.
+ * Re-reads status first (same closed-status rule as the leave timer / control
+ * API) so a completed/canceled/duplicated task is never reopened at turn start.
  *
  * @returns true when the status write was attempted successfully.
  */
 export async function markBacksterosTaskInProgressForAgent(taskId: string): Promise<boolean> {
+  const task = await fetchBacksterosTask(taskId);
+  const status = migrateBacksterosTaskStatus(task.status);
+  if (!canAutoPromoteBacksterosTaskStatus(status)) {
+    return false;
+  }
   await updateBacksterosTask(taskId, {
     status: "in_progress",
     activityActor: "agent",
@@ -192,6 +197,13 @@ export function usePromoteWorkingBacksterosTasks() {
         projectId: byTaskId[taskId]?.backsterosProjectId ?? null,
       });
       void markBacksterosTaskInProgressForAgent(taskId)
+        .then((promoted) => {
+          if (!promoted) {
+            // Closed task — undo optimistic in_progress and skip the leave timer.
+            promoteHandledWhileWorking.delete(taskId);
+            void restoreBacksterosTaskStatusFromServer(taskId);
+          }
+        })
         .catch(() => {
           promoteHandledWhileWorking.delete(taskId);
           void restoreBacksterosTaskStatusFromServer(taskId);

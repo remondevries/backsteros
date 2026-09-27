@@ -22,14 +22,42 @@ afterEach(() => {
 });
 
 describe("markBacksterosTaskInProgressForAgent", () => {
-  it("patches tasks to in_progress without a preliminary GET", async () => {
+  it("does not reopen a completed task at turn start", async () => {
+    fetchMock.mockResolvedValue({
+      id: "task-1",
+      status: "completed",
+    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+
+    await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith("task-1");
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("skips canceled and duplicated tasks at turn start", async () => {
+    for (const status of ["canceled", "duplicated"] as const) {
+      fetchMock.mockResolvedValue({
+        id: "task-1",
+        status,
+      } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+
+      await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(false);
+      expect(updateMock).not.toHaveBeenCalled();
+      vi.clearAllMocks();
+    }
+  });
+
+  it("promotes an open task to in_progress after re-reading status", async () => {
+    fetchMock.mockResolvedValue({
+      id: "task-1",
+      status: "in_review",
+    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_progress",
     } as Awaited<ReturnType<typeof updateBacksterosTask>>);
 
     await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith("task-1");
     expect(updateMock).toHaveBeenCalledWith("task-1", {
       status: "in_progress",
       activityActor: "agent",
