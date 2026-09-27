@@ -46,7 +46,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm --filter @backsteros/server exec tsx src/db/migrate.ts
+      # Reuse the job service Postgres; avoid a second compose stack on :5433.
       - run: pnpm test:integration
+        env:
+          INTEGRATION_USE_EXISTING_DB: "1"
       - run: pnpm build
 
   # Desktop shell + desktop-owned UI: typecheck, lint, unit tests.

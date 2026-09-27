@@ -11,7 +11,12 @@ import { getChangesSince } from "./sync.js";
 import type { KnownTable } from "./tables.js";
 import type { ReplicationApplyRequest, ReplicationCursor } from "./types.js";
 import { buildSyncEventsFeed } from "./sync-event-replication.js";
-import { acceptLeaderMutations, acceptDocumentContentLeaderMutation } from "./leader-mutations.js";
+import {
+  acceptLeaderMutations,
+  acceptDocumentContentLeaderMutation,
+  acceptDocumentPropertiesLeaderMutation,
+} from "./leader-mutations.js";
+import { DocumentPropertyError } from "../document-properties.js";
 import type { SyncEntity, SyncOperation } from "../../lib/sync-constants.js";
 import { SYNC_ENTITIES, SYNC_OPERATIONS } from "../../lib/sync-constants.js";
 import { syncDocumentMetadataAfterVaultWrite } from "../vault-document-metadata.js";
@@ -341,6 +346,120 @@ export function registerCoreReplicationRoutes(app: Hono) {
             code: "storage_access_denied",
           },
           503,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.post("/internal/core-replication/document-properties", async (c) => {
+    const config = getCoreReplicationConfig();
+    if (!config || config.role !== "cloud") {
+      return c.json(unauthorized(), 401);
+    }
+    const token = extractBearerToken(c.req.header("Authorization"));
+    if (!token || !verifyReplicationSecret(token, config.secret)) {
+      return c.json(unauthorized(), 401);
+    }
+
+    const body = (await c.req.json()) as {
+      workspace_id?: string;
+      document_id?: string;
+      properties?: Record<string, unknown>;
+      if_match_version?: number;
+      mutation_id?: string;
+      device_id?: string;
+    };
+    const workspaceId = body.workspace_id?.trim();
+    const documentId = body.document_id?.trim();
+    const mutationId = body.mutation_id?.trim();
+    if (!workspaceId || !documentId || !mutationId) {
+      return c.json(
+        {
+          error: "workspace_id, document_id, and mutation_id are required",
+          code: "bad_request" as const,
+        },
+        400,
+      );
+    }
+    if (!body.properties || typeof body.properties !== "object") {
+      return c.json(
+        { error: "properties is required", code: "bad_request" as const },
+        400,
+      );
+    }
+
+    try {
+      const result = await acceptDocumentPropertiesLeaderMutation({
+        workspaceId,
+        documentId,
+        properties: body.properties,
+        ifMatchVersion: body.if_match_version,
+        mutationId,
+        deviceId: body.device_id?.trim() || "replica",
+      });
+      return c.json({
+        last_sync_id: result.lastSyncId,
+        content_version: result.contentVersion,
+        doc_key: result.docKey,
+        properties: result.properties,
+        front_matter_valid: result.frontMatterValid,
+        content: result.content,
+        events: result.events.map((event) => ({
+          cursor: event.cursor,
+          mutation_id: event.mutationId,
+          device_id: event.deviceId,
+          entity: event.entity,
+          entity_id: event.entityId,
+          operation: event.operation,
+          payload: event.payload,
+          created_at: event.createdAt.toISOString(),
+        })),
+      });
+    } catch (error) {
+      if (error instanceof DocumentPropertyError) {
+        if (error.code === "CONTENT_VERSION_CONFLICT") {
+          return c.json(
+            {
+              error: "Document content version conflict",
+              code: "content_version_conflict",
+            },
+            409,
+          );
+        }
+        if (error.code === "INVALID_YAML") {
+          return c.json(
+            { error: "Invalid YAML front matter", code: "invalid_yaml" },
+            422,
+          );
+        }
+        if (error.code === "STORAGE_NOT_FOUND") {
+          return c.json(
+            {
+              error: "Document content not found in storage",
+              code: "storage_not_found",
+            },
+            422,
+          );
+        }
+        return c.json(
+          { error: error.message, code: "invalid_property" },
+          422,
+        );
+      }
+      if (error instanceof Error && error.message === "DOCUMENT_NOT_FOUND") {
+        return c.json(
+          { error: "Document not found", code: "not_found" as const },
+          404,
+        );
+      }
+      if (error instanceof Error && error.message === "CONTENT_VERSION_CONFLICT") {
+        return c.json(
+          {
+            error: "Document content version conflict",
+            code: "content_version_conflict",
+          },
+          409,
         );
       }
       throw error;

@@ -241,6 +241,9 @@ function documentSnapshot(row: typeof documents.$inferSelect) {
     tracked_minutes: row.trackedMinutes ?? null,
     tracked_duration_seconds: row.trackedDurationSeconds ?? null,
     last_tracked_at: row.lastTrackedAt?.toISOString() ?? null,
+    doc_key: row.docKey ?? null,
+    properties: row.properties ?? {},
+    front_matter_valid: row.frontMatterValid ?? true,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -2423,6 +2426,9 @@ export async function applySyncChange(
         const lastTrackedAt = asNullableString(
           change.payload.last_tracked_at ?? change.payload.lastTrackedAt,
         );
+        const audience = asString(
+          change.payload.audience,
+        ) as "group" | "individual" | undefined;
         const row = await documentService.updateDocument(
           workspaceId,
           change.entity_id,
@@ -2433,6 +2439,11 @@ export async function applySyncChange(
             icon,
             sortOrder,
             journalDate,
+            ...(audience !== undefined ? { audience } : {}),
+            ...(change.payload.project_id !== undefined ||
+            change.payload.projectId !== undefined
+              ? { projectId: projectId ?? null }
+              : {}),
             ...(trackedMinutes !== undefined ? { trackedMinutes } : {}),
             ...(trackedDurationSeconds !== undefined
               ? { trackedDurationSeconds }

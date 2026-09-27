@@ -276,7 +276,10 @@ import {
   commitRestEntityWriteBatch,
   isRestLeaderFirstWrite,
 } from "../services/rest-leader-write.js";
-import { commitDocumentContentLeaderFirst } from "../services/core-replication/leader-mutations.js";
+import {
+  commitDocumentContentLeaderFirst,
+  commitDocumentPropertiesLeaderFirst,
+} from "../services/core-replication/leader-mutations.js";
 import { emitHabitTaskSyncChanges } from "../services/habit-task-sync.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
 import * as whoopService from "../services/whoop.js";
@@ -3932,6 +3935,15 @@ export function registerApiRoutes(app: Hono) {
             422,
           );
         }
+        if (error instanceof Error && error.message === "INVALID_PROPERTY") {
+          return c.json(
+            {
+              error: "Invalid document property value",
+              code: "invalid_property",
+            },
+            422,
+          );
+        }
         throw error;
       }
     },
@@ -3964,9 +3976,35 @@ export function registerApiRoutes(app: Hono) {
 
       try {
         const body = c.req.valid("json");
+        const documentId = c.req.param("id");
+
+        if (isRestLeaderFirstWrite()) {
+          const leaderResult = await commitDocumentPropertiesLeaderFirst({
+            workspaceId: auth.workspaceId,
+            documentId,
+            properties: body.properties,
+            ifMatchVersion: body.ifMatchVersion,
+          });
+          const row = await documentService.getDocumentById(
+            auth.workspaceId,
+            documentId,
+          );
+          publishDocumentLiveFromAgent(auth, documentId, {
+            projectId: row?.projectId ?? null,
+            contentVersion: leaderResult.contentVersion,
+            storageKey: row?.storageKey,
+          });
+          return c.json({
+            docKey: leaderResult.docKey,
+            properties: leaderResult.properties,
+            frontMatterValid: leaderResult.frontMatterValid,
+            contentVersion: leaderResult.contentVersion,
+          });
+        }
+
         const result = await putDocumentProperties(
           auth.workspaceId,
-          c.req.param("id"),
+          documentId,
           body,
         );
         if (!result) {
@@ -4000,9 +4038,30 @@ export function registerApiRoutes(app: Hono) {
               422,
             );
           }
+          if (error.code === "STORAGE_NOT_FOUND") {
+            return c.json(
+              {
+                error: "Document content not found in storage",
+                code: "storage_not_found",
+              },
+              422,
+            );
+          }
           return c.json(
             { error: error.message, code: "invalid_property" },
             422,
+          );
+        }
+        if (error instanceof Error && error.message === "DOCUMENT_NOT_FOUND") {
+          return c.json(notFound("Document"), 404);
+        }
+        if (error instanceof Error && error.message === "CONTENT_VERSION_CONFLICT") {
+          return c.json(
+            {
+              error: "Document content version conflict",
+              code: "content_version_conflict",
+            },
+            409,
           );
         }
         if (error instanceof Error && error.message === "STORAGE_ACCESS_DENIED") {
