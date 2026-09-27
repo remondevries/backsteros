@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { DOCUMENT_LIST_MAX_LIMIT } from "@backsteros/contracts";
+
 import {
+  applyDocumentListPagination,
   camelToKebab,
   documentMatchesPropertyFilters,
   parseDocumentListTypeFilter,
   parseExactMultiQueryValues,
   parseMultiQueryValues,
   propertiesLinkTask,
+  resolveDocumentListPagination,
   resolveSectionIfMatchVersion,
 } from "./document-property-filters.ts";
 
@@ -98,5 +102,72 @@ describe("document property filters", () => {
   it("defaults section ifMatchVersion to the version just read", () => {
     assert.equal(resolveSectionIfMatchVersion(undefined, 7), 7);
     assert.equal(resolveSectionIfMatchVersion(3, 7), 3);
+  });
+
+  it("resolves document list limit/offset (omit = all, clamp max)", () => {
+    assert.deepEqual(resolveDocumentListPagination(undefined), {
+      limit: undefined,
+      offset: undefined,
+    });
+    assert.deepEqual(resolveDocumentListPagination({}), {
+      limit: undefined,
+      offset: undefined,
+    });
+    assert.deepEqual(resolveDocumentListPagination({ limit: 2 }), {
+      limit: 2,
+      offset: 0,
+    });
+    assert.deepEqual(
+      resolveDocumentListPagination({ limit: 2, offset: 10 }),
+      { limit: 2, offset: 10 },
+    );
+    assert.deepEqual(
+      resolveDocumentListPagination({ limit: 9999, offset: -3 }),
+      { limit: DOCUMENT_LIST_MAX_LIMIT, offset: 0 },
+    );
+    assert.deepEqual(resolveDocumentListPagination({ limit: 0 }), {
+      limit: 1,
+      offset: 0,
+    });
+  });
+
+  it("applies limit after filters both with and without property filters", () => {
+    function mockQuery() {
+      const seen: { limit?: number; offset?: number } = {};
+      const self = {
+        // Stand-in for the already-filtered drizzle chain (WHERE applied).
+        filtersApplied: true as const,
+        limit(n: number) {
+          seen.limit = n;
+          return self;
+        },
+        offset(n: number) {
+          seen.offset = n;
+          return self;
+        },
+        seen,
+      };
+      return self;
+    }
+
+    // No property filters — limit still applied on the filtered query.
+    const withoutFilters = mockQuery();
+    assert.equal(withoutFilters.filtersApplied, true);
+    applyDocumentListPagination(withoutFilters, { limit: 2 });
+    assert.deepEqual(withoutFilters.seen, { limit: 2 });
+
+    // With property filters already in WHERE — limit/offset still applied after.
+    const withFilters = mockQuery();
+    assert.equal(withFilters.filtersApplied, true);
+    applyDocumentListPagination(withFilters, {
+      limit: 2,
+      offset: 4,
+    });
+    assert.deepEqual(withFilters.seen, { limit: 2, offset: 4 });
+
+    // Omit limit → no SQL limit (full list for desktop clients).
+    const unbounded = mockQuery();
+    applyDocumentListPagination(unbounded, {});
+    assert.deepEqual(unbounded.seen, {});
   });
 });

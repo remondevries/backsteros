@@ -959,6 +959,39 @@ export const documentRetrievalQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
 
+/** Max page size for GET /api/v1/documents (same band as activities / ops logs). */
+export const DOCUMENT_LIST_MAX_LIMIT = 200;
+
+/** Accept a single query string or repeated keys (`?type=a&type=b`). */
+const optionalQueryString = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((value) => {
+    if (value == null) return undefined;
+    return Array.isArray(value) ? value.join(",") : value;
+  });
+
+/**
+ * Query for GET /api/v1/documents.
+ * When `limit` is omitted, all matching rows are returned (desktop/full-list clients).
+ * When set, clamped to 1..DOCUMENT_LIST_MAX_LIMIT after filters.
+ */
+export const listDocumentsQuerySchema = z.object({
+  /**
+   * Structural document type (knowledge|project|journal) or, when the
+   * value is not one of those, semantic property type from the index
+   * (e.g. house-rule). Comma-separated / repeated for multi-value.
+   */
+  type: optionalQueryString,
+  projectId: z.string().optional(),
+  /** Property audience filter (comma-separated or repeated). */
+  audience: optionalQueryString,
+  /** Property status filter (comma-separated or repeated). */
+  status: optionalQueryString,
+  limit: z.coerce.number().int().min(1).max(DOCUMENT_LIST_MAX_LIMIT).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
 export const spaceSeoAddressSchema = z.object({
   streetAddress: z.string().max(500).optional(),
   addressLocality: z.string().max(200).optional(),

@@ -43,6 +43,7 @@ import {
   updateDocumentContentSchema,
   updateDocumentSectionSchema,
   documentRetrievalQuerySchema,
+  listDocumentsQuerySchema,
   putDocumentPropertiesSchema,
   updateDocumentSchema,
   updateFinancialCategorySchema,
@@ -3605,37 +3606,43 @@ export function registerApiRoutes(app: Hono) {
     return row ? c.json(row) : c.json(notFound("PDF"), 404);
   });
 
-  app.get("/api/v1/documents", async (c) => {
-    const auth = getAuth(c);
-    if (!requireScope("documents:read")(auth)) {
-      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
-    }
+  app.get(
+    "/api/v1/documents",
+    zValidator("query", listDocumentsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("documents:read")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
 
-    const typeFilter = parseDocumentListTypeFilter([
-      ...(c.req.queries("type") ?? []),
-    ]);
-    if (typeFilter.kind === "mixed") {
-      return c.json(
-        { error: typeFilter.message, code: "bad_request" },
-        400,
-      );
-    }
+      const query = c.req.valid("query");
+      const typeFilter = parseDocumentListTypeFilter([
+        ...(c.req.queries("type") ?? []),
+      ]);
+      if (typeFilter.kind === "mixed") {
+        return c.json(
+          { error: typeFilter.message, code: "bad_request" },
+          400,
+        );
+      }
 
-    const audience = parseMultiQueryValues(c.req.queries("audience") ?? []);
-    const status = parseMultiQueryValues(c.req.queries("status") ?? []);
-    const projectId = c.req.query("projectId");
+      const audience = parseMultiQueryValues(c.req.queries("audience") ?? []);
+      const status = parseMultiQueryValues(c.req.queries("status") ?? []);
 
-    const rows = await documentService.listDocuments(auth.workspaceId, {
-      type:
-        typeFilter.kind === "documentType" ? typeFilter.values : undefined,
-      propertyType:
-        typeFilter.kind === "propertyType" ? typeFilter.values : undefined,
-      audience: audience.length ? audience : undefined,
-      status: status.length ? status : undefined,
-      projectId,
-    });
-    return c.json({ documents: rows.map(toDocument) });
-  });
+      const rows = await documentService.listDocuments(auth.workspaceId, {
+        type:
+          typeFilter.kind === "documentType" ? typeFilter.values : undefined,
+        propertyType:
+          typeFilter.kind === "propertyType" ? typeFilter.values : undefined,
+        audience: audience.length ? audience : undefined,
+        status: status.length ? status : undefined,
+        projectId: query.projectId,
+        limit: query.limit,
+        offset: query.offset,
+      });
+      return c.json({ documents: rows.map(toDocument) });
+    },
+  );
 
   app.get(
     "/api/v1/documents/retrieve",

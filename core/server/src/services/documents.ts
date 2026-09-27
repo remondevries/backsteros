@@ -11,7 +11,10 @@ import { db } from "../db/index.js";
 import { documents, projects, tasks } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { bodyForSnippet } from "../lib/document-frontmatter.js";
-import { resolveSectionIfMatchVersion } from "../lib/document-property-filters.js";
+import {
+  resolveDocumentListPagination,
+  resolveSectionIfMatchVersion,
+} from "../lib/document-property-filters.js";
 import {
   clampRetrievalBudget,
   retrieveDocumentSections,
@@ -167,6 +170,10 @@ export async function listDocuments(
     audience?: string[];
     /** Property status from the OS-26 properties index. */
     status?: string[];
+    /** Page size after filters (omit for all matching rows). */
+    limit?: number;
+    /** Rows to skip after filters (only applied when `limit` is set). */
+    offset?: number;
   },
   executor: DbExecutor = db,
 ) {
@@ -208,11 +215,21 @@ export async function listDocuments(
     conditions.push(propertyScalarIn("status", filters.status));
   }
 
-  return executor
+  const { limit, offset } = resolveDocumentListPagination({
+    limit: filters?.limit,
+    offset: filters?.offset,
+  });
+
+  const query = executor
     .select()
     .from(documents)
     .where(and(...conditions))
     .orderBy(desc(documents.updatedAt));
+
+  // Apply pagination only after WHERE filters (see applyDocumentListPagination).
+  if (limit == null) return query;
+  if (offset != null && offset > 0) return query.limit(limit).offset(offset);
+  return query.limit(limit);
 }
 
 /**

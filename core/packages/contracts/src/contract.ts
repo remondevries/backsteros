@@ -652,19 +652,7 @@ export const apiContract: AppRouter = c.router(
     listDocuments: {
       method: "GET",
       path: "/api/v1/documents",
-      query: z.object({
-        /**
-         * Structural document type (knowledge|project|journal) or, when the
-         * value is not one of those, semantic property type from the index
-         * (e.g. house-rule). Comma-separated / repeated for multi-value.
-         */
-        type: z.string().optional(),
-        projectId: z.string().optional(),
-        /** Property audience filter (comma-separated or repeated). */
-        audience: z.string().optional(),
-        /** Property status filter (comma-separated or repeated). */
-        status: z.string().optional(),
-      }),
+      query: s.listDocumentsQuerySchema,
       responses: {
         200: z.object({ documents: z.array(documentSchema) }),
         400: badRequestSchema,

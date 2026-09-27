@@ -3,7 +3,54 @@
  * Accepts comma-separated values and camelCase aliases (houseRule → house-rule).
  */
 
-import { DOCUMENT_TYPES, type DocumentType } from "@backsteros/contracts";
+import {
+  DOCUMENT_LIST_MAX_LIMIT,
+  DOCUMENT_TYPES,
+  type DocumentType,
+} from "@backsteros/contracts";
+
+/**
+ * Resolve list pagination for GET /documents.
+ * - `limit` omitted → undefined (return all; desktop full-list clients)
+ * - `limit` set → clamp to 1..DOCUMENT_LIST_MAX_LIMIT
+ * - `offset` defaults to 0 when `limit` is set; ignored when unbounded
+ */
+export function resolveDocumentListPagination(input?: {
+  limit?: number;
+  offset?: number;
+}): { limit?: number; offset?: number } {
+  const hasLimit = input?.limit != null && Number.isFinite(input.limit);
+  if (!hasLimit) {
+    return { limit: undefined, offset: undefined };
+  }
+  const limit = Math.min(
+    Math.max(Math.trunc(input!.limit!), 1),
+    DOCUMENT_LIST_MAX_LIMIT,
+  );
+  const offset =
+    input?.offset != null && Number.isFinite(input.offset)
+      ? Math.max(0, Math.trunc(input.offset))
+      : 0;
+  return { limit, offset };
+}
+
+/**
+ * Apply limit/offset to an already-filtered query builder mock / chain.
+ * Production `listDocuments` inlines the same steps for drizzle typing.
+ */
+export function applyDocumentListPagination(
+  query: {
+    limit: (n: number) => { offset: (n: number) => unknown };
+  },
+  pagination?: { limit?: number; offset?: number },
+): unknown {
+  const { limit, offset } = resolveDocumentListPagination(pagination);
+  if (limit == null) return query;
+  if (offset != null && offset > 0) {
+    return query.limit(limit).offset(offset);
+  }
+  return query.limit(limit);
+}
 
 const DOCUMENT_TYPE_SET = new Set<string>(DOCUMENT_TYPES);
 
