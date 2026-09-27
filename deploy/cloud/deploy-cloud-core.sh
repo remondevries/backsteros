@@ -56,7 +56,8 @@ for i in $(seq 1 30); do
 done
 
 echo "==> Running db:migrate in container…"
-ssh "$CLOUD_SSH_HOST" "${REMOTE_COMPOSE} exec -T backsteros pnpm db:migrate"
+# Compose injects DATABASE_URL; the image has no .env (pnpm db:migrate uses --env-file=.env).
+ssh "$CLOUD_SSH_HOST" "${REMOTE_COMPOSE} exec -T backsteros sh -c 'cd /app/core/server && pnpm exec tsx src/db/migrate.ts'"
 
 echo "==> Verifying cloud replication knows crm_groups…"
 SECRET="$(grep '^CORE_REPLICATION_SECRET=' core/server/.env | cut -d= -f2-)"
