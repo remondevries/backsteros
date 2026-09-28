@@ -492,6 +492,75 @@ export const taskSchema = z.object({
   deletedAt: z.string().datetime().nullable(),
 });
 
+/**
+ * Compact task row for paginated GET /tasks (OS-28).
+ * Enough for an agent to decide relevance without a second fetch.
+ */
+export const taskListItemSchema = z.object({
+  id: z.string(),
+  /** Human key, e.g. OS-28 or INBOX-3. */
+  key: z.string(),
+  title: z.string(),
+  status: taskStatusSchema,
+  assigneeId: z.string().nullable(),
+  projectId: z.string().nullable(),
+  dueDate: z.string().datetime().nullable(),
+  linkedDocumentIds: z.array(z.string()),
+  linkedContactIds: z.array(z.string()),
+  linkedTaskIds: z.array(z.string()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+/**
+ * Query for GET /tasks. Legacy single-value filters stay optional strings.
+ * Multi-value, dueDate ranges, link filters, cursor/limit opt into the
+ * paginated `{ items, nextCursor }` response (see listTasksResponseSchema).
+ */
+export const listTasksQuerySchema = z.object({
+  projectId: z.string().optional(),
+  contactId: z.string().optional(),
+  assigneeId: z.string().optional(),
+  relatedContactId: z.string().optional(),
+  relatedOrganizationId: z.string().optional(),
+  status: z.string().optional(),
+  inbox: z.coerce.boolean().optional(),
+  support: z.coerce.boolean().optional(),
+  notification: z.coerce.boolean().optional(),
+  /**
+   * Range: `before:<date>`, `after:<date>`, or `between:<start>,<end>`
+   * (ISO datetime or YYYY-MM-DD). Opt-in to paginated response.
+   */
+  dueDate: z.string().optional(),
+  /** Document id or comma-separated list (bidirectional via front-matter linkedTasks). */
+  linkedDocuments: z.string().optional(),
+  /** Task id or comma-separated list — co-linked tasks via shared documents. */
+  linkedTasks: z.string().optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  /** Only `dueDate` is supported today (default). */
+  sort: z.literal("dueDate").optional(),
+  /** When true, response includes `totalCount`. */
+  includeTotalCount: z.coerce.boolean().optional(),
+  /** Force paginated `{ items, nextCursor }` even without other new params. */
+  paginated: z.coerce.boolean().optional(),
+});
+
+export const listTasksLegacyResponseSchema = z.object({
+  tasks: z.array(taskSchema),
+});
+
+export const listTasksPaginatedResponseSchema = z.object({
+  items: z.array(taskListItemSchema),
+  nextCursor: z.string().nullable(),
+  totalCount: z.number().int().nonnegative().optional(),
+});
+
+export const listTasksResponseSchema = z.union([
+  listTasksLegacyResponseSchema,
+  listTasksPaginatedResponseSchema,
+]);
+
 export const createTaskSchema = z.object({
   /** Client-generated id for offline-first / PowerSync dual-write creates. */
   id: z.string().min(1).max(64).optional(),
@@ -3660,6 +3729,9 @@ export const whoopSettingsStatusSchema = z.object({
 
 export type Project = z.infer<typeof projectSchema>;
 export type Task = z.infer<typeof taskSchema>;
+export type TaskListItem = z.infer<typeof taskListItemSchema>;
+export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
+export type ListTasksResponse = z.infer<typeof listTasksResponseSchema>;
 export type Habit = z.infer<typeof habitSchema>;
 export type HabitCadence = z.infer<typeof habitCadenceSchema>;
 export type CreateHabitInput = z.infer<typeof createHabitSchema>;

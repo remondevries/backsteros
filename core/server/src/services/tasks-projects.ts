@@ -3,13 +3,17 @@ import {
   asc,
   desc,
   eq,
+  gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
   lt,
   lte,
+  notInArray,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import type {
@@ -34,6 +38,14 @@ import {
   tasks,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import {
+  TASK_LIST_DEFAULT_EXCLUDED_STATUSES,
+  decodeTaskListCursor,
+  encodeTaskListCursor,
+  formatTaskDisplayKey,
+  type DueDateFilter,
+  type ParsedTaskListQuery,
+} from "../lib/task-filters.js";
 import {
   assertTaskLabelIds,
   normalizeTaskLabelIds,
@@ -644,6 +656,544 @@ export async function listTasks(
     .from(tasks)
     .where(and(...conditions))
     .orderBy(tasks.sortOrder, desc(tasks.updatedAt));
+}
+
+export type TaskListItem = {
+  id: string;
+  key: string;
+  title: string;
+  status: string;
+  assigneeId: string | null;
+  projectId: string | null;
+  dueDate: string | null;
+  linkedDocumentIds: string[];
+  linkedContactIds: string[];
+  linkedTaskIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListTasksPaginatedResult = {
+  items: TaskListItem[];
+  nextCursor: string | null;
+  totalCount?: number;
+};
+
+function dueDateSqlCondition(filter: DueDateFilter): SQL {
+  if (filter.op === "before") {
+    return and(isNotNull(tasks.dueDate), lt(tasks.dueDate, filter.date))!;
+  }
+  if (filter.op === "after") {
+    return and(isNotNull(tasks.dueDate), gt(tasks.dueDate, filter.date))!;
+  }
+  return and(
+    isNotNull(tasks.dueDate),
+    gte(tasks.dueDate, filter.start),
+    lte(tasks.dueDate, filter.end),
+  )!;
+}
+
+function relatedContactOrCondition(ids: string[]): SQL | undefined {
+  if (!ids.length) return undefined;
+  return or(
+    ...ids.map(
+      (id) =>
+        sql`${tasks.relatedContactIds} @> ${JSON.stringify([id])}::jsonb`,
+    ),
+  );
+}
+
+function relatedOrganizationOrCondition(ids: string[]): SQL | undefined {
+  if (!ids.length) return undefined;
+  return or(
+    ...ids.map(
+      (id) =>
+        sql`${tasks.relatedOrganizationIds} @> ${JSON.stringify([id])}::jsonb`,
+    ),
+  );
+}
+
+/** Tasks whose display key appears in any of the given documents' linkedTasks. */
+function linkedDocumentsCondition(documentIds: string[]): SQL {
+  return sql`exists (
+    select 1
+    from ${documents} d
+    where d.workspace_id = ${tasks.workspaceId}
+      and d.id in (${sql.join(
+        documentIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      and d.deleted_at is null
+      and d.kind = 'document'
+      and (
+        d.properties->'linkedTasks' @> to_jsonb(
+          coalesce(${projects.key}, 'INBOX') || '-' || ${tasks.number}::text
+        )
+        or d.properties->>'linkedTasks' = (
+          coalesce(${projects.key}, 'INBOX') || '-' || ${tasks.number}::text
+        )
+      )
+  )`;
+}
+
+/**
+ * Tasks co-linked via document front-matter linkedTasks with any seed task id.
+ * Excludes the seed tasks themselves.
+ */
+function linkedTasksCondition(
+  workspaceId: string,
+  seedTaskIds: string[],
+): SQL {
+  return sql`${tasks.id} in (
+    with seed as (
+      select
+        t.id as seed_id,
+        (coalesce(p.key, 'INBOX') || '-' || t.number::text) as display_key
+      from ${tasks} t
+      left join ${projects} p
+        on p.id = t.project_id and p.workspace_id = t.workspace_id
+      where t.workspace_id = ${workspaceId}
+        and t.id in (${sql.join(
+          seedTaskIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+        and t.deleted_at is null
+    ),
+    docs as (
+      select d.properties->'linkedTasks' as linked
+      from ${documents} d
+      cross join seed s
+      where d.workspace_id = ${workspaceId}
+        and d.deleted_at is null
+        and d.kind = 'document'
+        and (
+          d.properties->'linkedTasks' @> to_jsonb(s.display_key)
+          or d.properties->>'linkedTasks' = s.display_key
+        )
+    ),
+    keys as (
+      select distinct trim(both '"' from elem::text) as display_key
+      from docs,
+      lateral jsonb_array_elements(
+        case
+          when jsonb_typeof(docs.linked) = 'array' then docs.linked
+          when jsonb_typeof(docs.linked) = 'string' then jsonb_build_array(docs.linked)
+          else '[]'::jsonb
+        end
+      ) as elem
+      union
+      select docs.linked #>> '{}' as display_key
+      from docs
+      where jsonb_typeof(docs.linked) = 'string'
+    )
+    select t2.id
+    from ${tasks} t2
+    left join ${projects} p2
+      on p2.id = t2.project_id and p2.workspace_id = t2.workspace_id
+    join keys k
+      on (coalesce(p2.key, 'INBOX') || '-' || t2.number::text) = k.display_key
+    where t2.workspace_id = ${workspaceId}
+      and t2.deleted_at is null
+      and t2.id not in (${sql.join(
+        seedTaskIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+  )`;
+}
+
+function buildPaginatedTaskConditions(
+  workspaceId: string,
+  filters: ParsedTaskListQuery,
+): SQL[] {
+  const conditions: SQL[] = [
+    eq(tasks.workspaceId, workspaceId),
+    isNull(tasks.deletedAt),
+  ];
+
+  if (filters.projectIds.length) {
+    conditions.push(inArray(tasks.projectId, filters.projectIds));
+  }
+  if (filters.statuses.length) {
+    conditions.push(inArray(tasks.status, filters.statuses));
+  } else {
+    conditions.push(
+      notInArray(tasks.status, [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES]),
+    );
+  }
+  if (filters.assigneeIds.length) {
+    conditions.push(inArray(tasks.assigneeId, filters.assigneeIds));
+  }
+  if (filters.contactIds.length) {
+    conditions.push(inArray(tasks.contactId, filters.contactIds));
+  }
+  const relatedContact = relatedContactOrCondition(filters.relatedContactIds);
+  if (relatedContact) conditions.push(relatedContact);
+  const relatedOrg = relatedOrganizationOrCondition(
+    filters.relatedOrganizationIds,
+  );
+  if (relatedOrg) conditions.push(relatedOrg);
+  if (filters.dueDate) {
+    conditions.push(dueDateSqlCondition(filters.dueDate));
+  }
+  if (filters.inbox !== undefined) {
+    conditions.push(eq(tasks.inbox, filters.inbox));
+  }
+  if (filters.support !== undefined) {
+    conditions.push(eq(tasks.support, filters.support));
+  }
+  if (filters.notification !== undefined) {
+    conditions.push(eq(tasks.notification, filters.notification));
+  }
+  if (filters.linkedDocumentIds.length) {
+    conditions.push(linkedDocumentsCondition(filters.linkedDocumentIds));
+  }
+  if (filters.linkedTaskIds.length) {
+    conditions.push(
+      linkedTasksCondition(workspaceId, filters.linkedTaskIds),
+    );
+  }
+
+  return conditions;
+}
+
+function cursorSqlCondition(cursor: ReturnType<typeof decodeTaskListCursor>): SQL {
+  // Sort key: (coalesce(due_date, infinity), created_at, id) ascending.
+  // Truncate to milliseconds so ISO cursor values match JS Date precision.
+  const dueKey =
+    cursor.dueDate == null
+      ? sql`'infinity'::timestamptz`
+      : sql`date_trunc('milliseconds', ${cursor.dueDate}::timestamptz)`;
+  return sql`(
+    coalesce(date_trunc('milliseconds', ${tasks.dueDate}), 'infinity'::timestamptz),
+    date_trunc('milliseconds', ${tasks.createdAt}),
+    ${tasks.id}
+  ) > (
+    ${dueKey},
+    date_trunc('milliseconds', ${cursor.createdAt}::timestamptz),
+    ${cursor.id}
+  )`;
+}
+
+async function loadTaskLinkEnrichment(
+  workspaceId: string,
+  rows: Array<{
+    id: string;
+    number: number;
+    projectKey: string | null;
+  }>,
+  executor: DbExecutor,
+): Promise<
+  Map<
+    string,
+    {
+      linkedDocumentIds: string[];
+      linkedTaskIds: string[];
+    }
+  >
+> {
+  const result = new Map<
+    string,
+    { linkedDocumentIds: string[]; linkedTaskIds: string[] }
+  >();
+  if (!rows.length) return result;
+
+  const keyByTaskId = new Map<string, string>();
+  const taskIdByKey = new Map<string, string>();
+  for (const row of rows) {
+    const key = formatTaskDisplayKey(row.projectKey, row.number);
+    keyByTaskId.set(row.id, key);
+    taskIdByKey.set(key, row.id);
+    result.set(row.id, { linkedDocumentIds: [], linkedTaskIds: [] });
+  }
+
+  const keys = [...keyByTaskId.values()];
+  const docRows = await executor
+    .select({
+      id: documents.id,
+      properties: documents.properties,
+    })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+        eq(documents.kind, "document"),
+        or(
+          ...keys.map(
+            (key) =>
+              sql`(
+                ${documents.properties}->'linkedTasks' @> ${JSON.stringify([key])}::jsonb
+                or ${documents.properties}->>'linkedTasks' = ${key}
+              )`,
+          ),
+        ),
+      ),
+    );
+
+  const linkedKeysByTask = new Map<string, Set<string>>();
+  for (const taskId of keyByTaskId.keys()) {
+    linkedKeysByTask.set(taskId, new Set());
+  }
+
+  for (const doc of docRows) {
+    const linked = (doc.properties as { linkedTasks?: unknown } | null)
+      ?.linkedTasks;
+    const listed: string[] = [];
+    if (typeof linked === "string" && linked.trim()) {
+      listed.push(linked.trim());
+    } else if (Array.isArray(linked)) {
+      for (const entry of linked) {
+        if (typeof entry === "string" && entry.trim()) {
+          listed.push(entry.trim());
+        }
+      }
+    }
+    for (const key of listed) {
+      const taskId = taskIdByKey.get(key);
+      if (!taskId) continue;
+      const bucket = result.get(taskId)!;
+      if (!bucket.linkedDocumentIds.includes(doc.id)) {
+        bucket.linkedDocumentIds.push(doc.id);
+      }
+      for (const other of listed) {
+        if (other === key) continue;
+        linkedKeysByTask.get(taskId)!.add(other);
+      }
+    }
+  }
+
+  const unresolvedKeys = new Set<string>();
+  for (const keysForTask of linkedKeysByTask.values()) {
+    for (const key of keysForTask) {
+      if (!taskIdByKey.has(key)) unresolvedKeys.add(key);
+    }
+  }
+
+  if (unresolvedKeys.size) {
+    const resolved = await resolveTaskIdsByDisplayKeys(
+      workspaceId,
+      [...unresolvedKeys],
+      executor,
+    );
+    for (const [key, id] of resolved) {
+      taskIdByKey.set(key, id);
+    }
+  }
+
+  for (const [taskId, keysForTask] of linkedKeysByTask) {
+    const bucket = result.get(taskId)!;
+    for (const key of keysForTask) {
+      const otherId = taskIdByKey.get(key);
+      if (otherId && otherId !== taskId && !bucket.linkedTaskIds.includes(otherId)) {
+        bucket.linkedTaskIds.push(otherId);
+      }
+    }
+  }
+
+  return result;
+}
+
+async function resolveTaskIdsByDisplayKeys(
+  workspaceId: string,
+  displayKeys: string[],
+  executor: DbExecutor,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!displayKeys.length) return out;
+
+  const parsed = displayKeys
+    .map((key) => {
+      const match = key.trim().match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)$/);
+      if (!match) return null;
+      return { key, projectKey: match[1]!, number: Number(match[2]) };
+    })
+    .filter((row): row is { key: string; projectKey: string; number: number } =>
+      Boolean(row),
+    );
+
+  if (!parsed.length) return out;
+
+  const rows = await executor
+    .select({
+      id: tasks.id,
+      number: tasks.number,
+      projectKey: projects.key,
+    })
+    .from(tasks)
+    .leftJoin(
+      projects,
+      and(
+        eq(projects.id, tasks.projectId),
+        eq(projects.workspaceId, tasks.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+        or(
+          ...parsed.map(
+            (entry) =>
+              and(
+                eq(tasks.number, entry.number),
+                entry.projectKey.toUpperCase() === "INBOX"
+                  ? isNull(tasks.projectId)
+                  : eq(projects.key, entry.projectKey),
+              )!,
+          ),
+        ),
+      ),
+    );
+
+  for (const row of rows) {
+    const key = formatTaskDisplayKey(row.projectKey, row.number);
+    out.set(key, row.id);
+  }
+  return out;
+}
+
+/**
+ * Cursor-paginated task list with multi-value filters (OS-28).
+ * Default sort: dueDate ASC (nulls last), then createdAt ASC, then id.
+ */
+export async function listTasksPaginated(
+  workspaceId: string,
+  filters: ParsedTaskListQuery,
+  executor: DbExecutor = db,
+  nowMs: number = Date.now(),
+): Promise<ListTasksPaginatedResult> {
+  const conditions = buildPaginatedTaskConditions(workspaceId, filters);
+  if (filters.cursor?.trim()) {
+    const cursor = decodeTaskListCursor(filters.cursor, nowMs);
+    conditions.push(cursorSqlCondition(cursor));
+  }
+
+  const limit = filters.limit;
+  const rows = await executor
+    .select({
+      id: tasks.id,
+      workspaceId: tasks.workspaceId,
+      projectId: tasks.projectId,
+      contactId: tasks.contactId,
+      assigneeId: tasks.assigneeId,
+      relatedContactIds: tasks.relatedContactIds,
+      relatedOrganizationIds: tasks.relatedOrganizationIds,
+      labelIds: tasks.labelIds,
+      number: tasks.number,
+      title: tasks.title,
+      description: tasks.description,
+      status: tasks.status,
+      priority: tasks.priority,
+      sortOrder: tasks.sortOrder,
+      dueDate: tasks.dueDate,
+      dueEndDate: tasks.dueEndDate,
+      triagedAt: tasks.triagedAt,
+      inbox: tasks.inbox,
+      support: tasks.support,
+      notification: tasks.notification,
+      links: tasks.links,
+      agentChatId: tasks.agentChatId,
+      linkedCommitShas: tasks.linkedCommitShas,
+      habitId: tasks.habitId,
+      legacySource: tasks.legacySource,
+      completedAt: tasks.completedAt,
+      agentCreatedAt: tasks.agentCreatedAt,
+      agentInboxApprovedAt: tasks.agentInboxApprovedAt,
+      trackedMinutes: tasks.trackedMinutes,
+      trackedDurationSeconds: tasks.trackedDurationSeconds,
+      inboxUpdatedAt: tasks.inboxUpdatedAt,
+      createdAt: tasks.createdAt,
+      updatedAt: tasks.updatedAt,
+      deletedAt: tasks.deletedAt,
+      projectKey: projects.key,
+    })
+    .from(tasks)
+    .leftJoin(
+      projects,
+      and(
+        eq(projects.id, tasks.projectId),
+        eq(projects.workspaceId, tasks.workspaceId),
+      ),
+    )
+    .where(and(...conditions))
+    .orderBy(
+      sql`coalesce(date_trunc('milliseconds', ${tasks.dueDate}), 'infinity'::timestamptz) asc`,
+      sql`date_trunc('milliseconds', ${tasks.createdAt}) asc`,
+      asc(tasks.id),
+    )
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+
+  const enrichment = await loadTaskLinkEnrichment(workspaceId, page, executor);
+
+  const items: TaskListItem[] = page.map((row) => {
+    const links = enrichment.get(row.id) ?? {
+      linkedDocumentIds: [],
+      linkedTaskIds: [],
+    };
+    const linkedContactIds = [
+      ...new Set(
+        [
+          row.contactId,
+          ...(Array.isArray(row.relatedContactIds)
+            ? row.relatedContactIds
+            : []),
+        ].filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    ];
+    return {
+      id: row.id,
+      key: formatTaskDisplayKey(row.projectKey, row.number),
+      title: row.title,
+      status: row.status,
+      assigneeId: row.assigneeId,
+      projectId: row.projectId,
+      dueDate: row.dueDate?.toISOString() ?? null,
+      linkedDocumentIds: links.linkedDocumentIds,
+      linkedContactIds,
+      linkedTaskIds: links.linkedTaskIds,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  });
+
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeTaskListCursor(
+          {
+            dueDate: last.dueDate,
+            createdAt: last.createdAt,
+            id: last.id,
+          },
+          nowMs,
+        )
+      : null;
+
+  let totalCount: number | undefined;
+  if (filters.includeTotalCount) {
+    const countConditions = buildPaginatedTaskConditions(workspaceId, filters);
+    const [countRow] = await executor
+      .select({ value: sql<number>`count(*)::int` })
+      .from(tasks)
+      .leftJoin(
+        projects,
+        and(
+          eq(projects.id, tasks.projectId),
+          eq(projects.workspaceId, tasks.workspaceId),
+        ),
+      )
+      .where(and(...countConditions));
+    totalCount = Number(countRow?.value ?? 0);
+  }
+
+  return {
+    items,
+    nextCursor,
+    ...(totalCount !== undefined ? { totalCount } : {}),
+  };
 }
 
 export async function getTaskById(

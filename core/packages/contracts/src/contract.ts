@@ -422,20 +422,15 @@ export const apiContract: AppRouter = c.router(
     listTasks: {
       method: "GET",
       path: "/api/v1/tasks",
-      query: z.object({
-        projectId: z.string().optional(),
-        contactId: z.string().optional(),
-        assigneeId: z.string().optional(),
-        relatedContactId: z.string().optional(),
-        status: z.string().optional(),
-        inbox: z.coerce.boolean().optional(),
-      }),
+      query: s.listTasksQuerySchema,
       responses: {
-        200: z.object({ tasks: z.array(taskSchema) }),
+        200: s.listTasksResponseSchema,
+        400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "List tasks",
+      summary:
+        "List tasks (legacy `{ tasks }` or paginated `{ items, nextCursor }` when cursor/limit/sort/new filters are present)",
     },
     getTask: {
       method: "GET",

@@ -154,6 +154,10 @@ import {
   resolveSectionIfMatchVersion,
 } from "../lib/document-property-filters.js";
 import {
+  TaskFilterError,
+  parseTaskListQuery,
+} from "../lib/task-filters.js";
+import {
   readDocumentSection,
   replaceDocumentSectionBody,
 } from "../lib/document-sections.js";
@@ -2442,27 +2446,73 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const rows = await taskProjectService.listTasks(auth.workspaceId, {
-      projectId: c.req.query("projectId"),
-      contactId: c.req.query("contactId"),
-      assigneeId: c.req.query("assigneeId"),
-      relatedContactId: c.req.query("relatedContactId"),
-      relatedOrganizationId: c.req.query("relatedOrganizationId"),
-      status: c.req.query("status"),
-      inbox:
-        c.req.query("inbox") === undefined
-          ? undefined
-          : c.req.query("inbox") === "true",
-      support:
-        c.req.query("support") === undefined
-          ? undefined
-          : c.req.query("support") === "true",
-      notification:
-        c.req.query("notification") === undefined
-          ? undefined
-          : c.req.query("notification") === "true",
-    });
-    return c.json({ tasks: rows.map(toTask) });
+    const url = new URL(c.req.url);
+    const raw: Record<string, string | string[]> = {};
+    for (const key of url.searchParams.keys()) {
+      const all = url.searchParams.getAll(key);
+      raw[key] = all.length <= 1 ? (all[0] ?? "") : all;
+    }
+
+    let parsed;
+    try {
+      parsed = parseTaskListQuery(raw);
+    } catch (error) {
+      if (error instanceof TaskFilterError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            field: error.field,
+          },
+          400,
+        );
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const rows = await taskProjectService.listTasks(auth.workspaceId, {
+        projectId: c.req.query("projectId"),
+        contactId: c.req.query("contactId"),
+        assigneeId: c.req.query("assigneeId"),
+        relatedContactId: c.req.query("relatedContactId"),
+        relatedOrganizationId: c.req.query("relatedOrganizationId"),
+        status: c.req.query("status"),
+        inbox:
+          c.req.query("inbox") === undefined
+            ? undefined
+            : c.req.query("inbox") === "true",
+        support:
+          c.req.query("support") === undefined
+            ? undefined
+            : c.req.query("support") === "true",
+        notification:
+          c.req.query("notification") === undefined
+            ? undefined
+            : c.req.query("notification") === "true",
+      });
+      return c.json({ tasks: rows.map(toTask) });
+    }
+
+    try {
+      const result = await taskProjectService.listTasksPaginated(
+        auth.workspaceId,
+        parsed,
+      );
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof TaskFilterError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            field: error.field,
+          },
+          400,
+        );
+      }
+      throw error;
+    }
   });
 
   // Static task collection routes must be registered before /tasks/:id.

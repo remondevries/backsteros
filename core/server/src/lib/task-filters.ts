@@ -1,0 +1,494 @@
+/**
+ * Parse GET /api/v1/tasks filter/pagination query params (OS-28).
+ *
+ * Legacy callers (no new params) keep `{ tasks: [...] }`.
+ * Opt-in paginated shape `{ items, nextCursor, totalCount? }` when any of:
+ * cursor, limit, sort, includeTotalCount, dueDate, linkedDocuments,
+ * linkedTasks, paginated=true, or a multi-value filter is present.
+ */
+
+import { TASK_STATUSES } from "@backsteros/contracts";
+
+export const TASK_LIST_DEFAULT_LIMIT = 50;
+export const TASK_LIST_MAX_LIMIT = 200;
+export const TASK_LIST_CURSOR_TTL_MS = 10 * 60 * 1000;
+export const TASK_LIST_DEFAULT_SORT = "dueDate" as const;
+
+/** Terminal statuses excluded unless the caller passes them in `status`. */
+export const TASK_LIST_DEFAULT_EXCLUDED_STATUSES = [
+  "completed",
+  "canceled",
+] as const;
+
+const STATUS_SET = new Set<string>(TASK_STATUSES);
+
+export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
+  "projectId",
+  "status",
+  "assigneeId",
+  "dueDate",
+  "linkedDocuments",
+  "contactId",
+  "relatedContactId",
+  "relatedOrganizationId",
+  "linkedTasks",
+  "inbox",
+  "support",
+  "notification",
+  "cursor",
+  "limit",
+  "sort",
+  "includeTotalCount",
+  "paginated",
+]);
+
+export type DueDateFilter =
+  | { op: "before"; date: Date }
+  | { op: "after"; date: Date }
+  | { op: "between"; start: Date; end: Date };
+
+export type TaskListCursorPayload = {
+  v: 1;
+  issuedAt: number;
+  /** 0 = has due date, 1 = null due date (sorts last). */
+  nullDue: 0 | 1;
+  dueDate: string | null;
+  createdAt: string;
+  id: string;
+};
+
+export class TaskFilterError extends Error {
+  readonly field: string;
+  readonly code: "bad_request" | "cursor_expired";
+
+  constructor(
+    message: string,
+    field: string,
+    code: "bad_request" | "cursor_expired" = "bad_request",
+  ) {
+    super(message);
+    this.name = "TaskFilterError";
+    this.field = field;
+    this.code = code;
+  }
+}
+
+/** Flatten repeated + comma-separated query values (ids/status — no case fold). */
+export function parseTaskMultiValues(
+  raw: string | string[] | undefined | null,
+): string[] {
+  if (raw == null) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const entry of list) {
+    for (const part of String(entry).split(",")) {
+      const trimmed = part.trim();
+      if (trimmed) out.push(trimmed);
+    }
+  }
+  return [...new Set(out)];
+}
+
+function parseOptionalBoolean(
+  raw: string | string[] | undefined | null,
+  field: string,
+): boolean | undefined {
+  if (raw == null) return undefined;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === undefined || value === "") return undefined;
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
+  throw new TaskFilterError(
+    `Invalid boolean for ${field}`,
+    field,
+  );
+}
+
+function parseDateValue(raw: string, field: string): Date {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new TaskFilterError(`Invalid date for ${field}`, field);
+  }
+  // Date-only → UTC midnight so range bounds are stable.
+  const iso =
+    /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T00:00:00.000Z` : trimmed;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    throw new TaskFilterError(`Invalid date for ${field}: ${raw}`, field);
+  }
+  return date;
+}
+
+/**
+ * dueDate range syntax (single query param value):
+ * - before:<iso|YYYY-MM-DD>
+ * - after:<iso|YYYY-MM-DD>
+ * - between:<start>,<end>
+ */
+export function parseDueDateFilter(
+  raw: string | string[] | undefined | null,
+): DueDateFilter | undefined {
+  if (raw == null) return undefined;
+  const value = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+  if (!value) return undefined;
+
+  const lower = value.toLowerCase();
+  if (lower.startsWith("before:")) {
+    return {
+      op: "before",
+      date: parseDateValue(value.slice("before:".length), "dueDate"),
+    };
+  }
+  if (lower.startsWith("after:")) {
+    return {
+      op: "after",
+      date: parseDateValue(value.slice("after:".length), "dueDate"),
+    };
+  }
+  if (lower.startsWith("between:")) {
+    const rest = value.slice("between:".length);
+    const comma = rest.indexOf(",");
+    if (comma < 0) {
+      throw new TaskFilterError(
+        "dueDate between requires start,end",
+        "dueDate",
+      );
+    }
+    const start = parseDateValue(rest.slice(0, comma), "dueDate");
+    const end = parseDateValue(rest.slice(comma + 1), "dueDate");
+    if (end.getTime() < start.getTime()) {
+      throw new TaskFilterError(
+        "dueDate between end must be >= start",
+        "dueDate",
+      );
+    }
+    return { op: "between", start, end };
+  }
+
+  throw new TaskFilterError(
+    "dueDate must be before:<date>, after:<date>, or between:<start>,<end>",
+    "dueDate",
+  );
+}
+
+export function parseTaskListLimit(
+  raw: string | string[] | undefined | null,
+): number {
+  if (raw == null || raw === "") return TASK_LIST_DEFAULT_LIMIT;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > TASK_LIST_MAX_LIMIT) {
+    throw new TaskFilterError(
+      `limit must be an integer between 1 and ${TASK_LIST_MAX_LIMIT}`,
+      "limit",
+    );
+  }
+  return n;
+}
+
+export function assertKnownTaskListQueryKeys(
+  keys: Iterable<string>,
+): void {
+  for (const key of keys) {
+    if (!TASK_LIST_KNOWN_QUERY_KEYS.has(key)) {
+      throw new TaskFilterError(`Unknown filter field: ${key}`, key);
+    }
+  }
+}
+
+export type ParsedTaskListQuery = {
+  mode: "legacy" | "paginated";
+  projectIds: string[];
+  statuses: string[];
+  assigneeIds: string[];
+  contactIds: string[];
+  relatedContactIds: string[];
+  relatedOrganizationIds: string[];
+  linkedDocumentIds: string[];
+  linkedTaskIds: string[];
+  dueDate?: DueDateFilter;
+  inbox?: boolean;
+  support?: boolean;
+  notification?: boolean;
+  limit: number;
+  cursor?: string;
+  includeTotalCount: boolean;
+  sort: typeof TASK_LIST_DEFAULT_SORT;
+};
+
+function firstString(
+  raw: string | string[] | undefined | null,
+): string | undefined {
+  if (raw == null) return undefined;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "" ? undefined : value;
+}
+
+function hasMultiValues(values: string[]): boolean {
+  return values.length > 1;
+}
+
+/**
+ * Decide whether this request should use the paginated response shape.
+ * Pure: call after multi-value expansion.
+ */
+export function shouldUsePaginatedTaskList(input: {
+  cursor?: string;
+  limitPresent: boolean;
+  sortPresent: boolean;
+  includeTotalCountPresent: boolean;
+  dueDatePresent: boolean;
+  linkedDocumentsPresent: boolean;
+  linkedTasksPresent: boolean;
+  paginatedFlag: boolean;
+  hasMultiValueFilter: boolean;
+}): boolean {
+  return (
+    input.paginatedFlag ||
+    Boolean(input.cursor?.trim()) ||
+    input.limitPresent ||
+    input.sortPresent ||
+    input.includeTotalCountPresent ||
+    input.dueDatePresent ||
+    input.linkedDocumentsPresent ||
+    input.linkedTasksPresent ||
+    input.hasMultiValueFilter
+  );
+}
+
+export function parseTaskListQuery(
+  raw: Record<string, string | string[] | undefined>,
+): ParsedTaskListQuery {
+  const projectIds = parseTaskMultiValues(raw.projectId);
+  const statusesRaw = parseTaskMultiValues(raw.status);
+  const assigneeIds = parseTaskMultiValues(raw.assigneeId);
+  const contactIds = parseTaskMultiValues(raw.contactId);
+  const relatedContactIds = parseTaskMultiValues(raw.relatedContactId);
+  const relatedOrganizationIds = parseTaskMultiValues(
+    raw.relatedOrganizationId,
+  );
+  const linkedDocumentIds = parseTaskMultiValues(raw.linkedDocuments);
+  const linkedTaskIds = parseTaskMultiValues(raw.linkedTasks);
+
+  // Validate status values only when present — legacy callers that somehow
+  // pass junk keep their prior empty-match behavior unless they opt in.
+  const dueDateRaw = firstString(raw.dueDate);
+  let dueDate: DueDateFilter | undefined;
+  const sortRaw = firstString(raw.sort);
+
+  const paginatedFlag =
+    parseOptionalBoolean(raw.paginated, "paginated") === true;
+  const includeTotalCountPresent = raw.includeTotalCount != null;
+  const includeTotalCount =
+    parseOptionalBoolean(raw.includeTotalCount, "includeTotalCount") === true;
+
+  const hasMultiValueFilter =
+    hasMultiValues(projectIds) ||
+    hasMultiValues(statusesRaw) ||
+    hasMultiValues(assigneeIds) ||
+    hasMultiValues(contactIds) ||
+    hasMultiValues(relatedContactIds) ||
+    hasMultiValues(relatedOrganizationIds) ||
+    hasMultiValues(linkedDocumentIds) ||
+    hasMultiValues(linkedTaskIds);
+
+  const limitPresent = raw.limit != null && firstString(raw.limit) != null;
+  const mode = shouldUsePaginatedTaskList({
+    cursor: firstString(raw.cursor),
+    limitPresent,
+    sortPresent: sortRaw != null,
+    includeTotalCountPresent,
+    dueDatePresent: dueDateRaw != null,
+    linkedDocumentsPresent: linkedDocumentIds.length > 0,
+    linkedTasksPresent: linkedTaskIds.length > 0,
+    paginatedFlag,
+    hasMultiValueFilter,
+  })
+    ? "paginated"
+    : "legacy";
+
+  if (mode === "paginated") {
+    assertKnownTaskListQueryKeys(Object.keys(raw));
+    for (const status of statusesRaw) {
+      if (!STATUS_SET.has(status)) {
+        throw new TaskFilterError(`Invalid status: ${status}`, "status");
+      }
+    }
+    if (dueDateRaw != null) {
+      dueDate = parseDueDateFilter(dueDateRaw);
+    }
+    if (sortRaw != null && sortRaw !== TASK_LIST_DEFAULT_SORT) {
+      throw new TaskFilterError(
+        `Unsupported sort: ${sortRaw}. Only dueDate is supported`,
+        "sort",
+      );
+    }
+  }
+
+  return {
+    mode,
+    projectIds,
+    statuses: statusesRaw,
+    assigneeIds,
+    contactIds,
+    relatedContactIds,
+    relatedOrganizationIds,
+    linkedDocumentIds,
+    linkedTaskIds,
+    dueDate,
+    inbox: parseOptionalBoolean(raw.inbox, "inbox"),
+    support: parseOptionalBoolean(raw.support, "support"),
+    notification: parseOptionalBoolean(raw.notification, "notification"),
+    limit:
+      mode === "paginated"
+        ? parseTaskListLimit(raw.limit)
+        : TASK_LIST_DEFAULT_LIMIT,
+    cursor: firstString(raw.cursor),
+    includeTotalCount,
+    sort: TASK_LIST_DEFAULT_SORT,
+  };
+}
+
+export function encodeTaskListCursor(
+  row: {
+    dueDate: Date | null;
+    createdAt: Date;
+    id: string;
+  },
+  nowMs: number = Date.now(),
+): string {
+  const payload: TaskListCursorPayload = {
+    v: 1,
+    issuedAt: nowMs,
+    nullDue: row.dueDate == null ? 1 : 0,
+    dueDate: row.dueDate ? row.dueDate.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+    id: row.id,
+  };
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+export function decodeTaskListCursor(
+  cursor: string,
+  nowMs: number = Date.now(),
+): TaskListCursorPayload {
+  let payload: TaskListCursorPayload;
+  try {
+    payload = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as TaskListCursorPayload;
+  } catch {
+    throw new TaskFilterError("Invalid cursor", "cursor");
+  }
+  if (
+    payload?.v !== 1 ||
+    typeof payload.issuedAt !== "number" ||
+    (payload.nullDue !== 0 && payload.nullDue !== 1) ||
+    typeof payload.createdAt !== "string" ||
+    typeof payload.id !== "string" ||
+    (payload.dueDate != null && typeof payload.dueDate !== "string")
+  ) {
+    throw new TaskFilterError("Invalid cursor", "cursor");
+  }
+  if (nowMs - payload.issuedAt > TASK_LIST_CURSOR_TTL_MS) {
+    throw new TaskFilterError(
+      "Cursor expired; re-query from the start",
+      "cursor",
+      "cursor_expired",
+    );
+  }
+  const createdAt = new Date(payload.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new TaskFilterError("Invalid cursor", "cursor");
+  }
+  if (payload.dueDate != null) {
+    const due = new Date(payload.dueDate);
+    if (Number.isNaN(due.getTime())) {
+      throw new TaskFilterError("Invalid cursor", "cursor");
+    }
+  }
+  return payload;
+}
+
+/** Human display key: PROJECT-number, or INBOX-number when no project. */
+export function formatTaskDisplayKey(
+  projectKey: string | null | undefined,
+  number: number,
+): string {
+  const key = projectKey?.trim() || "INBOX";
+  return `${key}-${number}`;
+}
+
+/**
+ * Pure AND/OR match helper for unit tests (mirrors SQL filter semantics
+ * for scalar fields; link filters are SQL-only).
+ */
+export function taskRowMatchesScalarFilters(
+  row: {
+    projectId: string | null;
+    status: string;
+    assigneeId: string | null;
+    contactId: string | null;
+    relatedContactIds: string[];
+    dueDate: Date | null;
+  },
+  filters: Pick<
+    ParsedTaskListQuery,
+    | "projectIds"
+    | "statuses"
+    | "assigneeIds"
+    | "contactIds"
+    | "relatedContactIds"
+    | "dueDate"
+  >,
+): boolean {
+  if (filters.projectIds.length && !filters.projectIds.includes(row.projectId ?? "")) {
+    return false;
+  }
+  if (filters.statuses.length) {
+    if (!filters.statuses.includes(row.status)) return false;
+  } else if (
+    (TASK_LIST_DEFAULT_EXCLUDED_STATUSES as readonly string[]).includes(
+      row.status,
+    )
+  ) {
+    return false;
+  }
+  if (
+    filters.assigneeIds.length &&
+    !filters.assigneeIds.includes(row.assigneeId ?? "")
+  ) {
+    return false;
+  }
+  if (
+    filters.contactIds.length &&
+    !filters.contactIds.includes(row.contactId ?? "")
+  ) {
+    return false;
+  }
+  if (filters.relatedContactIds.length) {
+    const hit = filters.relatedContactIds.some((id) =>
+      row.relatedContactIds.includes(id),
+    );
+    if (!hit) return false;
+  }
+  if (filters.dueDate) {
+    if (!row.dueDate) return false;
+    const t = row.dueDate.getTime();
+    if (filters.dueDate.op === "before" && !(t < filters.dueDate.date.getTime())) {
+      return false;
+    }
+    if (filters.dueDate.op === "after" && !(t > filters.dueDate.date.getTime())) {
+      return false;
+    }
+    if (filters.dueDate.op === "between") {
+      if (
+        t < filters.dueDate.start.getTime() ||
+        t > filters.dueDate.end.getTime()
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
