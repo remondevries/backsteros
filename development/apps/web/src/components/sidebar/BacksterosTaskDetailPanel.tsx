@@ -66,6 +66,7 @@ import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import {
   BACKSTEROS_TASK_STATUS_ORDER,
   getBacksterosTaskStatusLabel,
+  isBacksterosTaskClosedStatus,
   migrateBacksterosTaskStatus,
   type BacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
@@ -632,9 +633,11 @@ export function BacksterosTaskDetailPanel() {
       <div className="shrink-0 no-drag">
         <BacksterosTrackedTimeField
           timerKey={state.task.id}
+          taskStatus={state.task.status}
           trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
           trackedMinutes={state.task.trackedMinutes ?? null}
           onTrackedDurationSecondsChange={(seconds) => {
+            if (isBacksterosTaskClosedStatus(state.task.status)) return;
             const trackedMinutes =
               seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
             void applyPatch(

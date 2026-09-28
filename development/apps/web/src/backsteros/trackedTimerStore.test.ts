@@ -4,9 +4,11 @@ import {
   bindTrackedTimerCallbacks,
   checkpointTrackedTimers,
   getTrackedTimerElapsedSeconds,
+  isTrackedTimerPersistRefused,
   isTrackedTimerRunning,
   pauseTrackedTimer,
   resetTrackedTimerStoreForTests,
+  setTrackedTimerRefusePersist,
   startTrackedTimer,
   syncTrackedTimerDuration,
 } from "./trackedTimerStore";
@@ -40,6 +42,22 @@ describe("trackedTimerStore", () => {
 
     expect(isTrackedTimerRunning("task-1")).toBe(true);
     expect(getTrackedTimerElapsedSeconds("task-1")).toBe(65);
+    expect(onPersist).not.toHaveBeenCalled();
+  });
+
+  it("does not PATCH after unbind even when the checkpoint interval fires", () => {
+    const onPersist = vi.fn();
+    const unbind = bindTrackedTimerCallbacks("task-1", {
+      onPersist,
+      onSessionChange: null,
+    });
+    startTrackedTimer("task-1", 0);
+    unbind();
+
+    vi.advanceTimersByTime(120_000);
+
+    expect(isTrackedTimerRunning("task-1")).toBe(true);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(120);
     expect(onPersist).not.toHaveBeenCalled();
   });
 
@@ -84,6 +102,43 @@ describe("trackedTimerStore", () => {
     expect(isTrackedTimerRunning("task-1")).toBe(true);
     expect(onPersist).toHaveBeenCalledWith(90);
     expect(getTrackedTimerElapsedSeconds("task-1")).toBe(90);
+  });
+
+  it("refuses checkpoint/persist writes for a closed task", () => {
+    const onPersist = vi.fn();
+    const onSessionChange = vi.fn();
+    bindTrackedTimerCallbacks("task-1", { onPersist, onSessionChange });
+    startTrackedTimer("task-1", 10, { silent: true });
+    vi.advanceTimersByTime(5_000);
+
+    setTrackedTimerRefusePersist("task-1", true);
+    expect(isTrackedTimerPersistRefused("task-1")).toBe(true);
+
+    expect(checkpointTrackedTimers(true)).toBe(true);
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+    expect(onPersist).not.toHaveBeenCalled();
+    expect(onSessionChange).not.toHaveBeenCalled();
+  });
+
+  it("refuses non-silent pause persist for a closed task", () => {
+    const onPersist = vi.fn();
+    const onSessionChange = vi.fn();
+    bindTrackedTimerCallbacks("task-1", { onPersist, onSessionChange });
+    startTrackedTimer("task-1", 0, { silent: true });
+    vi.advanceTimersByTime(4_000);
+
+    setTrackedTimerRefusePersist("task-1", true);
+    pauseTrackedTimer("task-1");
+
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+    expect(onPersist).not.toHaveBeenCalled();
+    expect(onSessionChange).toHaveBeenCalledWith("pause", 4);
+  });
+
+  it("does not start a timer when persist is refused", () => {
+    setTrackedTimerRefusePersist("task-1", true);
+    startTrackedTimer("task-1", 20);
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
   });
 
   it("silent start/pause skips session callbacks", () => {

@@ -207,6 +207,14 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         }
       }
 
+      // Halt local tracked-time when status flips elsewhere (API / other client),
+      // even if the rest of the detail fingerprint has not changed yet.
+      syncTrackedTimerWithTaskStatus({
+        taskId: task.id,
+        status: migrateBacksterosTaskStatus(task.status),
+        trackedDurationSeconds: task.trackedDurationSeconds ?? null,
+      });
+
       const nextFingerprint = taskDetailFingerprint(task, comments, activities, assignee);
       const prevFingerprint = taskDetailFingerprint(
         current.task,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FocusEvent } from "react";
 
+import { isBacksterosTaskClosedStatus } from "./taskStatus";
 import {
   formatTrackedTimeInput,
   parseTrackedTimeInput,
@@ -11,6 +12,7 @@ import {
   checkpointTrackedTimers,
   getTrackedTimerElapsedSeconds,
   getTrackedTimerVersion,
+  isTrackedTimerPersistRefused,
   isTrackedTimerRunning,
   pauseTrackedTimer,
   startTrackedTimer,
@@ -101,10 +103,13 @@ function TrackedTimePillDigits(props: { readonly totalSeconds: number; readonly 
  * (pill / inline-chip variant).
  *
  * Running sessions live in `trackedTimerStore` so closing the task rail or
- * navigating away does not pause the timer.
+ * navigating away does not pause an in-progress timer. Checkpoints only PATCH
+ * while this field is mounted (bound `onPersist`); closed tasks refuse writes
+ * at the store level.
  */
 export function BacksterosTrackedTimeField(props: {
   readonly timerKey: string;
+  readonly taskStatus?: string | null | undefined;
   readonly trackedDurationSeconds?: number | null;
   readonly trackedMinutes?: number | null | undefined;
   readonly disabled?: boolean | undefined;
@@ -113,7 +118,9 @@ export function BacksterosTrackedTimeField(props: {
   readonly onTimerSessionChange?: (action: "start" | "pause", seconds?: number | null) => void;
 }) {
   const label = props.label ?? "Time tracked";
-  const disabled = props.disabled ?? false;
+  const taskClosed =
+    props.taskStatus != null ? isBacksterosTaskClosedStatus(props.taskStatus) : false;
+  const disabled = (props.disabled ?? false) || taskClosed;
   const timerKey = props.timerKey;
   const trackedDurationSeconds = props.trackedDurationSeconds ?? null;
   const trackedMinutes = props.trackedMinutes ?? null;
@@ -136,6 +143,8 @@ export function BacksterosTrackedTimeField(props: {
   onPersistRef.current = props.onTrackedDurationSecondsChange;
   const onTimerSessionChangeRef = useRef(props.onTimerSessionChange);
   onTimerSessionChangeRef.current = props.onTimerSessionChange;
+  const taskClosedRef = useRef(taskClosed);
+  taskClosedRef.current = taskClosed;
 
   useSyncExternalStore(subscribeTrackedTimers, getTrackedTimerVersion, getTrackedTimerVersion);
 
@@ -151,6 +160,8 @@ export function BacksterosTrackedTimeField(props: {
   useEffect(() => {
     const unbind = bindTrackedTimerCallbacks(timerKey, {
       onPersist: (seconds) => {
+        // Closed tasks must never PATCH tracked time (store also refuses).
+        if (taskClosedRef.current || isTrackedTimerPersistRefused(timerKey)) return;
         if (seconds != null) setPendingSeconds(seconds);
         onPersistRef.current?.(seconds);
       },
@@ -159,7 +170,7 @@ export function BacksterosTrackedTimeField(props: {
       },
     });
     // Reattach after the rail remounts: soft-save elapsed without pausing.
-    if (isTrackedTimerRunning(timerKey)) {
+    if (isTrackedTimerRunning(timerKey) && !isTrackedTimerPersistRefused(timerKey)) {
       checkpointTrackedTimers(true);
     }
     return unbind;
@@ -192,7 +203,7 @@ export function BacksterosTrackedTimeField(props: {
   }, [isEditingTime]);
 
   const commit = (raw: string) => {
-    if (!props.onTrackedDurationSecondsChange || isRunning) return;
+    if (!props.onTrackedDurationSecondsChange || isRunning || taskClosed) return;
     const trimmed = raw.trim();
     if (!trimmed) {
       props.onTrackedDurationSecondsChange(null);

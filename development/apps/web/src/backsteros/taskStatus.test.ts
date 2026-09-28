@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { groupBacksterosTasksByStatus, migrateBacksterosTaskStatus } from "./taskStatus";
+import {
+  groupBacksterosTasksByStatus,
+  isBacksterosTaskClosedStatus,
+  migrateBacksterosTaskStatus,
+} from "./taskStatus";
 
 describe("groupBacksterosTasksByStatus", () => {
   it("groups tasks by status and skips empty groups", () => {
@@ -51,5 +55,20 @@ describe("groupBacksterosTasksByStatus", () => {
   it("migrates legacy statuses", () => {
     expect(migrateBacksterosTaskStatus("todo")).toBe("ready_to_start");
     expect(migrateBacksterosTaskStatus("done")).toBe("completed");
+  });
+});
+
+describe("isBacksterosTaskClosedStatus", () => {
+  it("treats completed, canceled, duplicated, and legacy done as closed", () => {
+    expect(isBacksterosTaskClosedStatus("completed")).toBe(true);
+    expect(isBacksterosTaskClosedStatus("canceled")).toBe(true);
+    expect(isBacksterosTaskClosedStatus("duplicated")).toBe(true);
+    expect(isBacksterosTaskClosedStatus("done")).toBe(true);
+  });
+
+  it("leaves open statuses writable", () => {
+    expect(isBacksterosTaskClosedStatus("in_progress")).toBe(false);
+    expect(isBacksterosTaskClosedStatus("in_review")).toBe(false);
+    expect(isBacksterosTaskClosedStatus("ready_to_start")).toBe(false);
   });
 });

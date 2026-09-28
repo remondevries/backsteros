@@ -55,6 +55,12 @@ export function migrateBacksterosTaskStatus(status: string): BacksterosTaskStatu
   }
 }
 
+/** Terminal outcomes — local timers must halt and refuse tracked-time writes. */
+export function isBacksterosTaskClosedStatus(status: string): boolean {
+  const migrated = migrateBacksterosTaskStatus(status);
+  return migrated === "completed" || migrated === "canceled" || migrated === "duplicated";
+}
+
 export type BacksterosTaskLikeForGrouping = {
   readonly status: string;
   readonly sortOrder?: number;

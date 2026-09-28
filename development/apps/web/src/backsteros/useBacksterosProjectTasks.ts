@@ -5,6 +5,7 @@ import { createBacksterosSharedQuery, type BacksterosSharedQuery } from "./backs
 import { fetchBacksterosProjectTasks } from "./client";
 import { applyPendingBacksterosTaskStatuses, pendingStatusPatch } from "./pendingTaskStatus";
 import { settleBoundChatsForCompletedTasks } from "./settleTaskChatOnComplete";
+import { syncRunningTrackedTimersWithTasks } from "./syncTrackedTimerWithTaskStatus";
 import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
 import { upsertBacksterosTaskInList } from "./taskListUpsert";
 import type { BacksterosTask } from "./types";
@@ -26,6 +27,7 @@ function getProjectTasksQuery(projectId: string): BacksterosSharedQuery<readonly
           await fetchBacksterosProjectTasks(projectId, signal),
         );
         settleBoundChatsForCompletedTasks(tasks);
+        syncRunningTrackedTimersWithTasks(tasks);
         return tasks;
       },
       fingerprint: backsterosEntityListFingerprint,

@@ -6,6 +6,7 @@ import { fetchBacksterosInboxAttentionTasks, fetchBacksterosTask } from "./clien
 import { isBacksterosInboxMemberTask, mergeBacksterosInboxTasksWithWorking } from "./inboxDue";
 import { applyPendingBacksterosTaskStatuses, pendingStatusPatch } from "./pendingTaskStatus";
 import { settleBoundChatsForCompletedTasks } from "./settleTaskChatOnComplete";
+import { syncRunningTrackedTimersWithTasks } from "./syncTrackedTimerWithTaskStatus";
 import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
 import { upsertBacksterosTaskInList } from "./taskListUpsert";
 import type { BacksterosTask } from "./types";
@@ -24,6 +25,7 @@ const inboxQuery = createBacksterosSharedQuery({
       await fetchBacksterosInboxAttentionTasks(signal),
     );
     settleBoundChatsForCompletedTasks(tasks);
+    syncRunningTrackedTimersWithTasks(tasks);
     return tasks;
   },
   fingerprint: backsterosEntityListFingerprint,

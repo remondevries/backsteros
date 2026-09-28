@@ -12,6 +12,8 @@ type TrackedTimerEntry = {
   baseSeconds: number;
   accumulatedSeconds: number;
   sessionStartAt: number | null;
+  /** When true, checkpoint/pause must not PATCH tracked time (closed task). */
+  refusePersist: boolean;
   onPersist: ((seconds: number | null) => void) | null;
   onSessionChange: ((action: "start" | "pause", seconds?: number | null) => void) | null;
 };
@@ -83,6 +85,7 @@ function ensureEntry(key: string): TrackedTimerEntry {
     baseSeconds: 0,
     accumulatedSeconds: 0,
     sessionStartAt: null,
+    refusePersist: false,
     onPersist: null,
     onSessionChange: null,
   };
@@ -90,8 +93,17 @@ function ensureEntry(key: string): TrackedTimerEntry {
   return created;
 }
 
+function canPersist(entry: TrackedTimerEntry): boolean {
+  return !entry.refusePersist && entry.onPersist != null;
+}
+
 function checkpointEntry(entry: TrackedTimerEntry, persist: boolean): boolean {
   if (entry.sessionStartAt == null) return false;
+  // Closed tasks must not keep soft-checkpointing — halt silently.
+  if (entry.refusePersist) {
+    pauseTrackedTimer(entry.key, { silent: true });
+    return true;
+  }
   const seconds = trackedDurationSecondsFromElapsed(elapsedSecondsForEntry(entry));
   if (seconds == null) return false;
 
@@ -99,7 +111,8 @@ function checkpointEntry(entry: TrackedTimerEntry, persist: boolean): boolean {
   entry.baseSeconds = entry.accumulatedSeconds;
   entry.sessionStartAt = Date.now();
   entries.set(entry.key, entry);
-  if (persist) {
+  // Only write when a UI is bound and the task is still open.
+  if (persist && canPersist(entry)) {
     entry.onPersist?.(seconds);
   }
   return true;
@@ -139,9 +152,31 @@ export function getTrackedTimerElapsedSeconds(key: string): number {
   return elapsedSecondsForEntry(entry);
 }
 
+/** Keys with an active session — used to reconcile list/sync status updates. */
+export function listRunningTrackedTimerKeys(): readonly string[] {
+  return listRunningKeys();
+}
+
+export function isTrackedTimerPersistRefused(key: string): boolean {
+  return entries.get(key)?.refusePersist === true;
+}
+
+/**
+ * Block or allow tracked-time PATCHes for a task. Closed tasks set this so
+ * checkpoint / pause cannot write even if a stale onPersist is still bound.
+ */
+export function setTrackedTimerRefusePersist(key: string, refuse: boolean): void {
+  const entry = ensureEntry(key);
+  if (entry.refusePersist === refuse) return;
+  entry.refusePersist = refuse;
+  entries.set(key, entry);
+}
+
 /**
  * Keep persist/session callbacks attached while the field is mounted.
- * Unregister clears callbacks but leaves a running session intact.
+ * Unregister clears callbacks but leaves a running session intact (background
+ * timer while the rail is hidden). Checkpoints then no-op for writes until
+ * a UI rebinds — see `canPersist`.
  */
 export function bindTrackedTimerCallbacks(
   key: string,
@@ -187,6 +222,10 @@ export function startTrackedTimer(
   options?: { readonly silent?: boolean; readonly startedAtMs?: number },
 ): void {
   const entry = ensureEntry(key);
+  if (entry.refusePersist) {
+    // Closed task — never start a local session that could write later.
+    return;
+  }
   if (entry.sessionStartAt != null) {
     ensureHeartbeat();
     return;
@@ -228,7 +267,9 @@ export function pauseTrackedTimer(
   entries.set(key, entry);
 
   if (!options?.silent) {
-    entry.onPersist?.(seconds);
+    if (canPersist(entry)) {
+      entry.onPersist?.(seconds);
+    }
     entry.onSessionChange?.("pause", sessionSeconds);
   }
   ensureHeartbeat();
