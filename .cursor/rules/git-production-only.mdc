@@ -7,7 +7,7 @@ alwaysApply: true
 
 - Commit and push directly to `production`, the canonical branch of `remondevries/backsteros`. No pull requests, no feature branches, no sub-branches.
 - Never open a PR or create a branch unless the person who gave you the task explicitly asks for one.
-- Before every push, run from the repo root and push only if all pass: `pnpm typecheck`, `pnpm test`, `pnpm test:integration`. If you touched `development/`, also run `vp run -r typecheck` and `vp run -r test` there.
+- Before every push, run from the repo root and push only if all pass: `pnpm typecheck`, `pnpm test`, `pnpm test:integration` (integration uses Docker Postgres DB `backsteros_test`, never live `backsteros`). If you touched `development/`, also run `vp run -r typecheck` and `vp run -r test` there.
 - If anything fails, fix it locally and rerun before pushing. Never push red and never skip or disable a test to get green.
 - CI (`.github/workflows/ci.yml`) runs only on pushes to `main`/`v2` and on PRs, not on `production`. Local runs are the only gate.
 - `git pull --rebase origin production` before pushing; rerun the suite if that pulled in new commits.

@@ -30,7 +30,7 @@ interface ComposerPrimaryActionsProps {
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   /** Active agent accent — paints send/action chrome so it cannot fall back to theme blue. */
-  agentAccentColor?: string | null;
+  agentAccentColor?: string | null | undefined;
   preserveComposerFocusOnPointerDown?: boolean;
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */

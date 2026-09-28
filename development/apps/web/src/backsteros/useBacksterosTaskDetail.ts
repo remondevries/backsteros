@@ -50,17 +50,45 @@ export type BacksterosTaskDetailState =
   | { readonly status: "error"; readonly message: string };
 
 function normalizeTask(
-  task: Omit<BacksterosTaskDetail, "dueDate" | "relatedContactIds" | "relatedOrganizationIds"> & {
+  task: Omit<
+    BacksterosTaskDetail,
+    "dueDate" | "dueEndDate" | "relatedContactIds" | "relatedOrganizationIds"
+  > & {
     readonly dueDate?: string | null | undefined;
+    readonly dueEndDate?: string | null | undefined;
     readonly relatedContactIds?: readonly string[] | null | undefined;
     readonly relatedOrganizationIds?: readonly string[] | null | undefined;
+    readonly sortOrder?: number | undefined;
+    readonly priority?: number | undefined;
+    readonly trackedDurationSeconds?: number | null | undefined;
+    readonly trackedMinutes?: number | null | undefined;
   },
 ): BacksterosTaskDetail {
-  return {
-    ...task,
+  const normalized: BacksterosTaskDetail = {
+    id: task.id,
+    projectId: task.projectId,
+    number: task.number,
+    title: task.title,
+    status: task.status,
     dueDate: task.dueDate ?? null,
+    updatedAt: task.updatedAt,
+    contactId: task.contactId,
+    assigneeId: task.assigneeId,
     relatedContactIds: task.relatedContactIds ?? [],
     relatedOrganizationIds: task.relatedOrganizationIds ?? [],
+    description: task.description,
+    createdAt: task.createdAt,
+    deletedAt: task.deletedAt,
+  };
+  return {
+    ...normalized,
+    ...(task.sortOrder !== undefined ? { sortOrder: task.sortOrder } : {}),
+    ...(task.priority !== undefined ? { priority: task.priority } : {}),
+    ...(task.dueEndDate !== undefined ? { dueEndDate: task.dueEndDate } : {}),
+    ...(task.trackedDurationSeconds !== undefined
+      ? { trackedDurationSeconds: task.trackedDurationSeconds }
+      : {}),
+    ...(task.trackedMinutes !== undefined ? { trackedMinutes: task.trackedMinutes } : {}),
   };
 }
 

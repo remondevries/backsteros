@@ -14,11 +14,11 @@ export type FileTaskWakePayload = {
 export type FileTaskCallbackSuccess = {
   readonly ok: true;
   readonly requestId: string;
-  readonly taskId?: string;
-  readonly taskRef?: string;
-  readonly title?: string;
-  readonly projectId?: string;
-  readonly summary?: string;
+  readonly taskId?: string | undefined;
+  readonly taskRef?: string | undefined;
+  readonly title?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly summary?: string | undefined;
 };
 
 export type FileTaskCallbackFailure = {

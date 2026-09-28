@@ -12,9 +12,11 @@ WORKFLOW RULE: Commit and push directly to the production branch. No pull reques
    ```bash
    pnpm typecheck
    pnpm test
-   pnpm test:integration   # starts Docker Postgres via core/server/scripts/run-integration-tests.sh
+   pnpm test:integration   # Docker Postgres :5433 → database backsteros_test (never live backsteros)
    ```
-   If you changed anything under `development/`, also run `vp run -r typecheck` and `vp run -r test` inside `development/`.
+   `pnpm test:integration` creates `backsteros_test` if needed, migrates it, and refuses to run when `DATABASE_URL` points at the live local-core DB named `backsteros`. CI already uses `backsteros_test` via `INTEGRATION_USE_EXISTING_DB=1`.
+   If you changed anything under `development/`, also run `vp run -r typecheck` and `vp run -r test` inside `development/` (mobile typecheck is noisy upstream — use `vp run --filter @t3tools/mobile typecheck` when you touch mobile).
+   When `development/` is installed locally, root `pnpm typecheck` delegates a filtered package set (excludes `@t3tools/mobile`); root `pnpm test` does not run the nested T3 suite — run that inside `development/` when you change it.
 4. **If anything fails, fix it locally and rerun the suite before pushing.** Never push red, never push "to see what CI says", and never skip or disable a failing test to get green.
 5. **Local runs are the only gate.** `.github/workflows/ci.yml` runs only on pushes to `main`/`v2` and on pull requests, so nothing checks a push to `production` after it lands.
 6. Before pushing, `git pull --rebase origin production` so history stays linear, then rerun the suite if the rebase brought in new commits.

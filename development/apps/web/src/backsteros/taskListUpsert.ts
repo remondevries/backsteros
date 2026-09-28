@@ -2,17 +2,26 @@ import type { BacksterosTask, BacksterosTaskDetail } from "./types";
 
 /** Strip detail fields so list caches stay list-shaped. */
 export function backsterosTaskListRowFromDetail(detail: BacksterosTaskDetail): BacksterosTask {
-  return {
+  const row: BacksterosTask = {
     id: detail.id,
     projectId: detail.projectId,
     number: detail.number,
     title: detail.title,
     status: detail.status,
-    sortOrder: detail.sortOrder,
     dueDate: detail.dueDate,
-    priority: detail.priority,
     updatedAt: detail.updatedAt,
   };
+  if (detail.sortOrder !== undefined) {
+    return {
+      ...row,
+      sortOrder: detail.sortOrder,
+      ...(detail.priority !== undefined ? { priority: detail.priority } : {}),
+    };
+  }
+  if (detail.priority !== undefined) {
+    return { ...row, priority: detail.priority };
+  }
+  return row;
 }
 
 /**

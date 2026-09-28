@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "@effect/vitest";
 
 import {
   DEFAULT_FILE_TASK_MAILBOX_URL,

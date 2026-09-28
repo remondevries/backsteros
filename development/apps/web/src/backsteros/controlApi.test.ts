@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "@effect/vitest";
 
 import { mergeControlBindingsIntoTaskChatStore } from "./controlApi";
 import { useBacksterosTaskChatStore } from "./taskChatStore";

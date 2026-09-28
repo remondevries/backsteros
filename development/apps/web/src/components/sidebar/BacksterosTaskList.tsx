@@ -83,11 +83,13 @@ function BacksterosTaskRow(props: {
   readonly projectName?: string | null | undefined;
   readonly project?: BacksterosCodebaseProject | null | undefined;
   readonly onSelect: (task: BacksterosTask) => void;
-  readonly onContextMenu?: (
-    task: BacksterosTask,
-    project: BacksterosCodebaseProject | null | undefined,
-    position: { x: number; y: number },
-  ) => void;
+  readonly onContextMenu?:
+    | ((
+        task: BacksterosTask,
+        project: BacksterosCodebaseProject | null | undefined,
+        position: { x: number; y: number },
+      ) => void)
+    | undefined;
   readonly sortable?: SortableRowBag;
 }) {
   const {

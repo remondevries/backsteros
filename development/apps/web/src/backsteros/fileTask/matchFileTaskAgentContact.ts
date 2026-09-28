@@ -1,4 +1,4 @@
-import type { BacksterosContact } from "./types";
+import type { BacksterosContact } from "../types";
 
 /** Match a file-task agent display name to a BacksterOS contact for avatars. */
 export function matchFileTaskAgentContact(

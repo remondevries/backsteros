@@ -183,10 +183,12 @@ export function parseComponentEditorDocument(source: string): {
   const canvasMatch = source.match(CANVAS_MARKER_RE);
   const appearanceMatch = source.match(APPEARANCE_MARKER_RE);
   const framework: ComponentEditorFramework =
-    frameworkMatch && isComponentEditorFramework(frameworkMatch[1]) ? frameworkMatch[1] : "vanilla";
+    frameworkMatch?.[1] && isComponentEditorFramework(frameworkMatch[1])
+      ? frameworkMatch[1]
+      : "vanilla";
   const canvas = componentEditorCanvasColor(canvasMatch?.[1] ?? COMPONENT_EDITOR_DEFAULT_CANVAS);
   const appearance: ComponentEditorAppearance =
-    appearanceMatch && isComponentEditorAppearance(appearanceMatch[1])
+    appearanceMatch?.[1] && isComponentEditorAppearance(appearanceMatch[1])
       ? appearanceMatch[1]
       : COMPONENT_EDITOR_DEFAULT_APPEARANCE;
 

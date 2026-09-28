@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { emailAgentCallbackResultSchema } from "@backsteros/contracts";
 
-import { resolveEmailAgentSuccessIntent } from "./email-agent-callback-dispatch.js";
+import { resolveEmailAgentSuccessIntent } from "./email-agent-callback-intent.js";
 
 describe("emailAgentCallbackResultSchema", () => {
   it("accepts legacy body-only success as valid", () => {

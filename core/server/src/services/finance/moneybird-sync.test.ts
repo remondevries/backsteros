@@ -7,7 +7,7 @@ import {
   moneybirdMutationFingerprint,
   parseMoneybirdAmountToCents,
   parseMoneybirdPeriodBounds,
-} from "./moneybird-sync.js";
+} from "./moneybird-sync-map.js";
 
 function sampleMutation(
   overrides: Partial<MoneybirdFinancialMutation> = {},

@@ -25,7 +25,7 @@ export type BacksterosTaskActionMenuState = {
   readonly supportsPinning: boolean;
   readonly supportsSnooze: boolean;
   readonly hasWorkspacePath: boolean;
-  readonly currentAccentColor?: string | null;
+  readonly currentAccentColor?: string | null | undefined;
   readonly snoozePresets: ReadonlyArray<{
     readonly id: string;
     readonly label: string;

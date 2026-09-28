@@ -212,7 +212,7 @@ export function collectBacksterosVibeHiddenChatKeys(input: {
 /** Reverse lookup: which BacksterOS task owns this T3 thread (if any). */
 export function findBacksterosTaskIdForThread(input: {
   readonly threadId: string;
-  readonly environmentId?: string | null;
+  readonly environmentId?: string | null | undefined;
   readonly byTaskId?: Readonly<Record<string, BacksterosTaskChatBinding>> | null;
 }): string | null {
   const threadId = input.threadId.trim();

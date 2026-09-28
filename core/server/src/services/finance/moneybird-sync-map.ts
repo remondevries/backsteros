@@ -12,6 +12,17 @@ export function parseMoneybirdAmountToCents(raw: string): number {
   return parseDecimalAmountToCents(raw);
 }
 
+/** Parse Moneybird `YYYYMMDD..YYYYMMDD` period into ISO dates. */
+export function parseMoneybirdPeriodBounds(
+  period: string,
+): { from: string; to: string } | null {
+  const m = period.trim().match(/^(\d{8})\.\.(\d{8})$/);
+  if (!m) return null;
+  const toIso = (raw: string) =>
+    `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  return { from: toIso(m[1]!), to: toIso(m[2]!) };
+}
+
 export function mapMoneybirdMutationToLedgerRow(
   mutation: MoneybirdFinancialMutation,
   accountType: string | null | undefined,

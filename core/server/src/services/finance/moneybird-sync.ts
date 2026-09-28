@@ -19,12 +19,13 @@ import {
   commitFinancialTransactionLedgerRefreshes,
 } from "./finance.js";
 import type { FinancialTransactionSyncCreateInput } from "./finance.js";
-import { mapMoneybirdMutationToLedgerRow } from "./moneybird-sync-map.js";
+import { mapMoneybirdMutationToLedgerRow, parseMoneybirdPeriodBounds } from "./moneybird-sync-map.js";
 
 export {
   mapMoneybirdMutationToLedgerRow,
   moneybirdMutationFingerprint,
   parseMoneybirdAmountToCents,
+  parseMoneybirdPeriodBounds,
 } from "./moneybird-sync-map.js";
 
 const MUTATION_FETCH_CHUNK = 100;
@@ -40,17 +41,6 @@ function chunkIds<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
-}
-
-/** Parse Moneybird `YYYYMMDD..YYYYMMDD` period into ISO dates. */
-export function parseMoneybirdPeriodBounds(
-  period: string,
-): { from: string; to: string } | null {
-  const m = period.trim().match(/^(\d{8})\.\.(\d{8})$/);
-  if (!m) return null;
-  const toIso = (raw: string) =>
-    `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
-  return { from: toIso(m[1]), to: toIso(m[2]) };
 }
 
 function localMoneybirdVersion(raw: unknown): number | null {

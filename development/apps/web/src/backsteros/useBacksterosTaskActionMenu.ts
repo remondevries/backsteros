@@ -5,6 +5,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
 import {
@@ -82,7 +83,12 @@ export function useBacksterosTaskActionMenu() {
         const api = readLocalApi();
         if (!api) return;
         const binding = useBacksterosTaskChatStore.getState().getBinding(task.id);
-        const threadRef = binding ? scopeThreadRef(binding.environmentId, binding.threadId) : null;
+        const threadRef = binding
+          ? scopeThreadRef(
+              EnvironmentId.make(binding.environmentId),
+              ThreadId.make(binding.threadId),
+            )
+          : null;
         const thread = threadRef ? readThreadShell(threadRef) : null;
         const now = new Date();
         const nowIso = now.toISOString();

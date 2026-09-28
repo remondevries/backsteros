@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
 import { parseDisplayId } from "./resolve.js";
 import { parseCliArgv } from "./parse.js";
 import { loadConfig } from "./config.js";
@@ -40,31 +43,49 @@ describe("parseCliArgv", () => {
 });
 
 describe("loadConfig", () => {
-  it("defaults to local core auth", () => {
-    const prevUrl = process.env.BACKSTEROS_API_URL;
-    const prevKey = process.env.BACKSTEROS_API_KEY;
+  const envKeys = [
+    "BACKSTEROS_API_URL",
+    "BACKSTEROS_API_KEY",
+    "BACKSTEROS_CLI_ENV",
+    "BACKSTEROS_AGENT_CONTACT_ID",
+    "BACKSTEROS_ACTIVITY_ACTOR",
+    "LOCAL_SHELL_TOKEN",
+    "HOME",
+    "XDG_CONFIG_HOME",
+  ] as const;
+
+  let tempHome: string;
+  const previous = new Map<string, string | undefined>();
+
+  before(() => {
+    tempHome = mkdtempSync(join(tmpdir(), "backsteros-cli-test-"));
+    for (const key of envKeys) {
+      previous.set(key, process.env[key]);
+    }
+    process.env.HOME = tempHome;
+    process.env.XDG_CONFIG_HOME = join(tempHome, ".config");
     delete process.env.BACKSTEROS_API_URL;
     delete process.env.BACKSTEROS_API_KEY;
-    // Point at a missing env file so this test stays hermetic.
-    const prevEnvPath = process.env.BACKSTEROS_CLI_ENV;
-    process.env.BACKSTEROS_CLI_ENV = "/tmp/backsteros-cli-missing.env";
-    const prevAgentContact = process.env.BACKSTEROS_AGENT_CONTACT_ID;
+    delete process.env.BACKSTEROS_CLI_ENV;
     delete process.env.BACKSTEROS_AGENT_CONTACT_ID;
-    try {
-      const config = loadConfig({});
-      assert.equal(config.baseUrl, "http://127.0.0.1:8788");
-      assert.equal(config.token, "local");
-      assert.equal(config.activityActor, "agent");
-      assert.equal(config.agentContactId, null);
-    } finally {
-      if (prevUrl === undefined) delete process.env.BACKSTEROS_API_URL;
-      else process.env.BACKSTEROS_API_URL = prevUrl;
-      if (prevKey === undefined) delete process.env.BACKSTEROS_API_KEY;
-      else process.env.BACKSTEROS_API_KEY = prevKey;
-      if (prevEnvPath === undefined) delete process.env.BACKSTEROS_CLI_ENV;
-      else process.env.BACKSTEROS_CLI_ENV = prevEnvPath;
-      if (prevAgentContact === undefined) delete process.env.BACKSTEROS_AGENT_CONTACT_ID;
-      else process.env.BACKSTEROS_AGENT_CONTACT_ID = prevAgentContact;
+    delete process.env.BACKSTEROS_ACTIVITY_ACTOR;
+    delete process.env.LOCAL_SHELL_TOKEN;
+  });
+
+  after(() => {
+    for (const key of envKeys) {
+      const value = previous.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
+    rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("defaults to local core auth", () => {
+    const config = loadConfig({});
+    assert.equal(config.baseUrl, "http://127.0.0.1:8788");
+    assert.equal(config.token, "local");
+    assert.equal(config.activityActor, "agent");
+    assert.equal(config.agentContactId, null);
   });
 });

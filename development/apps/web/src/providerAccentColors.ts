@@ -61,9 +61,9 @@ export function providerAccentSwatchForInstance(scopeKey: string): ProviderAccen
  * the same; include the instance so switching agents in-thread also changes it.
  */
 export function composerAccentScopeKey(input: {
-  threadId?: string | null;
-  draftKey?: string | null;
-  instanceId?: string | null;
+  threadId?: string | null | undefined;
+  draftKey?: string | null | undefined;
+  instanceId?: string | null | undefined;
 }): string | undefined {
   const threadId = input.threadId?.trim() || undefined;
   const draftKey = input.draftKey?.trim() || undefined;
@@ -81,16 +81,19 @@ export function resolveProviderAccentColor(
   instanceId: string | undefined,
   accentColor: string | undefined,
 ): string {
-  return resolveComposerAccentColor({ instanceId, accentColor });
+  return resolveComposerAccentColor({
+    instanceId: instanceId ?? null,
+    accentColor: accentColor ?? null,
+  });
 }
 
 export function resolveComposerAccentColor(input: {
-  threadId?: string | null;
-  draftKey?: string | null;
-  instanceId?: string | null;
-  accentColor?: string | null;
+  threadId?: string | null | undefined;
+  draftKey?: string | null | undefined;
+  instanceId?: string | null | undefined;
+  accentColor?: string | null | undefined;
   /** Persisted per-chat override from the context-menu color picker. */
-  overrideColor?: string | null;
+  overrideColor?: string | null | undefined;
 }): string {
   const override = normalizeProviderAccentColor(input.overrideColor ?? undefined);
   if (override) return override;

@@ -45,7 +45,7 @@ export interface ThreadActionMenuState {
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
   /** Current composer accent for this chat (override or resolved). */
-  readonly currentAccentColor?: string | null;
+  readonly currentAccentColor?: string | null | undefined;
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -56,7 +56,7 @@ export interface ThreadActionMenuState {
 }
 
 export function buildComposerColorMenuItems(input: {
-  readonly currentAccentColor?: string | null;
+  readonly currentAccentColor?: string | null | undefined;
   readonly includeClear?: boolean;
 }): ReadonlyArray<ContextMenuItem<`color:${string}` | "color:clear">> {
   const current = input.currentAccentColor?.trim().toLowerCase() ?? "";

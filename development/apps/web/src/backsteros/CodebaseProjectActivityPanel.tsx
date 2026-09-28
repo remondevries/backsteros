@@ -8,7 +8,7 @@ import {
   isBacksterosTaskStatus,
   migrateBacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
-import type { BacksterosTaskActivity } from "~/backsteros/types";
+import type { BacksterosTask, BacksterosTaskActivity } from "~/backsteros/types";
 import "~/backsteros/backsterosActivity.css";
 
 /** Matches desktop `CodebaseProjectActivityPanel`: show 5, load 5 more, up to 20. */

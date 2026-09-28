@@ -1,27 +1,21 @@
 import type {
   EmailAgentCallbackResult,
-  EmailAgentIntent,
 } from "@backsteros/contracts";
 
 import { newId } from "../lib/crypto.js";
 import * as agentmailSettingsService from "./agentmail-settings.js";
+import { resolveEmailAgentSuccessIntent } from "./email-agent-callback-intent.js";
 import * as emailThreadsService from "./email-threads.js";
 import * as meetingService from "./meetings.js";
 import * as taskProjectService from "./tasks-projects.js";
+
+export { resolveEmailAgentSuccessIntent } from "./email-agent-callback-intent.js";
 
 export type EmailAgentCallbackRow = {
   workspaceId: string;
   inboxId: string;
   messageId: string;
 };
-
-export function resolveEmailAgentSuccessIntent(
-  body: Extract<EmailAgentCallbackResult, { ok: true }>,
-): EmailAgentIntent | null {
-  if (body.intent) return body.intent;
-  if (body.body?.trim()) return "reply_draft";
-  return null;
-}
 
 function appendEmailContext(description: string | null | undefined, input: {
   subject: string;

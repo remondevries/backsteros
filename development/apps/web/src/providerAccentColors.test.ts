@@ -135,8 +135,9 @@ describe("providerAccentColors", () => {
       "--message-action-foreground": "#0a0a0a",
       "--color-message-action-foreground": "#0a0a0a",
     });
-    expect(style["--message-action-hover"]).toContain("#4ADE80");
-    expect(style["--color-message-action-hover"]).toContain("#4ADE80");
+    const cssVars = style as Record<string, string | undefined>;
+    expect(cssVars["--message-action-hover"]).toContain("#4ADE80");
+    expect(cssVars["--color-message-action-hover"]).toContain("#4ADE80");
   });
 
   it("builds solid button styles that do not rely on theme tokens", () => {

@@ -8,8 +8,8 @@ const COMPOSER_ACCENT_STORAGE_KEY = "t3code:composer-accent-overrides";
 const COMPOSER_ACCENT_STORAGE_VERSION = 1;
 
 export function composerAccentOverrideKey(input: {
-  readonly taskId?: string | null;
-  readonly threadId?: string | null;
+  readonly taskId?: string | null | undefined;
+  readonly threadId?: string | null | undefined;
 }): string | null {
   const taskId = input.taskId?.trim();
   if (taskId) return `task:${taskId}`;

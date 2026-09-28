@@ -75,7 +75,7 @@ export async function fetchControlBindings(signal?: AbortSignal): Promise<{
     method: "GET",
     credentials: "include",
     headers: controlAuthHeaders(),
-    signal,
+    ...(signal ? { signal } : {}),
     cache: "no-store",
   });
   if (!response.ok) {

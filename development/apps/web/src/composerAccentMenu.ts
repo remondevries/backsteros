@@ -8,39 +8,39 @@ import { resolveComposerAccentColor } from "./providerAccentColors";
 
 /** Resolve the accent shown in Color menus (override → provider → hash). */
 export function resolveComposerAccentForMenu(input: {
-  readonly taskId?: string | null;
-  readonly threadId?: string | null;
-  readonly environmentId?: string | null;
-  readonly instanceId?: string | null;
-  readonly accentColor?: string | null;
+  readonly taskId?: string | null | undefined;
+  readonly threadId?: string | null | undefined;
+  readonly environmentId?: string | null | undefined;
+  readonly instanceId?: string | null | undefined;
+  readonly accentColor?: string | null | undefined;
 }): string {
   const taskId =
     input.taskId?.trim() ||
     (input.threadId
       ? findBacksterosTaskIdForThread({
           threadId: input.threadId,
-          environmentId: input.environmentId,
+          environmentId: input.environmentId ?? null,
         })
       : null);
   const key = composerAccentOverrideKey({
     taskId,
-    threadId: input.threadId,
+    threadId: input.threadId ?? null,
   });
   const overrideColor = useComposerAccentStore.getState().getOverride(key);
   return resolveComposerAccentColor({
-    threadId: input.threadId,
-    instanceId: input.instanceId,
-    accentColor: input.accentColor,
-    overrideColor,
+    threadId: input.threadId ?? null,
+    instanceId: input.instanceId ?? null,
+    accentColor: input.accentColor ?? null,
+    overrideColor: overrideColor ?? null,
   });
 }
 
 /** Persist a Color submenu pick for a task or thread scope. */
 export function applyComposerColorMenuAction(input: {
   readonly action: string;
-  readonly taskId?: string | null;
-  readonly threadId?: string | null;
-  readonly environmentId?: string | null;
+  readonly taskId?: string | null | undefined;
+  readonly threadId?: string | null | undefined;
+  readonly environmentId?: string | null | undefined;
 }): boolean {
   const parsed = parseComposerColorMenuAction(input.action);
   if (!parsed) return false;
@@ -49,12 +49,12 @@ export function applyComposerColorMenuAction(input: {
     (input.threadId
       ? findBacksterosTaskIdForThread({
           threadId: input.threadId,
-          environmentId: input.environmentId,
+          environmentId: input.environmentId ?? null,
         })
       : null);
   const key = composerAccentOverrideKey({
     taskId,
-    threadId: input.threadId,
+    threadId: input.threadId ?? null,
   });
   if (!key) return false;
   useComposerAccentStore.getState().setOverride(key, parsed.kind === "clear" ? null : parsed.hex);
