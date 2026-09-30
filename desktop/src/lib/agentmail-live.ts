@@ -16,15 +16,25 @@ export function pathNeedsAgentMail(pathname: string): boolean {
   );
 }
 
+/** Router outlet paths that need AgentMail even when another section stays warm. */
+export function isEmailOutletPath(pathname: string): boolean {
+  return (
+    pathname === "/email" ||
+    pathname.startsWith("/email/") ||
+    pathname.startsWith("/desktop-overlay/compose")
+  );
+}
+
 /**
  * Inbox / Communication enable/live follows `visibleKeepAliveSurface`, not the
- * router. Email / compose stay on Outlet — only then do we read the window href.
+ * router. Email / compose stay on Outlet — read the window href for mailboxes.
  */
 export function shouldLiveUpdateAgentMail(
   visible: PendingPageSurface | null,
   pathname: string = parseNavigationPathname(currentWindowNavigationHref()),
 ): boolean {
   if (visible === "inbox" || visible === "communication") return true;
+  if (isEmailOutletPath(pathname)) return true;
   if (visible != null) return false;
   return pathNeedsAgentMail(pathname);
 }

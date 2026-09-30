@@ -18,3 +18,9 @@ test("email and compose stay live only on Outlet (visible null)", () => {
   assert.equal(shouldLiveUpdateAgentMail(null, "/tasks"), false);
   assert.equal(shouldLiveUpdateAgentMail("inbox", "/email/box/msg"), true);
 });
+
+test("email outlet loads mailboxes while another keep-alive section is visible", () => {
+  assert.equal(shouldLiveUpdateAgentMail("contacts", "/email/compose"), true);
+  assert.equal(shouldLiveUpdateAgentMail("calendar", "/email/in-1/msg-1"), true);
+  assert.equal(shouldLiveUpdateAgentMail("calendar", "/inbox"), false);
+});
