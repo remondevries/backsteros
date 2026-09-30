@@ -211,6 +211,31 @@ describe("canManageApiKeys", () => {
     );
   });
 
+  it("allows a key attached to the workspace owner's own contact", () => {
+    const ownerContactKey = {
+      kind: "api_key" as const,
+      userId: "user-1",
+      clerkUserId: null,
+      apiKeyId: "key-1",
+      contactId: "owner-contact",
+      workspaceId: "ws",
+      membershipRole: null,
+      scopes: ["settings:write" as const, "tasks:write" as const],
+    };
+    assert.equal(
+      canManageApiKeys(ownerContactKey, { contactIsWorkspaceOwner: true }),
+      true,
+    );
+    assert.equal(canManageApiKeys(ownerContactKey), false);
+    assert.equal(
+      canManageApiKeys(
+        { ...ownerContactKey, scopes: ["tasks:write"] },
+        { contactIsWorkspaceOwner: true },
+      ),
+      false,
+    );
+  });
+
   it("rejects api keys without settings:write", () => {
     assert.equal(
       canManageApiKeys({

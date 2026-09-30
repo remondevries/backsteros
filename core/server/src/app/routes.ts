@@ -10276,9 +10276,18 @@ export function registerApiRoutes(app: Hono) {
     },
   );
 
+  /** Owner gate for Settings → API keys (see `canManageApiKeys`). */
+  async function authCanManageApiKeys(auth: AuthContext): Promise<boolean> {
+    const contactIsWorkspaceOwner =
+      auth.kind === "api_key" && Boolean(auth.contactId)
+        ? await apiKeyService.apiKeyContactIsWorkspaceOwner(auth)
+        : false;
+    return canManageApiKeys(auth, { contactIsWorkspaceOwner });
+  }
+
   app.get("/api/v1/api-keys", async (c) => {
     const auth = getAuth(c);
-    if (!canManageApiKeys(auth)) {
+    if (!(await authCanManageApiKeys(auth))) {
       return c.json(
         auth.kind === "api_key" ? forbidden() : unauthorized(),
         auth.kind === "api_key" ? 403 : 401,
@@ -10294,7 +10303,7 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", createApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!canManageApiKeys(auth)) {
+      if (!(await authCanManageApiKeys(auth))) {
         return c.json(
           auth.kind === "api_key" ? forbidden() : unauthorized(),
           auth.kind === "api_key" ? 403 : 401,
@@ -10332,7 +10341,7 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", updateApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!canManageApiKeys(auth)) {
+      if (!(await authCanManageApiKeys(auth))) {
         return c.json(
           auth.kind === "api_key" ? forbidden() : unauthorized(),
           auth.kind === "api_key" ? 403 : 401,
@@ -10370,7 +10379,7 @@ export function registerApiRoutes(app: Hono) {
 
   app.delete("/api/v1/api-keys/:id", async (c) => {
     const auth = getAuth(c);
-    if (!canManageApiKeys(auth)) {
+    if (!(await authCanManageApiKeys(auth))) {
       return c.json(
         auth.kind === "api_key" ? forbidden() : unauthorized(),
         auth.kind === "api_key" ? 403 : 401,

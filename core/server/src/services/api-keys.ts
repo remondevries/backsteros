@@ -6,6 +6,7 @@ import { db } from "../db/index.js";
 import {
   apiKeys,
   contacts,
+  users,
   workspaceSettings,
   workspaces,
 } from "../db/schema.js";
@@ -22,6 +23,46 @@ export async function listApiKeys(workspaceId: string) {
     .from(apiKeys)
     .where(and(eq(apiKeys.workspaceId, workspaceId), isNull(apiKeys.revokedAt)))
     .orderBy(desc(apiKeys.createdAt));
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * True when an API key's attached contact is the workspace owner themself:
+ * the key belongs to the workspace owner and the contact's email equals that
+ * user's email. Such a key is the owner's key with name attribution, not an
+ * agent persona key (agent contacts have no matching owner email).
+ */
+export async function apiKeyContactIsWorkspaceOwner(auth: {
+  kind: string;
+  userId: string | null;
+  contactId: string | null;
+  workspaceId: string;
+}): Promise<boolean> {
+  if (auth.kind !== "api_key" || !auth.contactId || !auth.userId) return false;
+  const [row] = await db
+    .select({
+      contactEmail: contacts.email,
+      userEmail: users.email,
+      ownerUserId: workspaces.ownerUserId,
+    })
+    .from(contacts)
+    .innerJoin(workspaces, eq(workspaces.id, contacts.workspaceId))
+    .innerJoin(users, eq(users.id, auth.userId))
+    .where(
+      and(
+        eq(contacts.id, auth.contactId),
+        eq(contacts.workspaceId, auth.workspaceId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row || row.ownerUserId !== auth.userId) return false;
+  const contactEmail = normalizeEmail(row.contactEmail);
+  return contactEmail !== null && contactEmail === normalizeEmail(row.userEmail);
 }
 
 async function resolveKeyContactId(

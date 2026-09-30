@@ -70,15 +70,24 @@ export function canMintPowerSyncToken(auth: AuthContext | null): boolean {
  * Who may administer `/api/v1/api-keys` (Settings → API keys).
  * Local-shell on local-core, or an owner-grade `sk_live_…` with `settings:write`.
  * Contact-bound agent keys are rejected even if overscoped.
+ *
+ * A key attached to the workspace owner's *own* contact (so their activity
+ * shows under their name) is still the owner's key, not an agent persona.
+ * Callers resolve that with `apiKeyContactIsWorkspaceOwner` and pass
+ * `contactIsWorkspaceOwner: true`.
  */
-export function canManageApiKeys(auth: AuthContext | null | undefined): boolean {
+export function canManageApiKeys(
+  auth: AuthContext | null | undefined,
+  options: { contactIsWorkspaceOwner?: boolean } = {},
+): boolean {
   if (!auth?.workspaceId) return false;
   if (auth.kind === "local_shell") {
     return Boolean(auth.userId);
   }
   if (auth.kind === "api_key") {
-    if (auth.contactId) return false;
-    return hasScope(auth.scopes, "settings:write");
+    if (!hasScope(auth.scopes, "settings:write")) return false;
+    if (auth.contactId && !options.contactIsWorkspaceOwner) return false;
+    return true;
   }
   return false;
 }
