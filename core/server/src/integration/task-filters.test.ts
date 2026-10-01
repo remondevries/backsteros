@@ -370,6 +370,18 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   assert.ok(byTaskIds.has(taskIds.b));
   assert.ok(!byTaskIds.has(taskIds.a));
 
+  // OS-45: linkedTasks also accepts a display key.
+  const byKey = await json(
+    app,
+    `/api/v1/tasks?linkedTasks=os28-1&paginated=true`,
+    secret,
+  );
+  assert.equal(byKey.response.status, 200);
+  assert.deepEqual(
+    (byKey.body.items as Array<{ id: string }>).map((item) => item.id),
+    [taskIds.b],
+  );
+
   // Default exclusion of completed/canceled; include when asked.
   const openOnly = await json(
     app,

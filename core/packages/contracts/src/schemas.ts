@@ -544,7 +544,7 @@ export const listTasksQuerySchema = z.object({
   dueDate: z.string().optional(),
   /** Document id or comma-separated list (bidirectional via front-matter linkedTasks). */
   linkedDocuments: z.string().optional(),
-  /** Task id or comma-separated list — co-linked tasks via shared documents. */
+  /** Task id or key (OS-28) or a comma list — co-linked tasks via shared documents. */
   linkedTasks: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),

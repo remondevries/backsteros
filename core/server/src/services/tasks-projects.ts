@@ -798,10 +798,17 @@ function linkedTasksCondition(
       left join ${projects} p
         on p.id = t.project_id and p.workspace_id = t.workspace_id
       where t.workspace_id = ${workspaceId}
-        and t.id in (${sql.join(
-          seedTaskIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})
+        and (
+          t.id in (${sql.join(
+            seedTaskIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})
+          -- OS-45: also accept display keys (e.g. OS-28) as seeds.
+          or (coalesce(p.key, 'INBOX') || '-' || t.number::text) in (${sql.join(
+            seedTaskIds.map((id) => sql`${id.toUpperCase()}`),
+            sql`, `,
+          )})
+        )
         and t.deleted_at is null
     ),
     docs as (
@@ -839,10 +846,7 @@ function linkedTasksCondition(
       on (coalesce(p2.key, 'INBOX') || '-' || t2.number::text) = k.display_key
     where t2.workspace_id = ${workspaceId}
       and t2.deleted_at is null
-      and t2.id not in (${sql.join(
-        seedTaskIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})
+      and t2.id not in (select seed_id from seed)
   )`;
 }
 
