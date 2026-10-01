@@ -159,6 +159,13 @@ import {
   parseTaskListQuery,
 } from "../lib/task-filters.js";
 import {
+  resolveContactRef,
+  resolveOrganizationRef,
+  resolveProjectRef,
+  resolveTaskListFilterRefs,
+  resolveTaskRef,
+} from "../lib/entity-refs.js";
+import {
   readDocumentSection,
   replaceDocumentSectionBody,
 } from "../lib/document-sections.js";
@@ -514,6 +521,23 @@ async function tasksWithKeys(workspaceId: string, rows: TaskRow[]) {
 
 function notFound(resource: string) {
   return { error: `${resource} not found`, code: "not_found" as const };
+}
+
+/** OS-58: path/filter refs may be internal ids or human keys. */
+async function routeTaskId(workspaceId: string, ref: string) {
+  return resolveTaskRef(workspaceId, ref);
+}
+
+async function routeProjectId(workspaceId: string, ref: string) {
+  return resolveProjectRef(workspaceId, ref);
+}
+
+async function routeOrganizationId(workspaceId: string, ref: string) {
+  return resolveOrganizationRef(workspaceId, ref);
+}
+
+async function routeContactId(workspaceId: string, ref: string) {
+  return resolveContactRef(workspaceId, ref);
 }
 
 /** Hash write-only `portalPassword` into `portalPasswordHash` for REST / leader payloads. */
@@ -880,7 +904,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const projectId = c.req.param("id");
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     // Safety: create vault folder + .cursor skills on open if missing.
     await projectVaultService.ensureProjectVaultFoldersOnly(
       auth.workspaceId,
@@ -905,7 +931,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const projectId = c.req.param("id");
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
       projectId,
@@ -939,7 +967,9 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/projects/:id/relations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "projects:read")) return c.json(forbidden(), 403);
-    const result = await circleService.getProjectRelations(auth.workspaceId, c.req.param("id"));
+    const projectId = await routeProjectId(auth.workspaceId, c.req.param("id"));
+    if (!projectId) return c.json(notFound("Project"), 404);
+    const result = await circleService.getProjectRelations(auth.workspaceId, projectId);
     return result ? c.json(result) : c.json(notFound("Project"), 404);
   });
 
@@ -1014,7 +1044,9 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
-        const projectId = c.req.param("id");
+        const projectIdRaw = c.req.param("id");
+        const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+        if (!projectId) return c.json(notFound("Project"), 404);
         const patch = c.req.valid("json");
         if (isRestLeaderFirstWrite()) {
           const existing = await taskProjectService.getProjectById(
@@ -1100,7 +1132,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const projectId = c.req.param("id");
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     if (isRestLeaderFirstWrite()) {
       const existing = await taskProjectService.getProjectById(
         auth.workspaceId,
@@ -1136,7 +1170,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("projects:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
-    const projectId = c.req.param("id");
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
       projectId,
@@ -1159,7 +1195,9 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("projects:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
-      const projectId = c.req.param("id");
+      const projectIdRaw = c.req.param("id");
+      const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+      if (!projectId) return c.json(notFound("Project"), 404);
       try {
         const row = await projectUpdatesService.createProjectUpdate(
           auth.workspaceId,
@@ -1738,9 +1776,12 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -1798,6 +1839,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const branch = c.req.query("branch")?.trim();
     if (!branch) {
       return c.json(
@@ -1816,7 +1860,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -1878,6 +1922,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const sha = c.req.param("sha")?.trim();
     if (!sha) {
       return c.json(
@@ -1888,7 +1935,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -1948,6 +1995,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Number(pageRaw) : 1;
     if (!Number.isInteger(page) || page < 1) {
@@ -1959,7 +2009,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -2020,6 +2070,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const number = Number(c.req.param("number"));
     if (!Number.isInteger(number) || number < 1) {
       return c.json(
@@ -2030,7 +2083,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -2089,6 +2142,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const number = Number(c.req.param("number"));
     if (!Number.isInteger(number) || number < 1) {
       return c.json(
@@ -2107,7 +2163,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -2170,6 +2226,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(forbidden(), 403);
     }
 
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const number = Number(c.req.param("number"));
     if (!Number.isInteger(number) || number < 1) {
       return c.json(
@@ -2188,7 +2247,7 @@ export function registerApiRoutes(app: Hono) {
 
     const project = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!project) {
       return c.json(notFound("Project"), 404);
@@ -2276,9 +2335,12 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("projects:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const loaded = await loadCodebaseFsProject(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if ("error" in loaded) {
       return c.json(loaded.error, loaded.status);
@@ -2304,9 +2366,12 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("projects:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const loaded = await loadCodebaseFsProject(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if ("error" in loaded) {
       return c.json(loaded.error, loaded.status);
@@ -2333,6 +2398,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("projects:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const filePath = c.req.query("path")?.trim();
     if (!filePath) {
       return c.json(
@@ -2342,7 +2410,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const loaded = await loadCodebaseFsProject(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if ("error" in loaded) {
       return c.json(loaded.error, loaded.status);
@@ -2372,10 +2440,13 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("projects:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
+      const projectIdRaw = c.req.param("id");
+      const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+      if (!projectId) return c.json(notFound("Project"), 404);
       const body = c.req.valid("json");
       const loaded = await loadCodebaseFsProject(
         auth.workspaceId,
-        c.req.param("id"),
+        projectId,
       );
       if ("error" in loaded) {
         return c.json(loaded.error, loaded.status);
@@ -2407,10 +2478,13 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("projects:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
+      const projectIdRaw = c.req.param("id");
+      const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+      if (!projectId) return c.json(notFound("Project"), 404);
       const body = c.req.valid("json");
       const loaded = await loadCodebaseFsProject(
         auth.workspaceId,
-        c.req.param("id"),
+        projectId,
       );
       if ("error" in loaded) {
         return c.json(loaded.error, loaded.status);
@@ -2440,6 +2514,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("projects:write")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
     const entryPath = c.req.query("path")?.trim();
     if (!entryPath) {
       return c.json(
@@ -2449,7 +2526,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const loaded = await loadCodebaseFsProject(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if ("error" in loaded) {
       return c.json(loaded.error, loaded.status);
@@ -2516,13 +2593,19 @@ export function registerApiRoutes(app: Hono) {
           "Full task list (all statuses). Prefer GET /tasks?paginated=true&projectId=...&status=... and read items.",
         );
       }
+      // OS-58: resolve keys in filters (unknown refs stay unmatched → empty list).
+      const resolved = await resolveTaskListFilterRefs(
+        auth.workspaceId,
+        parsed,
+        { strict: false },
+      );
       const rows = await taskProjectService.listTasks(auth.workspaceId, {
-        projectId: parsed.projectIds,
-        contactId: parsed.contactIds,
-        assigneeId: parsed.assigneeIds,
-        relatedContactId: parsed.relatedContactIds,
-        relatedOrganizationId: parsed.relatedOrganizationIds,
-        status: parsed.statuses,
+        projectId: resolved.projectIds,
+        contactId: resolved.contactIds,
+        assigneeId: resolved.assigneeIds,
+        relatedContactId: resolved.relatedContactIds,
+        relatedOrganizationId: resolved.relatedOrganizationIds,
+        status: resolved.statuses,
         inbox:
           c.req.query("inbox") === undefined
             ? undefined
@@ -2540,9 +2623,15 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const result = await taskProjectService.listTasksPaginated(
+      // OS-58: keys allowed; unknown project/assignee/contact/org → 400.
+      const resolved = await resolveTaskListFilterRefs(
         auth.workspaceId,
         parsed,
+        { strict: true },
+      );
+      const result = await taskProjectService.listTasksPaginated(
+        auth.workspaceId,
+        resolved,
       );
       return c.json(result);
     } catch (error) {
@@ -2586,9 +2675,13 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
+    const taskId = await routeTaskId(auth.workspaceId, c.req.param("id"));
+    if (!taskId) {
+      return c.json(notFound("Task"), 404);
+    }
     const row = await taskProjectService.getTaskById(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     if (!row) {
       return c.json(notFound("Task"), 404);
@@ -2604,9 +2697,11 @@ export function registerApiRoutes(app: Hono) {
     }
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
 
+    const taskId = await routeTaskId(auth.workspaceId, c.req.param("id"));
+    if (!taskId) return c.json(notFound("Task"), 404);
     const rows = await documentService.listDocumentsForTask(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     if (rows === null) {
       return c.json(notFound("Task"), 404);
@@ -2617,7 +2712,9 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/:id/relations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
-    const result = await circleService.getTaskRelations(auth.workspaceId, c.req.param("id"));
+    const taskId = await routeTaskId(auth.workspaceId, c.req.param("id"));
+    if (!taskId) return c.json(notFound("Task"), 404);
+    const result = await circleService.getTaskRelations(auth.workspaceId, taskId);
     return result ? c.json(result) : c.json(notFound("Task"), 404);
   });
 
@@ -2626,7 +2723,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:read")(auth) && !requireScope("projects:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
-    const taskId = c.req.param("id");
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const task = await taskProjectService.getTaskById(auth.workspaceId, taskId);
     if (!task) {
       return c.json(notFound("Task"), 404);
@@ -2679,9 +2778,12 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const rows = await taskCommentService.listTaskComments(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     if (!rows) return c.json(notFound("Task"), 404);
     return c.json({ comments: rows.map(toTaskComment) });
@@ -2692,9 +2794,12 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:read")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const rows = await taskActivityService.listTaskActivities(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     if (!rows) return c.json(notFound("Task"), 404);
     return c.json({ activities: rows.map(toTaskActivity) });
@@ -2800,10 +2905,13 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("tasks:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       const body = c.req.valid("json");
       const presence = await taskAgentPresenceService.upsertTaskAgentPresence(
         auth.workspaceId,
-        c.req.param("id"),
+        taskId,
         {
           source: body.source,
           sessionId: body.sessionId,
@@ -2819,7 +2927,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:write")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
-    const taskId = c.req.param("id");
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const task = await taskProjectService.getTaskById(auth.workspaceId, taskId);
     if (!task) return c.json(notFound("Task"), 404);
     await taskAgentPresenceService.clearTaskAgentPresence(
@@ -2838,7 +2948,9 @@ export function registerApiRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const body = c.req.valid("json");
-      const taskId = c.req.param("id");
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       if (isRestLeaderFirstWrite()) {
         const existingTask = await taskProjectService.getTaskById(
           auth.workspaceId,
@@ -2896,7 +3008,9 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:write")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
-    const taskId = c.req.param("taskId");
+    const taskIdRaw = c.req.param("taskId");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const activityId = c.req.param("id");
     const existing = await taskActivityService.getTaskActivityRow(
       auth.workspaceId,
@@ -2967,7 +3081,9 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("tasks:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
-      const taskId = c.req.param("taskId");
+      const taskIdRaw = c.req.param("taskId");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       const activityId = c.req.param("id");
       const body = c.req.valid("json");
       const updated = await taskActivityService.updateTaskTimerSessionActor(
@@ -3031,7 +3147,9 @@ export function registerApiRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const body = c.req.valid("json");
-      const taskId = c.req.param("id");
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       const actor = writeActorForComment(auth, {
         activityActor: body.activityActor,
         authorContactId: body.authorContactId,
@@ -3113,7 +3231,9 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("tasks:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
-      const taskId = c.req.param("taskId");
+      const taskIdRaw = c.req.param("taskId");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       const commentId = c.req.param("id");
       const patch = c.req.valid("json");
       if (isRestLeaderFirstWrite()) {
@@ -3176,7 +3296,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
     const commentId = c.req.param("id");
-    const taskId = c.req.param("taskId");
+    const taskIdRaw = c.req.param("taskId");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const existing = await taskCommentService.getTaskCommentRow(
       auth.workspaceId,
       commentId,
@@ -3355,7 +3477,9 @@ export function registerApiRoutes(app: Hono) {
       try {
         const body = c.req.valid("json");
         const { activityActor, agentInboxApproved, ...patch } = body;
-        const taskId = c.req.param("id");
+        const taskIdRaw = c.req.param("id");
+        const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+        if (!taskId) return c.json(notFound("Task"), 404);
         if (isRestLeaderFirstWrite()) {
           const existing = await taskProjectService.getTaskById(
             auth.workspaceId,
@@ -3451,7 +3575,9 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const taskId = c.req.param("id");
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     if (isRestLeaderFirstWrite()) {
       const existing = await taskProjectService.getTaskById(
         auth.workspaceId,
@@ -3504,6 +3630,9 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       const bytes = new Uint8Array(await c.req.arrayBuffer());
       const contentType =
         sniffAvatarContentType(bytes) ??
@@ -3523,7 +3652,7 @@ export function registerApiRoutes(app: Hono) {
       }
       const image = await taskImageService.createTaskImage(
         auth.workspaceId,
-        c.req.param("id"),
+        taskId,
         bytes,
         contentType,
         c.req.header("X-Filename") ?? undefined,
@@ -3537,9 +3666,12 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/:id/images/:imageId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const result = await taskImageService.getTaskImage(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       c.req.param("imageId"),
     );
     if (!result) return c.json(notFound("Image"), 404);
@@ -3558,9 +3690,12 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/:id/attachments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const attachments = await taskAttachmentService.listTaskAttachments(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     return attachments
       ? c.json({ attachments })
@@ -3570,6 +3705,9 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/tasks/:id/attachments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     if (blobReadsRequireLocalCore()) {
       return c.json(
         {
@@ -3602,7 +3740,7 @@ export function registerApiRoutes(app: Hono) {
     );
     const attachment = await taskAttachmentService.createTaskAttachment(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       bytes,
       filename,
       contentType,
@@ -3618,10 +3756,13 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
       try {
         const rows = await taskAttachmentService.reorderTaskAttachments(
           auth.workspaceId,
-          c.req.param("id"),
+          taskId,
           c.req.valid("json").orderedIds,
         );
         if (!rows) return c.json(notFound("Task"), 404);
@@ -3645,6 +3786,9 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     if (blobReadsRequireLocalCore()) {
       return c.json(
         {
@@ -3656,7 +3800,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const result = await taskAttachmentService.getTaskAttachment(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       c.req.param("attachmentId"),
     );
     if (!result) return c.json(notFound("Attachment"), 404);
@@ -3671,6 +3815,9 @@ export function registerApiRoutes(app: Hono) {
   app.patch("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const body = await c.req.json().catch(() => null);
     const parsed = z
       .object({ originalFilename: z.string().trim().min(1).max(255) })
@@ -3683,7 +3830,7 @@ export function registerApiRoutes(app: Hono) {
     }
     const row = await taskAttachmentService.updateTaskAttachment(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       c.req.param("attachmentId"),
       parsed.data,
     );
@@ -3693,9 +3840,12 @@ export function registerApiRoutes(app: Hono) {
   app.delete("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const row = await taskAttachmentService.deleteTaskAttachment(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       c.req.param("attachmentId"),
     );
     return row ? c.json(row) : c.json(notFound("PDF"), 404);
@@ -4537,7 +4687,9 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/tasks/:id/move", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
-    const taskId = c.req.param("id");
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     const parsed = z.object({ projectId: z.string().nullable() }).safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid projectId", code: "bad_request" }, 400);
     if (isRestLeaderFirstWrite()) {
@@ -4585,7 +4737,9 @@ export function registerApiRoutes(app: Hono) {
       .object({ projectId: z.string().nullable().optional(), status: z.string().optional() })
       .safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid triage data", code: "bad_request" }, 400);
-    const taskId = c.req.param("id");
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
     if (isRestLeaderFirstWrite()) {
       const existing = await taskProjectService.getTaskById(auth.workspaceId, taskId);
       if (!existing) return c.json(notFound("Task"), 404);
@@ -5395,13 +5549,17 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/organizations/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
-    const row = await circleService.getOrganizationById(auth.workspaceId, c.req.param("id"));
+    const organizationId = await routeOrganizationId(auth.workspaceId, c.req.param("id"));
+    if (!organizationId) return c.json(notFound("Organization"), 404);
+    const row = await circleService.getOrganizationById(auth.workspaceId, organizationId);
     return row ? c.json(row) : c.json(notFound("Organization"), 404);
   });
   app.get("/api/v1/organizations/:id/relations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
-    const result = await circleService.getOrganizationRelations(auth.workspaceId, c.req.param("id"));
+    const organizationId = await routeOrganizationId(auth.workspaceId, c.req.param("id"));
+    if (!organizationId) return c.json(notFound("Organization"), 404);
+    const result = await circleService.getOrganizationRelations(auth.workspaceId, organizationId);
     return result ? c.json(result) : c.json(notFound("Organization"), 404);
   });
   app.post("/api/v1/organizations", zValidator("json", organizationSchema), async (c) => {
@@ -5432,7 +5590,9 @@ export function registerApiRoutes(app: Hono) {
   app.patch("/api/v1/organizations/:id", zValidator("json", organizationSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
-    const organizationId = c.req.param("id");
+    const organizationIdRaw = c.req.param("id");
+    const organizationId = await routeOrganizationId(auth.workspaceId, organizationIdRaw);
+    if (!organizationId) return c.json(notFound("Organization"), 404);
     const patch = c.req.valid("json");
     if (isRestLeaderFirstWrite()) {
       const existing = await circleService.getOrganizationById(
@@ -5483,7 +5643,9 @@ export function registerApiRoutes(app: Hono) {
   app.delete("/api/v1/organizations/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
-    const organizationId = c.req.param("id");
+    const organizationIdRaw = c.req.param("id");
+    const organizationId = await routeOrganizationId(auth.workspaceId, organizationIdRaw);
+    if (!organizationId) return c.json(notFound("Organization"), 404);
     if (isRestLeaderFirstWrite()) {
       const existing = await circleService.getOrganizationById(
         auth.workspaceId,
@@ -5549,13 +5711,17 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
-    const row = await circleService.getContactById(auth.workspaceId, c.req.param("id"));
+    const contactId = await routeContactId(auth.workspaceId, c.req.param("id"));
+    if (!contactId) return c.json(notFound("Contact"), 404);
+    const row = await circleService.getContactById(auth.workspaceId, contactId);
     return row ? c.json(toPublicContact(row)) : c.json(notFound("Contact"), 404);
   });
   app.get("/api/v1/contacts/:id/relations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
-    const result = await circleService.getContactRelations(auth.workspaceId, c.req.param("id"));
+    const contactId = await routeContactId(auth.workspaceId, c.req.param("id"));
+    if (!contactId) return c.json(notFound("Contact"), 404);
+    const result = await circleService.getContactRelations(auth.workspaceId, contactId);
     return result ? c.json(result) : c.json(notFound("Contact"), 404);
   });
   app.post("/api/v1/contacts", zValidator("json", contactSchema), async (c) => {
@@ -5622,7 +5788,9 @@ export function registerApiRoutes(app: Hono) {
   app.patch("/api/v1/contacts/:id", zValidator("json", contactSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const contactId = c.req.param("id");
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const raw = c.req.valid("json") as Record<string, unknown>;
     if (Object.prototype.hasOwnProperty.call(raw, "portalPassword")) {
       console.info(
@@ -5717,7 +5885,9 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/contacts/:id/send-portal-password-reset", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const contactId = c.req.param("id");
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const row = await circleService.getContactById(auth.workspaceId, contactId);
     if (!row) return c.json(notFound("Contact"), 404);
     const { sendPortalPasswordResetViaPortal } = await import(
@@ -5739,7 +5909,9 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/contacts/:id/send-portal-invite", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const contactId = c.req.param("id");
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const row = await circleService.getContactById(auth.workspaceId, contactId);
     if (!row) return c.json(notFound("Contact"), 404);
     const { sendPortalInviteViaPortal } = await import(
@@ -5761,7 +5933,9 @@ export function registerApiRoutes(app: Hono) {
   app.delete("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const contactId = c.req.param("id");
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     if (isRestLeaderFirstWrite()) {
       const existing = await circleService.getContactById(auth.workspaceId, contactId);
       if (!existing) return c.json(notFound("Contact"), 404);
@@ -5785,9 +5959,12 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts/:id/relationships", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const result = await crmGroupsService.listContactRelationships(
       auth.workspaceId,
-      c.req.param("id"),
+      contactId,
     );
     return result
       ? c.json({ relationships: result })
@@ -5799,7 +5976,9 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-      const fromContactId = c.req.param("id");
+      const fromContactIdRaw = c.req.param("id");
+      const fromContactId = await routeContactId(auth.workspaceId, fromContactIdRaw);
+      if (!fromContactId) return c.json(notFound("Contact"), 404);
       const body = c.req.valid("json");
       try {
         if (isRestLeaderFirstWrite()) {
@@ -6527,10 +6706,13 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts/:id/groups", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const groups = await crmGroupsService.listCrmGroupsForSubject(
       auth.workspaceId,
       "contact",
-      c.req.param("id"),
+      contactId,
     );
     // Local-first: contact may not be in Postgres yet — empty membership is fine.
     return c.json({ groups: groups ?? [] });
@@ -6538,10 +6720,13 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/organizations/:id/groups", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
+    const organizationIdRaw = c.req.param("id");
+    const organizationId = await routeOrganizationId(auth.workspaceId, organizationIdRaw);
+    if (!organizationId) return c.json(notFound("Organization"), 404);
     const groups = await crmGroupsService.listCrmGroupsForSubject(
       auth.workspaceId,
       "organization",
-      c.req.param("id"),
+      organizationId,
     );
     return c.json({ groups: groups ?? [] });
   });
@@ -6549,9 +6734,12 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts/:id/activity", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const contact = await circleService.getContactById(
       auth.workspaceId,
-      c.req.param("id"),
+      contactId,
     );
     if (!contact) return c.json(notFound("Contact"), 404);
     const query = crmActivityFeedQuerySchema.parse({
@@ -6568,7 +6756,9 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts/:id/portal-logs", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
-    const contactId = c.req.param("id");
+    const contactIdRaw = c.req.param("id");
+    const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+    if (!contactId) return c.json(notFound("Contact"), 404);
     const contact = await circleService.getContactById(auth.workspaceId, contactId);
     if (!contact) return c.json(notFound("Contact"), 404);
     const rawLimit = c.req.query("limit");
@@ -6592,7 +6782,9 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-      const contactId = c.req.param("id");
+      const contactIdRaw = c.req.param("id");
+      const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+      if (!contactId) return c.json(notFound("Contact"), 404);
       const contact = await circleService.getContactById(
         auth.workspaceId,
         contactId,
@@ -6628,9 +6820,12 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      const contactIdRaw = c.req.param("id");
+      const contactId = await routeContactId(auth.workspaceId, contactIdRaw);
+      if (!contactId) return c.json(notFound("Contact"), 404);
       const contact = await circleService.getContactById(
         auth.workspaceId,
-        c.req.param("id"),
+        contactId,
       );
       if (!contact) return c.json(notFound("Contact"), 404);
       const body = c.req.valid("json");
@@ -6698,9 +6893,12 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/organizations/:id/activity", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
+    const organizationIdRaw = c.req.param("id");
+    const organizationId = await routeOrganizationId(auth.workspaceId, organizationIdRaw);
+    if (!organizationId) return c.json(notFound("Organization"), 404);
     const organization = await circleService.getOrganizationById(
       auth.workspaceId,
-      c.req.param("id"),
+      organizationId,
     );
     if (!organization) return c.json(notFound("Organization"), 404);
     const query = crmActivityFeedQuerySchema.parse({
@@ -6720,9 +6918,12 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
+      const organizationIdRaw = c.req.param("id");
+      const organizationId = await routeOrganizationId(auth.workspaceId, organizationIdRaw);
+      if (!organizationId) return c.json(notFound("Organization"), 404);
       const organization = await circleService.getOrganizationById(
         auth.workspaceId,
-        c.req.param("id"),
+        organizationId,
       );
       if (!organization) return c.json(notFound("Organization"), 404);
       const body = c.req.valid("json");

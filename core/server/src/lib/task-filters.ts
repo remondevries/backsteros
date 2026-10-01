@@ -26,6 +26,8 @@ const STATUS_SET = new Set<string>(TASK_STATUSES);
 
 export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
   "projectId",
+  /** Explicit project key alias (OS-58); merged into projectId refs. */
+  "projectKey",
   "status",
   "assigneeId",
   "dueDate",
@@ -279,7 +281,11 @@ export function ignoredLegacyTaskListKeys(
 export function parseTaskListQuery(
   raw: Record<string, string | string[] | undefined>,
 ): ParsedTaskListQuery {
-  const projectIds = parseTaskMultiValues(raw.projectId);
+  // OS-58: projectKey is an explicit alias; merged for later id/key resolution.
+  const projectIds = [
+    ...parseTaskMultiValues(raw.projectId),
+    ...parseTaskMultiValues(raw.projectKey),
+  ];
   const statusesRaw = parseTaskMultiValues(raw.status);
   const assigneeIds = parseTaskMultiValues(raw.assigneeId);
   const contactIds = parseTaskMultiValues(raw.contactId);
@@ -416,6 +422,28 @@ export function decodeTaskListCursor(
     }
   }
   return payload;
+}
+
+/**
+ * Human display key: PROJECT-number, or INBOX-number when no project.
+ * Project segment: letter then alphanumerics (case-insensitive).
+ */
+export const TASK_DISPLAY_KEY_RE = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
+
+export type ParsedTaskDisplayKey = {
+  projectKey: string;
+  number: number;
+};
+
+export function parseTaskDisplayKey(
+  ref: string,
+): ParsedTaskDisplayKey | null {
+  const match = ref.trim().match(TASK_DISPLAY_KEY_RE);
+  if (!match) return null;
+  return {
+    projectKey: match[1]!.toUpperCase(),
+    number: Number(match[2]),
+  };
 }
 
 /** Human display key: PROJECT-number, or INBOX-number when no project. */

@@ -11,6 +11,7 @@ import {
   formatTaskDisplayKey,
   ignoredLegacyTaskListKeys,
   parseDueDateFilter,
+  parseTaskDisplayKey,
   parseTaskListLimit,
   parseTaskListQuery,
   parseTaskMultiValues,
@@ -306,5 +307,22 @@ describe("task display key", () => {
   it("formats project and inbox keys", () => {
     assert.equal(formatTaskDisplayKey("OS", 28), "OS-28");
     assert.equal(formatTaskDisplayKey(null, 3), "INBOX-3");
+  });
+
+  it("parses KEY-number refs (OS-58)", () => {
+    assert.deepEqual(parseTaskDisplayKey("qm-38"), {
+      projectKey: "QM",
+      number: 38,
+    });
+    assert.equal(parseTaskDisplayKey("not-a-key"), null);
+  });
+
+  it("merges projectKey into projectIds", () => {
+    const parsed = parseTaskListQuery({
+      paginated: "true",
+      projectKey: "OS",
+      projectId: "abc",
+    });
+    assert.deepEqual(parsed.projectIds.sort(), ["OS", "abc"].sort());
   });
 });

@@ -89,14 +89,17 @@ export const apiContract: AppRouter = c.router(
     getProject: {
       method: "GET",
       path: "/api/v1/projects/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Project id or key (e.g. `OS`). */
+        id: z.string(),
+      }),
       responses: {
         200: projectSchema,
         401: errorSchema,
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Get project by id",
+      summary: "Get project by id or key",
     },
     createProject: {
       method: "POST",
@@ -113,7 +116,10 @@ export const apiContract: AppRouter = c.router(
     updateProject: {
       method: "PATCH",
       path: "/api/v1/projects/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Project id or key (e.g. `OS`). */
+        id: z.string(),
+      }),
       body: updateProjectSchema,
       responses: {
         200: projectSchema,
@@ -122,12 +128,15 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Update project",
+      summary: "Update project by id or key",
     },
     deleteProject: {
       method: "DELETE",
       path: "/api/v1/projects/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Project id or key (e.g. `OS`). */
+        id: z.string(),
+      }),
       body: null,
       responses: {
         204: c.noBody(),
@@ -135,7 +144,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Soft-delete project",
+      summary: "Soft-delete project by id or key",
     },
     ensureProjectVault: {
       method: "POST",
@@ -435,14 +444,17 @@ export const apiContract: AppRouter = c.router(
     getTask: {
       method: "GET",
       path: "/api/v1/tasks/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Task id or display key (e.g. `OS-51`). */
+        id: z.string(),
+      }),
       responses: {
         200: taskSchema,
         401: errorSchema,
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Get task by id",
+      summary: "Get task by id or key",
     },
     createTask: {
       method: "POST",
@@ -460,7 +472,10 @@ export const apiContract: AppRouter = c.router(
     updateTask: {
       method: "PATCH",
       path: "/api/v1/tasks/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Task id or display key (e.g. `OS-51`). */
+        id: z.string(),
+      }),
       body: updateTaskSchema,
       responses: {
         200: taskSchema,
@@ -469,12 +484,15 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Update task",
+      summary: "Update task by id or key",
     },
     deleteTask: {
       method: "DELETE",
       path: "/api/v1/tasks/:id",
-      pathParams: z.object({ id: z.string() }),
+      pathParams: z.object({
+        /** Task id or display key (e.g. `OS-51`). */
+        id: z.string(),
+      }),
       body: null,
       responses: {
         204: c.noBody(),
@@ -482,7 +500,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Soft-delete task",
+      summary: "Soft-delete task by id or key",
     },
     createTaskImage: {
       method: "POST",
@@ -1345,14 +1363,14 @@ export const apiContract: AppRouter = c.router(
       path: "/api/v1/organizations/:id",
       pathParams: s.idParamsSchema,
       responses: { 200: s.organizationSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Get an organization",
+      summary: "Get an organization by id or key",
     },
     getOrganizationRelations: {
       method: "GET",
       path: "/api/v1/organizations/:id/relations",
       pathParams: s.idParamsSchema,
       responses: { 200: s.organizationRelationsSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Get organization relations",
+      summary: "Get organization relations by id or key",
     },
     createOrganization: {
       method: "POST",
@@ -1367,7 +1385,7 @@ export const apiContract: AppRouter = c.router(
       pathParams: s.idParamsSchema,
       body: s.updateOrganizationSchema,
       responses: { 200: s.organizationSchema, 400: badRequestSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Update an organization",
+      summary: "Update an organization by id or key",
     },
     deleteOrganization: {
       method: "DELETE",
@@ -1375,7 +1393,7 @@ export const apiContract: AppRouter = c.router(
       pathParams: s.idParamsSchema,
       body: null,
       responses: { 204: c.noBody(), 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Delete an organization",
+      summary: "Delete an organization by id or key",
     },
     listContacts: {
       method: "GET",
@@ -1389,14 +1407,14 @@ export const apiContract: AppRouter = c.router(
       path: "/api/v1/contacts/:id",
       pathParams: s.idParamsSchema,
       responses: { 200: s.contactSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Get a contact",
+      summary: "Get a contact by id or key",
     },
     getContactRelations: {
       method: "GET",
       path: "/api/v1/contacts/:id/relations",
       pathParams: s.idParamsSchema,
       responses: { 200: s.contactRelationsSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Get contact relations",
+      summary: "Get contact relations by id or key",
     },
     createContact: {
       method: "POST",
@@ -1411,7 +1429,7 @@ export const apiContract: AppRouter = c.router(
       pathParams: s.idParamsSchema,
       body: s.updateContactSchema,
       responses: { 200: s.contactSchema, 400: badRequestSchema, 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Update a contact",
+      summary: "Update a contact by id or key",
     },
     deleteContact: {
       method: "DELETE",
@@ -1419,7 +1437,7 @@ export const apiContract: AppRouter = c.router(
       pathParams: s.idParamsSchema,
       body: null,
       responses: { 204: c.noBody(), 401: errorSchema, 403: errorSchema, 404: errorSchema },
-      summary: "Delete a contact",
+      summary: "Delete a contact by id or key",
     },
     listContactRelationships: {
       method: "GET",

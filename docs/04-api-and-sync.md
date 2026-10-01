@@ -74,19 +74,27 @@ Auth: `Authorization: Bearer sk_live_…`
 ```http
 GET  /api/v1/search?q=architecture&type=document
 GET  /api/v1/projects
-GET  /api/v1/tasks
+GET  /api/v1/projects/OS
+GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
+GET  /api/v1/tasks/OS-51
+GET  /api/v1/organizations/IN
 GET  /api/v1/documents/{id}
 GET  /api/v1/documents/{id}/content
 GET  /api/v1/letters/{id}
 GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 ```
 
+Path params and filter ids accept the **internal id or the human key**
+(`OS-51` for a task, `OS` for a project, org/contact keys likewise).
+Unknown filter ids on paginated `GET /tasks` return **400** (not an empty 200).
+
 ### Write (agents)
 
 ```http
 PATCH /api/v1/documents/{id}/content
 POST  /api/v1/tasks/batch
-PATCH /api/v1/tasks/{id}
+PATCH /api/v1/tasks/OS-51
+POST  /api/v1/tasks/OS-51/comments
 POST  /api/v1/tasks/{id}/attachments
       Content-Type: application/pdf   # or image/*, message/rfc822, etc.
       X-Filename: brief.pdf

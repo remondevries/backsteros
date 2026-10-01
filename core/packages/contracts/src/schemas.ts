@@ -528,10 +528,17 @@ export const taskListItemSchema = z.object({
  * With `paginated=true` the response is `{ items, nextCursor }`.
  */
 export const listTasksQuerySchema = z.object({
+  /** Project id or key (e.g. `OS`). Unknown values → 400 in paginated mode. */
   projectId: z.string().optional(),
+  /** Explicit project key alias (same resolution as projectId). */
+  projectKey: z.string().optional(),
+  /** Contact id or key. Unknown → 400 when paginated. */
   contactId: z.string().optional(),
+  /** Assignee contact id or key. Unknown → 400 when paginated. */
   assigneeId: z.string().optional(),
+  /** Related contact id or key. Unknown → 400 when paginated. */
   relatedContactId: z.string().optional(),
+  /** Related organization id or key. Unknown → 400 when paginated. */
   relatedOrganizationId: z.string().optional(),
   status: z.string().optional(),
   inbox: z.coerce.boolean().optional(),
@@ -1170,7 +1177,10 @@ export const searchResultSchema = z.object({
 const isoDateSchema = z.string().datetime();
 const nullableIsoDateSchema = isoDateSchema.nullable();
 
-export const idParamsSchema = z.object({ id: z.string() });
+export const idParamsSchema = z.object({
+  /** Internal id or human key (task `OS-51`, project `OS`, org/contact key). */
+  id: z.string(),
+});
 export const reorderSchema = z.object({
   orderedIds: z.array(z.string()).min(1).max(500),
 });
