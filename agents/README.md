@@ -27,6 +27,24 @@ CORE_UPSTREAM_URL=http://127.0.0.1:8788
 
 Public base URL for agents: `https://agent.backsteros.com/api/v1`.
 
+## List endpoints (agents)
+
+Prefer **`paginated=true`** on collection GETs so responses are
+`{ items, nextCursor }` with `limit` (default 50, max 200). Legacy
+`{ projects }` / `{ meetings }` / … shapes remain without that flag;
+`limit`/`cursor`/`updatedSince` are ignored there and reported via
+`X-BacksterOS-Hint`.
+
+```http
+GET /api/v1/meetings?projectId=OS&paginated=true&limit=20
+GET /api/v1/contacts?paginated=true&limit=50
+GET /api/v1/documents            # default limit=100 + hint
+GET /api/v1/global-search?q=…&mode=tasks
+```
+
+Unknown filter ids and bad enums (`status=bogus`, `mode=bogus`) return **400**
+with `field`. Keys work wherever ids are accepted (`projectId=OS`).
+
 ## Allowed traffic
 
 All `/api/v1/*` routes are forwarded. Core enforces API key scopes (except the

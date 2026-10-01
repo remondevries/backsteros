@@ -39,6 +39,13 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
+  decodeUpdatedAtCursor,
+  encodeUpdatedAtCursor,
+  LIST_DEFAULT_LIMIT,
+  type ParsedDueTasksListQuery,
+  type ParsedProjectsListQuery,
+} from "../lib/list-query.js";
+import {
   TASK_LIST_DEFAULT_EXCLUDED_STATUSES,
   decodeTaskListCursor,
   encodeTaskListCursor,
@@ -258,10 +265,16 @@ export async function listProjects(
     area?: string;
     status?: string;
     type?: string;
+    updatedSince?: Date;
   } = {},
   executor: DbExecutor = db,
 ) {
-  const conditions = [eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt)];
+  const conditions = [eq(projects.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(projects.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(projects.deletedAt));
+  }
   if (filters.organizationId) conditions.push(eq(projects.organizationId, filters.organizationId));
   if (filters.area) conditions.push(eq(projects.area, filters.area));
   if (filters.status) conditions.push(eq(projects.status, filters.status));
@@ -271,6 +284,60 @@ export async function listProjects(
     .from(projects)
     .where(and(...conditions))
     .orderBy(projects.sortOrder, desc(projects.updatedAt));
+}
+
+export async function listProjectsPaginated(
+  workspaceId: string,
+  filters: ParsedProjectsListQuery,
+  executor: DbExecutor = db,
+  nowMs: number = Date.now(),
+) {
+  const conditions: SQL[] = [eq(projects.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(projects.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(projects.deletedAt));
+  }
+  if (filters.organizationId) {
+    conditions.push(eq(projects.organizationId, filters.organizationId));
+  }
+  if (filters.area) conditions.push(eq(projects.area, filters.area));
+  if (filters.status) conditions.push(eq(projects.status, filters.status));
+  if (filters.type) conditions.push(eq(projects.type, filters.type));
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${projects.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${projects.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${projects.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const rows = await executor
+    .select()
+    .from(projects)
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${projects.updatedAt}) desc`,
+      asc(projects.id),
+    )
+    .limit(filters.limit + 1);
+  const hasMore = rows.length > filters.limit;
+  const page = hasMore ? rows.slice(0, filters.limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page,
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 export async function getProjectById(
@@ -1988,6 +2055,93 @@ export async function listDueTasks(
       ),
     )
     .orderBy(asc(tasks.dueDate), asc(tasks.sortOrder));
+}
+
+export type DueTaskListItem = {
+  id: string;
+  key: string;
+  title: string;
+  status: string;
+  priority: number;
+  projectId: string | null;
+  dueDate: string | null;
+  updatedAt: string;
+};
+
+export async function listDueTasksPaginated(
+  workspaceId: string,
+  filters: ParsedDueTasksListQuery,
+  executor: DbExecutor = db,
+  nowMs: number = Date.now(),
+): Promise<{ items: DueTaskListItem[]; nextCursor: string | null }> {
+  const conditions: SQL[] = [
+    eq(tasks.workspaceId, workspaceId),
+    isNull(tasks.deletedAt),
+    isNull(tasks.completedAt),
+    isNotNull(tasks.dueDate),
+    lte(tasks.dueDate, filters.before),
+  ];
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${tasks.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${tasks.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${tasks.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const limit = Number.isFinite(filters.limit) ? filters.limit : LIST_DEFAULT_LIMIT;
+  const rows = await executor
+    .select({
+      id: tasks.id,
+      number: tasks.number,
+      title: tasks.title,
+      status: tasks.status,
+      priority: tasks.priority,
+      projectId: tasks.projectId,
+      dueDate: tasks.dueDate,
+      updatedAt: tasks.updatedAt,
+      projectKey: projects.key,
+    })
+    .from(tasks)
+    .leftJoin(
+      projects,
+      and(
+        eq(projects.id, tasks.projectId),
+        eq(projects.workspaceId, tasks.workspaceId),
+      ),
+    )
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${tasks.updatedAt}) desc`,
+      asc(tasks.id),
+    )
+    .limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page.map((row) => ({
+      id: row.id,
+      key: formatTaskDisplayKey(row.projectKey, row.number),
+      title: row.title,
+      status: row.status,
+      priority: row.priority,
+      projectId: row.projectId,
+      dueDate: row.dueDate ? row.dueDate.toISOString() : null,
+      updatedAt: row.updatedAt.toISOString(),
+    })),
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 /**

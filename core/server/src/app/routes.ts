@@ -167,6 +167,30 @@ import {
   taskListUsesDefaultStatusExclusion,
 } from "../lib/task-filters.js";
 import {
+  DOCUMENTS_DEFAULT_LIMIT,
+  ListQueryError,
+  assertDocumentListTypeValue,
+  collectQueryParams,
+  ignoredLegacyListKeys,
+  CONTACTS_LIST_PAGINATED_ONLY_KEYS,
+  EMAIL_MESSAGES_LIST_PAGINATED_ONLY_KEYS,
+  LETTERS_LIST_PAGINATED_ONLY_KEYS,
+  MEETINGS_LIST_PAGINATED_ONLY_KEYS,
+  ORGANIZATIONS_LIST_PAGINATED_ONLY_KEYS,
+  PROJECTS_LIST_PAGINATED_ONLY_KEYS,
+  DUE_TASKS_LIST_PAGINATED_ONLY_KEYS,
+  parseContactsListQuery,
+  parseDocumentsListLimit,
+  parseDueTasksListQuery,
+  parseEmailMessagesListQuery,
+  parseGlobalSearchQuery,
+  parseLettersListQuery,
+  parseMeetingsListQuery,
+  parseOrganizationsListQuery,
+  parseProjectsListQuery,
+  paginateByUpdatedAtId,
+} from "../lib/list-query.js";
+import {
   resolveContactRef,
   resolveOrganizationRef,
   resolveProjectRef,
@@ -529,6 +553,33 @@ async function tasksWithKeys(workspaceId: string, rows: TaskRow[]) {
 
 function notFound(resource: string) {
   return { error: `${resource} not found`, code: "not_found" as const };
+}
+
+function listQueryErrorBody(error: ListQueryError | TaskFilterError) {
+  return {
+    error: error.message,
+    code: error.code,
+    field: error.field,
+  };
+}
+
+/** Resolve a filter id/key; unknown → 400 (OS-58/OS-59). */
+async function requireResolvedRef(
+  workspaceId: string,
+  ref: string | undefined,
+  field: "projectId" | "organizationId" | "contactId",
+): Promise<string | undefined> {
+  if (ref == null || ref === "") return undefined;
+  const resolved =
+    field === "projectId"
+      ? await resolveProjectRef(workspaceId, ref)
+      : field === "organizationId"
+        ? await resolveOrganizationRef(workspaceId, ref)
+        : await resolveContactRef(workspaceId, ref);
+  if (!resolved) {
+    throw new ListQueryError(`Unknown ${field.replace(/Id$/, "")}`, field);
+  }
+  return resolved;
 }
 
 /** OS-58: path/filter refs may be internal ids or human keys. */
@@ -905,13 +956,53 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const rows = await taskProjectService.listProjects(auth.workspaceId, {
-      organizationId: c.req.query("organizationId"),
-      area: c.req.query("area"),
-      status: c.req.query("status"),
-      type: c.req.query("type"),
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseProjectsListQuery(raw);
+      parsed = {
+        ...parsed,
+        organizationId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.organizationId,
+          "organizationId",
+        ),
+      };
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const ignored = ignoredLegacyListKeys(
+        raw,
+        PROJECTS_LIST_PAGINATED_ONLY_KEYS,
+      );
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      }
+      const rows = await taskProjectService.listProjects(auth.workspaceId, {
+        organizationId: parsed.organizationId,
+        area: parsed.area,
+        status: parsed.status,
+        type: parsed.type,
+      });
+      return c.json({ projects: rows.map(toProject) });
+    }
+
+    const result = await taskProjectService.listProjectsPaginated(
+      auth.workspaceId,
+      parsed,
+    );
+    return c.json({
+      items: result.items.map(toProject),
+      nextCursor: result.nextCursor,
     });
-    return c.json({ projects: rows.map(toProject) });
   });
 
   app.get("/api/v1/projects/:id", async (c) => {
@@ -2673,13 +2764,46 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/tasks/due", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
-    const beforeValue = c.req.query("before");
-    const before = beforeValue ? new Date(beforeValue) : new Date();
-    if (Number.isNaN(before.getTime())) {
-      return c.json({ error: "Invalid before date", code: "bad_request" }, 400);
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseDueTasksListQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
     }
-    const rows = await taskProjectService.listDueTasks(auth.workspaceId, before);
-    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
+
+    if (parsed.mode === "paginated") {
+      const result = await taskProjectService.listDueTasksPaginated(
+        auth.workspaceId,
+        parsed,
+      );
+      return c.json(result);
+    }
+
+    const ignored = ignoredLegacyListKeys(raw, DUE_TASKS_LIST_PAGINATED_ONLY_KEYS);
+    if (ignored.length && raw.limit == null) {
+      c.header(
+        "X-BacksterOS-Hint",
+        `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+      );
+    }
+    const rows = await taskProjectService.listDueTasks(
+      auth.workspaceId,
+      parsed.before,
+    );
+    const limited = Number.isFinite(parsed.limit)
+      ? rows.slice(0, parsed.limit)
+      : rows;
+    if (Number.isFinite(parsed.limit) && rows.length > parsed.limit) {
+      c.header(
+        "X-BacksterOS-Hint",
+        `Limited to ${parsed.limit} rows. Add paginated=true for { items, nextCursor }.`,
+      );
+    }
+    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, limited) });
   });
 
   app.get("/api/v1/tasks/inbox", async (c) => {
@@ -3881,18 +4005,52 @@ export function registerApiRoutes(app: Hono) {
       }
 
       const query = c.req.valid("query");
-      const typeFilter = parseDocumentListTypeFilter([
-        ...(c.req.queries("type") ?? []),
-      ]);
+      const typeValues = parseMultiQueryValues(c.req.queries("type") ?? []);
+      try {
+        for (const value of typeValues) {
+          assertDocumentListTypeValue(value);
+        }
+      } catch (error) {
+        if (error instanceof ListQueryError) {
+          return c.json(listQueryErrorBody(error), 400);
+        }
+        throw error;
+      }
+      const typeFilter = parseDocumentListTypeFilter(typeValues);
       if (typeFilter.kind === "mixed") {
         return c.json(
-          { error: typeFilter.message, code: "bad_request" },
+          { error: typeFilter.message, code: "bad_request", field: "type" },
           400,
         );
       }
 
       const audience = parseMultiQueryValues(c.req.queries("audience") ?? []);
       const status = parseMultiQueryValues(c.req.queries("status") ?? []);
+      const { limit, appliedDefault } = parseDocumentsListLimit(
+        query.limit != null ? String(query.limit) : undefined,
+      );
+      if (appliedDefault) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Default limit=${DOCUMENTS_DEFAULT_LIMIT} applied. Pass limit=1..200 explicitly.`,
+        );
+      }
+
+      let projectId = query.projectId;
+      if (projectId) {
+        try {
+          projectId = await requireResolvedRef(
+            auth.workspaceId,
+            projectId,
+            "projectId",
+          );
+        } catch (error) {
+          if (error instanceof ListQueryError) {
+            return c.json(listQueryErrorBody(error), 400);
+          }
+          throw error;
+        }
+      }
 
       const rows = await documentService.listDocuments(auth.workspaceId, {
         type:
@@ -3901,8 +4059,8 @@ export function registerApiRoutes(app: Hono) {
           typeFilter.kind === "propertyType" ? typeFilter.values : undefined,
         audience: audience.length ? audience : undefined,
         status: status.length ? status : undefined,
-        projectId: query.projectId,
-        limit: query.limit,
+        projectId,
+        limit,
         offset: query.offset,
       });
       return c.json({ documents: rows.map(toDocument) });
@@ -5089,9 +5247,54 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/meetings", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
-    return c.json({
-      meetings: await meetingService.listMeetings(auth.workspaceId),
-    });
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseMeetingsListQuery(raw);
+      parsed = {
+        ...parsed,
+        projectId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.projectId,
+          "projectId",
+        ),
+        organizationId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.organizationId,
+          "organizationId",
+        ),
+        contactId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.contactId,
+          "contactId",
+        ),
+      };
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const ignored = ignoredLegacyListKeys(
+        raw,
+        MEETINGS_LIST_PAGINATED_ONLY_KEYS,
+      );
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      }
+      return c.json({
+        meetings: await meetingService.listMeetings(auth.workspaceId, parsed),
+      });
+    }
+
+    return c.json(
+      await meetingService.listMeetingsPaginated(auth.workspaceId, parsed),
+    );
   });
 
   app.get("/api/v1/meetings/:id", async (c) => {
@@ -5560,11 +5763,38 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/organizations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
-    // OS-45: `q` (alias `search`) filters by name, key, email, website, city.
-    const q = (c.req.query("q") ?? c.req.query("search"))?.trim() || undefined;
-    return c.json({
-      organizations: await circleService.listOrganizations(auth.workspaceId, { q }),
-    });
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseOrganizationsListQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const ignored = ignoredLegacyListKeys(
+        raw,
+        ORGANIZATIONS_LIST_PAGINATED_ONLY_KEYS,
+      );
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      }
+      return c.json({
+        organizations: await circleService.listOrganizations(auth.workspaceId, {
+          q: parsed.q,
+        }),
+      });
+    }
+
+    return c.json(
+      await circleService.listOrganizationsPaginated(auth.workspaceId, parsed),
+    );
   });
   app.get("/api/v1/organizations/:id", async (c) => {
     const auth = getAuth(c);
@@ -5721,12 +5951,51 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/contacts", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
-    const rows = await circleService.listContacts(auth.workspaceId, {
-      organizationId: c.req.query("organizationId"),
-      // OS-45: accept `search` as an alias for `q`.
-      q: (c.req.query("q") ?? c.req.query("search"))?.trim() || undefined,
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseContactsListQuery(raw);
+      parsed = {
+        ...parsed,
+        organizationId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.organizationId,
+          "organizationId",
+        ),
+      };
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const ignored = ignoredLegacyListKeys(
+        raw,
+        CONTACTS_LIST_PAGINATED_ONLY_KEYS,
+      );
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      }
+      const rows = await circleService.listContacts(auth.workspaceId, {
+        organizationId: parsed.organizationId,
+        q: parsed.q,
+      });
+      return c.json({ contacts: rows.map(toPublicContact) });
+    }
+
+    const result = await circleService.listContactsPaginated(
+      auth.workspaceId,
+      parsed,
+    );
+    return c.json({
+      items: result.items.map(toPublicContact),
+      nextCursor: result.nextCursor,
     });
-    return c.json({ contacts: rows.map(toPublicContact) });
   });
   app.get("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
@@ -7099,13 +7368,60 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/letters", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
-    return c.json({ letters: await circleService.listLetters(auth.workspaceId, {
-      projectId: c.req.query("projectId"),
-      organizationId: c.req.query("organizationId"),
-      contactId: c.req.query("contactId"),
-      status: c.req.query("status"),
-      triage: c.req.query("triage") === "true",
-    }) });
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseLettersListQuery(raw);
+      parsed = {
+        ...parsed,
+        projectId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.projectId,
+          "projectId",
+        ),
+        organizationId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.organizationId,
+          "organizationId",
+        ),
+        contactId: await requireResolvedRef(
+          auth.workspaceId,
+          parsed.contactId,
+          "contactId",
+        ),
+      };
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+
+    if (parsed.mode === "legacy") {
+      const ignored = ignoredLegacyListKeys(
+        raw,
+        LETTERS_LIST_PAGINATED_ONLY_KEYS,
+      );
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      }
+      return c.json({
+        letters: await circleService.listLetters(auth.workspaceId, {
+          projectId: parsed.projectId,
+          organizationId: parsed.organizationId,
+          contactId: parsed.contactId,
+          status: parsed.status,
+          triage: parsed.triage === true,
+        }),
+      });
+    }
+
+    return c.json(
+      await circleService.listLettersPaginated(auth.workspaceId, parsed),
+    );
   });
   app.get("/api/v1/letters/inbox", async (c) => {
     const auth = getAuth(c);
@@ -8209,11 +8525,60 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/email/messages", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
     try {
-      const messages = await agentmailSettingsService.listAgentMailMessages(
+      parsed = parseEmailMessagesListQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+    try {
+      let messages = await agentmailSettingsService.listAgentMailMessages(
         auth.workspaceId,
       );
-      return c.json({ messages });
+      if (parsed.statuses.length) {
+        messages = messages.filter((message) =>
+          parsed.statuses.includes(message.status ?? "backlog"),
+        );
+      }
+      if (parsed.updatedSince) {
+        const since = parsed.updatedSince.getTime();
+        messages = messages.filter(
+          (message) => (Date.parse(message.timestamp) || 0) >= since,
+        );
+      }
+
+      if (parsed.mode === "legacy") {
+        const ignored = ignoredLegacyListKeys(
+          raw,
+          EMAIL_MESSAGES_LIST_PAGINATED_ONLY_KEYS,
+        );
+        if (ignored.length) {
+          c.header(
+            "X-BacksterOS-Hint",
+            `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+          );
+        }
+        return c.json({ messages });
+      }
+
+      // Map timestamp → updatedAt for shared keyset helper.
+      const keyed = messages.map((message) => ({
+        ...message,
+        id: message.messageId,
+        updatedAt: message.timestamp,
+      }));
+      const page = paginateByUpdatedAtId(keyed, {
+        limit: parsed.limit,
+        cursor: parsed.cursor,
+      });
+      return c.json({
+        items: page.items.map(({ id: _id, updatedAt: _u, ...message }) => message),
+        nextCursor: page.nextCursor,
+      });
     } catch (error) {
       const message =
         error instanceof Error
@@ -9486,43 +9851,39 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/global-search", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "search:query")) return c.json(forbidden(), 403);
-    const q = c.req.query("q");
-    if (!q) return c.json({ error: "Query parameter q is required", code: "bad_request" }, 400);
-    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
-    const modeRaw = c.req.query("mode") ?? "all";
-    const allowedModes = new Set([
-      "all",
-      "projects",
-      "tasks",
-      "documents",
-      "letters",
-      "knowledge",
-      "contacts",
-      "organizations",
-    ]);
-    const mode = allowedModes.has(modeRaw)
-      ? (modeRaw as
-          | "all"
-          | "projects"
-          | "tasks"
-          | "documents"
-          | "letters"
-          | "knowledge"
-          | "contacts"
-          | "organizations")
-      : "all";
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseGlobalSearchQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+    if (parsed.limitClamped) {
+      c.header(
+        "X-BacksterOS-Hint",
+        "limit clamped to 100 (maximum for global-search).",
+      );
+    }
 
     return c.json({
-      results: await circleService.globalSearch(auth.workspaceId, q, limit, {
-        mode,
-        contextKind: c.req.query("contextKind"),
-        projectId: c.req.query("projectId"),
-        projectSection: c.req.query("projectSection"),
-        contactId: c.req.query("contactId"),
-        contactSection: c.req.query("contactSection"),
-        organizationId: c.req.query("organizationId"),
-        organizationSection: c.req.query("organizationSection"),
-      }),
+      results: await circleService.globalSearch(
+        auth.workspaceId,
+        parsed.q,
+        parsed.limit,
+        {
+          mode: parsed.mode,
+          contextKind: parsed.contextKind,
+          projectId: parsed.projectId,
+          projectSection: parsed.projectSection,
+          contactId: parsed.contactId,
+          contactSection: parsed.contactSection,
+          organizationId: parsed.organizationId,
+          organizationSection: parsed.organizationSection,
+        },
+      ),
     });
   });
 

@@ -73,18 +73,18 @@ export const apiContract: AppRouter = c.router(
     listProjects: {
       method: "GET",
       path: "/api/v1/projects",
-      query: z.object({
-        organizationId: z.string().optional(),
-        area: z.string().optional(),
-        status: z.string().optional(),
-        type: z.string().optional(),
-      }),
+      query: s.listProjectsQuerySchema,
       responses: {
-        200: z.object({ projects: z.array(projectSchema) }),
+        200: z.union([
+          z.object({ projects: z.array(projectSchema) }),
+          s.listPaginatedResponseSchema(projectSchema),
+        ]),
+        400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "List projects",
+      summary:
+        "List projects (legacy `{ projects }`; paginated `{ items, nextCursor }` with paginated=true)",
     },
     getProject: {
       method: "GET",
@@ -1014,8 +1014,27 @@ export const apiContract: AppRouter = c.router(
     listDueTasks: {
       method: "GET",
       path: "/api/v1/tasks/due",
-      query: z.object({ before: z.string().datetime().optional() }),
-      responses: { 200: z.object({ tasks: z.array(taskSchema) }), 400: badRequestSchema, 401: errorSchema, 403: errorSchema },
+      query: s.listDueTasksQuerySchema,
+      responses: {
+        200: z.union([
+          z.object({ tasks: z.array(taskSchema) }),
+          s.listPaginatedResponseSchema(
+            z.object({
+              id: z.string(),
+              key: z.string(),
+              title: z.string(),
+              status: z.string(),
+              priority: z.number(),
+              projectId: z.string().nullable(),
+              dueDate: z.string().nullable(),
+              updatedAt: z.string(),
+            }),
+          ),
+        ]),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
       summary: "List tasks due before a date",
     },
     listInboxTasks: {
@@ -1258,12 +1277,18 @@ export const apiContract: AppRouter = c.router(
     listMeetings: {
       method: "GET",
       path: "/api/v1/meetings",
+      query: s.listMeetingsQuerySchema,
       responses: {
-        200: z.object({ meetings: z.array(s.meetingSchema) }),
+        200: z.union([
+          z.object({ meetings: z.array(s.meetingSchema) }),
+          s.listPaginatedResponseSchema(s.meetingSchema),
+        ]),
+        400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "List workspace meetings",
+      summary:
+        "List workspace meetings (filters + paginated=true for { items, nextCursor })",
     },
     getMeeting: {
       method: "GET",
@@ -1355,7 +1380,16 @@ export const apiContract: AppRouter = c.router(
     listOrganizations: {
       method: "GET",
       path: "/api/v1/organizations",
-      responses: { 200: z.object({ organizations: z.array(s.organizationSchema) }), 401: errorSchema, 403: errorSchema },
+      query: s.listOrganizationsQuerySchema,
+      responses: {
+        200: z.union([
+          z.object({ organizations: z.array(s.organizationSchema) }),
+          s.listPaginatedResponseSchema(s.organizationSchema),
+        ]),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
       summary: "List organizations",
     },
     getOrganization: {
@@ -1398,8 +1432,16 @@ export const apiContract: AppRouter = c.router(
     listContacts: {
       method: "GET",
       path: "/api/v1/contacts",
-      query: z.object({ organizationId: z.string().optional(), q: z.string().optional() }),
-      responses: { 200: z.object({ contacts: z.array(s.contactSchema) }), 401: errorSchema, 403: errorSchema },
+      query: s.listContactsQuerySchema,
+      responses: {
+        200: z.union([
+          z.object({ contacts: z.array(s.contactSchema) }),
+          s.listPaginatedResponseSchema(s.contactSchema),
+        ]),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
       summary: "List contacts",
     },
     getContact: {
@@ -1740,14 +1782,16 @@ export const apiContract: AppRouter = c.router(
     listLetters: {
       method: "GET",
       path: "/api/v1/letters",
-      query: z.object({
-        projectId: z.string().optional(),
-        organizationId: z.string().optional(),
-        contactId: z.string().optional(),
-        status: z.string().optional(),
-        triage: z.coerce.boolean().optional(),
-      }),
-      responses: { 200: z.object({ letters: z.array(s.letterSchema) }), 401: errorSchema, 403: errorSchema },
+      query: s.listLettersQuerySchema,
+      responses: {
+        200: z.union([
+          z.object({ letters: z.array(s.letterSchema) }),
+          s.listPaginatedResponseSchema(s.letterSchema),
+        ]),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
       summary: "List letters",
     },
     listLetterInbox: {
@@ -2274,8 +2318,12 @@ export const apiContract: AppRouter = c.router(
     listAgentMailMessages: {
       method: "GET",
       path: "/api/v1/email/messages",
+      query: s.listEmailMessagesQuerySchema,
       responses: {
-        200: s.agentMailMessagesResponseSchema,
+        200: z.union([
+          s.agentMailMessagesResponseSchema,
+          s.listPaginatedResponseSchema(s.agentMailMessageSchema),
+        ]),
         400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
@@ -2607,8 +2655,13 @@ export const apiContract: AppRouter = c.router(
     globalSearch: {
       method: "GET",
       path: "/api/v1/global-search",
-      query: z.object({ q: z.string().min(1), limit: z.coerce.number().int().min(1).max(100).optional() }),
-      responses: { 200: z.object({ results: z.array(s.globalSearchResultSchema) }), 400: badRequestSchema, 401: errorSchema, 403: errorSchema },
+      query: s.globalSearchQuerySchema,
+      responses: {
+        200: z.object({ results: z.array(s.globalSearchResultSchema) }),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
       summary: "Search all human-facing entities",
     },
     /**

@@ -11,7 +11,8 @@ import {
 
 /**
  * Resolve list pagination for GET /documents.
- * - `limit` omitted → undefined (return all; desktop full-list clients)
+ * - `limit` omitted → undefined (unbounded; used by sync bootstrap / internal)
+ * - Route layer supplies DOCUMENTS_DEFAULT_LIMIT (100) when the client omits limit
  * - `limit` set → clamp to 1..DOCUMENT_LIST_MAX_LIMIT
  * - `offset` defaults to 0 when `limit` is set; ignored when unbounded
  */

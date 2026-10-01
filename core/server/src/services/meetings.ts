@@ -1,4 +1,16 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import type {
   CreateMeetingInput,
@@ -17,6 +29,11 @@ import {
   type DbMeeting,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import {
+  decodeUpdatedAtCursor,
+  encodeUpdatedAtCursor,
+  type ParsedMeetingsListQuery,
+} from "../lib/list-query.js";
 import { toIso } from "../lib/mappers.js";
 import {
   softDeleteMeetingCrmActivities,
@@ -108,18 +125,118 @@ export function toMeeting(row: DbMeeting): Meeting {
   };
 }
 
+/** List rows omit transcription (OS-59) — fetch via GET /meetings/:id. */
+export function toMeetingListItem(row: DbMeeting): Meeting {
+  return { ...toMeeting(row), transcription: null };
+}
+
+function buildMeetingListConditions(
+  workspaceId: string,
+  filters: ParsedMeetingsListQuery,
+): SQL[] {
+  const conditions: SQL[] = [eq(meetings.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(meetings.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(meetings.deletedAt));
+  }
+  if (filters.projectId) {
+    conditions.push(eq(meetings.projectId, filters.projectId));
+  }
+  if (filters.organizationId) {
+    conditions.push(eq(meetings.organizationId, filters.organizationId));
+  }
+  if (filters.contactId) {
+    conditions.push(
+      sql`${meetings.attendeeContactIds} @> ${JSON.stringify([filters.contactId])}::jsonb`,
+    );
+  }
+  if (filters.statuses.length) {
+    conditions.push(inArray(meetings.status, filters.statuses));
+  }
+  if (filters.from) {
+    conditions.push(gte(meetings.startAt, filters.from));
+  }
+  if (filters.to) {
+    conditions.push(lte(meetings.startAt, filters.to));
+  }
+  if (filters.q) {
+    const pattern = `%${filters.q}%`;
+    conditions.push(
+      or(
+        ilike(meetings.title, pattern),
+        ilike(meetings.summary, pattern),
+        ilike(meetings.notes, pattern),
+      )!,
+    );
+  }
+  return conditions;
+}
+
 export async function listMeetings(
   workspaceId: string,
+  filters: ParsedMeetingsListQuery = {
+    mode: "legacy",
+    limit: 50,
+    statuses: [],
+  },
   executor: DbExecutor = db,
 ): Promise<Meeting[]> {
+  const conditions = buildMeetingListConditions(workspaceId, filters);
   const rows = await executor
     .select()
     .from(meetings)
-    .where(
-      and(eq(meetings.workspaceId, workspaceId), isNull(meetings.deletedAt)),
-    )
+    .where(and(...conditions))
     .orderBy(asc(meetings.startAt), asc(meetings.number));
-  return rows.map(toMeeting);
+  return rows.map(toMeetingListItem);
+}
+
+export type ListMeetingsPaginatedResult = {
+  items: Meeting[];
+  nextCursor: string | null;
+};
+
+export async function listMeetingsPaginated(
+  workspaceId: string,
+  filters: ParsedMeetingsListQuery,
+  executor: DbExecutor = db,
+  nowMs: number = Date.now(),
+): Promise<ListMeetingsPaginatedResult> {
+  const conditions = buildMeetingListConditions(workspaceId, filters);
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${meetings.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${meetings.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${meetings.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const rows = await executor
+    .select()
+    .from(meetings)
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${meetings.updatedAt}) desc`,
+      asc(meetings.id),
+    )
+    .limit(filters.limit + 1);
+  const hasMore = rows.length > filters.limit;
+  const page = hasMore ? rows.slice(0, filters.limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page.map(toMeetingListItem),
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 export async function getMeetingRow(

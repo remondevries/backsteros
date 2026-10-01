@@ -1073,6 +1073,95 @@ export const documentRetrievalQuerySchema = z.object({
 /** Max page size for GET /api/v1/documents (same band as activities / ops logs). */
 export const DOCUMENT_LIST_MAX_LIMIT = 200;
 
+/** Shared list pagination (OS-59) — opt in with `paginated=true` or `cursor`. */
+export const LIST_DEFAULT_LIMIT = 50;
+export const LIST_MAX_LIMIT = 200;
+export const DOCUMENTS_DEFAULT_LIMIT = 100;
+
+export const listPaginationQuerySchema = z.object({
+  paginated: z.coerce.boolean().optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(LIST_MAX_LIMIT).optional(),
+  updatedSince: z.string().optional(),
+});
+
+export const listProjectsQuerySchema = listPaginationQuerySchema.extend({
+  organizationId: z.string().optional(),
+  area: z.string().optional(),
+  status: z.string().optional(),
+  type: z.string().optional(),
+});
+
+export const listMeetingsQuerySchema = listPaginationQuerySchema.extend({
+  projectId: z.string().optional(),
+  organizationId: z.string().optional(),
+  contactId: z.string().optional(),
+  status: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  q: z.string().optional(),
+});
+
+export const listOrganizationsQuerySchema = listPaginationQuerySchema.extend({
+  q: z.string().optional(),
+  search: z.string().optional(),
+});
+
+export const listContactsQuerySchema = listPaginationQuerySchema.extend({
+  organizationId: z.string().optional(),
+  q: z.string().optional(),
+  search: z.string().optional(),
+});
+
+export const listLettersQuerySchema = listPaginationQuerySchema.extend({
+  projectId: z.string().optional(),
+  organizationId: z.string().optional(),
+  contactId: z.string().optional(),
+  status: z.string().optional(),
+  triage: z.coerce.boolean().optional(),
+});
+
+export const listEmailMessagesQuerySchema = listPaginationQuerySchema.extend({
+  status: z.string().optional(),
+});
+
+export const listDueTasksQuerySchema = z.object({
+  before: z.string().datetime().optional(),
+  paginated: z.coerce.boolean().optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(LIST_MAX_LIMIT).optional(),
+});
+
+export const globalSearchQuerySchema = z.object({
+  q: z.string().min(1),
+  limit: z.coerce.number().int().min(1).optional(),
+  mode: z
+    .enum([
+      "all",
+      "projects",
+      "tasks",
+      "documents",
+      "letters",
+      "knowledge",
+      "contacts",
+      "organizations",
+    ])
+    .optional(),
+  contextKind: z.string().optional(),
+  projectId: z.string().optional(),
+  projectSection: z.string().optional(),
+  contactId: z.string().optional(),
+  contactSection: z.string().optional(),
+  organizationId: z.string().optional(),
+  organizationSection: z.string().optional(),
+});
+
+export const listPaginatedResponseSchema = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({
+    items: z.array(item),
+    nextCursor: z.string().nullable(),
+  });
+
 /** Accept a single query string or repeated keys (`?type=a&type=b`). */
 const optionalQueryString = z
   .union([z.string(), z.array(z.string())])
@@ -1084,14 +1173,15 @@ const optionalQueryString = z
 
 /**
  * Query for GET /api/v1/documents.
- * When `limit` is omitted, all matching rows are returned (desktop/full-list clients).
- * When set, clamped to 1..DOCUMENT_LIST_MAX_LIMIT after filters.
+ * When `limit` is omitted, the route applies DOCUMENTS_DEFAULT_LIMIT (100)
+ * and sets `X-BacksterOS-Hint` (OS-59). When set, clamped to 1..DOCUMENT_LIST_MAX_LIMIT.
+ * `type` must be a structural document type (knowledge|project|journal) or a
+ * known semantic property type (house-rule, runbook, …).
  */
 export const listDocumentsQuerySchema = z.object({
   /**
-   * Structural document type (knowledge|project|journal) or, when the
-   * value is not one of those, semantic property type from the index
-   * (e.g. house-rule). Comma-separated / repeated for multi-value.
+   * Structural document type (knowledge|project|journal) or semantic property
+   * type from the index (e.g. house-rule). Comma-separated / repeated for multi-value.
    */
   type: optionalQueryString,
   projectId: z.string().optional(),

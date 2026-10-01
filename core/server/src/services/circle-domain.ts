@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
@@ -18,6 +18,13 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
+import {
+  decodeUpdatedAtCursor,
+  encodeUpdatedAtCursor,
+  type ParsedContactsListQuery,
+  type ParsedLettersListQuery,
+  type ParsedOrganizationsListQuery,
+} from "../lib/list-query.js";
 import { rethrowPortalUsernameConflict } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword } from "../lib/portal-password.js";
 import {
@@ -303,12 +310,16 @@ async function projectExists(
 
 export function listOrganizations(
   workspaceId: string,
-  filters: { q?: string } = {},
+  filters: { q?: string; updatedSince?: Date } = {},
 ) {
   const conditions = [
     eq(organizations.workspaceId, workspaceId),
-    isNull(organizations.deletedAt),
   ];
+  if (filters.updatedSince) {
+    conditions.push(gte(organizations.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(organizations.deletedAt));
+  }
   if (filters.q) {
     const pattern = `%${filters.q}%`;
     conditions.push(
@@ -330,6 +341,69 @@ export function listOrganizations(
     .from(organizations)
     .where(and(...conditions))
     .orderBy(organizations.sortOrder, organizations.name);
+}
+
+export async function listOrganizationsPaginated(
+  workspaceId: string,
+  filters: ParsedOrganizationsListQuery,
+  nowMs: number = Date.now(),
+) {
+  const conditions: SQL[] = [eq(organizations.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(organizations.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(organizations.deletedAt));
+  }
+  if (filters.q) {
+    const pattern = `%${filters.q}%`;
+    conditions.push(
+      or(
+        ilike(organizations.name, pattern),
+        ilike(organizations.key, pattern),
+        ilike(organizations.email, pattern),
+        ilike(organizations.website, pattern),
+        ilike(organizations.city, pattern),
+        sql`exists (
+          select 1 from jsonb_array_elements(coalesce(${organizations.emails}, '[]'::jsonb)) as e(value)
+          where coalesce(e.value->>'address', e.value #>> '{}') ilike ${pattern}
+        )`,
+      )!,
+    );
+  }
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${organizations.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${organizations.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${organizations.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const rows = await db
+    .select()
+    .from(organizations)
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${organizations.updatedAt}) desc`,
+      asc(organizations.id),
+    )
+    .limit(filters.limit + 1);
+  const hasMore = rows.length > filters.limit;
+  const page = hasMore ? rows.slice(0, filters.limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page,
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 export async function createOrganization(
@@ -441,12 +515,16 @@ export async function deleteOrganization(
 
 export function listContacts(
   workspaceId: string,
-  filters: { organizationId?: string; q?: string } = {},
+  filters: { organizationId?: string; q?: string; updatedSince?: Date } = {},
 ) {
   const conditions = [
     eq(contacts.workspaceId, workspaceId),
-    isNull(contacts.deletedAt),
   ];
+  if (filters.updatedSince) {
+    conditions.push(gte(contacts.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(contacts.deletedAt));
+  }
   if (filters.organizationId) conditions.push(eq(contacts.organizationId, filters.organizationId));
   if (filters.q) {
     const pattern = `%${filters.q}%`;
@@ -464,6 +542,71 @@ export function listContacts(
     );
   }
   return db.select().from(contacts).where(and(...conditions)).orderBy(contacts.sortOrder, contacts.name);
+}
+
+export async function listContactsPaginated(
+  workspaceId: string,
+  filters: ParsedContactsListQuery,
+  nowMs: number = Date.now(),
+) {
+  const conditions: SQL[] = [eq(contacts.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(contacts.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(contacts.deletedAt));
+  }
+  if (filters.organizationId) {
+    conditions.push(eq(contacts.organizationId, filters.organizationId));
+  }
+  if (filters.q) {
+    const pattern = `%${filters.q}%`;
+    conditions.push(
+      or(
+        ilike(contacts.name, pattern),
+        ilike(contacts.firstName, pattern),
+        ilike(contacts.lastName, pattern),
+        ilike(contacts.email, pattern),
+        sql`exists (
+          select 1 from jsonb_array_elements(${contacts.emails}) as e(value)
+          where coalesce(e.value->>'address', e.value #>> '{}') ilike ${pattern}
+        )`,
+      )!,
+    );
+  }
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${contacts.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${contacts.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${contacts.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const rows = await db
+    .select()
+    .from(contacts)
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${contacts.updatedAt}) desc`,
+      asc(contacts.id),
+    )
+    .limit(filters.limit + 1);
+  const hasMore = rows.length > filters.limit;
+  const page = hasMore ? rows.slice(0, filters.limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page,
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 export async function createContact(
@@ -864,9 +1007,15 @@ export function listLetters(
     contactId?: string;
     status?: string;
     triage?: boolean;
+    updatedSince?: Date;
   } = {},
 ) {
-  const conditions = [eq(letters.workspaceId, workspaceId), isNull(letters.deletedAt)];
+  const conditions = [eq(letters.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(letters.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(letters.deletedAt));
+  }
   if (filters.projectId) conditions.push(eq(letters.projectId, filters.projectId));
   if (filters.organizationId) conditions.push(eq(letters.organizationId, filters.organizationId));
   if (filters.contactId) conditions.push(eq(letters.contactId, filters.contactId));
@@ -877,6 +1026,60 @@ export function listLetters(
     .from(letters)
     .where(and(...conditions))
     .orderBy(asc(letters.sortOrder), desc(letters.receivedDate), desc(letters.updatedAt));
+}
+
+export async function listLettersPaginated(
+  workspaceId: string,
+  filters: ParsedLettersListQuery,
+  nowMs: number = Date.now(),
+) {
+  const conditions: SQL[] = [eq(letters.workspaceId, workspaceId)];
+  if (filters.updatedSince) {
+    conditions.push(gte(letters.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(letters.deletedAt));
+  }
+  if (filters.projectId) conditions.push(eq(letters.projectId, filters.projectId));
+  if (filters.organizationId) {
+    conditions.push(eq(letters.organizationId, filters.organizationId));
+  }
+  if (filters.contactId) conditions.push(eq(letters.contactId, filters.contactId));
+  if (filters.status) conditions.push(eq(letters.status, filters.status));
+  if (filters.triage) conditions.push(eq(letters.status, "triage"));
+  if (filters.cursor?.trim()) {
+    const cursor = decodeUpdatedAtCursor(filters.cursor, nowMs);
+    conditions.push(
+      sql`(
+        date_trunc('milliseconds', ${letters.updatedAt}) < date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+        OR (
+          date_trunc('milliseconds', ${letters.updatedAt}) = date_trunc('milliseconds', ${cursor.updatedAt}::timestamptz)
+          AND ${letters.id} > ${cursor.id}
+        )
+      )`,
+    );
+  }
+  const rows = await db
+    .select()
+    .from(letters)
+    .where(and(...conditions))
+    .orderBy(
+      sql`date_trunc('milliseconds', ${letters.updatedAt}) desc`,
+      asc(letters.id),
+    )
+    .limit(filters.limit + 1);
+  const hasMore = rows.length > filters.limit;
+  const page = hasMore ? rows.slice(0, filters.limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    items: page,
+    nextCursor:
+      hasMore && last
+        ? encodeUpdatedAtCursor(
+            { id: last.id, updatedAt: last.updatedAt },
+            nowMs,
+          )
+        : null,
+  };
 }
 
 export async function createLetter(

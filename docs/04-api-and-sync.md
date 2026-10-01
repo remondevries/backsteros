@@ -77,6 +77,13 @@ GET  /api/v1/projects
 GET  /api/v1/projects/OS
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
 GET  /api/v1/tasks/OS-51
+GET  /api/v1/meetings?projectId=OS&paginated=true&limit=20
+GET  /api/v1/contacts?paginated=true&limit=50
+GET  /api/v1/organizations?paginated=true&limit=50
+GET  /api/v1/letters?status=triage&paginated=true
+GET  /api/v1/documents?limit=100
+GET  /api/v1/tasks/due?paginated=true&limit=50
+GET  /api/v1/global-search?q=backster&mode=tasks
 GET  /api/v1/organizations/IN
 GET  /api/v1/documents/{id}
 GET  /api/v1/documents/{id}/content
@@ -86,6 +93,30 @@ GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 
 Path params and filter ids accept the **internal id or the human key**
 (`OS-51` for a task, `OS` for a project, org/contact keys likewise).
+Unknown filter ids return **400** (not an empty 200). Bad enum values
+(`status=bogus`, `mode=bogus`, `type=bogus` on documents) likewise return **400**
+with a `field` in the body.
+
+### List pagination (agents)
+
+Most collection GETs keep a legacy array shape (`{ projects }`, `{ meetings }`, …)
+for existing clients. Opt in to `{ items, nextCursor }` with **`paginated=true`**
+(or a `cursor`):
+
+| Param | Behaviour |
+| --- | --- |
+| `paginated=true` | Response `{ items, nextCursor }`; default `limit=50`, max 200 |
+| `limit` | Page size (ignored in legacy mode — see `X-BacksterOS-Hint`) |
+| `cursor` | Opaque keyset on `(updatedAt desc, id)`; TTL 10 minutes |
+| `updatedSince` | Incremental change feed (ISO instant) |
+
+`GET /documents` always applies **`limit=100`** when omitted (hint header).
+`GET /global-search` rejects unknown `mode` and sets a hint when `limit` is clamped to 100.
+
+Meetings accept `projectId`, `organizationId`, `contactId` (attendee), `status`,
+`from`/`to` (on `startAt`), and `q`. List rows omit `transcription` (fetch via
+`GET /meetings/:id`).
+
 Unknown filter ids on paginated `GET /tasks` return **400** (not an empty 200).
 
 #### Paginated `GET /tasks` defaults (OS-57)
