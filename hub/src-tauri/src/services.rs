@@ -624,7 +624,7 @@ fn tailscale_bin() -> Option<PathBuf> {
 }
 
 /// Expose a local TCP port on the Tailscale interface only (not LAN/public).
-/// Used for cloud-core → local API (`:8788`) and phone → Metro (`:8081`).
+/// Used for phone → Metro (`:8081`). Local-core API stays on 127.0.0.1 only.
 fn enable_tailscale_tcp_serve(service: ServiceId, port: u16) {
     let Some(bin) = tailscale_bin() else {
         append_log_line(
@@ -713,9 +713,6 @@ fn disable_tailscale_tcp_serve(service: ServiceId, port: u16) {
     }
 }
 
-fn enable_api_tailscale_serve() {
-    enable_tailscale_tcp_serve(ServiceId::Api, API_PORT);
-}
 
 fn disable_api_tailscale_serve() {
     disable_tailscale_tcp_serve(ServiceId::Api, API_PORT);
@@ -1268,7 +1265,7 @@ fn stop_docker(repo_root: &Path) -> Result<String, String> {
 
 fn start_api(repo_root: &Path) -> Result<String, String> {
     if api_healthy() {
-        enable_api_tailscale_serve();
+        disable_api_tailscale_serve();
         clear_starting(&[ServiceId::Api]);
         return Ok("Core API already running".into());
     }
@@ -1316,9 +1313,8 @@ fn start_api(repo_root: &Path) -> Result<String, String> {
         .current_dir(repo_root)
         .env("FORCE_COLOR", "0");
     let pid = spawn_logged(ServiceId::Api, cmd)?;
-    // Tailscale TCP forward is config in the daemon (not a listen on :8788),
-    // so it is safe to enable before the API finishes binding.
-    enable_api_tailscale_serve();
+    // Local-core stays on 127.0.0.1 only — clear any leftover Tailscale serve.
+    disable_api_tailscale_serve();
 
     // Wait for /health like Docker wait — Start should not finish "green"
     // while the API is still compiling / binding.

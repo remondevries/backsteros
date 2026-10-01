@@ -9,7 +9,8 @@ AGENT_DIR="${HOME_DIR}/Library/LaunchAgents"
 PLIST="${AGENT_DIR}/${LABEL}.plist"
 REPO_ROOT="${BACKSTEROS_REPO_ROOT:-}"
 SCRIPT=""
-LOG_OUT="${HOME_DIR}/.config/backsteros/desktop/local-core.log"
+LOG_DIR="${HOME_DIR}/.config/backsteros/desktop"
+LOG_OUT="${LOG_DIR}/local-core.launchd.log"
 DOMAIN="gui/${UID_NUM}/${LABEL}"
 
 resolve_repo_root() {
@@ -22,7 +23,6 @@ resolve_repo_root() {
       return 0
     fi
   fi
-  # Prefer the directory that contains this installer.
   local here
   here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   if [[ -f "${here}/scripts/local-core/run.sh" ]]; then
@@ -43,7 +43,7 @@ fi
 
 SCRIPT="${REPO_ROOT}/scripts/local-core/run.sh"
 chmod +x "${SCRIPT}"
-mkdir -p "${AGENT_DIR}" "${HOME_DIR}/.config/backsteros/desktop"
+mkdir -p "${AGENT_DIR}" "${LOG_DIR}"
 
 # Unload if already registered (ignore missing).
 if launchctl print "${DOMAIN}" >/dev/null 2>&1; then
@@ -96,9 +96,11 @@ launchctl enable "${DOMAIN}" 2>/dev/null || true
 launchctl kickstart -k "${DOMAIN}" 2>/dev/null || true
 
 echo "Installed LaunchAgent ${LABEL}"
-echo "  plist:  ${PLIST}"
-echo "  script: ${SCRIPT}"
-echo "  logs:   ${LOG_OUT}"
-echo "  env:    CORE_REPLICATION_SYNC_EVENTS_PULL=0 (OS-49 safeguard; table LWW continues)"
-echo "  stop:   launchctl bootout gui/${UID_NUM} ${PLIST}"
-echo "  start:  launchctl bootstrap gui/${UID_NUM} ${PLIST}"
+echo "  plist:     ${PLIST}"
+echo "  script:    ${SCRIPT}"
+echo "  api log:   ${LOG_DIR}/local-core.log (copy-truncate rotate @ 32MiB)"
+echo "  launchd:   ${LOG_OUT}"
+echo "  bind:      127.0.0.1:${API_PORT:-8788} only (no Tailscale serve)"
+echo "  env:       CORE_REPLICATION_SYNC_EVENTS_PULL=0 (OS-49 safeguard)"
+echo "  stop:      launchctl bootout gui/${UID_NUM} ${PLIST}"
+echo "  start:     launchctl bootstrap gui/${UID_NUM} ${PLIST}"

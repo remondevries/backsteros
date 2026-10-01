@@ -62,7 +62,6 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
         .map_err(|_| "local-core ensure lock poisoned".to_string())?;
 
     if api_healthy() {
-        enable_api_tailscale_serve();
         return Ok(EnsureOutcome::AlreadyRunning);
     }
 
@@ -71,7 +70,6 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     ensure_docker(&repo)?;
 
     if api_healthy() {
-        enable_api_tailscale_serve();
         return Ok(EnsureOutcome::AlreadyRunning);
     }
     if port_open(API_PORT) {
@@ -81,7 +79,6 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     }
 
     start_api(&repo)?;
-    enable_api_tailscale_serve();
     Ok(EnsureOutcome::Started)
 }
 
@@ -249,42 +246,6 @@ fn pnpm_command(pnpm: &Path, node: &Path) -> Command {
     cmd
 }
 
-fn enable_api_tailscale_serve() {
-    let Some(bin) = which(
-        "tailscale",
-        &[
-            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-            "/opt/homebrew/bin/tailscale",
-            "/usr/local/bin/tailscale",
-        ],
-    ) else {
-        log_line("tailscale not found — skipping serve for :8788");
-        return;
-    };
-    let mut cmd = Command::new(bin);
-    if let Ok(node) = resolve_node() {
-        apply_tool_env(&mut cmd, &node);
-    }
-    let target = format!("tcp://127.0.0.1:{API_PORT}");
-    match cmd
-        .args(["serve", "--bg", &format!("--tcp={API_PORT}"), &target])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-    {
-        Ok(out) if out.status.success() => {
-            log_line(&format!("tailscale serve --tcp={API_PORT} → {target}"));
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            log_line(&format!(
-                "tailscale serve warning: {}",
-                clip(stderr.trim())
-            ));
-        }
-        Err(err) => log_line(&format!("tailscale serve spawn error: {err}")),
-    }
-}
 
 fn api_healthy() -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(

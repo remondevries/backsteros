@@ -56,5 +56,5 @@ Copy to `~/Applications` and optionally add as a Login Item.
 - Core API is **always** started with `pnpm --filter @backsteros/server dev` from `repo_root` (live TypeScript via `tsx`, including `predev` rebuild of `@backsteros/contracts`). Hub **build vs hub dev** only changes the tray binary — both drive the same repo Core API. Rebuild/reinstall Hub after hub code changes (`pnpm --filter @backsteros/hub build` → copy `.app` to `~/Applications`).
 - Desktop start waits for `http://127.0.0.1:8788/health` (up to ~30s) before treating Core API as up; the menu shows **Desktop Loading** while `predev` / bind is in progress. Clicking the toggle during that window cancels and stops the stack.
 - Service logs under `~/.config/backsteros/hub/logs/` rotate when a file exceeds ~32 MB (keeps `.log.prev`).
-- On Core API start, Hub enables `tailscale serve --tcp=8788` so cloud-core can reach local-core over the tailnet only (`http://<mac-tailnet-ip>:8788`). Desktop keeps using `127.0.0.1:8788`. Serve is cleared on API stop.
+- Core API stays on `127.0.0.1:8788` only (no Tailscale serve). Hub clears any leftover `tailscale serve --tcp=8788` on API start/stop. Cloud clients use the gateway / cloud-core, not a direct tailnet forward to local-core.
 - Quitting the hub does **not** stop services — use the Desktop / Mobile toggles first if you want them down.

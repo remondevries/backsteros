@@ -1,8 +1,11 @@
 # Local-core LaunchAgent
 
-Keeps the optional local replica (Docker compose + API on `:8788`) up after reboot
-and restarts it if the API process dies. Product desktop still talks to cloud-core
-by default; this restores the local fast path for CLI / Hub / Development.
+Keeps the optional local replica (Docker compose + API on `127.0.0.1:8788`) up
+after reboot and restarts it if the API process dies. Product desktop still talks
+to cloud-core by default; this restores the local fast path for CLI / Hub /
+Development.
+
+The API is **localhost only** — the LaunchAgent does not enable Tailscale serve.
 
 ## Install (once per Mac)
 
@@ -15,7 +18,11 @@ and `KeepAlive`, pointing at `scripts/local-core/run.sh`.
 
 ## Logs
 
-`~/.config/backsteros/desktop/local-core.log` (rotates to `.log.prev` at ~32 MiB).
+- `~/.config/backsteros/desktop/local-core.log` — API + supervisor (copy-truncate
+  rotates to `.log.prev` at ~32 MiB while the server keeps writing; override with
+  `LOCAL_CORE_LOG_ROTATE_BYTES`).
+- `~/.config/backsteros/desktop/local-core.launchd.log` — launchd stdout/stderr
+  only (separate so launchd does not hold a handle on the rotated API log).
 
 ## OS-49 safeguard
 
