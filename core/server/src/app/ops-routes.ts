@@ -19,6 +19,11 @@ import {
   isRestLeaderFirstWrite,
 } from "../services/rest-leader-write.js";
 import { recordRecurringTaskRestSyncEvent } from "../services/sync.js";
+import {
+  countOpenReplicationDeadLetters,
+  listOpenReplicationDeadLetters,
+} from "../services/core-replication/dead-letters.js";
+import { listReplicationReconcileMismatches } from "../services/core-replication/reconcile.js";
 
 function getAuth(c: Context): AuthContext {
   return c.get("auth");
@@ -58,7 +63,18 @@ export function registerOpsRoutes(app: Hono) {
       getAuth(c).workspaceId,
       isSpacesConfigured(),
     );
-    return c.json(payload);
+    const [replicationDeadLetterCount, replicationDeadLetters, replicationMismatches] =
+      await Promise.all([
+        countOpenReplicationDeadLetters(),
+        listOpenReplicationDeadLetters(20),
+        listReplicationReconcileMismatches(),
+      ]);
+    return c.json({
+      ...payload,
+      replicationDeadLetterCount,
+      replicationDeadLetters,
+      replicationMismatches,
+    });
   });
 
   app.get("/api/v1/ops/logs", async (c) => {

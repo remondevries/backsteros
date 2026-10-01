@@ -1,8 +1,4 @@
-/**
- * Public barrel for core-replication (current Linear-shaped worker API).
- * Stale outbox/LWW helper names from an earlier draft are intentionally gone.
- */
-export { applyRemoteChanges, bootstrapTableFromPeer } from "./apply.js";
+export { applyRemoteChanges, applyReplicationRow, bootstrapTableFromPeer } from "./apply.js";
 export {
   getCoreReplicationConfig,
   isCoreReplicationEnabled,
@@ -17,6 +13,17 @@ export {
   type ReplicatedTable,
 } from "./constants.js";
 export { isApplyingReplication, withReplicationApply } from "./context.js";
+export {
+  countOpenReplicationDeadLetters,
+  listOpenReplicationDeadLetters,
+  retryReplicationDeadLetters,
+} from "./dead-letters.js";
+export {
+  computeTableFingerprint,
+  isReplicationReconcileEnabled,
+  listReplicationReconcileMismatches,
+  runReplicationReconcile,
+} from "./reconcile.js";
 export { getChangesSince } from "./sync.js";
 export {
   startCoreReplicationWorker,

@@ -22,9 +22,26 @@ export type ReplicationApplyRequest = {
   changes: ReplicationChange[];
 };
 
+export type ReplicationApplyFailed = {
+  id: string;
+  code: string;
+  message: string;
+};
+
 export type ReplicationApplyResponse = {
   applied: number;
+  /** Intentional LWW / no-op / FK-sanitize skips only — not apply exceptions. */
   skipped: number;
+  /** Rows that threw during apply (unique/FK/cast). Recorded as dead letters. */
+  failed: ReplicationApplyFailed[];
+};
+
+export type ReplicationApplyDirection = "pull" | "push";
+
+export type TableFingerprint = {
+  table: string;
+  count: number;
+  fingerprint: string;
 };
 
 export type BootstrapResponse = {

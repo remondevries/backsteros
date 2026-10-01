@@ -147,7 +147,10 @@ if [[ "$use_existing" != "1" ]]; then
   echo "[integration] running tests…"
   (
     cd "$SERVER_DIR"
-    DATABASE_URL="$RESOLVED_DATABASE_URL" pnpm exec tsx --env-file="$ENV_FILE" --test "src/integration/**/*.test.ts"
+    DATABASE_URL="$RESOLVED_DATABASE_URL" \
+      BACKSTEROS_INTEGRATION_TEST=1 \
+      CORE_REPLICATION_RECONCILE=0 \
+      pnpm exec tsx --env-file="$ENV_FILE" --test "src/integration/**/*.test.ts"
   )
   exit 0
 fi
@@ -169,5 +172,7 @@ echo "[integration] migrating…"
 echo "[integration] running tests…"
 (
   cd "$SERVER_DIR"
-  pnpm exec tsx --test "src/integration/**/*.test.ts"
+  BACKSTEROS_INTEGRATION_TEST=1 \
+    CORE_REPLICATION_RECONCILE=0 \
+    pnpm exec tsx --test "src/integration/**/*.test.ts"
 )

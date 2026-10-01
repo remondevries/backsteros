@@ -38,7 +38,12 @@ import {
 } from "./soft-unique-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import { publishProjectUpdateWorkspaceUpdated } from "../../lib/workspace-events.js";
+import {
+  recordReplicationDeadLetter,
+  toApplyFailed,
+} from "./dead-letters.js";
 import type {
+  ReplicationApplyDirection,
   ReplicationApplyResponse,
   ReplicationChange,
   ReplicationRow,
@@ -604,7 +609,7 @@ async function applyWorkspaceSettingsRow(
   return "applied";
 }
 
-async function applyRow(
+export async function applyReplicationRow(
   table: KnownTable,
   row: ReplicationRow,
 ): Promise<"applied" | "skipped"> {
@@ -647,9 +652,12 @@ async function applyRow(
 export async function applyRemoteChanges(
   table: KnownTable,
   changes: ReplicationChange[],
+  options?: { direction?: ReplicationApplyDirection },
 ): Promise<ReplicationApplyResponse> {
+  const direction = options?.direction ?? "pull";
   let applied = 0;
   let skipped = 0;
+  const failed: ReplicationApplyResponse["failed"] = [];
 
   for (const change of changes) {
     if (change.table !== table) {
@@ -657,28 +665,39 @@ export async function applyRemoteChanges(
       continue;
     }
     try {
-      const result = await applyRow(table, change.row);
+      const result = await applyReplicationRow(table, change.row);
       if (result === "applied") applied += 1;
       else skipped += 1;
     } catch (error) {
-      // Never stall an entire twin page on one unrecoverable row — log and
-      // continue so push/pull cursors can advance after soft-unique/FK heals.
-      const message = error instanceof Error ? error.message : String(error);
-      const spec = getTableSpec(table);
-      const rowId = spec
-        ? rowIdFromPk(change.row, spec.pk)
-        : String(change.row.id ?? "?");
+      // Never stall an entire twin page on one unrecoverable row — record a
+      // dead letter and continue so push/pull cursors can still advance.
+      const entry = toApplyFailed(table, change.row, error);
+      failed.push(entry);
+      try {
+        await recordReplicationDeadLetter({
+          table,
+          rowId: entry.id,
+          direction,
+          errorCode: entry.code,
+          errorMessage: entry.message,
+          row: change.row,
+        });
+      } catch (recordError) {
+        console.error(
+          `core replication dead letter record failed ${table}`,
+          recordError,
+        );
+      }
       appendOpsLog(
         "error",
         `core replication apply row failed ${table}`,
-        `${rowId}: ${message}`,
+        `${entry.id}: ${entry.message}`,
       );
       console.error(`core replication apply row failed ${table}`, error);
-      skipped += 1;
     }
   }
 
-  return { applied, skipped };
+  return { applied, skipped, failed };
 }
 
 export async function bootstrapTableFromPeer(

@@ -7,6 +7,11 @@ import { REPLICATED_TABLES } from "./constants.js";
 import { tableExists } from "./cursors.js";
 import { applyRemoteChanges } from "./apply.js";
 import { fetchAllLocalRows } from "./fetch.js";
+import {
+  computeTableFingerprint,
+  fetchLocalRowsByKeys,
+  listReplicationRowKeys,
+} from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
 import type { KnownTable } from "./tables.js";
 import type { ReplicationApplyRequest, ReplicationCursor } from "./types.js";
@@ -510,7 +515,11 @@ export function registerCoreReplicationRoutes(app: Hono) {
       );
     }
     if (tableState === "absent") {
-      return c.json({ applied: 0, skipped: Array.isArray(body.changes) ? body.changes.length : 0 });
+      return c.json({
+        applied: 0,
+        skipped: Array.isArray(body.changes) ? body.changes.length : 0,
+        failed: [],
+      });
     }
 
     if (!Array.isArray(body.changes)) {
@@ -520,8 +529,79 @@ export function registerCoreReplicationRoutes(app: Hono) {
       );
     }
 
-    const result = await applyRemoteChanges(table as KnownTable, body.changes);
+    const result = await applyRemoteChanges(table as KnownTable, body.changes, {
+      direction: "push",
+    });
     return c.json(result);
+  });
+
+  app.get("/internal/core-replication/table-fingerprint", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const table = parseTable(c.req.query("table"));
+    const tableState = table ? await isKnownReplicationTable(table) : "unknown";
+    if (!table || tableState === "unknown") {
+      return c.json(
+        { error: "Unknown or unsupported table", code: "bad_request" as const },
+        400,
+      );
+    }
+    if (tableState === "absent") {
+      return c.json({ table, count: 0, fingerprint: "" });
+    }
+    const fingerprint = await computeTableFingerprint(table as KnownTable);
+    return c.json(
+      fingerprint ?? { table, count: 0, fingerprint: "" },
+    );
+  });
+
+  app.get("/internal/core-replication/table-keys", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const table = parseTable(c.req.query("table"));
+    const tableState = table ? await isKnownReplicationTable(table) : "unknown";
+    if (!table || tableState === "unknown") {
+      return c.json(
+        { error: "Unknown or unsupported table", code: "bad_request" as const },
+        400,
+      );
+    }
+    if (tableState === "absent") {
+      return c.json({ table, keys: [] });
+    }
+    const keys = await listReplicationRowKeys(table as KnownTable);
+    return c.json({ table, keys });
+  });
+
+  app.post("/internal/core-replication/rows", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const body = (await c.req.json()) as { table?: string; keys?: unknown };
+    const table = parseTable(body.table);
+    const tableState = table ? await isKnownReplicationTable(table) : "unknown";
+    if (!table || tableState === "unknown") {
+      return c.json(
+        { error: "Unknown or unsupported table", code: "bad_request" as const },
+        400,
+      );
+    }
+    if (!Array.isArray(body.keys) || !body.keys.every((k) => typeof k === "string")) {
+      return c.json(
+        { error: "keys must be a string array", code: "bad_request" as const },
+        400,
+      );
+    }
+    if (tableState === "absent") {
+      return c.json({ table, changes: [] });
+    }
+    const changes = await fetchLocalRowsByKeys(
+      table as KnownTable,
+      body.keys as string[],
+    );
+    return c.json({ table, changes });
   });
 
   app.get("/internal/core-replication/bootstrap", async (c) => {

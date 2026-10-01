@@ -523,6 +523,66 @@ export const coreReplicationCursors = pgTable("core_replication_cursors", {
 });
 
 /**
+ * Rows that failed twin apply (unique/FK/cast) after intentional LWW skips.
+ * Cursor still advances so one bad row cannot stall the page; retries use
+ * exponential backoff and stop after max attempts (OS-62).
+ */
+export const replicationDeadLetters = pgTable(
+  "replication_dead_letters",
+  {
+    id: text("id").primaryKey(),
+    tableName: text("table_name").notNull(),
+    rowId: text("row_id").notNull(),
+    /** `pull` = local apply of peer changes; `push` = apply of peer-pushed rows. */
+    direction: text("direction").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message").notNull(),
+    /** Full replication row payload for retry apply. */
+    rowPayload: jsonb("row_payload").$type<Record<string, unknown>>().notNull(),
+    attempts: integer("attempts").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("replication_dead_letters_open_uidx")
+      .on(table.tableName, table.rowId, table.direction)
+      .where(sql`${table.resolvedAt} is null`),
+    index("replication_dead_letters_retry_idx").on(
+      table.resolvedAt,
+      table.nextRetryAt,
+    ),
+  ],
+);
+
+/**
+ * Last hourly reconcile fingerprint mismatch per replicated table (OS-62).
+ * Cleared when fingerprints match again.
+ */
+export const replicationReconcileMismatches = pgTable(
+  "replication_reconcile_mismatches",
+  {
+    tableName: text("table_name").primaryKey(),
+    localCount: integer("local_count").notNull(),
+    peerCount: integer("peer_count").notNull(),
+    localFingerprint: text("local_fingerprint").notNull(),
+    peerFingerprint: text("peer_fingerprint").notNull(),
+    missingLocally: integer("missing_locally").notNull().default(0),
+    missingOnPeer: integer("missing_on_peer").notNull().default(0),
+    checkedAt: timestamp("checked_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
+/**
  * Per-workspace watermark for peer sync_events delta pull (Linear-shaped).
  * Replica advances `after_cursor` only after applying peer events in order.
  * Does not invent a second LWW path — peer `sync_events.cursor` is authority.

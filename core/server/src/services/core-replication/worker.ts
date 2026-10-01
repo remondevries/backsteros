@@ -3,15 +3,23 @@ import {
   getCoreReplicationConfig,
   resolveReplicationIntervalMs,
 } from "./config.js";
-import { applyRemoteChanges } from "./apply.js";
+import { applyRemoteChanges, applyReplicationRow } from "./apply.js";
+import {
+  retryReplicationDeadLetters,
+} from "./dead-letters.js";
 import {
   fetchLocalChanges,
   listActiveReplicatedTables,
 } from "./fetch.js";
 import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
+import { runReplicationReconcile } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
 import type { ReplicatedTable } from "./constants.js";
-import type { ReplicationApplyRequest, ReplicationChangesResponse } from "./types.js";
+import type {
+  ReplicationApplyRequest,
+  ReplicationApplyResponse,
+  ReplicationChangesResponse,
+} from "./types.js";
 import { pullPeerSyncEvents } from "./sync-event-replication.js";
 import { syncVaultWithPeer } from "./vault-replication.js";
 
@@ -34,6 +42,7 @@ export async function pullTable(table: ReplicatedTable) {
   let cursor = await getReplicationCursor(table, "pull");
   let appliedTotal = 0;
   let skippedTotal = 0;
+  let failedTotal = 0;
 
   for (;;) {
     const url = new URL(`${config.peerUrl}/internal/core-replication/changes`);
@@ -61,11 +70,15 @@ export async function pullTable(table: ReplicatedTable) {
         break;
       }
 
-      const result = await applyRemoteChanges(table, payload.changes);
+      const result = await applyRemoteChanges(table, payload.changes, {
+        direction: "pull",
+      });
+      // Always advance past the page — failed rows are dead-lettered for retry.
       await setReplicationCursor(table, payload.cursor, "pull");
       cursor = payload.cursor;
       appliedTotal += result.applied;
       skippedTotal += result.skipped;
+      failedTotal += result.failed.length;
 
       if (payload.changes.length < PAGE_SIZE) {
         break;
@@ -75,11 +88,11 @@ export async function pullTable(table: ReplicatedTable) {
     }
   }
 
-  if (appliedTotal > 0 || skippedTotal > 0) {
+  if (appliedTotal > 0 || skippedTotal > 0 || failedTotal > 0) {
     appendOpsLog(
       "info",
       `core replication pull ${table}`,
-      `${appliedTotal} applied, ${skippedTotal} skipped (${config.role})`,
+      `${appliedTotal} applied, ${skippedTotal} skipped, ${failedTotal} failed (${config.role})`,
     );
   }
 }
@@ -90,6 +103,7 @@ export async function pushTable(table: ReplicatedTable) {
 
   let cursor = await getReplicationCursor(table, "push");
   let pushed = 0;
+  let failedTotal = 0;
 
   for (;;) {
     const { changes, cursor: nextCursor } = await fetchLocalChanges(table, cursor);
@@ -117,7 +131,11 @@ export async function pushTable(table: ReplicatedTable) {
         throw new Error(`push ${table} failed (${response.status}): ${text}`);
       }
 
+      const result = (await response.json()) as ReplicationApplyResponse;
+      // Peer records dead letters for failed applies; we still advance so one
+      // bad row cannot block the rest of the page forever.
       pushed += changes.length;
+      failedTotal += Array.isArray(result.failed) ? result.failed.length : 0;
       cursor = nextCursor;
       await setReplicationCursor(table, cursor, "push");
 
@@ -129,11 +147,11 @@ export async function pushTable(table: ReplicatedTable) {
     }
   }
 
-  if (pushed > 0) {
+  if (pushed > 0 || failedTotal > 0) {
     appendOpsLog(
       "info",
       `core replication push ${table}`,
-      `${pushed} rows (${config.role})`,
+      `${pushed} rows, ${failedTotal} peer-failed (${config.role})`,
     );
   }
 }
@@ -185,6 +203,30 @@ export async function runCoreReplicationTick(): Promise<void> {
       console.error(`core replication failed on table ${table} (push)`, error);
     }
   }
+
+  try {
+    const dead = await retryReplicationDeadLetters(applyReplicationRow);
+    if (dead.retried > 0) {
+      appendOpsLog(
+        "info",
+        "core replication dead letter retry",
+        `${dead.retried} retried, ${dead.resolved} resolved, ${dead.failed} failed`,
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOpsLog("error", "core replication dead letter retry failed", message);
+    console.error("core replication dead letter retry failed", error);
+  }
+
+  try {
+    await runReplicationReconcile();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOpsLog("error", "core replication reconcile failed", message);
+    console.error("core replication reconcile failed", error);
+  }
+
   if (tableErrors.length > 0) {
     throw new Error(
       `core replication failed on ${tableErrors.length} table(s): ${tableErrors.join("; ")}`,
