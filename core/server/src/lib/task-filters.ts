@@ -19,6 +19,7 @@ export const TASK_LIST_DEFAULT_SORT = "dueDate" as const;
 export const TASK_LIST_DEFAULT_EXCLUDED_STATUSES = [
   "completed",
   "canceled",
+  "duplicated",
 ] as const;
 
 const STATUS_SET = new Set<string>(TASK_STATUSES);

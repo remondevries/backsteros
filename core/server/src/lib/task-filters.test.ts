@@ -206,8 +206,22 @@ describe("task filter parsing", () => {
     );
   });
 
-  it("excludes completed/canceled by default in scalar matcher", () => {
+  it("excludes completed/canceled/duplicated by default in scalar matcher", () => {
     const filters = parseTaskListQuery({ paginated: "true" });
+    assert.equal(
+      taskRowMatchesScalarFilters(
+        {
+          projectId: "p",
+          status: "duplicated",
+          assigneeId: null,
+          contactId: null,
+          relatedContactIds: [],
+          dueDate: null,
+        },
+        filters,
+      ),
+      false,
+    );
     assert.equal(
       taskRowMatchesScalarFilters(
         {
