@@ -155,6 +155,7 @@ import {
 } from "../lib/document-property-filters.js";
 import {
   TaskFilterError,
+  ignoredLegacyTaskListKeys,
   parseTaskListQuery,
 } from "../lib/task-filters.js";
 import {
@@ -486,6 +487,29 @@ function unauthorized() {
 
 function forbidden() {
   return { error: "Insufficient scope", code: "forbidden" as const };
+}
+
+type TaskRow = Parameters<typeof toTask>[0];
+
+/** Task API shape including the display key (e.g. PF-41) — OS-45. */
+async function taskWithKey(workspaceId: string, row: TaskRow) {
+  if (!row.projectId) return toTask(row, null);
+  const keys = await taskProjectService.getProjectKeyMap(workspaceId, [
+    row.projectId,
+  ]);
+  return toTask(row, keys.get(row.projectId));
+}
+
+/** List variant of taskWithKey: one project-key query for all rows. */
+async function tasksWithKeys(workspaceId: string, rows: TaskRow[]) {
+  if (!rows.length) return [];
+  const keys = await taskProjectService.getProjectKeyMap(
+    workspaceId,
+    rows.map((row) => row.projectId),
+  );
+  return rows.map((row) =>
+    toTask(row, row.projectId ? keys.get(row.projectId) : null),
+  );
 }
 
 function notFound(resource: string) {
@@ -2471,13 +2495,27 @@ export function registerApiRoutes(app: Hono) {
     }
 
     if (parsed.mode === "legacy") {
+      // OS-45: legacy `{ tasks }` unless paginated=true/cursor. Paginated-only
+      // params are ignored here; tell the caller so it can opt in.
+      const ignored = ignoredLegacyTaskListKeys(raw);
+      if (ignored.length) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
+        );
+      } else if (url.searchParams.size === 0) {
+        c.header(
+          "X-BacksterOS-Hint",
+          "Full task list (all statuses). Prefer GET /tasks?paginated=true&projectId=...&status=... and read items.",
+        );
+      }
       const rows = await taskProjectService.listTasks(auth.workspaceId, {
-        projectId: c.req.query("projectId"),
-        contactId: c.req.query("contactId"),
-        assigneeId: c.req.query("assigneeId"),
-        relatedContactId: c.req.query("relatedContactId"),
-        relatedOrganizationId: c.req.query("relatedOrganizationId"),
-        status: c.req.query("status"),
+        projectId: parsed.projectIds,
+        contactId: parsed.contactIds,
+        assigneeId: parsed.assigneeIds,
+        relatedContactId: parsed.relatedContactIds,
+        relatedOrganizationId: parsed.relatedOrganizationIds,
+        status: parsed.statuses,
         inbox:
           c.req.query("inbox") === undefined
             ? undefined
@@ -2491,7 +2529,7 @@ export function registerApiRoutes(app: Hono) {
             ? undefined
             : c.req.query("notification") === "true",
       });
-      return c.json({ tasks: rows.map(toTask) });
+      return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
     }
 
     try {
@@ -2525,14 +2563,14 @@ export function registerApiRoutes(app: Hono) {
       return c.json({ error: "Invalid before date", code: "bad_request" }, 400);
     }
     const rows = await taskProjectService.listDueTasks(auth.workspaceId, before);
-    return c.json({ tasks: rows.map(toTask) });
+    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
   });
 
   app.get("/api/v1/tasks/inbox", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
     const rows = await taskProjectService.listInboxTasks(auth.workspaceId);
-    return c.json({ tasks: rows.map(toTask) });
+    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
   });
 
   app.get("/api/v1/tasks/:id", async (c) => {
@@ -2549,7 +2587,7 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Task"), 404);
     }
 
-    return c.json(toTask(row));
+    return c.json(await taskWithKey(auth.workspaceId, row));
   });
 
   app.get("/api/v1/tasks/:id/documents", async (c) => {
@@ -3203,7 +3241,7 @@ export function registerApiRoutes(app: Hono) {
             preferredId,
           );
           if (existing) {
-            return c.json(toTask(existing), 200);
+            return c.json(await taskWithKey(auth.workspaceId, existing), 200);
           }
         }
         if (isRestLeaderFirstWrite()) {
@@ -3226,7 +3264,7 @@ export function registerApiRoutes(app: Hono) {
             projectId: row.projectId ?? null,
             operation: "upsert",
           });
-          return c.json(toTask(row), 201);
+          return c.json(await taskWithKey(auth.workspaceId, row), 201);
         }
         const row = await taskProjectService.createTask(
           auth.workspaceId,
@@ -3246,7 +3284,7 @@ export function registerApiRoutes(app: Hono) {
           projectId: row.projectId ?? null,
           operation: "upsert",
         });
-        return c.json(toTask(row), 201);
+        return c.json(await taskWithKey(auth.workspaceId, row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
@@ -3339,7 +3377,7 @@ export function registerApiRoutes(app: Hono) {
               operation: "upsert",
             });
           }
-          return c.json(toTask(row!));
+          return c.json(await taskWithKey(auth.workspaceId, row!));
         }
         const row = await taskProjectService.updateTask(
           auth.workspaceId,
@@ -3357,7 +3395,7 @@ export function registerApiRoutes(app: Hono) {
           projectId: row.projectId ?? null,
           operation: "upsert",
         });
-        return c.json(toTask(row));
+        return c.json(await taskWithKey(auth.workspaceId, row));
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
@@ -4443,7 +4481,7 @@ export function registerApiRoutes(app: Hono) {
         operation: "upsert",
       });
     }
-    return c.json({ tasks: rows.map(toTask) });
+    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
   });
 
   app.post(
@@ -4484,7 +4522,7 @@ export function registerApiRoutes(app: Hono) {
           operation: "upsert",
         });
       }
-      return c.json({ tasks: rows.map(toTask) });
+      return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
     },
   );
 
@@ -4514,7 +4552,7 @@ export function registerApiRoutes(app: Hono) {
           operation: "upsert",
         });
       }
-      return c.json(toTask(row!));
+      return c.json(await taskWithKey(auth.workspaceId, row!));
     }
     const row = await taskProjectService.updateTask(
       auth.workspaceId,
@@ -4529,7 +4567,7 @@ export function registerApiRoutes(app: Hono) {
       projectId: row.projectId ?? null,
       operation: "upsert",
     });
-    return c.json(toTask(row));
+    return c.json(await taskWithKey(auth.workspaceId, row));
   });
 
   app.post("/api/v1/tasks/:id/triage", async (c) => {
@@ -4562,7 +4600,7 @@ export function registerApiRoutes(app: Hono) {
           operation: "upsert",
         });
       }
-      return c.json(toTask(row!));
+      return c.json(await taskWithKey(auth.workspaceId, row!));
     }
     const row = await taskProjectService.updateTask(
       auth.workspaceId,
@@ -4582,7 +4620,7 @@ export function registerApiRoutes(app: Hono) {
       projectId: row.projectId ?? null,
       operation: "upsert",
     });
-    return c.json(toTask(row));
+    return c.json(await taskWithKey(auth.workspaceId, row));
   });
 
   app.get("/api/v1/journal/:date", async (c) => {
@@ -4843,7 +4881,7 @@ export function registerApiRoutes(app: Hono) {
               500,
             );
           }
-          return c.json(toTask(task), existing ? 200 : 201);
+          return c.json(await taskWithKey(auth.workspaceId, task), existing ? 200 : 201);
         }
 
         const result = await habitService.recordHabitDay(
@@ -4853,7 +4891,7 @@ export function registerApiRoutes(app: Hono) {
         );
         if (!result) return c.json(notFound("Habit"), 404);
         await emitHabitTaskSyncChanges(auth.workspaceId, result.changedTasks);
-        return c.json(toTask(result.task), result.created ? 201 : 200);
+        return c.json(await taskWithKey(auth.workspaceId, result.task), result.created ? 201 : 200);
       } catch (error) {
         if (error instanceof Error && error.message === "HABIT_DAY_IN_FUTURE") {
           return c.json(
@@ -5340,7 +5378,11 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/organizations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
-    return c.json({ organizations: await circleService.listOrganizations(auth.workspaceId) });
+    // OS-45: `q` (alias `search`) filters by name, key, email, website, city.
+    const q = (c.req.query("q") ?? c.req.query("search"))?.trim() || undefined;
+    return c.json({
+      organizations: await circleService.listOrganizations(auth.workspaceId, { q }),
+    });
   });
   app.get("/api/v1/organizations/:id", async (c) => {
     const auth = getAuth(c);
@@ -5491,7 +5533,8 @@ export function registerApiRoutes(app: Hono) {
     if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
     const rows = await circleService.listContacts(auth.workspaceId, {
       organizationId: c.req.query("organizationId"),
-      q: c.req.query("q"),
+      // OS-45: accept `search` as an alias for `q`.
+      q: (c.req.query("q") ?? c.req.query("search"))?.trim() || undefined,
     });
     return c.json({ contacts: rows.map(toPublicContact) });
   });

@@ -9,6 +9,7 @@ import {
   decodeTaskListCursor,
   encodeTaskListCursor,
   formatTaskDisplayKey,
+  ignoredLegacyTaskListKeys,
   parseDueDateFilter,
   parseTaskListLimit,
   parseTaskListQuery,
@@ -79,40 +80,79 @@ describe("task filter parsing", () => {
     );
   });
 
-  it("opts into paginated mode for new params and multi-value filters", () => {
+  it("uses paginated mode only on explicit opt-in (OS-45)", () => {
+    assert.equal(parseTaskListQuery({ projectId: "p1" }).mode, "legacy");
+    // Bare limit (and other paginated-only params) keep the legacy shape.
     assert.equal(
-      parseTaskListQuery({ projectId: "p1" }).mode,
+      parseTaskListQuery({ projectId: "p1", limit: "30" }).mode,
       "legacy",
     );
+    assert.equal(parseTaskListQuery({ projectId: "p1,p2" }).mode, "legacy");
+    assert.equal(parseTaskListQuery({ sort: "dueDate" }).mode, "legacy");
     assert.equal(
-      parseTaskListQuery({ projectId: "p1,p2" }).mode,
-      "paginated",
+      parseTaskListQuery({ dueDate: "before:2026-01-01" }).mode,
+      "legacy",
+    );
+    assert.equal(parseTaskListQuery({ linkedDocuments: "doc1" }).mode, "legacy");
+    // Legacy ignores bad limits instead of 400ing (limit is ignored).
+    assert.equal(parseTaskListQuery({ limit: "500" }).mode, "legacy");
+    assert.equal(parseTaskListQuery({ paginated: "true" }).mode, "paginated");
+    assert.equal(parseTaskListQuery({ paginated: "1" }).mode, "paginated");
+    assert.equal(parseTaskListQuery({ paginated: "false" }).mode, "legacy");
+    assert.equal(
+      shouldUsePaginatedTaskList({ cursor: "abc", paginatedFlag: false }),
+      true,
     );
     assert.equal(
-      parseTaskListQuery({ limit: "20" }).mode,
-      "paginated",
-    );
-    assert.equal(
-      parseTaskListQuery({ linkedDocuments: "doc1" }).mode,
-      "paginated",
-    );
-    assert.equal(
-      parseTaskListQuery({ paginated: "true" }).mode,
-      "paginated",
-    );
-    assert.equal(
-      shouldUsePaginatedTaskList({
-        cursor: undefined,
-        limitPresent: false,
-        sortPresent: false,
-        includeTotalCountPresent: false,
-        dueDatePresent: false,
-        linkedDocumentsPresent: false,
-        linkedTasksPresent: false,
-        paginatedFlag: false,
-        hasMultiValueFilter: false,
-      }),
+      shouldUsePaginatedTaskList({ cursor: "  ", paginatedFlag: false }),
       false,
+    );
+    // Multi-value lists still parse in legacy mode (route applies them as OR).
+    assert.deepEqual(
+      parseTaskListQuery({ status: "in_progress,on_hold" }).statuses,
+      ["in_progress", "on_hold"],
+    );
+  });
+
+  it("reports paginated-only params ignored in legacy mode", () => {
+    assert.deepEqual(
+      ignoredLegacyTaskListKeys({ projectId: "p1", limit: "30", sort: "" }),
+      ["limit"],
+    );
+    assert.deepEqual(ignoredLegacyTaskListKeys({ projectId: "p1" }), []);
+    assert.deepEqual(
+      ignoredLegacyTaskListKeys({ updatedSince: "2026-01-01", dueDate: "x" }),
+      ["dueDate", "updatedSince"],
+    );
+  });
+
+  it("parses updatedSince in paginated mode (OS-45)", () => {
+    const parsed = parseTaskListQuery({
+      paginated: "true",
+      updatedSince: "2026-10-01T10:00:00Z",
+    });
+    assert.equal(parsed.updatedSince?.toISOString(), "2026-10-01T10:00:00.000Z");
+    assert.equal(
+      parseTaskListQuery({ paginated: "true", updatedSince: "2026-10-01" })
+        .updatedSince?.toISOString(),
+      "2026-10-01T00:00:00.000Z",
+    );
+    assert.throws(
+      () => parseTaskListQuery({ paginated: "true", updatedSince: "nope" }),
+      (err: unknown) =>
+        err instanceof TaskFilterError && err.field === "updatedSince",
+    );
+    assert.equal(
+      parseTaskListQuery({ updatedSince: "2026-10-01" }).updatedSince,
+      undefined,
+    );
+    // Statuses used by the bulk open-tasks call are all valid.
+    assert.deepEqual(
+      parseTaskListQuery({
+        paginated: "true",
+        status: "triage,backlog,ready_to_start,in_progress,on_hold,in_review",
+      }).statuses.length,
+      6,
     );
   });
 

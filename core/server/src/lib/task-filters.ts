@@ -1,10 +1,11 @@
 /**
- * Parse GET /api/v1/tasks filter/pagination query params (OS-28).
+ * Parse GET /api/v1/tasks filter/pagination query params (OS-28, OS-45).
  *
- * Legacy callers (no new params) keep `{ tasks: [...] }`.
- * Opt-in paginated shape `{ items, nextCursor, totalCount? }` when any of:
- * cursor, limit, sort, includeTotalCount, dueDate, linkedDocuments,
- * linkedTasks, paginated=true, or a multi-value filter is present.
+ * Legacy callers keep `{ tasks: [...] }` (full rows, all statuses).
+ * The paginated shape `{ items, nextCursor, totalCount? }` is explicit
+ * opt-in only: `paginated=true` or a `cursor` (OS-45). Paginated-only params
+ * (limit, sort, dueDate, linked*, updatedSince, includeTotalCount) are ignored
+ * in legacy mode; the route reports them in an `X-BacksterOS-Hint` header.
  */
 
 import { TASK_STATUSES } from "@backsteros/contracts";
@@ -40,7 +41,23 @@ export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
   "sort",
   "includeTotalCount",
   "paginated",
+  "updatedSince",
 ]);
+
+/**
+ * Params that only take effect in paginated mode. In legacy mode they are
+ * ignored (reported via the hint header so callers notice).
+ */
+export const TASK_LIST_PAGINATED_ONLY_KEYS = [
+  "cursor",
+  "limit",
+  "sort",
+  "includeTotalCount",
+  "dueDate",
+  "linkedDocuments",
+  "linkedTasks",
+  "updatedSince",
+] as const;
 
 export type DueDateFilter =
   | { op: "before"; date: Date }
@@ -191,7 +208,10 @@ export function assertKnownTaskListQueryKeys(
 ): void {
   for (const key of keys) {
     if (!TASK_LIST_KNOWN_QUERY_KEYS.has(key)) {
-      throw new TaskFilterError(`Unknown filter field: ${key}`, key);
+      throw new TaskFilterError(
+        `Unknown filter field: ${key}. Allowed: ${[...TASK_LIST_KNOWN_QUERY_KEYS].join(", ")}`,
+        key,
+      );
     }
   }
 }
@@ -207,6 +227,12 @@ export type ParsedTaskListQuery = {
   linkedDocumentIds: string[];
   linkedTaskIds: string[];
   dueDate?: DueDateFilter;
+  /**
+   * Change feed (OS-45): only tasks with updatedAt >= this instant. Also
+   * returns soft-deleted tasks (with `deletedAt`) and, unless `status` is
+   * given, all statuses (completed/canceled included).
+   */
+  updatedSince?: Date;
   inbox?: boolean;
   support?: boolean;
   notification?: boolean;
@@ -224,36 +250,29 @@ function firstString(
   return value === "" ? undefined : value;
 }
 
-function hasMultiValues(values: string[]): boolean {
-  return values.length > 1;
-}
-
 /**
  * Decide whether this request should use the paginated response shape.
- * Pure: call after multi-value expansion.
+ *
+ * OS-45: explicit opt-in only (`paginated=true` or a cursor). Before OS-45 any
+ * limit, sort, dueDate, linked-filter or multi-value param switched the shape, which made
+ * legacy callers reading `tasks` silently get nothing.
  */
 export function shouldUsePaginatedTaskList(input: {
   cursor?: string;
-  limitPresent: boolean;
-  sortPresent: boolean;
-  includeTotalCountPresent: boolean;
-  dueDatePresent: boolean;
-  linkedDocumentsPresent: boolean;
-  linkedTasksPresent: boolean;
   paginatedFlag: boolean;
-  hasMultiValueFilter: boolean;
 }): boolean {
-  return (
-    input.paginatedFlag ||
-    Boolean(input.cursor?.trim()) ||
-    input.limitPresent ||
-    input.sortPresent ||
-    input.includeTotalCountPresent ||
-    input.dueDatePresent ||
-    input.linkedDocumentsPresent ||
-    input.linkedTasksPresent ||
-    input.hasMultiValueFilter
-  );
+  return Boolean(input.paginatedFlag || input.cursor?.trim());
+}
+
+/** Paginated-only params present on a request (for the legacy-mode hint). */
+export function ignoredLegacyTaskListKeys(
+  raw: Record<string, string | string[] | undefined>,
+): string[] {
+  return TASK_LIST_PAGINATED_ONLY_KEYS.filter((key) => {
+    const value = raw[key];
+    if (value == null) return false;
+    return Array.isArray(value) ? value.length > 0 : value !== "";
+  });
 }
 
 export function parseTaskListQuery(
@@ -278,31 +297,15 @@ export function parseTaskListQuery(
 
   const paginatedFlag =
     parseOptionalBoolean(raw.paginated, "paginated") === true;
-  const includeTotalCountPresent = raw.includeTotalCount != null;
   const includeTotalCount =
     parseOptionalBoolean(raw.includeTotalCount, "includeTotalCount") === true;
 
-  const hasMultiValueFilter =
-    hasMultiValues(projectIds) ||
-    hasMultiValues(statusesRaw) ||
-    hasMultiValues(assigneeIds) ||
-    hasMultiValues(contactIds) ||
-    hasMultiValues(relatedContactIds) ||
-    hasMultiValues(relatedOrganizationIds) ||
-    hasMultiValues(linkedDocumentIds) ||
-    hasMultiValues(linkedTaskIds);
+  const updatedSinceRaw = firstString(raw.updatedSince);
+  let updatedSince: Date | undefined;
 
-  const limitPresent = raw.limit != null && firstString(raw.limit) != null;
   const mode = shouldUsePaginatedTaskList({
     cursor: firstString(raw.cursor),
-    limitPresent,
-    sortPresent: sortRaw != null,
-    includeTotalCountPresent,
-    dueDatePresent: dueDateRaw != null,
-    linkedDocumentsPresent: linkedDocumentIds.length > 0,
-    linkedTasksPresent: linkedTaskIds.length > 0,
     paginatedFlag,
-    hasMultiValueFilter,
   })
     ? "paginated"
     : "legacy";
@@ -316,6 +319,9 @@ export function parseTaskListQuery(
     }
     if (dueDateRaw != null) {
       dueDate = parseDueDateFilter(dueDateRaw);
+    }
+    if (updatedSinceRaw != null) {
+      updatedSince = parseDateValue(updatedSinceRaw, "updatedSince");
     }
     if (sortRaw != null && sortRaw !== TASK_LIST_DEFAULT_SORT) {
       throw new TaskFilterError(
@@ -336,6 +342,7 @@ export function parseTaskListQuery(
     linkedDocumentIds,
     linkedTaskIds,
     dueDate,
+    updatedSince,
     inbox: parseOptionalBoolean(raw.inbox, "inbox"),
     support: parseOptionalBoolean(raw.support, "support"),
     notification: parseOptionalBoolean(raw.notification, "notification"),

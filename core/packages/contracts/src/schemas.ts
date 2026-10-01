@@ -446,6 +446,11 @@ export const taskSchema = z.object({
   /** Workspace label ids. Managed in Settings; not created from the task dropdown. */
   labelIds: z.array(z.string()).default([]),
   number: z.number().int().positive(),
+  /**
+   * Human display key, e.g. PF-41 (INBOX-3 without a project). Set by the
+   * REST API on single-task, create/update and legacy list responses (OS-45).
+   */
+  key: z.string().optional(),
   title: z.string(),
   description: z.string().nullable(),
   status: taskStatusSchema,
@@ -502,6 +507,8 @@ export const taskListItemSchema = z.object({
   key: z.string(),
   title: z.string(),
   status: taskStatusSchema,
+  /** 0 = none, 1 = urgent … 4 = low (same scale as Task.priority). */
+  priority: z.number().int().min(0).max(4),
   assigneeId: z.string().nullable(),
   projectId: z.string().nullable(),
   dueDate: z.string().datetime().nullable(),
@@ -510,12 +517,15 @@ export const taskListItemSchema = z.object({
   linkedTaskIds: z.array(z.string()),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /** Only with `updatedSince`: set when the task was deleted. */
+  deletedAt: z.string().datetime().nullable().optional(),
 });
 
 /**
- * Query for GET /tasks. Legacy single-value filters stay optional strings.
- * Multi-value, dueDate ranges, link filters, cursor/limit opt into the
- * paginated `{ items, nextCursor }` response (see listTasksResponseSchema).
+ * Query for GET /tasks. Without `paginated=true` (or a `cursor`) the response
+ * is the legacy `{ tasks }` shape and paginated-only params (limit, sort,
+ * dueDate, linked*, updatedSince, includeTotalCount) are ignored (OS-45).
+ * With `paginated=true` the response is `{ items, nextCursor }`.
  */
 export const listTasksQuerySchema = z.object({
   projectId: z.string().optional(),
@@ -542,8 +552,14 @@ export const listTasksQuerySchema = z.object({
   sort: z.literal("dueDate").optional(),
   /** When true, response includes `totalCount`. */
   includeTotalCount: z.coerce.boolean().optional(),
-  /** Force paginated `{ items, nextCursor }` even without other new params. */
+  /** Opt in to paginated `{ items, nextCursor }` (the only switch besides cursor). */
   paginated: z.coerce.boolean().optional(),
+  /**
+   * Change feed (paginated only): tasks with updatedAt >= this ISO instant,
+   * including soft-deleted ones (`deletedAt` set) and, unless `status` is
+   * given, all statuses.
+   */
+  updatedSince: z.string().optional(),
 });
 
 export const listTasksLegacyResponseSchema = z.object({

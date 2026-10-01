@@ -612,12 +612,13 @@ export async function deleteProject(
 export async function listTasks(
   workspaceId: string,
   filters: {
-    projectId?: string;
-    contactId?: string;
-    assigneeId?: string;
-    relatedContactId?: string;
-    relatedOrganizationId?: string;
-    status?: string;
+    /** Single id or OR-list (OS-45: comma lists work in legacy mode too). */
+    projectId?: string | string[];
+    contactId?: string | string[];
+    assigneeId?: string | string[];
+    relatedContactId?: string | string[];
+    relatedOrganizationId?: string | string[];
+    status?: string | string[];
     inbox?: boolean;
     support?: boolean;
     notification?: boolean;
@@ -628,21 +629,27 @@ export async function listTasks(
     eq(tasks.workspaceId, workspaceId),
     isNull(tasks.deletedAt),
   ];
+  const list = (value: string | string[] | undefined): string[] =>
+    (Array.isArray(value) ? value : value ? [value] : []).filter(Boolean);
 
-  if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
-  if (filters.contactId) conditions.push(eq(tasks.contactId, filters.contactId));
-  if (filters.assigneeId) conditions.push(eq(tasks.assigneeId, filters.assigneeId));
-  if (filters.relatedContactId) {
-    conditions.push(
-      sql`${tasks.relatedContactIds} @> ${JSON.stringify([filters.relatedContactId])}::jsonb`,
-    );
+  const projectIds = list(filters.projectId);
+  if (projectIds.length) conditions.push(inArray(tasks.projectId, projectIds));
+  const contactIds = list(filters.contactId);
+  if (contactIds.length) conditions.push(inArray(tasks.contactId, contactIds));
+  const assigneeIds = list(filters.assigneeId);
+  if (assigneeIds.length) {
+    conditions.push(inArray(tasks.assigneeId, assigneeIds));
   }
-  if (filters.relatedOrganizationId) {
-    conditions.push(
-      sql`${tasks.relatedOrganizationIds} @> ${JSON.stringify([filters.relatedOrganizationId])}::jsonb`,
-    );
-  }
-  if (filters.status) conditions.push(eq(tasks.status, filters.status));
+  const relatedContact = relatedContactOrCondition(
+    list(filters.relatedContactId),
+  );
+  if (relatedContact) conditions.push(relatedContact);
+  const relatedOrg = relatedOrganizationOrCondition(
+    list(filters.relatedOrganizationId),
+  );
+  if (relatedOrg) conditions.push(relatedOrg);
+  const statuses = list(filters.status);
+  if (statuses.length) conditions.push(inArray(tasks.status, statuses));
   if (filters.inbox !== undefined) conditions.push(eq(tasks.inbox, filters.inbox));
   if (filters.support !== undefined) {
     conditions.push(eq(tasks.support, filters.support));
@@ -658,11 +665,47 @@ export async function listTasks(
     .orderBy(tasks.sortOrder, desc(tasks.updatedAt));
 }
 
+/**
+ * projectId → project key for display keys (PF-41). Includes soft-deleted
+ * projects so old tasks keep a stable key.
+ */
+export async function getProjectKeyMap(
+  workspaceId: string,
+  projectIds?: Array<string | null | undefined>,
+  executor: DbExecutor = db,
+): Promise<Map<string, string>> {
+  const ids =
+    projectIds === undefined
+      ? undefined
+      : [
+          ...new Set(
+            projectIds.filter(
+              (id): id is string => typeof id === "string" && id.length > 0,
+            ),
+          ),
+        ];
+  const out = new Map<string, string>();
+  if (ids && !ids.length) return out;
+  const rows = await executor
+    .select({ id: projects.id, key: projects.key })
+    .from(projects)
+    .where(
+      ids
+        ? and(eq(projects.workspaceId, workspaceId), inArray(projects.id, ids))
+        : eq(projects.workspaceId, workspaceId),
+    );
+  for (const row of rows) {
+    if (row.key) out.set(row.id, row.key);
+  }
+  return out;
+}
+
 export type TaskListItem = {
   id: string;
   key: string;
   title: string;
   status: string;
+  priority: number;
   assigneeId: string | null;
   projectId: string | null;
   dueDate: string | null;
@@ -671,6 +714,8 @@ export type TaskListItem = {
   linkedTaskIds: string[];
   createdAt: string;
   updatedAt: string;
+  /** Only present with `updatedSince` (change feed includes deletions). */
+  deletedAt?: string | null;
 };
 
 export type ListTasksPaginatedResult = {
@@ -805,17 +850,21 @@ function buildPaginatedTaskConditions(
   workspaceId: string,
   filters: ParsedTaskListQuery,
 ): SQL[] {
-  const conditions: SQL[] = [
-    eq(tasks.workspaceId, workspaceId),
-    isNull(tasks.deletedAt),
-  ];
+  const conditions: SQL[] = [eq(tasks.workspaceId, workspaceId)];
+
+  if (filters.updatedSince) {
+    // Change feed (OS-45): include soft-deleted rows so callers see removals.
+    conditions.push(gte(tasks.updatedAt, filters.updatedSince));
+  } else {
+    conditions.push(isNull(tasks.deletedAt));
+  }
 
   if (filters.projectIds.length) {
     conditions.push(inArray(tasks.projectId, filters.projectIds));
   }
   if (filters.statuses.length) {
     conditions.push(inArray(tasks.status, filters.statuses));
-  } else {
+  } else if (!filters.updatedSince) {
     conditions.push(
       notInArray(tasks.status, [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES]),
     );
@@ -1148,6 +1197,7 @@ export async function listTasksPaginated(
       key: formatTaskDisplayKey(row.projectKey, row.number),
       title: row.title,
       status: row.status,
+      priority: row.priority,
       assigneeId: row.assigneeId,
       projectId: row.projectId,
       dueDate: row.dueDate?.toISOString() ?? null,
@@ -1156,6 +1206,9 @@ export async function listTasksPaginated(
       linkedTaskIds: links.linkedTaskIds,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      ...(filters.updatedSince
+        ? { deletedAt: row.deletedAt?.toISOString() ?? null }
+        : {}),
     };
   });
 

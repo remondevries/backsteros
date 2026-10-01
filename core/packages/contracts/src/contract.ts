@@ -430,7 +430,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary:
-        "List tasks (legacy `{ tasks }` or paginated `{ items, nextCursor }` when cursor/limit/sort/new filters are present)",
+        "List tasks (legacy `{ tasks }`; paginated `{ items, nextCursor }` only with paginated=true or cursor)",
     },
     getTask: {
       method: "GET",

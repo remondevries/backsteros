@@ -204,6 +204,44 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   assert.equal(legacy.response.status, 200);
   assert.ok(Array.isArray(legacy.body.tasks));
   assert.equal(legacy.body.items, undefined);
+  // OS-45: legacy rows carry the display key.
+  const legacyTasks = legacy.body.tasks as Array<{ id: string; key?: string }>;
+  assert.equal(
+    legacyTasks.find((task) => task.id === taskIds.a)?.key,
+    "OS28-1",
+  );
+
+  // OS-45: bare limit stays legacy (limit ignored, hint header set).
+  const legacyLimit = await json(
+    app,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&limit=1`,
+    secret,
+  );
+  assert.equal(legacyLimit.response.status, 200);
+  assert.ok(Array.isArray(legacyLimit.body.tasks));
+  assert.equal(legacyLimit.body.items, undefined);
+  assert.equal((legacyLimit.body.tasks as unknown[]).length, 5);
+  assert.match(
+    legacyLimit.response.headers.get("x-backsteros-hint") ?? "",
+    /limit/,
+  );
+
+  // OS-45: comma lists work in legacy mode too (OR).
+  const legacyMulti = await json(
+    app,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=ready_to_start,in_progress`,
+    secret,
+  );
+  assert.deepEqual(
+    (legacyMulti.body.tasks as Array<{ id: string }>)
+      .map((task) => task.id)
+      .sort(),
+    [taskIds.a, taskIds.b].sort(),
+  );
+
+  // OS-45: single-task response carries the key.
+  const one = await json(app, `/api/v1/tasks/${taskIds.b}`, secret);
+  assert.equal(one.body.key, "OS28-2");
 
   // Single filter (paginated).
   const single = await json(
@@ -221,7 +259,7 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   // Multi-value OR within status.
   const multi = await json(
     app,
-    `/api/v1/tasks?status=ready_to_start,in_progress&projectId=${encodeURIComponent(projectId)}`,
+    `/api/v1/tasks?status=ready_to_start,in_progress&projectId=${encodeURIComponent(projectId)}&paginated=true`,
     secret,
   );
   assert.equal(multi.response.status, 200);
@@ -258,7 +296,7 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   // Pagination with cursor.
   const page1 = await json(
     app,
-    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=ready_to_start,in_progress,on_hold&limit=2`,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=ready_to_start,in_progress,on_hold&limit=2&paginated=true`,
     secret,
   );
   assert.equal(page1.response.status, 200);
@@ -299,7 +337,7 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   // Bidirectional link filter: document → tasks via linkedTasks index.
   const byDoc = await json(
     app,
-    `/api/v1/tasks?linkedDocuments=${encodeURIComponent(docId)}`,
+    `/api/v1/tasks?linkedDocuments=${encodeURIComponent(docId)}&paginated=true`,
     secret,
   );
   assert.equal(byDoc.response.status, 200);
@@ -322,7 +360,7 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   // linkedTasks filter: co-linked tasks (A ↔ B via the same document).
   const byTask = await json(
     app,
-    `/api/v1/tasks?linkedTasks=${encodeURIComponent(taskIds.a)}`,
+    `/api/v1/tasks?linkedTasks=${encodeURIComponent(taskIds.a)}&paginated=true`,
     secret,
   );
   assert.equal(byTask.response.status, 200);
@@ -346,7 +384,7 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
 
   const withDone = await json(
     app,
-    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=completed,canceled`,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=completed,canceled&paginated=true`,
     secret,
   );
   const doneIds = new Set(
@@ -354,6 +392,48 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   );
   assert.ok(doneIds.has(taskIds.done));
   assert.ok(doneIds.has(taskIds.canceled));
+
+  // OS-45: compact rows include priority.
+  assert.equal(
+    typeof (openOnly.body.items as Array<{ priority: unknown }>)[0]?.priority,
+    "number",
+  );
+
+  // OS-45: updatedSince change feed — includes closed + deleted tasks.
+  const feedStart = new Date();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await db
+    .update(tasks)
+    .set({ status: "completed", updatedAt: new Date() })
+    .where(eq(tasks.id, taskIds.b));
+  await db
+    .update(tasks)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(tasks.id, taskIds.orphan));
+  const feed = await json(
+    app,
+    `/api/v1/tasks?paginated=true&updatedSince=${encodeURIComponent(feedStart.toISOString())}`,
+    secret,
+  );
+  assert.equal(feed.response.status, 200);
+  const feedItems = feed.body.items as Array<{
+    id: string;
+    status: string;
+    deletedAt?: string | null;
+  }>;
+  assert.deepEqual(
+    feedItems.map((item) => item.id).sort(),
+    [taskIds.b, taskIds.orphan].sort(),
+  );
+  assert.equal(
+    feedItems.find((item) => item.id === taskIds.b)?.status,
+    "completed",
+  );
+  assert.equal(feedItems.find((item) => item.id === taskIds.b)?.deletedAt, null);
+  assert.equal(
+    typeof feedItems.find((item) => item.id === taskIds.orphan)?.deletedAt,
+    "string",
+  );
 
   // Unknown field names the field.
   const unknown = await json(

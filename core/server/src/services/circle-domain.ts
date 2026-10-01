@@ -301,11 +301,34 @@ async function projectExists(
   return Boolean(row);
 }
 
-export function listOrganizations(workspaceId: string) {
+export function listOrganizations(
+  workspaceId: string,
+  filters: { q?: string } = {},
+) {
+  const conditions = [
+    eq(organizations.workspaceId, workspaceId),
+    isNull(organizations.deletedAt),
+  ];
+  if (filters.q) {
+    const pattern = `%${filters.q}%`;
+    conditions.push(
+      or(
+        ilike(organizations.name, pattern),
+        ilike(organizations.key, pattern),
+        ilike(organizations.email, pattern),
+        ilike(organizations.website, pattern),
+        ilike(organizations.city, pattern),
+        sql`exists (
+          select 1 from jsonb_array_elements(coalesce(${organizations.emails}, '[]'::jsonb)) as e(value)
+          where coalesce(e.value->>'address', e.value #>> '{}') ilike ${pattern}
+        )`,
+      )!,
+    );
+  }
   return db
     .select()
     .from(organizations)
-    .where(and(eq(organizations.workspaceId, workspaceId), isNull(organizations.deletedAt)))
+    .where(and(...conditions))
     .orderBy(organizations.sortOrder, organizations.name);
 }
 

@@ -17,6 +17,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { normalizeTaskLabelIds } from "../services/task-labels.js";
+import { formatTaskDisplayKey } from "./task-filters.js";
 
 import type {
   DbApiKey,
@@ -102,7 +103,11 @@ export function toProject(row: DbProject): Project {
   };
 }
 
-export function toTask(row: DbTask): Task {
+/**
+ * Map a task row to the API shape. Pass `projectKey` (string, or null for no
+ * project) to include the display `key` (e.g. PF-41); omit to leave it out.
+ */
+export function toTask(row: DbTask, projectKey?: string | null): Task {
   const relatedContactIds = Array.isArray(row.relatedContactIds)
     ? row.relatedContactIds.filter(
         (id): id is string => typeof id === "string" && id.trim().length > 0,
@@ -122,6 +127,9 @@ export function toTask(row: DbTask): Task {
     relatedOrganizationIds,
     labelIds: normalizeTaskLabelIds(row.labelIds),
     number: row.number,
+    ...(projectKey !== undefined
+      ? { key: formatTaskDisplayKey(projectKey, row.number) }
+      : {}),
     title: row.title,
     description: row.description,
     status: row.status as Task["status"],
