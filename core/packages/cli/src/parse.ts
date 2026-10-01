@@ -48,6 +48,10 @@ const TASK_OPTS = {
   assignee: { type: "string" as const },
   inbox: { type: "boolean" as const },
   body: { type: "string" as const, short: "b" as const },
+  /** task list: before:<date> | after:<date> | between:<start>,<end> */
+  due: { type: "string" as const },
+  /** task list: page size (1–200, default 200); all pages are followed. */
+  limit: { type: "string" as const },
 };
 
 const COMMENT_OPTS = {
@@ -132,7 +136,8 @@ Projects:
   backsteros project delete <id|KEY>
 
 Tasks:
-  backsteros task list [--project KEY|id] [--status in_progress]
+  backsteros task list [--project KEY|id[,KEY…]] [--status in_progress,on_hold] [--assignee id[,id…]] [--due before:2026-10-08] [--limit 200]
+    (open tasks by default; pass --status completed,canceled to include closed ones)
   backsteros task get <id|KEY-number>
   backsteros task create --title "..." [--project KEY|id] [--status ...] [--description ...]
   backsteros task update <id|KEY-number> [--title ...] [--status completed] [--body '{...}']

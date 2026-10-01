@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { parseDisplayId } from "./resolve.js";
+import { listTaskItems, parseDisplayId } from "./resolve.js";
+import type { CliClient } from "./config.js";
 import { parseCliArgv } from "./parse.js";
 import { loadConfig } from "./config.js";
 
@@ -87,5 +88,57 @@ describe("loadConfig", () => {
     assert.equal(config.token, "local");
     assert.equal(config.activityActor, "agent");
     assert.equal(config.agentContactId, null);
+  });
+});
+
+describe("listTaskItems (OS-45)", () => {
+  type Call = Record<string, unknown>;
+  function fakeClient(pages: Array<Record<string, unknown>>) {
+    const calls: Call[] = [];
+    const client = {
+      contract: {
+        listTasks: async ({ query }: { query: Call }) => {
+          calls.push(query);
+          return { status: 200, body: pages[calls.length - 1] };
+        },
+      },
+    };
+    return { client: client as unknown as CliClient, calls };
+  }
+
+  it("sends paginated=true, reads items and follows nextCursor", async () => {
+    const { client, calls } = fakeClient([
+      {
+        items: [{ id: "a", key: "OS-1", title: "A", status: "in_progress", projectId: "p" }],
+        nextCursor: "c1",
+      },
+      {
+        items: [{ id: "b", key: "OS-2", title: "B", status: "on_hold", projectId: "p" }],
+        nextCursor: null,
+      },
+    ]);
+    const rows = await listTaskItems(client, {
+      projectId: "p",
+      status: "in_progress,on_hold",
+    });
+    assert.deepEqual(
+      rows.map((row) => row.key),
+      ["OS-1", "OS-2"],
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]!.paginated, true);
+    assert.equal(calls[0]!.limit, 200);
+    assert.equal(calls[0]!.status, "in_progress,on_hold");
+    assert.equal(calls[0]!.cursor, undefined);
+    assert.equal(calls[1]!.cursor, "c1");
+  });
+
+  it("falls back to legacy tasks for older servers", async () => {
+    const { client, calls } = fakeClient([
+      { tasks: [{ id: "a", number: 1, title: "A", status: "ready_to_start", projectId: null }] },
+    ]);
+    const rows = await listTaskItems(client, {});
+    assert.equal(rows.length, 1);
+    assert.equal(calls.length, 1);
   });
 });

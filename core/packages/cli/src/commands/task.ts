@@ -1,7 +1,11 @@
-import type { CreateTaskInput, Task, UpdateTaskInput } from "@backsteros/contracts";
+import type {
+  CreateTaskInput,
+  ListTasksQuery,
+  UpdateTaskInput,
+} from "@backsteros/contracts";
 import type { CliClient, CliConfig } from "../config.js";
 import { emitResult } from "../output.js";
-import { resolveProjectId, resolveTaskId } from "../resolve.js";
+import { listTaskItems, resolveProjectId, resolveTaskId } from "../resolve.js";
 
 function optionalInt(value: string | boolean | undefined): number | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
@@ -52,13 +56,15 @@ function taskSummary(
   task: {
     id: string;
     number: number;
+    key?: string;
     title: string;
     status: string;
     projectId: string | null;
   },
   projectKey?: string | null,
 ): string {
-  const label = projectKey ? `${projectKey}-${task.number}` : `#${task.number}`;
+  const label =
+    task.key ?? (projectKey ? `${projectKey}-${task.number}` : `#${task.number}`);
   return `${label}  ${task.status}  ${task.title}  (${task.id})`;
 }
 
@@ -71,21 +77,37 @@ export async function runTaskCommand(
 ): Promise<void> {
   switch (action) {
     case "list": {
-      const query: { projectId?: string; status?: string } = {};
+      // OS-45: paginated=true + server-side filters; read `items`, follow
+      // nextCursor. Comma lists are OR within a field.
+      const query: Omit<ListTasksQuery, "paginated" | "cursor"> = {};
       if (typeof values.project === "string") {
-        query.projectId = await resolveProjectId(client, values.project);
+        const refs = values.project
+          .split(",")
+          .map((ref) => ref.trim())
+          .filter(Boolean);
+        const ids: string[] = [];
+        for (const ref of refs) ids.push(await resolveProjectId(client, ref));
+        if (ids.length) query.projectId = ids.join(",");
       }
-      if (typeof values.status === "string") query.status = values.status;
-      const res = await client.contract.listTasks({ query });
-      if (res.status !== 200) throw new Error(`list failed (${res.status})`);
-      const tasks = res.body.tasks;
+      if (typeof values.status === "string" && values.status.trim()) {
+        query.status = values.status.replace(/\s+/g, "");
+      }
+      if (typeof values.assignee === "string" && values.assignee.trim()) {
+        query.assigneeId = values.assignee.replace(/\s+/g, "");
+      }
+      if (typeof values.due === "string" && values.due.trim()) {
+        query.dueDate = values.due.trim();
+      }
+      const limit = optionalInt(values.limit);
+      if (limit !== undefined) query.limit = limit;
+      const tasks = await listTaskItems(client, query);
       emitResult(
         config.json,
         { tasks },
         tasks
           .map(
-            (t: Task) =>
-              `${t.number}\t${t.status}\t${t.title}\t${t.id}\t${t.projectId ?? ""}`,
+            (t) =>
+              `${t.key ?? t.number ?? ""}\t${t.status}\t${t.dueDate?.slice(0, 10) ?? ""}\t${t.title}\t${t.id}`,
           )
           .join("\n") || "(no tasks)",
       );
@@ -99,7 +121,8 @@ export async function runTaskCommand(
       if (res.status !== 200) throw new Error(`get failed (${res.status})`);
       const t = res.body;
       let projectKey: string | null = null;
-      if (t.projectId) {
+      // Servers since OS-45 return `key`; only older ones need the lookup.
+      if (t.projectId && !t.key) {
         const p = await client.contract.getProject({
           params: { id: t.projectId },
         });
@@ -119,7 +142,8 @@ export async function runTaskCommand(
       if (res.status !== 201) throw new Error(`create failed (${res.status})`);
       const t = res.body;
       let projectKey: string | null = null;
-      if (t.projectId) {
+      // Servers since OS-45 return `key`; only older ones need the lookup.
+      if (t.projectId && !t.key) {
         const p = await client.contract.getProject({
           params: { id: t.projectId },
         });
@@ -146,7 +170,8 @@ export async function runTaskCommand(
       if (res.status !== 200) throw new Error(`update failed (${res.status})`);
       const t = res.body;
       let projectKey: string | null = null;
-      if (t.projectId) {
+      // Servers since OS-45 return `key`; only older ones need the lookup.
+      if (t.projectId && !t.key) {
         const p = await client.contract.getProject({
           params: { id: t.projectId },
         });
