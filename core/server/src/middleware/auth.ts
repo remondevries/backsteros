@@ -26,6 +26,8 @@ export type AuthContext = {
   /** Legacy users.clerk_id sentinel (e.g. local_shell); not a Clerk session. */
   clerkUserId: string | null;
   apiKeyId: string | null;
+  /** API key label (never the secret) — used for per-request audit logs. */
+  apiKeyName?: string | null;
   contactId: string | null;
   workspaceId: string;
   membershipRole: string | null;
@@ -80,6 +82,7 @@ export async function authenticateApiKey(secret: string): Promise<AuthContext | 
     userId: row.userId,
     clerkUserId: null,
     apiKeyId: row.id,
+    apiKeyName: row.name,
     contactId: row.contactId,
     workspaceId: row.workspaceId,
     membershipRole: null,

@@ -562,6 +562,13 @@ async function withAuth(c: Context, next: Next) {
   }
   c.set("auth", auth);
   await next();
+  if (auth.kind === "api_key") {
+    // OS-45: which agent key made which call (name only, never the secret).
+    const url = new URL(c.req.url);
+    console.log(
+      `[api-key] ${JSON.stringify(auth.apiKeyName ?? auth.apiKeyId ?? "?")} ${c.req.method} ${url.pathname}${url.search} ${c.res.status}`,
+    );
+  }
 }
 
 function getAuth(c: Context): AuthContext {
