@@ -212,6 +212,26 @@ Env vars: `CORE_REPLICATION_ROLE`, `CORE_REPLICATION_PEER_URL`, `CORE_REPLICATIO
 `CORE_REPLICATION_WORKSPACE_IDS`, `CORE_REPLICATION_INTERVAL_MS` (default 15000).
 Internal routes: `POST/GET /api/v1/internal/replication/push|pull`.
 
+### Keeping local-core on the same commit as cloud (OS-61)
+
+Local-core must not silently run a dirty or lagging developer checkout. The
+LaunchAgent / desktop supervisor start the API from
+`~/.backsteros/local-core-build` (a git worktree of `origin/production`).
+`GET /health` and `GET /api/v1/health` report
+`version: { commit, builtAt, dirty }`. Each replication tick compares that
+commit with the peer’s `/health` and ops-alerts **once** per distinct mismatch;
+the desktop supervisor logs the same warning once.
+
+After a cloud-core deploy:
+
+```bash
+bash scripts/local-core/update-build.sh
+bash scripts/local-core/install-launch-agent.sh
+curl -fsS http://127.0.0.1:8788/health | jq .version
+```
+
+Details: [scripts/local-core/README.md](../scripts/local-core/README.md).
+
 ### Phase B — full Tier A/B Postgres sync
 
 - Replicate all PowerSync-published tables

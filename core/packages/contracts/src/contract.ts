@@ -68,7 +68,15 @@ export const apiContract: AppRouter = c.router(
       responses: {
         200: healthSchema,
       },
-      summary: "Health check",
+      summary: "Health check (build version + optional peer mismatch)",
+    },
+    healthV1: {
+      method: "GET",
+      path: "/api/v1/health",
+      responses: {
+        200: healthSchema,
+      },
+      summary: "Health check under /api/v1 (no auth; same body as /health)",
     },
     listProjects: {
       method: "GET",

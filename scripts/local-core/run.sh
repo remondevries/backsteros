@@ -9,7 +9,7 @@
 set -euo pipefail
 
 LABEL="com.backsteros.local-core"
-API_PORT=8788
+API_PORT="${LOCAL_CORE_API_PORT:-8788}"
 LOG_DIR="${HOME}/.config/backsteros/desktop"
 LOG_FILE="${LOG_DIR}/local-core.log"
 LOG_PREV="${LOG_DIR}/local-core.log.prev"
@@ -21,6 +21,9 @@ HEALTH_INTERVAL_SECS="${LOCAL_CORE_HEALTH_INTERVAL_SECS:-10}"
 HEALTH_FAIL_THRESHOLD="${LOCAL_CORE_HEALTH_FAIL_THRESHOLD:-3}"
 STARTUP_GRACE_SECS="${LOCAL_CORE_STARTUP_GRACE_SECS:-90}"
 REPO_ROOT="${BACKSTEROS_REPO_ROOT:-}"
+# Dedicated origin/production worktree (OS-61). Prefer this over a dirty checkout.
+LOCAL_CORE_BUILD="${BACKSTEROS_LOCAL_CORE_BUILD:-${HOME}/.backsteros/local-core-build}"
+ENV_FILE="${LOCAL_CORE_ENV_FILE:-}"
 PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
 export PATH
 
@@ -86,6 +89,14 @@ rotate_log_if_needed() {
 
 
 resolve_repo_root() {
+  # Prefer the dedicated local-core build (origin/production worktree).
+  if [[ -n "${LOCAL_CORE_BUILD}" \
+    && -f "${LOCAL_CORE_BUILD}/pnpm-workspace.yaml" \
+    && -f "${LOCAL_CORE_BUILD}/docker-compose.yml" \
+    && -d "${LOCAL_CORE_BUILD}/core/server" ]]; then
+    REPO_ROOT="${LOCAL_CORE_BUILD}"
+    return 0
+  fi
   if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
     return 0
   fi
@@ -100,6 +111,57 @@ resolve_repo_root() {
     return 0
   fi
   return 1
+}
+
+# Runtime secrets stay in the developer checkout (or LOCAL_CORE_ENV_FILE). The
+# dedicated build worktree must not need its own copy of .env.
+resolve_env_file() {
+  if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
+    return 0
+  fi
+  if [[ -f "${REPO_ROOT}/core/server/.env" ]]; then
+    ENV_FILE="${REPO_ROOT}/core/server/.env"
+    return 0
+  fi
+  local hub_root=""
+  if [[ -f "${HOME}/.config/backsteros/hub.json" ]]; then
+    hub_root="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME}/.config/backsteros/hub.json" 2>/dev/null || true)"
+    if [[ -n "${hub_root}" && -f "${hub_root}/core/server/.env" ]]; then
+      ENV_FILE="${hub_root}/core/server/.env"
+      return 0
+    fi
+  fi
+  local fallback="${HOME}/BacksterOS/Projects/OS/Codebase/core/server/.env"
+  if [[ -f "${fallback}" ]]; then
+    ENV_FILE="${fallback}"
+    return 0
+  fi
+  return 1
+}
+
+export_build_version_env() {
+  local info="${REPO_ROOT}/core/server/build-info.json"
+  if [[ -f "${info}" ]]; then
+    local commit built_at dirty
+    commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("commit") or "")' "${info}" 2>/dev/null || true)"
+    built_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("builtAt") or "")' "${info}" 2>/dev/null || true)"
+    dirty="$(python3 -c 'import json,sys; print("1" if json.load(open(sys.argv[1])).get("dirty") else "0")' "${info}" 2>/dev/null || true)"
+    if [[ -n "${commit}" && -n "${built_at}" ]]; then
+      export BACKSTEROS_BUILD_COMMIT="${commit}"
+      export BACKSTEROS_BUILD_BUILT_AT="${built_at}"
+      export BACKSTEROS_BUILD_DIRTY="${dirty:-0}"
+      return 0
+    fi
+  fi
+  if command -v git >/dev/null 2>&1 && git -C "${REPO_ROOT}" rev-parse HEAD >/dev/null 2>&1; then
+    export BACKSTEROS_BUILD_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+    export BACKSTEROS_BUILD_BUILT_AT="$(git -C "${REPO_ROOT}" show -s --format=%cI HEAD 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain 2>/dev/null || true)" ]]; then
+      export BACKSTEROS_BUILD_DIRTY=1
+    else
+      export BACKSTEROS_BUILD_DIRTY=0
+    fi
+  fi
 }
 
 api_healthy() {
@@ -286,11 +348,12 @@ start_api_child() {
   build_contracts
   cd "${REPO_ROOT}/core/server"
   rotate_log_if_needed
-  log "starting API: pnpm exec tsx --env-file=.env src/index.ts (no watch; CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL})"
+  export_build_version_env
+  log "starting API: pnpm exec tsx --env-file=${ENV_FILE} src/index.ts (no watch; build=${BACKSTEROS_BUILD_COMMIT:-unknown} dirty=${BACKSTEROS_BUILD_DIRTY:-?} CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL})"
   # Job control → own process group (macOS has no setsid(1); Homebrew pnpm is a
   # shell script so we must spawn via bash, not execvp("pnpm")).
   set -m
-  pnpm exec tsx --env-file=.env src/index.ts >>"${LOG_FILE}" 2>&1 &
+  pnpm exec tsx --env-file="${ENV_FILE}" src/index.ts >>"${LOG_FILE}" 2>&1 &
   CHILD_PID=$!
   set +m
   CHILD_PGID="$(ps -o pgid= -p "${CHILD_PID}" 2>/dev/null | tr -d "[:space:]")"
@@ -344,9 +407,26 @@ if ! resolve_repo_root; then
   exit 1
 fi
 export BACKSTEROS_REPO_ROOT="${REPO_ROOT}"
+if [[ "${REPO_ROOT}" == "${LOCAL_CORE_BUILD}" ]]; then
+  log "using dedicated local-core build at ${REPO_ROOT}"
+else
+  log "WARNING: dedicated build missing at ${LOCAL_CORE_BUILD}; using ${REPO_ROOT} (run scripts/local-core/update-build.sh)"
+fi
+
+if ! resolve_env_file; then
+  log "could not find core/server/.env (set LOCAL_CORE_ENV_FILE)"
+  exit 1
+fi
+log "env file: ${ENV_FILE}"
 
 # OS-49: peer sync-event replay stamps updatedAt=now and can overwrite cloud.
 export CORE_REPLICATION_SYNC_EVENTS_PULL="${CORE_REPLICATION_SYNC_EVENTS_PULL:-0}"
+
+# Allow LaunchAgent / scratch tests to bind a non-default port without editing .env.
+if [[ -n "${LOCAL_CORE_API_PORT:-}" ]]; then
+  export PORT="${LOCAL_CORE_API_PORT}"
+fi
+API_PORT="${PORT:-${API_PORT}}"
 
 if ! command -v pnpm >/dev/null 2>&1; then
   log "pnpm not found on PATH"

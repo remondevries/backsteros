@@ -33,6 +33,15 @@ cd deploy/cloud
 docker compose up -d
 ```
 
+The image stamps `BACKSTEROS_BUILD_*` / `core/server/build-info.json` so
+`GET /health` reports `{ commit, builtAt, dirty }`. After the VPS is up, refresh
+the Mac replica so it matches:
+
+```bash
+bash scripts/local-core/update-build.sh
+bash scripts/local-core/install-launch-agent.sh
+```
+
 Or on the VPS after `docker load`:
 
 ```bash

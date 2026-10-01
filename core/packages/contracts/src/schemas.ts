@@ -145,11 +145,21 @@ export const validationErrorSchema = z.object({
 /** The API uses both explicit errors and Hono's serialized Zod validation result. */
 export const badRequestSchema = z.union([errorSchema, validationErrorSchema]);
 
+/** Git/build identity exposed on `/health` and `/api/v1/health` (OS-61). */
+export const buildVersionSchema = z.object({
+  commit: z.string(),
+  builtAt: z.string(),
+  dirty: z.boolean(),
+});
+
 export const healthSchema = z.object({
   ok: z.literal(true),
   service: z.string(),
-  version: z.string(),
+  version: buildVersionSchema,
   spacesConfigured: z.boolean(),
+  /** True when this core's commit differs from the replication peer's `/health`. */
+  versionMismatch: z.boolean().optional(),
+  peerVersion: buildVersionSchema.nullable().optional(),
 });
 
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */

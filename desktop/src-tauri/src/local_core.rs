@@ -4,12 +4,16 @@
 //! `BACKSTEROS_START_LOCAL_REPLICA=1` to bring up compose + the API on `:8788`.
 //! Hub can still start that stack itself. This module does not start PTY or
 //! Expo, and it does not stop the stack when the app quits.
+//!
+//! Prefer the dedicated `origin/production` worktree at
+//! `~/.backsteros/local-core-build` (OS-61) over a dirty developer checkout.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -21,6 +25,7 @@ const DOCKER_CONTAINERS: &[&str] = &[
 ];
 
 static ENSURE_LOCK: Mutex<()> = Mutex::new(());
+static VERSION_MISMATCH_WARNED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnsureOutcome {
@@ -62,6 +67,7 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
         .map_err(|_| "local-core ensure lock poisoned".to_string())?;
 
     if api_healthy() {
+        warn_if_version_mismatch();
         return Ok(EnsureOutcome::AlreadyRunning);
     }
 
@@ -70,6 +76,7 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     ensure_docker(&repo)?;
 
     if api_healthy() {
+        warn_if_version_mismatch();
         return Ok(EnsureOutcome::AlreadyRunning);
     }
     if port_open(API_PORT) {
@@ -79,6 +86,7 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     }
 
     start_api(&repo)?;
+    warn_if_version_mismatch();
     Ok(EnsureOutcome::Started)
 }
 
@@ -166,11 +174,51 @@ fn container_running(name: &str) -> bool {
 fn start_api(repo: &Path) -> Result<(), String> {
     let node = resolve_node()?;
     let pnpm = resolve_pnpm()?;
-    let mut cmd = pnpm_command(&pnpm, &node);
-    cmd.args(["--filter", "@backsteros/server", "dev"])
+    let env_file = resolve_env_file(repo)?;
+    let server_dir = repo.join("core/server");
+    if !server_dir.is_dir() {
+        return Err(format!("missing {}", server_dir.display()));
+    }
+
+    // Match LaunchAgent: rebuild contracts, then tsx without watch.
+    log_line("building @backsteros/contracts");
+    let mut build = pnpm_command(&pnpm, &node);
+    build
+        .args(["--filter", "@backsteros/contracts", "build"])
         .current_dir(repo)
         .env("FORCE_COLOR", "0")
         .stdin(Stdio::null());
+    let build_out = build
+        .output()
+        .map_err(|err| format!("contracts build failed to spawn: {err}"))?;
+    if !build_out.status.success() {
+        return Err(format!(
+            "contracts build failed: {}",
+            clip(&String::from_utf8_lossy(&build_out.stderr))
+        ));
+    }
+
+    let mut cmd = pnpm_command(&pnpm, &node);
+    cmd.args([
+        "exec",
+        "tsx",
+        &format!("--env-file={}", env_file.display()),
+        "src/index.ts",
+    ])
+    .current_dir(&server_dir)
+    .env("FORCE_COLOR", "0")
+    .env("BACKSTEROS_REPO_ROOT", repo)
+    .stdin(Stdio::null());
+
+    if let Some(info) = read_build_info(&server_dir.join("build-info.json")) {
+        cmd.env("BACKSTEROS_BUILD_COMMIT", &info.commit);
+        cmd.env("BACKSTEROS_BUILD_BUILT_AT", &info.built_at);
+        cmd.env(
+            "BACKSTEROS_BUILD_DIRTY",
+            if info.dirty { "1" } else { "0" },
+        );
+    }
+
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -181,9 +229,11 @@ fn start_api(repo: &Path) -> Result<(), String> {
     cmd.stdout(Stdio::from(log));
     cmd.stderr(Stdio::from(log_err));
     log_line(&format!(
-        "starting API via {} (node {})",
+        "starting API via {} exec tsx (node {}, env {}, cwd {})",
         pnpm.display(),
-        node.display()
+        node.display(),
+        env_file.display(),
+        server_dir.display()
     ));
     let child = cmd
         .spawn()
@@ -204,6 +254,63 @@ fn start_api(repo: &Path) -> Result<(), String> {
         "core API did not become healthy within 60s (pid {pid}). See {}",
         log_path().display()
     ))
+}
+
+#[derive(Debug, Clone)]
+struct BuildInfo {
+    commit: String,
+    built_at: String,
+    dirty: bool,
+}
+
+fn read_build_info(path: &Path) -> Option<BuildInfo> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let commit = value.get("commit")?.as_str()?.trim().to_string();
+    let built_at = value.get("builtAt")?.as_str()?.trim().to_string();
+    if commit.is_empty() || built_at.is_empty() {
+        return None;
+    }
+    let dirty = value
+        .get("dirty")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Some(BuildInfo {
+        commit,
+        built_at,
+        dirty,
+    })
+}
+
+fn resolve_env_file(repo: &Path) -> Result<PathBuf, String> {
+    if let Some(raw) = std::env::var_os("LOCAL_CORE_ENV_FILE") {
+        let path = PathBuf::from(raw);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    let in_repo = repo.join("core/server/.env");
+    if in_repo.is_file() {
+        return Ok(in_repo);
+    }
+    if let Some(home) = home_dir() {
+        let config = home.join(".config/backsteros/hub.json");
+        if let Ok(text) = fs::read_to_string(config) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(root) = value.get("repo_root").and_then(|v| v.as_str()) {
+                    let candidate = PathBuf::from(root.trim()).join("core/server/.env");
+                    if candidate.is_file() {
+                        return Ok(candidate);
+                    }
+                }
+            }
+        }
+        let fallback = home.join("BacksterOS/Projects/OS/Codebase/core/server/.env");
+        if fallback.is_file() {
+            return Ok(fallback);
+        }
+    }
+    Err("could not find core/server/.env (set LOCAL_CORE_ENV_FILE)".into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,6 +377,71 @@ fn api_healthy() -> bool {
     text.contains(" 200 ") || text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200")
 }
 
+fn fetch_health_json() -> Option<serde_json::Value> {
+    let mut stream = TcpStream::connect_timeout(
+        &format!("127.0.0.1:{API_PORT}").parse().ok()?,
+        Duration::from_millis(400),
+    )
+    .ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    stream
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .ok()?;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
+        }
+        if buf.len() > 64 * 1024 {
+            break;
+        }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    if !(text.contains(" 200 ")
+        || text.starts_with("HTTP/1.1 200")
+        || text.starts_with("HTTP/1.0 200"))
+    {
+        return None;
+    }
+    let body = text.split("\r\n\r\n").nth(1)?;
+    serde_json::from_str(body.trim()).ok()
+}
+
+/// Log once when local-core `/health` reports a peer version mismatch (OS-61).
+fn warn_if_version_mismatch() {
+    let Some(health) = fetch_health_json() else {
+        return;
+    };
+    let mismatch = health
+        .get("versionMismatch")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !mismatch {
+        VERSION_MISMATCH_WARNED.store(false, Ordering::SeqCst);
+        return;
+    }
+    if VERSION_MISMATCH_WARNED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let local = health
+        .get("version")
+        .and_then(|v| v.get("commit"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let peer = health
+        .get("peerVersion")
+        .and_then(|v| v.get("commit"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    log_line(&format!(
+        "WARNING: local-core version mismatch with replication peer (local={local} peer={peer}). Run scripts/local-core/update-build.sh after the cloud deploy."
+    ));
+}
+
 fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(
         &format!("127.0.0.1:{port}").parse().expect("static addr"),
@@ -279,6 +451,18 @@ fn port_open(port: u16) -> bool {
 }
 
 fn resolve_repo_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("BACKSTEROS_LOCAL_CORE_BUILD") {
+        let path = PathBuf::from(root);
+        if looks_like_repo(&path) {
+            return Ok(path);
+        }
+    }
+    if let Some(home) = home_dir() {
+        let dedicated = home.join(".backsteros/local-core-build");
+        if looks_like_repo(&dedicated) {
+            return Ok(dedicated);
+        }
+    }
     if let Some(root) = std::env::var_os("BACKSTEROS_REPO_ROOT") {
         let path = PathBuf::from(root);
         if looks_like_repo(&path) {
@@ -647,5 +831,35 @@ mod tests {
             Some(value) => std::env::set_var("BACKSTEROS_START_LOCAL_REPLICA", value),
             None => std::env::remove_var("BACKSTEROS_START_LOCAL_REPLICA"),
         }
+    }
+
+    #[test]
+    fn prefers_dedicated_local_core_build_env() {
+        let dir = std::env::temp_dir().join(format!(
+            "backsteros-local-core-build-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("core/server")).unwrap();
+        fs::write(dir.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+        fs::write(dir.join("docker-compose.yml"), "services: {}\n").unwrap();
+
+        let previous_build = std::env::var("BACKSTEROS_LOCAL_CORE_BUILD").ok();
+        let previous_repo = std::env::var("BACKSTEROS_REPO_ROOT").ok();
+        std::env::set_var("BACKSTEROS_LOCAL_CORE_BUILD", &dir);
+        std::env::remove_var("BACKSTEROS_REPO_ROOT");
+
+        let root = resolve_repo_root().expect("repo");
+        assert_eq!(root, dir);
+
+        match previous_build {
+            Some(value) => std::env::set_var("BACKSTEROS_LOCAL_CORE_BUILD", value),
+            None => std::env::remove_var("BACKSTEROS_LOCAL_CORE_BUILD"),
+        }
+        match previous_repo {
+            Some(value) => std::env::set_var("BACKSTEROS_REPO_ROOT", value),
+            None => std::env::remove_var("BACKSTEROS_REPO_ROOT"),
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 }

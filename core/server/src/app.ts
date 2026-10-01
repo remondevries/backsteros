@@ -17,6 +17,8 @@ import { registerSpacesRoutes } from "./app/spaces-routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
 import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
+import { getPeerVersionState } from "./services/core-replication/peer-version.js";
+import { resolveBuildVersion } from "./lib/build-version.js";
 import { installOpsLogConsoleCapture } from "./lib/ops-log-buffer.js";
 import { isSpacesConfigured } from "./lib/storage.js";
 import {
@@ -26,6 +28,18 @@ import {
 import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
 
 installOpsLogConsoleCapture();
+
+function healthPayload() {
+  const peer = getPeerVersionState();
+  return {
+    ok: true as const,
+    service: "backsteros-server",
+    version: resolveBuildVersion(),
+    spacesConfigured: isSpacesConfigured(),
+    versionMismatch: peer.mismatch,
+    peerVersion: peer.peerVersion,
+  };
+}
 
 export function createApp() {
   const app = new Hono();
@@ -86,14 +100,10 @@ export function createApp() {
     );
   });
 
-  app.get("/health", (c) =>
-    c.json({
-      ok: true as const,
-      service: "backsteros-server",
-      version: "0.1.0",
-      spacesConfigured: isSpacesConfigured(),
-    }),
-  );
+  // Public (no auth). `/api/v1/health` is registered here so `withAuth` on
+  // `/api/v1/*` does not require a bearer for liveness/version probes.
+  app.get("/health", (c) => c.json(healthPayload()));
+  app.get("/api/v1/health", (c) => c.json(healthPayload()));
 
   app.get("/api/v1/openapi.json", (c) => {
     const document = generateOpenApi(fullApiContract, {

@@ -86,6 +86,15 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
   assert.equal(health.response.status, 200);
   assert.equal(health.body.ok, true);
   assert.equal(typeof health.body.spacesConfigured, "boolean");
+  assert.equal(typeof health.body.version, "object");
+  assert.equal(typeof health.body.version.commit, "string");
+  assert.equal(typeof health.body.version.builtAt, "string");
+  assert.equal(typeof health.body.version.dirty, "boolean");
+
+  const healthV1 = await json(app, "/api/v1/health");
+  assert.equal(healthV1.response.status, 200);
+  assert.equal(healthV1.body.ok, true);
+  assert.deepEqual(healthV1.body.version, health.body.version);
 
   const unauthorized = await json(app, "/api/v1/projects");
   assert.equal(unauthorized.response.status, 401);

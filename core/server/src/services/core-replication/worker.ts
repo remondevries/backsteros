@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 import { pullPeerSyncEvents } from "./sync-event-replication.js";
 import { syncVaultWithPeer } from "./vault-replication.js";
+import { checkPeerBuildVersion } from "./peer-version.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 100;
@@ -159,6 +160,14 @@ export async function pushTable(table: ReplicatedTable) {
 export async function runCoreReplicationTick(): Promise<void> {
   const config = getCoreReplicationConfig();
   if (!config) return;
+
+  // OS-61: compare /health commits with the peer once per distinct mismatch.
+  try {
+    await checkPeerBuildVersion();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOpsLog("warn", "core replication version check failed", message);
+  }
 
   // Linear-shaped: local-core applies peer sync_events in cursor order before
   // table LWW catch-up. Cloud is the leader clock; do not pull this feed as cloud.
