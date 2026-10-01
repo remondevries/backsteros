@@ -119,7 +119,13 @@ import { PortalUsernameConflictError } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword, verifyPortalPassword } from "../lib/portal-password.js";
 import { proxyErrorStatus } from "../lib/proxy-http-status.js";
 import type { AuthContext } from "../middleware/auth.js";
-import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
+import {
+  requireScope,
+  resolveAuth,
+  isOwnerShellAuth,
+  logUnauthorizedRequest,
+} from "../middleware/auth.js";
+
 import { canManageApiKeys } from "../lib/powersync-auth.js";
 import { registerTaskLabelRoutes } from "./task-label-routes.js";
 import {
@@ -582,6 +588,14 @@ async function withAuth(c: Context, next: Next) {
 
   const auth = await resolveAuth(c.req.header("Authorization"));
   if (!auth) {
+    // OS-63: identify silent 401 pollers (UA + key name, never the secret).
+    const url = new URL(c.req.url);
+    void logUnauthorizedRequest({
+      method: c.req.method,
+      path: `${url.pathname}${url.search}`,
+      userAgent: c.req.header("User-Agent"),
+      authorization: c.req.header("Authorization"),
+    });
     return c.json(unauthorized(), 401);
   }
   c.set("auth", auth);

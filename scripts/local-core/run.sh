@@ -13,8 +13,9 @@ API_PORT=8788
 LOG_DIR="${HOME}/.config/backsteros/desktop"
 LOG_FILE="${LOG_DIR}/local-core.log"
 LOG_PREV="${LOG_DIR}/local-core.log.prev"
-# Match Hub: rotate when past ~32 MiB. Override with LOCAL_CORE_LOG_ROTATE_BYTES for tests.
+# One threshold for startup + supervise loop (~32 MiB). Override for tests.
 LOG_ROTATE_BYTES="${LOCAL_CORE_LOG_ROTATE_BYTES:-$((32 * 1024 * 1024))}"
+LOG_ROTATE_GENERATIONS="${LOCAL_CORE_LOG_ROTATE_GENERATIONS:-5}"
 # Health poll interval / consecutive failures before restart (after startup grace).
 HEALTH_INTERVAL_SECS="${LOCAL_CORE_HEALTH_INTERVAL_SECS:-10}"
 HEALTH_FAIL_THRESHOLD="${LOCAL_CORE_HEALTH_FAIL_THRESHOLD:-3}"
@@ -46,6 +47,8 @@ interruptible_sleep() {
 }
 
 # Copy-truncate so the child's O_APPEND fd keeps writing to the same inode.
+# Keep LOG_ROTATE_GENERATIONS numbered slots (.1 newest … .N oldest). Never
+# rotate a file smaller than LOG_ROTATE_BYTES (startup and loop share this).
 rotate_log_if_needed() {
   if [[ ! -f "${LOG_FILE}" ]]; then
     : >"${LOG_FILE}"
@@ -56,12 +59,31 @@ rotate_log_if_needed() {
   if [[ "${size}" -lt "${LOG_ROTATE_BYTES}" ]]; then
     return 0
   fi
-  rm -f "${LOG_PREV}"
-  cp "${LOG_FILE}" "${LOG_PREV}"
+
+  # Migrate legacy single-slot .prev into the numbered chain once.
+  if [[ -f "${LOG_PREV}" && ! -f "${LOG_FILE}.1" ]]; then
+    mv "${LOG_PREV}" "${LOG_FILE}.1" 2>/dev/null || true
+  else
+    rm -f "${LOG_PREV}" 2>/dev/null || true
+  fi
+
+  local i next
+  local last="${LOG_ROTATE_GENERATIONS}"
+  rm -f "${LOG_FILE}.${last}" 2>/dev/null || true
+  for ((i = last - 1; i >= 1; i--)); do
+    next=$((i + 1))
+    if [[ -f "${LOG_FILE}.${i}" ]]; then
+      mv "${LOG_FILE}.${i}" "${LOG_FILE}.${next}" 2>/dev/null || true
+    fi
+  done
+  cp "${LOG_FILE}" "${LOG_FILE}.1"
   : >"${LOG_FILE}"
-  printf '%s\n' "$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] rotated local-core.log (${size} bytes → .prev, threshold=${LOG_ROTATE_BYTES})" >>"${LOG_FILE}" 2>/dev/null || true
-  printf '%s\n' "$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] rotated local-core.log (${size} bytes → .prev, threshold=${LOG_ROTATE_BYTES})" >&2
+  local msg
+  msg="$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] rotated local-core.log (${size} bytes → .1….${last}, threshold=${LOG_ROTATE_BYTES})"
+  printf '%s\n' "${msg}" >>"${LOG_FILE}" 2>/dev/null || true
+  printf '%s\n' "${msg}" >&2
 }
+
 
 resolve_repo_root() {
   if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then

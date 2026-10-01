@@ -471,7 +471,9 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 /// Rotate when past this size (replication / tsx spam can grow unbounded).
+/// Same threshold for every open_log call (no separate “startup” path).
 const LOG_ROTATE_BYTES: u64 = 32 * 1024 * 1024;
+const LOG_ROTATE_GENERATIONS: u32 = 5;
 
 fn log_path() -> PathBuf {
     home_dir()
@@ -479,24 +481,53 @@ fn log_path() -> PathBuf {
         .join(".config/backsteros/desktop/local-core.log")
 }
 
+/// Copy-truncate into `local-core.log.1`…`.5` (`.1` newest). Never rotates a
+/// file smaller than [`LOG_ROTATE_BYTES`]. Migrates legacy `.log.prev` once.
+fn rotate_log_if_needed(path: &Path) {
+    let Ok(meta) = fs::metadata(path) else {
+        return;
+    };
+    if meta.len() < LOG_ROTATE_BYTES {
+        return;
+    }
+
+    let prev = path.with_extension("log.prev");
+    let gen1 = path.with_extension("log.1");
+    if prev.exists() && !gen1.exists() {
+        let _ = fs::rename(&prev, &gen1);
+    } else {
+        let _ = fs::remove_file(&prev);
+    }
+
+    let last = LOG_ROTATE_GENERATIONS;
+    let _ = fs::remove_file(path.with_extension(format!("log.{last}")));
+    for i in (1..last).rev() {
+        let from = path.with_extension(format!("log.{i}"));
+        let to = path.with_extension(format!("log.{}", i + 1));
+        if from.exists() {
+            let _ = fs::rename(&from, &to);
+        }
+    }
+
+    // Copy then truncate so any concurrent append fd keeps the same inode.
+    if fs::copy(path, &gen1).is_ok() {
+        let _ = OpenOptions::new().write(true).truncate(true).open(path);
+    }
+}
+
 fn open_log() -> Result<std::fs::File, String> {
     let path = log_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    if let Ok(meta) = fs::metadata(&path) {
-        if meta.len() >= LOG_ROTATE_BYTES {
-            let rotated = path.with_extension("log.prev");
-            let _ = fs::remove_file(&rotated);
-            let _ = fs::rename(&path, &rotated);
-        }
-    }
+    rotate_log_if_needed(&path);
     OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .map_err(|err| err.to_string())
 }
+
 
 fn log_line(message: &str) {
     let line = format!(

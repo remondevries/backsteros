@@ -6,6 +6,7 @@ import type { ApiKeyScope } from "@backsteros/contracts";
 import { db } from "../db/index.js";
 import { apiKeys } from "../db/schema.js";
 import {
+  API_KEY_PREFIX,
   apiKeyLookupPrefix,
   hashApiKey,
   hasAnyScope,
@@ -17,6 +18,96 @@ import {
   resolveLocalShellOwner,
 } from "../services/local-shell-auth.js";
 import { warmVaultPathCache } from "../services/vault-settings.js";
+import {
+  shouldEmitUnauthorizedLog,
+  UNAUTHORIZED_LOG_INTERVAL_MS,
+} from "./unauthorized-log.js";
+
+export {
+  shouldEmitUnauthorizedLog,
+  UNAUTHORIZED_LOG_INTERVAL_MS,
+} from "./unauthorized-log.js";
+
+const unauthorizedLogLastAt = new Map<string, number>();
+
+export function resetUnauthorizedLogStateForTests(): void {
+  unauthorizedLogLastAt.clear();
+}
+
+/**
+ * Resolve an API key **name** for 401 audit (never the secret).
+ * Includes revoked rows so a stale island/CLI key is identifiable.
+ */
+export async function resolveApiKeyNameForAudit(
+  secret: string,
+): Promise<string> {
+  const prefix = apiKeyLookupPrefix(secret);
+  const keyHash = hashApiKey(secret);
+  const [row] = await db
+    .select({ name: apiKeys.name, revokedAt: apiKeys.revokedAt })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.prefix, prefix), eq(apiKeys.keyHash, keyHash)))
+    .limit(1);
+  if (!row) {
+    return "unknown";
+  }
+  if (row.revokedAt) {
+    return `${row.name} (revoked)`;
+  }
+  return row.name;
+}
+
+function bearerKindLabel(token: string | null): string {
+  if (!token) {
+    return "missing";
+  }
+  if (token.startsWith(API_KEY_PREFIX)) {
+    return "api_key";
+  }
+  if (isLocalShellBearerToken(token)) {
+    return "local_shell";
+  }
+  return "unsupported";
+}
+
+/**
+ * OS-63: on 401, log User-Agent + API key **name** (never the secret),
+ * rate-limited per client/route so a 15s poller does not flood the log.
+ */
+export async function logUnauthorizedRequest(input: {
+  method: string;
+  path: string;
+  userAgent?: string | null;
+  authorization?: string | null;
+}): Promise<void> {
+  const token = getBearerToken(input.authorization ?? undefined);
+  const kind = bearerKindLabel(token);
+  let keyName = kind;
+  if (kind === "api_key" && token) {
+    try {
+      keyName = await resolveApiKeyNameForAudit(token);
+    } catch {
+      keyName = "unknown";
+    }
+  }
+
+  const ua = (input.userAgent ?? "").trim() || "-";
+  const bucket = `${ua}\0${keyName}\0${input.method} ${input.path}`;
+  if (
+    !shouldEmitUnauthorizedLog(
+      unauthorizedLogLastAt,
+      bucket,
+      Date.now(),
+      UNAUTHORIZED_LOG_INTERVAL_MS,
+    )
+  ) {
+    return;
+  }
+
+  console.warn(
+    `[auth] 401 ${input.method} ${input.path} ua=${JSON.stringify(ua)} apiKey=${JSON.stringify(keyName)}`,
+  );
+}
 
 export type AuthKind = "api_key" | "local_shell" | "powersync";
 
