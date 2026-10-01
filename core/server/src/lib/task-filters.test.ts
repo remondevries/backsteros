@@ -3,11 +3,13 @@ import { describe, it } from "node:test";
 
 import {
   TASK_LIST_CURSOR_TTL_MS,
+  TASK_LIST_DEFAULT_EXCLUDED_STATUSES,
   TASK_LIST_DEFAULT_LIMIT,
   TASK_LIST_MAX_LIMIT,
   TaskFilterError,
   decodeTaskListCursor,
   encodeTaskListCursor,
+  expandTaskListStatuses,
   formatTaskDisplayKey,
   ignoredLegacyTaskListKeys,
   parseDueDateFilter,
@@ -16,8 +18,11 @@ import {
   parseTaskListQuery,
   parseTaskMultiValues,
   shouldUsePaginatedTaskList,
+  taskListUsesDefaultStatusExclusion,
   taskRowMatchesScalarFilters,
 } from "./task-filters.ts";
+
+import { TASK_STATUSES } from "@backsteros/contracts";
 
 describe("task filter parsing", () => {
   it("parses single and multi-value OR lists", () => {
@@ -255,6 +260,38 @@ describe("task filter parsing", () => {
       ),
       true,
     );
+  });
+
+  it("expands status=all and detects default exclusion (OS-57)", () => {
+    assert.deepEqual(expandTaskListStatuses(["all"]), [...TASK_STATUSES]);
+    assert.throws(
+      () => expandTaskListStatuses(["all", "completed"]),
+      (err: unknown) =>
+        err instanceof TaskFilterError && err.field === "status",
+    );
+
+    const all = parseTaskListQuery({ paginated: "true", status: "all" });
+    assert.deepEqual(all.statuses, [...TASK_STATUSES]);
+    assert.equal(taskListUsesDefaultStatusExclusion(all), false);
+
+    const open = parseTaskListQuery({ paginated: "true" });
+    assert.equal(taskListUsesDefaultStatusExclusion(open), true);
+    assert.deepEqual(
+      [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES],
+      ["completed", "canceled", "duplicated"],
+    );
+
+    const withStatus = parseTaskListQuery({
+      paginated: "true",
+      status: "completed",
+    });
+    assert.equal(taskListUsesDefaultStatusExclusion(withStatus), false);
+
+    const feed = parseTaskListQuery({
+      paginated: "true",
+      updatedSince: "2026-10-01T00:00:00.000Z",
+    });
+    assert.equal(taskListUsesDefaultStatusExclusion(feed), false);
   });
 });
 

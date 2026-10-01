@@ -88,6 +88,28 @@ Path params and filter ids accept the **internal id or the human key**
 (`OS-51` for a task, `OS` for a project, org/contact keys likewise).
 Unknown filter ids on paginated `GET /tasks` return **400** (not an empty 200).
 
+#### Paginated `GET /tasks` defaults (OS-57)
+
+`GET /api/v1/tasks?paginated=true` (or with a `cursor`) without `status` and
+without `updatedSince` **excludes** `completed`, `canceled`, and `duplicated`.
+That is intentional for agents listing open work, but the response must not
+look complete:
+
+- Header `X-BacksterOS-Hint: completed, canceled, duplicated excluded by default; pass status=... to include them`
+- Body `appliedDefaults: { excludedStatuses: ["completed","canceled","duplicated"] }`
+- With `includeTotalCount=true`, also `excludedCount` (how many matching rows
+  were hidden by that default)
+
+Pass `status=all` for every known status, or an explicit comma list
+(e.g. `status=completed,canceled`). Giving `status` or `updatedSince`
+suppresses the default, the hint, and `appliedDefaults`.
+
+```http
+GET  /api/v1/tasks?paginated=true&projectId=OS&includeTotalCount=true
+GET  /api/v1/tasks?paginated=true&projectId=OS&status=all
+GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
+```
+
 ### Write (agents)
 
 ```http

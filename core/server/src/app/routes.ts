@@ -160,9 +160,11 @@ import {
   resolveSectionIfMatchVersion,
 } from "../lib/document-property-filters.js";
 import {
+  TASK_LIST_DEFAULT_EXCLUSION_HINT,
   TaskFilterError,
   ignoredLegacyTaskListKeys,
   parseTaskListQuery,
+  taskListUsesDefaultStatusExclusion,
 } from "../lib/task-filters.js";
 import {
   resolveContactRef,
@@ -2647,6 +2649,10 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         resolved,
       );
+      // OS-57: surface the default terminal-status exclusion (also in body).
+      if (taskListUsesDefaultStatusExclusion(resolved)) {
+        c.header("X-BacksterOS-Hint", TASK_LIST_DEFAULT_EXCLUSION_HINT);
+      }
       return c.json(result);
     } catch (error) {
       if (error instanceof TaskFilterError) {

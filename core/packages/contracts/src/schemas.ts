@@ -540,6 +540,11 @@ export const listTasksQuerySchema = z.object({
   relatedContactId: z.string().optional(),
   /** Related organization id or key. Unknown → 400 when paginated. */
   relatedOrganizationId: z.string().optional(),
+  /**
+   * Comma-separated statuses, or `all` for every known status (OS-57).
+   * Paginated mode without `status` (and without `updatedSince`) excludes
+   * completed/canceled/duplicated by default — see `appliedDefaults`.
+   */
   status: z.string().optional(),
   inbox: z.coerce.boolean().optional(),
   support: z.coerce.boolean().optional(),
@@ -557,7 +562,7 @@ export const listTasksQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   /** Only `dueDate` is supported today (default). */
   sort: z.literal("dueDate").optional(),
-  /** When true, response includes `totalCount`. */
+  /** When true, response includes `totalCount` (and `excludedCount` when defaults apply). */
   includeTotalCount: z.coerce.boolean().optional(),
   /** Opt in to paginated `{ items, nextCursor }` (the only switch besides cursor). */
   paginated: z.coerce.boolean().optional(),
@@ -577,6 +582,20 @@ export const listTasksPaginatedResponseSchema = z.object({
   items: z.array(taskListItemSchema),
   nextCursor: z.string().nullable(),
   totalCount: z.number().int().nonnegative().optional(),
+  /**
+   * With `includeTotalCount` when the default status exclusion applied:
+   * how many matching tasks were hidden (completed/canceled/duplicated).
+   */
+  excludedCount: z.number().int().nonnegative().optional(),
+  /**
+   * Present when paginated list hid terminal statuses by default (OS-57).
+   * Absent when `status` or `updatedSince` was given.
+   */
+  appliedDefaults: z
+    .object({
+      excludedStatuses: z.array(z.string()).min(1),
+    })
+    .optional(),
 });
 
 export const listTasksResponseSchema = z.union([

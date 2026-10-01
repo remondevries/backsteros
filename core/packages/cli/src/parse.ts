@@ -136,8 +136,8 @@ Projects:
   backsteros project delete <id|KEY>
 
 Tasks:
-  backsteros task list [--project KEY|id[,KEY…]] [--status in_progress,on_hold] [--assignee id[,id…]] [--due before:2026-10-08] [--limit 200]
-    (open tasks by default; pass --status completed,canceled to include closed ones)
+  backsteros task list [--project KEY|id[,KEY…]] [--status in_progress,on_hold|all] [--assignee id[,id…]] [--due before:2026-10-08] [--limit 200]
+    (open tasks by default; pass --status all or completed,canceled to include closed ones)
   backsteros task get <id|KEY-number>
   backsteros task create --title "..." [--project KEY|id] [--status ...] [--description ...]
   backsteros task update <id|KEY-number> [--title ...] [--status completed] [--body '{...}']

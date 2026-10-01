@@ -43,6 +43,7 @@ import {
   decodeTaskListCursor,
   encodeTaskListCursor,
   formatTaskDisplayKey,
+  taskListUsesDefaultStatusExclusion,
   type DueDateFilter,
   type ParsedTaskListQuery,
 } from "../lib/task-filters.js";
@@ -722,6 +723,15 @@ export type ListTasksPaginatedResult = {
   items: TaskListItem[];
   nextCursor: string | null;
   totalCount?: number;
+  /**
+   * When the default terminal-status exclusion applies and
+   * `includeTotalCount=true`: how many matching tasks were hidden.
+   */
+  excludedCount?: number;
+  /** Present when completed/canceled/duplicated were hidden by default (OS-57). */
+  appliedDefaults?: {
+    excludedStatuses: Array<(typeof TASK_LIST_DEFAULT_EXCLUDED_STATUSES)[number]>;
+  };
 };
 
 function dueDateSqlCondition(filter: DueDateFilter): SQL {
@@ -1229,7 +1239,10 @@ export async function listTasksPaginated(
         )
       : null;
 
+  const usesDefaultExclusion = taskListUsesDefaultStatusExclusion(filters);
+
   let totalCount: number | undefined;
+  let excludedCount: number | undefined;
   if (filters.includeTotalCount) {
     const countConditions = buildPaginatedTaskConditions(workspaceId, filters);
     const [countRow] = await executor
@@ -1244,12 +1257,40 @@ export async function listTasksPaginated(
       )
       .where(and(...countConditions));
     totalCount = Number(countRow?.value ?? 0);
+
+    // OS-57: same other filters, but only the default-excluded statuses.
+    if (usesDefaultExclusion) {
+      const excludedConditions = buildPaginatedTaskConditions(workspaceId, {
+        ...filters,
+        statuses: [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES],
+      });
+      const [excludedRow] = await executor
+        .select({ value: sql<number>`count(*)::int` })
+        .from(tasks)
+        .leftJoin(
+          projects,
+          and(
+            eq(projects.id, tasks.projectId),
+            eq(projects.workspaceId, tasks.workspaceId),
+          ),
+        )
+        .where(and(...excludedConditions));
+      excludedCount = Number(excludedRow?.value ?? 0);
+    }
   }
 
   return {
     items,
     nextCursor,
     ...(totalCount !== undefined ? { totalCount } : {}),
+    ...(excludedCount !== undefined ? { excludedCount } : {}),
+    ...(usesDefaultExclusion
+      ? {
+          appliedDefaults: {
+            excludedStatuses: [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES],
+          },
+        }
+      : {}),
   };
 }
 

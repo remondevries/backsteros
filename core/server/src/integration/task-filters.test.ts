@@ -282,16 +282,19 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   assert.equal(combinedItems.length, 1);
   assert.equal(combinedItems[0]?.id, taskIds.c);
 
-  // Empty result — no error.
+  // Empty result — no error (known project, status with no rows).
+  // OS-58: unknown projectId is 400; empty match stays 200.
   const empty = await json(
     app,
-    `/api/v1/tasks?projectId=${encodeURIComponent(id("missing"))}&paginated=true&includeTotalCount=true`,
+    `/api/v1/tasks?projectId=${encodeURIComponent(otherProjectId)}&status=completed&paginated=true&includeTotalCount=true`,
     secret,
   );
   assert.equal(empty.response.status, 200);
   assert.deepEqual(empty.body.items, []);
   assert.equal(empty.body.nextCursor, null);
   assert.equal(empty.body.totalCount, 0);
+  assert.equal(empty.body.appliedDefaults, undefined);
+  assert.equal(empty.body.excludedCount, undefined);
 
   // Pagination with cursor.
   const page1 = await json(
@@ -394,6 +397,28 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   assert.ok(!openIds.has(taskIds.done));
   assert.ok(!openIds.has(taskIds.canceled));
 
+  // OS-57: hint + appliedDefaults when default exclusion applies.
+  assert.match(
+    openOnly.response.headers.get("X-BacksterOS-Hint") ?? "",
+    /completed, canceled, duplicated excluded by default/,
+  );
+  assert.deepEqual(openOnly.body.appliedDefaults, {
+    excludedStatuses: ["completed", "canceled", "duplicated"],
+  });
+
+  const openCounted = await json(
+    app,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&paginated=true&includeTotalCount=true`,
+    secret,
+  );
+  assert.equal(openCounted.response.status, 200);
+  // Open: a, b, orphan (on_hold). Closed: done, canceled.
+  assert.equal(openCounted.body.totalCount, 3);
+  assert.equal(openCounted.body.excludedCount, 2);
+  assert.deepEqual(openCounted.body.appliedDefaults, {
+    excludedStatuses: ["completed", "canceled", "duplicated"],
+  });
+
   const withDone = await json(
     app,
     `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=completed,canceled&paginated=true`,
@@ -404,6 +429,26 @@ test("OS-28 task filtering: filters, pagination, links, defaults", async (contex
   );
   assert.ok(doneIds.has(taskIds.done));
   assert.ok(doneIds.has(taskIds.canceled));
+  assert.equal(withDone.response.headers.get("X-BacksterOS-Hint"), null);
+  assert.equal(withDone.body.appliedDefaults, undefined);
+
+  // OS-57: status=all returns open + closed (same set as listing all statuses).
+  const allStatuses = await json(
+    app,
+    `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}&status=all&paginated=true&includeTotalCount=true`,
+    secret,
+  );
+  assert.equal(allStatuses.response.status, 200);
+  assert.equal(allStatuses.body.totalCount, 5);
+  assert.equal(allStatuses.body.excludedCount, undefined);
+  assert.equal(allStatuses.body.appliedDefaults, undefined);
+  assert.equal(allStatuses.response.headers.get("X-BacksterOS-Hint"), null);
+  const allIds = new Set(
+    (allStatuses.body.items as Array<{ id: string }>).map((item) => item.id),
+  );
+  assert.ok(allIds.has(taskIds.a));
+  assert.ok(allIds.has(taskIds.done));
+  assert.ok(allIds.has(taskIds.canceled));
 
   // OS-45: compact rows include priority.
   assert.equal(

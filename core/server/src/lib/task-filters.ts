@@ -22,6 +22,10 @@ export const TASK_LIST_DEFAULT_EXCLUDED_STATUSES = [
   "duplicated",
 ] as const;
 
+/** Hint when paginated list hides terminal statuses by default (OS-57). */
+export const TASK_LIST_DEFAULT_EXCLUSION_HINT =
+  "completed, canceled, duplicated excluded by default; pass status=... to include them";
+
 const STATUS_SET = new Set<string>(TASK_STATUSES);
 
 export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
@@ -245,6 +249,33 @@ export type ParsedTaskListQuery = {
   sort: typeof TASK_LIST_DEFAULT_SORT;
 };
 
+/**
+ * True when paginated list SQL/matcher applies the default terminal-status
+ * exclusion (no `status`, no `updatedSince` change feed).
+ */
+export function taskListUsesDefaultStatusExclusion(
+  filters: Pick<ParsedTaskListQuery, "statuses" | "updatedSince">,
+): boolean {
+  return filters.statuses.length === 0 && filters.updatedSince == null;
+}
+
+/**
+ * Expand `status=all` to every known status. Rejects mixing `all` with others.
+ */
+export function expandTaskListStatuses(rawStatuses: string[]): string[] {
+  if (!rawStatuses.length) return [];
+  if (rawStatuses.includes("all")) {
+    if (rawStatuses.length !== 1) {
+      throw new TaskFilterError(
+        "status=all cannot be combined with other statuses",
+        "status",
+      );
+    }
+    return [...TASK_STATUSES];
+  }
+  return rawStatuses;
+}
+
 function firstString(
   raw: string | string[] | undefined | null,
 ): string | undefined {
@@ -317,9 +348,12 @@ export function parseTaskListQuery(
     ? "paginated"
     : "legacy";
 
+  let statuses = statusesRaw;
   if (mode === "paginated") {
     assertKnownTaskListQueryKeys(Object.keys(raw));
-    for (const status of statusesRaw) {
+    // OS-57: status=all → every known status (before per-value validation).
+    statuses = expandTaskListStatuses(statusesRaw);
+    for (const status of statuses) {
       if (!STATUS_SET.has(status)) {
         throw new TaskFilterError(`Invalid status: ${status}`, "status");
       }
@@ -341,7 +375,7 @@ export function parseTaskListQuery(
   return {
     mode,
     projectIds,
-    statuses: statusesRaw,
+    statuses,
     assigneeIds,
     contactIds,
     relatedContactIds,

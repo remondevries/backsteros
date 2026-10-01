@@ -439,7 +439,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary:
-        "List tasks (legacy `{ tasks }`; paginated `{ items, nextCursor }` only with paginated=true or cursor)",
+        "List tasks (legacy `{ tasks }`; paginated `{ items, nextCursor, appliedDefaults? }` with paginated=true/cursor; default excludes completed/canceled/duplicated — pass status=all or status=…)",
     },
     getTask: {
       method: "GET",
