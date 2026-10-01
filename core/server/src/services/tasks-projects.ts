@@ -36,6 +36,7 @@ import {
   organizations,
   projects,
   tasks,
+  type DbTask,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
@@ -65,6 +66,7 @@ import {
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
 } from "../lib/storage.js";
+import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 
@@ -768,6 +770,51 @@ export async function getProjectKeyMap(
   return out;
 }
 
+/** contactId → display name (name, else email). Soft-deleted contacts omitted. */
+export async function getContactNameMap(
+  workspaceId: string,
+  contactIds?: Array<string | null | undefined>,
+  executor: DbExecutor = db,
+): Promise<Map<string, string>> {
+  const ids =
+    contactIds === undefined
+      ? undefined
+      : [
+          ...new Set(
+            contactIds.filter(
+              (id): id is string => typeof id === "string" && id.length > 0,
+            ),
+          ),
+        ];
+  const out = new Map<string, string>();
+  if (ids && !ids.length) return out;
+  const rows = await executor
+    .select({
+      id: contacts.id,
+      name: contacts.name,
+      email: contacts.email,
+    })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        isNull(contacts.deletedAt),
+        ...(ids ? [inArray(contacts.id, ids)] : []),
+      ),
+    );
+  for (const row of rows) {
+    const name = row.name?.trim() || row.email?.trim();
+    if (name) out.set(row.id, name);
+  }
+  return out;
+}
+
+/**
+ * Merge replace / add / remove commit SHA lists (dedupe case-insensitive).
+ * Returns `undefined` when nothing changes.
+ */
+export { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
+
 export type TaskListItem = {
   id: string;
   key: string;
@@ -775,7 +822,9 @@ export type TaskListItem = {
   status: string;
   priority: number;
   assigneeId: string | null;
+  assigneeName: string | null;
   projectId: string | null;
+  projectKey: string | null;
   dueDate: string | null;
   linkedDocumentIds: string[];
   linkedContactIds: string[];
@@ -1257,6 +1306,11 @@ export async function listTasksPaginated(
   const page = hasMore ? rows.slice(0, limit) : rows;
 
   const enrichment = await loadTaskLinkEnrichment(workspaceId, page, executor);
+  const assigneeNames = await getContactNameMap(
+    workspaceId,
+    page.map((row) => row.assigneeId),
+    executor,
+  );
 
   const items: TaskListItem[] = page.map((row) => {
     const links = enrichment.get(row.id) ?? {
@@ -1280,7 +1334,11 @@ export async function listTasksPaginated(
       status: row.status,
       priority: row.priority,
       assigneeId: row.assigneeId,
+      assigneeName: row.assigneeId
+        ? (assigneeNames.get(row.assigneeId) ?? null)
+        : null,
       projectId: row.projectId,
+      projectKey: row.projectKey ?? null,
       dueDate: row.dueDate?.toISOString() ?? null,
       linkedDocumentIds: links.linkedDocumentIds,
       linkedContactIds,
@@ -1656,8 +1714,34 @@ export async function updateTask(
   executor: DbExecutor = db,
   actor?: TaskWriteActor | null,
   options?: { allowAgentInboxApproval?: boolean },
-) {
-  const existing = await getTaskById(workspaceId, id, executor);
+): Promise<DbTask | null> {
+  const needsShaLock =
+    (Array.isArray(input.addLinkedCommitShas) &&
+      input.addLinkedCommitShas.length > 0) ||
+    (Array.isArray(input.removeLinkedCommitShas) &&
+      input.removeLinkedCommitShas.length > 0);
+
+  // Concurrent addLinkedCommitShas must see each other's writes (OS-64).
+  if (needsShaLock && executor === db) {
+    return db.transaction((tx) =>
+      updateTask(workspaceId, id, input, tx, actor, options),
+    );
+  }
+
+  const existingQuery = executor
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.id, id),
+        isNull(tasks.deletedAt),
+      ),
+    )
+    .limit(1);
+  const [existing] = needsShaLock
+    ? await existingQuery.for("update")
+    : await existingQuery;
   if (!existing) {
     return null;
   }
@@ -1765,6 +1849,13 @@ export async function updateTask(
     }
   }
 
+  const nextLinkedCommitShas = mergeLinkedCommitShas(
+    existing.linkedCommitShas,
+    input.linkedCommitShas,
+    input.addLinkedCommitShas,
+    input.removeLinkedCommitShas,
+  );
+
   const [row] = await executor
     .update(tasks)
     .set({
@@ -1811,7 +1902,9 @@ export async function updateTask(
       notification: input.notification,
       links: input.links,
       agentChatId: input.agentChatId,
-      linkedCommitShas: input.linkedCommitShas,
+      ...(nextLinkedCommitShas !== undefined
+        ? { linkedCommitShas: nextLinkedCommitShas }
+        : {}),
       habitId: input.habitId,
       trackedMinutes: input.trackedMinutes,
       trackedDurationSeconds: input.trackedDurationSeconds,

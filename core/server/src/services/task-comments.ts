@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 
 import type {
   CreateTaskCommentInput,
@@ -241,6 +241,7 @@ export async function listTaskComments(
   workspaceId: string,
   taskId: string,
   executor: DbExecutor = db,
+  options?: { limit?: number },
 ): Promise<TaskCommentListRow[] | null> {
   const [task] = await executor
     .select({ id: tasks.id })
@@ -255,7 +256,15 @@ export async function listTaskComments(
     .limit(1);
   if (!task) return null;
 
-  return executor
+  const limit =
+    typeof options?.limit === "number" &&
+    Number.isFinite(options.limit) &&
+    options.limit > 0
+      ? Math.min(Math.floor(options.limit), 200)
+      : undefined;
+
+  // Newest-first when limited (last N), then reverse to chronological.
+  const baseQuery = executor
     .select({
       id: taskComments.id,
       workspaceId: taskComments.workspaceId,
@@ -284,7 +293,18 @@ export async function listTaskComments(
         isNull(taskComments.deletedAt),
       ),
     )
-    .orderBy(asc(taskComments.createdAt));
+    .orderBy(
+      limit
+        ? desc(taskComments.createdAt)
+        : asc(taskComments.createdAt),
+    );
+
+  const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
+
+  if (limit) {
+    rows.reverse();
+  }
+  return rows;
 }
 
 export async function createTaskComment(

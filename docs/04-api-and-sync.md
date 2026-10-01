@@ -145,20 +145,60 @@ GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
 
 ```http
 PATCH /api/v1/documents/{id}/content
+POST  /api/v1/tasks
+      Idempotency-Key: <optional unique key>   # 24h cache; retries return same task
 POST  /api/v1/tasks/batch
+      { "ids": ["OS-51", "OS-52"], "patch": { "status": "in_review" } }
+      → { tasks, results[] }  # unknown refs → results[].ok=false (no upsert)
 PATCH /api/v1/tasks/OS-51
 POST  /api/v1/tasks/OS-51/comments
+      Idempotency-Key: <optional>
 POST  /api/v1/tasks/{id}/attachments
       Content-Type: application/pdf   # or image/*, message/rfc822, etc.
       X-Filename: brief.pdf
       <raw file bytes, max 25 MB>
 GET   /api/v1/tasks/{id}/attachments
 GET   /api/v1/tasks/{id}/attachments/{attachmentId}
+GET   /api/v1/tasks/OS-51?include=comments   # last 20 comments inline
 ```
 
 Task file attachments (any common type: PDF, image, email `.eml`, office docs, …) require `tasks:write` / `tasks:read` and **local-core** for blob put/get (cloud-core returns `503 pdf_requires_local_core`). Metadata lists work from either role.
 
 Every write runs the **unified write pipeline** (storage → Postgres → sync event → Meilisearch → realtime).
+
+#### One-call task recipes (OS-64)
+
+Agents should prefer these over separate status + comment / commit-link round trips:
+
+```http
+# Status + comment in one call (required for on_hold / canceled / duplicated)
+PATCH /api/v1/tasks/OS-51
+{ "status": "canceled", "comment": { "body": "Duplicate of OS-40" }, "activityActor": "agent" }
+→ task row includes `comment`
+
+# Append commit SHAs without racing replace
+PATCH /api/v1/tasks/OS-51
+{ "addLinkedCommitShas": ["abc1234"] }
+# still supported: linkedCommitShas replaces the full list
+
+# Create on a project by key (+ optional assignee/related contact keys + comment)
+POST /api/v1/tasks
+Idempotency-Key: create-os-brief-1
+{ "title": "…", "projectKey": "OS", "assigneeId": "NC4", "comment": { "body": "…" }, "activityActor": "agent" }
+
+# List / get without a follow-up /projects or /contacts fetch
+GET /api/v1/tasks?paginated=true&projectId=OS
+→ items include projectKey + assigneeName
+GET /api/v1/tasks/OS-51?include=comments
+→ task includes projectKey, assigneeName, comments[]
+```
+
+`linkedCommitShas` on create/update still **replaces** the full list when set. Prefer
+`addLinkedCommitShas` / `removeLinkedCommitShas` for agent linking so concurrent
+adds both persist (server-side dedupe).
+
+Remon: update the shared agent skill / CLI finish flow to use status+comment and
+`addLinkedCommitShas` instead of GET-then-replace.
 
 ### OpenAPI
 

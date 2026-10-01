@@ -456,26 +456,40 @@ export const apiContract: AppRouter = c.router(
         /** Task id or display key (e.g. `OS-51`). */
         id: z.string(),
       }),
+      query: z.object({
+        /**
+         * Comma-separated includes. `comments` returns the last 20 comments
+         * inline on the task (OS-64).
+         */
+        include: z.string().optional(),
+      }),
       responses: {
-        200: taskSchema,
+        200: s.taskApiSchema,
         401: errorSchema,
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Get task by id or key",
+      summary: "Get task by id or key (optional include=comments)",
     },
     createTask: {
       method: "POST",
       path: "/api/v1/tasks",
       body: createTaskSchema,
+      headers: z
+        .object({
+          "idempotency-key": z.string().min(1).max(256).optional(),
+        })
+        .optional(),
       responses: {
-        201: taskSchema,
+        200: s.taskApiSchema,
+        201: s.taskApiSchema,
         400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Create task",
+      summary:
+        "Create task (optional projectKey, contact keys, inline comment; Idempotency-Key)",
     },
     updateTask: {
       method: "PATCH",
@@ -486,13 +500,14 @@ export const apiContract: AppRouter = c.router(
       }),
       body: updateTaskSchema,
       responses: {
-        200: taskSchema,
+        200: s.taskApiSchema,
         400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Update task by id or key",
+      summary:
+        "Update task by id or key (optional inline comment, add/removeLinkedCommitShas)",
     },
     deleteTask: {
       method: "DELETE",
@@ -1186,8 +1201,14 @@ export const apiContract: AppRouter = c.router(
       method: "POST",
       path: "/api/v1/tasks/batch",
       body: s.batchUpdateTasksSchema,
-      responses: { 200: z.object({ tasks: z.array(taskSchema) }), 400: badRequestSchema, 401: errorSchema, 403: errorSchema },
-      summary: "Batch update tasks",
+      responses: {
+        200: s.batchUpdateTasksResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "Batch update tasks by id or key; unknown refs return not_found in results (no upsert)",
     },
     reorderTasks: {
       method: "POST",

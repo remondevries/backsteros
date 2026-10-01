@@ -196,7 +196,12 @@ import {
   resolveProjectRef,
   resolveTaskListFilterRefs,
   resolveTaskRef,
+  resolveTaskWriteRefs,
 } from "../lib/entity-refs.js";
+import {
+  readIdempotencyKey,
+  withIdempotency,
+} from "../lib/idempotency.js";
 import {
   readDocumentSection,
   replaceDocumentSectionBody,
@@ -530,25 +535,58 @@ function forbidden() {
 
 type TaskRow = Parameters<typeof toTask>[0];
 
-/** Task API shape including the display key (e.g. PF-41) — OS-45. */
-async function taskWithKey(workspaceId: string, row: TaskRow) {
-  if (!row.projectId) return toTask(row, null);
-  const keys = await taskProjectService.getProjectKeyMap(workspaceId, [
-    row.projectId,
-  ]);
-  return toTask(row, keys.get(row.projectId));
+/** Task API shape including display key, projectKey, assigneeName (OS-45/OS-64). */
+async function taskWithKey(
+  workspaceId: string,
+  row: TaskRow,
+  extras?: {
+    comment?: ReturnType<typeof toTaskComment>;
+    comments?: Array<ReturnType<typeof toTaskComment>>;
+  },
+) {
+  const projectKey = row.projectId
+    ? (
+        await taskProjectService.getProjectKeyMap(workspaceId, [row.projectId])
+      ).get(row.projectId) ?? null
+    : null;
+  const assigneeName = row.assigneeId
+    ? (
+        await taskProjectService.getContactNameMap(workspaceId, [
+          row.assigneeId,
+        ])
+      ).get(row.assigneeId) ?? null
+    : null;
+  return {
+    ...toTask(row, projectKey),
+    projectKey,
+    assigneeName,
+    ...(extras?.comment ? { comment: extras.comment } : {}),
+    ...(extras?.comments ? { comments: extras.comments } : {}),
+  };
 }
 
-/** List variant of taskWithKey: one project-key query for all rows. */
+/** List variant of taskWithKey: one project-key + assignee-name query for all rows. */
 async function tasksWithKeys(workspaceId: string, rows: TaskRow[]) {
   if (!rows.length) return [];
   const keys = await taskProjectService.getProjectKeyMap(
     workspaceId,
     rows.map((row) => row.projectId),
   );
-  return rows.map((row) =>
-    toTask(row, row.projectId ? keys.get(row.projectId) : null),
+  const names = await taskProjectService.getContactNameMap(
+    workspaceId,
+    rows.map((row) => row.assigneeId),
   );
+  return rows.map((row) => {
+    const projectKey = row.projectId ? (keys.get(row.projectId) ?? null) : null;
+    const assigneeName = row.assigneeId
+      ? (names.get(row.assigneeId) ?? null)
+      : null;
+    return {
+      ...toTask(row, projectKey),
+      projectKey,
+      assigneeName,
+    };
+  });
 }
 
 function notFound(resource: string) {
@@ -2831,7 +2869,33 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Task"), 404);
     }
 
-    return c.json(await taskWithKey(auth.workspaceId, row));
+    const includeRaw = c.req.query("include") ?? "";
+    const includes = new Set(
+      includeRaw
+        .split(",")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    let comments:
+      | Array<ReturnType<typeof toTaskComment>>
+      | undefined;
+    if (includes.has("comments")) {
+      const commentRows = await taskCommentService.listTaskComments(
+        auth.workspaceId,
+        taskId,
+        db,
+        { limit: 20 },
+      );
+      comments = (commentRows ?? []).map(toTaskComment);
+    }
+
+    return c.json(
+      await taskWithKey(
+        auth.workspaceId,
+        row,
+        comments ? { comments } : undefined,
+      ),
+    );
   });
 
   app.get("/api/v1/tasks/:id/documents", async (c) => {
@@ -3298,72 +3362,97 @@ export function registerApiRoutes(app: Hono) {
         activityActor: body.activityActor,
         authorContactId: body.authorContactId,
       });
-      if (isRestLeaderFirstWrite()) {
-        const existingTask = await taskProjectService.getTaskById(
+
+      const runCreate = async () => {
+        if (isRestLeaderFirstWrite()) {
+          const existingTask = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (!existingTask) {
+            return {
+              status: 404 as const,
+              body: notFound("Task"),
+            };
+          }
+          const commentId = newId();
+          const profile = await taskCommentService.resolveWriteActorProfile(
+            auth.workspaceId,
+            actor,
+            db,
+          );
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "task_comment",
+            entityId: commentId,
+            operation: "upsert",
+            payload: buildTaskCommentRestPayload(commentId, taskId, {
+              body: body.body,
+              parentCommentId: body.parentCommentId,
+              authorUserId: profile.userId,
+              authorContactId: profile.contactId,
+              authorEmail: profile.email,
+            }),
+          });
+          const row = await taskCommentService.getTaskCommentRow(
+            auth.workspaceId,
+            commentId,
+          );
+          if (!row) {
+            return {
+              status: 500 as const,
+              body: { error: "Comment create failed", code: "internal" },
+            };
+          }
+          return { status: 201 as const, body: toTaskComment(row) };
+        }
+        const row = await taskCommentService.createTaskComment(
           auth.workspaceId,
           taskId,
-        );
-        if (!existingTask) return c.json(notFound("Task"), 404);
-        const commentId = newId();
-        const profile = await taskCommentService.resolveWriteActorProfile(
-          auth.workspaceId,
+          body,
           actor,
-          db,
-        );
-        await commitRestEntityWrite({
-          workspaceId: auth.workspaceId,
-          entity: "task_comment",
-          entityId: commentId,
-          operation: "upsert",
-          payload: buildTaskCommentRestPayload(commentId, taskId, {
-            body: body.body,
-            parentCommentId: body.parentCommentId,
-            authorUserId: profile.userId,
-            authorContactId: profile.contactId,
-            authorEmail: profile.email,
-          }),
-        });
-        const row = await taskCommentService.getTaskCommentRow(
-          auth.workspaceId,
-          commentId,
         );
         if (!row) {
-          return c.json(
-            { error: "Comment create failed", code: "internal" },
-            500,
-          );
+          return { status: 404 as const, body: notFound("Task") };
         }
-        return c.json(toTaskComment(row), 201);
-      }
-      const row = await taskCommentService.createTaskComment(
-        auth.workspaceId,
-        taskId,
-        body,
-        actor,
+        await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
+        const { notifyPeerOfEntityWrite } = await import(
+          "../services/core-replication/nudge.js"
+        );
+        const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+          "../services/core-replication/sync-event-live-publish.js"
+        );
+        publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+          entity: "task_comment",
+          entityId: row.id,
+          operation: "upsert",
+          payload: { task_id: taskId },
+        });
+        notifyPeerOfEntityWrite({
+          workspaceId: auth.workspaceId,
+          reason: "rest",
+          entity: "task_comment",
+          entityId: row.id,
+          taskId,
+          operation: "upsert",
+        });
+        return { status: 201 as const, body: toTaskComment(row) };
+      };
+
+      const idempotencyKey = readIdempotencyKey(
+        c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key"),
       );
-      if (!row) return c.json(notFound("Task"), 404);
-      await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
-      const { notifyPeerOfEntityWrite } = await import(
-        "../services/core-replication/nudge.js"
+      const scope =
+        auth.apiKeyId != null
+          ? `api_key:${auth.apiKeyId}:task_comment`
+          : `ws:${auth.workspaceId}:task_comment`;
+      const result = idempotencyKey
+        ? await withIdempotency(scope, idempotencyKey, runCreate)
+        : await runCreate();
+      return c.json(
+        result.body,
+        result.status as 201 | 404 | 500,
       );
-      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
-        "../services/core-replication/sync-event-live-publish.js"
-      );
-      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
-        entity: "task_comment",
-        entityId: row.id,
-        operation: "upsert",
-        payload: { task_id: taskId },
-      });
-      notifyPeerOfEntityWrite({
-        workspaceId: auth.workspaceId,
-        reason: "rest",
-        entity: "task_comment",
-        entityId: row.id,
-        taskId,
-        operation: "upsert",
-      });
-      return c.json(toTaskComment(row), 201);
     },
   );
 
@@ -3505,59 +3594,387 @@ export function registerApiRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
 
-      try {
-        const body = c.req.valid("json");
-        const { activityActor, id: preferredId, ...createInput } = body;
-        if (preferredId) {
-          const existing = await taskProjectService.getTaskById(
-            auth.workspaceId,
-            preferredId,
-          );
-          if (existing) {
-            return c.json(await taskWithKey(auth.workspaceId, existing), 200);
-          }
-        }
-        if (isRestLeaderFirstWrite()) {
-          const taskId = preferredId ?? newId();
-          await commitRestEntityWrite({
-            workspaceId: auth.workspaceId,
-            entity: "task",
-            entityId: taskId,
-            operation: "upsert",
-            payload: buildTaskRestPayload(taskId, createInput),
+      const runCreate = async (): Promise<{
+        status: number;
+        body: unknown;
+      }> => {
+        try {
+          const body = c.req.valid("json");
+          const {
+            activityActor,
+            id: preferredId,
+            comment: inlineComment,
+            projectKey,
+            ...createFields
+          } = body;
+          const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
+            projectId: createFields.projectId,
+            projectKey,
+            contactId: createFields.contactId,
+            assigneeId: createFields.assigneeId,
+            relatedContactIds: createFields.relatedContactIds,
+            relatedOrganizationIds: createFields.relatedOrganizationIds,
           });
-          const row = await taskProjectService.getTaskById(
-            auth.workspaceId,
-            taskId,
-          );
-          if (!row) {
-            throw new Error("TASK_CREATE_FAILED");
+          const createInput = {
+            ...createFields,
+            ...resolvedRefs,
+          };
+          if (preferredId) {
+            const existing = await taskProjectService.getTaskById(
+              auth.workspaceId,
+              preferredId,
+            );
+            if (existing) {
+              return {
+                status: 200,
+                body: await taskWithKey(auth.workspaceId, existing),
+              };
+            }
           }
+
+          const actor = writeActorFromAuth(auth, activityActor);
+          let row;
+          let commentMapped: ReturnType<typeof toTaskComment> | undefined;
+
+          if (isRestLeaderFirstWrite()) {
+            const taskId = preferredId ?? newId();
+            const changes: Array<{
+              entity: "task" | "task_comment";
+              entityId: string;
+              operation: "upsert";
+              payload: Record<string, unknown>;
+            }> = [
+              {
+                entity: "task",
+                entityId: taskId,
+                operation: "upsert",
+                payload: buildTaskRestPayload(taskId, createInput),
+              },
+            ];
+            let commentId: string | null = null;
+            if (inlineComment?.body) {
+              commentId = newId();
+              const profile = await taskCommentService.resolveWriteActorProfile(
+                auth.workspaceId,
+                writeActorForComment(auth, { activityActor }),
+                db,
+              );
+              changes.push({
+                entity: "task_comment",
+                entityId: commentId,
+                operation: "upsert",
+                payload: buildTaskCommentRestPayload(commentId, taskId, {
+                  body: inlineComment.body,
+                  authorUserId: profile.userId,
+                  authorContactId: profile.contactId,
+                  authorEmail: profile.email,
+                }),
+              });
+            }
+            if (changes.length === 1) {
+              await commitRestEntityWrite({
+                workspaceId: auth.workspaceId,
+                entity: "task",
+                entityId: taskId,
+                operation: "upsert",
+                payload: changes[0]!.payload,
+              });
+            } else {
+              await commitRestEntityWriteBatch({
+                workspaceId: auth.workspaceId,
+                changes,
+              });
+            }
+            row = await taskProjectService.getTaskById(
+              auth.workspaceId,
+              taskId,
+            );
+            if (!row) {
+              throw new Error("TASK_CREATE_FAILED");
+            }
+            if (commentId) {
+              const commentRow = await taskCommentService.getTaskCommentRow(
+                auth.workspaceId,
+                commentId,
+              );
+              if (commentRow) commentMapped = toTaskComment(commentRow);
+            }
+          } else {
+            const created = await db.transaction(async (tx) => {
+              const taskRow = await taskProjectService.createTask(
+                auth.workspaceId,
+                createInput,
+                preferredId,
+                tx,
+                actor,
+                {
+                  authKind:
+                    auth.kind === "api_key" || auth.kind === "local_shell"
+                      ? auth.kind
+                      : undefined,
+                },
+              );
+              let commentRow = null;
+              if (inlineComment?.body) {
+                commentRow = await taskCommentService.createTaskComment(
+                  auth.workspaceId,
+                  taskRow.id,
+                  { body: inlineComment.body, activityActor },
+                  writeActorForComment(auth, { activityActor }),
+                  tx,
+                );
+              }
+              return { taskRow, commentRow };
+            });
+            row = created.taskRow;
+            await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+            if (created.commentRow) {
+              await recordTaskCommentRestSyncEvent(
+                auth.workspaceId,
+                created.commentRow,
+                "upsert",
+              );
+              commentMapped = toTaskComment(created.commentRow);
+            }
+          }
+
           publishTaskLive(auth, row.id, {
             projectId: row.projectId ?? null,
             operation: "upsert",
           });
-          return c.json(await taskWithKey(auth.workspaceId, row), 201);
+          return {
+            status: 201,
+            body: await taskWithKey(
+              auth.workspaceId,
+              row,
+              commentMapped ? { comment: commentMapped } : undefined,
+            ),
+          };
+        } catch (error) {
+          if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
+            return { status: 404, body: notFound("Project") };
+          }
+          if (error instanceof Error && error.message === "ASSIGNEE_NOT_FOUND") {
+            return {
+              status: 400,
+              body: {
+                error: "Assignee not found",
+                code: "assignee_not_found",
+              },
+            };
+          }
+          if (
+            error instanceof Error &&
+            error.message === "RELATED_CONTACT_NOT_FOUND"
+          ) {
+            return {
+              status: 400,
+              body: {
+                error: "Related contact not found",
+                code: "related_contact_not_found",
+              },
+            };
+          }
+          if (
+            error instanceof Error &&
+            error.message === "RELATED_ORGANIZATION_NOT_FOUND"
+          ) {
+            return {
+              status: 400,
+              body: {
+                error: "Related organization not found",
+                code: "related_organization_not_found",
+              },
+            };
+          }
+          if (
+            error instanceof Error &&
+            error.message === "TASK_LABEL_NOT_FOUND"
+          ) {
+            return {
+              status: 400,
+              body: { error: "Label not found", code: "task_label_not_found" },
+            };
+          }
+          if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+            return { status: 404, body: notFound("Contact") };
+          }
+          throw error;
         }
-        const row = await taskProjectService.createTask(
-          auth.workspaceId,
-          createInput,
-          preferredId,
-          undefined,
-          writeActorFromAuth(auth, activityActor),
-          {
-            authKind:
-              auth.kind === "api_key" || auth.kind === "local_shell"
-                ? auth.kind
-                : undefined,
-          },
-        );
-        await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
-        publishTaskLive(auth, row.id, {
-          projectId: row.projectId ?? null,
-          operation: "upsert",
+      };
+
+      const idempotencyKey = readIdempotencyKey(
+        c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key"),
+      );
+      const scope =
+        auth.apiKeyId != null
+          ? `api_key:${auth.apiKeyId}:task`
+          : `ws:${auth.workspaceId}:task`;
+      const result = idempotencyKey
+        ? await withIdempotency(scope, idempotencyKey, runCreate)
+        : await runCreate();
+      return c.json(result.body, result.status as 200 | 201 | 400 | 404);
+    },
+  );
+
+  app.patch(
+    "/api/v1/tasks/:id",
+    zValidator("json", updateTaskSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+
+      try {
+        const body = c.req.valid("json");
+        const {
+          activityActor,
+          agentInboxApproved,
+          comment: inlineComment,
+          projectKey,
+          ...patchFields
+        } = body;
+        const taskIdRaw = c.req.param("id");
+        const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+        if (!taskId) return c.json(notFound("Task"), 404);
+
+        const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
+          projectId: patchFields.projectId,
+          projectKey,
+          contactId: patchFields.contactId,
+          assigneeId: patchFields.assigneeId,
+          relatedContactIds: patchFields.relatedContactIds,
+          relatedOrganizationIds: patchFields.relatedOrganizationIds,
         });
-        return c.json(await taskWithKey(auth.workspaceId, row), 201);
+        const patch = {
+          ...patchFields,
+          ...resolvedRefs,
+        };
+        const actor = writeActorFromAuth(auth, activityActor);
+        let row;
+        let commentMapped: ReturnType<typeof toTaskComment> | undefined;
+
+        if (isRestLeaderFirstWrite()) {
+          const existing = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (!existing) {
+            return c.json(notFound("Task"), 404);
+          }
+          const changes: Array<{
+            entity: "task" | "task_comment";
+            entityId: string;
+            operation: "upsert" | "patch";
+            payload: Record<string, unknown>;
+          }> = [
+            {
+              entity: "task",
+              entityId: taskId,
+              operation: "upsert",
+              payload: buildTaskRestPayload(taskId, patch, {
+                agentInboxApproved,
+                allowAgentInboxApproval: isOwnerShellAuth(auth),
+              }),
+            },
+          ];
+          let commentId: string | null = null;
+          if (inlineComment?.body) {
+            commentId = newId();
+            const profile = await taskCommentService.resolveWriteActorProfile(
+              auth.workspaceId,
+              writeActorForComment(auth, { activityActor }),
+              db,
+            );
+            changes.push({
+              entity: "task_comment",
+              entityId: commentId,
+              operation: "upsert",
+              payload: buildTaskCommentRestPayload(commentId, taskId, {
+                body: inlineComment.body,
+                authorUserId: profile.userId,
+                authorContactId: profile.contactId,
+                authorEmail: profile.email,
+              }),
+            });
+          }
+          if (changes.length === 1) {
+            await commitRestEntityWrite({
+              workspaceId: auth.workspaceId,
+              entity: "task",
+              entityId: taskId,
+              operation: "upsert",
+              payload: changes[0]!.payload,
+            });
+          } else {
+            await commitRestEntityWriteBatch({
+              workspaceId: auth.workspaceId,
+              changes,
+            });
+          }
+          row = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (commentId) {
+            const commentRow = await taskCommentService.getTaskCommentRow(
+              auth.workspaceId,
+              commentId,
+            );
+            if (commentRow) commentMapped = toTaskComment(commentRow);
+          }
+        } else {
+          const updated = await db.transaction(async (tx) => {
+            const taskRow = await taskProjectService.updateTask(
+              auth.workspaceId,
+              taskId,
+              { ...patch, agentInboxApproved },
+              tx,
+              actor,
+              { allowAgentInboxApproval: isOwnerShellAuth(auth) },
+            );
+            if (!taskRow) return { taskRow: null, commentRow: null };
+            let commentRow = null;
+            if (inlineComment?.body) {
+              commentRow = await taskCommentService.createTaskComment(
+                auth.workspaceId,
+                taskId,
+                { body: inlineComment.body, activityActor },
+                writeActorForComment(auth, { activityActor }),
+                tx,
+              );
+            }
+            return { taskRow, commentRow };
+          });
+          row = updated.taskRow;
+          if (!row) {
+            return c.json(notFound("Task"), 404);
+          }
+          await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+          if (updated.commentRow) {
+            await recordTaskCommentRestSyncEvent(
+              auth.workspaceId,
+              updated.commentRow,
+              "upsert",
+            );
+            commentMapped = toTaskComment(updated.commentRow);
+          }
+        }
+
+        if (row) {
+          publishTaskLive(auth, row.id, {
+            projectId: row.projectId ?? null,
+            operation: "upsert",
+          });
+        }
+        return c.json(
+          await taskWithKey(
+            auth.workspaceId,
+            row!,
+            commentMapped ? { comment: commentMapped } : undefined,
+          ),
+        );
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
@@ -3603,110 +4020,6 @@ export function registerApiRoutes(app: Hono) {
         }
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
-        }
-        throw error;
-      }
-    },
-  );
-
-  app.patch(
-    "/api/v1/tasks/:id",
-    zValidator("json", updateTaskSchema),
-    async (c) => {
-      const auth = getAuth(c);
-      if (!requireScope("tasks:write")(auth)) {
-        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
-      }
-
-      try {
-        const body = c.req.valid("json");
-        const { activityActor, agentInboxApproved, ...patch } = body;
-        const taskIdRaw = c.req.param("id");
-        const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
-        if (!taskId) return c.json(notFound("Task"), 404);
-        if (isRestLeaderFirstWrite()) {
-          const existing = await taskProjectService.getTaskById(
-            auth.workspaceId,
-            taskId,
-          );
-          if (!existing) {
-            return c.json(notFound("Task"), 404);
-          }
-          await commitRestEntityWrite({
-            workspaceId: auth.workspaceId,
-            entity: "task",
-            entityId: taskId,
-            operation: "upsert",
-            payload: buildTaskRestPayload(taskId, patch, {
-              agentInboxApproved,
-              allowAgentInboxApproval: isOwnerShellAuth(auth),
-            }),
-          });
-          const row = await taskProjectService.getTaskById(
-            auth.workspaceId,
-            taskId,
-          );
-          if (row) {
-            publishTaskLive(auth, row.id, {
-              projectId: row.projectId ?? null,
-              operation: "upsert",
-            });
-          }
-          return c.json(await taskWithKey(auth.workspaceId, row!));
-        }
-        const row = await taskProjectService.updateTask(
-          auth.workspaceId,
-          taskId,
-          { ...patch, agentInboxApproved },
-          undefined,
-          writeActorFromAuth(auth, activityActor),
-          { allowAgentInboxApproval: isOwnerShellAuth(auth) },
-        );
-        if (!row) {
-          return c.json(notFound("Task"), 404);
-        }
-        await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
-        publishTaskLive(auth, row.id, {
-          projectId: row.projectId ?? null,
-          operation: "upsert",
-        });
-        return c.json(await taskWithKey(auth.workspaceId, row));
-      } catch (error) {
-        if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
-          return c.json(notFound("Project"), 404);
-        }
-        if (
-          error instanceof Error &&
-          error.message === "RELATED_CONTACT_NOT_FOUND"
-        ) {
-          return c.json(
-            {
-              error: "Related contact not found",
-              code: "related_contact_not_found",
-            },
-            400,
-          );
-        }
-        if (
-          error instanceof Error &&
-          error.message === "RELATED_ORGANIZATION_NOT_FOUND"
-        ) {
-          return c.json(
-            {
-              error: "Related organization not found",
-              code: "related_organization_not_found",
-            },
-            400,
-          );
-        }
-        if (
-          error instanceof Error &&
-          error.message === "TASK_LABEL_NOT_FOUND"
-        ) {
-          return c.json(
-            { error: "Label not found", code: "task_label_not_found" },
-            400,
-          );
         }
         throw error;
       }
@@ -4777,47 +5090,186 @@ export function registerApiRoutes(app: Hono) {
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
     const body = await c.req.json();
     const ids = idListSchema.safeParse(body);
-    const patch = updateTaskSchema.safeParse(body.patch);
-    if (!ids.success || !patch.success) {
+    const patchParsed = updateTaskSchema.safeParse(body.patch);
+    if (!ids.success || !patchParsed.success) {
       return c.json({ error: "Invalid batch update", code: "bad_request" }, 400);
     }
-    const rows = await (async () => {
+
+    const {
+      activityActor: _activityActor,
+      agentInboxApproved,
+      comment: _comment,
+      projectKey,
+      ...patchFields
+    } = patchParsed.data;
+    // Inline comments are not supported on batch — use PATCH /tasks/:id.
+    void _comment;
+    void _activityActor;
+
+    let resolvedPatch;
+    try {
+      const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
+        projectId: patchFields.projectId,
+        projectKey,
+        contactId: patchFields.contactId,
+        assigneeId: patchFields.assigneeId,
+        relatedContactIds: patchFields.relatedContactIds,
+        relatedOrganizationIds: patchFields.relatedOrganizationIds,
+      });
+      resolvedPatch = {
+        ...patchFields,
+        ...resolvedRefs,
+        ...(agentInboxApproved !== undefined ? { agentInboxApproved } : {}),
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
+        return c.json(notFound("Project"), 404);
+      }
+      if (error instanceof Error && error.message === "ASSIGNEE_NOT_FOUND") {
+        return c.json(
+          { error: "Assignee not found", code: "assignee_not_found" },
+          400,
+        );
+      }
+      if (
+        error instanceof Error &&
+        error.message === "RELATED_CONTACT_NOT_FOUND"
+      ) {
+        return c.json(
+          {
+            error: "Related contact not found",
+            code: "related_contact_not_found",
+          },
+          400,
+        );
+      }
+      if (
+        error instanceof Error &&
+        error.message === "RELATED_ORGANIZATION_NOT_FOUND"
+      ) {
+        return c.json(
+          {
+            error: "Related organization not found",
+            code: "related_organization_not_found",
+          },
+          400,
+        );
+      }
+      if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+        return c.json(notFound("Contact"), 404);
+      }
+      throw error;
+    }
+
+    const results: Array<
+      | {
+          ok: true;
+          id: string;
+          ref: string;
+          task: Awaited<ReturnType<typeof taskWithKey>>;
+        }
+      | {
+          ok: false;
+          id: string | null;
+          ref: string;
+          error: string;
+          code: "not_found";
+        }
+    > = [];
+    const resolvedIds: string[] = [];
+    const refById = new Map<string, string>();
+
+    for (const ref of ids.data.ids) {
+      const taskId = await routeTaskId(auth.workspaceId, ref);
+      if (!taskId) {
+        results.push({
+          ok: false,
+          id: null,
+          ref,
+          error: "Task not found",
+          code: "not_found",
+        });
+        continue;
+      }
+      const existing = await taskProjectService.getTaskById(
+        auth.workspaceId,
+        taskId,
+      );
+      if (!existing) {
+        results.push({
+          ok: false,
+          id: taskId,
+          ref,
+          error: "Task not found",
+          code: "not_found",
+        });
+        continue;
+      }
+      resolvedIds.push(taskId);
+      refById.set(taskId, ref);
+    }
+
+    const updatedRows = await (async () => {
+      if (resolvedIds.length === 0) return [];
       if (isRestLeaderFirstWrite()) {
+        // Use patch so unknown ids never invent rows (OS-64).
         await commitRestEntityWriteBatch({
           workspaceId: auth.workspaceId,
-          changes: ids.data.ids.map((id) => ({
+          changes: resolvedIds.map((id) => ({
             entity: "task" as const,
             entityId: id,
-            operation: "upsert" as const,
-            payload: buildTaskRestPayload(id, patch.data),
+            operation: "patch" as const,
+            payload: buildTaskRestPayload(id, resolvedPatch),
           })),
         });
         const loaded = await Promise.all(
-          ids.data.ids.map((id) =>
+          resolvedIds.map((id) =>
             taskProjectService.getTaskById(auth.workspaceId, id),
           ),
         );
-        return loaded.filter((row): row is NonNullable<typeof row> => row != null);
+        return loaded.filter(
+          (row): row is NonNullable<typeof row> => row != null,
+        );
       }
       return taskProjectService.batchUpdateTasks(
         auth.workspaceId,
-        ids.data.ids,
-        patch.data,
+        resolvedIds,
+        resolvedPatch,
         writeActorFromAuth(auth),
       );
     })();
+
     if (!isRestLeaderFirstWrite()) {
-      for (const row of rows) {
+      for (const row of updatedRows) {
         await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
       }
     }
-    for (const row of rows) {
+    for (const row of updatedRows) {
       publishTaskLive(auth, row.id, {
         projectId: row.projectId ?? null,
         operation: "upsert",
       });
     }
-    return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
+
+    const tasksOut = await tasksWithKeys(auth.workspaceId, updatedRows);
+    const taskById = new Map(tasksOut.map((task) => [task.id, task]));
+    for (const id of resolvedIds) {
+      const task = taskById.get(id);
+      const ref = refById.get(id) ?? id;
+      if (task) {
+        results.push({ ok: true, id, ref, task });
+      } else {
+        results.push({
+          ok: false,
+          id,
+          ref,
+          error: "Task not found",
+          code: "not_found",
+        });
+      }
+    }
+
+    return c.json({ tasks: tasksOut, results });
   });
 
   app.post(

@@ -266,3 +266,102 @@ export async function resolveTaskListFilterRefs(
     relatedOrganizationIds,
   };
 }
+
+export type TaskWriteRefInput = {
+  projectId?: string | null;
+  projectKey?: string;
+  contactId?: string | null;
+  assigneeId?: string | null;
+  relatedContactIds?: string[];
+  relatedOrganizationIds?: string[];
+};
+
+/**
+ * Resolve keys on task create/update bodies (OS-64).
+ * `projectKey` fills `projectId` when projectId is omitted.
+ * Throws PROJECT_NOT_FOUND / ASSIGNEE_NOT_FOUND / CONTACT_NOT_FOUND /
+ * RELATED_CONTACT_NOT_FOUND / RELATED_ORGANIZATION_NOT_FOUND.
+ */
+export async function resolveTaskWriteRefs(
+  workspaceId: string,
+  input: TaskWriteRefInput,
+  executor: DbExecutor = db,
+): Promise<{
+  projectId?: string | null;
+  contactId?: string | null;
+  assigneeId?: string | null;
+  relatedContactIds?: string[];
+  relatedOrganizationIds?: string[];
+}> {
+  const out: {
+    projectId?: string | null;
+    contactId?: string | null;
+    assigneeId?: string | null;
+    relatedContactIds?: string[];
+    relatedOrganizationIds?: string[];
+  } = {};
+
+  if (input.projectId !== undefined || input.projectKey !== undefined) {
+    if (input.projectId === null) {
+      out.projectId = null;
+    } else {
+      const ref =
+        input.projectId !== undefined && input.projectId !== null
+          ? input.projectId
+          : input.projectKey!.trim();
+      const resolved = await resolveProjectRef(workspaceId, ref, executor);
+      if (!resolved) throw new Error("PROJECT_NOT_FOUND");
+      out.projectId = resolved;
+    }
+  }
+
+  if (input.contactId !== undefined) {
+    if (input.contactId === null) {
+      out.contactId = null;
+    } else {
+      const resolved = await resolveContactRef(
+        workspaceId,
+        input.contactId,
+        executor,
+      );
+      if (!resolved) throw new Error("CONTACT_NOT_FOUND");
+      out.contactId = resolved;
+    }
+  }
+
+  if (input.assigneeId !== undefined) {
+    if (input.assigneeId === null) {
+      out.assigneeId = null;
+    } else {
+      const resolved = await resolveContactRef(
+        workspaceId,
+        input.assigneeId,
+        executor,
+      );
+      if (!resolved) throw new Error("ASSIGNEE_NOT_FOUND");
+      out.assigneeId = resolved;
+    }
+  }
+
+  if (input.relatedContactIds !== undefined) {
+    const resolved: string[] = [];
+    for (const ref of input.relatedContactIds) {
+      const id = await resolveContactRef(workspaceId, ref, executor);
+      if (!id) throw new Error("RELATED_CONTACT_NOT_FOUND");
+      resolved.push(id);
+    }
+    out.relatedContactIds = [...new Set(resolved)];
+  }
+
+  if (input.relatedOrganizationIds !== undefined) {
+    const resolved: string[] = [];
+    for (const ref of input.relatedOrganizationIds) {
+      const id = await resolveOrganizationRef(workspaceId, ref, executor);
+      if (!id) throw new Error("RELATED_ORGANIZATION_NOT_FOUND");
+      resolved.push(id);
+    }
+    out.relatedOrganizationIds = [...new Set(resolved)];
+  }
+
+  return out;
+}

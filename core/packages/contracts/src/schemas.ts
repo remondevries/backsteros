@@ -444,6 +444,15 @@ export const taskLinkSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const linkedCommitShaSchema = z
+  .string()
+  .regex(/^[0-9a-fA-F]{7,64}$/);
+
+/** Optional comment created in the same write as POST/PATCH /tasks (OS-64). */
+export const taskInlineCommentSchema = z.object({
+  body: z.string().min(1).max(20_000),
+});
+
 export const taskSchema = z.object({
   id: z.string(),
   projectId: z.string().nullable(),
@@ -461,6 +470,10 @@ export const taskSchema = z.object({
    * REST API on single-task, create/update and legacy list responses (OS-45).
    */
   key: z.string().optional(),
+  /** Project key (e.g. `OS`); null for inbox tasks. Set on REST task rows (OS-64). */
+  projectKey: z.string().nullable().optional(),
+  /** Assignee display name when assigneeId is set (OS-64). */
+  assigneeName: z.string().nullable().optional(),
   title: z.string(),
   description: z.string().nullable(),
   status: taskStatusSchema,
@@ -520,7 +533,11 @@ export const taskListItemSchema = z.object({
   /** 0 = none, 1 = urgent … 4 = low (same scale as Task.priority). */
   priority: z.number().int().min(0).max(4),
   assigneeId: z.string().nullable(),
+  /** Assignee display name when assigneeId is set (OS-64). */
+  assigneeName: z.string().nullable().optional(),
   projectId: z.string().nullable(),
+  /** Project key (e.g. `OS`); null for inbox tasks (OS-64). */
+  projectKey: z.string().nullable().optional(),
   dueDate: z.string().datetime().nullable(),
   linkedDocumentIds: z.array(z.string()),
   linkedContactIds: z.array(z.string()),
@@ -616,10 +633,17 @@ export const listTasksResponseSchema = z.union([
 export const createTaskSchema = z.object({
   /** Client-generated id for offline-first / PowerSync dual-write creates. */
   id: z.string().min(1).max(64).optional(),
+  /** Project id or key. Prefer {@link projectKey} when you only know the key. */
   projectId: z.string().nullable().optional(),
+  /** Project key alias (e.g. `OS`); resolved server-side (OS-64). */
+  projectKey: z.string().min(1).max(64).optional(),
+  /** Contact id or key. */
   contactId: z.string().nullable().optional(),
+  /** Assignee contact id or key. */
   assigneeId: z.string().nullable().optional(),
+  /** Related contact ids or keys. */
   relatedContactIds: z.array(z.string()).optional(),
+  /** Related organization ids or keys. */
   relatedOrganizationIds: z.array(z.string()).optional(),
   labelIds: z.array(z.string().min(1).max(64)).max(32).optional(),
   title: z.string().min(1).max(500),
@@ -639,10 +663,7 @@ export const createTaskSchema = z.object({
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
   /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
-  linkedCommitShas: z
-    .array(z.string().regex(/^[0-9a-fA-F]{7,64}$/))
-    .max(20)
-    .optional(),
+  linkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
   habitId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
@@ -655,6 +676,11 @@ export const createTaskSchema = z.object({
    * `agent` also flags the task for the Agents inbox subgroup.
    */
   activityActor: z.enum(["user", "agent"]).optional(),
+  /**
+   * Create a comment in the same transaction (OS-64). Returned on the task as
+   * `comment`.
+   */
+  comment: taskInlineCommentSchema.optional(),
 });
 
 export const updateTaskSchema = createTaskSchema
@@ -667,6 +693,13 @@ export const updateTaskSchema = createTaskSchema
     /** Clear the Updated inbox flag after the user views the item. */
     acknowledgeInboxUpdate: z.boolean().optional(),
     inboxUpdatedAt: z.string().datetime().nullable().optional(),
+    /**
+     * Append commit SHAs (deduped, case-insensitive). Prefer this over replacing
+     * `linkedCommitShas` so concurrent agents do not overwrite each other (OS-64).
+     */
+    addLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
+    /** Remove commit SHAs (case-insensitive match) (OS-64). */
+    removeLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
   })
   .refine(
     (value) =>
@@ -698,6 +731,15 @@ export const taskCommentSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
+});
+
+/**
+ * REST task shape including optional inline comment fields (OS-64).
+ * `comment` = created in the same POST/PATCH; `comments` = GET ?include=comments.
+ */
+export const taskApiSchema = taskSchema.extend({
+  comment: taskCommentSchema.optional(),
+  comments: z.array(taskCommentSchema).optional(),
 });
 
 export const createTaskCommentSchema = z.object({
@@ -1309,8 +1351,34 @@ export const triageTaskSchema = z.object({
   status: taskStatusSchema.optional(),
 });
 export const batchUpdateTasksSchema = z.object({
+  /** Task ids or display keys (e.g. `OS-51`). */
   ids: z.array(z.string()).min(1).max(500),
   patch: updateTaskSchema,
+});
+
+export const batchUpdateTasksResultItemSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    /** Resolved task id. */
+    id: z.string(),
+    /** Original ref from the request (id or key). */
+    ref: z.string(),
+    task: taskSchema,
+  }),
+  z.object({
+    ok: z.literal(false),
+    id: z.string().nullable(),
+    ref: z.string(),
+    error: z.string(),
+    code: z.literal("not_found"),
+  }),
+]);
+
+export const batchUpdateTasksResponseSchema = z.object({
+  /** Successfully updated tasks (backward compatible). */
+  tasks: z.array(taskSchema),
+  /** Per-ref results including 404 entries for unknown ids/keys (OS-64). */
+  results: z.array(batchUpdateTasksResultItemSchema),
 });
 
 export const organizationInputSchema = z.object({
@@ -3874,6 +3942,7 @@ export const whoopSettingsStatusSchema = z.object({
 
 export type Project = z.infer<typeof projectSchema>;
 export type Task = z.infer<typeof taskSchema>;
+export type TaskApi = z.infer<typeof taskApiSchema>;
 export type TaskListItem = z.infer<typeof taskListItemSchema>;
 export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
 export type ListTasksResponse = z.infer<typeof listTasksResponseSchema>;

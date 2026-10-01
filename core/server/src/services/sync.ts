@@ -2074,6 +2074,12 @@ function mapTaskUpsert(
     linkedCommitShas: parseStringIdArray(
       payload.linked_commit_shas ?? payload.linkedCommitShas,
     ),
+    addLinkedCommitShas: parseStringIdArray(
+      payload.add_linked_commit_shas ?? payload.addLinkedCommitShas,
+    ),
+    removeLinkedCommitShas: parseStringIdArray(
+      payload.remove_linked_commit_shas ?? payload.removeLinkedCommitShas,
+    ),
     habitId: asNullableString(payload.habit_id ?? payload.habitId),
     trackedMinutes: asNullableNumber(
       payload.tracked_minutes ?? payload.trackedMinutes,
