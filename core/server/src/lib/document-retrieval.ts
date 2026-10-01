@@ -12,12 +12,23 @@ import {
 export const DOCUMENT_RETRIEVAL_DEFAULT_BUDGET = 8000;
 export const DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET = 32_000;
 export const DOCUMENT_RETRIEVAL_DEFAULT_LIMIT = 20;
+/** Max concurrent object-storage body reads per retrieve call. */
+export const DOCUMENT_RETRIEVAL_BODY_CONCURRENCY = 8;
+/** Log retrieve calls that take longer than this (ms). */
+export const DOCUMENT_RETRIEVAL_SLOW_MS = 1000;
 
 export type RetrievalCandidate = {
   id: string;
   docKey: string | null;
   title: string;
   content: string;
+};
+
+export type RetrievalCandidateRow = {
+  id: string;
+  docKey: string | null;
+  title: string;
+  storageKey: string;
 };
 
 export type RetrievalHit = {
@@ -46,6 +57,77 @@ export function tokenizeQuery(query: string): string[] {
     .split(/[^a-z0-9]+/i)
     .map((token) => token.trim())
     .filter((token) => token.length >= 2);
+}
+
+/**
+ * Run `mapper` over `items` with at most `concurrency` in flight.
+ * Results keep input order.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const limit = Math.max(1, Math.floor(concurrency));
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]!, index);
+    }
+  }
+
+  const workers = Math.min(limit, items.length);
+  if (workers === 0) return results;
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
+}
+
+/**
+ * Load candidate document bodies from storage with a bounded concurrency pool.
+ * Missing objects are skipped (counted + optional callback); they do not fail the batch.
+ */
+export async function loadRetrievalCandidateBodies(
+  rows: readonly RetrievalCandidateRow[],
+  options: {
+    getObject: (storageKey: string) => Promise<{ body: string }>;
+    concurrency?: number;
+    onSkip?: (row: RetrievalCandidateRow, error: unknown) => void;
+  },
+): Promise<{ candidates: RetrievalCandidate[]; skipped: number }> {
+  const concurrency = options.concurrency ?? DOCUMENT_RETRIEVAL_BODY_CONCURRENCY;
+  const loaded = await mapWithConcurrency(rows, concurrency, async (row) => {
+    try {
+      const object = await options.getObject(row.storageKey);
+      return {
+        ok: true as const,
+        candidate: {
+          id: row.id,
+          docKey: row.docKey,
+          title: row.title,
+          content: object.body,
+        },
+      };
+    } catch (error) {
+      options.onSkip?.(row, error);
+      return { ok: false as const };
+    }
+  });
+
+  const candidates: RetrievalCandidate[] = [];
+  let skipped = 0;
+  for (const item of loaded) {
+    if (item.ok) {
+      candidates.push(item.candidate);
+    } else {
+      skipped += 1;
+    }
+  }
+  return { candidates, skipped };
 }
 
 export function scoreSectionText(

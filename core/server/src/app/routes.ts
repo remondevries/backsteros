@@ -3763,6 +3763,7 @@ export function registerApiRoutes(app: Hono) {
         results: result.results,
         budget: result.budget,
         truncated: result.truncated,
+        skipped: result.skipped,
       });
     },
   );

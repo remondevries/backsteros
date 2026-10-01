@@ -17,6 +17,9 @@ import {
 } from "../lib/document-property-filters.js";
 import {
   clampRetrievalBudget,
+  DOCUMENT_RETRIEVAL_BODY_CONCURRENCY,
+  DOCUMENT_RETRIEVAL_SLOW_MS,
+  loadRetrievalCandidateBodies,
   retrieveDocumentSections,
   type RetrievalHit,
 } from "../lib/document-retrieval.js";
@@ -25,6 +28,7 @@ import {
   readDocumentSection,
   replaceDocumentSectionBody,
 } from "../lib/document-sections.js";
+import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import {
   buildStorageKey,
   checksumForContent,
@@ -1217,11 +1221,22 @@ export async function retrieveDocuments(input: {
   results: RetrievalHit[];
   budget: number;
   truncated: boolean;
+  skipped: number;
 }> {
+  const started = Date.now();
+  const pattern = `%${input.q}%`;
   const conditions = [
     eq(documents.workspaceId, input.workspaceId),
     isNull(documents.deletedAt),
     eq(documents.kind, "document"),
+    // Pre-filter on indexed metadata so older matches are not buried under the
+    // newest N rows. Body text is still scored after concurrent storage loads.
+    or(
+      ilike(documents.title, pattern),
+      ilike(documents.path, pattern),
+      ilike(documents.snippet, pattern),
+      sql`(${documents.properties})::text ILIKE ${pattern}`,
+    )!,
   ];
   if (input.propertyType?.length) {
     conditions.push(propertyScalarIn("type", input.propertyType));
@@ -1236,40 +1251,57 @@ export async function retrieveDocuments(input: {
     conditions.push(propertyScalarIn("project", input.project));
   }
 
+  const candidateLimit = input.candidateLimit ?? 100;
   const rows = await db
-    .select()
+    .select({
+      id: documents.id,
+      docKey: documents.docKey,
+      title: documents.title,
+      storageKey: documents.storageKey,
+    })
     .from(documents)
     .where(and(...conditions))
-    .orderBy(desc(documents.updatedAt))
-    .limit(input.candidateLimit ?? 100);
+    .orderBy(
+      // Prefer title/path hits over snippet/properties, then recency.
+      sql`(CASE
+        WHEN ${documents.title} ILIKE ${pattern} THEN 3
+        WHEN ${documents.path} ILIKE ${pattern} THEN 2
+        WHEN coalesce(${documents.snippet}, '') ILIKE ${pattern} THEN 1
+        ELSE 0
+      END) DESC`,
+      desc(documents.updatedAt),
+    )
+    .limit(candidateLimit);
 
-  const candidates: {
-    id: string;
-    docKey: string | null;
-    title: string;
-    content: string;
-  }[] = [];
+  const { candidates, skipped } = await loadRetrievalCandidateBodies(rows, {
+    getObject,
+    concurrency: DOCUMENT_RETRIEVAL_BODY_CONCURRENCY,
+    onSkip: (row) => {
+      appendOpsLog(
+        "warn",
+        "documents retrieve skipped missing object",
+        row.id,
+      );
+    },
+  });
 
-  for (const row of rows) {
-    try {
-      const object = await getObject(row.storageKey);
-      candidates.push({
-        id: row.id,
-        docKey: row.docKey,
-        title: row.title,
-        content: object.body,
-      });
-    } catch {
-      // Skip missing vault objects; same as search not inventing content.
-    }
-  }
-
-  return retrieveDocumentSections({
+  const ranked = retrieveDocumentSections({
     query: input.q,
     candidates,
     budget: clampRetrievalBudget(input.budget),
     limit: input.limit,
   });
+
+  const elapsedMs = Date.now() - started;
+  if (elapsedMs > DOCUMENT_RETRIEVAL_SLOW_MS) {
+    appendOpsLog(
+      "warn",
+      "documents retrieve slow",
+      `qLen=${input.q.length} candidates=${rows.length} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} ${elapsedMs}ms`,
+    );
+  }
+
+  return { ...ranked, skipped };
 }
 
 export { DocumentSectionError };
