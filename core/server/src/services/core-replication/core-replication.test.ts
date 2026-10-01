@@ -13,6 +13,7 @@ import {
   InvalidReplicationPeerUrlError,
   assertReplicationListenHost,
   getCoreReplicationConfig,
+  isSyncEventPullEnabled,
   validateReplicationPeerUrl,
 } from "./config.js";
 import {
@@ -141,5 +142,23 @@ describe("core-replication rules", () => {
       true,
     );
     assert.equal(isCalendarBusyTaskRow({ legacy_source: "circle" }), false);
+  });
+});
+
+describe("isSyncEventPullEnabled", () => {
+  it("defaults to enabled", () => {
+    assert.equal(isSyncEventPullEnabled({}), true);
+  });
+
+  it("treats 0/false/no/off as disabled", () => {
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "0" }), false);
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "false" }), false);
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "NO" }), false);
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "off" }), false);
+  });
+
+  it("treats 1/true/yes as enabled", () => {
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "1" }), true);
+    assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "true" }), true);
   });
 });

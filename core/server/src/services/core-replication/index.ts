@@ -6,6 +6,7 @@ export { applyRemoteChanges, bootstrapTableFromPeer } from "./apply.js";
 export {
   getCoreReplicationConfig,
   isCoreReplicationEnabled,
+  isSyncEventPullEnabled,
   resolveReplicationIntervalMs,
   type CoreReplicationConfig,
   type CoreReplicationRole,

@@ -509,6 +509,9 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Rotate when past this size (replication / tsx spam can grow unbounded).
+const LOG_ROTATE_BYTES: u64 = 32 * 1024 * 1024;
+
 fn log_path() -> PathBuf {
     home_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
@@ -519,6 +522,13 @@ fn open_log() -> Result<std::fs::File, String> {
     let path = log_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    if let Ok(meta) = fs::metadata(&path) {
+        if meta.len() >= LOG_ROTATE_BYTES {
+            let rotated = path.with_extension("log.prev");
+            let _ = fs::remove_file(&rotated);
+            let _ = fs::rename(&path, &rotated);
+        }
     }
     OpenOptions::new()
         .create(true)

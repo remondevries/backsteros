@@ -20,7 +20,7 @@ shells (UI only)
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
 
-**Today:** Opening desktop does **not** start Docker. The optional replica starts from Hub, or from the desktop process only when `BACKSTEROS_START_LOCAL_REPLICA=1`. iOS is not on cloud-core yet.
+**Today:** Opening desktop does **not** start Docker. The optional replica starts from the `com.backsteros.local-core` LaunchAgent (boot + KeepAlive), from Hub, or from the desktop process when `BACKSTEROS_START_LOCAL_REPLICA=1`. iOS is not on cloud-core yet.
 
 **Target (ADR-035 addendum, 2026-09-19):** Product desktop syncs its PowerSync client SQLite to cloud PowerSync and does not start Docker. The compose stack is an optional replica (Hub or an explicit flag). iOS talks only to cloud-core. Shared files live in private R2; this computer keeps a local working copy. Hub still owns PTY and Expo. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 

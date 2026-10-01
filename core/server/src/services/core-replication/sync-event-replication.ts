@@ -14,7 +14,10 @@ import {
   listSyncEventsAfter,
   type SyncEventRow,
 } from "../sync-log.js";
-import { getCoreReplicationConfig } from "./config.js";
+import {
+  getCoreReplicationConfig,
+  isSyncEventPullEnabled,
+} from "./config.js";
 
 const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -287,12 +290,21 @@ export async function pullPeerSyncEvents(): Promise<void> {
     return;
   }
 
+  const { appendOpsLog } = await import("../../lib/ops-log-buffer.js");
+
+  if (!isSyncEventPullEnabled()) {
+    appendOpsLog(
+      "info",
+      "core sync-events pull skipped",
+      "CORE_REPLICATION_SYNC_EVENTS_PULL=0 (OS-49 safeguard; table LWW continues)",
+    );
+    return;
+  }
+
   const workspaceIds = replicationWorkspaceIds();
   if (workspaceIds.length === 0) {
     return;
   }
-
-  const { appendOpsLog } = await import("../../lib/ops-log-buffer.js");
 
   for (const workspaceId of workspaceIds) {
     const result = await pullWorkspaceSyncEvents(workspaceId);
