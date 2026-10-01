@@ -68,6 +68,8 @@ cat >"${PLIST}" <<PLIST
   <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
   <key>WorkingDirectory</key>
   <string>${REPO_ROOT}</string>
   <key>StandardOutPath</key>

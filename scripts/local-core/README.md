@@ -13,8 +13,13 @@ The API is **localhost only** — the LaunchAgent does not enable Tailscale serv
 bash scripts/local-core/install-launch-agent.sh
 ```
 
-Creates `~/Library/LaunchAgents/com.backsteros.local-core.plist` with `RunAtLoad`
-and `KeepAlive`, pointing at `scripts/local-core/run.sh`.
+Creates `~/Library/LaunchAgents/com.backsteros.local-core.plist` with `RunAtLoad`,
+`KeepAlive`, and `ExitTimeOut=30`, pointing at `scripts/local-core/run.sh`.
+
+The supervisor runs `tsx` **without** `watch`, polls `/health` every ~10s, and
+exits non-zero after 3 consecutive failures so KeepAlive restarts a dead API
+(even if a parent wrapper lingered). SIGTERM uses interruptible sleeps and kills
+the child process group so launchd stop/unload leaves no orphans.
 
 ## Logs
 

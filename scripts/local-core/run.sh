@@ -2,6 +2,10 @@
 # Foreground supervisor for local-core (Docker compose + API on :8788).
 # Intended for LaunchAgent KeepAlive: exits non-zero if API dies so launchd restarts.
 # Listens on 127.0.0.1 only — does not enable Tailscale serve.
+#
+# Runs `tsx` without `watch` so a dead node process ends the child. Health is
+# polled as a second signal: consecutive /health failures kill the tree and
+# exit non-zero even if a parent wrapper somehow lingered.
 set -euo pipefail
 
 LABEL="com.backsteros.local-core"
@@ -11,27 +15,37 @@ LOG_FILE="${LOG_DIR}/local-core.log"
 LOG_PREV="${LOG_DIR}/local-core.log.prev"
 # Match Hub: rotate when past ~32 MiB. Override with LOCAL_CORE_LOG_ROTATE_BYTES for tests.
 LOG_ROTATE_BYTES="${LOCAL_CORE_LOG_ROTATE_BYTES:-$((32 * 1024 * 1024))}"
-SUPERVISE_INTERVAL_SECS="${LOCAL_CORE_SUPERVISE_INTERVAL_SECS:-30}"
+# Health poll interval / consecutive failures before restart (after startup grace).
+HEALTH_INTERVAL_SECS="${LOCAL_CORE_HEALTH_INTERVAL_SECS:-10}"
+HEALTH_FAIL_THRESHOLD="${LOCAL_CORE_HEALTH_FAIL_THRESHOLD:-3}"
+STARTUP_GRACE_SECS="${LOCAL_CORE_STARTUP_GRACE_SECS:-90}"
 REPO_ROOT="${BACKSTEROS_REPO_ROOT:-}"
 PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
 export PATH
 
 CHILD_PID=""
+CHILD_PGID=""
 SHUTTING_DOWN=0
+BECAME_HEALTHY_AT=""
 
 mkdir -p "${LOG_DIR}"
 
 log() {
   local line
   line="$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] $*"
-  # Supervisor messages go to the service log (copy-truncate safe) and stderr
-  # (captured by launchd into local-core.launchd.log).
   printf '%s\n' "${line}" >>"${LOG_FILE}" 2>/dev/null || true
   printf '%s\n' "${line}" >&2
 }
 
-# Copy-truncate so the child's O_APPEND fd keeps writing to the same inode path
-# after we empty it in place (mv+create would leave the child on the old inode).
+# sleep that returns immediately when a signal arrives (launchd SIGTERM).
+interruptible_sleep() {
+  local secs="${1:-1}"
+  sleep "${secs}" &
+  local spid=$!
+  wait "${spid}" 2>/dev/null || true
+}
+
+# Copy-truncate so the child's O_APPEND fd keeps writing to the same inode.
 rotate_log_if_needed() {
   if [[ ! -f "${LOG_FILE}" ]]; then
     : >"${LOG_FILE}"
@@ -45,7 +59,6 @@ rotate_log_if_needed() {
   rm -f "${LOG_PREV}"
   cp "${LOG_FILE}" "${LOG_PREV}"
   : >"${LOG_FILE}"
-  # Avoid recursive append failures if LOG_FILE briefly unavailable.
   printf '%s\n' "$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] rotated local-core.log (${size} bytes → .prev, threshold=${LOG_ROTATE_BYTES})" >>"${LOG_FILE}" 2>/dev/null || true
   printf '%s\n' "$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] rotated local-core.log (${size} bytes → .prev, threshold=${LOG_ROTATE_BYTES})" >&2
 }
@@ -71,6 +84,10 @@ api_healthy() {
   curl -fsS -m 2 "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1
 }
 
+port_listening() {
+  lsof -nP -iTCP:"${API_PORT}" -sTCP:LISTEN >/dev/null 2>&1
+}
+
 wait_for_docker() {
   local started
   started="$(date +%s)"
@@ -84,7 +101,7 @@ wait_for_docker() {
       log "Docker daemon did not become ready within 120s"
       return 1
     fi
-    sleep 2
+    interruptible_sleep 2
   done
 }
 
@@ -137,44 +154,97 @@ child_alive() {
   [[ -n "${CHILD_PID}" ]] && kill -0 "${CHILD_PID}" 2>/dev/null
 }
 
-kill_tree() {
+# Kill a process group (preferred) plus any remaining descendants.
+kill_pgid_tree() {
   local sig="$1"
-  local root="$2"
-  [[ -z "${root}" ]] && return 0
-  # Prefer process-group signal (job-control / setpgid). Fall back to the pid
-  # and its descendants (macOS has no setsid(1)).
-  kill "-${sig}" -- "-${root}" 2>/dev/null || true
-  kill "-${sig}" "${root}" 2>/dev/null || true
-  local kids
-  kids="$(pgrep -P "${root}" 2>/dev/null || true)"
-  local kid
-  for kid in ${kids}; do
-    kill_tree "${sig}" "${kid}"
-  done
+  local pgid="$2"
+  local root="$3"
+  [[ -z "${pgid}" && -z "${root}" ]] && return 0
+  if [[ -n "${pgid}" ]]; then
+    kill "-${sig}" -- "-${pgid}" 2>/dev/null || true
+  fi
+  if [[ -n "${root}" ]]; then
+    kill "-${sig}" "${root}" 2>/dev/null || true
+    local kids kid
+    kids="$(pgrep -P "${root}" 2>/dev/null || true)"
+    for kid in ${kids}; do
+      kill_pgid_tree "${sig}" "" "${kid}"
+    done
+  fi
 }
 
 stop_child() {
-  SHUTTING_DOWN=1
-  if ! child_alive; then
+  if ! child_alive && [[ -z "${CHILD_PGID}" ]]; then
     CHILD_PID=""
+    CHILD_PGID=""
     return 0
   fi
-  log "forwarding shutdown to child tree ${CHILD_PID}"
-  kill_tree TERM "${CHILD_PID}"
+  log "forwarding shutdown to child pgid=${CHILD_PGID:-?} pid=${CHILD_PID:-?}"
+  kill_pgid_tree TERM "${CHILD_PGID}" "${CHILD_PID}"
   local waited=0
-  while child_alive && (( waited < 15 )); do
-    sleep 1
+  while child_alive && (( waited < 8 )); do
+    interruptible_sleep 1
     waited=$((waited + 1))
   done
   if child_alive; then
     log "child still alive after TERM; sending KILL"
-    kill_tree KILL "${CHILD_PID}"
+    kill_pgid_tree KILL "${CHILD_PGID}" "${CHILD_PID}"
+    interruptible_sleep 1
+  elif [[ -n "${CHILD_PGID}" ]]; then
+    # Sweep the process group even if the leader already exited.
+    kill_pgid_tree KILL "${CHILD_PGID}" ""
   fi
   wait "${CHILD_PID}" 2>/dev/null || true
   CHILD_PID=""
+  CHILD_PGID=""
+}
+
+# Kill anything still holding :8788 or leftover LaunchAgent API trees for this repo.
+reclaim_api_port() {
+  local pids pid
+  pids="$(lsof -nP -iTCP:"${API_PORT}" -sTCP:LISTEN -t 2>/dev/null || true)"
+  if [[ -n "${pids}" ]]; then
+    log "reclaiming :${API_PORT} listeners: ${pids}"
+    for pid in ${pids}; do
+      kill_pgid_tree TERM "" "${pid}"
+    done
+    interruptible_sleep 1
+    for pid in ${pids}; do
+      kill_pgid_tree KILL "" "${pid}" 2>/dev/null || true
+    done
+  fi
+  # Orphaned pnpm/tsx from earlier KeepAlive runs (often reparented to PID 1).
+  local orphans
+  orphans="$(
+    {
+      pgrep -f "${REPO_ROOT}/core/server.*src/index.ts" || true
+      pgrep -f "pnpm --filter @backsteros/server" || true
+      pgrep -f "pnpm exec tsx --env-file=.env src/index.ts" || true
+    } 2>/dev/null | awk "NF" | sort -u
+  )"
+  if [[ -n "${orphans}" ]]; then
+    log "killing leftover local-core API processes: $(echo "${orphans}" | tr '\n' ' ')"
+    for pid in ${orphans}; do
+      kill_pgid_tree TERM "" "${pid}"
+    done
+    interruptible_sleep 1
+    for pid in ${orphans}; do
+      kill_pgid_tree KILL "" "${pid}" 2>/dev/null || true
+    done
+  fi
+  # Brief wait until the port is free.
+  local waited=0
+  while port_listening && (( waited < 10 )); do
+    interruptible_sleep 1
+    waited=$((waited + 1))
+  done
 }
 
 on_signal() {
+  if [[ "${SHUTTING_DOWN}" -eq 1 ]]; then
+    return 0
+  fi
+  SHUTTING_DOWN=1
   log "received signal; shutting down"
   stop_child
   exit 0
@@ -182,21 +252,44 @@ on_signal() {
 
 trap on_signal TERM INT HUP
 
+build_contracts() {
+  log "building @backsteros/contracts (launchd start uses tsx without watch)"
+  (
+    cd "${REPO_ROOT}"
+    pnpm --filter @backsteros/contracts build
+  ) >>"${LOG_FILE}" 2>&1
+}
+
 start_api_child() {
-  log "starting API: pnpm --filter @backsteros/server dev (CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL})"
-  cd "${REPO_ROOT}"
+  build_contracts
+  cd "${REPO_ROOT}/core/server"
   rotate_log_if_needed
-  # Job control puts the background pipeline in its own process group so
-  # launchd stop can signal the whole pnpm/tsx tree (macOS has no setsid(1)).
+  log "starting API: pnpm exec tsx --env-file=.env src/index.ts (no watch; CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL})"
+  # Job control → own process group (macOS has no setsid(1); Homebrew pnpm is a
+  # shell script so we must spawn via bash, not execvp("pnpm")).
   set -m
-  pnpm --filter @backsteros/server dev >>"${LOG_FILE}" 2>&1 &
+  pnpm exec tsx --env-file=.env src/index.ts >>"${LOG_FILE}" 2>&1 &
   CHILD_PID=$!
   set +m
-  log "API child pid ${CHILD_PID}"
+  CHILD_PGID="$(ps -o pgid= -p "${CHILD_PID}" 2>/dev/null | tr -d "[:space:]")"
+  if [[ -z "${CHILD_PGID}" ]]; then
+    CHILD_PGID="${CHILD_PID}"
+  fi
+  log "API child pid ${CHILD_PID} pgid ${CHILD_PGID}"
+}
+
+fail_for_keepalive() {
+  local reason="$1"
+  log "${reason}; stopping child and exiting for KeepAlive restart"
+  stop_child
+  exit 1
 }
 
 supervise_loop() {
-  log "supervising (interval=${SUPERVISE_INTERVAL_SECS}s, rotate≥${LOG_ROTATE_BYTES} bytes)"
+  local fails=0
+  # Startup grace already elapsed (we only enter after /health succeeded).
+  # From here, N consecutive health failures or a dead child ⇒ KeepAlive restart.
+  log "supervising (health every ${HEALTH_INTERVAL_SECS}s, fail×${HEALTH_FAIL_THRESHOLD}, rotate≥${LOG_ROTATE_BYTES})"
   while true; do
     if [[ "${SHUTTING_DOWN}" -eq 1 ]]; then
       exit 0
@@ -204,11 +297,21 @@ supervise_loop() {
     if ! child_alive; then
       local status=0
       wait "${CHILD_PID}" 2>/dev/null || status=$?
-      log "API child exited (pid=${CHILD_PID}, wait_status=${status}); exiting for KeepAlive restart"
-      exit 1
+      fail_for_keepalive "API child exited (pid=${CHILD_PID}, wait_status=${status})"
     fi
+
+    if api_healthy; then
+      fails=0
+    else
+      fails=$((fails + 1))
+      log "health check failed (${fails}/${HEALTH_FAIL_THRESHOLD})"
+      if (( fails >= HEALTH_FAIL_THRESHOLD )); then
+        fail_for_keepalive "API unhealthy for ${fails} consecutive checks"
+      fi
+    fi
+
     rotate_log_if_needed
-    sleep "${SUPERVISE_INTERVAL_SECS}"
+    interruptible_sleep "${HEALTH_INTERVAL_SECS}"
   done
 }
 
@@ -221,7 +324,6 @@ fi
 export BACKSTEROS_REPO_ROOT="${REPO_ROOT}"
 
 # OS-49: peer sync-event replay stamps updatedAt=now and can overwrite cloud.
-# Table LWW still runs; re-enable after OS-49 is fixed.
 export CORE_REPLICATION_SYNC_EVENTS_PULL="${CORE_REPLICATION_SYNC_EVENTS_PULL:-0}"
 
 if ! command -v pnpm >/dev/null 2>&1; then
@@ -232,27 +334,18 @@ if ! command -v node >/dev/null 2>&1; then
   log "node not found on PATH"
   exit 1
 fi
-
 wait_for_docker
 ensure_compose
-
-if api_healthy; then
-  # Another process (Hub) already owns :8788. Supervise health only — do not
-  # start a second API. If health drops, exit so KeepAlive can take over.
-  log "local-core already healthy on :${API_PORT}; monitoring existing listener (no Tailscale serve)"
-  while api_healthy; do
-    rotate_log_if_needed
-    sleep "${SUPERVISE_INTERVAL_SECS}"
-  done
-  log "local-core health lost; exiting for KeepAlive restart"
-  exit 1
-fi
+reclaim_api_port
 
 start_api_child
 
-# Wait until healthy or child dies (predev can take a while).
+# Wait until healthy or child dies (contracts build + boot can take a while).
 ready=0
-for _ in $(seq 1 90); do
+for _ in $(seq 1 "${STARTUP_GRACE_SECS}"); do
+  if [[ "${SHUTTING_DOWN}" -eq 1 ]]; then
+    exit 0
+  fi
   if api_healthy; then
     ready=1
     break
@@ -262,13 +355,12 @@ for _ in $(seq 1 90); do
     log "API child exited before becoming healthy"
     exit 1
   fi
-  sleep 1
+  interruptible_sleep 1
 done
 if [[ "${ready}" -ne 1 ]]; then
-  log "API did not become healthy within 90s; stopping child"
-  stop_child
-  exit 1
+  fail_for_keepalive "API did not become healthy within ${STARTUP_GRACE_SECS}s"
 fi
+BECAME_HEALTHY_AT="$(date +%s)"
 log "API healthy on 127.0.0.1:${API_PORT}"
 
 supervise_loop
