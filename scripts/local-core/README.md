@@ -7,9 +7,11 @@ to talk to cloud via Caddy instead.
 
 The API is **localhost only** — the LaunchAgent does not enable Tailscale serve.
 
-Start logic lives only under `scripts/local-core/`: LaunchAgent `run.sh` (KeepAlive)
-and one-shot `ensure-once.sh` (desktop `BACKSTEROS_START_LOCAL_REPLICA=1`). Do not
-duplicate spawn/env resolution in Rust beyond calling `ensure-once.sh`.
+Start logic lives only under `scripts/local-core/`: shared `lib.sh`, LaunchAgent `run.sh` (KeepAlive),
+and one-shot `ensure-once.sh` (desktop `BACKSTEROS_START_LOCAL_REPLICA=1`). `ensure-once.sh` only
+kickstarts the LaunchAgent — it never nohup's an unsupervised API. Do not duplicate spawn/env
+resolution in Rust beyond calling `ensure-once.sh`. Compose defaults to project
+`backsteros-worktree`; live scripts export `BACKSTEROS_COMPOSE_PROJECT=backsteros`.
 
 ## Build source (OS-61)
 

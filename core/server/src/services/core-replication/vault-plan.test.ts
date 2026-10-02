@@ -8,10 +8,13 @@ import {
   planVaultPull,
   planVaultPullDeletes,
   planVaultPush,
+  pruneVaultManifest,
   resolveSafeVaultAbsolute,
   shouldPullVaultFile,
   shouldPushVaultFile,
   shouldSkipFullVaultWalk,
+  shouldSkipVaultWalkDirectory,
+  isSkippedVaultRelativePath,
   vaultFileMetaFromManifest,
   applyDirtyVaultPathStats,
   VaultPathError,
@@ -294,6 +297,121 @@ describe("vault-replication pull planning", () => {
       "file-0.md": { mtimeMs: 100, size: 10 },
     });
     assert.deepEqual(deletes, []);
+  });
+
+  it("mixed-build: filtered paths never produce deletes on either side", () => {
+    // Old peer/local manifests still list ~60k node_modules entries. New builds
+    // prune them; deletes must not fire because a path was filtered.
+    const nodeModulesNoise = Array.from({ length: 200 }, (_, index) => ({
+      relativePath: `Projects/App/Codebase/node_modules/pkg/file-${index}.md`,
+      mtimeMs: 1,
+      size: 1,
+    }));
+    const spacesLocal = [
+      { relativePath: "Spaces/knowledge-base/second-brain/a.md", mtimeMs: 10, size: 10 },
+      { relativePath: "Spaces/knowledge-base/second-brain/keep.md", mtimeMs: 20, size: 20 },
+    ];
+    const spacesPeer = [
+      { relativePath: "Spaces/knowledge-base/second-brain/a.md", mtimeMs: 10, size: 10 },
+      { relativePath: "Spaces/knowledge-base/second-brain/keep.md", mtimeMs: 20, size: 20 },
+    ];
+    const previousWithNoise: Record<string, { mtimeMs: number; size: number }> = {
+      "Spaces/knowledge-base/second-brain/a.md": { mtimeMs: 10, size: 10 },
+      "Spaces/knowledge-base/second-brain/keep.md": { mtimeMs: 20, size: 20 },
+      "Spaces/knowledge-base/second-brain/gone.md": { mtimeMs: 30, size: 30 },
+    };
+    for (const file of nodeModulesNoise) {
+      previousWithNoise[file.relativePath] = {
+        mtimeMs: file.mtimeMs,
+        size: file.size,
+      };
+    }
+
+    // New local listing (filtered) + old peer listing that still includes noise:
+    // incomplete-peer guard must use pruned counts, and noise paths never delete.
+    const peerWithNoise = [...spacesPeer, ...nodeModulesNoise];
+    const localFiltered = spacesLocal;
+    const pullDeletes = planVaultPullDeletes(
+      [
+        ...localFiltered,
+        {
+          relativePath: "Spaces/knowledge-base/second-brain/gone.md",
+          mtimeMs: 30,
+          size: 30,
+        },
+      ],
+      peerWithNoise,
+      previousWithNoise,
+    );
+    assert.deepEqual(pullDeletes, ["Spaces/knowledge-base/second-brain/gone.md"]);
+    assert.ok(
+      !pullDeletes.some((path) => path.includes("node_modules")),
+      "node_modules paths must never be pull-deleted",
+    );
+
+    // Push-side diff: previous has noise, current listing is filtered → noise
+    // must not appear in deletes (would wipe peer copies on mixed builds).
+    const pushDiff = diffVaultManifest(localFiltered, previousWithNoise);
+    assert.ok(
+      !pushDiff.deletes.some((path) => path.includes("node_modules")),
+      "node_modules paths must never be push-deleted",
+    );
+    assert.ok(pushDiff.deletes.includes("Spaces/knowledge-base/second-brain/gone.md"));
+  });
+
+  it("mixed-build: pruned counts unblock legitimate deletes when peer filter shrinks the listing", () => {
+    // Local still has a fat previous manifest (old build). Peer is new and only
+    // returns real Spaces files. After prune, incomplete-peer guard must not
+    // block deleting a real Spaces path that is gone on the peer.
+    const noisePrevious: Record<string, { mtimeMs: number; size: number }> = {};
+    for (let i = 0; i < 80; i += 1) {
+      noisePrevious[`Projects/App/Codebase/node_modules/pkg/${i}.md`] = {
+        mtimeMs: 1,
+        size: 1,
+      };
+    }
+    noisePrevious["Spaces/note.md"] = { mtimeMs: 5, size: 5 };
+    noisePrevious["Spaces/gone.md"] = { mtimeMs: 6, size: 6 };
+
+    const local = [
+      { relativePath: "Spaces/note.md", mtimeMs: 5, size: 5 },
+      { relativePath: "Spaces/gone.md", mtimeMs: 6, size: 6 },
+    ];
+    const peer = [{ relativePath: "Spaces/note.md", mtimeMs: 5, size: 5 }];
+
+    // Without pruning, localCount from a fat listing would trip the 25% guard.
+    // With pruning, only Spaces paths count → gone.md deletes.
+    const deletes = planVaultPullDeletes(local, peer, noisePrevious);
+    assert.deepEqual(deletes, ["Spaces/gone.md"]);
+  });
+
+  it("rejects skipped vault paths in normalizeVaultMarkdownPath", () => {
+    assert.throws(
+      () =>
+        normalizeVaultMarkdownPath(
+          "Projects/App/Codebase/node_modules/x/readme.md",
+        ),
+      VaultPathError,
+    );
+    assert.throws(
+      () => normalizeVaultMarkdownPath(".git/hooks/note.md"),
+      VaultPathError,
+    );
+    assert.throws(
+      () => normalizeVaultMarkdownPath(".hidden/secret.md"),
+      VaultPathError,
+    );
+    assert.equal(shouldSkipVaultWalkDirectory("node_modules"), true);
+    assert.equal(isSkippedVaultRelativePath("Projects/x/node_modules/a.md"), true);
+    assert.deepEqual(
+      Object.keys(
+        pruneVaultManifest({
+          "Spaces/a.md": { mtimeMs: 1, size: 1 },
+          "Projects/x/node_modules/a.md": { mtimeMs: 1, size: 1 },
+        }),
+      ),
+      ["Spaces/a.md"],
+    );
   });
 });
 

@@ -8,10 +8,13 @@
 # exit non-zero even if a parent wrapper somehow lingered.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
 LABEL="com.backsteros.local-core"
-API_PORT="${LOCAL_CORE_API_PORT:-8788}"
-LOG_DIR="${HOME}/.config/backsteros/desktop"
-LOG_FILE="${LOG_DIR}/local-core.log"
+LOCAL_CORE_LOG_LABEL="${LABEL}"
+export LOCAL_CORE_LOG_LABEL
 LOG_PREV="${LOG_DIR}/local-core.log.prev"
 # One threshold for startup + supervise loop (~32 MiB). Override for tests.
 LOG_ROTATE_BYTES="${LOCAL_CORE_LOG_ROTATE_BYTES:-$((32 * 1024 * 1024))}"
@@ -20,25 +23,14 @@ LOG_ROTATE_GENERATIONS="${LOCAL_CORE_LOG_ROTATE_GENERATIONS:-5}"
 HEALTH_INTERVAL_SECS="${LOCAL_CORE_HEALTH_INTERVAL_SECS:-10}"
 HEALTH_FAIL_THRESHOLD="${LOCAL_CORE_HEALTH_FAIL_THRESHOLD:-3}"
 STARTUP_GRACE_SECS="${LOCAL_CORE_STARTUP_GRACE_SECS:-90}"
-REPO_ROOT="${BACKSTEROS_REPO_ROOT:-}"
-# Dedicated origin/production worktree (OS-61). Prefer this over a dirty checkout.
-LOCAL_CORE_BUILD="${BACKSTEROS_LOCAL_CORE_BUILD:-${HOME}/.backsteros/local-core-build}"
-ENV_FILE="${LOCAL_CORE_ENV_FILE:-}"
-PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
-export PATH
 
 CHILD_PID=""
 CHILD_PGID=""
 SHUTTING_DOWN=0
 BECAME_HEALTHY_AT=""
 
-mkdir -p "${LOG_DIR}"
-
 log() {
-  local line
-  line="$(date '+%Y-%m-%dT%H:%M:%S') [${LABEL}] $*"
-  printf '%s\n' "${line}" >>"${LOG_FILE}" 2>/dev/null || true
-  printf '%s\n' "${line}" >&2
+  local_core_log "$@"
 }
 
 # sleep that returns immediately when a signal arrives (launchd SIGTERM).
@@ -89,59 +81,13 @@ rotate_log_if_needed() {
 
 
 resolve_repo_root() {
-  # Prefer the dedicated local-core build (origin/production worktree).
-  if [[ -n "${LOCAL_CORE_BUILD}" \
-    && -f "${LOCAL_CORE_BUILD}/pnpm-workspace.yaml" \
-    && -f "${LOCAL_CORE_BUILD}/docker-compose.yml" \
-    && -d "${LOCAL_CORE_BUILD}/core/server" ]]; then
-    REPO_ROOT="${LOCAL_CORE_BUILD}"
-    return 0
-  fi
-  if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
-    return 0
-  fi
-  if [[ -f "${HOME}/.config/backsteros/hub.json" ]]; then
-    REPO_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME}/.config/backsteros/hub.json" 2>/dev/null || true)"
-    if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
-      return 0
-    fi
-  fi
-  REPO_ROOT="${HOME}/BacksterOS/Projects/OS/Codebase"
-  if [[ -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
-    return 0
-  fi
-  return 1
+  local_core_resolve_repo_root
 }
 
 # Runtime secrets live in ~/.config/backsteros/local-core.env (preferred) or
 # LOCAL_CORE_ENV_FILE / the developer checkout core/server/.env fallback.
 resolve_env_file() {
-  if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
-    return 0
-  fi
-  local dedicated="${HOME}/.config/backsteros/local-core.env"
-  if [[ -f "${dedicated}" ]]; then
-    ENV_FILE="${dedicated}"
-    return 0
-  fi
-  if [[ -f "${REPO_ROOT}/core/server/.env" ]]; then
-    ENV_FILE="${REPO_ROOT}/core/server/.env"
-    return 0
-  fi
-  local hub_root=""
-  if [[ -f "${HOME}/.config/backsteros/hub.json" ]]; then
-    hub_root="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME}/.config/backsteros/hub.json" 2>/dev/null || true)"
-    if [[ -n "${hub_root}" && -f "${hub_root}/core/server/.env" ]]; then
-      ENV_FILE="${hub_root}/core/server/.env"
-      return 0
-    fi
-  fi
-  local fallback="${HOME}/BacksterOS/Projects/OS/Codebase/core/server/.env"
-  if [[ -f "${fallback}" ]]; then
-    ENV_FILE="${fallback}"
-    return 0
-  fi
-  return 1
+  local_core_resolve_env_file
 }
 
 export_build_version_env() {
@@ -170,14 +116,15 @@ export_build_version_env() {
 }
 
 api_healthy() {
-  curl -fsS -m 2 "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1
+  local_core_api_healthy
 }
 
 port_listening() {
-  lsof -nP -iTCP:"${API_PORT}" -sTCP:LISTEN >/dev/null 2>&1
+  local_core_port_listening
 }
 
 wait_for_docker() {
+  # Prefer interruptible sleep so launchd SIGTERM is not blocked for 120s.
   local started
   started="$(date +%s)"
   if docker info >/dev/null 2>&1; then
@@ -195,32 +142,12 @@ wait_for_docker() {
 }
 
 ensure_compose() {
-  local compose_root="${REPO_ROOT}"
-  if [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
-    compose_root="${LOCAL_CORE_BUILD}"
-  fi
-  log "docker compose up -d postgres mongo powersync (cwd=${compose_root})"
-  if ! (
-    cd "${compose_root}"
-    docker compose up -d postgres mongo powersync
-  ); then
-    log "compose up reported an error; starting existing containers and repairing powersync mounts"
-    docker start backsteros-postgres backsteros-powersync-mongo >/dev/null 2>&1 || true
-    docker network connect --alias mongo backsteros_default backsteros-powersync-mongo >/dev/null 2>&1 || true
-    docker network connect --alias mongo codebase_default backsteros-powersync-mongo >/dev/null 2>&1 || true
-    docker network connect --alias postgres backsteros_default backsteros-postgres >/dev/null 2>&1 || true
-    docker network connect --alias postgres codebase_default backsteros-postgres >/dev/null 2>&1 || true
-    repair_powersync_if_needed
-  fi
-  ensure_compose_dns_aliases
+  local_core_ensure_compose
   repair_powersync_if_needed
 }
 
 ensure_compose_dns_aliases() {
-  docker network connect --alias postgres backsteros_default backsteros-postgres >/dev/null 2>&1 || true
-  docker network connect --alias postgres codebase_default backsteros-postgres >/dev/null 2>&1 || true
-  docker network connect --alias mongo backsteros_default backsteros-powersync-mongo >/dev/null 2>&1 || true
-  docker network connect --alias mongo codebase_default backsteros-powersync-mongo >/dev/null 2>&1 || true
+  local_core_ensure_compose_dns_aliases
 }
 
 powersync_mounts_ok() {
@@ -235,10 +162,8 @@ repair_powersync_if_needed() {
     && powersync_mounts_ok; then
     return 0
   fi
-  local compose_root="${REPO_ROOT}"
-  if [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
-    compose_root="${LOCAL_CORE_BUILD}"
-  fi
+  local compose_root
+  compose_root="$(local_core_compose_root)"
   log "recreating backsteros-powersync with mounts from ${compose_root}"
   docker rm -f backsteros-powersync >/dev/null 2>&1 || true
   (

@@ -38,6 +38,8 @@ import type { OrchestrationDispatchError } from "../Errors.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
+import * as ServerConfig from "../../config.ts";
+import { scheduleControlSessionPromoteAfterTurn } from "../../backsteros/control-session-promote.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -89,6 +91,7 @@ const make = Effect.gen(function* () {
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const pullRequests = yield* PullRequestService.PullRequestService;
+  const serverConfig = yield* ServerConfig.ServerConfig;
   const startedTurns = new Map<ThreadId, TurnId>();
   const pending = new Set<ThreadId>();
 
@@ -252,6 +255,7 @@ const make = Effect.gen(function* () {
     yield* checkpointStore.captureCheckpoint({
       cwd: input.cwd,
       checkpointRef: targetCheckpointRef,
+      reuseIfUnchangedFromRef: fromCheckpointExists ? fromCheckpointRef : undefined,
     });
 
     // Refresh the workspace entry index so the @-mention file picker
@@ -870,6 +874,9 @@ const make = Effect.gen(function* () {
       if (isTrackedTurn) startedTurns.delete(event.threadId);
       if (event.type === "turn.completed") {
         yield* statusRefreshWorker.enqueue(event);
+        // Control-API-only sessions have no web leave-timer; promote In Review
+        // when the turn finishes (OS-73).
+        scheduleControlSessionPromoteAfterTurn(serverConfig.stateDir, String(event.threadId));
       }
       if (
         turnId !== null &&

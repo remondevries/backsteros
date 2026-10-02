@@ -33,14 +33,18 @@ import {
   VaultPathError,
   applyDirtyVaultPathStats,
   diffVaultManifest,
+  filterVaultFileMetaList,
+  isSkippedVaultRelativePath,
   normalizeVaultMarkdownPath,
   planVaultPull,
   planVaultPullDeletes,
   planVaultPush,
+  pruneVaultManifest,
   resolveSafeVaultAbsolute,
   shouldPullVaultFile,
   shouldPushVaultFile,
   shouldSkipFullVaultWalk,
+  shouldSkipVaultWalkDirectory,
   vaultFileMetaFromManifest,
   type VaultFileMeta,
   type VaultManifest,
@@ -52,14 +56,18 @@ export {
   VaultPathError,
   applyDirtyVaultPathStats,
   diffVaultManifest,
+  filterVaultFileMetaList,
+  isSkippedVaultRelativePath,
   normalizeVaultMarkdownPath,
   planVaultPull,
   planVaultPullDeletes,
   planVaultPush,
+  pruneVaultManifest,
   resolveSafeVaultAbsolute,
   shouldPullVaultFile,
   shouldPushVaultFile,
   shouldSkipFullVaultWalk,
+  shouldSkipVaultWalkDirectory,
   vaultFileMetaFromManifest,
 };
 export type {
@@ -124,7 +132,9 @@ function scheduleLocalVaultMetadataHeal(relativePath: string): void {
 
 /** Test / ops: mark paths dirty (`*` = force full walk). */
 export function markVaultMarkdownDirty(relativePath: string): void {
-  dirtyMarkdownPaths.add(relativePath.replace(/\\/g, "/"));
+  const normalized = relativePath.replace(/\\/g, "/");
+  if (normalized !== "*" && isSkippedVaultRelativePath(normalized)) return;
+  dirtyMarkdownPaths.add(normalized);
 }
 
 /** Test helper: clear dirty set + tick counter (does not stop the watcher). */
@@ -148,8 +158,14 @@ function noteVaultWatchEvent(filename: string | null): void {
     return;
   }
   const normalized = filename.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  // Ignore dependency / VCS / hidden paths entirely (no full rescan).
+  for (const part of parts) {
+    if (shouldSkipVaultWalkDirectory(part) || shouldSkipDirentName(part)) {
+      return;
+    }
+  }
   const base = path.posix.basename(normalized);
-  if (shouldSkipDirentName(base)) return;
   if (base.toLowerCase().endsWith(".md")) {
     dirtyMarkdownPaths.add(normalized);
     // Agent / editor wrote the vault file directly — bump content_version +
@@ -158,8 +174,16 @@ function noteVaultWatchEvent(filename: string | null): void {
     scheduleLocalVaultMetadataHeal(normalized);
     return;
   }
-  // Directory / non-md change may mean a new .md appeared — force a walk.
-  dirtyMarkdownPaths.add("*");
+  // Non-markdown under an allowed path: only force a walk when a directory
+  // entry changed (new .md may have appeared). Ignore binary/asset noise.
+  if (parts.length === 0) {
+    dirtyMarkdownPaths.add("*");
+    return;
+  }
+  // Treat directory-looking events (no extension) as possible new .md trees.
+  if (!base.includes(".")) {
+    dirtyMarkdownPaths.add("*");
+  }
 }
 
 export function ensureVaultChangeWatcher(vaultRoot: string): void {
@@ -191,23 +215,6 @@ function manifestAbsolutePath(vaultRoot: string): string {
 function shouldSkipDirentName(name: string): boolean {
   if (name === ".DS_Store" || name === ".AppleDouble") return true;
   if (name.startsWith("._")) return true;
-  return false;
-}
-
-/** Directories that must never be walked for vault markdown manifests. */
-const SKIP_DIRECTORY_NAMES = new Set([
-  "node_modules",
-  ".git",
-]);
-
-/**
- * Skip dependency trees, VCS, and hidden folders (e.g. `.backsteros`, `.cache`).
- * Walking `node_modules` under project Codebase trees was taking 17–23s on cloud
- * and scanning millions of files on the Mac vault.
- */
-export function shouldSkipVaultWalkDirectory(name: string): boolean {
-  if (SKIP_DIRECTORY_NAMES.has(name)) return true;
-  if (name.startsWith(".")) return true;
   return false;
 }
 
@@ -341,7 +348,7 @@ export async function readVaultManifest(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};
     }
-    return parsed;
+    return pruneVaultManifest(parsed);
   } catch {
     return {};
   }
@@ -353,7 +360,8 @@ export async function writeVaultManifest(
 ): Promise<void> {
   const absolute = manifestAbsolutePath(vaultRoot);
   await mkdir(path.dirname(absolute), { recursive: true });
-  await writeFile(absolute, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  const pruned = pruneVaultManifest(manifest);
+  await writeFile(absolute, `${JSON.stringify(pruned, null, 2)}\n`, "utf8");
 }
 
 export async function sha256File(absolutePath: string): Promise<string> {
@@ -486,7 +494,7 @@ async function fetchPeerManifest(
       throw new Error(`vault manifest failed (${response.status}): ${text}`);
     }
     const body = (await response.json()) as { files?: VaultFileMeta[] };
-    return body.files ?? [];
+    return filterVaultFileMetaList(body.files ?? []);
   } finally {
     clearTimeout(timeout);
   }
@@ -496,6 +504,8 @@ type VaultTickContext = {
   vaultRoot: string;
   localFiles: VaultFileMeta[];
   previous: VaultManifest;
+  /** Shared peer manifest for this tick (avoids 2–3 fetches). */
+  peerFiles?: VaultFileMeta[];
 };
 
 /**
@@ -529,11 +539,9 @@ export async function pullVaultFromPeer(
   const localFiles =
     options.tick?.localFiles ??
     (await resolveLocalMarkdownListing(vaultRoot, previous)).files;
-  const peerFiles = await fetchPeerManifest(
-    config.peerUrl,
-    config.secret,
-    timeoutMs,
-  );
+  const peerFiles =
+    options.tick?.peerFiles ??
+    (await fetchPeerManifest(config.peerUrl, config.secret, timeoutMs));
 
   const pullList = planVaultPull(localFiles, peerFiles);
   const deleteList = planVaultPullDeletes(localFiles, peerFiles, previous);
@@ -657,9 +665,10 @@ export async function pushVaultToPeer(
 
   // After bootstrap/rsync, local may have no manifest yet. Use the peer
   // manifest as baseline so we only push real drift instead of every file.
-  if (Object.keys(previous).length === 0) {
+  let peerFiles: VaultFileMeta[] = options.tick?.peerFiles ?? [];
+  if (Object.keys(previous).length === 0 && peerFiles.length === 0) {
     try {
-      const peerFiles = await fetchPeerManifest(
+      peerFiles = await fetchPeerManifest(
         config.peerUrl,
         config.secret,
         timeoutMs,
@@ -675,15 +684,26 @@ export async function pushVaultToPeer(
     } catch {
       // Peer unreachable — fall through and page upserts from empty baseline
     }
+  } else if (Object.keys(previous).length === 0 && peerFiles.length > 0) {
+    const seeded: VaultManifest = {};
+    for (const file of peerFiles) {
+      seeded[file.relativePath] = {
+        mtimeMs: file.mtimeMs,
+        size: file.size,
+      };
+    }
+    previous = seeded;
   }
 
   // Prefer peer when it is strictly newer so we don't overwrite cloud offline writes.
   // Also never push an empty local file over a non-empty peer body.
-  let peerFiles: VaultFileMeta[] = [];
-  try {
-    peerFiles = await fetchPeerManifest(config.peerUrl, config.secret, timeoutMs);
-  } catch {
-    peerFiles = [];
+  // Only fetch when this tick did not already supply a shared peer manifest.
+  if (!options.tick || !("peerFiles" in options.tick)) {
+    try {
+      peerFiles = await fetchPeerManifest(config.peerUrl, config.secret, timeoutMs);
+    } catch {
+      peerFiles = [];
+    }
   }
   const currentForPush = planVaultPush(current, peerFiles);
   const peerByPath = new Map(
@@ -694,7 +714,9 @@ export async function pushVaultToPeer(
 
   // Only delete on peer when local removed a path we previously synced and peer
   // still has the old meta (avoid deleting peer-only agent files).
+  // Never delete filtered paths (node_modules / .git / hidden) on either side.
   const deletes = diff.deletes.filter((relativePath) => {
+    if (isSkippedVaultRelativePath(relativePath)) return false;
     const remote = peerByPath.get(relativePath);
     const prior = previous[relativePath];
     if (!remote || !prior) return false;
@@ -774,6 +796,7 @@ export async function pushVaultToPeer(
   // Keep peer-only files in the local manifest so pull-deletes and future
   // LWW comparisons stay accurate after a push page.
   for (const remote of peerFiles) {
+    if (isSkippedVaultRelativePath(remote.relativePath)) continue;
     if (!nextManifest[remote.relativePath]) {
       nextManifest[remote.relativePath] = {
         mtimeMs: remote.mtimeMs,
@@ -841,6 +864,20 @@ export async function syncVaultWithPeer(
     previous,
   };
 
+  // One peer manifest fetch for pull + push this tick.
+  const config = getCoreReplicationConfig();
+  if (config?.role === "local") {
+    try {
+      tick.peerFiles = await fetchPeerManifest(
+        config.peerUrl,
+        config.secret,
+        options.timeoutMs ?? 120_000,
+      );
+    } catch {
+      tick.peerFiles = [];
+    }
+  }
+
   const pull = await pullVaultFromPeer({ ...options, tick });
   // Pull may have rewritten files + manifest; re-resolve so push sees disk.
   const previousAfterPull = await readVaultManifest(vaultRoot);
@@ -854,6 +891,7 @@ export async function syncVaultWithPeer(
       vaultRoot,
       localFiles: listingAfterPull.files,
       previous: previousAfterPull,
+      peerFiles: tick.peerFiles,
     },
   });
   return { pull, push };

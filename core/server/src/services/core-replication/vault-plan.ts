@@ -33,6 +33,49 @@ export class VaultPathError extends Error {
   }
 }
 
+/** Directory names that must never appear in vault markdown manifests. */
+const SKIP_DIRECTORY_NAMES = new Set(["node_modules", ".git"]);
+
+/**
+ * Skip dependency trees, VCS, and hidden folders (e.g. `.backsteros`, `.cache`).
+ * Shared by walks, manifests, watchers, peer listings, and delete planners so
+ * mixed builds never delete (or pull) paths the other side filters out.
+ */
+export function shouldSkipVaultWalkDirectory(name: string): boolean {
+  if (SKIP_DIRECTORY_NAMES.has(name)) return true;
+  if (name.startsWith(".")) return true;
+  return false;
+}
+
+/** True when any path segment is a skipped directory (node_modules / .git / hidden). */
+export function isSkippedVaultRelativePath(relativePath: string): boolean {
+  const parts = relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.some((part) => shouldSkipVaultWalkDirectory(part));
+}
+
+/**
+ * Drop skipped paths from a saved or peer-sourced manifest.
+ * Safe to call repeatedly; does not invent keys.
+ */
+export function pruneVaultManifest(manifest: VaultManifest): VaultManifest {
+  const out: VaultManifest = {};
+  for (const [relativePath, entry] of Object.entries(manifest)) {
+    const rewritten = rewriteLegacyKnowledgeBaseStorageKey(relativePath);
+    if (isSkippedVaultRelativePath(rewritten)) continue;
+    const prev = out[rewritten];
+    if (!prev || entry.mtimeMs >= prev.mtimeMs) {
+      out[rewritten] = entry;
+    }
+  }
+  return out;
+}
+
+export function filterVaultFileMetaList(
+  files: readonly VaultFileMeta[],
+): VaultFileMeta[] {
+  return files.filter((file) => !isSkippedVaultRelativePath(file.relativePath));
+}
+
 function basenameOf(relativePath: string): string {
   const parts = relativePath.split("/");
   return parts[parts.length - 1] ?? relativePath;
@@ -56,6 +99,11 @@ export function normalizeVaultMarkdownPath(raw: string): string {
     .split("/")
     .filter((segment) => segment.length > 0 && segment !== ".")
     .join("/");
+  if (isSkippedVaultRelativePath(relativePath)) {
+    throw new VaultPathError(
+      "Paths under node_modules, .git, or hidden folders are not replicated",
+    );
+  }
   const base = basenameOf(relativePath);
   if (base.startsWith("._") || base === ".DS_Store") {
     throw new VaultPathError("macOS junk paths are not replicated");
@@ -99,17 +147,14 @@ export function shouldSkipFullVaultWalk(input: {
 export function vaultFileMetaFromManifest(
   manifest: VaultManifest,
 ): VaultFileMeta[] {
+  const pruned = pruneVaultManifest(manifest);
   const byPath = new Map<string, VaultFileMeta>();
-  for (const [relativePath, entry] of Object.entries(manifest)) {
-    const rewritten = rewriteLegacyKnowledgeBaseStorageKey(relativePath);
-    const prev = byPath.get(rewritten);
-    if (!prev || entry.mtimeMs >= prev.mtimeMs) {
-      byPath.set(rewritten, {
-        relativePath: rewritten,
-        mtimeMs: entry.mtimeMs,
-        size: entry.size,
-      });
-    }
+  for (const [relativePath, entry] of Object.entries(pruned)) {
+    byPath.set(relativePath, {
+      relativePath,
+      mtimeMs: entry.mtimeMs,
+      size: entry.size,
+    });
   }
   return [...byPath.values()].sort((a, b) =>
     a.relativePath.localeCompare(b.relativePath),
@@ -119,6 +164,7 @@ export function vaultFileMetaFromManifest(
 /**
  * Merge dirty path stats into the previous manifest listing.
  * `null` stat means the path was deleted on disk.
+ * Skipped paths are never added (and are dropped from previous).
  */
 export function applyDirtyVaultPathStats(input: {
   previous: VaultManifest;
@@ -133,6 +179,10 @@ export function applyDirtyVaultPathStats(input: {
 
   for (const [relativePath, statOrNull] of input.dirtyStats) {
     const rewritten = rewriteLegacyKnowledgeBaseStorageKey(relativePath);
+    if (isSkippedVaultRelativePath(rewritten)) {
+      byPath.delete(rewritten);
+      continue;
+    }
     if (statOrNull == null) {
       byPath.delete(rewritten);
       continue;
@@ -153,12 +203,14 @@ export function diffVaultManifest(
   current: readonly VaultFileMeta[],
   previous: VaultManifest,
 ): VaultManifestDiff {
+  const prunedPrevious = pruneVaultManifest(previous);
+  const filteredCurrent = filterVaultFileMetaList(current);
   const upserts: VaultFileMeta[] = [];
   const currentPaths = new Set<string>();
 
-  for (const file of current) {
+  for (const file of filteredCurrent) {
     currentPaths.add(file.relativePath);
-    const prior = previous[file.relativePath];
+    const prior = prunedPrevious[file.relativePath];
     if (
       !prior ||
       prior.mtimeMs !== file.mtimeMs ||
@@ -169,7 +221,9 @@ export function diffVaultManifest(
   }
 
   const deletes: string[] = [];
-  for (const priorPath of Object.keys(previous)) {
+  for (const priorPath of Object.keys(prunedPrevious)) {
+    // Never delete because a path was filtered (node_modules / .git / hidden).
+    if (isSkippedVaultRelativePath(priorPath)) continue;
     if (!currentPaths.has(priorPath)) {
       deletes.push(priorPath);
     }
@@ -201,10 +255,12 @@ export function planVaultPull(
   local: readonly VaultFileMeta[],
   peer: readonly VaultFileMeta[],
 ): VaultFileMeta[] {
+  const localFiltered = filterVaultFileMetaList(local);
+  const peerFiltered = filterVaultFileMetaList(peer);
   const localByPath = new Map(
-    local.map((file) => [file.relativePath, file] as const),
+    localFiltered.map((file) => [file.relativePath, file] as const),
   );
-  return peer
+  return peerFiltered
     .filter((remote) =>
       shouldPullVaultFile(remote, localByPath.get(remote.relativePath)),
     )
@@ -230,10 +286,12 @@ export function planVaultPush(
   local: readonly VaultFileMeta[],
   peer: readonly VaultFileMeta[],
 ): VaultFileMeta[] {
+  const localFiltered = filterVaultFileMetaList(local);
+  const peerFiltered = filterVaultFileMetaList(peer);
   const peerByPath = new Map(
-    peer.map((file) => [file.relativePath, file] as const),
+    peerFiltered.map((file) => [file.relativePath, file] as const),
   );
-  return local
+  return localFiltered
     .filter((file) => shouldPushVaultFile(file, peerByPath.get(file.relativePath)))
     .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
@@ -241,25 +299,34 @@ export function planVaultPush(
 /**
  * Local paths that existed on the peer last sync and are gone remotely, while
  * the local file still matches the last synced meta — treat as remote deletes.
+ *
+ * Skipped paths (node_modules / .git / hidden) are pruned from all three inputs
+ * first so a mixed-build peer that still lists 60k node_modules entries cannot
+ * trip the incomplete-peer guard or invent deletes for filtered paths.
  */
 export function planVaultPullDeletes(
   local: readonly VaultFileMeta[],
   peer: readonly VaultFileMeta[],
   previous: VaultManifest,
 ): string[] {
-  const peerCount = peer.length;
-  const localCount = local.length;
+  const localFiltered = filterVaultFileMetaList(local);
+  const peerFiltered = filterVaultFileMetaList(peer);
+  const prunedPrevious = pruneVaultManifest(previous);
+
+  const peerCount = peerFiltered.length;
+  const localCount = localFiltered.length;
   // Incomplete peer manifest — do not delete local markdown (hybrid recovery safety).
   if (localCount >= 20 && peerCount < Math.max(20, Math.floor(localCount * 0.25))) {
     return [];
   }
 
-  const peerPaths = new Set(peer.map((f) => f.relativePath));
+  const peerPaths = new Set(peerFiltered.map((f) => f.relativePath));
   const localByPath = new Map(
-    local.map((file) => [file.relativePath, file] as const),
+    localFiltered.map((file) => [file.relativePath, file] as const),
   );
   const deletes: string[] = [];
-  for (const [relativePath, prior] of Object.entries(previous)) {
+  for (const [relativePath, prior] of Object.entries(prunedPrevious)) {
+    if (isSkippedVaultRelativePath(relativePath)) continue;
     if (peerPaths.has(relativePath)) continue;
     const here = localByPath.get(relativePath);
     if (!here) continue;

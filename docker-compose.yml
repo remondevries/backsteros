@@ -1,9 +1,12 @@
-name: backsteros
+# Default project name is worktree-safe. Live LaunchAgent / ensure-once export
+# BACKSTEROS_COMPOSE_PROJECT=backsteros (+ COMPOSE_PROJECT_NAME) so plain
+# `docker compose up` from a checkout cannot recreate live containers.
+name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}
 
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: backsteros-postgres
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}-postgres
     restart: unless-stopped
     ports:
       - "127.0.0.1:5433:5432"
@@ -23,7 +26,7 @@ services:
 
   mongo:
     image: mongo:7
-    container_name: backsteros-powersync-mongo
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}-powersync-mongo
     restart: unless-stopped
     # PowerSync bucket storage needs transactions → single-node replica set.
     command: ["--replSet", "rs0", "--bind_ip_all"]
@@ -44,7 +47,7 @@ services:
 
   powersync:
     image: journeyapps/powersync-service:latest
-    container_name: backsteros-powersync
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}-powersync
     restart: unless-stopped
     depends_on:
       postgres:

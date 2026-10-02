@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "BacksterOS",
-  "version": "0.1.0",
+  "version": "0.2.271",
   "identifier": "com.backsteros.desktop",
   "build": {
     "beforeDevCommand": "./node_modules/.bin/vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm -C .. --filter @backsteros/ui build && ./node_modules/.bin/tsc && ./node_modules/.bin/vite build",
+    "beforeBuildCommand": "node ../scripts/sync-app-version.mjs && pnpm -C .. --filter @backsteros/ui build && ./node_modules/.bin/tsc && ./node_modules/.bin/vite build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -36,7 +36,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "Productivity",
     "shortDescription": "BacksterOS desktop",
     "longDescription": "Native BacksterOS client — tasks, projects, documents, and letters with offline-first sync.",

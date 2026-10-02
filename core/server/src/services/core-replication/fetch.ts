@@ -135,6 +135,7 @@ export async function fetchLocalChanges(
 /**
  * Tip watermark per table: max (updated_at, pk) used to skip empty change
  * pulls with one HTTP round-trip instead of one request per quiet table.
+ * Selects only the tip columns (not row_to_json of the full row).
  */
 export async function fetchLocalTableTip(
   table: ReplicatedTable,
@@ -144,21 +145,20 @@ export async function fetchLocalTableTip(
     return null;
   }
   const whereClause = spec.whereSql ? `WHERE ${spec.whereSql}` : "";
+  const pkSelect = spec.pk.map((col) => `"${col}"`).join(", ");
   const orderClause = `"${spec.updatedAtColumn}" DESC, ${pkOrderClause(spec)} DESC`;
   const query = `
-    SELECT row_to_json(t)::jsonb AS row
-    FROM "${spec.name}" t
+    SELECT "${spec.updatedAtColumn}" AS tip_updated_at, ${pkSelect}
+    FROM "${spec.name}"
     ${whereClause}
     ORDER BY ${orderClause}
     LIMIT 1
   `;
-  const rows = (await sqlClient.unsafe(query)) as {
-    row: Record<string, unknown>;
-  }[];
+  const rows = (await sqlClient.unsafe(query)) as Record<string, unknown>[];
   if (rows.length === 0) return null;
-  const row = rows[0]!.row;
+  const row = rows[0]!;
   return {
-    updatedAt: toIso(row[spec.updatedAtColumn] as string | Date),
+    updatedAt: toIso(row.tip_updated_at as string | Date),
     rowId: rowIdFromPk(row, spec.pk),
   };
 }

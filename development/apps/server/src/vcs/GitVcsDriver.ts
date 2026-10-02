@@ -714,6 +714,41 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const checkpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
       const operation = "GitVcsDriver.checkpoints.captureCheckpoint";
+
+      // OS-73: cheap path — when worktree matches an existing commit, point the
+      // new ref at it instead of `git add -A` over a huge tree.
+      // `git diff` alone misses untracked files; those would be included by
+      // `git add -A`, so also require a clean untracked set.
+      const reuseCandidates = [input.reuseIfUnchangedFromRef, "HEAD"].filter(
+        (value): value is string => Boolean(value),
+      );
+      for (const reuseRef of reuseCandidates) {
+        const reuseCommit = yield* resolveCheckpointCommit(input.cwd, reuseRef);
+        if (!reuseCommit) continue;
+        const diff = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["diff", "--quiet", reuseCommit, "--", "."],
+          allowNonZeroExit: true,
+          timeoutMs: 30_000,
+        });
+        if (diff.exitCode !== 0) continue;
+        const untracked = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["ls-files", "-o", "--exclude-standard", "--", "."],
+          allowNonZeroExit: true,
+          timeoutMs: 30_000,
+        });
+        if (untracked.stdout.trim().length > 0) continue;
+        yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["update-ref", input.checkpointRef, reuseCommit],
+        });
+        return;
+      }
+
       const gitCommonDir = yield* resolveGitCommonDir(input.cwd);
       const tempIndexPath = path.join(
         gitCommonDir,

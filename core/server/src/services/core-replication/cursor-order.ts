@@ -80,6 +80,10 @@ export function maxCursor(
  * Whether a peer tip from /sync-state means /changes would return rows.
  * `undefined` tip = peer did not report this table → must poll.
  * `null` tip = empty/absent table → skip.
+ *
+ * When timestamps are equal but rowIds differ, poll instead of skipping:
+ * JS `localeCompare` does not match Postgres text ordering for mixed-case
+ * nanoids, so an equal-time tip with a different id is treated as maybe-ahead.
  */
 export function peerTipHasChanges(
   tip: ReplicationCursor | null | undefined,
@@ -87,5 +91,32 @@ export function peerTipHasChanges(
 ): boolean {
   if (tip === undefined) return true;
   if (tip === null) return false;
-  return compareCursor(tip, cursor) > 0;
+  const tipTime = sortableTime(toIso(tip.updatedAt));
+  const cursorTime = sortableTime(toIso(cursor.updatedAt));
+  if (tipTime > cursorTime) return true;
+  if (tipTime < cursorTime) return false;
+  // Equal timestamps: identical id → caught up; differing id → poll.
+  return tip.rowId !== cursor.rowId;
+}
+
+/**
+ * Decide whether to poll /changes given an optional peer tip and empty-pull backoff.
+ * - Quiet tip → skip without growing backoff.
+ * - Tip ahead → poll and bypass empty-pull backoff.
+ * - No tip → honor empty-pull deferral.
+ */
+export function decidePullForPeerTip(input: {
+  peerTipProvided: boolean;
+  peerTip?: ReplicationCursor | null;
+  cursor: ReplicationCursor;
+  deferEmptyPull: boolean;
+}): "poll" | "skip_quiet_tip" | "defer_backoff" {
+  if (input.peerTipProvided) {
+    if (!peerTipHasChanges(input.peerTip, input.cursor)) {
+      return "skip_quiet_tip";
+    }
+    return "poll";
+  }
+  if (input.deferEmptyPull) return "defer_backoff";
+  return "poll";
 }

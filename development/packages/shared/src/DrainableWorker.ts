@@ -6,6 +6,10 @@
  * has finished processing. This lets tests replace timing-sensitive
  * `Effect.sleep` calls with deterministic `drain()`.
  *
+ * Optional `concurrency` runs that many workers against the same queue so
+ * independent items (e.g. session starts on different threads) can proceed
+ * in parallel (OS-73).
+ *
  * @module DrainableWorker
  */
 import * as Scope from "effect/Scope";
@@ -28,6 +32,14 @@ export interface DrainableWorker<A> {
   readonly drain: Effect.Effect<void>;
 }
 
+export type MakeDrainableWorkerOptions = {
+  /**
+   * Number of concurrent processors pulling from the same queue.
+   * Defaults to 1 (sequential). Cap at a sensible limit for session starts.
+   */
+  readonly concurrency?: number;
+};
+
 /**
  * Create a drainable worker that processes items from an unbounded queue.
  *
@@ -35,16 +47,19 @@ export interface DrainableWorker<A> {
  * the scope closes. A finalizer shuts down the queue.
  *
  * @param process - The effect to run for each queued item.
- * @returns A `DrainableWorker` with `queue` and `drain`.
+ * @param options - Optional concurrency (default 1).
+ * @returns A `DrainableWorker` with `enqueue` and `drain`.
  */
 export const makeDrainableWorker = <A, E, R>(
   process: (item: A) => Effect.Effect<void, E, R>,
+  options?: MakeDrainableWorkerOptions,
 ): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
   Effect.gen(function* () {
     const queue = yield* Effect.acquireRelease(TxQueue.unbounded<A>(), TxQueue.shutdown);
     const outstanding = yield* TxRef.make(0);
+    const concurrency = Math.max(1, Math.min(options?.concurrency ?? 1, 16));
 
-    yield* TxQueue.take(queue).pipe(
+    const workerLoop = TxQueue.take(queue).pipe(
       Effect.tap((a) =>
         Effect.ensuring(
           process(a),
@@ -54,6 +69,10 @@ export const makeDrainableWorker = <A, E, R>(
       Effect.forever,
       Effect.forkScoped,
     );
+
+    for (let i = 0; i < concurrency; i += 1) {
+      yield* workerLoop;
+    }
 
     const drain: DrainableWorker<A>["drain"] = TxRef.get(outstanding).pipe(
       Effect.tap((n) => (n > 0 ? Effect.txRetry : Effect.void)),

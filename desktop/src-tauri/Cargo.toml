@@ -1,6 +1,6 @@
 [package]
 name = "backsteros-desktop"
-version = "0.1.0"
+version = "0.2.271"
 description = "BacksterOS desktop — Tauri 2 + Vite/React"
 authors = ["BacksterOS"]
 edition = "2021"

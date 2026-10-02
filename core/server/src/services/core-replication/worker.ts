@@ -17,7 +17,10 @@ import {
   listActiveReplicatedTables,
 } from "./fetch.js";
 import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
-import { peerTipHasChanges } from "./cursor-order.js";
+import {
+  decidePullForPeerTip,
+  peerTipHasChanges,
+} from "./cursor-order.js";
 import { runReplicationReconcile } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
 import type { ReplicatedTable } from "./constants.js";
@@ -39,7 +42,7 @@ export function resetReplicationWorkerStateForTests(): void {
   resetEmptyPullStateForTests();
 }
 
-export { peerTipHasChanges };
+export { decidePullForPeerTip, peerTipHasChanges };
 
 function replicationHeaders(secret: string): HeadersInit {
   return {
@@ -93,17 +96,18 @@ export async function pullTable(
   // skip local rows that are still older than the peer tip.
   let cursor = await getReplicationCursor(table, "pull");
   const nowMs = Date.now();
-  if (shouldDeferEmptyPull(table, cursor, nowMs)) {
+  const peerTipProvided = Boolean(options && "peerTip" in options);
+  const decision = decidePullForPeerTip({
+    peerTipProvided,
+    peerTip: options?.peerTip,
+    cursor,
+    deferEmptyPull: shouldDeferEmptyPull(table, cursor, nowMs),
+  });
+  if (decision === "skip_quiet_tip" || decision === "defer_backoff") {
+    // Quiet tip: do not grow empty-pull backoff. Defer: leave backoff as-is.
     return;
   }
-
-  // sync-state short-circuit: tip not ahead of cursor → empty, no /changes HTTP.
-  if (options && "peerTip" in options) {
-    if (!peerTipHasChanges(options.peerTip, cursor)) {
-      notePullOutcome(table, cursor, false, Date.now());
-      return;
-    }
-  }
+  // Tip ahead (or no tip info past defer) → poll /changes.
 
   let appliedTotal = 0;
   let skippedTotal = 0;

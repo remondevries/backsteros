@@ -25,6 +25,8 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 export interface CaptureCheckpointInput {
   readonly cwd: string;
   readonly checkpointRef: CheckpointRef;
+  /** Skip expensive `git add -A` when worktree matches this ref (OS-73). */
+  readonly reuseIfUnchangedFromRef?: CheckpointRef;
 }
 
 export interface RestoreCheckpointInput {

@@ -17,6 +17,11 @@ import * as VcsProcess from "./VcsProcess.ts";
 export interface VcsCaptureCheckpointInput {
   readonly cwd: string;
   readonly checkpointRef: CheckpointRef;
+  /**
+   * When set, skip the expensive `git add -A` if the worktree matches this
+   * existing checkpoint commit and just point `checkpointRef` at it (OS-73).
+   */
+  readonly reuseIfUnchangedFromRef?: CheckpointRef;
 }
 
 export interface VcsRestoreCheckpointInput {

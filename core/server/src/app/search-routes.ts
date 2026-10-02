@@ -3,7 +3,7 @@
  *
  * Canonical path: `GET /api/v1/search` (agent document/task search + pagination).
  * Batch: `POST /api/v1/search/batch` — parallel search + document retrieve.
- * Alias: `GET /api/v1/global-search` → same module, multi-entity palette profile.
+ * Alias: `GET /api/v1/global-search` → same handler, multi-entity palette profile.
  * Task hits share key/status/projectId; palette task rows come from `searchTasks`.
  *
  * `include=task`: document hits only on the first page; `cursor` paginates tasks.
@@ -43,6 +43,8 @@ import {
 const TASK_STATUS_SET = new Set<string>(TASK_STATUSES);
 /** Cap concurrent batch item work (each item may run multiple DB queries). */
 const SEARCH_BATCH_CONCURRENCY = 4;
+
+export type SearchProfile = "agent" | "palette";
 
 function parseStatusCsv(status: string | undefined): string[] {
   if (!status?.trim()) return [];
@@ -84,56 +86,56 @@ async function mapPool<T, R>(
   return results;
 }
 
-/** Multi-entity command-palette search (formerly only on /global-search). */
-async function handlePaletteSearch(c: Context) {
+/**
+ * Single search implementation for agent + palette profiles.
+ * `/api/v1/global-search` is a thin alias that forces `profile: "palette"`.
+ */
+export async function handleMergedSearch(
+  c: Context,
+  profile: SearchProfile,
+) {
   const auth = getAuth(c);
   if (!requireScope("search:query")(auth)) {
     return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
   }
+
   const raw = collectQueryParams(new URL(c.req.url));
-  let parsed;
-  try {
-    parsed = parseGlobalSearchQuery(raw);
-  } catch (error) {
-    if (error instanceof ListQueryError) {
-      return c.json(listQueryErrorBody(error), 400);
+
+  if (profile === "palette") {
+    let parsed;
+    try {
+      parsed = parseGlobalSearchQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
     }
-    throw error;
-  }
-  if (parsed.limitClamped) {
-    c.header(
-      "X-BacksterOS-Hint",
-      "limit clamped to 100 (maximum for global-search).",
-    );
-  }
-
-  return c.json({
-    results: await circleService.globalSearch(
-      auth.workspaceId,
-      parsed.q,
-      parsed.limit,
-      {
-        mode: parsed.mode,
-        contextKind: parsed.contextKind,
-        projectId: parsed.projectId,
-        projectSection: parsed.projectSection,
-        contactId: parsed.contactId,
-        contactSection: parsed.contactSection,
-        organizationId: parsed.organizationId,
-        organizationSection: parsed.organizationSection,
-      },
-    ),
-  });
-}
-
-/** Agent search: type=task (paginated) or document types (+ optional include=task). */
-async function handleAgentSearch(c: Context) {
-  const auth = getAuth(c);
-  if (!requireScope("search:query")(auth)) {
-    return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    if (parsed.limitClamped) {
+      c.header(
+        "X-BacksterOS-Hint",
+        "limit clamped to 100 (maximum for global-search).",
+      );
+    }
+    return c.json({
+      results: await circleService.globalSearch(
+        auth.workspaceId,
+        parsed.q,
+        parsed.limit,
+        {
+          mode: parsed.mode,
+          contextKind: parsed.contextKind,
+          projectId: parsed.projectId,
+          projectSection: parsed.projectSection,
+          contactId: parsed.contactId,
+          contactSection: parsed.contactSection,
+          organizationId: parsed.organizationId,
+          organizationSection: parsed.organizationSection,
+        },
+      ),
+    });
   }
 
-  const raw = collectQueryParams(new URL(c.req.url));
   let parsed;
   try {
     parsed = parseSearchQuery(raw);
@@ -293,21 +295,6 @@ async function handleSearchBatch(c: Context) {
     (item) => runBatchItem(auth.workspaceId, item),
   );
   return c.json({ results } satisfies SearchBatchResponse);
-}
-
-/**
- * Single merged search implementation.
- * - `profile: "agent"` → /api/v1/search
- * - `profile: "palette"` → /api/v1/global-search (thin alias)
- */
-async function handleMergedSearch(
-  c: Context,
-  profile: "agent" | "palette",
-) {
-  if (profile === "palette") {
-    return handlePaletteSearch(c);
-  }
-  return handleAgentSearch(c);
 }
 
 export function registerSearchRoutes(app: Hono) {
