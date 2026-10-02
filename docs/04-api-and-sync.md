@@ -73,8 +73,10 @@ Auth: `Authorization: Bearer sk_live_…`
 
 ```http
 GET  /api/v1/search?q=architecture&type=knowledge
+GET  /api/v1/search?q=architecture&include=task
 GET  /api/v1/search?q=FiboSearch&type=task
 GET  /api/v1/search?q=QM-38&type=task
+POST /api/v1/search/batch
 GET  /api/v1/projects
 GET  /api/v1/projects/OS
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
@@ -105,6 +107,7 @@ with a `field` in the body.
 | --- | --- |
 | `q` | Required. Documents: ILIKE on title/path/snippet. Tasks: ILIKE on title/description; display key (`QM-38`) or exact task id is preferred on the first page |
 | `type` | `project` \| `knowledge` \| `journal` \| `task` (alias `tasks`). Omit for documents only. Unknown → **400** `field: type` |
+| `include` | `task` \| `tasks` — when searching documents, also run task search for the same `q` and merge hits (OS-76). Invalid with `type=task` |
 | `projectId` | Optional filter (id or project key) |
 | `status` | Tasks only: comma-separated statuses (OR) |
 | `limit` | Default 20, max 50 |
@@ -113,6 +116,22 @@ with a `field` in the body.
 Task results: `{ id, type: "task", key, projectId, status, title, snippet, updatedAt }` plus response `nextCursor`.
 Document results keep `{ id, type, projectId, path, title, snippet, updatedAt }`.
 Prefer **`type=task`** for task text search; `GET /global-search?mode=tasks` remains for mixed command-palette hits.
+
+Identical agent search / document-retrieve lookups within ~15s share an in-memory
+result (OS-76). For several different lookups in one turn prefer:
+
+```http
+POST /api/v1/search/batch
+{ "queries": [
+  { "id": "r1", "kind": "retrieve", "q": "architecture", "budget": 4000, "limit": 5 },
+  { "id": "s1", "kind": "search", "q": "OS-76", "type": "task", "limit": 5 },
+  { "id": "s2", "kind": "search", "q": "vault", "include": "task", "limit": 5 }
+]}
+```
+
+Queries run in parallel (max 10). `kind=retrieve` needs `documents:read` as well as
+`search:query`. Per-item failures return `{ id, kind, error, field? }` without failing
+the whole batch.
 
 ### List pagination (agents)
 

@@ -98,6 +98,11 @@ export const FINANCIAL_IMPORT_DIALECTS = [
 export const FINANCIAL_AMOUNT_SIGNS = ["all", "debit", "credit"] as const;
 
 export const taskStatusSchema = z.enum(TASK_STATUSES);
+/** Email thread status includes unsent AgentMail drafts (`concept`). */
+export const emailThreadStatusSchema = z.union([
+  taskStatusSchema,
+  z.literal("concept"),
+]);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
 export const projectTypeSchema = z.enum(PROJECT_TYPES);
 export const projectProviderSchema = z.enum(PROJECT_PROVIDERS);
@@ -1369,12 +1374,90 @@ export const searchQuerySchema = z.object({
   status: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
   cursor: z.string().optional(),
+  /**
+   * When searching documents (type omitted or a document type), also run task
+   * search for the same `q` and merge hits (OS-76 multi-resource).
+   * Values: `task` | `tasks`.
+   */
+  include: z.enum(["task", "tasks"]).optional(),
 });
 
 export const searchResponseSchema = z.object({
   results: z.array(searchResultSchema),
   /** Present for `type=task` (opaque keyset on updatedAt desc, id). */
   nextCursor: z.string().nullable().optional(),
+});
+
+/** Max queries per `POST /api/v1/search/batch` (OS-76). */
+export const SEARCH_BATCH_MAX_QUERIES = 10;
+
+const searchBatchSearchItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.literal("search"),
+  q: z.string().min(1).max(500),
+  type: searchTypeQuerySchema.optional(),
+  projectId: z.string().optional(),
+  status: z.string().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+  cursor: z.string().optional(),
+  include: z.enum(["task", "tasks"]).optional(),
+});
+
+const searchBatchRetrieveItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.literal("retrieve"),
+  q: z.string().min(1).max(2000),
+  type: multiValueQuerySchema.optional(),
+  audience: multiValueQuerySchema.optional(),
+  status: multiValueQuerySchema.optional(),
+  project: multiValueQuerySchema.optional(),
+  budget: z.number().int().positive().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+
+export const searchBatchQueryItemSchema = z.discriminatedUnion("kind", [
+  searchBatchSearchItemSchema,
+  searchBatchRetrieveItemSchema,
+]);
+
+export const searchBatchRequestSchema = z.object({
+  queries: z
+    .array(searchBatchQueryItemSchema)
+    .min(1)
+    .max(SEARCH_BATCH_MAX_QUERIES),
+});
+
+export const searchBatchSearchResponseItemSchema = z.object({
+  id: z.string(),
+  kind: z.literal("search"),
+  results: z.array(searchResultSchema),
+  nextCursor: z.string().nullable().optional(),
+});
+
+export const searchBatchRetrieveResponseItemSchema = z.object({
+  id: z.string(),
+  kind: z.literal("retrieve"),
+  results: z.array(documentRetrievalHitSchema),
+  budget: z.number().int().positive(),
+  truncated: z.boolean(),
+  skipped: z.number().int().nonnegative(),
+});
+
+export const searchBatchErrorResponseItemSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["search", "retrieve"]),
+  error: z.string(),
+  field: z.string().optional(),
+});
+
+export const searchBatchResponseItemSchema = z.union([
+  searchBatchSearchResponseItemSchema,
+  searchBatchRetrieveResponseItemSchema,
+  searchBatchErrorResponseItemSchema,
+]);
+
+export const searchBatchResponseSchema = z.object({
+  results: z.array(searchBatchResponseItemSchema),
 });
 
 const isoDateSchema = z.string().datetime();
@@ -3192,7 +3275,7 @@ export const agentMailMessageSchema = z.object({
   number: z.number().int().positive().optional(),
   displayId: z.string().optional(),
   /** Workspace thread property; defaults to backlog when unset. */
-  status: taskStatusSchema.optional(),
+  status: emailThreadStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   organizationId: z.string().nullable().optional(),
@@ -3227,7 +3310,7 @@ export const emailThreadMetadataSchema = z.object({
   projectId: z.string().nullable(),
   projectName: z.string().nullable().optional(),
   projectKey: z.string().nullable().optional(),
-  status: taskStatusSchema,
+  status: emailThreadStatusSchema,
   priority: z.number().int().min(0).max(4),
   dueDate: z.string().datetime().nullable(),
   /** External update flag — surfaces in the Updated inbox group. */
@@ -3240,7 +3323,7 @@ export const updateEmailThreadMetadataSchema = z.object({
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
-  status: taskStatusSchema.optional(),
+  status: emailThreadStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   /** Clear the Updated inbox flag after the user views the item. */
@@ -4327,6 +4410,9 @@ export type DocumentSearchResult = z.infer<typeof documentSearchResultSchema>;
 export type TaskSearchResult = z.infer<typeof taskSearchResultSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
 export type SearchTypeQuery = z.infer<typeof searchTypeQuerySchema>;
+export type SearchBatchRequest = z.infer<typeof searchBatchRequestSchema>;
+export type SearchBatchResponse = z.infer<typeof searchBatchResponseSchema>;
+export type SearchBatchQueryItem = z.infer<typeof searchBatchQueryItemSchema>;
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 export type Organization = z.infer<typeof organizationSchema>;
 export type Contact = z.infer<typeof contactSchema>;

@@ -23,6 +23,8 @@ import {
   documentRetrievalQuerySchema,
   documentRetrievalResponseSchema,
   documentSchema,
+  searchBatchRequestSchema,
+  searchBatchResponseSchema,
   documentSectionResponseSchema,
   errorSchema,
   githubBranchSchema,
@@ -1021,7 +1023,20 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary:
-        "Merged search: documents (title/path/snippet) or tasks (type=task). Palette multi-entity search uses /global-search alias (OS-73).",
+        "Merged search: documents (title/path/snippet) or tasks (type=task). include=task also merges task hits. Palette multi-entity search uses /global-search alias (OS-73).",
+    },
+    searchBatch: {
+      method: "POST",
+      path: "/api/v1/search/batch",
+      body: searchBatchRequestSchema,
+      responses: {
+        200: searchBatchResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "Batch agent search + document retrieve in one round trip (parallel, short-TTL cached; OS-76).",
     },
     getProjectRelations: {
       method: "GET",

@@ -40,6 +40,8 @@ GET /api/v1/meetings?projectId=OS&paginated=true&limit=20
 GET /api/v1/contacts?paginated=true&limit=50
 GET /api/v1/documents            # default limit=100 + hint
 GET /api/v1/search?q=…&type=task # task text / key / id search
+GET /api/v1/search?q=…&include=task # documents + tasks for one q
+POST /api/v1/search/batch        # parallel search + document retrieve
 GET /api/v1/global-search?q=…&mode=tasks
 ```
 
@@ -49,7 +51,9 @@ with `field`. Keys work wherever ids are accepted (`projectId=OS`, `q=QM-38&type
 For task text search prefer **`GET /api/v1/search?q=…&type=task`** (returns
 `{ results: [{ id, type: "task", key, projectId, status, title, snippet, updatedAt }], nextCursor }`).
 `type=tasks` is accepted as an alias. Omit `type` for document search only
-(`project` / `knowledge` / `journal`).
+(`project` / `knowledge` / `journal`). Use `include=task` to merge task hits into a
+document search. For several lookups in one turn, prefer **`POST /api/v1/search/batch`**
+(search + `documents/retrieve` queries in parallel; short-TTL response cache).
 
 ## Allowed traffic
 

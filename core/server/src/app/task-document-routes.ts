@@ -159,6 +159,7 @@ import {
 } from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
+import { runAgentRetrieve } from "../services/agent-search.js";
 import {
   DocumentPropertyError,
   getDocumentProperties,
@@ -2066,7 +2067,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
       }
 
       const query = c.req.valid("query");
-      const result = await documentService.retrieveDocuments({
+      const result = await runAgentRetrieve({
         workspaceId: auth.workspaceId,
         q: query.q,
         propertyType: parseMultiQueryValues(query.type),

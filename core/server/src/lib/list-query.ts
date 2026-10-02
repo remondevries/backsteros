@@ -683,6 +683,7 @@ export const SEARCH_KNOWN_KEYS = new Set([
   "status",
   "limit",
   "cursor",
+  "include",
 ]);
 
 export const SEARCH_TYPE_VALUES = new Set([
@@ -703,6 +704,8 @@ export type ParsedSearchQuery = {
   statuses: string[];
   limit: number;
   cursor?: string;
+  /** Also merge task hits when searching documents (OS-76). */
+  includeTasks: boolean;
 };
 
 /**
@@ -732,6 +735,21 @@ export function parseSearchQuery(
     assertEnumValues(statuses, STATUS_SET, "status");
   }
 
+  const includeRaw = firstString(raw.include);
+  let includeTasks = false;
+  if (includeRaw != null) {
+    if (includeRaw !== "task" && includeRaw !== "tasks") {
+      throw new ListQueryError(`Invalid include: ${includeRaw}`, "include");
+    }
+    if (type === "task") {
+      throw new ListQueryError(
+        "include is only valid for document search",
+        "include",
+      );
+    }
+    includeTasks = true;
+  }
+
   return {
     q,
     type,
@@ -742,6 +760,7 @@ export function parseSearchQuery(
       maxLimit: SEARCH_MAX_LIMIT,
     }),
     cursor: firstString(raw.cursor),
+    includeTasks,
   };
 }
 
