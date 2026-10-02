@@ -40,6 +40,11 @@ import {
   naturalKeyColumnsFor,
   naturalKeyForkWinner,
 } from "./natural-key-conflicts.js";
+import {
+  isTaskNumberUniqueViolation,
+  taskNumberKeeper,
+  taskNumberScopeId,
+} from "./task-number-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import { publishProjectUpdateWorkspaceUpdated } from "../../lib/workspace-events.js";
 import {
@@ -341,6 +346,18 @@ async function applyGenericRowUnchecked(
             : 0;
       return rowCount > 0 ? "applied" : "skipped";
     } catch (error) {
+      if (isTaskNumberUniqueViolation(error) && spec.name === "tasks") {
+        const renumbered = await renumberTaskNumberCollision(attemptRow);
+        if (renumbered) {
+          appendOpsLog(
+            "warn",
+            "core replication task-number renumber",
+            `${renumbered.fromId} ${renumbered.fromNumber} -> ${renumbered.toNumber}`,
+          );
+          attemptRow = renumbered.row;
+          continue;
+        }
+      }
       if (isHealableSoftUnique(error)) {
         const healed = await softDeleteSoftUniqueLosers(spec, attemptRow, error);
         if (healed) {
@@ -375,6 +392,116 @@ async function applyGenericRowUnchecked(
 }
 
 /**
+ * On tasks_workspace_scope_number_unique: keep the earlier-created task's
+ * number and move the other to max(scope)+1. Never soft-deletes. Returns the
+ * row to retry with (incoming number may change) plus renumber metadata for
+ * ops-log, or null when the collision cannot be resolved here.
+ */
+async function renumberTaskNumberCollision(
+  row: ReplicationRow,
+): Promise<{
+  row: ReplicationRow;
+  fromId: string;
+  fromNumber: number;
+  toNumber: number;
+} | null> {
+  const workspaceId = typeof row.workspace_id === "string" ? row.workspace_id : null;
+  const incomingId = typeof row.id === "string" ? row.id : null;
+  const incomingNumber = row.number == null ? null : Number(row.number);
+  if (!workspaceId || !incomingId || incomingNumber == null || !Number.isFinite(incomingNumber)) {
+    return null;
+  }
+  if (row.legacy_source != null && row.legacy_source !== "") {
+    return null;
+  }
+
+  const projectId =
+    typeof row.project_id === "string" ? row.project_id : null;
+  const contactId =
+    typeof row.contact_id === "string" ? row.contact_id : null;
+
+  const twins = (await sqlClient.unsafe(
+    `
+      SELECT id, number, created_at
+      FROM tasks
+      WHERE workspace_id = $1
+        AND number = $2
+        AND id <> $3
+        AND legacy_source IS NULL
+        AND coalesce('project:' || project_id, 'contact:' || contact_id, '__inbox__')
+          = coalesce('project:' || $4::text, 'contact:' || $5::text, '__inbox__')
+      LIMIT 1
+    `,
+    [workspaceId, incomingNumber, incomingId, projectId, contactId] as never[],
+  )) as { id: string; number: number; created_at: Date | string }[];
+
+  const twin = twins[0];
+  if (!twin) return null;
+
+  const incomingCreatedAt = new Date(String(row.created_at ?? row.updated_at));
+  const keeper = taskNumberKeeper(
+    { id: incomingId, createdAt: incomingCreatedAt },
+    { id: twin.id, createdAt: new Date(twin.created_at) },
+  );
+
+  const maxRows = (await sqlClient.unsafe(
+    `
+      SELECT coalesce(max(number), 0)::int AS max_number
+      FROM tasks
+      WHERE workspace_id = $1
+        AND coalesce('project:' || project_id, 'contact:' || contact_id, '__inbox__')
+          = coalesce('project:' || $2::text, 'contact:' || $3::text, '__inbox__')
+    `,
+    [workspaceId, projectId, contactId] as never[],
+  )) as { max_number: number }[];
+  const nextNumber = Number(maxRows[0]?.max_number ?? 0) + 1;
+  const nowIso = new Date().toISOString();
+  const scopeId = taskNumberScopeId(projectId, contactId);
+
+  await sqlClient.unsafe(
+    `
+      INSERT INTO entity_counters (workspace_id, entity, scope_id, next_value, updated_at)
+      VALUES ($1, 'task', $2, $3, $4::timestamptz)
+      ON CONFLICT (workspace_id, entity, scope_id)
+      DO UPDATE SET
+        next_value = greatest(entity_counters.next_value, EXCLUDED.next_value),
+        updated_at = EXCLUDED.updated_at
+    `,
+    [workspaceId, scopeId, nextNumber + 1, nowIso] as never[],
+  );
+
+  if (keeper.id === incomingId) {
+    // Incoming keeps the number — move the local twin out of the way.
+    await sqlClient.unsafe(
+      `
+        UPDATE tasks
+        SET number = $1, updated_at = $2::timestamptz
+        WHERE id = $3
+      `,
+      [nextNumber, nowIso, twin.id] as never[],
+    );
+    return {
+      row,
+      fromId: twin.id,
+      fromNumber: Number(twin.number),
+      toNumber: nextNumber,
+    };
+  }
+
+  // Local twin keeps the number — renumber the incoming payload and retry.
+  return {
+    row: {
+      ...row,
+      number: nextNumber,
+      updated_at: nowIso,
+    },
+    fromId: incomingId,
+    fromNumber: incomingNumber,
+    toNumber: nextNumber,
+  };
+}
+
+/**
  * Soft-delete live rows that block a soft-unique index for this incoming PK.
  * Returns true when at least one loser was cleared (caller should retry).
  */
@@ -405,32 +532,6 @@ async function softDeleteSoftUniqueLosers(
         AND id <> $4
     `;
     params = [nowIso, habitId, dueDate, id];
-  } else if (
-    constraint === "tasks_workspace_scope_number_unique" &&
-    spec.name === "tasks"
-  ) {
-    const workspaceId = row.workspace_id;
-    const number = row.number;
-    const id = row.id;
-    if (!workspaceId || number == null || !id) return false;
-    sqlText = `
-      UPDATE tasks
-      SET deleted_at = $1::timestamptz, updated_at = $1::timestamptz
-      WHERE workspace_id = $2
-        AND number = $3
-        AND deleted_at IS NULL
-        AND id <> $4
-        AND coalesce('project:' || project_id, 'contact:' || contact_id, '__inbox__')
-          = coalesce('project:' || $5::text, 'contact:' || $6::text, '__inbox__')
-    `;
-    params = [
-      nowIso,
-      workspaceId,
-      number,
-      id,
-      row.project_id ?? null,
-      row.contact_id ?? null,
-    ];
   } else if (
     constraint === "organizations_workspace_number_unique" &&
     spec.name === "organizations"

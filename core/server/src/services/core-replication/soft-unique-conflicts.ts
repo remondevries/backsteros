@@ -50,10 +50,14 @@ export function isForeignKeyViolation(error: unknown): boolean {
   return readPgError(error)?.code === "23503";
 }
 
-/** Soft-unique constraints that twin apply can heal by soft-deleting losers. */
+/**
+ * Soft-unique constraints that twin apply can heal by soft-deleting losers.
+ * Do NOT include tasks_workspace_scope_number_unique — that index is not
+ * partial on deleted_at, and soft-deleting a different live task is data loss.
+ * OS-70 renumbers on that collision instead (task-number-conflicts.ts).
+ */
 export const HEALABLE_SOFT_UNIQUE_CONSTRAINTS = new Set([
   "tasks_habit_due_unique",
-  "tasks_workspace_scope_number_unique",
   "organizations_workspace_number_unique",
   "contacts_workspace_number_unique",
 ]);

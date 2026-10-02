@@ -37,6 +37,18 @@ describe("soft-unique-conflicts helpers", () => {
   it("only heals known soft-unique constraints", () => {
     assert.ok(HEALABLE_SOFT_UNIQUE_CONSTRAINTS.has("tasks_habit_due_unique"));
     assert.equal(
+      HEALABLE_SOFT_UNIQUE_CONSTRAINTS.has("tasks_workspace_scope_number_unique"),
+      false,
+      "task numbers renumber (OS-70); never soft-delete heal",
+    );
+    assert.equal(
+      isHealableSoftUnique({
+        code: "23505",
+        constraint_name: "tasks_workspace_scope_number_unique",
+      }),
+      false,
+    );
+    assert.equal(
       isHealableSoftUnique({
         code: "23505",
         constraint_name: "some_other_unique",
