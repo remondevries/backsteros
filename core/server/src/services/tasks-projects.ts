@@ -84,6 +84,23 @@ export type ProjectWriteOptions = {
   skipVaultSideEffects?: boolean;
 };
 
+/**
+ * OS-42 / OS-49: peer sync replay / controlled task writes.
+ * Activity rows and auto-timer transitions arrive as their own sync entities;
+ * replaying a task change must not invent a second copy.
+ */
+export type TaskWriteOptions = {
+  /** Preserve the sync_event row time instead of stamping now. */
+  updatedAt?: Date;
+  /**
+   * Peer sync_event replay — do not invent activity rows or auto-timer
+   * start/stop; those replicate as task_activity / timer sync entities.
+   */
+  skipActivitySideEffects?: boolean;
+  allowAgentInboxApproval?: boolean;
+  authKind?: "api_key" | "local_shell";
+};
+
 async function assertWorkspaceReference(
   workspaceId: string,
   id: string | null | undefined,
@@ -1767,7 +1784,7 @@ async function createTaskWithExecutor(
   id: string,
   executor: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "local_shell" },
+  options?: TaskWriteOptions,
 ) {
   if (input.projectId) {
     const project = await getProjectById(workspaceId, input.projectId, executor);
@@ -1836,6 +1853,8 @@ async function createTaskWithExecutor(
         ? new Date(input.inboxUpdatedAt)
         : null
       : undefined;
+  const writeAt = options?.updatedAt;
+  const skipActivity = Boolean(options?.skipActivitySideEffects);
 
   const [row] = await executor
     .insert(tasks)
@@ -1870,9 +1889,10 @@ async function createTaskWithExecutor(
       habitId: input.habitId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
-      completedAt: status === "completed" ? new Date() : null,
+      completedAt: status === "completed" ? (writeAt ?? new Date()) : null,
       agentCreatedAt,
       ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
+      ...(writeAt ? { updatedAt: writeAt, createdAt: writeAt } : {}),
     })
     .returning();
 
@@ -1880,66 +1900,68 @@ async function createTaskWithExecutor(
     if (labelIds.length > 0) {
       await touchTaskLabelsUsed(workspaceId, labelIds, executor);
     }
-    await taskActivityService.recordTaskActivity(
-      workspaceId,
-      row.id,
-      "created",
-      { status: row.status },
-      actor,
-      executor,
-    );
-    if (row.assigneeId) {
-      const toName = await contactDisplayName(
-        workspaceId,
-        row.assigneeId,
-        executor,
-      );
+    if (!skipActivity) {
       await taskActivityService.recordTaskActivity(
         workspaceId,
         row.id,
-        "assignee_changed",
-        { from: null, to: row.assigneeId, fromName: null, toName },
+        "created",
+        { status: row.status },
         actor,
         executor,
       );
-    }
-    if (relatedContactIds.length > 0) {
-      const toNames = await relatedContactDisplayNames(
-        workspaceId,
-        relatedContactIds,
-        executor,
-      );
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        row.id,
-        "related_contacts_changed",
-        { from: [], to: relatedContactIds, fromNames: [], toNames },
-        actor,
-        executor,
-      );
-    }
-    if (relatedOrganizationIds.length > 0) {
-      const toNames = await relatedOrganizationDisplayNames(
-        workspaceId,
-        relatedOrganizationIds,
-        executor,
-      );
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        row.id,
-        "related_organizations_changed",
-        { from: [], to: relatedOrganizationIds, fromNames: [], toNames },
-        actor,
-        executor,
-      );
-    }
-    if (taskActivityService.shouldAutoStartTaskTimer(null, row.status)) {
-      await taskActivityService.autoStartTaskTimerOnStatus(
-        workspaceId,
-        row.id,
-        row.assigneeId,
-        executor,
-      );
+      if (row.assigneeId) {
+        const toName = await contactDisplayName(
+          workspaceId,
+          row.assigneeId,
+          executor,
+        );
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          row.id,
+          "assignee_changed",
+          { from: null, to: row.assigneeId, fromName: null, toName },
+          actor,
+          executor,
+        );
+      }
+      if (relatedContactIds.length > 0) {
+        const toNames = await relatedContactDisplayNames(
+          workspaceId,
+          relatedContactIds,
+          executor,
+        );
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          row.id,
+          "related_contacts_changed",
+          { from: [], to: relatedContactIds, fromNames: [], toNames },
+          actor,
+          executor,
+        );
+      }
+      if (relatedOrganizationIds.length > 0) {
+        const toNames = await relatedOrganizationDisplayNames(
+          workspaceId,
+          relatedOrganizationIds,
+          executor,
+        );
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          row.id,
+          "related_organizations_changed",
+          { from: [], to: relatedOrganizationIds, fromNames: [], toNames },
+          actor,
+          executor,
+        );
+      }
+      if (taskActivityService.shouldAutoStartTaskTimer(null, row.status)) {
+        await taskActivityService.autoStartTaskTimerOnStatus(
+          workspaceId,
+          row.id,
+          row.assigneeId,
+          executor,
+        );
+      }
     }
   }
 
@@ -1952,7 +1974,7 @@ export async function createTask(
   id = newId(),
   executor?: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "local_shell" },
+  options?: TaskWriteOptions,
 ) {
   if (executor) {
     return createTaskWithExecutor(
@@ -1975,7 +1997,7 @@ export async function updateTask(
   input: UpdateTaskInput,
   executor: DbExecutor = db,
   actor?: TaskWriteActor | null,
-  options?: { allowAgentInboxApproval?: boolean },
+  options?: TaskWriteOptions,
 ): Promise<DbTask | null> {
   const needsShaLock =
     (Array.isArray(input.addLinkedCommitShas) &&
@@ -2071,9 +2093,11 @@ export async function updateTask(
     taskScope(existing.projectId, existing.contactId)
       ? existing.number
       : await nextTaskNumber(workspaceId, nextProjectId, nextContactId, executor);
+  const writeAt = options?.updatedAt ?? new Date();
+  const skipActivity = Boolean(options?.skipActivitySideEffects);
   const completedAt =
     nextStatus === "completed"
-      ? existing.completedAt ?? new Date()
+      ? existing.completedAt ?? writeAt
       : input.status && input.status !== "completed"
         ? null
         : existing.completedAt;
@@ -2085,7 +2109,7 @@ export async function updateTask(
     existing.agentCreatedAt &&
     !existing.agentInboxApprovedAt
   ) {
-    agentInboxApprovedAt = new Date();
+    agentInboxApprovedAt = writeAt;
   } else if (
     input.agentInboxApprovedAt &&
     existing.agentCreatedAt &&
@@ -2173,7 +2197,7 @@ export async function updateTask(
       completedAt,
       agentInboxApprovedAt,
       ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
-      updatedAt: new Date(),
+      updatedAt: writeAt,
     })
     .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
     .returning();
@@ -2186,187 +2210,189 @@ export async function updateTask(
         await touchTaskLabelsUsed(workspaceId, added, executor);
       }
     }
-    if (input.status !== undefined && input.status !== existing.status) {
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        id,
-        "status_changed",
-        { from: existing.status, to: input.status },
-        actor,
-        executor,
-      );
-      nudgeDynamicIslandTasksRefresh(
-        `status:${existing.status}->${input.status}`,
-      );
-    }
-    // Auto time tracking: start on in_progress, pause on leave — attribute
-    // to the assignee contact so agent status flips never show as "Agent".
-    // Ensure-start whenever the write sets `in_progress` (even if twin
-    // replication already flipped the row) so leader-first local apply cannot
-    // no-op the transition and skip the timer.
-    if (input.status === "in_progress") {
-      await taskActivityService.autoStartTaskTimerOnStatus(
-        workspaceId,
-        id,
-        row.assigneeId,
-        executor,
-      );
-    } else if (
-      input.status !== undefined &&
-      taskActivityService.shouldAutoStopTaskTimer(existing.status, input.status)
-    ) {
-      const stopped = await taskActivityService.autoStopTaskTimerOnStatus(
-        workspaceId,
-        id,
-        row.assigneeId,
-        executor,
-      );
-      if (
-        stopped &&
-        stopped.trackedDurationSeconds !== (row.trackedDurationSeconds ?? null)
-      ) {
-        row.trackedDurationSeconds = stopped.trackedDurationSeconds;
-        row.trackedMinutes =
-          stopped.trackedDurationSeconds != null &&
-          stopped.trackedDurationSeconds >= 60
-            ? Math.floor(stopped.trackedDurationSeconds / 60)
-            : null;
+    if (!skipActivity) {
+      if (input.status !== undefined && input.status !== existing.status) {
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "status_changed",
+          { from: existing.status, to: input.status },
+          actor,
+          executor,
+        );
+        nudgeDynamicIslandTasksRefresh(
+          `status:${existing.status}->${input.status}`,
+        );
       }
-    }
-    if (
-      input.assigneeId !== undefined &&
-      input.assigneeId !== existing.assigneeId
-    ) {
-      const [fromName, toName] = await Promise.all([
-        contactDisplayName(workspaceId, existing.assigneeId, executor),
-        contactDisplayName(workspaceId, input.assigneeId, executor),
-      ]);
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        id,
-        "assignee_changed",
-        {
-          from: existing.assigneeId,
-          to: input.assigneeId,
-          fromName,
-          toName,
-        },
-        actor,
-        executor,
-      );
-    }
-    if (nextRelatedContactIds !== undefined) {
-      const existingRelated = normalizeRelatedContactIds(
-        existing.relatedContactIds,
-      );
-      if (!relatedContactIdsEqual(existingRelated, nextRelatedContactIds)) {
-        const [fromNames, toNames] = await Promise.all([
-          relatedContactDisplayNames(workspaceId, existingRelated, executor),
-          relatedContactDisplayNames(
-            workspaceId,
-            nextRelatedContactIds,
-            executor,
-          ),
+      // Auto time tracking: start on in_progress, pause on leave — attribute
+      // to the assignee contact so agent status flips never show as "Agent".
+      // Ensure-start whenever the write sets `in_progress` (even if twin
+      // replication already flipped the row) so leader-first local apply cannot
+      // no-op the transition and skip the timer.
+      if (input.status === "in_progress") {
+        await taskActivityService.autoStartTaskTimerOnStatus(
+          workspaceId,
+          id,
+          row.assigneeId,
+          executor,
+        );
+      } else if (
+        input.status !== undefined &&
+        taskActivityService.shouldAutoStopTaskTimer(existing.status, input.status)
+      ) {
+        const stopped = await taskActivityService.autoStopTaskTimerOnStatus(
+          workspaceId,
+          id,
+          row.assigneeId,
+          executor,
+        );
+        if (
+          stopped &&
+          stopped.trackedDurationSeconds !== (row.trackedDurationSeconds ?? null)
+        ) {
+          row.trackedDurationSeconds = stopped.trackedDurationSeconds;
+          row.trackedMinutes =
+            stopped.trackedDurationSeconds != null &&
+            stopped.trackedDurationSeconds >= 60
+              ? Math.floor(stopped.trackedDurationSeconds / 60)
+              : null;
+        }
+      }
+      if (
+        input.assigneeId !== undefined &&
+        input.assigneeId !== existing.assigneeId
+      ) {
+        const [fromName, toName] = await Promise.all([
+          contactDisplayName(workspaceId, existing.assigneeId, executor),
+          contactDisplayName(workspaceId, input.assigneeId, executor),
         ]);
         await taskActivityService.recordTaskActivity(
           workspaceId,
           id,
-          "related_contacts_changed",
+          "assignee_changed",
           {
-            from: existingRelated,
-            to: nextRelatedContactIds,
-            fromNames,
-            toNames,
+            from: existing.assigneeId,
+            to: input.assigneeId,
+            fromName,
+            toName,
           },
           actor,
           executor,
         );
       }
-    }
-    if (nextRelatedOrganizationIds !== undefined) {
-      const existingRelated = normalizeRelatedOrganizationIds(
-        existing.relatedOrganizationIds,
-      );
-      if (
-        !relatedOrganizationIdsEqual(
-          existingRelated,
-          nextRelatedOrganizationIds,
-        )
-      ) {
-        const [fromNames, toNames] = await Promise.all([
-          relatedOrganizationDisplayNames(
+      if (nextRelatedContactIds !== undefined) {
+        const existingRelated = normalizeRelatedContactIds(
+          existing.relatedContactIds,
+        );
+        if (!relatedContactIdsEqual(existingRelated, nextRelatedContactIds)) {
+          const [fromNames, toNames] = await Promise.all([
+            relatedContactDisplayNames(workspaceId, existingRelated, executor),
+            relatedContactDisplayNames(
+              workspaceId,
+              nextRelatedContactIds,
+              executor,
+            ),
+          ]);
+          await taskActivityService.recordTaskActivity(
             workspaceId,
+            id,
+            "related_contacts_changed",
+            {
+              from: existingRelated,
+              to: nextRelatedContactIds,
+              fromNames,
+              toNames,
+            },
+            actor,
+            executor,
+          );
+        }
+      }
+      if (nextRelatedOrganizationIds !== undefined) {
+        const existingRelated = normalizeRelatedOrganizationIds(
+          existing.relatedOrganizationIds,
+        );
+        if (
+          !relatedOrganizationIdsEqual(
             existingRelated,
-            executor,
-          ),
-          relatedOrganizationDisplayNames(
-            workspaceId,
             nextRelatedOrganizationIds,
+          )
+        ) {
+          const [fromNames, toNames] = await Promise.all([
+            relatedOrganizationDisplayNames(
+              workspaceId,
+              existingRelated,
+              executor,
+            ),
+            relatedOrganizationDisplayNames(
+              workspaceId,
+              nextRelatedOrganizationIds,
+              executor,
+            ),
+          ]);
+          await taskActivityService.recordTaskActivity(
+            workspaceId,
+            id,
+            "related_organizations_changed",
+            {
+              from: existingRelated,
+              to: nextRelatedOrganizationIds,
+              fromNames,
+              toNames,
+            },
+            actor,
             executor,
-          ),
+          );
+        }
+      }
+      if (input.priority !== undefined && input.priority !== existing.priority) {
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "priority_changed",
+          { from: existing.priority, to: input.priority },
+          actor,
+          executor,
+        );
+      }
+      if (input.dueDate !== undefined) {
+        const fromDue = dueDateIso(existing.dueDate);
+        const toDue = dueDateIso(
+          input.dueDate ? new Date(input.dueDate) : null,
+        );
+        if (fromDue !== toDue) {
+          await taskActivityService.recordTaskActivity(
+            workspaceId,
+            id,
+            "due_date_changed",
+            { from: fromDue, to: toDue },
+            actor,
+            executor,
+          );
+        }
+      }
+      if (
+        input.projectId !== undefined &&
+        input.projectId !== existing.projectId
+      ) {
+        const [fromName, toName] = await Promise.all([
+          projectDisplayName(workspaceId, existing.projectId, executor),
+          projectDisplayName(workspaceId, input.projectId, executor),
         ]);
         await taskActivityService.recordTaskActivity(
           workspaceId,
           id,
-          "related_organizations_changed",
+          "project_changed",
           {
-            from: existingRelated,
-            to: nextRelatedOrganizationIds,
-            fromNames,
-            toNames,
+            from: existing.projectId,
+            to: input.projectId,
+            fromName,
+            toName,
           },
           actor,
           executor,
         );
       }
-    }
-    if (input.priority !== undefined && input.priority !== existing.priority) {
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        id,
-        "priority_changed",
-        { from: existing.priority, to: input.priority },
-        actor,
-        executor,
-      );
-    }
-    if (input.dueDate !== undefined) {
-      const fromDue = dueDateIso(existing.dueDate);
-      const toDue = dueDateIso(
-        input.dueDate ? new Date(input.dueDate) : null,
-      );
-      if (fromDue !== toDue) {
-        await taskActivityService.recordTaskActivity(
-          workspaceId,
-          id,
-          "due_date_changed",
-          { from: fromDue, to: toDue },
-          actor,
-          executor,
-        );
-      }
-    }
-    if (
-      input.projectId !== undefined &&
-      input.projectId !== existing.projectId
-    ) {
-      const [fromName, toName] = await Promise.all([
-        projectDisplayName(workspaceId, existing.projectId, executor),
-        projectDisplayName(workspaceId, input.projectId, executor),
-      ]);
-      await taskActivityService.recordTaskActivity(
-        workspaceId,
-        id,
-        "project_changed",
-        {
-          from: existing.projectId,
-          to: input.projectId,
-          fromName,
-          toName,
-        },
-        actor,
-        executor,
-      );
     }
   }
 

@@ -176,7 +176,7 @@ async function readLocalEntityUpdatedAt(
 /**
  * After peer apply, force the row time back to the event's updated_at for
  * entities that still stamp `now` inside their service writers (OS-49).
- * Projects already preserve via ProjectWriteOptions; this covers tasks.
+ * Projects/tasks already preserve via WriteOptions; this is belt-and-suspenders.
  */
 async function stampPeerEntityUpdatedAt(
   workspaceId: string,
@@ -207,9 +207,10 @@ async function stampPeerEntityUpdatedAt(
  * sync_events (avoids forking the serial clock). Same mutation_id claims a
  * receipt so PowerSync/REST retries with that id do not double-apply.
  *
- * OS-49: keeps the event's own updated_at, skips events older than the local
- * row, skips vault side effects on projects, and does not freshen timestamps
- * so table LWW will not push stale values back to the peer.
+ * OS-49 / OS-42: keeps the event's own updated_at, skips events older than the
+ * local row, skips vault side effects on projects, skips task activity /
+ * auto-timer side effects, and does not freshen timestamps so table LWW will
+ * not push stale values back to the peer.
  */
 export async function applyPeerSyncEvent(
   workspaceId: string,

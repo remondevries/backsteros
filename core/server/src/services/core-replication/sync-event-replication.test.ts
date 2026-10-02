@@ -59,6 +59,20 @@ describe("sync-event replication contracts", () => {
     assert.ok(src.includes("core sync-events pull stuck"));
   });
 
+  it("OS-42: peer task apply skips activity side effects and preserves updated_at", () => {
+    const syncSrc = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../sync.ts"),
+      "utf8",
+    );
+    const tasksSrc = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../tasks-projects.ts"),
+      "utf8",
+    );
+    assert.ok(syncSrc.includes("skipActivitySideEffects: true"));
+    assert.ok(tasksSrc.includes("skipActivitySideEffects"));
+    assert.ok(tasksSrc.includes("TaskWriteOptions"));
+  });
+
   it("OS-49: leader-first apply does not jump the sync-event pull cursor", () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "leader-mutations.ts"),
