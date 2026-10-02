@@ -5,6 +5,7 @@ import {
   authorizationHeaderFromWebhookKey,
   buildEmailGrokWakePayload,
   EMAIL_AGENT_ALLOWED_INTENTS,
+  emailMessageLinkHref,
   resolveEmailAgentLanguage,
 } from "./email-grok-wake.js";
 
@@ -63,6 +64,8 @@ describe("buildEmailGrokWakePayload", () => {
     assert.equal(payload.language, "nl");
     assert.equal(payload.userPrompt, "Zeg dankjewel");
     assert.equal(payload.intent, null);
+    assert.equal(payload.contactId, null);
+    assert.deepEqual(payload.linkedTaskKeys, []);
     assert.deepEqual(payload.allowedIntents, [...EMAIL_AGENT_ALLOWED_INTENTS]);
     assert.match(
       payload.instructions.join("\n"),
@@ -71,6 +74,26 @@ describe("buildEmailGrokWakePayload", () => {
     assert.match(payload.instructions.join("\n"), /reply_draft/);
     assert.match(payload.instructions.join("\n"), /Dutch/);
     assert.ok(payload.callbackUrl.includes("email-agent-callbacks"));
+  });
+
+  it("includes contactId and linkedTaskKeys when provided", () => {
+    const payload = buildEmailGrokWakePayload({
+      requestId: "req-3",
+      callbackUrl:
+        "https://agent.backsteros.com/api/v1/public/email-agent-callbacks/req-3?token=x",
+      language: "en",
+      userPrompt: "Summarize",
+      inboxId: "in_1",
+      messageId: "msg_1",
+      contactId: "contact_abc",
+      linkedTaskKeys: ["OS-45", " OS-45 ", "", "INBOX-2"],
+      from: "Ada <ada@example.com>",
+      to: ["sander@agentmail.to"],
+      subject: "Hello",
+      text: "Hi there",
+    });
+    assert.equal(payload.contactId, "contact_abc");
+    assert.deepEqual(payload.linkedTaskKeys, ["OS-45", "INBOX-2"]);
   });
 
   it("fixes reply_draft intent and skips classification", () => {
@@ -89,6 +112,8 @@ describe("buildEmailGrokWakePayload", () => {
       text: "Hi there",
     });
     assert.equal(payload.intent, "reply_draft");
+    assert.equal(payload.contactId, null);
+    assert.deepEqual(payload.linkedTaskKeys, []);
     assert.deepEqual(payload.allowedIntents, ["reply_draft"]);
     assert.match(payload.instructions.join("\n"), /Intent is FIXED: reply_draft/);
     assert.doesNotMatch(
@@ -96,6 +121,16 @@ describe("buildEmailGrokWakePayload", () => {
       /Classify intent from userPrompt/,
     );
     assert.match(payload.instructions.join("\n"), /English/);
+  });
+});
+
+describe("emailMessageLinkHref", () => {
+  it("matches desktop email item hrefs", () => {
+    assert.equal(emailMessageLinkHref("in_1", "msg_1"), "/email/in_1/msg_1");
+    assert.equal(
+      emailMessageLinkHref("in/a", "msg b"),
+      "/email/in%2Fa/msg%20b",
+    );
   });
 });
 

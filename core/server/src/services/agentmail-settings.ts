@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type {
   AgentMailDraftDetail as ApiAgentMailDraftDetail,
@@ -16,7 +16,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { contacts, workspaceIntegrationSecrets } from "../db/schema.js";
+import { contacts, projects, tasks, workspaceIntegrationSecrets } from "../db/schema.js";
 import {
   AgentMailApiError,
   AgentMailClient,
@@ -55,6 +55,7 @@ import {
   type AssembledReplyEmail,
   type EmailReplyTemplateSettings,
 } from "../lib/email-reply-assembler.js";
+import { formatTaskDisplayKey } from "../lib/task-filters.js";
 import { getAvatar } from "./circle-domain.js";
 import * as emailThreadsService from "./email-threads.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
@@ -62,6 +63,7 @@ import { registerEmailAgentCallback } from "./email-agent-callbacks.js";
 import {
   buildEmailGrokWakePayload,
   counterpartEmailFromMessage,
+  emailMessageLinkHref,
   resolveEmailAgentLanguage,
   wakeEmailGrokWebhook,
 } from "../lib/email-grok-wake.js";
@@ -1698,6 +1700,18 @@ export async function startEmailAgentDraft(
         )
       : null;
 
+  const linkedMessageIds = await collectEmailThreadMessageIds(
+    client,
+    inboxId,
+    messageId,
+    message.threadId ?? null,
+  );
+  const linkedTaskKeys = await listTaskKeysLinkedToEmailMessages(
+    workspaceId,
+    inboxId,
+    linkedMessageIds,
+  );
+
   const payload = buildEmailGrokWakePayload({
     requestId,
     callbackUrl: registered.callbackUrl,
@@ -1707,6 +1721,8 @@ export async function startEmailAgentDraft(
     messageId,
     threadId: message.threadId ?? null,
     currentDraftBody: resolvedCurrentDraftBody,
+    contactId: metadata.contactId ?? null,
+    linkedTaskKeys,
     intent: intent ?? null,
     from: message.from ?? "",
     to: message.to ?? [],
@@ -1724,6 +1740,79 @@ export async function startEmailAgentDraft(
   }
 
   return { requestId, language };
+}
+
+/** Message ids in this thread (best-effort); always includes the open message. */
+async function collectEmailThreadMessageIds(
+  client: AgentMailClient,
+  inboxId: string,
+  messageId: string,
+  threadId: string | null,
+): Promise<string[]> {
+  const ids = new Set<string>([messageId]);
+  const trimmedThread = threadId?.trim();
+  if (!trimmedThread) return [...ids];
+  try {
+    const thread = await client.getThread(inboxId, trimmedThread);
+    for (const entry of thread.messages) {
+      const id = entry.messageId?.trim();
+      if (id) ids.add(id);
+    }
+  } catch {
+    // Fall back to the open message only.
+  }
+  return [...ids];
+}
+
+/** Display keys of tasks whose links point at any of these email messages. */
+async function listTaskKeysLinkedToEmailMessages(
+  workspaceId: string,
+  inboxId: string,
+  messageIds: readonly string[],
+): Promise<string[]> {
+  const urls = [
+    ...new Set(
+      messageIds
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map((id) => emailMessageLinkHref(inboxId, id)),
+    ),
+  ];
+  if (urls.length === 0) return [];
+
+  const rows = await db
+    .select({
+      number: tasks.number,
+      projectKey: projects.key,
+    })
+    .from(tasks)
+    .leftJoin(
+      projects,
+      and(
+        eq(projects.id, tasks.projectId),
+        eq(projects.workspaceId, tasks.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+        sql`exists (
+          select 1
+          from jsonb_array_elements(${tasks.links}) as link
+          where link->>'url' in (${sql.join(
+            urls.map((url) => sql`${url}`),
+            sql`, `,
+          )})
+        )`,
+      ),
+    );
+
+  return [
+    ...new Set(
+      rows.map((row) => formatTaskDisplayKey(row.projectKey, row.number)),
+    ),
+  ];
 }
 
 export async function upsertEmailComposeDraft(

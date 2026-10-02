@@ -54,6 +54,16 @@ export type EmailGrokWakePayload = {
   messageId: string;
   threadId: string | null;
   currentDraftBody: string | null;
+  /**
+   * Thread contact when set on email-thread metadata; null when none.
+   * Agents can use `GET /api/v1/tasks?paginated=true&relatedContactId=<id>`.
+   */
+  contactId: string | null;
+  /**
+   * Display keys of tasks that link to this email (e.g. `["OS-45"]`).
+   * Empty array when none — always present so receivers can rely on the field.
+   */
+  linkedTaskKeys: string[];
   /** Fixed intent from the UI when set — bot must not reclassify. */
   intent: EmailAgentAllowedIntent | null;
   allowedIntents: readonly EmailAgentAllowedIntent[];
@@ -66,6 +76,11 @@ export type EmailGrokWakePayload = {
   instructions: string[];
 };
 
+/** App href stored on task.links when a task is created from an email message. */
+export function emailMessageLinkHref(inboxId: string, messageId: string): string {
+  return `/email/${encodeURIComponent(inboxId)}/${encodeURIComponent(messageId)}`;
+}
+
 export function buildEmailGrokWakePayload(input: {
   requestId: string;
   callbackUrl: string;
@@ -75,6 +90,8 @@ export function buildEmailGrokWakePayload(input: {
   messageId: string;
   threadId?: string | null;
   currentDraftBody?: string | null;
+  contactId?: string | null;
+  linkedTaskKeys?: readonly string[] | null;
   /** When set, only this intent is allowed and instructions skip classification. */
   intent?: EmailAgentAllowedIntent | null;
   from: string;
@@ -122,6 +139,15 @@ export function buildEmailGrokWakePayload(input: {
             "On failure, POST { ok:false, requestId, error }.",
           ];
 
+  const contactId = input.contactId?.trim() || null;
+  const linkedTaskKeys = [
+    ...new Set(
+      (input.linkedTaskKeys ?? [])
+        .map((key) => key.trim())
+        .filter(Boolean),
+    ),
+  ];
+
   return {
     kind: "email.agent_command",
     requestId: input.requestId,
@@ -132,6 +158,8 @@ export function buildEmailGrokWakePayload(input: {
     messageId: input.messageId,
     threadId: input.threadId?.trim() || null,
     currentDraftBody: input.currentDraftBody?.trim() || null,
+    contactId,
+    linkedTaskKeys,
     intent: fixedIntent,
     allowedIntents,
     email: {

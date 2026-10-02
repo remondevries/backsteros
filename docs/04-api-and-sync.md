@@ -314,7 +314,13 @@ POST /api/v1/public/email-agent-callbacks/:requestId?token=…
 
 **Wake (core → Judith):** `requestId`, `callbackUrl`, `userPrompt`, inbox/message/thread
 ids, `email { from, to, subject, text }`, `language`, optional `currentDraftBody`,
+`contactId` (thread contact id or `null`), `linkedTaskKeys` (display keys of tasks
+that link to this email thread, e.g. `["OS-45"]` — always an array, empty when none),
 `allowedIntents: ["reply_draft","task","calendar","note"]`.
+
+Agents can use `contactId` with
+`GET /api/v1/tasks?paginated=true&relatedContactId=<id>`, or open a key from
+`linkedTaskKeys` directly.
 
 **Callback (Judith → core)** — echo `requestId` exactly:
 
