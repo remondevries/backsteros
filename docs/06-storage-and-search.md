@@ -161,10 +161,13 @@ replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 
 ## AI agent read workflow
 
 ```text
-1. GET /api/v1/search?q=invoice&type=letter
-2. GET /api/v1/letters/{id}           → metadata
-3. GET /api/v1/letters/{id}/pdf       → binary when needed
-4. PATCH /api/v1/documents/{id}/content → write markdown
+1. GET /api/v1/search?q=invoice&type=knowledge
+2. GET /api/v1/search?q=FiboSearch&type=task   → task hits with key/status
+3. GET /api/v1/documents/{id}/content          → markdown body when needed
+4. GET /api/v1/letters/{id}/pdf                → binary when needed
+5. PATCH /api/v1/documents/{id}/content        → write markdown
 ```
 
 Agents never need filesystem paths or repo checkout.
+`GET /search` `type` is `project` | `knowledge` | `journal` | `task` (alias `tasks`);
+unknown values return **400**. Omit `type` for document search only.

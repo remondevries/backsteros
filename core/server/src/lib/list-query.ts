@@ -22,6 +22,9 @@ export const LIST_CURSOR_TTL_MS = 10 * 60 * 1000;
 export const DOCUMENTS_DEFAULT_LIMIT = 100;
 export const GLOBAL_SEARCH_DEFAULT_LIMIT = 20;
 export const GLOBAL_SEARCH_MAX_LIMIT = 100;
+/** Default / max for `GET /api/v1/search` (documents + tasks). */
+export const SEARCH_DEFAULT_LIMIT = 20;
+export const SEARCH_MAX_LIMIT = 50;
 
 export const GLOBAL_SEARCH_MODES = [
   "all",
@@ -668,6 +671,77 @@ export function parseGlobalSearchQuery(
     contactSection: firstString(raw.contactSection),
     organizationId: firstString(raw.organizationId),
     organizationSection: firstString(raw.organizationSection),
+  };
+}
+
+// --- Agent search (GET /api/v1/search) — OS-55 --------------------------------
+
+export const SEARCH_KNOWN_KEYS = new Set([
+  "q",
+  "type",
+  "projectId",
+  "status",
+  "limit",
+  "cursor",
+]);
+
+export const SEARCH_TYPE_VALUES = new Set([
+  "project",
+  "knowledge",
+  "journal",
+  "task",
+  "tasks",
+]);
+
+export type SearchDocumentType = "project" | "knowledge" | "journal";
+export type ParsedSearchQuery = {
+  q: string;
+  /** Normalized: `tasks` → `task`. */
+  type?: SearchDocumentType | "task";
+  projectId?: string;
+  /** Task status filter (only meaningful when type=task). */
+  statuses: string[];
+  limit: number;
+  cursor?: string;
+};
+
+/**
+ * Parse `GET /api/v1/search` query. Unknown `type` → 400 with field `type`
+ * (do not silently return empty results).
+ */
+export function parseSearchQuery(
+  raw: Record<string, string | string[] | undefined>,
+): ParsedSearchQuery {
+  assertKnownQueryKeys(Object.keys(raw), SEARCH_KNOWN_KEYS);
+  const q = firstString(raw.q)?.trim();
+  if (!q) {
+    throw new ListQueryError("Query parameter q is required", "q");
+  }
+
+  const typeRaw = firstString(raw.type);
+  let type: ParsedSearchQuery["type"];
+  if (typeRaw != null) {
+    if (!SEARCH_TYPE_VALUES.has(typeRaw)) {
+      throw new ListQueryError(`Invalid type: ${typeRaw}`, "type");
+    }
+    type = typeRaw === "tasks" ? "task" : (typeRaw as ParsedSearchQuery["type"]);
+  }
+
+  const statuses = parseMultiValues(raw.status);
+  if (statuses.length) {
+    assertEnumValues(statuses, STATUS_SET, "status");
+  }
+
+  return {
+    q,
+    type,
+    projectId: firstString(raw.projectId),
+    statuses,
+    limit: parseListLimit(raw.limit, {
+      defaultLimit: SEARCH_DEFAULT_LIMIT,
+      maxLimit: SEARCH_MAX_LIMIT,
+    }),
+    cursor: firstString(raw.cursor),
   };
 }
 

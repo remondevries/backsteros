@@ -1325,7 +1325,8 @@ export const publicSpaceArticleListItemSchema = publicSpaceArticleSchema.omit({
   content: true,
 });
 
-export const searchResultSchema = z.object({
+/** Document hit from `GET /search` (type = project | knowledge | journal). */
+export const documentSearchResultSchema = z.object({
   id: z.string(),
   type: documentTypeSchema,
   projectId: z.string().nullable(),
@@ -1333,6 +1334,47 @@ export const searchResultSchema = z.object({
   title: z.string(),
   snippet: z.string().nullable(),
   updatedAt: z.string().datetime(),
+});
+
+/** Task hit from `GET /search?type=task` (alias `tasks`). */
+export const taskSearchResultSchema = z.object({
+  id: z.string(),
+  type: z.literal("task"),
+  key: z.string(),
+  projectId: z.string().nullable(),
+  status: taskStatusSchema,
+  title: z.string(),
+  snippet: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const searchResultSchema = z.union([
+  documentSearchResultSchema,
+  taskSearchResultSchema,
+]);
+
+/** Query `type` for `/search`: document types + `task` (alias `tasks`). */
+export const SEARCH_TYPE_QUERY_VALUES = [
+  ...DOCUMENT_TYPES,
+  "task",
+  "tasks",
+] as const;
+export const searchTypeQuerySchema = z.enum(SEARCH_TYPE_QUERY_VALUES);
+
+export const searchQuerySchema = z.object({
+  q: z.string().min(1).max(500),
+  type: searchTypeQuerySchema.optional(),
+  projectId: z.string().optional(),
+  /** Comma-separated task statuses (only applied when type=task|tasks). */
+  status: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  cursor: z.string().optional(),
+});
+
+export const searchResponseSchema = z.object({
+  results: z.array(searchResultSchema),
+  /** Present for `type=task` (opaque keyset on updatedAt desc, id). */
+  nextCursor: z.string().nullable().optional(),
 });
 
 const isoDateSchema = z.string().datetime();
@@ -4277,7 +4319,10 @@ export type PublicSpaceArticleListItem = z.infer<
   typeof publicSpaceArticleListItemSchema
 >;
 export type UpdateDocumentContentInput = z.infer<typeof updateDocumentContentSchema>;
+export type DocumentSearchResult = z.infer<typeof documentSearchResultSchema>;
+export type TaskSearchResult = z.infer<typeof taskSearchResultSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
+export type SearchTypeQuery = z.infer<typeof searchTypeQuerySchema>;
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 export type Organization = z.infer<typeof organizationSchema>;
 export type Contact = z.infer<typeof contactSchema>;

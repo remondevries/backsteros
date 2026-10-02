@@ -24,7 +24,6 @@ import {
   documentRetrievalResponseSchema,
   documentSchema,
   documentSectionResponseSchema,
-  documentTypeSchema,
   errorSchema,
   githubBranchSchema,
   githubCommitSchema,
@@ -41,7 +40,8 @@ import {
   projectRepoDocsResponseSchema,
   projectFsWriteFileSchema,
   projectSchema,
-  searchResultSchema,
+  searchQuerySchema,
+  searchResponseSchema,
   taskSchema,
   taskActivitySchema,
   taskCommentSchema,
@@ -1013,19 +1013,15 @@ export const apiContract: AppRouter = c.router(
     search: {
       method: "GET",
       path: "/api/v1/search",
-      query: z.object({
-        q: z.string().min(1).max(500),
-        type: documentTypeSchema.optional(),
-        projectId: z.string().optional(),
-        limit: z.coerce.number().int().min(1).max(50).optional(),
-      }),
+      query: searchQuerySchema,
       responses: {
-        200: z.object({ results: z.array(searchResultSchema) }),
+        200: searchResponseSchema,
         400: badRequestSchema,
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "Search documents by title, path, and snippet",
+      summary:
+        "Search documents (title/path/snippet) or tasks (title/description; type=task)",
     },
     getProjectRelations: {
       method: "GET",

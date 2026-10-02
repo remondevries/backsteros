@@ -72,7 +72,9 @@ Auth: `Authorization: Bearer sk_live_…`
 ### Read / search (agents)
 
 ```http
-GET  /api/v1/search?q=architecture&type=document
+GET  /api/v1/search?q=architecture&type=knowledge
+GET  /api/v1/search?q=FiboSearch&type=task
+GET  /api/v1/search?q=QM-38&type=task
 GET  /api/v1/projects
 GET  /api/v1/projects/OS
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
@@ -94,8 +96,23 @@ GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 Path params and filter ids accept the **internal id or the human key**
 (`OS-51` for a task, `OS` for a project, org/contact keys likewise).
 Unknown filter ids return **400** (not an empty 200). Bad enum values
-(`status=bogus`, `mode=bogus`, `type=bogus` on documents) likewise return **400**
+(`status=bogus`, `mode=bogus`, `type=bogus` on search/documents) likewise return **400**
 with a `field` in the body.
+
+#### `GET /search` (agents)
+
+| Param | Behaviour |
+| --- | --- |
+| `q` | Required. Documents: ILIKE on title/path/snippet. Tasks: ILIKE on title/description; display key (`QM-38`) or exact task id is preferred on the first page |
+| `type` | `project` \| `knowledge` \| `journal` \| `task` (alias `tasks`). Omit for documents only. Unknown → **400** `field: type` |
+| `projectId` | Optional filter (id or project key) |
+| `status` | Tasks only: comma-separated statuses (OR) |
+| `limit` | Default 20, max 50 |
+| `cursor` | Tasks only: opaque keyset on `(updatedAt desc, id)` |
+
+Task results: `{ id, type: "task", key, projectId, status, title, snippet, updatedAt }` plus response `nextCursor`.
+Document results keep `{ id, type, projectId, path, title, snippet, updatedAt }`.
+Prefer **`type=task`** for task text search; `GET /global-search?mode=tasks` remains for mixed command-palette hits.
 
 ### List pagination (agents)
 

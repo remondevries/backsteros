@@ -4,13 +4,13 @@ import type {
   BankAccount,
   CashflowPlannerEntry,
   Document,
+  DocumentSearchResult,
   FinancialCategory,
   FinancialGoal,
   FinancialImportBatch,
   FinancialRecurring,
   FinancialTransaction,
   Project,
-  SearchResult,
   Task,
   TaskActivity,
   TaskComment,
@@ -304,10 +304,10 @@ export function toArea(row: DbArea): Area {
   };
 }
 
-export function toSearchResult(row: DbDocument): SearchResult {
+export function toSearchResult(row: DbDocument): DocumentSearchResult {
   return {
     id: row.id,
-    type: row.type as SearchResult["type"],
+    type: row.type as DocumentSearchResult["type"],
     projectId: row.projectId,
     path: row.path,
     title: row.title,

@@ -188,6 +188,7 @@ import {
   parseMeetingsListQuery,
   parseOrganizationsListQuery,
   parseProjectsListQuery,
+  parseSearchQuery,
   paginateByUpdatedAtId,
 } from "../lib/list-query.js";
 import {
@@ -10347,21 +10348,58 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
-    const q = c.req.query("q");
-    if (!q) {
-      return c.json({ error: "Query parameter q is required", code: "bad_request" }, 400);
+    const raw = collectQueryParams(new URL(c.req.url));
+    let parsed;
+    try {
+      parsed = parseSearchQuery(raw);
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
     }
 
-    const type = c.req.query("type");
-    const projectId = c.req.query("projectId");
-    const limit = c.req.query("limit");
+    if (parsed.type === "task") {
+      let projectId = parsed.projectId;
+      if (projectId) {
+        try {
+          projectId = await requireResolvedRef(
+            auth.workspaceId,
+            projectId,
+            "projectId",
+          );
+        } catch (error) {
+          if (error instanceof ListQueryError) {
+            return c.json(listQueryErrorBody(error), 400);
+          }
+          throw error;
+        }
+      }
+
+      try {
+        const { results, nextCursor } = await taskProjectService.searchTasks({
+          workspaceId: auth.workspaceId,
+          q: parsed.q,
+          projectId,
+          statuses: parsed.statuses.length ? parsed.statuses : undefined,
+          limit: parsed.limit,
+          cursor: parsed.cursor,
+        });
+        return c.json({ results, nextCursor });
+      } catch (error) {
+        if (error instanceof ListQueryError) {
+          return c.json(listQueryErrorBody(error), 400);
+        }
+        throw error;
+      }
+    }
 
     const rows = await documentService.searchDocuments({
       workspaceId: auth.workspaceId,
-      q,
-      type: type as "project" | "knowledge" | "journal" | undefined,
-      projectId,
-      limit: limit ? Number(limit) : undefined,
+      q: parsed.q,
+      type: parsed.type,
+      projectId: parsed.projectId,
+      limit: parsed.limit,
     });
 
     return c.json({ results: rows.map(toSearchResult) });

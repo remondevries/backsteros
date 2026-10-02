@@ -14,6 +14,7 @@ import {
   parseGlobalSearchQuery,
   parseMeetingsListQuery,
   parseProjectsListQuery,
+  parseSearchQuery,
   paginateByUpdatedAtId,
 } from "./list-query.js";
 
@@ -146,4 +147,38 @@ test("updatedAt cursor round-trip and pagination", () => {
   assert.equal(page2.items.length, 1);
   assert.equal(page2.items[0]!.id, "c");
   assert.equal(page2.nextCursor, null);
+});
+
+test("parseSearchQuery: type=task alias, invalid type → field type", () => {
+  const task = parseSearchQuery({ q: "FiboSearch", type: "task", limit: "5" });
+  assert.equal(task.type, "task");
+  assert.equal(task.limit, 5);
+  assert.equal(task.q, "FiboSearch");
+
+  const alias = parseSearchQuery({ q: "x", type: "tasks" });
+  assert.equal(alias.type, "task");
+  assert.equal(alias.limit, 20);
+
+  const knowledge = parseSearchQuery({ q: "Daily Briefing", type: "knowledge" });
+  assert.equal(knowledge.type, "knowledge");
+
+  assert.throws(
+    () => parseSearchQuery({ q: "x", type: "bogus" }),
+    (error: unknown) =>
+      error instanceof ListQueryError && error.field === "type",
+  );
+  assert.throws(
+    () => parseSearchQuery({ q: "x", type: "document" }),
+    (error: unknown) =>
+      error instanceof ListQueryError && error.field === "type",
+  );
+  assert.throws(
+    () => parseSearchQuery({}),
+    (error: unknown) => error instanceof ListQueryError && error.field === "q",
+  );
+  assert.throws(
+    () => parseSearchQuery({ q: "x", status: "bogus", type: "task" }),
+    (error: unknown) =>
+      error instanceof ListQueryError && error.field === "status",
+  );
 });
