@@ -18,6 +18,7 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import {
   controlMessageHandler,
+  controlPruneHandler,
   controlStatusHandler,
   isControlDispatchPending,
   isControlLoopbackRemote,
@@ -37,6 +38,7 @@ import {
   findBacksterosTaskThreadBinding,
   listBacksterosTaskThreadBindings,
   readBacksterosTaskThreadBindings,
+  removeBacksterosTaskThreadBinding,
   writeBacksterosTaskThreadBinding,
 } from "./task-thread-bindings.ts";
 
@@ -642,6 +644,86 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.every((call) => call.method === "GET")).toBe(true);
       expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
       expect(fakeTask.status).toBe("completed");
+    });
+  });
+
+  describe("POST /sessions/prune", () => {
+    const ORPHAN_TASK = "orphan-task-id";
+    const ORPHAN_THREAD = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+
+    function runPrune(threads: ReturnType<typeof threadShell>[]) {
+      const provided = controlPruneHandler.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/prune", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${API_KEY}`,
+                "content-type": "application/json",
+              },
+              body: "{}",
+            }),
+          ),
+        ),
+        Effect.provideService(SessionStore.SessionStore, {} as never),
+        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
+        Effect.provideService(ServerConfig.ServerConfig, {
+          stateDir,
+          attachmentsDir: path.join(stateDir, "attachments"),
+        } as never),
+        Effect.provideService(ProjectionSnapshotQuery, {
+          getShellSnapshot: () => Effect.sync(() => ({ projects: [], threads })),
+        } as never),
+        Effect.provideService(OrchestrationEngineService, {
+          dispatch: () => Effect.succeed({ sequence: 1 }),
+        } as never),
+        Effect.provideService(Crypto.Crypto, {
+          randomUUIDv4: Effect.succeed("00000000-0000-4000-8000-000000000099"),
+        } as never),
+        Effect.provideService(FileSystem.FileSystem, {} as never),
+        Effect.provideService(Path.Path, {} as never),
+        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+      );
+      return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
+    }
+
+    it("removes bindings whose threads are gone and keeps live bindings", async () => {
+      writeBacksterosTaskThreadBinding(stateDir, ORPHAN_TASK, {
+        threadId: ORPHAN_THREAD,
+        environmentId: "env-1",
+        t3ProjectId: "t3-project",
+        backsterosProjectId: "os-project",
+        projectTitle: "OS",
+        title: "orphan",
+        displayId: "OS-999",
+      });
+      expect(listBacksterosTaskThreadBindings(stateDir)).toHaveLength(2);
+
+      // Live THREAD_ID still in the shell snapshot; orphan thread is absent.
+      const response = await runPrune([threadShell()]);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: boolean; pruned: string[] };
+      expect(body).toEqual({ ok: true, pruned: [ORPHAN_TASK] });
+      expect(findBacksterosTaskThreadBinding(stateDir, { taskId: TASK_ID })?.taskId).toBe(TASK_ID);
+      expect(findBacksterosTaskThreadBinding(stateDir, { taskId: ORPHAN_TASK })).toBeNull();
+    });
+
+    it("does not remove a binding when its thread shell is still present", async () => {
+      const before = listBacksterosTaskThreadBindings(stateDir)
+        .map((row) => row.taskId)
+        .sort();
+      const response = await runPrune([threadShell()]);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: boolean; pruned: string[] };
+      expect(body.pruned).toEqual([]);
+      expect(
+        listBacksterosTaskThreadBindings(stateDir)
+          .map((row) => row.taskId)
+          .sort(),
+      ).toEqual(before);
+      // Guard: helper still available for explicit cleanup in other tests.
+      expect(typeof removeBacksterosTaskThreadBinding).toBe("function");
     });
   });
 });

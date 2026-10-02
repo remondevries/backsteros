@@ -393,10 +393,20 @@ export const backsterosFileTaskRouteLayer = Layer.mergeAll(
 
 const CONTROL_SESSIONS_PATH = "/api/backsteros/control/sessions";
 const CONTROL_SESSIONS_PROMOTE_PATH = "/api/backsteros/control/sessions/promote";
-const CONTROL_SESSIONS_PRUNE_PATH = "/api/backsteros/control/sessions/prune";
+/** Explicit POST — remove bindings whose threads are gone (never from GET). */
+export const CONTROL_SESSIONS_PRUNE_PATH = "/api/backsteros/control/sessions/prune";
 const CONTROL_HEALTH_PATH = "/api/backsteros/control/health";
 const CONTROL_BINDINGS_PATH = "/api/backsteros/control/bindings";
 const CONTROL_MESSAGE_PATH = "/api/backsteros/control/message";
+
+export const CONTROL_ROUTE_PATHS = {
+  sessions: CONTROL_SESSIONS_PATH,
+  promote: CONTROL_SESSIONS_PROMOTE_PATH,
+  prune: CONTROL_SESSIONS_PRUNE_PATH,
+  health: CONTROL_HEALTH_PATH,
+  bindings: CONTROL_BINDINGS_PATH,
+  message: CONTROL_MESSAGE_PATH,
+} as const;
 
 export const backsterosControlHealthRouteLayer = HttpRouter.add(
   "GET",
