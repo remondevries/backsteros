@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "./node_modules/.bin/vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node ../scripts/sync-app-version.mjs && pnpm -C .. --filter @backsteros/ui build && ./node_modules/.bin/tsc && ./node_modules/.bin/vite build",
+    "beforeBuildCommand": "node scripts/sync-app-version.mjs && pnpm -C .. --filter @backsteros/ui build && ./node_modules/.bin/tsc && ./node_modules/.bin/vite build",
     "frontendDist": "../dist"
   },
   "app": {

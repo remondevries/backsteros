@@ -8,12 +8,15 @@
  *
  * Optional `concurrency` runs that many workers against the same queue so
  * independent items (e.g. session starts on different threads) can proceed
- * in parallel (OS-73).
+ * in parallel (OS-73). Pass `key` so items that share a key stay strictly
+ * ordered while different keys still run concurrently.
  *
  * @module DrainableWorker
  */
 import * as Scope from "effect/Scope";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 import * as TxQueue from "effect/TxQueue";
 import * as TxRef from "effect/TxRef";
 
@@ -32,12 +35,17 @@ export interface DrainableWorker<A> {
   readonly drain: Effect.Effect<void>;
 }
 
-export type MakeDrainableWorkerOptions = {
+export type MakeDrainableWorkerOptions<A> = {
   /**
    * Number of concurrent processors pulling from the same queue.
    * Defaults to 1 (sequential). Cap at a sensible limit for session starts.
    */
   readonly concurrency?: number;
+  /**
+   * When set, items that return the same key run one-at-a-time in enqueue
+   * order. Different keys may still overlap up to `concurrency`.
+   */
+  readonly key?: (item: A) => string;
 };
 
 /**
@@ -47,22 +55,55 @@ export type MakeDrainableWorkerOptions = {
  * the scope closes. A finalizer shuts down the queue.
  *
  * @param process - The effect to run for each queued item.
- * @param options - Optional concurrency (default 1).
+ * @param options - Optional concurrency and per-key serial ordering.
  * @returns A `DrainableWorker` with `enqueue` and `drain`.
  */
 export const makeDrainableWorker = <A, E, R>(
   process: (item: A) => Effect.Effect<void, E, R>,
-  options?: MakeDrainableWorkerOptions,
+  options?: MakeDrainableWorkerOptions<A>,
 ): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
   Effect.gen(function* () {
     const queue = yield* Effect.acquireRelease(TxQueue.unbounded<A>(), TxQueue.shutdown);
     const outstanding = yield* TxRef.make(0);
     const concurrency = Math.max(1, Math.min(options?.concurrency ?? 1, 16));
+    const keyOf = options?.key;
+    const keyGates = yield* Ref.make(new Map<string, Deferred.Deferred<void, never>>());
+
+    const processSeriallyByKey = (item: A): Effect.Effect<void, E, R> => {
+      if (!keyOf) {
+        return process(item);
+      }
+      const key = keyOf(item);
+      return Effect.gen(function* () {
+        const done = yield* Deferred.make<void>();
+        const previous = yield* Ref.modify(keyGates, (gates) => {
+          const prev = gates.get(key);
+          const next = new Map(gates);
+          next.set(key, done);
+          return [prev, next] as const;
+        });
+        if (previous) {
+          yield* Deferred.await(previous);
+        }
+        yield* Effect.ensuring(
+          process(item),
+          Effect.gen(function* () {
+            yield* Deferred.succeed(done, undefined).pipe(Effect.orDie);
+            yield* Ref.update(keyGates, (gates) => {
+              if (gates.get(key) !== done) return gates;
+              const next = new Map(gates);
+              next.delete(key);
+              return next;
+            });
+          }),
+        );
+      });
+    };
 
     const workerLoop = TxQueue.take(queue).pipe(
       Effect.tap((a) =>
         Effect.ensuring(
-          process(a),
+          processSeriallyByKey(a),
           TxRef.update(outstanding, (n) => n - 1),
         ),
       ),

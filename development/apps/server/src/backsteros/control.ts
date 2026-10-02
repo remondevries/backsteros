@@ -44,7 +44,10 @@ import {
   getControlPendingDispatch,
   recordControlPendingDispatch,
 } from "./control-pending-dispatch.ts";
-import { maybePromoteBacksterosTaskForControlSession } from "./control-session-promote.ts";
+import {
+  cancelControlSessionIdlePromote,
+  maybePromoteBacksterosTaskForControlSession,
+} from "./control-session-promote.ts";
 import {
   findBacksterosTaskThreadBinding,
   listBacksterosTaskThreadBindings,
@@ -975,6 +978,8 @@ export const controlMessageHandler = catchControlErrors(
 
     // A message to a stopped session is accepted before the provider session
     // starts; track it so the response and following GETs read `working`.
+    // Also cancel any pending idle→in_review from a prior turn (OS-73).
+    cancelControlSessionIdlePromote(config.stateDir, threadId);
     recordControlPendingDispatch(threadId, dispatchedAtMs);
     yield* orchestrationEngine.dispatch(command).pipe(
       Effect.onError(() =>

@@ -13,12 +13,12 @@
     "typecheck": "pnpm --filter @backsteros/contracts build && pnpm --filter @backsteros/api-client build && pnpm --filter @backsteros/powersync-schema build && pnpm --filter @backsteros/ui build && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:integration": "pnpm --filter @backsteros/server test:integration",
-    "db:up": "docker compose up -d",
-    "db:down": "docker compose down",
+    "db:up": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose up -d",
+    "db:down": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose down",
     "db:migrate": "pnpm --filter @backsteros/server db:migrate",
     "db:powersync-setup": "pnpm --filter @backsteros/server db:powersync-setup",
     "db:powersync-verify": "pnpm --filter @backsteros/server db:powersync-verify",
-    "powersync:up": "docker compose up -d mongo powersync",
+    "powersync:up": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose up -d mongo powersync",
     "cli": "pnpm --filter @backsteros/cli exec backsteros"
   }
 }

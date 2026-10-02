@@ -1770,8 +1770,10 @@ const make = Effect.gen(function* () {
     );
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely, {
-    // OS-73: session starts (~5s each) must not serialize across threads.
+    // OS-73: session starts (~5s each) must not serialize across threads, but
+    // events for the same thread (start then interrupt, queued turns) stay ordered.
     concurrency: 4,
+    key: (event) => String(event.payload.threadId),
   });
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {

@@ -64,9 +64,10 @@ services:
       - "127.0.0.1:8080:8080"
 
 volumes:
-  # Pin names so a repo path / compose-project rename does not orphan the
-  # populated DB (Hub Files/Documents + local-core need :5433 with schema).
+  # Tie volume names to the compose project so worktree stacks never mount (or
+  # `down -v`) the live volumes. Live LaunchAgent exports
+  # BACKSTEROS_COMPOSE_PROJECT=backsteros → backsteros_backsteros_pg_data.
   backsteros_pg_data:
-    name: backsteros_backsteros_pg_data
+    name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}_backsteros_pg_data
   backsteros_powersync_mongo:
-    name: backsteros_backsteros_powersync_mongo
+    name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-worktree}_backsteros_powersync_mongo

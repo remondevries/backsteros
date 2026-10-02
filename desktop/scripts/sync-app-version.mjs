@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * Sync desktop app version across package.json, tauri.conf.json, and Cargo.toml.
- *
- * Default: 0.2.<git-rev-list-count> (leaves the shipped 0.1.0 placeholder behind).
- * Override with DESKTOP_APP_VERSION=x.y.z.
+ * Sync desktop app version from package.json → tauri.conf.json, Cargo.toml,
+ * and Cargo.lock. Does not rewrite files that already match (keeps the tree
+ * clean across builds). Override with DESKTOP_APP_VERSION=x.y.z.
  *
  * Signing: set APPLE_SIGNING_IDENTITY to a Developer ID Application identity
  * when one is available. Apple Development alone cannot notarize distribution builds.
@@ -14,43 +13,72 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = path.resolve(desktopRoot, "..");
-
-function gitCommitCount() {
-  try {
-    return execSync("git rev-list --count HEAD", {
-      cwd: repoRoot,
-      encoding: "utf8",
-    }).trim();
-  } catch {
-    return "0";
-  }
-}
-
-const version =
-  process.env.DESKTOP_APP_VERSION?.trim() || `0.2.${gitCommitCount()}`;
 
 const pkgPath = path.join(desktopRoot, "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-pkg.version = version;
-fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+const version =
+  process.env.DESKTOP_APP_VERSION?.trim() ||
+  (typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : null);
+
+if (!version) {
+  console.error("[sync-app-version] package.json has no version and DESKTOP_APP_VERSION is unset");
+  process.exit(1);
+}
+
+let wrote = false;
+
+if (pkg.version !== version) {
+  pkg.version = version;
+  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+  wrote = true;
+}
 
 const tauriPath = path.join(desktopRoot, "src-tauri", "tauri.conf.json");
 const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
-tauri.version = version;
 tauri.bundle ??= {};
 tauri.bundle.macOS ??= {};
 const identity = process.env.APPLE_SIGNING_IDENTITY?.trim();
-if (identity) {
-  tauri.bundle.macOS.signingIdentity = identity;
-} else {
-  delete tauri.bundle.macOS.signingIdentity;
+let tauriChanged = tauri.version !== version;
+if (tauri.version !== version) {
+  tauri.version = version;
 }
-fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, 2)}\n`);
+if (identity) {
+  if (tauri.bundle.macOS.signingIdentity !== identity) {
+    tauri.bundle.macOS.signingIdentity = identity;
+    tauriChanged = true;
+  }
+} else if (tauri.bundle.macOS.signingIdentity != null) {
+  delete tauri.bundle.macOS.signingIdentity;
+  tauriChanged = true;
+}
+if (tauriChanged) {
+  fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, 2)}\n`);
+  wrote = true;
+}
 
 const cargoPath = path.join(desktopRoot, "src-tauri", "Cargo.toml");
 let cargo = fs.readFileSync(cargoPath, "utf8");
-cargo = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
-fs.writeFileSync(cargoPath, cargo);
+const nextCargo = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
+if (nextCargo !== cargo) {
+  fs.writeFileSync(cargoPath, nextCargo);
+  wrote = true;
+  cargo = nextCargo;
+}
 
-console.log(`[sync-app-version] ${version}${identity ? ` signed as ${identity}` : " (no Developer ID identity set)"}`);
+const lockPath = path.join(desktopRoot, "src-tauri", "Cargo.lock");
+if (fs.existsSync(lockPath)) {
+  let lock = fs.readFileSync(lockPath, "utf8");
+  const nextLock = lock.replace(
+    /(name = "backsteros-desktop"\n)version = "[^"]+"/,
+    `$1version = "${version}"`,
+  );
+  if (nextLock !== lock) {
+    fs.writeFileSync(lockPath, nextLock);
+    wrote = true;
+  }
+}
+
+console.log(
+  `[sync-app-version] ${version}${identity ? ` signed as ${identity}` : " (no Developer ID identity set)"}${wrote ? "" : " (already in sync)"}`,
+);

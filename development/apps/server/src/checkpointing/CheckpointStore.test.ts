@@ -431,4 +431,86 @@ it.layer(TestLayer)("CheckpointStore.layer", (it) => {
       }),
     );
   });
+
+  describe("captureCheckpoint reuse with untracked files (OS-73)", () => {
+    it.effect("reuses the previous checkpoint when untracked files are unchanged", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-untracked");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "scratch.local"), "same-bytes\n");
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        // Untracked file still present with identical content — must reuse.
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).toBe(firstOid);
+      }),
+    );
+
+    it.effect("captures a new checkpoint when an untracked file changes", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-untracked-dirty");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "scratch.local"), "v1\n");
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        yield* writeTextFile(NodePath.join(tmp, "scratch.local"), "v2\n");
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).not.toBe(firstOid);
+
+        const diff = yield* checkpointStore.diffCheckpoints({
+          cwd: tmp,
+          fromCheckpointRef: first,
+          toCheckpointRef: second,
+          ignoreWhitespace: false,
+        });
+        expect(diff).toContain("scratch.local");
+      }),
+    );
+
+    it.effect("captures a new checkpoint when a new untracked file appears", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-untracked-new");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "a.local"), "a\n");
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        yield* writeTextFile(NodePath.join(tmp, "b.local"), "b\n");
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).not.toBe(firstOid);
+      }),
+    );
+  });
 });

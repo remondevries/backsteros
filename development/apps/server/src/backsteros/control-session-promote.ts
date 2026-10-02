@@ -14,6 +14,8 @@ import { findBacksterosTaskThreadBinding } from "./task-thread-bindings.ts";
 
 const lastPromotedStatus = new Map<string, BacksterosControlSessionStatus>();
 const idlePromoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Generations bump on activity so a stale timer cannot promote after cancel. */
+const idlePromoteGenerations = new Map<string, number>();
 
 /** Debounce ready→in_review so brief session gaps do not flip status (mirrors web OS-15). */
 export const CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS = 5_000;
@@ -24,6 +26,26 @@ export function resetControlSessionPromoteStateForTests(): void {
     clearTimeout(timer);
   }
   idlePromoteTimers.clear();
+  idlePromoteGenerations.clear();
+}
+
+/**
+ * Cancel a pending idle→in_review timer (new turn, message, interrupt/fail).
+ * No-op when the thread is not control/web-bound in the bindings file.
+ */
+export function cancelControlSessionIdlePromote(stateDir: string, threadId: string): void {
+  const found = findBacksterosTaskThreadBinding(stateDir, { threadId });
+  if (!found) return;
+  cancelIdlePromoteForTask(found.taskId);
+}
+
+function cancelIdlePromoteForTask(taskId: string): void {
+  const existing = idlePromoteTimers.get(taskId);
+  if (existing) {
+    clearTimeout(existing);
+    idlePromoteTimers.delete(taskId);
+  }
+  idlePromoteGenerations.set(taskId, (idlePromoteGenerations.get(taskId) ?? 0) + 1);
 }
 
 /**
@@ -42,6 +64,11 @@ export function maybePromoteBacksterosTaskForControlSession(
   if (previous === sessionStatus) return;
   lastPromotedStatus.set(taskId, sessionStatus);
 
+  // Fresh work cancels any pending idle promote.
+  if (sessionStatus === "working" || sessionStatus === "blocked") {
+    cancelIdlePromoteForTask(taskId);
+  }
+
   let target = backsterosStatusForControlSession(sessionStatus);
   if (
     target == null &&
@@ -54,16 +81,29 @@ export function maybePromoteBacksterosTaskForControlSession(
   void patchBacksterosControlTaskStatus(taskId, target);
 }
 
+export type ScheduleControlSessionPromoteOptions = {
+  /**
+   * When the grace timer fires, return false to skip promote (session not idle).
+   * Defaults to true (timer alone means idle).
+   */
+  readonly isIdle?: () => boolean;
+};
+
 /**
- * After a provider turn completes on a control-bound thread, promote to
- * `in_review` (debounced). No-op when the thread is not control-bound.
+ * After a provider turn completes successfully on a bound thread, promote to
+ * `in_review` (debounced). No-op when the thread has no binding (pure web thread
+ * without a BacksterOS task link never enters this path). Callers must only
+ * invoke this for successful `turn.completed` (not interrupted/failed/aborted).
  */
-export function scheduleControlSessionPromoteAfterTurn(stateDir: string, threadId: string): void {
+export function scheduleControlSessionPromoteAfterTurn(
+  stateDir: string,
+  threadId: string,
+  options?: ScheduleControlSessionPromoteOptions,
+): void {
   const found = findBacksterosTaskThreadBinding(stateDir, { threadId });
   if (!found) return;
 
-  const existing = idlePromoteTimers.get(found.taskId);
-  if (existing) clearTimeout(existing);
+  cancelIdlePromoteForTask(found.taskId);
 
   // Mark that we saw work so a later idle snapshot still promotes.
   const previous = lastPromotedStatus.get(found.taskId);
@@ -71,10 +111,17 @@ export function scheduleControlSessionPromoteAfterTurn(stateDir: string, threadI
     lastPromotedStatus.set(found.taskId, "working");
   }
 
+  const generation = idlePromoteGenerations.get(found.taskId) ?? 0;
   idlePromoteTimers.set(
     found.taskId,
     setTimeout(() => {
       idlePromoteTimers.delete(found.taskId);
+      if ((idlePromoteGenerations.get(found.taskId) ?? 0) !== generation) {
+        return;
+      }
+      if (options?.isIdle && !options.isIdle()) {
+        return;
+      }
       maybePromoteBacksterosTaskForControlSession(found.taskId, "done");
     }, CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS),
   );

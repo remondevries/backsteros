@@ -12,17 +12,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const API_PORT: u16 = 8788;
-const DOCKER_CONTAINERS: &[&str] = &[
-    "backsteros-postgres",
-    "backsteros-powersync",
-    "backsteros-powersync-mongo",
-];
 
 static ENSURE_LOCK: Mutex<()> = Mutex::new(());
 static VERSION_MISMATCH_WARNED: AtomicBool = AtomicBool::new(false);
@@ -101,234 +96,6 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     Ok(EnsureOutcome::Started)
 }
 
-fn ensure_docker(repo: &Path) -> Result<(), String> {
-    if docker_stack_running() {
-        log_line("docker stack already running");
-        return Ok(());
-    }
-    ensure_docker_daemon()?;
-    log_line("docker compose up -d postgres mongo powersync");
-    let output = docker_command()
-        .args(["compose", "up", "-d", "postgres", "mongo", "powersync"])
-        .current_dir(repo)
-        .output()
-        .map_err(|err| format!("docker compose failed to spawn: {err}"))?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    log_line(&format!("{stdout}{stderr}"));
-    if !output.status.success() {
-        return Err(format!(
-            "docker compose up failed: {}",
-            clip(stderr.trim())
-        ));
-    }
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(90) {
-        if docker_stack_running() {
-            log_line("docker stack running");
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    Err("docker stack did not become running within 90s".into())
-}
-
-fn ensure_docker_daemon() -> Result<(), String> {
-    if docker_info_ok() {
-        return Ok(());
-    }
-    #[cfg(target_os = "macos")]
-    {
-        log_line("docker daemon down; opening Docker.app");
-        let _ = Command::new("/usr/bin/open")
-            .args(["-a", "Docker"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(90) {
-        if docker_info_ok() {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    }
-    Err("Docker daemon is not running".into())
-}
-
-fn docker_info_ok() -> bool {
-    docker_command()
-        .args(["info"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-fn docker_stack_running() -> bool {
-    DOCKER_CONTAINERS.iter().all(|name| container_running(name))
-}
-
-fn container_running(name: &str) -> bool {
-    let output = docker_command()
-        .args(["inspect", "-f", "{{.State.Running}}", name])
-        .output();
-    match output {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).trim() == "true"
-        }
-        _ => false,
-    }
-}
-
-fn start_api(repo: &Path) -> Result<(), String> {
-    let node = resolve_node()?;
-    let pnpm = resolve_pnpm()?;
-    let env_file = resolve_env_file(repo)?;
-    let server_dir = repo.join("core/server");
-    if !server_dir.is_dir() {
-        return Err(format!("missing {}", server_dir.display()));
-    }
-
-    // Match LaunchAgent: rebuild contracts, then tsx without watch.
-    log_line("building @backsteros/contracts");
-    let mut build = pnpm_command(&pnpm, &node);
-    build
-        .args(["--filter", "@backsteros/contracts", "build"])
-        .current_dir(repo)
-        .env("FORCE_COLOR", "0")
-        .stdin(Stdio::null());
-    let build_out = build
-        .output()
-        .map_err(|err| format!("contracts build failed to spawn: {err}"))?;
-    if !build_out.status.success() {
-        return Err(format!(
-            "contracts build failed: {}",
-            clip(&String::from_utf8_lossy(&build_out.stderr))
-        ));
-    }
-
-    let mut cmd = pnpm_command(&pnpm, &node);
-    cmd.args([
-        "exec",
-        "tsx",
-        &format!("--env-file={}", env_file.display()),
-        "src/index.ts",
-    ])
-    .current_dir(&server_dir)
-    .env("FORCE_COLOR", "0")
-    .env("BACKSTEROS_REPO_ROOT", repo)
-    .stdin(Stdio::null());
-
-    if let Some(info) = read_build_info(&server_dir.join("build-info.json")) {
-        cmd.env("BACKSTEROS_BUILD_COMMIT", &info.commit);
-        cmd.env("BACKSTEROS_BUILD_BUILT_AT", &info.built_at);
-        cmd.env(
-            "BACKSTEROS_BUILD_DIRTY",
-            if info.dirty { "1" } else { "0" },
-        );
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-    let log = open_log()?;
-    let log_err = log.try_clone().map_err(|err| err.to_string())?;
-    cmd.stdout(Stdio::from(log));
-    cmd.stderr(Stdio::from(log_err));
-    log_line(&format!(
-        "starting API via {} exec tsx (node {}, env {}, cwd {})",
-        pnpm.display(),
-        node.display(),
-        env_file.display(),
-        server_dir.display()
-    ));
-    let child = cmd
-        .spawn()
-        .map_err(|err| format!("failed to start core API: {err}"))?;
-    let pid = child.id();
-    // Detach. Dropping Child does not kill the process.
-    drop(child);
-
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(60) {
-        if api_healthy() {
-            log_line(&format!("core API healthy (pid {pid})"));
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    Err(format!(
-        "core API did not become healthy within 60s (pid {pid}). See {}",
-        log_path().display()
-    ))
-}
-
-#[derive(Debug, Clone)]
-struct BuildInfo {
-    commit: String,
-    built_at: String,
-    dirty: bool,
-}
-
-fn read_build_info(path: &Path) -> Option<BuildInfo> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let commit = value.get("commit")?.as_str()?.trim().to_string();
-    let built_at = value.get("builtAt")?.as_str()?.trim().to_string();
-    if commit.is_empty() || built_at.is_empty() {
-        return None;
-    }
-    let dirty = value
-        .get("dirty")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    Some(BuildInfo {
-        commit,
-        built_at,
-        dirty,
-    })
-}
-
-fn resolve_env_file(repo: &Path) -> Result<PathBuf, String> {
-    if let Some(raw) = std::env::var_os("LOCAL_CORE_ENV_FILE") {
-        let path = PathBuf::from(raw);
-        if path.is_file() {
-            return Ok(path);
-        }
-    }
-    if let Some(home) = home_dir() {
-        let dedicated = home.join(".config/backsteros/local-core.env");
-        if dedicated.is_file() {
-            return Ok(dedicated);
-        }
-    }
-    let in_repo = repo.join("core/server/.env");
-    if in_repo.is_file() {
-        return Ok(in_repo);
-    }
-    if let Some(home) = home_dir() {
-        let config = home.join(".config/backsteros/hub.json");
-        if let Ok(text) = fs::read_to_string(config) {
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(root) = value.get("repo_root").and_then(|v| v.as_str()) {
-                    let candidate = PathBuf::from(root.trim()).join("core/server/.env");
-                    if candidate.is_file() {
-                        return Ok(candidate);
-                    }
-                }
-            }
-        }
-        let fallback = home.join("BacksterOS/Projects/OS/Codebase/core/server/.env");
-        if fallback.is_file() {
-            return Ok(fallback);
-        }
-    }
-    Err("could not find local-core.env or core/server/.env (set LOCAL_CORE_ENV_FILE)".into())
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PnpmLaunch {
@@ -628,22 +395,6 @@ fn tool_path(node: &Path) -> String {
     parts.join(":")
 }
 
-fn docker_command() -> Command {
-    let bin = which(
-        "docker",
-        &[
-            "/usr/local/bin/docker",
-            "/opt/homebrew/bin/docker",
-            "/Applications/Docker.app/Contents/Resources/bin/docker",
-        ],
-    )
-    .unwrap_or_else(|| PathBuf::from("docker"));
-    let mut cmd = Command::new(bin);
-    if let Ok(node) = resolve_node() {
-        apply_tool_env(&mut cmd, &node);
-    }
-    cmd
-}
 
 fn is_native_executable(path: &Path) -> bool {
     let mut magic = [0u8; 4];
@@ -749,9 +500,6 @@ fn chrono_less_stamp() -> String {
     elapsed.to_string()
 }
 
-fn clip(text: &str) -> String {
-    text.chars().take(240).collect()
-}
 
 /// Owner credential for cloud-core. Reads `~/.config/backsteros/cli.env`.
 /// Does not log the secret.

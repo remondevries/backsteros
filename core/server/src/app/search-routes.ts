@@ -86,6 +86,11 @@ async function mapPool<T, R>(
   return results;
 }
 
+export type MergedSearchDeps = {
+  readonly globalSearch?: typeof circleService.globalSearch;
+  readonly runAgentSearch?: typeof runAgentSearch;
+};
+
 /**
  * Single search implementation for agent + palette profiles.
  * `/api/v1/global-search` is a thin alias that forces `profile: "palette"`.
@@ -93,6 +98,7 @@ async function mapPool<T, R>(
 export async function handleMergedSearch(
   c: Context,
   profile: SearchProfile,
+  deps: MergedSearchDeps = {},
 ) {
   const auth = getAuth(c);
   if (!requireScope("search:query")(auth)) {
@@ -100,6 +106,8 @@ export async function handleMergedSearch(
   }
 
   const raw = collectQueryParams(new URL(c.req.url));
+  const globalSearch = deps.globalSearch ?? circleService.globalSearch;
+  const agentSearch = deps.runAgentSearch ?? runAgentSearch;
 
   if (profile === "palette") {
     let parsed;
@@ -118,7 +126,7 @@ export async function handleMergedSearch(
       );
     }
     return c.json({
-      results: await circleService.globalSearch(
+      results: await globalSearch(
         auth.workspaceId,
         parsed.q,
         parsed.limit,
@@ -147,7 +155,7 @@ export async function handleMergedSearch(
   }
 
   try {
-    const payload = await runAgentSearch({
+    const payload = await agentSearch({
       workspaceId: auth.workspaceId,
       q: parsed.q,
       type: parsed.type,

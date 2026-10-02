@@ -1220,6 +1220,9 @@ fn start_docker(repo_root: &Path) -> Result<String, String> {
     append_log_line(ServiceId::Docker, "docker compose up -d");
     let mut compose = Command::new(docker_bin());
     ensure_path_env(&mut compose);
+    // Live Hub always targets the canonical project + volume names.
+    compose.env("BACKSTEROS_COMPOSE_PROJECT", "backsteros");
+    compose.env("COMPOSE_PROJECT_NAME", "backsteros");
     let output = compose
         .args(["compose", "up", "-d"])
         .current_dir(repo_root)
@@ -1248,6 +1251,8 @@ fn stop_docker(repo_root: &Path) -> Result<String, String> {
     append_log_line(ServiceId::Docker, "docker compose stop");
     let mut compose = Command::new(docker_bin());
     ensure_path_env(&mut compose);
+    compose.env("BACKSTEROS_COMPOSE_PROJECT", "backsteros");
+    compose.env("COMPOSE_PROJECT_NAME", "backsteros");
     let output = compose
         .args(["compose", "stop"])
         .current_dir(repo_root)

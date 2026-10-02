@@ -39,7 +39,10 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import * as ServerConfig from "../../config.ts";
-import { scheduleControlSessionPromoteAfterTurn } from "../../backsteros/control-session-promote.ts";
+import {
+  cancelControlSessionIdlePromote,
+  scheduleControlSessionPromoteAfterTurn,
+} from "../../backsteros/control-session-promote.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -822,6 +825,8 @@ const make = Effect.gen(function* () {
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (event: OrchestrationEvent) {
     if (event.type === "thread.turn-start-requested" || event.type === "thread.message-sent") {
       if (event.type === "thread.turn-start-requested") pending.add(event.payload.threadId);
+      // New user activity cancels a pending idle→in_review promote (OS-73).
+      cancelControlSessionIdlePromote(serverConfig.stateDir, String(event.payload.threadId));
       yield* ensurePreTurnBaselineFromDomainTurnStart(event);
       return;
     }
@@ -862,6 +867,7 @@ const make = Effect.gen(function* () {
         startedTurns.set(event.threadId, turnId);
         pending.delete(event.threadId);
       }
+      cancelControlSessionIdlePromote(serverConfig.stateDir, String(event.threadId));
       yield* ensurePreTurnBaselineFromTurnStart(event);
       return;
     }
@@ -872,11 +878,27 @@ const make = Effect.gen(function* () {
       const startedTurnId = startedTurns.get(event.threadId);
       const isTrackedTurn = sameId(startedTurnId, turnId);
       if (isTrackedTurn) startedTurns.delete(event.threadId);
+      if (event.type === "turn.aborted") {
+        cancelControlSessionIdlePromote(serverConfig.stateDir, String(event.threadId));
+      }
       if (event.type === "turn.completed") {
         yield* statusRefreshWorker.enqueue(event);
-        // Control-API-only sessions have no web leave-timer; promote In Review
-        // when the turn finishes (OS-73).
-        scheduleControlSessionPromoteAfterTurn(serverConfig.stateDir, String(event.threadId));
+        // Only successful completions schedule idle→in_review; failed/interrupted
+        // turn.completed states cancel any pending timer instead (OS-73).
+        if (event.payload.state === "completed") {
+          const threadId = String(event.threadId);
+          scheduleControlSessionPromoteAfterTurn(serverConfig.stateDir, threadId, {
+            isIdle: () => {
+              // Skip if another turn already started for this thread.
+              if (startedTurns.has(event.threadId) || pending.has(event.threadId)) {
+                return false;
+              }
+              return true;
+            },
+          });
+        } else {
+          cancelControlSessionIdlePromote(serverConfig.stateDir, String(event.threadId));
+        }
       }
       if (
         turnId !== null &&
