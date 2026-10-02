@@ -532,6 +532,65 @@ it.layer(TestLayer)("CheckpointStore.layer", (it) => {
       }),
     );
 
+    it.effect("captures a new checkpoint when an untracked file becomes executable", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        yield* git(tmp, ["config", "core.fileMode", "true"]);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const threadId = ThreadId.make("checkpoint-reuse-chmod");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "scratch.local"), "same-bytes\n");
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+        const firstMode = yield* git(tmp, ["ls-tree", first, "scratch.local"]);
+        expect(firstMode.startsWith("100644")).toBe(true);
+
+        yield* fileSystem.chmod(NodePath.join(tmp, "scratch.local"), 0o755);
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).not.toBe(firstOid);
+        const secondMode = yield* git(tmp, ["ls-tree", second, "scratch.local"]);
+        expect(secondMode.startsWith("100755")).toBe(true);
+      }),
+    );
+
+    it.effect("falls back to a full capture when the reuse probe fails", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const threadId = ThreadId.make("checkpoint-reuse-probe-fail");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "a.local"), "a\n");
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        yield* writeTextFile(NodePath.join(tmp, "b.local"), "b\n");
+        yield* fileSystem.writeFileString(NodePath.join(tmp, ".git/index"), "not-a-git-index\n");
+
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).not.toBe(firstOid);
+        const tree = yield* git(tmp, ["ls-tree", "-r", "--name-only", second]);
+        expect(tree.split("\n")).toContain("b.local");
+      }),
+    );
+
     it.effect("large tracked path listing (>1.2MB) reuses or falls back without error", () =>
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();

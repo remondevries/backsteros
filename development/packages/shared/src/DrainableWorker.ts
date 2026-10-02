@@ -140,25 +140,25 @@ export const makeDrainableWorker = <A, E, R>(
         Effect.flatMap((hasMore) => (hasMore ? TxQueue.offer(runnableKeys, key) : Effect.void)),
       );
 
-    const processKey = (key: string): Effect.Effect<void, never, R> =>
+    const processKeyItems = (key: string): Effect.Effect<void, never, R> =>
       Effect.gen(function* () {
         while (true) {
           const item = yield* takeNextForKey(key);
           if (item === undefined) break;
-          // Interrupt-safe: always drop outstanding, keep draining this key, and
-          // never let a failed/interrupted item kill the worker forever-loop.
           yield* Effect.ensuring(
             process(item).pipe(Effect.catchCause(() => Effect.void)),
             TxRef.update(outstanding, (n) => n - 1),
           );
         }
-      }).pipe(Effect.ensuring(finishKey(key)));
+      });
 
-    const workerLoop = TxQueue.take(runnableKeys).pipe(
-      Effect.flatMap((key) => processKey(key)),
-      Effect.forever,
-      Effect.forkScoped,
-    );
+    const workerLoop = Effect.uninterruptibleMask((restore) =>
+      restore(TxQueue.take(runnableKeys)).pipe(
+        Effect.flatMap((key) =>
+          restore(processKeyItems(key)).pipe(Effect.ensuring(finishKey(key))),
+        ),
+      ),
+    ).pipe(Effect.forever, Effect.forkScoped);
 
     for (let i = 0; i < concurrency; i += 1) {
       yield* workerLoop;

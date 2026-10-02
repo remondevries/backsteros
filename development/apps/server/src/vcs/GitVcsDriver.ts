@@ -362,9 +362,14 @@ function splitNullSeparatedPaths(stdout: string): string[] {
   return paths;
 }
 
-/** Parse `git ls-tree -r -z` → path → blob oid. */
-function parseLsTreeBlobs(stdout: string): Map<string, string> {
-  const blobs = new Map<string, string>();
+type LsTreeEntry = {
+  readonly mode: string;
+  readonly hash: string;
+};
+
+/** Parse `git ls-tree -r -z` → path → { mode, blob oid }. */
+function parseLsTreeEntries(stdout: string): Map<string, LsTreeEntry> {
+  const entries = new Map<string, LsTreeEntry>();
   for (const entry of splitNullSeparatedPaths(stdout)) {
     const tab = entry.indexOf("\t");
     if (tab < 0) continue;
@@ -372,10 +377,17 @@ function parseLsTreeBlobs(stdout: string): Map<string, string> {
     const relativePath = entry.slice(tab + 1);
     if (relativePath.length === 0) continue;
     const parts = meta.split(" ");
+    const mode = parts[0];
     const hash = parts[2];
-    if (hash) blobs.set(relativePath, hash);
+    if (mode && hash) entries.set(relativePath, { mode, hash });
   }
-  return blobs;
+  return entries;
+}
+
+function workingTreeGitMode(info: FileSystem.File.Info, checkExecutable: boolean): string | null {
+  if (info.type === "SymbolicLink" || info.type !== "File") return null;
+  if (!checkExecutable) return "100644";
+  return (info.mode & 0o100) !== 0 ? "100755" : "100644";
 }
 
 const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
@@ -754,6 +766,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       );
 
       const tryReuse = Effect.gen(function* () {
+        const fileModeResult = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["config", "--bool", "--get", "core.fileMode"],
+          allowNonZeroExit: true,
+          timeoutMs: 5_000,
+          maxOutputBytes: 64,
+        });
+        const checkExecutable = fileModeResult.stdout.trim() !== "false";
+
         for (const reuseRef of reuseCandidates) {
           const reuseCommit = yield* resolveCheckpointCommit(input.cwd, reuseRef);
           if (!reuseCommit) continue;
@@ -766,7 +788,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             timeoutMs: 30_000,
             maxOutputBytes: listingMax,
           });
-          if (diffResult.stdoutTruncated) continue;
+          if (diffResult.exitCode !== 0 || diffResult.stdoutTruncated) continue;
 
           const treeResult = yield* execute({
             operation,
@@ -777,7 +799,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             maxOutputBytes: listingMax,
           });
           if (treeResult.exitCode !== 0 || treeResult.stdoutTruncated) continue;
-          const commitBlobs = parseLsTreeBlobs(treeResult.stdout);
+          const commitEntries = parseLsTreeEntries(treeResult.stdout);
 
           const untrackedResult = yield* execute({
             operation,
@@ -787,7 +809,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             timeoutMs: 30_000,
             maxOutputBytes: listingMax,
           });
-          if (untrackedResult.stdoutTruncated) continue;
+          if (untrackedResult.exitCode !== 0 || untrackedResult.stdoutTruncated) continue;
           const untrackedPaths = splitNullSeparatedPaths(untrackedResult.stdout);
           const untrackedSet = new Set(untrackedPaths);
 
@@ -814,9 +836,39 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
 
           let matches = true;
           for (const relativePath of untrackedPaths) {
-            const commitHash = commitBlobs.get(relativePath);
+            const commitEntry = commitEntries.get(relativePath);
             const workingHash = workingHashes.get(relativePath);
-            if (!commitHash || !workingHash || commitHash !== workingHash) {
+            if (!commitEntry || !workingHash || commitEntry.hash !== workingHash) {
+              matches = false;
+              break;
+            }
+            if (commitEntry.mode === "120000") {
+              matches = false;
+              break;
+            }
+            const absPath = path.join(input.cwd, relativePath);
+            const isSymlink = yield* fileSystem.readLink(absPath).pipe(
+              Effect.as(true),
+              Effect.catch(() => Effect.succeed(false)),
+            );
+            if (isSymlink) {
+              matches = false;
+              break;
+            }
+            const info = yield* fileSystem
+              .stat(absPath)
+              .pipe(Effect.catch(() => Effect.succeed(null)));
+            if (!info || info.type !== "File") {
+              matches = false;
+              break;
+            }
+            if (checkExecutable) {
+              const workingMode = workingTreeGitMode(info, true);
+              if (workingMode === null || commitEntry.mode !== workingMode) {
+                matches = false;
+                break;
+              }
+            } else if (commitEntry.mode !== "100644" && commitEntry.mode !== "100755") {
               matches = false;
               break;
             }
@@ -831,9 +883,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               matches = false;
               break;
             }
-            const commitHash = commitBlobs.get(relativePath);
+            const commitEntry = commitEntries.get(relativePath);
             const workingHash = workingHashes.get(relativePath);
-            if (!commitHash || !workingHash || commitHash !== workingHash) {
+            if (!commitEntry || !workingHash || commitEntry.hash !== workingHash) {
               matches = false;
               break;
             }
