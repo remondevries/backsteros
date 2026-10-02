@@ -1052,11 +1052,6 @@ export function registerApiRoutes(app: Hono) {
     const projectIdRaw = c.req.param("id");
     const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
     if (!projectId) return c.json(notFound("Project"), 404);
-    // Safety: create vault folder + .cursor skills on open if missing.
-    await projectVaultService.ensureProjectVaultFoldersOnly(
-      auth.workspaceId,
-      projectId,
-    );
 
     const row = await taskProjectService.getProjectById(
       auth.workspaceId,
@@ -1065,6 +1060,13 @@ export function registerApiRoutes(app: Hono) {
     if (!row) {
       return c.json(notFound("Project"), 404);
     }
+
+    // Vault folder + .cursor skills: never block the detail response. Awaiting
+    // ensure here hung GET /projects/{id} when vault FS stalled (OS-68), while
+    // list/tasks stayed fast. Dedicated POST …/ensure-vault remains available.
+    void projectVaultService
+      .ensureProjectVaultFoldersOnly(auth.workspaceId, projectId)
+      .catch(() => null);
 
     c.header("Cache-Control", "no-store");
     return c.json(toProject(row));

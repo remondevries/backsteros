@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { patchBacksterosControlTaskStatus } from "./control-backsteros.ts";
+import {
+  BACKSTEROS_FETCH_TIMEOUT_MS,
+  BacksterosTimeoutError,
+  fetchBacksterosControlProject,
+  patchBacksterosControlTaskStatus,
+  resolveBacksterosControlTask,
+} from "./control-backsteros.ts";
 
 describe("patchBacksterosControlTaskStatus", () => {
   const originalFetch = globalThis.fetch;
@@ -32,6 +38,7 @@ describe("patchBacksterosControlTaskStatus", () => {
       const url = String(input);
       expect(url).toBe("https://api.test.backsteros.com/api/v1/tasks/task-1");
       expect(init?.method ?? "GET").toBe("GET");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
       return new Response(JSON.stringify({ id: "task-1", status: "completed" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -81,6 +88,7 @@ describe("patchBacksterosControlTaskStatus", () => {
         });
       }
       expect(init?.method).toBe("PATCH");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
       expect(JSON.parse(String(init?.body))).toEqual({
         status: "in_review",
         activityActor: "agent",
@@ -94,5 +102,172 @@ describe("patchBacksterosControlTaskStatus", () => {
 
     await expect(patchBacksterosControlTaskStatus("task-1", "in_review")).resolves.toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("backsterosFetch timeout + project detail fallback", () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.BACKSTEROS_API_KEY;
+  const originalApiUrl = process.env.BACKSTEROS_API_URL;
+
+  beforeEach(() => {
+    process.env.BACKSTEROS_API_KEY = "test-key";
+    process.env.BACKSTEROS_API_URL = "https://api.test.backsteros.com";
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) {
+      delete process.env.BACKSTEROS_API_KEY;
+    } else {
+      process.env.BACKSTEROS_API_KEY = originalApiKey;
+    }
+    if (originalApiUrl === undefined) {
+      delete process.env.BACKSTEROS_API_URL;
+    } else {
+      process.env.BACKSTEROS_API_URL = originalApiUrl;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it(`uses a ${BACKSTEROS_FETCH_TIMEOUT_MS}ms AbortSignal.timeout on local-core fetches`, async () => {
+    expect(BACKSTEROS_FETCH_TIMEOUT_MS).toBe(10_000);
+
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return new Response(
+        JSON.stringify({
+          id: "proj-1",
+          key: "OS",
+          name: "OS",
+          localWorkingDirectory: "/tmp/os",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(fetchBacksterosControlProject("proj-1")).resolves.toMatchObject({
+      id: "proj-1",
+      key: "OS",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws BacksterosTimeoutError naming the path when the fetch aborts", async () => {
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(_input);
+      if (url.includes("/projects?type=codebase")) {
+        return new Response(JSON.stringify({ projects: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const abortError = new Error("The operation was aborted due to timeout");
+      abortError.name = "TimeoutError";
+      // Honour the signal so real AbortSignal.timeout behaviour is represented.
+      if (init?.signal?.aborted) {
+        throw abortError;
+      }
+      throw abortError;
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(fetchBacksterosControlProject("hung-proj")).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(BacksterosTimeoutError);
+      expect(error).toMatchObject({
+        code: "backsteros_timeout",
+        pathname: "/api/v1/projects/hung-proj",
+      });
+      expect(String(error)).toContain("/api/v1/projects/hung-proj");
+      expect(String(error)).toContain(String(BACKSTEROS_FETCH_TIMEOUT_MS));
+      return true;
+    });
+  });
+
+  it("falls back to /projects?type=codebase when GET /projects/{id} times out", async () => {
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/projects/proj-hang")) {
+        const abortError = new Error("The operation was aborted due to timeout");
+        abortError.name = "TimeoutError";
+        throw abortError;
+      }
+      if (url.includes("/projects?type=codebase")) {
+        return new Response(
+          JSON.stringify({
+            projects: [
+              {
+                id: "proj-hang",
+                key: "OS",
+                name: "BacksterOS",
+                localWorkingDirectory: "/Users/me/Codebase",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(fetchBacksterosControlProject("proj-hang")).resolves.toEqual({
+      id: "proj-hang",
+      key: "OS",
+      name: "BacksterOS",
+      localWorkingDirectory: "/Users/me/Codebase",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to the codebase list when resolving a task by id and detail hangs", async () => {
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/tasks/task-1")) {
+        return new Response(
+          JSON.stringify({
+            id: "task-1",
+            number: 68,
+            title: "Hang fix",
+            status: "in_progress",
+            projectId: "proj-hang",
+            description: "desc",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/v1/projects/proj-hang")) {
+        const abortError = new Error("The operation was aborted due to timeout");
+        abortError.name = "TimeoutError";
+        throw abortError;
+      }
+      if (url.includes("/projects?type=codebase")) {
+        return new Response(
+          JSON.stringify({
+            projects: [
+              {
+                id: "proj-hang",
+                key: "OS",
+                name: "BacksterOS",
+                localWorkingDirectory: "/tmp/os",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const resolved = await resolveBacksterosControlTask("task-1");
+    expect(resolved.task.id).toBe("task-1");
+    expect(resolved.project).toEqual({
+      id: "proj-hang",
+      key: "OS",
+      name: "BacksterOS",
+      localWorkingDirectory: "/tmp/os",
+    });
   });
 });

@@ -32,6 +32,7 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import {
+  BacksterosTimeoutError,
   buildControlKickoffPrompt,
   patchBacksterosControlTaskStatus,
   resolveBacksterosControlApiKey,
@@ -508,11 +509,20 @@ export const controlStartHandler = catchControlErrors(
 
     const resolved = yield* Effect.tryPromise({
       try: () => resolveBacksterosControlTask(taskIdOrRef),
-      catch: (cause): ControlHttpError => ({
-        status: 404,
-        error: cause instanceof Error ? cause.message : "Failed to resolve BacksterOS task",
-        code: "task_not_found",
-      }),
+      catch: (cause): ControlHttpError => {
+        if (cause instanceof BacksterosTimeoutError) {
+          return {
+            status: 504,
+            error: cause.message,
+            code: "backsteros_timeout",
+          };
+        }
+        return {
+          status: 404,
+          error: cause instanceof Error ? cause.message : "Failed to resolve BacksterOS task",
+          code: "task_not_found",
+        };
+      },
     });
 
     const { task, project } = resolved;
@@ -590,6 +600,38 @@ export const controlStartHandler = catchControlErrors(
     const messageId = MessageId.make(yield* newId());
 
     if (start) {
+      // Create the thread first when needed. bootstrap.createThread on
+      // thread.turn.start is rejected by the orchestration engine
+      // ("Thread … does not exist for command thread.turn.start").
+      if (created) {
+        const createCommand = yield* normalizeDispatchCommand({
+          type: "thread.create",
+          commandId: CommandId.make(yield* newId()),
+          threadId: ThreadId.make(threadId),
+          projectId: ProjectId.make(t3Project.id),
+          title,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        }).pipe(
+          Effect.mapError((cause): ControlHttpError => ({
+            status: 400,
+            error: cause instanceof Error ? cause.message : "Invalid create command",
+            code: "invalid_command",
+          })),
+        );
+        yield* orchestrationEngine.dispatch(createCommand).pipe(
+          Effect.mapError((cause): ControlHttpError => ({
+            status: 500,
+            error: cause instanceof Error ? cause.message : "Failed to create thread",
+            code: "dispatch_failed",
+          })),
+        );
+      }
+
       const command = yield* normalizeDispatchCommand({
         type: "thread.turn.start",
         commandId,
@@ -605,22 +647,6 @@ export const controlStartHandler = catchControlErrors(
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt,
-        ...(created
-          ? {
-              bootstrap: {
-                createThread: {
-                  projectId: ProjectId.make(t3Project.id),
-                  title,
-                  modelSelection,
-                  runtimeMode: "full-access" as const,
-                  interactionMode: "default" as const,
-                  branch: null,
-                  worktreePath: null,
-                  createdAt,
-                },
-              },
-            }
-          : {}),
       }).pipe(
         Effect.mapError((cause): ControlHttpError => ({
           status: 400,

@@ -14,6 +14,9 @@ export { backsterosStatusForControlSession, canAutoPromoteBacksterosTaskStatus }
 const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
 const DISPLAY_ID_RE = /^([A-Za-z0-9]{2,3})-(\d+)$/;
 
+/** Fail fast when local-core (or any BacksterOS API) stalls — e.g. hung GET /projects/{id}. */
+export const BACKSTEROS_FETCH_TIMEOUT_MS = 10_000;
+
 export type BacksterosControlTask = {
   readonly id: string;
   readonly number: number;
@@ -29,6 +32,28 @@ export type BacksterosControlProject = {
   readonly name: string;
   readonly localWorkingDirectory: string | null;
 };
+
+export class BacksterosTimeoutError extends Error {
+  readonly code = "backsteros_timeout" as const;
+  readonly pathname: string;
+
+  constructor(pathname: string, cause?: unknown) {
+    super(`BacksterOS ${pathname} timed out after ${BACKSTEROS_FETCH_TIMEOUT_MS}ms`);
+    this.name = "BacksterosTimeoutError";
+    this.pathname = pathname;
+    if (cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+function isAbortTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  return code === "ABORT_ERR";
+}
 
 function readCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): string {
   try {
@@ -72,14 +97,23 @@ async function backsterosFetchJson<T>(pathname: string): Promise<T> {
       "BacksterOS API key missing (BACKSTEROS_API_KEY or ~/.config/backsteros/cli.env)",
     );
   }
-  const response = await fetch(`${origin}${pathname}`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${origin}${pathname}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(BACKSTEROS_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (isAbortTimeoutError(error)) {
+      throw new BacksterosTimeoutError(pathname, error);
+    }
+    throw error;
+  }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(
@@ -89,21 +123,39 @@ async function backsterosFetchJson<T>(pathname: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function fetchBacksterosControlProject(
-  projectId: string,
-): Promise<BacksterosControlProject> {
-  const project = await backsterosFetchJson<{
-    id: string;
-    key?: string | null;
-    name: string;
-    localWorkingDirectory?: string | null;
-  }>(`/api/v1/projects/${encodeURIComponent(projectId)}`);
+function mapProjectRow(project: {
+  id: string;
+  key?: string | null;
+  name: string;
+  localWorkingDirectory?: string | null;
+}): BacksterosControlProject {
   return {
     id: project.id,
     key: project.key ?? null,
     name: project.name,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
   };
+}
+
+export async function fetchBacksterosControlProject(
+  projectId: string,
+): Promise<BacksterosControlProject> {
+  const detailPath = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  try {
+    const project = await backsterosFetchJson<{
+      id: string;
+      key?: string | null;
+      name: string;
+      localWorkingDirectory?: string | null;
+    }>(detailPath);
+    return mapProjectRow(project);
+  } catch (error) {
+    // Detail GET has hung on local-core (vault ensure). List answers in ms.
+    const projects = await listBacksterosControlProjects();
+    const match = projects.find((project) => project.id === projectId);
+    if (match) return match;
+    throw error;
+  }
 }
 
 async function listBacksterosControlProjects(): Promise<ReadonlyArray<BacksterosControlProject>> {
@@ -115,12 +167,7 @@ async function listBacksterosControlProjects(): Promise<ReadonlyArray<Backsteros
       localWorkingDirectory?: string | null;
     }>;
   }>("/api/v1/projects?type=codebase");
-  return (payload.projects ?? []).map((project) => ({
-    id: project.id,
-    key: project.key ?? null,
-    name: project.name,
-    localWorkingDirectory: project.localWorkingDirectory ?? null,
-  }));
+  return (payload.projects ?? []).map(mapProjectRow);
 }
 
 export async function resolveBacksterosControlProjectByKey(
@@ -234,6 +281,7 @@ export async function patchBacksterosControlTaskStatus(
       },
       body: JSON.stringify({ status, activityActor: "agent" }),
       cache: "no-store",
+      signal: AbortSignal.timeout(BACKSTEROS_FETCH_TIMEOUT_MS),
     });
     return response.ok;
   } catch {
