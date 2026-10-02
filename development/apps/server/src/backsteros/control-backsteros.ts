@@ -257,6 +257,8 @@ export async function resolveBacksterosControlTask(taskRefOrId: string): Promise
  * swallowed — the web lifecycle hook is still the primary path when the UI is open.
  *
  * Re-reads the task first so completed/canceled/duplicated stay closed.
+ * `in_review` only applies when the live status is already `in_progress`
+ * (never yank backlog / ready_to_start / on_hold back to review).
  */
 export async function patchBacksterosControlTaskStatus(
   taskId: string,
@@ -270,6 +272,9 @@ export async function patchBacksterosControlTaskStatus(
       `/api/v1/tasks/${encodeURIComponent(taskId)}`,
     );
     if (!canAutoPromoteBacksterosTaskStatus(current.status)) {
+      return false;
+    }
+    if (status === "in_review" && current.status !== "in_progress") {
       return false;
     }
     const response = await fetch(`${origin}/api/v1/tasks/${encodeURIComponent(taskId)}`, {

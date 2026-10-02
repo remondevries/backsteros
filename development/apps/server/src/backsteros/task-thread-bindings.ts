@@ -135,3 +135,14 @@ export function listBacksterosTaskThreadBindings(
   const file = readBacksterosTaskThreadBindings(stateDir);
   return Object.entries(file.byTaskId).map(([taskId, binding]) => ({ taskId, binding }));
 }
+
+export function removeBacksterosTaskThreadBinding(stateDir: string, taskId: string): boolean {
+  const current = readBacksterosTaskThreadBindings(stateDir);
+  if (!(taskId in current.byTaskId)) return false;
+  const { [taskId]: _removed, ...rest } = current.byTaskId;
+  const file: BindingsFile = { version: 1, byTaskId: rest };
+  const filePath = bindingsPath(stateDir);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+  return true;
+}

@@ -50,6 +50,11 @@ resolve_env_file() {
   if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
     return 0
   fi
+  local dedicated="${HOME_DIR}/.config/backsteros/local-core.env"
+  if [[ -f "${dedicated}" ]]; then
+    ENV_FILE="${dedicated}"
+    return 0
+  fi
   if [[ -f "${HOME_DIR}/.config/backsteros/hub.json" ]]; then
     local hub_root
     hub_root="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME_DIR}/.config/backsteros/hub.json" 2>/dev/null || true)"
@@ -88,8 +93,8 @@ chmod +x "${SCRIPT}"
 mkdir -p "${AGENT_DIR}" "${LOG_DIR}"
 
 if ! resolve_env_file; then
-  echo "WARNING: could not resolve LOCAL_CORE_ENV_FILE; run.sh will try again at start" >&2
-  ENV_FILE="${HOME_DIR}/BacksterOS/Projects/OS/Codebase/core/server/.env"
+  echo "WARNING: could not resolve LOCAL_CORE_ENV_FILE; copy deploy/local-core.env.example to ~/.config/backsteros/local-core.env" >&2
+  ENV_FILE="${HOME_DIR}/.config/backsteros/local-core.env"
 fi
 
 # Unload if already registered (ignore missing).
@@ -137,8 +142,6 @@ cat >"${PLIST}" <<PLIST
     <string>${ENV_FILE}</string>
     <key>FORCE_COLOR</key>
     <string>0</string>
-    <key>CORE_REPLICATION_SYNC_EVENTS_PULL</key>
-    <string>0</string>
   </dict>
 </dict>
 </plist>
@@ -156,7 +159,7 @@ echo "  env file:  ${ENV_FILE}"
 echo "  api log:   ${LOG_DIR}/local-core.log (copy-truncate rotate @ 32MiB)"
 echo "  launchd:   ${LOG_OUT}"
 echo "  bind:      127.0.0.1:${API_PORT:-8788} only (no Tailscale serve)"
-echo "  env:       CORE_REPLICATION_SYNC_EVENTS_PULL=0 (OS-49 safeguard)"
+echo "  sync pull: CORE_REPLICATION_SYNC_EVENTS_PULL from ${ENV_FILE}"
 echo "  update:    bash scripts/local-core/update-build.sh"
 echo "  stop:      launchctl bootout gui/${UID_NUM} ${PLIST}"
 echo "  start:     launchctl bootstrap gui/${UID_NUM} ${PLIST}"

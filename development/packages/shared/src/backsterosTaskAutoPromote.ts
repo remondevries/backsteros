@@ -1,8 +1,8 @@
 /**
  * Shared rules for agent-driven BacksterOS task status auto-promote.
- * Used by Development web turn-start / leave-timer writes and the localhost
- * control API session start. The control status GET is read-only (OS-38) and
- * never writes task status.
+ * Used by Development web turn-start / leave-timer writes, control session
+ * start, and explicit POST promote when the web UI is closed.
+ * Control status / session-list GETs stay read-only (OS-38).
  */
 
 export type BacksterosControlSessionStatus = "idle" | "working" | "blocked" | "done";

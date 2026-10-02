@@ -8,6 +8,11 @@ import {
   retryReplicationDeadLetters,
 } from "./dead-letters.js";
 import {
+  notePullOutcome,
+  resetEmptyPullStateForTests,
+  shouldDeferEmptyPull,
+} from "./empty-pull-backoff.js";
+import {
   fetchLocalChanges,
   listActiveReplicatedTables,
 } from "./fetch.js";
@@ -27,6 +32,10 @@ import { checkPeerBuildVersion } from "./peer-version.js";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 100;
 
+export function resetReplicationWorkerStateForTests(): void {
+  resetEmptyPullStateForTests();
+}
+
 function replicationHeaders(secret: string): HeadersInit {
   return {
     Authorization: `Bearer ${secret}`,
@@ -41,9 +50,14 @@ export async function pullTable(table: ReplicatedTable) {
   // Pull watermark is independent of push — advancing peer tip must not
   // skip local rows that are still older than the peer tip.
   let cursor = await getReplicationCursor(table, "pull");
+  const nowMs = Date.now();
+  if (shouldDeferEmptyPull(table, cursor, nowMs)) {
+    return;
+  }
   let appliedTotal = 0;
   let skippedTotal = 0;
   let failedTotal = 0;
+  let hadChanges = false;
 
   for (;;) {
     const url = new URL(`${config.peerUrl}/internal/core-replication/changes`);
@@ -70,6 +84,7 @@ export async function pullTable(table: ReplicatedTable) {
       if (payload.changes.length === 0) {
         break;
       }
+      hadChanges = true;
 
       const result = await applyRemoteChanges(table, payload.changes, {
         direction: "pull",
@@ -88,6 +103,8 @@ export async function pullTable(table: ReplicatedTable) {
       clearTimeout(timeout);
     }
   }
+
+  notePullOutcome(table, cursor, hadChanges, Date.now());
 
   if (appliedTotal > 0 || skippedTotal > 0 || failedTotal > 0) {
     appendOpsLog(
@@ -180,8 +197,8 @@ export async function runCoreReplicationTick(): Promise<void> {
     });
   }
 
-  // Per-table isolation: one peer schema lag / apply 500 must not stall every
-  // later table (e.g. workspace_integration_secrets blocking api_keys).
+  // Every active table each tick; empty-pull backoff defers quiet tables so we
+  // do not permanently skip them (and do not need a round-robin batch).
   const tables = await listActiveReplicatedTables();
   const tableErrors: string[] = [];
   for (const table of tables) {

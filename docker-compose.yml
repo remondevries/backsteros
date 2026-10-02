@@ -6,7 +6,7 @@ services:
     container_name: backsteros-postgres
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: backsteros
       POSTGRES_PASSWORD: backsteros
@@ -28,7 +28,7 @@ services:
     # PowerSync bucket storage needs transactions → single-node replica set.
     command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - backsteros_powersync_mongo:/data/db
     healthcheck:
@@ -58,7 +58,7 @@ services:
       - ./deploy/powersync/service.local.yaml:/config/service.yaml:ro
       - ./deploy/powersync/sync-config.yaml:/config/sync-config.yaml:ro
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
 volumes:
   # Pin names so a repo path / compose-project rename does not orphan the

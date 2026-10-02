@@ -17,6 +17,19 @@ import { readBootstrapEnvelope } from "../bootstrap.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 
+/** Loopback-only unless Tailscale serve explicitly exposes the server. */
+export function resolveServerListenHost(input: {
+  readonly host: string | undefined;
+  readonly tailscaleServeEnabled: boolean;
+}): string | undefined {
+  const raw = input.host?.trim();
+  if (!raw) return undefined;
+  if (raw === "0.0.0.0" || raw === "::" || raw === "[::]") {
+    return input.tailscaleServeEnabled ? raw : "127.0.0.1";
+  }
+  return raw;
+}
+
 export const modeFlag = Flag.choice("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
   Flag.optional,
@@ -337,7 +350,7 @@ export const resolveServerConfig = (
       () => 443,
     );
     const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
-    const host = Option.getOrElse(
+    const hostRaw = Option.getOrElse(
       resolveOptionPrecedence(
         normalizedFlags.host,
         Option.fromUndefinedOr(env.host),
@@ -345,6 +358,10 @@ export const resolveServerConfig = (
       ),
       () => (mode === "desktop" ? "127.0.0.1" : undefined),
     );
+    const host = resolveServerListenHost({
+      host: hostRaw,
+      tailscaleServeEnabled,
+    });
     const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
     const config: ServerConfig.ServerConfig["Service"] = {

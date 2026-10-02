@@ -44,9 +44,11 @@ import {
   getControlPendingDispatch,
   recordControlPendingDispatch,
 } from "./control-pending-dispatch.ts";
+import { maybePromoteBacksterosTaskForControlSession } from "./control-session-promote.ts";
 import {
   findBacksterosTaskThreadBinding,
   listBacksterosTaskThreadBindings,
+  removeBacksterosTaskThreadBinding,
   writeBacksterosTaskThreadBinding,
   type BacksterosTaskThreadBinding,
 } from "./task-thread-bindings.ts";
@@ -211,6 +213,8 @@ function toSessionView(input: {
   readonly thread: OrchestrationThreadShell | null;
   readonly now: number;
 }): ControlSessionView {
+  // Read-only (OS-38): never promote or prune from a view built for GET.
+  const status = resolveControlSessionStatus(input.binding.threadId, input.thread, input.now);
   return {
     ok: true,
     taskId: input.taskId,
@@ -219,7 +223,7 @@ function toSessionView(input: {
     environmentId: input.binding.environmentId,
     projectId: input.binding.t3ProjectId,
     title: input.binding.title,
-    status: resolveControlSessionStatus(input.binding.threadId, input.thread, input.now),
+    status,
     sessionStatus: input.thread?.session?.status ?? null,
     hasPendingApprovals: input.thread?.hasPendingApprovals ?? false,
     hasPendingUserInput: input.thread?.hasPendingUserInput ?? false,
@@ -718,8 +722,11 @@ export const controlStartHandler = catchControlErrors(
 
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
+    const view = toSessionView({ taskId: task.id, binding, thread, now });
+    // Non-GET path: sync BacksterOS status from the session lifecycle.
+    maybePromoteBacksterosTaskForControlSession(task.id, view.status);
     return HttpServerResponse.jsonUnsafe({
-      ...toSessionView({ taskId: task.id, binding, thread, now }),
+      ...view,
       created,
       started: start,
     });
@@ -742,15 +749,28 @@ export const controlStatusHandler = catchControlErrors(
     const taskId = url.value.searchParams.get("taskId")?.trim() || null;
     const taskRef = url.value.searchParams.get("taskRef")?.trim() || null;
     const threadId = url.value.searchParams.get("threadId")?.trim() || null;
+    const config = yield* ServerConfig.ServerConfig;
+    const now = yield* Clock.currentTimeMillis;
+
     if (!taskId && !taskRef && !threadId) {
-      return yield* Effect.fail({
-        status: 400,
-        error: "taskId, taskRef, or threadId query parameter is required",
-        code: "bad_request",
-      } satisfies ControlHttpError);
+      // Read-only list (OS-38): no promote, no pruneMissing deletes.
+      const sessions: ControlSessionView[] = [];
+      for (const { taskId: boundTaskId, binding } of listBacksterosTaskThreadBindings(
+        config.stateDir,
+      )) {
+        const thread = yield* findThreadShell(binding.threadId);
+        sessions.push(
+          toSessionView({
+            taskId: boundTaskId,
+            binding,
+            thread,
+            now,
+          }),
+        );
+      }
+      return HttpServerResponse.jsonUnsafe({ ok: true, sessions });
     }
 
-    const config = yield* ServerConfig.ServerConfig;
     let found = findBacksterosTaskThreadBinding(config.stateDir, {
       ...(taskId ? { taskId } : {}),
       ...(threadId ? { threadId } : {}),
@@ -777,10 +797,8 @@ export const controlStatusHandler = catchControlErrors(
     }
 
     const thread = yield* findThreadShell(found.binding.threadId);
-    const now = yield* Clock.currentTimeMillis;
     // Read-only (OS-38): a status GET never writes BacksterOS task status or
-    // updatedAt. In Review after agent work is owned by the web leave timer
-    // (markBacksterosTaskInReviewForAgent), which is guarded against closed tasks.
+    // updatedAt. Promotion is POST /sessions/promote (or start/message).
     const view = toSessionView({
       taskId: found.taskId,
       binding: found.binding,
@@ -788,6 +806,92 @@ export const controlStatusHandler = catchControlErrors(
       now,
     });
     return HttpServerResponse.jsonUnsafe(view);
+  }),
+);
+
+/**
+ * Explicit non-GET promote: sync BacksterOS task status from bound session(s).
+ * `in_review` only applies when the live task is already `in_progress`.
+ */
+export const controlPromoteHandler = catchControlErrors(
+  Effect.gen(function* () {
+    yield* requireControlAuth();
+
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    const body =
+      bodyJson && typeof bodyJson === "object" ? (bodyJson as Record<string, unknown>) : {};
+    const taskIdFilter = asNonEmptyString(body.taskId);
+    const taskRefFilter = asNonEmptyString(body.taskRef);
+    const threadIdFilter = asNonEmptyString(body.threadId);
+
+    const config = yield* ServerConfig.ServerConfig;
+    const now = yield* Clock.currentTimeMillis;
+    const sessions: ControlSessionView[] = [];
+
+    let bindings = listBacksterosTaskThreadBindings(config.stateDir);
+    if (taskIdFilter || taskRefFilter || threadIdFilter) {
+      let found = findBacksterosTaskThreadBinding(config.stateDir, {
+        ...(taskIdFilter ? { taskId: taskIdFilter } : {}),
+        ...(threadIdFilter ? { threadId: threadIdFilter } : {}),
+        ...(taskRefFilter ? { displayId: taskRefFilter } : {}),
+      });
+      if (!found && taskRefFilter) {
+        const resolved = yield* Effect.promise(() =>
+          resolveBacksterosControlTask(taskRefFilter).then(
+            (value) => value,
+            () => null,
+          ),
+        );
+        if (resolved) {
+          found = findBacksterosTaskThreadBinding(config.stateDir, { taskId: resolved.task.id });
+        }
+      }
+      if (!found) {
+        return yield* Effect.fail({
+          status: 404,
+          error: "No bound session for that task/thread",
+          code: "not_found",
+        } satisfies ControlHttpError);
+      }
+      bindings = [{ taskId: found.taskId, binding: found.binding }];
+    }
+
+    for (const { taskId: boundTaskId, binding } of bindings) {
+      const thread = yield* findThreadShell(binding.threadId);
+      const view = toSessionView({
+        taskId: boundTaskId,
+        binding,
+        thread,
+        now,
+      });
+      maybePromoteBacksterosTaskForControlSession(boundTaskId, view.status);
+      sessions.push(view);
+    }
+
+    return HttpServerResponse.jsonUnsafe({ ok: true, sessions });
+  }),
+);
+
+/**
+ * Remove bindings whose threads are gone. Explicit DELETE — never from GET.
+ */
+export const controlPruneHandler = catchControlErrors(
+  Effect.gen(function* () {
+    yield* requireControlAuth();
+
+    const config = yield* ServerConfig.ServerConfig;
+    const pruned: string[] = [];
+    for (const { taskId: boundTaskId, binding } of listBacksterosTaskThreadBindings(
+      config.stateDir,
+    )) {
+      const thread = yield* findThreadShell(binding.threadId);
+      if (!thread) {
+        removeBacksterosTaskThreadBinding(config.stateDir, boundTaskId);
+        pruned.push(boundTaskId);
+      }
+    }
+    return HttpServerResponse.jsonUnsafe({ ok: true, pruned });
   }),
 );
 
@@ -885,8 +989,10 @@ export const controlMessageHandler = catchControlErrors(
 
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
+    const view = toSessionView({ taskId: found.taskId, binding: found.binding, thread, now });
+    maybePromoteBacksterosTaskForControlSession(found.taskId, view.status);
     return HttpServerResponse.jsonUnsafe({
-      ...toSessionView({ taskId: found.taskId, binding: found.binding, thread, now }),
+      ...view,
       sent: true,
     });
   }),

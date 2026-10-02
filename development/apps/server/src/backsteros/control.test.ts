@@ -632,12 +632,15 @@ describe("control API handlers (OS-38)", () => {
       };
       expect((await getStatus()).status).toBe("idle");
 
-      // Auto-settle at turn end → done; still no BacksterOS writes from GETs.
+      // Auto-settle at turn end → done; GETs still never write BacksterOS status.
+      // POST /message may GET the live task for an explicit promote attempt, but
+      // completed tasks stay closed (no PATCH).
       threadState.sessionStatus = "stopped";
       threadState.settledAt = sentAt;
       expect((await getStatus()).status).toBe("done");
       await flush();
-      expect(fetchCalls).toEqual([]);
+      expect(fetchCalls.every((call) => call.method === "GET")).toBe(true);
+      expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
       expect(fakeTask.status).toBe("completed");
     });
   });

@@ -12,6 +12,8 @@ import {
 export const DOCUMENT_RETRIEVAL_DEFAULT_BUDGET = 8000;
 export const DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET = 32_000;
 export const DOCUMENT_RETRIEVAL_DEFAULT_LIMIT = 20;
+/** Default cap on DB rows loaded before body scoring (was 100). */
+export const DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT = 24;
 /** Max concurrent object-storage body reads per retrieve call. */
 export const DOCUMENT_RETRIEVAL_BODY_CONCURRENCY = 8;
 /** Log retrieve calls that take longer than this (ms). */
@@ -29,7 +31,19 @@ export type RetrievalCandidateRow = {
   docKey: string | null;
   title: string;
   storageKey: string;
+  contentEtag?: string | null;
 };
+
+const BODY_CACHE_MAX = 256;
+const bodyCache = new Map<string, string>();
+
+function bodyCacheKey(storageKey: string, contentEtag: string | null | undefined): string {
+  return `${storageKey}\0${contentEtag ?? ""}`;
+}
+
+export function resetDocumentRetrievalBodyCacheForTests(): void {
+  bodyCache.clear();
+}
 
 export type RetrievalHit = {
   documentId: string;
@@ -102,14 +116,24 @@ export async function loadRetrievalCandidateBodies(
   const concurrency = options.concurrency ?? DOCUMENT_RETRIEVAL_BODY_CONCURRENCY;
   const loaded = await mapWithConcurrency(rows, concurrency, async (row) => {
     try {
-      const object = await options.getObject(row.storageKey);
+      const cacheKey = bodyCacheKey(row.storageKey, row.contentEtag);
+      let body = bodyCache.get(cacheKey);
+      if (body === undefined) {
+        const object = await options.getObject(row.storageKey);
+        body = object.body;
+        if (bodyCache.size >= BODY_CACHE_MAX) {
+          const first = bodyCache.keys().next().value;
+          if (first) bodyCache.delete(first);
+        }
+        bodyCache.set(cacheKey, body);
+      }
       return {
         ok: true as const,
         candidate: {
           id: row.id,
           docKey: row.docKey,
           title: row.title,
-          content: object.body,
+          content: body,
         },
       };
     } catch (error) {

@@ -6,6 +6,8 @@ import {
   controlBindingsGetHandler,
   controlBindingsPutHandler,
   controlMessageHandler,
+  controlPromoteHandler,
+  controlPruneHandler,
   controlStartHandler,
   controlStatusHandler,
 } from "./control.ts";
@@ -390,8 +392,23 @@ export const backsterosFileTaskRouteLayer = Layer.mergeAll(
 );
 
 const CONTROL_SESSIONS_PATH = "/api/backsteros/control/sessions";
+const CONTROL_SESSIONS_PROMOTE_PATH = "/api/backsteros/control/sessions/promote";
+const CONTROL_SESSIONS_PRUNE_PATH = "/api/backsteros/control/sessions/prune";
+const CONTROL_HEALTH_PATH = "/api/backsteros/control/health";
 const CONTROL_BINDINGS_PATH = "/api/backsteros/control/bindings";
 const CONTROL_MESSAGE_PATH = "/api/backsteros/control/message";
+
+export const backsterosControlHealthRouteLayer = HttpRouter.add(
+  "GET",
+  CONTROL_HEALTH_PATH,
+  Effect.gen(function* () {
+    yield* Effect.void;
+    return HttpServerResponse.jsonUnsafe({
+      ok: true,
+      service: "backsteros-control",
+    });
+  }),
+);
 
 export const backsterosControlStartRouteLayer = HttpRouter.add(
   "POST",
@@ -403,6 +420,18 @@ export const backsterosControlStatusRouteLayer = HttpRouter.add(
   "GET",
   CONTROL_SESSIONS_PATH,
   controlStatusHandler,
+);
+
+export const backsterosControlPromoteRouteLayer = HttpRouter.add(
+  "POST",
+  CONTROL_SESSIONS_PROMOTE_PATH,
+  controlPromoteHandler,
+);
+
+export const backsterosControlPruneRouteLayer = HttpRouter.add(
+  "POST",
+  CONTROL_SESSIONS_PRUNE_PATH,
+  controlPruneHandler,
 );
 
 export const backsterosControlMessageRouteLayer = HttpRouter.add(
@@ -424,8 +453,11 @@ export const backsterosControlBindingsPutRouteLayer = HttpRouter.add(
 );
 
 export const backsterosControlRouteLayer = Layer.mergeAll(
+  backsterosControlHealthRouteLayer,
   backsterosControlStartRouteLayer,
   backsterosControlStatusRouteLayer,
+  backsterosControlPromoteRouteLayer,
+  backsterosControlPruneRouteLayer,
   backsterosControlMessageRouteLayer,
   backsterosControlBindingsGetRouteLayer,
   backsterosControlBindingsPutRouteLayer,

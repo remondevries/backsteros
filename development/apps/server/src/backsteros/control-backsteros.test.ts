@@ -103,6 +103,22 @@ describe("patchBacksterosControlTaskStatus", () => {
     await expect(patchBacksterosControlTaskStatus("task-1", "in_review")).resolves.toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("does not PATCH in_review when the live task is backlog / ready_to_start", async () => {
+    for (const status of ["backlog", "ready_to_start", "on_hold", "in_review"] as const) {
+      const fetchMock = vi.fn(async () => {
+        return new Response(JSON.stringify({ id: "task-1", status }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      await expect(patchBacksterosControlTaskStatus("task-1", "in_review")).resolves.toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[1]?.method ?? "GET").toBe("GET");
+    }
+  });
 });
 
 describe("backsterosFetch timeout + project detail fallback", () => {

@@ -16,8 +16,9 @@ The LaunchAgent runs the API from a **dedicated** git worktree pinned to
 ~/.backsteros/local-core-build
 ```
 
-Runtime secrets still come from the developer checkout’s
-`core/server/.env` (or `LOCAL_CORE_ENV_FILE`). Editing files under
+Runtime secrets come from `~/.config/backsteros/local-core.env` (copy
+`deploy/local-core.env.example`) or `LOCAL_CORE_ENV_FILE` / checkout
+`core/server/.env` as fallback. Editing files under
 `~/BacksterOS/Projects/OS/Codebase` does **not** change local-core behaviour
 until that commit is on `origin/production` and you refresh the build.
 
@@ -68,9 +69,9 @@ On each replication tick the local core compares that commit with the peer’s
 
 ## OS-49 safeguard
 
-The LaunchAgent sets `CORE_REPLICATION_SYNC_EVENTS_PULL=0` so a long-offline
-replica does not replay leader sync_events with `updatedAt = now` (see OS-49).
-Table LWW and vault sync still run. Re-enable after OS-49 is fixed.
+Set `CORE_REPLICATION_SYNC_EVENTS_PULL=0` in `~/.config/backsteros/local-core.env`
+when a long-offline replica must not replay leader sync_events with
+`updatedAt = now` (see OS-49). Table LWW and vault sync still run.
 
 ## Stop / start
 

@@ -113,10 +113,15 @@ resolve_repo_root() {
   return 1
 }
 
-# Runtime secrets stay in the developer checkout (or LOCAL_CORE_ENV_FILE). The
-# dedicated build worktree must not need its own copy of .env.
+# Runtime secrets live in ~/.config/backsteros/local-core.env (preferred) or
+# LOCAL_CORE_ENV_FILE / the developer checkout core/server/.env fallback.
 resolve_env_file() {
   if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
+    return 0
+  fi
+  local dedicated="${HOME}/.config/backsteros/local-core.env"
+  if [[ -f "${dedicated}" ]]; then
+    ENV_FILE="${dedicated}"
     return 0
   fi
   if [[ -f "${REPO_ROOT}/core/server/.env" ]]; then
@@ -190,9 +195,13 @@ wait_for_docker() {
 }
 
 ensure_compose() {
-  log "docker compose up -d postgres mongo powersync (cwd=${REPO_ROOT})"
+  local compose_root="${REPO_ROOT}"
+  if [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
+    compose_root="${LOCAL_CORE_BUILD}"
+  fi
+  log "docker compose up -d postgres mongo powersync (cwd=${compose_root})"
   if ! (
-    cd "${REPO_ROOT}"
+    cd "${compose_root}"
     docker compose up -d postgres mongo powersync
   ); then
     log "compose up reported an error; starting existing containers and repairing powersync mounts"
@@ -226,10 +235,14 @@ repair_powersync_if_needed() {
     && powersync_mounts_ok; then
     return 0
   fi
-  log "recreating backsteros-powersync with mounts from ${REPO_ROOT}"
+  local compose_root="${REPO_ROOT}"
+  if [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
+    compose_root="${LOCAL_CORE_BUILD}"
+  fi
+  log "recreating backsteros-powersync with mounts from ${compose_root}"
   docker rm -f backsteros-powersync >/dev/null 2>&1 || true
   (
-    cd "${REPO_ROOT}"
+    cd "${compose_root}"
     docker compose up -d --no-deps powersync
   )
 }
@@ -419,8 +432,7 @@ if ! resolve_env_file; then
 fi
 log "env file: ${ENV_FILE}"
 
-# OS-49: peer sync-event replay stamps updatedAt=now and can overwrite cloud.
-export CORE_REPLICATION_SYNC_EVENTS_PULL="${CORE_REPLICATION_SYNC_EVENTS_PULL:-0}"
+# CORE_REPLICATION_SYNC_EVENTS_PULL: set in local-core.env (see deploy/local-core.env.example).
 
 # Allow LaunchAgent / scratch tests to bind a non-default port without editing .env.
 if [[ -n "${LOCAL_CORE_API_PORT:-}" ]]; then

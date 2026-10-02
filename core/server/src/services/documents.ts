@@ -19,6 +19,7 @@ import {
   clampRetrievalBudget,
   DOCUMENT_RETRIEVAL_BODY_CONCURRENCY,
   DOCUMENT_RETRIEVAL_SLOW_MS,
+  DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT,
   loadRetrievalCandidateBodies,
   retrieveDocumentSections,
   type RetrievalHit,
@@ -1251,13 +1252,14 @@ export async function retrieveDocuments(input: {
     conditions.push(propertyScalarIn("project", input.project));
   }
 
-  const candidateLimit = input.candidateLimit ?? 100;
+  const candidateLimit = input.candidateLimit ?? DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT;
   const rows = await db
     .select({
       id: documents.id,
       docKey: documents.docKey,
       title: documents.title,
       storageKey: documents.storageKey,
+      contentEtag: documents.contentEtag,
     })
     .from(documents)
     .where(and(...conditions))
