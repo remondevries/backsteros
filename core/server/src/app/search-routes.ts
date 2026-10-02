@@ -5,11 +5,14 @@
  * Batch: `POST /api/v1/search/batch` — parallel search + document retrieve.
  * Alias: `GET /api/v1/global-search` → same module, multi-entity palette profile.
  * Task hits share key/status/projectId; palette task rows come from `searchTasks`.
+ *
+ * `include=task`: document hits only on the first page; `cursor` paginates tasks.
  */
 import type { Context, Hono } from "hono";
 
 import {
   searchBatchRequestSchema,
+  TASK_STATUSES,
   type SearchBatchQueryItem,
   type SearchBatchResponse,
 } from "@backsteros/contracts";
@@ -37,12 +40,48 @@ import {
   unauthorized,
 } from "./route-helpers.js";
 
+const TASK_STATUS_SET = new Set<string>(TASK_STATUSES);
+/** Cap concurrent batch item work (each item may run multiple DB queries). */
+const SEARCH_BATCH_CONCURRENCY = 4;
+
 function parseStatusCsv(status: string | undefined): string[] {
   if (!status?.trim()) return [];
   return status
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function parseAndValidateTaskStatuses(status: string | undefined): string[] {
+  const statuses = parseStatusCsv(status);
+  for (const value of statuses) {
+    if (!TASK_STATUS_SET.has(value)) {
+      throw new ListQueryError(`Invalid status: ${value}`, "status");
+    }
+  }
+  return statuses;
+}
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const index = next;
+        next += 1;
+        if (index >= items.length) return;
+        results[index] = await fn(items[index]!, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 /** Multi-entity command-palette search (formerly only on /global-search). */
@@ -174,12 +213,13 @@ async function runBatchItem(
       };
     }
 
+    const statuses = parseAndValidateTaskStatuses(item.status);
     const payload = await runAgentSearch({
       workspaceId,
       q: item.q,
       type,
       projectId: item.projectId,
-      statuses: parseStatusCsv(item.status),
+      statuses: statuses.length ? statuses : undefined,
       limit: item.limit,
       cursor: item.cursor,
       includeTasks,
@@ -199,7 +239,13 @@ async function runBatchItem(
         field: error.field,
       };
     }
-    throw error;
+    const message =
+      error instanceof Error ? error.message : "Unexpected batch item error";
+    return {
+      id: item.id,
+      kind: item.kind,
+      error: message,
+    };
   }
 }
 
@@ -209,7 +255,21 @@ async function handleSearchBatch(c: Context) {
     return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
   }
 
-  const parsed = searchBatchRequestSchema.safeParse(await c.req.json());
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json(
+      {
+        error: "Invalid JSON body",
+        code: "bad_request" as const,
+        field: "body",
+      },
+      400,
+    );
+  }
+
+  const parsed = searchBatchRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     return c.json(
       {
@@ -226,8 +286,11 @@ async function handleSearchBatch(c: Context) {
     return c.json(forbidden(), 403);
   }
 
-  const results = await Promise.all(
-    body.queries.map((item) => runBatchItem(auth.workspaceId, item)),
+  // Per-item errors are returned in the body; never fail the whole batch with 500.
+  const results = await mapPool(
+    body.queries,
+    SEARCH_BATCH_CONCURRENCY,
+    (item) => runBatchItem(auth.workspaceId, item),
   );
   return c.json({ results } satisfies SearchBatchResponse);
 }

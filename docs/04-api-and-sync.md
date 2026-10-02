@@ -107,18 +107,19 @@ with a `field` in the body.
 | --- | --- |
 | `q` | Required. Documents: ILIKE on title/path/snippet. Tasks: ILIKE on title/description; display key (`QM-38`) or exact task id is preferred on the first page |
 | `type` | `project` \| `knowledge` \| `journal` \| `task` (alias `tasks`). Omit for documents only. Unknown → **400** `field: type` |
-| `include` | `task` \| `tasks` — when searching documents, also run task search for the same `q` and merge hits (OS-76). Invalid with `type=task` |
+| `include` | `task` \| `tasks` — when searching documents, also run task search for the same `q` and merge hits ranked by `updatedAt` (capped at `limit`). Document hits appear **only on the first page**; a `cursor` paginates tasks only (OS-76). Invalid with `type=task` |
 | `projectId` | Optional filter (id or project key) |
 | `status` | Tasks only: comma-separated statuses (OR) |
 | `limit` | Default 20, max 50 |
-| `cursor` | Tasks only: opaque keyset on `(updatedAt desc, id)` |
+| `cursor` | Tasks only: opaque keyset on `(updatedAt desc, id)`. With `include=task`, cursor continues the task side after page 1 |
 
 Task results: `{ id, type: "task", key, projectId, status, title, snippet, updatedAt }` plus response `nextCursor`.
 Document results keep `{ id, type, projectId, path, title, snippet, updatedAt }`.
 Prefer **`type=task`** for task text search; `GET /global-search?mode=tasks` remains for mixed command-palette hits.
 
 Identical agent search / document-retrieve lookups within ~15s share an in-memory
-result (OS-76). For several different lookups in one turn prefer:
+result (OS-76). The cache is invalidated on every task or document write in that
+workspace (API and replication apply). For several different lookups in one turn prefer:
 
 ```http
 POST /api/v1/search/batch
@@ -129,9 +130,9 @@ POST /api/v1/search/batch
 ]}
 ```
 
-Queries run in parallel (max 10). `kind=retrieve` needs `documents:read` as well as
+Queries run with concurrency 4 (max 10 items). `kind=retrieve` needs `documents:read` as well as
 `search:query`. Per-item failures return `{ id, kind, error, field? }` without failing
-the whole batch.
+the whole batch. Malformed JSON → **400**.
 
 ### List pagination (agents)
 

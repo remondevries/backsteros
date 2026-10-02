@@ -98,11 +98,6 @@ export const FINANCIAL_IMPORT_DIALECTS = [
 export const FINANCIAL_AMOUNT_SIGNS = ["all", "debit", "credit"] as const;
 
 export const taskStatusSchema = z.enum(TASK_STATUSES);
-/** Email thread status includes unsent AgentMail drafts (`concept`). */
-export const emailThreadStatusSchema = z.union([
-  taskStatusSchema,
-  z.literal("concept"),
-]);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
 export const projectTypeSchema = z.enum(PROJECT_TYPES);
 export const projectProviderSchema = z.enum(PROJECT_PROVIDERS);
@@ -3275,7 +3270,7 @@ export const agentMailMessageSchema = z.object({
   number: z.number().int().positive().optional(),
   displayId: z.string().optional(),
   /** Workspace thread property; defaults to backlog when unset. */
-  status: emailThreadStatusSchema.optional(),
+  status: taskStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   organizationId: z.string().nullable().optional(),
@@ -3310,7 +3305,7 @@ export const emailThreadMetadataSchema = z.object({
   projectId: z.string().nullable(),
   projectName: z.string().nullable().optional(),
   projectKey: z.string().nullable().optional(),
-  status: emailThreadStatusSchema,
+  status: taskStatusSchema,
   priority: z.number().int().min(0).max(4),
   dueDate: z.string().datetime().nullable(),
   /** External update flag — surfaces in the Updated inbox group. */
@@ -3323,7 +3318,7 @@ export const updateEmailThreadMetadataSchema = z.object({
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
-  status: emailThreadStatusSchema.optional(),
+  status: taskStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   /** Clear the Updated inbox flag after the user views the item. */

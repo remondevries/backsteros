@@ -30,6 +30,7 @@ import {
   replaceDocumentSectionBody,
 } from "../lib/document-sections.js";
 import { appendOpsLog } from "../lib/ops-log-buffer.js";
+import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
 import {
   buildStorageKey,
   checksumForContent,
@@ -507,6 +508,7 @@ export async function createDocument(
     }
   }
 
+  bumpAgentSearchCache(workspaceId);
   return row;
 }
 
@@ -597,6 +599,7 @@ export async function updateDocument(
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
     .returning();
 
+  if (row) bumpAgentSearchCache(workspaceId);
   return row ?? null;
 }
 
@@ -616,6 +619,7 @@ export async function deleteDocument(
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
     .returning();
 
+  if (row) bumpAgentSearchCache(workspaceId);
   return row ?? null;
 }
 
@@ -1001,6 +1005,7 @@ export async function updateDocumentContent(
       },
     });
 
+    bumpAgentSearchCache(workspaceId);
     return updated;
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_YAML") {

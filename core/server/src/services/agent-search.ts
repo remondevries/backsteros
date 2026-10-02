@@ -3,6 +3,10 @@
  *
  * Used by GET /search, GET /documents/retrieve, and POST /search/batch so
  * chained agent lookups in one turn do not always pay full per-call cost.
+ *
+ * `include=task` pagination: document hits are only on the first page (no
+ * cursor). A present `cursor` paginates tasks only. Combined first-page hits
+ * are ranked by `updatedAt` desc and capped at `limit`.
  */
 
 import type {
@@ -14,7 +18,13 @@ import type {
 
 import { ListQueryError } from "../lib/list-query.js";
 import { AgentReadCache, stableCacheKey } from "../lib/agent-read-cache.js";
+import {
+  bumpAgentSearchCache,
+  clearAgentSearchCacheEpochsForTests,
+  getAgentSearchCacheEpoch,
+} from "../lib/agent-search-cache.js";
 import { resolveProjectRef } from "../lib/entity-refs.js";
+import { encodeUpdatedAtCursor } from "../lib/list-query.js";
 import { toSearchResult } from "../lib/mappers.js";
 import * as documentService from "./documents.js";
 import * as taskProjectService from "./tasks-projects.js";
@@ -43,9 +53,12 @@ const retrieveCache = new AgentReadCache<AgentRetrievePayload>({
   maxEntries: 128,
 });
 
+export { bumpAgentSearchCache };
+
 export function clearAgentSearchCachesForTests(): void {
   searchCache.clear();
   retrieveCache.clear();
+  clearAgentSearchCacheEpochsForTests();
 }
 
 async function resolveOptionalProjectId(
@@ -58,6 +71,60 @@ async function resolveOptionalProjectId(
     throw new ListQueryError("Unknown project", "projectId");
   }
   return resolved;
+}
+
+/** Rank document + task hits by updatedAt desc, then id, and cap at limit. */
+export function mergeIncludeTaskHits(
+  docs: DocumentSearchResult[],
+  tasks: TaskSearchResult[],
+  limit: number,
+): AgentSearchHit[] {
+  const merged: AgentSearchHit[] = [...docs, ...tasks];
+  merged.sort((a, b) => {
+    const ta = Date.parse(a.updatedAt);
+    const tb = Date.parse(b.updatedAt);
+    if (tb !== ta) return tb - ta;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  return merged.slice(0, Math.max(0, limit));
+}
+
+function nextCursorAfterIncludedTasks(
+  taskPage: { results: TaskSearchResult[]; nextCursor: string | null },
+  includedTasks: TaskSearchResult[],
+  nowMs: number,
+): string | null {
+  if (includedTasks.length === 0) {
+    // Docs filled the merge window but tasks exist — continue from the start
+    // of the task page (cursor just before the first task result).
+    const first = taskPage.results[0];
+    if (!first) return null;
+    // Cursor means "rows strictly after this point". Encode a point just newer
+    // than the first task so the next page includes it.
+    const firstMs = Date.parse(first.updatedAt);
+    return encodeUpdatedAtCursor(
+      {
+        id: "",
+        updatedAt: new Date(firstMs + 1).toISOString(),
+      },
+      nowMs,
+    );
+  }
+
+  const lastIncluded = includedTasks[includedTasks.length - 1]!;
+  const lastIndex = taskPage.results.findIndex((t) => t.id === lastIncluded.id);
+  const hasUnshownInPage =
+    lastIndex >= 0 && lastIndex < taskPage.results.length - 1;
+  if (hasUnshownInPage || taskPage.nextCursor) {
+    return encodeUpdatedAtCursor(
+      {
+        id: lastIncluded.id,
+        updatedAt: lastIncluded.updatedAt,
+      },
+      nowMs,
+    );
+  }
+  return null;
 }
 
 export type RunAgentSearchInput = {
@@ -75,14 +142,17 @@ export type RunAgentSearchInput = {
 export async function runAgentSearch(
   input: RunAgentSearchInput,
 ): Promise<AgentSearchPayload> {
+  const limit = input.limit ?? 20;
+  const epoch = getAgentSearchCacheEpoch(input.workspaceId);
   const cacheKey = stableCacheKey({
     op: "search",
+    epoch,
     workspaceId: input.workspaceId,
     q: input.q,
     type: input.type ?? null,
     projectId: input.projectId ?? null,
     statuses: input.statuses ?? [],
-    limit: input.limit ?? 20,
+    limit,
     cursor: input.cursor ?? null,
     includeTasks: Boolean(input.includeTasks),
   });
@@ -99,7 +169,7 @@ export async function runAgentSearch(
         q: input.q,
         projectId,
         statuses: input.statuses?.length ? input.statuses : undefined,
-        limit: input.limit,
+        limit,
         cursor: input.cursor,
       });
       return {
@@ -115,35 +185,66 @@ export async function runAgentSearch(
         ? input.type
         : undefined;
 
-    const docsPromise = documentService.searchDocuments({
-      workspaceId: input.workspaceId,
-      q: input.q,
-      type: docType,
-      projectId,
-      limit: input.limit,
-    });
-
     if (!input.includeTasks) {
-      const rows = await docsPromise;
+      const rows = await documentService.searchDocuments({
+        workspaceId: input.workspaceId,
+        q: input.q,
+        type: docType,
+        projectId,
+        limit,
+      });
       return { results: rows.map(toSearchResult) as AgentSearchHit[] };
     }
 
+    // include=task: document hits only on the first page (no cursor).
+    // A cursor paginates tasks only so agents can follow nextCursor to the end.
+    if (input.cursor?.trim()) {
+      const { results, nextCursor } = await taskProjectService.searchTasks({
+        workspaceId: input.workspaceId,
+        q: input.q,
+        projectId,
+        statuses: input.statuses?.length ? input.statuses : undefined,
+        limit,
+        cursor: input.cursor,
+      });
+      return {
+        results: results as AgentSearchHit[],
+        nextCursor,
+      };
+    }
+
+    const nowMs = Date.now();
     const [rows, taskPage] = await Promise.all([
-      docsPromise,
+      documentService.searchDocuments({
+        workspaceId: input.workspaceId,
+        q: input.q,
+        type: docType,
+        projectId,
+        limit,
+      }),
       taskProjectService.searchTasks({
         workspaceId: input.workspaceId,
         q: input.q,
         projectId,
         statuses: input.statuses?.length ? input.statuses : undefined,
-        limit: input.limit,
+        limit,
       }),
     ]);
 
     const docs = rows.map(toSearchResult) as DocumentSearchResult[];
     const tasks = taskPage.results as TaskSearchResult[];
+    const results = mergeIncludeTaskHits(docs, tasks, limit);
+    const includedTasks = results.filter(
+      (hit): hit is TaskSearchResult => hit.type === "task",
+    );
+
     return {
-      results: [...docs, ...tasks] as AgentSearchHit[],
-      nextCursor: taskPage.nextCursor,
+      results,
+      nextCursor: nextCursorAfterIncludedTasks(
+        { results: tasks, nextCursor: taskPage.nextCursor },
+        includedTasks,
+        nowMs,
+      ),
     };
   });
 }
@@ -162,8 +263,10 @@ export type RunAgentRetrieveInput = {
 export async function runAgentRetrieve(
   input: RunAgentRetrieveInput,
 ): Promise<AgentRetrievePayload> {
+  const epoch = getAgentSearchCacheEpoch(input.workspaceId);
   const cacheKey = stableCacheKey({
     op: "retrieve",
+    epoch,
     workspaceId: input.workspaceId,
     q: input.q,
     propertyType: input.propertyType ?? [],

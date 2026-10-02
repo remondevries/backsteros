@@ -71,6 +71,7 @@ import {
   rewriteProjectVaultWorkingDirectory,
 } from "../lib/storage.js";
 import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
+import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 
@@ -1965,6 +1966,7 @@ async function createTaskWithExecutor(
     }
   }
 
+  bumpAgentSearchCache(workspaceId);
   return row;
 }
 
@@ -2396,6 +2398,7 @@ export async function updateTask(
     }
   }
 
+  bumpAgentSearchCache(workspaceId);
   return row ?? null;
 }
 
@@ -2415,6 +2418,7 @@ export async function deleteTask(
       ),
     )
     .returning();
+  if (row) bumpAgentSearchCache(workspaceId);
   return row ?? null;
 }
 

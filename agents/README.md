@@ -52,8 +52,10 @@ For task text search prefer **`GET /api/v1/search?q=…&type=task`** (returns
 `{ results: [{ id, type: "task", key, projectId, status, title, snippet, updatedAt }], nextCursor }`).
 `type=tasks` is accepted as an alias. Omit `type` for document search only
 (`project` / `knowledge` / `journal`). Use `include=task` to merge task hits into a
-document search. For several lookups in one turn, prefer **`POST /api/v1/search/batch`**
-(search + `documents/retrieve` queries in parallel; short-TTL response cache).
+document search (docs only on page 1; `cursor` continues tasks). For several lookups
+in one turn, prefer **`POST /api/v1/search/batch`**
+(search + `documents/retrieve` queries with concurrency 4; short-TTL response cache
+invalidated on task/document writes).
 
 ## Allowed traffic
 
