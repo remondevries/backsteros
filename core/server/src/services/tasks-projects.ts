@@ -63,7 +63,9 @@ import {
   touchTaskLabelsUsed,
 } from "./task-labels.js";
 import {
+  assertProjectVaultRenameAllowed,
   ensureProjectVaultFolders,
+  removeProjectVaultFolderIfPresent,
   renameProjectVaultFolder,
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
@@ -73,6 +75,14 @@ import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
+
+/** OS-49: peer sync replay / controlled writes. */
+export type ProjectWriteOptions = {
+  /** Preserve the sync_event row time instead of stamping now. */
+  updatedAt?: Date;
+  /** Skip vault folder rename/ensure (replica apply must not touch disks). */
+  skipVaultSideEffects?: boolean;
+};
 
 async function assertWorkspaceReference(
   workspaceId: string,
@@ -387,6 +397,7 @@ export async function createProject(
   input: CreateProjectInput,
   id = newId(),
   executor: DbExecutor = db,
+  options?: ProjectWriteOptions,
 ) {
   const key = input.key.toUpperCase();
   const existing = await getProjectByKey(workspaceId, key, executor);
@@ -407,6 +418,7 @@ export async function createProject(
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
 
+  const writeAt = options?.updatedAt ?? new Date();
   const [row] = await executor
     .insert(projects)
     .values({
@@ -436,8 +448,14 @@ export async function createProject(
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
+      createdAt: writeAt,
+      updatedAt: writeAt,
     })
     .returning();
+
+  if (options?.skipVaultSideEffects) {
+    return row;
+  }
 
   try {
     const ensured = await ensureProjectVaultFolders(key, undefined, {
@@ -450,7 +468,7 @@ export async function createProject(
         .update(projects)
         .set({
           localWorkingDirectory: ensured.projectVaultPath,
-          updatedAt: new Date(),
+          updatedAt: writeAt,
         })
         .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
         .returning();
@@ -470,6 +488,7 @@ export async function updateProject(
   id: string,
   input: UpdateProjectInput,
   executor: DbExecutor = db,
+  options?: ProjectWriteOptions,
 ) {
   const existing = await getProjectById(workspaceId, id, executor);
   if (!existing) {
@@ -524,142 +543,187 @@ export async function updateProject(
       ? null
       : input.category;
 
-  const [updatedRow] = await executor
-    .update(projects)
-    .set({
-      key,
-      name: input.name,
-      summary: input.summary,
-      description: input.description,
-      organizationId: input.organizationId,
-      areaId: input.areaId,
-      area: input.area,
-      startDate:
-        input.startDate === undefined
-          ? undefined
-          : input.startDate
-            ? new Date(input.startDate)
-            : null,
-      dueDate:
-        input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
-      icon: input.icon,
-      color: input.color,
-      type: input.type,
-      provider: input.provider,
-      category,
-      githubRepository,
-      cloudflareZoneId: input.cloudflareZoneId,
-      localWorkingDirectory: input.localWorkingDirectory,
-      healthCheckMode,
-      healthCheckDomain,
-      hourlyRateCents: input.hourlyRateCents,
-      budgets: input.budgets,
-      status: input.status,
-      priority: input.priority,
-      sortOrder: input.sortOrder,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
-    .returning();
+  const keyChanging = Boolean(key && key !== existing.key);
+  const skipVault = Boolean(options?.skipVaultSideEffects);
+  const writeAt = options?.updatedAt ?? new Date();
 
-  let row = updatedRow;
-  if (!row) {
-    return null;
+  // OS-49: refuse non-empty target folders before touching the DB row.
+  if (keyChanging && !skipVault) {
+    await assertProjectVaultRenameAllowed(existing.key, key!);
   }
 
-  const keyChanged = Boolean(key && key !== existing.key);
+  const applyRow = async (tx: DbExecutor) => {
+    const [updatedRow] = await tx
+      .update(projects)
+      .set({
+        key,
+        name: input.name,
+        summary: input.summary,
+        description: input.description,
+        organizationId: input.organizationId,
+        areaId: input.areaId,
+        area: input.area,
+        startDate:
+          input.startDate === undefined
+            ? undefined
+            : input.startDate
+              ? new Date(input.startDate)
+              : null,
+        dueDate:
+          input.dueDate === undefined
+            ? undefined
+            : input.dueDate
+              ? new Date(input.dueDate)
+              : null,
+        icon: input.icon,
+        color: input.color,
+        type: input.type,
+        provider: input.provider,
+        category,
+        githubRepository,
+        cloudflareZoneId: input.cloudflareZoneId,
+        localWorkingDirectory: input.localWorkingDirectory,
+        healthCheckMode,
+        healthCheckDomain,
+        hourlyRateCents: input.hourlyRateCents,
+        budgets: input.budgets,
+        status: input.status,
+        priority: input.priority,
+        sortOrder: input.sortOrder,
+        updatedAt: writeAt,
+      })
+      .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+      .returning();
 
-  // Key rename — move the on-disk vault folder and rewrite document storage keys.
-  if (keyChanged) {
-    try {
-      const renamed = await renameProjectVaultFolder(existing.key, row.key);
-      if (renamed.renamed && renamed.previousProjectVaultPath) {
-        const nextCwd = rewriteProjectVaultWorkingDirectory(
-          row.localWorkingDirectory,
-          renamed.previousProjectVaultPath,
-          renamed.projectVaultPath,
-        );
-        if (nextCwd && nextCwd !== row.localWorkingDirectory) {
-          const [cwdUpdated] = await executor
-            .update(projects)
-            .set({
-              localWorkingDirectory: nextCwd,
-              updatedAt: new Date(),
-            })
-            .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
-            .returning();
-          if (cwdUpdated) {
-            row = cwdUpdated;
+    let row = updatedRow;
+    if (!row) {
+      return null;
+    }
+
+    const keyChanged = Boolean(key && key !== existing.key);
+
+    // Key rename — move the on-disk vault folder and rewrite document storage keys.
+    if (keyChanged && !skipVault) {
+      let didRename = false;
+      let previousVaultPath: string | null = null;
+      let nextVaultPath: string | null = null;
+      try {
+        const renamed = await renameProjectVaultFolder(existing.key, row.key);
+        didRename = renamed.renamed;
+        previousVaultPath = renamed.previousProjectVaultPath;
+        nextVaultPath = renamed.projectVaultPath;
+        if (renamed.renamed && renamed.previousProjectVaultPath) {
+          const nextCwd = rewriteProjectVaultWorkingDirectory(
+            row.localWorkingDirectory,
+            renamed.previousProjectVaultPath,
+            renamed.projectVaultPath,
+          );
+          if (nextCwd && nextCwd !== row.localWorkingDirectory) {
+            const [cwdUpdated] = await tx
+              .update(projects)
+              .set({
+                localWorkingDirectory: nextCwd,
+                updatedAt: writeAt,
+              })
+              .where(
+                and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)),
+              )
+              .returning();
+            if (cwdUpdated) {
+              row = cwdUpdated;
+            }
           }
         }
-      }
 
-      const projectDocs = await executor
-        .select({
-          id: documents.id,
-          storageKey: documents.storageKey,
-        })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, workspaceId),
-            eq(documents.projectId, id),
-            eq(documents.type, "project"),
-          ),
-        );
+        // Belt-and-suspenders: if the old key folder somehow remains, drop it so
+        // vault sync cannot copy Projects/{oldKey} back onto the Mac.
+        await removeProjectVaultFolderIfPresent(existing.key);
 
-      for (const doc of projectDocs) {
-        const nextKey = rewriteProjectStorageKeyPrefix(
-          doc.storageKey,
-          existing.key,
-          row.key,
-        );
-        if (!nextKey || nextKey === doc.storageKey) continue;
-        await executor
-          .update(documents)
-          .set({
-            storageKey: nextKey,
-            updatedAt: new Date(),
+        const projectDocs = await tx
+          .select({
+            id: documents.id,
+            storageKey: documents.storageKey,
           })
+          .from(documents)
           .where(
             and(
               eq(documents.workspaceId, workspaceId),
-              eq(documents.id, doc.id),
+              eq(documents.projectId, id),
+              eq(documents.type, "project"),
             ),
           );
-      }
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === "PROJECT_VAULT_TARGET_EXISTS"
-      ) {
-        throw error;
-      }
-      // Vault may be unset — folder bootstrap still runs below when possible.
-    }
-  }
 
-  // Keep on-disk vault folders in sync (creates missing areas / .cursor skills).
-  try {
-    const ensured = await ensureProjectVaultFolders(row.key, undefined, {
-      projectType: row.type,
-    });
-    if (!row.localWorkingDirectory?.trim()) {
-      const [updated] = await executor
-        .update(projects)
-        .set({
-          localWorkingDirectory: ensured.projectVaultPath,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
-        .returning();
-      return updated ?? row;
+        for (const doc of projectDocs) {
+          const nextKey = rewriteProjectStorageKeyPrefix(
+            doc.storageKey,
+            existing.key,
+            row.key,
+          );
+          if (!nextKey || nextKey === doc.storageKey) continue;
+          await tx
+            .update(documents)
+            .set({
+              storageKey: nextKey,
+              updatedAt: writeAt,
+            })
+            .where(
+              and(
+                eq(documents.workspaceId, workspaceId),
+                eq(documents.id, doc.id),
+              ),
+            );
+        }
+      } catch (error) {
+        if (didRename && previousVaultPath && nextVaultPath) {
+          try {
+            await renameProjectVaultFolder(row.key, existing.key);
+          } catch {
+            // Best-effort undo; DB transaction rollback restores the key.
+          }
+        }
+        if (
+          error instanceof Error &&
+          error.message === "PROJECT_VAULT_TARGET_EXISTS"
+        ) {
+          throw error;
+        }
+        // Vault may be unset — folder bootstrap still runs below when possible.
+      }
     }
-  } catch {
-    // Vault may be unset.
-  }
 
-  return row;
+    if (skipVault) {
+      return row;
+    }
+
+    // Keep on-disk vault folders in sync (creates missing areas / .cursor skills).
+    try {
+      const ensured = await ensureProjectVaultFolders(row.key, undefined, {
+        projectType: row.type,
+      });
+      if (!row.localWorkingDirectory?.trim()) {
+        const [updated] = await tx
+          .update(projects)
+          .set({
+            localWorkingDirectory: ensured.projectVaultPath,
+            updatedAt: writeAt,
+          })
+          .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+          .returning();
+        return updated ?? row;
+      }
+    } catch {
+      // Vault may be unset.
+    }
+
+    return row;
+  };
+
+  // OS-49: when renaming, wrap DB + folder rename so a vault failure rolls back
+  // the key. Callers already inside a transaction pass their executor through.
+  if (keyChanging && !skipVault && executor === db) {
+    return db.transaction(async (tx) => applyRow(tx));
+  }
+  return applyRow(executor);
 }
 
 export async function deleteProject(

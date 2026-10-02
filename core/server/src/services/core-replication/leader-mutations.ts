@@ -30,7 +30,6 @@ import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import { getCoreReplicationConfig } from "./config.js";
 import {
   applyPeerSyncEvent,
-  setSyncEventPullCursor,
 } from "./sync-event-replication.js";
 import {
   SYNC_ENTITIES,
@@ -331,13 +330,12 @@ async function applyLeaderEventsLocally(
   workspaceId: string,
   events: SyncEventRow[],
 ): Promise<void> {
-  let maxCursor = 0;
+  // OS-49: do NOT advance the ordered sync-event pull cursor here. Leader-first
+  // responses can jump the serial clock past unapplied (or failed) events in
+  // the peer feed; only pullWorkspaceSyncEvents may move the cursor after each
+  // successfully handled event in order. Receipts make re-apply a no-op.
   for (const event of events) {
     await applyPeerSyncEvent(workspaceId, event);
-    maxCursor = Math.max(maxCursor, event.cursor);
-  }
-  if (maxCursor > 0) {
-    await setSyncEventPullCursor(workspaceId, maxCursor);
   }
   // Open desktop shells on this core need SSE before PowerSync download —
   // same as cloud acceptLeaderMutations and handleReplicationNudge.

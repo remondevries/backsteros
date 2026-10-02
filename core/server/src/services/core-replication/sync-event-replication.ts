@@ -1,13 +1,19 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
-import { coreSyncEventReplicationState, mutationReceipts } from "../../db/schema.js";
+import {
+  coreSyncEventReplicationState,
+  mutationReceipts,
+  projects,
+  tasks,
+} from "../../db/schema.js";
 import {
   SYNC_ENTITIES,
   SYNC_OPERATIONS,
   type SyncEntity,
   type SyncOperation,
 } from "../../lib/sync-constants.js";
+import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import { applySyncChange, type SyncChange } from "../sync.js";
 import {
   getWorkspaceLastSyncId,
@@ -18,9 +24,15 @@ import {
   getCoreReplicationConfig,
   isSyncEventPullEnabled,
 } from "./config.js";
+import {
+  resolvePeerEventUpdatedAt,
+  shouldSkipPeerEventAsStale,
+} from "./peer-sync-event-apply.js";
 
 const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
 function replicationHeaders(secret: string): HeadersInit {
   return {
@@ -134,10 +146,70 @@ function parseSyncOperation(value: string): SyncOperation | null {
     : null;
 }
 
+async function readLocalEntityUpdatedAt(
+  workspaceId: string,
+  entity: SyncEntity,
+  entityId: string,
+  executor: DbExecutor,
+): Promise<Date | null> {
+  if (entity === "project") {
+    const [row] = await executor
+      .select({ updatedAt: projects.updatedAt })
+      .from(projects)
+      .where(
+        and(eq(projects.workspaceId, workspaceId), eq(projects.id, entityId)),
+      )
+      .limit(1);
+    return row?.updatedAt ?? null;
+  }
+  if (entity === "task") {
+    const [row] = await executor
+      .select({ updatedAt: tasks.updatedAt })
+      .from(tasks)
+      .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, entityId)))
+      .limit(1);
+    return row?.updatedAt ?? null;
+  }
+  return null;
+}
+
+/**
+ * After peer apply, force the row time back to the event's updated_at for
+ * entities that still stamp `now` inside their service writers (OS-49).
+ * Projects already preserve via ProjectWriteOptions; this covers tasks.
+ */
+async function stampPeerEntityUpdatedAt(
+  workspaceId: string,
+  entity: SyncEntity,
+  entityId: string,
+  updatedAt: Date,
+  executor: DbExecutor,
+): Promise<void> {
+  if (entity === "project") {
+    await executor
+      .update(projects)
+      .set({ updatedAt })
+      .where(
+        and(eq(projects.workspaceId, workspaceId), eq(projects.id, entityId)),
+      );
+    return;
+  }
+  if (entity === "task") {
+    await executor
+      .update(tasks)
+      .set({ updatedAt })
+      .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, entityId)));
+  }
+}
+
 /**
  * Apply one peer sync_event locally without appending to this core's
  * sync_events (avoids forking the serial clock). Same mutation_id claims a
  * receipt so PowerSync/REST retries with that id do not double-apply.
+ *
+ * OS-49: keeps the event's own updated_at, skips events older than the local
+ * row, skips vault side effects on projects, and does not freshen timestamps
+ * so table LWW will not push stale values back to the peer.
  */
 export async function applyPeerSyncEvent(
   workspaceId: string,
@@ -149,12 +221,17 @@ export async function applyPeerSyncEvent(
     return "skipped";
   }
 
+  const eventUpdatedAt = resolvePeerEventUpdatedAt({
+    payload: event.payload ?? {},
+    createdAt: event.createdAt,
+  });
+
   const change: SyncChange = {
     entity,
     entity_id: event.entityId,
     operation,
     payload: event.payload,
-    updated_at: event.createdAt.getTime(),
+    updated_at: eventUpdatedAt.getTime(),
   };
 
   return db.transaction(async (tx) => {
@@ -172,7 +249,48 @@ export async function applyPeerSyncEvent(
       return "duplicate";
     }
 
-    await applySyncChange(workspaceId, change, tx);
+    const localUpdatedAt = await readLocalEntityUpdatedAt(
+      workspaceId,
+      entity,
+      event.entityId,
+      tx,
+    );
+    if (shouldSkipPeerEventAsStale(eventUpdatedAt, localUpdatedAt)) {
+      await tx
+        .update(mutationReceipts)
+        .set({
+          result: {
+            accepted: true,
+            skipped: "stale_peer_event",
+            source: "peer_sync_event",
+            peer_cursor: event.cursor,
+            event_updated_at: eventUpdatedAt.toISOString(),
+            local_updated_at: localUpdatedAt?.toISOString() ?? null,
+          },
+        })
+        .where(
+          and(
+            eq(mutationReceipts.workspaceId, workspaceId),
+            eq(mutationReceipts.mutationId, event.mutationId),
+          ),
+        );
+      return "skipped";
+    }
+
+    await applySyncChange(workspaceId, change, tx, {
+      peerReplay: { updatedAt: eventUpdatedAt },
+    });
+
+    // Belt-and-suspenders for writers that still stamp now (e.g. tasks).
+    if (operation !== "delete") {
+      await stampPeerEntityUpdatedAt(
+        workspaceId,
+        entity,
+        event.entityId,
+        eventUpdatedAt,
+        tx,
+      );
+    }
 
     await tx
       .update(mutationReceipts)
@@ -181,6 +299,7 @@ export async function applyPeerSyncEvent(
           accepted: true,
           source: "peer_sync_event",
           peer_cursor: event.cursor,
+          event_updated_at: eventUpdatedAt.toISOString(),
         },
       })
       .where(
@@ -199,6 +318,7 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
   duplicate: number;
   skipped: number;
   peerMissing?: boolean;
+  stuck?: { cursor: number; entity: string; entityId: string; error: string };
 }> {
   const config = getCoreReplicationConfig();
   if (!config) {
@@ -258,7 +378,29 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
         payload: raw.payload ?? {},
         createdAt: new Date(raw.created_at),
       };
-      const result = await applyPeerSyncEvent(workspaceId, event);
+      let result: "applied" | "duplicate" | "skipped";
+      try {
+        result = await applyPeerSyncEvent(workspaceId, event);
+      } catch (error) {
+        // OS-49: do not advance past a failed event — leave it visible and retry.
+        const message = error instanceof Error ? error.message : String(error);
+        appendOpsLog(
+          "error",
+          "core sync-events pull stuck",
+          `workspace=${workspaceId} cursor=${event.cursor} ${event.operation} ${event.entity}/${event.entityId}: ${message}`,
+        );
+        return {
+          applied,
+          duplicate,
+          skipped,
+          stuck: {
+            cursor: event.cursor,
+            entity: event.entity,
+            entityId: event.entityId,
+            error: message,
+          },
+        };
+      }
       if (result === "applied") {
         applied += 1;
         // Open desktop shells subscribe on local — rebroadcast before PowerSync.
@@ -290,13 +432,11 @@ export async function pullPeerSyncEvents(): Promise<void> {
     return;
   }
 
-  const { appendOpsLog } = await import("../../lib/ops-log-buffer.js");
-
   if (!isSyncEventPullEnabled()) {
     appendOpsLog(
       "info",
       "core sync-events pull skipped",
-      "CORE_REPLICATION_SYNC_EVENTS_PULL=0 (OS-49 safeguard; table LWW continues)",
+      "CORE_REPLICATION_SYNC_EVENTS_PULL=0 (emergency off-switch; table LWW continues)",
     );
     return;
   }
@@ -313,6 +453,14 @@ export async function pullPeerSyncEvents(): Promise<void> {
         "info",
         `core sync-events pull ${workspaceId}`,
         "peer feed not deployed yet (404); table LWW continues",
+      );
+      continue;
+    }
+    if (result.stuck) {
+      appendOpsLog(
+        "error",
+        `core sync-events pull ${workspaceId} stuck`,
+        `cursor=${result.stuck.cursor} ${result.stuck.entity}/${result.stuck.entityId}: ${result.stuck.error} (cursor not advanced; will retry)`,
       );
       continue;
     }

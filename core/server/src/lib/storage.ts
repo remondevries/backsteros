@@ -746,6 +746,60 @@ async function directoryHasFiles(dir: string): Promise<boolean> {
 }
 
 /**
+ * Fail before a DB key write when `Projects/{toKey}` already has files.
+ * OS-49: keeps project.key and vault folders aligned on rename failure.
+ */
+export async function assertProjectVaultRenameAllowed(
+  fromKey: string,
+  toKey: string,
+  settingsVaultPath?: string | null,
+): Promise<void> {
+  const root = await resolveVaultPath(settingsVaultPath);
+  const fromPath = buildProjectVaultAbsolutePath(root, fromKey);
+  const toPath = buildProjectVaultAbsolutePath(root, toKey);
+  if (fromPath === toPath) return;
+
+  let destinationExists = false;
+  try {
+    await access(toPath, constants.F_OK);
+    destinationExists = true;
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code?: string }).code === "ENOENT"
+      )
+    ) {
+      throw error;
+    }
+  }
+  if (destinationExists && (await directoryHasFiles(toPath))) {
+    throw new Error("PROJECT_VAULT_TARGET_EXISTS");
+  }
+}
+
+/**
+ * Remove `Projects/{projectKey}` when present (e.g. leftover after a key rename
+ * so vault sync does not copy the old folder back to the Mac).
+ */
+export async function removeProjectVaultFolderIfPresent(
+  projectKey: string,
+  settingsVaultPath?: string | null,
+): Promise<boolean> {
+  const root = await resolveVaultPath(settingsVaultPath);
+  const projectPath = buildProjectVaultAbsolutePath(root, projectKey);
+  try {
+    await access(projectPath, constants.F_OK);
+  } catch {
+    return false;
+  }
+  await rm(projectPath, { recursive: true, force: true });
+  return true;
+}
+
+/**
  * Rename `Projects/{fromKey}` → `Projects/{toKey}` after a project code change.
  * No-op when the source folder is missing (caller should ensure the new path).
  */
@@ -776,6 +830,8 @@ export async function renameProjectVaultFolder(
     };
   }
 
+  await assertProjectVaultRenameAllowed(fromKey, toKey, settingsVaultPath);
+
   let destinationExists = false;
   try {
     await access(toPath, constants.F_OK);
@@ -794,9 +850,8 @@ export async function renameProjectVaultFolder(
   }
 
   if (destinationExists) {
-    if (await directoryHasFiles(toPath)) {
-      throw new Error("PROJECT_VAULT_TARGET_EXISTS");
-    }
+    // Empty destination only — assertProjectVaultRenameAllowed already rejected
+    // non-empty targets.
     await rm(toPath, { recursive: true, force: true });
   }
 

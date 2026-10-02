@@ -34,6 +34,7 @@ import {
 
 import { useDesktopApi } from "../lib/api-context";
 import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
+import { diffProjectPatch } from "../lib/project-patch-diff";
 import {
   CODEBASE_SIDE_PANEL_MIN_WIDTH,
   CODEBASE_SIDE_PANEL_NUDGE_STEP,
@@ -918,28 +919,16 @@ export function CodebaseProjectWorkbench({
   }
 
   const handleProjectUpdated = (updated: ApiProject) => {
+    // OS-49: overview already PATCHed only changed fields via REST. Diff against
+    // the previous row so PowerSync dual-write does not rewrite the whole project.
+    const patch = diffProjectPatch(
+      apiProject as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>,
+    );
     setApiProject(updated);
-    onProjectPatched({
-      name: updated.name,
-      key: updated.key,
-      status: updated.status,
-      priority: updated.priority,
-      area: updated.area,
-      areaId: updated.areaId,
-      organizationId: updated.organizationId,
-      icon: updated.icon,
-      type: updated.type,
-      githubRepository: updated.githubRepository,
-      localWorkingDirectory: updated.localWorkingDirectory,
-      healthCheckMode: updated.healthCheckMode,
-      healthCheckDomain: updated.healthCheckDomain,
-      hourlyRateCents: updated.hourlyRateCents,
-      budgets: updated.budgets,
-      startDate: updated.startDate,
-      dueDate: updated.dueDate,
-      summary: updated.summary,
-      description: updated.description,
-    });
+    if (Object.keys(patch).length > 0) {
+      onProjectPatched(patch);
+    }
   };
 
   const contentListTab =

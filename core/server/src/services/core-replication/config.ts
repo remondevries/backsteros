@@ -75,9 +75,9 @@ export function isCoreReplicationEnabled(
  * Ordered peer sync-event pull (local-core only). Default on.
  *
  * Set `CORE_REPLICATION_SYNC_EVENTS_PULL=0` to skip applying the leader
- * sync_events feed while still running table LWW + vault sync. Used as an
- * OS-49 safeguard: replay currently stamps `updatedAt = now`, which can push
- * stale row payloads back to cloud-core after a long offline window.
+ * sync_events feed while still running table LWW + vault sync. Emergency
+ * off-switch if ordered replay misbehaves; OS-49 fixed stale timestamp
+ * freshening so the default-on path is safe again.
  */
 export function isSyncEventPullEnabled(
   env: NodeJS.ProcessEnv = process.env,

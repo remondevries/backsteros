@@ -2108,6 +2108,13 @@ export type ApplySyncChangeOptions = {
    * moves, ensure) so callers can emit task sync_events.
    */
   habitTaskChangesOut?: HabitTaskSyncChange[];
+  /**
+   * OS-49: peer sync_event replay — keep the event's updated_at and skip vault
+   * folder side effects so stale rows cannot win LWW on the peer.
+   */
+  peerReplay?: {
+    updatedAt: Date;
+  };
 };
 
 export async function applySyncChange(
@@ -2133,6 +2140,12 @@ export async function applySyncChange(
         executor,
       );
       const input = mapProjectUpsert(change.payload);
+      const projectWriteOptions = options?.peerReplay
+        ? {
+            updatedAt: options.peerReplay.updatedAt,
+            skipVaultSideEffects: true,
+          }
+        : undefined;
 
       if (existing) {
         const row = await taskProjectService.updateProject(
@@ -2140,6 +2153,7 @@ export async function applySyncChange(
           change.entity_id,
           input,
           executor,
+          projectWriteOptions,
         );
         return row ? projectSnapshot(row) : null;
       }
@@ -2180,6 +2194,7 @@ export async function applySyncChange(
         },
         change.entity_id,
         executor,
+        projectWriteOptions,
       );
       return projectSnapshot(row);
     }

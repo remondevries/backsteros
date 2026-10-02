@@ -44,4 +44,30 @@ describe("sync-event replication contracts", () => {
       "upsert",
     ]);
   });
+
+  it("OS-49: peer apply preserves event updated_at and skips stale rows", () => {
+    const src = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "sync-event-replication.ts",
+      ),
+      "utf8",
+    );
+    assert.ok(src.includes("peerReplay"));
+    assert.ok(src.includes("shouldSkipPeerEventAsStale"));
+    assert.ok(src.includes("stale_peer_event"));
+    assert.ok(src.includes("core sync-events pull stuck"));
+  });
+
+  it("OS-49: leader-first apply does not jump the sync-event pull cursor", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "leader-mutations.ts"),
+      "utf8",
+    );
+    assert.ok(src.includes("do NOT advance the ordered sync-event pull cursor"));
+    assert.equal(
+      src.includes("setSyncEventPullCursor(workspaceId, maxCursor)"),
+      false,
+    );
+  });
 });

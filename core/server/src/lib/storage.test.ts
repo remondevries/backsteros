@@ -24,6 +24,8 @@ import {
   letterPdfSubjectFromFilename,
   normalizeVaultRelativeKey,
   renameProjectVaultFolder,
+  assertProjectVaultRenameAllowed,
+  removeProjectVaultFolderIfPresent,
   resolveVaultPath,
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
@@ -462,6 +464,48 @@ test("renameProjectVaultFolder moves the project folder and rewrites helpers", a
       ),
       null,
     );
+  } finally {
+    setVaultPathCache(null);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("assertProjectVaultRenameAllowed rejects a non-empty target (OS-49)", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "backsteros-vault-"));
+  setVaultPathCache(root);
+  try {
+    await ensureProjectVaultFolders("FROM", undefined, { projectType: "general" });
+    const target = await ensureProjectVaultFolders("TO", undefined, {
+      projectType: "general",
+    });
+    await writeFile(
+      path.join(target.projectVaultPath, "Documents", "keep.md"),
+      "# keep\n",
+      "utf8",
+    );
+    await assert.rejects(
+      () => assertProjectVaultRenameAllowed("FROM", "TO"),
+      (error: Error) => error.message === "PROJECT_VAULT_TARGET_EXISTS",
+    );
+  } finally {
+    setVaultPathCache(null);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("removeProjectVaultFolderIfPresent deletes leftover project folders (OS-49)", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "backsteros-vault-"));
+  setVaultPathCache(root);
+  try {
+    const created = await ensureProjectVaultFolders("OLD", undefined, {
+      projectType: "general",
+    });
+    assert.equal(await removeProjectVaultFolderIfPresent("OLD"), true);
+    await assert.rejects(
+      () => access(created.projectVaultPath),
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT",
+    );
+    assert.equal(await removeProjectVaultFolderIfPresent("OLD"), false);
   } finally {
     setVaultPathCache(null);
     await rm(root, { recursive: true, force: true });
