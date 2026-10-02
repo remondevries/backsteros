@@ -25,6 +25,7 @@ import {
   updateFinancialRecurringSchema,
   updateCashflowPlannerEntrySchema,
   updateFinancialTransactionSchema,
+  moneybirdSalesInvoicesQuerySchema,
   moneybirdInvoiceRevenueQuerySchema,
   moneybirdBankAccountSyncQuerySchema,
 } from "@backsteros/contracts";
@@ -72,6 +73,41 @@ import {
 } from "./route-helpers.js";
 
 export function registerFinanceRoutes(app: Hono) {
+  app.get(
+    "/api/v1/finance/moneybird/invoices",
+    zValidator("query", moneybirdSalesInvoicesQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const page = query.page ?? 1;
+      const perPage = query.perPage ?? 50;
+      try {
+        const result =
+          await moneybirdSettingsService.listMoneybirdSalesInvoicesPage(
+            auth.workspaceId,
+            {
+              page,
+              perPage,
+              filter: query.filter,
+            },
+          );
+        return c.json({
+          invoices: result.invoices,
+          page: result.page,
+          perPage: result.perPage,
+          hasMore: result.hasMore,
+          totalPages: result.totalPages,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not list Moneybird invoices";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/finance/moneybird/invoices/:invoiceId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "finance:read")) return c.json(forbidden(), 403);

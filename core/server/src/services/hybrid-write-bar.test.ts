@@ -96,23 +96,25 @@ describe("hybrid write bar", () => {
   it("nudges peer after cloud REST writes for CRM circle entities", () => {
     // Agent API-key path writes on cloud without commitRestEntityWrite —
     // without these helpers local-core waits on the ~15s replication tick.
-    const routes = readSrc("../app/routes.ts");
-    assert.ok(routes.includes("function publishTaskLive("));
-    assert.ok(routes.includes("function publishMeetingLive("));
-    assert.ok(routes.includes("function nudgeCrmActivityLive("));
-    assert.ok(routes.includes("function nudgeContactLive("));
-    assert.ok(routes.includes("function nudgeOrganizationLive("));
-    assert.ok(routes.includes("function nudgeContactRelationshipLive("));
-    assert.ok(routes.includes("function nudgeCrmGroupMemberLive("));
-    assert.ok(routes.includes("function nudgeCrmRelationshipLabelLive("));
-    assert.ok(routes.includes("nudgeContactLive(auth,"));
-    assert.ok(routes.includes("nudgeOrganizationLive(auth,"));
-    assert.ok(routes.includes("nudgeContactRelationshipLive(auth,"));
-    assert.ok(routes.includes("nudgeCrmGroupMemberLive(auth,"));
-    assert.ok(routes.includes("nudgeCrmRelationshipLabelLive(auth,"));
-    assert.ok(routes.includes("publishTaskLive(auth,"));
-    assert.ok(routes.includes("publishMeetingLive(auth,"));
-    assert.ok(routes.includes("nudgeCrmActivityLive(auth,"));
+    const shared = readSrc("../app/route-shared.ts");
+    const crm = readSrc("../app/crm-routes.ts");
+    const tasks = readSrc("../app/task-document-routes.ts");
+    assert.ok(shared.includes("function publishTaskLive("));
+    assert.ok(shared.includes("function publishMeetingLive("));
+    assert.ok(shared.includes("function nudgeCrmActivityLive("));
+    assert.ok(shared.includes("function nudgeContactLive("));
+    assert.ok(shared.includes("function nudgeOrganizationLive("));
+    assert.ok(shared.includes("function nudgeContactRelationshipLive("));
+    assert.ok(shared.includes("function nudgeCrmGroupMemberLive("));
+    assert.ok(shared.includes("function nudgeCrmRelationshipLabelLive("));
+    assert.ok(crm.includes("nudgeContactLive(auth,"));
+    assert.ok(crm.includes("nudgeOrganizationLive(auth,"));
+    assert.ok(crm.includes("nudgeContactRelationshipLive(auth,"));
+    assert.ok(crm.includes("nudgeCrmGroupMemberLive(auth,"));
+    assert.ok(crm.includes("nudgeCrmRelationshipLabelLive(auth,"));
+    assert.ok(tasks.includes("publishTaskLive(auth,"));
+    assert.ok(tasks.includes("publishMeetingLive(auth,"));
+    assert.ok(crm.includes("nudgeCrmActivityLive(auth,"));
     const apiKeyRoutes = readSrc("../app/api-key-routes.ts");
     assert.ok(
       apiKeyRoutes.includes('entity: "api_key"'),

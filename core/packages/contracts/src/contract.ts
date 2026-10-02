@@ -1021,7 +1021,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary:
-        "Search documents (title/path/snippet) or tasks (title/description; type=task)",
+        "Merged search: documents (title/path/snippet) or tasks (type=task). Palette multi-entity search uses /global-search alias (OS-73).",
     },
     getProjectRelations: {
       method: "GET",
@@ -2687,7 +2687,8 @@ export const apiContract: AppRouter = c.router(
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "Search all human-facing entities",
+      summary:
+        "Alias of palette search (same handler as /api/v1/search multi-entity profile; OS-73)",
     },
     /**
      * @deprecated DEAD — legacy Linear-style sync. Kept for storage-health

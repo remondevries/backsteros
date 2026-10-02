@@ -1557,6 +1557,10 @@ export async function searchTasks(
     workspaceId: string;
     q: string;
     projectId?: string;
+    /** Palette / global-search contact scope (OS-73). */
+    contactId?: string;
+    /** Palette inbox-only scope (OS-73). */
+    inboxOnly?: boolean;
     statuses?: string[];
     limit?: number;
     cursor?: string;
@@ -1579,6 +1583,12 @@ export async function searchTasks(
       ];
       if (input.projectId) {
         exactConditions.push(eq(tasks.projectId, input.projectId));
+      }
+      if (input.contactId) {
+        exactConditions.push(eq(tasks.contactId, input.contactId));
+      }
+      if (input.inboxOnly) {
+        exactConditions.push(eq(tasks.inbox, true));
       }
       if (input.statuses?.length) {
         exactConditions.push(inArray(tasks.status, input.statuses));
@@ -1622,6 +1632,12 @@ export async function searchTasks(
   }
   if (input.projectId) {
     conditions.push(eq(tasks.projectId, input.projectId));
+  }
+  if (input.contactId) {
+    conditions.push(eq(tasks.contactId, input.contactId));
+  }
+  if (input.inboxOnly) {
+    conditions.push(eq(tasks.inbox, true));
   }
   if (input.statuses?.length) {
     conditions.push(inArray(tasks.status, input.statuses));

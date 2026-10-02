@@ -37,7 +37,7 @@ describe("habit task sync emission", () => {
 
   it("routes habit day through leader-first when hybrid is on", () => {
     const routes = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../app/routes.ts"),
+      join(dirname(fileURLToPath(import.meta.url)), "../app/task-document-routes.ts"),
       "utf8",
     );
     assert.ok(routes.includes("buildHabitDayTaskSyncPayload"));
@@ -48,7 +48,7 @@ describe("habit task sync emission", () => {
 
   it("routes emit habit task sync changes", () => {
     const routes = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../app/routes.ts"),
+      join(dirname(fileURLToPath(import.meta.url)), "../app/task-document-routes.ts"),
       "utf8",
     );
     assert.ok(routes.includes("emitHabitTaskSyncChanges"));

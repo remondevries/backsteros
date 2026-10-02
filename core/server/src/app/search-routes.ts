@@ -1,10 +1,12 @@
 /**
- * Agent + command-palette search routes.
- * Task hits from `/search?type=task` and `/global-search` share key/status/projectId.
+ * Merged search routes (OS-73).
+ *
+ * Canonical path: `GET /api/v1/search` (agent document/task search + pagination).
+ * Alias: `GET /api/v1/global-search` → same module, multi-entity palette profile.
+ * Task hits share key/status/projectId; palette task rows come from `searchTasks`.
  */
 import type { Context, Hono } from "hono";
 
-import type { AuthContext } from "../middleware/auth.js";
 import { requireScope } from "../middleware/auth.js";
 import { resolveProjectRef } from "../lib/entity-refs.js";
 import {
@@ -17,26 +19,12 @@ import { toSearchResult } from "../lib/mappers.js";
 import * as circleService from "../services/circle-domain.js";
 import * as documentService from "../services/documents.js";
 import * as taskProjectService from "../services/tasks-projects.js";
-
-function getAuth(c: Context): AuthContext {
-  return c.get("auth");
-}
-
-function unauthorized() {
-  return { error: "Unauthorized", code: "unauthorized" as const };
-}
-
-function forbidden() {
-  return { error: "Insufficient scope", code: "forbidden" as const };
-}
-
-function listQueryErrorBody(error: ListQueryError) {
-  return {
-    error: error.message,
-    code: error.code,
-    field: error.field,
-  };
-}
+import {
+  forbidden,
+  getAuth,
+  listQueryErrorBody,
+  unauthorized,
+} from "./route-helpers.js";
 
 async function requireResolvedProjectId(
   workspaceId: string,
@@ -49,88 +37,71 @@ async function requireResolvedProjectId(
   return resolved;
 }
 
-export function registerSearchRoutes(app: Hono) {
-  app.get("/api/v1/global-search", async (c) => {
-    const auth = getAuth(c);
-    if (!requireScope("search:query")(auth)) {
-      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+/** Multi-entity command-palette search (formerly only on /global-search). */
+async function handlePaletteSearch(c: Context) {
+  const auth = getAuth(c);
+  if (!requireScope("search:query")(auth)) {
+    return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+  }
+  const raw = collectQueryParams(new URL(c.req.url));
+  let parsed;
+  try {
+    parsed = parseGlobalSearchQuery(raw);
+  } catch (error) {
+    if (error instanceof ListQueryError) {
+      return c.json(listQueryErrorBody(error), 400);
     }
-    const raw = collectQueryParams(new URL(c.req.url));
-    let parsed;
-    try {
-      parsed = parseGlobalSearchQuery(raw);
-    } catch (error) {
-      if (error instanceof ListQueryError) {
-        return c.json(listQueryErrorBody(error), 400);
-      }
-      throw error;
-    }
-    if (parsed.limitClamped) {
-      c.header(
-        "X-BacksterOS-Hint",
-        "limit clamped to 100 (maximum for global-search).",
-      );
-    }
+    throw error;
+  }
+  if (parsed.limitClamped) {
+    c.header(
+      "X-BacksterOS-Hint",
+      "limit clamped to 100 (maximum for global-search).",
+    );
+  }
 
-    return c.json({
-      results: await circleService.globalSearch(
-        auth.workspaceId,
-        parsed.q,
-        parsed.limit,
-        {
-          mode: parsed.mode,
-          contextKind: parsed.contextKind,
-          projectId: parsed.projectId,
-          projectSection: parsed.projectSection,
-          contactId: parsed.contactId,
-          contactSection: parsed.contactSection,
-          organizationId: parsed.organizationId,
-          organizationSection: parsed.organizationSection,
-        },
-      ),
-    });
+  return c.json({
+    results: await circleService.globalSearch(
+      auth.workspaceId,
+      parsed.q,
+      parsed.limit,
+      {
+        mode: parsed.mode,
+        contextKind: parsed.contextKind,
+        projectId: parsed.projectId,
+        projectSection: parsed.projectSection,
+        contactId: parsed.contactId,
+        contactSection: parsed.contactSection,
+        organizationId: parsed.organizationId,
+        organizationSection: parsed.organizationSection,
+      },
+    ),
   });
+}
 
-  app.get("/api/v1/search", async (c) => {
-    const auth = getAuth(c);
-    if (!requireScope("search:query")(auth)) {
-      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+/** Agent search: type=task (paginated) or document types. */
+async function handleAgentSearch(c: Context) {
+  const auth = getAuth(c);
+  if (!requireScope("search:query")(auth)) {
+    return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+  }
+
+  const raw = collectQueryParams(new URL(c.req.url));
+  let parsed;
+  try {
+    parsed = parseSearchQuery(raw);
+  } catch (error) {
+    if (error instanceof ListQueryError) {
+      return c.json(listQueryErrorBody(error), 400);
     }
+    throw error;
+  }
 
-    const raw = collectQueryParams(new URL(c.req.url));
-    let parsed;
-    try {
-      parsed = parseSearchQuery(raw);
-    } catch (error) {
-      if (error instanceof ListQueryError) {
-        return c.json(listQueryErrorBody(error), 400);
-      }
-      throw error;
-    }
-
-    if (parsed.type === "task") {
-      let projectId = parsed.projectId;
-      if (projectId) {
-        try {
-          projectId = await requireResolvedProjectId(auth.workspaceId, projectId);
-        } catch (error) {
-          if (error instanceof ListQueryError) {
-            return c.json(listQueryErrorBody(error), 400);
-          }
-          throw error;
-        }
-      }
-
+  if (parsed.type === "task") {
+    let projectId = parsed.projectId;
+    if (projectId) {
       try {
-        const { results, nextCursor } = await taskProjectService.searchTasks({
-          workspaceId: auth.workspaceId,
-          q: parsed.q,
-          projectId,
-          statuses: parsed.statuses.length ? parsed.statuses : undefined,
-          limit: parsed.limit,
-          cursor: parsed.cursor,
-        });
-        return c.json({ results, nextCursor });
+        projectId = await requireResolvedProjectId(auth.workspaceId, projectId);
       } catch (error) {
         if (error instanceof ListQueryError) {
           return c.json(listQueryErrorBody(error), 400);
@@ -139,14 +110,52 @@ export function registerSearchRoutes(app: Hono) {
       }
     }
 
-    const rows = await documentService.searchDocuments({
-      workspaceId: auth.workspaceId,
-      q: parsed.q,
-      type: parsed.type,
-      projectId: parsed.projectId,
-      limit: parsed.limit,
-    });
+    try {
+      const { results, nextCursor } = await taskProjectService.searchTasks({
+        workspaceId: auth.workspaceId,
+        q: parsed.q,
+        projectId,
+        statuses: parsed.statuses.length ? parsed.statuses : undefined,
+        limit: parsed.limit,
+        cursor: parsed.cursor,
+      });
+      return c.json({ results, nextCursor });
+    } catch (error) {
+      if (error instanceof ListQueryError) {
+        return c.json(listQueryErrorBody(error), 400);
+      }
+      throw error;
+    }
+  }
 
-    return c.json({ results: rows.map(toSearchResult) });
+  const rows = await documentService.searchDocuments({
+    workspaceId: auth.workspaceId,
+    q: parsed.q,
+    type: parsed.type,
+    projectId: parsed.projectId,
+    limit: parsed.limit,
   });
+
+  return c.json({ results: rows.map(toSearchResult) });
+}
+
+/**
+ * Single merged search implementation.
+ * - `profile: "agent"` → /api/v1/search
+ * - `profile: "palette"` → /api/v1/global-search (thin alias)
+ */
+async function handleMergedSearch(
+  c: Context,
+  profile: "agent" | "palette",
+) {
+  if (profile === "palette") {
+    return handlePaletteSearch(c);
+  }
+  return handleAgentSearch(c);
+}
+
+export function registerSearchRoutes(app: Hono) {
+  app.get("/api/v1/search", (c) => handleMergedSearch(c, "agent"));
+  // Thin alias for callers (desktop/mobile command palette) that still use the old path.
+  app.get("/api/v1/global-search", (c) => handleMergedSearch(c, "palette"));
 }

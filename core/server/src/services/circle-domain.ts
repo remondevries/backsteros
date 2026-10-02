@@ -27,7 +27,7 @@ import {
 } from "../lib/list-query.js";
 import { rethrowPortalUsernameConflict } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword } from "../lib/portal-password.js";
-import { formatTaskDisplayKey } from "../lib/task-filters.js";
+import { searchTasks } from "./tasks-projects.js";
 import {
   assertPrivateStorageKey,
   buildLetterPdfStorageKey,
@@ -2259,21 +2259,6 @@ export async function globalSearch(
     projectConditions.push(eq(projects.organizationId, scope.projectOrganizationId));
   }
 
-  const taskConditions = [
-    eq(tasks.workspaceId, workspaceId),
-    isNull(tasks.deletedAt),
-    or(ilike(tasks.title, pattern), ilike(tasks.description, pattern)),
-  ];
-  if (scope.taskInboxOnly) {
-    taskConditions.push(eq(tasks.inbox, true));
-  }
-  if (scope.taskProjectId) {
-    taskConditions.push(eq(tasks.projectId, scope.taskProjectId));
-  }
-  if (scope.taskContactId) {
-    taskConditions.push(eq(tasks.contactId, scope.taskContactId));
-  }
-
   const projectDocConditions = [
     eq(documents.workspaceId, workspaceId),
     isNull(documents.deletedAt),
@@ -2340,7 +2325,7 @@ export async function globalSearch(
 
   const [
     projectRows,
-    taskRows,
+    taskSearch,
     projectDocumentRows,
     knowledgeDocumentRows,
     organizationRows,
@@ -2354,29 +2339,17 @@ export async function globalSearch(
           .where(and(...projectConditions))
           .limit(limit)
       : Promise.resolve([]),
+    // OS-73: palette task hits use the same searchTasks path as GET /search?type=task.
     scope.includeTasks
-      ? db
-          .select({
-            id: tasks.id,
-            title: tasks.title,
-            description: tasks.description,
-            status: tasks.status,
-            projectId: tasks.projectId,
-            number: tasks.number,
-            updatedAt: tasks.updatedAt,
-            projectKey: projects.key,
-          })
-          .from(tasks)
-          .leftJoin(
-            projects,
-            and(
-              eq(projects.id, tasks.projectId),
-              eq(projects.workspaceId, tasks.workspaceId),
-            ),
-          )
-          .where(and(...taskConditions))
-          .limit(limit)
-      : Promise.resolve([]),
+      ? searchTasks({
+          workspaceId,
+          q,
+          projectId: scope.taskProjectId,
+          contactId: scope.taskContactId,
+          inboxOnly: scope.taskInboxOnly,
+          limit,
+        })
+      : Promise.resolve({ results: [], nextCursor: null }),
     scope.includeDocuments
       ? db
           .select()
@@ -2414,6 +2387,8 @@ export async function globalSearch(
       : Promise.resolve([]),
   ]);
 
+  const taskRows = taskSearch.results;
+
   return [
     ...projectRows.map((row) => ({
       type: "project" as const,
@@ -2429,12 +2404,12 @@ export async function globalSearch(
       type: "task" as const,
       id: row.id,
       title: row.title,
-      snippet: row.description,
-      updatedAt: row.updatedAt,
+      snippet: row.snippet,
+      updatedAt: new Date(row.updatedAt),
       documentType: null as null,
       path: null as null,
       projectId: row.projectId,
-      key: formatTaskDisplayKey(row.projectKey, row.number),
+      key: row.key,
       status: row.status,
     })),
     ...projectDocumentRows.map((row) => ({
@@ -2499,5 +2474,7 @@ export async function globalSearch(
       ...(row.documentType ? { documentType: row.documentType } : {}),
       ...(row.path ? { path: row.path } : {}),
       ...(row.projectId ? { projectId: row.projectId } : {}),
+      ...("key" in row && row.key ? { key: row.key } : {}),
+      ...("status" in row && row.status ? { status: row.status } : {}),
     }));
 }

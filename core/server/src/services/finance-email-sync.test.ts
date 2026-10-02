@@ -60,19 +60,19 @@ describe("finance + email REST-leader sync entities", () => {
 
   it("routes call isRestLeaderFirstWrite for transactions and email comments", () => {
     const appDir = join(dirname(fileURLToPath(import.meta.url)), "../app");
-    const routes = readFileSync(join(appDir, "routes.ts"), "utf8");
     const financeRoutes = readFileSync(join(appDir, "finance-routes.ts"), "utf8");
+    const emailRoutes = readFileSync(join(appDir, "email-routes.ts"), "utf8");
     assert.ok(financeRoutes.includes('entity: "financial_transaction"'));
-    assert.ok(routes.includes('entity: "email_thread"'));
-    assert.ok(routes.includes('entity: "email_thread_comment"'));
+    assert.ok(emailRoutes.includes('entity: "email_thread"'));
+    assert.ok(emailRoutes.includes('entity: "email_thread_comment"'));
     assert.ok(financeRoutes.includes("buildFinancialTransactionRestPayload"));
-    assert.ok(routes.includes("buildEmailThreadRestPayload"));
-    assert.ok(routes.includes("buildEmailThreadCommentRestPayload"));
+    assert.ok(emailRoutes.includes("buildEmailThreadRestPayload"));
+    assert.ok(emailRoutes.includes("buildEmailThreadCommentRestPayload"));
     assert.ok(financeRoutes.includes("/api/v1/transactions/:id"));
     assert.ok(financeRoutes.includes("/api/v1/transactions/batch"));
     assert.ok(financeRoutes.includes("/api/v1/transactions/batch-delete"));
     assert.ok(
-      routes.includes(
+      emailRoutes.includes(
         "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments",
       ),
     );
@@ -82,11 +82,11 @@ describe("finance + email REST-leader sync entities", () => {
     const txPatchSlice = financeRoutes.slice(txPatchIdx, txPatchIdx + 1200);
     assert.ok(txPatchSlice.includes("isRestLeaderFirstWrite()"));
 
-    const commentPostIdx = routes.indexOf(
+    const commentPostIdx = emailRoutes.indexOf(
       'app.post(\n    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments"',
     );
     assert.ok(commentPostIdx >= 0);
-    const commentSlice = routes.slice(commentPostIdx, commentPostIdx + 1500);
+    const commentSlice = emailRoutes.slice(commentPostIdx, commentPostIdx + 1500);
     assert.ok(commentSlice.includes("isRestLeaderFirstWrite()"));
   });
 
