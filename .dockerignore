@@ -19,3 +19,7 @@ backsteros-sync-demo
 docker-compose.yml
 deploy
 config
+# Nested env files (e.g. core/server/.env) — root-only `.env` above does not match them.
+**/.env
+**/.env.*
+!**/.env.example
