@@ -59,6 +59,35 @@ describe("replication cursors", () => {
     );
   });
 
+  it("peerTipHasChanges polls same-millisecond tip with later microseconds", () => {
+    const cursor: ReplicationCursor = {
+      updatedAt: "2026-10-02T12:00:00.123400Z",
+      rowId: "older-row",
+    };
+    const tipSameMsLaterUs: ReplicationCursor = {
+      updatedAt: "2026-10-02T12:00:00.123500Z",
+      rowId: "newer-row",
+    };
+    assert.equal(peerTipHasChanges(tipSameMsLaterUs, cursor), true);
+
+    // Truncated tip (ms only) that shares the cursor's ms bucket must poll,
+    // never skip — JS Date tips lose microseconds.
+    const tipTruncatedMs: ReplicationCursor = {
+      updatedAt: "2026-10-02T12:00:00.123Z",
+      rowId: "newer-row",
+    };
+    assert.equal(peerTipHasChanges(tipTruncatedMs, cursor), true);
+
+    // Truly earlier millisecond still skips.
+    assert.equal(
+      peerTipHasChanges(
+        { updatedAt: "2026-10-02T12:00:00.122999Z", rowId: "z" },
+        cursor,
+      ),
+      false,
+    );
+  });
+
   it("decidePullForPeerTip skips quiet tips without defer, bypasses backoff when tip ahead", () => {
     const cursor: ReplicationCursor = {
       updatedAt: "2026-10-02T00:00:00.000Z",

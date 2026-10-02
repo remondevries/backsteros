@@ -148,7 +148,7 @@ export async function fetchLocalTableTip(
   const pkSelect = spec.pk.map((col) => `"${col}"`).join(", ");
   const orderClause = `"${spec.updatedAtColumn}" DESC, ${pkOrderClause(spec)} DESC`;
   const query = `
-    SELECT "${spec.updatedAtColumn}" AS tip_updated_at, ${pkSelect}
+    SELECT "${spec.updatedAtColumn}"::text AS tip_updated_at, ${pkSelect}
     FROM "${spec.name}"
     ${whereClause}
     ORDER BY ${orderClause}
@@ -157,8 +157,9 @@ export async function fetchLocalTableTip(
   const rows = (await sqlClient.unsafe(query)) as Record<string, unknown>[];
   if (rows.length === 0) return null;
   const row = rows[0]!;
+  // ::text keeps Postgres microseconds; never pass through JS Date (ms only).
   return {
-    updatedAt: toIso(row.tip_updated_at as string | Date),
+    updatedAt: toIso(String(row.tip_updated_at ?? "")),
     rowId: rowIdFromPk(row, spec.pk),
   };
 }

@@ -87,15 +87,24 @@ export async function fetchPeerSyncState(
 
 export async function pullTable(
   table: ReplicatedTable,
-  options?: { peerTip?: ReplicationCursor | null },
+  options?: {
+    peerTip?: ReplicationCursor | null;
+    /** Test hooks — production callers omit these. */
+    getCursor?: typeof getReplicationCursor;
+    fetchFn?: typeof fetch;
+    nowMs?: number;
+  },
 ) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
+  const getCursor = options?.getCursor ?? getReplicationCursor;
+  const fetchFn = options?.fetchFn ?? fetch;
+
   // Pull watermark is independent of push — advancing peer tip must not
   // skip local rows that are still older than the peer tip.
-  let cursor = await getReplicationCursor(table, "pull");
-  const nowMs = Date.now();
+  let cursor = await getCursor(table, "pull");
+  const nowMs = options?.nowMs ?? Date.now();
   const peerTipProvided = Boolean(options && "peerTip" in options);
   const decision = decidePullForPeerTip({
     peerTipProvided,
@@ -124,7 +133,7 @@ export async function pullTable(
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchFn(url, {
         method: "GET",
         headers: replicationHeaders(config.secret),
         signal: controller.signal,
@@ -229,13 +238,50 @@ export async function pushTable(table: ReplicatedTable) {
   }
 }
 
-export async function runCoreReplicationTick(): Promise<void> {
+/** Optional hooks so unit tests can drive the tick without a live peer/DB. */
+export type CoreReplicationTickHooks = {
+  checkPeerBuildVersion?: () => Promise<void>;
+  pullPeerSyncEvents?: () => Promise<unknown>;
+  listActiveReplicatedTables?: () => Promise<ReplicatedTable[]>;
+  fetchPeerSyncState?: (
+    signal?: AbortSignal,
+  ) => Promise<Map<ReplicatedTable, ReplicationCursor | null> | null>;
+  pullTable?: (
+    table: ReplicatedTable,
+    options?: { peerTip?: ReplicationCursor | null },
+  ) => Promise<void>;
+  pushTable?: (table: ReplicatedTable) => Promise<void>;
+  retryDeadLetters?: () => Promise<{
+    retried: number;
+    resolved: number;
+    failed: number;
+  }>;
+  runReconcile?: () => Promise<void>;
+  syncVault?: () => Promise<unknown>;
+};
+
+export async function runCoreReplicationTick(
+  hooks: CoreReplicationTickHooks = {},
+): Promise<void> {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
+  const checkVersion = hooks.checkPeerBuildVersion ?? checkPeerBuildVersion;
+  const pullEvents = hooks.pullPeerSyncEvents ?? pullPeerSyncEvents;
+  const listTables =
+    hooks.listActiveReplicatedTables ?? listActiveReplicatedTables;
+  const fetchTips = hooks.fetchPeerSyncState ?? fetchPeerSyncState;
+  const pull = hooks.pullTable ?? pullTable;
+  const push = hooks.pushTable ?? pushTable;
+  const retryDead =
+    hooks.retryDeadLetters ??
+    (() => retryReplicationDeadLetters(applyReplicationRow));
+  const reconcile = hooks.runReconcile ?? runReplicationReconcile;
+  const syncVault = hooks.syncVault ?? syncVaultWithPeer;
+
   // OS-61: compare /health commits with the peer once per distinct mismatch.
   try {
-    await checkPeerBuildVersion();
+    await checkVersion();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     appendOpsLog("warn", "core replication version check failed", message);
@@ -244,7 +290,7 @@ export async function runCoreReplicationTick(): Promise<void> {
   // Linear-shaped: local-core applies peer sync_events in cursor order before
   // table LWW catch-up. Cloud is the leader clock; do not pull this feed as cloud.
   try {
-    await pullPeerSyncEvents();
+    await pullEvents();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`core replication failed on sync-events: ${message}`, {
@@ -254,7 +300,7 @@ export async function runCoreReplicationTick(): Promise<void> {
 
   // Every active table each tick; empty-pull backoff defers quiet tables so we
   // do not permanently skip them (and do not need a round-robin batch).
-  const tables = await listActiveReplicatedTables();
+  const tables = await listTables();
 
   // One sync-state round-trip when the peer supports it; otherwise per-table
   // /changes (older builds return 404).
@@ -263,7 +309,7 @@ export async function runCoreReplicationTick(): Promise<void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
     try {
-      peerTips = await fetchPeerSyncState(controller.signal);
+      peerTips = await fetchTips(controller.signal);
     } finally {
       clearTimeout(timeout);
     }
@@ -282,9 +328,9 @@ export async function runCoreReplicationTick(): Promise<void> {
     // block local→peer catch-up (and vice versa).
     try {
       if (peerTips?.has(table)) {
-        await pullTable(table, { peerTip: peerTips.get(table) ?? null });
+        await pull(table, { peerTip: peerTips.get(table) ?? null });
       } else {
-        await pullTable(table);
+        await pull(table);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -297,7 +343,7 @@ export async function runCoreReplicationTick(): Promise<void> {
       console.error(`core replication failed on table ${table} (pull)`, error);
     }
     try {
-      await pushTable(table);
+      await push(table);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       tableErrors.push(`${table} push: ${message}`);
@@ -311,7 +357,7 @@ export async function runCoreReplicationTick(): Promise<void> {
   }
 
   try {
-    const dead = await retryReplicationDeadLetters(applyReplicationRow);
+    const dead = await retryDead();
     if (dead.retried > 0) {
       appendOpsLog(
         "info",
@@ -326,7 +372,7 @@ export async function runCoreReplicationTick(): Promise<void> {
   }
 
   try {
-    await runReplicationReconcile();
+    await reconcile();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     appendOpsLog("error", "core replication reconcile failed", message);
@@ -341,7 +387,7 @@ export async function runCoreReplicationTick(): Promise<void> {
 
   if (config.role === "local") {
     try {
-      await syncVaultWithPeer();
+      await syncVault();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`core replication failed on vault: ${message}`, {

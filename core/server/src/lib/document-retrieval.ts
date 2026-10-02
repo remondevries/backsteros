@@ -26,6 +26,8 @@ export const DOCUMENT_RETRIEVAL_BODY_CONCURRENCY = 8;
 export const DOCUMENT_RETRIEVAL_SLOW_MS = 1000;
 /** Remember missing vault bodies briefly so retrieve does not re-HEAD them. */
 export const DOCUMENT_RETRIEVAL_MISSING_TTL_MS = 30_000;
+/** Cap the missing-body memo (LRU by insertion order + expiry sweep). */
+export const DOCUMENT_RETRIEVAL_MISSING_MEMO_MAX = 512;
 
 export type RetrievalCandidate = {
   id: string;
@@ -55,6 +57,38 @@ export function retrievalContentEtag(body: string): string {
   return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 32);
 }
 
+/**
+ * Only genuine not-found results belong in the missing-body memo.
+ * Transient errors (R2 timeouts, 403, network) must not suppress retries.
+ */
+export function isGenuineStorageNotFound(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  if (msg === "STORAGE_OBJECT_NOT_FOUND") return true;
+  if (msg === "STORAGE_OBJECT_NOT_FOUND_MEMO") return true;
+  // AWS SDK / R2 missing-object shapes that may bubble from getObject.
+  if (/\bNoSuchKey\b/i.test(msg) || /\bNotFound\b/i.test(msg)) return true;
+  const name = error.name;
+  return name === "NoSuchKey" || name === "NotFound";
+}
+
+function sweepExpiredMissingBodyMemo(nowMs: number): void {
+  for (const [key, until] of missingBodyUntil) {
+    if (until <= nowMs) missingBodyUntil.delete(key);
+  }
+}
+
+function noteMissingBody(storageKey: string, nowMs: number): void {
+  sweepExpiredMissingBodyMemo(nowMs);
+  if (missingBodyUntil.has(storageKey)) {
+    missingBodyUntil.delete(storageKey); // refresh insertion order
+  } else if (missingBodyUntil.size >= DOCUMENT_RETRIEVAL_MISSING_MEMO_MAX) {
+    const oldest = missingBodyUntil.keys().next().value;
+    if (oldest) missingBodyUntil.delete(oldest);
+  }
+  missingBodyUntil.set(storageKey, nowMs + DOCUMENT_RETRIEVAL_MISSING_TTL_MS);
+}
+
 export function resetDocumentRetrievalBodyCacheForTests(): void {
   bodyCache.clear();
   missingBodyUntil.clear();
@@ -62,6 +96,10 @@ export function resetDocumentRetrievalBodyCacheForTests(): void {
 
 export function peekDocumentRetrievalBodyCacheSizeForTests(): number {
   return bodyCache.size;
+}
+
+export function peekDocumentRetrievalMissingMemoSizeForTests(): number {
+  return missingBodyUntil.size;
 }
 
 export type RetrievalHit = {
@@ -193,10 +231,9 @@ export async function loadRetrievalCandidateBodies(
         },
       };
     } catch (error) {
-      missingBodyUntil.set(
-        row.storageKey,
-        nowMs + DOCUMENT_RETRIEVAL_MISSING_TTL_MS,
-      );
+      if (isGenuineStorageNotFound(error)) {
+        noteMissingBody(row.storageKey, nowMs);
+      }
       options.onSkip?.(row, error);
       return { ok: false as const };
     }

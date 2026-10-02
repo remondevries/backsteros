@@ -282,4 +282,85 @@ Nothing about storage.
     );
     assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 0);
   });
+
+  it("memos only genuine not-found errors and caps memo size", async () => {
+    const {
+      DOCUMENT_RETRIEVAL_MISSING_MEMO_MAX,
+      peekDocumentRetrievalMissingMemoSizeForTests,
+    } = await import("./document-retrieval.ts");
+
+    let calls = 0;
+    const notFoundRow = {
+      id: "missing",
+      docKey: null,
+      title: "Gone",
+      storageKey: "vault/missing-once.md",
+      contentEtag: null,
+    };
+
+    await loadRetrievalCandidateBodies([notFoundRow], {
+      nowMs: 1_000,
+      getObject: async () => {
+        calls += 1;
+        throw new Error("STORAGE_OBJECT_NOT_FOUND");
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(peekDocumentRetrievalMissingMemoSizeForTests(), 1);
+
+    // Second call within TTL uses memo — no getObject.
+    await loadRetrievalCandidateBodies([notFoundRow], {
+      nowMs: 1_000 + 1_000,
+      getObject: async () => {
+        calls += 1;
+        throw new Error("STORAGE_OBJECT_NOT_FOUND");
+      },
+    });
+    assert.equal(calls, 1);
+
+    // Transient R2/timeout must not enter the memo.
+    await loadRetrievalCandidateBodies(
+      [
+        {
+          id: "transient",
+          docKey: null,
+          title: "Flaky",
+          storageKey: "vault/transient.md",
+          contentEtag: null,
+        },
+      ],
+      {
+        nowMs: 1_000,
+        getObject: async () => {
+          throw new Error("R2 timeout");
+        },
+      },
+    );
+    assert.equal(peekDocumentRetrievalMissingMemoSizeForTests(), 1);
+
+    // Cap: fill past max; oldest genuine miss is evicted.
+    for (let i = 0; i < DOCUMENT_RETRIEVAL_MISSING_MEMO_MAX + 5; i += 1) {
+      await loadRetrievalCandidateBodies(
+        [
+          {
+            id: `m-${i}`,
+            docKey: null,
+            title: "m",
+            storageKey: `vault/cap-${i}.md`,
+            contentEtag: null,
+          },
+        ],
+        {
+          nowMs: 2_000 + i,
+          getObject: async () => {
+            throw new Error("STORAGE_OBJECT_NOT_FOUND");
+          },
+        },
+      );
+    }
+    assert.ok(
+      peekDocumentRetrievalMissingMemoSizeForTests() <=
+        DOCUMENT_RETRIEVAL_MISSING_MEMO_MAX,
+    );
+  });
 });

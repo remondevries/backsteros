@@ -40,7 +40,7 @@ export function toIso(value: Date | string | null | undefined): string {
 }
 
 /** Pad fractional seconds to 6 digits so string compare matches PG order. */
-function sortableTime(iso: string): string {
+export function sortableTime(iso: string): string {
   const match = iso.match(
     /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$/i,
   );
@@ -56,6 +56,11 @@ function sortableTime(iso: string): string {
   }
   const frac = (match[2] ?? ".000").padEnd(7, "0").slice(0, 7);
   return `${match[1]}${frac}Z`;
+}
+
+/** Millisecond bucket prefix of a sortable timestamptz (23 chars + truncated). */
+export function millisecondBucket(iso: string): string {
+  return sortableTime(toIso(iso)).slice(0, 23);
 }
 
 /** Compare replication watermarks: updatedAt then rowId. No DB dependency. */
@@ -84,6 +89,10 @@ export function maxCursor(
  * When timestamps are equal but rowIds differ, poll instead of skipping:
  * JS `localeCompare` does not match Postgres text ordering for mixed-case
  * nanoids, so an equal-time tip with a different id is treated as maybe-ahead.
+ *
+ * Same-millisecond doubt: if the tip looks behind but shares the cursor's ms
+ * bucket (e.g. tip truncated to ms while cursor keeps microseconds), poll —
+ * never skip a same-millisecond tip that might still be ahead in µs.
  */
 export function peerTipHasChanges(
   tip: ReplicationCursor | null | undefined,
@@ -94,9 +103,15 @@ export function peerTipHasChanges(
   const tipTime = sortableTime(toIso(tip.updatedAt));
   const cursorTime = sortableTime(toIso(cursor.updatedAt));
   if (tipTime > cursorTime) return true;
-  if (tipTime < cursorTime) return false;
-  // Equal timestamps: identical id → caught up; differing id → poll.
-  return tip.rowId !== cursor.rowId;
+  if (tipTime === cursorTime) {
+    // Equal timestamps: identical id → caught up; differing id → poll.
+    return tip.rowId !== cursor.rowId;
+  }
+  // tipTime < cursorTime — only skip when clearly in an earlier ms bucket.
+  if (millisecondBucket(tip.updatedAt) === millisecondBucket(cursor.updatedAt)) {
+    return true;
+  }
+  return false;
 }
 
 /**
