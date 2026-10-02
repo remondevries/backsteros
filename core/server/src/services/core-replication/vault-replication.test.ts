@@ -29,6 +29,29 @@ describe("vault-replication filesystem", () => {
     );
   });
 
+  it("skips node_modules, .git, and hidden directories in the walk", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vault-repl-skip-"));
+    await mkdir(path.join(root, "Journal"), { recursive: true });
+    await mkdir(path.join(root, "Projects", "App", "Codebase", "node_modules", "pkg"), {
+      recursive: true,
+    });
+    await mkdir(path.join(root, ".git", "objects"), { recursive: true });
+    await mkdir(path.join(root, ".hidden"), { recursive: true });
+    await writeFile(path.join(root, "Journal", "day.md"), "# hi\n");
+    await writeFile(
+      path.join(root, "Projects", "App", "Codebase", "node_modules", "pkg", "readme.md"),
+      "# dep\n",
+    );
+    await writeFile(path.join(root, ".git", "objects", "x.md"), "# git\n");
+    await writeFile(path.join(root, ".hidden", "secret.md"), "# hide\n");
+
+    const files = await listMarkdownFiles(root);
+    assert.deepEqual(
+      files.map((f) => f.relativePath),
+      ["Journal/day.md"],
+    );
+  });
+
   it("reuses the manifest on a no-change tick (no full walk)", async () => {
     resetVaultListingStateForTests();
     const root = await mkdtemp(path.join(tmpdir(), "vault-repl-manifest-"));

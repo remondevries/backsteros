@@ -132,6 +132,48 @@ export async function fetchLocalChanges(
   return fetchForSpec(spec, since);
 }
 
+/**
+ * Tip watermark per table: max (updated_at, pk) used to skip empty change
+ * pulls with one HTTP round-trip instead of one request per quiet table.
+ */
+export async function fetchLocalTableTip(
+  table: ReplicatedTable,
+): Promise<ReplicationCursor | null> {
+  const spec = getTableSpec(table);
+  if (!spec || !(await tableExists(spec.name))) {
+    return null;
+  }
+  const whereClause = spec.whereSql ? `WHERE ${spec.whereSql}` : "";
+  const orderClause = `"${spec.updatedAtColumn}" DESC, ${pkOrderClause(spec)} DESC`;
+  const query = `
+    SELECT row_to_json(t)::jsonb AS row
+    FROM "${spec.name}" t
+    ${whereClause}
+    ORDER BY ${orderClause}
+    LIMIT 1
+  `;
+  const rows = (await sqlClient.unsafe(query)) as {
+    row: Record<string, unknown>;
+  }[];
+  if (rows.length === 0) return null;
+  const row = rows[0]!.row;
+  return {
+    updatedAt: toIso(row[spec.updatedAtColumn] as string | Date),
+    rowId: rowIdFromPk(row, spec.pk),
+  };
+}
+
+export async function fetchLocalTableTips(
+  tables: readonly ReplicatedTable[],
+): Promise<{ table: ReplicatedTable; tip: ReplicationCursor | null }[]> {
+  return Promise.all(
+    tables.map(async (table) => ({
+      table,
+      tip: await fetchLocalTableTip(table),
+    })),
+  );
+}
+
 export async function fetchAllLocalRows(
   table: KnownTable,
 ): Promise<ReplicationChange[]> {

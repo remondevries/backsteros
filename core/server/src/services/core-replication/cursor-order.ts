@@ -75,3 +75,17 @@ export function maxCursor(
 ): ReplicationCursor {
   return compareCursor(candidate, current) > 0 ? candidate : current;
 }
+
+/**
+ * Whether a peer tip from /sync-state means /changes would return rows.
+ * `undefined` tip = peer did not report this table → must poll.
+ * `null` tip = empty/absent table → skip.
+ */
+export function peerTipHasChanges(
+  tip: ReplicationCursor | null | undefined,
+  cursor: ReplicationCursor,
+): boolean {
+  if (tip === undefined) return true;
+  if (tip === null) return false;
+  return compareCursor(tip, cursor) > 0;
+}

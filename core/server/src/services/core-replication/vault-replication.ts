@@ -194,6 +194,23 @@ function shouldSkipDirentName(name: string): boolean {
   return false;
 }
 
+/** Directories that must never be walked for vault markdown manifests. */
+const SKIP_DIRECTORY_NAMES = new Set([
+  "node_modules",
+  ".git",
+]);
+
+/**
+ * Skip dependency trees, VCS, and hidden folders (e.g. `.backsteros`, `.cache`).
+ * Walking `node_modules` under project Codebase trees was taking 17–23s on cloud
+ * and scanning millions of files on the Mac vault.
+ */
+export function shouldSkipVaultWalkDirectory(name: string): boolean {
+  if (SKIP_DIRECTORY_NAMES.has(name)) return true;
+  if (name.startsWith(".")) return true;
+  return false;
+}
+
 function isMarkdownFileName(name: string): boolean {
   if (shouldSkipDirentName(name)) return false;
   return name.toLowerCase().endsWith(".md");
@@ -218,6 +235,7 @@ async function walkMarkdownFiles(
       : entry.name;
     const childAbs = path.join(dirAbsolute, entry.name);
     if (entry.isDirectory()) {
+      if (shouldSkipVaultWalkDirectory(entry.name)) continue;
       await walkMarkdownFiles(childAbs, childRel, out);
       continue;
     }

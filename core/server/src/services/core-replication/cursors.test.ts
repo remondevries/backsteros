@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { compareCursor, maxCursor, toIso } from "./cursor-order.js";
+import { compareCursor, maxCursor, peerTipHasChanges, toIso } from "./cursor-order.js";
 import type { ReplicationCursor } from "./types.js";
 
 describe("replication cursors", () => {
@@ -22,6 +22,27 @@ describe("replication cursors", () => {
     assert.ok(compareCursor(late, early) > 0);
     assert.ok(compareCursor(early, sameTimeLaterId) < 0);
     assert.equal(compareCursor(early, early), 0);
+  });
+
+  it("peerTipHasChanges polls unknown tips and skips null/caught-up tips", () => {
+    const cursor: ReplicationCursor = {
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      rowId: "a",
+    };
+    assert.equal(peerTipHasChanges(undefined, cursor), true);
+    assert.equal(peerTipHasChanges(null, cursor), false);
+    assert.equal(peerTipHasChanges(cursor, cursor), false);
+    assert.equal(
+      peerTipHasChanges({ updatedAt: cursor.updatedAt, rowId: "b" }, cursor),
+      true,
+    );
+    assert.equal(
+      peerTipHasChanges(
+        { updatedAt: "2026-10-01T00:00:00.000Z", rowId: "z" },
+        cursor,
+      ),
+      false,
+    );
   });
 
   it("maxCursor never moves backwards", () => {

@@ -1060,9 +1060,34 @@ export async function putObject(
   };
 }
 
+export type GetObjectOptions = {
+  /**
+   * When local bytes exist and their etag matches, skip the R2 freshness HEAD.
+   * Document retrieve uses this so up to N candidates do not each pay a remote
+   * round-trip when the vault already matches Postgres `content_etag`.
+   */
+  expectedEtag?: string | null;
+  /**
+   * When true and local bytes exist, skip R2 refresh (trust disk). Prefer
+   * `expectedEtag` when the caller has a content hash from metadata.
+   */
+  skipRemoteRefresh?: boolean;
+};
+
+function shouldSkipRemoteRefresh(
+  bytes: Buffer,
+  options?: GetObjectOptions,
+): boolean {
+  if (options?.skipRemoteRefresh) return true;
+  const expected = options?.expectedEtag?.trim();
+  if (!expected) return false;
+  return checksumForContent(bytes).slice(0, 32) === expected;
+}
+
 export async function getObject(
   key: string,
   settingsVaultPath?: string | null,
+  options?: GetObjectOptions,
 ): Promise<{
   body: string;
   bytes: Uint8Array;
@@ -1114,8 +1139,12 @@ export async function getObject(
     }
   }
 
-  const refreshed = await refreshLocalFromR2(key, preferred, bytes);
-  if (refreshed) bytes = refreshed;
+  // Missing local → always try R2. Present + matching etag / explicit skip →
+  // avoid per-file HEAD latency (dominant on cloud document retrieve).
+  if (!(bytes && shouldSkipRemoteRefresh(bytes, options))) {
+    const refreshed = await refreshLocalFromR2(key, preferred, bytes);
+    if (refreshed) bytes = refreshed;
+  }
   if (!bytes) throw new Error("STORAGE_OBJECT_NOT_FOUND");
 
   const isPdf = preferred.toLowerCase().endsWith(".pdf");

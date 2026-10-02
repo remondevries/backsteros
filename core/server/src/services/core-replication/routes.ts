@@ -6,7 +6,7 @@ import { getCoreReplicationConfig } from "./config.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import { tableExists } from "./cursors.js";
 import { applyRemoteChanges } from "./apply.js";
-import { fetchAllLocalRows } from "./fetch.js";
+import { fetchAllLocalRows, fetchLocalTableTips } from "./fetch.js";
 import {
   computeTableFingerprint,
   fetchLocalRowsByKeys,
@@ -498,6 +498,20 @@ export function registerCoreReplicationRoutes(app: Hono) {
       since,
     );
     return c.json(payload);
+  });
+
+  /**
+   * Batch tip watermarks for every replicated table. Callers compare each tip
+   * to their pull cursor and only GET /changes for tables that moved — cuts
+   * empty per-table poll traffic (~44 requests/tick → 1 + dirty tables).
+   */
+  app.get("/internal/core-replication/sync-state", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+
+    const tips = await fetchLocalTableTips([...REPLICATED_TABLES]);
+    return c.json({ tips });
   });
 
   app.post("/internal/core-replication/apply", async (c) => {

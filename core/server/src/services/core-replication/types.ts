@@ -17,6 +17,17 @@ export type ReplicationChangesResponse = {
   cursor: ReplicationCursor;
 };
 
+/** Per-table tip for empty-pull short-circuit (single sync-state round-trip). */
+export type ReplicationTableTip = {
+  table: string;
+  /** Latest (updatedAt, rowId) on the peer; null when the table is empty/absent. */
+  tip: ReplicationCursor | null;
+};
+
+export type ReplicationSyncStateResponse = {
+  tips: ReplicationTableTip[];
+};
+
 export type ReplicationApplyRequest = {
   table: string;
   changes: ReplicationChange[];

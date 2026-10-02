@@ -1206,6 +1206,17 @@ export async function updateDocumentSection(
   };
 }
 
+export type RetrieveDocumentsTiming = {
+  /** Wall time for the candidate SQL (ILIKE pre-filter + order). */
+  candidateQueryMs: number;
+  /** Wall time for concurrent vault body loads (incl. optional R2). */
+  bodyFetchMs: number;
+  /** Wall time for lexical section parse + score + budget trim. */
+  rankingMs: number;
+  /** End-to-end retrieve wall time. */
+  totalMs: number;
+};
+
 export async function retrieveDocuments(input: {
   workspaceId: string;
   q: string;
@@ -1223,6 +1234,7 @@ export async function retrieveDocuments(input: {
   budget: number;
   truncated: boolean;
   skipped: number;
+  timing: RetrieveDocumentsTiming;
 }> {
   const started = Date.now();
   const pattern = `%${input.q}%`;
@@ -1253,6 +1265,7 @@ export async function retrieveDocuments(input: {
   }
 
   const candidateLimit = input.candidateLimit ?? DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT;
+  const queryStarted = Date.now();
   const rows = await db
     .select({
       id: documents.id,
@@ -1274,9 +1287,18 @@ export async function retrieveDocuments(input: {
       desc(documents.updatedAt),
     )
     .limit(candidateLimit);
+  const candidateQueryMs = Date.now() - queryStarted;
 
+  const bodyStarted = Date.now();
   const { candidates, skipped } = await loadRetrievalCandidateBodies(rows, {
-    getObject,
+    // Trust vault when content_etag matches — skips per-candidate R2 HEAD
+    // (the main cloud retrieve cost). Missing local still falls through to R2.
+    getObject: (row) =>
+      getObject(row.storageKey, null, {
+        expectedEtag: row.contentEtag,
+        // No etag in metadata: still prefer local for retrieve batches.
+        skipRemoteRefresh: !row.contentEtag,
+      }),
     concurrency: DOCUMENT_RETRIEVAL_BODY_CONCURRENCY,
     onSkip: (row) => {
       appendOpsLog(
@@ -1286,24 +1308,33 @@ export async function retrieveDocuments(input: {
       );
     },
   });
+  const bodyFetchMs = Date.now() - bodyStarted;
 
+  const rankStarted = Date.now();
   const ranked = retrieveDocumentSections({
     query: input.q,
     candidates,
     budget: clampRetrievalBudget(input.budget),
     limit: input.limit,
   });
+  const rankingMs = Date.now() - rankStarted;
 
-  const elapsedMs = Date.now() - started;
-  if (elapsedMs > DOCUMENT_RETRIEVAL_SLOW_MS) {
+  const totalMs = Date.now() - started;
+  const timing: RetrieveDocumentsTiming = {
+    candidateQueryMs,
+    bodyFetchMs,
+    rankingMs,
+    totalMs,
+  };
+  if (totalMs > DOCUMENT_RETRIEVAL_SLOW_MS) {
     appendOpsLog(
       "warn",
       "documents retrieve slow",
-      `qLen=${input.q.length} candidates=${rows.length} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} ${elapsedMs}ms`,
+      `qLen=${input.q.length} candidates=${rows.length} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} query=${candidateQueryMs}ms bodies=${bodyFetchMs}ms rank=${rankingMs}ms total=${totalMs}ms`,
     );
   }
 
-  return { ...ranked, skipped };
+  return { ...ranked, skipped, timing };
 }
 
 export { DocumentSectionError };

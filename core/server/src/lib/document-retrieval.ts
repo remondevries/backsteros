@@ -108,11 +108,14 @@ export async function mapWithConcurrency<T, R>(
 /**
  * Load candidate document bodies from storage with a bounded concurrency pool.
  * Missing objects are skipped (counted + optional callback); they do not fail the batch.
+ *
+ * `getObject` receives the full candidate row so callers can pass `contentEtag`
+ * into storage and skip remote freshness checks when the vault already matches.
  */
 export async function loadRetrievalCandidateBodies(
   rows: readonly RetrievalCandidateRow[],
   options: {
-    getObject: (storageKey: string) => Promise<{ body: string }>;
+    getObject: (row: RetrievalCandidateRow) => Promise<{ body: string }>;
     concurrency?: number;
     onSkip?: (row: RetrievalCandidateRow, error: unknown) => void;
   },
@@ -123,7 +126,7 @@ export async function loadRetrievalCandidateBodies(
       const cacheKey = bodyCacheKey(row.storageKey, row.contentEtag);
       let body = bodyCache.get(cacheKey);
       if (body === undefined) {
-        const object = await options.getObject(row.storageKey);
+        const object = await options.getObject(row);
         body = object.body;
         if (bodyCache.size >= BODY_CACHE_MAX) {
           const first = bodyCache.keys().next().value;

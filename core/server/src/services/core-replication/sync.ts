@@ -14,6 +14,8 @@ export {
 export {
   fetchAllLocalRows,
   fetchLocalChanges,
+  fetchLocalTableTip,
+  fetchLocalTableTips,
   listActiveBootstrapTables,
   listActiveReplicatedTables,
 } from "./fetch.js";

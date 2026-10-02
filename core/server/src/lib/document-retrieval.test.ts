@@ -123,11 +123,11 @@ Nothing about storage.
       ],
       {
         concurrency: 2,
-        getObject: async (storageKey) => {
-          if (storageKey.includes("missing")) {
+        getObject: async (row) => {
+          if (row.storageKey.includes("missing")) {
             throw new Error("not found");
           }
-          return { body: `# Body for ${storageKey}\nbackster term here.\n` };
+          return { body: `# Body for ${row.storageKey}\nbackster term here.\n` };
         },
         onSkip: (row) => {
           skippedIds.push(row.id);

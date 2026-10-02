@@ -17,6 +17,7 @@ import {
   listActiveReplicatedTables,
 } from "./fetch.js";
 import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
+import { peerTipHasChanges } from "./cursor-order.js";
 import { runReplicationReconcile } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
 import type { ReplicatedTable } from "./constants.js";
@@ -24,6 +25,8 @@ import type {
   ReplicationApplyRequest,
   ReplicationApplyResponse,
   ReplicationChangesResponse,
+  ReplicationCursor,
+  ReplicationSyncStateResponse,
 } from "./types.js";
 import { pullPeerSyncEvents } from "./sync-event-replication.js";
 import { syncVaultWithPeer } from "./vault-replication.js";
@@ -36,6 +39,8 @@ export function resetReplicationWorkerStateForTests(): void {
   resetEmptyPullStateForTests();
 }
 
+export { peerTipHasChanges };
+
 function replicationHeaders(secret: string): HeadersInit {
   return {
     Authorization: `Bearer ${secret}`,
@@ -43,7 +48,44 @@ function replicationHeaders(secret: string): HeadersInit {
   };
 }
 
-export async function pullTable(table: ReplicatedTable) {
+/**
+ * Fetch peer tip watermarks in one request. Returns null when the peer does
+ * not yet expose /sync-state (older build) so callers fall back to per-table
+ * /changes polls.
+ */
+export async function fetchPeerSyncState(
+  signal?: AbortSignal,
+): Promise<Map<ReplicatedTable, ReplicationCursor | null> | null> {
+  const config = getCoreReplicationConfig();
+  if (!config) return null;
+
+  const response = await fetch(
+    `${config.peerUrl}/internal/core-replication/sync-state`,
+    {
+      method: "GET",
+      headers: replicationHeaders(config.secret),
+      signal,
+    },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`sync-state failed (${response.status}): ${body}`);
+  }
+  const payload = (await response.json()) as ReplicationSyncStateResponse;
+  const tips = new Map<ReplicatedTable, ReplicationCursor | null>();
+  for (const entry of payload.tips ?? []) {
+    tips.set(entry.table as ReplicatedTable, entry.tip);
+  }
+  return tips;
+}
+
+export async function pullTable(
+  table: ReplicatedTable,
+  options?: { peerTip?: ReplicationCursor | null },
+) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
@@ -54,6 +96,15 @@ export async function pullTable(table: ReplicatedTable) {
   if (shouldDeferEmptyPull(table, cursor, nowMs)) {
     return;
   }
+
+  // sync-state short-circuit: tip not ahead of cursor → empty, no /changes HTTP.
+  if (options && "peerTip" in options) {
+    if (!peerTipHasChanges(options.peerTip, cursor)) {
+      notePullOutcome(table, cursor, false, Date.now());
+      return;
+    }
+  }
+
   let appliedTotal = 0;
   let skippedTotal = 0;
   let failedTotal = 0;
@@ -200,12 +251,37 @@ export async function runCoreReplicationTick(): Promise<void> {
   // Every active table each tick; empty-pull backoff defers quiet tables so we
   // do not permanently skip them (and do not need a round-robin batch).
   const tables = await listActiveReplicatedTables();
+
+  // One sync-state round-trip when the peer supports it; otherwise per-table
+  // /changes (older builds return 404).
+  let peerTips: Map<ReplicatedTable, ReplicationCursor | null> | null = null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    try {
+      peerTips = await fetchPeerSyncState(controller.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOpsLog(
+      "warn",
+      "core replication sync-state failed; falling back to per-table pulls",
+      message,
+    );
+  }
+
   const tableErrors: string[] = [];
   for (const table of tables) {
     // Pull and push are independent: inbound soft-unique/FK conflicts must not
     // block local→peer catch-up (and vice versa).
     try {
-      await pullTable(table);
+      if (peerTips?.has(table)) {
+        await pullTable(table, { peerTip: peerTips.get(table) ?? null });
+      } else {
+        await pullTable(table);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       tableErrors.push(`${table} pull: ${message}`);
