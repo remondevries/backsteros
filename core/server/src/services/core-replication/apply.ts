@@ -36,6 +36,10 @@ import {
   isHealableSoftUnique,
   readPgError,
 } from "./soft-unique-conflicts.js";
+import {
+  naturalKeyColumnsFor,
+  naturalKeyForkWinner,
+} from "./natural-key-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import { publishProjectUpdateWorkspaceUpdated } from "../../lib/workspace-events.js";
 import {
@@ -160,6 +164,11 @@ async function applyGenericRow(
     return applyDocumentsRow(row, localRole);
   }
 
+  const naturalKey = naturalKeyColumnsFor(spec.name);
+  if (naturalKey) {
+    return applyNaturalKeyRow(spec, naturalKey, row, localRole);
+  }
+
   const remoteUpdatedAt = new Date(String(row[spec.updatedAtColumn]));
   const localUpdatedAt = await readLocalUpdatedAt(spec, row);
   const decision = shouldApplyByUpdatedAt(
@@ -175,11 +184,105 @@ async function applyGenericRow(
   return applyGenericRowUnchecked(spec, row);
 }
 
+type SqlExecutor = Pick<typeof sqlClient, "unsafe">;
+
+/**
+ * Tables whose business key is the identity (natural-key-conflicts.ts): one row
+ * per key, newest updated_at wins the whole row (id included), the loser is
+ * removed in the same transaction. Without this, two cores that each created
+ * a row for the same key dead-letter on the secondary UNIQUE index forever.
+ */
+async function applyNaturalKeyRow(
+  spec: TableSpec,
+  keyColumns: readonly string[],
+  row: ReplicationRow,
+  localRole: CoreReplicationRole,
+): Promise<"applied" | "skipped"> {
+  const incomingId = typeof row.id === "string" ? row.id : null;
+  const keyValues = keyColumns.map((col) => row[col]);
+  if (
+    !incomingId ||
+    spec.pk.length !== 1 ||
+    spec.pk[0] !== "id" ||
+    keyValues.some((value) => value === null || value === undefined)
+  ) {
+    return applyGenericRowById(spec, row, localRole);
+  }
+
+  const keyWhere = keyColumns
+    .map((col, index) => `"${col}" = $${index + 1}`)
+    .join(" AND ");
+  const idParam = `$${keyColumns.length + 1}`;
+  const twins = (await sqlClient.unsafe(
+    `SELECT id, "${spec.updatedAtColumn}" AS updated_at FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
+    [...keyValues, incomingId] as never[],
+  )) as { id: string; updated_at: Date | string }[];
+
+  if (twins.length === 0) {
+    return applyGenericRowById(spec, row, localRole);
+  }
+
+  const incoming = {
+    id: incomingId,
+    updatedAt: new Date(String(row[spec.updatedAtColumn])),
+  };
+  const survivor = twins.find(
+    (twin) =>
+      naturalKeyForkWinner(incoming, {
+        id: twin.id,
+        updatedAt: new Date(twin.updated_at),
+      }) === "existing",
+  );
+  if (survivor) {
+    // Local row wins; the peer converges when it applies our row.
+    appendOpsLog(
+      "info",
+      `core replication natural-key fork kept local ${spec.name}`,
+      `${survivor.id} over ${incomingId}`,
+    );
+    return "skipped";
+  }
+
+  const result = await sqlClient.begin(async (tx) => {
+    await tx.unsafe(
+      `DELETE FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
+      [...keyValues, incomingId] as never[],
+    );
+    return applyGenericRowUnchecked(spec, row, { executor: tx });
+  });
+  appendOpsLog(
+    "warn",
+    `core replication natural-key fork replaced ${spec.name}`,
+    `${twins.map((twin) => twin.id).join(",")} -> ${incomingId}`,
+  );
+  return result;
+}
+
+async function applyGenericRowById(
+  spec: TableSpec,
+  row: ReplicationRow,
+  localRole: CoreReplicationRole,
+): Promise<"applied" | "skipped"> {
+  const remoteUpdatedAt = new Date(String(row[spec.updatedAtColumn]));
+  const localUpdatedAt = await readLocalUpdatedAt(spec, row);
+  const decision = shouldApplyByUpdatedAt(
+    spec.name as ReplicatedTable,
+    localRole,
+    remoteUpdatedAt,
+    localUpdatedAt,
+  );
+  if (decision === "skip") {
+    return "skipped";
+  }
+  return applyGenericRowUnchecked(spec, row);
+}
+
 async function applyGenericRowUnchecked(
   spec: TableSpec,
   row: ReplicationRow,
-  options?: { enforceUpdatedAtGate?: boolean },
+  options?: { enforceUpdatedAtGate?: boolean; executor?: SqlExecutor },
 ): Promise<"applied" | "skipped"> {
+  const executor: SqlExecutor = options?.executor ?? sqlClient;
   // Drop columns the local schema does not have yet so a newer peer (or a
   // newer local pushing to an older peer after deploy lag) does not 500 the
   // whole apply — e.g. mapbox_access_token before migration 0081 on cloud.
@@ -226,7 +329,7 @@ async function applyGenericRowUnchecked(
     `;
 
     try {
-      const result = await sqlClient.unsafe(query, values as never[]);
+      const result = await executor.unsafe(query, values as never[]);
       const rowCount =
         typeof result === "object" &&
         result !== null &&
