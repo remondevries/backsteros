@@ -56,6 +56,18 @@ describe("core-replication constants", () => {
     const tasks = listReplicatedTableSpecs().find((spec) => spec.name === "tasks");
     assert.equal(tasks?.whereSql, undefined);
   });
+
+  it("exposes /sync-state and selects only tip columns for table tips", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const path = await import("node:path");
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const routes = await readFile(path.join(dir, "routes.ts"), "utf8");
+    const fetchSrc = await readFile(path.join(dir, "fetch.ts"), "utf8");
+    assert.match(routes, /\/internal\/core-replication\/sync-state/);
+    assert.match(fetchSrc, /AS tip_updated_at/);
+    assert.match(fetchSrc, /fetchLocalTableTip/);
+  });
 });
 
 describe("core-replication peer URL", () => {

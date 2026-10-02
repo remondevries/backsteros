@@ -2,6 +2,8 @@
  * Lexical document section retrieval (v1, no embeddings).
  */
 
+import { createHash } from "node:crypto";
+
 import {
   parseDocumentSections,
   sectionBodyText,
@@ -22,6 +24,8 @@ export const DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT = 100;
 export const DOCUMENT_RETRIEVAL_BODY_CONCURRENCY = 8;
 /** Log retrieve calls that take longer than this (ms). */
 export const DOCUMENT_RETRIEVAL_SLOW_MS = 1000;
+/** Remember missing vault bodies briefly so retrieve does not re-HEAD them. */
+export const DOCUMENT_RETRIEVAL_MISSING_TTL_MS = 30_000;
 
 export type RetrievalCandidate = {
   id: string;
@@ -40,13 +44,24 @@ export type RetrievalCandidateRow = {
 
 const BODY_CACHE_MAX = 256;
 const bodyCache = new Map<string, string>();
+const missingBodyUntil = new Map<string, number>();
 
-function bodyCacheKey(storageKey: string, contentEtag: string | null | undefined): string {
-  return `${storageKey}\0${contentEtag ?? ""}`;
+function bodyCacheKey(storageKey: string, contentEtag: string): string {
+  return `${storageKey}\0${contentEtag}`;
+}
+
+/** First 32 hex chars of sha256 — matches documents.content_etag / getObject etag. */
+export function retrievalContentEtag(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 32);
 }
 
 export function resetDocumentRetrievalBodyCacheForTests(): void {
   bodyCache.clear();
+  missingBodyUntil.clear();
+}
+
+export function peekDocumentRetrievalBodyCacheSizeForTests(): number {
+  return bodyCache.size;
 }
 
 export type RetrievalHit = {
@@ -109,8 +124,9 @@ export async function mapWithConcurrency<T, R>(
  * Load candidate document bodies from storage with a bounded concurrency pool.
  * Missing objects are skipped (counted + optional callback); they do not fail the batch.
  *
- * `getObject` receives the full candidate row so callers can pass `contentEtag`
- * into storage and skip remote freshness checks when the vault already matches.
+ * Cache keys and validates on the hash of the bytes actually returned — never on
+ * the row's etag alone. Rows with a null etag are never cached. A brief missing
+ * memo avoids repeating HEADs for absent objects across queries.
  */
 export async function loadRetrievalCandidateBodies(
   rows: readonly RetrievalCandidateRow[],
@@ -118,22 +134,55 @@ export async function loadRetrievalCandidateBodies(
     getObject: (row: RetrievalCandidateRow) => Promise<{ body: string }>;
     concurrency?: number;
     onSkip?: (row: RetrievalCandidateRow, error: unknown) => void;
+    nowMs?: number;
   },
 ): Promise<{ candidates: RetrievalCandidate[]; skipped: number }> {
   const concurrency = options.concurrency ?? DOCUMENT_RETRIEVAL_BODY_CONCURRENCY;
+  const nowMs = options.nowMs ?? Date.now();
   const loaded = await mapWithConcurrency(rows, concurrency, async (row) => {
     try {
-      const cacheKey = bodyCacheKey(row.storageKey, row.contentEtag);
-      let body = bodyCache.get(cacheKey);
-      if (body === undefined) {
-        const object = await options.getObject(row);
-        body = object.body;
+      const expectedEtag = row.contentEtag?.trim() || null;
+      if (expectedEtag) {
+        const cached = bodyCache.get(bodyCacheKey(row.storageKey, expectedEtag));
+        if (cached !== undefined) {
+          // Only serve cache when stored bytes still hash to the expected etag.
+          if (retrievalContentEtag(cached) === expectedEtag) {
+            return {
+              ok: true as const,
+              candidate: {
+                id: row.id,
+                docKey: row.docKey,
+                title: row.title,
+                content: cached,
+              },
+            };
+          }
+          bodyCache.delete(bodyCacheKey(row.storageKey, expectedEtag));
+        }
+      }
+
+      const missingUntil = missingBodyUntil.get(row.storageKey);
+      if (missingUntil != null && missingUntil > nowMs) {
+        options.onSkip?.(row, new Error("STORAGE_OBJECT_NOT_FOUND_MEMO"));
+        return { ok: false as const };
+      }
+
+      const object = await options.getObject(row);
+      const body = object.body;
+      const actualEtag = retrievalContentEtag(body);
+      missingBodyUntil.delete(row.storageKey);
+
+      // Only cache when the row has an etag AND returned bytes match it.
+      // Never cache null-etag rows (avoids sticky stale bodies when metadata
+      // advances ahead of vault bytes — "row arrives before body").
+      if (expectedEtag && actualEtag === expectedEtag) {
         if (bodyCache.size >= BODY_CACHE_MAX) {
           const first = bodyCache.keys().next().value;
           if (first) bodyCache.delete(first);
         }
-        bodyCache.set(cacheKey, body);
+        bodyCache.set(bodyCacheKey(row.storageKey, actualEtag), body);
       }
+
       return {
         ok: true as const,
         candidate: {
@@ -144,6 +193,10 @@ export async function loadRetrievalCandidateBodies(
         },
       };
     } catch (error) {
+      missingBodyUntil.set(
+        row.storageKey,
+        nowMs + DOCUMENT_RETRIEVAL_MISSING_TTL_MS,
+      );
       options.onSkip?.(row, error);
       return { ok: false as const };
     }

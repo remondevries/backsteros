@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 
 import {
   DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET,
   clampRetrievalBudget,
   loadRetrievalCandidateBodies,
   mapWithConcurrency,
+  peekDocumentRetrievalBodyCacheSizeForTests,
+  resetDocumentRetrievalBodyCacheForTests,
+  retrievalContentEtag,
   retrieveDocumentSections,
 } from "./document-retrieval.ts";
 
 describe("document retrieval v1", () => {
+  beforeEach(() => {
+    resetDocumentRetrievalBodyCacheForTests();
+  });
   it("clamps budget to the hard max", () => {
     assert.equal(clampRetrievalBudget(undefined), 8000);
     assert.equal(clampRetrievalBudget(99_999), DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET);
@@ -183,5 +189,97 @@ Nothing about storage.
     assert.ok(results.length >= 1);
     assert.equal(results[0]!.documentId, "old-match");
     assert.ok(!results.some((hit) => hit.documentId.startsWith("new-noise")));
+  });
+
+  it("passes contentEtag through to getObject (expectedEtag path)", async () => {
+    const body = "# Expected\nbackster.\n";
+    const etag = retrievalContentEtag(body);
+    const seen: Array<{ storageKey: string; contentEtag?: string | null }> = [];
+    await loadRetrievalCandidateBodies(
+      [
+        {
+          id: "doc-etag",
+          docKey: "DOC-E",
+          title: "Etag",
+          storageKey: "vault/etag.md",
+          contentEtag: etag,
+        },
+      ],
+      {
+        getObject: async (row) => {
+          seen.push({
+            storageKey: row.storageKey,
+            contentEtag: row.contentEtag,
+          });
+          return { body };
+        },
+      },
+    );
+    assert.deepEqual(seen, [{ storageKey: "vault/etag.md", contentEtag: etag }]);
+    assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 1);
+  });
+
+  it("does not cache when row etag arrives before matching body bytes", async () => {
+    const newBody = "# New body\nbackster retrieval cache.\n";
+    const oldBody = "# Old body\nstale content.\n";
+    const newEtag = retrievalContentEtag(newBody);
+    const calls: string[] = [];
+
+    const row = {
+      id: "doc-1",
+      docKey: "DOC-1",
+      title: "Race",
+      storageKey: "vault/race.md",
+      contentEtag: newEtag,
+    };
+
+    // First load: metadata has new etag, vault still serves old bytes → do not cache.
+    const first = await loadRetrievalCandidateBodies([row], {
+      getObject: async () => {
+        calls.push("old");
+        return { body: oldBody };
+      },
+    });
+    assert.equal(first.candidates[0]!.content, oldBody);
+    assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 0);
+
+    // Second load: body now matches etag → cache and serve correct body.
+    const second = await loadRetrievalCandidateBodies([row], {
+      getObject: async () => {
+        calls.push("new");
+        return { body: newBody };
+      },
+    });
+    assert.equal(second.candidates[0]!.content, newBody);
+    assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 1);
+
+    // Third load: served from cache (no getObject).
+    const third = await loadRetrievalCandidateBodies([row], {
+      getObject: async () => {
+        calls.push("should-not-run");
+        return { body: "wrong" };
+      },
+    });
+    assert.equal(third.candidates[0]!.content, newBody);
+    assert.deepEqual(calls, ["old", "new"]);
+  });
+
+  it("never caches rows with a null contentEtag", async () => {
+    const body = "# No etag\nbackster.\n";
+    await loadRetrievalCandidateBodies(
+      [
+        {
+          id: "doc-null",
+          docKey: null,
+          title: "Null etag",
+          storageKey: "vault/null.md",
+          contentEtag: null,
+        },
+      ],
+      {
+        getObject: async () => ({ body }),
+      },
+    );
+    assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 0);
   });
 });

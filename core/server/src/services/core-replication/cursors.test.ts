@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { compareCursor, maxCursor, peerTipHasChanges, toIso } from "./cursor-order.js";
+import {
+  compareCursor,
+  decidePullForPeerTip,
+  maxCursor,
+  peerTipHasChanges,
+  toIso,
+} from "./cursor-order.js";
 import type { ReplicationCursor } from "./types.js";
 
 describe("replication cursors", () => {
@@ -24,16 +30,17 @@ describe("replication cursors", () => {
     assert.equal(compareCursor(early, early), 0);
   });
 
-  it("peerTipHasChanges polls unknown tips and skips null/caught-up tips", () => {
+  it("peerTipHasChanges polls unknown tips and equal-time differing ids", () => {
     const cursor: ReplicationCursor = {
       updatedAt: "2026-10-02T00:00:00.000Z",
-      rowId: "a",
+      rowId: "aAbB",
     };
     assert.equal(peerTipHasChanges(undefined, cursor), true);
     assert.equal(peerTipHasChanges(null, cursor), false);
     assert.equal(peerTipHasChanges(cursor, cursor), false);
+    // Equal timestamp + different id → poll (JS localeCompare ≠ Postgres).
     assert.equal(
-      peerTipHasChanges({ updatedAt: cursor.updatedAt, rowId: "b" }, cursor),
+      peerTipHasChanges({ updatedAt: cursor.updatedAt, rowId: "ZzZz" }, cursor),
       true,
     );
     assert.equal(
@@ -42,6 +49,63 @@ describe("replication cursors", () => {
         cursor,
       ),
       false,
+    );
+    assert.equal(
+      peerTipHasChanges(
+        { updatedAt: "2026-10-03T00:00:00.000Z", rowId: "z" },
+        cursor,
+      ),
+      true,
+    );
+  });
+
+  it("decidePullForPeerTip skips quiet tips without defer, bypasses backoff when tip ahead", () => {
+    const cursor: ReplicationCursor = {
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      rowId: "a",
+    };
+    assert.equal(
+      decidePullForPeerTip({
+        peerTipProvided: true,
+        peerTip: null,
+        cursor,
+        deferEmptyPull: true,
+      }),
+      "skip_quiet_tip",
+    );
+    assert.equal(
+      decidePullForPeerTip({
+        peerTipProvided: true,
+        peerTip: cursor,
+        cursor,
+        deferEmptyPull: true,
+      }),
+      "skip_quiet_tip",
+    );
+    assert.equal(
+      decidePullForPeerTip({
+        peerTipProvided: true,
+        peerTip: { updatedAt: "2026-10-03T00:00:00.000Z", rowId: "b" },
+        cursor,
+        deferEmptyPull: true,
+      }),
+      "poll",
+    );
+    assert.equal(
+      decidePullForPeerTip({
+        peerTipProvided: false,
+        cursor,
+        deferEmptyPull: true,
+      }),
+      "defer_backoff",
+    );
+    assert.equal(
+      decidePullForPeerTip({
+        peerTipProvided: false,
+        cursor,
+        deferEmptyPull: false,
+      }),
+      "poll",
     );
   });
 

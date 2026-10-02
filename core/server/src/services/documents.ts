@@ -1331,10 +1331,10 @@ export async function retrieveDocuments(input: {
     rankingMs,
     totalMs,
   };
-  if (totalMs > DOCUMENT_RETRIEVAL_SLOW_MS) {
+  if (totalMs > DOCUMENT_RETRIEVAL_SLOW_MS || process.env.DOCUMENT_RETRIEVAL_LOG_EVERY === "1") {
     appendOpsLog(
-      "warn",
-      "documents retrieve slow",
+      totalMs > DOCUMENT_RETRIEVAL_SLOW_MS ? "warn" : "info",
+      "documents retrieve timing",
       `qLen=${input.q.length} candidates=${rows.length} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} query=${candidateQueryMs}ms bodies=${bodyFetchMs}ms rank=${rankingMs}ms total=${totalMs}ms`,
     );
   }

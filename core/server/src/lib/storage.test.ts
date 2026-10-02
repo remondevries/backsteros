@@ -190,6 +190,52 @@ test("getObject with matching expectedEtag skips R2 refresh path", async () => {
   }
 });
 
+test("getObject with mismatched expectedEtag still returns local bytes without requiring R2", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "vault-etag-mismatch-"));
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  // Leave R2 unset so a mismatched etag falls through to local-only refresh
+  // (refreshLocalFromR2 no-ops) rather than hanging on a fake endpoint.
+  const previousBucket = process.env.BACKSTEROS_R2_BUCKET;
+  const previousEndpoint = process.env.BACKSTEROS_R2_ENDPOINT;
+  const previousKey = process.env.BACKSTEROS_R2_ACCESS_KEY_ID;
+  const previousSecret = process.env.BACKSTEROS_R2_SECRET_ACCESS_KEY;
+  try {
+    setVaultPathCache(root);
+    process.env.BACKSTEROS_VAULT_PATH = root;
+    delete process.env.BACKSTEROS_R2_BUCKET;
+    delete process.env.BACKSTEROS_R2_ENDPOINT;
+    delete process.env.BACKSTEROS_R2_ACCESS_KEY_ID;
+    delete process.env.BACKSTEROS_R2_SECRET_ACCESS_KEY;
+
+    const relative = `${VAULT_SPACES_FOLDER}/knowledge-base/second-brain/mismatch.md`;
+    const absolute = path.join(root, ...relative.split("/"));
+    await mkdir(path.dirname(absolute), { recursive: true });
+    const body = "# local body\n";
+    await writeFile(absolute, body, "utf8");
+
+    const result = await getObject(relative, null, {
+      expectedEtag: "deadbeef".padEnd(32, "0"),
+    });
+    assert.equal(result.body, body);
+  } finally {
+    setVaultPathCache(null);
+    if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+    if (previousBucket === undefined) delete process.env.BACKSTEROS_R2_BUCKET;
+    else process.env.BACKSTEROS_R2_BUCKET = previousBucket;
+    if (previousEndpoint === undefined) delete process.env.BACKSTEROS_R2_ENDPOINT;
+    else process.env.BACKSTEROS_R2_ENDPOINT = previousEndpoint;
+    if (previousKey === undefined) delete process.env.BACKSTEROS_R2_ACCESS_KEY_ID;
+    else process.env.BACKSTEROS_R2_ACCESS_KEY_ID = previousKey;
+    if (previousSecret === undefined) {
+      delete process.env.BACKSTEROS_R2_SECRET_ACCESS_KEY;
+    } else {
+      process.env.BACKSTEROS_R2_SECRET_ACCESS_KEY = previousSecret;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ensureVaultStructure renames legacy Knowledge Base folder to Spaces", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "vault-spaces-migrate-"));
   await mkdir(path.join(root, VAULT_SPACES_FOLDER_LEGACY), { recursive: true });
