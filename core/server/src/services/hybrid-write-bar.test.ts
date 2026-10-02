@@ -113,8 +113,9 @@ describe("hybrid write bar", () => {
     assert.ok(routes.includes("publishTaskLive(auth,"));
     assert.ok(routes.includes("publishMeetingLive(auth,"));
     assert.ok(routes.includes("nudgeCrmActivityLive(auth,"));
+    const apiKeyRoutes = readSrc("../app/api-key-routes.ts");
     assert.ok(
-      routes.includes('entity: "api_key"'),
+      apiKeyRoutes.includes('entity: "api_key"'),
       "API key create/update/revoke must wake peer (api_keys twin)",
     );
 

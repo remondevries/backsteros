@@ -44,7 +44,9 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
         throw new Error("PowerSync credentials response missing endpoint/token");
       }
       return {
-        endpoint: rewritePowerSyncEndpoint(body.endpoint),
+        endpoint: rewritePowerSyncEndpoint(body.endpoint, {
+          apiUrl: this.apiUrl,
+        }),
         token: body.token,
       };
     }
@@ -80,7 +82,9 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
     }
     // PowerSync rejects endpoints with a trailing slash.
     return {
-      endpoint: rewritePowerSyncEndpoint(body.endpoint),
+      endpoint: rewritePowerSyncEndpoint(body.endpoint, {
+        apiUrl: this.apiUrl,
+      }),
       token: body.token,
     };
   }

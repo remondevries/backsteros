@@ -1,11 +1,15 @@
 # Local-core LaunchAgent
 
 Keeps the optional local replica (Docker compose + API on `127.0.0.1:8788`) up
-after reboot and restarts it if the API process dies. Product desktop still talks
-to cloud-core by default; this restores the local fast path for CLI / Hub /
-Development.
+after reboot and restarts it if the API process dies. Product desktop defaults to
+this local-core URL (OS-73); set `VITE_API_URL=https://api.local.backsteros.com`
+to talk to cloud via Caddy instead.
 
 The API is **localhost only** — the LaunchAgent does not enable Tailscale serve.
+
+Start logic lives only under `scripts/local-core/`: LaunchAgent `run.sh` (KeepAlive)
+and one-shot `ensure-once.sh` (desktop `BACKSTEROS_START_LOCAL_REPLICA=1`). Do not
+duplicate spawn/env resolution in Rust beyond calling `ensure-once.sh`.
 
 ## Build source (OS-61)
 

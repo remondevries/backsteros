@@ -12,8 +12,12 @@ import {
 export const DOCUMENT_RETRIEVAL_DEFAULT_BUDGET = 8000;
 export const DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET = 32_000;
 export const DOCUMENT_RETRIEVAL_DEFAULT_LIMIT = 20;
-/** Default cap on DB rows loaded before body scoring (was 100). */
-export const DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT = 24;
+/**
+ * Default cap on DB rows loaded before body scoring.
+ * OS-73 measured 24 vs 100 on local-core: 4/10 real-token queries changed
+ * top-5 section hits (broad terms like "decision" / "documentation"), so keep 100.
+ */
+export const DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT = 100;
 /** Max concurrent object-storage body reads per retrieve call. */
 export const DOCUMENT_RETRIEVAL_BODY_CONCURRENCY = 8;
 /** Log retrieve calls that take longer than this (ms). */

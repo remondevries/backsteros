@@ -1,9 +1,9 @@
-//! Optional local-core replica.
+//! Optional local-core replica bootstrap.
 //!
-//! Product desktop does **not** start Docker. Set
-//! `BACKSTEROS_START_LOCAL_REPLICA=1` to bring up compose + the API on `:8788`.
-//! Hub can still start that stack itself. This module does not start PTY or
-//! Expo, and it does not stop the stack when the app quits.
+//! Product desktop defaults to local-core (`:8788`). Startup is owned by
+//! `scripts/local-core/` (LaunchAgent `run.sh` or one-shot `ensure-once.sh`).
+//! Set `BACKSTEROS_START_LOCAL_REPLICA=1` to invoke `ensure-once.sh` from the
+//! app — do not duplicate compose/API start logic here.
 //!
 //! Prefer the dedicated `origin/production` worktree at
 //! `~/.backsteros/local-core-build` (OS-61) over a dirty developer checkout.
@@ -72,20 +72,31 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     }
 
     let repo = resolve_repo_root()?;
-    log_line(&format!("ensuring local-core from {}", repo.display()));
-    ensure_docker(&repo)?;
-
-    if api_healthy() {
-        warn_if_version_mismatch();
-        return Ok(EnsureOutcome::AlreadyRunning);
-    }
-    if port_open(API_PORT) {
+    let script = repo.join("scripts/local-core/ensure-once.sh");
+    if !script.is_file() {
         return Err(format!(
-            "port :{API_PORT} is in use but /health is not OK — not starting a second API"
+            "missing {} — refresh ~/.backsteros/local-core-build",
+            script.display()
         ));
     }
-
-    start_api(&repo)?;
+    log_line(&format!(
+        "ensuring local-core via {}",
+        script.display()
+    ));
+    let status = Command::new("bash")
+        .arg(&script)
+        .current_dir(&repo)
+        .status()
+        .map_err(|err| format!("failed to spawn ensure-once.sh: {err}"))?;
+    if !status.success() {
+        return Err(format!(
+            "ensure-once.sh exited {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    if !api_healthy() {
+        return Err("ensure-once.sh finished but /health is still not OK".into());
+    }
     warn_if_version_mismatch();
     Ok(EnsureOutcome::Started)
 }
@@ -289,6 +300,12 @@ fn resolve_env_file(repo: &Path) -> Result<PathBuf, String> {
             return Ok(path);
         }
     }
+    if let Some(home) = home_dir() {
+        let dedicated = home.join(".config/backsteros/local-core.env");
+        if dedicated.is_file() {
+            return Ok(dedicated);
+        }
+    }
     let in_repo = repo.join("core/server/.env");
     if in_repo.is_file() {
         return Ok(in_repo);
@@ -310,7 +327,7 @@ fn resolve_env_file(repo: &Path) -> Result<PathBuf, String> {
             return Ok(fallback);
         }
     }
-    Err("could not find core/server/.env (set LOCAL_CORE_ENV_FILE)".into())
+    Err("could not find local-core.env or core/server/.env (set LOCAL_CORE_ENV_FILE)".into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

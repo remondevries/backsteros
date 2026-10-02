@@ -5,13 +5,13 @@ function required(name: string, value: string | undefined): string {
   return value.trim().replace(/\/$/, "");
 }
 
-/** Default local core origin (optional replica — not the product shell). */
+/** Local-core API (LaunchAgent / Hub replica on :8788). Product desktop default (OS-73). */
 export const LOCAL_CORE_API_URL = "http://127.0.0.1:8788";
 
-/** Product desktop API. Caddy HTTPS gateway to cloud-core. Override with VITE_API_URL. */
+/** Legacy Caddy HTTPS gateway to cloud-core. Still used when VITE_API_URL points here. */
 export const CLOUD_CORE_API_URL = "https://api.local.backsteros.com";
 
-/** Product PowerSync stream. Cleartext tailnet/loopback endpoints are rewritten here. */
+/** Cloud PowerSync HTTPS gateway (when API is not the local replica). */
 export const CLOUD_SYNC_URL = "https://sync.local.backsteros.com";
 
 /**
@@ -30,20 +30,38 @@ function isDevGatewayHostname(hostname: string): boolean {
 function devGatewayApiUrl(): string | null {
   if (typeof window === "undefined") return null;
   if (!isDevGatewayHostname(window.location.hostname)) return null;
-  return "https://api.local.backsteros.com";
+  return CLOUD_CORE_API_URL;
+}
+
+function resolveConfiguredDesktopApiUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_URL?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  return devGatewayApiUrl() ?? LOCAL_CORE_API_URL;
+}
+
+/**
+ * True when `VITE_API_URL` targets local-core (`:8788`), not the Vite UI on `:1420`.
+ */
+export function isLocalDevApiUrl(apiUrl: string): boolean {
+  try {
+    const url = new URL(apiUrl);
+    const host = url.hostname.toLowerCase();
+    if (host !== "127.0.0.1" && host !== "localhost") return false;
+    if (url.port === "1420") return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function sseUrlForApiUrl(apiUrl: string): string {
+  if (isLocalDevApiUrl(apiUrl)) {
+    return apiUrl.replace(/\/$/, "");
+  }
   try {
     const url = new URL(apiUrl);
-    if (url.hostname === "127.0.0.1") {
-      url.hostname = "localhost";
-      return url.toString().replace(/\/$/, "");
-    }
-    if (url.hostname === "localhost") {
-      url.hostname = "127.0.0.1";
-      return url.toString().replace(/\/$/, "");
-    }
     if (url.hostname === "api.local.backsteros.com") {
       url.hostname = "sse.local.backsteros.com";
       return url.toString().replace(/\/$/, "");
@@ -60,31 +78,51 @@ export type DesktopPublicEnvironment = {
 };
 
 /**
- * Product API URL. An explicit loopback URL stays (optional replica).
- * Cleartext Tailscale (`100.*`) is the old fallback and is sent through the HTTPS gateway.
+ * Product API URL. Defaults to local-core. Cleartext Tailscale (`100.*`) still
+ * goes through the HTTPS gateway. Explicit loopback stays on local-core.
  */
 export function resolveDesktopApiUrl(
   configured: string | null | undefined,
 ): string {
-  const raw = (configured?.trim() || CLOUD_CORE_API_URL).replace(/\/$/, "");
+  const raw = (configured?.trim() || LOCAL_CORE_API_URL).replace(/\/$/, "");
   try {
     const url = new URL(raw);
     if (url.protocol === "http:" && url.hostname.startsWith("100.")) {
       return CLOUD_CORE_API_URL;
     }
   } catch {
-    return CLOUD_CORE_API_URL;
+    return LOCAL_CORE_API_URL;
   }
   return raw;
 }
 
 /**
- * WKWebView blocks cleartext sync. Tailnet `100.*` and loopback PowerSync
- * both become the Caddy HTTPS gateway, including when the page is
- * `http://localhost:1420` (tauri dev).
+ * WKWebView blocks cleartext sync. With local-core API, keep loopback PowerSync.
+ * Tailnet `100.*` cleartext becomes the Caddy HTTPS sync gateway.
  */
-export function rewritePowerSyncEndpoint(endpoint: string): string {
+export function rewritePowerSyncEndpoint(
+  endpoint: string,
+  options?: { apiUrl?: string | null },
+): string {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
+  const apiUrl = options?.apiUrl ?? null;
+  if (apiUrl && isLocalDevApiUrl(apiUrl)) {
+    return trimmed;
+  }
+  // Product default is local-core — keep loopback PowerSync when API is unset/local.
+  if (!apiUrl || apiUrl === LOCAL_CORE_API_URL || isLocalDevApiUrl(apiUrl || "")) {
+    try {
+      const url = new URL(trimmed);
+      if (
+        url.protocol === "http:" &&
+        (url.hostname === "127.0.0.1" || url.hostname === "localhost")
+      ) {
+        return trimmed;
+      }
+    } catch {
+      // fall through
+    }
+  }
   try {
     const url = new URL(trimmed);
     const cleartextCloud =
@@ -101,9 +139,7 @@ export function rewritePowerSyncEndpoint(endpoint: string): string {
 
 /** Soft read for the product shell (local-shell auth). */
 export function getDesktopPublicEnvironment(): DesktopPublicEnvironment {
-  const apiUrl = resolveDesktopApiUrl(
-    devGatewayApiUrl() ?? import.meta.env.VITE_API_URL ?? CLOUD_CORE_API_URL,
-  );
+  const apiUrl = resolveDesktopApiUrl(resolveConfiguredDesktopApiUrl());
   const appUrl = (import.meta.env.VITE_APP_URL ?? "")
     .trim()
     .replace(/\/$/, "");

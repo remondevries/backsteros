@@ -27,6 +27,7 @@ import {
 } from "../lib/list-query.js";
 import { rethrowPortalUsernameConflict } from "../lib/portal-contact-auth.js";
 import { hashPortalPassword } from "../lib/portal-password.js";
+import { formatTaskDisplayKey } from "../lib/task-filters.js";
 import {
   assertPrivateStorageKey,
   buildLetterPdfStorageKey,
@@ -2355,8 +2356,24 @@ export async function globalSearch(
       : Promise.resolve([]),
     scope.includeTasks
       ? db
-          .select()
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            description: tasks.description,
+            status: tasks.status,
+            projectId: tasks.projectId,
+            number: tasks.number,
+            updatedAt: tasks.updatedAt,
+            projectKey: projects.key,
+          })
           .from(tasks)
+          .leftJoin(
+            projects,
+            and(
+              eq(projects.id, tasks.projectId),
+              eq(projects.workspaceId, tasks.workspaceId),
+            ),
+          )
           .where(and(...taskConditions))
           .limit(limit)
       : Promise.resolve([]),
@@ -2416,7 +2433,9 @@ export async function globalSearch(
       updatedAt: row.updatedAt,
       documentType: null as null,
       path: null as null,
-      projectId: null as null,
+      projectId: row.projectId,
+      key: formatTaskDisplayKey(row.projectKey, row.number),
+      status: row.status,
     })),
     ...projectDocumentRows.map((row) => ({
       type: "document" as const,

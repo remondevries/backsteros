@@ -59,28 +59,27 @@ describe("finance + email REST-leader sync entities", () => {
   });
 
   it("routes call isRestLeaderFirstWrite for transactions and email comments", () => {
-    const routes = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../app/routes.ts"),
-      "utf8",
-    );
-    assert.ok(routes.includes('entity: "financial_transaction"'));
+    const appDir = join(dirname(fileURLToPath(import.meta.url)), "../app");
+    const routes = readFileSync(join(appDir, "routes.ts"), "utf8");
+    const financeRoutes = readFileSync(join(appDir, "finance-routes.ts"), "utf8");
+    assert.ok(financeRoutes.includes('entity: "financial_transaction"'));
     assert.ok(routes.includes('entity: "email_thread"'));
     assert.ok(routes.includes('entity: "email_thread_comment"'));
-    assert.ok(routes.includes("buildFinancialTransactionRestPayload"));
+    assert.ok(financeRoutes.includes("buildFinancialTransactionRestPayload"));
     assert.ok(routes.includes("buildEmailThreadRestPayload"));
     assert.ok(routes.includes("buildEmailThreadCommentRestPayload"));
-    assert.ok(routes.includes("/api/v1/transactions/:id"));
-    assert.ok(routes.includes("/api/v1/transactions/batch"));
-    assert.ok(routes.includes("/api/v1/transactions/batch-delete"));
+    assert.ok(financeRoutes.includes("/api/v1/transactions/:id"));
+    assert.ok(financeRoutes.includes("/api/v1/transactions/batch"));
+    assert.ok(financeRoutes.includes("/api/v1/transactions/batch-delete"));
     assert.ok(
       routes.includes(
         "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments",
       ),
     );
 
-    const txPatchIdx = routes.indexOf('app.patch(\n    "/api/v1/transactions/:id"');
+    const txPatchIdx = financeRoutes.indexOf('app.patch(\n    "/api/v1/transactions/:id"');
     assert.ok(txPatchIdx >= 0);
-    const txPatchSlice = routes.slice(txPatchIdx, txPatchIdx + 1200);
+    const txPatchSlice = financeRoutes.slice(txPatchIdx, txPatchIdx + 1200);
     assert.ok(txPatchSlice.includes("isRestLeaderFirstWrite()"));
 
     const commentPostIdx = routes.indexOf(

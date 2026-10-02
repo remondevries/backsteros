@@ -3702,8 +3702,12 @@ export const globalSearchResultSchema = z.object({
   documentType: z.enum(["project", "knowledge", "journal"]).nullable().optional(),
   /** Document relative path for href building. */
   path: z.string().nullable().optional(),
-  /** Project UUID for project-document href building. */
+  /** Project UUID (tasks + project-documents). */
   projectId: z.string().nullable().optional(),
+  /** Task display key (`OS-73`) — same field as `GET /search?type=task`. */
+  key: z.string().optional(),
+  /** Task status — same field as `GET /search?type=task`. */
+  status: taskStatusSchema.optional(),
 });
 
 export const projectRelationsSchema = z.object({
