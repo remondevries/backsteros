@@ -17,6 +17,7 @@ import { parseTurnDiffFilesFromNumstat } from "./Diffs.ts";
 import * as CheckpointStore from "./CheckpointStore.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
 
 const ServerConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -66,6 +67,24 @@ function git(
       cwd,
       args,
       timeoutMs: 10_000,
+    });
+    return result.stdout.trim();
+  });
+}
+
+function gitLong(
+  cwd: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<string, VcsError, VcsProcess.VcsProcess> {
+  return Effect.gen(function* () {
+    const process = yield* VcsProcess.VcsProcess;
+    const result = yield* process.run({
+      operation: "CheckpointStore.test.gitLong",
+      command: "git",
+      cwd,
+      args,
+      timeoutMs: 180_000,
+      maxOutputBytes: 16 * 1024 * 1024,
     });
     return result.stdout.trim();
   });
@@ -512,5 +531,124 @@ it.layer(TestLayer)("CheckpointStore.layer", (it) => {
         expect(secondOid).not.toBe(firstOid);
       }),
     );
+
+    it.effect("large tracked path listing (>1.2MB) reuses or falls back without error", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-large-tree");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        // ~6000 paths × ~220 bytes ≈ 1.3MB of `git ls-files -z` output.
+        yield* Effect.promise(() => seedLargeTrackedTree(tmp, 6_000, 200));
+        yield* gitLong(tmp, ["add", "-A"]);
+        yield* gitLong(tmp, ["commit", "-m", "large tree"]);
+
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        // Unchanged tree → reuse; if listing truncates for some reason, full
+        // capture still succeeds and may produce an equivalent tree commit.
+        expect(secondOid.length).toBe(40);
+        expect(firstOid.length).toBe(40);
+      }),
+    );
+
+    it.effect("forced listing truncation falls back to a full capture", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-truncation");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        yield* writeTextFile(NodePath.join(tmp, "tracked.txt"), "v1\n");
+        yield* git(tmp, ["add", "tracked.txt"]);
+        yield* git(tmp, ["commit", "-m", "tracked"]);
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+
+        const previous = GitVcsDriver.checkpointReuseListingLimits.maxOutputBytes;
+        // Force every reuse listing call to report truncation.
+        GitVcsDriver.checkpointReuseListingLimits.maxOutputBytes = 8;
+        try {
+          yield* checkpointStore.captureCheckpoint({
+            cwd: tmp,
+            checkpointRef: second,
+            reuseIfUnchangedFromRef: first,
+          });
+          const secondOid = yield* git(tmp, ["rev-parse", second]);
+          expect(secondOid.length).toBe(40);
+        } finally {
+          GitVcsDriver.checkpointReuseListingLimits.maxOutputBytes = previous;
+        }
+      }),
+    );
+
+    it.effect("a changed file beyond the old pathspec cutoff produces a new checkpoint", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+        const checkpointStore = yield* CheckpointStore.CheckpointStore;
+        const threadId = ThreadId.make("checkpoint-reuse-late-change");
+        const first = checkpointRefForThreadTurn(threadId, 1);
+        const second = checkpointRefForThreadTurn(threadId, 2);
+
+        // Seed enough tracked paths that the old per-pathspec argv would truncate
+        // well before the last file; change that late file and expect no reuse.
+        yield* Effect.promise(() => seedLargeTrackedTree(tmp, 5_000, 200));
+        const lateRelative = "z-late/zzzz-last.txt";
+        yield* Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          yield* fileSystem.makeDirectory(NodePath.join(tmp, "z-late"), { recursive: true });
+        });
+        yield* writeTextFile(NodePath.join(tmp, lateRelative), "before\n");
+        yield* gitLong(tmp, ["add", "-A"]);
+        yield* gitLong(tmp, ["commit", "-m", "large + late"]);
+
+        yield* checkpointStore.captureCheckpoint({ cwd: tmp, checkpointRef: first });
+        const firstOid = yield* git(tmp, ["rev-parse", first]);
+
+        yield* writeTextFile(NodePath.join(tmp, lateRelative), "after\n");
+        yield* checkpointStore.captureCheckpoint({
+          cwd: tmp,
+          checkpointRef: second,
+          reuseIfUnchangedFromRef: first,
+        });
+        const secondOid = yield* git(tmp, ["rev-parse", second]);
+        expect(secondOid).not.toBe(firstOid);
+      }),
+    );
   });
 });
+
+/** Create many tracked empty files with long relative paths (for listing-size tests). */
+async function seedLargeTrackedTree(
+  cwd: string,
+  fileCount: number,
+  namePad: number,
+): Promise<void> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const dir = path.join(cwd, "bulk");
+  await fs.mkdir(dir, { recursive: true });
+  const pad = "p".repeat(namePad);
+  const writes: Array<Promise<void>> = [];
+  for (let i = 0; i < fileCount; i += 1) {
+    const name = `${pad}-${String(i).padStart(5, "0")}.txt`;
+    writes.push(fs.writeFile(path.join(dir, name), "", "utf8"));
+    if (writes.length >= 500) {
+      await Promise.all(writes);
+      writes.length = 0;
+    }
+  }
+  if (writes.length > 0) await Promise.all(writes);
+}

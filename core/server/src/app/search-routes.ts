@@ -305,9 +305,9 @@ async function handleSearchBatch(c: Context) {
   return c.json({ results } satisfies SearchBatchResponse);
 }
 
-export function registerSearchRoutes(app: Hono) {
-  app.get("/api/v1/search", (c) => handleMergedSearch(c, "agent"));
+export function registerSearchRoutes(app: Hono, deps: MergedSearchDeps = {}) {
+  app.get("/api/v1/search", (c) => handleMergedSearch(c, "agent", deps));
   app.post("/api/v1/search/batch", handleSearchBatch);
   // Thin alias for callers (desktop/mobile command palette) that still use the old path.
-  app.get("/api/v1/global-search", (c) => handleMergedSearch(c, "palette"));
+  app.get("/api/v1/global-search", (c) => handleMergedSearch(c, "palette", deps));
 }

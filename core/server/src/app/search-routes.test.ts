@@ -57,8 +57,7 @@ test("OS-73 /search uses agent profile and /global-search uses palette", async (
     c.set("auth", authWithSearch);
     await next();
   });
-  app.get("/api/v1/search", (c) => handleMergedSearch(c, "agent", stubs));
-  app.get("/api/v1/global-search", (c) => handleMergedSearch(c, "palette", stubs));
+  registerSearchRoutes(app, stubs);
 
   const agentRes = await app.request("/api/v1/search?q=hello&type=task");
   assert.equal(agentRes.status, 200);

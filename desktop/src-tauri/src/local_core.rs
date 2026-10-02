@@ -97,47 +97,6 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PnpmLaunch {
-    Native,
-    Node,
-    Shell,
-}
-
-fn pnpm_launch_kind(pnpm: &Path) -> PnpmLaunch {
-    if is_native_executable(pnpm) {
-        return PnpmLaunch::Native;
-    }
-    let mut header = [0u8; 2];
-    if let Ok(mut file) = fs::File::open(pnpm) {
-        if file.read(&mut header).ok() == Some(2) && &header == b"#!" {
-            return PnpmLaunch::Node;
-        }
-    }
-    // Homebrew pnpm is a shebang-less shell script. Spawning it directly
-    // returns ENOEXEC on macOS; `node <pnpm>` SyntaxErrors.
-    PnpmLaunch::Shell
-}
-
-fn pnpm_command(pnpm: &Path, node: &Path) -> Command {
-    let mut cmd = match pnpm_launch_kind(pnpm) {
-        PnpmLaunch::Native => Command::new(pnpm),
-        PnpmLaunch::Node => {
-            let mut cmd = Command::new(node);
-            cmd.arg(pnpm);
-            cmd
-        }
-        PnpmLaunch::Shell => {
-            let mut cmd = Command::new("/bin/sh");
-            cmd.arg(pnpm);
-            cmd
-        }
-    };
-    apply_tool_env(&mut cmd, node);
-    cmd
-}
-
-
 fn api_healthy() -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(
         &format!("127.0.0.1:{API_PORT}").parse().expect("static addr"),
@@ -226,14 +185,6 @@ fn warn_if_version_mismatch() {
     ));
 }
 
-fn port_open(port: u16) -> bool {
-    TcpStream::connect_timeout(
-        &format!("127.0.0.1:{port}").parse().expect("static addr"),
-        Duration::from_millis(250),
-    )
-    .is_ok()
-}
-
 fn resolve_repo_root() -> Result<PathBuf, String> {
     if let Some(root) = std::env::var_os("BACKSTEROS_LOCAL_CORE_BUILD") {
         let path = PathBuf::from(root);
@@ -283,137 +234,6 @@ fn looks_like_repo(path: &Path) -> bool {
     path.join("pnpm-workspace.yaml").is_file()
         && path.join("core/server").is_dir()
         && path.join("docker-compose.yml").is_file()
-}
-
-fn resolve_node() -> Result<PathBuf, String> {
-    let mut candidates = vec![
-        PathBuf::from("/opt/homebrew/bin/node"),
-        PathBuf::from("/usr/local/bin/node"),
-    ];
-    if let Some(home) = home_dir() {
-        candidates.push(home.join(".local/bin/node"));
-    }
-    for candidate in candidates {
-        if node_version_ok(&candidate) {
-            return Ok(candidate);
-        }
-    }
-    Err("no Node.js ≥22 found. Install it with Homebrew (`brew install node`).".into())
-}
-
-fn node_version_ok(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    let Ok(output) = Command::new(path).arg("-v").output() else {
-        return false;
-    };
-    if !output.status.success() {
-        return false;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let version = text.trim().trim_start_matches('v');
-    let mut parts = version.split('.');
-    let Ok(major) = parts.next().unwrap_or("0").parse::<u32>() else {
-        return false;
-    };
-    let Ok(minor) = parts.next().unwrap_or("0").parse::<u32>() else {
-        return false;
-    };
-    major > 22 || (major == 22 && minor >= 13)
-}
-
-fn resolve_pnpm() -> Result<PathBuf, String> {
-    which(
-        "pnpm",
-        &[
-            "/opt/homebrew/bin/pnpm",
-            "/usr/local/bin/pnpm",
-        ],
-    )
-    .ok_or_else(|| "pnpm not found. Install it with Homebrew (`brew install pnpm`).".into())
-}
-
-fn which(name: &str, preferred: &[&str]) -> Option<PathBuf> {
-    for path in preferred {
-        let candidate = PathBuf::from(path);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    let mut dirs = vec![
-        PathBuf::from("/opt/homebrew/bin"),
-        PathBuf::from("/usr/local/bin"),
-        PathBuf::from("/usr/bin"),
-        PathBuf::from("/bin"),
-    ];
-    if let Some(home) = home_dir() {
-        dirs.insert(0, home.join("Library/pnpm"));
-        dirs.insert(0, home.join(".local/bin"));
-    }
-    dirs.into_iter()
-        .map(|dir| dir.join(name))
-        .find(|path| path.is_file())
-}
-
-fn apply_tool_env(cmd: &mut Command, node: &Path) {
-    cmd.env("PATH", tool_path(node));
-    if std::env::var_os("DOCKER_HOST").is_none() {
-        if let Some(home) = home_dir() {
-            let sock = home.join(".docker/run/docker.sock");
-            if sock.exists() {
-                cmd.env("DOCKER_HOST", format!("unix://{}", sock.display()));
-            }
-        }
-    }
-}
-
-fn tool_path(node: &Path) -> String {
-    let mut parts = Vec::new();
-    let mut push = |path: String| {
-        if !path.is_empty() && !parts.iter().any(|existing: &String| existing == &path) {
-            parts.push(path);
-        }
-    };
-    if let Some(dir) = node.parent() {
-        push(dir.to_string_lossy().into_owned());
-    }
-    if let Some(home) = home_dir() {
-        push(home.join(".local/bin").to_string_lossy().into_owned());
-        push(home.join("Library/pnpm").to_string_lossy().into_owned());
-    }
-    push("/opt/homebrew/bin".into());
-    push("/opt/homebrew/sbin".into());
-    push("/usr/local/bin".into());
-    push("/usr/bin".into());
-    push("/bin".into());
-    if let Ok(existing) = std::env::var("PATH") {
-        for part in existing.split(':') {
-            push(part.to_string());
-        }
-    }
-    parts.join(":")
-}
-
-
-fn is_native_executable(path: &Path) -> bool {
-    let mut magic = [0u8; 4];
-    let Ok(mut file) = fs::File::open(path) else {
-        return false;
-    };
-    if file.read(&mut magic).ok() != Some(4) {
-        return false;
-    }
-    matches!(
-        magic,
-        [0xcf, 0xfa, 0xed, 0xfe]
-            | [0xfe, 0xed, 0xfa, 0xcf]
-            | [0xce, 0xfa, 0xed, 0xfe]
-            | [0xfe, 0xed, 0xfa, 0xce]
-            | [0xca, 0xfe, 0xba, 0xbe]
-            | [0xbe, 0xba, 0xfe, 0xca]
-            | [0x7f, b'E', b'L', b'F']
-    )
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -532,6 +352,154 @@ pub fn owner_api_key() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
+    use std::process::Command;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum PnpmLaunch {
+        Native,
+        Node,
+        Shell,
+    }
+
+    fn is_native_executable(path: &Path) -> bool {
+        let mut magic = [0u8; 4];
+        let Ok(mut file) = fs::File::open(path) else {
+            return false;
+        };
+        if file.read(&mut magic).ok() != Some(4) {
+            return false;
+        }
+        matches!(
+            magic,
+            [0xcf, 0xfa, 0xed, 0xfe]
+                | [0xfe, 0xed, 0xfa, 0xcf]
+                | [0xce, 0xfa, 0xed, 0xfe]
+                | [0xfe, 0xed, 0xfa, 0xce]
+                | [0xca, 0xfe, 0xba, 0xbe]
+                | [0xbe, 0xba, 0xfe, 0xca]
+                | [0x7f, b'E', b'L', b'F']
+        )
+    }
+
+    fn pnpm_launch_kind(pnpm: &Path) -> PnpmLaunch {
+        if is_native_executable(pnpm) {
+            return PnpmLaunch::Native;
+        }
+        let mut header = [0u8; 2];
+        if let Ok(mut file) = fs::File::open(pnpm) {
+            if file.read(&mut header).ok() == Some(2) && &header == b"#!" {
+                return PnpmLaunch::Node;
+            }
+        }
+        PnpmLaunch::Shell
+    }
+
+    fn node_version_ok(path: &Path) -> bool {
+        if !path.is_file() {
+            return false;
+        }
+        let Ok(output) = Command::new(path).arg("-v").output() else {
+            return false;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let version = text.trim().trim_start_matches('v');
+        let mut parts = version.split('.');
+        let Ok(major) = parts.next().unwrap_or("0").parse::<u32>() else {
+            return false;
+        };
+        let Ok(minor) = parts.next().unwrap_or("0").parse::<u32>() else {
+            return false;
+        };
+        major > 22 || (major == 22 && minor >= 13)
+    }
+
+    fn resolve_node() -> Result<PathBuf, String> {
+        let mut candidates = vec![
+            PathBuf::from("/opt/homebrew/bin/node"),
+            PathBuf::from("/usr/local/bin/node"),
+        ];
+        if let Some(home) = home_dir() {
+            candidates.push(home.join(".local/bin/node"));
+        }
+        for candidate in candidates {
+            if node_version_ok(&candidate) {
+                return Ok(candidate);
+            }
+        }
+        Err("no Node.js ≥22 found. Install it with Homebrew (`brew install node`).".into())
+    }
+
+    fn resolve_pnpm() -> Result<PathBuf, String> {
+        for path in ["/opt/homebrew/bin/pnpm", "/usr/local/bin/pnpm"] {
+            let candidate = PathBuf::from(path);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+        let mut dirs = vec![
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/bin"),
+        ];
+        if let Some(home) = home_dir() {
+            dirs.insert(0, home.join("Library/pnpm"));
+            dirs.insert(0, home.join(".local/bin"));
+        }
+        dirs.into_iter()
+            .map(|dir| dir.join("pnpm"))
+            .find(|path| path.is_file())
+            .ok_or_else(|| "pnpm not found. Install it with Homebrew (`brew install pnpm`).".into())
+    }
+
+    fn tool_path(node: &Path) -> String {
+        let mut parts = Vec::new();
+        let mut push = |path: String| {
+            if !path.is_empty() && !parts.iter().any(|existing: &String| existing == &path) {
+                parts.push(path);
+            }
+        };
+        if let Some(dir) = node.parent() {
+            push(dir.to_string_lossy().into_owned());
+        }
+        if let Some(home) = home_dir() {
+            push(home.join(".local/bin").to_string_lossy().into_owned());
+            push(home.join("Library/pnpm").to_string_lossy().into_owned());
+        }
+        push("/opt/homebrew/bin".into());
+        push("/opt/homebrew/sbin".into());
+        push("/usr/local/bin".into());
+        push("/usr/bin".into());
+        push("/bin".into());
+        if let Ok(existing) = std::env::var("PATH") {
+            for part in existing.split(':') {
+                push(part.to_string());
+            }
+        }
+        parts.join(":")
+    }
+
+    fn pnpm_command(pnpm: &Path, node: &Path) -> Command {
+        let mut cmd = match pnpm_launch_kind(pnpm) {
+            PnpmLaunch::Native => Command::new(pnpm),
+            PnpmLaunch::Node => {
+                let mut cmd = Command::new(node);
+                cmd.arg(pnpm);
+                cmd
+            }
+            PnpmLaunch::Shell => {
+                let mut cmd = Command::new("/bin/sh");
+                cmd.arg(pnpm);
+                cmd
+            }
+        };
+        cmd.env("PATH", tool_path(node));
+        cmd
+    }
 
     #[test]
     fn repo_root_is_the_monorepo() {

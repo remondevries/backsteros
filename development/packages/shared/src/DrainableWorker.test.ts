@@ -123,7 +123,6 @@ describe("makeDrainableWorker", () => {
         yield* worker.enqueue({ key: "thread-1", label: "interrupt" });
         yield* Deferred.await(startEntered);
 
-        // Interrupt is queued/running but must not enter until start finishes.
         expect(order).toEqual(["enter:start"]);
         expect(yield* Deferred.isDone(interruptEntered)).toBe(false);
 
@@ -132,6 +131,102 @@ describe("makeDrainableWorker", () => {
         yield* worker.drain;
 
         expect(order).toEqual(["enter:start", "leave:start", "enter:interrupt", "leave:interrupt"]);
+      }),
+    ),
+  );
+
+  it.live("keeps enqueue FIFO for 3+ same-key items with yields between", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        type Item = { readonly key: string; readonly n: number };
+        const order: number[] = [];
+        const worker = yield* makeDrainableWorker(
+          (item: Item) =>
+            Effect.gen(function* () {
+              order.push(item.n);
+              yield* Effect.yieldNow;
+            }),
+          { concurrency: 4, key: (item) => item.key },
+        );
+
+        yield* worker.enqueue({ key: "t", n: 1 });
+        yield* Effect.yieldNow;
+        yield* worker.enqueue({ key: "t", n: 2 });
+        yield* Effect.yieldNow;
+        yield* worker.enqueue({ key: "t", n: 3 });
+        yield* worker.drain;
+        expect(order).toEqual([1, 2, 3]);
+      }),
+    ),
+  );
+
+  it.live("five same-key events do not block another key", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        type Item = { readonly key: string; readonly label: string };
+        const aGate = yield* Deferred.make<void>();
+        const bStarted = yield* Deferred.make<void>();
+        const aEntered = yield* Ref.make(0);
+
+        const worker = yield* makeDrainableWorker(
+          (item: Item) =>
+            Effect.gen(function* () {
+              if (item.key === "a") {
+                yield* Ref.update(aEntered, (n) => n + 1);
+                yield* Deferred.await(aGate);
+                return;
+              }
+              yield* Deferred.succeed(bStarted, undefined).pipe(Effect.orDie);
+            }),
+          { concurrency: 4, key: (item) => item.key },
+        );
+
+        for (let i = 0; i < 5; i += 1) {
+          yield* worker.enqueue({ key: "a", label: `a-${i}` });
+        }
+        yield* worker.enqueue({ key: "b", label: "b-0" });
+
+        // b must start while a is still holding its single worker on the first item.
+        yield* Deferred.await(bStarted);
+        expect(yield* Ref.get(aEntered)).toBe(1);
+
+        yield* Deferred.succeed(aGate, undefined);
+        yield* worker.drain;
+        expect(yield* Ref.get(aEntered)).toBe(5);
+      }),
+    ),
+  );
+
+  it.live("interrupting an in-flight keyed item does not hang later ones", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        type Item = { readonly key: string; readonly label: string };
+        const firstStarted = yield* Deferred.make<void>();
+        const secondDone = yield* Deferred.make<void>();
+        const processed: string[] = [];
+
+        const worker = yield* makeDrainableWorker(
+          (item: Item) =>
+            Effect.gen(function* () {
+              if (item.label === "first") {
+                yield* Deferred.succeed(firstStarted, undefined).pipe(Effect.orDie);
+                return yield* Effect.interrupt;
+              }
+              processed.push(item.label);
+              if (item.label === "second") {
+                yield* Deferred.succeed(secondDone, undefined).pipe(Effect.orDie);
+              }
+            }),
+          { concurrency: 4, key: (item) => item.key },
+        );
+
+        yield* worker.enqueue({ key: "t", label: "first" });
+        yield* worker.enqueue({ key: "t", label: "second" });
+        yield* Deferred.await(firstStarted);
+        yield* Deferred.await(secondDone);
+        yield* worker.drain;
+
+        expect(processed).toEqual(["second"]);
       }),
     ),
   );

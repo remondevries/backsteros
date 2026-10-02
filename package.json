@@ -14,7 +14,7 @@
     "test": "pnpm -r --if-present test",
     "test:integration": "pnpm --filter @backsteros/server test:integration",
     "db:up": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose up -d",
-    "db:down": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose down",
+    "db:down": "bash scripts/db-down.sh",
     "db:migrate": "pnpm --filter @backsteros/server db:migrate",
     "db:powersync-setup": "pnpm --filter @backsteros/server db:powersync-setup",
     "db:powersync-verify": "pnpm --filter @backsteros/server db:powersync-verify",

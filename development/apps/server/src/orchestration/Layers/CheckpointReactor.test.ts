@@ -34,6 +34,31 @@ import * as Stream from "effect/Stream";
 import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+const promoteMocks = vi.hoisted(() => ({
+  schedule: vi.fn(),
+  cancel: vi.fn(),
+}));
+
+vi.mock("../../backsteros/control-session-promote.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../backsteros/control-session-promote.ts")>();
+  return {
+    ...actual,
+    scheduleControlSessionPromoteAfterTurn: (
+      ...args: Parameters<typeof actual.scheduleControlSessionPromoteAfterTurn>
+    ) => {
+      promoteMocks.schedule(...args);
+      return actual.scheduleControlSessionPromoteAfterTurn(...args);
+    },
+    cancelControlSessionIdlePromote: (
+      ...args: Parameters<typeof actual.cancelControlSessionIdlePromote>
+    ) => {
+      promoteMocks.cancel(...args);
+      return actual.cancelControlSessionIdlePromote(...args);
+    },
+  };
+});
+
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
@@ -854,6 +879,26 @@ describe("CheckpointReactor", () => {
     await harness.drain();
 
     expect(gitStatusRefreshCalls).toEqual([harness.cwd]);
+  });
+
+  it("does not schedule idle promote for non-completed turn.completed (OS-73)", async () => {
+    promoteMocks.schedule.mockClear();
+    promoteMocks.cancel.mockClear();
+    const harness = await createHarness({ seedFilesystemCheckpoints: false });
+
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.make("evt-turn-completed-failed-no-promote"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: ThreadId.make("thread-1"),
+      turnId: asTurnId("turn-failed-no-promote"),
+      payload: { state: "failed" },
+    });
+    await harness.drain();
+
+    expect(promoteMocks.schedule).not.toHaveBeenCalled();
+    expect(promoteMocks.cancel).toHaveBeenCalled();
   });
 
   it("re-asks for the pull request at turn end when the thread branch is checked out", async () => {

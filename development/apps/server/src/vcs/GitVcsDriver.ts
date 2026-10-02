@@ -342,12 +342,41 @@ export class GitVcsDriver extends Context.Service<
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
+/** Listing budget for checkpoint reuse probes (diff / ls-tree / ls-files). Mutate in tests. */
+export const checkpointReuseListingLimits = {
+  maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
+};
 const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
   "core.fsmonitor=false",
   "-c",
   "core.untrackedCache=false",
 ] as const;
+
+/** Split git -z stdout. Do not trim — paths may have leading/trailing spaces. */
+function splitNullSeparatedPaths(stdout: string): string[] {
+  const paths: string[] = [];
+  for (const part of stdout.split("\0")) {
+    if (part.length > 0) paths.push(part);
+  }
+  return paths;
+}
+
+/** Parse `git ls-tree -r -z` → path → blob oid. */
+function parseLsTreeBlobs(stdout: string): Map<string, string> {
+  const blobs = new Map<string, string>();
+  for (const entry of splitNullSeparatedPaths(stdout)) {
+    const tab = entry.indexOf("\t");
+    if (tab < 0) continue;
+    const meta = entry.slice(0, tab);
+    const relativePath = entry.slice(tab + 1);
+    if (relativePath.length === 0) continue;
+    const parts = meta.split(" ");
+    const hash = parts[2];
+    if (hash) blobs.set(relativePath, hash);
+  }
+  return blobs;
+}
 
 const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
   const now = yield* DateTime.now;
@@ -714,119 +743,114 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const checkpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
       const operation = "GitVcsDriver.checkpoints.captureCheckpoint";
+      const listingMax = checkpointReuseListingLimits.maxOutputBytes;
 
       // OS-73: cheap path — when worktree matches an existing commit (including
-      // untracked paths that were snapshotted into that commit), point the new
-      // ref at it instead of `git add -A` over a huge tree.
-      //
-      // `git diff COMMIT` treats commit-only paths that are still untracked in
-      // the WT as deletions, so we cannot use a bare diff --quiet. Instead:
-      // compare tracked paths with diff, then require every untracked path to
-      // hash-match the commit (and every commit-only path to still exist).
+      // untracked paths snapshotted into that commit), point the new ref at it.
+      // Never pass per-file pathspecs (E2BIG / silent truncation on large trees).
+      // Any probe error or truncated listing falls through to full `git add -A`.
       const reuseCandidates = [input.reuseIfUnchangedFromRef, "HEAD"].filter(
         (value): value is string => Boolean(value),
       );
-      for (const reuseRef of reuseCandidates) {
-        const reuseCommit = yield* resolveCheckpointCommit(input.cwd, reuseRef);
-        if (!reuseCommit) continue;
 
-        const trackedList = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["ls-files", "-z", "--", "."],
-          allowNonZeroExit: true,
-          timeoutMs: 30_000,
-        });
-        const trackedPaths = trackedList.stdout
-          .split("\0")
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0);
+      const tryReuse = Effect.gen(function* () {
+        for (const reuseRef of reuseCandidates) {
+          const reuseCommit = yield* resolveCheckpointCommit(input.cwd, reuseRef);
+          if (!reuseCommit) continue;
 
-        if (trackedPaths.length > 0) {
-          const trackedDiff = yield* execute({
+          const diffResult = yield* execute({
             operation,
             cwd: input.cwd,
-            args: ["diff", "--quiet", reuseCommit, "--", ...trackedPaths],
+            args: ["diff", "--name-only", "-z", "--no-renames", reuseCommit],
             allowNonZeroExit: true,
             timeoutMs: 30_000,
+            maxOutputBytes: listingMax,
           });
-          if (trackedDiff.exitCode !== 0) continue;
-        }
+          if (diffResult.stdoutTruncated) continue;
 
-        const commitTree = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["ls-tree", "-r", "--name-only", "-z", reuseCommit],
-          allowNonZeroExit: true,
-          timeoutMs: 30_000,
-        });
-        if (commitTree.exitCode !== 0) continue;
-        const commitPaths = new Set(
-          commitTree.stdout
-            .split("\0")
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0),
-        );
-
-        const untracked = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["ls-files", "-o", "--exclude-standard", "-z", "--", "."],
-          allowNonZeroExit: true,
-          timeoutMs: 30_000,
-        });
-        const untrackedPaths = untracked.stdout
-          .split("\0")
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0);
-
-        let matches = true;
-        for (const relativePath of untrackedPaths) {
-          if (!commitPaths.has(relativePath)) {
-            matches = false;
-            break;
-          }
-          const workingHash = yield* execute({
+          const treeResult = yield* execute({
             operation,
             cwd: input.cwd,
-            args: ["hash-object", "--", relativePath],
+            args: ["ls-tree", "-r", "-z", reuseCommit],
             allowNonZeroExit: true,
-            timeoutMs: 10_000,
+            timeoutMs: 30_000,
+            maxOutputBytes: listingMax,
           });
-          const commitHash = yield* execute({
+          if (treeResult.exitCode !== 0 || treeResult.stdoutTruncated) continue;
+          const commitBlobs = parseLsTreeBlobs(treeResult.stdout);
+
+          const untrackedResult = yield* execute({
             operation,
             cwd: input.cwd,
-            args: ["rev-parse", `${reuseCommit}:${relativePath}`],
+            args: ["ls-files", "-o", "--exclude-standard", "-z", "--", "."],
             allowNonZeroExit: true,
-            timeoutMs: 10_000,
+            timeoutMs: 30_000,
+            maxOutputBytes: listingMax,
           });
-          if (
-            workingHash.exitCode !== 0 ||
-            commitHash.exitCode !== 0 ||
-            workingHash.stdout.trim() !== commitHash.stdout.trim()
-          ) {
-            matches = false;
-            break;
+          if (untrackedResult.stdoutTruncated) continue;
+          const untrackedPaths = splitNullSeparatedPaths(untrackedResult.stdout);
+          const untrackedSet = new Set(untrackedPaths);
+
+          const workingHashes = new Map<string, string>();
+          if (untrackedPaths.length > 0) {
+            // git hash-object --stdin-paths has no -z on current git; paths with
+            // embedded newlines are extremely rare and fall through to full capture.
+            const hashResult = yield* execute({
+              operation,
+              cwd: input.cwd,
+              args: ["hash-object", "--stdin-paths"],
+              stdin: `${untrackedPaths.join("\n")}\n`,
+              allowNonZeroExit: true,
+              timeoutMs: 60_000,
+              maxOutputBytes: listingMax,
+            });
+            if (hashResult.exitCode !== 0 || hashResult.stdoutTruncated) continue;
+            const hashLines = hashResult.stdout.split("\n").filter((line) => line.length > 0);
+            if (hashLines.length !== untrackedPaths.length) continue;
+            for (let i = 0; i < untrackedPaths.length; i += 1) {
+              workingHashes.set(untrackedPaths[i]!, hashLines[i]!);
+            }
           }
-        }
-        if (!matches) continue;
 
-        // Commit-only paths (snapshotted untracked) must still exist on disk
-        // with the same bytes — otherwise the tree changed via deletion.
-        const trackedSet = new Set(trackedPaths);
-        for (const relativePath of commitPaths) {
-          if (trackedSet.has(relativePath)) continue;
-          if (untrackedPaths.includes(relativePath)) continue;
-          matches = false;
-          break;
-        }
-        if (!matches) continue;
+          let matches = true;
+          for (const relativePath of untrackedPaths) {
+            const commitHash = commitBlobs.get(relativePath);
+            const workingHash = workingHashes.get(relativePath);
+            if (!commitHash || !workingHash || commitHash !== workingHash) {
+              matches = false;
+              break;
+            }
+          }
+          if (!matches) continue;
 
-        yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["update-ref", input.checkpointRef, reuseCommit],
-        });
+          // Diff may only contain commit paths that are still untracked with the
+          // same blob (git reports them as deletions vs the index). Anything else
+          // (tracked edits, real deletions, renames) blocks reuse.
+          for (const relativePath of splitNullSeparatedPaths(diffResult.stdout)) {
+            if (!untrackedSet.has(relativePath)) {
+              matches = false;
+              break;
+            }
+            const commitHash = commitBlobs.get(relativePath);
+            const workingHash = workingHashes.get(relativePath);
+            if (!commitHash || !workingHash || commitHash !== workingHash) {
+              matches = false;
+              break;
+            }
+          }
+          if (!matches) continue;
+
+          yield* execute({
+            operation,
+            cwd: input.cwd,
+            args: ["update-ref", input.checkpointRef, reuseCommit],
+          });
+          return true;
+        }
+        return false;
+      }).pipe(Effect.catch(() => Effect.succeed(false)));
+
+      if (yield* tryReuse) {
         return;
       }
 
