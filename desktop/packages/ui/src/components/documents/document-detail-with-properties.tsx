@@ -48,17 +48,22 @@ export function DocumentDetailWithProperties({
           />
         }
         properties={
-          <>
-            {documentProperties ? (
-              <DocumentPropertiesPanel
-                document={documentProperties}
-                types={propertyTypes}
-                contactOptions={contactOptions}
-                taskOptions={taskOptions}
-              />
-            ) : null}
-            {extraProperties}
-          </>
+          <div className="task-detail-properties-scroll">
+            <div className="entity-properties-stack">
+              {documentProperties ? (
+                <DocumentPropertiesPanel
+                  document={documentProperties}
+                  types={propertyTypes}
+                  contactOptions={contactOptions}
+                  taskOptions={taskOptions}
+                >
+                  {extraProperties}
+                </DocumentPropertiesPanel>
+              ) : (
+                extraProperties
+              )}
+            </div>
+          </div>
         }
       />
     </div>

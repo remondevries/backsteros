@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { XIcon } from "@primer/octicons-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { DocumentPropertyType } from "@backsteros/contracts";
 import { CORE_DOCUMENT_PROPERTY_TYPE_SEEDS } from "@backsteros/contracts";
@@ -14,6 +15,7 @@ import {
 } from "../dropdowns/dropdown-options.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 export type DocumentPropertiesPanelModel = {
   docKey: string | null;
@@ -31,6 +33,8 @@ export type DocumentPropertiesPanelProps = {
   types?: DocumentPropertyType[];
   contactOptions?: SearchableDropdownOption<string>[];
   taskOptions?: SearchableDropdownOption<string>[];
+  /** Extra table rows (e.g. publishable Status / Folder) in the same card. */
+  children?: ReactNode;
 };
 
 function fallbackTypes(): DocumentPropertyType[] {
@@ -74,13 +78,18 @@ export function DocumentPropertiesPanel({
   types,
   contactOptions = [],
   taskOptions = [],
+  children,
 }: DocumentPropertiesPanelProps) {
   const definitions = types?.length ? types : fallbackTypes();
   const byKey = useMemo(
-    () => new Map(definitions.filter((type) => type.status === "active").map((type) => [type.key, type])),
+    () =>
+      new Map(
+        definitions
+          .filter((type) => type.status === "active")
+          .map((type) => [type.key, type]),
+      ),
     [definitions],
   );
-  const [addingKey, setAddingKey] = useState("");
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -102,6 +111,11 @@ export function DocumentPropertiesPanel({
       !propertyKeys.includes(type.key) &&
       type.key !== pendingKey,
   );
+  const addOptions = unusedTypes.map((type) => ({
+    value: type.key,
+    label: type.label,
+    searchTerms: `${type.key} ${type.label} ${type.kind}`,
+  }));
 
   async function savePatch(patch: Record<string, unknown>) {
     if (!document.onSave || !document.frontMatterValid) return;
@@ -120,24 +134,56 @@ export function DocumentPropertiesPanel({
     setPendingKey(null);
   }
 
+  function addType(key: string) {
+    const type = byKey.get(key);
+    if (!type) return;
+    if (type.kind === "checkbox") {
+      void savePatch({ [type.key]: false });
+      return;
+    }
+    if (type.kind === "select" && type.options[0]) {
+      void savePatch({ [type.key]: type.options[0].value });
+      return;
+    }
+    if (type.kind === "multi-select") {
+      void savePatch({ [type.key]: [] });
+      return;
+    }
+    setPendingKey(type.key);
+  }
+
   const disabled = !document.frontMatterValid || !document.onSave || saving;
 
   return (
     <EntityPropertiesSection title="Properties">
-      {document.docKey ? (
-        <p className="document-properties-panel__doc-key">{document.docKey}</p>
-      ) : null}
       {!document.frontMatterValid ? (
         <p className="document-properties-panel__error" role="alert">
           Fix invalid YAML front matter before editing properties.
         </p>
       ) : null}
-      <div className="entity-properties-stack">
+      <div className="document-properties-table">
+        {document.docKey ? (
+          <PropertyFieldGroup label="Key">
+            <span className="document-properties-table__static">
+              {document.docKey}
+            </span>
+          </PropertyFieldGroup>
+        ) : null}
         {propertyKeys.map((key) => {
           const type = byKey.get(key);
           const unknown = !type;
+          const removable = key !== "project";
           return (
-            <div key={key} className="document-properties-panel__row">
+            <div
+              key={key}
+              className={[
+                "document-properties-table__row",
+                unknown ? "is-unknown" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              title={unknown ? "Unknown property type" : undefined}
+            >
               <DocumentPropertyEditor
                 propertyKey={key}
                 type={type}
@@ -147,62 +193,63 @@ export function DocumentPropertiesPanel({
                 taskOptions={taskOptions}
                 onChange={(next) => void savePatch({ [key]: next })}
               />
-              {unknown ? (
-                <p className="document-properties-panel__flag">Unknown type</p>
-              ) : null}
-              <button
-                type="button"
-                className="document-properties-panel__remove"
-                disabled={disabled || key === "project"}
-                onClick={() => void savePatch({ [key]: null })}
-              >
-                Remove
-              </button>
+              {removable ? (
+                <button
+                  type="button"
+                  className="document-properties-table__remove"
+                  disabled={disabled}
+                  aria-label={`Remove ${type?.label ?? key}`}
+                  onClick={() => {
+                    if (pendingKey === key) {
+                      setPendingKey(null);
+                      return;
+                    }
+                    void savePatch({ [key]: null });
+                  }}
+                >
+                  <XIcon size={12} />
+                </button>
+              ) : (
+                <span className="document-properties-table__remove-spacer" />
+              )}
             </div>
           );
         })}
+        {children}
       </div>
-      {unusedTypes.length > 0 ? (
-        <div className="document-properties-panel__add">
-          <select
-            className="property-field-input"
-            value={addingKey}
+      {addOptions.length > 0 ? (
+        <div className="document-properties-table__add">
+          <SearchableDropdown
+            value={null}
+            options={addOptions}
+            onChange={(next) => addType(next)}
             disabled={disabled}
-            onChange={(event) => setAddingKey(event.target.value)}
-            aria-label="Property type to add"
-          >
-            <option value="">Add property…</option>
-            {unusedTypes.map((type) => (
-              <option key={type.id} value={type.key}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={disabled || !addingKey}
-            onClick={() => {
-              const type = byKey.get(addingKey);
-              if (!type) return;
-              setAddingKey("");
-              if (type.kind === "checkbox") {
-                void savePatch({ [type.key]: false });
-                return;
-              }
-              if (type.kind === "select" && type.options[0]) {
-                void savePatch({ [type.key]: type.options[0].value });
-                return;
-              }
-              if (type.kind === "multi-select") {
-                void savePatch({ [type.key]: [] });
-                return;
-              }
-              setPendingKey(type.key);
-            }}
-          >
-            Add
-          </button>
+            searchPlaceholder="Add property…"
+            ariaLabel="Add property"
+            emptySelectionLabel="Add property"
+            panelWidth={280}
+            panelAlign="start"
+            renderTrigger={({ open, disabled: isDisabled, triggerId, onToggle }) => (
+              <button
+                type="button"
+                id={triggerId}
+                className={["contact-detail-chips__add", open ? "is-open" : null]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={isDisabled}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-label="Add property"
+                title="Add property"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle();
+                }}
+              >
+                <SidePanelPlusIcon />
+              </button>
+            )}
+          />
         </div>
       ) : null}
       {error ? (

@@ -95,6 +95,12 @@ export type HelpArticlePropertiesDisplayProps = {
   folderOptions?: SearchableDropdownOption<string>[];
   contactOptions?: SearchableDropdownOption<string>[];
   placementOptions?: SearchableDropdownOption<string>[];
+  /**
+   * `all` — Details card + Properties card.
+   * `fields` — Status/Folder/… rows for the document properties table.
+   * `seo` — Details card only.
+   */
+  sections?: "all" | "fields" | "seo";
 };
 
 /**
@@ -118,6 +124,7 @@ export function HelpArticlePropertiesDisplay({
   folderOptions = [],
   contactOptions = [],
   placementOptions = [],
+  sections = "all",
 }: HelpArticlePropertiesDisplayProps) {
   const disabled = article == null;
   const showIndividualFields =
@@ -236,160 +243,168 @@ export function HelpArticlePropertiesDisplay({
     onSeoDetailsChange(next);
   }
 
+  const seoCard =
+    showSeoDetails && sections !== "fields" ? (
+      <EntityPropertiesSection title="Details">
+        <div className="help-article-seo-fields">
+          <HelpArticleSeoField
+            label="Slug"
+            value={slugLeaf}
+            prefix={prefix || undefined}
+            openLinkHref={null}
+            disabled={!canEditSeo}
+            placeholder="url-slug"
+            singleLine
+            onChange={updateSlugLeaf}
+            onBlur={(nextLeaf) => commitSeoDetails({ slugLeaf: nextLeaf })}
+          />
+          <HelpArticleSeoField
+            label="Title"
+            value={seoTitle}
+            disabled={!canEditSeo}
+            placeholder="SEO title"
+            singleLine
+            onChange={updateSeoTitle}
+            onBlur={(nextTitle) => commitSeoDetails({ seoTitle: nextTitle })}
+          />
+          <HelpArticleSeoField
+            label="Description"
+            value={seoDescription}
+            disabled={!canEditSeo}
+            placeholder="Meta description"
+            onChange={updateSeoDescription}
+            onBlur={(nextDescription) =>
+              commitSeoDetails({ seoDescription: nextDescription })
+            }
+          />
+        </div>
+      </EntityPropertiesSection>
+    ) : null;
+
+  const propertyFields = (
+    <>
+      <PropertyFieldGroup label="Status">
+        <PropertyDropdown
+          value={status}
+          options={statusOptions}
+          onChange={(next) => onStatusChange?.(next)}
+          disabled={disabled || !onStatusChange}
+          searchPlaceholder="Change status…"
+          searchShortcutLabel="S"
+          ariaLabel="Status"
+          fallbackIcon={<HelpArticleStatusIcon status={status} size={14} />}
+          fallbackLabel={getHelpArticleStatusLabel(status)}
+        />
+      </PropertyFieldGroup>
+
+      {showFolderField ? (
+        <PropertyFieldGroup label="Folder">
+          {canEditFolder ? (
+            <PropertyDropdown
+              value={folderId ?? DROPDOWN_NONE_VALUE}
+              options={folderSelectOptions}
+              onChange={(next) => onFolderChange?.(resolveDropdownNone(next))}
+              disabled={disabled}
+              searchPlaceholder="Move to folder…"
+              searchShortcutLabel="F"
+              ariaLabel="Folder"
+              fallbackIcon={folderIcon}
+              fallbackLabel="No folder"
+              mutedFallback
+              createFromQueryLabel={
+                onCreateFolderFromQuery
+                  ? (query) => getCreateEntityFromQueryLabel("folder", query)
+                  : undefined
+              }
+              onCreateFromQuery={onCreateFolderFromQuery}
+            />
+          ) : (
+            <button
+              type="button"
+              className="property-dropdown-trigger"
+              disabled={disabled}
+              aria-label="Folder"
+            >
+              <span
+                className="property-dropdown-trigger__icon"
+                aria-hidden="true"
+              >
+                {selectedFolder?.icon ?? folderIcon}
+              </span>
+              <span className="property-dropdown-trigger__label">
+                {selectedFolder?.label ?? "No folder"}
+              </span>
+            </button>
+          )}
+        </PropertyFieldGroup>
+      ) : null}
+
+      {showIndividualFields ? (
+        <>
+          <PropertyFieldGroup label="Contacts">
+            <div className="help-article-contact-chips">
+              <TaskRelatedChips
+                values={contactIds}
+                options={contactSelectOptions}
+                onChange={onContactIdsChange}
+                disabled={disabled}
+                emptyLabel="No contacts"
+                searchPlaceholder="Add contacts…"
+                searchShortcutLabel="C"
+                ariaLabel="Contacts"
+              />
+            </div>
+          </PropertyFieldGroup>
+
+          <PropertyFieldGroup label="Appears in">
+            {canEditPlacement ? (
+              <PropertyDropdown
+                value={article?.placementFolderId ?? DROPDOWN_NONE_VALUE}
+                options={placementOptions}
+                onChange={(next) =>
+                  onPlacementChange?.(resolveDropdownNone(next))
+                }
+                disabled={disabled}
+                searchPlaceholder="Choose Group section…"
+                searchShortcutLabel="P"
+                ariaLabel="Appears in"
+                fallbackIcon={<SpaceSectionIcon size={14} />}
+                fallbackLabel="No section"
+                mutedFallback
+              />
+            ) : (
+              <button
+                type="button"
+                className="property-dropdown-trigger"
+                disabled={disabled}
+                aria-label="Appears in"
+              >
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  <SpaceSectionIcon size={14} />
+                </span>
+                <span className="property-dropdown-trigger__label">
+                  {article?.placementFolderTitle?.trim() || "No section"}
+                </span>
+              </button>
+            )}
+          </PropertyFieldGroup>
+        </>
+      ) : null}
+    </>
+  );
+
+  if (sections === "fields") return propertyFields;
+  if (sections === "seo") return seoCard;
+
   return (
     <div className="task-detail-properties-scroll">
       <div className="entity-properties-stack">
-        {showSeoDetails ? (
-          <EntityPropertiesSection title="Details">
-            <div className="help-article-seo-fields">
-              <HelpArticleSeoField
-                label="Slug"
-                value={slugLeaf}
-                prefix={prefix || undefined}
-                openLinkHref={null}
-                disabled={!canEditSeo}
-                placeholder="url-slug"
-                singleLine
-                onChange={updateSlugLeaf}
-                onBlur={(nextLeaf) => commitSeoDetails({ slugLeaf: nextLeaf })}
-              />
-              <HelpArticleSeoField
-                label="Title"
-                value={seoTitle}
-                disabled={!canEditSeo}
-                placeholder="SEO title"
-                singleLine
-                onChange={updateSeoTitle}
-                onBlur={(nextTitle) => commitSeoDetails({ seoTitle: nextTitle })}
-              />
-              <HelpArticleSeoField
-                label="Description"
-                value={seoDescription}
-                disabled={!canEditSeo}
-                placeholder="Meta description"
-                onChange={updateSeoDescription}
-                onBlur={(nextDescription) =>
-                  commitSeoDetails({ seoDescription: nextDescription })
-                }
-              />
-            </div>
-          </EntityPropertiesSection>
-        ) : null}
-
+        {seoCard}
         <EntityPropertiesSection title="Properties">
-          <PropertyFieldGroup label="Status">
-            <PropertyDropdown
-              value={status}
-              options={statusOptions}
-              onChange={(next) => onStatusChange?.(next)}
-              disabled={disabled || !onStatusChange}
-              searchPlaceholder="Change status…"
-              searchShortcutLabel="S"
-              ariaLabel="Status"
-              fallbackIcon={<HelpArticleStatusIcon status={status} size={14} />}
-              fallbackLabel={getHelpArticleStatusLabel(status)}
-            />
-          </PropertyFieldGroup>
-
-          {showFolderField ? (
-            <PropertyFieldGroup label="Folder">
-              {canEditFolder ? (
-                <PropertyDropdown
-                  value={folderId ?? DROPDOWN_NONE_VALUE}
-                  options={folderSelectOptions}
-                  onChange={(next) =>
-                    onFolderChange?.(resolveDropdownNone(next))
-                  }
-                  disabled={disabled}
-                  searchPlaceholder="Move to folder…"
-                  searchShortcutLabel="F"
-                  ariaLabel="Folder"
-                  fallbackIcon={folderIcon}
-                  fallbackLabel="No folder"
-                  mutedFallback
-                  createFromQueryLabel={
-                    onCreateFolderFromQuery
-                      ? (query) =>
-                          getCreateEntityFromQueryLabel("folder", query)
-                      : undefined
-                  }
-                  onCreateFromQuery={onCreateFolderFromQuery}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="property-dropdown-trigger"
-                  disabled={disabled}
-                  aria-label="Folder"
-                >
-                  <span
-                    className="property-dropdown-trigger__icon"
-                    aria-hidden="true"
-                  >
-                    {selectedFolder?.icon ?? folderIcon}
-                  </span>
-                  <span className="property-dropdown-trigger__label">
-                    {selectedFolder?.label ?? "No folder"}
-                  </span>
-                </button>
-              )}
-            </PropertyFieldGroup>
-          ) : null}
-
-          {showIndividualFields ? (
-            <>
-              <PropertyFieldGroup label="Contacts">
-                <div className="help-article-contact-chips">
-                  <TaskRelatedChips
-                    values={contactIds}
-                    options={contactSelectOptions}
-                    onChange={onContactIdsChange}
-                    disabled={disabled}
-                    emptyLabel="No contacts"
-                    searchPlaceholder="Add contacts…"
-                    searchShortcutLabel="C"
-                    ariaLabel="Contacts"
-                  />
-                </div>
-              </PropertyFieldGroup>
-
-              <PropertyFieldGroup label="Appears in">
-                {canEditPlacement ? (
-                  <PropertyDropdown
-                    value={article?.placementFolderId ?? DROPDOWN_NONE_VALUE}
-                    options={placementOptions}
-                    onChange={(next) =>
-                      onPlacementChange?.(resolveDropdownNone(next))
-                    }
-                    disabled={disabled}
-                    searchPlaceholder="Choose Group section…"
-                    searchShortcutLabel="P"
-                    ariaLabel="Appears in"
-                    fallbackIcon={<SpaceSectionIcon size={14} />}
-                    fallbackLabel="No section"
-                    mutedFallback
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="property-dropdown-trigger"
-                    disabled={disabled}
-                    aria-label="Appears in"
-                  >
-                    <span
-                      className="property-dropdown-trigger__icon"
-                      aria-hidden="true"
-                    >
-                      <SpaceSectionIcon size={14} />
-                    </span>
-                    <span className="property-dropdown-trigger__label">
-                      {article?.placementFolderTitle?.trim() || "No section"}
-                    </span>
-                  </button>
-                )}
-              </PropertyFieldGroup>
-            </>
-          ) : null}
+          {propertyFields}
         </EntityPropertiesSection>
       </div>
     </div>

@@ -76,31 +76,54 @@ export function HelpArticleDetailView({
           />
         }
         properties={
-          <>
-            {documentProperties ? (
-              <DocumentPropertiesPanel
-                document={documentProperties}
-                types={propertyTypes}
-                contactOptions={contactOptions}
-                taskOptions={taskOptions}
-              />
-            ) : null}
-            <HelpArticlePropertiesDisplay
-            article={article}
-            onStatusChange={onStatusChange}
-            onContactIdsChange={onContactIdsChange}
-            onFolderChange={onFolderChange}
-            onCreateFolderFromQuery={onCreateFolderFromQuery}
-            onPlacementChange={onPlacementChange}
-            onSeoDetailsChange={onSeoDetailsChange}
-            showSeoDetails={showSeoDetails}
-            slugPrefix={slugPrefix}
-            folderId={folderId}
-            folderOptions={folderOptions}
-            contactOptions={contactOptions}
-            placementOptions={placementOptions}
-          />
-          </>
+          <div className="task-detail-properties-scroll">
+            <div className="entity-properties-stack">
+              {documentProperties ? (
+                <DocumentPropertiesPanel
+                  document={documentProperties}
+                  types={propertyTypes}
+                  contactOptions={contactOptions}
+                  taskOptions={taskOptions}
+                >
+                  <HelpArticlePropertiesDisplay
+                    article={article}
+                    sections="fields"
+                    onStatusChange={onStatusChange}
+                    onContactIdsChange={onContactIdsChange}
+                    onFolderChange={onFolderChange}
+                    onCreateFolderFromQuery={onCreateFolderFromQuery}
+                    onPlacementChange={onPlacementChange}
+                    folderId={folderId}
+                    folderOptions={folderOptions}
+                    contactOptions={contactOptions}
+                    placementOptions={placementOptions}
+                  />
+                </DocumentPropertiesPanel>
+              ) : (
+                <HelpArticlePropertiesDisplay
+                  article={article}
+                  onStatusChange={onStatusChange}
+                  onContactIdsChange={onContactIdsChange}
+                  onFolderChange={onFolderChange}
+                  onCreateFolderFromQuery={onCreateFolderFromQuery}
+                  onPlacementChange={onPlacementChange}
+                  folderId={folderId}
+                  folderOptions={folderOptions}
+                  contactOptions={contactOptions}
+                  placementOptions={placementOptions}
+                />
+              )}
+              {showSeoDetails ? (
+                <HelpArticlePropertiesDisplay
+                  article={article}
+                  sections="seo"
+                  showSeoDetails
+                  onSeoDetailsChange={onSeoDetailsChange}
+                  slugPrefix={slugPrefix}
+                />
+              ) : null}
+            </div>
+          </div>
         }
       />
     </div>
