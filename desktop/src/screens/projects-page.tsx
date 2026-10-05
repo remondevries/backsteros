@@ -1990,6 +1990,7 @@ function ProjectsPageBody({
                   propertyTypes={documentPropertyTypes}
                   contactOptions={assigneeOptions}
                   taskOptions={documentTaskOptions}
+                  projectOptions={composeProjectOptions}
                 />
               </>
             )

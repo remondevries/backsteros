@@ -18,6 +18,7 @@ import {
   ResizableSidePanel,
   SPACE_SETTINGS_PANEL_WIDTH_KEY,
   buildAssigneeDropdownOptions,
+  buildProjectDropdownOptions,
   createDefaultHelpArticleProperties,
   filterDocumentsForHelpArticleScope,
   filterDocumentsForSpaceRoot,
@@ -90,6 +91,7 @@ import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
   useWorkspaceSurfaceReady,
 } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
@@ -133,6 +135,7 @@ function KnowledgePageBody() {
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
   const workspace = useDesktopWorkspaceActions();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const spaceCoverSrc = useDesktopSpaceCoverSrcMap(knowledgeDocuments);
@@ -692,6 +695,26 @@ function KnowledgePageBody() {
         onSave: handleSaveDocumentProperties,
       }
     : undefined;
+  const documentProjectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projects.map((entry) => ({
+          key: entry.key,
+          name: entry.name,
+          icon: entry.icon,
+          status: entry.status,
+        })),
+        {
+          includeNone: true,
+          keepKeys: [
+            typeof documentPropertiesModel?.properties.project === "string"
+              ? documentPropertiesModel.properties.project
+              : null,
+          ],
+        },
+      ),
+    [documentPropertiesModel?.properties.project, projects],
+  );
 
   const placementOptions = useMemo(() => {
     if (!isSupportSpace) return [];
@@ -1309,6 +1332,7 @@ function KnowledgePageBody() {
           documentProperties={documentPropertiesModel}
           propertyTypes={documentPropertyTypes}
           taskOptions={documentTaskOptions}
+          projectOptions={documentProjectOptions}
         />
       ) : (
         <DocumentDetailWithProperties
@@ -1342,6 +1366,7 @@ function KnowledgePageBody() {
           propertyTypes={documentPropertyTypes}
           contactOptions={contactOptions}
           taskOptions={documentTaskOptions}
+          projectOptions={documentProjectOptions}
         />
       )}
     </>

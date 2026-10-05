@@ -21,6 +21,7 @@ export type DocumentDetailWithPropertiesProps =
     propertyTypes?: DocumentPropertyType[];
     contactOptions?: SearchableDropdownOption<string>[];
     taskOptions?: SearchableDropdownOption<string>[];
+    projectOptions?: SearchableDropdownOption<string>[];
     extraProperties?: ReactNode;
   };
 
@@ -29,6 +30,7 @@ export function DocumentDetailWithProperties({
   propertyTypes,
   contactOptions,
   taskOptions,
+  projectOptions,
   extraProperties,
   ...documentProps
 }: DocumentDetailWithPropertiesProps) {
@@ -56,6 +58,7 @@ export function DocumentDetailWithProperties({
                   types={propertyTypes}
                   contactOptions={contactOptions}
                   taskOptions={taskOptions}
+                  projectOptions={projectOptions}
                 >
                   {extraProperties}
                 </DocumentPropertiesPanel>

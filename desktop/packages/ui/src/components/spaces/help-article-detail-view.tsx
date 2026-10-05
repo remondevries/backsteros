@@ -23,6 +23,7 @@ export type HelpArticleDetailViewProps = MarkdownDocumentDetailViewProps & {
   documentProperties?: DocumentPropertiesPanelModel;
   propertyTypes?: DocumentPropertyType[];
   taskOptions?: SearchableDropdownOption<string>[];
+  projectOptions?: SearchableDropdownOption<string>[];
   onStatusChange?: HelpArticlePropertiesDisplayProps["onStatusChange"];
   onContactIdsChange?: HelpArticlePropertiesDisplayProps["onContactIdsChange"];
   onFolderChange?: HelpArticlePropertiesDisplayProps["onFolderChange"];
@@ -46,6 +47,7 @@ export function HelpArticleDetailView({
   documentProperties,
   propertyTypes,
   taskOptions,
+  projectOptions,
   onStatusChange,
   onContactIdsChange,
   onFolderChange,
@@ -84,6 +86,7 @@ export function HelpArticleDetailView({
                   types={propertyTypes}
                   contactOptions={contactOptions}
                   taskOptions={taskOptions}
+                  projectOptions={projectOptions}
                 >
                   <HelpArticlePropertiesDisplay
                     article={article}

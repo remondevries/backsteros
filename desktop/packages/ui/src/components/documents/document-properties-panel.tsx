@@ -11,7 +11,9 @@ import { PropertyFieldGroup } from "../content/property-field-group.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import {
   DROPDOWN_NONE_VALUE,
+  DROPDOWN_NO_PROJECT_VALUE,
   resolveDropdownNone,
+  resolveDropdownProjectKey,
 } from "../dropdowns/dropdown-options.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -33,6 +35,7 @@ export type DocumentPropertiesPanelProps = {
   types?: DocumentPropertyType[];
   contactOptions?: SearchableDropdownOption<string>[];
   taskOptions?: SearchableDropdownOption<string>[];
+  projectOptions?: SearchableDropdownOption<string>[];
   /** Extra table rows (e.g. publishable Status / Folder) in the same card. */
   children?: ReactNode;
 };
@@ -52,6 +55,10 @@ function fallbackTypes(): DocumentPropertyType[] {
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   }));
+}
+
+function isProjectPropertyKey(key: string): boolean {
+  return key === "project" || key === "projects";
 }
 
 function formatValue(value: unknown): string {
@@ -78,6 +85,7 @@ export function DocumentPropertiesPanel({
   types,
   contactOptions = [],
   taskOptions = [],
+  projectOptions = [],
   children,
 }: DocumentPropertiesPanelProps) {
   const definitions = types?.length ? types : fallbackTypes();
@@ -201,6 +209,7 @@ export function DocumentPropertiesPanel({
                   disabled={disabled}
                   contactOptions={contactOptions}
                   taskOptions={taskOptions}
+                  projectOptions={projectOptions}
                   onChange={(next) => void savePatch({ [key]: next })}
                 />
                 {removable ? (
@@ -286,6 +295,7 @@ function DocumentPropertyEditor({
   disabled,
   contactOptions,
   taskOptions,
+  projectOptions,
   onChange,
 }: {
   propertyKey: string;
@@ -294,6 +304,7 @@ function DocumentPropertyEditor({
   disabled: boolean;
   contactOptions: SearchableDropdownOption<string>[];
   taskOptions: SearchableDropdownOption<string>[];
+  projectOptions: SearchableDropdownOption<string>[];
   onChange: (value: unknown) => void;
 }) {
   const label = type?.label ?? propertyKey;
@@ -392,6 +403,23 @@ function DocumentPropertyEditor({
           searchPlaceholder="Link tasks…"
           ariaLabel={label}
           emptySelectionLabel="—"
+          disabled={disabled}
+        />
+      </PropertyFieldGroup>
+    );
+  }
+
+  if (isProjectPropertyKey(propertyKey) && projectOptions.length > 0) {
+    const current = typeof value === "string" ? value : "";
+    return (
+      <PropertyFieldGroup label={label}>
+        <PropertyDropdown
+          value={current || DROPDOWN_NO_PROJECT_VALUE}
+          options={projectOptions}
+          onChange={(next) => onChange(resolveDropdownProjectKey(next))}
+          searchPlaceholder="Set project…"
+          ariaLabel={label}
+          fallbackLabel="No project"
           disabled={disabled}
         />
       </PropertyFieldGroup>
