@@ -162,96 +162,114 @@ export function DocumentPropertiesPanel({
         </p>
       ) : null}
       <div className="document-properties-table">
-        {document.docKey ? (
-          <PropertyFieldGroup label="Key">
-            <span className="document-properties-table__static">
-              {document.docKey}
-            </span>
-          </PropertyFieldGroup>
+        {children ? (
+          <div className="document-properties-table__defaults">{children}</div>
         ) : null}
-        {propertyKeys.map((key) => {
-          const type = byKey.get(key);
-          const unknown = !type;
-          const removable = key !== "project";
-          return (
-            <div
-              key={key}
-              className={[
-                "document-properties-table__row",
-                unknown ? "is-unknown" : null,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              title={unknown ? "Unknown property type" : undefined}
-            >
-              <DocumentPropertyEditor
-                propertyKey={key}
-                type={type}
-                value={document.properties[key]}
-                disabled={disabled}
-                contactOptions={contactOptions}
-                taskOptions={taskOptions}
-                onChange={(next) => void savePatch({ [key]: next })}
-              />
-              {removable ? (
-                <button
-                  type="button"
-                  className="document-properties-table__remove"
-                  disabled={disabled}
-                  aria-label={`Remove ${type?.label ?? key}`}
-                  onClick={() => {
-                    if (pendingKey === key) {
-                      setPendingKey(null);
-                      return;
-                    }
-                    void savePatch({ [key]: null });
-                  }}
-                >
-                  <XIcon size={12} />
-                </button>
-              ) : (
-                <span className="document-properties-table__remove-spacer" />
-              )}
-            </div>
-          );
-        })}
-        {children}
-      </div>
-      {addOptions.length > 0 ? (
-        <div className="document-properties-table__add">
-          <SearchableDropdown
-            value={null}
-            options={addOptions}
-            onChange={(next) => addType(next)}
-            disabled={disabled}
-            searchPlaceholder="Add property…"
-            ariaLabel="Add property"
-            emptySelectionLabel="Add property"
-            panelWidth={280}
-            panelAlign="start"
-            renderTrigger={({ open, disabled: isDisabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className={["contact-detail-chips__add", open ? "is-open" : null]
+        {children ? (
+          <div
+            className="document-properties-table__rule"
+            role="separator"
+          />
+        ) : null}
+        <div className="document-properties-table__document">
+          {document.docKey ? (
+            <PropertyFieldGroup label="Key">
+              <span className="document-properties-table__static">
+                {document.docKey}
+              </span>
+            </PropertyFieldGroup>
+          ) : null}
+          {propertyKeys.map((key) => {
+            const type = byKey.get(key);
+            const unknown = !type;
+            const removable = key !== "project";
+            return (
+              <div
+                key={key}
+                className={[
+                  "document-properties-table__row",
+                  unknown ? "is-unknown" : null,
+                ]
                   .filter(Boolean)
                   .join(" ")}
-                disabled={isDisabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label="Add property"
-                title="Add property"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggle();
-                }}
+                title={unknown ? "Unknown property type" : undefined}
               >
-                <SidePanelPlusIcon />
-              </button>
-            )}
-          />
+                <DocumentPropertyEditor
+                  propertyKey={key}
+                  type={type}
+                  value={document.properties[key]}
+                  disabled={disabled}
+                  contactOptions={contactOptions}
+                  taskOptions={taskOptions}
+                  onChange={(next) => void savePatch({ [key]: next })}
+                />
+                {removable ? (
+                  <button
+                    type="button"
+                    className="document-properties-table__remove"
+                    disabled={disabled}
+                    aria-label={`Remove ${type?.label ?? key}`}
+                    onClick={() => {
+                      if (pendingKey === key) {
+                        setPendingKey(null);
+                        return;
+                      }
+                      void savePatch({ [key]: null });
+                    }}
+                  >
+                    <XIcon size={12} />
+                  </button>
+                ) : (
+                  <span className="document-properties-table__remove-spacer" />
+                )}
+              </div>
+            );
+          })}
+          {addOptions.length > 0 ? (
+            <div className="document-properties-table__add">
+              <SearchableDropdown
+                value={null}
+                options={addOptions}
+                onChange={(next) => addType(next)}
+                disabled={disabled}
+                searchPlaceholder="Add property…"
+                ariaLabel="Add property"
+                emptySelectionLabel="Add property"
+                panelWidth={280}
+                panelAlign="start"
+                renderTrigger={({
+                  open,
+                  disabled: isDisabled,
+                  triggerId,
+                  onToggle,
+                }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className={[
+                      "contact-detail-chips__add",
+                      open ? "is-open" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    disabled={isDisabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label="Add property"
+                    title="Add property"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggle();
+                    }}
+                  >
+                    <SidePanelPlusIcon />
+                  </button>
+                )}
+              />
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
       {error ? (
         <p className="document-properties-panel__error" role="alert">
           {error}

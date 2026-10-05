@@ -316,7 +316,21 @@
   gap: 0;
 }
 
-.document-properties-table > .property-field-group,
+.document-properties-table__defaults,
+.document-properties-table__document {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.document-properties-table__rule {
+  height: 0;
+  margin: 8px 0;
+  border: 0;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.document-properties-table .property-field-group,
 .document-properties-table__row {
   display: grid;
   grid-template-columns: minmax(72px, 34%) minmax(0, 1fr) 22px;
@@ -330,7 +344,7 @@
   display: contents;
 }
 
-.document-properties-table > .property-field-group .property-field-group__label,
+.document-properties-table .property-field-group .property-field-group__label,
 .document-properties-table__row .property-field-group__label {
   padding: 0;
   overflow: hidden;
@@ -338,7 +352,7 @@
   white-space: nowrap;
 }
 
-.document-properties-table > .property-field-group > :not(.property-field-group__label),
+.document-properties-table .property-field-group > :not(.property-field-group__label),
 .document-properties-table__row .property-field-group > :not(.property-field-group__label) {
   min-width: 0;
 }
