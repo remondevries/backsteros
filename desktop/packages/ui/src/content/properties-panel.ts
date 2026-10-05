@@ -17,6 +17,9 @@ export const MEETING_PROPERTIES_PANEL_WIDTH_KEY =
 export const HELP_ARTICLE_PROPERTIES_PANEL_WIDTH_KEY =
   "help-article-properties-panel-width";
 
+export const DOCUMENT_PROPERTIES_PANEL_WIDTH_KEY =
+  "document-properties-panel-width";
+
 export const SPACE_SETTINGS_PANEL_WIDTH_KEY = "space-settings-panel-width";
 
 export function isTaskDetailPath(pathname: string): boolean {

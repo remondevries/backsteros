@@ -1255,6 +1255,43 @@ export const documents = pgTable(
   ],
 );
 
+export const documentPropertyTypes = pgTable(
+  "document_property_types",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    kind: text("kind").notNull(),
+    options: jsonb("options")
+      .$type<{ value: string; label: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    multiple: boolean("multiple").notNull().default(false),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").notNull().default("active"),
+    seeded: boolean("seeded").notNull().default(false),
+    proposedByContactId: text("proposed_by_contact_id"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("document_property_types_workspace_id_idx").on(table.workspaceId),
+    index("document_property_types_deleted_at_idx").on(table.deletedAt),
+    index("document_property_types_project_id_idx").on(table.projectId),
+  ],
+);
+
 /**
  * Per–space-root publish settings (site key, domains, public base URL).
  * Site key hash is server-only — not published to PowerSync.

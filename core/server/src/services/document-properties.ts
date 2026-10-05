@@ -24,6 +24,12 @@ import {
   shouldAllocateDocKeyLocally,
   type DocumentPropertiesIndex,
 } from "../lib/document-core-property-schema.js";
+import {
+  isReservedDocumentPropertyKey,
+  validateDocumentPropertyValue,
+  type DocumentPropertyType,
+} from "@backsteros/contracts";
+import { listActiveDocumentPropertyTypes } from "./document-property-types.js";
 
 export { shouldAllocateDocKeyLocally };
 import {
@@ -344,7 +350,7 @@ export async function validateAndNormalizeProperties(input: {
   projectKey: string | null;
   executor?: DbExecutor;
   /**
-   * Keys that must match core enums / resolve references.
+   * Keys that must match definitions / resolve references.
    * Empty = preserve legacy (content index path).
    */
   strictKeys?: ReadonlySet<string>;
@@ -354,26 +360,67 @@ export async function validateAndNormalizeProperties(input: {
   const strictKeys = input.strictKeys ?? new Set<string>();
   const strict = (key: string) => strictKeys.has(key);
 
+  const definitions = await listActiveDocumentPropertyTypes(
+    input.workspaceId,
+    input.row.projectId,
+    executor,
+  );
+  const byKey = new Map(definitions.map((type) => [type.key, type]));
+
+  for (const key of Object.keys(fm)) {
+    if (isReservedDocumentPropertyKey(key) || key === "docKey") continue;
+    const definition = byKey.get(key);
+    const value = fm[key];
+    if (value == null) {
+      delete fm[key];
+      continue;
+    }
+    if (!definition) continue;
+    const checked = validateDocumentPropertyValue({
+      key,
+      kind: definition.kind,
+      value,
+      options: definition.options,
+      multiple: definition.multiple || definition.kind === "multi-select",
+    });
+    if (!checked.ok) {
+      if (strict(key)) {
+        throw new DocumentPropertyError(checked.error, "INVALID_PROPERTY");
+      }
+      continue;
+    }
+    if (checked.value == null) {
+      delete fm[key];
+      continue;
+    }
+    fm[key] = checked.value;
+  }
+
+  const typeAllowed = (byKey.get("type")?.options ?? []).map((o) => o.value);
   const semanticType = coerceEnum(
     "type",
     fm.type,
-    DOCUMENT_SEMANTIC_TYPE_OPTIONS,
+    typeAllowed.length ? typeAllowed : DOCUMENT_SEMANTIC_TYPE_OPTIONS,
     strict("type"),
   );
   if (semanticType != null) fm.type = semanticType;
 
+  const audienceAllowed = (byKey.get("audience")?.options ?? []).map(
+    (o) => o.value,
+  );
   const audience = coerceEnum(
     "audience",
     fm.audience,
-    DOCUMENT_AUDIENCE_OPTIONS,
+    audienceAllowed.length ? audienceAllowed : DOCUMENT_AUDIENCE_OPTIONS,
     strict("audience"),
   );
   if (audience != null) fm.audience = audience;
 
+  const statusAllowed = (byKey.get("status")?.options ?? []).map((o) => o.value);
   const status = coerceEnum(
     "status",
     fm.status,
-    DOCUMENT_STATUS_OPTIONS,
+    statusAllowed.length ? statusAllowed : DOCUMENT_STATUS_OPTIONS,
     strict("status"),
   );
   if (status != null) fm.status = status;
@@ -403,46 +450,13 @@ export async function validateAndNormalizeProperties(input: {
     );
   }
 
-  if (fm.owner != null) {
-    await resolveContactId(
-      input.workspaceId,
-      String(fm.owner),
-      executor,
-      strict("owner"),
-    );
-  }
-
-  if (fm.linkedContacts != null) {
-    const list = normalizeScalar(fm.linkedContacts);
-    if (Array.isArray(list)) {
-      for (const entry of list) {
-        await resolveContactId(
-          input.workspaceId,
-          String(entry),
-          executor,
-          strict("linkedContacts"),
-        );
-      }
-    }
-  }
-
-  if (fm.linkedTasks != null) {
-    await resolveTaskIdsFromKeys(
-      input.workspaceId,
-      fm.linkedTasks,
-      executor,
-      strict("linkedTasks"),
-    );
-  }
-
-  if (fm.reviewDate != null && typeof fm.reviewDate !== "string") {
-    if (strict("reviewDate")) {
-      throw new DocumentPropertyError(
-        "reviewDate must be an ISO date string",
-        "INVALID_PROPERTY",
-      );
-    }
-  }
+  await resolveTypedReferences({
+    workspaceId: input.workspaceId,
+    frontMatter: fm,
+    definitions: byKey,
+    executor,
+    strict,
+  });
 
   const withMirrors = applyMirrorFrontMatter(
     input.row,
@@ -454,6 +468,38 @@ export async function validateAndNormalizeProperties(input: {
     frontMatter: withMirrors,
     index: buildPropertiesIndex(withMirrors),
   };
+}
+
+async function resolveTypedReferences(input: {
+  workspaceId: string;
+  frontMatter: Record<string, unknown>;
+  definitions: Map<string, DocumentPropertyType>;
+  executor: DbExecutor;
+  strict: (key: string) => boolean;
+}) {
+  for (const [key, definition] of input.definitions) {
+    const value = input.frontMatter[key];
+    if (value == null) continue;
+    if (definition.kind === "contact") {
+      const list = Array.isArray(value) ? value : [value];
+      for (const entry of list) {
+        await resolveContactId(
+          input.workspaceId,
+          String(entry),
+          input.executor,
+          input.strict(key),
+        );
+      }
+    }
+    if (definition.kind === "task") {
+      await resolveTaskIdsFromKeys(
+        input.workspaceId,
+        value,
+        input.executor,
+        input.strict(key),
+      );
+    }
+  }
 }
 
 export type DocumentContentPropertySyncResult = {
@@ -659,21 +705,7 @@ export async function planDocumentPropertiesPut(
   };
 
   const strictKeys = new Set(
-    Object.keys(input.properties).filter((key) =>
-      (
-        [
-          "type",
-          "audience",
-          "status",
-          "project",
-          "supersededBy",
-          "owner",
-          "linkedTasks",
-          "linkedContacts",
-          "reviewDate",
-        ] as const
-      ).includes(key as never),
-    ),
+    Object.keys(input.properties).filter((key) => key !== "docKey"),
   );
 
   const { frontMatter, index } = await validateAndNormalizeProperties({

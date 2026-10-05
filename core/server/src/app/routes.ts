@@ -128,6 +128,7 @@ import {
 
 import { canManageApiKeys } from "../lib/powersync-auth.js";
 import { registerTaskLabelRoutes } from "./task-label-routes.js";
+import { registerDocumentPropertyTypeRoutes } from "./document-property-type-routes.js";
 import { registerSearchRoutes } from "./search-routes.js";
 import { registerProjectRoutes } from "./project-routes.js";
 import { registerTaskDocumentRoutes } from "./task-document-routes.js";
@@ -377,6 +378,7 @@ import type { SyncEntity } from "../lib/sync-constants.js";
 export function registerApiRoutes(app: Hono) {
   app.use("/api/v1/*", withAuth);
   registerTaskLabelRoutes(app);
+  registerDocumentPropertyTypeRoutes(app);
   registerSearchRoutes(app);
   registerProjectRoutes(app);
   registerTaskDocumentRoutes(app);

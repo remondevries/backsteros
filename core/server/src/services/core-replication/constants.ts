@@ -50,6 +50,7 @@ export const REPLICATED_TABLES = [
   "entity_counters",
   "api_keys",
   "financial_transactions",
+  "document_property_types",
 ] as const;
 
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];

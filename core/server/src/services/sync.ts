@@ -91,6 +91,7 @@ import * as taskCommentService from "./task-comments.js";
 import * as taskActivityService from "./task-activities.js";
 import * as taskProjectService from "./tasks-projects.js";
 import * as taskLabelService from "./task-labels.js";
+import * as documentPropertyTypeService from "./document-property-types.js";
 import * as crmGroupsService from "./crm-groups.js";
 import * as crmRelationshipLabelsService from "./crm-relationship-labels.js";
 import * as crmActivitiesService from "./crm-activities.js";
@@ -3845,6 +3846,126 @@ export async function applySyncChange(
         executor,
       );
       return dbRow ? taskLabelService.taskLabelSyncSnapshot(dbRow) : null;
+    }
+
+    case "document_property_type": {
+      const payload = change.payload ?? {};
+      if (change.operation === "delete" || isSoftDeletePayload(payload)) {
+        const row = await documentPropertyTypeService.deleteDocumentPropertyType(
+          workspaceId,
+          change.entity_id,
+          { confirm: true },
+          executor,
+        );
+        if (!row) return null;
+        const dbRow =
+          await documentPropertyTypeService.getDocumentPropertyTypeById(
+            workspaceId,
+            change.entity_id,
+            executor,
+          );
+        return dbRow
+          ? documentPropertyTypeService.documentPropertyTypeSyncSnapshot(dbRow)
+          : null;
+      }
+      const rawOptions = payload.options;
+      const options = Array.isArray(rawOptions)
+        ? rawOptions
+        : typeof rawOptions === "string"
+          ? (JSON.parse(rawOptions) as unknown)
+          : undefined;
+      const statusRaw = asString(payload.status);
+      const key = asString(payload.key);
+      const label = asString(payload.label);
+      const kind = asString(payload.kind);
+      const existing =
+        await documentPropertyTypeService.getDocumentPropertyTypeById(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+      if (existing && !existing.deletedAt) {
+        if (
+          statusRaw === "active" ||
+          statusRaw === "proposed" ||
+          statusRaw === "rejected"
+        ) {
+          await documentPropertyTypeService.setDocumentPropertyTypeStatus(
+            workspaceId,
+            change.entity_id,
+            statusRaw,
+            executor,
+          );
+        }
+        const row = await documentPropertyTypeService.updateDocumentPropertyType(
+          workspaceId,
+          change.entity_id,
+          {
+            ...(key ? { key } : {}),
+            ...(label ? { label } : {}),
+            ...(kind ? { kind: kind as never } : {}),
+            ...(options !== undefined ? { options: options as never } : {}),
+            ...(payload.multiple !== undefined
+              ? { multiple: asBoolean(payload.multiple) }
+              : {}),
+            ...(payload.project_id !== undefined ||
+            payload.projectId !== undefined
+              ? {
+                  projectId: asNullableString(
+                    payload.project_id ?? payload.projectId,
+                  ),
+                }
+              : {}),
+          },
+          executor,
+        );
+        if (!row) return null;
+        const dbRow =
+          await documentPropertyTypeService.getDocumentPropertyTypeById(
+            workspaceId,
+            change.entity_id,
+            executor,
+          );
+        return dbRow
+          ? documentPropertyTypeService.documentPropertyTypeSyncSnapshot(dbRow)
+          : null;
+      }
+      if (!key || !label || !kind) {
+        throw new Error("INVALID_DOCUMENT_PROPERTY_TYPE");
+      }
+      const created =
+        await documentPropertyTypeService.createDocumentPropertyType(
+          workspaceId,
+          {
+            id: change.entity_id,
+            key,
+            label,
+            kind: kind as never,
+            options: (options as never) ?? [],
+            multiple: asBoolean(payload.multiple),
+            projectId: asNullableString(
+              payload.project_id ?? payload.projectId,
+            ),
+            status:
+              statusRaw === "proposed" || statusRaw === "rejected"
+                ? statusRaw
+                : "active",
+            seeded: asBoolean(payload.seeded) === true,
+            proposedByContactId: asNullableString(
+              payload.proposed_by_contact_id ?? payload.proposedByContactId,
+            ),
+          },
+          executor,
+        );
+      const dbRow =
+        await documentPropertyTypeService.getDocumentPropertyTypeById(
+          workspaceId,
+          created.id,
+          executor,
+        );
+      return dbRow
+        ? documentPropertyTypeService.documentPropertyTypeSyncSnapshot(dbRow)
+        : null;
     }
   }
 }

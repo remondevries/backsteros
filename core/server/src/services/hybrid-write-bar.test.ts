@@ -28,6 +28,7 @@ describe("hybrid write bar", () => {
       "crm_relationship_label",
       "financial_transaction",
       "task_activity",
+      "document_property_type",
     ] as const) {
       assert.ok(
         (SYNC_ENTITIES as readonly string[]).includes(entity),

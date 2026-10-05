@@ -15,9 +15,11 @@ describe("document properties error contract", () => {
       invalid_yaml: 422,
       invalid_property: 422,
       storage_not_found: 422,
+      document_property_type_in_use: 409,
     };
     assert.deepEqual(Object.values(codes).sort(), [
-      400, 403, 409, 422, 422, 422,
+      400, 403, 409, 409, 422, 422, 422,
     ]);
+    assert.equal(codes.document_property_type_in_use, 409);
   });
 });

@@ -27,6 +27,16 @@ export function newId(): string {
   return nanoid();
 }
 
+export function documentPropertyTypeSeedId(
+  workspaceId: string,
+  key: string,
+): string {
+  return createHash("sha256")
+    .update(`document-property-type:${workspaceId}:${key}`)
+    .digest("hex")
+    .slice(0, 21);
+}
+
 /** Stable id so local + cloud meeting apply insert the same CRM activity rows. */
 export function meetingCrmActivityId(
   meetingId: string,

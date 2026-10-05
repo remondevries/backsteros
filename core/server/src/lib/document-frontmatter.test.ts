@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   composeDocumentMarkdown,
+  mergeFrontMatter,
   splitDocumentMarkdown,
 } from "../lib/document-frontmatter.ts";
 
@@ -29,5 +30,16 @@ type: [broken
 Body
 `);
     assert.equal(parsed.valid, false);
+  });
+
+  it("removes patched keys with null and keeps the rest of the record", () => {
+    const merged = mergeFrontMatter(
+      { type: "reference", customNote: "keep me", status: "draft" },
+      { status: null, audience: "agents" },
+    );
+    assert.equal(merged.status, undefined);
+    assert.equal(merged.customNote, "keep me");
+    assert.equal(merged.type, "reference");
+    assert.equal(merged.audience, "agents");
   });
 });

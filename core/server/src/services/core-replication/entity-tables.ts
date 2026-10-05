@@ -37,6 +37,7 @@ const ENTITY_REPLICATION_TABLES: Partial<
   email_thread_comment: ["email_thread_comments"],
   recurring_task: ["recurring_tasks"],
   mention: ["mentions"],
+  document_property_type: ["document_property_types"],
   /** Avatar blob metadata (contact / org / bank account chrome). */
   avatar: ["avatars"],
   /** API keys minted/revoked on either core must twin immediately. */

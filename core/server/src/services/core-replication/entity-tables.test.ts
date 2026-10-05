@@ -34,6 +34,9 @@ describe("replicatedTablesForEntity", () => {
     assert.deepEqual(replicatedTablesForEntity("project_update"), [
       "project_updates",
     ]);
+    assert.deepEqual(replicatedTablesForEntity("document_property_type"), [
+      "document_property_types",
+    ]);
   });
 
   it("returns empty for unknown entities", () => {

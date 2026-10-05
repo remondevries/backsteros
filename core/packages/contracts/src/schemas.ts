@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  DOCUMENT_PROPERTY_TYPE_KEY_PATTERN,
+  DOCUMENT_PROPERTY_TYPE_KINDS,
+  DOCUMENT_PROPERTY_TYPE_STATUSES,
+} from "./document-property-types.js";
+
 export const TASK_STATUSES = [
   "triage",
   "backlog",
@@ -1085,6 +1091,72 @@ export const putDocumentPropertiesResponseSchema =
   documentPropertiesResponseSchema.extend({
     contentVersion: z.number().int().positive(),
   });
+
+export const documentPropertyTypeKindSchema = z.enum(
+  DOCUMENT_PROPERTY_TYPE_KINDS,
+);
+
+export const documentPropertyTypeStatusSchema = z.enum(
+  DOCUMENT_PROPERTY_TYPE_STATUSES,
+);
+
+export const documentPropertyTypeOptionSchema = z.object({
+  value: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(80),
+});
+
+export const documentPropertyTypeSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  label: z.string(),
+  kind: documentPropertyTypeKindSchema,
+  options: z.array(documentPropertyTypeOptionSchema),
+  multiple: z.boolean(),
+  projectId: z.string().nullable(),
+  status: documentPropertyTypeStatusSchema,
+  seeded: z.boolean(),
+  proposedByContactId: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const documentPropertyTypeKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(DOCUMENT_PROPERTY_TYPE_KEY_PATTERN, "key must be English camelCase");
+
+export const createDocumentPropertyTypeSchema = z.object({
+  key: documentPropertyTypeKeySchema,
+  label: z.string().trim().min(1).max(80),
+  kind: documentPropertyTypeKindSchema,
+  options: z.array(documentPropertyTypeOptionSchema).max(100).optional(),
+  multiple: z.boolean().optional(),
+  projectId: z.string().min(1).nullable().optional(),
+});
+
+export const updateDocumentPropertyTypeSchema = z
+  .object({
+    key: documentPropertyTypeKeySchema.optional(),
+    label: z.string().trim().min(1).max(80).optional(),
+    kind: documentPropertyTypeKindSchema.optional(),
+    options: z.array(documentPropertyTypeOptionSchema).max(100).optional(),
+    multiple: z.boolean().optional(),
+    projectId: z.string().min(1).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const listDocumentPropertyTypesQuerySchema = z.object({
+  status: documentPropertyTypeStatusSchema.optional(),
+  projectId: z.string().optional(),
+});
+
+export const listDocumentPropertyTypesResponseSchema = z.object({
+  types: z.array(documentPropertyTypeSchema),
+});
 
 /** Comma-separated or repeated multi-value query string. */
 export const multiValueQuerySchema = z.string().min(1).optional();
@@ -4397,6 +4469,13 @@ export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
 export type Document = z.infer<typeof documentSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
+export type DocumentPropertyType = z.infer<typeof documentPropertyTypeSchema>;
+export type CreateDocumentPropertyTypeInput = z.infer<
+  typeof createDocumentPropertyTypeSchema
+>;
+export type UpdateDocumentPropertyTypeInput = z.infer<
+  typeof updateDocumentPropertyTypeSchema
+>;
 export type DocumentContent = z.infer<typeof documentContentSchema>;
 export type SpacePublishSettings = z.infer<typeof spacePublishSettingsSchema>;
 export type UpdateSpacePublishSettingsInput = z.infer<

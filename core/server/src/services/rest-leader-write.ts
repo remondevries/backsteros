@@ -154,6 +154,15 @@ export function buildCrmRelationshipLabelRestPayload(
   return restFieldsToSyncPayload(labelId, body);
 }
 
+export function buildDocumentPropertyTypeRestPayload(
+  typeId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(typeId, body, {
+    jsonStringify: ["options"],
+  });
+}
+
 export function buildCrmGroupRestPayload(
   groupId: string,
   body: Record<string, unknown>,

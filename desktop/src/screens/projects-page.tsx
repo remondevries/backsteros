@@ -11,7 +11,7 @@ import {
   LetterComposeView,
   LetterDetailSkeleton,
   LetterDetailView,
-  MarkdownDocumentDetailView,
+  DocumentDetailWithProperties,
   PROJECTS_LIST_BOARD_STORAGE_KEY,
   PROJECT_SECTIONS,
   ProjectDetailView,
@@ -103,6 +103,10 @@ import {
   documentPropertiesFromApiDocument,
   putDocumentProperties,
 } from "../lib/document-properties-api";
+import {
+  useDocumentPropertyTaskOptions,
+  useDocumentPropertyTypes,
+} from "../lib/use-document-property-types";
 import { useAgentMail } from "../lib/agentmail-context";
 import {
   filterEmailTaskRowsForProject,
@@ -1079,6 +1083,10 @@ function ProjectsPageBody({
   const assigneeOptions = useMemo(
     () => buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
     [contactAvatarSrc, contacts]);
+  const { types: documentPropertyTypes } = useDocumentPropertyTypes(
+    selectedDocument?.projectId ?? selected?.id,
+  );
+  const documentTaskOptions = useDocumentPropertyTaskOptions();
 
   const organizationOptions = useMemo(
     () =>
@@ -1901,7 +1909,7 @@ function ProjectsPageBody({
                   entityLabel={`document "${selectedDocument.title}"`}
                   onDelete={handleDeleteDocument}
                 />
-                <MarkdownDocumentDetailView
+                <DocumentDetailWithProperties
                   sectionLabel="Documents"
                   title={selectedDocument.title}
                   resetKey={selectedDocument.id}
@@ -1979,6 +1987,9 @@ function ProjectsPageBody({
                     ...documentPropertiesFromApiDocument(selectedDocument),
                     onSave: handleSaveDocumentProperties,
                   }}
+                  propertyTypes={documentPropertyTypes}
+                  contactOptions={assigneeOptions}
+                  taskOptions={documentTaskOptions}
                 />
               </>
             )

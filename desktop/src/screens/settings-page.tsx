@@ -25,6 +25,7 @@ import {
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
+import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
@@ -557,7 +558,7 @@ export function SettingsPage() {
   }
 
   return (
-    <SettingsDetailLayout wide={activeTab === "labels"}>
+    <SettingsDetailLayout wide={activeTab === "labels" || activeTab === "document-properties"}>
       {activeTab === "storage" ? (
         <SettingsStorageTab title={meta.label} description={meta.description} />
       ) : (
@@ -595,6 +596,9 @@ export function SettingsPage() {
             />
           ) : null}
           {activeTab === "labels" ? <SettingsLabelsTab /> : null}
+          {activeTab === "document-properties" ? (
+            <SettingsDocumentPropertiesTab />
+          ) : null}
           {activeTab === "api" ? <SettingsApiTab /> : null}
           {activeTab === "integrations" ? (
             <SettingsIntegrationsTab

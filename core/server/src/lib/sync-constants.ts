@@ -29,6 +29,7 @@ export const SYNC_ENTITIES = [
   "email_thread_comment",
   "recurring_task",
   "mention",
+  "document_property_type",
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 

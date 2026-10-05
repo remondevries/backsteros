@@ -29,6 +29,10 @@ describe("sync-event replication contracts", () => {
     assert.ok(SYNC_ENTITIES.includes("mention"));
   });
 
+  it("keeps document_property_type in the ordered entity set", () => {
+    assert.ok(SYNC_ENTITIES.includes("document_property_type"));
+  });
+
   it("applies recurring runner state (next_run_at / last_task_id) from leader snapshots", () => {
     const syncSrc = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../sync.ts"),

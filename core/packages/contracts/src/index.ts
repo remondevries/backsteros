@@ -5,6 +5,7 @@ export * from "./file-task-callback-contract.js";
 export * from "./transip-contract.js";
 export * from "./agent-attention-notifications.js";
 export * from "./contact-emails.js";
+export * from "./document-property-types.js";
 export * from "./contact-phones.js";
 export * from "./project-budgets.js";
 export * from "./organization-contact-channels.js";

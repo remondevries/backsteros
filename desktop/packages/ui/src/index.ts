@@ -2932,6 +2932,7 @@ export {
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
   MEETING_PROPERTIES_PANEL_WIDTH_KEY,
   HELP_ARTICLE_PROPERTIES_PANEL_WIDTH_KEY,
+  DOCUMENT_PROPERTIES_PANEL_WIDTH_KEY,
   SPACE_SETTINGS_PANEL_WIDTH_KEY,
   isTaskDetailPath,
 } from "./content/properties-panel.js";
@@ -3138,6 +3139,17 @@ export {
   type DocumentPropertiesDropdownProps,
   type DocumentPropertiesFieldConfig,
 } from "./components/documents/document-properties-dropdown.js";
+
+export {
+  DocumentPropertiesPanel,
+  type DocumentPropertiesPanelModel,
+  type DocumentPropertiesPanelProps,
+} from "./components/documents/document-properties-panel.js";
+
+export {
+  DocumentDetailWithProperties,
+  type DocumentDetailWithPropertiesProps,
+} from "./components/documents/document-detail-with-properties.js";
 
 export {
   compactDocumentHeadingPreview,

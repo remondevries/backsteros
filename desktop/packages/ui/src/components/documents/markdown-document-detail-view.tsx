@@ -28,11 +28,6 @@ import {
   buildContentIconTitleHeaders,
 } from "../content/content-detail-title-header.js";
 import { DocumentHeadingMinimap } from "./document-heading-minimap.js";
-import {
-  CORE_DOCUMENT_PROPERTY_FIELDS,
-  DocumentPropertiesDropdown,
-  normalizeDocumentPropertiesForSave,
-} from "./document-properties-dropdown.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
@@ -361,7 +356,7 @@ export function MarkdownDocumentDetailView({
   // Separate edit/preview title instances — sharing one element remounts on
   // mode switch and drops ⌘R focus into the body editor.
   const wrapHeader = (header: ReactNode, inlinePadding: boolean) =>
-    headerAccessory || documentProperties ? (
+    headerAccessory ? (
       <div
         className={[
           "markdown-document-detail__title-block",
@@ -374,25 +369,6 @@ export function MarkdownDocumentDetailView({
       >
         {header}
         <div className="markdown-document-detail__header-accessory">
-          {documentProperties ? (
-            <DocumentPropertiesDropdown
-              {...documentProperties}
-              fields={CORE_DOCUMENT_PROPERTY_FIELDS}
-              onSave={
-                documentProperties.onSave
-                  ? async (input) => {
-                      const result = await documentProperties.onSave!({
-                        properties: normalizeDocumentPropertiesForSave(
-                          input.properties,
-                        ),
-                        ifMatchVersion: input.ifMatchVersion,
-                      });
-                      return result;
-                    }
-                  : undefined
-              }
-            />
-          ) : null}
           {headerAccessory}
         </div>
       </div>
@@ -400,24 +376,7 @@ export function MarkdownDocumentDetailView({
       header
     );
 
-  const propertiesPreview =
-    documentProperties && icon ? (
-      <div className="markdown-document-detail__properties-preview">
-        <DocumentPropertiesDropdown
-          {...documentProperties}
-          fields={CORE_DOCUMENT_PROPERTY_FIELDS}
-          previewOnly
-          readOnly
-        />
-      </div>
-    ) : null;
-
-  const wrapTitleWithPreview = (titleNode: ReactNode) => (
-    <>
-      {propertiesPreview}
-      {titleNode}
-    </>
-  );
+  const wrapTitleWithPreview = (titleNode: ReactNode) => titleNode;
 
   const { editHeader, previewTitleHeader } = icon
     ? (() => {

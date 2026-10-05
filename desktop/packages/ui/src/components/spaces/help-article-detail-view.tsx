@@ -7,13 +7,22 @@ import {
   type MarkdownDocumentDetailViewProps,
 } from "../documents/markdown-document-detail-view.js";
 import {
+  DocumentPropertiesPanel,
+  type DocumentPropertiesPanelModel,
+} from "../documents/document-properties-panel.js";
+import {
   HelpArticlePropertiesDisplay,
   type HelpArticlePropertiesDisplayProps,
 } from "./help-article-properties-display.js";
 import type { HelpArticleProperties } from "../../spaces/help-article-properties.js";
+import type { DocumentPropertyType } from "@backsteros/contracts";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 export type HelpArticleDetailViewProps = MarkdownDocumentDetailViewProps & {
   article: HelpArticleProperties | null;
+  documentProperties?: DocumentPropertiesPanelModel;
+  propertyTypes?: DocumentPropertyType[];
+  taskOptions?: SearchableDropdownOption<string>[];
   onStatusChange?: HelpArticlePropertiesDisplayProps["onStatusChange"];
   onContactIdsChange?: HelpArticlePropertiesDisplayProps["onContactIdsChange"];
   onFolderChange?: HelpArticlePropertiesDisplayProps["onFolderChange"];
@@ -34,6 +43,9 @@ export type HelpArticleDetailViewProps = MarkdownDocumentDetailViewProps & {
  */
 export function HelpArticleDetailView({
   article,
+  documentProperties,
+  propertyTypes,
+  taskOptions,
   onStatusChange,
   onContactIdsChange,
   onFolderChange,
@@ -57,10 +69,23 @@ export function HelpArticleDetailView({
       <DetailWithPropertiesLayout
         storageKey={HELP_ARTICLE_PROPERTIES_PANEL_WIDTH_KEY}
         main={
-          <MarkdownDocumentDetailView {...documentProps} embedded />
+          <MarkdownDocumentDetailView
+            {...documentProps}
+            documentProperties={documentProperties}
+            embedded
+          />
         }
         properties={
-          <HelpArticlePropertiesDisplay
+          <>
+            {documentProperties ? (
+              <DocumentPropertiesPanel
+                document={documentProperties}
+                types={propertyTypes}
+                contactOptions={contactOptions}
+                taskOptions={taskOptions}
+              />
+            ) : null}
+            <HelpArticlePropertiesDisplay
             article={article}
             onStatusChange={onStatusChange}
             onContactIdsChange={onContactIdsChange}
@@ -75,6 +100,7 @@ export function HelpArticleDetailView({
             contactOptions={contactOptions}
             placementOptions={placementOptions}
           />
+          </>
         }
       />
     </div>

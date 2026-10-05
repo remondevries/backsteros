@@ -6,7 +6,7 @@ import {
   DocumentDetailIcon,
   DROPDOWN_NONE_VALUE,
   HelpArticleDetailView,
-  MarkdownDocumentDetailView,
+  DocumentDetailWithProperties,
   RegisterEntityDeleteAction,
   RegisterPageTitle,
   SpacesOverviewView,
@@ -75,6 +75,10 @@ import {
   documentPropertiesFromApiDocument,
   putDocumentProperties,
 } from "../lib/document-properties-api";
+import {
+  useDocumentPropertyTaskOptions,
+  useDocumentPropertyTypes,
+} from "../lib/use-document-property-types";
 import { useDesktopApi } from "../lib/api-context";
 import {
   useKeepAliveActive,
@@ -678,6 +682,16 @@ function KnowledgePageBody() {
       ),
     [contactAvatarSrc, contacts],
   );
+  const { types: documentPropertyTypes } = useDocumentPropertyTypes(
+    selected?.projectId,
+  );
+  const documentTaskOptions = useDocumentPropertyTaskOptions();
+  const documentPropertiesModel = selected
+    ? {
+        ...documentPropertiesFromApiDocument(selected),
+        onSave: handleSaveDocumentProperties,
+      }
+    : undefined;
 
   const placementOptions = useMemo(() => {
     if (!isSupportSpace) return [];
@@ -1274,7 +1288,7 @@ function KnowledgePageBody() {
             workspace.renameDocument(selected.id, title)
           }
           article={helpArticle}
-          contactOptions={isSupportSpace ? contactOptions : undefined}
+          contactOptions={contactOptions}
           slugPrefix={slugPrefix}
           folderId={selectedFolderId}
           folderOptions={folderOptions}
@@ -1292,9 +1306,12 @@ function KnowledgePageBody() {
           onPlacementChange={
             isSupportSpace ? handleHelpPlacementChange : undefined
           }
+          documentProperties={documentPropertiesModel}
+          propertyTypes={documentPropertyTypes}
+          taskOptions={documentTaskOptions}
         />
       ) : (
-        <MarkdownDocumentDetailView
+        <DocumentDetailWithProperties
           sectionLabel="Knowledge"
           title={selected.title}
           resetKey={selected.id}
@@ -1321,10 +1338,10 @@ function KnowledgePageBody() {
           onSaveTitle={async (title) =>
             workspace.renameDocument(selected.id, title)
           }
-          documentProperties={{
-            ...documentPropertiesFromApiDocument(selected),
-            onSave: handleSaveDocumentProperties,
-          }}
+          documentProperties={documentPropertiesModel}
+          propertyTypes={documentPropertyTypes}
+          contactOptions={contactOptions}
+          taskOptions={documentTaskOptions}
         />
       )}
     </>

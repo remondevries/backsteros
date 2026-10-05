@@ -946,6 +946,13 @@
       "when": 1795690000000,
       "tag": "0133_task_linked_email_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1795700000000,
+      "tag": "0134_document_property_types",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ export type SettingsTabId =
   | "general"
   | "account"
   | "labels"
+  | "document-properties"
   | "api"
   | "integrations"
   | "storage";
@@ -58,6 +59,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Tags you can attach to any task. Groups only organize this list.",
     group: "general",
     href: "/settings/labels",
+  },
+  {
+    id: "document-properties",
+    label: "Document properties",
+    description: "Types you can attach to knowledge and project documents",
+    group: "general",
+    href: "/settings/document-properties",
   },
   {
     id: "integrations",
