@@ -249,6 +249,8 @@ export type CommandPaletteHit = {
   section: CommandPaletteResultSection;
   /** Resolved avatar URL for contact/organization hits. */
   avatarSrc?: string | null;
+  /** Project status for project hits (OS-7). */
+  projectStatus?: string | null;
 };
 
 /** Empty-query contacts list when the palette is scoped to Contacts. */

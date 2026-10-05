@@ -25,6 +25,7 @@ import {
   openTaskPropertyDropdown,
 } from "~/backsteros/openTaskPropertyDropdown";
 import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
+import { buildBacksterosProjectPickerOptions } from "~/backsteros/projectPickerOptions";
 import {
   BacksterosSearchablePropertyMenu,
   type BacksterosSearchablePropertyOption,
@@ -251,20 +252,10 @@ export function BacksterosCreateTaskForm({
   }, [projectsState, selectedProject]);
 
   const projectOptions = useMemo((): readonly BacksterosSearchablePropertyOption[] => {
-    return codebaseProjects.map((entry) => ({
-      value: entry.id,
-      label: entry.name,
-      searchText: `${entry.key} ${entry.name}`,
-      icon: (
-        <ProjectOcticon
-          icon={entry.icon}
-          type={entry.type}
-          size={14}
-          className="shrink-0 opacity-70"
-        />
-      ),
-    }));
-  }, [codebaseProjects]);
+    return buildBacksterosProjectPickerOptions(codebaseProjects, {
+      keepIds: [selectedProject.id],
+    });
+  }, [codebaseProjects, selectedProject.id]);
 
   const statusOptions = useMemo(
     (): BacksterosSearchablePropertyOption<BacksterosTaskStatus>[] =>

@@ -73,13 +73,40 @@ test("buildMentionSections finds contacts by display id", () => {
   assert.equal(contactSection.items[0]?.kind, "contact");
 });
 
-test("buildMentionSections finds organizations by name", () => {
-  const sections = buildMentionSections(catalog, "Acme");
-  const orgSection = sections.find((section) => section.kind === "organization");
-  assert.ok(orgSection);
-  assert.equal(orgSection.items.length, 1);
-  assert.equal(orgSection.items[0]?.kind, "organization");
-  if (orgSection.items[0]?.kind === "organization") {
-    assert.equal(orgSection.items[0].name, "Acme Corp");
+test("buildMentionSections omits completed canceled duplicated projects", () => {
+  const withProjects: MentionCatalog = {
+    ...catalog,
+    projects: [
+      {
+        id: "p1",
+        key: "OS",
+        name: "Open Sys",
+        color: null,
+        icon: null,
+        type: "codebase",
+        summary: null,
+        status: "active",
+        area: null,
+      },
+      {
+        id: "p2",
+        key: "OLD",
+        name: "Old Sys",
+        color: null,
+        icon: null,
+        type: "codebase",
+        summary: null,
+        status: "completed",
+        area: null,
+      },
+    ],
+  };
+  const sections = buildMentionSections(withProjects, "Sys");
+  const projectSection = sections.find((section) => section.kind === "project");
+  assert.ok(projectSection);
+  assert.equal(projectSection.items.length, 1);
+  assert.equal(projectSection.items[0]?.kind, "project");
+  if (projectSection.items[0]?.kind === "project") {
+    assert.equal(projectSection.items[0].key, "OS");
   }
 });

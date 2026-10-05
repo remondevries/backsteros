@@ -53,6 +53,7 @@ import {
 import { FinanceSectionNavIcon } from "../finance/finance-side-panel-nav-view.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { NavigationItemIcon } from "../navigation/navigation-item-icon.js";
+import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { SearchNavIcon } from "../shell/sidebar-nav-icons.js";
 import { dismissInstantCommandOverlay, revealCommandPaletteChrome } from "../../command-palette/conceal-command-palette-chrome.js";
 
@@ -1009,6 +1010,13 @@ export function CommandPaletteView({
                                     src={avatar.src}
                                     size={16}
                                     kind={avatar.kind}
+                                  />
+                                </span>
+                              ) : hit.type === "project" ? (
+                                <span className="nav-icon">
+                                  <ProjectStatusIcon
+                                    status={hit.projectStatus ?? "backlog"}
+                                    size={16}
                                   />
                                 </span>
                               ) : null}

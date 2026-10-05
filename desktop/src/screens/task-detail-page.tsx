@@ -569,8 +569,11 @@ export function TaskDetailPage({
           name: project.name,
           icon: project.icon,
           type: project.type,
-        }))),
-    [projects]);
+          status: project.status,
+        })),
+        { keepKeys: [base?.projectKey] },
+      ),
+    [base?.projectKey, projects]);
 
   const task = useMemo(() => {
     if (!base) return null;

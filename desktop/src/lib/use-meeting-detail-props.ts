@@ -84,6 +84,7 @@ export function useMeetingDetailViewProps(
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         })),
       ),
     [workspace.projects],

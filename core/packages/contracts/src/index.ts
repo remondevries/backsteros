@@ -17,4 +17,5 @@ export * from "./activity-feed.js";
 export * from "./client-logic/task-due-date.js";
 export * from "./client-logic/task-involves-contact.js";
 export * from "./client-logic/financial-settlement.js";
+export * from "./client-logic/project-picker.js";
 

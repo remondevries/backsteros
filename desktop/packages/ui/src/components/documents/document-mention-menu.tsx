@@ -414,7 +414,9 @@ export function DocumentMentionMenu({
                     <MentionLeadingIcon
                       kind={item.kind}
                       status={
-                        item.kind === "task" || item.kind === "email"
+                        item.kind === "task" ||
+                        item.kind === "email" ||
+                        item.kind === "project"
                           ? item.status
                           : null
                       }

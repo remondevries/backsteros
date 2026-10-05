@@ -1,10 +1,11 @@
-import type { TaskStatus } from "./task-status.js";
+import { isTaskStatus, type TaskStatus } from "./task-status.js";
 import {
   resolveTaskStatusColor,
   type TaskStatusColorScheme,
 } from "./task-status-color.js";
 
 export type TaskStatusIconModel =
+  | { kind: "unknown"; color: string }
   | { kind: "triage"; color: string }
   | { kind: "backlog"; color: string }
   | { kind: "completed"; color: string }
@@ -20,10 +21,17 @@ const RING_FILL_BY_STATUS: Partial<Record<TaskStatus, number>> = {
 };
 
 export function computeTaskStatusIconModel(input: {
-  status: TaskStatus;
+  status: TaskStatus | string | null | undefined;
   colorOverride?: string;
   colorScheme?: TaskStatusColorScheme;
 }): TaskStatusIconModel {
+  if (input.status == null || !isTaskStatus(input.status)) {
+    const color = resolveTaskStatusColor("unknown", input.colorOverride, {
+      colorScheme: input.colorScheme,
+    });
+    return { kind: "unknown", color };
+  }
+
   const color = resolveTaskStatusColor(input.status, input.colorOverride, {
     colorScheme: input.colorScheme,
   });

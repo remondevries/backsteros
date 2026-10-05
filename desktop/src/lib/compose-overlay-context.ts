@@ -13,6 +13,7 @@ export type ComposeOverlayProject = {
   name: string;
   icon: string | null;
   type: string | null;
+  status?: string | null;
   color: string | null;
   dueDate: Date | null;
 };
@@ -60,6 +61,7 @@ export type ComposeOverlayProjectSource = {
   name: string;
   icon?: string | null;
   type?: string | null;
+  status?: string | null;
   dueDate?: Date | string | number | null;
 };
 
@@ -101,6 +103,7 @@ export function buildComposeOverlayContext(input: {
     name: project.name,
     icon: project.icon ?? null,
     type: project.type ?? null,
+    status: project.status ?? null,
     color: null,
     dueDate: toComposeDueDate(project.dueDate),
   }));

@@ -35,6 +35,14 @@ export function getTaskStatusLabel(status: TaskStatus): string {
   return TASK_STATUS_LABELS[status];
 }
 
+/** Label for mention chips; null when the catalog has no real status. */
+export function getOptionalTaskStatusLabel(
+  status: string | null | undefined,
+): string | null {
+  if (status == null || !isTaskStatus(status)) return null;
+  return getTaskStatusLabel(status);
+}
+
 export function isTriageStatus(status: string | null | undefined): boolean {
   if (!status) {
     return false;

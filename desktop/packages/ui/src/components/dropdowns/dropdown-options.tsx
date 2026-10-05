@@ -2,11 +2,13 @@
 
 import type { ReactNode } from "react";
 
+import { filterProjectsForDefaultPicker } from "@backsteros/contracts";
+
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
-import { ProjectOcticon } from "../projects/project-octicon.js";
+import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import type { EmailMailbox } from "../../email/email.js";
@@ -50,6 +52,7 @@ export type ProjectDropdownItem = {
   name: string;
   icon?: string | null;
   type?: string | null;
+  status?: string | null;
 };
 
 function personIcon(size = 14, avatarSrc?: string | null): ReactNode {
@@ -68,19 +71,8 @@ function orgIcon(size = 14, avatarSrc?: string | null): ReactNode {
   return <OrganizationIcon size={size} className="text-foreground/70" />;
 }
 
-function projectGlyph(
-  size = 14,
-  icon?: string | null,
-  type?: string | null,
-): ReactNode {
-  return (
-    <ProjectOcticon
-      icon={icon}
-      type={type}
-      size={size}
-      className="text-foreground/70"
-    />
-  );
+function projectStatusGlyph(size = 14, status?: string | null): ReactNode {
+  return <ProjectStatusIcon status={status ?? "backlog"} size={size} />;
 }
 
 /**
@@ -170,19 +162,27 @@ export function buildOrganizationDropdownOptions(
 
 /**
  * Project options — label is the project name only; key is searchable.
- * Matches Next.js `task-project-field` / letter compose (with optional “No project”).
+ * Hides completed/canceled/duplicated by default (OS-7); pass `keepKeys` for
+ * a currently assigned closed project. Status icon is the row/trigger mark.
  */
 export function buildProjectDropdownOptions(
   projects: ProjectDropdownItem[],
-  options?: { iconSize?: number; includeNone?: boolean },
+  options?: {
+    iconSize?: number;
+    includeNone?: boolean;
+    keepKeys?: readonly (string | null | undefined)[];
+  },
 ): SearchableDropdownOption<string>[] {
   const iconSize = options?.iconSize ?? 14;
   const includeNone = options?.includeNone ?? true;
-  const rows = projects.map((project) => ({
+  const visible = filterProjectsForDefaultPicker(projects, {
+    keepKeys: options?.keepKeys,
+  });
+  const rows = visible.map((project) => ({
     value: project.key,
     label: project.name,
     searchTerms: `${project.key} ${project.name}`,
-    icon: projectGlyph(iconSize, project.icon, project.type),
+    icon: projectStatusGlyph(iconSize, project.status),
   }));
   if (!includeNone) return rows;
   return [

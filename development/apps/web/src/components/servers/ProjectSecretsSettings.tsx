@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchBacksterosCodebaseProjects } from "../../backsteros/client";
 import { ProjectOcticon } from "../../backsteros/ProjectOcticon";
+import { buildBacksterosProjectPickerOptions } from "../../backsteros/projectPickerOptions";
 import {
   BacksterosSearchablePropertyMenu,
   type BacksterosSearchablePropertyOption,
@@ -106,13 +107,18 @@ export function ProjectSecretsSettings({
   );
 
   const projectOptions = useMemo((): readonly BacksterosSearchablePropertyOption[] => {
-    return projects.map((project) => ({
-      value: project.id,
-      label: project.key ? `${project.name} (${project.key})` : project.name,
-      searchText: [project.name, project.key, project.id].filter(Boolean).join(" "),
-      icon: <ProjectOcticon icon={project.icon} type={project.type} size={14} />,
-    }));
-  }, [projects]);
+    return buildBacksterosProjectPickerOptions(projects, {
+      keepIds: [projectId],
+    }).map((option) => {
+      const project = projects.find((entry) => entry.id === option.value);
+      if (!project?.key) return option;
+      return {
+        ...option,
+        label: `${project.name} (${project.key})`,
+        searchText: [project.name, project.key, project.id].filter(Boolean).join(" "),
+      };
+    });
+  }, [projectId, projects]);
 
   const applyContent = useCallback((content: string) => {
     const entries = parseDotenv(content);

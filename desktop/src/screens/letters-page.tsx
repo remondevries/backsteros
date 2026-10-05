@@ -216,6 +216,7 @@ function LettersPageBody({
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         })),
         { includeNone: false }),
     [projects]);
@@ -228,6 +229,7 @@ function LettersPageBody({
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         }))),
     [projects]);
 

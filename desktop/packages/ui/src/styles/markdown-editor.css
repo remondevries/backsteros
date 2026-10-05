@@ -875,6 +875,19 @@ a.mention-chip-lite--deleted:hover {
   max-width: none;
 }
 
+.mention-chip-lite__status {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  letter-spacing: -0.01em;
+}
+
+.mention-chip-lite:not(.mention-chip-lite--block) .mention-chip-lite__status {
+  font-size: 0.6875rem;
+}
+
 .mention-chip-lite__due {
   display: inline-flex;
   flex-shrink: 0;

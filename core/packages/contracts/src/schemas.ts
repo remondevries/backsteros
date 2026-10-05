@@ -3786,6 +3786,8 @@ export const globalSearchResultSchema = z.object({
   key: z.string().optional(),
   /** Task status — same field as `GET /search?type=task`. */
   status: taskStatusSchema.optional(),
+  /** Project status on project hits (OS-7 palette / global-search). */
+  projectStatus: projectStatusSchema.optional(),
 });
 
 export const projectRelationsSchema = z.object({

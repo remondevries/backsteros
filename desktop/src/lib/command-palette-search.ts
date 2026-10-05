@@ -5,7 +5,10 @@ import {
   sectionForSearchResultType,
   type CommandPaletteHit,
 } from "@backsteros/ui";
-import type { GlobalSearchResult } from "@backsteros/contracts";
+import {
+  isProjectPickerDefaultVisibleStatus,
+  type GlobalSearchResult,
+} from "@backsteros/contracts";
 
 import { useDesktopApi } from "./api-context";
 
@@ -59,6 +62,12 @@ export function useCommandPaletteSearchFn() {
           result.documentType ?? null,
         );
         if (!section) return null;
+        if (
+          result.type === "project" &&
+          !isProjectPickerDefaultVisibleStatus(result.projectStatus)
+        ) {
+          return null;
+        }
         return {
           id: result.id,
           type: result.type,
@@ -66,6 +75,9 @@ export function useCommandPaletteSearchFn() {
           subtitle: result.snippet,
           href: hrefForSearchResult(result),
           section,
+          ...(result.type === "project"
+            ? { projectStatus: result.projectStatus ?? null }
+            : {}),
         };
       })
       .filter((hit): hit is CommandPaletteHit => hit != null);

@@ -11,7 +11,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import type { TaskLink } from "@backsteros/contracts";
+import {
+  filterProjectsForDefaultPicker,
+  type TaskLink,
+} from "@backsteros/contracts";
 
 import {
   getComposeKindForShortcutKey,
@@ -62,6 +65,7 @@ import { ComposeFolderIcon } from "./compose-folder-icon.js";
 import type { AssigneeDropdownContact } from "../dropdowns/dropdown-options.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { getDisplayProjectIcon, ProjectOcticon } from "../projects/project-octicon.js";
+import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { KnowledgeBaseNavIcon } from "../shell/sidebar-nav-icons.js";
@@ -123,6 +127,7 @@ export type ComposeModalProject = {
   name: string;
   icon: string | null;
   type?: string | null;
+  status?: string | null;
   color?: string | null;
   dueDate?: Date | null;
 };
@@ -850,21 +855,16 @@ export function ComposeModal({
               ),
             },
           ]),
-      ...projects.map((project) => ({
+      ...filterProjectsForDefaultPicker(projects, {
+        keepIds: [taskProjectId],
+      }).map((project) => ({
         value: project.id,
         label: project.name,
         searchTerms: `${project.key} ${project.name}`,
-        icon: (
-          <ProjectOcticon
-            icon={getDisplayProjectIcon(project.icon, project.type)}
-            type={project.type}
-            size={14}
-            className="text-foreground/70"
-          />
-        ),
+        icon: <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />,
       })),
     ],
-    [projects, requireProject],
+    [projects, requireProject, taskProjectId],
   );
 
   const documentProjectOptions = useMemo(
@@ -875,21 +875,16 @@ export function ComposeModal({
         searchTerms: "knowledge base kb documentation wiki",
         icon: <KnowledgeBaseNavIcon className="size-3.5 text-foreground/70" />,
       },
-      ...projects.map((project) => ({
+      ...filterProjectsForDefaultPicker(projects, {
+        keepIds: [documentProjectId],
+      }).map((project) => ({
         value: project.id,
         label: project.name,
         searchTerms: `${project.key} ${project.name}`,
-        icon: (
-          <ProjectOcticon
-            icon={getDisplayProjectIcon(project.icon, project.type)}
-            type={project.type}
-            size={14}
-            className="text-foreground/70"
-          />
-        ),
+        icon: <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />,
       })),
     ],
-    [projects],
+    [documentProjectId, projects],
   );
 
   const statusOptions = useMemo(() => {

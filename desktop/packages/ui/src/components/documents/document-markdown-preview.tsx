@@ -63,6 +63,7 @@ import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
 } from "../../tasks/task-due-date.js";
+import { getOptionalTaskStatusLabel } from "../../tasks/task-status.js";
 import { useContentPreviewLinkNavigation } from "../../content/use-content-preview-link-navigation.js";
 import { DocumentMentionHoverCard } from "./document-mention-hover-card.js";
 import { EmailMentionBlockChip } from "../email/email-mention-block-chip.js";
@@ -575,9 +576,12 @@ function renderMentionChipBody(
   const iconProps = resolvePreviewChipIconProps(token, catalog);
 
   if (layout === "inline" || deleted) {
+    const task =
+      token.kind === "task" ? resolveMentionCatalogTask(token, catalog) : null;
+    const statusLabel = getOptionalTaskStatusLabel(task?.status);
     return (
       <>
-        <span className="mention-chip-lite__icon" aria-hidden="true">
+        <span className="mention-chip-lite__icon">
           <MentionLeadingIcon
             kind={iconProps.kind}
             status={iconProps.status}
@@ -589,6 +593,9 @@ function renderMentionChipBody(
           />
         </span>
         <span className="mention-chip-lite__label">{label}</span>
+        {statusLabel ? (
+          <span className="mention-chip-lite__status">{statusLabel}</span>
+        ) : null}
       </>
     );
   }
@@ -598,7 +605,7 @@ function renderMentionChipBody(
     if (!task) {
       return (
         <>
-          <span className="mention-chip-lite__icon" aria-hidden="true">
+          <span className="mention-chip-lite__icon">
             <MentionLeadingIcon kind="task" status={null} />
           </span>
           <span className="mention-chip-lite__label">{label}</span>
@@ -608,6 +615,7 @@ function renderMentionChipBody(
 
     const dueDateLabel =
       task.dueDate != null ? formatTaskDueMetaLabel(task.dueDate) : null;
+    const statusLabel = getOptionalTaskStatusLabel(task.status);
 
     return (
       <>
@@ -616,13 +624,16 @@ function renderMentionChipBody(
           size={14}
           className="mention-chip-lite__meta-icon"
         />
-        <span className="mention-chip-lite__icon" aria-hidden="true">
+        <span className="mention-chip-lite__icon">
           <MentionLeadingIcon kind="task" status={task.status} />
         </span>
         <span className="mention-chip-lite__id">{task.displayId}</span>
         <span className="mention-chip-lite__label mention-chip-lite__label--grow">
           {task.title || task.displayId}
         </span>
+        {statusLabel ? (
+          <span className="mention-chip-lite__status">{statusLabel}</span>
+        ) : null}
         {dueDateLabel ? (
           <span className="mention-chip-lite__due">
             <TaskDueDateIcon

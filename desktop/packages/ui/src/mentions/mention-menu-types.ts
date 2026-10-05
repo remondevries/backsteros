@@ -149,6 +149,7 @@ export type MentionItem =
       color: string | null;
       icon: string | null;
       type?: string | null;
+      status?: string | null;
     }
   | {
       kind: "contact";

@@ -16,6 +16,7 @@ import { DefaultProjectIcon } from "~/backsteros/DefaultProjectIcon";
 import { BacksterosDueDatePropertyMenu } from "~/backsteros/DueDatePropertyMenu";
 import { BacksterosEntityAvatarIcon } from "~/backsteros/EntityAvatarIcon";
 import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
+import { buildBacksterosProjectPickerOptions } from "~/backsteros/projectPickerOptions";
 import {
   BacksterosMarkdownDescription,
   useBacksterosMarkdownDetailEditor,
@@ -554,28 +555,12 @@ export function BacksterosTaskDetailPanel() {
   }, [avatarSrcById, contacts]);
 
   const projectOptions = useMemo((): BacksterosSearchablePropertyOption[] => {
-    const none: BacksterosSearchablePropertyOption = {
-      value: NO_PROJECT_VALUE,
-      label: "No project",
-      searchText: "none clear unassigned inbox",
-      icon: <DefaultProjectIcon size={14} className="shrink-0 opacity-70" />,
-    };
-    const entries = codebaseProjects.map((entry, index) => ({
-      value: entry.id,
-      label: entry.name,
-      searchText: [entry.name, entry.key].filter(Boolean).join(" "),
-      icon: (
-        <ProjectOcticon
-          icon={entry.icon}
-          type={entry.type}
-          size={14}
-          className="shrink-0 opacity-70"
-        />
-      ),
-      separatorBefore: index === 0,
-    }));
-    return [none, ...entries];
-  }, [codebaseProjects]);
+    return buildBacksterosProjectPickerOptions(codebaseProjects, {
+      includeNone: true,
+      noneValue: NO_PROJECT_VALUE,
+      keepIds: [project?.id, state.status === "ready" ? state.task.projectId : null],
+    });
+  }, [codebaseProjects, project?.id, state]);
 
   const handleProjectChange = useCallback(
     async (nextProjectId: string | null) => {

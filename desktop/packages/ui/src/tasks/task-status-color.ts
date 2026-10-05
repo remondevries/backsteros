@@ -148,6 +148,7 @@ const DEFAULT_STATUS_OKLCH: Record<string, TaskStatusOklch> = {
   completed: { l: 0.571, c: 0.17, h: 274.4 },
   canceled: { l: 0.913, c: 0, h: 0 },
   duplicated: { l: 0.74, c: 0.08, h: 258.3 },
+  unknown: { l: 0.813, c: 0.01, h: 258.3 },
 };
 
 export function resolveTaskStatusColorScheme(

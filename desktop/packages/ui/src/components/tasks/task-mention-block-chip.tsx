@@ -7,6 +7,7 @@ import {
   getTaskDueDateUrgency,
 } from "../../tasks/task-due-date.js";
 import { getDisplayProjectIcon, ProjectOcticon } from "../projects/project-octicon.js";
+import { getOptionalTaskStatusLabel } from "../../tasks/task-status.js";
 import { MentionLeadingIcon } from "../mentions/mention-leading-icon.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
@@ -41,6 +42,7 @@ export function TaskMentionBlockChip({
   const dueDateLabel =
     task.dueDate != null ? formatTaskDueMetaLabel(task.dueDate) : null;
   const label = task.title?.trim() || task.displayId;
+  const statusLabel = getOptionalTaskStatusLabel(task.status);
 
   return (
     <ClientLink
@@ -53,13 +55,16 @@ export function TaskMentionBlockChip({
         size={14}
         className="mention-chip-lite__meta-icon"
       />
-      <span className="mention-chip-lite__icon" aria-hidden="true">
+      <span className="mention-chip-lite__icon">
         <MentionLeadingIcon kind="task" status={task.status} />
       </span>
       <span className="mention-chip-lite__id">{task.displayId}</span>
       <span className="mention-chip-lite__label mention-chip-lite__label--grow">
         {label}
       </span>
+      {statusLabel ? (
+        <span className="mention-chip-lite__status">{statusLabel}</span>
+      ) : null}
       {dueDateLabel ? (
         <span className="mention-chip-lite__due">
           <TaskDueDateIcon

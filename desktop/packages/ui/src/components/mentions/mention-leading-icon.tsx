@@ -1,15 +1,15 @@
 "use client";
 
-import {
-  getDisplayProjectIcon,
-  ProjectOcticon,
-} from "../projects/project-octicon.js";
 import { DocumentIcon } from "../documents/document-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
-import type { TaskStatus } from "../../tasks/task-status.js";
+import { ProjectStatusIcon } from "../projects/project-status-icon.js";
+import {
+  getOptionalTaskStatusLabel,
+  type TaskStatus,
+} from "../../tasks/task-status.js";
 import type { MentionKind } from "../../mentions/mention-tokens.js";
 
 export function MentionLeadingIcon({
@@ -22,7 +22,7 @@ export function MentionLeadingIcon({
   size = 16,
 }: {
   kind: MentionKind;
-  status?: TaskStatus | null;
+  status?: TaskStatus | string | null;
   projectIcon?: string | null;
   projectType?: string | null;
   documentIcon?: string | null;
@@ -39,9 +39,11 @@ export function MentionLeadingIcon({
   size?: number;
 }) {
   if (kind === "task") {
+    const statusLabel = getOptionalTaskStatusLabel(status);
     return (
       <TaskStatusIcon
-        status={status ?? "backlog"}
+        status={statusLabel ? (status ?? null) : null}
+        title={statusLabel ?? "Unknown"}
         className="mention-menu__icon"
       />
     );
@@ -67,10 +69,9 @@ export function MentionLeadingIcon({
 
   if (kind === "project") {
     return (
-      <ProjectOcticon
-        icon={getDisplayProjectIcon(projectIcon, projectType)}
-        type={projectType}
-        className="mention-menu__icon mention-menu__icon--muted"
+      <ProjectStatusIcon
+        status={status ?? "backlog"}
+        className="mention-menu__icon"
       />
     );
   }

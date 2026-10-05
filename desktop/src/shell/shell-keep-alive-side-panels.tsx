@@ -455,6 +455,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         })),
         { includeNone: true },
       ),

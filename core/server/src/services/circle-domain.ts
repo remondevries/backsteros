@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
@@ -17,7 +17,11 @@ import {
   workspaceSettings,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
-import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
+import {
+  normalizeContactEmailsInput,
+  normalizeContactPhonesInput,
+  PROJECT_PICKER_DEFAULT_EXCLUDED_STATUSES,
+} from "@backsteros/contracts";
 import {
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
@@ -2254,6 +2258,7 @@ export async function globalSearch(
     eq(projects.workspaceId, workspaceId),
     isNull(projects.deletedAt),
     or(ilike(projects.name, pattern), ilike(projects.summary, pattern)),
+    notInArray(projects.status, [...PROJECT_PICKER_DEFAULT_EXCLUDED_STATUSES]),
   ];
   if (scope.projectOrganizationId) {
     projectConditions.push(eq(projects.organizationId, scope.projectOrganizationId));
@@ -2399,6 +2404,7 @@ export async function globalSearch(
       documentType: null as null,
       path: null as null,
       projectId: null as null,
+      projectStatus: row.status,
     })),
     ...taskRows.map((row) => ({
       type: "task" as const,
@@ -2476,5 +2482,8 @@ export async function globalSearch(
       ...(row.projectId ? { projectId: row.projectId } : {}),
       ...("key" in row && row.key ? { key: row.key } : {}),
       ...("status" in row && row.status ? { status: row.status } : {}),
+      ...("projectStatus" in row && row.projectStatus
+        ? { projectStatus: row.projectStatus }
+        : {}),
     }));
 }

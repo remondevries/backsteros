@@ -2,6 +2,7 @@ import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } fro
 import type { AgentMailMessageDetail, TaskLink } from "@backsteros/contracts";
 import {
   contactMatchesEmailAddress,
+  filterProjectsForDefaultPicker,
   getContactEmailAddresses,
   resolveContactEmailForAddress,
 } from "@backsteros/contracts";
@@ -34,10 +35,9 @@ import {
   getEmailItemHref,
   getInboxTaskRouteHref,
   getScopedProjectTaskHref,
-  getDisplayProjectIcon,
   getCalendarMeetingHref,
   formatMeetingDisplayId,
-  ProjectOcticon,
+  ProjectStatusIcon,
   COMPOSE_NO_PROJECT_VALUE,
   DefaultProjectIcon,
   type EmailAgentActionCardId,
@@ -287,6 +287,7 @@ export function EmailThreadDetail({
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         })),
       ),
     [projects],
@@ -300,18 +301,11 @@ export function EmailThreadDetail({
         searchTerms: "inbox triage none",
         icon: <DefaultProjectIcon size={14} />,
       },
-      ...projects.map((project) => ({
+      ...filterProjectsForDefaultPicker(projects).map((project) => ({
         value: project.id,
         label: project.name,
         searchTerms: `${project.key} ${project.name}`,
-        icon: (
-          <ProjectOcticon
-            icon={getDisplayProjectIcon(project.icon, project.type)}
-            type={project.type}
-            size={14}
-            className="text-foreground/70"
-          />
-        ),
+        icon: <ProjectStatusIcon status={project.status} size={14} />,
       })),
     ];
   }, [projects]);

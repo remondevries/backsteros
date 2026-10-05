@@ -1109,6 +1109,7 @@ function ProjectsPageBody({
           key: entry.key,
           name: entry.name,
           icon: entry.icon,
+          status: entry.status,
         })),
         { includeNone: false }),
     [projectList]);
@@ -1120,6 +1121,7 @@ function ProjectsPageBody({
           key: entry.key,
           name: entry.name,
           icon: entry.icon,
+          status: entry.status,
         })),
         { includeNone: true }),
     [projectList]);

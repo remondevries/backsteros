@@ -46,6 +46,7 @@ export function useEmailDetailPropertyOptions(
           name: project.name,
           icon: project.icon,
           type: project.type,
+          status: project.status,
         })),
       ),
     [projects],

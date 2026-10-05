@@ -1,3 +1,5 @@
+import { filterProjectsForDefaultPicker } from "@backsteros/contracts";
+
 import type {
   MentionCatalog,
   MentionItem,
@@ -53,7 +55,7 @@ function filterTasks(catalog: MentionCatalog, query: string): MentionItem[] {
 function filterProjects(catalog: MentionCatalog, query: string): MentionItem[] {
   const normalized = normalizeQuery(query);
 
-  return catalog.projects
+  return filterProjectsForDefaultPicker(catalog.projects)
     .filter(
       (project) =>
         matchesQuery(project.name, normalized) ||
@@ -69,6 +71,7 @@ function filterProjects(catalog: MentionCatalog, query: string): MentionItem[] {
         color: project.color,
         icon: project.icon,
         type: project.type ?? null,
+        status: project.status,
       }),
     );
 }

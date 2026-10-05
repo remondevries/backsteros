@@ -24,6 +24,7 @@ import {
 } from "~/backsteros/project-reorder";
 import {
   groupBacksterosProjectsByStatus,
+  filterBacksterosProjectsForDefaultPicker,
   type BacksterosProjectStatus,
 } from "~/backsteros/projectStatus";
 import type { BacksterosCodebaseProject } from "~/backsteros/types";
@@ -250,7 +251,7 @@ export function BacksterosProjectList(props: {
   const filteredProjects = useMemo(() => {
     if (state.status !== "ready") return [];
     if (!isSearching) return state.projects;
-    return state.projects.filter((project) =>
+    return filterBacksterosProjectsForDefaultPicker(state.projects).filter((project) =>
       matchesBacksterosSearchQuery(
         [
           project.name,

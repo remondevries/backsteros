@@ -32,6 +32,31 @@ export function migrateBacksterosProjectStatus(status: string): BacksterosProjec
   return isBacksterosProjectStatus(status) ? status : "backlog";
 }
 
+export const BACKSTEROS_PROJECT_PICKER_DEFAULT_EXCLUDED_STATUSES = [
+  "completed",
+  "canceled",
+  "duplicated",
+] as const;
+
+const PICKER_EXCLUDED = new Set<string>(BACKSTEROS_PROJECT_PICKER_DEFAULT_EXCLUDED_STATUSES);
+
+export function isBacksterosProjectPickerDefaultVisibleStatus(status: string): boolean {
+  return !PICKER_EXCLUDED.has(status.trim().toLowerCase());
+}
+
+export function filterBacksterosProjectsForDefaultPicker<
+  T extends { readonly status: string; readonly id?: string },
+>(
+  projects: readonly T[],
+  options?: { readonly keepIds?: readonly (string | null | undefined)[] },
+): T[] {
+  const keepIds = new Set((options?.keepIds ?? []).filter((id): id is string => Boolean(id)));
+  return projects.filter((project) => {
+    if (project.id && keepIds.has(project.id)) return true;
+    return isBacksterosProjectPickerDefaultVisibleStatus(project.status);
+  });
+}
+
 export type BacksterosProjectLikeForGrouping = {
   readonly status: string;
   readonly sortOrder?: number;

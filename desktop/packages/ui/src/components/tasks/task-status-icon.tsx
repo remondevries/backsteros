@@ -112,7 +112,7 @@ function SupportTicketIcon() {
 }
 
 export type TaskStatusIconProps = {
-  status: TaskStatus | string;
+  status: TaskStatus | string | null;
   title?: string;
   className?: string;
   size?: number;
@@ -153,17 +153,17 @@ export function TaskStatusIcon({
   notification = false,
   inboxUpdatedAt,
 }: TaskStatusIconProps) {
-  const normalizedStatus = isTaskStatus(status) ? status : "backlog";
+  const knownStatus = status != null && isTaskStatus(status) ? status : null;
   const colorScheme = useSyncExternalStore(
     subscribeToPreferredColorScheme,
     getPreferredColorSchemeSnapshot,
     () => "dark" as const,
   );
   const model = computeTaskStatusIconModel({
-    status: normalizedStatus,
+    status: knownStatus,
     colorScheme,
   });
-  const label = title ?? getTaskStatusLabel(normalizedStatus);
+  const label = title ?? (knownStatus ? getTaskStatusLabel(knownStatus) : "Unknown");
 
   if (working) {
     return (
@@ -187,11 +187,10 @@ export function TaskStatusIcon({
           width={size}
           height={size}
           fill="none"
-          aria-hidden={title ? undefined : true}
-          aria-label={title ? undefined : label}
-          role={title ? "img" : undefined}
+          aria-label={label}
+          role="img"
         >
-          {title ? <title>{title}</title> : null}
+          <title>{label}</title>
           <SupportTicketIcon />
         </svg>
       </IconWithInboxUpdateIndicator>
@@ -207,11 +206,10 @@ export function TaskStatusIcon({
           viewBox="0 0 24 24"
           width={size}
           height={size}
-          aria-hidden={title ? undefined : true}
-          aria-label={title ? undefined : label}
-          role={title ? "img" : undefined}
+          aria-label={label}
+          role="img"
         >
-          {title ? <title>{title}</title> : null}
+          <title>{label}</title>
           <NotificationBellIcon />
         </svg>
       </IconWithInboxUpdateIndicator>
@@ -226,12 +224,14 @@ export function TaskStatusIcon({
         viewBox="0 0 14 14"
         width={size}
         height={size}
-        aria-hidden={title ? undefined : true}
-        aria-label={title ? undefined : label}
-        role={title ? "img" : undefined}
+        aria-label={label}
+        role="img"
       >
-        {title ? <title>{title}</title> : null}
+        <title>{label}</title>
         <g fill="none">
+          {model.kind === "unknown" ? (
+            <ProgressRingIcon fillRatio={0} />
+          ) : null}
           {model.kind === "triage" ? <TriageIcon /> : null}
           {model.kind === "backlog" ? (
             <g fill="currentColor">

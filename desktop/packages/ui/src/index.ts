@@ -4,6 +4,7 @@ export {
   TASK_STATUS_ORDER,
   isTaskStatus,
   getTaskStatusLabel,
+  getOptionalTaskStatusLabel,
   isTriageStatus,
   migrateLegacyTaskStatus,
   type TaskStatus,
@@ -465,6 +466,17 @@ export {
   EmailComposeChrome,
   type EmailComposeChromeProps,
 } from "./components/email/email-compose-chrome.js";
+export {
+  EmailRecipientAutocompleteField,
+  type EmailRecipientAutocompleteFieldProps,
+} from "./components/email/email-recipient-autocomplete-field.js";
+export {
+  buildEmailRecipientSuggestions,
+  filterEmailRecipientSuggestions,
+  type BuildEmailRecipientSuggestionsInput,
+  type EmailRecipientSuggestion,
+  type EmailRecipientSuggestionKind,
+} from "./email/email-recipient-suggestions.js";
 export {
   EmailComposeBodyStage,
   type EmailComposeBodyStageProps,
