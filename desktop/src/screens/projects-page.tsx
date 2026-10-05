@@ -1134,6 +1134,20 @@ function ProjectsPageBody({
         { includeNone: true }),
     [projectList]);
 
+  const documentProjectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projectList.map((entry) => ({
+          key: entry.key,
+          name: entry.name,
+          icon: entry.icon,
+          status: entry.status,
+        })),
+        { includeNone: true, includeClosed: true },
+      ),
+    [projectList],
+  );
+
   if (!routeSlug) {
     const areaFilter =
       parseProjectAreaFilterFromLocation(location.pathname, location.searchStr) ??
@@ -1990,7 +2004,7 @@ function ProjectsPageBody({
                   propertyTypes={documentPropertyTypes}
                   contactOptions={assigneeOptions}
                   taskOptions={documentTaskOptions}
-                  projectOptions={composeProjectOptions}
+                  projectOptions={documentProjectOptions}
                 />
               </>
             )

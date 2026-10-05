@@ -24,6 +24,22 @@ test("buildProjectDropdownOptions hides completed canceled duplicated", () => {
   );
 });
 
+test("buildProjectDropdownOptions includeClosed lists completed and canceled", () => {
+  const options = buildProjectDropdownOptions(
+    [
+      { key: "OS", name: "Open", status: "active" },
+      { key: "DONE", name: "Done", status: "completed" },
+      { key: "CXL", name: "Canceled", status: "canceled" },
+    ],
+    { includeNone: false, includeClosed: true },
+  );
+
+  assert.deepEqual(
+    options.map((option) => option.value),
+    ["OS", "DONE", "CXL"],
+  );
+});
+
 test("buildProjectDropdownOptions keeps a closed assigned project", () => {
   const options = buildProjectDropdownOptions(
     [

@@ -706,14 +706,10 @@ function KnowledgePageBody() {
         })),
         {
           includeNone: true,
-          keepKeys: [
-            typeof documentPropertiesModel?.properties.project === "string"
-              ? documentPropertiesModel.properties.project
-              : null,
-          ],
+          includeClosed: true,
         },
       ),
-    [documentPropertiesModel?.properties.project, projects],
+    [projects],
   );
 
   const placementOptions = useMemo(() => {

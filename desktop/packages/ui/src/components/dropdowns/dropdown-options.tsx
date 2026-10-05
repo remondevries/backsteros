@@ -171,17 +171,21 @@ export function buildProjectDropdownOptions(
     iconSize?: number;
     includeNone?: boolean;
     keepKeys?: readonly (string | null | undefined)[];
+    /** Include completed/canceled/duplicated; default picker hides those. */
+    includeClosed?: boolean;
   },
 ): SearchableDropdownOption<string>[] {
   const iconSize = options?.iconSize ?? 14;
   const includeNone = options?.includeNone ?? true;
-  const visible = filterProjectsForDefaultPicker(projects, {
-    keepKeys: options?.keepKeys,
-  });
+  const visible = options?.includeClosed
+    ? projects
+    : filterProjectsForDefaultPicker(projects, {
+        keepKeys: options?.keepKeys,
+      });
   const rows = visible.map((project) => ({
     value: project.key,
     label: project.name,
-    searchTerms: `${project.key} ${project.name}`,
+    searchTerms: `${project.key} ${project.name} ${project.status ?? ""}`,
     icon: projectStatusGlyph(iconSize, project.status),
   }));
   if (!includeNone) return rows;
