@@ -90,6 +90,7 @@ function taskRow(args: {
     assignee_id: null,
     related_contact_ids: [],
     related_organization_ids: [],
+    linked_email_ids: [],
     label_ids: [],
     number: args.number,
     title: args.title,

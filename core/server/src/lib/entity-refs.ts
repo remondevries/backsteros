@@ -7,7 +7,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { contacts, organizations, projects, tasks } from "../db/schema.js";
+import { contacts, emailThreads, organizations, projects, tasks } from "../db/schema.js";
 import {
   TaskFilterError,
   parseTaskDisplayKey,
@@ -115,6 +115,53 @@ export async function resolveProjectRef(
     )
     .limit(1);
   return byKey?.id ?? null;
+}
+
+function parseEmailDisplayNumber(ref: string): number | null {
+  const match = ref.trim().match(/^E-(\d+)$/i);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * Resolve an email thread id or display id (`E-17`). Returns null when the
+ * thread is not in this workspace (callers may keep the original token).
+ */
+export async function resolveEmailThreadRef(
+  workspaceId: string,
+  ref: string,
+  executor: DbExecutor = db,
+): Promise<string | null> {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+
+  const [byId] = await executor
+    .select({ id: emailThreads.id })
+    .from(emailThreads)
+    .where(
+      and(
+        eq(emailThreads.workspaceId, workspaceId),
+        eq(emailThreads.id, trimmed),
+      ),
+    )
+    .limit(1);
+  if (byId) return byId.id;
+
+  const number = parseEmailDisplayNumber(trimmed);
+  if (number == null) return null;
+
+  const [byNumber] = await executor
+    .select({ id: emailThreads.id })
+    .from(emailThreads)
+    .where(
+      and(
+        eq(emailThreads.workspaceId, workspaceId),
+        eq(emailThreads.number, number),
+      ),
+    )
+    .limit(1);
+  return byNumber?.id ?? null;
 }
 
 export async function resolveOrganizationRef(
@@ -256,6 +303,13 @@ export async function resolveTaskListFilterRefs(
     "organization",
     strict,
   );
+  const linkedEmailIds = await resolveRefList(
+    filters.linkedEmailIds,
+    (ref) => resolveEmailThreadRef(workspaceId, ref, executor),
+    "linkedEmails",
+    "email",
+    false,
+  );
 
   return {
     ...filters,
@@ -264,6 +318,7 @@ export async function resolveTaskListFilterRefs(
     contactIds,
     relatedContactIds,
     relatedOrganizationIds,
+    linkedEmailIds,
   };
 }
 
@@ -274,6 +329,7 @@ export type TaskWriteRefInput = {
   assigneeId?: string | null;
   relatedContactIds?: string[];
   relatedOrganizationIds?: string[];
+  linkedEmailIds?: string[];
 };
 
 /**
@@ -292,6 +348,7 @@ export async function resolveTaskWriteRefs(
   assigneeId?: string | null;
   relatedContactIds?: string[];
   relatedOrganizationIds?: string[];
+  linkedEmailIds?: string[];
 }> {
   const out: {
     projectId?: string | null;
@@ -299,6 +356,7 @@ export async function resolveTaskWriteRefs(
     assigneeId?: string | null;
     relatedContactIds?: string[];
     relatedOrganizationIds?: string[];
+    linkedEmailIds?: string[];
   } = {};
 
   if (input.projectId !== undefined || input.projectKey !== undefined) {
@@ -361,6 +419,21 @@ export async function resolveTaskWriteRefs(
       resolved.push(id);
     }
     out.relatedOrganizationIds = [...new Set(resolved)];
+  }
+
+  if (input.linkedEmailIds !== undefined) {
+    const resolved: string[] = [];
+    const seen = new Set<string>();
+    for (const ref of input.linkedEmailIds) {
+      if (typeof ref !== "string") continue;
+      const trimmed = ref.trim();
+      if (!trimmed) continue;
+      const id = (await resolveEmailThreadRef(workspaceId, trimmed, executor)) ?? trimmed;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      resolved.push(id);
+    }
+    out.linkedEmailIds = resolved;
   }
 
   return out;

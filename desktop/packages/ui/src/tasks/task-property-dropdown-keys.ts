@@ -20,6 +20,8 @@ export type TaskPropertyDropdownId =
   | "startDate"
   | "assignee"
   | "related"
+  | "emails"
+  | "linkedTasks"
   | "labels"
   | "area"
   | "areaId"

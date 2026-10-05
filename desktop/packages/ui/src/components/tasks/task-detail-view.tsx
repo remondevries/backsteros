@@ -153,10 +153,12 @@ export type TaskDetailViewProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
+  onLinkedEmailsChange?: (emailIds: string[]) => void;
   onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
+  emailRelatedOptions?: SearchableDropdownOption<string>[];
   labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
@@ -215,10 +217,12 @@ export function TaskDetailView({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
+  onLinkedEmailsChange,
   onLabelChange,
   onProjectChange,
   assigneeOptions,
   relatedOptions,
+  emailRelatedOptions,
   labelOptions,
   projectOptions,
   assigneeNavigateHref,
@@ -558,10 +562,12 @@ export function TaskDetailView({
                     onDueDateChange={onDueDateChange}
                     onAssigneeChange={onAssigneeChange}
                     onRelatedChange={onRelatedChange}
+                    onLinkedEmailsChange={onLinkedEmailsChange}
                     onLabelChange={onLabelChange}
                     onProjectChange={onProjectChange}
                     assigneeOptions={assigneeOptions}
                     relatedOptions={relatedOptions}
+                    emailRelatedOptions={emailRelatedOptions}
                     labelOptions={labelOptions}
                     projectOptions={projectOptions}
                     onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
@@ -633,10 +639,12 @@ export function TaskDetailView({
                 onDueDateChange={onDueDateChange}
                 onAssigneeChange={onAssigneeChange}
                 onRelatedChange={onRelatedChange}
+                onLinkedEmailsChange={onLinkedEmailsChange}
                 onLabelChange={onLabelChange}
                 onProjectChange={onProjectChange}
                 assigneeOptions={assigneeOptions}
                 relatedOptions={relatedOptions}
+                emailRelatedOptions={emailRelatedOptions}
                 labelOptions={labelOptions}
                 projectOptions={projectOptions}
                 assigneeNavigateHref={assigneeNavigateHref}

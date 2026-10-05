@@ -50,6 +50,7 @@ const tasks = new Table(
     assignee_id: column.text,
     related_contact_ids: column.text,
     related_organization_ids: column.text,
+    linked_email_ids: column.text,
     label_ids: column.text,
     number: column.integer,
     title: column.text,

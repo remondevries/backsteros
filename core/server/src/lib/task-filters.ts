@@ -40,6 +40,7 @@ export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
   "relatedContactId",
   "relatedOrganizationId",
   "linkedTasks",
+  "linkedEmails",
   "inbox",
   "support",
   "notification",
@@ -63,6 +64,7 @@ export const TASK_LIST_PAGINATED_ONLY_KEYS = [
   "dueDate",
   "linkedDocuments",
   "linkedTasks",
+  "linkedEmails",
   "updatedSince",
 ] as const;
 
@@ -233,6 +235,7 @@ export type ParsedTaskListQuery = {
   relatedOrganizationIds: string[];
   linkedDocumentIds: string[];
   linkedTaskIds: string[];
+  linkedEmailIds: string[];
   dueDate?: DueDateFilter;
   /**
    * Change feed (OS-45): only tasks with updatedAt >= this instant. Also
@@ -326,6 +329,7 @@ export function parseTaskListQuery(
   );
   const linkedDocumentIds = parseTaskMultiValues(raw.linkedDocuments);
   const linkedTaskIds = parseTaskMultiValues(raw.linkedTasks);
+  const linkedEmailIds = parseTaskMultiValues(raw.linkedEmails);
 
   // Validate status values only when present — legacy callers that somehow
   // pass junk keep their prior empty-match behavior unless they opt in.
@@ -382,6 +386,7 @@ export function parseTaskListQuery(
     relatedOrganizationIds,
     linkedDocumentIds,
     linkedTaskIds,
+    linkedEmailIds,
     dueDate,
     updatedSince,
     inbox: parseOptionalBoolean(raw.inbox, "inbox"),

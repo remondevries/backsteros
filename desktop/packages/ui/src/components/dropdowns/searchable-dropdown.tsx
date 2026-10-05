@@ -43,6 +43,8 @@ export type SearchableDropdownOption<T extends string = string> = {
   avatarSrc?: string | null;
   shortcut?: string;
   searchTerms?: string;
+  /** When set, selected chips navigate to this href. */
+  href?: string;
   /**
    * Parent group name. The first option in a group renders a labeled rule
    * (group separator) above the row. Ungrouped options omit this.

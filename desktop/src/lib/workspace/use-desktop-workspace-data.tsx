@@ -142,6 +142,7 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
       number: coerceTaskDisplayNumber(task.number) ?? 0,
       relatedContactIds: parseStringIdArray(task.relatedContactIds),
       relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
+      linkedEmailIds: parseStringIdArray(task.linkedEmailIds),
       labelIds: parseStringIdArray(task.labelIds),
     };
   });

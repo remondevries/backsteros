@@ -1291,6 +1291,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
             assigneeId: createFields.assigneeId,
             relatedContactIds: createFields.relatedContactIds,
             relatedOrganizationIds: createFields.relatedOrganizationIds,
+            linkedEmailIds: createFields.linkedEmailIds,
           });
           const createInput = {
             ...createFields,
@@ -1523,6 +1524,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
           assigneeId: patchFields.assigneeId,
           relatedContactIds: patchFields.relatedContactIds,
           relatedOrganizationIds: patchFields.relatedOrganizationIds,
+          linkedEmailIds: patchFields.linkedEmailIds,
         });
         const patch = {
           ...patchFields,
@@ -2792,6 +2794,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
         assigneeId: patchFields.assigneeId,
         relatedContactIds: patchFields.relatedContactIds,
         relatedOrganizationIds: patchFields.relatedOrganizationIds,
+        linkedEmailIds: patchFields.linkedEmailIds,
       });
       resolvedPatch = {
         ...patchFields,

@@ -22,6 +22,7 @@ export const TASK_LIST_COLUMNS = [
   "assignee_id",
   "related_contact_ids",
   "related_organization_ids",
+  "linked_email_ids",
   "label_ids",
   "sort_order",
   "updated_at",

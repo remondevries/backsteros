@@ -118,6 +118,11 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
         (id): id is string => typeof id === "string" && id.trim().length > 0,
       )
     : [];
+  const linkedEmailIds = Array.isArray(row.linkedEmailIds)
+    ? row.linkedEmailIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      )
+    : [];
   return {
     id: row.id,
     projectId: row.projectId,
@@ -125,6 +130,7 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     assigneeId: row.assigneeId,
     relatedContactIds,
     relatedOrganizationIds,
+    linkedEmailIds,
     labelIds: normalizeTaskLabelIds(row.labelIds),
     number: row.number,
     ...(projectKey !== undefined

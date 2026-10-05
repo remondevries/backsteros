@@ -8,6 +8,7 @@ import type { TaskPropertyDropdownId } from "../../tasks/task-property-dropdown-
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import { ClientLink } from "../../shared/client-link.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 export type TaskRelatedChipsProps = {
@@ -238,20 +239,32 @@ export function TaskRelatedChips({
       <div className="contact-detail-chips__row">
         {visibleSelected.map((option) => {
           const icon: ReactNode = option.icon ?? fallbackIcon;
+          const chipInner = (
+            <>
+              <span className="task-related-chip__icon" aria-hidden="true">
+                {icon}
+              </span>
+              <span className="task-related-chip__label">{option.label}</span>
+            </>
+          );
           return (
             <div
               key={option.value}
               className="contact-detail-relationship-chip task-related-chip"
             >
-              <span
-                className="contact-detail-chip"
-                title={option.label}
-              >
-                <span className="task-related-chip__icon" aria-hidden="true">
-                  {icon}
+              {option.href ? (
+                <ClientLink
+                  href={option.href}
+                  className="contact-detail-chip"
+                  title={option.label}
+                >
+                  {chipInner}
+                </ClientLink>
+              ) : (
+                <span className="contact-detail-chip" title={option.label}>
+                  {chipInner}
                 </span>
-                <span className="task-related-chip__label">{option.label}</span>
-              </span>
+              )}
               {canEdit ? (
                 <button
                   type="button"

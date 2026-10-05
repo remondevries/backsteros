@@ -7,6 +7,7 @@ import {
   TaskDetailView,
   TaskLinkedCommitSection,
   buildAssigneeDropdownOptions,
+  buildEmailRelatedPropertyOptions,
   buildInboxTaskListItem,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
@@ -152,6 +153,12 @@ function InboxPageBody() {
   const emailLinkOptions = useMemo(
     () =>
       keepAliveFrozen ? [] : buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages, keepAliveFrozen]);
+  const emailRelatedOptions = useMemo(
+    () =>
+      keepAliveFrozen
+        ? []
+        : buildEmailRelatedPropertyOptions(agentMail.messages),
     [agentMail.messages, keepAliveFrozen]);
   const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
     null);
@@ -595,6 +602,7 @@ function InboxPageBody() {
           relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
           relatedOrganizationIds:
             selectedTaskRecord?.relatedOrganizationIds ?? [],
+          linkedEmailIds: selectedTaskRecord?.linkedEmailIds ?? [],
           projectKey: project?.key ?? resolvedProjectKey,
           projectName: project?.name ?? selectedTask.projectName ?? null,
           agentCreatedAt: selectedTaskRecord?.agentCreatedAt ?? selectedTask.agentCreatedAt ?? null,
@@ -653,6 +661,11 @@ function InboxPageBody() {
             relatedOrganizationIds: related.organizationIds,
           });
         }}
+        onLinkedEmailsChange={(emailIds) => {
+          void workspace.patchTask(selectedTask.id, {
+            linkedEmailIds: emailIds,
+          });
+        }}
         onLabelChange={(labelIds) => {
           void workspace.patchTask(selectedTask.id, { labelIds });
         }}
@@ -700,6 +713,7 @@ function InboxPageBody() {
         }}
         assigneeOptions={assigneeOptions}
         relatedOptions={relatedOptions}
+        emailRelatedOptions={emailRelatedOptions}
         projectOptions={projectOptions}
         supportContact={supportParties.contact}
         supportOrganization={supportParties.organization}

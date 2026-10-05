@@ -7,6 +7,7 @@ import {
   FinanceSyncIcon,
   TaskDetailView,
   buildAssigneeDropdownOptions,
+  buildEmailRelatedPropertyOptions,
   buildInboxTaskListItem,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
@@ -325,6 +326,10 @@ function CommunicationPageBody() {
     () => buildEmailLinkOptions(agentMail.messages),
     [agentMail.messages],
   );
+  const emailRelatedOptions = useMemo(
+    () => buildEmailRelatedPropertyOptions(agentMail.messages),
+    [agentMail.messages],
+  );
 
   const assignee = useMemo(() => {
     const id = selectedTaskRecord?.assigneeId ?? supportTask?.assigneeId;
@@ -512,6 +517,7 @@ function CommunicationPageBody() {
           relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
           relatedOrganizationIds:
             selectedTaskRecord?.relatedOrganizationIds ?? [],
+          linkedEmailIds: selectedTaskRecord?.linkedEmailIds ?? [],
           projectKey: supportTask.projectKey,
           projectName: supportTask.projectName,
           agentCreatedAt:
@@ -535,6 +541,7 @@ function CommunicationPageBody() {
         assigneeOptions={assigneeOptions}
         projectOptions={projectOptions}
         relatedOptions={relatedOptions}
+        emailRelatedOptions={emailRelatedOptions}
         supportContact={supportParties.contact}
         supportOrganization={supportParties.organization}
         supportContactHref={supportParties.contactHref}
@@ -559,6 +566,9 @@ function CommunicationPageBody() {
             relatedContactIds: related.contactIds,
             relatedOrganizationIds: related.organizationIds,
           })
+        }
+        onLinkedEmailsChange={(emailIds) =>
+          patchTask({ linkedEmailIds: emailIds })
         }
         onLabelChange={(labelIds) => patchTask({ labelIds })}
         labelOptions={labelOptions}

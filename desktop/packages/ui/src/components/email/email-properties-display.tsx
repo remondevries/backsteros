@@ -25,6 +25,7 @@ import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
+import { TaskRelatedChips } from "../tasks/task-related-chips.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { formatTaskDueMetaLabel } from "../../tasks/task-due-date.js";
 
@@ -66,6 +67,9 @@ export type EmailPropertiesDisplayProps = {
   onCreateOrganizationFromQuery?: (query: string) => void;
   onCreateContactFromQuery?: (query: string) => void;
   onCreateAssigneeFromQuery?: (query: string) => void;
+  linkedTaskIds?: readonly string[];
+  linkedTaskOptions?: SearchableDropdownOption<string>[];
+  onLinkedTasksChange?: (taskIds: string[]) => void;
 };
 
 function toDate(value: number | Date | string | null | undefined): Date | null {
@@ -96,6 +100,9 @@ export function EmailPropertiesDisplay({
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
   onCreateAssigneeFromQuery,
+  linkedTaskIds = [],
+  linkedTaskOptions = [],
+  onLinkedTasksChange,
 }: EmailPropertiesDisplayProps) {
   const status = migrateLegacyTaskStatus(thread.status?.trim() || "triage");
   const priority = thread.priority ?? 0;
@@ -125,6 +132,8 @@ export function EmailPropertiesDisplay({
     Boolean(onAssigneeChange) && assigneeOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
+  const canEditLinkedTasks =
+    Boolean(onLinkedTasksChange) && linkedTaskOptions.length > 0;
 
   const organizationField = canEditOrg ? (
     <PropertyDropdownNavigateRow navigateHref={organizationNavigateHref}>
@@ -344,6 +353,24 @@ export function EmailPropertiesDisplay({
             {organizationField}
           </PropertyFieldGroup>
           <PropertyFieldGroup label="Contact">{contactField}</PropertyFieldGroup>
+          <PropertyFieldGroup label="Tasks">
+            <TaskRelatedChips
+              values={[...linkedTaskIds]}
+              options={linkedTaskOptions}
+              onChange={
+                canEditLinkedTasks
+                  ? (next) => onLinkedTasksChange?.(next)
+                  : undefined
+              }
+              emptyLabel="No tasks"
+              searchPlaceholder="Add task…"
+              ariaLabel="Tasks"
+              taskPropertyDropdownId="linkedTasks"
+              variant="rail"
+              emptyIcon={<TaskStatusIcon status="triage" size={14} />}
+              onActivate={() => onFieldActivate?.("related")}
+            />
+          </PropertyFieldGroup>
           <PropertyFieldGroup label="Received">
             <button
               type="button"

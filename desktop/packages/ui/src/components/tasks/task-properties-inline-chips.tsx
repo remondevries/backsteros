@@ -1,5 +1,6 @@
 "use client";
 
+import { MailIcon } from "@primer/octicons-react";
 import type { ReactNode } from "react";
 
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
@@ -43,11 +44,13 @@ export type TaskPropertiesInlineChipsProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: TaskRelatedSelection) => void;
+  onLinkedEmailsChange?: (emailIds: string[]) => void;
   onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
+  emailRelatedOptions?: SearchableDropdownOption<string>[];
   labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
@@ -108,11 +111,13 @@ export function TaskPropertiesInlineChips({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
+  onLinkedEmailsChange,
   onLabelChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
   relatedOptions = [],
+  emailRelatedOptions = [],
   labelOptions = [],
   projectOptions = [],
   onCreateAssigneeFromQuery,
@@ -147,6 +152,8 @@ export function TaskPropertiesInlineChips({
     Boolean(onAssigneeChange) && assigneeOptions.length > 0;
   const canEditRelated =
     Boolean(onRelatedChange) && relatedOptions.length > 0;
+  const canEditEmails =
+    Boolean(onLinkedEmailsChange) && emailRelatedOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
 
@@ -272,24 +279,44 @@ export function TaskPropertiesInlineChips({
           />
         )}
         {task?.support ? null : (
-          <TaskRelatedChips
-            values={relatedValues}
-            options={relatedOptions}
-            onChange={
-              canEditRelated
-                ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
-                : undefined
-            }
-            disabled={disabled}
-            emptyLabel="Related"
-            searchPlaceholder="Add related…"
-            searchShortcutLabel="R"
-            ariaLabel="Related"
-            taskPropertyDropdownId="related"
-            onCreateFromQuery={onCreateRelatedContactFromQuery}
-            variant="inline"
-            onActivate={() => onFieldActivate?.("related")}
-          />
+          <>
+            <TaskRelatedChips
+              values={relatedValues}
+              options={relatedOptions}
+              onChange={
+                canEditRelated
+                  ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+                  : undefined
+              }
+              disabled={disabled}
+              emptyLabel="Related"
+              searchPlaceholder="Add related…"
+              searchShortcutLabel="R"
+              ariaLabel="Related"
+              taskPropertyDropdownId="related"
+              onCreateFromQuery={onCreateRelatedContactFromQuery}
+              variant="inline"
+              onActivate={() => onFieldActivate?.("related")}
+            />
+            <TaskRelatedChips
+              values={task?.linkedEmailIds ?? []}
+              options={emailRelatedOptions}
+              onChange={
+                canEditEmails
+                  ? (next) => onLinkedEmailsChange?.(next)
+                  : undefined
+              }
+              disabled={disabled}
+              emptyLabel="Emails"
+              searchPlaceholder="Add email…"
+              searchShortcutLabel="E"
+              ariaLabel="Emails"
+              taskPropertyDropdownId="emails"
+              variant="inline"
+              emptyIcon={<MailIcon size={14} />}
+              onActivate={() => onFieldActivate?.("emails")}
+            />
+          </>
         )}
       </div>
     </div>

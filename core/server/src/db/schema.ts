@@ -696,6 +696,11 @@ export const tasks = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /** Email thread ids (`email_threads.id`) related on the task rail. */
+    linkedEmailIds: jsonb("linked_email_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     /** Workspace task label ids (`task_labels.id`). Rename does not rewrite tasks. */
     labelIds: jsonb("label_ids")
       .$type<string[]>()

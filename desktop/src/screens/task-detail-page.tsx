@@ -11,6 +11,7 @@ import {
   TaskLinkedCommitSection,
   type TaskRelatedUpdateLink,
   buildAssigneeDropdownOptions,
+  buildEmailRelatedPropertyOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildSpellcheckSegments,
@@ -283,6 +284,9 @@ export function TaskDetailPage({
     [letters, projects]);
   const emailLinkOptions = useMemo(
     () => buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages]);
+  const emailRelatedOptions = useMemo(
+    () => buildEmailRelatedPropertyOptions(agentMail.messages),
     [agentMail.messages]);
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
@@ -858,6 +862,9 @@ export function TaskDetailPage({
       relatedOrganizationIds: related.organizationIds,
     });
   };
+  const patchLinkedEmails = (emailIds: string[]) => {
+    void workspace.patchTask(task.id, { linkedEmailIds: emailIds });
+  };
   const patchLabels = (labelIds: string[]) => {
     void workspace.patchTask(task.id, { labelIds });
   };
@@ -1065,6 +1072,7 @@ export function TaskDetailPage({
           onDueDateChange={patchDueDate}
           onAssigneeChange={patchAssignee}
           onRelatedChange={patchRelated}
+          onLinkedEmailsChange={patchLinkedEmails}
           onLabelChange={patchLabels}
           labelOptions={labelOptions}
           onProjectChange={patchProjectKey}
@@ -1088,6 +1096,7 @@ export function TaskDetailPage({
           onSaveTitle={saveTitle}
           assigneeOptions={assigneeOptions}
           relatedOptions={relatedOptions}
+          emailRelatedOptions={emailRelatedOptions}
           projectOptions={projectOptions}
           supportContact={supportParties.contact}
           supportOrganization={supportParties.organization}

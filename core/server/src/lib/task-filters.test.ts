@@ -100,6 +100,7 @@ describe("task filter parsing", () => {
       "legacy",
     );
     assert.equal(parseTaskListQuery({ linkedDocuments: "doc1" }).mode, "legacy");
+    assert.equal(parseTaskListQuery({ linkedEmails: "E-17" }).mode, "legacy");
     // Legacy ignores bad limits instead of 400ing (limit is ignored).
     assert.equal(parseTaskListQuery({ limit: "500" }).mode, "legacy");
     assert.equal(parseTaskListQuery({ paginated: "true" }).mode, "paginated");

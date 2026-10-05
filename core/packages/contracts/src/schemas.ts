@@ -462,6 +462,11 @@ export const taskSchema = z.object({
   relatedContactIds: z.array(z.string()).default([]),
   /** Organizations this task is about / for (same Related UI field as contacts). */
   relatedOrganizationIds: z.array(z.string()).default([]),
+  /**
+   * Related email thread ids (`email_threads.id`). Writes also accept display
+   * ids (`E-17`). Unknown/removed threads are kept and do not 500.
+   */
+  linkedEmailIds: z.array(z.string()).default([]),
   /** Workspace label ids. Managed in Settings; not created from the task dropdown. */
   labelIds: z.array(z.string()).default([]),
   number: z.number().int().positive(),
@@ -542,6 +547,7 @@ export const taskListItemSchema = z.object({
   linkedDocumentIds: z.array(z.string()),
   linkedContactIds: z.array(z.string()),
   linkedTaskIds: z.array(z.string()),
+  linkedEmailIds: z.array(z.string()),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   /** Only with `updatedSince`: set when the task was deleted. */
@@ -585,6 +591,8 @@ export const listTasksQuerySchema = z.object({
   linkedDocuments: z.string().optional(),
   /** Task id or key (OS-28) or a comma list — co-linked tasks via shared documents. */
   linkedTasks: z.string().optional(),
+  /** Email thread id or display id (`E-17`), or a comma list. */
+  linkedEmails: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   /** Only `dueDate` is supported today (default). */
@@ -645,6 +653,8 @@ export const createTaskSchema = z.object({
   relatedContactIds: z.array(z.string()).optional(),
   /** Related organization ids or keys. */
   relatedOrganizationIds: z.array(z.string()).optional(),
+  /** Related email thread ids or display ids (`E-17`). Unknown ids are kept. */
+  linkedEmailIds: z.array(z.string()).optional(),
   labelIds: z.array(z.string().min(1).max(64)).max(32).optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(10000).nullable().optional(),

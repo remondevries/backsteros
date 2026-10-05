@@ -166,6 +166,11 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
         (id): id is string => typeof id === "string" && id.trim().length > 0,
       )
     : [];
+  const linkedEmailIds = Array.isArray(row.linkedEmailIds)
+    ? row.linkedEmailIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      )
+    : [];
   return {
     id: row.id,
     project_id: row.projectId,
@@ -173,6 +178,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     assignee_id: row.assigneeId,
     related_contact_ids: JSON.stringify(relatedContactIds),
     related_organization_ids: JSON.stringify(relatedOrganizationIds),
+    linked_email_ids: JSON.stringify(linkedEmailIds),
     label_ids: JSON.stringify(
       Array.isArray(row.labelIds)
         ? row.labelIds.filter(
@@ -2055,6 +2061,9 @@ function mapTaskUpsert(
     relatedOrganizationIds: parseStringIdArray(
       payload.related_organization_ids ?? payload.relatedOrganizationIds,
     ),
+    linkedEmailIds: parseStringIdArray(
+      payload.linked_email_ids ?? payload.linkedEmailIds,
+    ),
     labelIds: parseStringIdArray(payload.label_ids ?? payload.labelIds),
     title: asString(payload.title),
     description: asString(payload.description),
@@ -2279,6 +2288,7 @@ export async function applySyncChange(
             assigneeId: input.assigneeId,
             relatedContactIds: input.relatedContactIds,
             relatedOrganizationIds: input.relatedOrganizationIds,
+            linkedEmailIds: input.linkedEmailIds,
             title: input.title,
             description: input.description,
             status: input.status,
@@ -2332,6 +2342,7 @@ export async function applySyncChange(
               assigneeId: input.assigneeId,
               relatedContactIds: input.relatedContactIds,
               relatedOrganizationIds: input.relatedOrganizationIds,
+              linkedEmailIds: input.linkedEmailIds,
               title: input.title,
               description: input.description,
               status: input.status,
@@ -2390,6 +2401,7 @@ export async function applySyncChange(
               assigneeId: input.assigneeId,
               relatedContactIds: input.relatedContactIds,
               relatedOrganizationIds: input.relatedOrganizationIds,
+              linkedEmailIds: input.linkedEmailIds,
               title: input.title,
               description: input.description,
               status: input.status,

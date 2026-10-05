@@ -504,6 +504,10 @@ export function useWorkspaceTaskActions({
         source.relatedOrganizationIds.length > 0
           ? { relatedOrganizationIds: source.relatedOrganizationIds }
           : {}),
+        ...(Array.isArray(source.linkedEmailIds) &&
+        source.linkedEmailIds.length > 0
+          ? { linkedEmailIds: source.linkedEmailIds }
+          : {}),
         ...(links.length > 0 ? { links } : {}),
         ...(Array.isArray(source.linkedCommitShas) &&
         source.linkedCommitShas.length > 0

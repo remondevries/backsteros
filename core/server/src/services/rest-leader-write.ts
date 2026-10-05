@@ -65,6 +65,7 @@ export function buildTaskRestPayload(
       "links",
       "related_contact_ids",
       "related_organization_ids",
+      "linked_email_ids",
       "label_ids",
       "linked_commit_shas",
       "add_linked_commit_shas",

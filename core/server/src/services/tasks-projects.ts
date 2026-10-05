@@ -239,6 +239,21 @@ function relatedOrganizationIdsEqual(
   return relatedContactIdsEqual(a, b);
 }
 
+function normalizeLinkedEmailIds(
+  value: readonly string[] | null | undefined,
+): string[] {
+  return normalizeRelatedContactIds(value);
+}
+
+function linkedEmailIdsEqual(
+  a: readonly string[],
+  b: readonly string[],
+): boolean {
+  return relatedContactIdsEqual(a, b);
+}
+
+void linkedEmailIdsEqual;
+
 async function assertRelatedOrganizationIds(
   workspaceId: string,
   ids: readonly string[],
@@ -913,6 +928,7 @@ export type TaskListItem = {
   linkedDocumentIds: string[];
   linkedContactIds: string[];
   linkedTaskIds: string[];
+  linkedEmailIds: string[];
   createdAt: string;
   updatedAt: string;
   /** Only present with `updatedSince` (change feed includes deletions). */
@@ -964,6 +980,16 @@ function relatedOrganizationOrCondition(ids: string[]): SQL | undefined {
     ...ids.map(
       (id) =>
         sql`${tasks.relatedOrganizationIds} @> ${JSON.stringify([id])}::jsonb`,
+    ),
+  );
+}
+
+function linkedEmailsOrCondition(ids: string[]): SQL | undefined {
+  if (!ids.length) return undefined;
+  return or(
+    ...ids.map(
+      (id) =>
+        sql`${tasks.linkedEmailIds} @> ${JSON.stringify([id])}::jsonb`,
     ),
   );
 }
@@ -1095,6 +1121,8 @@ function buildPaginatedTaskConditions(
     filters.relatedOrganizationIds,
   );
   if (relatedOrg) conditions.push(relatedOrg);
+  const linkedEmails = linkedEmailsOrCondition(filters.linkedEmailIds);
+  if (linkedEmails) conditions.push(linkedEmails);
   if (filters.dueDate) {
     conditions.push(dueDateSqlCondition(filters.dueDate));
   }
@@ -1341,6 +1369,7 @@ export async function listTasksPaginated(
       assigneeId: tasks.assigneeId,
       relatedContactIds: tasks.relatedContactIds,
       relatedOrganizationIds: tasks.relatedOrganizationIds,
+      linkedEmailIds: tasks.linkedEmailIds,
       labelIds: tasks.labelIds,
       number: tasks.number,
       title: tasks.title,
@@ -1411,6 +1440,11 @@ export async function listTasksPaginated(
         ].filter((id): id is string => typeof id === "string" && id.length > 0),
       ),
     ];
+    const linkedEmailIds = Array.isArray(row.linkedEmailIds)
+      ? row.linkedEmailIds.filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        )
+      : [];
     return {
       id: row.id,
       key: formatTaskDisplayKey(row.projectKey, row.number),
@@ -1427,6 +1461,7 @@ export async function listTasksPaginated(
       linkedDocumentIds: links.linkedDocumentIds,
       linkedContactIds,
       linkedTaskIds: links.linkedTaskIds,
+      linkedEmailIds,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       ...(filters.updatedSince
@@ -1817,6 +1852,7 @@ async function createTaskWithExecutor(
     relatedOrganizationIds,
     executor,
   );
+  const linkedEmailIds = normalizeLinkedEmailIds(input.linkedEmailIds);
   const labelIds = normalizeTaskLabelIds(input.labelIds);
   await assertTaskLabelIds(workspaceId, labelIds, executor);
   await assertWorkspaceReference(
@@ -1867,6 +1903,7 @@ async function createTaskWithExecutor(
       assigneeId: input.assigneeId ?? null,
       relatedContactIds,
       relatedOrganizationIds,
+      linkedEmailIds,
       labelIds,
       number,
       title: input.title,
@@ -2070,6 +2107,10 @@ export async function updateTask(
       executor,
     );
   }
+  const nextLinkedEmailIds =
+    input.linkedEmailIds === undefined
+      ? undefined
+      : normalizeLinkedEmailIds(input.linkedEmailIds);
   const nextLabelIds =
     input.labelIds === undefined
       ? undefined
@@ -2155,6 +2196,9 @@ export async function updateTask(
         : {}),
       ...(nextRelatedOrganizationIds !== undefined
         ? { relatedOrganizationIds: nextRelatedOrganizationIds }
+        : {}),
+      ...(nextLinkedEmailIds !== undefined
+        ? { linkedEmailIds: nextLinkedEmailIds }
         : {}),
       ...(nextLabelIds !== undefined ? { labelIds: nextLabelIds } : {}),
       number,

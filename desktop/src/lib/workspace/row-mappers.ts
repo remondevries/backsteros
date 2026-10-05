@@ -178,6 +178,7 @@ export function mapTask(
     assigneeId: task.assigneeId,
     relatedContactIds: parseStringIdArray(task.relatedContactIds),
     relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
+    linkedEmailIds: parseStringIdArray(task.linkedEmailIds),
     labelIds: parseStringIdArray(task.labelIds),
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,

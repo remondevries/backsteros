@@ -36,6 +36,8 @@ import {
   getInboxTaskRouteHref,
   getScopedProjectTaskHref,
   getCalendarMeetingHref,
+  getTaskDisplayId,
+  getProjectTaskHref,
   formatMeetingDisplayId,
   ProjectStatusIcon,
   COMPOSE_NO_PROJECT_VALUE,
@@ -45,6 +47,7 @@ import {
   type EmailComposerTaskSubmit,
   type EmailMailbox,
   type SearchableDropdownOption,
+  TaskStatusIcon,
 } from "@backsteros/ui";
 
 import {
@@ -112,7 +115,7 @@ export function EmailThreadDetail({
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
-  const { organizations, contacts, projects, meetings } = workspace;
+  const { organizations, contacts, projects, meetings, allTasks } = workspace;
   const mentionCatalog = useMentionCatalogOptional()?.catalog;
   const {
     statusOverride,
@@ -291,6 +294,81 @@ export function EmailThreadDetail({
         })),
       ),
     [projects],
+  );
+
+  const emailThreadId =
+    message?.threadMetadata?.id?.trim() ||
+    message?.emailThreadId?.trim() ||
+    null;
+
+  const linkedTaskOptions = useMemo((): SearchableDropdownOption<string>[] => {
+    return allTasks.map((task) => {
+      const displayId = getTaskDisplayId({
+        number: task.number,
+        projectId: task.projectId,
+        projectKey: task.projectKey,
+        contactId: task.contactId,
+      });
+      const href =
+        task.projectKey && task.number != null
+          ? getProjectTaskHref(task.projectKey, task.number)
+          : getInboxTaskRouteHref({
+              number: task.number,
+              projectKey: task.projectKey,
+              taskId: task.id,
+            });
+      const status = migrateLegacyTaskStatus(task.status);
+      return {
+        value: task.id,
+        label: task.title?.trim() || displayId || "Untitled",
+        secondaryLabel: displayId ?? undefined,
+        searchTerms: [task.title, displayId, task.projectKey]
+          .filter(Boolean)
+          .join(" "),
+        href,
+        icon: (
+          <TaskStatusIcon
+            status={status}
+            size={14}
+            support={Boolean(task.support)}
+            notification={Boolean(task.notification)}
+          />
+        ),
+      };
+    });
+  }, [allTasks]);
+
+  const linkedTaskIds = useMemo(() => {
+    if (!emailThreadId) return [];
+    return allTasks
+      .filter((task) => task.linkedEmailIds?.includes(emailThreadId))
+      .map((task) => task.id);
+  }, [allTasks, emailThreadId]);
+
+  const handleLinkedTasksChange = useCallback(
+    (nextIds: string[]) => {
+      if (!emailThreadId) return;
+      const current = new Set(linkedTaskIds);
+      const next = new Set(nextIds);
+      for (const id of next) {
+        if (current.has(id)) continue;
+        const task = allTasks.find((entry) => entry.id === id);
+        const existing = task?.linkedEmailIds ?? [];
+        if (existing.includes(emailThreadId)) continue;
+        void workspace.patchTask(id, {
+          linkedEmailIds: [...existing, emailThreadId],
+        });
+      }
+      for (const id of current) {
+        if (next.has(id)) continue;
+        const task = allTasks.find((entry) => entry.id === id);
+        const existing = task?.linkedEmailIds ?? [];
+        void workspace.patchTask(id, {
+          linkedEmailIds: existing.filter((entry) => entry !== emailThreadId),
+        });
+      }
+    },
+    [allTasks, emailThreadId, linkedTaskIds, workspace],
   );
 
   const taskProjectIdOptions = useMemo((): SearchableDropdownOption<string>[] => {
@@ -1126,6 +1204,11 @@ export function EmailThreadDetail({
                   }
                   projectNavigateHref={
                     projectKey ? `/projects/${projectKey}` : null
+                  }
+                  linkedTaskIds={linkedTaskIds}
+                  linkedTaskOptions={linkedTaskOptions}
+                  onLinkedTasksChange={
+                    emailThreadId ? handleLinkedTasksChange : undefined
                   }
                   onStatusChange={(next) => {
                     setStatusOverride(next);
