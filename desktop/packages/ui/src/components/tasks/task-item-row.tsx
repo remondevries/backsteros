@@ -79,7 +79,7 @@ export type TaskItemRowTask = {
   relatedContactIds?: string[] | null;
   /** Organizations this task is about / for (Related property). */
   relatedOrganizationIds?: string[] | null;
-  /** Email thread ids related on the task rail. */
+  /** Email thread ids on the Related property. */
   linkedEmailIds?: string[] | null;
   /** Workspace label ids. */
   labelIds?: string[] | null;

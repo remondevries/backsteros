@@ -306,6 +306,14 @@ function CommunicationPageBody() {
       buildProjectDropdownOptions(workspace.projects, { includeNone: true }),
     [workspace.projects],
   );
+  const emailLinkOptions = useMemo(
+    () => buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages],
+  );
+  const emailRelatedOptions = useMemo(
+    () => buildEmailRelatedPropertyOptions(agentMail.messages),
+    [agentMail.messages],
+  );
   const relatedOptions = useMemo(
     () =>
       buildTaskRelatedDropdownOptions({
@@ -314,21 +322,19 @@ function CommunicationPageBody() {
           withAvatarSrc(workspace.organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
+        emailOptions: emailRelatedOptions,
       }),
-    [assigneeOptions, organizationAvatarSrc, workspace.organizations],
+    [
+      assigneeOptions,
+      emailRelatedOptions,
+      organizationAvatarSrc,
+      workspace.organizations,
+    ],
   );
   const labelOptions = useTaskLabelDropdownOptions();
   const documentLinkOptions = useMemo(
     () => buildDocumentLinkOptions(workspace.documents),
     [workspace.documents],
-  );
-  const emailLinkOptions = useMemo(
-    () => buildEmailLinkOptions(agentMail.messages),
-    [agentMail.messages],
-  );
-  const emailRelatedOptions = useMemo(
-    () => buildEmailRelatedPropertyOptions(agentMail.messages),
-    [agentMail.messages],
   );
 
   const assignee = useMemo(() => {
@@ -541,7 +547,6 @@ function CommunicationPageBody() {
         assigneeOptions={assigneeOptions}
         projectOptions={projectOptions}
         relatedOptions={relatedOptions}
-        emailRelatedOptions={emailRelatedOptions}
         supportContact={supportParties.contact}
         supportOrganization={supportParties.organization}
         supportContactHref={supportParties.contactHref}
@@ -565,10 +570,8 @@ function CommunicationPageBody() {
           patchTask({
             relatedContactIds: related.contactIds,
             relatedOrganizationIds: related.organizationIds,
+            linkedEmailIds: related.emailIds,
           })
-        }
-        onLinkedEmailsChange={(emailIds) =>
-          patchTask({ linkedEmailIds: emailIds })
         }
         onLabelChange={(labelIds) => patchTask({ labelIds })}
         labelOptions={labelOptions}

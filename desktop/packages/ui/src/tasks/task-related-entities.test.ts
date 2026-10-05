@@ -9,20 +9,22 @@ import {
 } from "./task-related-entities.js";
 
 describe("task-related-entities", () => {
-  it("encodes and decodes contact + organization ids", () => {
-    const values = encodeTaskRelatedValues(["c1", "c2"], ["o1"]);
+  it("encodes and decodes contact + organization + email ids", () => {
+    const values = encodeTaskRelatedValues(["c1", "c2"], ["o1"], ["e1"]);
     assert.deepEqual(values, [
       "contact:c1",
       "contact:c2",
       "organization:o1",
+      "email:e1",
     ]);
     assert.deepEqual(decodeTaskRelatedValues(values), {
       contactIds: ["c1", "c2"],
       organizationIds: ["o1"],
+      emailIds: ["e1"],
     });
   });
 
-  it("builds prefixed options with contact and org icons preserved", () => {
+  it("builds prefixed options with contact, org, and email icons preserved", () => {
     const options = buildTaskRelatedDropdownOptions({
       contactOptions: [
         { value: "__none__", label: "Unassigned" },
@@ -31,6 +33,14 @@ describe("task-related-entities", () => {
       organizationOptions: [
         { value: "__none__", label: "No organization" },
         { value: "o1", label: "Acme", icon: "org" },
+      ],
+      emailOptions: [
+        {
+          value: "thread-1",
+          label: "Quote follow-up",
+          icon: "mail",
+          href: "/email/in1/m1",
+        },
       ],
     });
     assert.deepEqual(options, [
@@ -45,6 +55,13 @@ describe("task-related-entities", () => {
         label: "Acme",
         icon: "org",
         searchTerms: "organization org Acme",
+      },
+      {
+        value: "email:thread-1",
+        label: "Quote follow-up",
+        icon: "mail",
+        href: "/email/in1/m1",
+        searchTerms: "email mail Quote follow-up",
       },
     ]);
   });

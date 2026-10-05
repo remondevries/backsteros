@@ -560,8 +560,14 @@ export function TaskDetailPage({
           withAvatarSrc(organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
+        emailOptions: emailRelatedOptions,
       }),
-    [assigneeOptions, organizationAvatarSrc, organizations],
+    [
+      assigneeOptions,
+      emailRelatedOptions,
+      organizationAvatarSrc,
+      organizations,
+    ],
   );
   const labelOptions = useTaskLabelDropdownOptions();
 
@@ -856,14 +862,13 @@ export function TaskDetailPage({
   const patchRelated = (related: {
     contactIds: string[];
     organizationIds: string[];
+    emailIds: string[];
   }) => {
     void workspace.patchTask(task.id, {
       relatedContactIds: related.contactIds,
       relatedOrganizationIds: related.organizationIds,
+      linkedEmailIds: related.emailIds,
     });
-  };
-  const patchLinkedEmails = (emailIds: string[]) => {
-    void workspace.patchTask(task.id, { linkedEmailIds: emailIds });
   };
   const patchLabels = (labelIds: string[]) => {
     void workspace.patchTask(task.id, { labelIds });
@@ -1072,7 +1077,6 @@ export function TaskDetailPage({
           onDueDateChange={patchDueDate}
           onAssigneeChange={patchAssignee}
           onRelatedChange={patchRelated}
-          onLinkedEmailsChange={patchLinkedEmails}
           onLabelChange={patchLabels}
           labelOptions={labelOptions}
           onProjectChange={patchProjectKey}
@@ -1096,7 +1100,6 @@ export function TaskDetailPage({
           onSaveTitle={saveTitle}
           assigneeOptions={assigneeOptions}
           relatedOptions={relatedOptions}
-          emailRelatedOptions={emailRelatedOptions}
           projectOptions={projectOptions}
           supportContact={supportParties.contact}
           supportOrganization={supportParties.organization}

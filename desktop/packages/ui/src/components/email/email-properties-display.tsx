@@ -353,7 +353,7 @@ export function EmailPropertiesDisplay({
             {organizationField}
           </PropertyFieldGroup>
           <PropertyFieldGroup label="Contact">{contactField}</PropertyFieldGroup>
-          <PropertyFieldGroup label="Tasks">
+          <PropertyFieldGroup label="Related">
             <TaskRelatedChips
               values={[...linkedTaskIds]}
               options={linkedTaskOptions}
@@ -362,10 +362,11 @@ export function EmailPropertiesDisplay({
                   ? (next) => onLinkedTasksChange?.(next)
                   : undefined
               }
-              emptyLabel="No tasks"
-              searchPlaceholder="Add task…"
-              ariaLabel="Tasks"
-              taskPropertyDropdownId="linkedTasks"
+              emptyLabel="No related"
+              searchPlaceholder="Add related…"
+              searchShortcutLabel="R"
+              ariaLabel="Related"
+              taskPropertyDropdownId="related"
               variant="rail"
               emptyIcon={<TaskStatusIcon status="triage" size={14} />}
               onActivate={() => onFieldActivate?.("related")}

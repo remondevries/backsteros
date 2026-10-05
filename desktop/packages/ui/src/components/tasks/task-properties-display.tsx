@@ -1,6 +1,5 @@
 "use client";
 
-import { MailIcon } from "@primer/octicons-react";
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import {
@@ -82,13 +81,11 @@ export type TaskPropertiesDisplayProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: TaskRelatedSelection) => void;
-  onLinkedEmailsChange?: (emailIds: string[]) => void;
   onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
-  emailRelatedOptions?: SearchableDropdownOption<string>[];
   labelOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
@@ -129,13 +126,11 @@ export function TaskPropertiesDisplay({
   onDueDateChange,
   onAssigneeChange,
   onRelatedChange,
-  onLinkedEmailsChange,
   onLabelChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
   relatedOptions = [],
-  emailRelatedOptions = [],
   labelOptions = [],
   projectOptions = [],
   assigneeNavigateHref,
@@ -177,13 +172,12 @@ export function TaskPropertiesDisplay({
   const relatedValues = encodeTaskRelatedValues(
     task?.relatedContactIds ?? [],
     task?.relatedOrganizationIds ?? [],
+    task?.linkedEmailIds ?? [],
   );
   const canEditAssignee =
     Boolean(onAssigneeChange) && assigneeOptions.length > 0;
   const canEditRelated =
     Boolean(onRelatedChange) && relatedOptions.length > 0;
-  const canEditEmails =
-    Boolean(onLinkedEmailsChange) && emailRelatedOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
   /** Support tickets keep Contact/Org in the rail; other props sit under the title. */
@@ -330,26 +324,6 @@ export function TaskPropertiesDisplay({
                 onCreateFromQuery={onCreateRelatedContactFromQuery}
                 variant="rail"
                 onActivate={() => onFieldActivate?.("related")}
-              />
-            </PropertyFieldGroup>
-            <PropertyFieldGroup label="Emails">
-              <TaskRelatedChips
-                values={task?.linkedEmailIds ?? []}
-                options={emailRelatedOptions}
-                onChange={
-                  canEditEmails
-                    ? (next) => onLinkedEmailsChange?.(next)
-                    : undefined
-                }
-                disabled={disabled}
-                emptyLabel="No emails"
-                searchPlaceholder="Add email…"
-                searchShortcutLabel="E"
-                ariaLabel="Emails"
-                taskPropertyDropdownId="emails"
-                variant="rail"
-                emptyIcon={<MailIcon size={14} />}
-                onActivate={() => onFieldActivate?.("emails")}
               />
             </PropertyFieldGroup>
           </EntityPropertiesSection>

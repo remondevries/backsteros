@@ -319,8 +319,14 @@ function InboxPageBody() {
           withAvatarSrc(organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
+        emailOptions: emailRelatedOptions,
       }),
-    [assigneeOptions, organizationAvatarSrc, organizations],
+    [
+      assigneeOptions,
+      emailRelatedOptions,
+      organizationAvatarSrc,
+      organizations,
+    ],
   );
   const labelOptions = useTaskLabelDropdownOptions();
 
@@ -659,11 +665,7 @@ function InboxPageBody() {
           void workspace.patchTask(selectedTask.id, {
             relatedContactIds: related.contactIds,
             relatedOrganizationIds: related.organizationIds,
-          });
-        }}
-        onLinkedEmailsChange={(emailIds) => {
-          void workspace.patchTask(selectedTask.id, {
-            linkedEmailIds: emailIds,
+            linkedEmailIds: related.emailIds,
           });
         }}
         onLabelChange={(labelIds) => {
@@ -713,7 +715,6 @@ function InboxPageBody() {
         }}
         assigneeOptions={assigneeOptions}
         relatedOptions={relatedOptions}
-        emailRelatedOptions={emailRelatedOptions}
         projectOptions={projectOptions}
         supportContact={supportParties.contact}
         supportOrganization={supportParties.organization}
