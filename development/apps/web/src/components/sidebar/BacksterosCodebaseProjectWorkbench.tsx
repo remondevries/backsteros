@@ -22,6 +22,7 @@ import {
   formatBacksterosLocalCoreError,
   patchBacksterosProjectUpdate,
 } from "~/backsteros/client";
+import { resolveCodebaseListSelection } from "~/backsteros/codebaseListSelection";
 import {
   BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS,
   type BacksterosCodebaseListTab,
@@ -497,7 +498,6 @@ function CommitsTab(props: { readonly project: BacksterosCodebaseProject }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    setSelectedSha(null);
     void (async () => {
       try {
         const branchPayload = await fetchBacksterosProjectGithubBranches(
@@ -534,7 +534,6 @@ function CommitsTab(props: { readonly project: BacksterosCodebaseProject }) {
   const loadBranch = useCallback(
     async (nextBranch: string) => {
       setBranch(nextBranch);
-      setSelectedSha(null);
       setLoading(true);
       setError(null);
       try {
@@ -549,6 +548,17 @@ function CommitsTab(props: { readonly project: BacksterosCodebaseProject }) {
     },
     [project.id],
   );
+
+  // Desktop parity: opening Commits auto-opens the first commit. Branch change
+  // and refresh keep the current sha when it is still in the list.
+  useEffect(() => {
+    if (loading) return;
+    const nextSha = resolveCodebaseListSelection(
+      commits.map((commit) => commit.sha),
+      selectedSha,
+    );
+    if (nextSha !== selectedSha) setSelectedSha(nextSha);
+  }, [commits, loading, selectedSha]);
 
   const selected = commits.find((commit) => commit.sha === selectedSha) ?? null;
 
@@ -680,6 +690,17 @@ function PullsTab(props: { readonly project: BacksterosCodebaseProject }) {
       });
     return () => controller.abort();
   }, [githubConnected, project.id, reloadToken, repo]);
+
+  // Desktop parity: opening PRs auto-opens the first pull. Refresh keeps the
+  // current number when it is still in the list.
+  useEffect(() => {
+    if (loading) return;
+    const nextNumber = resolveCodebaseListSelection(
+      pulls.map((pull) => pull.number),
+      selectedNumber,
+    );
+    if (nextNumber !== selectedNumber) setSelectedNumber(nextNumber);
+  }, [loading, pulls, selectedNumber]);
 
   useEffect(() => {
     if (selectedNumber == null) {
