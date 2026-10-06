@@ -117,8 +117,9 @@ export function versionedAsideAppName(version, now) {
 
 /**
  * Default `tauri build --bundles app` only on macOS so a local/CI Mac build
- * does not produce a DMG. Windows/Linux use tauri.conf.json `bundle.targets`
- * (`all`) and therefore still get msi/nsis (and Linux packages).
+ * does not produce a DMG. tauri.conf.json `bundle.targets` is
+ * ["app","msi","nsis"] (no Linux job in desktop-release.yml) so Windows CI
+ * still gets msi/nsis and a bare `pnpm tauri build` on macOS cannot emit a DMG.
  *
  * @param {string[]} args
  * @param {NodeJS.Platform} [platform]

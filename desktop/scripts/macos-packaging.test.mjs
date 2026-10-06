@@ -361,9 +361,9 @@ test("replace-stable refuses when the stable bundle executable is running", asyn
   writeFakeApp(versioned);
   writeFakeApp(stable);
   const exePath = path.join(stable, "Contents", "MacOS", BUNDLE_EXECUTABLE_FALLBACK);
-  fs.writeFileSync(exePath, "#!/bin/sh\nexec /bin/sleep 30\n");
+  fs.writeFileSync(exePath, "#!/bin/sh\nsleep 30\n");
   fs.chmodSync(exePath, 0o755);
-  const child = spawn(exePath, [], { stdio: "ignore" });
+  const child = spawn(exePath, [], { detached: true, stdio: "ignore" });
   try {
     const deadline = Date.now() + 2000;
     const pattern = `${path.join(stable, "Contents", "MacOS")}${path.sep}`;
@@ -388,6 +388,16 @@ test("replace-stable refuses when the stable bundle executable is running", asyn
     assert.equal(fs.existsSync(versioned), true);
     assert.equal(fs.existsSync(stable), true);
   } finally {
-    child.kill("SIGTERM");
+    if (child.pid) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      }
+    }
   }
 });

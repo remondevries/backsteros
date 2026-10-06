@@ -109,8 +109,9 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 `pnpm --filter @backsteros/desktop build` writes `CFBundleShortVersionString` from
 the synced app version and a valid `CFBundleVersion` (pre-release suffixes such as
 `-beta.1` are stripped). On **macOS** it then runs `tauri build --bundles app`.
-`tauri.conf.json` `bundle.targets` is `all` so Windows CI still produces msi/nsis
-and Linux produces its packages. The command
+`tauri.conf.json` `bundle.targets` is `["app", "msi", "nsis"]` so Windows CI
+still produces msi/nsis, while a direct `pnpm tauri build` on macOS cannot emit
+a DMG. The command
 **does not** copy or overwrite `/Applications/BacksterOS.app`. After the build it
 snapshots each `BacksterOS*.app` plus `Contents/Info.plist`,
 `Contents/_CodeSignature/CodeResources`, and every file in `Contents/MacOS/`, and
