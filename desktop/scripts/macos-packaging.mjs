@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const STABLE_APP_NAME = "BacksterOS.app";
-export const BUNDLE_EXECUTABLE_FALLBACK = "BacksterOS";
+export const BUNDLE_EXECUTABLE_FALLBACK = "backsteros-desktop";
 
 const SNAPSHOT_FIXED_FILES = [
   path.join("Contents", "Info.plist"),
@@ -116,8 +116,9 @@ export function versionedAsideAppName(version, now) {
 }
 
 /**
- * Default `tauri build --bundles app` only on macOS so Windows CI still
- * produces msi/nsis from tauri.conf.json targets.
+ * Default `tauri build --bundles app` only on macOS so a local/CI Mac build
+ * does not produce a DMG. Windows/Linux use tauri.conf.json `bundle.targets`
+ * (`all`) and therefore still get msi/nsis (and Linux packages).
  *
  * @param {string[]} args
  * @param {NodeJS.Platform} [platform]
@@ -262,13 +263,14 @@ export function describeBacksterAppChanges(before, after) {
  * }} result
  */
 export function interpretCodesignVerify(result) {
-  if ((result.verifyStatus ?? 1) === 0) {
-    return { ok: true, adHoc: false };
-  }
   const display = result.displayOutput ?? "";
   const adHoc = /Signature=adhoc|\(adhoc\)|flags=.*adhoc/i.test(display);
-  if (adHoc) {
-    return { ok: true, adHoc: true };
+  if ((result.verifyStatus ?? 1) === 0) {
+    return { ok: true, adHoc };
   }
-  return { ok: false, adHoc: false, error: (result.verifyStderr ?? "").trim() || "codesign --verify failed" };
+  return {
+    ok: false,
+    adHoc,
+    error: (result.verifyStderr ?? "").trim() || "codesign --verify failed",
+  };
 }

@@ -36,9 +36,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app"
-    ],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "BacksterOS desktop",
     "longDescription": "Native BacksterOS client — tasks, projects, documents, and letters with offline-first sync.",

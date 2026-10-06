@@ -96,14 +96,54 @@ export function verifyMacosAppBundle(appPath, opts) {
   return interpreted;
 }
 
+function pgrepHasAppProcess(runPgrep, pgrepArgs, processCommand) {
+  const result = runPgrep(pgrepArgs);
+  if ((result.status ?? 1) !== 0) {
+    return false;
+  }
+  const pids = (result.stdout ?? "").trim().split(/\s+/).filter(Boolean);
+  if (pids.length === 0) {
+    return true;
+  }
+  return pids.some((pid) => !/\bpgrep\b/.test(processCommand(pid)));
+}
+
 /**
- * @param {(args?: string[]) => { status: number | null }} [runPgrep]
+ * True when a process is running from the stable bundle (CFBundleExecutable is
+ * `backsteros-desktop`, not the Finder name BacksterOS).
+ *
+ * @param {string} stableDest
+ * @param {{
+ *   exists?: (p: string) => boolean,
+ *   readFile?: (p: string) => string,
+ *   runPgrep?: (args: string[]) => { status: number | null, stdout?: string },
+ *   processCommand?: (pid: string) => string,
+ * }} [opts]
  */
-export function isBacksterOsRunning(runPgrep) {
-  const run =
-    runPgrep ??
-    (() => spawnSync("pgrep", ["-x", "BacksterOS"], { encoding: "utf8" }));
-  return (run(["-x", "BacksterOS"]).status ?? 1) === 0;
+export function isStableBundleRunning(stableDest, opts = {}) {
+  const exists = opts.exists ?? ((p) => fs.existsSync(p));
+  const readFile = opts.readFile ?? ((p) => fs.readFileSync(p, "utf8"));
+  const runPgrep =
+    opts.runPgrep ??
+    ((args) => spawnSync("pgrep", args, { encoding: "utf8" }));
+  const processCommand =
+    opts.processCommand ??
+    ((pid) => spawnSync("ps", ["-p", pid, "-o", "args="], { encoding: "utf8" }).stdout ?? "");
+  const macosDir = `${path.join(stableDest, "Contents", "MacOS")}${path.sep}`;
+  if (pgrepHasAppProcess(runPgrep, ["-f", macosDir], processCommand)) {
+    return true;
+  }
+  const plistPath = path.join(stableDest, "Contents", "Info.plist");
+  let exe = BUNDLE_EXECUTABLE_FALLBACK;
+  if (exists(plistPath)) {
+    try {
+      exe = readPlistString(readFile(plistPath), "CFBundleExecutable") || BUNDLE_EXECUTABLE_FALLBACK;
+    } catch {
+      exe = BUNDLE_EXECUTABLE_FALLBACK;
+    }
+  }
+  const exePath = path.join(stableDest, "Contents", "MacOS", exe);
+  return pgrepHasAppProcess(runPgrep, ["-f", exePath], processCommand);
 }
 
 /**
@@ -129,7 +169,9 @@ function installIo(overrides = {}) {
     rename: overrides.rename ?? ((from, to) => fs.renameSync(from, to)),
     rm: overrides.rm ?? ((p) => fs.rmSync(p, { recursive: true, force: true })),
     verifyBundle: overrides.verifyBundle ?? verifyMacosAppBundle,
-    isRunning: overrides.isRunning ?? (() => isBacksterOsRunning()),
+    isRunning: overrides.isRunning,
+    runPgrep: overrides.runPgrep,
+    processCommand: overrides.processCommand,
     runCodesign: overrides.runCodesign,
   };
 }
@@ -181,7 +223,22 @@ export function installMacosApp(opts) {
     if (io.exists(versionedDest)) {
       io.rename(versionedDest, asideDest);
     }
-    io.rename(tmpDest, versionedDest);
+    try {
+      io.rename(tmpDest, versionedDest);
+    } catch (err) {
+      if (io.exists(asideDest) && !io.exists(versionedDest)) {
+        try {
+          io.rename(asideDest, versionedDest);
+        } catch (restoreErr) {
+          const restoreMsg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
+          throw new Error(
+            `failed to place ${versionedDest} (${err instanceof Error ? err.message : err}); also failed to restore aside copy: ${restoreMsg}`,
+          );
+        }
+      }
+      if (io.exists(tmpDest)) io.rm(tmpDest);
+      throw err;
+    }
     copiedFromBuild = true;
   }
 
@@ -194,7 +251,14 @@ export function installMacosApp(opts) {
       `missing versioned copy ${versionedDest}; run install without --replace-stable first`,
     );
   }
-  if (io.isRunning() && !force) {
+  const running = io.isRunning
+    ? io.isRunning()
+    : isStableBundleRunning(stableDest, {
+        exists: io.exists,
+        runPgrep: io.runPgrep,
+        processCommand: io.processCommand,
+      });
+  if (running && !force) {
     throw new Error("BacksterOS is running; quit it or pass --force");
   }
 
@@ -286,13 +350,13 @@ if (isDirectRun()) {
     replaceStable,
     force,
   });
-  console.log(`[install-macos-app] versioned copy: ${plan.versionedDest}`);
   if (plan.adHoc) {
-    console.warn("[install-macos-app] versioned copy is ad-hoc signed (Developer ID is OS-86)");
+    console.warn("[install-macos-app] bundle is ad-hoc signed (Developer ID is OS-86)");
   }
   if (replaceStable) {
     console.log(`[install-macos-app] stable app: ${plan.stableDest}`);
   } else {
+    console.log(`[install-macos-app] versioned copy: ${plan.versionedDest}`);
     console.log(
       `[install-macos-app] left ${path.join(applicationsDir, STABLE_APP_NAME)} untouched; pass --replace-stable to promote the versioned copy`,
     );

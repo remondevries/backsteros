@@ -109,7 +109,8 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 `pnpm --filter @backsteros/desktop build` writes `CFBundleShortVersionString` from
 the synced app version and a valid `CFBundleVersion` (pre-release suffixes such as
 `-beta.1` are stripped). On **macOS** it then runs `tauri build --bundles app`.
-Windows/Linux keep the targets in `tauri.conf.json` (msi/nsis). The command
+`tauri.conf.json` `bundle.targets` is `all` so Windows CI still produces msi/nsis
+and Linux produces its packages. The command
 **does not** copy or overwrite `/Applications/BacksterOS.app`. After the build it
 snapshots each `BacksterOS*.app` plus `Contents/Info.plist`,
 `Contents/_CodeSignature/CodeResources`, and every file in `Contents/MacOS/`, and
@@ -127,8 +128,9 @@ pnpm --filter @backsteros/desktop install:macos
 # After you have verified BacksterOS-<version>.app, promote it to the stable
 # name. This does not recopy the build. The existing /Applications/BacksterOS.app
 # is renamed to /Applications/BacksterOS-rollback-<timestamp>.app, then the
-# versioned copy is renamed onto BacksterOS.app. Refuses while BacksterOS is
-# running. A failed second rename restores the rollback.
+# versioned copy is renamed onto BacksterOS.app. Refuses while a process is
+# running from that bundle (`Contents/MacOS/backsteros-desktop`). A failed
+# second rename restores the rollback.
 pnpm --filter @backsteros/desktop install:macos -- --replace-stable
 
 # Rebuild the versioned copy, or swap while the app is still running:
