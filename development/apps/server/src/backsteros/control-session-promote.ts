@@ -48,17 +48,37 @@ function cancelIdlePromoteForTask(taskId: string): void {
   idlePromoteGenerations.set(taskId, (idlePromoteGenerations.get(taskId) ?? 0) + 1);
 }
 
+export type ControlSessionPromoteThread = {
+  readonly sessionStatus?: string | null;
+  readonly lastError?: string | null;
+};
+
+/**
+ * A rejected turn (session `error`, or `stopped` with `lastError`) must not
+ * look like a successful completion. Those snapshots often read as idle/done
+ * and would otherwise auto-flip to `in_review` (OS-91).
+ */
+export function controlSessionFailedToComplete(
+  thread?: ControlSessionPromoteThread | null,
+): boolean {
+  if (!thread) return false;
+  if (thread.sessionStatus === "error") return true;
+  return thread.sessionStatus === "stopped" && Boolean(thread.lastError?.trim());
+}
+
 /**
  * Map session lifecycle → BacksterOS status and PATCH when it changes.
  * `in_review` is only applied when the live task is already `in_progress`
  * (enforced inside {@link patchBacksterosControlTaskStatus}).
  *
  * Control-only sessions usually finish turns as `idle` (not settled `done`);
- * after a working stretch, idle also promotes to `in_review`.
+ * after a working stretch, idle also promotes to `in_review` — unless the
+ * live session errored or stopped with `lastError`.
  */
 export function maybePromoteBacksterosTaskForControlSession(
   taskId: string,
   sessionStatus: BacksterosControlSessionStatus,
+  thread?: ControlSessionPromoteThread | null,
 ): void {
   const previous = lastPromotedStatus.get(taskId);
   if (previous === sessionStatus) return;
@@ -76,6 +96,9 @@ export function maybePromoteBacksterosTaskForControlSession(
     (previous === "working" || previous === "blocked")
   ) {
     target = "in_review";
+  }
+  if (target === "in_review" && controlSessionFailedToComplete(thread)) {
+    return;
   }
   if (!target) return;
   void patchBacksterosControlTaskStatus(taskId, target);

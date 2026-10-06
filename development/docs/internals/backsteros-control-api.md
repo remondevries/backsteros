@@ -53,14 +53,14 @@ curl -sS -X POST "$ORIGIN/api/backsteros/control/sessions" \
 
 Body fields:
 
-| Field                 | Required | Notes                                                                 |
-| --------------------- | -------- | --------------------------------------------------------------------- |
-| `taskRef` or `taskId` | yes      | `BDV-33` or the task id                                               |
-| `prompt`              | no       | Defaults to the standard BacksterOS kickoff prompt from the task body |
-| `start`               | no       | Default `true`. Set `false` to create/bind without starting a turn    |
-| `workspaceRoot`       | no       | Override when the BacksterOS project cwd is unset                     |
-| `projectId`           | no       | T3 project id override                                                |
-| `modelSelection`      | no       | `{ "instanceId": "cursor", "model": "…" }`                            |
+| Field                 | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `taskRef` or `taskId` | yes      | `BDV-33` or the task id                                                                                                                                                                                                                                                                                                                                                                                    |
+| `prompt`              | no       | Defaults to the standard BacksterOS kickoff prompt from the task body                                                                                                                                                                                                                                                                                                                                      |
+| `start`               | no       | Default `true`. Set `false` to create/bind without starting a turn                                                                                                                                                                                                                                                                                                                                         |
+| `workspaceRoot`       | no       | Override when the BacksterOS project cwd is unset                                                                                                                                                                                                                                                                                                                                                          |
+| `projectId`           | no       | T3 project id override                                                                                                                                                                                                                                                                                                                                                                                     |
+| `modelSelection`      | no       | `{ "instanceId": "cursor", "model": "…" }`. On a **new** thread this falls back to the T3 project default (then the first authenticated provider). On an **existing** bound thread the turn uses that thread's stored selection — not the project default — so a cursor thread is not restarted as `claudeAgent`. An explicit selection on a **different driver** is rejected before dispatch (see below). |
 
 **Project resolution:** when `workspaceRoot` / `projectId` are omitted, the
 server reads the BacksterOS task's project `localWorkingDirectory`, matches it
@@ -71,16 +71,36 @@ task chat in the UI. Callers only need `taskRef` for the happy path.
 If the BacksterOS project has no cwd and `workspaceRoot` was not provided, the
 response is JSON `409` with `code: "no_workspace"` (not a 500).
 
-Response includes `threadId`, `taskId`, `taskRef`, `status`
-(`idle` \| `working` \| `blocked` \| `done`), `created`, `started`.
+If the caller passes `modelSelection` whose **driver** differs from the existing
+thread (same check as the orchestration engine), the response is JSON `409`
+with `code: "driver_mismatch"` and:
 
-Re-calling with the same task reuses the bound thread.
+| Field                 | Meaning                                     |
+| --------------------- | ------------------------------------------- |
+| `threadInstanceId`    | Instance id stored on the thread            |
+| `threadDriver`        | Driver kind the thread is bound to          |
+| `requestedInstanceId` | Instance id from the request                |
+| `requestedDriver`     | Driver kind that would have been dispatched |
+
+Same-driver instance switches are allowed. Nothing is dispatched, and the
+BacksterOS task status is not written.
+
+Response includes `threadId`, `taskId`, `taskRef`, `status`
+(`idle` \| `working` \| `blocked` \| `done`), `lastError` (provider/session
+error text, or `null`), `created`, `started`.
+
+Re-calling with the same task reuses the bound thread and its driver. A
+rejected or errored session (or `stopped` with `lastError`) does **not** move
+the task to `in_review`; only a real successful turn completion does. A retry
+that actually dispatches a turn still marks the task `in_progress`.
 
 ### Status
 
 `GET /api/backsteros/control/sessions?taskRef=BDV-33`
 
-Also accepts `taskId=` or `threadId=`.
+Also accepts `taskId=` or `threadId=`. The JSON includes `lastError` when the
+provider session failed (so callers can tell a rejected turn from a finished
+one). Status GET is read-only: it never writes BacksterOS task status.
 
 ### Follow-up message
 

@@ -72,6 +72,41 @@ describe("control-session-promote (OS-73 idle in_review)", () => {
     expect(patchCalls).toEqual([]);
   });
 
+  it("does not promote idle-after-working when the session errored", () => {
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "working");
+    patchCalls.length = 0;
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "idle", {
+      sessionStatus: "error",
+      lastError: "Thread is bound to driver 'cursor' and cannot switch to 'claudeAgent'.",
+    });
+    expect(patchCalls.every((call) => call.status !== "in_review")).toBe(true);
+  });
+
+  it("does not promote idle/done when the session stopped with lastError", () => {
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "working");
+    patchCalls.length = 0;
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "idle", {
+      sessionStatus: "stopped",
+      lastError: "Thread is bound to driver 'cursor' and cannot switch to 'claudeAgent'.",
+    });
+    expect(patchCalls).toEqual([]);
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "done", {
+      sessionStatus: "stopped",
+      lastError: "Thread is bound to driver 'cursor' and cannot switch to 'claudeAgent'.",
+    });
+    expect(patchCalls.every((call) => call.status !== "in_review")).toBe(true);
+  });
+
+  it("still promotes idle-after-working for a healthy ready session", () => {
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "working");
+    patchCalls.length = 0;
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "idle", {
+      sessionStatus: "ready",
+      lastError: null,
+    });
+    expect(patchCalls).toEqual([{ taskId: TASK_ID, status: "in_review" }]);
+  });
+
   it("skips promote when isIdle returns false at fire time", () => {
     scheduleControlSessionPromoteAfterTurn(stateDir, THREAD_ID, {
       isIdle: () => false,

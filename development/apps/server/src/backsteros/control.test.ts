@@ -22,6 +22,7 @@ import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import {
   controlMessageHandler,
+  controlPromoteHandler,
   controlPruneHandler,
   controlStartHandler,
   controlStatusHandler,
@@ -107,7 +108,7 @@ describe("resolveControlTurnModelPreference (OS-91)", () => {
     ).toEqual({ kind: "use", modelSelection: claude });
   });
 
-  it("returns driver_mismatch when an explicit selection uses another instance", () => {
+  it("returns driver_mismatch when an explicit selection uses another driver", () => {
     expect(
       resolveControlTurnModelPreference({
         preferred: claude,
@@ -116,8 +117,21 @@ describe("resolveControlTurnModelPreference (OS-91)", () => {
     ).toEqual({
       kind: "driver_mismatch",
       threadInstanceId: "cursor",
+      threadDriver: "cursor",
       requestedInstanceId: "claudeAgent",
+      requestedDriver: "claudeAgent",
     });
+  });
+
+  it("allows a same-driver instance switch when lookup maps both ids", () => {
+    const cursorWork = createModelSelection(ProviderInstanceId.make("cursor-work"), "default");
+    expect(
+      resolveControlTurnModelPreference({
+        preferred: cursorWork,
+        existingThreadSelection: cursor,
+        driverByInstanceId: { cursor: "cursor", "cursor-work": "cursor" },
+      }),
+    ).toEqual({ kind: "use", modelSelection: cursorWork });
   });
 
   it("accepts an explicit selection on the same instance", () => {
@@ -465,7 +479,7 @@ describe("control API handlers (OS-38)", () => {
   let idCounter = 0;
   let fakeTask: FakeTask;
   let threadState: ThreadState;
-  let fetchCalls: Array<{ method: string; url: string }>;
+  let fetchCalls: Array<{ method: string; url: string; patchStatus?: string }>;
   let dispatched: Array<{
     type: string;
     createdAt?: string;
@@ -612,7 +626,12 @@ describe("control API handlers (OS-38)", () => {
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input instanceof Request ? input.url : input);
         const method = (init?.method ?? "GET").toUpperCase();
-        fetchCalls.push({ method, url });
+        let patchStatus: string | undefined;
+        if (method === "PATCH") {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { status?: string };
+          patchStatus = body.status;
+        }
+        fetchCalls.push({ method, url, ...(patchStatus ? { patchStatus } : {}) });
         if (url === `${API_ORIGIN}/api/v1/projects?type=codebase`) {
           return new Response(
             JSON.stringify({
@@ -828,7 +847,10 @@ describe("control API handlers (OS-38)", () => {
             }),
         } as never),
         Effect.provideService(ProviderRegistry, {
-          getProviders: Effect.die("OS-91 continue path must not consult the provider registry"),
+          getProviders: Effect.succeed([
+            { instanceId: "cursor", driver: "cursor" },
+            { instanceId: "claudeAgent", driver: "claudeAgent" },
+          ]),
         } as never),
         Effect.provideService(Crypto.Crypto, {
           randomUUIDv4: Effect.sync(
@@ -865,10 +887,24 @@ describe("control API handlers (OS-38)", () => {
         modelSelection: { instanceId: "claudeAgent", model: "opus" },
       });
       expect(response.status).toBe(409);
-      const body = (await response.json()) as { ok: boolean; code: string; error: string };
-      expect(body.ok).toBe(false);
-      expect(body.code).toBe("driver_mismatch");
-      expect(body.error).toContain("cursor");
+      const body = (await response.json()) as {
+        ok: boolean;
+        code: string;
+        error: string;
+        threadInstanceId: string;
+        threadDriver: string;
+        requestedInstanceId: string;
+        requestedDriver: string;
+      };
+      expect(body).toMatchObject({
+        ok: false,
+        code: "driver_mismatch",
+        threadInstanceId: "cursor",
+        threadDriver: "cursor",
+        requestedInstanceId: "claudeAgent",
+        requestedDriver: "claudeAgent",
+      });
+      expect(body.error).toContain("driver 'cursor'");
       expect(body.error).toContain("claudeAgent");
       expect(dispatched).toEqual([]);
       await flush();
@@ -876,8 +912,8 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
     });
 
-    it("does not move the task to in_review when the session is already in error", async () => {
-      fakeTask.status = "in_progress";
+    it("retry of an errored thread still marks the task in_progress", async () => {
+      fakeTask.status = "in_review";
       threadState.sessionStatus = "error";
       threadState.lastError =
         "Thread '11111111-2222-4333-8444-555555555555' is bound to driver 'cursor' and cannot switch to 'claudeAgent'.";
@@ -891,12 +927,112 @@ describe("control API handlers (OS-38)", () => {
       const body = (await response.json()) as {
         lastError: string | null;
         sessionStatus: string | null;
+        started: boolean;
       };
+      expect(body.started).toBe(true);
       expect(body.sessionStatus).toBe("error");
       expect(body.lastError).toBe(threadState.lastError);
+      expect(dispatched.some((command) => command.type === "thread.turn.start")).toBe(true);
       await flush();
       expect(fakeTask.status).toBe("in_progress");
-      expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
+      expect(
+        fetchCalls.some((call) => call.method === "PATCH" && call.patchStatus === "in_progress"),
+      ).toBe(true);
+      expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
+    });
+
+    it("a new thread uses the project default model", async () => {
+      removeBacksterosTaskThreadBinding(stateDir, TASK_ID);
+      fakeTask.status = "ready_to_start";
+      const response = await runStart({
+        taskId: TASK_ID,
+        start: true,
+        prompt: "Kickoff on the project default.",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { created: boolean; started: boolean };
+      expect(body).toMatchObject({ created: true, started: true });
+      const create = dispatched.find((command) => command.type === "thread.create");
+      const turn = dispatched.find((command) => command.type === "thread.turn.start");
+      expect(create?.modelSelection).toEqual({ instanceId: "claudeAgent", model: "opus" });
+      expect(turn?.modelSelection).toEqual({ instanceId: "claudeAgent", model: "opus" });
+    });
+
+    function runPromote(): Promise<Response> {
+      const provided = controlPromoteHandler.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/promote", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${API_KEY}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({ taskId: TASK_ID }),
+            }),
+          ),
+        ),
+        Effect.provideService(SessionStore.SessionStore, {} as never),
+        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
+        Effect.provideService(ServerConfig.ServerConfig, {
+          stateDir,
+          attachmentsDir: path.join(stateDir, "attachments"),
+        } as never),
+        Effect.provideService(ProjectionSnapshotQuery, {
+          getShellSnapshot: () =>
+            Effect.sync(() => ({ projects: [t3Project()], threads: [threadShell()] })),
+        } as never),
+        Effect.provideService(OrchestrationEngineService, {
+          dispatch: () => Effect.succeed({ sequence: 1 }),
+        } as never),
+        Effect.provideService(Crypto.Crypto, {
+          randomUUIDv4: Effect.succeed("00000000-0000-4000-8000-000000000099"),
+        } as never),
+        Effect.provideService(FileSystem.FileSystem, {} as never),
+        Effect.provideService(Path.Path, {} as never),
+        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+      );
+      return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
+    }
+
+    it("POST /sessions/promote does not flip in_review for error or stopped+lastError", async () => {
+      fakeTask.status = "in_progress";
+      // Prior working stretch would otherwise idle→in_review.
+      threadState.sessionStatus = "running";
+      threadState.activeTurnId = "turn-1";
+      expect((await runPromote()).status).toBe(200);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
+
+      threadState.sessionStatus = "error";
+      threadState.activeTurnId = null;
+      threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
+      fetchCalls.length = 0;
+      expect((await runPromote()).status).toBe(200);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
+      expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
+
+      threadState.sessionStatus = "stopped";
+      threadState.settledAt = "2026-09-27T22:10:11.000Z";
+      fetchCalls.length = 0;
+      expect((await runPromote()).status).toBe(200);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
+      expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
+    });
+
+    it("POST /message does not flip in_review when the session stopped with lastError", async () => {
+      fakeTask.status = "in_progress";
+      threadState.sessionStatus = "stopped";
+      threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
+      threadState.settledAt = "2026-09-27T22:10:11.000Z";
+      const sent = await sendMessage("Retry on the bound driver.");
+      expect(sent.sent).toBe(true);
+      await flush();
+      expect(fakeTask.status).not.toBe("in_review");
+      expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
     });
   });
 

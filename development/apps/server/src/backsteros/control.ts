@@ -78,6 +78,10 @@ type ControlHttpError = {
   readonly status: number;
   readonly error: string;
   readonly code?: string;
+  readonly threadInstanceId?: string;
+  readonly threadDriver?: string;
+  readonly requestedInstanceId?: string;
+  readonly requestedDriver?: string;
 };
 
 function asNonEmptyString(value: unknown): string | null {
@@ -239,9 +243,10 @@ function toSessionView(input: {
 }
 
 function controlErrorResponse(error: ControlHttpError) {
+  const { status, error: message, code, ...details } = error;
   return HttpServerResponse.jsonUnsafe(
-    { ok: false, error: error.error, ...(error.code ? { code: error.code } : {}) },
-    { status: error.status },
+    { ok: false, error: message, ...(code ? { code } : {}), ...details },
+    { status },
   );
 }
 
@@ -307,28 +312,57 @@ const newId = Effect.fn("backsteros.control.newId")(function* () {
 });
 
 /**
+ * Built-in default instance ids equal the driver kind
+ * (`defaultInstanceIdForDriver`). Custom instances may map through `lookup`.
+ */
+export function controlDriverKindForInstanceId(
+  instanceId: string,
+  lookup?: Readonly<Record<string, string>>,
+): string {
+  const mapped = lookup?.[instanceId]?.trim();
+  return mapped && mapped.length > 0 ? mapped : instanceId;
+}
+
+/**
  * Prefer an explicit request, else the existing thread's stored selection.
  * Do not fall back to the project default while a thread already exists —
  * that is how a cursor thread was dispatched as claudeAgent (OS-91).
+ *
+ * An explicit selection on a *different driver* is a 409 (same check as
+ * ProviderCommandReactor). Same-driver instance switches are allowed.
  */
 export function resolveControlTurnModelPreference(input: {
   readonly preferred: ModelSelection | null;
   readonly existingThreadSelection: ModelSelection | null;
+  readonly driverByInstanceId?: Readonly<Record<string, string>>;
 }):
   | { readonly kind: "use"; readonly modelSelection: ModelSelection | null }
   | {
       readonly kind: "driver_mismatch";
       readonly threadInstanceId: string;
+      readonly threadDriver: string;
       readonly requestedInstanceId: string;
+      readonly requestedDriver: string;
     } {
   const existing = input.existingThreadSelection;
   const preferred = input.preferred;
-  if (existing && preferred && String(existing.instanceId) !== String(preferred.instanceId)) {
-    return {
-      kind: "driver_mismatch",
-      threadInstanceId: String(existing.instanceId),
-      requestedInstanceId: String(preferred.instanceId),
-    };
+  if (existing && preferred) {
+    const threadInstanceId = String(existing.instanceId);
+    const requestedInstanceId = String(preferred.instanceId);
+    const threadDriver = controlDriverKindForInstanceId(threadInstanceId, input.driverByInstanceId);
+    const requestedDriver = controlDriverKindForInstanceId(
+      requestedInstanceId,
+      input.driverByInstanceId,
+    );
+    if (threadDriver !== requestedDriver) {
+      return {
+        kind: "driver_mismatch",
+        threadInstanceId,
+        threadDriver,
+        requestedInstanceId,
+        requestedDriver,
+      };
+    }
   }
   return { kind: "use", modelSelection: preferred ?? existing };
 }
@@ -618,15 +652,29 @@ export const controlStartHandler = catchControlErrors(
       }
     }
 
+    let driverByInstanceId: Record<string, string> | undefined;
+    if (existingThread && preferredModel) {
+      const registry = yield* ProviderRegistry;
+      const providers = yield* registry.getProviders;
+      driverByInstanceId = Object.fromEntries(
+        providers.map((provider) => [String(provider.instanceId), String(provider.driver)]),
+      );
+    }
+
     const turnPreference = resolveControlTurnModelPreference({
       preferred: preferredModel,
       existingThreadSelection: existingThread?.modelSelection ?? null,
+      driverByInstanceId,
     });
     if (turnPreference.kind === "driver_mismatch") {
       return yield* Effect.fail({
         status: 409,
-        error: `Thread '${threadId}' is bound to driver '${turnPreference.threadInstanceId}' and cannot switch to '${turnPreference.requestedInstanceId}'.`,
+        error: `Thread '${threadId}' is bound to driver '${turnPreference.threadDriver}' and cannot switch to '${turnPreference.requestedDriver}'.`,
         code: "driver_mismatch",
+        threadInstanceId: turnPreference.threadInstanceId,
+        threadDriver: turnPreference.threadDriver,
+        requestedInstanceId: turnPreference.requestedInstanceId,
+        requestedDriver: turnPreference.requestedDriver,
       } satisfies ControlHttpError);
     }
 
@@ -766,23 +814,22 @@ export const controlStartHandler = catchControlErrors(
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
-    const sessionErrored = thread?.session?.status === "error";
-    if (start && !sessionErrored) {
-      // Status write #1 (OS-38 audit): explicit POST /sessions start → In Progress.
-      // Guarded in patchBacksterosControlTaskStatus (re-reads the task and never
-      // reopens completed/canceled/duplicated). Fire-and-forget; the web turn-start
-      // promote is the other writer. Skip when the live session is already
-      // `error` — a rejected turn must not look like completion (OS-91).
+    if (start) {
+      // Status write #1 (OS-38 audit): explicit POST /sessions start that
+      // dispatched a turn → In Progress. Reaching here means dispatch
+      // succeeded; skip only when start was false (bind-only). A retry of a
+      // previously errored thread must still reopen in_progress (OS-91).
       void patchBacksterosControlTaskStatus(task.id, "in_progress");
     }
     // Non-GET path: sync BacksterOS status from the session lifecycle.
-    // Never promote idle/done/error here — `in_review` is only for a real
-    // turn completion (CheckpointReactor / OS-73). An idle snapshot after a
-    // rejected dispatch used to auto-flip tasks to in_review (OS-91).
+    // Never promote idle/done here — `in_review` is only for a real turn
+    // completion (CheckpointReactor / OS-73). Failed sessions are also
+    // blocked inside maybePromote (error / stopped+lastError).
     if (view.status === "working" || view.status === "blocked") {
-      if (!sessionErrored) {
-        maybePromoteBacksterosTaskForControlSession(task.id, view.status);
-      }
+      maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
+        sessionStatus: thread?.session?.status ?? null,
+        lastError: thread?.session?.lastError ?? null,
+      });
     }
     return HttpServerResponse.jsonUnsafe({
       ...view,
@@ -924,7 +971,10 @@ export const controlPromoteHandler = catchControlErrors(
         thread,
         now,
       });
-      maybePromoteBacksterosTaskForControlSession(boundTaskId, view.status);
+      maybePromoteBacksterosTaskForControlSession(boundTaskId, view.status, {
+        sessionStatus: thread?.session?.status ?? null,
+        lastError: thread?.session?.lastError ?? null,
+      });
       sessions.push(view);
     }
 
@@ -1051,7 +1101,10 @@ export const controlMessageHandler = catchControlErrors(
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: found.taskId, binding: found.binding, thread, now });
-    maybePromoteBacksterosTaskForControlSession(found.taskId, view.status);
+    maybePromoteBacksterosTaskForControlSession(found.taskId, view.status, {
+      sessionStatus: thread?.session?.status ?? null,
+      lastError: thread?.session?.lastError ?? null,
+    });
     return HttpServerResponse.jsonUnsafe({
       ...view,
       sent: true,
