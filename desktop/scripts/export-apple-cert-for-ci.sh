@@ -1,28 +1,47 @@
 #!/usr/bin/env bash
-# Export a Developer ID Application identity to base64 PKCS#12 for GitHub Actions.
-# Apple Development certificates cannot notarize — refuse those names.
+# Point Remon at a Keychain Access export of ONE Developer ID identity.
+# `security export` cannot select a single identity; a CLI fallback would dump
+# every identity in the keychain. This script never does that and never creates
+# or modifies a keychain.
 #
 # Usage:
-#   APPLE_P12_PASSWORD='…' ./scripts/export-apple-cert-for-ci.sh \
-#     "Developer ID Application: Your Name (TEAMID)"
-#
-# Writes to /tmp by default (never the repo). Then:
-#   gh secret set APPLE_CERTIFICATE < "$OUT_B64"
-#   gh secret set APPLE_CERTIFICATE_PASSWORD --body "$APPLE_P12_PASSWORD"
-#   gh secret set KEYCHAIN_PASSWORD --body "$(openssl rand -base64 24)"
-# Also copy desktop/scripts/apple-developer.env.example to
-# ~/.config/secrets/apple-developer.env for local builds.
+#   ./scripts/export-apple-cert-for-ci.sh "Developer ID Application: Your Name (TEAMID)"
 set -euo pipefail
+umask 077
 
 IDENTITY="${1:-}"
-OUT_P12="${2:-/tmp/backsteros-apple-codesign.p12}"
-OUT_B64="${3:-/tmp/backsteros-certificate-base64.txt}"
+
+print_manual_steps() {
+  local identity="$1"
+  local workdir="$2"
+  cat <<EOF >&2
+
+Export only this identity in Keychain Access (do not use \`security export\`):
+
+  1. Open Keychain Access → login → My Certificates.
+  2. Select exactly: ${identity}
+  3. File → Export Items… → Personal Information Exchange (.p12).
+  4. Save to: ${workdir}/apple-codesign.p12
+  5. Set a passphrase; that value is APPLE_CERTIFICATE_PASSWORD / APPLE_P12_PASSWORD.
+
+Then:
+
+  openssl base64 -A -in ${workdir}/apple-codesign.p12 -out ${workdir}/certificate-base64.txt
+  gh secret set APPLE_CERTIFICATE < ${workdir}/certificate-base64.txt
+  gh secret set APPLE_CERTIFICATE_PASSWORD --body "\$APPLE_P12_PASSWORD"
+  gh secret set KEYCHAIN_PASSWORD --body "\$(openssl rand -base64 24)"
+  rm -f ${workdir}/apple-codesign.p12 ${workdir}/certificate-base64.txt
+
+Copy desktop/scripts/apple-developer.env.example to
+~/.config/secrets/apple-developer.env for local signed builds.
+EOF
+}
 
 if [[ -z "$IDENTITY" ]]; then
-  echo "Available codesigning identities:"
-  security find-identity -v -p codesigning
-  echo
-  echo "Usage: $0 \"Developer ID Application: Your Name (TEAMID)\""
+  echo "Available codesigning identities:" >&2
+  security find-identity -v -p codesigning >&2
+  echo >&2
+  echo "Usage: $0 \"Developer ID Application: Your Name (TEAMID)\"" >&2
   exit 1
 fi
 
@@ -36,22 +55,14 @@ if [[ "$IDENTITY" != *"Developer ID Application:"* ]]; then
   exit 1
 fi
 
-if [[ -z "${APPLE_P12_PASSWORD:-}" ]]; then
-  echo "Set APPLE_P12_PASSWORD to the export passphrase (will also be APPLE_CERTIFICATE_PASSWORD)."
+if ! security find-identity -v -p codesigning | grep -F -q "$IDENTITY"; then
+  echo "That identity is not in the keychain:" >&2
+  echo "  $IDENTITY" >&2
+  security find-identity -v -p codesigning >&2
   exit 1
 fi
 
-security export -k ~/Library/Keychains/login.keychain-db \
-  -t identities -f pkcs12 \
-  -P "$APPLE_P12_PASSWORD" \
-  -o "$OUT_P12" \
-  "$IDENTITY" 2>/dev/null \
-  || security export \
-    -t identities -f pkcs12 \
-    -P "$APPLE_P12_PASSWORD" \
-    -o "$OUT_P12"
-
-openssl base64 -A -in "$OUT_P12" -out "$OUT_B64"
-echo "Wrote $OUT_P12 and $OUT_B64"
-echo "Next: gh secret set APPLE_CERTIFICATE < $OUT_B64"
-echo "      rm -f $OUT_P12 $OUT_B64  # do not commit these files"
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/backsteros-apple-export.XXXXXX")"
+echo "Refusing CLI export (it cannot isolate one identity). Work directory: $WORKDIR" >&2
+print_manual_steps "$IDENTITY" "$WORKDIR"
+exit 2

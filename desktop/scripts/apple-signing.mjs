@@ -157,19 +157,46 @@ export function resolveAppleSigning(env) {
 }
 
 /**
+ * @param {string} email
+ */
+export function maskEmail(email) {
+  const at = email.indexOf("@");
+  if (at <= 0) return "***";
+  return `${email.slice(0, 1)}***${email.slice(at)}`;
+}
+
+/**
+ * @param {string} value
+ */
+export function maskSecretId(value) {
+  const trimmed = value.trim();
+  if (trimmed.length <= 4) return "****";
+  return `…${trimmed.slice(-4)}`;
+}
+
+/**
+ * Keep the Developer ID common name; mask the Team ID in parentheses.
+ * @param {string} identity
+ */
+export function maskSigningIdentity(identity) {
+  return identity.replace(/\(([^)]+)\)\s*$/, (_, team) => `(${maskSecretId(team)})`);
+}
+
+/**
  * @param {Record<string, string>} env
  * @returns {string[]}
  */
 export function redactedEnvSummary(env) {
-  const keys = [
-    "APPLE_SIGNING_IDENTITY",
-    "APPLE_TEAM_ID",
-    "APPLE_API_ISSUER",
-    "APPLE_API_KEY",
-    "APPLE_API_KEY_PATH",
-    "APPLE_ID",
-  ];
-  return keys
-    .filter((key) => env[key]?.trim())
-    .map((key) => `${key}=${env[key].trim()}`);
+  /** @type {Record<string, (value: string) => string>} */
+  const maskers = {
+    APPLE_SIGNING_IDENTITY: maskSigningIdentity,
+    APPLE_TEAM_ID: maskSecretId,
+    APPLE_API_ISSUER: maskSecretId,
+    APPLE_API_KEY: maskSecretId,
+    APPLE_API_KEY_PATH: (value) => maskSecretId(value.split(/[/\\]/).pop() || value),
+    APPLE_ID: maskEmail,
+  };
+  return Object.entries(maskers)
+    .filter(([key]) => env[key]?.trim())
+    .map(([key, mask]) => `${key}=${mask(env[key].trim())}`);
 }
