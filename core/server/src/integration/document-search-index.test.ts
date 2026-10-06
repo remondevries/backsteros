@@ -36,6 +36,13 @@ import {
 
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
 
+async function documentUpdatedAtText(documentId: string): Promise<string | undefined> {
+  const [row] = await sqlClient<{ updated_at: string }[]>`
+    SELECT updated_at::text AS updated_at FROM documents WHERE id = ${documentId}
+  `;
+  return row?.updated_at;
+}
+
 const R2_ENV_KEYS = [
   "BACKSTEROS_R2_BUCKET",
   "BACKSTEROS_R2_ENDPOINT",
@@ -455,6 +462,7 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
   const driftId = id("doc-drift");
   const nullId = id("doc-null");
   const yamlId = id("doc-yaml");
+  const concurrentId = id("doc-concurrent");
   const matchBody = "# Match\nvault bytes agree.\n";
   const driftVault = "# Drift vault\n";
   const driftRow = "# Drift row\n";
@@ -527,21 +535,26 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
     contentEtag: documentContentEtag(yamlOriginal),
     checksum: checksumForContent(yamlVault),
   });
+  await seed({
+    id: concurrentId,
+    bodyForRow: yamlVault,
+    contentEtag: documentContentEtag(yamlOriginal),
+    checksum: checksumForContent(yamlVault),
+  });
 
-  const [yamlBefore] = await db
-    .select({
-      contentEtag: documents.contentEtag,
-      updatedAt: documents.updatedAt,
-    })
-    .from(documents)
-    .where(eq(documents.id, yamlId));
-  const yamlUpdatedAtBefore = yamlBefore?.updatedAt?.getTime();
+  const yamlUpdatedAtBefore = await documentUpdatedAtText(yamlId);
+
+  const concurrentEdit = "# Concurrent edit\n";
+  const concurrentEditEtag = documentContentEtag(concurrentEdit);
+  const concurrentEditChecksum = checksumForContent(concurrentEdit);
+  let concurrentUpdatedAtAfterEdit: string | undefined;
 
   const vault: Record<string, string> = {
     [`fts/${matchId}.md`]: matchBody,
     [`fts/${driftId}.md`]: driftVault,
     [`fts/${nullId}.md`]: nullBody,
     [`fts/${yamlId}.md`]: yamlVault,
+    [`fts/${concurrentId}.md`]: yamlVault,
   };
   const expectedByKey: string[] = [];
   const getObject = async (
@@ -549,6 +562,17 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
     options?: { expectedEtag?: string | null },
   ) => {
     expectedByKey.push(`${storageKey}:${options?.expectedEtag ?? "none"}`);
+    if (storageKey === `fts/${concurrentId}.md`) {
+      await db
+        .update(documents)
+        .set({
+          contentEtag: concurrentEditEtag,
+          checksum: concurrentEditChecksum,
+          updatedAt: new Date("2030-01-15T12:00:00.123Z"),
+        })
+        .where(eq(documents.id, concurrentId));
+      concurrentUpdatedAtAfterEdit = await documentUpdatedAtText(concurrentId);
+    }
     const body = vault[storageKey];
     if (!body) throw new Error("missing");
     return { body };
@@ -559,7 +583,7 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
     batchSize: 50,
     getObject,
   });
-  assert.equal(first.updated, 4);
+  assert.equal(first.updated, 5);
   assert.equal(first.etagDrift, 1);
   assert.equal(first.yamlRepaired, 1);
   assert.ok(expectedByKey.some((row) => row.endsWith(documentContentEtag(matchBody))));
@@ -587,7 +611,21 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
 
   const [yamlDoc] = await db.select().from(documents).where(eq(documents.id, yamlId));
   assert.equal(yamlDoc?.contentEtag, documentContentEtag(yamlVault));
-  assert.equal(yamlDoc?.updatedAt.getTime(), yamlUpdatedAtBefore);
+  assert.equal(await documentUpdatedAtText(yamlId), yamlUpdatedAtBefore);
+
+  const [concurrentDoc] = await db
+    .select()
+    .from(documents)
+    .where(eq(documents.id, concurrentId));
+  assert.equal(concurrentDoc?.contentEtag, concurrentEditEtag);
+  assert.ok(concurrentUpdatedAtAfterEdit);
+  assert.equal(await documentUpdatedAtText(concurrentId), concurrentUpdatedAtAfterEdit);
+  const [concurrentIndex] = await db
+    .select()
+    .from(documentSearchIndex)
+    .where(eq(documentSearchIndex.documentId, concurrentId));
+  assert.equal(concurrentIndex?.contentEtag, documentContentEtag(yamlVault));
+  assert.notEqual(concurrentIndex?.contentEtag, concurrentEditEtag);
 
   const loadsAfterFirst = expectedByKey.length;
   const second = await backfillDocumentSearchBodies({
@@ -595,9 +633,9 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
     batchSize: 50,
     getObject,
   });
-  assert.equal(second.scanned, 1);
-  assert.equal(second.etagDrift, 1);
-  assert.equal(expectedByKey.length, loadsAfterFirst + 1);
+  assert.equal(second.scanned, 2);
+  assert.equal(second.etagDrift, 2);
+  assert.equal(expectedByKey.length, loadsAfterFirst + 2);
 });
 
 test("OS-80 vault heal etag repair does not bump updatedAt", async (context) => {
@@ -659,27 +697,20 @@ test("OS-80 vault heal etag repair does not bump updatedAt", async (context) => 
     contentEtag: documentContentEtag("# other\n"),
   });
 
-  const [before] = await db
-    .select({
-      updatedAt: documents.updatedAt,
-      contentEtag: documents.contentEtag,
-    })
-    .from(documents)
-    .where(eq(documents.id, documentId));
+  const updatedAtBefore = await documentUpdatedAtText(documentId);
 
   const result = await syncDocumentMetadataFromStorageKey(workspaceId, storageKey);
   assert.equal(result, "skipped");
 
   const [after] = await db
     .select({
-      updatedAt: documents.updatedAt,
       contentEtag: documents.contentEtag,
     })
     .from(documents)
     .where(eq(documents.id, documentId));
   assert.equal(after?.contentEtag, documentContentEtag(body));
-  assert.notEqual(after?.contentEtag, before?.contentEtag);
-  assert.equal(after?.updatedAt.getTime(), before?.updatedAt.getTime());
+  assert.notEqual(after?.contentEtag, documentContentEtag("# other\n"));
+  assert.equal(await documentUpdatedAtText(documentId), updatedAtBefore);
 });
 
 

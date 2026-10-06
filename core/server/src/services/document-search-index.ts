@@ -2,7 +2,7 @@ import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { documentSearchIndex, documents } from "../db/schema.js";
-import { getObject } from "../lib/storage.js";
+import { getObject, documentContentEtag } from "../lib/storage.js";
 import { isLiveBacksterosDatabaseUrl } from "./document-search-live-url.js";
 import {
   decideBackfillStamp,
@@ -108,7 +108,6 @@ export async function backfillDocumentSearchBodies(options?: {
       storageKey: documents.storageKey,
       contentEtag: documents.contentEtag,
       checksum: documents.checksum,
-      updatedAt: documents.updatedAt,
     })
     .from(documents)
     .innerJoin(
@@ -137,15 +136,31 @@ export async function backfillDocumentSearchBodies(options?: {
         rowChecksum: row.checksum,
         body: object.body,
       });
+      let indexEtag = decision.contentEtag;
       if (decision.kind === "yamlRepair") {
-        await db
+        const [repaired] = await db
           .update(documents)
           .set({
             contentEtag: decision.contentEtag,
-            updatedAt: row.updatedAt,
+            updatedAt: sql`${documents.updatedAt}`,
           })
-          .where(eq(documents.id, row.id));
-        yamlRepaired += 1;
+          .where(
+            and(
+              eq(documents.id, row.id),
+              row.contentEtag == null
+                ? isNull(documents.contentEtag)
+                : eq(documents.contentEtag, row.contentEtag),
+              row.checksum == null
+                ? isNull(documents.checksum)
+                : eq(documents.checksum, row.checksum),
+            ),
+          )
+          .returning({ id: documents.id });
+        if (repaired) {
+          yamlRepaired += 1;
+        } else {
+          indexEtag = documentContentEtag(object.body);
+        }
       }
       if (decision.kind === "etagDrift") {
         etagDrift += 1;
@@ -154,7 +169,7 @@ export async function backfillDocumentSearchBodies(options?: {
         documentId: row.id,
         workspaceId: row.workspaceId,
         searchBody: object.body,
-        contentEtag: decision.contentEtag,
+        contentEtag: indexEtag,
       });
       updated += 1;
     } catch {

@@ -3,7 +3,7 @@
  * Vault replication writes files without updating documents.byte_size — this
  * module repairs that drift and is invoked after replication applies files.
  */
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { documents } from "../db/schema.js";
@@ -95,7 +95,7 @@ export async function syncDocumentMetadataFromStorageKey(
           if ((row.contentEtag ?? null) !== contentEtag) {
             await tx
               .update(documents)
-              .set({ contentEtag, updatedAt: row.updatedAt })
+              .set({ contentEtag, updatedAt: sql`${documents.updatedAt}` })
               .where(eq(documents.id, row.id));
           }
           await upsertDocumentSearchIndex(
