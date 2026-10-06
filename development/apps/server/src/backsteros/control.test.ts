@@ -806,7 +806,10 @@ describe("control API handlers (OS-38)", () => {
       };
     }
 
-    function runStart(body: Record<string, unknown>): Promise<Response> {
+    function runStart(
+      body: Record<string, unknown>,
+      options?: { readonly failDispatch?: boolean },
+    ): Promise<Response> {
       const provided = controlStartHandler.pipe(
         Effect.provideService(
           HttpServerRequest.HttpServerRequest,
@@ -840,11 +843,13 @@ describe("control API handlers (OS-38)", () => {
             type: string;
             createdAt?: string;
             modelSelection?: { instanceId: string; model: string };
-          }) =>
-            Effect.sync(() => {
-              dispatched.push(command);
-              return { sequence: dispatched.length };
-            }),
+          }) => {
+            dispatched.push(command);
+            if (options?.failDispatch === true && command.type === "thread.turn.start") {
+              return Effect.fail("dispatch failed");
+            }
+            return Effect.succeed({ sequence: dispatched.length });
+          },
         } as never),
         Effect.provideService(ProviderRegistry, {
           getProviders: Effect.succeed([
@@ -996,15 +1001,31 @@ describe("control API handlers (OS-38)", () => {
       return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
     }
 
-    it("POST /sessions/promote does not flip in_review for error or stopped+lastError", async () => {
+    it("a dispatch failure does not write in_progress", async () => {
+      fakeTask.status = "ready_to_start";
+      const response = await runStart(
+        {
+          taskId: TASK_ID,
+          start: true,
+          prompt: "This dispatch will fail.",
+        },
+        { failDispatch: true },
+      );
+      expect(response.status).toBe(500);
+      await flush();
+      expect(fakeTask.status).toBe("ready_to_start");
+      expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
+    });
+
+    it("POST /sessions/promote does not flip in_review for stopped+lastError", async () => {
       fakeTask.status = "in_progress";
-      // Prior working stretch would otherwise idle→in_review.
       threadState.sessionStatus = "running";
       threadState.activeTurnId = "turn-1";
       expect((await runPromote()).status).toBe(200);
       await flush();
       expect(fakeTask.status).toBe("in_progress");
 
+      // error maps to blocked → in_progress, not the in_review guard.
       threadState.sessionStatus = "error";
       threadState.activeTurnId = null;
       threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
@@ -1014,6 +1035,7 @@ describe("control API handlers (OS-38)", () => {
       expect(fakeTask.status).toBe("in_progress");
       expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
 
+      // settled stopped+lastError maps to done; that is the in_review guard.
       threadState.sessionStatus = "stopped";
       threadState.settledAt = "2026-09-27T22:10:11.000Z";
       fetchCalls.length = 0;
@@ -1023,15 +1045,24 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
     });
 
-    it("POST /message does not flip in_review when the session stopped with lastError", async () => {
+    it("POST /message then promote does not flip in_review for stopped+lastError", async () => {
       fakeTask.status = "in_progress";
       threadState.sessionStatus = "stopped";
       threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
       threadState.settledAt = "2026-09-27T22:10:11.000Z";
       const sent = await sendMessage("Retry on the bound driver.");
       expect(sent.sent).toBe(true);
+      expect(sent.status).toBe("working");
       await flush();
-      expect(fakeTask.status).not.toBe("in_review");
+      expect(fakeTask.status).toBe("in_progress");
+
+      // After dispatch the view is working (pending). Drop pending so the
+      // next promote sees settled stopped+lastError as done and hits the guard.
+      resetControlPendingDispatches();
+      fetchCalls.length = 0;
+      expect((await runPromote()).status).toBe(200);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
       expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
     });
   });

@@ -82,8 +82,9 @@ with `code: "driver_mismatch"` and:
 | `requestedInstanceId` | Instance id from the request                |
 | `requestedDriver`     | Driver kind that would have been dispatched |
 
-Same-driver instance switches are allowed. Nothing is dispatched, and the
-BacksterOS task status is not written.
+Same-driver instance switches are not rejected here; the orchestration engine
+can still refuse an incompatible resume state after dispatch. A driver mismatch
+is rejected before dispatch, and the BacksterOS task status is not written.
 
 Response includes `threadId`, `taskId`, `taskRef`, `status`
 (`idle` \| `working` \| `blocked` \| `done`), `lastError` (provider/session

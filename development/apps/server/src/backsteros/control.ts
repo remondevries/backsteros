@@ -329,7 +329,8 @@ export function controlDriverKindForInstanceId(
  * that is how a cursor thread was dispatched as claudeAgent (OS-91).
  *
  * An explicit selection on a *different driver* is a 409 (same check as
- * ProviderCommandReactor). Same-driver instance switches are allowed.
+ * ProviderCommandReactor). Same-driver instance switches are not rejected
+ * here; the engine can still refuse an incompatible resume state.
  */
 export function resolveControlTurnModelPreference(input: {
   readonly preferred: ModelSelection | null;
@@ -664,7 +665,7 @@ export const controlStartHandler = catchControlErrors(
     const turnPreference = resolveControlTurnModelPreference({
       preferred: preferredModel,
       existingThreadSelection: existingThread?.modelSelection ?? null,
-      driverByInstanceId,
+      ...(driverByInstanceId ? { driverByInstanceId } : {}),
     });
     if (turnPreference.kind === "driver_mismatch") {
       return yield* Effect.fail({

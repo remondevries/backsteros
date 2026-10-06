@@ -81,13 +81,6 @@ export function maybePromoteBacksterosTaskForControlSession(
   thread?: ControlSessionPromoteThread | null,
 ): void {
   const previous = lastPromotedStatus.get(taskId);
-  if (previous === sessionStatus) return;
-  lastPromotedStatus.set(taskId, sessionStatus);
-
-  // Fresh work cancels any pending idle promote.
-  if (sessionStatus === "working" || sessionStatus === "blocked") {
-    cancelIdlePromoteForTask(taskId);
-  }
 
   let target = backsterosStatusForControlSession(sessionStatus);
   if (
@@ -97,9 +90,20 @@ export function maybePromoteBacksterosTaskForControlSession(
   ) {
     target = "in_review";
   }
+  // Do not record a failed idle/done snapshot. A later healthy `done` from
+  // the web UI timer would otherwise hit previous === "done" and skip.
   if (target === "in_review" && controlSessionFailedToComplete(thread)) {
     return;
   }
+
+  if (previous === sessionStatus) return;
+  lastPromotedStatus.set(taskId, sessionStatus);
+
+  // Fresh work cancels any pending idle promote.
+  if (sessionStatus === "working" || sessionStatus === "blocked") {
+    cancelIdlePromoteForTask(taskId);
+  }
+
   if (!target) return;
   void patchBacksterosControlTaskStatus(taskId, target);
 }

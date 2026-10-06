@@ -97,13 +97,16 @@ describe("control-session-promote (OS-73 idle in_review)", () => {
     expect(patchCalls.every((call) => call.status !== "in_review")).toBe(true);
   });
 
-  it("still promotes idle-after-working for a healthy ready session", () => {
+  it("does not record a failed done, so a later healthy done still reaches in_review", () => {
     maybePromoteBacksterosTaskForControlSession(TASK_ID, "working");
     patchCalls.length = 0;
-    maybePromoteBacksterosTaskForControlSession(TASK_ID, "idle", {
-      sessionStatus: "ready",
-      lastError: null,
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "done", {
+      sessionStatus: "stopped",
+      lastError: "Thread is bound to driver 'cursor' and cannot switch to 'claudeAgent'.",
     });
+    expect(patchCalls.every((call) => call.status !== "in_review")).toBe(true);
+    scheduleControlSessionPromoteAfterTurn(stateDir, THREAD_ID);
+    vi.advanceTimersByTime(CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS);
     expect(patchCalls).toEqual([{ taskId: TASK_ID, status: "in_review" }]);
   });
 
