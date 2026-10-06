@@ -95,7 +95,7 @@ export async function syncDocumentMetadataFromStorageKey(
           if ((row.contentEtag ?? null) !== contentEtag) {
             await tx
               .update(documents)
-              .set({ contentEtag, updatedAt: new Date() })
+              .set({ contentEtag, updatedAt: row.updatedAt })
               .where(eq(documents.id, row.id));
           }
           await upsertDocumentSearchIndex(

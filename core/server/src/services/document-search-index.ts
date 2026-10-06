@@ -108,6 +108,7 @@ export async function backfillDocumentSearchBodies(options?: {
       storageKey: documents.storageKey,
       contentEtag: documents.contentEtag,
       checksum: documents.checksum,
+      updatedAt: documents.updatedAt,
     })
     .from(documents)
     .innerJoin(
@@ -139,7 +140,10 @@ export async function backfillDocumentSearchBodies(options?: {
       if (decision.kind === "yamlRepair") {
         await db
           .update(documents)
-          .set({ contentEtag: decision.contentEtag, updatedAt: new Date() })
+          .set({
+            contentEtag: decision.contentEtag,
+            updatedAt: row.updatedAt,
+          })
           .where(eq(documents.id, row.id));
         yamlRepaired += 1;
       }

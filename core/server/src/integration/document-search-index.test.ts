@@ -27,6 +27,7 @@ import {
   upsertDocumentSearchIndex,
 } from "../services/document-search-index.js";
 import { putDocumentProperties } from "../services/document-properties.js";
+import { syncDocumentMetadataFromStorageKey } from "../services/vault-document-metadata.js";
 import {
   createDocument,
   retrieveDocuments,
@@ -527,6 +528,15 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
     checksum: checksumForContent(yamlVault),
   });
 
+  const [yamlBefore] = await db
+    .select({
+      contentEtag: documents.contentEtag,
+      updatedAt: documents.updatedAt,
+    })
+    .from(documents)
+    .where(eq(documents.id, yamlId));
+  const yamlUpdatedAtBefore = yamlBefore?.updatedAt?.getTime();
+
   const vault: Record<string, string> = {
     [`fts/${matchId}.md`]: matchBody,
     [`fts/${driftId}.md`]: driftVault,
@@ -577,6 +587,7 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
 
   const [yamlDoc] = await db.select().from(documents).where(eq(documents.id, yamlId));
   assert.equal(yamlDoc?.contentEtag, documentContentEtag(yamlVault));
+  assert.equal(yamlDoc?.updatedAt.getTime(), yamlUpdatedAtBefore);
 
   const loadsAfterFirst = expectedByKey.length;
   const second = await backfillDocumentSearchBodies({
@@ -588,6 +599,89 @@ test("OS-80 backfill match, drift, and null etag cases", async (context) => {
   assert.equal(second.etagDrift, 1);
   assert.equal(expectedByKey.length, loadsAfterFirst + 1);
 });
+
+test("OS-80 vault heal etag repair does not bump updatedAt", async (context) => {
+  const userId = id("user");
+  const workspaceId = id("workspace");
+  const documentId = id("doc-heal");
+  const body = "# Heal\nunchanged file, stale etag.\n";
+  const previousVault = process.env.BACKSTEROS_VAULT_PATH;
+  const savedR2: Partial<Record<(typeof R2_ENV_KEYS)[number], string | undefined>> =
+    {};
+  for (const key of R2_ENV_KEYS) {
+    savedR2[key] = process.env[key];
+    delete process.env[key];
+  }
+  const vaultRoot = await mkdtemp(path.join(tmpdir(), "bos-fts-heal-"));
+  setVaultPathCache(vaultRoot);
+  process.env.BACKSTEROS_VAULT_PATH = vaultRoot;
+  const storageKey = `fts/${documentId}.md`;
+  await putObject(storageKey, body);
+
+  context.after(async () => {
+    setVaultPathCache(previousVault?.trim() || null);
+    if (previousVault === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousVault;
+    for (const key of R2_ENV_KEYS) {
+      if (savedR2[key] === undefined) delete process.env[key];
+      else process.env[key] = savedR2[key];
+    }
+    await db.delete(documents).where(eq(documents.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
+    await rm(vaultRoot, { recursive: true, force: true });
+  });
+
+  await db.insert(users).values({
+    id: userId,
+    clerkId: id("clerk"),
+    email: `${userId}@example.test`,
+  });
+  await db.insert(workspaces).values({
+    id: workspaceId,
+    name: "FTS heal",
+    slug: id("fts-heal"),
+    ownerUserId: userId,
+  });
+  await db.insert(documents).values({
+    id: documentId,
+    workspaceId,
+    type: "knowledge",
+    kind: "document",
+    path: storageKey,
+    title: "Heal",
+    storageKey,
+    contentType: "text/markdown; charset=utf-8",
+    byteSize: Buffer.byteLength(body, "utf8"),
+    checksum: checksumForContent(body),
+    snippet: snippetForContent(body),
+    contentVersion: 1,
+    contentEtag: documentContentEtag("# other\n"),
+  });
+
+  const [before] = await db
+    .select({
+      updatedAt: documents.updatedAt,
+      contentEtag: documents.contentEtag,
+    })
+    .from(documents)
+    .where(eq(documents.id, documentId));
+
+  const result = await syncDocumentMetadataFromStorageKey(workspaceId, storageKey);
+  assert.equal(result, "skipped");
+
+  const [after] = await db
+    .select({
+      updatedAt: documents.updatedAt,
+      contentEtag: documents.contentEtag,
+    })
+    .from(documents)
+    .where(eq(documents.id, documentId));
+  assert.equal(after?.contentEtag, documentContentEtag(body));
+  assert.notEqual(after?.contentEtag, before?.contentEtag);
+  assert.equal(after?.updatedAt.getTime(), before?.updatedAt.getTime());
+});
+
 
 test("OS-80 retrieve still uses the indexed body after a property edit", async (context) => {
   const userId = id("user");
@@ -730,8 +824,8 @@ test("OS-80 retrieve timings with mixed realistic markdown on backsteros_test", 
   const userId = id("user");
   const workspaceId = id("workspace");
   const uniqueToken = `zxqmix${randomUUID().replace(/-/g, "").slice(0, 10)}`;
-  const docCount = 400;
-  const matchCount = 40;
+  const docCount = 1700;
+  const matchCount = 170;
   const vocab = [
     "Postgres GIN indexes rank markdown with simple lexemes and weighted titles.",
     "PowerSync ships metadata to clients while markdown bodies stay in the vault.",
@@ -739,6 +833,40 @@ test("OS-80 retrieve timings with mixed realistic markdown on backsteros_test", 
     "Replication copies table twins between local-core and cloud-core over HTTPS.",
     "Invoice drafts live beside house rules, runbooks, and meeting notes.",
     "Desktop Settings storage points BACKSTEROS_VAULT_PATH at the working copy.",
+    "Circle contacts store emails, phones, and social accounts separately from tasks.",
+    "Journal entries are dated markdown files under the vault Journal folder.",
+    "Project documents live under Projects/{KEY}/Documents and Updates.",
+    "Letter PDFs stay out of the FTS corpus and are fetched lazily by id.",
+    "Front matter YAML mirrors type, status, audience, and project onto columns.",
+    "Soft-deleted documents keep their search_body so restore stays searchable.",
+    "tsvector input is capped at eighty thousand characters to avoid overflow.",
+    "Retrieve uses the indexed body only when content_etag values agree.",
+    "Stale index rows fall back to getObject and the local vault working copy.",
+    "Candidate limit stays at one hundred so broad terms still rank well.",
+    "Snippets are the first five hundred characters after trimming whitespace.",
+    "Doc keys like DOC-38 are allocated on the leader, not on a forwarding replica.",
+    "Object storage etags are the first thirty-two hex chars of sha256.",
+    "Backfill is batched, resumable, and refused against live without --allow-live.",
+    "Dead letters hold replication rows that failed validation or unique indexes.",
+    "Task search excludes completed, canceled, and duplicated unless status=all.",
+    "Mobile and desktop share contracts only; they do not share visual UI.",
+    "Tier C markdown bodies are never bulk-synced to client SQLite by default.",
+    "R2 is the target blob store; today the Mac vault is still the source of truth.",
+    "OpenAPI lives on the local Hono server in core/server, not in the shells.",
+    "Property filters on retrieve accept type, audience, status, and project keys.",
+    "Heading-aware section scoring still runs after the FTS candidate query.",
+    "Checksums of vault bytes detect YAML rewrites that left a stale content_etag.",
+    "Null document etags are indexed once so backfill does not refetch forever.",
+    "Compose binds Postgres to 127.0.0.1:5433 and defaults POSTGRES_PASSWORD safely.",
+    "LaunchAgent start must docker start PowerSync when live containers already exist.",
+    "Integration tests use backsteros_test and refuse the live backsteros database.",
+    "Agents authenticate with sk_live keys through agent.backsteros.com.",
+    "Search batch fans out retrieve and search items with a small concurrency cap.",
+    "House rules, decisions, and runbooks are semantic types in front matter.",
+    "Meeting notes mention attendees, action items, and follow-up dates in prose.",
+    "Architecture docs discuss Hono, Drizzle, PowerSync publications, and LWW.",
+    "Ops routes expose replication dead letters without writing client schemas.",
+    "A unique lexeme in a late section past the cap must not match plainquery.",
   ];
 
   const padMarkdown = (seed: number, targetBytes: number, extra = "") => {
@@ -772,8 +900,8 @@ test("OS-80 retrieve timings with mixed realistic markdown on backsteros_test", 
   const rows = Array.from({ length: docCount }, (_, i) => {
     const docId = id(`mix-${i}`);
     let target = 2_000 + (i % 18) * 1_000;
-    if (i >= docCount - 10) target = 110_000 + (i % 3) * 10_000;
-    else if (i >= docCount - 50) target = 12_000 + (i % 8) * 1_000;
+    if (i >= docCount - 42) target = 110_000 + (i % 3) * 10_000;
+    else if (i >= docCount - 212) target = 12_000 + (i % 8) * 1_000;
     const extra =
       i < matchCount ? `replicationledger ${uniqueToken}\n\n` : "";
     const body = padMarkdown(i, target, extra);
