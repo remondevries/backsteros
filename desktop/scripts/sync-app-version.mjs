@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
  * Sync desktop app version from package.json → tauri.conf.json, Cargo.toml,
- * and Cargo.lock. Does not rewrite files that already match (keeps the tree
+ * Cargo.lock, and src-tauri/Info.plist (CFBundleShortVersionString /
+ * CFBundleVersion). Does not rewrite files that already match (keeps the tree
  * clean across builds). Override with DESKTOP_APP_VERSION=x.y.z.
  *
  * Signing: set APPLE_SIGNING_IDENTITY to a Developer ID Application identity
  * when one is available. Apple Development alone cannot notarize distribution builds.
  */
-import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { applyInfoPlistVersions } from "./macos-packaging.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -64,6 +66,16 @@ if (nextCargo !== cargo) {
   fs.writeFileSync(cargoPath, nextCargo);
   wrote = true;
   cargo = nextCargo;
+}
+
+const plistPath = path.join(desktopRoot, "src-tauri", "Info.plist");
+if (fs.existsSync(plistPath)) {
+  const plist = fs.readFileSync(plistPath, "utf8");
+  const nextPlist = applyInfoPlistVersions(plist, version);
+  if (nextPlist !== plist) {
+    fs.writeFileSync(plistPath, nextPlist);
+    wrote = true;
+  }
 }
 
 const lockPath = path.join(desktopRoot, "src-tauri", "Cargo.lock");

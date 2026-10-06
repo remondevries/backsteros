@@ -106,11 +106,30 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 ## Ship / package
 
+`pnpm --filter @backsteros/desktop build` writes `CFBundleShortVersionString` /
+`CFBundleVersion` from the synced app version, then runs `tauri build --bundles app`.
+It **does not** copy or overwrite `/Applications/BacksterOS.app` (that 2 Oct
+incident is guarded: the build fails if any `BacksterOS*.app` under
+`/Applications` changes). Default bundle is `.app` only — not a DMG.
+
 ```bash
-# Build shared UI, then native installers (macOS .app / .dmg, Windows, Linux)
-pnpm --filter @backsteros/ui build
+# Shared UI is also built by Tauri beforeBuildCommand; this is enough:
 pnpm --filter @backsteros/desktop build
-# Artifacts under backsteros-desktop/src-tauri/target/release/bundle/
+# Artifact: desktop/src-tauri/target/release/bundle/macos/BacksterOS.app
+
+# Safe install: versioned copy only (leaves /Applications/BacksterOS.app alone)
+pnpm --filter @backsteros/desktop install:macos
+
+# After you have verified BacksterOS-<version>.app, swap the stable name.
+# Existing /Applications/BacksterOS.app is copied first to
+# /Applications/BacksterOS-rollback-<timestamp>.app
+pnpm --filter @backsteros/desktop install:macos -- --replace-stable
+```
+
+DMG (still does not install into `/Applications`):
+
+```bash
+pnpm --filter @backsteros/desktop build:dmg
 ```
 
 Packaged builds always use compile-time `VITE_*` from `.env` (or CI env).
