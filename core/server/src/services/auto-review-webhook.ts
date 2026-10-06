@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, or } from "drizzle-orm";
 
 import type {
   AutoReviewWebhookSettings,
@@ -21,18 +21,22 @@ import { formatTaskDisplayKey } from "../lib/task-filters.js";
 import {
   AUTO_REVIEW_EVENT,
   AUTO_REVIEW_MAX_ATTEMPTS,
+  AUTO_REVIEW_SEND_LEASE_MS,
   AUTO_REVIEW_TIMEOUT_MS,
   type AutoReviewReadyPayload,
   buildAutoReviewHeaders,
+  canEncryptWebhookSecret,
   classifyWebhookResponse,
   decryptWebhookSecret,
   encryptWebhookSecret,
+  mapAutoReviewDeliveryStatusForApi,
   maskWebhookSecret,
   nextAttemptAt,
   parseRetryAfterMs,
   shouldDeliverAutoReviewWebhooks,
   shouldEnqueueAutoReview,
   stableJson,
+  validateAutoReviewWebhookUrl,
 } from "../lib/auto-review-webhook.js";
 import * as taskActivityService from "./task-activities.js";
 import * as taskCommentService from "./task-comments.js";
@@ -55,9 +59,8 @@ export async function isAutoReviewWebhookEnabled(
     .from(workspaceIntegrationSecrets)
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
     .limit(1);
-  return Boolean(
-    row?.enabled && row.url?.trim() && row.secret?.trim(),
-  );
+  if (!row?.enabled || !row.url?.trim() || !row.secret?.trim()) return false;
+  return Boolean(decryptWebhookSecret(row.secret));
 }
 
 export async function enqueueAutoReviewDelivery(input: {
@@ -210,19 +213,17 @@ export async function getAutoReviewWebhookSettings(
   const secretPlain = decryptWebhookSecret(
     secrets?.autoReviewWebhookSecretCiphertext,
   );
-  const lastResult =
-    last?.status === "delivered" ||
-    last?.status === "failed" ||
-    last?.status === "pending"
-      ? last.status
-      : null;
+  const lastResult = mapAutoReviewDeliveryStatusForApi(last?.status ?? null);
 
   return {
     enabled: Boolean(secrets?.autoReviewWebhookEnabled),
     url: secrets?.autoReviewWebhookUrl?.trim() || null,
     secretConfigured: Boolean(secretPlain),
     secretPreview: maskWebhookSecret(secretPlain),
-    lastDeliveryAt: last?.lastAttemptAt?.toISOString() ?? last?.updatedAt.toISOString() ?? null,
+    lastDeliveryAt:
+      last?.lastAttemptAt?.toISOString() ??
+      last?.updatedAt.toISOString() ??
+      null,
     lastDeliveryResult: lastResult,
     lastDeliveryHttpStatus: last?.lastHttpStatus ?? null,
     lastDeliveryError: last?.lastError ?? null,
@@ -241,9 +242,20 @@ export async function getAutoReviewWebhookSettings(
   };
 }
 
+export class AutoReviewWebhookSettingsError extends Error {
+  constructor(
+    message: string,
+    readonly code: "bad_request" = "bad_request",
+  ) {
+    super(message);
+    this.name = "AutoReviewWebhookSettingsError";
+  }
+}
+
 export async function updateAutoReviewWebhookSettings(
   workspaceId: string,
   input: UpdateAutoReviewWebhookSettingsInput,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<AutoReviewWebhookSettings> {
   await ensureSecretRow(workspaceId);
   const patch: {
@@ -254,14 +266,27 @@ export async function updateAutoReviewWebhookSettings(
   } = { updatedAt: new Date() };
 
   if (input.url !== undefined) {
-    const trimmed = input.url.trim();
-    patch.autoReviewWebhookUrl = trimmed || null;
+    const validated = validateAutoReviewWebhookUrl(input.url, env);
+    if (!validated.ok) {
+      throw new AutoReviewWebhookSettingsError(validated.error);
+    }
+    patch.autoReviewWebhookUrl = validated.url;
   }
   if (input.secret !== undefined) {
     const trimmed = input.secret.trim();
-    patch.autoReviewWebhookSecretCiphertext = trimmed
-      ? encryptWebhookSecret(trimmed)
-      : null;
+    if (!trimmed) {
+      patch.autoReviewWebhookSecretCiphertext = null;
+    } else {
+      if (!canEncryptWebhookSecret(env)) {
+        throw new AutoReviewWebhookSettingsError(
+          "BACKSTEROS_SECRET_ENCRYPTION_KEY (or CORE_REPLICATION_SECRET) is required to save an auto-review webhook secret",
+        );
+      }
+      patch.autoReviewWebhookSecretCiphertext = encryptWebhookSecret(
+        trimmed,
+        env,
+      );
+    }
   }
   if (input.enabled !== undefined) {
     patch.autoReviewWebhookEnabled = input.enabled;
@@ -388,8 +413,11 @@ async function recordFailureComment(
     SYSTEM_ACTOR,
   );
   if (!comment) return;
-  const { recordTaskCommentRestSyncEvent, loadTaskActivityRow, recordTaskActivityRestSyncEvent } =
-    await import("./sync.js");
+  const {
+    recordTaskCommentRestSyncEvent,
+    loadTaskActivityRow,
+    recordTaskActivityRestSyncEvent,
+  } = await import("./sync.js");
   await recordTaskCommentRestSyncEvent(workspaceId, comment, "upsert");
   const activity = await loadTaskActivityRow(workspaceId, comment.id);
   if (activity) {
@@ -397,11 +425,17 @@ async function recordFailureComment(
   }
 }
 
-async function finalizeDelivery(input: {
+/**
+ * Finalize a claimed (`sending`) row. Side effects (activity / failure comment)
+ * run only when this UPDATE wins the `sending` → terminal transition.
+ */
+export async function finalizeDelivery(input: {
   row: typeof autoReviewWebhookDeliveries.$inferSelect;
   result: PostResult;
   payload: AutoReviewReadyPayload;
-}): Promise<"delivered" | "pending" | "failed"> {
+  /** Test deliveries never stay retryable. */
+  forceFailedOnRetry?: boolean;
+}): Promise<"delivered" | "pending" | "failed" | "skipped"> {
   const classification = classifyWebhookResponse({
     httpStatus: input.result.httpStatus,
     networkError: input.result.networkError,
@@ -409,9 +443,13 @@ async function finalizeDelivery(input: {
   });
   const attempt = input.payload.attempt;
   const now = new Date();
+  const sendingOnly = and(
+    eq(autoReviewWebhookDeliveries.id, input.row.id),
+    eq(autoReviewWebhookDeliveries.status, "sending"),
+  );
 
   if (classification === "success") {
-    await db
+    const [won] = await db
       .update(autoReviewWebhookDeliveries)
       .set({
         status: "delivered",
@@ -422,7 +460,9 @@ async function finalizeDelivery(input: {
         payload: input.payload,
         updatedAt: now,
       })
-      .where(eq(autoReviewWebhookDeliveries.id, input.row.id));
+      .where(sendingOnly)
+      .returning();
+    if (!won) return "skipped";
     await markTaskDeliveryStatus(
       input.row.workspaceId,
       input.row.taskId,
@@ -434,10 +474,14 @@ async function finalizeDelivery(input: {
     return "delivered";
   }
 
-  const exhausted =
-    classification === "dead" || attempt >= AUTO_REVIEW_MAX_ATTEMPTS;
-  if (exhausted) {
-    await db
+  const treatAsDead =
+    classification === "dead" ||
+    attempt >= AUTO_REVIEW_MAX_ATTEMPTS ||
+    (input.forceFailedOnRetry && classification === "retry") ||
+    (Boolean(input.payload.test) && classification === "retry");
+
+  if (treatAsDead) {
+    const [won] = await db
       .update(autoReviewWebhookDeliveries)
       .set({
         status: "failed",
@@ -448,19 +492,21 @@ async function finalizeDelivery(input: {
         payload: input.payload,
         updatedAt: now,
       })
-      .where(eq(autoReviewWebhookDeliveries.id, input.row.id));
+      .where(sendingOnly)
+      .returning();
+    if (!won) return "skipped";
     await markTaskDeliveryStatus(
       input.row.workspaceId,
       input.row.taskId,
       "failed",
     );
-    if (input.row.taskId) {
+    if (input.row.taskId && !input.payload.test) {
       await recordFailureComment(input.row.workspaceId, input.row.taskId);
     }
     return "failed";
   }
 
-  await db
+  const [won] = await db
     .update(autoReviewWebhookDeliveries)
     .set({
       status: "pending",
@@ -476,14 +522,22 @@ async function finalizeDelivery(input: {
       }),
       updatedAt: now,
     })
-    .where(eq(autoReviewWebhookDeliveries.id, input.row.id));
+    .where(sendingOnly)
+    .returning();
+  if (!won) return "skipped";
   return "pending";
 }
 
-async function credentialsForWorkspace(workspaceId: string): Promise<{
-  url: string;
-  secret: string;
-} | null> {
+type CredentialsResult =
+  | { ok: true; url: string; secret: string }
+  | {
+      ok: false;
+      reason: "disabled" | "not_configured" | "secret_unreadable";
+    };
+
+async function credentialsForWorkspace(
+  workspaceId: string,
+): Promise<CredentialsResult> {
   const [row] = await db
     .select({
       url: workspaceIntegrationSecrets.autoReviewWebhookUrl,
@@ -493,30 +547,76 @@ async function credentialsForWorkspace(workspaceId: string): Promise<{
     .from(workspaceIntegrationSecrets)
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
     .limit(1);
-  const url = row?.url?.trim() ?? "";
-  const secret = decryptWebhookSecret(row?.ciphertext) ?? "";
-  if (!row?.enabled || !url || !secret) return null;
-  return { url, secret };
+  if (!row?.enabled) return { ok: false, reason: "disabled" };
+  const url = row.url?.trim() ?? "";
+  if (!url) return { ok: false, reason: "not_configured" };
+  const hasCiphertext = Boolean(row.ciphertext?.trim());
+  const secret = decryptWebhookSecret(row.ciphertext);
+  if (!secret) {
+    return {
+      ok: false,
+      reason: hasCiphertext ? "secret_unreadable" : "not_configured",
+    };
+  }
+  return { ok: true, url, secret };
+}
+
+function unconfiguredError(
+  reason: "disabled" | "not_configured" | "secret_unreadable",
+): string {
+  if (reason === "disabled") return "webhook disabled";
+  if (reason === "secret_unreadable") return "webhook secret unreadable";
+  return "webhook not configured";
+}
+
+/** Mark a claimed row failed because the webhook cannot be delivered. */
+async function failUnconfiguredDelivery(input: {
+  row: typeof autoReviewWebhookDeliveries.$inferSelect;
+  reason: "disabled" | "not_configured" | "secret_unreadable";
+  /** Test rows: no task comment. */
+  isTest?: boolean;
+}): Promise<"failed" | "skipped"> {
+  const now = new Date();
+  const attempt = Math.max(1, input.row.attempt + 1);
+  const [won] = await db
+    .update(autoReviewWebhookDeliveries)
+    .set({
+      status: "failed",
+      attempt,
+      lastAttemptAt: now,
+      lastError: unconfiguredError(input.reason),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(autoReviewWebhookDeliveries.id, input.row.id),
+        eq(autoReviewWebhookDeliveries.status, "sending"),
+      ),
+    )
+    .returning();
+  if (!won) return "skipped";
+  await markTaskDeliveryStatus(
+    input.row.workspaceId,
+    input.row.taskId,
+    "failed",
+  );
+  if (input.row.taskId && !input.isTest) {
+    await recordFailureComment(input.row.workspaceId, input.row.taskId);
+  }
+  return "failed";
 }
 
 async function deliverRow(
   row: typeof autoReviewWebhookDeliveries.$inferSelect,
+  options: { forceFailedOnRetry?: boolean } = {},
 ): Promise<"delivered" | "pending" | "failed" | "skipped"> {
   const creds = await credentialsForWorkspace(row.workspaceId);
-  if (!creds) {
-    await db
-      .update(autoReviewWebhookDeliveries)
-      .set({
-        status: "pending",
-        lastError: "webhook not configured",
-        nextAttemptAt: nextAttemptAt({
-          failedAttempt: Math.max(1, row.attempt),
-          retryAfterMs: null,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(autoReviewWebhookDeliveries.id, row.id));
-    return "skipped";
+  if (!creds.ok) {
+    return failUnconfiguredDelivery({
+      row,
+      reason: creds.reason,
+      isTest: Boolean((row.payload as AutoReviewReadyPayload | null)?.test),
+    });
   }
 
   const attempt = row.attempt + 1;
@@ -548,58 +648,126 @@ async function deliverRow(
     timestamp: timestampHeader,
     deliveryId: row.id,
   });
-  return finalizeDelivery({ row, result, payload });
+  return finalizeDelivery({
+    row,
+    result,
+    payload,
+    forceFailedOnRetry: options.forceFailedOnRetry ?? Boolean(payload.test),
+  });
 }
+
+/**
+ * Atomically claim due pending (or lease-expired sending) rows before POST.
+ */
+export async function claimDueAutoReviewWebhookDeliveries(
+  now = new Date(),
+  limit = 10,
+): Promise<(typeof autoReviewWebhookDeliveries.$inferSelect)[]> {
+  const leaseUntil = new Date(now.getTime() + AUTO_REVIEW_SEND_LEASE_MS);
+  return db.transaction(async (tx) => {
+    const due = await tx
+      .select()
+      .from(autoReviewWebhookDeliveries)
+      .where(
+        and(
+          or(
+            eq(autoReviewWebhookDeliveries.status, "pending"),
+            eq(autoReviewWebhookDeliveries.status, "sending"),
+          ),
+          lte(autoReviewWebhookDeliveries.nextAttemptAt, now),
+        ),
+      )
+      .orderBy(autoReviewWebhookDeliveries.nextAttemptAt)
+      .limit(limit)
+      .for("update", { skipLocked: true });
+
+    if (due.length === 0) return [];
+
+    const claimed: (typeof autoReviewWebhookDeliveries.$inferSelect)[] = [];
+    for (const row of due) {
+      const [updated] = await tx
+        .update(autoReviewWebhookDeliveries)
+        .set({
+          status: "sending",
+          nextAttemptAt: leaseUntil,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(autoReviewWebhookDeliveries.id, row.id),
+            or(
+              eq(autoReviewWebhookDeliveries.status, "pending"),
+              eq(autoReviewWebhookDeliveries.status, "sending"),
+            ),
+          ),
+        )
+        .returning();
+      if (updated) claimed.push(updated);
+    }
+    return claimed;
+  });
+}
+
+let tickInFlight = false;
 
 export async function runDueAutoReviewWebhookDeliveries(
   now = new Date(),
   limit = 10,
 ): Promise<number> {
   if (!shouldDeliverAutoReviewWebhooks()) return 0;
-
-  const due = await db
-    .select()
-    .from(autoReviewWebhookDeliveries)
-    .where(
-      and(
-        eq(autoReviewWebhookDeliveries.status, "pending"),
-        lte(autoReviewWebhookDeliveries.nextAttemptAt, now),
-      ),
-    )
-    .orderBy(autoReviewWebhookDeliveries.nextAttemptAt)
-    .limit(limit)
-    .for("update", { skipLocked: true });
-
-  let delivered = 0;
-  for (const row of due) {
-    try {
-      const outcome = await deliverRow(row);
-      if (outcome === "delivered") delivered += 1;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "deliver failed";
-      console.warn(
-        `[auto-review] delivery ${row.id} failed:`,
-        message,
-      );
+  if (tickInFlight) return 0;
+  tickInFlight = true;
+  try {
+    const claimed = await claimDueAutoReviewWebhookDeliveries(now, limit);
+    let delivered = 0;
+    for (const row of claimed) {
+      try {
+        const outcome = await deliverRow(row);
+        if (outcome === "delivered") delivered += 1;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "deliver failed";
+        console.warn(`[auto-review] delivery ${row.id} failed:`, message);
+        // Leave lease in place; expired sending rows become due again.
+      }
     }
+    return delivered;
+  } finally {
+    tickInFlight = false;
   }
-  return delivered;
+}
+
+/** Test helper: clear the in-process tick guard. */
+export function resetAutoReviewWebhookTickGuardForTests(): void {
+  tickInFlight = false;
 }
 
 export async function sendAutoReviewWebhookTest(
   workspaceId: string,
 ): Promise<AutoReviewWebhookTestResult> {
+  if (!shouldDeliverAutoReviewWebhooks()) {
+    return {
+      ok: false,
+      error:
+        "Auto-review webhook Send test only runs on cloud or standalone core (not local replica).",
+      httpStatus: null,
+      deliveryId: null,
+    };
+  }
+
   const settings = await getAutoReviewWebhookSettings(workspaceId);
   if (!settings.enabled || !settings.url || !settings.secretConfigured) {
     return {
       ok: false,
-      error: "Configure URL, secret, and turn the webhook on before sending a test.",
+      error:
+        "Configure URL, secret, and turn the webhook on before sending a test.",
       httpStatus: null,
       deliveryId: null,
     };
   }
 
   const deliveryId = newId();
+  const now = new Date();
   const payload: AutoReviewReadyPayload = {
     event: AUTO_REVIEW_EVENT,
     taskId: "test",
@@ -610,7 +778,7 @@ export async function sendAutoReviewWebhookTest(
     projectName: null,
     assigneeId: null,
     assigneeName: null,
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     threadId: null,
     sessionId: null,
     commitHashes: [],
@@ -627,9 +795,9 @@ export async function sendAutoReviewWebhookTest(
       taskId: null,
       event: AUTO_REVIEW_EVENT,
       payload,
-      status: "pending",
+      status: "sending",
       attempt: 0,
-      nextAttemptAt: new Date(),
+      nextAttemptAt: new Date(now.getTime() + AUTO_REVIEW_SEND_LEASE_MS),
     })
     .returning();
   if (!row) {
@@ -641,16 +809,37 @@ export async function sendAutoReviewWebhookTest(
     };
   }
 
-  const outcome = await deliverRow(row);
+  const outcome = await deliverRow(row, { forceFailedOnRetry: true });
   const [updated] = await db
     .select()
     .from(autoReviewWebhookDeliveries)
     .where(eq(autoReviewWebhookDeliveries.id, deliveryId))
     .limit(1);
+
+  // Never leave a test row retryable.
+  if (updated?.status === "pending" || updated?.status === "sending") {
+    await db
+      .update(autoReviewWebhookDeliveries)
+      .set({
+        status: "failed",
+        lastError: updated.lastError ?? "test delivery incomplete",
+        updatedAt: new Date(),
+      })
+      .where(eq(autoReviewWebhookDeliveries.id, deliveryId));
+  }
+
+  const [finalRow] = await db
+    .select()
+    .from(autoReviewWebhookDeliveries)
+    .where(eq(autoReviewWebhookDeliveries.id, deliveryId))
+    .limit(1);
+
   return {
     ok: outcome === "delivered",
-    error: updated?.lastError ?? (outcome === "delivered" ? null : "delivery failed"),
-    httpStatus: updated?.lastHttpStatus ?? null,
+    error:
+      finalRow?.lastError ??
+      (outcome === "delivered" ? null : "delivery failed"),
+    httpStatus: finalRow?.lastHttpStatus ?? null,
     deliveryId,
   };
 }

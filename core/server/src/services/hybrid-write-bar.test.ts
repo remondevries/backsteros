@@ -55,8 +55,10 @@ describe("hybrid write bar", () => {
     const service = readSrc("auto-review-webhook.ts");
     assert.ok(service.includes("shouldDeliverAutoReviewWebhooks"));
     assert.ok(service.includes("enqueueAutoReviewDelivery"));
+    assert.ok(service.includes("claimDueAutoReviewWebhookDeliveries"));
     const lib = readSrc("../lib/auto-review-webhook.ts");
-    assert.ok(lib.includes('CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local"'));
+    assert.ok(lib.includes("CORE_REPLICATION_PEER_URL"));
+    assert.ok(lib.includes('=== "cloud"'));
     const index = readSrc("../index.ts");
     assert.ok(index.includes("startAutoReviewWebhookWorker"));
   });

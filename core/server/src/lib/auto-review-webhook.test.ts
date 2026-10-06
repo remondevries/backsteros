@@ -3,17 +3,25 @@ import { describe, it } from "node:test";
 
 import {
   AUTO_REVIEW_BACKOFF_MS,
+  AUTO_REVIEW_DELIVERY_ID_HEADER,
   AUTO_REVIEW_MAX_ATTEMPTS,
+  AUTO_REVIEW_SIGNATURE_HEADER,
+  AUTO_REVIEW_TIMESTAMP_HEADER,
   backoffMsAfterAttempt,
+  buildAutoReviewHeaders,
+  canEncryptWebhookSecret,
   classifyWebhookResponse,
   decryptWebhookSecret,
   encryptWebhookSecret,
+  mapAutoReviewDeliveryStatusForApi,
   maskWebhookSecret,
   nextAttemptAt,
   parseRetryAfterMs,
+  resetDecryptFailureWarnedForTests,
   shouldDeliverAutoReviewWebhooks,
   shouldEnqueueAutoReview,
   signAutoReviewBody,
+  validateAutoReviewWebhookUrl,
   verifyAutoReviewSignature,
 } from "./auto-review-webhook.js";
 
@@ -164,9 +172,75 @@ describe("auto-review webhook helpers", () => {
     assert.equal(maskWebhookSecret("super-secret-token"), "••••oken");
   });
 
-  it("HMAC-signs body + timestamp", () => {
+  it("decrypt failure returns null instead of throwing", () => {
+    resetDecryptFailureWarnedForTests();
+    const env = { BACKSTEROS_SECRET_ENCRYPTION_KEY: "unit-test-key" };
+    const cipher = encryptWebhookSecret("token", env);
+    const other = { BACKSTEROS_SECRET_ENCRYPTION_KEY: "other-key" };
+    assert.equal(decryptWebhookSecret(cipher, other), null);
+    assert.equal(decryptWebhookSecret("v1:bad:tag:data", env), null);
+  });
+
+  it("refuses the public fallback encryption key in production/cloud", () => {
+    assert.equal(
+      canEncryptWebhookSecret({ NODE_ENV: "production" }),
+      false,
+    );
+    assert.equal(
+      canEncryptWebhookSecret({ CORE_REPLICATION_ROLE: "cloud" }),
+      false,
+    );
+    assert.equal(
+      canEncryptWebhookSecret({
+        NODE_ENV: "production",
+        BACKSTEROS_SECRET_ENCRYPTION_KEY: "ok",
+      }),
+      true,
+    );
+    assert.equal(canEncryptWebhookSecret({ NODE_ENV: "test" }), true);
+    assert.throws(
+      () =>
+        encryptWebhookSecret("x", {
+          NODE_ENV: "production",
+        }),
+      /BACKSTEROS_SECRET_ENCRYPTION_KEY/,
+    );
+  });
+
+  it("validates webhook URLs (https, localhost http in dev, empty clears)", () => {
+    assert.deepEqual(validateAutoReviewWebhookUrl(""), { ok: true, url: null });
+    assert.deepEqual(validateAutoReviewWebhookUrl("https://hooks.example/x"), {
+      ok: true,
+      url: "https://hooks.example/x",
+    });
+    assert.equal(
+      validateAutoReviewWebhookUrl("http://evil.example/x").ok,
+      false,
+    );
+    assert.equal(
+      validateAutoReviewWebhookUrl("http://evil.example/x", {
+        NODE_ENV: "production",
+      }).ok,
+      false,
+    );
+    assert.deepEqual(
+      validateAutoReviewWebhookUrl("http://127.0.0.1:9999/hook", {
+        NODE_ENV: "test",
+      }),
+      { ok: true, url: "http://127.0.0.1:9999/hook" },
+    );
+    assert.equal(
+      validateAutoReviewWebhookUrl("http://127.0.0.1:9999/hook", {
+        NODE_ENV: "production",
+      }).ok,
+      false,
+    );
+    assert.equal(validateAutoReviewWebhookUrl("not-a-url").ok, false);
+  });
+
+  it("HMAC-signs body + timestamp and does not put the secret in headers", () => {
     const body = '{"event":"task.ready_for_review"}';
-    const timestamp = "2026-10-06T12:00:00.000Z";
+    const timestamp = "1728216000000";
     const secret = "hook-secret";
     const sig = signAutoReviewBody({ body, timestamp, secret });
     assert.equal(
@@ -182,16 +256,63 @@ describe("auto-review webhook helpers", () => {
       }),
       false,
     );
+    const headers = buildAutoReviewHeaders({
+      body,
+      timestamp,
+      secret,
+      deliveryId: "del-1",
+    });
+    assert.equal(headers[AUTO_REVIEW_SIGNATURE_HEADER], `sha256=${sig}`);
+    assert.equal(headers[AUTO_REVIEW_TIMESTAMP_HEADER], timestamp);
+    assert.equal(headers[AUTO_REVIEW_DELIVERY_ID_HEADER], "del-1");
+    assert.equal(headers["content-type"], "application/json");
+    assert.equal(headers.authorization, undefined);
+    for (const value of Object.values(headers)) {
+      assert.equal(value.includes(secret), false);
+    }
   });
 
-  it("only cloud/standalone cores deliver (never local)", () => {
+  it("maps sending → pending for settings/API surfaces", () => {
+    assert.equal(mapAutoReviewDeliveryStatusForApi("sending"), "pending");
+    assert.equal(mapAutoReviewDeliveryStatusForApi("pending"), "pending");
+    assert.equal(mapAutoReviewDeliveryStatusForApi("delivered"), "delivered");
+    assert.equal(mapAutoReviewDeliveryStatusForApi("failed"), "failed");
+    assert.equal(mapAutoReviewDeliveryStatusForApi(null), null);
+  });
+
+  it("only cloud/standalone cores deliver; unset role with peer is local", () => {
     assert.equal(shouldDeliverAutoReviewWebhooks({}), true);
     assert.equal(
       shouldDeliverAutoReviewWebhooks({ CORE_REPLICATION_ROLE: "cloud" }),
       true,
     );
     assert.equal(
+      shouldDeliverAutoReviewWebhooks({
+        CORE_REPLICATION_ROLE: "cloud",
+        CORE_REPLICATION_PEER_URL: "http://127.0.0.1:8788",
+        CORE_REPLICATION_SECRET: "peer-secret",
+      }),
+      true,
+    );
+    assert.equal(
       shouldDeliverAutoReviewWebhooks({ CORE_REPLICATION_ROLE: "local" }),
+      true,
+      "role alone without peer is standalone",
+    );
+    assert.equal(
+      shouldDeliverAutoReviewWebhooks({
+        CORE_REPLICATION_PEER_URL: "http://127.0.0.1:8788",
+        CORE_REPLICATION_SECRET: "peer-secret",
+      }),
+      false,
+      "unset role with peer must not deliver",
+    );
+    assert.equal(
+      shouldDeliverAutoReviewWebhooks({
+        CORE_REPLICATION_ROLE: "local",
+        CORE_REPLICATION_PEER_URL: "http://127.0.0.1:8788",
+        CORE_REPLICATION_SECRET: "peer-secret",
+      }),
       false,
     );
   });

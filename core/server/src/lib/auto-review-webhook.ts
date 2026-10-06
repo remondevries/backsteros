@@ -10,6 +10,8 @@ import {
 export const AUTO_REVIEW_EVENT = "task.ready_for_review" as const;
 export const AUTO_REVIEW_TIMEOUT_MS = 10_000;
 export const AUTO_REVIEW_MAX_ATTEMPTS = 6;
+/** Lease held while a worker is POSTing; expired `sending` rows become due again. */
+export const AUTO_REVIEW_SEND_LEASE_MS = 2 * 60_000;
 
 /** Delay before attempts 2–6 (after a failed attempt 1…5). */
 export const AUTO_REVIEW_BACKOFF_MS = [
@@ -42,6 +44,19 @@ export type AutoReviewReadyPayload = {
   attempt: number;
   test?: boolean;
 };
+
+export type AutoReviewDeliveryStatus = "pending" | "sending" | "delivered" | "failed";
+
+/** Task-facing / settings-facing status — never expose `sending`. */
+export function mapAutoReviewDeliveryStatusForApi(
+  status: string | null | undefined,
+): "pending" | "delivered" | "failed" | null {
+  if (status === "sending") return "pending";
+  if (status === "pending" || status === "delivered" || status === "failed") {
+    return status;
+  }
+  return null;
+}
 
 export function shouldEnqueueAutoReview(input: {
   skipActivitySideEffects: boolean;
@@ -128,18 +143,56 @@ export function previewWebhookUrl(url: string | null | undefined): string | null
   }
 }
 
+const DEV_FALLBACK_KEY = "backsteros-dev-auto-review";
+
+export function webhookEncryptionKeyMaterial(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const primary = env.BACKSTEROS_SECRET_ENCRYPTION_KEY?.trim();
+  if (primary) return primary;
+  const secondary = env.CORE_REPLICATION_SECRET?.trim();
+  if (secondary) return secondary;
+  return null;
+}
+
+/** Production / cloud cores must not encrypt with the public dev constant. */
+export function requiresConfiguredWebhookEncryptionKey(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.NODE_ENV === "production") return true;
+  if (env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") return true;
+  return false;
+}
+
+export function canEncryptWebhookSecret(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (webhookEncryptionKeyMaterial(env)) return true;
+  return !requiresConfiguredWebhookEncryptionKey(env);
+}
+
 function encryptionKey(env: NodeJS.ProcessEnv = process.env): Buffer {
-  const raw =
-    env.BACKSTEROS_SECRET_ENCRYPTION_KEY?.trim() ||
-    env.CORE_REPLICATION_SECRET?.trim() ||
-    "backsteros-dev-auto-review";
-  return createHash("sha256").update(raw).digest();
+  const material = webhookEncryptionKeyMaterial(env);
+  if (material) {
+    return createHash("sha256").update(material).digest();
+  }
+  if (requiresConfiguredWebhookEncryptionKey(env)) {
+    throw new Error(
+      "BACKSTEROS_SECRET_ENCRYPTION_KEY (or CORE_REPLICATION_SECRET) is required to encrypt auto-review webhook secrets in production/cloud",
+    );
+  }
+  return createHash("sha256").update(DEV_FALLBACK_KEY).digest();
 }
 
 export function encryptWebhookSecret(
   plaintext: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
+  if (!canEncryptWebhookSecret(env)) {
+    throw new Error(
+      "BACKSTEROS_SECRET_ENCRYPTION_KEY (or CORE_REPLICATION_SECRET) is required to save an auto-review webhook secret",
+    );
+  }
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(env), iv);
   const encrypted = Buffer.concat([
@@ -150,6 +203,8 @@ export function encryptWebhookSecret(
   return `v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
 }
 
+let decryptFailureWarned = false;
+
 export function decryptWebhookSecret(
   ciphertext: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -158,21 +213,67 @@ export function decryptWebhookSecret(
   if (!raw) return null;
   const parts = raw.split(":");
   if (parts.length !== 4 || parts[0] !== "v1") return null;
-  const iv = Buffer.from(parts[1]!, "base64url");
-  const tag = Buffer.from(parts[2]!, "base64url");
-  const data = Buffer.from(parts[3]!, "base64url");
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(env), iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString(
-    "utf8",
-  );
+  try {
+    const iv = Buffer.from(parts[1]!, "base64url");
+    const tag = Buffer.from(parts[2]!, "base64url");
+    const data = Buffer.from(parts[3]!, "base64url");
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(env), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString(
+      "utf8",
+    );
+  } catch {
+    if (!decryptFailureWarned) {
+      decryptFailureWarned = true;
+      console.warn(
+        "[auto-review] webhook secret decrypt failed (wrong or rotated encryption key); treating as not configured",
+      );
+    }
+    return null;
+  }
 }
 
-export function authorizationHeaderFromSecret(secret: string): string {
-  const trimmed = secret.trim();
-  if (!trimmed) return "";
-  if (/^bearer\s+/i.test(trimmed)) return trimmed;
-  return `Bearer ${trimmed}`;
+/** Reset the one-shot decrypt warning (unit tests). */
+export function resetDecryptFailureWarnedForTests(): void {
+  decryptFailureWarned = false;
+}
+
+export function isLocalhostHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+/**
+ * Empty string clears the URL. Otherwise require absolute https://
+ * (http:// only for localhost in non-production).
+ */
+export function validateAutoReviewWebhookUrl(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true; url: string | null } | { ok: false; error: string } {
+  const trimmed = url.trim();
+  if (!trimmed) return { ok: true, url: null };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { ok: false, error: "Webhook URL must be an absolute http(s) URL" };
+  }
+  if (parsed.protocol === "https:") {
+    return { ok: true, url: trimmed };
+  }
+  if (
+    parsed.protocol === "http:" &&
+    isLocalhostHostname(parsed.hostname) &&
+    env.NODE_ENV !== "production"
+  ) {
+    return { ok: true, url: trimmed };
+  }
+  return {
+    ok: false,
+    error:
+      "Webhook URL must use https:// (http:// allowed only for localhost in development)",
+  };
 }
 
 export function signAutoReviewBody(input: {
@@ -203,6 +304,10 @@ export function verifyAutoReviewSignature(input: {
   }
 }
 
+/**
+ * Signed delivery headers. The HMAC key is never sent in Authorization (or
+ * any other header) — receivers verify X-BacksterOS-Signature.
+ */
 export function buildAutoReviewHeaders(input: {
   body: string;
   timestamp: string;
@@ -212,17 +317,24 @@ export function buildAutoReviewHeaders(input: {
   const signature = signAutoReviewBody(input);
   return {
     "content-type": "application/json",
-    authorization: authorizationHeaderFromSecret(input.secret),
     [AUTO_REVIEW_TIMESTAMP_HEADER]: input.timestamp,
     [AUTO_REVIEW_SIGNATURE_HEADER]: `sha256=${signature}`,
     [AUTO_REVIEW_DELIVERY_ID_HEADER]: input.deliveryId,
   };
 }
 
+/**
+ * Deliver only from standalone cores (no peer config) or explicit cloud role.
+ * Mirrors getCoreReplicationConfig(): PEER_URL+SECRET with an unset role is
+ * treated as local, so a local core without CORE_REPLICATION_ROLE must not send.
+ */
 export function shouldDeliverAutoReviewWebhooks(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local";
+  const peerUrl = env.CORE_REPLICATION_PEER_URL?.trim();
+  const secret = env.CORE_REPLICATION_SECRET?.trim();
+  if (!peerUrl || !secret) return true;
+  return env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
 }
 
 export function stableJson(value: unknown): string {

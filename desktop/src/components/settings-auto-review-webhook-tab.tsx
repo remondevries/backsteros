@@ -131,7 +131,7 @@ export function SettingsAutoReviewWebhookTab(props: {
             placeholder={
               settings?.secretConfigured
                 ? `Configured (${settings.secretPreview ?? "••••"})`
-                : "Shared secret for HMAC + Authorization"
+                : "Shared secret for HMAC signature"
             }
             value={secretDraft}
             onChange={(event) => setSecretDraft(event.target.value)}

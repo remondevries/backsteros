@@ -835,7 +835,16 @@ export function registerSettingsRoutes(app: Hono) {
   });
   app.patch("/api/v1/settings/auto-review-webhook", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const contactIsWorkspaceOwner =
+      auth.kind === "api_key" && Boolean(auth.contactId)
+        ? await apiKeyService.apiKeyContactIsWorkspaceOwner(auth)
+        : false;
+    if (!canManageApiKeys(auth, { contactIsWorkspaceOwner })) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
+    }
     const parsed = updateAutoReviewWebhookSettingsSchema.safeParse(
       await c.req.json(),
     );
@@ -845,16 +854,32 @@ export function registerSettingsRoutes(app: Hono) {
         400,
       );
     }
-    return c.json(
-      await autoReviewWebhookService.updateAutoReviewWebhookSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
+    try {
+      return c.json(
+        await autoReviewWebhookService.updateAutoReviewWebhookSettings(
+          auth.workspaceId,
+          parsed.data,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof autoReviewWebhookService.AutoReviewWebhookSettingsError) {
+        return c.json({ error: error.message, code: error.code }, 400);
+      }
+      throw error;
+    }
   });
   app.post("/api/v1/settings/auto-review-webhook/test", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const contactIsWorkspaceOwner =
+      auth.kind === "api_key" && Boolean(auth.contactId)
+        ? await apiKeyService.apiKeyContactIsWorkspaceOwner(auth)
+        : false;
+    if (!canManageApiKeys(auth, { contactIsWorkspaceOwner })) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
+    }
     return c.json(
       await autoReviewWebhookService.sendAutoReviewWebhookTest(
         auth.workspaceId,

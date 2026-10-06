@@ -263,9 +263,14 @@ PATCH /api/v1/tasks/OS-92
 { "automateCompletion": true }
 ```
 
-Tasks also expose `autoReviewDeliveryStatus`: `pending` | `delivered` | `failed`.
+Tasks also expose `autoReviewDeliveryStatus`: `pending` | `delivered` | `failed`
+(outbox may briefly be `sending` while a lease is held; that maps to `pending`
+in the API).
 
-**Settings** (secret encrypted at rest; never logged or returned raw):
+**Settings** (secret encrypted at rest; never logged or returned raw). PATCH and
+Send test are owner-only (`local_shell` or a non–contact-bound API key with
+`settings:write` — same gate as API key admin). URL must be absolute `https://`
+(empty string clears; `http://` only for localhost in development).
 
 ```http
 GET   /api/v1/settings/auto-review-webhook
@@ -277,19 +282,52 @@ POST  /api/v1/settings/auto-review-webhook/test
 GET returns a masked `secretPreview` (last four characters) and recent failures.
 `enabled` must be on and both URL and secret set, or nothing is enqueued.
 
+**Encryption key.** Both cores that store or read the secret must share the same
+key material: prefer `BACKSTEROS_SECRET_ENCRYPTION_KEY`, else
+`CORE_REPLICATION_SECRET`. In production / cloud role, PATCH refuses to save a
+secret if neither is set (no public fallback). Local/dev may use a built-in
+fallback only when neither env var is set.
+
 **Request Sander should verify**
 
 ```http
 POST <configured URL>
 Content-Type: application/json
-Authorization: Bearer <shared secret>
 X-BacksterOS-Timestamp: <unix-ms>
 X-BacksterOS-Signature: sha256=<hex>
 X-BacksterOS-Delivery-Id: <deliveryId>
 ```
 
-Signature is HMAC-SHA256 of the UTF-8 string `{timestamp}.{rawBody}` using the
-shared secret. Compare with a timing-safe equals. Dedupe on `deliveryId`.
+There is **no** `Authorization` header carrying the HMAC key. The shared secret
+is only used to compute / verify the signature.
+
+Receiver checklist:
+
+1. Reject if `|nowMs - Number(X-BacksterOS-Timestamp)| > 5 * 60_000` (replay window).
+2. Verify HMAC-SHA256 over the UTF-8 string `` `${timestamp}.${rawBody}` `` using
+   the **raw request body bytes** (not a re-serialized JSON object).
+3. Compare the hex digest to the value after `sha256=` with a timing-safe equals.
+4. Dedupe on `deliveryId` (stable across retry attempts of the same outbox row).
+
+Node verification sketch:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(req, rawBody, secret) {
+  const ts = req.headers["x-backsteros-timestamp"];
+  const sig = String(req.headers["x-backsteros-signature"] ?? "")
+    .replace(/^sha256=/i, "")
+    .trim();
+  if (!ts || Math.abs(Date.now() - Number(ts)) > 5 * 60_000) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`${ts}.${rawBody}`)
+    .digest("hex");
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(sig, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+```
 
 **JSON body** (`event` is always `task.ready_for_review`):
 
@@ -314,12 +352,21 @@ shared secret. Compare with a timing-safe equals. Dedupe on `deliveryId`.
 ```
 
 Send-test adds `"test": true` and uses `taskId: "test"`. Ignore those for review.
+Send test inserts the row already claimed (`sending`) so the worker cannot
+double-post it; failed tests end as `failed`, not retryable `pending`.
 
 **Delivery:** written to `auto_review_webhook_deliveries` in the same transaction
-as the status change. Only cloud-core (or a standalone core) sends. Timeout 10 s.
-2xx = success. Retry 5xx, timeouts, and network errors with backoff 1m, 5m, 15m,
-1h, 6h (max 6 attempts). Do not retry other 4xx; 408/429 retry and honour
-`Retry-After`. After the last attempt the delivery is dead: the task shows
+as the status change. Only cloud-core (`CORE_REPLICATION_ROLE=cloud`) or a
+standalone core (no peer URL/secret) sends. A local core with peer configured
+but an unset role does **not** send (matches `getCoreReplicationConfig`).
+Timeout 10 s. 2xx = success. Retry 5xx, timeouts, and network errors with
+backoff 1m, 5m, 15m, 1h, 6h (max 6 attempts). Do not retry other 4xx; 408/429
+retry and honour `Retry-After`. Workers claim rows with a `sending` lease
+(`FOR UPDATE SKIP LOCKED` inside a transaction) so overlapping ticks cannot
+double-send; success activity and the failure comment are written only by the
+path that wins `sending` → `delivered`/`failed`. If the webhook is disabled or
+the secret cannot be decrypted, the row is marked `failed` (not left pending
+forever). After the last attempt the delivery is dead: the task shows
 `autoReviewDeliveryStatus: failed` and a comment `Auto-review trigger failed`.
 A successful delivery records activity `auto_review_requested`
 (“Auto-review requested from Sander”).
