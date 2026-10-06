@@ -24,7 +24,7 @@ export type EmailMailbox = {
 };
 
 export type EmailListItem = {
-  kind: "message";
+  kind: "message" | "draft";
   id: string;
   inboxId: string;
   subject: string;
@@ -54,7 +54,34 @@ export type EmailListItem = {
 export function agentMailMessageToListItem(
   entry: AgentMailMessage,
 ): EmailListItem | null {
-  if (entry.kind === "draft") return null;
+  if (entry.kind === "draft") {
+    return {
+      kind: "draft",
+      id: entry.draftId ?? entry.messageId,
+      inboxId: entry.inboxId,
+      subject: entry.subject,
+      from: entry.from,
+      preview: entry.preview,
+      receivedAt: Date.parse(entry.timestamp) || 0,
+      threadId: entry.threadId ?? null,
+      inReplyToMessageId: entry.inReplyToMessageId ?? null,
+      status: entry.status ?? "concept",
+      priority: entry.priority ?? 0,
+      dueDate: entry.dueDate ?? null,
+      organizationId: entry.organizationId ?? null,
+      organizationName: entry.organizationName ?? null,
+      contactId: entry.contactId ?? null,
+      contactName: entry.contactName ?? null,
+      assigneeId: entry.assigneeId ?? null,
+      assigneeName: entry.assigneeName ?? null,
+      projectId: entry.projectId ?? null,
+      projectName: entry.projectName ?? null,
+      projectKey: entry.projectKey ?? null,
+      emailThreadId: entry.emailThreadId ?? null,
+      number: entry.number ?? null,
+      displayId: entry.displayId ?? null,
+    };
+  }
   return {
     kind: "message",
     id: entry.messageId,
@@ -92,8 +119,13 @@ export function agentMailMessageToListItem(
 export function collapseEmailListItemsByThread(
   items: readonly EmailListItem[],
 ): EmailListItem[] {
+  const draftRows: EmailListItem[] = [];
   const groups = new Map<string, EmailListItem[]>();
   for (const item of items) {
+    if (item.kind === "draft") {
+      draftRows.push(item);
+      continue;
+    }
     const threadKey = item.threadId?.trim() || item.id;
     const key = `${item.inboxId}:${threadKey}`;
     const bucket = groups.get(key);
@@ -120,13 +152,17 @@ export function collapseEmailListItemsByThread(
     });
   }
 
-  return collapsed.sort((left, right) => right.receivedAt - left.receivedAt);
+  return [...draftRows, ...collapsed].sort(
+    (left, right) => right.receivedAt - left.receivedAt,
+  );
 }
 
 export function resolveEmailListItemStatus(
-  item: Pick<EmailListItem, "status">,
-): TaskStatus {
+  item: Pick<EmailListItem, "kind" | "status">,
+): TaskStatus | "concept" {
+  if (item.kind === "draft") return "concept";
   const raw = typeof item.status === "string" ? item.status.trim() : item.status;
+  if (raw === "concept") return "concept";
   return migrateLegacyTaskStatus(raw || "triage");
 }
 
@@ -145,7 +181,9 @@ export function groupEmailItemsByStatus(
     buckets.set(status, []);
   }
   for (const item of items) {
-    buckets.get(resolveEmailListItemStatus(item))?.push(item);
+    const status = resolveEmailListItemStatus(item);
+    const bucketKey = status === "concept" ? "triage" : status;
+    buckets.get(bucketKey)?.push(item);
   }
   return TASK_STATUS_ORDER.map((status) => ({
     status,
@@ -162,6 +200,7 @@ export function isEmailIncomingStatus(
 ): boolean {
   const trimmed = status?.trim();
   if (!trimmed) return true;
+  if (trimmed === "concept") return true;
   return migrateLegacyTaskStatus(trimmed) === "triage";
 }
 

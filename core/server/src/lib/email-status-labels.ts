@@ -3,6 +3,9 @@
  * Names match desktop TASK_STATUS_LABELS so folders read the same in both UIs.
  */
 
+/** Unsent AgentMail draft rows use this status in triage lists (E-number assigned). */
+export const EMAIL_CONCEPT_STATUS = "concept" as const;
+
 export const EMAIL_STATUS_VALUES = [
   "triage",
   "backlog",
@@ -13,6 +16,7 @@ export const EMAIL_STATUS_VALUES = [
   "completed",
   "canceled",
   "duplicated",
+  EMAIL_CONCEPT_STATUS,
 ] as const;
 
 export type EmailStatusValue = (typeof EMAIL_STATUS_VALUES)[number];
@@ -27,6 +31,7 @@ export const EMAIL_STATUS_LABELS: Record<EmailStatusValue, string> = {
   completed: "Completed",
   canceled: "Canceled",
   duplicated: "Duplicated",
+  concept: "Concept",
 };
 
 export const EMAIL_STATUS_LABEL_NAMES: readonly string[] = EMAIL_STATUS_VALUES.map(
@@ -43,6 +48,8 @@ export function migrateLegacyEmailStatus(status: string): EmailStatusValue {
       return "ready_to_start";
     case "done":
       return "completed";
+    case EMAIL_CONCEPT_STATUS:
+      return EMAIL_CONCEPT_STATUS;
     default:
       return isEmailStatusValue(status) ? status : "backlog";
   }

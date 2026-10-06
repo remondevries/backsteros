@@ -94,7 +94,37 @@ function toListItem(
   entry: AgentMailMessage,
   mailboxEmails: ReadonlySet<string>,
 ): EmailListItem | null {
-  if (entry.kind === "draft") return null;
+  if (entry.kind === "draft") {
+    return {
+      kind: "draft",
+      id: entry.draftId ?? entry.messageId,
+      inboxId: entry.inboxId,
+      subject: entry.subject,
+      from: entry.from,
+      to: entry.to ?? null,
+      preview: entry.preview,
+      receivedAt: Date.parse(entry.timestamp) || 0,
+      threadId: entry.threadId ?? null,
+      inReplyToMessageId: entry.inReplyToMessageId ?? null,
+      status: entry.status ?? "concept",
+      priority: entry.priority ?? 0,
+      dueDate: entry.dueDate ?? null,
+      organizationId: entry.organizationId ?? null,
+      organizationName: entry.organizationName ?? null,
+      contactId: entry.contactId ?? null,
+      contactName: entry.contactName ?? null,
+      assigneeId: entry.assigneeId ?? null,
+      assigneeName: entry.assigneeName ?? null,
+      projectId: entry.projectId ?? null,
+      projectName: entry.projectName ?? null,
+      projectKey: entry.projectKey ?? null,
+      emailThreadId: entry.emailThreadId ?? null,
+      number: entry.number ?? null,
+      displayId: entry.displayId ?? null,
+      inboxUpdatedAt: entry.inboxUpdatedAt ?? null,
+      direction: resolveEmailMessageDirection(entry.from, mailboxEmails),
+    };
+  }
   return {
     kind: "message",
     id: entry.messageId,

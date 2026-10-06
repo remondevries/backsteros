@@ -7,6 +7,12 @@ export function parseReplyToAddress(from: string): string {
   return trimmed;
 }
 
+function capitalizePersonNameToken(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === "there") return trimmed;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
 /** First name for greeting — `Ada Lovelace <ada@…>` → `Ada`. */
 export function parseSenderFirstName(from: string): string {
   const trimmed = from.trim();
@@ -16,7 +22,7 @@ export function parseSenderFirstName(from: string): string {
       ? trimmed.split("@")[0] ?? trimmed
       : trimmed;
   const first = display.split(/\s+/).filter(Boolean)[0];
-  return first || "there";
+  return capitalizePersonNameToken(first || "there");
 }
 
 export function replySubject(originalSubject: string): string {
@@ -119,6 +125,8 @@ const DUTCH_LANGUAGE_MARKERS = new Set([
   "het",
   "een",
   "en",
+  "ik",
+  "aan",
   "van",
   "voor",
   "met",
@@ -153,6 +161,10 @@ const DUTCH_LANGUAGE_MARKERS = new Set([
   "vraag",
   "antwoord",
   "hartelijk",
+  "zojuist",
+  "begrepen",
+  "boekingsregel",
+  "factuurbedrag",
 ]);
 
 const ENGLISH_LANGUAGE_MARKERS = new Set([
@@ -307,10 +319,32 @@ function stripAssembledEmailShell(body: string): string {
   return match?.[1]?.trim() ?? body;
 }
 
-function dedupeSentences(body: string): string {
+const PS_SENTENCE_PLACEHOLDER = "\u0000BSH_PS\u0000";
+const THOUSANDS_DOT_PLACEHOLDER = "\u0000BSH_THOU\u0000";
+
+function protectSentenceSplitLiterals(text: string): string {
+  return text
+    .replace(/\bP\.S\./gi, PS_SENTENCE_PLACEHOLDER)
+    .replace(/(\d)\.(\d{3}(?:,\d+)?)/g, `$1${THOUSANDS_DOT_PLACEHOLDER}$2`);
+}
+
+function restoreSentenceSplitLiterals(text: string): string {
+  return text
+    .replaceAll(PS_SENTENCE_PLACEHOLDER, "P.S.")
+    .replaceAll(THOUSANDS_DOT_PLACEHOLDER, ".");
+}
+
+function splitIntoSentences(body: string): string[] {
+  const protectedText = protectSentenceSplitLiterals(body);
   const parts =
-    body.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g)?.map((part) => part.trim()) ??
-    [body.trim()];
+    protectedText.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g)?.map((part) =>
+      restoreSentenceSplitLiterals(part.trim()),
+    ) ?? [restoreSentenceSplitLiterals(body.trim())];
+  return parts.filter(Boolean);
+}
+
+function dedupeSentences(body: string): string {
+  const parts = splitIntoSentences(body);
   const seen = new Set<string>();
   const kept: string[] = [];
 
@@ -368,12 +402,39 @@ export function sanitizeAgentReplyBody(raw: string): string {
     .map((part) => cleanParagraph(part))
     .filter(isSubstantiveParagraph);
 
-  const candidate =
-    paragraphs.length > 0
-      ? paragraphs[paragraphs.length - 1]!
-      : cleanParagraph(body);
+  if (paragraphs.length === 0) {
+    return cleanParagraph(body).trim();
+  }
+  if (paragraphs.length === 1) {
+    return paragraphs[0]!.trim();
+  }
 
-  return candidate.trim();
+  if (paragraphsLookLikeAgentIterations(paragraphs)) {
+    return paragraphs[paragraphs.length - 1]!.trim();
+  }
+
+  return paragraphs.join("\n\n").trim();
+}
+
+function paragraphsLookLikeAgentIterations(paragraphs: string[]): boolean {
+  const last = normalizeWhitespace(paragraphs[paragraphs.length - 1] ?? "").toLowerCase();
+  if (!last) return true;
+  for (let index = 0; index < paragraphs.length - 1; index += 1) {
+    const earlier = normalizeWhitespace(paragraphs[index] ?? "").toLowerCase();
+    if (!earlier) continue;
+    if (earlier === last || last.includes(earlier) || earlier.includes(last)) {
+      return true;
+    }
+    const earlierWords = new Set(
+      earlier.split(/\s+/).filter((word) => word.length > 4),
+    );
+    let sharedLongWords = 0;
+    for (const word of last.split(/\s+/)) {
+      if (word.length > 4 && earlierWords.has(word)) sharedLongWords += 1;
+    }
+    if (sharedLongWords >= 3) return true;
+  }
+  return false;
 }
 
 function extractReplyBodyWithTemplates(
@@ -506,6 +567,8 @@ export function assembleReplyEmail(input: {
   languageHint?: EmailReplyLanguage;
   /** Extra text for language detection (e.g. the incoming message). */
   contextText?: string | null;
+  /** When true, do not run agent sanitizer (stored user edits / send path). */
+  preserveBody?: boolean;
 }): AssembledReplyEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language =
@@ -513,7 +576,7 @@ export function assembleReplyEmail(input: {
     detectEmailLanguage(input.body, input.contextText);
   const templates = resolveTemplatesForLanguage(baseTemplates, language);
   const rawBody = input.body.trim();
-  const sanitized = sanitizeAgentReplyBody(rawBody);
+  const sanitized = input.preserveBody ? rawBody : sanitizeAgentReplyBody(rawBody);
   // Never silently drop agent text — if sanitize over-strips, keep a light clean.
   const body =
     sanitized ||
@@ -547,12 +610,13 @@ export function assembleComposeEmail(input: {
     }
   > | null;
   languageHint?: EmailReplyLanguage;
+  preserveBody?: boolean;
 }): AssembledComposeEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language = input.languageHint ?? detectEmailLanguage(input.body);
   const templates = resolveTemplatesForLanguage(baseTemplates, language);
   const rawBody = input.body.trim();
-  const sanitized = sanitizeAgentReplyBody(rawBody);
+  const sanitized = input.preserveBody ? rawBody : sanitizeAgentReplyBody(rawBody);
   const body =
     sanitized ||
     (rawBody
@@ -577,6 +641,95 @@ export function assembleComposeEmail(input: {
 /** Escape plain text for a multipart HTML alternative that preserves line breaks. */
 export function plainTextEmailToHtml(text: string): string {
   return escapeEmailHtml(text).replace(/\n/g, "<br>\n");
+}
+
+/**
+ * Reply target when the opened message is our own sent mail — use the external
+ * recipient instead of our inbox address.
+ */
+export function resolveReplyPartyFromMessage(
+  message: { from: string; to?: string[] | null },
+  inboxEmail: string | null | undefined,
+  threadMessages?: readonly { from: string; to?: string[] | null }[],
+): string {
+  const ours = inboxEmail?.trim().toLowerCase() || null;
+  const fromAddr = parseReplyToAddress(message.from).toLowerCase();
+  if (ours && fromAddr === ours) {
+    for (const raw of message.to ?? []) {
+      const addr = parseReplyToAddress(raw).toLowerCase();
+      if (addr.includes("@") && addr !== ours) return raw;
+    }
+    for (const entry of threadMessages ?? []) {
+      const entryFrom = parseReplyToAddress(entry.from).toLowerCase();
+      if (entryFrom.includes("@") && entryFrom !== ours) return entry.from;
+      for (const raw of entry.to ?? []) {
+        const addr = parseReplyToAddress(raw).toLowerCase();
+        if (addr.includes("@") && addr !== ours) return raw;
+      }
+    }
+  }
+  return message.from;
+}
+
+/**
+ * True when AgentMail already stores greeting/sign-off (or HTML).
+ * Send must use those stored bytes and must not reassemble.
+ */
+export function draftHasStoredShell(
+  text: string | null | undefined,
+  html: string | null | undefined,
+  signOffName: string,
+): boolean {
+  const storedText = (text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!storedText) return false;
+  return (
+    Boolean((html ?? "").trim()) ||
+    storedText.includes(signOffName.trim())
+  );
+}
+
+export type DraftSendBodyPlan =
+  | {
+      kind: "use_stored";
+      /** Exact plain text AgentMail already holds — send unchanged. */
+      text: string;
+      /** Exact HTML AgentMail already holds when present. */
+      html: string | null;
+    }
+  | { kind: "reassemble" };
+
+/**
+ * Pure send-path decision: keep stored draft bytes, or rebuild shell.
+ * Callers that get `use_stored` must not rewrite text/html before sendDraft.
+ */
+export function planDraftSendBodies(input: {
+  text: string | null | undefined;
+  html: string | null | undefined;
+  signOffName: string;
+}): DraftSendBodyPlan {
+  const text = (input.text ?? "").replace(/\r\n/g, "\n").trim();
+  const rawHtml = input.html ?? null;
+  const html = rawHtml?.trim() ? rawHtml : null;
+  if (draftHasStoredShell(text, html, input.signOffName)) {
+    return { kind: "use_stored", text, html };
+  }
+  return { kind: "reassemble" };
+}
+
+/** Reject send/update when re-assembly would drop a large share of stored text. */
+export function assertNoDraftBodyLoss(
+  storedText: string,
+  nextText: string,
+): void {
+  const stored = storedText.replace(/\r\n/g, "\n").trim();
+  const next = nextText.replace(/\r\n/g, "\n").trim();
+  if (!stored || next.length >= stored.length * 0.85) return;
+  const storedChars = stored.replace(/\s+/g, "").length;
+  const nextChars = next.replace(/\s+/g, "").length;
+  if (storedChars < 40 || nextChars >= storedChars * 0.85) return;
+  throw new Error(
+    "Draft body would lose text when assembling for send. Edit the concept in the app and try again.",
+  );
 }
 
 function escapeEmailHtml(text: string): string {

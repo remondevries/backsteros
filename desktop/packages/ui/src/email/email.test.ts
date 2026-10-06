@@ -295,6 +295,35 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
   assert.equal(collapsed[0]?.subject, "Factuur 8959599");
 });
 
+test("collapseEmailListItemsByThread keeps draft rows as list items", () => {
+  const items = [
+    {
+      kind: "draft" as const,
+      id: "draft_1",
+      inboxId: "in_1",
+      subject: "New invoice question",
+      from: "fandy@fandy.nl",
+      receivedAt: 300,
+      status: "concept",
+    },
+    {
+      kind: "message" as const,
+      id: "msg_root",
+      inboxId: "in_1",
+      subject: "Factuur",
+      from: "Ralph",
+      receivedAt: 100,
+      threadId: "thread_1",
+      status: "triage" as const,
+    },
+  ];
+  const collapsed = collapseEmailListItemsByThread(items);
+  assert.equal(collapsed.length, 2);
+  assert.equal(collapsed[0]?.kind, "draft");
+  assert.equal(collapsed[0]?.id, "draft_1");
+  assert.equal(resolveEmailListItemStatus(collapsed[0]!), "concept");
+});
+
 test("collapseEmailListItemsByThread keeps unread when any message in the thread is unread", () => {
   const items = [
     {

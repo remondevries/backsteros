@@ -19,6 +19,16 @@ export function composeClientId(sessionId: string): string {
   return `bsh-compose-${hash}`;
 }
 
+/** Thread key for workspace email_threads rows backing a draft list item. */
+export function resolveDraftListThreadKey(draft: {
+  draftId: string;
+  threadId?: string | null;
+}): string {
+  const threadId = draft.threadId?.trim();
+  if (threadId) return threadId;
+  return `draft:${draft.draftId.trim()}`;
+}
+
 export function resolveConceptDraftParentMessageId(
   clientId: string | null | undefined,
   messageIds: readonly string[],
@@ -394,6 +404,17 @@ export async function loadConceptDraftForThreadAcrossInboxes(
   }
 
   return null;
+}
+
+/**
+ * Include draft rows in the list (for triage) and attach conceptDraftId on parents.
+ */
+export function mergeEmailListWithVisibleDrafts(
+  messages: AgentMailMessage[],
+  drafts: AgentMailMessage[],
+): AgentMailMessage[] {
+  const withBadges = embedConceptDraftsInMessages(messages, drafts);
+  return sortEmailListItems([...withBadges, ...drafts]);
 }
 
 export function embedConceptDraftsInMessages(

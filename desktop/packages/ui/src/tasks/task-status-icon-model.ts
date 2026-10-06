@@ -25,6 +25,12 @@ export function computeTaskStatusIconModel(input: {
   colorOverride?: string;
   colorScheme?: TaskStatusColorScheme;
 }): TaskStatusIconModel {
+  if (input.status === "concept") {
+    const color = resolveTaskStatusColor("triage", input.colorOverride, {
+      colorScheme: input.colorScheme,
+    });
+    return { kind: "triage", color };
+  }
   if (input.status == null || !isTaskStatus(input.status)) {
     const color = resolveTaskStatusColor("unknown", input.colorOverride, {
       colorScheme: input.colorScheme,

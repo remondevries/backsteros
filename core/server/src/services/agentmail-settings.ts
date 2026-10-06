@@ -27,30 +27,38 @@ import {
   hydrateAgentMailThreadMessages,
   parseEmailSourceHeaders,
 } from "../lib/agentmail-client.js";
-import { emailStatusLabelPatch } from "../lib/email-status-labels.js";
+import {
+  EMAIL_CONCEPT_STATUS,
+  emailStatusLabelPatch,
+} from "../lib/email-status-labels.js";
 import {
   attachDraftThreadIds,
   composeClientId,
   conceptReplyClientId,
-  embedConceptDraftsInMessages,
   enrichDraftsForGlobalConceptLinking,
   deleteConceptReplyDraftsForMessage,
   findConceptDraftByClientIdAcrossInboxes,
   isDraftNotFoundError,
   loadConceptDraftForThreadAcrossInboxes,
+  mergeEmailListWithVisibleDrafts,
   resolveConceptDraftParentMessageId,
   resolveDraftAcrossInboxes,
+  resolveDraftListThreadKey,
 } from "../lib/agentmail-email-list.js";
 import {
   assembleComposeEmail,
   assembleEmailHtml,
   assembleReplyEmail,
+  assertNoDraftBodyLoss,
   DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME,
   detectEmailLanguage,
   EMAIL_SIGN_OFF_AVATAR_CID,
+  parseReplyToAddress,
+  planDraftSendBodies,
   replySubject,
   resolveEditableDraftBody,
   resolveEmailReplyTemplates,
+  resolveReplyPartyFromMessage,
   type AssembledComposeEmail,
   type AssembledReplyEmail,
   type EmailReplyTemplateSettings,
@@ -619,18 +627,69 @@ async function resolveReplyContextForDraft(
   if (!inReplyTo) {
     return { replyFrom: draft.to[0]?.trim() ?? "", contextText: null };
   }
+  const inboxId = draft.inboxId || fallbackInboxId;
   try {
-    const parent = await client.getMessage(
-      draft.inboxId || fallbackInboxId,
-      inReplyTo,
+    const [parent, inboxEmail] = await Promise.all([
+      client.getMessage(inboxId, inReplyTo),
+      resolveInboxEmail(client, inboxId),
+    ]);
+    let threadMessages: { from: string; to?: string[] | null }[] | undefined;
+    const threadId = parent.threadId?.trim();
+    if (threadId) {
+      try {
+        const thread = await client.getThread(inboxId, threadId);
+        threadMessages = thread.messages.map((entry) => ({
+          from: entry.from ?? "",
+          to: entry.to ?? [],
+        }));
+      } catch {
+        threadMessages = undefined;
+      }
+    }
+    const replyFrom = resolveReplyPartyFromMessage(
+      { from: parent.from ?? "", to: parent.to ?? [] },
+      inboxEmail,
+      threadMessages,
     );
     return {
-      replyFrom: parent.from,
+      replyFrom,
       contextText: parent.text ?? parent.extractedText ?? null,
     };
   } catch {
     return { replyFrom: draft.to[0]?.trim() ?? "", contextText: null };
   }
+}
+
+async function ensureDraftEmailThreadRegistered(
+  workspaceId: string,
+  inboxId: string,
+  draft: AgentMailDraftDetail,
+  parentThreadId?: string | null,
+): Promise<void> {
+  const threadKey = resolveDraftListThreadKey({
+    draftId: draft.draftId,
+    threadId: parentThreadId ?? null,
+  });
+  await emailThreadsService.getOrCreateEmailThreadMetadata(
+    workspaceId,
+    inboxId,
+    threadKey,
+  );
+  await emailThreadsService.patchEmailThreadMetadataLeaderAware(
+    workspaceId,
+    inboxId,
+    threadKey,
+    { status: EMAIL_CONCEPT_STATUS as "triage" },
+  );
+}
+
+function draftListFromLabel(draft: {
+  to?: string[] | null;
+  subject?: string | null;
+}): string {
+  const recipient = draft.to?.[0]?.trim();
+  if (recipient) return recipient;
+  return "Draft";
 }
 
 export async function getAgentMailCredentials(
@@ -1081,15 +1140,19 @@ function toApiDraft(draft: {
   text: string | null;
   inReplyTo: string | null;
   updatedAt: string;
+  to?: string[] | null;
+  threadId?: string | null;
 }): AgentMailMessage {
   return {
     kind: "draft",
     inboxId: draft.inboxId,
+    threadId: draft.threadId ?? undefined,
     messageId: draft.draftId,
     draftId: draft.draftId,
     inReplyToMessageId: draft.inReplyTo,
     subject: draft.subject?.trim() || "Reply concept",
-    from: "Draft",
+    from: draftListFromLabel(draft),
+    to: draft.to ?? undefined,
     preview: draft.preview ?? draft.text?.slice(0, 160) ?? null,
     timestamp: draft.updatedAt,
   };
@@ -1324,44 +1387,56 @@ export async function listAgentMailMessages(
   }
   const apiDrafts = attachDraftThreadIds(apiMessages, linkedDrafts);
 
-  const listed = embedConceptDraftsInMessages(apiMessages, apiDrafts).sort(
-    (a, b) => {
-      const aTime = Date.parse(a.timestamp) || 0;
-      const bTime = Date.parse(b.timestamp) || 0;
-      return bTime - aTime;
-    },
-  );
+  const listed = mergeEmailListWithVisibleDrafts(apiMessages, apiDrafts);
 
   await emailThreadsService.ensureEmailThreadsRegistered(
     workspaceId,
-    listed
-      .filter((message) => message.kind !== "draft")
-      .map((message) => ({
-        inboxId: message.inboxId,
-        threadKey: emailThreadsService.resolveEmailThreadKey({
-          threadId: message.threadId,
-          messageId: message.messageId,
-        }),
-      })),
+    listed.map((message) => ({
+      inboxId: message.inboxId,
+      threadKey:
+        message.kind === "draft"
+          ? resolveDraftListThreadKey({
+              draftId: message.draftId ?? message.messageId,
+              threadId: message.threadId ?? null,
+            })
+          : emailThreadsService.resolveEmailThreadKey({
+              threadId: message.threadId,
+              messageId: message.messageId,
+            }),
+    })),
   );
 
   const metaMap = await emailThreadsService.listEmailThreadListMetaMap(
     workspaceId,
   );
   return listed.map((message) => {
-    const threadKey = emailThreadsService.resolveEmailThreadKey({
-      threadId: message.threadId,
-      messageId: message.messageId,
-    });
+    const threadKey =
+      message.kind === "draft"
+        ? resolveDraftListThreadKey({
+            draftId: message.draftId ?? message.messageId,
+            threadId: message.threadId ?? null,
+          })
+        : emailThreadsService.resolveEmailThreadKey({
+            threadId: message.threadId,
+            messageId: message.messageId,
+          });
     const stored = metaMap.get(
       emailThreadsService.emailThreadStatusLookupKey(message.inboxId, threadKey),
     );
+    const defaultStatus =
+      message.kind === "draft" ? EMAIL_CONCEPT_STATUS : "triage";
+    const storedStatus = stored?.status;
+    const status =
+      message.kind === "draft" &&
+      (!storedStatus || storedStatus === "triage")
+        ? EMAIL_CONCEPT_STATUS
+        : (storedStatus ?? defaultStatus);
     return {
       ...message,
       emailThreadId: stored?.id,
       number: stored?.number,
       displayId: stored?.displayId,
-      status: stored?.status ?? "triage",
+      status: status as AgentMailMessage["status"],
       priority: stored?.priority ?? 0,
       dueDate: stored?.dueDate ?? null,
       organizationId: stored?.organizationId ?? null,
@@ -1487,7 +1562,14 @@ export async function getAgentMailMessage(
     conceptDraft: conceptDraft
       ? mapConceptDraftForApi({
           draft: conceptDraft,
-          replyFrom: conceptParent.from,
+          replyFrom: resolveReplyPartyFromMessage(
+            { from: conceptParent.from ?? "", to: conceptParent.to ?? [] },
+            inboxEmail,
+            threadMessages.map((entry) => ({
+              from: entry.from ?? "",
+              to: entry.to ?? [],
+            })),
+          ),
           templates,
           subject:
             conceptDraft.subject?.trim() || replySubject(conceptParent.subject),
@@ -1570,9 +1652,14 @@ export async function upsertEmailConceptReply(
 
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
+  const inboxEmail = await resolveInboxEmail(client, inboxId);
   const templates = await getEmailReplyTemplatesForInbox(workspaceId, inboxId);
+  const replyParty = resolveReplyPartyFromMessage(
+    { from: message.from ?? "", to: message.to ?? [] },
+    inboxEmail,
+  );
   const assembled = assembleReplyEmail({
-    from: message.from,
+    from: replyParty,
     subject: message.subject,
     body: agentBody,
     templates,
@@ -1585,6 +1672,12 @@ export async function upsertEmailConceptReply(
     messageId,
     assembled,
     inboxIds,
+  );
+  await ensureDraftEmailThreadRegistered(
+    workspaceId,
+    draft.inboxId,
+    draft,
+    message.threadId?.trim() || null,
   );
 
   return {
@@ -1847,6 +1940,12 @@ export async function upsertEmailComposeDraft(
     composeSessionId,
     assembled,
   );
+  await ensureDraftEmailThreadRegistered(
+    workspaceId,
+    draft.inboxId,
+    draft,
+    null,
+  );
 
   return {
     draftId: draft.draftId,
@@ -1873,9 +1972,32 @@ export async function sendAgentMailDraft(
     inboxId,
   );
 
-  // UI shows greeting/sign-off from templates even when draft.text is body-only.
-  // Re-assemble immediately before send so recipients get the full footer.
-  draft = await ensureDraftHasAssembledShell(client, workspaceId, inboxId, draft);
+  const templates = await getEmailReplyTemplatesForInbox(
+    workspaceId,
+    draft.inboxId || inboxId,
+  );
+  const sendPlan = planDraftSendBodies({
+    text: draft.text,
+    html: draft.html,
+    signOffName: templates.signOffName,
+  });
+
+  if (sendPlan.kind === "reassemble") {
+    draft = await ensureDraftHasAssembledShell(
+      client,
+      workspaceId,
+      inboxId,
+      draft,
+    );
+  } else {
+    // Stored greeting/sign-off (and optional HTML) — send those bytes as-is.
+    draft = await ensureDraftRecipientForReply(
+      client,
+      workspaceId,
+      inboxId,
+      draft,
+    );
+  }
 
   const sent = await client.sendDraft(draft.inboxId, draft.draftId);
 
@@ -1897,6 +2019,28 @@ export async function sendAgentMailDraft(
     subject: draft.subject ?? "",
     inReplyToMessageId: draft.inReplyTo,
   };
+}
+
+async function ensureDraftRecipientForReply(
+  client: AgentMailClient,
+  _workspaceId: string,
+  fallbackInboxId: string,
+  draft: AgentMailDraftDetail,
+): Promise<AgentMailDraftDetail> {
+  if (!draft.inReplyTo?.trim()) return draft;
+  const replyContext = await resolveReplyContextForDraft(
+    client,
+    draft,
+    fallbackInboxId,
+  );
+  const replyFrom = replyContext.replyFrom?.trim();
+  if (!replyFrom) return draft;
+  const expected = parseReplyToAddress(replyFrom);
+  const current = parseReplyToAddress(draft.to[0] ?? "");
+  if (!expected.includes("@") || expected === current) return draft;
+  return client.updateDraft(draft.inboxId, draft.draftId, {
+    to: [expected],
+  });
 }
 
 /**
@@ -1948,6 +2092,7 @@ async function ensureDraftHasAssembledShell(
         body: editableBody,
         templates,
         languageHint,
+        preserveBody: true,
       })
     : assembleReplyEmail({
         from: replyFrom || "there",
@@ -1956,10 +2101,12 @@ async function ensureDraftHasAssembledShell(
         templates,
         languageHint,
         contextText,
+        preserveBody: true,
       });
 
   const storedText = (draft.text ?? "").replace(/\r\n/g, "\n").trim();
   const desiredText = assembled.text.replace(/\r\n/g, "\n").trim();
+  assertNoDraftBodyLoss(storedText, desiredText);
   const avatar = await resolveSignOffAvatarAttachment(
     workspaceId,
     draft.inboxId,
@@ -2076,6 +2223,7 @@ export async function updateAgentMailDraft(
         body,
         templates,
         languageHint,
+        preserveBody: true,
       })
     : assembleReplyEmail({
         from: replyFrom || "there",
@@ -2084,6 +2232,7 @@ export async function updateAgentMailDraft(
         templates,
         languageHint,
         contextText,
+        preserveBody: true,
       });
   const avatar = await resolveSignOffAvatarAttachment(
     workspaceId,
@@ -2093,8 +2242,20 @@ export async function updateAgentMailDraft(
   const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
     text: bodies.text,
     html: bodies.html,
+    ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
     ...draftUpdateAttachmentFields(draft, avatar),
   });
+  await ensureDraftEmailThreadRegistered(
+    workspaceId,
+    updated.inboxId,
+    updated,
+    draft.inReplyTo?.trim()
+      ? await client
+          .getMessage(updated.inboxId, draft.inReplyTo)
+          .then((message) => message.threadId?.trim() || null)
+          .catch(() => null)
+      : null,
+  );
   const inboxEmail = await resolveInboxEmail(client, updated.inboxId);
   return mapDraftDetailForApi({
     draft: updated,

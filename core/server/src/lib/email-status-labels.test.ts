@@ -11,6 +11,7 @@ import {
 describe("emailStatusLabelName", () => {
   it("maps statuses to Task-style folder names", () => {
     assert.equal(emailStatusLabelName("triage"), "Triage");
+    assert.equal(emailStatusLabelName("concept"), "Concept");
     assert.equal(emailStatusLabelName("ready_to_start"), "Ready to Start");
     assert.equal(emailStatusLabelName("in_progress"), "In Progress");
     assert.equal(emailStatusLabelName("completed"), "Completed");
@@ -41,6 +42,7 @@ describe("emailStatusLabelPatch", () => {
         "Backlog",
         "Canceled",
         "Completed",
+        "Concept",
         "Duplicated",
         "In Progress",
         "In Review",

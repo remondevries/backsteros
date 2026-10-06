@@ -45,6 +45,21 @@ describe("collapseEmailListItemsByThread", () => {
     assert.equal(rows[0]!.id, "m2");
     assert.equal(rows[0]!.conceptDraftId, "d1");
   });
+
+  it("keeps draft rows as their own list items", () => {
+    const rows = collapseEmailListItemsByThread([
+      item({
+        kind: "draft",
+        id: "d1",
+        receivedAt: 300,
+        status: "concept",
+      }),
+      item({ id: "m1", threadId: "t1", receivedAt: 100 }),
+    ]);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]!.kind, "draft");
+    assert.equal(rows[0]!.id, "d1");
+  });
 });
 
 describe("groupEmailItemsByStatus", () => {

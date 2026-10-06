@@ -13,6 +13,7 @@ import {
   replySubject,
   resolveEditableDraftBody,
   resolveEmailReplyTemplates,
+  resolveReplyPartyFromMessage,
   sanitizeAgentReplyBody,
 } from "./email-reply-assembler.js";
 
@@ -260,6 +261,44 @@ describe("email-reply-assembler", () => {
       resolveEditableDraftBody(assembled.text, from, templates),
       body,
     );
+  });
+
+  it("preserves multiple distinct paragraphs in sanitizeAgentReplyBody", () => {
+    const body = [
+      "Hierbij de boekingsregel met bedrag €17.183,09.",
+      "",
+      "P.S. Ik heb zojuist van Moneybird begrepen dat dit klopt.",
+    ].join("\n");
+    assert.equal(sanitizeAgentReplyBody(body), body.trim());
+    assert.match(sanitizeAgentReplyBody(body), /€17\.183,09/);
+    assert.match(sanitizeAgentReplyBody(body), /P\.S\./);
+  });
+
+  it("capitalizes greeting first names", () => {
+    const assembled = assembleReplyEmail({
+      from: "fandy@fandy.nl",
+      subject: "Test",
+      body: "Even een korte vraag.",
+      templates: {
+        greetingTemplateNl: "Aan {firstName},",
+        signOffTemplateNl: "Groeten,\n{name}",
+        signOffName: "Remon",
+      },
+      languageHint: "nl",
+      preserveBody: true,
+    });
+    assert.match(assembled.greeting, /^Aan Fandy,/);
+  });
+
+  it("reply party for self-sent mail uses the external recipient", () => {
+    const party = resolveReplyPartyFromMessage(
+      {
+        from: "Remon <remon@lemo-design.com>",
+        to: ["Fandy <fandy@fandy.nl>"],
+      },
+      "remon@lemo-design.com",
+    );
+    assert.equal(party, "Fandy <fandy@fandy.nl>");
   });
 
   it("returns empty body for greeting+sign-off shell with no middle", () => {

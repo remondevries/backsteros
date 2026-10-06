@@ -449,9 +449,7 @@ export function groupEmailItemsByMailbox<T extends EmailListItem>(
  */
 export const EMAIL_STATUS_ORDER: readonly TaskStatus[] = TASK_STATUS_ORDER;
 
-export function getEmailStatusLabel(status: TaskStatus): string {
-  return getTaskStatusLabel(status);
-}
+export const EMAIL_CONCEPT_LIST_STATUS = "concept" as const;
 
 export type EmailStatusGroup<T extends EmailListItem = EmailListItem> = {
   status: TaskStatus;
@@ -460,9 +458,19 @@ export type EmailStatusGroup<T extends EmailListItem = EmailListItem> = {
 };
 
 export function resolveEmailListItemStatus(
-  item: Pick<EmailListItem, "status">,
-): TaskStatus {
-  return migrateLegacyTaskStatus(item.status?.trim() || "triage");
+  item: Pick<EmailListItem, "kind" | "status">,
+): TaskStatus | typeof EMAIL_CONCEPT_LIST_STATUS {
+  if (item.kind === "draft") return EMAIL_CONCEPT_LIST_STATUS;
+  const raw = item.status?.trim() || "triage";
+  if (raw === EMAIL_CONCEPT_LIST_STATUS) return EMAIL_CONCEPT_LIST_STATUS;
+  return migrateLegacyTaskStatus(raw);
+}
+
+export function getEmailStatusLabel(
+  status: TaskStatus | typeof EMAIL_CONCEPT_LIST_STATUS | string,
+): string {
+  if (status === EMAIL_CONCEPT_LIST_STATUS) return "Concept";
+  return getTaskStatusLabel(migrateLegacyTaskStatus(status));
 }
 
 /** Group emails by task status (Triage / Backlog / … / Duplicated). */
@@ -477,7 +485,9 @@ export function groupEmailItemsByStatus<T extends EmailListItem>(
 
   for (const item of items) {
     const status = resolveEmailListItemStatus(item);
-    buckets.get(status)?.push(item);
+    const bucketKey =
+      status === EMAIL_CONCEPT_LIST_STATUS ? "triage" : status;
+    buckets.get(bucketKey)?.push(item);
   }
 
   const groups = EMAIL_STATUS_ORDER.map((status) => ({
@@ -562,9 +572,13 @@ export function firstReceivedEmailAtMs(
 export function collapseEmailListItemsByThread(
   items: readonly EmailListItem[],
 ): EmailListItem[] {
+  const draftRows: EmailListItem[] = [];
   const groups = new Map<string, EmailListItem[]>();
   for (const item of items) {
-    if (item.kind === "draft") continue;
+    if (item.kind === "draft") {
+      draftRows.push(item);
+      continue;
+    }
     const threadKey = item.threadId?.trim() || item.id;
     const key = `${item.inboxId}:${threadKey}`;
     const bucket = groups.get(key);
@@ -601,7 +615,9 @@ export function collapseEmailListItemsByThread(
     });
   }
 
-  return collapsed.sort((left, right) => right.receivedAt - left.receivedAt);
+  return [...draftRows, ...collapsed].sort(
+    (left, right) => right.receivedAt - left.receivedAt,
+  );
 }
 
 export type EmailThreadBodyViewMode = "plain" | "rendered" | "source";

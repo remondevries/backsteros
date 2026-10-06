@@ -6,6 +6,7 @@ import type { AgentMailMessage } from "@backsteros/contracts";
 import {
   conceptReplyClientId,
   embedConceptDraftsInMessages,
+  mergeEmailListWithVisibleDrafts,
   isLikelyConceptDraft,
   loadConceptDraftForThreadAcrossInboxes,
   resolveConceptDraftParentLink,
@@ -54,6 +55,42 @@ describe("agentmail-email-list", () => {
       }),
       false,
     );
+  });
+
+  it("lists concept drafts as rows and badges the parent message", () => {
+    const messages: AgentMailMessage[] = [
+      {
+        kind: "message",
+        inboxId: "inbox_1",
+        threadId: "thread_b",
+        messageId: "msg_new",
+        draftId: null,
+        inReplyToMessageId: null,
+        subject: "Newer",
+        from: "Bob",
+        preview: null,
+        timestamp: "2026-08-19T10:00:00Z",
+      },
+    ];
+    const drafts: AgentMailMessage[] = [
+      {
+        kind: "draft",
+        inboxId: "inbox_1",
+        messageId: "draft_1",
+        draftId: "draft_1",
+        inReplyToMessageId: "msg_new",
+        subject: "Reply concept",
+        from: "ada@example.com",
+        preview: "Thanks for reaching out",
+        timestamp: "2026-08-19T11:00:00Z",
+      },
+    ];
+
+    const merged = mergeEmailListWithVisibleDrafts(messages, drafts);
+    assert.equal(merged.length, 2);
+    assert.equal(merged[0]?.kind, "draft");
+    assert.equal(merged[1]?.messageId, "msg_new");
+    assert.equal(merged[1]?.conceptDraftId, "draft_1");
   });
 
   it("embeds concept drafts on parent messages instead of separate rows", () => {

@@ -358,7 +358,10 @@ export function buildInboxEmailListItem(input: {
     threadId,
     title: input.title.trim() || "(no subject)",
     partyLabel: formatEmailListPartyLabel(input.contactName, input.from),
-    status: migrateLegacyTaskStatus(input.status?.trim() || "triage"),
+    status:
+      input.status?.trim() === "concept"
+        ? "concept"
+        : migrateLegacyTaskStatus(input.status?.trim() || "triage"),
     priority: input.priority ?? 0,
     dueDate: dueDate != null && Number.isFinite(dueDate) ? dueDate : null,
     updatedAt: input.updatedAt ?? Date.now(),
@@ -871,6 +874,7 @@ export function isEmailIncomingStatus(
 ): boolean {
   const trimmed = status?.trim();
   if (!trimmed) return true;
+  if (trimmed === "concept") return true;
   return migrateLegacyTaskStatus(trimmed) === "triage";
 }
 
