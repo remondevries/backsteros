@@ -235,6 +235,8 @@ export type DesktopWorkspaceData = {
     content?: string;
     folderPath?: string;
     parentId?: string | null;
+    /** Vault-relative path override (repo-doc tracking stubs). */
+    path?: string | null;
   }) => Promise<{ id: string; path: string; contentVersion: number }>;
   createKnowledgeFolder: (input: {
     title: string;

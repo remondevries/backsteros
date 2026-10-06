@@ -16,6 +16,27 @@ export type CodebaseRepoDocsResponse = {
   entries: CodebaseRepoDocEntry[];
 };
 
+export function normalizeRepoDocumentPath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+/** Match a BacksterOS project document stub to a working-directory file. */
+export function findProjectDocumentForRepoPath(
+  documents: readonly KnowledgeListItem[],
+  projectId: string,
+  relativePath: string,
+): KnowledgeListItem | null {
+  const target = normalizeRepoDocumentPath(relativePath);
+  if (!target) return null;
+  return (
+    documents.find((document) => {
+      if (document.projectId !== projectId) return false;
+      if (document.kind === "folder") return false;
+      return normalizeRepoDocumentPath(document.path ?? "") === target;
+    }) ?? null
+  );
+}
+
 /** Flat document-tree rows for repo `docs/` plus pinned root `AGENTS.md`. */
 export function codebaseRepoDocsToListItems(
   projectId: string,

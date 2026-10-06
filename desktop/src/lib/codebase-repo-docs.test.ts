@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { codebaseRepoDocsToListItems } from "./codebase-repo-docs";
+import {
+  codebaseRepoDocsToListItems,
+  findProjectDocumentForRepoPath,
+} from "./codebase-repo-docs";
 
 test("codebaseRepoDocsToListItems pins AGENTS.md and nests docs/", () => {
   const items = codebaseRepoDocsToListItems("proj-1", [
@@ -34,4 +37,30 @@ test("codebaseRepoDocsToListItems pins AGENTS.md and nests docs/", () => {
   const adr = items.find((item) => item.id === "docs/adr");
   assert.equal(adr?.parentId, "docs");
   assert.equal(adr?.kind, "folder");
+});
+
+test("findProjectDocumentForRepoPath matches project stubs by path", () => {
+  const match = findProjectDocumentForRepoPath(
+    [
+      {
+        id: "doc-1",
+        title: "Vision",
+        path: "/docs/00-vision.md",
+        projectId: "proj-1",
+        kind: "document",
+        trackedDurationSeconds: 90,
+      },
+      {
+        id: "doc-2",
+        title: "Other",
+        path: "docs/00-vision.md",
+        projectId: "proj-2",
+        kind: "document",
+      },
+    ],
+    "proj-1",
+    "docs/00-vision.md",
+  );
+  assert.equal(match?.id, "doc-1");
+  assert.equal(match?.trackedDurationSeconds, 90);
 });

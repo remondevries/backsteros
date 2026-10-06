@@ -2074,6 +2074,8 @@ function ProjectsPageBody({
           docsPanel={
             <CodebaseRepoDocsDetail
               projectId={project.id}
+              projectKey={project.key}
+              routeScope={routeScope}
               documentPath={documentPath}
               items={repoDocs.items}
               loading={repoDocs.loading}

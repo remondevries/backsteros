@@ -237,6 +237,7 @@ export function useWorkspaceDocumentActions({
       content?: string;
       folderPath?: string;
       parentId?: string | null;
+      path?: string | null;
     }) => {
       const title = input.title.trim() || "Untitled";
       const slug =
@@ -245,7 +246,9 @@ export function useWorkspaceDocumentActions({
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "") || "untitled";
       const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
-      const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
+      const path =
+        input.path?.trim().replace(/^\/+/, "") ||
+        (folder ? `${folder}/${slug}.md` : `${slug}.md`);
       if (!authenticated) throw new Error("Sign in to create documents.");
       if (shouldSkipRestEntityWrite(powerSync)) {
         return createDocumentMetadataLocal({
@@ -267,7 +270,7 @@ export function useWorkspaceDocumentActions({
             projectId: input.projectId,
             title,
             path,
-            content: input.content ?? "",
+            ...(input.content !== undefined ? { content: input.content } : {}),
             parentId: input.parentId ?? undefined,
           }),
         },
