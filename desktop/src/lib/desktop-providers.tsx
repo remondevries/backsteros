@@ -11,6 +11,7 @@ import { PowerSyncProvider } from "./powersync-context";
 import { DesktopWorkspaceDataProvider } from "./workspace-data";
 import { BootSplashWatchdog } from "../components/boot-splash-watchdog";
 import { DesktopCloudClientNotices } from "../components/desktop-cloud-client-notices";
+import { DesktopVersionMismatchNotice } from "../components/desktop-version-mismatch-notice";
 
 function WorkspaceProviders({
   children,
@@ -30,6 +31,7 @@ function WorkspaceProviders({
           <WorkspaceEventsProvider>
             <AgentMailProvider>
             <DesktopAgentStatusProvider>
+              <DesktopVersionMismatchNotice />
               <DesktopCloudClientNotices />
               {children}
             </DesktopAgentStatusProvider>
