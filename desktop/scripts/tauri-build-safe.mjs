@@ -1,24 +1,25 @@
 #!/usr/bin/env node
 /**
  * Run `tauri build` without installing over /Applications/BacksterOS.app.
- * Default bundle is `app` only (no DMG). After the build, fail if any
- * BacksterOS*.app under /Applications changed.
+ * On macOS the default bundle is `app` only (no DMG). Windows/Linux keep
+ * tauri.conf.json targets (msi/nsis). After the build, fail if any
+ * BacksterOS*.app under /Applications changed (including nested binaries).
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describeBacksterAppChanges, snapshotBacksterApps } from "./macos-packaging.mjs";
+import {
+  describeBacksterAppChanges,
+  snapshotBacksterApps,
+  withDefaultTauriBundles,
+} from "./macos-packaging.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const applicationsDir = process.env.INSTALL_APPLICATIONS_DIR?.trim() || "/Applications";
 
 const passthrough = process.argv.slice(2).filter((a) => a !== "--");
-const tauriArgs = ["build", ...passthrough];
-const hasBundles = tauriArgs.some((a) => a === "--bundles" || a.startsWith("--bundles="));
-if (!hasBundles) {
-  tauriArgs.push("--bundles", "app");
-}
+const tauriArgs = withDefaultTauriBundles(["build", ...passthrough]);
 
 const before = snapshotBacksterApps(applicationsDir);
 const result = spawnSync("tauri", tauriArgs, {
@@ -46,5 +47,5 @@ if (changes.length > 0) {
 }
 
 console.log(
-  `[tauri-build-safe] ${applicationsDir} BacksterOS apps unchanged. Artifact is under src-tauri/target/release/bundle/macos/`,
+  `[tauri-build-safe] ${applicationsDir} BacksterOS apps unchanged. Artifact is under src-tauri/target/release/bundle/`,
 );

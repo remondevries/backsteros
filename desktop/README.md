@@ -106,24 +106,34 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 ## Ship / package
 
-`pnpm --filter @backsteros/desktop build` writes `CFBundleShortVersionString` /
-`CFBundleVersion` from the synced app version, then runs `tauri build --bundles app`.
-It **does not** copy or overwrite `/Applications/BacksterOS.app` (that 2 Oct
-incident is guarded: the build fails if any `BacksterOS*.app` under
-`/Applications` changes). Default bundle is `.app` only — not a DMG.
+`pnpm --filter @backsteros/desktop build` writes `CFBundleShortVersionString` from
+the synced app version and a valid `CFBundleVersion` (pre-release suffixes such as
+`-beta.1` are stripped). On **macOS** it then runs `tauri build --bundles app`.
+Windows/Linux keep the targets in `tauri.conf.json` (msi/nsis). The command
+**does not** copy or overwrite `/Applications/BacksterOS.app`. After the build it
+snapshots each `BacksterOS*.app` plus `Contents/Info.plist`,
+`Contents/_CodeSignature/CodeResources`, and every file in `Contents/MacOS/`, and
+fails if any of those changed (the 2 Oct in-place overwrite).
 
 ```bash
 # Shared UI is also built by Tauri beforeBuildCommand; this is enough:
 pnpm --filter @backsteros/desktop build
 # Artifact: desktop/src-tauri/target/release/bundle/macos/BacksterOS.app
 
-# Safe install: versioned copy only (leaves /Applications/BacksterOS.app alone)
+# Safe install: atomic copy to /Applications/BacksterOS-<version>.app
+# (temp sibling → verify → rename; refuses if that path already exists)
 pnpm --filter @backsteros/desktop install:macos
 
-# After you have verified BacksterOS-<version>.app, swap the stable name.
-# Existing /Applications/BacksterOS.app is copied first to
-# /Applications/BacksterOS-rollback-<timestamp>.app
+# After you have verified BacksterOS-<version>.app, promote it to the stable
+# name. This does not recopy the build. The existing /Applications/BacksterOS.app
+# is renamed to /Applications/BacksterOS-rollback-<timestamp>.app, then the
+# versioned copy is renamed onto BacksterOS.app. Refuses while BacksterOS is
+# running. A failed second rename restores the rollback.
 pnpm --filter @backsteros/desktop install:macos -- --replace-stable
+
+# Rebuild the versioned copy, or swap while the app is still running:
+pnpm --filter @backsteros/desktop install:macos -- --force
+pnpm --filter @backsteros/desktop install:macos -- --replace-stable --force
 ```
 
 DMG (still does not install into `/Applications`):

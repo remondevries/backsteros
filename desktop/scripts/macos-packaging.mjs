@@ -8,6 +8,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const STABLE_APP_NAME = "BacksterOS.app";
+export const BUNDLE_EXECUTABLE_FALLBACK = "BacksterOS";
+
+const SNAPSHOT_FIXED_FILES = [
+  path.join("Contents", "Info.plist"),
+  path.join("Contents", "_CodeSignature", "CodeResources"),
+];
 
 /**
  * @param {string} xml
@@ -29,12 +35,37 @@ export function setPlistString(xml, key, value) {
 }
 
 /**
+ * Apple CFBundleVersion is a period-separated integer list. Strip semver
+ * pre-release / build metadata (`0.2.271-beta.1+1` → `0.2.271`).
+ *
+ * @param {string} version
+ */
+export function appleBundleVersion(version) {
+  const core = version.trim().split("+")[0].split("-")[0];
+  if (!/^\d+(\.\d+)*$/.test(core)) {
+    throw new Error(`cannot derive CFBundleVersion from ${JSON.stringify(version)}`);
+  }
+  return core;
+}
+
+/**
+ * @param {string} xml
+ * @param {string} key
+ */
+export function readPlistString(xml, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = xml.match(new RegExp(`<key>${escapedKey}</key>\\s*<string>([^<]*)</string>`));
+  return match ? match[1] : null;
+}
+
+/**
  * @param {string} xml
  * @param {string} version
  */
 export function applyInfoPlistVersions(xml, version) {
-  let next = setPlistString(xml, "CFBundleShortVersionString", version);
-  next = setPlistString(next, "CFBundleVersion", version);
+  const marketing = version.trim();
+  let next = setPlistString(xml, "CFBundleShortVersionString", marketing);
+  next = setPlistString(next, "CFBundleVersion", appleBundleVersion(marketing));
   return next;
 }
 
@@ -48,9 +79,9 @@ export function versionedAppName(version) {
 /**
  * @param {Date} now
  */
-export function rollbackAppName(now) {
+export function compactTimestamp(now) {
   const pad = (n) => String(n).padStart(2, "0");
-  const stamp = [
+  return [
     now.getFullYear(),
     pad(now.getMonth() + 1),
     pad(now.getDate()),
@@ -59,38 +90,79 @@ export function rollbackAppName(now) {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join("");
-  return `BacksterOS-rollback-${stamp}.app`;
+}
+
+/**
+ * @param {Date} now
+ */
+export function rollbackAppName(now) {
+  return `BacksterOS-rollback-${compactTimestamp(now)}.app`;
+}
+
+/**
+ * @param {string} version
+ * @param {Date} now
+ */
+export function versionedTempAppName(version, now) {
+  return `.BacksterOS-${version}.app.tmp-${compactTimestamp(now)}`;
+}
+
+/**
+ * @param {string} version
+ * @param {Date} now
+ */
+export function versionedAsideAppName(version, now) {
+  return `.BacksterOS-${version}.app.aside-${compactTimestamp(now)}`;
+}
+
+/**
+ * Default `tauri build --bundles app` only on macOS so Windows CI still
+ * produces msi/nsis from tauri.conf.json targets.
+ *
+ * @param {string[]} args
+ * @param {NodeJS.Platform} [platform]
+ */
+export function withDefaultTauriBundles(args, platform = process.platform) {
+  const hasBundles = args.some((a) => a === "--bundles" || a.startsWith("--bundles="));
+  if (!hasBundles && platform === "darwin") {
+    return [...args, "--bundles", "app"];
+  }
+  return [...args];
 }
 
 /**
  * @param {{
  *   applicationsDir?: string,
  *   version: string,
- *   replaceStable?: boolean,
- *   stableExists?: boolean,
  *   now?: Date,
  * }} opts
  */
-export function planMacosInstall(opts) {
+export function macosInstallPaths(opts) {
   const applicationsDir = opts.applicationsDir ?? "/Applications";
-  const replaceStable = Boolean(opts.replaceStable);
   const now = opts.now ?? new Date();
-  const versionedDest = path.join(applicationsDir, versionedAppName(opts.version));
-  const stableDest = path.join(applicationsDir, STABLE_APP_NAME);
-  /** @type {Array<{ action: "copy", role: "versioned" | "rollback" | "stable", dest: string, source: "built" | "stable" | "versioned" }>} */
-  const steps = [{ action: "copy", role: "versioned", dest: versionedDest, source: "built" }];
-  if (replaceStable && opts.stableExists) {
-    steps.push({
-      action: "copy",
-      role: "rollback",
-      dest: path.join(applicationsDir, rollbackAppName(now)),
-      source: "stable",
-    });
+  return {
+    applicationsDir,
+    versionedDest: path.join(applicationsDir, versionedAppName(opts.version)),
+    stableDest: path.join(applicationsDir, STABLE_APP_NAME),
+    rollbackDest: path.join(applicationsDir, rollbackAppName(now)),
+    tmpDest: path.join(applicationsDir, versionedTempAppName(opts.version, now)),
+    asideDest: path.join(applicationsDir, versionedAsideAppName(opts.version, now)),
+  };
+}
+
+/**
+ * @param {string} filePath
+ * @returns {{ exists: boolean, mtimeMs: number | null, size: number | null }}
+ */
+function snapshotFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, mtimeMs: null, size: null };
   }
-  if (replaceStable) {
-    steps.push({ action: "copy", role: "stable", dest: stableDest, source: "versioned" });
+  const st = fs.statSync(filePath);
+  if (!st.isFile()) {
+    return { exists: false, mtimeMs: null, size: null };
   }
-  return { versionedDest, stableDest, steps };
+  return { exists: true, mtimeMs: st.mtimeMs, size: st.size };
 }
 
 /**
@@ -98,15 +170,28 @@ export function planMacosInstall(opts) {
  */
 export function snapshotAppBundle(appPath) {
   if (!fs.existsSync(appPath)) {
-    return { exists: false, path: appPath, mtimeMs: null, size: null, ino: null };
+    return { exists: false, path: appPath, mtimeMs: null, size: null, ino: null, files: {} };
   }
   const st = fs.statSync(appPath);
+  /** @type {Record<string, ReturnType<typeof snapshotFile>>} */
+  const files = {};
+  for (const rel of SNAPSHOT_FIXED_FILES) {
+    files[rel] = snapshotFile(path.join(appPath, rel));
+  }
+  const macosDir = path.join(appPath, "Contents", "MacOS");
+  if (fs.existsSync(macosDir) && fs.statSync(macosDir).isDirectory()) {
+    for (const name of fs.readdirSync(macosDir).sort()) {
+      const rel = path.join("Contents", "MacOS", name);
+      files[rel] = snapshotFile(path.join(appPath, rel));
+    }
+  }
   return {
     exists: true,
     path: appPath,
     mtimeMs: st.mtimeMs,
     size: st.size,
     ino: st.ino,
+    files,
   };
 }
 
@@ -131,12 +216,23 @@ export function snapshotBacksterApps(applicationsDir) {
  * @param {ReturnType<typeof snapshotAppBundle>} after
  */
 export function appBundleChanged(before, after) {
-  return (
+  if (
     before.exists !== after.exists ||
     before.mtimeMs !== after.mtimeMs ||
     before.size !== after.size ||
     before.ino !== after.ino
-  );
+  ) {
+    return true;
+  }
+  const names = new Set([...Object.keys(before.files ?? {}), ...Object.keys(after.files ?? {})]);
+  for (const name of names) {
+    const left = before.files?.[name] ?? { exists: false, mtimeMs: null, size: null };
+    const right = after.files?.[name] ?? { exists: false, mtimeMs: null, size: null };
+    if (left.exists !== right.exists || left.mtimeMs !== right.mtimeMs || left.size !== right.size) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -148,11 +244,31 @@ export function describeBacksterAppChanges(before, after) {
   const names = new Set([...Object.keys(before.apps), ...Object.keys(after.apps)]);
   const changes = [];
   for (const name of names) {
-    const left = before.apps[name] ?? { exists: false, path: name, mtimeMs: null, size: null, ino: null };
-    const right = after.apps[name] ?? { exists: false, path: name, mtimeMs: null, size: null, ino: null };
+    const empty = { exists: false, path: name, mtimeMs: null, size: null, ino: null, files: {} };
+    const left = before.apps[name] ?? empty;
+    const right = after.apps[name] ?? empty;
     if (appBundleChanged(left, right)) {
       changes.push(name);
     }
   }
   return changes.sort();
+}
+
+/**
+ * @param {{
+ *   verifyStatus: number | null,
+ *   verifyStderr?: string,
+ *   displayOutput?: string,
+ * }} result
+ */
+export function interpretCodesignVerify(result) {
+  if ((result.verifyStatus ?? 1) === 0) {
+    return { ok: true, adHoc: false };
+  }
+  const display = result.displayOutput ?? "";
+  const adHoc = /Signature=adhoc|\(adhoc\)|flags=.*adhoc/i.test(display);
+  if (adHoc) {
+    return { ok: true, adHoc: true };
+  }
+  return { ok: false, adHoc: false, error: (result.verifyStderr ?? "").trim() || "codesign --verify failed" };
 }
