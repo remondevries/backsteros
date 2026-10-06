@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import {
+  ORGANIZATION_DETAIL_PANEL_WIDTH_KEY,
   ORGANIZATION_EXPANDED_WORKSPACE_TABS,
   type OrganizationExpandedWorkspaceTabId,
   type OrganizationOverlayLayout,
@@ -47,6 +48,9 @@ export function OrganizationDetailOverlay({
   return (
     <EntityDetailOverlay
       {...props}
+      panelWidthStorageKey={
+        props.panelWidthStorageKey ?? ORGANIZATION_DETAIL_PANEL_WIDTH_KEY
+      }
       entityLabel="organization"
       overlayDataKey="organization"
       overlayLayout={props.overlayLayout}

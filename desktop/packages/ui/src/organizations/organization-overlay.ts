@@ -28,6 +28,9 @@ export const ORGANIZATION_DETAIL_CONTENT_FADE_MS =
 /** Fade list ↔ expanded workspace when toggling orgLayout=page. */
 export const ORGANIZATION_DETAIL_EXPAND_FADE_MS = ENTITY_DETAIL_EXPAND_FADE_MS;
 
+export const ORGANIZATION_DETAIL_PANEL_WIDTH_KEY =
+  "organization-detail-panel-width";
+
 /** Search param: organization overlay opens as full page vs narrow right panel. */
 export const ORGANIZATION_OVERLAY_LAYOUT_PARAM = "orgLayout";
 

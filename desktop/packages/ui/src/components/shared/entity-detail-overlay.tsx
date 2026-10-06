@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -10,13 +11,18 @@ import {
 } from "react";
 
 import {
+  clampEntityDetailPanelWidth,
+  defaultEntityDetailPanelWidthPx,
   ENTITY_DETAIL_COLLAPSE_DURATION_MS,
   ENTITY_DETAIL_CONTENT_FADE_MS,
+  ENTITY_DETAIL_PANEL_MAX_WIDTH_PX,
+  ENTITY_DETAIL_PANEL_MIN_WIDTH_PX,
   ENTITY_DETAIL_PANEL_WIDTH,
   ENTITY_DETAIL_STRIP_WIDTH_PX,
   type EntityDetailWorkspaceTab,
   type EntityOverlayLayout,
 } from "../../shared/entity-detail-overlay.js";
+import { readStoredPanelWidth } from "../shell/resizable-side-panel.js";
 import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import { CollapseLayoutIcon } from "../icons/collapse-layout-icon.js";
 import { ExpandLayoutIcon } from "../icons/expand-layout-icon.js";
@@ -74,6 +80,8 @@ export type EntityDetailOverlayProps = {
    * Span the workspace across the full content width (hide the profile card).
    */
   expandWorkspace?: boolean;
+  /** Persist drag-resized rail width (contacts, organizations, …). */
+  panelWidthStorageKey?: string;
 };
 
 /**
@@ -107,6 +115,7 @@ export function EntityDetailOverlay({
   workspaceTabs = [],
   hideWorkspaceTabs = false,
   expandWorkspace = false,
+  panelWidthStorageKey,
 }: EntityDetailOverlayProps) {
   const [uncontrolledWorkspaceTab, setUncontrolledWorkspaceTab] = useState(
     () => workspaceTabs[0]?.id ?? "",
@@ -125,6 +134,7 @@ export function EntityDetailOverlay({
   const [enterAnimating, setEnterAnimating] = useState(false);
   const enterAnimTimerRef = useRef<number | null>(null);
   const enterAnimRafRef = useRef<number | null>(null);
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
 
   const effectiveCollapsed = collapsed || enterCollapsed;
   const effectiveAnimating = collapseAnimating || enterAnimating;
@@ -162,6 +172,43 @@ export function EntityDetailOverlay({
   // the workspace overlay — never remounts the profile card.
   const railMode = open && !(layout === "page" && expandWorkspace);
 
+  const parentContentWidthPx = useCallback((el: HTMLElement | null) => {
+    return el?.parentElement?.clientWidth ?? 0;
+  }, []);
+
+  const resolveStoredOrDefaultWidthPx = useCallback(
+    (el: HTMLElement | null) => {
+      const parentWidth = parentContentWidthPx(el);
+      const fallback = defaultEntityDetailPanelWidthPx(parentWidth);
+      const raw = panelWidthStorageKey
+        ? readStoredPanelWidth(
+            panelWidthStorageKey,
+            fallback,
+            ENTITY_DETAIL_PANEL_MIN_WIDTH_PX,
+            ENTITY_DETAIL_PANEL_MAX_WIDTH_PX,
+          )
+        : fallback;
+      return clampEntityDetailPanelWidth(raw, parentWidth);
+    },
+    [panelWidthStorageKey, parentContentWidthPx],
+  );
+
+  const commitExpandedWidthPx = useCallback(
+    (width: number, persist: boolean) => {
+      const clamped = clampEntityDetailPanelWidth(
+        width,
+        parentContentWidthPx(railRef.current),
+      );
+      if (clamped <= ENTITY_DETAIL_STRIP_WIDTH_PX) return;
+      expandedWidthRef.current = clamped;
+      setExpandedWidthPx(clamped);
+      if (persist && panelWidthStorageKey) {
+        window.localStorage.setItem(panelWidthStorageKey, String(clamped));
+      }
+    },
+    [panelWidthStorageKey, parentContentWidthPx],
+  );
+
   function resolveOpenWidthPx(el: HTMLElement | null): number | null {
     if (
       expandedWidthRef.current != null &&
@@ -169,13 +216,54 @@ export function EntityDetailOverlay({
     ) {
       return expandedWidthRef.current;
     }
-    const parent = el?.parentElement;
-    if (parent) {
-      const fromParent = Math.round(parent.clientWidth * 0.3);
-      if (fromParent > ENTITY_DETAIL_STRIP_WIDTH_PX) return fromParent;
-    }
-    return null;
+    const resolved = resolveStoredOrDefaultWidthPx(el);
+    return resolved > ENTITY_DETAIL_STRIP_WIDTH_PX ? resolved : null;
   }
+
+  const handlePanelResizePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (effectiveCollapsed || effectiveAnimating || layout === "page") return;
+      event.preventDefault();
+      const handle = event.currentTarget;
+      handle.setPointerCapture(event.pointerId);
+      const startX = event.clientX;
+      const startWidth =
+        expandedWidthRef.current ??
+        resolveStoredOrDefaultWidthPx(railRef.current);
+      setIsResizingPanel(true);
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.userSelect = "none";
+
+      function handlePointerMove(moveEvent: PointerEvent) {
+        const delta = startX - moveEvent.clientX;
+        commitExpandedWidthPx(startWidth + delta, false);
+      }
+
+      function finishResize(upEvent: PointerEvent) {
+        setIsResizingPanel(false);
+        document.body.style.userSelect = previousUserSelect;
+        if (expandedWidthRef.current != null) {
+          commitExpandedWidthPx(expandedWidthRef.current, true);
+        }
+        handle.releasePointerCapture(upEvent.pointerId);
+        handle.removeEventListener("pointermove", handlePointerMove);
+        handle.removeEventListener("pointerup", finishResize);
+        handle.removeEventListener("pointercancel", finishResize);
+      }
+
+      handle.addEventListener("pointermove", handlePointerMove);
+      handle.addEventListener("pointerup", finishResize);
+      handle.addEventListener("pointercancel", finishResize);
+    },
+    [
+      commitExpandedWidthPx,
+      effectiveAnimating,
+      effectiveCollapsed,
+      layout,
+      parentContentWidthPx,
+      resolveStoredOrDefaultWidthPx,
+    ],
+  );
 
   // List selection: mount at strip width, then slide open (before paint).
   useLayoutEffect(() => {
@@ -200,8 +288,7 @@ export function EntityDetailOverlay({
 
     const targetWidth = resolveOpenWidthPx(railRef.current);
     if (targetWidth != null) {
-      expandedWidthRef.current = targetWidth;
-      setExpandedWidthPx(targetWidth);
+      commitExpandedWidthPx(targetWidth, false);
     }
 
     setEnterCollapsed(true);
@@ -226,7 +313,7 @@ export function EntityDetailOverlay({
         }, ENTITY_DETAIL_COLLAPSE_DURATION_MS);
       });
     });
-  }, [open, layout, expandWorkspace]);
+  }, [open, layout, expandWorkspace, commitExpandedWidthPx]);
 
   useEffect(() => {
     return () => {
@@ -239,34 +326,20 @@ export function EntityDetailOverlay({
     };
   }, []);
 
-  // Capture expanded width before collapse so we can interpolate px → strip.
+  // Seed width once when the rail opens without a stored measurement.
   useLayoutEffect(() => {
-    if (!railMode || effectiveCollapsed || effectiveAnimating) return;
-    const el = railRef.current;
-    if (!el) return;
-    const width = Math.round(el.getBoundingClientRect().width);
-    if (width > ENTITY_DETAIL_STRIP_WIDTH_PX) {
-      expandedWidthRef.current = width;
-      setExpandedWidthPx(width);
-    }
-  }, [railMode, effectiveCollapsed, effectiveAnimating, open]);
-
-  useEffect(() => {
-    if (!railMode || effectiveCollapsed || effectiveAnimating) return;
-    const el = railRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const width = Math.round(entry.contentRect.width);
-      if (width > ENTITY_DETAIL_STRIP_WIDTH_PX) {
-        expandedWidthRef.current = width;
-        setExpandedWidthPx(width);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [railMode, effectiveCollapsed, effectiveAnimating]);
+    if (!open || !railMode || effectiveCollapsed || effectiveAnimating) return;
+    if (expandedWidthRef.current != null) return;
+    const width = resolveStoredOrDefaultWidthPx(railRef.current);
+    commitExpandedWidthPx(width, false);
+  }, [
+    commitExpandedWidthPx,
+    effectiveAnimating,
+    effectiveCollapsed,
+    open,
+    railMode,
+    resolveStoredOrDefaultWidthPx,
+  ]);
 
   if (!open) return null;
 
@@ -436,7 +509,11 @@ export function EntityDetailOverlay({
     : openWidthPx;
   const railStyle: CSSProperties =
     railWidthPx != null
-      ? { width: railWidthPx }
+      ? {
+          width: railWidthPx,
+          minWidth: railWidthPx,
+          flexShrink: 0,
+        }
       : { width: ENTITY_DETAIL_PANEL_WIDTH };
   const bodyWidthPx = openWidthPx;
 
@@ -454,8 +531,10 @@ export function EntityDetailOverlay({
           "journal-day-layout__calendar",
           "contact-detail-panel",
           "contact-detail-panel--rail",
+          "resizable-side-panel",
           effectiveCollapsed ? "is-collapsed" : null,
           effectiveAnimating ? "is-collapse-animating" : null,
+          isResizingPanel ? "is-resizing" : null,
         ]
           .filter(Boolean)
           .join(" ")}
@@ -470,6 +549,28 @@ export function EntityDetailOverlay({
         }}
         style={railStyle}
       >
+        {layout === "panel" &&
+        !effectiveCollapsed &&
+        !effectiveAnimating &&
+        panelWidthStorageKey ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+            aria-valuemin={ENTITY_DETAIL_PANEL_MIN_WIDTH_PX}
+            aria-valuemax={ENTITY_DETAIL_PANEL_MAX_WIDTH_PX}
+            aria-valuenow={openWidthPx ?? undefined}
+            onPointerDown={handlePanelResizePointerDown}
+            className="resizable-side-panel__handle resizable-side-panel__handle--start"
+          >
+            <span
+              aria-hidden="true"
+              className={`resizable-side-panel__handle-line${
+                isResizingPanel ? " is-active" : ""
+              }`}
+            />
+          </div>
+        ) : null}
         <div
           className="contact-detail-panel__rail-body"
           style={

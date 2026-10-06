@@ -3,6 +3,14 @@
  * Keep aliases in entity-specific overlay modules for stable imports.
  */
 
+export {
+  clampEntityDetailPanelWidth,
+  defaultEntityDetailPanelWidthPx,
+  ENTITY_DETAIL_PANEL_MAX_WIDTH_PX,
+  ENTITY_DETAIL_PANEL_MIN_WIDTH_PX,
+  ENTITY_DETAIL_PANEL_WIDTH_RATIO,
+} from "./entity-detail-panel-width.js";
+
 /** Width for the standalone detail card — fraction of the content area. */
 export const ENTITY_DETAIL_PANEL_WIDTH = "30%";
 

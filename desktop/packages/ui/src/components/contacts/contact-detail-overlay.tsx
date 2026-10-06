@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import {
+  CONTACT_DETAIL_PANEL_WIDTH_KEY,
   CONTACT_EXPANDED_WORKSPACE_TABS,
   type ContactExpandedWorkspaceTabId,
   type ContactOverlayLayout,
@@ -42,6 +43,9 @@ export function ContactDetailOverlay({
   return (
     <EntityDetailOverlay
       {...props}
+      panelWidthStorageKey={
+        props.panelWidthStorageKey ?? CONTACT_DETAIL_PANEL_WIDTH_KEY
+      }
       entityLabel="contact"
       overlayDataKey="contact"
       overlayLayout={props.overlayLayout}
