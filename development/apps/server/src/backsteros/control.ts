@@ -68,6 +68,7 @@ export type ControlSessionView = {
   readonly title: string;
   readonly status: ControlSessionStatus;
   readonly sessionStatus: string | null;
+  readonly lastError: string | null;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly settled: boolean;
@@ -228,6 +229,7 @@ function toSessionView(input: {
     title: input.binding.title,
     status,
     sessionStatus: input.thread?.session?.status ?? null,
+    lastError: input.thread?.session?.lastError ?? null,
     hasPendingApprovals: input.thread?.hasPendingApprovals ?? false,
     hasPendingUserInput: input.thread?.hasPendingUserInput ?? false,
     settled:
@@ -303,6 +305,33 @@ const newId = Effect.fn("backsteros.control.newId")(function* () {
   const crypto = yield* Crypto.Crypto;
   return yield* crypto.randomUUIDv4.pipe(Effect.orDie);
 });
+
+/**
+ * Prefer an explicit request, else the existing thread's stored selection.
+ * Do not fall back to the project default while a thread already exists —
+ * that is how a cursor thread was dispatched as claudeAgent (OS-91).
+ */
+export function resolveControlTurnModelPreference(input: {
+  readonly preferred: ModelSelection | null;
+  readonly existingThreadSelection: ModelSelection | null;
+}):
+  | { readonly kind: "use"; readonly modelSelection: ModelSelection | null }
+  | {
+      readonly kind: "driver_mismatch";
+      readonly threadInstanceId: string;
+      readonly requestedInstanceId: string;
+    } {
+  const existing = input.existingThreadSelection;
+  const preferred = input.preferred;
+  if (existing && preferred && String(existing.instanceId) !== String(preferred.instanceId)) {
+    return {
+      kind: "driver_mismatch",
+      threadInstanceId: String(existing.instanceId),
+      requestedInstanceId: String(preferred.instanceId),
+    };
+  }
+  return { kind: "use", modelSelection: preferred ?? existing };
+}
 
 const resolveModelSelection = Effect.fn("backsteros.control.resolveModelSelection")(function* (
   preferred: ModelSelection | null | undefined,
@@ -549,10 +578,11 @@ export const controlStartHandler = catchControlErrors(
 
     let threadId: string | null = existing?.binding.threadId ?? null;
     let created = false;
+    let existingThread: OrchestrationThreadShell | null = null;
 
     if (threadId) {
-      const shell = yield* findThreadShell(threadId);
-      if (!shell) {
+      existingThread = yield* findThreadShell(threadId);
+      if (!existingThread) {
         threadId = null;
       }
     }
@@ -566,6 +596,7 @@ export const controlStartHandler = catchControlErrors(
     if (!threadId) {
       threadId = ThreadId.make(yield* newId());
       created = true;
+      existingThread = null;
     }
 
     const displayId =
@@ -587,9 +618,21 @@ export const controlStartHandler = catchControlErrors(
       }
     }
 
+    const turnPreference = resolveControlTurnModelPreference({
+      preferred: preferredModel,
+      existingThreadSelection: existingThread?.modelSelection ?? null,
+    });
+    if (turnPreference.kind === "driver_mismatch") {
+      return yield* Effect.fail({
+        status: 409,
+        error: `Thread '${threadId}' is bound to driver '${turnPreference.threadInstanceId}' and cannot switch to '${turnPreference.requestedInstanceId}'.`,
+        code: "driver_mismatch",
+      } satisfies ControlHttpError);
+    }
+
     const modelSelection = yield* resolveModelSelection(
-      preferredModel,
-      t3Project.defaultModelSelection,
+      turnPreference.modelSelection,
+      existingThread ? null : t3Project.defaultModelSelection,
     );
 
     const prompt =
@@ -607,6 +650,11 @@ export const controlStartHandler = catchControlErrors(
     const messageId = MessageId.make(yield* newId());
 
     if (start) {
+      // A follow-up on an existing thread must not inherit a pending
+      // idle→in_review from the previous turn (OS-91 / OS-73).
+      if (existingThread) {
+        cancelControlSessionIdlePromote(config.stateDir, threadId);
+      }
       // Create the thread first when needed. bootstrap.createThread on
       // thread.turn.start is rejected by the orchestration engine
       // ("Thread … does not exist for command thread.turn.start").
@@ -715,19 +763,27 @@ export const controlStartHandler = catchControlErrors(
       displayId,
     });
 
-    if (start) {
-      // Status write #1 (OS-38 audit): explicit POST /sessions start → In Progress.
-      // Guarded in patchBacksterosControlTaskStatus (re-reads the task and never
-      // reopens completed/canceled/duplicated). Fire-and-forget; the web turn-start
-      // promote is the other writer.
-      void patchBacksterosControlTaskStatus(task.id, "in_progress");
-    }
-
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
+    const sessionErrored = thread?.session?.status === "error";
+    if (start && !sessionErrored) {
+      // Status write #1 (OS-38 audit): explicit POST /sessions start → In Progress.
+      // Guarded in patchBacksterosControlTaskStatus (re-reads the task and never
+      // reopens completed/canceled/duplicated). Fire-and-forget; the web turn-start
+      // promote is the other writer. Skip when the live session is already
+      // `error` — a rejected turn must not look like completion (OS-91).
+      void patchBacksterosControlTaskStatus(task.id, "in_progress");
+    }
     // Non-GET path: sync BacksterOS status from the session lifecycle.
-    maybePromoteBacksterosTaskForControlSession(task.id, view.status);
+    // Never promote idle/done/error here — `in_review` is only for a real
+    // turn completion (CheckpointReactor / OS-73). An idle snapshot after a
+    // rejected dispatch used to auto-flip tasks to in_review (OS-91).
+    if (view.status === "working" || view.status === "blocked") {
+      if (!sessionErrored) {
+        maybePromoteBacksterosTaskForControlSession(task.id, view.status);
+      }
+    }
     return HttpServerResponse.jsonUnsafe({
       ...view,
       created,

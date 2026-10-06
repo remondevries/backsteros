@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ProviderInstanceId } from "@t3tools/contracts";
+import { createModelSelection } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -13,20 +15,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import {
   controlMessageHandler,
   controlPruneHandler,
+  controlStartHandler,
   controlStatusHandler,
   isControlDispatchPending,
   isControlLoopbackRemote,
   mapSessionStatus,
   matchControlT3Project,
   resolveControlSessionStatus,
+  resolveControlTurnModelPreference,
   resolveControlWorkspaceRoot,
 } from "./control.ts";
+import { resetControlSessionPromoteStateForTests } from "./control-session-promote.ts";
 import {
   CONTROL_PENDING_DISPATCH_TIMEOUT_MS,
   getControlPendingDispatch,
@@ -69,6 +76,61 @@ describe("backsteros task-thread bindings", () => {
     } finally {
       fs.rmSync(stateDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveControlTurnModelPreference (OS-91)", () => {
+  const cursor = createModelSelection(ProviderInstanceId.make("cursor"), "default");
+  const claude = createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus");
+
+  it("keeps the existing thread selection when the caller omits a model", () => {
+    expect(
+      resolveControlTurnModelPreference({
+        preferred: null,
+        existingThreadSelection: cursor,
+      }),
+    ).toEqual({ kind: "use", modelSelection: cursor });
+  });
+
+  it("does not fall back to a missing thread (new thread uses caller/project later)", () => {
+    expect(
+      resolveControlTurnModelPreference({
+        preferred: null,
+        existingThreadSelection: null,
+      }),
+    ).toEqual({ kind: "use", modelSelection: null });
+    expect(
+      resolveControlTurnModelPreference({
+        preferred: claude,
+        existingThreadSelection: null,
+      }),
+    ).toEqual({ kind: "use", modelSelection: claude });
+  });
+
+  it("returns driver_mismatch when an explicit selection uses another instance", () => {
+    expect(
+      resolveControlTurnModelPreference({
+        preferred: claude,
+        existingThreadSelection: cursor,
+      }),
+    ).toEqual({
+      kind: "driver_mismatch",
+      threadInstanceId: "cursor",
+      requestedInstanceId: "claudeAgent",
+    });
+  });
+
+  it("accepts an explicit selection on the same instance", () => {
+    const preferred = createModelSelection(ProviderInstanceId.make("cursor"), "gpt-5");
+    expect(
+      resolveControlTurnModelPreference({
+        preferred,
+        existingThreadSelection: cursor,
+      }),
+    ).toEqual({
+      kind: "use",
+      modelSelection: preferred,
+    });
   });
 });
 
@@ -385,6 +447,7 @@ describe("control API handlers (OS-38)", () => {
 
   type ThreadState = {
     sessionStatus: string | null;
+    lastError: string | null;
     activeTurnId: string | null;
     latestTurn: {
       turnId: string;
@@ -403,7 +466,11 @@ describe("control API handlers (OS-38)", () => {
   let fakeTask: FakeTask;
   let threadState: ThreadState;
   let fetchCalls: Array<{ method: string; url: string }>;
-  let dispatched: Array<{ type: string; createdAt?: string }>;
+  let dispatched: Array<{
+    type: string;
+    createdAt?: string;
+    modelSelection?: { instanceId: string; model: string };
+  }>;
   const savedEnv = {
     key: process.env.BACKSTEROS_API_KEY,
     url: process.env.BACKSTEROS_API_URL,
@@ -414,7 +481,7 @@ describe("control API handlers (OS-38)", () => {
       id: THREAD_ID,
       projectId: "t3-project",
       title: "OS-38 · test",
-      modelSelection: { instanceId: "codex", model: "gpt-5" },
+      modelSelection: { instanceId: "cursor", model: "default" },
       runtimeMode: "full-access",
       interactionMode: "default",
       settledOverride: null,
@@ -427,7 +494,11 @@ describe("control API handlers (OS-38)", () => {
       session:
         threadState.sessionStatus === null
           ? null
-          : { status: threadState.sessionStatus, activeTurnId: threadState.activeTurnId },
+          : {
+              status: threadState.sessionStatus,
+              activeTurnId: threadState.activeTurnId,
+              lastError: threadState.lastError,
+            },
     };
   }
 
@@ -476,7 +547,11 @@ describe("control API handlers (OS-38)", () => {
       }),
     );
     expect(response.status).toBe(200);
-    return (await response.json()) as { status: string; sessionStatus: string | null };
+    return (await response.json()) as {
+      status: string;
+      sessionStatus: string | null;
+      lastError: string | null;
+    };
   }
 
   async function sendMessage(text: string) {
@@ -513,6 +588,7 @@ describe("control API handlers (OS-38)", () => {
     fakeTask = { id: TASK_ID, status: "completed", updatedAt: "2026-09-27T22:17:17.065Z" };
     threadState = {
       sessionStatus: "ready",
+      lastError: null,
       activeTurnId: null,
       latestTurn: {
         turnId: "turn-1",
@@ -528,6 +604,7 @@ describe("control API handlers (OS-38)", () => {
     fetchCalls = [];
     dispatched = [];
     resetControlPendingDispatches();
+    resetControlSessionPromoteStateForTests();
     process.env.BACKSTEROS_API_KEY = API_KEY;
     process.env.BACKSTEROS_API_URL = API_ORIGIN;
     vi.stubGlobal(
@@ -536,13 +613,48 @@ describe("control API handlers (OS-38)", () => {
         const url = String(input instanceof Request ? input.url : input);
         const method = (init?.method ?? "GET").toUpperCase();
         fetchCalls.push({ method, url });
+        if (url === `${API_ORIGIN}/api/v1/projects?type=codebase`) {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  id: "os-project",
+                  key: "OS",
+                  name: "OS",
+                  localWorkingDirectory: "/tmp/os-workspace",
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === `${API_ORIGIN}/api/v1/projects/os-project`) {
+          return new Response(
+            JSON.stringify({
+              id: "os-project",
+              key: "OS",
+              name: "OS",
+              localWorkingDirectory: "/tmp/os-workspace",
+            }),
+            { status: 200 },
+          );
+        }
         if (url === `${API_ORIGIN}/api/v1/tasks/${TASK_ID}`) {
           if (method === "PATCH") {
             const body = JSON.parse(String(init?.body ?? "{}")) as { status?: string };
             if (body.status) fakeTask.status = body.status;
             fakeTask.updatedAt = "2099-01-01T00:00:00.000Z";
           }
-          return new Response(JSON.stringify(fakeTask), { status: 200 });
+          return new Response(
+            JSON.stringify({
+              ...fakeTask,
+              number: 38,
+              title: "test",
+              projectId: "os-project",
+              description: "desc",
+            }),
+            { status: 200 },
+          );
         }
         return new Response("not found", { status: 404 });
       }),
@@ -552,6 +664,7 @@ describe("control API handlers (OS-38)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetControlPendingDispatches();
+    resetControlSessionPromoteStateForTests();
     if (savedEnv.key === undefined) delete process.env.BACKSTEROS_API_KEY;
     else process.env.BACKSTEROS_API_KEY = savedEnv.key;
     if (savedEnv.url === undefined) delete process.env.BACKSTEROS_API_URL;
@@ -589,7 +702,19 @@ describe("control API handlers (OS-38)", () => {
   describe("control status mapping over a turn", () => {
     it("GET after a finished turn returns idle", async () => {
       const view = await getStatus();
-      expect(view).toMatchObject({ status: "idle", sessionStatus: "ready" });
+      expect(view).toMatchObject({ status: "idle", sessionStatus: "ready", lastError: null });
+    });
+
+    it("surfaces lastError when the session is in error", async () => {
+      threadState.sessionStatus = "error";
+      threadState.lastError =
+        "Thread '11111111-2222-4333-8444-555555555555' is bound to driver 'cursor' and cannot switch to 'claudeAgent'.";
+      const view = await getStatus();
+      expect(view).toMatchObject({
+        status: "blocked",
+        sessionStatus: "error",
+        lastError: threadState.lastError,
+      });
     });
 
     it("send to a stopped session reads working until the turn ends", async () => {
@@ -644,6 +769,134 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.every((call) => call.method === "GET")).toBe(true);
       expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
       expect(fakeTask.status).toBe("completed");
+    });
+  });
+
+  describe("POST /sessions continue thread driver (OS-91)", () => {
+    const WORKSPACE = "/tmp/os-workspace";
+
+    function t3Project() {
+      return {
+        id: "t3-project",
+        title: "OS",
+        workspaceRoot: WORKSPACE,
+        defaultModelSelection: { instanceId: "claudeAgent", model: "opus" },
+        scripts: [] as const,
+        createdAt: "2026-09-27T22:00:00.000Z",
+        updatedAt: "2026-09-27T22:00:00.000Z",
+      };
+    }
+
+    function runStart(body: Record<string, unknown>): Promise<Response> {
+      const provided = controlStartHandler.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${API_KEY}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(body),
+            }),
+          ),
+        ),
+        Effect.provideService(SessionStore.SessionStore, {} as never),
+        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
+        Effect.provideService(ServerConfig.ServerConfig, {
+          stateDir,
+          attachmentsDir: path.join(stateDir, "attachments"),
+        } as never),
+        Effect.provideService(ServerEnvironment.ServerEnvironment, {
+          getEnvironmentId: Effect.succeed("env-1"),
+          getDescriptor: Effect.die("unused"),
+        } as never),
+        Effect.provideService(ProjectionSnapshotQuery, {
+          getShellSnapshot: () =>
+            Effect.sync(() => ({ projects: [t3Project()], threads: [threadShell()] })),
+        } as never),
+        Effect.provideService(OrchestrationEngineService, {
+          dispatch: (command: {
+            type: string;
+            createdAt?: string;
+            modelSelection?: { instanceId: string; model: string };
+          }) =>
+            Effect.sync(() => {
+              dispatched.push(command);
+              return { sequence: dispatched.length };
+            }),
+        } as never),
+        Effect.provideService(ProviderRegistry, {
+          getProviders: Effect.die("OS-91 continue path must not consult the provider registry"),
+        } as never),
+        Effect.provideService(Crypto.Crypto, {
+          randomUUIDv4: Effect.sync(
+            () => `00000000-0000-4000-8000-${String((idCounter += 1)).padStart(12, "0")}`,
+          ),
+        } as never),
+        Effect.provideService(FileSystem.FileSystem, {} as never),
+        Effect.provideService(Path.Path, {} as never),
+        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+      );
+      return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
+    }
+
+    it("continues a cursor thread with cursor even when the project default is claudeAgent", async () => {
+      fakeTask.status = "in_progress";
+      const response = await runStart({
+        taskId: TASK_ID,
+        start: true,
+        prompt: "Follow-up: stay on cursor.",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { started: boolean; created: boolean };
+      expect(body).toMatchObject({ started: true, created: false });
+      const turn = dispatched.find((command) => command.type === "thread.turn.start");
+      expect(turn?.modelSelection).toEqual({ instanceId: "cursor", model: "default" });
+    });
+
+    it("returns 409 driver_mismatch when the caller asks for another driver", async () => {
+      fakeTask.status = "in_progress";
+      const response = await runStart({
+        taskId: TASK_ID,
+        start: true,
+        prompt: "Wrong driver",
+        modelSelection: { instanceId: "claudeAgent", model: "opus" },
+      });
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as { ok: boolean; code: string; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.code).toBe("driver_mismatch");
+      expect(body.error).toContain("cursor");
+      expect(body.error).toContain("claudeAgent");
+      expect(dispatched).toEqual([]);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
+      expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
+    });
+
+    it("does not move the task to in_review when the session is already in error", async () => {
+      fakeTask.status = "in_progress";
+      threadState.sessionStatus = "error";
+      threadState.lastError =
+        "Thread '11111111-2222-4333-8444-555555555555' is bound to driver 'cursor' and cannot switch to 'claudeAgent'.";
+      const response = await runStart({
+        taskId: TASK_ID,
+        start: true,
+        prompt: "Retry after a rejected turn",
+        modelSelection: { instanceId: "cursor", model: "default" },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        lastError: string | null;
+        sessionStatus: string | null;
+      };
+      expect(body.sessionStatus).toBe("error");
+      expect(body.lastError).toBe(threadState.lastError);
+      await flush();
+      expect(fakeTask.status).toBe("in_progress");
+      expect(fetchCalls.some((call) => call.method === "PATCH")).toBe(false);
     });
   });
 
