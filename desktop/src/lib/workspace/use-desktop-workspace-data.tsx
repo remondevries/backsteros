@@ -42,6 +42,7 @@ import {
   fillMissingCodebaseFieldsFromApi,
   fillMissingProjectBillingFields,
   fillMissingLinksFromApi,
+  fillMissingStringIdArrayFieldsFromApi,
   fillMissingLinkedCommitShasFromApi,
   fillMissingLongTextFromApi,
   fillMissingMeetingPropertiesFromApi,
@@ -554,12 +555,20 @@ function useDesktopWorkspaceDataImpl(): {
           fillMissingHabitIdFromApi(
             fillMissingLinkedCommitShasFromApi(
               fillMissingAgentChatIdFromApi(
-                fillMissingLinksFromApi(
-                  mergeLocalWithPendingApiCreates(
-                    resolveLocalOrApiRows(localMapped, apiTasks),
-                    apiTasks,
+                fillMissingStringIdArrayFieldsFromApi(
+                  fillMissingLinksFromApi(
+                    mergeLocalWithPendingApiCreates(
+                      resolveLocalOrApiRows(localMapped, apiTasks),
+                      apiTasks,
+                    ),
+                    fillFrom,
                   ),
                   fillFrom,
+                  [
+                    "relatedContactIds",
+                    "relatedOrganizationIds",
+                    "linkedEmailIds",
+                  ],
                 ),
                 fillFrom,
               ),
@@ -599,12 +608,20 @@ function useDesktopWorkspaceDataImpl(): {
           fillMissingHabitIdFromApi(
             fillMissingLinkedCommitShasFromApi(
               fillMissingAgentChatIdFromApi(
-                fillMissingLinksFromApi(
-                  mergeLocalWithPendingApiCreates(
-                    resolveLocalOrApiRows(localMapped, apiInboxTasks),
-                    apiInboxTasks,
+                fillMissingStringIdArrayFieldsFromApi(
+                  fillMissingLinksFromApi(
+                    mergeLocalWithPendingApiCreates(
+                      resolveLocalOrApiRows(localMapped, apiInboxTasks),
+                      apiInboxTasks,
+                    ),
+                    fillFrom,
                   ),
                   fillFrom,
+                  [
+                    "relatedContactIds",
+                    "relatedOrganizationIds",
+                    "linkedEmailIds",
+                  ],
                 ),
                 fillFrom,
               ),
@@ -707,6 +724,7 @@ function useDesktopWorkspaceDataImpl(): {
         [
           "summary",
           "notes",
+          "title",
           "birthday",
           "firstName",
           "lastName",

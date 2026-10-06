@@ -100,10 +100,11 @@ export function ContactLanguagesEditor({
   const [rowsSource, setRowsSource] = useState(remoteKey);
 
   if (remoteKey !== rowsSource) {
+    const priorSource = rowsSource;
     setRowsSource(remoteKey);
     // Adopt remote only when local committed values still match the prior
     // source (no in-flight edits). Keep trailing draft chips in multi mode.
-    if (languagesKey(committedFrom(rows)) === rowsSource) {
+    if (languagesKey(committedFrom(rows)) === priorSource) {
       if (selectionMode === "single") {
         setRows(rowsFromRemote(remote, selectionMode));
       } else {

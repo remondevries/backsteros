@@ -540,6 +540,26 @@ export function ContactOverviewView({
     persist({ phone: next.phone, phones: next.phones });
   }
 
+  function saveLanguages(next: ContactLanguage[]) {
+    const normalized = coerceContactLanguages(next);
+    setLanguages(normalized);
+    if (languagesKey(normalized) === languagesKey(remoteLanguages)) {
+      setLanguagesSource(languagesKey(normalized));
+      return;
+    }
+    persist({ languages: normalized });
+  }
+
+  function saveTitle(next: string) {
+    const trimmed = next.trim();
+    setTitle(trimmed);
+    if (trimmed === remoteTitle.trim()) {
+      setTitleSource(trimmed);
+      return;
+    }
+    persist({ title: trimmed || null });
+  }
+
   function saveSocialAccounts(nextAccounts: ContactSocialAccount[]) {
     const normalized = normalizeSocialAccounts(nextAccounts);
     setSocialAccounts(normalized);
@@ -663,13 +683,8 @@ export function ContactOverviewView({
           <ContactLanguagesEditor
             key={contact.id}
             languages={languages}
-            onChange={(next) => {
-              setLanguages(next);
-            }}
-            onSave={(next) => {
-              setLanguages(next);
-              persist({ languages: next });
-            }}
+            onChange={setLanguages}
+            onSave={saveLanguages}
           />
         </DetailsField>
       </DetailsSubgroup>
@@ -1022,11 +1037,7 @@ export function ContactOverviewView({
               as="span"
               titleClassName="contact-overview__job-title"
               onSave={(next) => {
-                const trimmed = next.trim();
-                setTitle(trimmed);
-                if (trimmed !== (contact.title ?? "").trim()) {
-                  persist({ title: trimmed || null });
-                }
+                saveTitle(next);
                 return { ok: true };
               }}
             />

@@ -104,8 +104,11 @@ export function TaskLinkAttachments({
   const [items, setItems] = useState(links);
   const [itemsSourceKey, setItemsSourceKey] = useState(remoteKey);
   if (remoteKey !== itemsSourceKey) {
+    const priorSourceKey = itemsSourceKey;
     setItemsSourceKey(remoteKey);
-    setItems(links);
+    if (JSON.stringify(items) === priorSourceKey) {
+      setItems(links);
+    }
   }
 
   const [modalOpen, setModalOpen] = useState(false);

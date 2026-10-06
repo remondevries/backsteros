@@ -1,3 +1,7 @@
+import { coerceContactLanguages } from "@backsteros/contracts";
+
+import { parseStringIdArray } from "./workspace/row-mappers.ts";
+
 function updatedAtMs(value: string | number | Date | null | undefined): number {
   if (value == null) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -205,6 +209,38 @@ export function preservePendingApiRows<T extends { id: string }>(
  * When local wins by updatedAt but still omits `links` (stale schema / sync),
  * copy non-empty links from the API row — matches web `findLocalOrApi`.
  */
+function stringIdArrayMissing(value: unknown): boolean {
+  return parseStringIdArray(value).length === 0;
+}
+
+/**
+ * When local SQLite still has `[]` for JSON id-array columns (related contacts,
+ * linked emails, …), copy non-empty values from the optimistic API row.
+ */
+export function fillMissingStringIdArrayFieldsFromApi<
+  T extends { id: string },
+>(
+  mergedRows: T[],
+  apiRows: T[] | null | undefined,
+  fields: readonly (keyof T & string)[],
+): T[] {
+  if (!apiRows?.length || fields.length === 0) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    let next: T | null = null;
+    for (const field of fields) {
+      if (!stringIdArrayMissing(row[field])) continue;
+      const apiValue = api[field];
+      if (stringIdArrayMissing(apiValue)) continue;
+      if (!next) next = { ...row };
+      (next as Record<string, unknown>)[field] = apiValue;
+    }
+    return next ?? row;
+  });
+}
+
 export function fillMissingLinksFromApi<
   T extends { id: string; links?: unknown },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
@@ -220,6 +256,50 @@ export function fillMissingLinksFromApi<
 
 function optionalTextMissing(value: unknown): boolean {
   return value == null || (typeof value === "string" && value.trim() === "");
+}
+
+/** Empty `languages` JSON (`[]`, `"[]"`) should not block API gap-fill. */
+function contactLanguagesMissing(value: unknown): boolean {
+  return coerceContactLanguages(value as string | readonly unknown[]).length === 0;
+}
+
+/** Empty JSON arrays / objects in SQLite text columns should not block API gap-fill. */
+function jsonCollectionMissing(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "[]" || trimmed === "{}") return true;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.length === 0;
+      if (parsed && typeof parsed === "object") {
+        return Object.keys(parsed as Record<string, unknown>).length === 0;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  }
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length === 0;
+  }
+  return optionalTextMissing(value);
+}
+
+const JSON_COLLECTION_GAP_FILL_FIELDS = new Set([
+  "emails",
+  "phones",
+  "socialAccounts",
+  "portalSettings",
+]);
+
+function fieldMissingForApiFill(field: string, value: unknown): boolean {
+  if (field === "languages") return contactLanguagesMissing(value);
+  if (JSON_COLLECTION_GAP_FILL_FIELDS.has(field)) {
+    return jsonCollectionMissing(value);
+  }
+  return optionalTextMissing(value);
 }
 
 /**
@@ -238,9 +318,9 @@ export function fillMissingLongTextFromApi<T extends { id: string }>(
     if (!api) return row;
     let next: T | null = null;
     for (const field of fields) {
-      if (!optionalTextMissing(row[field])) continue;
+      if (!fieldMissingForApiFill(field, row[field])) continue;
       const apiValue = api[field];
-      if (optionalTextMissing(apiValue)) continue;
+      if (fieldMissingForApiFill(field, apiValue)) continue;
       if (!next) next = { ...row };
       (next as Record<string, unknown>)[field] = apiValue;
     }

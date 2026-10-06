@@ -111,8 +111,9 @@ export function ContactPhonesEditor<
   const numberInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   if (remoteKey !== rowsSource) {
+    const priorSource = rowsSource;
     setRowsSource(remoteKey);
-    if (rowsKey(rows) === rowsSource) {
+    if (rowsKey(rows) === priorSource) {
       setRows(remoteRows);
     }
   }

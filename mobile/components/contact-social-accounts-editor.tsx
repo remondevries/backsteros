@@ -72,10 +72,11 @@ export function ContactSocialAccountsEditor({
   const [platformIndex, setPlatformIndex] = useState<number | null>(null);
 
   if (remoteKey !== rowsSource) {
+    const priorSource = rowsSource;
     setRowsSource(remoteKey);
     if (
-      rowsKey(rows.filter(hasCompletableUrl)) === rowsSource ||
-      rowsKey(rows) === rowsSource
+      rowsKey(rows.filter(hasCompletableUrl)) === priorSource ||
+      rowsKey(rows) === priorSource
     ) {
       setRows(value);
       setDraftHandles({});

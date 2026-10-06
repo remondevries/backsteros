@@ -73,8 +73,9 @@ export function ContactPhonesEditor({
   const [labelIndex, setLabelIndex] = useState<number | null>(null);
 
   if (remoteKey !== rowsSource) {
+    const priorSource = rowsSource;
     setRowsSource(remoteKey);
-    if (rowsKey(rows) === rowsSource) {
+    if (rowsKey(rows) === priorSource) {
       setRows(remoteRows);
     }
   }

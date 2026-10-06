@@ -68,10 +68,11 @@ export function ContactSocialAccountsEditor({
   const urlInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   if (remoteKey !== rowsSource) {
+    const priorSource = rowsSource;
     setRowsSource(remoteKey);
     if (
-      rowsKey(rows.filter(hasCompletableUrl)) === rowsSource ||
-      rowsKey(rows) === rowsSource
+      rowsKey(rows.filter(hasCompletableUrl)) === priorSource ||
+      rowsKey(rows) === priorSource
     ) {
       setRows(value);
       setDraftHandles({});

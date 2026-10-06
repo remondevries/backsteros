@@ -8,6 +8,8 @@ import {
   fillMissingDueDatesFromApi,
   fillMissingLinksFromApi,
   fillMissingLinkedCommitShasFromApi,
+  fillMissingLongTextFromApi,
+  fillMissingStringIdArrayFieldsFromApi,
   fillMissingMeetingPropertiesFromApi,
   fillMissingNumberFromApi,
   fillMissingTaskFlagsFromApi,
@@ -709,4 +711,41 @@ test("preservePendingApiRows keeps optimistic creates missing from hydrate", () 
     merged.map((row) => row.id),
     ["new", "old"],
   );
+});
+
+test("fillMissingLongTextFromApi fills languages when local SQLite has empty JSON", () => {
+  const filled = fillMissingLongTextFromApi(
+    [{ id: "c1", languages: "[]" }],
+    [{ id: "c1", languages: ["nl", "en"] }],
+    ["languages"],
+  );
+  assert.deepEqual(filled[0]?.languages, ["nl", "en"]);
+});
+
+test("fillMissingLongTextFromApi fills title when local row is empty", () => {
+  const filled = fillMissingLongTextFromApi(
+    [{ id: "c1", title: "" }],
+    [{ id: "c1", title: "Founder" }],
+    ["title"],
+  );
+  assert.equal(filled[0]?.title, "Founder");
+});
+
+test("fillMissingLongTextFromApi fills emails when local SQLite has empty JSON", () => {
+  const apiEmails = [{ label: "work", address: "a@example.com" }];
+  const filled = fillMissingLongTextFromApi(
+    [{ id: "c1", emails: "[]" }],
+    [{ id: "c1", emails: apiEmails }],
+    ["emails"],
+  );
+  assert.deepEqual(filled[0]?.emails, apiEmails);
+});
+
+test("fillMissingStringIdArrayFieldsFromApi fills related contacts from API", () => {
+  const filled = fillMissingStringIdArrayFieldsFromApi(
+    [{ id: "t1", relatedContactIds: "[]" }],
+    [{ id: "t1", relatedContactIds: ["contact-a"] }],
+    ["relatedContactIds"],
+  );
+  assert.deepEqual(filled[0]?.relatedContactIds, ["contact-a"]);
 });

@@ -358,8 +358,11 @@ export function TaskLinkAttachments({
   const [items, setItems] = useState(remoteLinks);
   const [itemsSourceKey, setItemsSourceKey] = useState(remoteKey);
   if (remoteKey !== itemsSourceKey) {
+    const priorSourceKey = itemsSourceKey;
     setItemsSourceKey(remoteKey);
-    setItems(remoteLinks);
+    if (JSON.stringify(items) === priorSourceKey) {
+      setItems(remoteLinks);
+    }
   }
 
   const canUploadFiles = Boolean(onUploadFile) && !readOnly;
