@@ -30,6 +30,7 @@ export function SettingsAutoReviewWebhookTab(props: {
   );
   const [urlDraft, setUrlDraft] = useState("");
   const [secretDraft, setSecretDraft] = useState("");
+  const [authorizationDraft, setAuthorizationDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -53,6 +54,7 @@ export function SettingsAutoReviewWebhookTab(props: {
   async function save(patch: {
     url?: string;
     secret?: string;
+    authorizationHeader?: string;
     enabled?: boolean;
   }) {
     setSaving(true);
@@ -69,6 +71,7 @@ export function SettingsAutoReviewWebhookTab(props: {
       setSettings(next);
       setUrlDraft("");
       setSecretDraft("");
+      setAuthorizationDraft("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
     } finally {
@@ -93,6 +96,11 @@ export function SettingsAutoReviewWebhookTab(props: {
     }
   }
 
+  const canSave =
+    urlDraft.trim() !== "" ||
+    secretDraft.trim() !== "" ||
+    authorizationDraft.trim() !== "";
+
   return (
     <div className="settings-cursor-tab">
       {props.hideHeader ? null : (
@@ -109,7 +117,8 @@ export function SettingsAutoReviewWebhookTab(props: {
         <h2>Auto-review webhook</h2>
         <p>
           POST JSON to this URL when an agent turn finishes and the task is In
-          Review. The secret is stored encrypted and is never returned.
+          Review. The HMAC secret and optional Authorization header are stored
+          encrypted and never returned.
         </p>
         <label className="settings-field">
           Webhook URL
@@ -124,7 +133,7 @@ export function SettingsAutoReviewWebhookTab(props: {
           />
         </label>
         <label className="settings-field">
-          Secret
+          Signing secret (HMAC)
           <input
             type="password"
             autoComplete="off"
@@ -137,6 +146,32 @@ export function SettingsAutoReviewWebhookTab(props: {
             onChange={(event) => setSecretDraft(event.target.value)}
           />
         </label>
+        <label className="settings-field">
+          Authorization header
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={
+              settings?.authorizationHeaderConfigured
+                ? `Configured (${settings.authorizationHeaderPreview ?? "••••"})`
+                : 'Optional — e.g. Bearer <Grok Bot sender key>'
+            }
+            value={authorizationDraft}
+            onChange={(event) => setAuthorizationDraft(event.target.value)}
+          />
+        </label>
+        {settings?.authorizationHeaderConfigured ? (
+          <div className="settings-cursor-key-actions">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void save({ authorizationHeader: "" })}
+            >
+              Clear Authorization header
+            </button>
+          </div>
+        ) : null}
         <div className="settings-field">
           <span>Enabled</span>
           <SegmentedPillToggle
@@ -155,14 +190,14 @@ export function SettingsAutoReviewWebhookTab(props: {
         <div className="settings-cursor-key-actions">
           <button
             type="button"
-            disabled={
-              saving ||
-              (!urlDraft.trim() && !secretDraft.trim())
-            }
+            disabled={saving || !canSave}
             onClick={() =>
               void save({
                 ...(urlDraft.trim() ? { url: urlDraft.trim() } : {}),
                 ...(secretDraft.trim() ? { secret: secretDraft } : {}),
+                ...(authorizationDraft.trim()
+                  ? { authorizationHeader: authorizationDraft.trim() }
+                  : {}),
               })
             }
           >

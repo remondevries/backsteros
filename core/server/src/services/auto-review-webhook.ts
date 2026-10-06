@@ -19,16 +19,18 @@ import {
 import { newId } from "../lib/crypto.js";
 import { formatTaskDisplayKey } from "../lib/task-filters.js";
 import {
+  AUTO_REVIEW_CLAIM_LIMIT,
   AUTO_REVIEW_EVENT,
   AUTO_REVIEW_MAX_ATTEMPTS,
-  AUTO_REVIEW_SEND_LEASE_MS,
   AUTO_REVIEW_TIMEOUT_MS,
   type AutoReviewReadyPayload,
+  type AutoReviewSecretBundle,
+  autoReviewSendLeaseMs,
   buildAutoReviewHeaders,
   canEncryptWebhookSecret,
   classifyWebhookResponse,
-  decryptWebhookSecret,
-  encryptWebhookSecret,
+  decryptAutoReviewSecretBundle,
+  encryptAutoReviewSecretBundle,
   mapAutoReviewDeliveryStatusForApi,
   maskWebhookSecret,
   nextAttemptAt,
@@ -46,6 +48,20 @@ type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 const FAILED_COMMENT = "Auto-review trigger failed";
 const SYSTEM_ACTOR = { userId: null, kind: "agent" as const };
 
+async function loadSecretBundle(
+  workspaceId: string,
+  executor: DbExecutor = db,
+): Promise<AutoReviewSecretBundle> {
+  const [row] = await executor
+    .select({
+      ciphertext: workspaceIntegrationSecrets.autoReviewWebhookSecretCiphertext,
+    })
+    .from(workspaceIntegrationSecrets)
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
+    .limit(1);
+  return decryptAutoReviewSecretBundle(row?.ciphertext);
+}
+
 export async function isAutoReviewWebhookEnabled(
   workspaceId: string,
   executor: DbExecutor = db,
@@ -60,7 +76,8 @@ export async function isAutoReviewWebhookEnabled(
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
     .limit(1);
   if (!row?.enabled || !row.url?.trim() || !row.secret?.trim()) return false;
-  return Boolean(decryptWebhookSecret(row.secret));
+  const bundle = decryptAutoReviewSecretBundle(row.secret);
+  return Boolean(bundle.hmacSecret);
 }
 
 export async function enqueueAutoReviewDelivery(input: {
@@ -210,7 +227,7 @@ export async function getAutoReviewWebhookSettings(
     .orderBy(desc(autoReviewWebhookDeliveries.updatedAt))
     .limit(8);
 
-  const secretPlain = decryptWebhookSecret(
+  const bundle = decryptAutoReviewSecretBundle(
     secrets?.autoReviewWebhookSecretCiphertext,
   );
   const lastResult = mapAutoReviewDeliveryStatusForApi(last?.status ?? null);
@@ -218,8 +235,10 @@ export async function getAutoReviewWebhookSettings(
   return {
     enabled: Boolean(secrets?.autoReviewWebhookEnabled),
     url: secrets?.autoReviewWebhookUrl?.trim() || null,
-    secretConfigured: Boolean(secretPlain),
-    secretPreview: maskWebhookSecret(secretPlain),
+    secretConfigured: Boolean(bundle.hmacSecret),
+    secretPreview: maskWebhookSecret(bundle.hmacSecret),
+    authorizationHeaderConfigured: Boolean(bundle.authorizationHeader),
+    authorizationHeaderPreview: maskWebhookSecret(bundle.authorizationHeader),
     lastDeliveryAt:
       last?.lastAttemptAt?.toISOString() ??
       last?.updatedAt.toISOString() ??
@@ -272,9 +291,23 @@ export async function updateAutoReviewWebhookSettings(
     }
     patch.autoReviewWebhookUrl = validated.url;
   }
-  if (input.secret !== undefined) {
-    const trimmed = input.secret.trim();
-    if (!trimmed) {
+
+  const touchingSecrets =
+    input.secret !== undefined || input.authorizationHeader !== undefined;
+  if (touchingSecrets) {
+    const current = await loadSecretBundle(workspaceId);
+    const next: AutoReviewSecretBundle = { ...current };
+
+    if (input.secret !== undefined) {
+      const trimmed = input.secret.trim();
+      next.hmacSecret = trimmed || null;
+    }
+    if (input.authorizationHeader !== undefined) {
+      const trimmed = input.authorizationHeader.trim();
+      next.authorizationHeader = trimmed || null;
+    }
+
+    if (!next.hmacSecret && !next.authorizationHeader) {
       patch.autoReviewWebhookSecretCiphertext = null;
     } else {
       if (!canEncryptWebhookSecret(env)) {
@@ -282,12 +315,13 @@ export async function updateAutoReviewWebhookSettings(
           "BACKSTEROS_SECRET_ENCRYPTION_KEY (or CORE_REPLICATION_SECRET) is required to save an auto-review webhook secret",
         );
       }
-      patch.autoReviewWebhookSecretCiphertext = encryptWebhookSecret(
-        trimmed,
+      patch.autoReviewWebhookSecretCiphertext = encryptAutoReviewSecretBundle(
+        next,
         env,
       );
     }
   }
+
   if (input.enabled !== undefined) {
     patch.autoReviewWebhookEnabled = input.enabled;
   }
@@ -314,12 +348,14 @@ async function postSignedWebhook(input: {
   body: string;
   timestamp: string;
   deliveryId: string;
+  authorizationHeader?: string | null;
 }): Promise<PostResult> {
   const headers = buildAutoReviewHeaders({
     body: input.body,
     timestamp: input.timestamp,
     secret: input.secret,
     deliveryId: input.deliveryId,
+    authorizationHeader: input.authorizationHeader,
   });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AUTO_REVIEW_TIMEOUT_MS);
@@ -425,9 +461,20 @@ async function recordFailureComment(
   }
 }
 
+/** Guard: only the claimer that set this lease may finalize. */
+function claimLeaseGuard(
+  row: typeof autoReviewWebhookDeliveries.$inferSelect,
+) {
+  return and(
+    eq(autoReviewWebhookDeliveries.id, row.id),
+    eq(autoReviewWebhookDeliveries.status, "sending"),
+    eq(autoReviewWebhookDeliveries.nextAttemptAt, row.nextAttemptAt),
+  );
+}
+
 /**
  * Finalize a claimed (`sending`) row. Side effects (activity / failure comment)
- * run only when this UPDATE wins the `sending` → terminal transition.
+ * run only when this UPDATE wins the lease-scoped `sending` → terminal transition.
  */
 export async function finalizeDelivery(input: {
   row: typeof autoReviewWebhookDeliveries.$inferSelect;
@@ -443,10 +490,7 @@ export async function finalizeDelivery(input: {
   });
   const attempt = input.payload.attempt;
   const now = new Date();
-  const sendingOnly = and(
-    eq(autoReviewWebhookDeliveries.id, input.row.id),
-    eq(autoReviewWebhookDeliveries.status, "sending"),
-  );
+  const leaseGuard = claimLeaseGuard(input.row);
 
   if (classification === "success") {
     const [won] = await db
@@ -460,7 +504,7 @@ export async function finalizeDelivery(input: {
         payload: input.payload,
         updatedAt: now,
       })
-      .where(sendingOnly)
+      .where(leaseGuard)
       .returning();
     if (!won) return "skipped";
     await markTaskDeliveryStatus(
@@ -492,7 +536,7 @@ export async function finalizeDelivery(input: {
         payload: input.payload,
         updatedAt: now,
       })
-      .where(sendingOnly)
+      .where(leaseGuard)
       .returning();
     if (!won) return "skipped";
     await markTaskDeliveryStatus(
@@ -522,14 +566,19 @@ export async function finalizeDelivery(input: {
       }),
       updatedAt: now,
     })
-    .where(sendingOnly)
+    .where(leaseGuard)
     .returning();
   if (!won) return "skipped";
   return "pending";
 }
 
 type CredentialsResult =
-  | { ok: true; url: string; secret: string }
+  | {
+      ok: true;
+      url: string;
+      secret: string;
+      authorizationHeader: string | null;
+    }
   | {
       ok: false;
       reason: "disabled" | "not_configured" | "secret_unreadable";
@@ -551,14 +600,19 @@ async function credentialsForWorkspace(
   const url = row.url?.trim() ?? "";
   if (!url) return { ok: false, reason: "not_configured" };
   const hasCiphertext = Boolean(row.ciphertext?.trim());
-  const secret = decryptWebhookSecret(row.ciphertext);
-  if (!secret) {
+  const bundle = decryptAutoReviewSecretBundle(row.ciphertext);
+  if (!bundle.hmacSecret) {
     return {
       ok: false,
       reason: hasCiphertext ? "secret_unreadable" : "not_configured",
     };
   }
-  return { ok: true, url, secret };
+  return {
+    ok: true,
+    url,
+    secret: bundle.hmacSecret,
+    authorizationHeader: bundle.authorizationHeader,
+  };
 }
 
 function unconfiguredError(
@@ -587,12 +641,7 @@ async function failUnconfiguredDelivery(input: {
       lastError: unconfiguredError(input.reason),
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(autoReviewWebhookDeliveries.id, input.row.id),
-        eq(autoReviewWebhookDeliveries.status, "sending"),
-      ),
-    )
+    .where(claimLeaseGuard(input.row))
     .returning();
   if (!won) return "skipped";
   await markTaskDeliveryStatus(
@@ -647,6 +696,7 @@ async function deliverRow(
     body,
     timestamp: timestampHeader,
     deliveryId: row.id,
+    authorizationHeader: creds.authorizationHeader,
   });
   return finalizeDelivery({
     row,
@@ -661,9 +711,9 @@ async function deliverRow(
  */
 export async function claimDueAutoReviewWebhookDeliveries(
   now = new Date(),
-  limit = 10,
+  limit = AUTO_REVIEW_CLAIM_LIMIT,
 ): Promise<(typeof autoReviewWebhookDeliveries.$inferSelect)[]> {
-  const leaseUntil = new Date(now.getTime() + AUTO_REVIEW_SEND_LEASE_MS);
+  const leaseUntil = new Date(now.getTime() + autoReviewSendLeaseMs(limit));
   return db.transaction(async (tx) => {
     const due = await tx
       .select()
@@ -712,7 +762,7 @@ let tickInFlight = false;
 
 export async function runDueAutoReviewWebhookDeliveries(
   now = new Date(),
-  limit = 10,
+  limit = AUTO_REVIEW_CLAIM_LIMIT,
 ): Promise<number> {
   if (!shouldDeliverAutoReviewWebhooks()) return 0;
   if (tickInFlight) return 0;
@@ -742,25 +792,30 @@ export function resetAutoReviewWebhookTickGuardForTests(): void {
   tickInFlight = false;
 }
 
+/**
+ * One-shot Send test. Allowed on local-role cores (desktop Settings).
+ * POSTs first, then inserts a single terminal outbox row (delivered/failed)
+ * so cloud never claims or re-sends it. Background workers stay cloud-only.
+ */
 export async function sendAutoReviewWebhookTest(
   workspaceId: string,
 ): Promise<AutoReviewWebhookTestResult> {
-  if (!shouldDeliverAutoReviewWebhooks()) {
-    return {
-      ok: false,
-      error:
-        "Auto-review webhook Send test only runs on cloud or standalone core (not local replica).",
-      httpStatus: null,
-      deliveryId: null,
-    };
-  }
-
   const settings = await getAutoReviewWebhookSettings(workspaceId);
   if (!settings.enabled || !settings.url || !settings.secretConfigured) {
     return {
       ok: false,
       error:
         "Configure URL, secret, and turn the webhook on before sending a test.",
+      httpStatus: null,
+      deliveryId: null,
+    };
+  }
+
+  const creds = await credentialsForWorkspace(workspaceId);
+  if (!creds.ok) {
+    return {
+      ok: false,
+      error: unconfiguredError(creds.reason),
       httpStatus: null,
       deliveryId: null,
     };
@@ -787,59 +842,42 @@ export async function sendAutoReviewWebhookTest(
     test: true,
   };
 
-  const [row] = await db
-    .insert(autoReviewWebhookDeliveries)
-    .values({
-      id: deliveryId,
-      workspaceId,
-      taskId: null,
-      event: AUTO_REVIEW_EVENT,
-      payload,
-      status: "sending",
-      attempt: 0,
-      nextAttemptAt: new Date(now.getTime() + AUTO_REVIEW_SEND_LEASE_MS),
-    })
-    .returning();
-  if (!row) {
-    return {
-      ok: false,
-      error: "Could not write test delivery",
-      httpStatus: null,
-      deliveryId: null,
-    };
-  }
+  const timestampHeader = String(Date.now());
+  const body = stableJson(payload);
+  const result = await postSignedWebhook({
+    url: creds.url,
+    secret: creds.secret,
+    body,
+    timestamp: timestampHeader,
+    deliveryId,
+    authorizationHeader: creds.authorizationHeader,
+  });
 
-  const outcome = await deliverRow(row, { forceFailedOnRetry: true });
-  const [updated] = await db
-    .select()
-    .from(autoReviewWebhookDeliveries)
-    .where(eq(autoReviewWebhookDeliveries.id, deliveryId))
-    .limit(1);
+  const classification = classifyWebhookResponse({
+    httpStatus: result.httpStatus,
+    networkError: result.networkError,
+    timeout: result.timeout,
+  });
+  const status = classification === "success" ? "delivered" : "failed";
 
-  // Never leave a test row retryable.
-  if (updated?.status === "pending" || updated?.status === "sending") {
-    await db
-      .update(autoReviewWebhookDeliveries)
-      .set({
-        status: "failed",
-        lastError: updated.lastError ?? "test delivery incomplete",
-        updatedAt: new Date(),
-      })
-      .where(eq(autoReviewWebhookDeliveries.id, deliveryId));
-  }
-
-  const [finalRow] = await db
-    .select()
-    .from(autoReviewWebhookDeliveries)
-    .where(eq(autoReviewWebhookDeliveries.id, deliveryId))
-    .limit(1);
+  await db.insert(autoReviewWebhookDeliveries).values({
+    id: deliveryId,
+    workspaceId,
+    taskId: null,
+    event: AUTO_REVIEW_EVENT,
+    payload,
+    status,
+    attempt: 1,
+    nextAttemptAt: now,
+    lastAttemptAt: now,
+    lastHttpStatus: result.httpStatus,
+    lastError: result.error,
+  });
 
   return {
-    ok: outcome === "delivered",
-    error:
-      finalRow?.lastError ??
-      (outcome === "delivered" ? null : "delivery failed"),
-    httpStatus: finalRow?.lastHttpStatus ?? null,
+    ok: status === "delivered",
+    error: result.error,
+    httpStatus: result.httpStatus,
     deliveryId,
   };
 }

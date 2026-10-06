@@ -3,15 +3,20 @@ import { describe, it } from "node:test";
 
 import {
   AUTO_REVIEW_BACKOFF_MS,
+  AUTO_REVIEW_CLAIM_LIMIT,
   AUTO_REVIEW_DELIVERY_ID_HEADER,
   AUTO_REVIEW_MAX_ATTEMPTS,
   AUTO_REVIEW_SIGNATURE_HEADER,
+  AUTO_REVIEW_TIMEOUT_MS,
   AUTO_REVIEW_TIMESTAMP_HEADER,
+  autoReviewSendLeaseMs,
   backoffMsAfterAttempt,
   buildAutoReviewHeaders,
   canEncryptWebhookSecret,
   classifyWebhookResponse,
+  decryptAutoReviewSecretBundle,
   decryptWebhookSecret,
+  encryptAutoReviewSecretBundle,
   encryptWebhookSecret,
   mapAutoReviewDeliveryStatusForApi,
   maskWebhookSecret,
@@ -21,6 +26,7 @@ import {
   shouldDeliverAutoReviewWebhooks,
   shouldEnqueueAutoReview,
   signAutoReviewBody,
+  unpackAutoReviewSecretBundle,
   validateAutoReviewWebhookUrl,
   verifyAutoReviewSignature,
 } from "./auto-review-webhook.js";
@@ -270,6 +276,57 @@ describe("auto-review webhook helpers", () => {
     for (const value of Object.values(headers)) {
       assert.equal(value.includes(secret), false);
     }
+
+    const withAuth = buildAutoReviewHeaders({
+      body,
+      timestamp,
+      secret,
+      deliveryId: "del-2",
+      authorizationHeader: "Bearer receiver-sender-key",
+    });
+    assert.equal(withAuth.authorization, "Bearer receiver-sender-key");
+    assert.equal(withAuth.authorization?.includes(secret), false);
+
+    const cleared = buildAutoReviewHeaders({
+      body,
+      timestamp,
+      secret,
+      deliveryId: "del-3",
+      authorizationHeader: "  ",
+    });
+    assert.equal(cleared.authorization, undefined);
+  });
+
+  it("packs HMAC + Authorization into one ciphertext; legacy plain still works", () => {
+    const env = { BACKSTEROS_SECRET_ENCRYPTION_KEY: "unit-test-key" };
+    const cipher = encryptAutoReviewSecretBundle(
+      {
+        hmacSecret: "hmac-secret",
+        authorizationHeader: "Bearer grok-key",
+      },
+      env,
+    );
+    const bundle = decryptAutoReviewSecretBundle(cipher, env);
+    assert.equal(bundle.hmacSecret, "hmac-secret");
+    assert.equal(bundle.authorizationHeader, "Bearer grok-key");
+    assert.deepEqual(unpackAutoReviewSecretBundle("legacy-plain"), {
+      hmacSecret: "legacy-plain",
+      authorizationHeader: null,
+    });
+    const legacy = encryptWebhookSecret("legacy-hmac", env);
+    assert.deepEqual(decryptAutoReviewSecretBundle(legacy, env), {
+      hmacSecret: "legacy-hmac",
+      authorizationHeader: null,
+    });
+  });
+
+  it("sizes the send lease to cover the claim batch", () => {
+    assert.equal(AUTO_REVIEW_CLAIM_LIMIT, 5);
+    assert.equal(
+      autoReviewSendLeaseMs(5),
+      5 * AUTO_REVIEW_TIMEOUT_MS + 60_000,
+    );
+    assert.equal(autoReviewSendLeaseMs(1), AUTO_REVIEW_TIMEOUT_MS + 60_000);
   });
 
   it("maps sending → pending for settings/API surfaces", () => {

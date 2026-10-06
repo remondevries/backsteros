@@ -3369,8 +3369,12 @@ export const autoReviewWebhookSettingsSchema = z.object({
   enabled: z.boolean(),
   url: z.string().nullable(),
   secretConfigured: z.boolean(),
-  /** Masked secret (never the raw value). */
+  /** Masked HMAC signing secret (never the raw value). */
   secretPreview: z.string().nullable(),
+  /** Optional Grok Bot / receiver Authorization header is configured. */
+  authorizationHeaderConfigured: z.boolean(),
+  /** Masked Authorization header value (last four; never the raw value). */
+  authorizationHeaderPreview: z.string().nullable(),
   lastDeliveryAt: z.string().datetime().nullable(),
   lastDeliveryResult: z.enum(["delivered", "failed", "pending"]).nullable(),
   lastDeliveryHttpStatus: z.number().int().nullable(),
@@ -3380,8 +3384,13 @@ export const autoReviewWebhookSettingsSchema = z.object({
 
 export const updateAutoReviewWebhookSettingsSchema = z.object({
   url: z.string().max(2000).optional(),
-  /** New secret, or empty string to clear. Omit to leave unchanged. */
+  /** New HMAC signing secret, or empty string to clear. Omit to leave unchanged. */
   secret: z.string().max(2000).optional(),
+  /**
+   * Full Authorization header value for the receiver (e.g. "Bearer …"), or empty
+   * string to clear. Distinct from the HMAC signing secret. Omit to leave unchanged.
+   */
+  authorizationHeader: z.string().max(2000).optional(),
   enabled: z.boolean().optional(),
 });
 

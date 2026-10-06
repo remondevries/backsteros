@@ -10,8 +10,8 @@ import {
 export const AUTO_REVIEW_EVENT = "task.ready_for_review" as const;
 export const AUTO_REVIEW_TIMEOUT_MS = 10_000;
 export const AUTO_REVIEW_MAX_ATTEMPTS = 6;
-/** Lease held while a worker is POSTing; expired `sending` rows become due again. */
-export const AUTO_REVIEW_SEND_LEASE_MS = 2 * 60_000;
+/** Max rows claimed per worker tick (lease covers this batch). */
+export const AUTO_REVIEW_CLAIM_LIMIT = 5;
 
 /** Delay before attempts 2–6 (after a failed attempt 1…5). */
 export const AUTO_REVIEW_BACKOFF_MS = [
@@ -25,6 +25,16 @@ export const AUTO_REVIEW_BACKOFF_MS = [
 export const AUTO_REVIEW_SIGNATURE_HEADER = "x-backsteros-signature";
 export const AUTO_REVIEW_TIMESTAMP_HEADER = "x-backsteros-timestamp";
 export const AUTO_REVIEW_DELIVERY_ID_HEADER = "x-backsteros-delivery-id";
+
+/** Lease duration for a claim batch: limit × POST timeout + 60 s slack. */
+export function autoReviewSendLeaseMs(
+  claimLimit: number = AUTO_REVIEW_CLAIM_LIMIT,
+): number {
+  return Math.max(1, claimLimit) * AUTO_REVIEW_TIMEOUT_MS + 60_000;
+}
+
+/** @deprecated Prefer autoReviewSendLeaseMs(claimLimit). */
+export const AUTO_REVIEW_SEND_LEASE_MS = autoReviewSendLeaseMs();
 
 export type AutoReviewReadyPayload = {
   event: typeof AUTO_REVIEW_EVENT;
@@ -45,7 +55,11 @@ export type AutoReviewReadyPayload = {
   test?: boolean;
 };
 
-export type AutoReviewDeliveryStatus = "pending" | "sending" | "delivered" | "failed";
+export type AutoReviewDeliveryStatus =
+  | "pending"
+  | "sending"
+  | "delivered"
+  | "failed";
 
 /** Task-facing / settings-facing status — never expose `sending`. */
 export function mapAutoReviewDeliveryStatusForApi(
@@ -238,6 +252,76 @@ export function resetDecryptFailureWarnedForTests(): void {
   decryptFailureWarned = false;
 }
 
+/**
+ * HMAC signing secret + optional receiver Authorization header value.
+ * Stored together in `auto_review_webhook_secret_ciphertext` (no extra column):
+ * encrypted JSON `{"hmac":"…","authorization":"…"}`. Legacy plain ciphertext
+ * decrypts as hmac-only.
+ */
+export type AutoReviewSecretBundle = {
+  hmacSecret: string | null;
+  authorizationHeader: string | null;
+};
+
+export function packAutoReviewSecretBundle(
+  bundle: AutoReviewSecretBundle,
+): string {
+  return JSON.stringify({
+    hmac: bundle.hmacSecret ?? "",
+    authorization: bundle.authorizationHeader ?? "",
+  });
+}
+
+export function unpackAutoReviewSecretBundle(
+  plaintext: string | null,
+): AutoReviewSecretBundle {
+  if (!plaintext) {
+    return { hmacSecret: null, authorizationHeader: null };
+  }
+  const trimmed = plaintext.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        hmac?: unknown;
+        authorization?: unknown;
+      };
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        ("hmac" in parsed || "authorization" in parsed)
+      ) {
+        const hmac =
+          typeof parsed.hmac === "string" && parsed.hmac.trim()
+            ? parsed.hmac.trim()
+            : null;
+        const authorization =
+          typeof parsed.authorization === "string" &&
+          parsed.authorization.trim()
+            ? parsed.authorization.trim()
+            : null;
+        return { hmacSecret: hmac, authorizationHeader: authorization };
+      }
+    } catch {
+      /* fall through to legacy */
+    }
+  }
+  return { hmacSecret: trimmed, authorizationHeader: null };
+}
+
+export function encryptAutoReviewSecretBundle(
+  bundle: AutoReviewSecretBundle,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return encryptWebhookSecret(packAutoReviewSecretBundle(bundle), env);
+}
+
+export function decryptAutoReviewSecretBundle(
+  ciphertext: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): AutoReviewSecretBundle {
+  return unpackAutoReviewSecretBundle(decryptWebhookSecret(ciphertext, env));
+}
+
 export function isLocalhostHostname(hostname: string): boolean {
   const host = hostname.trim().toLowerCase();
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
@@ -305,28 +389,36 @@ export function verifyAutoReviewSignature(input: {
 }
 
 /**
- * Signed delivery headers. The HMAC key is never sent in Authorization (or
- * any other header) — receivers verify X-BacksterOS-Signature.
+ * Signed delivery headers. The HMAC key is never sent as Authorization.
+ * An optional separate `authorizationHeader` (receiver sender key) may be set.
  */
 export function buildAutoReviewHeaders(input: {
   body: string;
   timestamp: string;
   secret: string;
   deliveryId: string;
+  /** Full Authorization header value (e.g. "Bearer …"), never the HMAC secret. */
+  authorizationHeader?: string | null;
 }): Record<string, string> {
   const signature = signAutoReviewBody(input);
-  return {
+  const headers: Record<string, string> = {
     "content-type": "application/json",
     [AUTO_REVIEW_TIMESTAMP_HEADER]: input.timestamp,
     [AUTO_REVIEW_SIGNATURE_HEADER]: `sha256=${signature}`,
     [AUTO_REVIEW_DELIVERY_ID_HEADER]: input.deliveryId,
   };
+  const auth = input.authorizationHeader?.trim() ?? "";
+  if (auth) {
+    headers.authorization = auth;
+  }
+  return headers;
 }
 
 /**
  * Deliver only from standalone cores (no peer config) or explicit cloud role.
  * Mirrors getCoreReplicationConfig(): PEER_URL+SECRET with an unset role is
  * treated as local, so a local core without CORE_REPLICATION_ROLE must not send.
+ * Send-test one-shots are allowed on local; only the background worker is gated.
  */
 export function shouldDeliverAutoReviewWebhooks(
   env: NodeJS.ProcessEnv = process.env,

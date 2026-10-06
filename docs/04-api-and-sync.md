@@ -267,7 +267,7 @@ Tasks also expose `autoReviewDeliveryStatus`: `pending` | `delivered` | `failed`
 (outbox may briefly be `sending` while a lease is held; that maps to `pending`
 in the API).
 
-**Settings** (secret encrypted at rest; never logged or returned raw). PATCH and
+**Settings** (secrets encrypted at rest; never logged or returned raw). PATCH and
 Send test are owner-only (`local_shell` or a non–contact-bound API key with
 `settings:write` — same gate as API key admin). URL must be absolute `https://`
 (empty string clears; `http://` only for localhost in development).
@@ -275,52 +275,75 @@ Send test are owner-only (`local_shell` or a non–contact-bound API key with
 ```http
 GET   /api/v1/settings/auto-review-webhook
 PATCH /api/v1/settings/auto-review-webhook
-      { "url": "https://…", "secret": "…", "enabled": true }
+      {
+        "url": "https://…",
+        "secret": "…",
+        "authorizationHeader": "Bearer …",
+        "enabled": true
+      }
 POST  /api/v1/settings/auto-review-webhook/test
 ```
 
-GET returns a masked `secretPreview` (last four characters) and recent failures.
-`enabled` must be on and both URL and secret set, or nothing is enqueued.
+GET returns masked `secretPreview` / `authorizationHeaderPreview` (last four)
+plus `secretConfigured` / `authorizationHeaderConfigured` booleans and recent
+failures. Empty string clears a secret field; omit leaves it unchanged. Never
+return the full HMAC secret or Authorization header value.
 
-**Encryption key.** Both cores that store or read the secret must share the same
+`enabled` must be on and both URL and HMAC secret set, or nothing is enqueued.
+The optional Authorization header is the **receiver’s own sender key** (Grok Bot
+routine). It is distinct from the HMAC signing secret — never derive one from
+the other, and never send the HMAC secret as Authorization.
+
+**Encryption key.** Both cores that store or read secrets must share the same
 key material: prefer `BACKSTEROS_SECRET_ENCRYPTION_KEY`, else
 `CORE_REPLICATION_SECRET`. In production / cloud role, PATCH refuses to save a
-secret if neither is set (no public fallback). Local/dev may use a built-in
-fallback only when neither env var is set.
+secret or Authorization header if neither is set (no public fallback). Local/dev
+may use a built-in fallback only when neither env var is set. HMAC + Authorization
+are packed into the existing encrypted ciphertext column (no extra migration).
 
-**Request Sander should verify**
+**Send test.** Allowed on local-role cores (desktop Settings) as a one-shot POST:
+the core POSTs first, then inserts a single terminal outbox row (`delivered` or
+`failed`). No `pending`/`sending` row is written, so cloud never claims or
+re-sends the test. Background delivery workers remain cloud/standalone only.
+
+**Request the receiver should verify**
 
 ```http
 POST <configured URL>
 Content-Type: application/json
+Authorization: <optional configured sender key, e.g. Bearer …>
 X-BacksterOS-Timestamp: <unix-ms>
 X-BacksterOS-Signature: sha256=<hex>
 X-BacksterOS-Delivery-Id: <deliveryId>
 ```
 
-There is **no** `Authorization` header carrying the HMAC key. The shared secret
-is only used to compute / verify the signature.
+The Grok Bot webhook routine authenticates the sender with its own key via
+`Authorization`. HMAC over `` `${timestamp}.${rawBody}` `` (using the separate
+signing secret) is the additional integrity and replay check. When the
+Authorization header setting is empty, BacksterOS omits the header entirely.
+The HMAC signing secret is **never** placed in Authorization.
 
 Receiver checklist:
 
-1. Reject if `|nowMs - Number(X-BacksterOS-Timestamp)| > 5 * 60_000` (replay window).
-2. Verify HMAC-SHA256 over the UTF-8 string `` `${timestamp}.${rawBody}` `` using
+1. Require the expected Authorization sender key (Grok Bot).
+2. Reject if `|nowMs - Number(X-BacksterOS-Timestamp)| > 5 * 60_000` (replay window).
+3. Verify HMAC-SHA256 over the UTF-8 string `` `${timestamp}.${rawBody}` `` using
    the **raw request body bytes** (not a re-serialized JSON object).
-3. Compare the hex digest to the value after `sha256=` with a timing-safe equals.
-4. Dedupe on `deliveryId` (stable across retry attempts of the same outbox row).
+4. Compare the hex digest to the value after `sha256=` with a timing-safe equals.
+5. Dedupe on `deliveryId` (stable across retry attempts of the same outbox row).
 
-Node verification sketch:
+Node verification sketch (HMAC only; check Authorization separately):
 
 ```js
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-function verify(req, rawBody, secret) {
+function verify(req, rawBody, hmacSecret) {
   const ts = req.headers["x-backsteros-timestamp"];
   const sig = String(req.headers["x-backsteros-signature"] ?? "")
     .replace(/^sha256=/i, "")
     .trim();
   if (!ts || Math.abs(Date.now() - Number(ts)) > 5 * 60_000) return false;
-  const expected = createHmac("sha256", secret)
+  const expected = createHmac("sha256", hmacSecret)
     .update(`${ts}.${rawBody}`)
     .digest("hex");
   const a = Buffer.from(expected, "hex");
@@ -352,21 +375,20 @@ function verify(req, rawBody, secret) {
 ```
 
 Send-test adds `"test": true` and uses `taskId: "test"`. Ignore those for review.
-Send test inserts the row already claimed (`sending`) so the worker cannot
-double-post it; failed tests end as `failed`, not retryable `pending`.
 
 **Delivery:** written to `auto_review_webhook_deliveries` in the same transaction
 as the status change. Only cloud-core (`CORE_REPLICATION_ROLE=cloud`) or a
-standalone core (no peer URL/secret) sends. A local core with peer configured
-but an unset role does **not** send (matches `getCoreReplicationConfig`).
-Timeout 10 s. 2xx = success. Retry 5xx, timeouts, and network errors with
-backoff 1m, 5m, 15m, 1h, 6h (max 6 attempts). Do not retry other 4xx; 408/429
-retry and honour `Retry-After`. Workers claim rows with a `sending` lease
-(`FOR UPDATE SKIP LOCKED` inside a transaction) so overlapping ticks cannot
-double-send; success activity and the failure comment are written only by the
-path that wins `sending` → `delivered`/`failed`. If the webhook is disabled or
-the secret cannot be decrypted, the row is marked `failed` (not left pending
-forever). After the last attempt the delivery is dead: the task shows
+standalone core (no peer URL/secret) runs the background worker. A local core
+with peer configured but an unset role does **not** run the worker (matches
+`getCoreReplicationConfig`). Timeout 10 s. 2xx = success. Retry 5xx, timeouts,
+and network errors with backoff 1m, 5m, 15m, 1h, 6h (max 6 attempts). Do not
+retry other 4xx; 408/429 retry and honour `Retry-After`. Workers claim at most
+5 rows with a lease of `limit × 10s + 60s`; finalize/fail only when
+`status='sending' AND next_attempt_at` still equals that claim’s lease (stale
+finalizers after a re-claim are no-ops). Success activity and the failure
+comment are written only by the path that wins the lease. If the webhook is
+disabled or the secret cannot be decrypted, the row is marked `failed`. After
+the last attempt the delivery is dead: the task shows
 `autoReviewDeliveryStatus: failed` and a comment `Auto-review trigger failed`.
 A successful delivery records activity `auto_review_requested`
 (“Auto-review requested from Sander”).

@@ -463,6 +463,7 @@ test("OS-92: concurrent finalizers write success activity at most once", async (
       deliveryId,
       attempt: 1,
     };
+    const lease = new Date(Date.now() + 120_000);
     const [row] = await db
       .insert(autoReviewWebhookDeliveries)
       .values({
@@ -473,7 +474,7 @@ test("OS-92: concurrent finalizers write success activity at most once", async (
         payload,
         status: "sending",
         attempt: 0,
-        nextAttemptAt: new Date(Date.now() + 120_000),
+        nextAttemptAt: lease,
       })
       .returning();
     assert.ok(row);
@@ -505,6 +506,90 @@ test("OS-92: concurrent finalizers write success activity at most once", async (
   }
 });
 
+test("OS-92: stale finalizer whose lease was taken over is a no-op", async () => {
+  const { workspaceId, projectId, userId } = await seed();
+  try {
+    const task = await taskProjectService.createTask(workspaceId, {
+      title: "stale lease",
+      projectId,
+      status: "in_progress",
+      automateCompletion: true,
+    });
+    assert.ok(task);
+    const deliveryId = id("del");
+    const payload = {
+      event: "task.ready_for_review" as const,
+      taskId: task.id,
+      taskKey: "T9-1",
+      title: task.title,
+      projectId,
+      projectKey: "T9",
+      projectName: "OS-92 test",
+      assigneeId: null,
+      assigneeName: null,
+      timestamp: new Date().toISOString(),
+      threadId: null,
+      sessionId: null,
+      commitHashes: [] as string[],
+      deliveryId,
+      attempt: 1,
+    };
+    const oldLease = new Date(Date.now() + 60_000);
+    const newLease = new Date(Date.now() + 180_000);
+    const [row] = await db
+      .insert(autoReviewWebhookDeliveries)
+      .values({
+        id: deliveryId,
+        workspaceId,
+        taskId: task.id,
+        event: "task.ready_for_review",
+        payload,
+        status: "sending",
+        attempt: 0,
+        nextAttemptAt: oldLease,
+      })
+      .returning();
+    assert.ok(row);
+
+    // Simulate another worker re-claiming with a new lease.
+    await db
+      .update(autoReviewWebhookDeliveries)
+      .set({ nextAttemptAt: newLease, status: "sending" })
+      .where(eq(autoReviewWebhookDeliveries.id, deliveryId));
+
+    const stale = await finalizeDelivery({
+      row, // still holds oldLease in nextAttemptAt
+      result: {
+        httpStatus: 200,
+        retryAfterMs: null,
+        networkError: false,
+        timeout: false,
+        error: null,
+      },
+      payload,
+    });
+    assert.equal(stale, "skipped");
+
+    const [still] = await db
+      .select()
+      .from(autoReviewWebhookDeliveries)
+      .where(eq(autoReviewWebhookDeliveries.id, deliveryId));
+    assert.equal(still?.status, "sending");
+    assert.equal(still?.nextAttemptAt.getTime(), newLease.getTime());
+
+    const activities = await db
+      .select()
+      .from(taskActivities)
+      .where(eq(taskActivities.taskId, task.id));
+    assert.equal(
+      activities.filter((row) => row.type === "auto_review_requested").length,
+      0,
+    );
+  } finally {
+    await cleanup(workspaceId, projectId, userId);
+  }
+});
+
 test("OS-92: outgoing headers carry HMAC but never the raw secret", async () => {
   resetAutoReviewWebhookTickGuardForTests();
   const { workspaceId, projectId, userId } = await seed();
@@ -518,12 +603,6 @@ test("OS-92: outgoing headers carry HMAC but never the raw secret", async () => 
     const all = JSON.stringify(req.headers);
     if (all.includes(secret)) sawSecret = true;
     if (req.headers[AUTO_REVIEW_SIGNATURE_HEADER]) sawSig = true;
-    if (req.headers[AUTO_REVIEW_TIMESTAMP_HEADER]) {
-      /* ok */
-    }
-    if (req.headers[AUTO_REVIEW_DELIVERY_ID_HEADER]) {
-      /* ok */
-    }
     res.writeHead(200);
     res.end("ok");
   });
@@ -548,6 +627,146 @@ test("OS-92: outgoing headers carry HMAC but never the raw secret", async () => 
     assert.equal(sawAuth, false);
     assert.equal(sawSecret, false);
     assert.equal(sawSig, true);
+  } finally {
+    await hook.close();
+    await cleanup(workspaceId, projectId, userId);
+  }
+});
+
+test("OS-92: Authorization header sent when set; omitted when cleared", async () => {
+  resetAutoReviewWebhookTickGuardForTests();
+  const app = createApp();
+  const { workspaceId, projectId, userId, secret } = await seed();
+  const hmacSecret = "hmac-signing-secret";
+  const authValue = "Bearer grok-sender-key-xyz";
+  let lastAuth: string | undefined;
+  const hook = await startMockWebhook((req, res) => {
+    lastAuth = req.headers.authorization;
+    const raw = JSON.stringify(req.headers);
+    assert.equal(raw.includes(hmacSecret), false);
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  try {
+    await updateAutoReviewWebhookSettings(workspaceId, {
+      url: hook.url,
+      secret: hmacSecret,
+      authorizationHeader: authValue,
+      enabled: true,
+    });
+
+    const settings = await json(
+      app,
+      "/api/v1/settings/auto-review-webhook",
+      secret,
+    );
+    assert.equal(settings.status, 200);
+    const bodyText = JSON.stringify(settings.body);
+    assert.equal(bodyText.includes(hmacSecret), false);
+    assert.equal(bodyText.includes(authValue), false);
+    assert.equal(settings.body?.authorizationHeaderConfigured, true);
+    assert.equal(settings.body?.secretConfigured, true);
+
+    const task = await taskProjectService.createTask(workspaceId, {
+      title: "with auth",
+      projectId,
+      status: "in_progress",
+      automateCompletion: true,
+    });
+    assert.ok(task);
+    await taskProjectService.updateTask(workspaceId, task.id, {
+      status: "in_review",
+    });
+    await runDueAutoReviewWebhookDeliveries();
+    assert.equal(lastAuth, authValue);
+
+    lastAuth = "sentinel";
+    await updateAutoReviewWebhookSettings(workspaceId, {
+      authorizationHeader: "",
+    });
+    const task2 = await taskProjectService.createTask(workspaceId, {
+      title: "no auth",
+      projectId,
+      status: "in_progress",
+      automateCompletion: true,
+    });
+    assert.ok(task2);
+    await taskProjectService.updateTask(workspaceId, task2.id, {
+      status: "in_review",
+    });
+    await runDueAutoReviewWebhookDeliveries();
+    assert.equal(lastAuth, undefined);
+
+    const testAuths: (string | undefined)[] = [];
+    const testHook = await startMockWebhook((req, res) => {
+      testAuths.push(req.headers.authorization);
+      res.writeHead(200);
+      res.end("ok");
+    });
+    await updateAutoReviewWebhookSettings(workspaceId, {
+      url: testHook.url,
+      authorizationHeader: authValue,
+    });
+    const testResult = await sendAutoReviewWebhookTest(workspaceId);
+    assert.equal(testResult.ok, true);
+    assert.equal(testAuths[0], authValue);
+    assert.equal(
+      JSON.stringify(testResult).includes(authValue),
+      false,
+      "test result must not echo Authorization",
+    );
+    await testHook.close();
+
+    const agent = await seed({ agentContactBound: true });
+    try {
+      const agentPatch = await json(
+        app,
+        "/api/v1/settings/auto-review-webhook",
+        agent.secret,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ authorizationHeader: "Bearer no" }),
+        },
+      );
+      assert.equal(agentPatch.status, 403);
+
+      const prevNode = process.env.NODE_ENV;
+      process.env.NODE_ENV = "production";
+      const savedKey = process.env.BACKSTEROS_SECRET_ENCRYPTION_KEY;
+      const savedRep = process.env.CORE_REPLICATION_SECRET;
+      delete process.env.BACKSTEROS_SECRET_ENCRYPTION_KEY;
+      delete process.env.CORE_REPLICATION_SECRET;
+      try {
+        const noKey = await json(
+          app,
+          "/api/v1/settings/auto-review-webhook",
+          secret,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              authorizationHeader: "Bearer should-not-store",
+            }),
+          },
+        );
+        assert.equal(noKey.status, 400);
+      } finally {
+        process.env.NODE_ENV = prevNode;
+        if (savedKey !== undefined) {
+          process.env.BACKSTEROS_SECRET_ENCRYPTION_KEY = savedKey;
+        } else {
+          process.env.BACKSTEROS_SECRET_ENCRYPTION_KEY =
+            "os92-integration-encryption-key";
+        }
+        if (savedRep !== undefined) {
+          process.env.CORE_REPLICATION_SECRET = savedRep;
+        } else {
+          delete process.env.CORE_REPLICATION_SECRET;
+        }
+      }
+    } finally {
+      await cleanup(agent.workspaceId, agent.projectId, agent.userId);
+    }
   } finally {
     await hook.close();
     await cleanup(workspaceId, projectId, userId);
@@ -660,41 +879,59 @@ test("OS-92: decrypt failure → settings 200 + delivery failed", async () => {
   }
 });
 
-test("OS-92: Send test inserts claimed row and does not double-send with worker", async () => {
+test("OS-92: Send test one-shot on local role; terminal row only", async () => {
   resetAutoReviewWebhookTickGuardForTests();
   const { workspaceId, projectId, userId } = await seed();
   let hits = 0;
   const hook = await startMockWebhook((_req, res) => {
     hits += 1;
-    setTimeout(() => {
-      res.writeHead(200);
-      res.end("ok");
-    }, 60);
+    res.writeHead(200);
+    res.end("ok");
   });
+  const prevRole = process.env.CORE_REPLICATION_ROLE;
+  const prevPeer = process.env.CORE_REPLICATION_PEER_URL;
+  const prevSecret = process.env.CORE_REPLICATION_SECRET;
 
   try {
+    process.env.CORE_REPLICATION_ROLE = "local";
+    process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8799";
+    process.env.CORE_REPLICATION_SECRET = "peer-secret-for-local-test";
+
     await updateAutoReviewWebhookSettings(workspaceId, {
       url: hook.url,
       secret: "hook-secret",
       enabled: true,
     });
-    const [testResult, workerHits] = await Promise.all([
-      sendAutoReviewWebhookTest(workspaceId),
-      runDueAutoReviewWebhookDeliveries(),
-    ]);
+
+    // Worker must not run on local+peer.
+    assert.equal(await runDueAutoReviewWebhookDeliveries(), 0);
+
+    const testResult = await sendAutoReviewWebhookTest(workspaceId);
     assert.equal(testResult.ok, true);
     assert.ok(testResult.deliveryId);
-    await new Promise((r) => setTimeout(r, 120));
     assert.equal(hits, 1);
-    void workerHits;
 
-    const [row] = await db
+    const rows = await db
       .select()
       .from(autoReviewWebhookDeliveries)
-      .where(eq(autoReviewWebhookDeliveries.id, testResult.deliveryId!));
-    assert.equal(row?.status, "delivered");
-    assert.equal((row?.payload as { test?: boolean }).test, true);
+      .where(eq(autoReviewWebhookDeliveries.workspaceId, workspaceId));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.status, "delivered");
+    assert.equal(
+      rows.some((r) => r.status === "pending" || r.status === "sending"),
+      false,
+    );
+
+    // Concurrent worker still cannot claim the terminal test row.
+    await runDueAutoReviewWebhookDeliveries();
+    assert.equal(hits, 1);
   } finally {
+    if (prevRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = prevRole;
+    if (prevPeer === undefined) delete process.env.CORE_REPLICATION_PEER_URL;
+    else process.env.CORE_REPLICATION_PEER_URL = prevPeer;
+    if (prevSecret === undefined) delete process.env.CORE_REPLICATION_SECRET;
+    else process.env.CORE_REPLICATION_SECRET = prevSecret;
     await hook.close();
     await cleanup(workspaceId, projectId, userId);
   }
