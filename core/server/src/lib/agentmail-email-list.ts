@@ -19,14 +19,34 @@ export function composeClientId(sessionId: string): string {
   return `bsh-compose-${hash}`;
 }
 
-/** Thread key for workspace email_threads rows backing a draft list item. */
+/**
+ * Thread key for workspace email_threads rows backing a draft list item.
+ * Always `draft:<draftId>` — never the parent AgentMail thread id, so reply
+ * concepts get their own E-number and cannot overwrite the parent's status.
+ * Parent `threadId` stays on the API row for linking only.
+ */
 export function resolveDraftListThreadKey(draft: {
   draftId: string;
+  /** Ignored for the metadata key; kept for call-site compatibility. */
   threadId?: string | null;
 }): string {
-  const threadId = draft.threadId?.trim();
-  if (threadId) return threadId;
   return `draft:${draft.draftId.trim()}`;
+}
+
+/** True for workspace keys that back AgentMail drafts, not real threads. */
+export function isDraftMetadataThreadKey(threadKey: string): boolean {
+  return threadKey.trim().startsWith("draft:");
+}
+
+/**
+ * Only assign concept when the draft row is new/untriaged.
+ * Never overwrite in_progress / on_hold / etc.
+ */
+export function shouldAssignDraftConceptStatus(
+  storedStatus: string | null | undefined,
+): boolean {
+  const trimmed = storedStatus?.trim();
+  return !trimmed || trimmed === "triage";
 }
 
 export function resolveConceptDraftParentMessageId(

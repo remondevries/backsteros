@@ -40,10 +40,12 @@ import {
   findConceptDraftByClientIdAcrossInboxes,
   isDraftNotFoundError,
   loadConceptDraftForThreadAcrossInboxes,
+  isDraftMetadataThreadKey,
   mergeEmailListWithVisibleDrafts,
   resolveConceptDraftParentMessageId,
   resolveDraftAcrossInboxes,
   resolveDraftListThreadKey,
+  shouldAssignDraftConceptStatus,
 } from "../lib/agentmail-email-list.js";
 import {
   assembleComposeEmail,
@@ -660,27 +662,90 @@ async function resolveReplyContextForDraft(
   }
 }
 
-async function ensureDraftEmailThreadRegistered(
+/**
+ * Injectable seams for send/delete tests (mock.method). Production uses the
+ * real credential / template / email-threads helpers.
+ */
+export const agentMailDraftLifecycleDeps = {
+  getCredentials: getAgentMailCredentials,
+  getTemplates: getEmailReplyTemplatesForInbox,
+  getOrCreateThread: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+  ) =>
+    emailThreadsService.getOrCreateEmailThreadMetadata(
+      workspaceId,
+      inboxId,
+      threadKey,
+    ),
+  patchThread: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+    patch: { status: string },
+  ) =>
+    emailThreadsService.patchEmailThreadMetadataLeaderAware(
+      workspaceId,
+      inboxId,
+      threadKey,
+      patch as { status: "triage" },
+    ),
+  deleteThread: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+  ) =>
+    emailThreadsService.deleteEmailThreadLeaderAware(
+      workspaceId,
+      inboxId,
+      threadKey,
+    ),
+};
+
+/** @internal Exported for unit tests (mock agentMailDraftLifecycleDeps). */
+export async function ensureDraftEmailThreadRegistered(
   workspaceId: string,
   inboxId: string,
   draft: AgentMailDraftDetail,
-  parentThreadId?: string | null,
+  _parentThreadId?: string | null,
 ): Promise<void> {
-  const threadKey = resolveDraftListThreadKey({
-    draftId: draft.draftId,
-    threadId: parentThreadId ?? null,
-  });
-  await emailThreadsService.getOrCreateEmailThreadMetadata(
+  // Always draft:<id> — parent AgentMail threadId is linking-only on list rows.
+  const threadKey = resolveDraftListThreadKey({ draftId: draft.draftId });
+  const meta = await agentMailDraftLifecycleDeps.getOrCreateThread(
     workspaceId,
     inboxId,
     threadKey,
   );
-  await emailThreadsService.patchEmailThreadMetadataLeaderAware(
+  if (!shouldAssignDraftConceptStatus(meta.status)) return;
+  await agentMailDraftLifecycleDeps.patchThread(
     workspaceId,
     inboxId,
     threadKey,
-    { status: EMAIL_CONCEPT_STATUS as "triage" },
+    { status: EMAIL_CONCEPT_STATUS },
   );
+}
+
+async function removeDraftEmailThreadMetadata(
+  workspaceId: string,
+  inboxId: string,
+  draftId: string,
+): Promise<void> {
+  const threadKey = resolveDraftListThreadKey({ draftId });
+  try {
+    await agentMailDraftLifecycleDeps.deleteThread(
+      workspaceId,
+      inboxId,
+      threadKey,
+    );
+  } catch (error) {
+    console.warn(
+      "[agentmail] draft thread metadata cleanup failed",
+      inboxId,
+      draftId,
+      error instanceof Error ? error.message : error,
+    );
+  }
 }
 
 function draftListFromLabel(draft: {
@@ -1677,7 +1742,6 @@ export async function upsertEmailConceptReply(
     workspaceId,
     draft.inboxId,
     draft,
-    message.threadId?.trim() || null,
   );
 
   return {
@@ -1959,7 +2023,8 @@ export async function sendAgentMailDraft(
   inboxId: string,
   draftId: string,
 ): Promise<EmailSendDraftResponse> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
@@ -1972,7 +2037,7 @@ export async function sendAgentMailDraft(
     inboxId,
   );
 
-  const templates = await getEmailReplyTemplatesForInbox(
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
     workspaceId,
     draft.inboxId || inboxId,
   );
@@ -2001,11 +2066,17 @@ export async function sendAgentMailDraft(
 
   const sent = await client.sendDraft(draft.inboxId, draft.draftId);
 
+  await removeDraftEmailThreadMetadata(
+    workspaceId,
+    draft.inboxId,
+    draft.draftId,
+  );
+
   const threadKey = emailThreadsService.resolveEmailThreadKey({
     threadId: sent.threadId,
     messageId: sent.messageId,
   });
-  await emailThreadsService.patchEmailThreadMetadataLeaderAware(
+  await agentMailDraftLifecycleDeps.patchThread(
     workspaceId,
     sent.inboxId,
     threadKey,
@@ -2053,7 +2124,7 @@ async function ensureDraftHasAssembledShell(
   fallbackInboxId: string,
   draft: AgentMailDraftDetail,
 ): Promise<AgentMailDraftDetail> {
-  const templates = await getEmailReplyTemplatesForInbox(
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
     workspaceId,
     draft.inboxId || fallbackInboxId,
   );
@@ -2147,7 +2218,8 @@ export async function deleteAgentMailDraft(
   inboxId: string,
   draftId: string,
 ): Promise<EmailDeleteDraftResponse> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
@@ -2172,6 +2244,12 @@ export async function deleteAgentMailDraft(
       draft.draftId,
     );
   }
+
+  await removeDraftEmailThreadMetadata(
+    workspaceId,
+    draft.inboxId,
+    draft.draftId,
+  );
 
   return { inboxId: draft.inboxId, draftId: draft.draftId };
 }
@@ -2249,12 +2327,6 @@ export async function updateAgentMailDraft(
     workspaceId,
     updated.inboxId,
     updated,
-    draft.inReplyTo?.trim()
-      ? await client
-          .getMessage(updated.inboxId, draft.inReplyTo)
-          .then((message) => message.threadId?.trim() || null)
-          .catch(() => null)
-      : null,
   );
   const inboxEmail = await resolveInboxEmail(client, updated.inboxId);
   return mapDraftDetailForApi({
@@ -2600,6 +2672,8 @@ export async function syncAgentMailEmailStatusLabel(
   const trimmedInbox = inboxId.trim();
   const trimmedThread = threadKey.trim();
   if (!trimmedInbox || !trimmedThread) return;
+  // Draft metadata keys are not AgentMail thread ids — never push labels.
+  if (isDraftMetadataThreadKey(trimmedThread)) return;
 
   // Avoid getAgentMailCredentials() — it lists every live inbox over the network.
   let apiKey: string | null = null;

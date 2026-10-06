@@ -674,6 +674,8 @@ export function resolveReplyPartyFromMessage(
 /**
  * True when AgentMail already stores greeting/sign-off (or HTML).
  * Send must use those stored bytes and must not reassemble.
+ * Empty text + non-empty HTML counts as shelled (HTML-only drafts).
+ * An empty/blank signOffName never matches via substring.
  */
 export function draftHasStoredShell(
   text: string | null | undefined,
@@ -681,11 +683,18 @@ export function draftHasStoredShell(
   signOffName: string,
 ): boolean {
   const storedText = (text ?? "").replace(/\r\n/g, "\n").trim();
+  const storedHtml = (html ?? "").trim();
+  if (storedHtml) return true;
   if (!storedText) return false;
-  return (
-    Boolean((html ?? "").trim()) ||
-    storedText.includes(signOffName.trim())
-  );
+  const name = signOffName.trim();
+  if (!name) return false;
+  // Prefer a sign-off line match ("…\nRemon" / trailing line) over a bare
+  // name mention in the body ("Remon calls you").
+  const lines = storedText.split("\n").map((line) => line.trim());
+  const lastNonEmpty = [...lines].reverse().find(Boolean) ?? "";
+  if (lastNonEmpty === name) return true;
+  if (storedText.endsWith(`\n${name}`)) return true;
+  return false;
 }
 
 export type DraftSendBodyPlan =
@@ -716,6 +725,10 @@ export function planDraftSendBodies(input: {
   return { kind: "reassemble" };
 }
 
+function normalizeParagraphForLossCheck(paragraph: string): string {
+  return paragraph.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 /** Reject send/update when re-assembly would drop a large share of stored text. */
 export function assertNoDraftBodyLoss(
   storedText: string,
@@ -723,10 +736,33 @@ export function assertNoDraftBodyLoss(
 ): void {
   const stored = storedText.replace(/\r\n/g, "\n").trim();
   const next = nextText.replace(/\r\n/g, "\n").trim();
-  if (!stored || next.length >= stored.length * 0.85) return;
+  if (!stored) return;
+
   const storedChars = stored.replace(/\s+/g, "").length;
   const nextChars = next.replace(/\s+/g, "").length;
-  if (storedChars < 40 || nextChars >= storedChars * 0.85) return;
+  const lengthOk =
+    next.length >= stored.length * 0.85 ||
+    storedChars < 40 ||
+    nextChars >= storedChars * 0.85;
+  if (!lengthOk) {
+    throw new Error(
+      "Draft body would lose text when assembling for send. Edit the concept in the app and try again.",
+    );
+  }
+
+  // Length can stay high when greeting/sign-off are added while a middle
+  // paragraph vanishes — require multi-paragraph bodies to keep each block.
+  const storedParagraphs = stored
+    .split(/\n\s*\n+/)
+    .map(normalizeParagraphForLossCheck)
+    .filter((paragraph) => paragraph.length >= 15);
+  if (storedParagraphs.length < 2) return;
+  const nextNormalized = normalizeParagraphForLossCheck(next);
+  if (
+    storedParagraphs.every((paragraph) => nextNormalized.includes(paragraph))
+  ) {
+    return;
+  }
   throw new Error(
     "Draft body would lose text when assembling for send. Edit the concept in the app and try again.",
   );

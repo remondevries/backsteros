@@ -6,16 +6,50 @@ import type { AgentMailMessage } from "@backsteros/contracts";
 import {
   conceptReplyClientId,
   embedConceptDraftsInMessages,
+  isDraftMetadataThreadKey,
   mergeEmailListWithVisibleDrafts,
   isLikelyConceptDraft,
   loadConceptDraftForThreadAcrossInboxes,
   resolveConceptDraftParentLink,
   resolveConceptDraftParentMessageId,
   resolveDraftAcrossInboxes,
+  resolveDraftListThreadKey,
+  shouldAssignDraftConceptStatus,
 } from "./agentmail-email-list.js";
 import { AgentMailClient } from "./agentmail-client.js";
 
 describe("agentmail-email-list", () => {
+  it("backs every draft with draft:<id>, ignoring parent threadId", () => {
+    assert.equal(
+      resolveDraftListThreadKey({
+        draftId: "draft_abc",
+        threadId: "thread_parent",
+      }),
+      "draft:draft_abc",
+    );
+    assert.equal(
+      resolveDraftListThreadKey({ draftId: "draft_abc" }),
+      "draft:draft_abc",
+    );
+    assert.notEqual(
+      resolveDraftListThreadKey({
+        draftId: "draft_abc",
+        threadId: "thread_parent",
+      }),
+      "thread_parent",
+    );
+    assert.ok(isDraftMetadataThreadKey("draft:draft_abc"));
+    assert.equal(isDraftMetadataThreadKey("thread_parent"), false);
+  });
+
+  it("only assigns concept on new or triage draft rows", () => {
+    assert.equal(shouldAssignDraftConceptStatus(null), true);
+    assert.equal(shouldAssignDraftConceptStatus("triage"), true);
+    assert.equal(shouldAssignDraftConceptStatus("concept"), false);
+    assert.equal(shouldAssignDraftConceptStatus("in_progress"), false);
+    assert.equal(shouldAssignDraftConceptStatus("on_hold"), false);
+  });
+
   it("resolves concept draft parent from stable client id", () => {
     const messageId = "msg_parent";
     const clientId = conceptReplyClientId(messageId);
