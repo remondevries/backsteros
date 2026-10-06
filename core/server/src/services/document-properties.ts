@@ -47,6 +47,7 @@ import {
 import { compareAndSwapDocumentContent } from "./document-content-cas-write.js";
 import { withDocumentContentRowLock } from "./document-content-row-lock.js";
 import { awaitDocumentContentSaveTestGate } from "./document-content-save-test-gate.js";
+import { upsertDocumentSearchIndex } from "./document-search-index.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
@@ -831,6 +832,15 @@ export async function putDocumentProperties(
                   )
                   .returning();
                 if (!updated) return null;
+                await upsertDocumentSearchIndex(
+                  {
+                    documentId: id,
+                    workspaceId,
+                    searchBody: contentForWrite,
+                    contentEtag: meta.contentEtag ?? null,
+                  },
+                  tx,
+                );
                 return {
                   contentVersion: updated.contentVersion,
                   byteSize: updated.byteSize,

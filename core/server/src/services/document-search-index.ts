@@ -2,10 +2,15 @@ import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { documentSearchIndex, documents } from "../db/schema.js";
-import { documentContentEtag, getObject } from "../lib/storage.js";
+import { getObject } from "../lib/storage.js";
 import { isLiveBacksterosDatabaseUrl } from "./document-search-live-url.js";
+import {
+  decideBackfillStamp,
+  type BackfillStampDecision,
+} from "./document-search-stamp.js";
 
-export { isLiveBacksterosDatabaseUrl };
+export { isLiveBacksterosDatabaseUrl, decideBackfillStamp };
+export type { BackfillStampDecision };
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -50,23 +55,32 @@ export type BackfillDocumentSearchProgress = {
   scanned: number;
   updated: number;
   skipped: number;
+  etagDrift: number;
+  yamlRepaired: number;
   lastId: string | null;
   done: boolean;
 };
 
+export type BackfillGetObject = (
+  storageKey: string,
+  options?: { expectedEtag?: string | null },
+) => Promise<{ body: string }>;
+
 /**
  * Fill missing/stale search_body from object storage. Idempotent and keyset
- * resumable (`afterId`). Skips rows whose index etag already matches the
- * document row (or whose loaded bytes already match).
+ * resumable (`afterId`). Null document etags are not re-fetched once the index
+ * already has a body.
  */
 export async function backfillDocumentSearchBodies(options?: {
   workspaceId?: string;
   batchSize?: number;
   afterId?: string;
-  getObject?: (storageKey: string) => Promise<{ body: string }>;
+  getObject?: BackfillGetObject;
   onProgress?: (progress: BackfillDocumentSearchProgress) => void;
 }): Promise<BackfillDocumentSearchProgress> {
-  const load = options?.getObject ?? ((key: string) => getObject(key));
+  const load: BackfillGetObject =
+    options?.getObject ??
+    ((key, opts) => getObject(key, undefined, opts));
   const batchSize = Math.max(1, Math.min(options?.batchSize ?? 50, 500));
   const conditions = [
     isNull(documents.deletedAt),
@@ -74,7 +88,10 @@ export async function backfillDocumentSearchBodies(options?: {
     sql`(
       ${documentSearchIndex.searchBody} IS NULL
       OR ${documentSearchIndex.searchBody} = ''
-      OR ${documentSearchIndex.contentEtag} IS DISTINCT FROM ${documents.contentEtag}
+      OR (
+        ${documents.contentEtag} IS NOT NULL
+        AND ${documentSearchIndex.contentEtag} IS DISTINCT FROM ${documents.contentEtag}
+      )
     )`,
   ];
   if (options?.workspaceId) {
@@ -90,6 +107,7 @@ export async function backfillDocumentSearchBodies(options?: {
       workspaceId: documents.workspaceId,
       storageKey: documents.storageKey,
       contentEtag: documents.contentEtag,
+      checksum: documents.checksum,
     })
     .from(documents)
     .innerJoin(
@@ -102,22 +120,37 @@ export async function backfillDocumentSearchBodies(options?: {
 
   let updated = 0;
   let skipped = 0;
+  let etagDrift = 0;
+  let yamlRepaired = 0;
   for (const row of rows) {
     try {
-      const object = await load(row.storageKey);
+      const object = await load(row.storageKey, {
+        expectedEtag: row.contentEtag,
+      });
       if (!object.body) {
         skipped += 1;
         continue;
       }
-      const bodyEtag = documentContentEtag(object.body);
-      // Stamp the document row's etag so retrieve can use the corpus. Hashing
-      // the loaded bytes separately disagrees with API-created rows (YAML wrap
-      // / putObject) and would refetch on every backfill run.
+      const decision = decideBackfillStamp({
+        rowContentEtag: row.contentEtag,
+        rowChecksum: row.checksum,
+        body: object.body,
+      });
+      if (decision.kind === "yamlRepair") {
+        await db
+          .update(documents)
+          .set({ contentEtag: decision.contentEtag, updatedAt: new Date() })
+          .where(eq(documents.id, row.id));
+        yamlRepaired += 1;
+      }
+      if (decision.kind === "etagDrift") {
+        etagDrift += 1;
+      }
       await upsertDocumentSearchIndex({
         documentId: row.id,
         workspaceId: row.workspaceId,
         searchBody: object.body,
-        contentEtag: row.contentEtag ?? bodyEtag,
+        contentEtag: decision.contentEtag,
       });
       updated += 1;
     } catch {
@@ -130,6 +163,8 @@ export async function backfillDocumentSearchBodies(options?: {
     scanned: rows.length,
     updated,
     skipped,
+    etagDrift,
+    yamlRepaired,
     lastId,
     done: rows.length < batchSize,
   };
@@ -142,14 +177,35 @@ export async function backfillDocumentSearchBodiesAll(options?: {
   batchSize?: number;
   pauseMs?: number;
   afterId?: string;
-  getObject?: (storageKey: string) => Promise<{ body: string }>;
+  getObject?: BackfillGetObject;
   onProgress?: (
     batch: BackfillDocumentSearchProgress,
-    totals: { scanned: number; updated: number; skipped: number; batches: number },
+    totals: {
+      scanned: number;
+      updated: number;
+      skipped: number;
+      etagDrift: number;
+      yamlRepaired: number;
+      batches: number;
+    },
   ) => void;
-}): Promise<{ scanned: number; updated: number; skipped: number; batches: number }> {
+}): Promise<{
+  scanned: number;
+  updated: number;
+  skipped: number;
+  etagDrift: number;
+  yamlRepaired: number;
+  batches: number;
+}> {
   let afterId = options?.afterId;
-  const totals = { scanned: 0, updated: 0, skipped: 0, batches: 0 };
+  const totals = {
+    scanned: 0,
+    updated: 0,
+    skipped: 0,
+    etagDrift: 0,
+    yamlRepaired: 0,
+    batches: 0,
+  };
   for (;;) {
     const batch = await backfillDocumentSearchBodies({
       workspaceId: options?.workspaceId,
@@ -160,6 +216,8 @@ export async function backfillDocumentSearchBodiesAll(options?: {
     totals.scanned += batch.scanned;
     totals.updated += batch.updated;
     totals.skipped += batch.skipped;
+    totals.etagDrift += batch.etagDrift;
+    totals.yamlRepaired += batch.yamlRepaired;
     totals.batches += 1;
     options?.onProgress?.(batch, totals);
     if (batch.done) return totals;

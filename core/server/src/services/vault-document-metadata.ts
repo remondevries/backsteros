@@ -92,6 +92,12 @@ export async function syncDocumentMetadataFromStorageKey(
         row.snippet === snippet
       ) {
         if (byteSize > 0) {
+          if ((row.contentEtag ?? null) !== contentEtag) {
+            await tx
+              .update(documents)
+              .set({ contentEtag, updatedAt: new Date() })
+              .where(eq(documents.id, row.id));
+          }
           await upsertDocumentSearchIndex(
             {
               documentId: row.id,
