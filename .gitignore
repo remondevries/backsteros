@@ -12,6 +12,12 @@ dist/
 node_modules/
 tmp/
 
+# Apple codesign / notarization exports — never commit.
+*.p12
+AuthKey*.p8
+certificate-base64.txt
+apple-codesign.p12
+
 # Cloud PowerSync config rendered from secrets.
 deploy/cloud/powersync.generated.yaml
 

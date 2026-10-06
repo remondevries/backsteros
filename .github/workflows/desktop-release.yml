@@ -1,7 +1,10 @@
 name: Desktop release
 
-# Builds Tauri installers. Signing/notarization run when Apple/Windows secrets
-# are present; otherwise the job produces unsigned artifacts for smoke packaging.
+# Builds Tauri installers. Signing/notarization run when Apple secrets exist
+# (Developer ID Application .p12 + App Store Connect API key or Apple ID).
+# Local builds: copy desktop/scripts/apple-developer.env.example to
+# ~/.config/secrets/apple-developer.env and wrap with
+# `node desktop/scripts/with-apple-signing.mjs -- …`. Never commit those files.
 on:
   workflow_dispatch:
   push:
@@ -42,14 +45,19 @@ jobs:
       - name: Import Apple certificate (optional)
         if: ${{ env.APPLE_CERTIFICATE != '' && env.KEYCHAIN_PASSWORD != '' }}
         run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          CERT_ID=$(security find-identity -v -p codesigning build.keychain | awk -F'"' '/Developer ID Application|Apple Distribution/{print $2; exit}')
+          CERT_ID=$(security find-identity -v -p codesigning build.keychain | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          if [[ -z "$CERT_ID" ]]; then
+            echo "Imported certificate is not a Developer ID Application identity (Apple Development cannot notarize)." >&2
+            exit 1
+          fi
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
       - name: Write App Store Connect API key (optional notarization)
         if: ${{ env.APPLE_API_KEY_BASE64 != '' }}
@@ -71,8 +79,8 @@ jobs:
         with:
           name: desktop-macos
           path: |
-            backsteros-desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            backsteros-desktop/src-tauri/target/release/bundle/macos/*.app
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/macos/*.app
 
   build-windows:
     runs-on: windows-latest
@@ -103,5 +111,5 @@ jobs:
         with:
           name: desktop-windows
           path: |
-            backsteros-desktop/src-tauri/target/release/bundle/msi/*.msi
-            backsteros-desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe

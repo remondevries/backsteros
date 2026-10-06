@@ -15,6 +15,12 @@ dist-ssr
 .env.*
 !.env.example
 
+# Apple codesign / notarization material (use ~/.config/secrets/apple-developer.env)
+*.p12
+AuthKey*.p8
+certificate-base64.txt
+apple-codesign.p12
+
 # Generated PowerSync worker/WASM assets (copied by scripts/copy-powersync-assets.mjs)
 public/@powersync/
 
