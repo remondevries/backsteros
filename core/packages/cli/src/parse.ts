@@ -174,7 +174,10 @@ Dynamic Island:
   backsteros dynamic-island pair
     Mint a read-only local-core key (tasks:read, projects:read) and write
     ~/.config/dynamic-island/backsteros.env (0600). Revokes the previous
-    dynamic-island key. Requires a local-shell owner session.
+    pair-flow dynamic-island key. Requires a local-shell owner session and a
+    loopback URL (127.0.0.1 / ::1 / localhost). api_keys replicate, so the
+    key is also valid read-only against the cloud API; revoke with
+    DELETE /api/v1/api-keys/:id or by re-running pair.
 
 Notes:
   --body on project/task accepts a JSON object merged into create/update payloads.

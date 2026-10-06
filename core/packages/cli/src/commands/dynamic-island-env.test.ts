@@ -7,19 +7,46 @@ import { after, describe, it } from "node:test";
 import {
   DYNAMIC_ISLAND_DEFAULT_API_URL,
   formatDynamicIslandEnv,
-  loopbackApiUrl,
+  requireLoopbackApiUrl,
   writeDynamicIslandEnvFile,
 } from "./dynamic-island-env.js";
 
-describe("loopbackApiUrl", () => {
-  it("keeps loopback URLs and rewrites anything else to 127.0.0.1", () => {
-    assert.equal(loopbackApiUrl("http://127.0.0.1:8788"), "http://127.0.0.1:8788");
-    assert.equal(loopbackApiUrl("http://localhost:8788"), "http://localhost:8788");
+describe("requireLoopbackApiUrl", () => {
+  it("accepts loopback variants and returns the normalised origin unchanged", () => {
     assert.equal(
-      loopbackApiUrl("https://api.backsteros.com"),
-      DYNAMIC_ISLAND_DEFAULT_API_URL,
+      requireLoopbackApiUrl("http://127.0.0.1:8788"),
+      "http://127.0.0.1:8788",
     );
-    assert.equal(loopbackApiUrl(undefined), DYNAMIC_ISLAND_DEFAULT_API_URL);
+    assert.equal(
+      requireLoopbackApiUrl("http://localhost:8788"),
+      "http://localhost:8788",
+    );
+    assert.equal(
+      requireLoopbackApiUrl("https://127.0.0.1:8788"),
+      "https://127.0.0.1:8788",
+    );
+    assert.equal(requireLoopbackApiUrl("http://[::1]:8788"), "http://[::1]:8788");
+    assert.equal(requireLoopbackApiUrl(undefined), DYNAMIC_ISLAND_DEFAULT_API_URL);
+    assert.equal(requireLoopbackApiUrl(""), DYNAMIC_ISLAND_DEFAULT_API_URL);
+  });
+
+  it("rejects non-loopback hosts without rewriting", () => {
+    assert.throws(
+      () => requireLoopbackApiUrl("https://agent.backsteros.com"),
+      /got agent\.backsteros\.com/,
+    );
+    assert.throws(
+      () => requireLoopbackApiUrl("http://192.168.1.10:8788"),
+      /got 192\.168\.1\.10/,
+    );
+    assert.throws(
+      () => requireLoopbackApiUrl("http://127.0.0.1.evil.test"),
+      /got 127\.0\.0\.1\.evil\.test/,
+    );
+    assert.throws(
+      () => requireLoopbackApiUrl("http://127.0.0.1@evil.test"),
+      /got evil\.test/,
+    );
   });
 });
 

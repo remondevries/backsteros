@@ -3,8 +3,7 @@ import { homedir } from "node:os";
 import type { CliClient, CliConfig } from "../config.js";
 import { emitResult } from "../output.js";
 import {
-  DYNAMIC_ISLAND_DEFAULT_API_URL,
-  loopbackApiUrl,
+  requireLoopbackApiUrl,
   writeDynamicIslandEnvFile,
 } from "./dynamic-island-env.js";
 
@@ -27,6 +26,9 @@ export async function runDynamicIslandCommand(
     throw new Error("Usage: backsteros dynamic-island pair");
   }
 
+  // Reject non-loopback before any HTTP call (never send the local-shell token remotely).
+  const apiUrl = requireLoopbackApiUrl(config.baseUrl);
+
   const res = await client.requestJson<PairResponse>(
     "/api/v1/dynamic-island/pair",
     { method: "POST" },
@@ -35,7 +37,7 @@ export async function runDynamicIslandCommand(
     process.env.BACKSTEROS_DYNAMIC_ISLAND_HOME?.trim() || homedir();
   await writeDynamicIslandEnvFile({
     home,
-    apiUrl: loopbackApiUrl(config.baseUrl) || DYNAMIC_ISLAND_DEFAULT_API_URL,
+    apiUrl,
     apiKey: res.secret,
   });
 

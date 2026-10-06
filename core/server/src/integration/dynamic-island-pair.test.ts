@@ -10,7 +10,11 @@ import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
 import { apiKeys, contacts } from "../db/schema.js";
 import { apiKeyLookupPrefix, hashApiKey } from "../lib/crypto.js";
-import { DYNAMIC_ISLAND_API_KEY_NAME } from "../lib/dynamic-island-local-key-format.js";
+import {
+  DYNAMIC_ISLAND_API_KEY_NAME,
+  DYNAMIC_ISLAND_SCOPES,
+  isPairFlowIslandKey,
+} from "../lib/dynamic-island-local-key-format.js";
 import { resolveLocalShellOwner } from "../services/local-shell-auth.js";
 
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
@@ -93,7 +97,11 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
   assert.notEqual(secondBody.secret, firstBody.secret);
 
   const active = await db
-    .select({ id: apiKeys.id })
+    .select({
+      id: apiKeys.id,
+      contactId: apiKeys.contactId,
+      scopes: apiKeys.scopes,
+    })
     .from(apiKeys)
     .where(
       and(
@@ -102,8 +110,9 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
         isNull(apiKeys.revokedAt),
       ),
     );
-  assert.equal(active.length, 1);
-  assert.equal(active[0]?.id, secondBody.apiKey.id);
+  const activePair = active.filter((row) => isPairFlowIslandKey(row));
+  assert.equal(activePair.length, 1);
+  assert.equal(activePair[0]?.id, secondBody.apiKey.id);
 
   const listed = await app.request("/api/v1/api-keys", {
     headers: { authorization: "Bearer local" },
@@ -164,6 +173,60 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
   });
   assert.equal(asAgent.status, 401);
 
+  // Hand-made same-name key with wider scopes must survive rotation.
+  const manualKeyId = id("key");
+  const manualSecret = `sk_live_${randomUUID().replaceAll("-", "")}`;
+  await db.insert(apiKeys).values({
+    id: manualKeyId,
+    workspaceId: owner.workspaceId,
+    userId: owner.userId,
+    name: DYNAMIC_ISLAND_API_KEY_NAME,
+    prefix: apiKeyLookupPrefix(manualSecret),
+    keyHash: hashApiKey(manualSecret),
+    scopes: [...DYNAMIC_ISLAND_SCOPES, "settings:read"],
+    contactId: null,
+  });
+  extraKeyIds.push(manualKeyId);
+
+  const [parA, parB] = await Promise.all([
+    app.request(PAIR, {
+      method: "POST",
+      headers: { authorization: "Bearer local" },
+    }),
+    app.request(PAIR, {
+      method: "POST",
+      headers: { authorization: "Bearer local" },
+    }),
+  ]);
+  assert.equal(parA.status, 201);
+  assert.equal(parB.status, 201);
+  const parBodyA = (await parA.json()) as { apiKey: { id: string }; secret: string };
+  const parBodyB = (await parB.json()) as { apiKey: { id: string }; secret: string };
+  mintedIds.push(parBodyA.apiKey.id, parBodyB.apiKey.id);
+
+  const named = await db
+    .select({
+      id: apiKeys.id,
+      contactId: apiKeys.contactId,
+      scopes: apiKeys.scopes,
+      revokedAt: apiKeys.revokedAt,
+    })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.workspaceId, owner.workspaceId),
+        eq(apiKeys.name, DYNAMIC_ISLAND_API_KEY_NAME),
+      ),
+    );
+  const activePairAfterParallel = named.filter(
+    (row) => row.revokedAt == null && isPairFlowIslandKey(row),
+  );
+  assert.equal(activePairAfterParallel.length, 1);
+  const manual = named.find((row) => row.id === manualKeyId);
+  assert.ok(manual);
+  assert.equal(manual.revokedAt, null);
+  assert.equal(isPairFlowIslandKey(manual), false);
+
   process.env.CORE_REPLICATION_ROLE = "cloud";
   const asCloud = await app.request(PAIR, {
     method: "POST",
@@ -176,6 +239,9 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
   const joinedLogs = logs.join("\n");
   assert.equal(joinedLogs.includes(firstBody.secret), false);
   assert.equal(joinedLogs.includes(secondBody.secret), false);
+  assert.equal(joinedLogs.includes(parBodyA.secret), false);
+  assert.equal(joinedLogs.includes(parBodyB.secret), false);
   assert.equal(joinedLogs.includes(ownerSecret), false);
   assert.equal(joinedLogs.includes(agentSecret), false);
+  assert.equal(joinedLogs.includes(manualSecret), false);
 });
