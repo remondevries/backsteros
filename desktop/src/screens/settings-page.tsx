@@ -43,6 +43,7 @@ import { projectFs } from "../lib/project-fs";
 import { rememberDesktopVaultRoot, peekPersistedDesktopVaultRoot } from "../lib/desktop-vault";
 import { localOnlyRestFailClosed } from "../lib/workspace/powersync-write-path";
 import { SettingsIntegrationsTab } from "../components/settings-integrations-tab";
+import { SettingsReplicationDeadLettersSection } from "../components/settings-replication-dead-letters";
 
 function SettingsAccountTab({
   settings,
@@ -568,26 +569,29 @@ export function SettingsPage() {
             description={meta.description}
           />
           {activeTab === "general" ? (
-            <GeneralSettingsSectionView
-              timezone={timezone}
-              saving={savingTimezone}
-              onTimezoneChange={async (next) => {
-                setTimezone(next);
-                setSavingTimezone(true);
-                try {
-                  await client.requestJson("/api/v1/settings", {
-                    method: "PATCH",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ timezone: next }),
-                  });
-                  await reloadSettings();
-                } catch {
-                  // keep optimistic value offline
-                } finally {
-                  setSavingTimezone(false);
-                }
-              }}
-            />
+            <>
+              <GeneralSettingsSectionView
+                timezone={timezone}
+                saving={savingTimezone}
+                onTimezoneChange={async (next) => {
+                  setTimezone(next);
+                  setSavingTimezone(true);
+                  try {
+                    await client.requestJson("/api/v1/settings", {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ timezone: next }),
+                    });
+                    await reloadSettings();
+                  } catch {
+                    // keep optimistic value offline
+                  } finally {
+                    setSavingTimezone(false);
+                  }
+                }}
+              />
+              <SettingsReplicationDeadLettersSection />
+            </>
           ) : null}
           {activeTab === "account" ? (
             <SettingsAccountTab

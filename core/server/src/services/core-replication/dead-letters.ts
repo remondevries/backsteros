@@ -100,6 +100,7 @@ export type OpenDeadLetterSummary = {
   attempts: number;
   firstSeenAt: string;
   lastSeenAt: string;
+  nextRetryAt: string;
 };
 
 export async function listOpenReplicationDeadLetters(
@@ -121,6 +122,7 @@ export async function listOpenReplicationDeadLetters(
     attempts: row.attempts,
     firstSeenAt: row.firstSeenAt.toISOString(),
     lastSeenAt: row.lastSeenAt.toISOString(),
+    nextRetryAt: row.nextRetryAt.toISOString(),
   }));
 }
 
@@ -142,6 +144,74 @@ type ApplyRowFn = (
   table: KnownTable,
   row: ReplicationRow,
 ) => Promise<"applied" | "skipped">;
+
+type DeadLetterRow = typeof replicationDeadLetters.$inferSelect;
+
+export type DeadLetterRetryResult =
+  | { status: "resolved" }
+  | { status: "failed" }
+  | { status: "not_found" }
+  | { status: "already_resolved" };
+
+export type DeadLetterAckResult =
+  | { status: "acknowledged" }
+  | { status: "not_found" }
+  | { status: "already_resolved" };
+
+async function retryOpenDeadLetterRow(
+  letter: DeadLetterRow,
+  applyRow: ApplyRowFn,
+  now: Date,
+): Promise<"resolved" | "failed"> {
+  const nextAttempts = letter.attempts + 1;
+  try {
+    const result = await applyRow(
+      letter.tableName as KnownTable,
+      letter.rowPayload,
+    );
+    if (result === "applied" || result === "skipped") {
+      await db
+        .update(replicationDeadLetters)
+        .set({
+          attempts: nextAttempts,
+          lastSeenAt: now,
+          resolvedAt: now,
+        })
+        .where(eq(replicationDeadLetters.id, letter.id));
+      appendOpsLog(
+        "info",
+        "core replication dead letter resolved",
+        `${letter.tableName} ${letter.rowId} (${letter.direction})`,
+      );
+      return "resolved";
+    }
+  } catch (error) {
+    const code = errorCodeFromUnknown(error);
+    const message = errorMessageFromUnknown(error);
+    const giveUp = nextAttempts >= DEAD_LETTER_MAX_ATTEMPTS;
+    await db
+      .update(replicationDeadLetters)
+      .set({
+        attempts: nextAttempts,
+        errorCode: code,
+        errorMessage: message,
+        lastSeenAt: now,
+        nextRetryAt: giveUp
+          ? new Date(now.getTime() + deadLetterMaxBackoffMs())
+          : new Date(now.getTime() + deadLetterBackoffMs(nextAttempts)),
+      })
+      .where(eq(replicationDeadLetters.id, letter.id));
+    if (giveUp) {
+      appendOpsLog(
+        "error",
+        "core replication dead letter exhausted",
+        `${letter.tableName} ${letter.rowId}: ${message}`,
+      );
+    }
+    return "failed";
+  }
+  return "failed";
+}
 
 /**
  * Retry open dead letters whose next_retry_at is due.
@@ -169,55 +239,53 @@ export async function retryReplicationDeadLetters(
 
   for (const letter of due) {
     retried += 1;
-    const nextAttempts = letter.attempts + 1;
-    try {
-      const result = await applyRow(
-        letter.tableName as KnownTable,
-        letter.rowPayload,
-      );
-      if (result === "applied" || result === "skipped") {
-        await db
-          .update(replicationDeadLetters)
-          .set({
-            attempts: nextAttempts,
-            lastSeenAt: now,
-            resolvedAt: now,
-          })
-          .where(eq(replicationDeadLetters.id, letter.id));
-        resolved += 1;
-        appendOpsLog(
-          "info",
-          "core replication dead letter resolved",
-          `${letter.tableName} ${letter.rowId} (${letter.direction})`,
-        );
-        continue;
-      }
-    } catch (error) {
-      const code = errorCodeFromUnknown(error);
-      const message = errorMessageFromUnknown(error);
-      const giveUp = nextAttempts >= DEAD_LETTER_MAX_ATTEMPTS;
-      await db
-        .update(replicationDeadLetters)
-        .set({
-          attempts: nextAttempts,
-          errorCode: code,
-          errorMessage: message,
-          lastSeenAt: now,
-          nextRetryAt: giveUp
-            ? new Date(now.getTime() + deadLetterMaxBackoffMs())
-            : new Date(now.getTime() + deadLetterBackoffMs(nextAttempts)),
-        })
-        .where(eq(replicationDeadLetters.id, letter.id));
-      failed += 1;
-      if (giveUp) {
-        appendOpsLog(
-          "error",
-          "core replication dead letter exhausted",
-          `${letter.tableName} ${letter.rowId}: ${message}`,
-        );
-      }
-    }
+    const outcome = await retryOpenDeadLetterRow(letter, applyRow, now);
+    if (outcome === "resolved") resolved += 1;
+    else failed += 1;
   }
 
   return { retried, resolved, failed };
+}
+
+/** Operator retry from ops UI — ignores next_retry_at and max-attempt skip. */
+export async function retryReplicationDeadLetterById(
+  id: string,
+  applyRow: ApplyRowFn,
+): Promise<DeadLetterRetryResult> {
+  const [letter] = await db
+    .select()
+    .from(replicationDeadLetters)
+    .where(eq(replicationDeadLetters.id, id))
+    .limit(1);
+  if (!letter) return { status: "not_found" };
+  if (letter.resolvedAt) return { status: "already_resolved" };
+  const outcome = await retryOpenDeadLetterRow(letter, applyRow, new Date());
+  return { status: outcome };
+}
+
+/** Mark an open letter resolved without applying the payload. */
+export async function acknowledgeReplicationDeadLetter(
+  id: string,
+): Promise<DeadLetterAckResult> {
+  const [letter] = await db
+    .select()
+    .from(replicationDeadLetters)
+    .where(eq(replicationDeadLetters.id, id))
+    .limit(1);
+  if (!letter) return { status: "not_found" };
+  if (letter.resolvedAt) return { status: "already_resolved" };
+  const now = new Date();
+  await db
+    .update(replicationDeadLetters)
+    .set({
+      lastSeenAt: now,
+      resolvedAt: now,
+    })
+    .where(eq(replicationDeadLetters.id, letter.id));
+  appendOpsLog(
+    "info",
+    "core replication dead letter acknowledged",
+    `${letter.tableName} ${letter.rowId} (${letter.direction})`,
+  );
+  return { status: "acknowledged" };
 }

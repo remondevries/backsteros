@@ -19,9 +19,12 @@ import {
   isRestLeaderFirstWrite,
 } from "../services/rest-leader-write.js";
 import { recordRecurringTaskRestSyncEvent } from "../services/sync.js";
+import { applyReplicationRow } from "../services/core-replication/apply.js";
 import {
+  acknowledgeReplicationDeadLetter,
   countOpenReplicationDeadLetters,
   listOpenReplicationDeadLetters,
+  retryReplicationDeadLetterById,
 } from "../services/core-replication/dead-letters.js";
 import { listReplicationReconcileMismatches } from "../services/core-replication/reconcile.js";
 
@@ -76,6 +79,40 @@ export function registerOpsRoutes(app: Hono) {
       replicationMismatches,
     });
   });
+
+  app.post("/api/v1/ops/replication-dead-letters/:id/retry", async (c) => {
+    const denied = await requireOwner(c);
+    if (denied) return denied;
+
+    const result = await retryReplicationDeadLetterById(
+      c.req.param("id"),
+      applyReplicationRow,
+    );
+    if (result.status === "not_found" || result.status === "already_resolved") {
+      return c.json(
+        { error: "Dead letter not found", code: "not_found" as const },
+        404,
+      );
+    }
+    return c.json({ ok: true as const, status: result.status });
+  });
+
+  app.post(
+    "/api/v1/ops/replication-dead-letters/:id/acknowledge",
+    async (c) => {
+      const denied = await requireOwner(c);
+      if (denied) return denied;
+
+      const result = await acknowledgeReplicationDeadLetter(c.req.param("id"));
+      if (result.status !== "acknowledged") {
+        return c.json(
+          { error: "Dead letter not found", code: "not_found" as const },
+          404,
+        );
+      }
+      return c.json({ ok: true as const, status: result.status });
+    },
+  );
 
   app.get("/api/v1/ops/logs", async (c) => {
     const denied = await requireOwner(c);

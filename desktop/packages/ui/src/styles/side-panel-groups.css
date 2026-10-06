@@ -1406,6 +1406,55 @@ button.side-panel-plain-group-label[aria-current="true"] {
   font-size: 12px;
 }
 
+.settings-dead-letters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.settings-dead-letter {
+  padding: 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--faint);
+}
+
+.settings-dead-letter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.settings-dead-letter__head span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-dead-letter__reason {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.settings-dead-letter .settings-sync-status {
+  margin-bottom: 0;
+}
+
+.settings-dead-letter__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
