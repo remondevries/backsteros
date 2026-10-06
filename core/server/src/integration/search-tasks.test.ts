@@ -213,7 +213,7 @@ test("OS-55 /search type=task: text, key, id, pagination, invalid type", async (
   assert.equal(documentType.response.status, 400);
   assert.equal(documentType.body.field, "type");
 
-  // Text search on tasks.
+  // Text search hides completed by default (OS-81).
   const fibo = await json(
     app,
     `/api/v1/search?q=FiboSearch&type=task`,
@@ -221,13 +221,40 @@ test("OS-55 /search type=task: text, key, id, pagination, invalid type", async (
   );
   assert.equal(fibo.response.status, 200);
   const fiboResults = fibo.body.results as Array<Record<string, unknown>>;
-  assert.ok(fiboResults.some((row) => row.id === taskIds.fibo));
-  const fiboHit = fiboResults.find((row) => row.id === taskIds.fibo)!;
+  assert.ok(!fiboResults.some((row) => row.id === taskIds.fibo));
+  assert.deepEqual(fibo.body.appliedDefaults, {
+    excludedStatuses: ["completed", "canceled", "duplicated"],
+  });
+  assert.equal(
+    fibo.response.headers.get("X-BacksterOS-Hint"),
+    "completed, canceled, duplicated excluded by default; pass status=... to include them",
+  );
+
+  const fiboAll = await json(
+    app,
+    `/api/v1/search?q=FiboSearch&type=task&status=all`,
+    secret,
+  );
+  assert.equal(fiboAll.response.status, 200);
+  const fiboAllResults = fiboAll.body.results as Array<Record<string, unknown>>;
+  assert.ok(fiboAllResults.some((row) => row.id === taskIds.fibo));
+  assert.equal(fiboAll.body.appliedDefaults, undefined);
+  assert.equal(fiboAll.response.headers.get("X-BacksterOS-Hint"), null);
+
+  const fiboClosed = await json(
+    app,
+    `/api/v1/search?q=FiboSearch&type=task&status=completed`,
+    secret,
+  );
+  const fiboClosedResults = fiboClosed.body.results as Array<
+    Record<string, unknown>
+  >;
+  const fiboHit = fiboClosedResults.find((row) => row.id === taskIds.fibo)!;
   assert.equal(fiboHit.type, "task");
   assert.equal(fiboHit.key, "QM55-38");
   assert.equal(fiboHit.projectId, projectId);
   assert.equal(fiboHit.status, "completed");
-  assert.equal(fibo.body.nextCursor, null);
+  assert.equal(fiboClosed.body.nextCursor, null);
 
   const checkout = await json(
     app,
@@ -250,7 +277,7 @@ test("OS-55 /search type=task: text, key, id, pagination, invalid type", async (
     ),
   );
 
-  // Display key lookup puts that task first.
+  // Display key lookup puts that task first even when it is completed (OS-81).
   const byKey = await json(
     app,
     `/api/v1/search?q=QM55-38&type=task`,
@@ -260,6 +287,9 @@ test("OS-55 /search type=task: text, key, id, pagination, invalid type", async (
   const byKeyResults = byKey.body.results as Array<Record<string, unknown>>;
   assert.equal(byKeyResults[0]?.id, taskIds.fibo);
   assert.equal(byKeyResults[0]?.key, "QM55-38");
+  assert.deepEqual(byKey.body.appliedDefaults, {
+    excludedStatuses: ["completed", "canceled", "duplicated"],
+  });
 
   // Exact task id lookup.
   const byId = await json(

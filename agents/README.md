@@ -49,11 +49,14 @@ Unknown filter ids and bad enums (`status=bogus`, `mode=bogus`, `type=bogus`) re
 with `field`. Keys work wherever ids are accepted (`projectId=OS`, `q=QM-38&type=task`).
 
 For task text search prefer **`GET /api/v1/search?q=…&type=task`** (returns
-`{ results: [{ id, type: "task", key, projectId, status, title, snippet, updatedAt }], nextCursor }`).
-`type=tasks` is accepted as an alias. Omit `type` for document search only
+`{ results: [{ id, type: "task", key, projectId, status, title, snippet, updatedAt }], nextCursor, appliedDefaults? }`).
+Without `status`, text hits hide completed/canceled/duplicated (pass `status=all` or
+`status=completed`). Exact key/id lookup still returns a closed task. `type=tasks`
+is accepted as an alias. Omit `type` for document search only
 (`project` / `knowledge` / `journal`). Use `include=task` to merge task hits into a
-document search (docs only on page 1; `cursor` continues tasks). For several lookups
-in one turn, prefer **`POST /api/v1/search/batch`**
+document search (docs only on page 1; `cursor` continues tasks; same status default).
+Palette **`GET /global-search?mode=tasks`** does not apply that default. For several
+lookups in one turn, prefer **`POST /api/v1/search/batch`**
 (search + `documents/retrieve` queries with concurrency 4; short-TTL response cache
 invalidated on task/document writes).
 

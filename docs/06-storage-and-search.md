@@ -162,10 +162,11 @@ replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 
 
 ```text
 1. GET /api/v1/search?q=invoice&type=knowledge
-2. GET /api/v1/search?q=FiboSearch&type=task   → task hits with key/status
-3. GET /api/v1/documents/{id}/content          → markdown body when needed
-4. GET /api/v1/letters/{id}/pdf                → binary when needed
-5. PATCH /api/v1/documents/{id}/content        → write markdown
+2. GET /api/v1/search?q=FiboSearch&type=task   → open task hits (status=all for closed)
+3. GET /api/v1/search?q=QM-38&type=task        → exact key still returns a closed task
+4. GET /api/v1/documents/{id}/content          → markdown body when needed
+5. GET /api/v1/letters/{id}/pdf                → binary when needed
+6. PATCH /api/v1/documents/{id}/content        → write markdown
 ```
 
 Agents never need filesystem paths or repo checkout.

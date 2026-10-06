@@ -2353,6 +2353,8 @@ export async function globalSearch(
           contactId: scope.taskContactId,
           inboxOnly: scope.taskInboxOnly,
           limit,
+          // Palette should still surface closed tasks (OS-81 agent default).
+          applyDefaultStatusExclusion: false,
         })
       : Promise.resolve({ results: [], nextCursor: null }),
     scope.includeDocuments

@@ -1109,7 +1109,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary:
-        "Merged search: documents (title/path/snippet) or tasks (type=task). include=task also merges task hits. Palette multi-entity search uses /global-search alias (OS-73).",
+        "Merged search: documents (title/path/snippet) or tasks (type=task). Task text search excludes completed/canceled/duplicated by default (status=all to include; appliedDefaults). include=task also merges task hits. Palette /global-search does not apply that default.",
     },
     searchBatch: {
       method: "POST",

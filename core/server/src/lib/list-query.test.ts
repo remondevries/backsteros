@@ -181,4 +181,13 @@ test("parseSearchQuery: type=task alias, invalid type → field type", () => {
     (error: unknown) =>
       error instanceof ListQueryError && error.field === "status",
   );
+
+  const all = parseSearchQuery({ q: "x", type: "task", status: "all" });
+  assert.ok(all.statuses.includes("completed"));
+  assert.ok(all.statuses.includes("ready_to_start"));
+  assert.throws(
+    () => parseSearchQuery({ q: "x", type: "task", status: "all,completed" }),
+    (error: unknown) =>
+      error instanceof ListQueryError && error.field === "status",
+  );
 });

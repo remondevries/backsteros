@@ -14,6 +14,10 @@ import {
 } from "@backsteros/contracts";
 
 import { DOCUMENT_SEMANTIC_TYPE_OPTIONS } from "./document-core-property-schema.js";
+import {
+  expandTaskListStatuses,
+  TaskFilterError,
+} from "./task-filters.js";
 
 export const LIST_DEFAULT_LIMIT = 50;
 export const LIST_MAX_LIMIT = 200;
@@ -276,6 +280,28 @@ function assertEnumValues(
       throw new ListQueryError(`Invalid ${field}: ${value}`, field);
     }
   }
+}
+
+/**
+ * Parse `status` for agent task search (OS-81): `all` expands to every known
+ * status; mixing `all` with others is 400.
+ */
+export function parseTaskSearchStatuses(
+  raw: string | string[] | undefined | null,
+): string[] {
+  const statusesRaw = parseMultiValues(raw);
+  if (!statusesRaw.length) return [];
+  let statuses: string[];
+  try {
+    statuses = expandTaskListStatuses(statusesRaw);
+  } catch (error) {
+    if (error instanceof TaskFilterError) {
+      throw new ListQueryError(error.message, error.field, error.code);
+    }
+    throw error;
+  }
+  assertEnumValues(statuses, STATUS_SET, "status");
+  return statuses;
 }
 
 // --- Meetings ----------------------------------------------------------------
@@ -730,10 +756,7 @@ export function parseSearchQuery(
     type = typeRaw === "tasks" ? "task" : (typeRaw as ParsedSearchQuery["type"]);
   }
 
-  const statuses = parseMultiValues(raw.status);
-  if (statuses.length) {
-    assertEnumValues(statuses, STATUS_SET, "status");
-  }
+  const statuses = parseTaskSearchStatuses(raw.status);
 
   const includeRaw = firstString(raw.include);
   let includeTasks = false;

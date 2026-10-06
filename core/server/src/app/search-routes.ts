@@ -12,7 +12,6 @@ import type { Context, Hono } from "hono";
 
 import {
   searchBatchRequestSchema,
-  TASK_STATUSES,
   type SearchBatchQueryItem,
   type SearchBatchResponse,
 } from "@backsteros/contracts";
@@ -23,7 +22,9 @@ import {
   collectQueryParams,
   parseGlobalSearchQuery,
   parseSearchQuery,
+  parseTaskSearchStatuses,
 } from "../lib/list-query.js";
+import { TASK_LIST_DEFAULT_EXCLUSION_HINT } from "../lib/task-filters.js";
 import {
   parseExactMultiQueryValues,
   parseMultiQueryValues,
@@ -40,29 +41,10 @@ import {
   unauthorized,
 } from "./route-helpers.js";
 
-const TASK_STATUS_SET = new Set<string>(TASK_STATUSES);
 /** Cap concurrent batch item work (each item may run multiple DB queries). */
 const SEARCH_BATCH_CONCURRENCY = 4;
 
 export type SearchProfile = "agent" | "palette";
-
-function parseStatusCsv(status: string | undefined): string[] {
-  if (!status?.trim()) return [];
-  return status
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function parseAndValidateTaskStatuses(status: string | undefined): string[] {
-  const statuses = parseStatusCsv(status);
-  for (const value of statuses) {
-    if (!TASK_STATUS_SET.has(value)) {
-      throw new ListQueryError(`Invalid status: ${value}`, "status");
-    }
-  }
-  return statuses;
-}
 
 async function mapPool<T, R>(
   items: T[],
@@ -165,6 +147,9 @@ export async function handleMergedSearch(
       cursor: parsed.cursor,
       includeTasks: parsed.includeTasks,
     });
+    if (payload.appliedDefaults) {
+      c.header("X-BacksterOS-Hint", TASK_LIST_DEFAULT_EXCLUSION_HINT);
+    }
     return c.json(payload);
   } catch (error) {
     if (error instanceof ListQueryError) {
@@ -223,7 +208,7 @@ async function runBatchItem(
       };
     }
 
-    const statuses = parseAndValidateTaskStatuses(item.status);
+    const statuses = parseTaskSearchStatuses(item.status);
     const payload = await runAgentSearch({
       workspaceId,
       q: item.q,
@@ -239,6 +224,9 @@ async function runBatchItem(
       kind: "search",
       results: payload.results,
       nextCursor: payload.nextCursor ?? null,
+      ...(payload.appliedDefaults
+        ? { appliedDefaults: payload.appliedDefaults }
+        : {}),
     };
   } catch (error) {
     if (error instanceof ListQueryError) {

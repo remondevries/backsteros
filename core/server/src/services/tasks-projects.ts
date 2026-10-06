@@ -1601,9 +1601,13 @@ function toTaskSearchHit(row: {
 }
 
 /**
- * Agent task text search for `GET /api/v1/search?type=task` (OS-55).
+ * Agent task text search for `GET /api/v1/search?type=task` (OS-55 / OS-81).
  * SQL ILIKE on title/description with keyset pagination; prefers an exact
  * display-key or id match on the first page.
+ *
+ * Without `statuses`, text matches exclude completed/canceled/duplicated
+ * (same default as paginated GET /tasks). Exact key/id hits still return.
+ * Palette `/global-search` passes `applyDefaultStatusExclusion: false`.
  */
 export async function searchTasks(
   input: {
@@ -1617,14 +1621,27 @@ export async function searchTasks(
     statuses?: string[];
     limit?: number;
     cursor?: string;
+    /**
+     * Default true. When false, text search includes terminal statuses
+     * (command palette). Ignored when `statuses` is set.
+     */
+    applyDefaultStatusExclusion?: boolean;
   },
   executor: DbExecutor = db,
   nowMs: number = Date.now(),
-): Promise<{ results: TaskSearchHit[]; nextCursor: string | null }> {
+): Promise<{
+  results: TaskSearchHit[];
+  nextCursor: string | null;
+  appliedDefaults?: {
+    excludedStatuses: Array<(typeof TASK_LIST_DEFAULT_EXCLUDED_STATUSES)[number]>;
+  };
+}> {
   const limit = input.limit ?? 20;
   const q = input.q.trim();
   const exactHits: TaskSearchHit[] = [];
   const excludeIds = new Set<string>();
+  const usesDefaultExclusion =
+    (input.applyDefaultStatusExclusion ?? true) && !input.statuses?.length;
 
   if (!input.cursor?.trim()) {
     const exactId = await resolveTaskRef(input.workspaceId, q, executor);
@@ -1646,6 +1663,8 @@ export async function searchTasks(
       if (input.statuses?.length) {
         exactConditions.push(inArray(tasks.status, input.statuses));
       }
+      // OS-81: exact display-key / id lookup is not subject to the default
+      // terminal-status exclusion (same as GET /tasks/:id).
       const [row] = await executor
         .select({
           id: tasks.id,
@@ -1694,6 +1713,10 @@ export async function searchTasks(
   }
   if (input.statuses?.length) {
     conditions.push(inArray(tasks.status, input.statuses));
+  } else if (usesDefaultExclusion) {
+    conditions.push(
+      notInArray(tasks.status, [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES]),
+    );
   }
   if (input.cursor?.trim()) {
     const cursor = decodeUpdatedAtCursor(input.cursor, nowMs);
@@ -1750,7 +1773,17 @@ export async function searchTasks(
         )
       : null;
 
-  return { results, nextCursor };
+  return {
+    results,
+    nextCursor,
+    ...(usesDefaultExclusion
+      ? {
+          appliedDefaults: {
+            excludedStatuses: [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES],
+          },
+        }
+      : {}),
+  };
 }
 
 function taskScope(projectId?: string | null, contactId?: string | null) {

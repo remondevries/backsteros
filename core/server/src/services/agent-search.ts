@@ -42,6 +42,9 @@ export type AgentRetrievePayload = {
 export type AgentSearchPayload = {
   results: AgentSearchHit[];
   nextCursor?: string | null;
+  appliedDefaults?: {
+    excludedStatuses: string[];
+  };
 };
 
 const searchCache = new AgentReadCache<AgentSearchPayload>({
@@ -164,17 +167,19 @@ export async function runAgentSearch(
     );
 
     if (input.type === "task") {
-      const { results, nextCursor } = await taskProjectService.searchTasks({
-        workspaceId: input.workspaceId,
-        q: input.q,
-        projectId,
-        statuses: input.statuses?.length ? input.statuses : undefined,
-        limit,
-        cursor: input.cursor,
-      });
+      const { results, nextCursor, appliedDefaults } =
+        await taskProjectService.searchTasks({
+          workspaceId: input.workspaceId,
+          q: input.q,
+          projectId,
+          statuses: input.statuses?.length ? input.statuses : undefined,
+          limit,
+          cursor: input.cursor,
+        });
       return {
         results: results as AgentSearchHit[],
         nextCursor,
+        ...(appliedDefaults ? { appliedDefaults } : {}),
       };
     }
 
@@ -199,17 +204,19 @@ export async function runAgentSearch(
     // include=task: document hits only on the first page (no cursor).
     // A cursor paginates tasks only so agents can follow nextCursor to the end.
     if (input.cursor?.trim()) {
-      const { results, nextCursor } = await taskProjectService.searchTasks({
-        workspaceId: input.workspaceId,
-        q: input.q,
-        projectId,
-        statuses: input.statuses?.length ? input.statuses : undefined,
-        limit,
-        cursor: input.cursor,
-      });
+      const { results, nextCursor, appliedDefaults } =
+        await taskProjectService.searchTasks({
+          workspaceId: input.workspaceId,
+          q: input.q,
+          projectId,
+          statuses: input.statuses?.length ? input.statuses : undefined,
+          limit,
+          cursor: input.cursor,
+        });
       return {
         results: results as AgentSearchHit[],
         nextCursor,
+        ...(appliedDefaults ? { appliedDefaults } : {}),
       };
     }
 
@@ -245,6 +252,9 @@ export async function runAgentSearch(
         includedTasks,
         nowMs,
       ),
+      ...(taskPage.appliedDefaults
+        ? { appliedDefaults: taskPage.appliedDefaults }
+        : {}),
     };
   });
 }

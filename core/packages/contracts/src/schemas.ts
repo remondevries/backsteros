@@ -1447,7 +1447,11 @@ export const searchQuerySchema = z.object({
   q: z.string().min(1).max(500),
   type: searchTypeQuerySchema.optional(),
   projectId: z.string().optional(),
-  /** Comma-separated task statuses (only applied when type=task|tasks). */
+  /**
+   * Comma-separated task statuses, or `all` (only applied when type=task|tasks
+   * or include=task). Omit to exclude completed/canceled/duplicated (OS-81) —
+   * see `appliedDefaults`.
+   */
   status: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
   cursor: z.string().optional(),
@@ -1463,6 +1467,15 @@ export const searchResponseSchema = z.object({
   results: z.array(searchResultSchema),
   /** Present for `type=task` (opaque keyset on updatedAt desc, id). */
   nextCursor: z.string().nullable().optional(),
+  /**
+   * Present when task search hid terminal statuses by default (OS-81).
+   * Absent when `status` is given. Exact key/id hits still return regardless.
+   */
+  appliedDefaults: z
+    .object({
+      excludedStatuses: z.array(z.string()).min(1),
+    })
+    .optional(),
 });
 
 /** Max queries per `POST /api/v1/search/batch` (OS-76). */
@@ -1509,6 +1522,11 @@ export const searchBatchSearchResponseItemSchema = z.object({
   kind: z.literal("search"),
   results: z.array(searchResultSchema),
   nextCursor: z.string().nullable().optional(),
+  appliedDefaults: z
+    .object({
+      excludedStatuses: z.array(z.string()).min(1),
+    })
+    .optional(),
 });
 
 export const searchBatchRetrieveResponseItemSchema = z.object({

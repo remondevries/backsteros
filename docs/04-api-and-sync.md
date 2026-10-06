@@ -74,7 +74,7 @@ Auth: `Authorization: Bearer sk_live_…`
 ```http
 GET  /api/v1/search?q=architecture&type=knowledge
 GET  /api/v1/search?q=architecture&include=task
-GET  /api/v1/search?q=FiboSearch&type=task
+GET  /api/v1/search?q=FiboSearch&type=task&status=all
 GET  /api/v1/search?q=QM-38&type=task
 POST /api/v1/search/batch
 GET  /api/v1/projects
@@ -109,11 +109,22 @@ with a `field` in the body.
 | `type` | `project` \| `knowledge` \| `journal` \| `task` (alias `tasks`). Omit for documents only. Unknown → **400** `field: type` |
 | `include` | `task` \| `tasks` — when searching documents, also run task search for the same `q` and merge hits ranked by `updatedAt` (capped at `limit`). Document hits appear **only on the first page**; a `cursor` paginates tasks only (OS-76). Invalid with `type=task` |
 | `projectId` | Optional filter (id or project key) |
-| `status` | Tasks only: comma-separated statuses (OR) |
+| `status` | Tasks only: comma-separated statuses (OR), or `all`. Omit to hide `completed` / `canceled` / `duplicated` (same default as paginated `GET /tasks`) |
 | `limit` | Default 20, max 50 |
 | `cursor` | Tasks only: opaque keyset on `(updatedAt desc, id)`. With `include=task`, cursor continues the task side after page 1 |
 
-Task results: `{ id, type: "task", key, projectId, status, title, snippet, updatedAt }` plus response `nextCursor`.
+#### `GET /search?type=task` defaults (OS-81)
+
+Task **text** search without `status` excludes `completed`, `canceled`, and `duplicated`:
+
+- Header `X-BacksterOS-Hint: completed, canceled, duplicated excluded by default; pass status=... to include them`
+- Body `appliedDefaults: { excludedStatuses: ["completed","canceled","duplicated"] }`
+
+Pass `status=all` for every known status, or an explicit list (`status=completed`). Exact display-key or task-id lookup on the first page still returns that row even when it is closed (same as `GET /tasks/:id`). `include=task` uses the same default on the task side.
+
+`GET /global-search?mode=tasks` (command palette) does **not** apply this default; it still searches all statuses.
+
+Task results: `{ id, type: "task", key, projectId, status, title, snippet, updatedAt }` plus response `nextCursor` (and `appliedDefaults` when the default exclusion applied).
 Document results keep `{ id, type, projectId, path, title, snippet, updatedAt }`.
 Prefer **`type=task`** for task text search; `GET /global-search?mode=tasks` remains for mixed command-palette hits.
 
