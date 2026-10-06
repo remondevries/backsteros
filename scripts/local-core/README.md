@@ -79,10 +79,13 @@ Default is on (`isSyncEventPullEnabled` treats an unset env as 1). Set
 `CORE_REPLICATION_SYNC_EVENTS_PULL=0` in `~/.config/backsteros/local-core.env`
 only as an emergency off-switch. Desktop start turns pull on again unless
 local core still has unpushed table rows, open dead letters, or reconcile
-local-only rows — in that case pull stays paused until you confirm.
+local-only rows — then desktop prompts. **Keep paused** leaves the gate up;
+pull resumes automatically once those pending conditions clear. **Pull anyway**
+acknowledges only the counts shown at confirm time (a new dead letter re-pauses).
 
-`run.sh` must not interpolate the unset variable under `set -u` (LaunchAgent
-crash-loop). The start log uses `${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}`.
+Control routes are local-role + loopback only. `run.sh` must not interpolate the
+unset variable under `set -u` (LaunchAgent crash-loop). The start log uses
+`${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}`.
 
 ## Stop / start
 

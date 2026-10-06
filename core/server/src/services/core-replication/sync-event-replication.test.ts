@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -77,28 +77,6 @@ describe("sync-event replication contracts", () => {
     assert.ok(tasksSrc.includes("TaskWriteOptions"));
   });
 
-  it("OS-82: desktop can inspect and acknowledge pull via internal routes", () => {
-    const routesSrc = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "routes.ts"),
-      "utf8",
-    );
-    assert.ok(routesSrc.includes("/internal/core-replication/sync-event-pull"));
-    assert.ok(routesSrc.includes("acknowledgePendingSyncEventPull"));
-  });
-
-  it("OS-82: ordered pull pauses on pending unpushed local state", () => {
-    const src = readFileSync(
-      join(
-        dirname(fileURLToPath(import.meta.url)),
-        "sync-event-replication.ts",
-      ),
-      "utf8",
-    );
-    assert.ok(src.includes("shouldPauseSyncEventPull"));
-    assert.ok(src.includes("getPendingUnpushedState"));
-    assert.ok(src.includes("core sync-events pull paused"));
-  });
-
   it("OS-49: leader-first apply does not jump the sync-event pull cursor", () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "leader-mutations.ts"),
@@ -109,5 +87,78 @@ describe("sync-event replication contracts", () => {
       src.includes("setSyncEventPullCursor(workspaceId, maxCursor)"),
       false,
     );
+  });
+});
+
+// pullPeerSyncEvents module graph loads db — set before dynamic import.
+process.env.DATABASE_URL ??=
+  "postgres://backsteros:backsteros@127.0.0.1:5433/backsteros_test";
+
+const {
+  acknowledgePendingSyncEventPull,
+  resetSyncEventPullRuntimeForTests,
+  setSyncEventPullRuntimeEnabled,
+} = await import("./config.js");
+const { pullPeerSyncEvents, resetPendingPullPauseLogForTests } = await import(
+  "./sync-event-replication.js"
+);
+
+describe("OS-82 pullPeerSyncEvents pending gate", () => {
+  const previous = {
+    peerUrl: process.env.CORE_REPLICATION_PEER_URL,
+    secret: process.env.CORE_REPLICATION_SECRET,
+    role: process.env.CORE_REPLICATION_ROLE,
+    workspaces: process.env.CORE_REPLICATION_WORKSPACE_IDS,
+  };
+
+  afterEach(() => {
+    if (previous.peerUrl === undefined) delete process.env.CORE_REPLICATION_PEER_URL;
+    else process.env.CORE_REPLICATION_PEER_URL = previous.peerUrl;
+    if (previous.secret === undefined) delete process.env.CORE_REPLICATION_SECRET;
+    else process.env.CORE_REPLICATION_SECRET = previous.secret;
+    if (previous.role === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previous.role;
+    if (previous.workspaces === undefined) {
+      delete process.env.CORE_REPLICATION_WORKSPACE_IDS;
+    } else {
+      process.env.CORE_REPLICATION_WORKSPACE_IDS = previous.workspaces;
+    }
+    resetSyncEventPullRuntimeForTests();
+    resetPendingPullPauseLogForTests();
+  });
+
+  it("skips the peer feed while pending and unacked; proceeds after ack", async () => {
+    process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8799";
+    process.env.CORE_REPLICATION_SECRET = "os-82-pending-gate-secret";
+    process.env.CORE_REPLICATION_ROLE = "local";
+    process.env.CORE_REPLICATION_WORKSPACE_IDS = "ws-os82";
+    setSyncEventPullRuntimeEnabled(true);
+
+    let pulled = 0;
+    const pending = {
+      unpushedRowCount: 2,
+      openDeadLetterCount: 0,
+      localOnlyRowCount: 0,
+      unpushedTables: ["tasks"],
+    };
+
+    await pullPeerSyncEvents({
+      getPendingUnpushedState: async () => pending,
+      pullWorkspaceSyncEvents: async () => {
+        pulled += 1;
+        return { applied: 0, duplicate: 0, skipped: 0 };
+      },
+    });
+    assert.equal(pulled, 0, "must not fetch/apply peer feed while pending");
+
+    acknowledgePendingSyncEventPull(pending);
+    await pullPeerSyncEvents({
+      getPendingUnpushedState: async () => pending,
+      pullWorkspaceSyncEvents: async () => {
+        pulled += 1;
+        return { applied: 0, duplicate: 0, skipped: 0 };
+      },
+    });
+    assert.equal(pulled, 1, "ack of shown snapshot allows pull to proceed");
   });
 });

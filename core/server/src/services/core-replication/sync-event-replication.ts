@@ -22,13 +22,15 @@ import {
 } from "../sync-log.js";
 import {
   getCoreReplicationConfig,
-  isPendingSyncEventPullAcknowledged,
+  getPendingSyncEventPullAck,
   isSyncEventPullEnabled,
+  syncPendingAckWithState,
 } from "./config.js";
 import {
   formatPendingUnpushedSummary,
   getPendingUnpushedState,
   shouldPauseSyncEventPull,
+  type PendingUnpushedState,
 } from "./pending-unpushed-state.js";
 import {
   resolvePeerEventUpdatedAt,
@@ -39,10 +41,25 @@ const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 let loggedPendingPullPause = false;
+let loggedPendingInspectFail = false;
 
 export function resetPendingPullPauseLogForTests(): void {
   loggedPendingPullPause = false;
+  loggedPendingInspectFail = false;
 }
+
+export type PullPeerSyncEventsHooks = {
+  getPendingUnpushedState?: () => Promise<PendingUnpushedState>;
+  pullWorkspaceSyncEvents?: (
+    workspaceId: string,
+  ) => Promise<{
+    applied: number;
+    duplicate: number;
+    skipped: number;
+    peerMissing?: boolean;
+    stuck?: { cursor: number; entity: string; entityId: string; error: string };
+  }>;
+};
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
@@ -439,7 +456,9 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
  * Replica (local-core) pulls ordered sync_events from the peer leader clock.
  * Cloud does not pull this feed — one leader, no second peer LWW authority.
  */
-export async function pullPeerSyncEvents(): Promise<void> {
+export async function pullPeerSyncEvents(
+  hooks: PullPeerSyncEventsHooks = {},
+): Promise<void> {
   const config = getCoreReplicationConfig();
   if (!config || config.role !== "local") {
     return;
@@ -454,18 +473,29 @@ export async function pullPeerSyncEvents(): Promise<void> {
     return;
   }
 
-  let pending;
+  const getPending = hooks.getPendingUnpushedState ?? getPendingUnpushedState;
+  const pullWorkspace =
+    hooks.pullWorkspaceSyncEvents ?? pullWorkspaceSyncEvents;
+
+  let pending: PendingUnpushedState;
   try {
-    pending = await getPendingUnpushedState();
+    pending = await getPending();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    appendOpsLog("warn", "core sync-events pending-state inspect failed", message);
-    pending = null;
+    // Fail closed: do not pull or advance cursors when pending-state inspect fails.
+    if (!loggedPendingInspectFail) {
+      loggedPendingInspectFail = true;
+      appendOpsLog(
+        "warn",
+        "core sync-events pending-state inspect failed",
+        `${message}; pull skipped this tick`,
+      );
+    }
+    return;
   }
-  if (
-    pending &&
-    shouldPauseSyncEventPull(pending, isPendingSyncEventPullAcknowledged())
-  ) {
+  loggedPendingInspectFail = false;
+  syncPendingAckWithState(pending);
+  if (shouldPauseSyncEventPull(pending, getPendingSyncEventPullAck())) {
     if (!loggedPendingPullPause) {
       loggedPendingPullPause = true;
       appendOpsLog(
@@ -484,7 +514,7 @@ export async function pullPeerSyncEvents(): Promise<void> {
   }
 
   for (const workspaceId of workspaceIds) {
-    const result = await pullWorkspaceSyncEvents(workspaceId);
+    const result = await pullWorkspace(workspaceId);
     if (result.peerMissing) {
       appendOpsLog(
         "info",

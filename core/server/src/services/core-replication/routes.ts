@@ -1,14 +1,16 @@
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 
 import { extractBearerToken, verifyReplicationSecret } from "./auth.js";
 import { verifyAvatarReplicationAuth } from "./avatar-replication.js";
 import {
   acknowledgePendingSyncEventPull,
   getCoreReplicationConfig,
+  getPendingSyncEventPullAck,
   getSyncEventPullRuntimeOverride,
-  isPendingSyncEventPullAcknowledged,
   isSyncEventPullEnabled,
   setSyncEventPullRuntimeEnabled,
+  syncPendingAckWithState,
 } from "./config.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import { tableExists } from "./cursors.js";
@@ -44,11 +46,45 @@ import { handleReplicationNudge } from "./nudge.js";
 import {
   formatPendingUnpushedSummary,
   getPendingUnpushedState,
+  isPendingCoveredByAck,
   shouldPauseSyncEventPull,
 } from "./pending-unpushed-state.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
+}
+
+/** Exported for unit tests — IPv4/IPv6 loopback only. */
+export function isLoopbackRemoteAddress(
+  address: string | null | undefined,
+): boolean {
+  if (!address) return false;
+  const normalized = address.trim().toLowerCase();
+  if (normalized === "127.0.0.1" || normalized === "::1") return true;
+  return normalized.startsWith("::ffff:127.0.0.1");
+}
+
+function remoteAddressFromContext(c: Context): string | null {
+  try {
+    return getConnInfo(c).remote.address ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Desktop-only control surface: local-core role + loopback caller.
+ * Cloud peers holding CORE_REPLICATION_SECRET must not flip pull/ack.
+ */
+function denySyncEventPullControl(c: Context): Response | null {
+  const config = getCoreReplicationConfig();
+  if (!config || config.role !== "local") {
+    return c.json({ error: "Not found", code: "not_found" as const }, 404);
+  }
+  if (!isLoopbackRemoteAddress(remoteAddressFromContext(c))) {
+    return c.json({ error: "Forbidden", code: "forbidden" as const }, 403);
+  }
+  return null;
 }
 
 function replicationAuth(authorization: string | undefined): boolean {
@@ -794,6 +830,9 @@ export function registerCoreReplicationRoutes(app: Hono) {
     if (!replicationAuth(c.req.header("Authorization"))) {
       return c.json(unauthorized(), 401);
     }
+    const denied = denySyncEventPullControl(c);
+    if (denied) return denied;
+
     const config = getCoreReplicationConfig();
     let pending;
     try {
@@ -805,16 +844,15 @@ export function registerCoreReplicationRoutes(app: Hono) {
         500,
       );
     }
-    const pausedForPending = shouldPauseSyncEventPull(
-      pending,
-      isPendingSyncEventPullAcknowledged(),
-    );
+    syncPendingAckWithState(pending);
+    const ack = getPendingSyncEventPullAck();
+    const pausedForPending = shouldPauseSyncEventPull(pending, ack);
     return c.json({
       ok: true,
       role: config?.role ?? null,
       enabled: isSyncEventPullEnabled(),
       runtimeOverride: getSyncEventPullRuntimeOverride(),
-      pendingAcknowledged: isPendingSyncEventPullAcknowledged(),
+      pendingAcknowledged: isPendingCoveredByAck(pending, ack),
       pausedForPending,
       pending,
       summary: formatPendingUnpushedSummary(pending),
@@ -825,6 +863,9 @@ export function registerCoreReplicationRoutes(app: Hono) {
     if (!replicationAuth(c.req.header("Authorization"))) {
       return c.json(unauthorized(), 401);
     }
+    const denied = denySyncEventPullControl(c);
+    if (denied) return denied;
+
     const body = (await c.req.json().catch(() => ({}))) as {
       enabled?: boolean;
       acknowledgePending?: boolean;
@@ -832,19 +873,29 @@ export function registerCoreReplicationRoutes(app: Hono) {
     if (typeof body.enabled === "boolean") {
       setSyncEventPullRuntimeEnabled(body.enabled);
     }
-    if (body.acknowledgePending === true) {
-      acknowledgePendingSyncEventPull();
+
+    let pending;
+    try {
+      pending = await getPendingUnpushedState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json(
+        { error: message, code: "internal" as const },
+        500,
+      );
     }
-    const pending = await getPendingUnpushedState();
-    const pausedForPending = shouldPauseSyncEventPull(
-      pending,
-      isPendingSyncEventPullAcknowledged(),
-    );
+
+    if (body.acknowledgePending === true) {
+      acknowledgePendingSyncEventPull(pending);
+    }
+    syncPendingAckWithState(pending);
+    const ack = getPendingSyncEventPullAck();
+    const pausedForPending = shouldPauseSyncEventPull(pending, ack);
     return c.json({
       ok: true,
       enabled: isSyncEventPullEnabled(),
       runtimeOverride: getSyncEventPullRuntimeOverride(),
-      pendingAcknowledged: isPendingSyncEventPullAcknowledged(),
+      pendingAcknowledged: isPendingCoveredByAck(pending, ack),
       pausedForPending,
       pending,
       summary: formatPendingUnpushedSummary(pending),

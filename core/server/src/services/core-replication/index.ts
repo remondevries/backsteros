@@ -5,6 +5,8 @@ export {
   isSyncEventPullEnabled,
   setSyncEventPullRuntimeEnabled,
   acknowledgePendingSyncEventPull,
+  getPendingSyncEventPullAck,
+  syncPendingAckWithState,
   resolveReplicationIntervalMs,
   type CoreReplicationConfig,
   type CoreReplicationRole,

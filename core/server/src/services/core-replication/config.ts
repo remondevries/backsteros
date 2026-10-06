@@ -1,4 +1,9 @@
 import { AGENTS_DOOR_HOSTNAMES } from "./constants.js";
+import type { PendingAckSnapshot, PendingUnpushedState } from "./pending-unpushed-policy.js";
+import {
+  nextPendingAckSnapshot,
+  toPendingAckSnapshot,
+} from "./pending-unpushed-policy.js";
 
 export type CoreReplicationRole = "local" | "cloud";
 
@@ -72,11 +77,12 @@ export function isCoreReplicationEnabled(
 }
 
 let syncEventPullRuntimeOverride: boolean | null = null;
-let pendingSyncEventPullAcknowledged = false;
+/** Ack covers only the pending counts shown at confirm time (OS-82). */
+let pendingSyncEventPullAck: PendingAckSnapshot | null = null;
 
 export function resetSyncEventPullRuntimeForTests(): void {
   syncEventPullRuntimeOverride = null;
-  pendingSyncEventPullAcknowledged = false;
+  pendingSyncEventPullAck = null;
 }
 
 /** Process-lifetime override from desktop start / ops. `null` follows env. */
@@ -93,13 +99,29 @@ export function getSyncEventPullRuntimeOverride(): boolean | null {
   return syncEventPullRuntimeOverride;
 }
 
-/** Allow ordered pull even while unpushed local state is still present. */
-export function acknowledgePendingSyncEventPull(): void {
-  pendingSyncEventPullAcknowledged = true;
+/**
+ * Acknowledge the pending snapshot shown in the desktop prompt. Growth in any
+ * category (e.g. a new dead letter) re-pauses; clean state clears the ack.
+ */
+export function acknowledgePendingSyncEventPull(
+  state: Pick<
+    PendingUnpushedState,
+    "unpushedRowCount" | "openDeadLetterCount" | "localOnlyRowCount"
+  >,
+): void {
+  pendingSyncEventPullAck = toPendingAckSnapshot(state);
 }
 
-export function isPendingSyncEventPullAcknowledged(): boolean {
-  return pendingSyncEventPullAcknowledged;
+export function getPendingSyncEventPullAck(): PendingAckSnapshot | null {
+  return pendingSyncEventPullAck;
+}
+
+/** Drop the ack once pending reaches zero; otherwise keep the snapshot. */
+export function syncPendingAckWithState(state: PendingUnpushedState): void {
+  pendingSyncEventPullAck = nextPendingAckSnapshot(
+    state,
+    pendingSyncEventPullAck,
+  );
 }
 
 /**

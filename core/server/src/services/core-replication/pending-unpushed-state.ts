@@ -10,7 +10,11 @@ import {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isPendingCoveredByAck,
+  nextPendingAckSnapshot,
   shouldPauseSyncEventPull,
+  toPendingAckSnapshot,
+  type PendingAckSnapshot,
   type PendingUnpushedState,
 } from "./pending-unpushed-policy.js";
 import { listReplicationReconcileMismatches } from "./reconcile.js";
@@ -19,7 +23,11 @@ export {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isPendingCoveredByAck,
+  nextPendingAckSnapshot,
   shouldPauseSyncEventPull,
+  toPendingAckSnapshot,
+  type PendingAckSnapshot,
   type PendingUnpushedState,
 };
 

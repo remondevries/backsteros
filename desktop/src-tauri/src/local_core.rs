@@ -106,18 +106,34 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
 
 const SYNC_EVENT_PULL_PATH: &str = "/internal/core-replication/sync-event-pull";
 
+fn env_assignment_key(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    let rest = trimmed
+        .strip_prefix("export ")
+        .map(str::trim_start)
+        .unwrap_or(trimmed);
+    let (name, _) = rest.split_once('=')?;
+    Some(name.trim())
+}
+
 fn env_file_value(text: &str, key: &str) -> Option<String> {
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((name, value)) = line.split_once('=') else {
+    for raw in text.split('\n') {
+        let line = raw.trim_end_matches('\r');
+        let Some(name) = env_assignment_key(line) else {
             continue;
         };
-        if name.trim() != key {
+        if name != key {
             continue;
         }
+        let trimmed = line.trim_start();
+        let rest = trimmed
+            .strip_prefix("export ")
+            .map(str::trim_start)
+            .unwrap_or(trimmed);
+        let (_, value) = rest.split_once('=')?;
         let value = value.trim().trim_matches('"').trim_matches('\'');
         if value.is_empty() {
             return None;
@@ -127,29 +143,43 @@ fn env_file_value(text: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Replace every non-comment assignment of `key` (Node --env-file is last-wins).
+/// Preserves other lines and CRLF endings byte-for-byte.
 fn upsert_env_assignment(text: &str, key: &str, value: &str) -> String {
-    let prefix = format!("{key}=");
-    let mut replaced = false;
-    let mut out = String::new();
-    for (index, line) in text.lines().enumerate() {
-        if index > 0 {
-            out.push('\n');
-        }
-        let trimmed = line.trim_start();
-        if !replaced && !trimmed.starts_with('#') && trimmed.starts_with(&prefix) {
-            out.push_str(&format!("{key}={value}"));
-            replaced = true;
+    let uses_crlf = text.contains("\r\n");
+    let newline = if uses_crlf { "\r\n" } else { "\n" };
+    let mut out = String::with_capacity(text.len() + key.len() + value.len() + 8);
+    let mut replaced_any = false;
+
+    for segment in text.split_inclusive('\n') {
+        let ending_len = if segment.ends_with("\r\n") {
+            2
+        } else if segment.ends_with('\n') {
+            1
         } else {
-            out.push_str(line);
+            0
+        };
+        let body = &segment[..segment.len() - ending_len];
+        let ending = &segment[segment.len() - ending_len..];
+        if env_assignment_key(body) == Some(key) {
+            out.push_str(key);
+            out.push('=');
+            out.push_str(value);
+            out.push_str(ending);
+            replaced_any = true;
+        } else {
+            out.push_str(segment);
         }
     }
-    if !replaced {
+
+    if !replaced_any {
         if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
+            out.push_str(newline);
         }
-        out.push_str(&format!("{key}={value}\n"));
-    } else if text.ends_with('\n') {
-        out.push('\n');
+        out.push_str(key);
+        out.push('=');
+        out.push_str(value);
+        out.push_str(newline);
     }
     out
 }
@@ -176,6 +206,49 @@ fn resolve_local_core_env_file() -> Option<PathBuf> {
     None
 }
 
+fn atomic_write_text(path: &Path, contents: &str) -> Result<(), String> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("env"),
+        std::process::id()
+    ));
+    let cleanup_tmp = || {
+        let _ = fs::remove_file(&tmp);
+    };
+
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mode = fs::metadata(path)
+            .map(|meta| meta.permissions().mode())
+            .unwrap_or(0o600);
+        options.mode(mode & 0o777);
+    }
+
+    let write_result = (|| -> Result<(), String> {
+        let mut file = options
+            .open(&tmp)
+            .map_err(|err| format!("could not create temp {}: {err}", tmp.display()))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|err| format!("could not write temp {}: {err}", tmp.display()))?;
+        file.sync_all()
+            .map_err(|err| format!("could not fsync temp {}: {err}", tmp.display()))?;
+        fs::rename(&tmp, path)
+            .map_err(|err| format!("could not rename temp over {}: {err}", path.display()))?;
+        Ok(())
+    })();
+
+    if write_result.is_err() {
+        cleanup_tmp();
+    }
+    write_result
+}
+
 fn persist_sync_event_pull_enabled(path: &Path) -> Result<(), String> {
     if path.file_name().and_then(|name| name.to_str()) != Some("local-core.env") {
         log_line(
@@ -187,48 +260,98 @@ fn persist_sync_event_pull_enabled(path: &Path) -> Result<(), String> {
         .map_err(|err| format!("could not read {}: {err}", path.display()))?;
     let next = upsert_env_assignment(&text, "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
     if next != text {
-        fs::write(path, next)
-            .map_err(|err| format!("could not write {}: {err}", path.display()))?;
+        atomic_write_text(path, &next)?;
     }
     Ok(())
 }
 
-fn replication_curl(
+fn parse_http_response(raw: &str) -> Result<(u16, &str), String> {
+    let (header, body) = raw
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "invalid HTTP response (no header terminator)".to_string())?;
+    let status_line = header
+        .lines()
+        .next()
+        .ok_or_else(|| "invalid HTTP response (empty)".to_string())?;
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| format!("invalid HTTP status line: {status_line}"))?;
+    Ok((status, body))
+}
+
+fn require_sync_event_pull_ok(value: &serde_json::Value) -> Result<(), String> {
+    if value.get("error").is_some() {
+        let code = value
+            .get("code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("error");
+        return Err(format!("sync-event pull response error ({code})"));
+    }
+    match value.get("ok").and_then(|v| v.as_bool()) {
+        Some(true) => Ok(()),
+        Some(false) => Err("sync-event pull response ok=false".into()),
+        None => Err("sync-event pull response missing ok=true".into()),
+    }
+}
+
+/// Loopback HTTP/1.1 — secret stays off process argv (`ps`).
+fn replication_http(
     method: &str,
     secret: &str,
     body: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let url = format!("http://127.0.0.1:{API_PORT}{SYNC_EVENT_PULL_PATH}");
-    let mut cmd = Command::new("curl");
-    cmd.args([
-        "-sS",
-        "--max-time",
-        "8",
-        "-X",
-        method,
-        "-H",
-        &format!("Authorization: Bearer {secret}"),
-        &url,
-    ]);
+    let mut stream = TcpStream::connect_timeout(
+        &format!("127.0.0.1:{API_PORT}").parse().expect("static addr"),
+        Duration::from_millis(800),
+    )
+    .map_err(|err| format!("connect local-core: {err}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(8)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(8)));
+
+    let body_bytes = body.unwrap_or("");
+    let mut request = format!(
+        "{method} {SYNC_EVENT_PULL_PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {secret}\r\nConnection: close\r\n"
+    );
+    if body.is_some() {
+        request.push_str("Content-Type: application/json\r\n");
+        request.push_str(&format!("Content-Length: {}\r\n", body_bytes.len()));
+    }
+    request.push_str("\r\n");
     if let Some(body) = body {
-        cmd.args(["-H", "Content-Type: application/json", "-d", body]);
+        request.push_str(body);
     }
-    let output = cmd
-        .output()
-        .map_err(|err| format!("curl failed: {err}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "curl exited {}",
-            output.status.code().unwrap_or(-1)
-        ));
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| format!("write local-core request: {err}"))?;
+
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
+        }
+        if buf.len() > 256 * 1024 {
+            break;
+        }
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(stdout.trim()).map_err(|err| format!("invalid JSON from local-core: {err}"))
+    let text = String::from_utf8_lossy(&buf);
+    let (status, body) = parse_http_response(&text)?;
+    if !(200..300).contains(&status) {
+        return Err(format!("sync-event pull HTTP {status}"));
+    }
+    let value: serde_json::Value = serde_json::from_str(body.trim())
+        .map_err(|err| format!("invalid JSON from local-core: {err}"))?;
+    require_sync_event_pull_ok(&value)?;
+    Ok(value)
 }
 
 fn prompt_pending_sync_event_pull(app: &AppHandle, summary: &str) -> bool {
     let message = format!(
-        "Local core still has unpushed state ({summary}). Cloud sync-event pull is paused so those rows are not overwritten.\n\nPull anyway, or keep pull paused?"
+        "Local core still has unpushed state ({summary}). Cloud sync-event pull is paused so those rows are not overwritten.\n\nKeep paused: pull resumes automatically once local rows are pushed and dead letters / local-only mismatches are resolved.\n\nPull anyway, or keep pull paused?"
     );
     app.dialog()
         .message(message)
@@ -251,6 +374,30 @@ fn wait_for_local_core_health() -> bool {
     api_healthy()
 }
 
+fn replication_interval_wait(env_text: &str) -> Duration {
+    let ms = env_file_value(env_text, "CORE_REPLICATION_INTERVAL_MS")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(15_000)
+        .clamp(2_000, 120_000);
+    Duration::from_millis(ms)
+}
+
+fn pending_is_unpushed_only(pending: &serde_json::Value) -> bool {
+    let unpushed = pending
+        .get("unpushedRowCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let dead = pending
+        .get("openDeadLetterCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let local_only = pending
+        .get("localOnlyRowCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    unpushed > 0 && dead == 0 && local_only == 0
+}
+
 fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
     if !wait_for_local_core_health() {
         log_line("sync-event pull: local-core /health not ready; skip");
@@ -266,26 +413,43 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
         log_line("sync-event pull: CORE_REPLICATION_SECRET missing; skip");
         return Ok(());
     };
-    let status = replication_curl("GET", &secret, None)?;
-    if status.get("error").is_some() {
-        let code = status.get("code").and_then(|v| v.as_str()).unwrap_or("error");
-        return Err(format!("sync-event pull status {code}"));
-    }
-    let paused = status
+
+    let mut status = replication_http("GET", &secret, None)?;
+    let mut paused = status
         .get("pausedForPending")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    if paused {
+        if let Some(pending) = status.get("pending") {
+            if pending_is_unpushed_only(pending) {
+                let wait = replication_interval_wait(&text);
+                log_line(&format!(
+                    "sync-event pull: unpushed-only pending; re-check after {}s",
+                    wait.as_secs()
+                ));
+                std::thread::sleep(wait);
+                status = replication_http("GET", &secret, None)?;
+                paused = status
+                    .get("pausedForPending")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            }
+        }
+    }
+
     let summary = status
         .get("summary")
         .and_then(|v| v.as_str())
-        .unwrap_or("pending local state");
+        .unwrap_or("pending local state")
+        .to_string();
+
     if paused {
         log_line(&format!(
             "sync-event pull paused for pending local state ({summary})"
         ));
-        let pull_anyway = prompt_pending_sync_event_pull(app, summary);
+        let pull_anyway = prompt_pending_sync_event_pull(app, &summary);
         if pull_anyway {
-            replication_curl(
+            replication_http(
                 "POST",
                 &secret,
                 Some(r#"{"enabled":true,"acknowledgePending":true}"#),
@@ -293,11 +457,14 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
             persist_sync_event_pull_enabled(&env_path)?;
             log_line("sync-event pull enabled after pending-state confirm");
         } else {
-            log_line("sync-event pull left paused (unpushed local state)");
+            log_line(
+                "sync-event pull kept paused; resumes automatically when pending local state clears",
+            );
         }
         return Ok(());
     }
-    replication_curl("POST", &secret, Some(r#"{"enabled":true}"#))?;
+
+    replication_http("POST", &secret, Some(r#"{"enabled":true}"#))?;
     persist_sync_event_pull_enabled(&env_path)?;
     log_line("sync-event pull enabled on desktop start");
     Ok(())
@@ -814,6 +981,11 @@ mod tests {
             env_file_value(text, "CORE_REPLICATION_SYNC_EVENTS_PULL"),
             None
         );
+        assert_eq!(
+            env_file_value("export CORE_REPLICATION_SECRET = sekret\n", "CORE_REPLICATION_SECRET")
+                .as_deref(),
+            Some("sekret")
+        );
     }
 
     #[test]
@@ -825,8 +997,37 @@ mod tests {
         );
         assert!(replaced.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1"));
         assert!(!replaced.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=0"));
-        let appended = upsert_env_assignment("CORE_REPLICATION_SECRET=x\n", "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
+        let appended = upsert_env_assignment(
+            "CORE_REPLICATION_SECRET=x\n",
+            "CORE_REPLICATION_SYNC_EVENTS_PULL",
+            "1",
+        );
         assert!(appended.contains("CORE_REPLICATION_SECRET=x"));
         assert!(appended.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1"));
+    }
+
+    #[test]
+    fn upsert_env_assignment_replaces_all_duplicates_and_export_forms() {
+        let input = "DATABASE_URL=postgres://local\nCORE_REPLICATION_SECRET=sekret\nCORE_REPLICATION_SYNC_EVENTS_PULL=0\nexport CORE_REPLICATION_SYNC_EVENTS_PULL = 0\nCORE_REPLICATION_SYNC_EVENTS_PULL=false\n";
+        let out = upsert_env_assignment(input, "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
+        assert_eq!(
+            out.matches("CORE_REPLICATION_SYNC_EVENTS_PULL=1").count(),
+            3
+        );
+        assert!(!out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=0"));
+        assert!(!out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=false"));
+        assert!(out.contains("DATABASE_URL=postgres://local"));
+        assert!(out.contains("CORE_REPLICATION_SECRET=sekret"));
+    }
+
+    #[test]
+    fn upsert_env_assignment_preserves_crlf_and_other_keys() {
+        let input = "DATABASE_URL=postgres://local\r\nCORE_REPLICATION_SECRET=sekret\r\nCORE_REPLICATION_SYNC_EVENTS_PULL=0\r\n";
+        let out = upsert_env_assignment(input, "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
+        assert!(out.contains("\r\n"));
+        assert!(out.contains("DATABASE_URL=postgres://local\r\n"));
+        assert!(out.contains("CORE_REPLICATION_SECRET=sekret\r\n"));
+        assert!(out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1\r\n"));
+        assert!(!out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=0"));
     }
 }

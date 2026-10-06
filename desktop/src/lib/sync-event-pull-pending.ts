@@ -4,6 +4,9 @@
  * Dead-letter pause uses OS-84's `shouldPauseSyncEventPullForDeadLetters` so
  * the rule is not duplicated. Server-side pending-unpushed-state uses the same
  * count > 0 meaning for open dead letters.
+ *
+ * "Pull anyway" acknowledges only the shown snapshot; growth in any category
+ * re-pauses. Keep paused: pull resumes automatically once pending clears.
  */
 
 import { shouldPauseSyncEventPullForDeadLetters } from "./replication-dead-letters";
@@ -13,6 +16,12 @@ export type SyncEventPullPendingState = {
   openDeadLetterCount: number;
   localOnlyRowCount: number;
   unpushedTables?: string[];
+};
+
+export type SyncEventPullPendingAck = {
+  unpushedRowCount: number;
+  openDeadLetterCount: number;
+  localOnlyRowCount: number;
 };
 
 export function hasSyncEventPullPendingState(
@@ -25,12 +34,35 @@ export function hasSyncEventPullPendingState(
   );
 }
 
-/** Pause ordered pull until Remon acknowledges pending local state. */
+export function toSyncEventPullPendingAck(
+  state: SyncEventPullPendingState,
+): SyncEventPullPendingAck {
+  return {
+    unpushedRowCount: state.unpushedRowCount,
+    openDeadLetterCount: state.openDeadLetterCount,
+    localOnlyRowCount: state.localOnlyRowCount,
+  };
+}
+
+export function isSyncEventPullPendingCoveredByAck(
+  state: SyncEventPullPendingState,
+  ack: SyncEventPullPendingAck | null,
+): boolean {
+  if (!ack) return false;
+  return (
+    state.unpushedRowCount <= ack.unpushedRowCount &&
+    state.openDeadLetterCount <= ack.openDeadLetterCount &&
+    state.localOnlyRowCount <= ack.localOnlyRowCount
+  );
+}
+
+/** Pause ordered pull until Remon acknowledges the shown pending snapshot. */
 export function shouldPauseSyncEventPullForPendingState(
   state: SyncEventPullPendingState,
-  acknowledged: boolean,
+  ack: SyncEventPullPendingAck | null,
 ): boolean {
-  return hasSyncEventPullPendingState(state) && !acknowledged;
+  if (!hasSyncEventPullPendingState(state)) return false;
+  return !isSyncEventPullPendingCoveredByAck(state, ack);
 }
 
 export function formatSyncEventPullPendingSummary(

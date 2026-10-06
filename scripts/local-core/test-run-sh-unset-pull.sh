@@ -7,7 +7,8 @@ RUN_SH="${ROOT}/scripts/local-core/run.sh"
 
 grep -F 'CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}' "${RUN_SH}" >/dev/null
 
-# Same expansion the start log uses.
+# Caller may have the var exported; force unset for the set -u check.
+unset CORE_REPLICATION_SYNC_EVENTS_PULL
 set -u
 log_value="${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}"
 test "${log_value}" = "unset"

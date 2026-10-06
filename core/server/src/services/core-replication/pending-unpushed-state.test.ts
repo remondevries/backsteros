@@ -5,7 +5,10 @@ import {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isPendingCoveredByAck,
+  nextPendingAckSnapshot,
   shouldPauseSyncEventPull,
+  toPendingAckSnapshot,
   type PendingUnpushedState,
 } from "./pending-unpushed-policy.js";
 
@@ -26,11 +29,43 @@ describe("pending unpushed state (OS-82)", () => {
     assert.equal(hasPendingUnpushedState(state({ localOnlyRowCount: 3 })), true);
   });
 
-  it("pauses pull until pending state is acknowledged", () => {
-    const pending = state({ unpushedRowCount: 1, unpushedTables: ["tasks"] });
-    assert.equal(shouldPauseSyncEventPull(pending, false), true);
-    assert.equal(shouldPauseSyncEventPull(pending, true), false);
-    assert.equal(shouldPauseSyncEventPull(emptyPendingUnpushedState(), false), false);
+  it("ack covers the shown snapshot and re-pauses when a category grows", () => {
+    const shown = state({
+      unpushedRowCount: 2,
+      openDeadLetterCount: 1,
+      localOnlyRowCount: 0,
+      unpushedTables: ["tasks"],
+    });
+    const ack = toPendingAckSnapshot(shown);
+    assert.equal(shouldPauseSyncEventPull(shown, null), true);
+    assert.equal(shouldPauseSyncEventPull(shown, ack), false);
+    assert.equal(isPendingCoveredByAck(shown, ack), true);
+
+    const newDeadLetter = state({
+      unpushedRowCount: 2,
+      openDeadLetterCount: 2,
+      localOnlyRowCount: 0,
+      unpushedTables: ["tasks"],
+    });
+    assert.equal(shouldPauseSyncEventPull(newDeadLetter, ack), true);
+    assert.equal(isPendingCoveredByAck(newDeadLetter, ack), false);
+  });
+
+  it("clears ack once pending state is clean", () => {
+    const ack = toPendingAckSnapshot(
+      state({ unpushedRowCount: 1, openDeadLetterCount: 0, localOnlyRowCount: 0 }),
+    );
+    assert.equal(
+      nextPendingAckSnapshot(emptyPendingUnpushedState(), ack),
+      null,
+    );
+    assert.equal(
+      nextPendingAckSnapshot(
+        state({ unpushedRowCount: 1, unpushedTables: ["tasks"] }),
+        ack,
+      ),
+      ack,
+    );
   });
 
   it("formats a compact summary for logs and the desktop prompt", () => {

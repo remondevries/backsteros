@@ -5,7 +5,9 @@ import { shouldPauseSyncEventPullForDeadLetters } from "./replication-dead-lette
 import {
   formatSyncEventPullPendingSummary,
   hasSyncEventPullPendingState,
+  isSyncEventPullPendingCoveredByAck,
   shouldPauseSyncEventPullForPendingState,
+  toSyncEventPullPendingAck,
 } from "./sync-event-pull-pending";
 
 test("OS-82 pending pause uses OS-84 dead-letter hook (count > 0)", () => {
@@ -28,27 +30,28 @@ test("OS-82 pending pause uses OS-84 dead-letter hook (count > 0)", () => {
     }),
     true,
   );
+});
+
+test("OS-82 ack covers shown snapshot; new dead letter re-pauses", () => {
+  const shown = {
+    unpushedRowCount: 0,
+    openDeadLetterCount: 2,
+    localOnlyRowCount: 0,
+  };
+  const ack = toSyncEventPullPendingAck(shown);
+  assert.equal(shouldPauseSyncEventPullForPendingState(shown, null), true);
+  assert.equal(shouldPauseSyncEventPullForPendingState(shown, ack), false);
+  assert.equal(isSyncEventPullPendingCoveredByAck(shown, ack), true);
   assert.equal(
     shouldPauseSyncEventPullForPendingState(
       {
         unpushedRowCount: 0,
-        openDeadLetterCount: 2,
+        openDeadLetterCount: 3,
         localOnlyRowCount: 0,
       },
-      false,
+      ack,
     ),
     true,
-  );
-  assert.equal(
-    shouldPauseSyncEventPullForPendingState(
-      {
-        unpushedRowCount: 0,
-        openDeadLetterCount: 2,
-        localOnlyRowCount: 0,
-      },
-      true,
-    ),
-    false,
   );
 });
 
@@ -61,7 +64,7 @@ test("OS-82 pending pause covers unpushed and local-only rows", () => {
         localOnlyRowCount: 0,
         unpushedTables: ["tasks"],
       },
-      false,
+      null,
     ),
     true,
   );
@@ -72,7 +75,7 @@ test("OS-82 pending pause covers unpushed and local-only rows", () => {
         openDeadLetterCount: 0,
         localOnlyRowCount: 1,
       },
-      false,
+      null,
     ),
     true,
   );
