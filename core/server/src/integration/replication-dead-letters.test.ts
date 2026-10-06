@@ -7,9 +7,9 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, sqlClient } from "../db/index.js";
 import {
   documents,
+  projects,
   replicationDeadLetters,
   spacePublishSettings,
-  spaceSiteKeys,
   users,
   workspaces,
 } from "../db/schema.js";
@@ -56,22 +56,21 @@ test("isReplicationReconcileEnabled is off under integration/test flags", () => 
 test("failed unique apply becomes a dead letter; cursor can still advance; retry heals", async (context) => {
   const userId = id("user");
   const workspaceId = id("workspace");
-  const spaceDocId = id("doc");
-  const existingKeyId = id("ssk");
-  const incomingKeyId = id("ssk");
-  const siteKeyPrefix = "dlpfx";
+  const existingProjectId = id("proj");
+  const incomingProjectId = id("proj");
+  const projectKey = `DL${randomUUID().slice(0, 6).toUpperCase()}`;
   const now = new Date().toISOString();
 
   context.after(async () => {
     await db
       .delete(replicationDeadLetters)
       .where(
-        inArray(replicationDeadLetters.rowId, [incomingKeyId, existingKeyId]),
+        inArray(replicationDeadLetters.rowId, [
+          incomingProjectId,
+          existingProjectId,
+        ]),
       );
-    await db
-      .delete(spaceSiteKeys)
-      .where(eq(spaceSiteKeys.workspaceId, workspaceId));
-    await db.delete(documents).where(eq(documents.id, spaceDocId));
+    await db.delete(projects).where(eq(projects.workspaceId, workspaceId));
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
     await db.delete(users).where(eq(users.id, userId));
   });
@@ -87,25 +86,13 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
     slug: id("dl"),
     ownerUserId: userId,
   });
-  await db.insert(documents).values({
-    id: spaceDocId,
+  // OS-89: projects_workspace_key_unique is an explicit dead-letter (project
+  // ids are referenced). space_site_keys now natural-key heals.
+  await db.insert(projects).values({
+    id: existingProjectId,
     workspaceId,
-    type: "folder",
-    kind: "space",
-    path: `/spaces/${spaceDocId}`,
-    title: "Space",
-    storageKey: `vault/spaces/${spaceDocId}`,
-  });
-  // space_site_keys has a unique index on (workspace_id, space_document_id,
-  // site_key_prefix) and is not in NATURAL_KEY_TABLES, so a same-prefix fork
-  // still 23505-dead-letters (unlike space_publish_settings after OS-40).
-  await db.insert(spaceSiteKeys).values({
-    id: existingKeyId,
-    workspaceId,
-    spaceDocumentId: spaceDocId,
-    label: "local",
-    siteKeyPrefix,
-    siteKeyHash: "local-hash",
+    key: projectKey,
+    name: "local",
     updatedAt: new Date(now),
   });
 
@@ -113,61 +100,63 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
     updatedAt: new Date(0).toISOString(),
     rowId: "",
   };
-  await setReplicationCursor("space_site_keys", beforeCursor, "pull");
+  await setReplicationCursor("projects", beforeCursor, "pull");
 
   const incomingRow = {
-    id: incomingKeyId,
+    id: incomingProjectId,
     workspace_id: workspaceId,
-    space_document_id: spaceDocId,
-    label: "incoming",
-    site_key_prefix: siteKeyPrefix,
-    site_key_hash: "incoming-hash",
+    key: projectKey,
+    name: "incoming",
+    type: "general",
+    status: "backlog",
+    priority: 0,
+    sort_order: 0,
+    budgets: [],
     created_at: now,
     updated_at: now,
+    deleted_at: null,
   };
 
   const result = await applyRemoteChanges(
-    "space_site_keys",
-    [{ table: "space_site_keys", row: incomingRow }],
+    "projects",
+    [{ table: "projects", row: incomingRow }],
     { direction: "pull" },
   );
 
   assert.equal(result.applied, 0);
   assert.equal(result.skipped, 0, "apply exceptions must not count as skipped");
   assert.equal(result.failed.length, 1);
-  assert.equal(result.failed[0]?.id, incomingKeyId);
+  assert.equal(result.failed[0]?.id, incomingProjectId);
   assert.equal(result.failed[0]?.code, "23505");
 
   const openCount = await countOpenReplicationDeadLetters();
   assert.ok(openCount >= 1);
   const open = await listOpenReplicationDeadLetters(50);
-  const letter = open.find((row) => row.rowId === incomingKeyId);
+  const letter = open.find((row) => row.rowId === incomingProjectId);
   assert.ok(letter, "dead letter should appear for the failed row");
-  assert.equal(letter.tableName, "space_site_keys");
+  assert.equal(letter.tableName, "projects");
   assert.equal(letter.direction, "pull");
   assert.equal(letter.attempts, 1);
 
   // Cursor still advances past the failed page tip (worker does this after apply).
   const advanced = {
     updatedAt: now,
-    rowId: incomingKeyId,
+    rowId: incomingProjectId,
   };
-  await setReplicationCursor("space_site_keys", advanced, "pull");
-  const cursor = await getReplicationCursor("space_site_keys", "pull");
-  assert.equal(cursor.rowId, incomingKeyId);
+  await setReplicationCursor("projects", advanced, "pull");
+  const cursor = await getReplicationCursor("projects", "pull");
+  assert.equal(cursor.rowId, incomingProjectId);
   assert.equal(cursor.updatedAt, now);
 
   // Heal the conflict, then retry the dead letter.
-  await db
-    .delete(spaceSiteKeys)
-    .where(eq(spaceSiteKeys.id, existingKeyId));
+  await db.delete(projects).where(eq(projects.id, existingProjectId));
 
   await db
     .update(replicationDeadLetters)
     .set({ nextRetryAt: new Date(0) })
     .where(
       and(
-        eq(replicationDeadLetters.rowId, incomingKeyId),
+        eq(replicationDeadLetters.rowId, incomingProjectId),
         isNull(replicationDeadLetters.resolvedAt),
       ),
     );
@@ -177,8 +166,8 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
 
   const [appliedRow] = await db
     .select()
-    .from(spaceSiteKeys)
-    .where(eq(spaceSiteKeys.id, incomingKeyId))
+    .from(projects)
+    .where(eq(projects.id, incomingProjectId))
     .limit(1);
   assert.ok(appliedRow, "retry should apply the previously failed row");
 
@@ -187,37 +176,33 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
     .from(replicationDeadLetters)
     .where(
       and(
-        eq(replicationDeadLetters.rowId, incomingKeyId),
+        eq(replicationDeadLetters.rowId, incomingProjectId),
         isNull(replicationDeadLetters.resolvedAt),
       ),
     );
   assert.equal(stillOpen.length, 0);
 
   // Re-recording the same failure collapses to one open letter (no spam).
-  await db
-    .delete(spaceSiteKeys)
-    .where(eq(spaceSiteKeys.id, incomingKeyId));
-  await db.insert(spaceSiteKeys).values({
-    id: existingKeyId,
+  await db.delete(projects).where(eq(projects.id, incomingProjectId));
+  await db.insert(projects).values({
+    id: existingProjectId,
     workspaceId,
-    spaceDocumentId: spaceDocId,
-    label: "local",
-    siteKeyPrefix,
-    siteKeyHash: "local-hash",
+    key: projectKey,
+    name: "local",
     updatedAt: new Date(),
   });
 
   await recordReplicationDeadLetter({
-    table: "space_site_keys",
-    rowId: incomingKeyId,
+    table: "projects",
+    rowId: incomingProjectId,
     direction: "pull",
     errorCode: "23505",
     errorMessage: "duplicate key",
     row: incomingRow,
   });
   await recordReplicationDeadLetter({
-    table: "space_site_keys",
-    rowId: incomingKeyId,
+    table: "projects",
+    rowId: incomingProjectId,
     direction: "pull",
     errorCode: "23505",
     errorMessage: "duplicate key again",
@@ -228,7 +213,7 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
     .from(replicationDeadLetters)
     .where(
       and(
-        eq(replicationDeadLetters.rowId, incomingKeyId),
+        eq(replicationDeadLetters.rowId, incomingProjectId),
         isNull(replicationDeadLetters.resolvedAt),
       ),
     );
