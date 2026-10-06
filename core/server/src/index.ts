@@ -11,6 +11,7 @@ import {
   assertReplicationListenHost,
   getCoreReplicationConfig,
 } from "./services/core-replication/config.js";
+import { ensureLocalCoreControlToken } from "./services/core-replication/local-core-control-token.js";
 import { startCoreReplicationWorker } from "./services/core-replication/worker.js";
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
@@ -44,6 +45,20 @@ const replicationConfig = getCoreReplicationConfig();
 if (replicationConfig) {
   console.log(
     `Core replication enabled (${replicationConfig.role}) → peer ${replicationConfig.peerUrl}`,
+  );
+}
+
+try {
+  const controlTokenResult = await ensureLocalCoreControlToken();
+  if (controlTokenResult === "written") {
+    console.log(
+      "Local-core control token ready (~/.config/backsteros/local-core-control.token)",
+    );
+  }
+} catch (error) {
+  console.error(
+    "Failed to write local-core control token:",
+    error instanceof Error ? error.message : error,
   );
 }
 

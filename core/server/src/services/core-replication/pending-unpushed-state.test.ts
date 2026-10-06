@@ -7,6 +7,8 @@ import {
   hasPendingUnpushedState,
   isPendingCoveredByAck,
   nextPendingAckSnapshot,
+  parseAcknowledgePendingBody,
+  resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
   toPendingAckSnapshot,
   type PendingUnpushedState,
@@ -65,6 +67,35 @@ describe("pending unpushed state (OS-82)", () => {
         ack,
       ),
       ack,
+    );
+  });
+
+  it("acks min(shown, current); growth after dialog stays paused", () => {
+    const shown = {
+      unpushedRowCount: 0,
+      openDeadLetterCount: 1,
+      localOnlyRowCount: 0,
+    };
+    const current = state({
+      unpushedRowCount: 0,
+      openDeadLetterCount: 3,
+      localOnlyRowCount: 0,
+    });
+    const ack = resolveAcknowledgePendingSnapshot(shown, current);
+    assert.deepEqual(ack, {
+      unpushedRowCount: 0,
+      openDeadLetterCount: 1,
+      localOnlyRowCount: 0,
+    });
+    assert.equal(shouldPauseSyncEventPull(current, ack), true);
+    assert.equal(parseAcknowledgePendingBody(true), "invalid");
+    assert.equal(
+      parseAcknowledgePendingBody({
+        unpushedRowCount: 0,
+        openDeadLetterCount: 1,
+        localOnlyRowCount: 0,
+      })?.openDeadLetterCount,
+      1,
     );
   });
 

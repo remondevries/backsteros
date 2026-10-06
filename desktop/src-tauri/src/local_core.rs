@@ -398,6 +398,41 @@ fn pending_is_unpushed_only(pending: &serde_json::Value) -> bool {
     unpushed > 0 && dead == 0 && local_only == 0
 }
 
+fn local_core_control_token_path() -> Option<PathBuf> {
+    home_dir().map(|home| home.join(".config/backsteros/local-core-control.token"))
+}
+
+/// Local-only control token (never CORE_REPLICATION_SECRET). Never log the value.
+fn read_local_core_control_token() -> Result<String, String> {
+    let Some(path) = local_core_control_token_path() else {
+        return Err("HOME is not set".into());
+    };
+    let text = fs::read_to_string(&path).map_err(|err| {
+        format!(
+            "could not read local-core control token {}: {err}",
+            path.display()
+        )
+    })?;
+    let token = text.trim();
+    if token.is_empty() {
+        return Err(format!("local-core control token empty at {}", path.display()));
+    }
+    Ok(token.to_string())
+}
+
+fn pending_count(pending: &serde_json::Value, key: &str) -> u64 {
+    pending.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
+}
+
+fn acknowledge_pending_body(pending: &serde_json::Value) -> String {
+    format!(
+        r#"{{"enabled":true,"acknowledgePending":{{"unpushedRowCount":{},"openDeadLetterCount":{},"localOnlyRowCount":{}}}}}"#,
+        pending_count(pending, "unpushedRowCount"),
+        pending_count(pending, "openDeadLetterCount"),
+        pending_count(pending, "localOnlyRowCount"),
+    )
+}
+
 fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
     if !wait_for_local_core_health() {
         log_line("sync-event pull: local-core /health not ready; skip");
@@ -409,12 +444,15 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
     };
     let text = fs::read_to_string(&env_path)
         .map_err(|err| format!("could not read {}: {err}", env_path.display()))?;
-    let Some(secret) = env_file_value(&text, "CORE_REPLICATION_SECRET") else {
-        log_line("sync-event pull: CORE_REPLICATION_SECRET missing; skip");
-        return Ok(());
+    let control_token = match read_local_core_control_token() {
+        Ok(token) => token,
+        Err(err) => {
+            log_line(&format!("sync-event pull: {err}; skip"));
+            return Ok(());
+        }
     };
 
-    let mut status = replication_http("GET", &secret, None)?;
+    let mut status = replication_http("GET", &control_token, None)?;
     let mut paused = status
         .get("pausedForPending")
         .and_then(|v| v.as_bool())
@@ -428,7 +466,7 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
                     wait.as_secs()
                 ));
                 std::thread::sleep(wait);
-                status = replication_http("GET", &secret, None)?;
+                status = replication_http("GET", &control_token, None)?;
                 paused = status
                     .get("pausedForPending")
                     .and_then(|v| v.as_bool())
@@ -442,6 +480,10 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
         .and_then(|v| v.as_str())
         .unwrap_or("pending local state")
         .to_string();
+    let shown_pending = status
+        .get("pending")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
 
     if paused {
         log_line(&format!(
@@ -449,11 +491,8 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
         ));
         let pull_anyway = prompt_pending_sync_event_pull(app, &summary);
         if pull_anyway {
-            replication_http(
-                "POST",
-                &secret,
-                Some(r#"{"enabled":true,"acknowledgePending":true}"#),
-            )?;
+            let body = acknowledge_pending_body(&shown_pending);
+            replication_http("POST", &control_token, Some(&body))?;
             persist_sync_event_pull_enabled(&env_path)?;
             log_line("sync-event pull enabled after pending-state confirm");
         } else {
@@ -464,7 +503,7 @@ fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    replication_http("POST", &secret, Some(r#"{"enabled":true}"#))?;
+    replication_http("POST", &control_token, Some(r#"{"enabled":true}"#))?;
     persist_sync_event_pull_enabled(&env_path)?;
     log_line("sync-event pull enabled on desktop start");
     Ok(())
@@ -1029,5 +1068,19 @@ mod tests {
         assert!(out.contains("CORE_REPLICATION_SECRET=sekret\r\n"));
         assert!(out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1\r\n"));
         assert!(!out.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=0"));
+    }
+
+    #[test]
+    fn acknowledge_pending_body_sends_shown_counts() {
+        let pending = serde_json::json!({
+            "unpushedRowCount": 2,
+            "openDeadLetterCount": 1,
+            "localOnlyRowCount": 0,
+        });
+        let body = acknowledge_pending_body(&pending);
+        assert!(body.contains(r#""unpushedRowCount":2"#));
+        assert!(body.contains(r#""openDeadLetterCount":1"#));
+        assert!(body.contains(r#""localOnlyRowCount":0"#));
+        assert!(!body.contains(r#""acknowledgePending":true"#));
     }
 }

@@ -43,10 +43,13 @@ import {
   VaultPathError,
 } from "./vault-replication.js";
 import { handleReplicationNudge } from "./nudge.js";
+import { verifyLocalCoreControlAuthorization } from "./local-core-control-token.js";
 import {
   formatPendingUnpushedSummary,
   getPendingUnpushedState,
   isPendingCoveredByAck,
+  parseAcknowledgePendingBody,
+  resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
 } from "./pending-unpushed-state.js";
 
@@ -73,8 +76,9 @@ function remoteAddressFromContext(c: Context): string | null {
 }
 
 /**
- * Desktop-only control surface: local-core role + loopback caller.
- * Cloud peers holding CORE_REPLICATION_SECRET must not flip pull/ack.
+ * Local-core control surface (OS-82). Auth is a local-only control token — not
+ * CORE_REPLICATION_SECRET — because Tailscale serve proxies peer traffic from
+ * 127.0.0.1. Role=local is required; loopback is defence in depth only.
  */
 function denySyncEventPullControl(c: Context): Response | null {
   const config = getCoreReplicationConfig();
@@ -85,6 +89,10 @@ function denySyncEventPullControl(c: Context): Response | null {
     return c.json({ error: "Forbidden", code: "forbidden" as const }, 403);
   }
   return null;
+}
+
+function syncEventPullControlAuth(authorization: string | undefined): boolean {
+  return verifyLocalCoreControlAuthorization(authorization);
 }
 
 function replicationAuth(authorization: string | undefined): boolean {
@@ -827,7 +835,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
   });
 
   app.get("/internal/core-replication/sync-event-pull", async (c) => {
-    if (!replicationAuth(c.req.header("Authorization"))) {
+    if (!syncEventPullControlAuth(c.req.header("Authorization"))) {
       return c.json(unauthorized(), 401);
     }
     const denied = denySyncEventPullControl(c);
@@ -860,7 +868,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
   });
 
   app.post("/internal/core-replication/sync-event-pull", async (c) => {
-    if (!replicationAuth(c.req.header("Authorization"))) {
+    if (!syncEventPullControlAuth(c.req.header("Authorization"))) {
       return c.json(unauthorized(), 401);
     }
     const denied = denySyncEventPullControl(c);
@@ -868,10 +876,22 @@ export function registerCoreReplicationRoutes(app: Hono) {
 
     const body = (await c.req.json().catch(() => ({}))) as {
       enabled?: boolean;
-      acknowledgePending?: boolean;
+      acknowledgePending?: unknown;
     };
     if (typeof body.enabled === "boolean") {
       setSyncEventPullRuntimeEnabled(body.enabled);
+    }
+
+    const shownAck = parseAcknowledgePendingBody(body.acknowledgePending);
+    if (shownAck === "invalid") {
+      return c.json(
+        {
+          error:
+            "acknowledgePending must be an object with non-negative integer unpushedRowCount, openDeadLetterCount, localOnlyRowCount",
+          code: "bad_request" as const,
+        },
+        400,
+      );
     }
 
     let pending;
@@ -885,8 +905,10 @@ export function registerCoreReplicationRoutes(app: Hono) {
       );
     }
 
-    if (body.acknowledgePending === true) {
-      acknowledgePendingSyncEventPull(pending);
+    if (shownAck) {
+      acknowledgePendingSyncEventPull(
+        resolveAcknowledgePendingSnapshot(shownAck, pending),
+      );
     }
     syncPendingAckWithState(pending);
     const ack = getPendingSyncEventPullAck();

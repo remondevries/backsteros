@@ -35,6 +35,59 @@ export function toPendingAckSnapshot(
 }
 
 /**
+ * Ack the counts the user saw, capped by current state (min per category).
+ * Growth after the dialog was shown stays above the ack and re-pauses.
+ */
+export function resolveAcknowledgePendingSnapshot(
+  shown: PendingAckSnapshot,
+  current: Pick<
+    PendingUnpushedState,
+    "unpushedRowCount" | "openDeadLetterCount" | "localOnlyRowCount"
+  >,
+): PendingAckSnapshot {
+  return {
+    unpushedRowCount: Math.min(shown.unpushedRowCount, current.unpushedRowCount),
+    openDeadLetterCount: Math.min(
+      shown.openDeadLetterCount,
+      current.openDeadLetterCount,
+    ),
+    localOnlyRowCount: Math.min(shown.localOnlyRowCount, current.localOnlyRowCount),
+  };
+}
+
+/** Parse desktop `acknowledgePending` object; bare `true` is rejected. */
+export function parseAcknowledgePendingBody(
+  raw: unknown,
+): PendingAckSnapshot | "invalid" | null {
+  if (raw === undefined || raw === null || raw === false) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return "invalid";
+  const row = raw as Record<string, unknown>;
+  const keys = [
+    "unpushedRowCount",
+    "openDeadLetterCount",
+    "localOnlyRowCount",
+  ] as const;
+  const out: PendingAckSnapshot = {
+    unpushedRowCount: 0,
+    openDeadLetterCount: 0,
+    localOnlyRowCount: 0,
+  };
+  for (const key of keys) {
+    const value = row[key];
+    if (
+      typeof value !== "number" ||
+      !Number.isInteger(value) ||
+      value < 0 ||
+      !Number.isFinite(value)
+    ) {
+      return "invalid";
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
  * True when ordered pull must pause. Dead letters use the same count > 0
  * rule as desktop `shouldPauseSyncEventPullForDeadLetters` (OS-84) — do not
  * invent a second threshold here.

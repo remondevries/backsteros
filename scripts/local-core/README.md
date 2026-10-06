@@ -83,9 +83,12 @@ local-only rows — then desktop prompts. **Keep paused** leaves the gate up;
 pull resumes automatically once those pending conditions clear. **Pull anyway**
 acknowledges only the counts shown at confirm time (a new dead letter re-pauses).
 
-Control routes are local-role + loopback only. `run.sh` must not interpolate the
-unset variable under `set -u` (LaunchAgent crash-loop). The start log uses
-`${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}`.
+Control routes use a local-only control token
+(`~/.config/backsteros/local-core-control.token`, minted at local-core startup) —
+not `CORE_REPLICATION_SECRET` — because Tailscale serve makes peer traffic look
+like loopback. Role must be `local`; loopback is defence in depth only.
+`run.sh` must not interpolate the unset pull env under `set -u` (LaunchAgent
+crash-loop). The start log uses `${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}`.
 
 ## Stop / start
 

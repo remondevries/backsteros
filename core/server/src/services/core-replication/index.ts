@@ -36,6 +36,11 @@ export {
 } from "./worker.js";
 export { registerCoreReplicationRoutes } from "./routes.js";
 export {
+  ensureLocalCoreControlToken,
+  verifyLocalCoreControlAuthorization,
+  localCoreControlTokenPath,
+} from "./local-core-control-token.js";
+export {
   pullPeerSyncEvents,
   buildSyncEventsFeed,
 } from "./sync-event-replication.js";
