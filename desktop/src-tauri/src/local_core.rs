@@ -17,6 +17,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use tauri::AppHandle;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
 const API_PORT: u16 = 8788;
 
 static ENSURE_LOCK: Mutex<()> = Mutex::new(());
@@ -40,14 +43,19 @@ pub fn local_replica_requested() -> bool {
     }
 }
 
-pub fn spawn_ensure_local_core() {
-    if !local_replica_requested() {
-        log_line("local replica not requested; not starting Docker");
-        return;
-    }
-    std::thread::spawn(|| match ensure_local_core() {
-        Ok(outcome) => log_line(&format!("local-core {outcome:?}")),
-        Err(err) => log_line(&format!("local-core ensure failed: {err}")),
+pub fn spawn_ensure_local_core(app: AppHandle) {
+    std::thread::spawn(move || {
+        if local_replica_requested() {
+            match ensure_local_core() {
+                Ok(outcome) => log_line(&format!("local-core {outcome:?}")),
+                Err(err) => log_line(&format!("local-core ensure failed: {err}")),
+            }
+        } else {
+            log_line("local replica not requested; not starting Docker");
+        }
+        if let Err(err) = ensure_sync_event_pull_on_start(&app) {
+            log_line(&format!("sync-event pull ensure failed: {err}"));
+        }
     });
 }
 
@@ -94,6 +102,205 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     }
     warn_if_version_mismatch();
     Ok(EnsureOutcome::Started)
+}
+
+const SYNC_EVENT_PULL_PATH: &str = "/internal/core-replication/sync-event-pull";
+
+fn env_file_value(text: &str, key: &str) -> Option<String> {
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if name.trim() != key {
+            continue;
+        }
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn upsert_env_assignment(text: &str, key: &str, value: &str) -> String {
+    let prefix = format!("{key}=");
+    let mut replaced = false;
+    let mut out = String::new();
+    for (index, line) in text.lines().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        let trimmed = line.trim_start();
+        if !replaced && !trimmed.starts_with('#') && trimmed.starts_with(&prefix) {
+            out.push_str(&format!("{key}={value}"));
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+    }
+    if !replaced {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&format!("{key}={value}\n"));
+    } else if text.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn resolve_local_core_env_file() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("LOCAL_CORE_ENV_FILE") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    if let Some(home) = home_dir() {
+        let dedicated = home.join(".config/backsteros/local-core.env");
+        if dedicated.is_file() {
+            return Some(dedicated);
+        }
+    }
+    if let Ok(root) = resolve_repo_root() {
+        let fallback = root.join("core/server/.env");
+        if fallback.is_file() {
+            return Some(fallback);
+        }
+    }
+    None
+}
+
+fn persist_sync_event_pull_enabled(path: &Path) -> Result<(), String> {
+    if path.file_name().and_then(|name| name.to_str()) != Some("local-core.env") {
+        log_line(
+            "sync-event pull: runtime enabled; not rewriting checkout env (persist in ~/.config/backsteros/local-core.env)",
+        );
+        return Ok(());
+    }
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+    let next = upsert_env_assignment(&text, "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
+    if next != text {
+        fs::write(path, next)
+            .map_err(|err| format!("could not write {}: {err}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn replication_curl(
+    method: &str,
+    secret: &str,
+    body: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let url = format!("http://127.0.0.1:{API_PORT}{SYNC_EVENT_PULL_PATH}");
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-sS",
+        "--max-time",
+        "8",
+        "-X",
+        method,
+        "-H",
+        &format!("Authorization: Bearer {secret}"),
+        &url,
+    ]);
+    if let Some(body) = body {
+        cmd.args(["-H", "Content-Type: application/json", "-d", body]);
+    }
+    let output = cmd
+        .output()
+        .map_err(|err| format!("curl failed: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "curl exited {}",
+            output.status.code().unwrap_or(-1)
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(stdout.trim()).map_err(|err| format!("invalid JSON from local-core: {err}"))
+}
+
+fn prompt_pending_sync_event_pull(app: &AppHandle, summary: &str) -> bool {
+    let message = format!(
+        "Local core still has unpushed state ({summary}). Cloud sync-event pull is paused so those rows are not overwritten.\n\nPull anyway, or keep pull paused?"
+    );
+    app.dialog()
+        .message(message)
+        .title("Sync-event pull paused")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Pull anyway".to_string(),
+            "Keep paused".to_string(),
+        ))
+        .blocking_show()
+}
+
+fn wait_for_local_core_health() -> bool {
+    for _ in 0..20 {
+        if api_healthy() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    api_healthy()
+}
+
+fn ensure_sync_event_pull_on_start(app: &AppHandle) -> Result<(), String> {
+    if !wait_for_local_core_health() {
+        log_line("sync-event pull: local-core /health not ready; skip");
+        return Ok(());
+    }
+    let Some(env_path) = resolve_local_core_env_file() else {
+        log_line("sync-event pull: no local-core env file; skip");
+        return Ok(());
+    };
+    let text = fs::read_to_string(&env_path)
+        .map_err(|err| format!("could not read {}: {err}", env_path.display()))?;
+    let Some(secret) = env_file_value(&text, "CORE_REPLICATION_SECRET") else {
+        log_line("sync-event pull: CORE_REPLICATION_SECRET missing; skip");
+        return Ok(());
+    };
+    let status = replication_curl("GET", &secret, None)?;
+    if status.get("error").is_some() {
+        let code = status.get("code").and_then(|v| v.as_str()).unwrap_or("error");
+        return Err(format!("sync-event pull status {code}"));
+    }
+    let paused = status
+        .get("pausedForPending")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let summary = status
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("pending local state");
+    if paused {
+        log_line(&format!(
+            "sync-event pull paused for pending local state ({summary})"
+        ));
+        let pull_anyway = prompt_pending_sync_event_pull(app, summary);
+        if pull_anyway {
+            replication_curl(
+                "POST",
+                &secret,
+                Some(r#"{"enabled":true,"acknowledgePending":true}"#),
+            )?;
+            persist_sync_event_pull_enabled(&env_path)?;
+            log_line("sync-event pull enabled after pending-state confirm");
+        } else {
+            log_line("sync-event pull left paused (unpushed local state)");
+        }
+        return Ok(());
+    }
+    replication_curl("POST", &secret, Some(r#"{"enabled":true}"#))?;
+    persist_sync_event_pull_enabled(&env_path)?;
+    log_line("sync-event pull enabled on desktop start");
+    Ok(())
 }
 
 
@@ -594,5 +801,32 @@ mod tests {
             None => std::env::remove_var("BACKSTEROS_REPO_ROOT"),
         }
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn env_file_value_skips_comments_and_blanks() {
+        let text = "# CORE_REPLICATION_SYNC_EVENTS_PULL=0\nCORE_REPLICATION_SECRET=sekret\n";
+        assert_eq!(
+            env_file_value(text, "CORE_REPLICATION_SECRET").as_deref(),
+            Some("sekret")
+        );
+        assert_eq!(
+            env_file_value(text, "CORE_REPLICATION_SYNC_EVENTS_PULL"),
+            None
+        );
+    }
+
+    #[test]
+    fn upsert_env_assignment_replaces_or_appends_pull_flag() {
+        let replaced = upsert_env_assignment(
+            "CORE_REPLICATION_SECRET=x\nCORE_REPLICATION_SYNC_EVENTS_PULL=0\n",
+            "CORE_REPLICATION_SYNC_EVENTS_PULL",
+            "1",
+        );
+        assert!(replaced.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1"));
+        assert!(!replaced.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=0"));
+        let appended = upsert_env_assignment("CORE_REPLICATION_SECRET=x\n", "CORE_REPLICATION_SYNC_EVENTS_PULL", "1");
+        assert!(appended.contains("CORE_REPLICATION_SECRET=x"));
+        assert!(appended.contains("CORE_REPLICATION_SYNC_EVENTS_PULL=1"));
     }
 }

@@ -2,7 +2,14 @@ import type { Hono } from "hono";
 
 import { extractBearerToken, verifyReplicationSecret } from "./auth.js";
 import { verifyAvatarReplicationAuth } from "./avatar-replication.js";
-import { getCoreReplicationConfig } from "./config.js";
+import {
+  acknowledgePendingSyncEventPull,
+  getCoreReplicationConfig,
+  getSyncEventPullRuntimeOverride,
+  isPendingSyncEventPullAcknowledged,
+  isSyncEventPullEnabled,
+  setSyncEventPullRuntimeEnabled,
+} from "./config.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import { tableExists } from "./cursors.js";
 import { applyRemoteChanges } from "./apply.js";
@@ -34,6 +41,11 @@ import {
   VaultPathError,
 } from "./vault-replication.js";
 import { handleReplicationNudge } from "./nudge.js";
+import {
+  formatPendingUnpushedSummary,
+  getPendingUnpushedState,
+  shouldPauseSyncEventPull,
+} from "./pending-unpushed-state.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -776,5 +788,66 @@ export function registerCoreReplicationRoutes(app: Hono) {
       }
       throw error;
     }
+  });
+
+  app.get("/internal/core-replication/sync-event-pull", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const config = getCoreReplicationConfig();
+    let pending;
+    try {
+      pending = await getPendingUnpushedState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json(
+        { error: message, code: "internal" as const },
+        500,
+      );
+    }
+    const pausedForPending = shouldPauseSyncEventPull(
+      pending,
+      isPendingSyncEventPullAcknowledged(),
+    );
+    return c.json({
+      ok: true,
+      role: config?.role ?? null,
+      enabled: isSyncEventPullEnabled(),
+      runtimeOverride: getSyncEventPullRuntimeOverride(),
+      pendingAcknowledged: isPendingSyncEventPullAcknowledged(),
+      pausedForPending,
+      pending,
+      summary: formatPendingUnpushedSummary(pending),
+    });
+  });
+
+  app.post("/internal/core-replication/sync-event-pull", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      enabled?: boolean;
+      acknowledgePending?: boolean;
+    };
+    if (typeof body.enabled === "boolean") {
+      setSyncEventPullRuntimeEnabled(body.enabled);
+    }
+    if (body.acknowledgePending === true) {
+      acknowledgePendingSyncEventPull();
+    }
+    const pending = await getPendingUnpushedState();
+    const pausedForPending = shouldPauseSyncEventPull(
+      pending,
+      isPendingSyncEventPullAcknowledged(),
+    );
+    return c.json({
+      ok: true,
+      enabled: isSyncEventPullEnabled(),
+      runtimeOverride: getSyncEventPullRuntimeOverride(),
+      pendingAcknowledged: isPendingSyncEventPullAcknowledged(),
+      pausedForPending,
+      pending,
+      summary: formatPendingUnpushedSummary(pending),
+    });
   });
 }

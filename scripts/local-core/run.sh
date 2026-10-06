@@ -287,7 +287,8 @@ start_api_child() {
   cd "${REPO_ROOT}/core/server"
   rotate_log_if_needed
   export_build_version_env
-  log "starting API: pnpm exec tsx --env-file=${ENV_FILE} src/index.ts (no watch; build=${BACKSTEROS_BUILD_COMMIT:-unknown} dirty=${BACKSTEROS_BUILD_DIRTY:-?} CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL})"
+  # Shell does not load --env-file; under `set -u` an unset pull flag crash-loops LaunchAgent.
+  log "starting API: pnpm exec tsx --env-file=${ENV_FILE} src/index.ts (no watch; build=${BACKSTEROS_BUILD_COMMIT:-unknown} dirty=${BACKSTEROS_BUILD_DIRTY:-?} CORE_REPLICATION_SYNC_EVENTS_PULL=${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset})"
   # Job control → own process group (macOS has no setsid(1); Homebrew pnpm is a
   # shell script so we must spawn via bash, not execvp("pnpm")).
   set -m

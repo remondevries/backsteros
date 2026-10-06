@@ -73,11 +73,16 @@ On each replication tick the local core compares that commit with the peer’s
 - `~/.config/backsteros/desktop/local-core.launchd.log` — launchd stdout/stderr
   only (separate so launchd does not hold a handle on the rotated API log).
 
-## OS-49 safeguard
+## Sync-event pull
 
-Set `CORE_REPLICATION_SYNC_EVENTS_PULL=0` in `~/.config/backsteros/local-core.env`
-when a long-offline replica must not replay leader sync_events with
-`updatedAt = now` (see OS-49). Table LWW and vault sync still run.
+Default is on (`isSyncEventPullEnabled` treats an unset env as 1). Set
+`CORE_REPLICATION_SYNC_EVENTS_PULL=0` in `~/.config/backsteros/local-core.env`
+only as an emergency off-switch. Desktop start turns pull on again unless
+local core still has unpushed table rows, open dead letters, or reconcile
+local-only rows — in that case pull stays paused until you confirm.
+
+`run.sh` must not interpolate the unset variable under `set -u` (LaunchAgent
+crash-loop). The start log uses `${CORE_REPLICATION_SYNC_EVENTS_PULL:-unset}`.
 
 ## Stop / start
 

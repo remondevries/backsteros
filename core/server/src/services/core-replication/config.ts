@@ -71,17 +71,52 @@ export function isCoreReplicationEnabled(
   return getCoreReplicationConfig(env) !== null;
 }
 
+let syncEventPullRuntimeOverride: boolean | null = null;
+let pendingSyncEventPullAcknowledged = false;
+
+export function resetSyncEventPullRuntimeForTests(): void {
+  syncEventPullRuntimeOverride = null;
+  pendingSyncEventPullAcknowledged = false;
+}
+
+/** Process-lifetime override from desktop start / ops. `null` follows env. */
+export function setSyncEventPullRuntimeEnabled(enabled: boolean | null): void {
+  syncEventPullRuntimeOverride = enabled;
+  if (enabled === true) {
+    process.env.CORE_REPLICATION_SYNC_EVENTS_PULL = "1";
+  } else if (enabled === false) {
+    process.env.CORE_REPLICATION_SYNC_EVENTS_PULL = "0";
+  }
+}
+
+export function getSyncEventPullRuntimeOverride(): boolean | null {
+  return syncEventPullRuntimeOverride;
+}
+
+/** Allow ordered pull even while unpushed local state is still present. */
+export function acknowledgePendingSyncEventPull(): void {
+  pendingSyncEventPullAcknowledged = true;
+}
+
+export function isPendingSyncEventPullAcknowledged(): boolean {
+  return pendingSyncEventPullAcknowledged;
+}
+
 /**
  * Ordered peer sync-event pull (local-core only). Default on.
  *
  * Set `CORE_REPLICATION_SYNC_EVENTS_PULL=0` to skip applying the leader
  * sync_events feed while still running table LWW + vault sync. Emergency
  * off-switch if ordered replay misbehaves; OS-49 fixed stale timestamp
- * freshening so the default-on path is safe again.
+ * freshening so the default-on path is safe again. Desktop start (OS-82)
+ * can override this at runtime without restarting the process.
  */
 export function isSyncEventPullEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  if (env === process.env && syncEventPullRuntimeOverride !== null) {
+    return syncEventPullRuntimeOverride;
+  }
   const raw = env.CORE_REPLICATION_SYNC_EVENTS_PULL?.trim().toLowerCase();
   if (!raw) return true;
   return raw !== "0" && raw !== "false" && raw !== "no" && raw !== "off";

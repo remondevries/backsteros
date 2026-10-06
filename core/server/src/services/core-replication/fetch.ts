@@ -132,6 +132,31 @@ export async function fetchLocalChanges(
   return fetchForSpec(spec, since);
 }
 
+/** Rows still ahead of the table push cursor (unpushed local state / “outbox”). */
+export async function countLocalChangesSince(
+  table: ReplicatedTable,
+  since: ReplicationCursor,
+): Promise<number> {
+  const spec = getTableSpec(table);
+  if (!spec || !(await tableExists(spec.name))) {
+    return 0;
+  }
+  const whereParts = [pkCursorPredicate(spec, since)];
+  if (spec.whereSql) {
+    whereParts.push(`(${spec.whereSql})`);
+  }
+  const query = `
+    SELECT count(*)::int AS count
+    FROM "${spec.name}" t
+    WHERE ${whereParts.join(" AND ")}
+  `;
+  const rows = (await sqlClient.unsafe(query, [
+    since.updatedAt,
+    since.rowId,
+  ])) as { count: number }[];
+  return rows[0]?.count ?? 0;
+}
+
 /**
  * Tip watermark per table: max (updated_at, pk) used to skip empty change
  * pulls with one HTTP round-trip instead of one request per quiet table.

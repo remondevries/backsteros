@@ -22,8 +22,14 @@ import {
 } from "../sync-log.js";
 import {
   getCoreReplicationConfig,
+  isPendingSyncEventPullAcknowledged,
   isSyncEventPullEnabled,
 } from "./config.js";
+import {
+  formatPendingUnpushedSummary,
+  getPendingUnpushedState,
+  shouldPauseSyncEventPull,
+} from "./pending-unpushed-state.js";
 import {
   resolvePeerEventUpdatedAt,
   shouldSkipPeerEventAsStale,
@@ -31,6 +37,12 @@ import {
 
 const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+let loggedPendingPullPause = false;
+
+export function resetPendingPullPauseLogForTests(): void {
+  loggedPendingPullPause = false;
+}
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
@@ -441,6 +453,30 @@ export async function pullPeerSyncEvents(): Promise<void> {
     );
     return;
   }
+
+  let pending;
+  try {
+    pending = await getPendingUnpushedState();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOpsLog("warn", "core sync-events pending-state inspect failed", message);
+    pending = null;
+  }
+  if (
+    pending &&
+    shouldPauseSyncEventPull(pending, isPendingSyncEventPullAcknowledged())
+  ) {
+    if (!loggedPendingPullPause) {
+      loggedPendingPullPause = true;
+      appendOpsLog(
+        "warn",
+        "core sync-events pull paused",
+        `pending unpushed local state (${formatPendingUnpushedSummary(pending)}); waiting for desktop confirm`,
+      );
+    }
+    return;
+  }
+  loggedPendingPullPause = false;
 
   const workspaceIds = replicationWorkspaceIds();
   if (workspaceIds.length === 0) {

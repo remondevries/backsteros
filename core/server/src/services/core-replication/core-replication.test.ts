@@ -14,6 +14,8 @@ import {
   assertReplicationListenHost,
   getCoreReplicationConfig,
   isSyncEventPullEnabled,
+  resetSyncEventPullRuntimeForTests,
+  setSyncEventPullRuntimeEnabled,
   validateReplicationPeerUrl,
 } from "./config.js";
 import {
@@ -147,6 +149,7 @@ describe("core-replication rules", () => {
 
 describe("isSyncEventPullEnabled", () => {
   it("defaults to enabled", () => {
+    resetSyncEventPullRuntimeForTests();
     assert.equal(isSyncEventPullEnabled({}), true);
   });
 
@@ -160,5 +163,22 @@ describe("isSyncEventPullEnabled", () => {
   it("treats 1/true/yes as enabled", () => {
     assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "1" }), true);
     assert.equal(isSyncEventPullEnabled({ CORE_REPLICATION_SYNC_EVENTS_PULL: "true" }), true);
+  });
+
+  it("OS-82: desktop runtime override wins over process env", () => {
+    const previous = process.env.CORE_REPLICATION_SYNC_EVENTS_PULL;
+    process.env.CORE_REPLICATION_SYNC_EVENTS_PULL = "0";
+    resetSyncEventPullRuntimeForTests();
+    assert.equal(isSyncEventPullEnabled(), false);
+    setSyncEventPullRuntimeEnabled(true);
+    assert.equal(isSyncEventPullEnabled(), true);
+    setSyncEventPullRuntimeEnabled(false);
+    assert.equal(isSyncEventPullEnabled(), false);
+    resetSyncEventPullRuntimeForTests();
+    if (previous === undefined) {
+      delete process.env.CORE_REPLICATION_SYNC_EVENTS_PULL;
+    } else {
+      process.env.CORE_REPLICATION_SYNC_EVENTS_PULL = previous;
+    }
   });
 });

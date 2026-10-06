@@ -77,6 +77,28 @@ describe("sync-event replication contracts", () => {
     assert.ok(tasksSrc.includes("TaskWriteOptions"));
   });
 
+  it("OS-82: desktop can inspect and acknowledge pull via internal routes", () => {
+    const routesSrc = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "routes.ts"),
+      "utf8",
+    );
+    assert.ok(routesSrc.includes("/internal/core-replication/sync-event-pull"));
+    assert.ok(routesSrc.includes("acknowledgePendingSyncEventPull"));
+  });
+
+  it("OS-82: ordered pull pauses on pending unpushed local state", () => {
+    const src = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "sync-event-replication.ts",
+      ),
+      "utf8",
+    );
+    assert.ok(src.includes("shouldPauseSyncEventPull"));
+    assert.ok(src.includes("getPendingUnpushedState"));
+    assert.ok(src.includes("core sync-events pull paused"));
+  });
+
   it("OS-49: leader-first apply does not jump the sync-event pull cursor", () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "leader-mutations.ts"),

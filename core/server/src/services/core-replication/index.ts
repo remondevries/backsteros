@@ -3,6 +3,8 @@ export {
   getCoreReplicationConfig,
   isCoreReplicationEnabled,
   isSyncEventPullEnabled,
+  setSyncEventPullRuntimeEnabled,
+  acknowledgePendingSyncEventPull,
   resolveReplicationIntervalMs,
   type CoreReplicationConfig,
   type CoreReplicationRole,
