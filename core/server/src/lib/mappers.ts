@@ -150,6 +150,13 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
     linkedCommitShas: row.linkedCommitShas ?? [],
+    automateCompletion: row.automateCompletion ?? false,
+    autoReviewDeliveryStatus:
+      row.autoReviewDeliveryStatus === "pending" ||
+      row.autoReviewDeliveryStatus === "delivered" ||
+      row.autoReviewDeliveryStatus === "failed"
+        ? row.autoReviewDeliveryStatus
+        : null,
     habitId: row.habitId ?? null,
     completedAt: toIso(row.completedAt),
     agentCreatedAt: toIso(row.agentCreatedAt),

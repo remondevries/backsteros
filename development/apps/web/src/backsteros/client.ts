@@ -335,6 +335,8 @@ const BACKSTEROS_SYSTEM_ACTIVITY_TYPES = [
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "automate_completion_changed",
+  "auto_review_requested",
 ] as const;
 
 function backsterosActivityToComment(

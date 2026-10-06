@@ -62,15 +62,27 @@ describe("task detail helpers", () => {
         createdAt: "2026-07-31T12:00:00.000Z",
       }),
     ).toBe("Niels tracked 00:00:03 on this task");
+
+    expect(
+      formatBacksterosActivityMessage({
+        id: "a4",
+        taskId: "t1",
+        type: "auto_review_requested",
+        actorUserId: null,
+        actorContactId: null,
+        actorEmail: null,
+        actorName: "Agent",
+        data: {},
+        createdAt: "2026-07-31T12:00:00.000Z",
+      }),
+    ).toBe("Auto-review requested from Sander");
   });
 
   it("formats relative activity times", () => {
     const now = Date.now();
-    expect(
-      formatBacksterosActivityRelativeTime(new Date(now - 120_000).toISOString()),
-    ).toBe("2m ago");
-    expect(
-      formatBacksterosActivityRelativeTime("2026-07-31T12:00:00.000Z"),
-    ).toMatch(/Jul 31/);
+    expect(formatBacksterosActivityRelativeTime(new Date(now - 120_000).toISOString())).toBe(
+      "2m ago",
+    );
+    expect(formatBacksterosActivityRelativeTime("2026-07-31T12:00:00.000Z")).toMatch(/Jul 31/);
   });
 });

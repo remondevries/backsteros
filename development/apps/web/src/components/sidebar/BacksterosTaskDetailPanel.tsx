@@ -113,9 +113,19 @@ function readInitialPanelWidth(): number {
 function BacksterosTaskDescriptionSection(props: {
   readonly taskId: string;
   readonly description: string | null;
+  readonly automateCompletion: boolean;
+  readonly autoReviewDeliveryStatus?: "pending" | "delivered" | "failed" | null;
   readonly onSave: (next: string | null) => Promise<void>;
+  readonly onAutomateCompletionChange: (next: boolean) => Promise<void>;
 }) {
-  const { taskId, description, onSave } = props;
+  const {
+    taskId,
+    description,
+    automateCompletion,
+    autoReviewDeliveryStatus,
+    onSave,
+    onAutomateCompletionChange,
+  } = props;
   const setDescriptionEditing = useBacksterosTaskDetailUiStore(
     (state) => state.setDescriptionEditing,
   );
@@ -189,19 +199,43 @@ function BacksterosTaskDescriptionSection(props: {
         onUploadImages={onUploadImages}
         onToggleMode={() => setViewMode(mode === "preview" ? "edit" : "preview")}
         toggle={
-          <FloatingPillToggleDock>
-            <SegmentedPillToggle
-              value={mode}
-              options={[
-                { value: "preview", label: "Preview" },
-                { value: "edit", label: "Edit" },
-              ]}
-              onChange={setViewMode}
-              ariaLabel="Content view mode"
-            />
-          </FloatingPillToggleDock>
+          <>
+            <FloatingPillToggleDock className="content-view-mode-toggle--start">
+              <span className="bos-automate-completion-label">Automate completion</span>
+              <SegmentedPillToggle
+                value={automateCompletion ? "on" : "off"}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "on", label: "On" },
+                ]}
+                onChange={(next) => {
+                  void onAutomateCompletionChange(next === "on");
+                }}
+                ariaLabel="Automate completion"
+              />
+            </FloatingPillToggleDock>
+            <FloatingPillToggleDock>
+              <SegmentedPillToggle
+                value={mode}
+                options={[
+                  { value: "preview", label: "Preview" },
+                  { value: "edit", label: "Edit" },
+                ]}
+                onChange={setViewMode}
+                ariaLabel="Content view mode"
+              />
+            </FloatingPillToggleDock>
+          </>
         }
       />
+      {autoReviewDeliveryStatus === "failed" ? (
+        <p className="bos-auto-review-failed" role="status">
+          Auto-review trigger failed. Ping Sander by hand.
+        </p>
+      ) : null}
+      {automateCompletion ? (
+        <p className="bos-auto-review-on-hint">Automate completion is on</p>
+      ) : null}
     </div>
   );
 }
@@ -822,7 +856,15 @@ export function BacksterosTaskDetailPanel() {
                     key={state.task.id}
                     taskId={state.task.id}
                     description={state.task.description}
+                    automateCompletion={state.task.automateCompletion === true}
+                    autoReviewDeliveryStatus={state.task.autoReviewDeliveryStatus ?? null}
                     onSave={handleSaveDescription}
+                    onAutomateCompletionChange={async (next) => {
+                      await applyPatch(
+                        { automateCompletion: next },
+                        "Could not update Automate completion",
+                      );
+                    }}
                   />
 
                   <div className="mt-5 border-t border-border/50 pt-3">

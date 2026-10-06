@@ -14,6 +14,7 @@ import {
 import { startCoreReplicationWorker } from "./services/core-replication/worker.js";
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
+import { startAutoReviewWebhookWorker } from "./services/auto-review-webhook.js";
 
 loadBacksterosR2Env();
 assertPowerSyncSecrets();
@@ -59,6 +60,7 @@ serve(
     console.log(`OpenAPI: http://${host}:${info.port}/api/v1/openapi.json`);
     startRecurringTaskRunner();
     startMeetingPortalReminderScheduler();
+    startAutoReviewWebhookWorker();
     startCoreReplicationWorker();
   },
 );

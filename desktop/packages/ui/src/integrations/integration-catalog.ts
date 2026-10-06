@@ -7,7 +7,8 @@ export type WorkspaceIntegrationId =
   | "moneybird"
   | "mapbox"
   | "email"
-  | "whoop";
+  | "whoop"
+  | "auto-review";
 
 export type WorkspaceIntegrationMeta = {
   id: WorkspaceIntegrationId;
@@ -65,6 +66,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "Whoop",
     description: "Recovery, sleep, and strain data for journal entries",
     faviconHost: "whoop.com",
+  },
+  {
+    id: "auto-review",
+    title: "Auto-review webhook",
+    description: "Signed webhook to Sander when Automate completion tasks hit In Review",
+    faviconHost: "x.ai",
   },
 ];
 

@@ -67,6 +67,8 @@ const tasks = new Table(
     links: column.text,
     agent_chat_id: column.text,
     linked_commit_shas: column.text,
+    automate_completion: column.integer,
+    auto_review_delivery_status: column.text,
     habit_id: column.text,
     completed_at: column.text,
     agent_created_at: column.text,

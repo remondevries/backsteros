@@ -204,6 +204,8 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     linked_commit_shas: JSON.stringify(
       Array.isArray(row.linkedCommitShas) ? row.linkedCommitShas : [],
     ),
+    automate_completion: row.automateCompletion ?? false,
+    auto_review_delivery_status: row.autoReviewDeliveryStatus ?? null,
     habit_id: row.habitId ?? null,
     completed_at: row.completedAt?.toISOString() ?? null,
     agent_created_at: row.agentCreatedAt?.toISOString() ?? null,
@@ -1133,6 +1135,17 @@ function asBoolean(value: unknown): boolean | undefined {
   // PowerSync SQLite stores booleans as 0/1 integers.
   if (value === 0) return false;
   if (value === 1) return true;
+  return undefined;
+}
+
+function asAutoReviewDeliveryStatus(
+  value: unknown,
+): UpdateTaskInput["autoReviewDeliveryStatus"] {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (value === "pending" || value === "delivered" || value === "failed") {
+    return value;
+  }
   return undefined;
 }
 
@@ -2083,6 +2096,12 @@ function mapTaskUpsert(
     ),
     linkedCommitShas: parseStringIdArray(
       payload.linked_commit_shas ?? payload.linkedCommitShas,
+    ),
+    automateCompletion: asBoolean(
+      payload.automate_completion ?? payload.automateCompletion,
+    ),
+    autoReviewDeliveryStatus: asAutoReviewDeliveryStatus(
+      payload.auto_review_delivery_status ?? payload.autoReviewDeliveryStatus,
     ),
     addLinkedCommitShas: parseStringIdArray(
       payload.add_linked_commit_shas ?? payload.addLinkedCommitShas,

@@ -76,7 +76,9 @@ export function BacksterosTaskActivityTimeline(props: {
               activity.type !== "related_organizations_changed" &&
               activity.type !== "created" &&
               activity.type !== "timer_started" &&
-              activity.type !== "timer_stopped");
+              activity.type !== "timer_stopped" &&
+              activity.type !== "automate_completion_changed" &&
+              activity.type !== "auto_review_requested");
 
           return (
             <li

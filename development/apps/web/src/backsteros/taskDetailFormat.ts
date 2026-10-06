@@ -96,6 +96,12 @@ export function formatBacksterosActivityMessage(activity: BacksterosTaskActivity
           : 0;
       return `${name} tracked ${formatBacksterosTrackedDuration(durationSeconds)} on this task`;
     }
+    case "automate_completion_changed":
+      return data.to === true
+        ? `${name} turned on Automate completion`
+        : `${name} turned off Automate completion`;
+    case "auto_review_requested":
+      return "Auto-review requested from Sander";
     default:
       return `${name} updated this task`;
   }

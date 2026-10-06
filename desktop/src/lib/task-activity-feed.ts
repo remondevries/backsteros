@@ -55,6 +55,8 @@ const ACTIVITY_TYPES = new Set<TaskActivityType>([
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "automate_completion_changed",
+  "auto_review_requested",
   "comment",
 ]);
 

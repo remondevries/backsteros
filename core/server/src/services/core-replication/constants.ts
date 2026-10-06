@@ -51,6 +51,7 @@ export const REPLICATED_TABLES = [
   "api_keys",
   "financial_transactions",
   "document_property_types",
+  "auto_review_webhook_deliveries",
 ] as const;
 
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];

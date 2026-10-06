@@ -33,6 +33,8 @@ export type TaskActivityType =
   | "agent_worked"
   | "timer_started"
   | "timer_stopped"
+  | "automate_completion_changed"
+  | "auto_review_requested"
   | "comment";
 
 /** Property updates coalesce into one row when repeated quickly. */
@@ -44,6 +46,7 @@ const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
   "priority_changed",
   "due_date_changed",
   "project_changed",
+  "automate_completion_changed",
 ]);
 
 /** System event types (excludes discussion comments). */
@@ -59,6 +62,8 @@ export const SYSTEM_ACTIVITY_TYPES = [
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "automate_completion_changed",
+  "auto_review_requested",
 ] as const satisfies readonly TaskActivityType[];
 
 /** Rapid edits of the same property within this window update the prior row. */

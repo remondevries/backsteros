@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import type {
   AgentMailSettings,
+  AutoReviewWebhookSettings,
   CloudflareSettings,
   CursorSettings,
   GithubSettings,
@@ -33,6 +34,7 @@ import { SettingsMapboxTab } from "./settings-mapbox-tab";
 import { SettingsMoneybirdTab } from "./settings-moneybird-tab";
 import { SettingsTransipTab } from "./settings-transip-tab";
 import { SettingsWhoopTab } from "./settings-whoop-tab";
+import { SettingsAutoReviewWebhookTab } from "./settings-auto-review-webhook-tab";
 
 type IntegrationStatus = {
   configured: boolean;
@@ -154,6 +156,17 @@ export function SettingsIntegrationsTab({
         configured: body.configured,
         connected: body.connected,
       })),
+      settle(
+        "auto-review",
+        () =>
+          client.requestJson<AutoReviewWebhookSettings>(
+            "/api/v1/settings/auto-review-webhook",
+          ),
+        (body) => ({
+          configured: Boolean(body.url && body.secretConfigured),
+          connected: Boolean(body.enabled && body.url && body.secretConfigured),
+        }),
+      ),
     ]);
 
     setStatuses(next);
@@ -297,6 +310,13 @@ export function SettingsIntegrationsTab({
         ) : null}
         {activeId === "whoop" && activeMeta ? (
           <SettingsWhoopTab
+            title={activeMeta.title}
+            description={activeMeta.description}
+            hideHeader
+          />
+        ) : null}
+        {activeId === "auto-review" && activeMeta ? (
+          <SettingsAutoReviewWebhookTab
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader

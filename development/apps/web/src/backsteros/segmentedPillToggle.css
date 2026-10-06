@@ -102,3 +102,38 @@
   border-color: color-mix(in srgb, var(--foreground) 9%, transparent);
   background: color-mix(in srgb, var(--foreground) 7%, transparent);
 }
+
+.content-view-mode-toggle--start {
+  right: auto;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-view-mode-toggle--start .content-view-mode-toggle__inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bos-automate-completion-label {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  white-space: nowrap;
+}
+
+.bos-auto-review-failed {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, #ef4444 80%, var(--foreground));
+}
+
+.bos-auto-review-on-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}

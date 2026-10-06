@@ -74,6 +74,7 @@ import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
 import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
+import { enqueueAutoReviewDelivery } from "./auto-review-webhook.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -1386,6 +1387,8 @@ export async function listTasksPaginated(
       links: tasks.links,
       agentChatId: tasks.agentChatId,
       linkedCommitShas: tasks.linkedCommitShas,
+      automateCompletion: tasks.automateCompletion,
+      autoReviewDeliveryStatus: tasks.autoReviewDeliveryStatus,
       habitId: tasks.habitId,
       legacySource: tasks.legacySource,
       completedAt: tasks.completedAt,
@@ -1957,6 +1960,7 @@ async function createTaskWithExecutor(
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
       linkedCommitShas: input.linkedCommitShas ?? [],
+      automateCompletion: input.automateCompletion ?? false,
       habitId: input.habitId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
@@ -2077,8 +2081,13 @@ export async function updateTask(
     (Array.isArray(input.removeLinkedCommitShas) &&
       input.removeLinkedCommitShas.length > 0);
 
-  // Concurrent addLinkedCommitShas must see each other's writes (OS-64).
-  if (needsShaLock && executor === db) {
+  const needsTxn =
+    needsShaLock ||
+    input.status !== undefined ||
+    input.automateCompletion !== undefined;
+
+  // Status / auto-review outbox must land in the same transaction (OS-92).
+  if (needsTxn && executor === db) {
     return db.transaction((tx) =>
       updateTask(workspaceId, id, input, tx, actor, options),
     );
@@ -2269,6 +2278,12 @@ export async function updateTask(
       agentChatId: input.agentChatId,
       ...(nextLinkedCommitShas !== undefined
         ? { linkedCommitShas: nextLinkedCommitShas }
+        : {}),
+      ...(input.automateCompletion !== undefined
+        ? { automateCompletion: input.automateCompletion }
+        : {}),
+      ...(input.autoReviewDeliveryStatus !== undefined
+        ? { autoReviewDeliveryStatus: input.autoReviewDeliveryStatus }
         : {}),
       habitId: input.habitId,
       trackedMinutes: input.trackedMinutes,
@@ -2472,7 +2487,34 @@ export async function updateTask(
           executor,
         );
       }
+      if (
+        input.automateCompletion !== undefined &&
+        input.automateCompletion !== existing.automateCompletion
+      ) {
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "automate_completion_changed",
+          {
+            from: existing.automateCompletion,
+            to: input.automateCompletion,
+          },
+          actor,
+          executor,
+        );
+      }
     }
+    await enqueueAutoReviewDelivery({
+      workspaceId,
+      task: row,
+      previousStatus: existing.status,
+      nextStatus: nextStatus,
+      automateCompletion:
+        input.automateCompletion ?? existing.automateCompletion,
+      skipActivitySideEffects: skipActivity,
+      timestamp: writeAt,
+      executor,
+    });
   }
 
   bumpAgentSearchCache(workspaceId);

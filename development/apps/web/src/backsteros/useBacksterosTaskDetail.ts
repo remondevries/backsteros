@@ -89,6 +89,12 @@ function normalizeTask(
       ? { trackedDurationSeconds: task.trackedDurationSeconds }
       : {}),
     ...(task.trackedMinutes !== undefined ? { trackedMinutes: task.trackedMinutes } : {}),
+    ...(task.automateCompletion !== undefined
+      ? { automateCompletion: task.automateCompletion }
+      : {}),
+    ...(task.autoReviewDeliveryStatus !== undefined
+      ? { autoReviewDeliveryStatus: task.autoReviewDeliveryStatus }
+      : {}),
   };
 }
 

@@ -124,6 +124,15 @@ export const workspaceIntegrationSecrets = pgTable(
     emailGrokWebhookUrl: text("email_grok_webhook_url"),
     /** Bearer/token for the Grok Bot webhook Authorization header. */
     emailGrokWebhookKey: text("email_grok_webhook_key"),
+    /** Sander auto-review webhook URL (OS-92). */
+    autoReviewWebhookUrl: text("auto_review_webhook_url"),
+    /** AES-GCM ciphertext of the webhook secret — never returned. */
+    autoReviewWebhookSecretCiphertext: text(
+      "auto_review_webhook_secret_ciphertext",
+    ),
+    autoReviewWebhookEnabled: boolean("auto_review_webhook_enabled")
+      .notNull()
+      .default(false),
     mapboxAccessToken: text("mapbox_access_token"),
     githubApiToken: text("github_api_token"),
     transipAccessToken: text("transip_access_token"),
@@ -742,6 +751,13 @@ export const tasks = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /**
+     * When true, moving this task to `in_review` enqueues an auto-review
+     * webhook to Sander (OS-92). Default off.
+     */
+    automateCompletion: boolean("automate_completion").notNull().default(false),
+    /** Latest auto-review delivery: pending | delivered | failed. */
+    autoReviewDeliveryStatus: text("auto_review_delivery_status"),
     /** Habit definition this daily instance belongs to, if any. */
     habitId: text("habit_id").references(() => habits.id, {
       onDelete: "set null",
@@ -1132,6 +1148,51 @@ export const taskActivities = pgTable(
       table.taskId,
       table.type,
       table.createdAt,
+    ),
+  ],
+);
+
+/**
+ * Durable auto-review webhook outbox (OS-92). Twin-replicated between cores;
+ * only cloud delivers. Not published to PowerSync.
+ */
+export const autoReviewWebhookDeliveries = pgTable(
+  "auto_review_webhook_deliveries",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("pending"),
+    attempt: integer("attempt").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastHttpStatus: integer("last_http_status"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("auto_review_webhook_deliveries_due_idx").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
+    index("auto_review_webhook_deliveries_task_id_idx").on(table.taskId),
+    index("auto_review_webhook_deliveries_workspace_id_idx").on(
+      table.workspaceId,
     ),
   ],
 );
@@ -2063,6 +2124,8 @@ export type DbHabit = typeof habits.$inferSelect;
 export type DbMeeting = typeof meetings.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;
+export type DbAutoReviewWebhookDelivery =
+  typeof autoReviewWebhookDeliveries.$inferSelect;
 export type DbDocument = typeof documents.$inferSelect;
 export type DbSpacePublishSettings = typeof spacePublishSettings.$inferSelect;
 export type DbSpaceSiteKey = typeof spaceSiteKeys.$inferSelect;

@@ -51,6 +51,16 @@ describe("hybrid write bar", () => {
     assert.ok(src.includes("recordMeetingRestSyncEvent"));
   });
 
+  it("sends auto-review webhooks from cloud only (OS-92)", () => {
+    const service = readSrc("auto-review-webhook.ts");
+    assert.ok(service.includes("shouldDeliverAutoReviewWebhooks"));
+    assert.ok(service.includes("enqueueAutoReviewDelivery"));
+    const lib = readSrc("../lib/auto-review-webhook.ts");
+    assert.ok(lib.includes('CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local"'));
+    const index = readSrc("../index.ts");
+    assert.ok(index.includes("startAutoReviewWebhookWorker"));
+  });
+
   it("registers and deletes email threads leader-first (not invent-on-list / hard-delete twin-only)", () => {
     const email = readSrc("email-threads.ts");
     assert.ok(email.includes("commitRestEntityWriteBatch"));

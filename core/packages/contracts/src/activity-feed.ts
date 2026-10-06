@@ -13,6 +13,8 @@ export const TASK_SYSTEM_ACTIVITY_TYPES = [
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "automate_completion_changed",
+  "auto_review_requested",
 ] as const;
 
 export type TaskSystemActivityType = (typeof TASK_SYSTEM_ACTIVITY_TYPES)[number];

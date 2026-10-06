@@ -2441,6 +2441,41 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "Test AgentMail API key and optional inbox access",
     },
+    getAutoReviewWebhookSettings: {
+      method: "GET",
+      path: "/api/v1/settings/auto-review-webhook",
+      responses: {
+        200: s.autoReviewWebhookSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "Get auto-review webhook settings (secret redacted; OS-92)",
+    },
+    updateAutoReviewWebhookSettings: {
+      method: "PATCH",
+      path: "/api/v1/settings/auto-review-webhook",
+      body: s.updateAutoReviewWebhookSettingsSchema,
+      responses: {
+        200: s.autoReviewWebhookSettingsSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Update auto-review webhook URL, secret, and on/off (OS-92)",
+    },
+    testAutoReviewWebhook: {
+      method: "POST",
+      path: "/api/v1/settings/auto-review-webhook/test",
+      body: z.object({}).optional(),
+      responses: {
+        200: s.autoReviewWebhookTestResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Send a signed test auto-review webhook (OS-92)",
+    },
     listAgentMailMessages: {
       method: "GET",
       path: "/api/v1/email/messages",

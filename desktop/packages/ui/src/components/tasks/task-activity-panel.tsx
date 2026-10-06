@@ -324,6 +324,16 @@ function activityMessage(activity: TaskActivity): ReactNode {
       </>
     );
   }
+  if (activity.type === "automate_completion_changed") {
+    return activity.data.to === true ? (
+      <>{name} turned on Automate completion</>
+    ) : (
+      <>{name} turned off Automate completion</>
+    );
+  }
+  if (activity.type === "auto_review_requested") {
+    return <>Auto-review requested from Sander</>;
+  }
   return <>{name} updated this task</>;
 }
 

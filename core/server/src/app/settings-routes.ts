@@ -65,6 +65,7 @@ import {
   updateTransipDomainContactsInputSchema,
   updateTransipDomainNameserversInputSchema,
   updateAgentMailSettingsSchema,
+  updateAutoReviewWebhookSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
   updateEmailThreadCommentSchema,
@@ -226,6 +227,7 @@ import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as mapboxSettingsService from "../services/mapbox-settings.js";
 import * as githubSettingsService from "../services/github-settings.js";
 import * as agentmailSettingsService from "../services/agentmail-settings.js";
+import * as autoReviewWebhookService from "../services/auto-review-webhook.js";
 import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { MapboxApiError } from "../lib/mapbox-client.js";
@@ -820,6 +822,43 @@ export function registerSettingsRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(
       await agentmailSettingsService.testAgentMailConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/settings/auto-review-webhook", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await autoReviewWebhookService.getAutoReviewWebhookSettings(
+        auth.workspaceId,
+      ),
+    );
+  });
+  app.patch("/api/v1/settings/auto-review-webhook", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateAutoReviewWebhookSettingsSchema.safeParse(
+      await c.req.json(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid auto-review webhook settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await autoReviewWebhookService.updateAutoReviewWebhookSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.post("/api/v1/settings/auto-review-webhook/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    return c.json(
+      await autoReviewWebhookService.sendAutoReviewWebhookTest(
+        auth.workspaceId,
+      ),
     );
   });
 }

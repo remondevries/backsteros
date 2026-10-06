@@ -513,6 +513,16 @@ export const taskSchema = z.object({
    * Empty when none are linked.
    */
   linkedCommitShas: z.array(z.string()).default([]),
+  /**
+   * When true, an `in_review` transition enqueues Sander's auto-review webhook
+   * (OS-92). Default false.
+   */
+  automateCompletion: z.boolean().default(false),
+  /** Latest auto-review delivery for this task (`pending` | `delivered` | `failed`). */
+  autoReviewDeliveryStatus: z
+    .enum(["pending", "delivered", "failed"])
+    .nullable()
+    .optional(),
   /** Habit definition this daily instance belongs to, if any. */
   habitId: z.string().nullable().optional(),
   completedAt: z.string().datetime().nullable(),
@@ -558,6 +568,8 @@ export const taskListItemSchema = z.object({
   updatedAt: z.string().datetime(),
   /** Only with `updatedSince`: set when the task was deleted. */
   deletedAt: z.string().datetime().nullable().optional(),
+  /** When true, in_review enqueues Sander's auto-review webhook (OS-92). */
+  automateCompletion: z.boolean().optional(),
 });
 
 /**
@@ -680,6 +692,8 @@ export const createTaskSchema = z.object({
   agentChatId: z.string().max(128).nullable().optional(),
   /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
   linkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
+  /** Enqueue auto-review when this task later moves to in_review (OS-92). */
+  automateCompletion: z.boolean().optional(),
   habitId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
@@ -716,6 +730,11 @@ export const updateTaskSchema = createTaskSchema
     addLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
     /** Remove commit SHAs (case-insensitive match) (OS-64). */
     removeLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
+    /** Replicated auto-review delivery state (OS-92). */
+    autoReviewDeliveryStatus: z
+      .enum(["pending", "delivered", "failed"])
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) =>
@@ -796,6 +815,8 @@ export const taskActivityTypeSchema = z.enum([
   "agent_worked",
   "timer_started",
   "timer_stopped",
+  "automate_completion_changed",
+  "auto_review_requested",
   /** Discussion body — first-class in the unified activities stream. */
   "comment",
 ]);
@@ -3333,6 +3354,43 @@ export const agentMailTestConnectionResultSchema = z.object({
   inboxEmail: z.string().nullable(),
   inboxCount: z.number().int().nullable(),
 });
+
+export const autoReviewWebhookRecentFailureSchema = z.object({
+  deliveryId: z.string(),
+  taskId: z.string().nullable(),
+  taskKey: z.string().nullable(),
+  at: z.string().datetime(),
+  error: z.string().nullable(),
+  httpStatus: z.number().int().nullable(),
+  attempt: z.number().int(),
+});
+
+export const autoReviewWebhookSettingsSchema = z.object({
+  enabled: z.boolean(),
+  url: z.string().nullable(),
+  secretConfigured: z.boolean(),
+  /** Masked secret (never the raw value). */
+  secretPreview: z.string().nullable(),
+  lastDeliveryAt: z.string().datetime().nullable(),
+  lastDeliveryResult: z.enum(["delivered", "failed", "pending"]).nullable(),
+  lastDeliveryHttpStatus: z.number().int().nullable(),
+  lastDeliveryError: z.string().nullable(),
+  recentFailures: z.array(autoReviewWebhookRecentFailureSchema),
+});
+
+export const updateAutoReviewWebhookSettingsSchema = z.object({
+  url: z.string().max(2000).optional(),
+  /** New secret, or empty string to clear. Omit to leave unchanged. */
+  secret: z.string().max(2000).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const autoReviewWebhookTestResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  httpStatus: z.number().int().nullable(),
+  deliveryId: z.string().nullable(),
+});
 export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
 export const agentMailConceptDraftSchema = z.object({
   draftId: z.string(),
@@ -4705,6 +4763,15 @@ export type UpdateAgentMailSettingsInput = z.infer<
 export type AgentMailInboxSummary = z.infer<typeof agentMailInboxSchema>;
 export type AgentMailTestConnectionResult = z.infer<
   typeof agentMailTestConnectionResultSchema
+>;
+export type AutoReviewWebhookSettings = z.infer<
+  typeof autoReviewWebhookSettingsSchema
+>;
+export type UpdateAutoReviewWebhookSettingsInput = z.infer<
+  typeof updateAutoReviewWebhookSettingsSchema
+>;
+export type AutoReviewWebhookTestResult = z.infer<
+  typeof autoReviewWebhookTestResultSchema
 >;
 export type AgentMailConceptDraft = z.infer<typeof agentMailConceptDraftSchema>;
 export type AgentMailMessage = z.infer<typeof agentMailMessageSchema>;

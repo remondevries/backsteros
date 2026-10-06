@@ -151,6 +151,8 @@ export interface BacksterosTaskDetail extends BacksterosTask {
   readonly trackedMinutes?: number | null | undefined;
   readonly createdAt: string;
   readonly deletedAt: string | null;
+  readonly automateCompletion?: boolean;
+  readonly autoReviewDeliveryStatus?: "pending" | "delivered" | "failed" | null;
 }
 
 export interface BacksterosTasksResponse {
@@ -255,6 +257,7 @@ export type BacksterosTaskUpdatePatch = {
   readonly trackedMinutes?: number | null | undefined;
   /** When set, BacksterOS records the status change as this actor. */
   readonly activityActor?: "user" | "agent";
+  readonly automateCompletion?: boolean;
 };
 
 export type BacksterosCreateTaskActivityInput =

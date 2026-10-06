@@ -248,6 +248,82 @@ adds both persist (server-side dedupe).
 Remon: update the shared agent skill / CLI finish flow to use status+comment and
 `addLinkedCommitShas` instead of GET-then-replace.
 
+### Auto-review webhook (OS-92)
+
+When a task has `automateCompletion: true` and its status **transitions** to
+`in_review` (the agent-done moment), cloud-core POSTs JSON to Sander’s webhook.
+No new BacksterOS task is created. Completing the task (`completed`) does **not**
+fire the webhook (no loops). Failed agent sessions never reach `in_review`, so
+they never fire.
+
+**Per-task field** (default `false`; PATCH `/api/v1/tasks/:id`):
+
+```http
+PATCH /api/v1/tasks/OS-92
+{ "automateCompletion": true }
+```
+
+Tasks also expose `autoReviewDeliveryStatus`: `pending` | `delivered` | `failed`.
+
+**Settings** (secret encrypted at rest; never logged or returned raw):
+
+```http
+GET   /api/v1/settings/auto-review-webhook
+PATCH /api/v1/settings/auto-review-webhook
+      { "url": "https://…", "secret": "…", "enabled": true }
+POST  /api/v1/settings/auto-review-webhook/test
+```
+
+GET returns a masked `secretPreview` (last four characters) and recent failures.
+`enabled` must be on and both URL and secret set, or nothing is enqueued.
+
+**Request Sander should verify**
+
+```http
+POST <configured URL>
+Content-Type: application/json
+Authorization: Bearer <shared secret>
+X-BacksterOS-Timestamp: <unix-ms>
+X-BacksterOS-Signature: sha256=<hex>
+X-BacksterOS-Delivery-Id: <deliveryId>
+```
+
+Signature is HMAC-SHA256 of the UTF-8 string `{timestamp}.{rawBody}` using the
+shared secret. Compare with a timing-safe equals. Dedupe on `deliveryId`.
+
+**JSON body** (`event` is always `task.ready_for_review`):
+
+```json
+{
+  "event": "task.ready_for_review",
+  "taskId": "…",
+  "taskKey": "OS-92",
+  "title": "…",
+  "projectId": "…",
+  "projectKey": "OS",
+  "projectName": "BacksterOS",
+  "assigneeId": "…",
+  "assigneeName": "Sander",
+  "timestamp": "2026-10-06T12:00:00.000Z",
+  "threadId": "<bound agentChatId / Development session>",
+  "sessionId": "<live presence session id when known>",
+  "commitHashes": ["abc1234"],
+  "deliveryId": "…",
+  "attempt": 1
+}
+```
+
+Send-test adds `"test": true` and uses `taskId: "test"`. Ignore those for review.
+
+**Delivery:** written to `auto_review_webhook_deliveries` in the same transaction
+as the status change. Only cloud-core (or a standalone core) sends. Timeout 10 s.
+2xx = success. Retry 5xx, timeouts, and network errors with backoff 1m, 5m, 15m,
+1h, 6h (max 6 attempts). Do not retry other 4xx; 408/429 retry and honour
+`Retry-After`. After the last attempt the delivery is dead: the task shows
+`autoReviewDeliveryStatus: failed` and a comment `Auto-review trigger failed`.
+A successful delivery records activity `auto_review_requested`
+(“Auto-review requested from Sander”).
+
 ### OpenAPI
 
 - Generated from ts-rest / Zod contracts in `packages/contracts`

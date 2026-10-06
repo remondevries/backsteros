@@ -77,6 +77,9 @@ const TABLE_SPECS: TableSpec[] = [
   spec("api_keys", ["id"]),
   spec("financial_transactions", ["id"]),
   spec("document_property_types", ["id"], "updated_at", { optional: true }),
+  spec("auto_review_webhook_deliveries", ["id"], "updated_at", {
+    optional: true,
+  }),
 ];
 
 const specByName = new Map<KnownTable, TableSpec>(
