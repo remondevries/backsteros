@@ -8,7 +8,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { documents, projects, tasks } from "../db/schema.js";
+import { documentSearchIndex, documents, projects, tasks } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { bodyForSnippet } from "../lib/document-frontmatter.js";
 import {
@@ -59,6 +59,10 @@ import {
   withDocumentContentSaveTimeout,
 } from "./document-content-timeout.js";
 import { syncDocumentMetadataFromStorageKey } from "./vault-document-metadata.js";
+import {
+  documentsPlainQuerySql,
+  upsertDocumentSearchIndex,
+} from "./document-search-index.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
 import {
@@ -492,6 +496,17 @@ export async function createDocument(
         })
         .where(eq(documents.id, row.id))
         .returning();
+      await upsertDocumentSearchIndex(
+        {
+          documentId: row.id,
+          workspaceId,
+          searchBody: synced.content,
+          contentEtag:
+            contentEtag ?? checksumForContent(synced.content).slice(0, 32),
+        },
+        executor,
+      );
+      bumpAgentSearchCache(workspaceId);
       return indexed ?? row;
     } catch (error) {
       if (
@@ -502,6 +517,15 @@ export async function createDocument(
           .update(documents)
           .set({ frontMatterValid: false, properties: {}, updatedAt: new Date() })
           .where(eq(documents.id, row.id));
+        await upsertDocumentSearchIndex(
+          {
+            documentId: row.id,
+            workspaceId,
+            searchBody: content,
+            contentEtag,
+          },
+          executor,
+        );
       } else {
         throw error;
       }
@@ -835,11 +859,19 @@ export async function hydrateLocalDocumentVaultContent(
   content: string,
 ): Promise<void> {
   if (!content.length) return;
-  await withDocumentContentRowLock(workspaceId, id, async (locked) => {
+  await withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
     if (!locked.storageKey) return;
     await withDocumentContentSaveTimeout(
       putObject(locked.storageKey, content),
       DOCUMENT_CONTENT_SAVE_TIMEOUT_MS,
+    );
+    await upsertDocumentSearchIndex(
+      {
+        documentId: locked.id,
+        workspaceId,
+        searchBody: content,
+      },
+      tx,
     );
   });
 }
@@ -960,6 +992,15 @@ export async function updateDocumentContent(
                 if (!updated) {
                   return null;
                 }
+                await upsertDocumentSearchIndex(
+                  {
+                    documentId: id,
+                    workspaceId,
+                    searchBody: contentForWrite,
+                    contentEtag: meta.contentEtag,
+                  },
+                  tx,
+                );
                 return {
                   contentVersion: updated.contentVersion,
                   byteSize: updated.byteSize,
@@ -1034,6 +1075,7 @@ export async function searchDocuments(input: {
   limit?: number;
 }) {
   const pattern = `%${input.q}%`;
+  const tsQuery = documentsPlainQuerySql(input.q);
   const conditions = [
     eq(documents.workspaceId, input.workspaceId),
     isNull(documents.deletedAt),
@@ -1041,6 +1083,11 @@ export async function searchDocuments(input: {
       ilike(documents.title, pattern),
       ilike(documents.path, pattern),
       ilike(documents.snippet, pattern),
+      sql`EXISTS (
+        SELECT 1 FROM document_search_index dsi
+        WHERE dsi.document_id = ${documents.id}
+          AND dsi.search_tsv @@ ${tsQuery}
+      )`,
     ),
   ];
 
@@ -1212,14 +1259,16 @@ export async function updateDocumentSection(
 }
 
 export type RetrieveDocumentsTiming = {
-  /** Wall time for the candidate SQL (ILIKE pre-filter + order). */
+  /** Wall time for the candidate SQL (FTS + ILIKE pre-filter + order). */
   candidateQueryMs: number;
-  /** Wall time for concurrent vault body loads (incl. optional R2). */
+  /** Wall time for concurrent body loads (indexed corpus, else vault/R2). */
   bodyFetchMs: number;
   /** Wall time for lexical section parse + score + budget trim. */
   rankingMs: number;
   /** End-to-end retrieve wall time. */
   totalMs: number;
+  /** Candidates whose body came from document_search_index (no storage read). */
+  indexedBodies: number;
 };
 
 export async function retrieveDocuments(input: {
@@ -1243,13 +1292,18 @@ export async function retrieveDocuments(input: {
 }> {
   const started = Date.now();
   const pattern = `%${input.q}%`;
+  const tsQuery = documentsPlainQuerySql(input.q);
   const conditions = [
     eq(documents.workspaceId, input.workspaceId),
     isNull(documents.deletedAt),
     eq(documents.kind, "document"),
-    // Pre-filter on indexed metadata so older matches are not buried under the
-    // newest N rows. Body text is still scored after concurrent storage loads.
+    // FTS includes body lexemes; ILIKE keeps substring hits on metadata.
     or(
+      sql`EXISTS (
+        SELECT 1 FROM document_search_index dsi
+        WHERE dsi.document_id = ${documents.id}
+          AND dsi.search_tsv @@ ${tsQuery}
+      )`,
       ilike(documents.title, pattern),
       ilike(documents.path, pattern),
       ilike(documents.snippet, pattern),
@@ -1278,21 +1332,31 @@ export async function retrieveDocuments(input: {
       title: documents.title,
       storageKey: documents.storageKey,
       contentEtag: documents.contentEtag,
+      indexedBody: documentSearchIndex.searchBody,
     })
     .from(documents)
+    .leftJoin(
+      documentSearchIndex,
+      eq(documentSearchIndex.documentId, documents.id),
+    )
     .where(and(...conditions))
     .orderBy(
-      // Prefer title/path hits over snippet/properties, then recency.
+      // Prefer title/path hits over snippet/properties, then FTS rank, then recency.
       sql`(CASE
         WHEN ${documents.title} ILIKE ${pattern} THEN 3
         WHEN ${documents.path} ILIKE ${pattern} THEN 2
         WHEN coalesce(${documents.snippet}, '') ILIKE ${pattern} THEN 1
         ELSE 0
       END) DESC`,
+      sql`ts_rank_cd(coalesce(document_search_index.search_tsv, ''::tsvector), ${tsQuery}) DESC`,
       desc(documents.updatedAt),
     )
     .limit(candidateLimit);
   const candidateQueryMs = Date.now() - queryStarted;
+
+  const indexedBodies = rows.filter(
+    (row) => row.indexedBody != null && row.indexedBody.length > 0,
+  ).length;
 
   const bodyStarted = Date.now();
   const { candidates, skipped } = await loadRetrievalCandidateBodies(rows, {
@@ -1330,12 +1394,13 @@ export async function retrieveDocuments(input: {
     bodyFetchMs,
     rankingMs,
     totalMs,
+    indexedBodies,
   };
   if (totalMs > DOCUMENT_RETRIEVAL_SLOW_MS || process.env.DOCUMENT_RETRIEVAL_LOG_EVERY === "1") {
     appendOpsLog(
       totalMs > DOCUMENT_RETRIEVAL_SLOW_MS ? "warn" : "info",
       "documents retrieve timing",
-      `qLen=${input.q.length} candidates=${rows.length} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} query=${candidateQueryMs}ms bodies=${bodyFetchMs}ms rank=${rankingMs}ms total=${totalMs}ms`,
+      `qLen=${input.q.length} candidates=${rows.length} indexed=${indexedBodies} loaded=${candidates.length} skipped=${skipped} hits=${ranked.results.length} query=${candidateQueryMs}ms bodies=${bodyFetchMs}ms rank=${rankingMs}ms total=${totalMs}ms`,
     );
   }
 

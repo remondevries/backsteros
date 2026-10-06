@@ -42,6 +42,8 @@ export type RetrievalCandidateRow = {
   title: string;
   storageKey: string;
   contentEtag?: string | null;
+  /** Postgres FTS corpus (OS-80). When set, retrieve skips object storage. */
+  indexedBody?: string | null;
 };
 
 const BODY_CACHE_MAX = 256;
@@ -179,6 +181,19 @@ export async function loadRetrievalCandidateBodies(
   const nowMs = options.nowMs ?? Date.now();
   const loaded = await mapWithConcurrency(rows, concurrency, async (row) => {
     try {
+      const indexed = row.indexedBody;
+      if (indexed != null && indexed.length > 0) {
+        return {
+          ok: true as const,
+          candidate: {
+            id: row.id,
+            docKey: row.docKey,
+            title: row.title,
+            content: indexed,
+          },
+        };
+      }
+
       const expectedEtag = row.contentEtag?.trim() || null;
       if (expectedEtag) {
         const cached = bodyCache.get(bodyCacheKey(row.storageKey, expectedEtag));

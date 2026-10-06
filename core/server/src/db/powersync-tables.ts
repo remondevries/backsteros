@@ -2,6 +2,7 @@
  * Canonical PowerSync publication / sync-rule tables (Tier A/B metadata).
  * Keep in sync with deploy/powersync/sync-config.yaml streams.
  * Do not add Tier C/D blob tables (PDF bytes, markdown bodies).
+ * `document_search_index` is server-only FTS (OS-80) — never publish it.
  */
 export const POWERSYNC_PUBLICATION_TABLES = [
   "projects",

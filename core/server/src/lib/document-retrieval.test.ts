@@ -219,6 +219,30 @@ Nothing about storage.
     assert.equal(peekDocumentRetrievalBodyCacheSizeForTests(), 1);
   });
 
+  it("uses indexedBody and does not call getObject", async () => {
+    let calls = 0;
+    const { candidates, skipped } = await loadRetrievalCandidateBodies(
+      [
+        {
+          id: "indexed",
+          docKey: "DOC-I",
+          title: "Indexed",
+          storageKey: "vault/indexed.md",
+          indexedBody: "# Body\nuniquelexemeonlyinbody.\n",
+        },
+      ],
+      {
+        getObject: async () => {
+          calls += 1;
+          throw new Error("should not load storage");
+        },
+      },
+    );
+    assert.equal(calls, 0);
+    assert.equal(skipped, 0);
+    assert.equal(candidates[0]?.content.includes("uniquelexemeonlyinbody"), true);
+  });
+
   it("does not cache when row etag arrives before matching body bytes", async () => {
     const newBody = "# New body\nbackster retrieval cache.\n";
     const oldBody = "# Old body\nstale content.\n";

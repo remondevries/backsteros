@@ -953,6 +953,13 @@
       "when": 1795700000000,
       "tag": "0134_document_property_types",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1795710000000,
+      "tag": "0135_document_search_index",
+      "breakpoints": true
     }
   ]
 }

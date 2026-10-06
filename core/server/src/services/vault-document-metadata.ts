@@ -20,6 +20,7 @@ import {
   listMarkdownFiles,
 } from "./core-replication/vault-replication.js";
 import { withDocumentContentRowLock } from "./document-content-row-lock.js";
+import { upsertDocumentSearchIndex } from "./document-search-index.js";
 
 export type VaultMetadataReconcileResult = {
   scanned: number;
@@ -90,6 +91,17 @@ export async function syncDocumentMetadataFromStorageKey(
         row.checksum === checksum &&
         row.snippet === snippet
       ) {
+        if (byteSize > 0) {
+          await upsertDocumentSearchIndex(
+            {
+              documentId: row.id,
+              workspaceId,
+              searchBody: content,
+              contentEtag,
+            },
+            tx,
+          );
+        }
         return "skipped" as const;
       }
 
@@ -167,6 +179,18 @@ export async function syncDocumentMetadataFromStorageKey(
           updatedAt: new Date(),
         })
         .where(eq(documents.id, row.id));
+
+      if (byteSize > 0) {
+        await upsertDocumentSearchIndex(
+          {
+            documentId: row.id,
+            workspaceId,
+            searchBody: content,
+            contentEtag,
+          },
+          tx,
+        );
+      }
 
       return {
         status: "updated" as const,

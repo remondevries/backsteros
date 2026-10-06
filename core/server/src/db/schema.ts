@@ -1255,6 +1255,28 @@ export const documents = pgTable(
   ],
 );
 
+/**
+ * Server-only full-text corpus (OS-80). Not on the PowerSync client schema.
+ * `search_tsv` is maintained by a BEFORE trigger; do not write it from app code.
+ */
+export const documentSearchIndex = pgTable(
+  "document_search_index",
+  {
+    documentId: text("document_id")
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull(),
+    searchBody: text("search_body"),
+    contentEtag: text("content_etag"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("document_search_index_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
 export const documentPropertyTypes = pgTable(
   "document_property_types",
   {
