@@ -401,6 +401,7 @@ export {
   emailMessageHtmlBody,
   type EmailThreadBodyViewMode,
   resolveEmailListItemStatus,
+  resolveEmailThreadMetadataKey,
   withEmailInboxListContext,
   withEmailCommunicationListContext,
   withEmailListContext,

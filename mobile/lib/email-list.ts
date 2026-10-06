@@ -32,6 +32,8 @@ export type EmailListItem = {
   preview?: string | null;
   receivedAt: number;
   threadId?: string | null;
+  /** AgentMail draft id when kind is draft (metadata key `draft:<id>`). */
+  draftId?: string | null;
   conceptDraftId?: string | null;
   inReplyToMessageId?: string | null;
   status?: TaskStatus | string | null;
@@ -51,19 +53,38 @@ export type EmailListItem = {
   displayId?: string | null;
 };
 
+/**
+ * Workspace / AgentMail thread key for PATCH …/threads/:threadKey/metadata.
+ * Draft rows must use `draft:<draftId>` so edits never hit the parent thread.
+ */
+export function resolveEmailThreadMetadataKey(input: {
+  kind?: "message" | "draft" | null;
+  draftId?: string | null;
+  threadId?: string | null;
+  messageId?: string | null;
+}): string {
+  const draftId = input.draftId?.trim();
+  if (input.kind === "draft" || draftId) {
+    return `draft:${draftId || input.messageId?.trim() || ""}`;
+  }
+  return input.threadId?.trim() || input.messageId?.trim() || "";
+}
+
 export function agentMailMessageToListItem(
   entry: AgentMailMessage,
 ): EmailListItem | null {
   if (entry.kind === "draft") {
+    const draftId = entry.draftId ?? entry.messageId;
     return {
       kind: "draft",
-      id: entry.draftId ?? entry.messageId,
+      id: draftId,
       inboxId: entry.inboxId,
       subject: entry.subject,
       from: entry.from,
       preview: entry.preview,
       receivedAt: Date.parse(entry.timestamp) || 0,
       threadId: entry.threadId ?? null,
+      draftId,
       inReplyToMessageId: entry.inReplyToMessageId ?? null,
       status: entry.status ?? "concept",
       priority: entry.priority ?? 0,

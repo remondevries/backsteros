@@ -5,8 +5,11 @@
 
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import type { EmailListItem } from "./email-list";
-import { dispatchEmailListPatch } from "./use-agentmail-mailboxes";
+import {
+  resolveEmailThreadMetadataKey,
+  type EmailListItem,
+} from "./email-list";
+import { dispatchEmailListPatch } from "./email-list-events";
 
 export type EmailThreadMetadataPatch = {
   status?: string;
@@ -28,12 +31,20 @@ export type EmailThreadPatchExtras = {
 
 export async function patchEmailThreadMetadata(
   client: BacksterosApiClient,
-  item: Pick<EmailListItem, "inboxId" | "id" | "threadId">,
+  item: Pick<
+    EmailListItem,
+    "inboxId" | "id" | "threadId" | "kind" | "draftId"
+  >,
   patch: EmailThreadMetadataPatch,
   listExtras?: EmailThreadPatchExtras,
 ): Promise<void> {
   const messageId = item.id.trim();
-  const threadKey = item.threadId?.trim() || messageId;
+  const threadKey = resolveEmailThreadMetadataKey({
+    kind: item.kind,
+    draftId: item.draftId,
+    threadId: item.threadId,
+    messageId,
+  });
   if (!threadKey || !messageId) return;
   await client.requestJson(
     `/api/v1/email/inboxes/${encodeURIComponent(item.inboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,

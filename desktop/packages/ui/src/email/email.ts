@@ -37,6 +37,8 @@ export type EmailListItem = {
    */
   firstReceivedAt?: number | null;
   threadId?: string | null;
+  /** AgentMail draft id when kind is draft (metadata key `draft:<id>`). */
+  draftId?: string | null;
   conceptDraftId?: string | null;
   inReplyToMessageId?: string | null;
   /** Workspace thread property; defaults to triage (Inbox) when unset. */
@@ -108,6 +110,23 @@ export type EmailDraftPath = {
   inboxId: string;
   draftId: string;
 };
+
+/**
+ * Workspace / AgentMail thread key for PATCH …/threads/:threadKey/metadata.
+ * Draft rows must use `draft:<draftId>` so edits never hit the parent thread.
+ */
+export function resolveEmailThreadMetadataKey(input: {
+  kind?: EmailListItemKind | null;
+  draftId?: string | null;
+  threadId?: string | null;
+  messageId?: string | null;
+}): string {
+  const draftId = input.draftId?.trim();
+  if (input.kind === "draft" || draftId) {
+    return `draft:${draftId || input.messageId?.trim() || ""}`;
+  }
+  return input.threadId?.trim() || input.messageId?.trim() || "";
+}
 
 export function isEmailPath(pathname: string): boolean {
   return pathname === "/email" || pathname.startsWith("/email/");

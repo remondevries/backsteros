@@ -95,9 +95,10 @@ function toListItem(
   mailboxEmails: ReadonlySet<string>,
 ): EmailListItem | null {
   if (entry.kind === "draft") {
+    const draftId = entry.draftId ?? entry.messageId;
     return {
       kind: "draft",
-      id: entry.draftId ?? entry.messageId,
+      id: draftId,
       inboxId: entry.inboxId,
       subject: entry.subject,
       from: entry.from,
@@ -105,6 +106,7 @@ function toListItem(
       preview: entry.preview,
       receivedAt: Date.parse(entry.timestamp) || 0,
       threadId: entry.threadId ?? null,
+      draftId,
       inReplyToMessageId: entry.inReplyToMessageId ?? null,
       status: entry.status ?? "concept",
       priority: entry.priority ?? 0,

@@ -110,6 +110,8 @@ export type TaskItemRowTask = {
   listKind?: "task" | "email" | "meeting";
   emailInboxId?: string | null;
   emailMessageId?: string | null;
+  /** Set when the row is an AgentMail draft (metadata key `draft:<id>`). */
+  emailDraftId?: string | null;
   emailThreadId?: string | null;
   /** `Name (email@domain)` shown beside the subject on email rows. */
   emailPartyLabel?: string | null;

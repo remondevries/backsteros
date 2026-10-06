@@ -671,16 +671,51 @@ export function resolveReplyPartyFromMessage(
   return message.from;
 }
 
+function lineMatchesSignOffName(line: string, name: string): boolean {
+  if (line === name) return true;
+  // Allow a title / rest of the line after the name ("Remon de Vries").
+  if (
+    line.startsWith(name) &&
+    line.length > name.length &&
+    /\s/.test(line.charAt(name.length))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function signOffOpenerLines(options?: {
+  signOffTemplateEn?: string | null;
+  signOffTemplateNl?: string | null;
+} | null): Set<string> {
+  const openers = new Set<string>();
+  for (const template of [
+    options?.signOffTemplateEn?.trim() || DEFAULT_EMAIL_REPLY_SIGN_OFF_EN,
+    options?.signOffTemplateNl?.trim() || DEFAULT_EMAIL_REPLY_SIGN_OFF_NL,
+  ]) {
+    const first =
+      template.replace(/\r\n/g, "\n").split("\n")[0]?.trim() ?? "";
+    if (first) openers.add(first.toLowerCase());
+  }
+  return openers;
+}
+
 /**
  * True when AgentMail already stores greeting/sign-off (or HTML).
  * Send must use those stored bytes and must not reassemble.
  * Empty text + non-empty HTML counts as shelled (HTML-only drafts).
  * An empty/blank signOffName never matches via substring.
+ * A name line that follows a sign-off opener anywhere in the body counts
+ * (trailing P.S. / title lines after the name are OK).
  */
 export function draftHasStoredShell(
   text: string | null | undefined,
   html: string | null | undefined,
   signOffName: string,
+  options?: {
+    signOffTemplateEn?: string | null;
+    signOffTemplateNl?: string | null;
+  } | null,
 ): boolean {
   const storedText = (text ?? "").replace(/\r\n/g, "\n").trim();
   const storedHtml = (html ?? "").trim();
@@ -688,9 +723,16 @@ export function draftHasStoredShell(
   if (!storedText) return false;
   const name = signOffName.trim();
   if (!name) return false;
-  // Prefer a sign-off line match ("…\nRemon" / trailing line) over a bare
-  // name mention in the body ("Remon calls you").
+  // Prefer a sign-off opener + name line over a bare name mention
+  // ("Remon calls you"). Trailing P.S. after the name is fine.
   const lines = storedText.split("\n").map((line) => line.trim());
+  const openers = signOffOpenerLines(options);
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    const line = lines[i] ?? "";
+    if (!line || !openers.has(line.toLowerCase())) continue;
+    const next = lines[i + 1] ?? "";
+    if (next && lineMatchesSignOffName(next, name)) return true;
+  }
   const lastNonEmpty = [...lines].reverse().find(Boolean) ?? "";
   if (lastNonEmpty === name) return true;
   if (storedText.endsWith(`\n${name}`)) return true;
@@ -715,11 +757,18 @@ export function planDraftSendBodies(input: {
   text: string | null | undefined;
   html: string | null | undefined;
   signOffName: string;
+  signOffTemplateEn?: string | null;
+  signOffTemplateNl?: string | null;
 }): DraftSendBodyPlan {
   const text = (input.text ?? "").replace(/\r\n/g, "\n").trim();
   const rawHtml = input.html ?? null;
   const html = rawHtml?.trim() ? rawHtml : null;
-  if (draftHasStoredShell(text, html, input.signOffName)) {
+  if (
+    draftHasStoredShell(text, html, input.signOffName, {
+      signOffTemplateEn: input.signOffTemplateEn,
+      signOffTemplateNl: input.signOffTemplateNl,
+    })
+  ) {
     return { kind: "use_stored", text, html };
   }
   return { kind: "reassemble" };

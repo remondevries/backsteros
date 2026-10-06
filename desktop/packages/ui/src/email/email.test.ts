@@ -28,9 +28,37 @@ import {
   preserveEmailInboxListContext,
   replySubject,
   resolveEmailListItemStatus,
+  resolveEmailThreadMetadataKey,
   stripEmailDraftShell,
   withEmailInboxListContext,
 } from "./email.js";
+
+test("resolveEmailThreadMetadataKey uses draft:<id> for reply drafts with a parent thread", () => {
+  assert.equal(
+    resolveEmailThreadMetadataKey({
+      kind: "draft",
+      draftId: "draft_reply_1",
+      threadId: "thread_parent",
+      messageId: "draft_reply_1",
+    }),
+    "draft:draft_reply_1",
+  );
+  assert.equal(
+    resolveEmailThreadMetadataKey({
+      kind: "message",
+      threadId: "thread_parent",
+      messageId: "msg_1",
+    }),
+    "thread_parent",
+  );
+  assert.equal(
+    resolveEmailThreadMetadataKey({
+      kind: "message",
+      messageId: "msg_orphan",
+    }),
+    "msg_orphan",
+  );
+});
 
 test("isEmailPath matches the email section", () => {
   assert.equal(isEmailPath("/email"), true);

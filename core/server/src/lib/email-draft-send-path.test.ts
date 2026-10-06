@@ -113,6 +113,64 @@ describe("email draft send path helpers", () => {
     );
   });
 
+  it("plans use_stored for text-only drafts with trailing P.S. or title after the name", () => {
+    const withPs = [
+      "Aan Fandy,",
+      "",
+      "Hierbij de boekingsregel.",
+      "",
+      "Met vriendelijke groet,",
+      "Remon",
+      "",
+      "P.S. Check Moneybird nog even.",
+    ].join("\n");
+    const withTitle = [
+      "Aan Fandy,",
+      "",
+      "Hierbij de boekingsregel.",
+      "",
+      "Met vriendelijke groet,",
+      "Remon de Vries",
+    ].join("\n");
+
+    assert.equal(
+      draftHasStoredShell(withPs, null, "Remon", {
+        signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+      }),
+      true,
+    );
+    assert.equal(
+      draftHasStoredShell(withTitle, null, "Remon", {
+        signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+      }),
+      true,
+    );
+
+    const planPs = planDraftSendBodies({
+      text: withPs,
+      html: null,
+      signOffName: "Remon",
+      signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+    });
+    assert.equal(planPs.kind, "use_stored");
+    if (planPs.kind === "use_stored") {
+      assert.equal(planPs.text, withPs);
+      assert.equal(planPs.html, null);
+    }
+
+    const planTitle = planDraftSendBodies({
+      text: withTitle,
+      html: null,
+      signOffName: "Remon",
+      signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+    });
+    assert.equal(planTitle.kind, "use_stored");
+    if (planTitle.kind === "use_stored") {
+      assert.equal(planTitle.text, withTitle);
+      assert.equal(planTitle.html, null);
+    }
+  });
+
   it("assertNoDraftBodyLoss boundary: 85% passes, just below refuses, short texts pass", () => {
     const stored = "a".repeat(100);
     assert.doesNotThrow(() => assertNoDraftBodyLoss(stored, "a".repeat(85)));
@@ -460,6 +518,67 @@ describe("sendAgentMailDraft (mocked AgentMail client)", () => {
       /lose text/i,
     );
     assert.equal(sendCalls, 0);
+  });
+
+  it("sends text-only shelled drafts with P.S. or title unchanged", async () => {
+    stubLifecycle();
+    const withPs = [
+      "Aan Fandy,",
+      "",
+      "Hierbij de boekingsregel.",
+      "",
+      "Met vriendelijke groet,",
+      "Remon",
+      "",
+      "P.S. Check Moneybird nog even.",
+    ].join("\n");
+    const withTitle = [
+      "Aan Fandy,",
+      "",
+      "Hierbij de boekingsregel.",
+      "",
+      "Met vriendelijke groet,",
+      "Remon de Vries",
+    ].join("\n");
+
+    for (const [draftId, text] of [
+      ["draft_ps", withPs],
+      ["draft_title", withTitle],
+    ] as const) {
+      const draft = baseDraft({ draftId, text, html: null });
+      let sendCalls = 0;
+      const updateBodies: Record<string, unknown>[] = [];
+
+      mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+      mock.method(
+        AgentMailClient.prototype,
+        "updateDraft",
+        async (
+          _inboxId: string,
+          _draftId: string,
+          body: Record<string, unknown>,
+        ) => {
+          updateBodies.push(body);
+          return draft;
+        },
+      );
+      mock.method(AgentMailClient.prototype, "sendDraft", async () => {
+        sendCalls += 1;
+        return {
+          inboxId: "inbox_1",
+          messageId: "msg_sent",
+          threadId: "thread_sent",
+        };
+      });
+
+      await sendAgentMailDraft("ws_1", "inbox_1", draftId);
+      assert.equal(sendCalls, 1, draftId);
+      assert.equal(
+        updateBodies.filter((body) => "text" in body || "html" in body).length,
+        0,
+        draftId,
+      );
+    }
   });
 
   it("sends an HTML-only draft unchanged", async () => {

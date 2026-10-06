@@ -110,7 +110,7 @@ export function useCommunicationListItems(): InboxListItem[] {
       return buildInboxEmailListItem({
         inboxId: item.inboxId,
         messageId: item.id,
-        draftId: item.kind === "draft" ? item.id : null,
+        draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
         threadId: item.threadId,
         title: item.subject,
         from: item.from,

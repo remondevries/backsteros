@@ -13,6 +13,7 @@ import type {
   EmailDeleteDraftResponse,
   EmailSendDraftResponse,
   UpdateAgentMailSettingsInput,
+  UpdateEmailThreadMetadataInput,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -683,13 +684,13 @@ export const agentMailDraftLifecycleDeps = {
     workspaceId: string,
     inboxId: string,
     threadKey: string,
-    patch: { status: string },
+    patch: UpdateEmailThreadMetadataInput,
   ) =>
     emailThreadsService.patchEmailThreadMetadataLeaderAware(
       workspaceId,
       inboxId,
       threadKey,
-      patch as { status: "triage" },
+      patch,
     ),
   deleteThread: (
     workspaceId: string,
@@ -1501,7 +1502,7 @@ export async function listAgentMailMessages(
       emailThreadId: stored?.id,
       number: stored?.number,
       displayId: stored?.displayId,
-      status: status as AgentMailMessage["status"],
+      status,
       priority: stored?.priority ?? 0,
       dueDate: stored?.dueDate ?? null,
       organizationId: stored?.organizationId ?? null,
@@ -2045,6 +2046,8 @@ export async function sendAgentMailDraft(
     text: draft.text,
     html: draft.html,
     signOffName: templates.signOffName,
+    signOffTemplateEn: templates.signOffTemplateEn,
+    signOffTemplateNl: templates.signOffTemplateNl,
   });
 
   if (sendPlan.kind === "reassemble") {

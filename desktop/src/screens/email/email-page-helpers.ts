@@ -5,6 +5,7 @@ import {
   isTaskPriority,
   isTaskStatus,
   migrateLegacyTaskStatus,
+  resolveEmailThreadMetadataKey,
   type EmailThreadBodyViewMode,
   type TaskPriority,
   type TaskStatus,
@@ -13,7 +14,12 @@ import {
 import type { EmailAgentTaskCardPayload } from "../../lib/email-task-card";
 
 export function resolveEmailThreadKey(message: AgentMailMessageDetail): string {
-  return message.threadId?.trim() || message.messageId.trim();
+  return resolveEmailThreadMetadataKey({
+    kind: message.kind,
+    draftId: message.draftId,
+    threadId: message.threadId,
+    messageId: message.messageId,
+  });
 }
 
 export function requestMailboxReload() {

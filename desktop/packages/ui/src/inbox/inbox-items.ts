@@ -180,7 +180,12 @@ export function emailInboxItemId(
   inboxId: string,
   threadId: string | null | undefined,
   messageId: string,
+  draftId?: string | null,
 ): string {
+  const draft = draftId?.trim();
+  if (draft) {
+    return `email:${inboxId}:draft:${draft}`;
+  }
   const threadKey = threadId?.trim() || messageId.trim();
   return `email:${inboxId}:${threadKey}`;
 }
@@ -351,7 +356,7 @@ export function buildInboxEmailListItem(input: {
       : null);
   return {
     kind: "email",
-    id: emailInboxItemId(inboxId, threadId, messageId),
+    id: emailInboxItemId(inboxId, threadId, messageId, draftId),
     inboxId,
     messageId,
     draftId,
@@ -435,6 +440,7 @@ export function buildInboxMeetingListItem(input: {
 export function buildTaskListEmailItem(input: {
   inboxId: string;
   messageId: string;
+  draftId?: string | null;
   threadId?: string | null;
   title: string;
   from?: string | null;
@@ -472,6 +478,7 @@ export function buildTaskListEmailItem(input: {
     listKind: "email",
     emailInboxId: email.inboxId,
     emailMessageId: email.messageId,
+    emailDraftId: email.draftId ?? null,
     emailThreadId: email.emailThreadId ?? email.threadId,
     emailPartyLabel: email.partyLabel,
     emailMailboxLabel: email.mailboxLabel,
@@ -511,6 +518,7 @@ export function inboxListItemToTaskItemRowTask(
       listKind: "email",
       emailInboxId: item.inboxId,
       emailMessageId: item.messageId,
+      emailDraftId: item.draftId ?? null,
       emailThreadId: item.emailThreadId ?? item.threadId,
       emailPartyLabel: item.partyLabel,
       emailMailboxLabel: item.mailboxLabel ?? null,

@@ -9,6 +9,7 @@ import {
   emailMailboxLabel,
   getEmailTaskListHref,
   isEmailTaskListItem,
+  resolveEmailThreadMetadataKey,
 } from "@backsteros/ui";
 
 import { dispatchEmailListPatch } from "./use-agentmail-mailboxes";
@@ -111,7 +112,12 @@ export async function patchEmailTaskListItem(
 ): Promise<void> {
   if (!isEmailTaskListItem(task) || !task.emailInboxId) return;
   const messageId = task.emailMessageId?.trim() || "";
-  const threadKey = task.emailThreadId?.trim() || messageId;
+  const threadKey = resolveEmailThreadMetadataKey({
+    kind: task.emailDraftId ? "draft" : "message",
+    draftId: task.emailDraftId,
+    threadId: task.emailThreadId,
+    messageId,
+  });
   if (!threadKey || !messageId) return;
   await client.requestJson(
     `/api/v1/email/inboxes/${encodeURIComponent(task.emailInboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,

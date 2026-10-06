@@ -387,6 +387,8 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
       void patchEmailThreadMetadata(
         client,
         {
+          kind: detail.kind,
+          draftId: detail.draftId,
           inboxId,
           id: detail.messageId,
           threadId: detail.threadId ?? null,
@@ -591,6 +593,8 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
         await patchEmailThreadMetadata(
           client,
           {
+            kind: detail.kind,
+            draftId: detail.draftId,
             inboxId: detail.inboxId,
             id: detail.messageId,
             threadId: detail.threadId ?? null,

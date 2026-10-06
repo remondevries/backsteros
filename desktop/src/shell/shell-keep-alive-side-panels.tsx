@@ -41,6 +41,7 @@ import {
   isSupportCenterDocumentPath,
   normalizeContactSocialAccounts,
   parseCrmGroupId,
+  resolveEmailThreadMetadataKey,
   resolveLetterDetailHref,
   useHelpArticleAudienceMap,
   useHelpArticleListScope,
@@ -318,7 +319,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         return buildInboxEmailListItem({
           inboxId: item.inboxId,
           messageId: item.id,
-          draftId: item.kind === "draft" ? item.id : null,
+          draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
           threadId: item.threadId,
           title: item.subject,
           from: item.from,
@@ -408,7 +409,13 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         (entry) => entry.id === itemId && entry.kind === "email",
       );
       if (!item || item.kind !== "email") return;
-      const threadKey = item.threadId?.trim() || item.messageId;
+      const threadKey = resolveEmailThreadMetadataKey({
+        kind: item.draftId ? "draft" : "message",
+        draftId: item.draftId,
+        threadId: item.threadId,
+        messageId: item.messageId,
+      });
+      if (!threadKey) return;
       dispatchEmailListPatch({
         inboxId: item.inboxId,
         messageId: item.messageId,

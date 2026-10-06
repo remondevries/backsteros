@@ -3401,6 +3401,12 @@ export const autoReviewWebhookTestResultSchema = z.object({
   deliveryId: z.string().nullable(),
 });
 export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
+/**
+ * Email thread statuses include task statuses plus draft-only `concept`.
+ * Kept separate from TASK_STATUSES so task pickers/filters never accept concept.
+ */
+export const EMAIL_THREAD_STATUSES = [...TASK_STATUSES, "concept"] as const;
+export const emailThreadStatusSchema = z.enum(EMAIL_THREAD_STATUSES);
 export const agentMailConceptDraftSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
@@ -3437,7 +3443,7 @@ export const agentMailMessageSchema = z.object({
   number: z.number().int().positive().optional(),
   displayId: z.string().optional(),
   /** Workspace thread property; defaults to backlog when unset. */
-  status: taskStatusSchema.optional(),
+  status: emailThreadStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   organizationId: z.string().nullable().optional(),
@@ -3472,7 +3478,7 @@ export const emailThreadMetadataSchema = z.object({
   projectId: z.string().nullable(),
   projectName: z.string().nullable().optional(),
   projectKey: z.string().nullable().optional(),
-  status: taskStatusSchema,
+  status: emailThreadStatusSchema,
   priority: z.number().int().min(0).max(4),
   dueDate: z.string().datetime().nullable(),
   /** External update flag — surfaces in the Updated inbox group. */
@@ -3485,7 +3491,7 @@ export const updateEmailThreadMetadataSchema = z.object({
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
-  status: taskStatusSchema.optional(),
+  status: emailThreadStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   /** Clear the Updated inbox flag after the user views the item. */

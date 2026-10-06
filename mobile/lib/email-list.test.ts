@@ -7,6 +7,7 @@ import {
   emailPartyLabel,
   groupEmailItemsByStatus,
   isEmailIncomingStatus,
+  resolveEmailThreadMetadataKey,
   resolveInboxEmailIconColor,
   type EmailListItem,
 } from "./email-list.ts";
@@ -118,5 +119,30 @@ describe("emailPartyLabel", () => {
     assert.equal(emailPartyLabel("Remon de Vries <remon@example.com>"), "Remon de Vries");
     assert.equal(emailPartyLabel('"Quoted Name" <q@example.com>'), "Quoted Name");
     assert.equal(emailPartyLabel("bare@example.com"), "bare@example.com");
+  });
+});
+
+describe("resolveEmailThreadMetadataKey", () => {
+  it("uses draft:<id> for reply drafts with a parent threadId", () => {
+    assert.equal(
+      resolveEmailThreadMetadataKey({
+        kind: "draft",
+        draftId: "draft_reply_1",
+        threadId: "thread_parent",
+        messageId: "draft_reply_1",
+      }),
+      "draft:draft_reply_1",
+    );
+  });
+
+  it("uses threadId for messages", () => {
+    assert.equal(
+      resolveEmailThreadMetadataKey({
+        kind: "message",
+        threadId: "thread_parent",
+        messageId: "msg_1",
+      }),
+      "thread_parent",
+    );
   });
 });
