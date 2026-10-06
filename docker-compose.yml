@@ -11,9 +11,9 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
     environment:
-      POSTGRES_USER: backsteros
-      POSTGRES_PASSWORD: backsteros
-      POSTGRES_DB: backsteros
+      POSTGRES_USER: ${POSTGRES_USER:-backsteros}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backsteros}
+      POSTGRES_DB: ${POSTGRES_DB:-backsteros}
     volumes:
       - backsteros_pg_data:/var/lib/postgresql/data
       - ./deploy/powersync/init-local.sql:/docker-entrypoint-initdb.d/99-powersync.sql:ro

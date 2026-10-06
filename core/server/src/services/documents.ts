@@ -20,6 +20,7 @@ import {
   DOCUMENT_RETRIEVAL_BODY_CONCURRENCY,
   DOCUMENT_RETRIEVAL_SLOW_MS,
   DOCUMENT_RETRIEVAL_DEFAULT_CANDIDATE_LIMIT,
+  indexedBodyIsFresh,
   loadRetrievalCandidateBodies,
   retrieveDocumentSections,
   type RetrievalHit,
@@ -35,6 +36,7 @@ import {
   buildStorageKey,
   checksumForContent,
   deleteObject,
+  documentContentEtag,
   ensureProjectVaultFolders,
   getObject,
   putObject,
@@ -482,7 +484,8 @@ export async function createDocument(
         executor,
       });
       if (synced.content !== content) {
-        await putObject(storageKey, synced.content);
+        const rewritten = await putObject(storageKey, synced.content);
+        contentEtag = rewritten.etag ?? documentContentEtag(synced.content);
       }
       const [indexed] = await executor
         .update(documents)
@@ -492,6 +495,7 @@ export async function createDocument(
           frontMatterValid: true,
           checksum: synced.checksum,
           snippet: synced.snippet,
+          contentEtag,
           updatedAt: new Date(),
         })
         .where(eq(documents.id, row.id))
@@ -501,8 +505,7 @@ export async function createDocument(
           documentId: row.id,
           workspaceId,
           searchBody: synced.content,
-          contentEtag:
-            contentEtag ?? checksumForContent(synced.content).slice(0, 32),
+          contentEtag: contentEtag ?? documentContentEtag(synced.content),
         },
         executor,
       );
@@ -522,7 +525,7 @@ export async function createDocument(
             documentId: row.id,
             workspaceId,
             searchBody: content,
-            contentEtag,
+            contentEtag: contentEtag ?? documentContentEtag(content),
           },
           executor,
         );
@@ -861,7 +864,7 @@ export async function hydrateLocalDocumentVaultContent(
   if (!content.length) return;
   await withDocumentContentRowLock(workspaceId, id, async (locked, tx) => {
     if (!locked.storageKey) return;
-    await withDocumentContentSaveTimeout(
+    const stored = await withDocumentContentSaveTimeout(
       putObject(locked.storageKey, content),
       DOCUMENT_CONTENT_SAVE_TIMEOUT_MS,
     );
@@ -870,6 +873,7 @@ export async function hydrateLocalDocumentVaultContent(
         documentId: locked.id,
         workspaceId,
         searchBody: content,
+        contentEtag: stored.etag ?? documentContentEtag(content),
       },
       tx,
     );
@@ -997,7 +1001,8 @@ export async function updateDocumentContent(
                     documentId: id,
                     workspaceId,
                     searchBody: contentForWrite,
-                    contentEtag: meta.contentEtag,
+                    contentEtag:
+                      meta.contentEtag ?? documentContentEtag(contentForWrite),
                   },
                   tx,
                 );
@@ -1333,6 +1338,7 @@ export async function retrieveDocuments(input: {
       storageKey: documents.storageKey,
       contentEtag: documents.contentEtag,
       indexedBody: documentSearchIndex.searchBody,
+      indexedContentEtag: documentSearchIndex.contentEtag,
     })
     .from(documents)
     .leftJoin(
@@ -1354,8 +1360,8 @@ export async function retrieveDocuments(input: {
     .limit(candidateLimit);
   const candidateQueryMs = Date.now() - queryStarted;
 
-  const indexedBodies = rows.filter(
-    (row) => row.indexedBody != null && row.indexedBody.length > 0,
+  const indexedBodies = rows.filter((row) =>
+    indexedBodyIsFresh(row.indexedBody, row.indexedContentEtag, row.contentEtag),
   ).length;
 
   const bodyStarted = Date.now();

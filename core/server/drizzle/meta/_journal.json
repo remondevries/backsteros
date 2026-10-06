@@ -960,6 +960,13 @@
       "when": 1795710000000,
       "tag": "0135_document_search_index",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1795720000000,
+      "tag": "0136_document_search_index_hardening",
+      "breakpoints": true
     }
   ]
 }

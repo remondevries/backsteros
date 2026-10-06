@@ -157,6 +157,8 @@ if [[ "$use_existing" != "1" ]]; then
   echo "[integration] starting Docker Postgres (compose root=${local_compose_root})…"
   export BACKSTEROS_COMPOSE_PROJECT="${BACKSTEROS_COMPOSE_PROJECT:-backsteros}"
   export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${BACKSTEROS_COMPOSE_PROJECT}}"
+  # Isolated compose stacks may use the well-known local test password.
+  export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-backsteros}"
   docker compose -f "$local_compose_root/docker-compose.yml" up -d postgres
 
   echo "[integration] waiting for Postgres health…"

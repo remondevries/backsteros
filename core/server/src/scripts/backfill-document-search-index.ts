@@ -1,35 +1,61 @@
 /**
  * Backfill document_search_index.search_body from vault/R2 (OS-80).
- * Safe for backsteros_test. Do not point DATABASE_URL at live `backsteros`.
  *
+ * Test DB (default):
  *   DATABASE_URL=postgres://…/backsteros_test \
  *   pnpm --filter @backsteros/server exec tsx src/scripts/backfill-document-search-index.ts \
- *     [--workspace <id>] [--limit N]
+ *     [--workspace <id>] [--batch-size 50] [--pause-ms 200] [--after-id <id>]
+ *
+ * Live `backsteros` requires an explicit opt-in. Do not run this against live
+ * from an agent session. Remon:
+ *   DATABASE_URL=postgresql://…/backsteros \
+ *   pnpm --filter @backsteros/server exec tsx src/scripts/backfill-document-search-index.ts \
+ *     --allow-live --batch-size 50 --pause-ms 250
+ *
+ * Resume from the last printed `lastId`:
+ *   … --allow-live --after-id <lastId>
  */
 import { parseArgs } from "node:util";
 
-async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-  if (/\/backsteros(\?|$)/.test(databaseUrl) && !/backsteros_test/.test(databaseUrl)) {
-    console.error("Refusing to backfill the live backsteros database.");
-    process.exit(2);
-  }
+import {
+  backfillDocumentSearchBodiesAll,
+  isLiveBacksterosDatabaseUrl,
+} from "../services/document-search-index.js";
 
+async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       workspace: { type: "string" },
-      limit: { type: "string" },
+      "batch-size": { type: "string" },
+      "pause-ms": { type: "string" },
+      "after-id": { type: "string" },
+      "allow-live": { type: "boolean", default: false },
     },
   });
 
-  const { backfillDocumentSearchBodies } = await import(
-    "../services/document-search-index.js"
-  );
-  const result = await backfillDocumentSearchBodies({
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  if (isLiveBacksterosDatabaseUrl(databaseUrl) && !values["allow-live"]) {
+    console.error(
+      "Refusing to backfill the live backsteros database. Re-run with --allow-live if you intend to.",
+    );
+    process.exit(2);
+  }
+
+  const result = await backfillDocumentSearchBodiesAll({
     workspaceId: values.workspace?.trim() || undefined,
-    limit: values.limit ? Number(values.limit) : undefined,
+    batchSize: values["batch-size"] ? Number(values["batch-size"]) : 50,
+    pauseMs: values["pause-ms"] ? Number(values["pause-ms"]) : 0,
+    afterId: values["after-id"]?.trim() || undefined,
+    onProgress: (batch, totals) => {
+      console.log(
+        JSON.stringify({
+          batch,
+          totals,
+        }),
+      );
+    },
   });
-  console.log(JSON.stringify(result));
+  console.log(JSON.stringify({ done: true, ...result }));
 }
 
 main().catch((error) => {

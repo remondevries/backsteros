@@ -2,14 +2,13 @@
  * Lexical document section retrieval (v1, no embeddings).
  */
 
-import { createHash } from "node:crypto";
-
 import {
   parseDocumentSections,
   sectionBodyText,
   slugifyHeading,
   type DocumentSection,
 } from "./document-sections.js";
+import { documentContentEtag } from "./storage.js";
 
 export const DOCUMENT_RETRIEVAL_DEFAULT_BUDGET = 8000;
 export const DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET = 32_000;
@@ -42,21 +41,34 @@ export type RetrievalCandidateRow = {
   title: string;
   storageKey: string;
   contentEtag?: string | null;
-  /** Postgres FTS corpus (OS-80). When set, retrieve skips object storage. */
+  /** Postgres FTS corpus (OS-80). Used only when etag matches the document row. */
   indexedBody?: string | null;
+  indexedContentEtag?: string | null;
 };
 
 const BODY_CACHE_MAX = 256;
 const bodyCache = new Map<string, string>();
 const missingBodyUntil = new Map<string, number>();
 
+/** Serve the FTS corpus only when it is stamped with the live document etag. */
+export function indexedBodyIsFresh(
+  indexedBody: string | null | undefined,
+  indexedContentEtag: string | null | undefined,
+  documentContentEtag: string | null | undefined,
+): boolean {
+  if (indexedBody == null || indexedBody.length === 0) return false;
+  const indexed = indexedContentEtag?.trim() || "";
+  const current = documentContentEtag?.trim() || "";
+  return indexed.length > 0 && indexed === current;
+}
+
 function bodyCacheKey(storageKey: string, contentEtag: string): string {
   return `${storageKey}\0${contentEtag}`;
 }
 
-/** First 32 hex chars of sha256 — matches documents.content_etag / getObject etag. */
+/** Same stamp as `documents.content_etag` / putObject (OS-80). */
 export function retrievalContentEtag(body: string): string {
-  return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 32);
+  return documentContentEtag(body);
 }
 
 /**
@@ -182,14 +194,14 @@ export async function loadRetrievalCandidateBodies(
   const loaded = await mapWithConcurrency(rows, concurrency, async (row) => {
     try {
       const indexed = row.indexedBody;
-      if (indexed != null && indexed.length > 0) {
+      if (indexedBodyIsFresh(indexed, row.indexedContentEtag, row.contentEtag)) {
         return {
           ok: true as const,
           candidate: {
             id: row.id,
             docKey: row.docKey,
             title: row.title,
-            content: indexed,
+            content: indexed as string,
           },
         };
       }

@@ -9,6 +9,7 @@ import { db } from "../db/index.js";
 import { documents } from "../db/schema.js";
 import {
   checksumForContent,
+  documentContentEtag,
   getObject,
   putObject,
   resolveVaultPath,
@@ -83,8 +84,7 @@ export async function syncDocumentMetadataFromStorageKey(
 
       let checksum = byteSize > 0 ? checksumForContent(content) : null;
       let snippet = byteSize > 0 ? snippetForContent(content) : null;
-      const contentEtag =
-        byteSize > 0 ? checksumForContent(content).slice(0, 32) : null;
+      let contentEtag = byteSize > 0 ? documentContentEtag(content) : null;
 
       if (
         row.byteSize === byteSize &&
@@ -144,6 +144,7 @@ export async function syncDocumentMetadataFromStorageKey(
             content = indexed.content;
             byteSize = Buffer.byteLength(content, "utf8");
             checksum = checksumForContent(content);
+            contentEtag = documentContentEtag(content);
             snippet = indexed.snippet;
             contentChanged = true;
           } else {

@@ -395,6 +395,11 @@ export function checksumForContent(content: string | Uint8Array): string {
     .digest("hex");
 }
 
+/** First 32 hex chars of sha256 — `documents.content_etag` / putObject etag. */
+export function documentContentEtag(content: string | Uint8Array): string {
+  return checksumForContent(content).slice(0, 32);
+}
+
 export function snippetForContent(content: string): string {
   const trimmed = content.trim();
   if (trimmed.length <= SNIPPET_LENGTH) {
@@ -1055,7 +1060,7 @@ export async function putObject(
     await utimes(absolute, now, now);
   }
   return {
-    etag: checksumForContent(bytes).slice(0, 32),
+    etag: documentContentEtag(bytes),
     byteSize: bytes.byteLength,
   };
 }
@@ -1081,7 +1086,7 @@ function shouldSkipRemoteRefresh(
   if (options?.skipRemoteRefresh) return true;
   const expected = options?.expectedEtag?.trim();
   if (!expected) return false;
-  return checksumForContent(bytes).slice(0, 32) === expected;
+  return documentContentEtag(bytes) === expected;
 }
 
 export async function getObject(
@@ -1151,7 +1156,7 @@ export async function getObject(
   return {
     body: bytes.toString("utf8"),
     bytes,
-    etag: checksumForContent(bytes).slice(0, 32),
+    etag: documentContentEtag(bytes),
     contentType: isPdf ? "application/pdf" : DEFAULT_CONTENT_TYPE,
     byteSize: bytes.byteLength,
   };

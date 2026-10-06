@@ -107,17 +107,57 @@ local_core_compose_root() {
   fi
 }
 
+local_core_load_postgres_password() {
+  if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
+    export POSTGRES_PASSWORD
+    return 0
+  fi
+  local file value=""
+  for file in \
+    "${ENV_FILE:-}" \
+    "${HOME}/.config/backsteros/local-core.env" \
+    "${HOME}/.config/secrets/local.env"
+  do
+    [[ -n "${file}" && -f "${file}" ]] || continue
+    value="$(awk -F= '
+      $1=="POSTGRES_PASSWORD" { v=substr($0, index($0,"=")+1) }
+      END { gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", v); printf "%s", v }
+    ' "${file}")"
+    if [[ -n "${value}" ]]; then
+      export POSTGRES_PASSWORD="${value}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 local_core_ensure_compose() {
   local_core_wait_for_docker
   local compose_root
   compose_root="$(local_core_compose_root)"
+  local_core_load_postgres_password || true
+  if [[ "${COMPOSE_PROJECT_NAME}" == "backsteros" ]] \
+    && docker inspect backsteros-postgres >/dev/null 2>&1; then
+    # Do not `compose up` the live stack from this path: a compose spec change
+    # (bind address / password) would recreate Postgres. Start existing
+    # containers only. Remon applies OS-80 recreate steps from the task comment.
+    docker start backsteros-postgres backsteros-powersync-mongo backsteros-powersync >/dev/null 2>&1 || true
+    local_core_ensure_compose_dns_aliases
+    return 0
+  fi
+  if [[ "${COMPOSE_PROJECT_NAME}" == "backsteros" ]] && {
+    [[ -z "${POSTGRES_PASSWORD:-}" ]] || [[ "${POSTGRES_PASSWORD}" == "backsteros" ]]
+  }; then
+    local_core_log "refusing to create live Postgres with the default password. Set POSTGRES_PASSWORD in local-core.env from Infisical."
+    return 1
+  fi
   local_core_log "docker compose up -d postgres mongo powersync (cwd=${compose_root} project=${COMPOSE_PROJECT_NAME})"
   if ! (
     cd "${compose_root}"
     docker compose up -d postgres mongo powersync
   ); then
     local_core_log "compose up reported an error; starting existing live containers"
-    docker start backsteros-postgres backsteros-powersync-mongo >/dev/null 2>&1 || true
+    docker start backsteros-postgres backsteros-powersync-mongo backsteros-powersync >/dev/null 2>&1 || true
     docker network connect --alias mongo backsteros_default backsteros-powersync-mongo >/dev/null 2>&1 || true
     docker network connect --alias mongo codebase_default backsteros-powersync-mongo >/dev/null 2>&1 || true
     docker network connect --alias postgres backsteros_default backsteros-postgres >/dev/null 2>&1 || true

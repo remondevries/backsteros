@@ -4,6 +4,7 @@ import { beforeEach, describe, it } from "node:test";
 import {
   DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET,
   clampRetrievalBudget,
+  indexedBodyIsFresh,
   loadRetrievalCandidateBodies,
   mapWithConcurrency,
   peekDocumentRetrievalBodyCacheSizeForTests,
@@ -16,6 +17,20 @@ describe("document retrieval v1", () => {
   beforeEach(() => {
     resetDocumentRetrievalBodyCacheForTests();
   });
+  it("uses the same stamp as documents.content_etag / putObject", async () => {
+    const { documentContentEtag } = await import("./storage.ts");
+    const sample = "Hello — café 🎯\n";
+    assert.equal(retrievalContentEtag(sample), documentContentEtag(sample));
+  });
+
+  it("treats indexed bodies as fresh only when etags match", () => {
+    const etag = retrievalContentEtag("same");
+    assert.equal(indexedBodyIsFresh("same", etag, etag), true);
+    assert.equal(indexedBodyIsFresh("same", etag, retrievalContentEtag("other")), false);
+    assert.equal(indexedBodyIsFresh("same", etag, null), false);
+    assert.equal(indexedBodyIsFresh("", etag, etag), false);
+  });
+
   it("clamps budget to the hard max", () => {
     assert.equal(clampRetrievalBudget(undefined), 8000);
     assert.equal(clampRetrievalBudget(99_999), DOCUMENT_RETRIEVAL_HARD_MAX_BUDGET);
@@ -228,7 +243,11 @@ Nothing about storage.
           docKey: "DOC-I",
           title: "Indexed",
           storageKey: "vault/indexed.md",
+          contentEtag: retrievalContentEtag("# Body\nuniquelexemeonlyinbody.\n"),
           indexedBody: "# Body\nuniquelexemeonlyinbody.\n",
+          indexedContentEtag: retrievalContentEtag(
+            "# Body\nuniquelexemeonlyinbody.\n",
+          ),
         },
       ],
       {
@@ -241,6 +260,33 @@ Nothing about storage.
     assert.equal(calls, 0);
     assert.equal(skipped, 0);
     assert.equal(candidates[0]?.content.includes("uniquelexemeonlyinbody"), true);
+  });
+
+  it("falls back to storage when indexed etag does not match the document etag", async () => {
+    const stale = "# Stale\noldlexeme.\n";
+    const fresh = "# Fresh\nnewlexemeonly.\n";
+    let calls = 0;
+    const { candidates } = await loadRetrievalCandidateBodies(
+      [
+        {
+          id: "stale",
+          docKey: "DOC-S",
+          title: "Stale",
+          storageKey: "vault/stale.md",
+          contentEtag: retrievalContentEtag(fresh),
+          indexedBody: stale,
+          indexedContentEtag: retrievalContentEtag(stale),
+        },
+      ],
+      {
+        getObject: async () => {
+          calls += 1;
+          return { body: fresh };
+        },
+      },
+    );
+    assert.equal(calls, 1);
+    assert.equal(candidates[0]?.content, fresh);
   });
 
   it("does not cache when row etag arrives before matching body bytes", async () => {
