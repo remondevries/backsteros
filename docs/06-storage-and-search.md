@@ -172,3 +172,22 @@ replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 
 Agents never need filesystem paths or repo checkout.
 `GET /search` `type` is `project` | `knowledge` | `journal` | `task` (alias `tasks`);
 unknown values return **400**. Omit `type` for document search only.
+
+## Postgres document search index (OS-80)
+
+Server-only table `document_search_index` holds `search_body` plus a GIN `search_tsv` (`simple` config) on title, path, snippet, properties, and body. It is not in PowerSync. `GET /search` and `GET /documents/retrieve` match body text through this index.
+
+Retrieve serves the indexed body only when `document_search_index.content_etag` equals `documents.content_etag` (sha256, first 32 hex chars). Otherwise it reads the vault as before.
+
+Body text past **80,000 characters** is stored for retrieve but is not in `search_tsv`, so it is not full-text searchable.
+
+Live backfill (opt-in, batched, resumable; do not run from an agent):
+
+```bash
+set -a && source ~/.config/backsteros/local-core.env && set +a
+pnpm --filter @backsteros/server exec tsx src/scripts/backfill-document-search-index.ts \
+  --allow-live --batch-size 50 --pause-ms 250
+```
+
+Resume with `--after-id <lastId>` from the last batch JSON.
+
