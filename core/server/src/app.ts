@@ -15,6 +15,7 @@ import { registerPublicSchedulingRoutes } from "./app/public-scheduling-routes.j
 import { registerSpacesPublishRoutes } from "./app/spaces-publish-routes.js";
 import { registerSpacesRoutes } from "./app/spaces-routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
+import { registerDynamicIslandRoutes } from "./app/dynamic-island-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
 import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
 import { getPeerVersionState } from "./services/core-replication/peer-version.js";
@@ -133,6 +134,7 @@ export function createApp() {
   registerSpacesPublishRoutes(api);
   registerSyncRoutes(api);
   registerOpsRoutes(api);
+  registerDynamicIslandRoutes(api);
   registerCoreReplicationRoutes(api);
   app.route("/", api);
 

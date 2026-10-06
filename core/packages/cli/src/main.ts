@@ -1,6 +1,7 @@
 import { createCliClient, formatCliError, loadConfig } from "./config.js";
 import { runCloudflareCommand } from "./commands/cloudflare.js";
 import { runCommentCommand } from "./commands/comment.js";
+import { runDynamicIslandCommand } from "./commands/dynamic-island.js";
 import { runProjectCommand } from "./commands/project.js";
 import { runSpacesCommand } from "./commands/spaces.js";
 import { runTaskCommand } from "./commands/task.js";
@@ -75,8 +76,23 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       await runCloudflareCommand(client, config, parsed.action);
       return 0;
     }
+    if (parsed.resource === "dynamic-island") {
+      const pairConfig = {
+        ...config,
+        token:
+          parsed.global.token?.trim() ||
+          process.env.LOCAL_SHELL_TOKEN?.trim() ||
+          "local",
+      };
+      await runDynamicIslandCommand(
+        createCliClient(pairConfig),
+        pairConfig,
+        parsed.action,
+      );
+      return 0;
+    }
     printErr(
-      `Unknown resource "${parsed.resource}". Use project|task|comment|spaces|transip|cloudflare.`,
+      `Unknown resource "${parsed.resource}". Use project|task|comment|spaces|transip|cloudflare|dynamic-island.`,
     );
     printLine(usageText());
     return 1;

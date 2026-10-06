@@ -41,6 +41,13 @@ describe("parseCliArgv", () => {
     assert.equal(parsed.values.status, "completed");
     assert.equal(parsed.global.json, true);
   });
+
+  it("parses dynamic-island pair", () => {
+    const parsed = parseCliArgv(["dynamic-island", "pair", "--json"]);
+    assert.equal(parsed.resource, "dynamic-island");
+    assert.equal(parsed.action, "pair");
+    assert.equal(parsed.global.json, true);
+  });
 });
 
 describe("loadConfig", () => {

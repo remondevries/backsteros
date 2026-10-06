@@ -127,6 +127,7 @@ Usage:
 Auth (first match wins for token):
   --token / BACKSTEROS_API_KEY / ~/.config/backsteros/cli.env / LOCAL_SHELL_TOKEN / "local"
   --url  / BACKSTEROS_API_URL / cli.env / http://127.0.0.1:8788
+  dynamic-island pair always uses the local-shell token unless --token is set.
 
 Projects:
   backsteros project list
@@ -168,6 +169,12 @@ TransIP:
 Cloudflare:
   backsteros cloudflare status
   backsteros cloudflare match-zones
+
+Dynamic Island:
+  backsteros dynamic-island pair
+    Mint a read-only local-core key (tasks:read, projects:read) and write
+    ~/.config/dynamic-island/backsteros.env (0600). Revokes the previous
+    dynamic-island key. Requires a local-shell owner session.
 
 Notes:
   --body on project/task accepts a JSON object merged into create/update payloads.
