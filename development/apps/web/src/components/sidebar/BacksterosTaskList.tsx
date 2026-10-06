@@ -37,7 +37,11 @@ import {
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
 import { groupBacksterosTasksByStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
-import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
+import {
+  getBacksterosTaskDisplayId,
+  type BacksterosCodebaseProject,
+  type BacksterosTask,
+} from "~/backsteros/types";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { cn } from "~/lib/utils";
@@ -103,6 +107,12 @@ function BacksterosTaskRow(props: {
     onContextMenu,
     sortable,
   } = props;
+  const resolvedProjectName = projectName ?? project?.name ?? null;
+  const displayId = getBacksterosTaskDisplayId(task, project?.key ?? null);
+  const metaLine =
+    displayId && resolvedProjectName
+      ? `${displayId} - ${resolvedProjectName}`
+      : (displayId ?? resolvedProjectName);
   const hasUnsentDraft = useBacksterosTaskHasUnsentDraft(task.id) && !active;
   const handleContextMenu = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -153,9 +163,9 @@ function BacksterosTaskRow(props: {
         ) : null}
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{task.title}</span>
-          {projectName ? (
+          {metaLine ? (
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-              {projectName}
+              {metaLine}
             </span>
           ) : null}
         </span>
@@ -358,11 +368,18 @@ export function BacksterosTaskList(props: {
     }
     if (!isSearching) return tasks;
     return tasks.filter((task) => {
+      const project =
+        task.projectId && projectById ? (projectById.get(task.projectId) ?? null) : null;
       const projectName =
-        task.projectId && projectNameById ? (projectNameById.get(task.projectId) ?? "") : "";
-      return matchesBacksterosSearchQuery([task.title, task.number, projectName], searchQuery);
+        (task.projectId && projectNameById ? (projectNameById.get(task.projectId) ?? "") : "") ||
+        (project?.name ?? "");
+      const displayId = getBacksterosTaskDisplayId(task, project?.key ?? null) ?? "";
+      return matchesBacksterosSearchQuery(
+        [task.title, task.number, projectName, displayId],
+        searchQuery,
+      );
     });
-  }, [isSearching, projectNameById, searchQuery, state, statusFilter, workingTaskIds]);
+  }, [isSearching, projectById, projectNameById, searchQuery, state, statusFilter, workingTaskIds]);
 
   const groups = useMemo(() => {
     if (!showDueGroup) {

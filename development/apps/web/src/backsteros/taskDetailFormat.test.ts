@@ -5,6 +5,7 @@ import {
   formatBacksterosActivityMessage,
   formatBacksterosTrackedDuration,
   getBacksterosTaskPriorityLabel,
+  resolveBacksterosTaskWorkingActorName,
 } from "./taskDetailFormat";
 import { getBacksterosTaskDisplayId } from "./types";
 
@@ -76,6 +77,30 @@ describe("task detail helpers", () => {
         createdAt: "2026-07-31T12:00:00.000Z",
       }),
     ).toBe("Auto-review requested from Sander");
+  });
+
+  it("resolves live working row actor names", () => {
+    expect(
+      resolveBacksterosTaskWorkingActorName({
+        assignee: { name: "Jaap Bakker", firstName: "Jaap" },
+        agentContact: { name: "Sander Bakker", firstName: "Sander" },
+      }),
+    ).toBe("Jaap");
+    expect(
+      resolveBacksterosTaskWorkingActorName({
+        assignee: null,
+        agentContact: { name: "Sander Bakker", firstName: "Sander" },
+      }),
+    ).toBe("Sander");
+    expect(
+      resolveBacksterosTaskWorkingActorName({
+        assignee: { name: "Jaap Bakker" },
+        agentContact: null,
+      }),
+    ).toBe("Jaap Bakker");
+    expect(resolveBacksterosTaskWorkingActorName({ assignee: null, agentContact: null })).toBe(
+      "Someone",
+    );
   });
 
   it("formats relative activity times", () => {

@@ -41,6 +41,7 @@ import { BacksterosTrackedTimeField } from "~/backsteros/TrackedTimeField";
 import {
   BACKSTEROS_TASK_PRIORITY_LABELS,
   getBacksterosTaskPriorityLabel,
+  resolveBacksterosTaskWorkingActorName,
 } from "~/backsteros/taskDetailFormat";
 import {
   clampTaskDetailPanelWidth,
@@ -73,6 +74,7 @@ import {
 } from "~/backsteros/taskStatus";
 import { useTaskDescriptionImages } from "~/backsteros/useTaskDescriptionImages";
 import { isElectron } from "~/env";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import {
   getLocalStorageItem,
   removeLocalStorageItem,
@@ -388,6 +390,46 @@ function TaskDetailPanelResizeRail(props: {
   );
 }
 
+function BacksterosTaskDetailPanelIdButton(props: { readonly displayId: string | null }) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: 1600,
+    target: "task ID",
+  });
+  const { displayId } = props;
+
+  if (!displayId) {
+    return (
+      <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground no-drag">
+        Task
+      </span>
+    );
+  }
+
+  const copyHint = `Copy ${displayId}`;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className={cn(
+              "-mx-1 min-w-0 truncate rounded px-1 text-xs font-medium tracking-wide no-drag",
+              "text-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+            )}
+            aria-label={isCopied ? "Copied" : copyHint}
+            onClick={() => copyToClipboard(displayId, undefined)}
+          >
+            {isCopied ? "Copied" : displayId}
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom">{isCopied ? "Copied" : copyHint}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function BacksterosTaskDetailPanel() {
   const selection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const closeTaskDetail = useBacksterosTaskDetailUiStore((state) => state.closeTaskDetail);
@@ -545,6 +587,7 @@ export function BacksterosTaskDetailPanel() {
     }
     return [...byId.values()];
   }, [contacts, state]);
+  const assignee = state.status === "ready" ? state.assignee : null;
   const avatarSrcById = useBacksterosContactAvatarSrcMap(avatarEntities);
   const organizationAvatarSrcById = useBacksterosAvatarSrcMap("organization", organizations);
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
@@ -552,19 +595,12 @@ export function BacksterosTaskDetailPanel() {
   const agentContactId = useBacksterosSettingsStore((state) => state.agentContactId);
   const workingActorName = useMemo(() => {
     const agentId = agentContactId?.trim() || null;
-    if (agentId) {
-      const fromList = contacts.find((contact) => contact.id === agentId);
-      if (fromList?.name.trim()) return fromList.name.trim();
-      if (
-        state.status === "ready" &&
-        state.assignee?.id === agentId &&
-        state.assignee.name.trim()
-      ) {
-        return state.assignee.name.trim();
-      }
-    }
-    const assigneeName = state.status === "ready" ? state.assignee?.name?.trim() : null;
-    return assigneeName || null;
+    const agentContact =
+      agentId == null
+        ? null
+        : (contacts.find((contact) => contact.id === agentId) ??
+          (assignee?.id === agentId ? assignee : null));
+    return resolveBacksterosTaskWorkingActorName({ assignee, agentContact });
   }, [agentContactId, contacts, state]);
   const assigneeAvatarSrc =
     state.status === "ready" && state.assignee ? (avatarSrcById[state.assignee.id] ?? null) : null;
@@ -623,7 +659,6 @@ export function BacksterosTaskDetailPanel() {
   const priorityValue = state.status === "ready" ? (state.task.priority ?? 0) : 0;
 
   const hideLabel = "Hide task details";
-  const titleLabel = displayId ?? "Task";
   const hideTaskButton = (
     <Tooltip>
       <TooltipTrigger
@@ -642,11 +677,7 @@ export function BacksterosTaskDetailPanel() {
       <TooltipPopup side="bottom">{hideLabel}</TooltipPopup>
     </Tooltip>
   );
-  const taskIdLabel = (
-    <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground no-drag">
-      {titleLabel}
-    </span>
-  );
+  const taskIdLabel = <BacksterosTaskDetailPanelIdButton displayId={displayId} />;
   const trackedTimeField =
     state.status === "ready" ? (
       <div className="shrink-0 no-drag">

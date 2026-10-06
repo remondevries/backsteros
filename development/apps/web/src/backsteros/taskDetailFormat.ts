@@ -4,7 +4,30 @@ import {
   migrateBacksterosTaskStatus,
 } from "./taskStatus";
 import { formatTaskDueMetaLabel } from "./taskDueDate";
-import type { BacksterosTaskActivity } from "./types";
+import type { BacksterosContact, BacksterosTaskActivity } from "./types";
+
+/** Short label for the live Activity “{name} is working…” row (assignee first). */
+export function backsterosContactWorkingDisplayName(
+  contact: Pick<BacksterosContact, "name" | "firstName"> | null | undefined,
+): string | null {
+  if (!contact) return null;
+  const first = contact.firstName?.trim();
+  if (first) return first;
+  const name = contact.name?.trim();
+  return name || null;
+}
+
+export function resolveBacksterosTaskWorkingActorName(input: {
+  readonly assignee?: Pick<BacksterosContact, "name" | "firstName"> | null;
+  /** Settings agent seat — used when the task has no assignee. */
+  readonly agentContact?: Pick<BacksterosContact, "name" | "firstName"> | null;
+}): string {
+  return (
+    backsterosContactWorkingDisplayName(input.assignee) ??
+    backsterosContactWorkingDisplayName(input.agentContact) ??
+    "Someone"
+  );
+}
 
 export const BACKSTEROS_TASK_PRIORITY_LABELS = [
   "No priority",

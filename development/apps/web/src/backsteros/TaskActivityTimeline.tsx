@@ -21,8 +21,8 @@ export function BacksterosTaskActivityTimeline(props: {
   /** Live agent presence for this task — mirrors desktop `working` prop. */
   readonly working?: boolean;
   /**
-   * Display name for the live working row (settings agent contact, else assignee).
-   * Falls back to "Agent" when omitted/blank.
+   * Display name for the live working row (assignee, else settings agent contact).
+   * Falls back to "Someone" when omitted/blank.
    */
   readonly workingActorName?: string | null;
 }) {
@@ -37,7 +37,7 @@ export function BacksterosTaskActivityTimeline(props: {
 
   const visible = timeline.slice(0, VISIBLE_ACTIVITY_LIMIT);
   const hidden = Math.max(0, timeline.length - visible.length);
-  const workingName = props.workingActorName?.trim() || "Agent";
+  const workingName = props.workingActorName?.trim() || "Someone";
 
   return (
     <div className="bos-task-activity">
