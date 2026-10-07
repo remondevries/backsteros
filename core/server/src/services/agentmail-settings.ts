@@ -86,7 +86,13 @@ import {
   wakeEmailGrokWebhook,
 } from "../lib/email-grok-wake.js";
 import { trimEmailTextForWake } from "../lib/email-wake-text.js";
+import { resolveAgentsPublicWebhookBase } from "../lib/agents-public-url.js";
 import { executeEmailCommandInCore } from "./email-command-execute.js";
+import {
+  EmailAgentCloudForwardError,
+  forwardEmailAgentDraftToCloud,
+  shouldForwardEmailAgentWakeToCloud,
+} from "./email-agent-cloud-forward.js";
 
 const INBOX_EMAIL_CACHE_MS = 5 * 60 * 1000;
 const inboxEmailCache = new Map<
@@ -1070,7 +1076,7 @@ export async function updateAgentMailSettings(
 }
 
 export function agentsPublicWebhookUrl(): string | null {
-  const base = process.env.AGENTS_PUBLIC_URL?.trim().replace(/\/$/, "");
+  const base = resolveAgentsPublicWebhookBase();
   if (!base) return null;
   return `${base}/api/v1/webhooks/agentmail`;
 }
@@ -1928,6 +1934,25 @@ export async function startEmailAgentDraft(
     };
   }
 
+  // Hybrid local-core: mailbox + public door live on cloud-core only (OS-100).
+  if (shouldForwardEmailAgentWakeToCloud()) {
+    try {
+      return await forwardEmailAgentDraftToCloud({
+        workspaceId,
+        inboxId,
+        messageId,
+        prompt,
+        intent,
+        currentDraftBody,
+      });
+    } catch (error) {
+      if (error instanceof EmailAgentCloudForwardError) {
+        throw new AgentMailApiError(error.status, "", error.message);
+      }
+      throw error;
+    }
+  }
+
   const [credentials, secretRow] = await Promise.all([
     getAgentMailCredentials(workspaceId),
     getSecretRow(workspaceId),
@@ -2057,6 +2082,14 @@ export async function startEmailAgentDraft(
   if (!wake.ok) {
     throw new AgentMailApiError(400, "", wake.error);
   }
+
+  // Agent is writing — move thread to In Progress so list/status survive nav.
+  void emailThreadsService.promoteEmailThreadWorkflowStatus(
+    workspaceId,
+    inboxId,
+    threadKey,
+    "in_progress",
+  );
 
   return { requestId, language };
 }

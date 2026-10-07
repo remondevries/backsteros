@@ -543,6 +543,11 @@ Desktop email-thread bottom box wakes one webhook (`email_grok_webhook_*`) with
 `kind: "email.agent_command"`. The open email is **context**; the agent classifies
 intent from `userPrompt`.
 
+`email_agent_callbacks` is **cloud-only** (not replicated). Callback URLs always
+use `https://agent.backsteros.com`. On hybrid local-core, wake + poll forward to
+cloud-core over `/internal/core-replication/email-agent-draft*` so Judith can POST
+back through the agents door. Simple core-executed intents (OS-94) stay local.
+
 ```http
 POST /api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft
 GET  /api/v1/email/agent-draft-callbacks/:requestId

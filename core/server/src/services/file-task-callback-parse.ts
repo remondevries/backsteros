@@ -6,19 +6,18 @@ import {
 } from "@backsteros/contracts";
 
 import { hashApiKey } from "../lib/crypto.js";
+import {
+  DEFAULT_AGENTS_PUBLIC_URL,
+  resolveAgentsPublicBase,
+} from "../lib/agents-public-url.js";
 
 export const FILE_TASK_CALLBACK_TTL_MS = 30 * 60 * 1000;
-export const DEFAULT_FILE_TASK_CALLBACK_PUBLIC_URL =
-  "https://agent.backsteros.com";
+export const DEFAULT_FILE_TASK_CALLBACK_PUBLIC_URL = DEFAULT_AGENTS_PUBLIC_URL;
 
-export function resolveFileTaskCallbackPublicBase(): string {
-  const configured =
-    process.env.FILE_TASK_CALLBACK_PUBLIC_URL?.trim() ||
-    process.env.AGENTS_PUBLIC_URL?.trim();
-  return (configured || DEFAULT_FILE_TASK_CALLBACK_PUBLIC_URL).replace(
-    /\/$/,
-    "",
-  );
+export function resolveFileTaskCallbackPublicBase(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolveAgentsPublicBase(env);
 }
 
 export function buildFileTaskCallbackUrl(

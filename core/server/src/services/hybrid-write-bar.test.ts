@@ -63,6 +63,24 @@ describe("hybrid write bar", () => {
     assert.ok(index.includes("startAutoReviewWebhookWorker"));
   });
 
+  it("forwards email-agent wakes to cloud-core only (OS-100)", () => {
+    const agentmail = readSrc("agentmail-settings.ts");
+    assert.ok(agentmail.includes("shouldForwardEmailAgentWakeToCloud"));
+    assert.ok(agentmail.includes("forwardEmailAgentDraftToCloud"));
+    const forward = readSrc("email-agent-cloud-forward.ts");
+    assert.ok(forward.includes('role === "local"'));
+    assert.ok(
+      forward.includes("/internal/core-replication/email-agent-draft"),
+    );
+    const callbacks = readSrc("email-agent-callbacks.ts");
+    assert.ok(callbacks.includes("cloud-only"));
+    const routes = readSrc("core-replication/routes.ts");
+    assert.ok(routes.includes("/internal/core-replication/email-agent-draft"));
+    assert.ok(
+      routes.includes("/internal/core-replication/email-agent-draft-callbacks/"),
+    );
+  });
+
   it("registers and deletes email threads leader-first (not invent-on-list / hard-delete twin-only)", () => {
     const email = readSrc("email-threads.ts");
     assert.ok(email.includes("commitRestEntityWriteBatch"));

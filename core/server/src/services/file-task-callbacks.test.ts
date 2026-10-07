@@ -5,6 +5,7 @@ import {
   buildFileTaskCallbackUrl,
   hashFileTaskCallbackToken,
   parseFileTaskCallbackResult,
+  resolveFileTaskCallbackPublicBase,
   tokenHashesEqual,
 } from "./file-task-callback-parse.js";
 
@@ -18,6 +19,27 @@ describe("file-task-callback-parse", () => {
       ),
       "https://agent.backsteros.com/api/v1/public/file-task-callbacks/req-1?token=ftc_secret",
     );
+  });
+
+  it("ignores dead staging AGENTS_PUBLIC_URL when resolving the public base (OS-100)", () => {
+    const previousAgents = process.env.AGENTS_PUBLIC_URL;
+    const previousFile = process.env.FILE_TASK_CALLBACK_PUBLIC_URL;
+    process.env.AGENTS_PUBLIC_URL = "https://staging.backsteros.com";
+    delete process.env.FILE_TASK_CALLBACK_PUBLIC_URL;
+    try {
+      assert.equal(
+        resolveFileTaskCallbackPublicBase(),
+        "https://agent.backsteros.com",
+      );
+    } finally {
+      if (previousAgents === undefined) delete process.env.AGENTS_PUBLIC_URL;
+      else process.env.AGENTS_PUBLIC_URL = previousAgents;
+      if (previousFile === undefined) {
+        delete process.env.FILE_TASK_CALLBACK_PUBLIC_URL;
+      } else {
+        process.env.FILE_TASK_CALLBACK_PUBLIC_URL = previousFile;
+      }
+    }
   });
 
   it("parses success and failure callback bodies", () => {

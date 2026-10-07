@@ -11,6 +11,11 @@ import {
   storeEmailAgentCallbackResult,
 } from "../services/email-agent-callbacks.js";
 import { dispatchEmailAgentCallbackSuccess } from "../services/email-agent-callback-dispatch.js";
+import {
+  EmailAgentCloudForwardError,
+  forwardEmailAgentCallbackPollToCloud,
+  shouldForwardEmailAgentWakeToCloud,
+} from "../services/email-agent-cloud-forward.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -29,9 +34,24 @@ export function registerEmailAgentCallbackRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) return c.json(unauthorized(), 401);
     const requestId = decodeURIComponent(c.req.param("requestId"));
-    const poll = await readEmailAgentCallback(auth.workspaceId, requestId);
-    if (!poll) return c.json(notFound("Email agent draft callback"), 404);
-    return c.json(poll);
+    try {
+      const poll = shouldForwardEmailAgentWakeToCloud()
+        ? await forwardEmailAgentCallbackPollToCloud(
+            auth.workspaceId,
+            requestId,
+          )
+        : await readEmailAgentCallback(auth.workspaceId, requestId);
+      if (!poll) return c.json(notFound("Email agent draft callback"), 404);
+      return c.json(poll);
+    } catch (error) {
+      if (error instanceof EmailAgentCloudForwardError) {
+        return c.json(
+          { error: error.message, code: "bad_request" as const },
+          error.status >= 500 ? 502 : 400,
+        );
+      }
+      throw error;
+    }
   });
 
   app.post(

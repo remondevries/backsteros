@@ -71,7 +71,4 @@ export const LEGACY_BOOTSTRAP_API_KEY_NAME = "Meetings";
 export const CALENDAR_BUSY_TASK_LEGACY_SOURCE = "calendar_busy";
 
 /** Hostnames that must never be used as CORE_REPLICATION_PEER_URL (agents HTTPS door). */
-export const AGENTS_DOOR_HOSTNAMES = [
-  "agent.backsteros.com",
-  "agents.backsteros.com",
-] as const;
+export { AGENTS_DOOR_HOSTNAMES } from "../../lib/agents-public-url.js";

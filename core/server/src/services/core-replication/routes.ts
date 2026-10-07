@@ -52,6 +52,9 @@ import {
   resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
 } from "./pending-unpushed-state.js";
+import { AgentMailApiError } from "../../lib/agentmail-client.js";
+import * as agentmailSettingsService from "../agentmail-settings.js";
+import { readEmailAgentCallback } from "../email-agent-callbacks.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -923,4 +926,115 @@ export function registerCoreReplicationRoutes(app: Hono) {
       summary: formatPendingUnpushedSummary(pending),
     });
   });
+
+  /**
+   * Local-core → cloud-core: register email_agent_callbacks + wake Judith.
+   * Callback URLs are always on agent.backsteros.com (OS-100).
+   */
+  app.post("/internal/core-replication/email-agent-draft", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const config = getCoreReplicationConfig();
+    if (!config || config.role !== "cloud") {
+      return c.json(
+        {
+          error: "Email agent draft mailbox is cloud-only",
+          code: "forbidden" as const,
+        },
+        403,
+      );
+    }
+
+    const body = (await c.req.json().catch(() => null)) as {
+      workspace_id?: string;
+      inbox_id?: string;
+      message_id?: string;
+      prompt?: string;
+      intent?: "reply_draft" | "task" | "calendar" | "note" | null;
+      current_draft_body?: string | null;
+    } | null;
+
+    const workspaceId = body?.workspace_id?.trim();
+    const inboxId = body?.inbox_id?.trim();
+    const messageId = body?.message_id?.trim();
+    const prompt = body?.prompt?.trim();
+    if (!workspaceId || !inboxId || !messageId || !prompt) {
+      return c.json(
+        {
+          error:
+            "workspace_id, inbox_id, message_id, and prompt are required",
+          code: "bad_request" as const,
+        },
+        400,
+      );
+    }
+
+    try {
+      const started = await agentmailSettingsService.startEmailAgentDraft(
+        workspaceId,
+        inboxId,
+        messageId,
+        prompt,
+        body?.intent,
+        body?.current_draft_body,
+      );
+      return c.json(started);
+    } catch (error) {
+      if (error instanceof AgentMailApiError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.status === 404 ? "not_found" : "bad_request",
+          },
+          error.status === 404 ? 404 : 400,
+        );
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not start email agent draft on cloud-core";
+      return c.json({ error: message, code: "bad_request" as const }, 400);
+    }
+  });
+
+  app.get(
+    "/internal/core-replication/email-agent-draft-callbacks/:requestId",
+    async (c) => {
+      if (!replicationAuth(c.req.header("Authorization"))) {
+        return c.json(unauthorized(), 401);
+      }
+      const config = getCoreReplicationConfig();
+      if (!config || config.role !== "cloud") {
+        return c.json(
+          {
+            error: "Email agent draft mailbox is cloud-only",
+            code: "forbidden" as const,
+          },
+          403,
+        );
+      }
+
+      const requestId = decodeURIComponent(c.req.param("requestId"));
+      const workspaceId = c.req.query("workspace_id")?.trim();
+      if (!workspaceId) {
+        return c.json(
+          { error: "workspace_id is required", code: "bad_request" as const },
+          400,
+        );
+      }
+
+      const poll = await readEmailAgentCallback(workspaceId, requestId);
+      if (!poll) {
+        return c.json(
+          {
+            error: "Email agent draft callback not found",
+            code: "not_found" as const,
+          },
+          404,
+        );
+      }
+      return c.json(poll);
+    },
+  );
 }

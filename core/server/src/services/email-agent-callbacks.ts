@@ -15,6 +15,7 @@ import {
   hashEmailAgentCallbackToken,
   parseEmailAgentCallbackResult,
 } from "./email-agent-callback-parse.js";
+import { shouldForwardEmailAgentWakeToCloud } from "./email-agent-cloud-forward.js";
 
 export {
   EMAIL_AGENT_CALLBACK_TTL_MS,
@@ -37,6 +38,11 @@ export async function registerEmailAgentCallback(input: {
   inboxId: string;
   messageId: string;
 }): Promise<{ requestId: string; callbackUrl: string; expiresAt: string } | { conflict: true }> {
+  if (shouldForwardEmailAgentWakeToCloud()) {
+    throw new Error(
+      "email_agent_callbacks is cloud-only; local-core must forward wakes to cloud-core",
+    );
+  }
   await pruneExpired();
   const existing = await db
     .select()
