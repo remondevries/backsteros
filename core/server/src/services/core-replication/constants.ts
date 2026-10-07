@@ -50,6 +50,8 @@ export const REPLICATED_TABLES = [
   "entity_counters",
   "api_keys",
   "financial_transactions",
+  /** Portal client estimates (Finance Estimates / Financials ACL). */
+  "client_estimates",
   "document_property_types",
   "auto_review_webhook_deliveries",
 ] as const;

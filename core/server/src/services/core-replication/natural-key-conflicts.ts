@@ -107,6 +107,13 @@ export const REPLICATED_UNIQUE_FORKS: readonly {
     reason: "Partial unique; soft-delete the live loser (existing apply heal).",
   },
   {
+    table: "client_estimates",
+    constraint: "client_estimates_workspace_number_uidx",
+    columns: ["workspace_id", "number"],
+    policy: "heal_soft_unique",
+    reason: "Partial unique ES-{n}; soft-delete the live loser.",
+  },
+  {
     table: "tasks",
     constraint: "tasks_workspace_scope_number_unique",
     columns: ["workspace_id", "scope", "number"],

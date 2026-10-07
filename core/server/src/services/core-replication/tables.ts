@@ -76,6 +76,7 @@ const TABLE_SPECS: TableSpec[] = [
   spec("entity_counters", ["workspace_id", "entity", "scope_id"]),
   spec("api_keys", ["id"]),
   spec("financial_transactions", ["id"]),
+  spec("client_estimates", ["id"], "updated_at", { optional: true }),
   spec("document_property_types", ["id"], "updated_at", { optional: true }),
   spec("auto_review_webhook_deliveries", ["id"], "updated_at", {
     optional: true,
