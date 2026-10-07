@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isAppDocumentFocused, shouldPlayAgentFinishedSound } from "./agentFinishedSound";
+import {
+  isAppDocumentFocused,
+  noteAgentFinishedSoundPlayed,
+  shouldPlayAgentFinishedSound,
+  wasAgentFinishedSoundRecentlyPlayed,
+} from "./agentFinishedSound";
 
 function doc(input: {
   visibilityState: DocumentVisibilityState;
@@ -71,5 +76,15 @@ describe("shouldPlayAgentFinishedSound", () => {
         doc: doc({ visibilityState: "visible", focused: true }),
       }),
     ).toBe(true);
+  });
+});
+
+describe("wasAgentFinishedSoundRecentlyPlayed", () => {
+  it("remembers a thread key for a short window", () => {
+    const key = `env:thread-recent-${Date.now()}`;
+    expect(wasAgentFinishedSoundRecentlyPlayed(key)).toBe(false);
+    noteAgentFinishedSoundPlayed(key);
+    expect(wasAgentFinishedSoundRecentlyPlayed(key)).toBe(true);
+    expect(wasAgentFinishedSoundRecentlyPlayed(key, Date.now() + 25_000)).toBe(false);
   });
 });

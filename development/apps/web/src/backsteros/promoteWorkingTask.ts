@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { canAutoPromoteBacksterosTaskStatus } from "@t3tools/shared/backsterosTaskAutoPromote";
 
+import { playAgentFinishedSoundForThread } from "~/agentFinishedSound";
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
 
@@ -163,7 +164,7 @@ export function shouldMarkBacksterosTaskInReviewAfterWorking(input: {
     shell as Parameters<typeof resolveSidebarThreadStatus>[0],
   );
   // Ready = turn done; failed = agent stopped with an error. Both should land
-  // In Review so the user can check the chat (matches finished-sound).
+  // In Review so the user can check the chat (finished-sound plays on that promote).
   return status === "ready" || status === "failed";
 }
 
@@ -259,6 +260,12 @@ export function usePromoteWorkingBacksterosTasks() {
                 status: "in_review",
                 projectId,
               });
+              // Attention chime for agent→In Review — plays even when the user
+              // is not looking at the UI (finish-sound for task chats is deferred here).
+              const binding = byTaskIdRef.current[taskId];
+              if (binding) {
+                playAgentFinishedSoundForThread(threadKey(binding.environmentId, binding.threadId));
+              }
             })
             .catch(() => {
               void restoreBacksterosTaskStatusFromServer(taskId);

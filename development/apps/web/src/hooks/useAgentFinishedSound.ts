@@ -5,22 +5,22 @@ import { useEffect, useMemo, useRef } from "react";
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useThreadShells } from "~/state/entities";
-import {
-  resolveActiveThreadRouteRef,
-  resolveThreadRouteTarget,
-} from "~/threadRoutes";
+import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "~/threadRoutes";
+
+import { findBacksterosTaskIdForThread } from "~/backsteros/taskChatStore";
 
 import {
-  playAgentFinishedSound,
+  playAgentFinishedSoundForThread,
   shouldPlayAgentFinishedSound,
   unlockAgentFinishedSound,
 } from "../agentFinishedSound";
 
 /**
- * Plays {@link playAgentFinishedSound} when any thread leaves the Working
- * state for Ready or Failed (agent finished). Skips the initial mount so
- * already-idle threads do not chime on load. Skips when the user already has
- * that chat focused in a visible window.
+ * Plays the agent-finished chime when any thread leaves the Working state for
+ * Ready or Failed. Skips the initial mount so already-idle threads do not
+ * chime on load. Skips when the user already has that chat focused in a
+ * visible window. BacksterOS task-bound threads skip here — they chime when
+ * the task is promoted to In Review instead (see promoteWorkingTask).
  */
 export function useAgentFinishedSound(): void {
   const shells = useThreadShells();
@@ -82,6 +82,16 @@ export function useAgentFinishedSound(): void {
       // Ready = turn done; failed = agent stopped with an error. Both are
       // "finished working" from the user's point of view.
       if (status !== "ready" && status !== "failed") continue;
+      // Task-bound chats chime on agent→in_review so the sound matches the
+      // status change the user listens for (and still fires while away).
+      if (
+        findBacksterosTaskIdForThread({
+          threadId,
+          environmentId,
+        })
+      ) {
+        continue;
+      }
       if (
         !shouldPlayAgentFinishedSound({
           finishedThreadKey: key,
@@ -90,7 +100,7 @@ export function useAgentFinishedSound(): void {
       ) {
         continue;
       }
-      playAgentFinishedSound();
+      playAgentFinishedSoundForThread(key);
       return;
     }
   }, [shells]);
