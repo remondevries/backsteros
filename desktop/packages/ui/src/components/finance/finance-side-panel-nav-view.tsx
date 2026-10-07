@@ -110,6 +110,8 @@ export function FinanceSectionNavIcon({ id }: { id: FinanceNavId }) {
       return <ArrowSwitchIcon {...props} />;
     case "invoices":
       return <FinanceInvoicesNavIcon {...props} />;
+    case "estimates":
+      return <FinanceInvoicesNavIcon {...props} />;
     case "goals":
       return <FinanceGoalsNavIcon {...props} />;
     case "cashflow":

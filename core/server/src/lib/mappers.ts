@@ -3,6 +3,7 @@ import type {
   Area,
   BankAccount,
   CashflowPlannerEntry,
+  ClientEstimate,
   Document,
   DocumentSearchResult,
   FinancialCategory,
@@ -15,6 +16,7 @@ import type {
   TaskActivity,
   TaskComment,
 } from "@backsteros/contracts";
+import { CLIENT_ESTIMATE_STATUSES } from "@backsteros/contracts";
 
 import { normalizeTaskLabelIds } from "../services/task-labels.js";
 import { formatTaskDisplayKey } from "./task-filters.js";
@@ -24,6 +26,7 @@ import type {
   DbArea,
   DbBankAccount,
   DbCashflowPlannerEntry,
+  DbClientEstimate,
   DbDocument,
   DbFinancialCategory,
   DbFinancialGoal,
@@ -424,6 +427,33 @@ export function toFinancialGoal(
     contributionCents,
     savingMode,
     savedCents: Number.isFinite(savedCents) ? Math.trunc(savedCents) : 0,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toClientEstimate(row: DbClientEstimate): ClientEstimate {
+  const status =
+    row.status &&
+    (CLIENT_ESTIMATE_STATUSES as readonly string[]).includes(row.status)
+      ? (row.status as ClientEstimate["status"])
+      : "draft";
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    organizationId: row.organizationId ?? null,
+    projectId: row.projectId ?? null,
+    title: row.title,
+    subtitle: row.subtitle ?? null,
+    clientLabel: row.clientLabel ?? null,
+    authorName: row.authorName ?? null,
+    versionLabel: row.versionLabel ?? null,
+    documentDate: row.documentDate ?? null,
+    status,
+    proposalMarkdown: row.proposalMarkdown ?? "",
+    estimateMarkdown: row.estimateMarkdown ?? "",
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

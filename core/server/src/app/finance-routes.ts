@@ -14,12 +14,15 @@ import {
   financeAssetsDebtQuerySchema,
   batchUpdateFinancialTransactionsSchema,
   batchDeleteFinancialTransactionsSchema,
+  createClientEstimateSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
   cashflowPlannerEntryInputSchema,
+  listClientEstimatesQuerySchema,
   listFinancialTransactionsQuerySchema,
   updateBankAccountSchema,
+  updateClientEstimateSchema,
   updateFinancialCategorySchema,
   updateFinancialGoalSchema,
   updateFinancialRecurringSchema,
@@ -32,6 +35,7 @@ import {
 
 import {
   toBankAccount,
+  toClientEstimate,
   toFinancialCategory,
   toFinancialGoal,
   toFinancialRecurring,
@@ -41,6 +45,7 @@ import {
 } from "../lib/mappers.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { newId } from "../lib/crypto.js";
+import { clientEstimateRouteDeps } from "../services/finance/client-estimates.js";
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
@@ -73,6 +78,83 @@ import {
 } from "./route-helpers.js";
 
 export function registerFinanceRoutes(app: Hono) {
+  app.get(
+    "/api/v1/finance/estimates",
+    zValidator("query", listClientEstimatesQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      // Portal keys often have organizations:read but not finance:read.
+      if (!can(auth, "finance:read") && !can(auth, "organizations:read")) {
+        return c.json(forbidden(), 403);
+      }
+      const query = c.req.valid("query");
+      const rows = await clientEstimateRouteDeps.listClientEstimates(
+        auth.workspaceId,
+        query,
+      );
+      return c.json({ estimates: rows.map(toClientEstimate) });
+    },
+  );
+
+  app.post(
+    "/api/v1/finance/estimates",
+    zValidator("json", createClientEstimateSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      const row = await clientEstimateRouteDeps.createClientEstimate(
+        auth.workspaceId,
+        body,
+      );
+      return c.json(toClientEstimate(row), 201);
+    },
+  );
+
+  app.get("/api/v1/finance/estimates/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read") && !can(auth, "organizations:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const id = c.req.param("id");
+    const row = await clientEstimateRouteDeps.getClientEstimateById(
+      auth.workspaceId,
+      id,
+    );
+    if (!row) return c.json(notFound("Estimate"), 404);
+    return c.json(toClientEstimate(row));
+  });
+
+  app.patch(
+    "/api/v1/finance/estimates/:id",
+    zValidator("json", updateClientEstimateSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const id = c.req.param("id");
+      const patch = c.req.valid("json");
+      const row = await clientEstimateRouteDeps.updateClientEstimate(
+        auth.workspaceId,
+        id,
+        patch,
+      );
+      if (!row) return c.json(notFound("Estimate"), 404);
+      return c.json(toClientEstimate(row));
+    },
+  );
+
+  app.delete("/api/v1/finance/estimates/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const id = c.req.param("id");
+    const row = await clientEstimateRouteDeps.deleteClientEstimate(
+      auth.workspaceId,
+      id,
+    );
+    if (!row) return c.json(notFound("Estimate"), 404);
+    return c.body(null, 204);
+  });
+
   app.get(
     "/api/v1/finance/moneybird/invoices",
     zValidator("query", moneybirdSalesInvoicesQuerySchema),

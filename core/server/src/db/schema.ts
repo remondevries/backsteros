@@ -1909,6 +1909,49 @@ export const financialGoals = pgTable(
   ],
 );
 
+/**
+ * Client proposal + estimate posts (portal Financials → Estimates).
+ * Tier C: REST only; markdown bodies stay server-side (not PowerSync).
+ */
+export const clientEstimates = pgTable(
+  "client_estimates",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    subtitle: text("subtitle"),
+    clientLabel: text("client_label"),
+    authorName: text("author_name"),
+    versionLabel: text("version_label"),
+    documentDate: text("document_date"),
+    status: text("status").notNull().default("draft"),
+    proposalMarkdown: text("proposal_markdown").notNull().default(""),
+    estimateMarkdown: text("estimate_markdown").notNull().default(""),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("client_estimates_workspace_id_idx").on(table.workspaceId),
+    index("client_estimates_organization_id_idx").on(table.organizationId),
+    index("client_estimates_deleted_at_idx").on(table.deletedAt),
+    index("client_estimates_status_idx").on(table.workspaceId, table.status),
+  ],
+);
+
 export const financialRecurrings = pgTable(
   "financial_recurrings",
   {
@@ -2165,6 +2208,7 @@ export type DbTaskAttachment = typeof taskAttachments.$inferSelect;
 export type DbBankAccount = typeof bankAccounts.$inferSelect;
 export type DbFinancialCategory = typeof financialCategories.$inferSelect;
 export type DbFinancialGoal = typeof financialGoals.$inferSelect;
+export type DbClientEstimate = typeof clientEstimates.$inferSelect;
 export type DbFinancialRecurring = typeof financialRecurrings.$inferSelect;
 export type DbCashflowPlannerEntry = typeof cashflowPlannerEntries.$inferSelect;
 export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;

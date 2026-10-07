@@ -1728,6 +1728,10 @@ export {
   type FinanceInvoicesViewProps,
 } from "./components/finance/finance-invoices-view.js";
 export {
+  FinanceEstimatesView,
+  type FinanceEstimatesViewProps,
+} from "./components/finance/finance-estimates-view.js";
+export {
   FinanceInvoiceDetailDocument,
   type FinanceInvoiceDetailDocumentProps,
 } from "./components/finance/finance-invoice-detail-document.js";

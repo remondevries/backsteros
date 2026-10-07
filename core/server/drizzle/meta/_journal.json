@@ -995,6 +995,13 @@
       "when": 1795760000000,
       "tag": "0140_zernio_social_layer",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1795770000000,
+      "tag": "0141_client_estimates",
+      "breakpoints": true
     }
   ]
 }

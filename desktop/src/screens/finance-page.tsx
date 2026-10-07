@@ -6,6 +6,7 @@ import {
   FinanceCategoriesView,
   FinanceDashboardView,
   FinanceGoalsView,
+  FinanceEstimatesView,
   FinanceInvoicesView,
   FinanceRecurringsView,
   FinanceSectionPlaceholder,
@@ -39,6 +40,7 @@ import { notifyBankAccountsChanged } from "./finance/finance-page-helpers";
 import { FinancePageModals } from "./finance/finance-page-modals";
 import { useFinanceCashflow } from "./finance/use-finance-cashflow";
 import { useFinanceCoreData } from "./finance/use-finance-core-data";
+import { useFinanceEstimates } from "./finance/use-finance-estimates";
 import { useFinanceMoneybirdInvoices } from "./finance/use-finance-moneybird-invoices";
 import { useFinancePageChrome } from "./finance/use-finance-page-chrome";
 import { useFinanceSectionData } from "./finance/use-finance-section-data";
@@ -215,6 +217,16 @@ function FinancePageBody() {
     moneybirdInvoiceDetailError,
     loadMoneybirdInvoicesPage,
   } = useFinanceMoneybirdInvoices({ client, navId });
+
+  const {
+    estimates,
+    estimatesLoading,
+    estimatesError,
+    estimatesCreating,
+    selectedEstimateId,
+    setSelectedEstimateId,
+    createEstimate,
+  } = useFinanceEstimates({ client, navId });
 
   const {
     workspaceCashflow,
@@ -519,6 +531,19 @@ function FinancePageBody() {
         onOpenSettings={() =>
           navigate(getIntegrationsSettingsHref("moneybird"))
         }
+      />
+    );
+  } else if (navId === "estimates") {
+    main = (
+      <FinanceEstimatesView
+        estimates={estimates}
+        organizations={organizations}
+        loading={estimatesLoading}
+        error={estimatesError}
+        selectedEstimateId={selectedEstimateId}
+        onSelectedEstimateChange={setSelectedEstimateId}
+        creating={estimatesCreating}
+        onCreateEstimate={createEstimate}
       />
     );
   } else if (navId === "investments") {
