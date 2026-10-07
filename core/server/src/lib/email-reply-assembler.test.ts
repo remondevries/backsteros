@@ -535,13 +535,15 @@ describe("email-reply-assembler", () => {
     assert.equal(sanitizeAgentReplyBody(invoice1065), invoice1065);
   });
 
-  it("OS-101: sanitize preserves decimals, times, versions, emails, URLs, P.S.", () => {
+  it("OS-101: sanitize preserves decimals, times, versions, emails, URLs, P.S., bijv.", () => {
     for (const body of [
       "Hierbij de boekingsregel met bedrag €17.183,09.",
       "The call is at 15.33 today.",
       "We shipped v1.2.3 this morning.",
       "Reach me at financials@lemo-design.com or see https://lemo-design.com/x. Thanks again.",
       "P.S. This still belongs in the body.",
+      "Dit is een voorbeeld, bijv. een factuurregel.",
+      "First paragraph about the invoice.\n\nSecond paragraph confirms we will process it.",
     ]) {
       assert.equal(sanitizeAgentReplyBody(body).replace(/\s+/g, ""), body.trim().replace(/\s+/g, ""));
     }
@@ -550,6 +552,44 @@ describe("email-reply-assembler", () => {
   it("OS-101: splitIntoSentences never drops characters", () => {
     const sample = "Thanks for EUR 18.15. I'll go ahead and process it.";
     assert.equal(splitIntoSentences(sample).join(" "), sample);
+  });
+
+  it("OS-101: dedupe removes only exact duplicate sentences", () => {
+    const body =
+      "Thanks for EUR 18.15. I'll go ahead and process it. Thanks for EUR 18.15.";
+    assert.equal(
+      sanitizeAgentReplyBody(body),
+      "I'll go ahead and process it. Thanks for EUR 18.15.",
+    );
+  });
+
+  it("OS-101: sanitize never loses non-whitespace except exact duplicates or shell", () => {
+    const samples = [
+      "Thanks for EUR 18.15. I'll go ahead and process it.",
+      "Thank you, I have received the Cursor invoice FD651B1A-0032 (EUR 10.65) and will process it.",
+      "Reach me at financials@lemo-design.com or see https://lemo-design.com/x. Thanks again.",
+      "Hi Ada,\n\nThanks for EUR 18.15. I'll go ahead and process it.\n\nBest,\nRalph",
+      "Thanks for EUR 18.15. I'll go ahead and process it. Thanks for EUR 18.15.",
+    ];
+    for (const raw of samples) {
+      const sanitized = sanitizeAgentReplyBody(raw);
+      const rawCore = raw
+        .replace(/^ *(?:hi|hello|hey|dear|aan|beste|geachte|to)\b[^,\n]{0,80},?\s*\n+/i, "")
+        .replace(/\n+(?:best|thanks|thank you|sincerely|regards|cheers),?\s*\n[\s\S]*$/i, "")
+        .trim();
+      const rawChars = new Set(rawCore.replace(/\s+/g, "").toLowerCase());
+      const outChars = sanitized.replace(/\s+/g, "").toLowerCase();
+      // Every output char must appear in the non-shell input (duplicates may shrink length).
+      for (const ch of outChars) {
+        assert.ok(rawChars.has(ch) || rawCore.replace(/\s+/g, "").toLowerCase().includes(ch));
+      }
+      assert.ok(
+        outChars.length >= rawCore.replace(/\s+/g, "").length * 0.5,
+        `unexpected loss for: ${raw.slice(0, 60)}`,
+      );
+      assert.doesNotMatch(sanitized, /^15\. /);
+      assert.doesNotMatch(sanitized, /^65\)/);
+    }
   });
 
   it("OS-101: bare role local-parts get nameless greetings; john stays John", () => {

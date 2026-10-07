@@ -1076,26 +1076,34 @@ describe("send self-only To correction + concept subject preserve", () => {
     assert.doesNotMatch(String(draft.subject), /^Re:/);
   });
 
-  it("OS-101: upsertEmailConceptReply keeps EUR 18.15 body intact", async () => {
+  it("OS-101: upsertEmailConceptReply keeps EUR 18.15 / 10.65 bodies intact", async () => {
     stubService();
-    const body = "Thanks for sending over AgentMail invoice RLMOORV4-0001 for EUR 18.15. I'll go ahead and process it.";
-    const messageId = "msg_os101_0";
-    const createPayloads: Record<string, unknown>[] = [];
-    mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
-    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
-      inboxId: "inbox_1", threadId: "thread_1", messageId, subject: "Invoice",
-      from: "Ada Lovelace <ada@example.com>", to: ["remon@example.com"], preview: null,
-      timestamp: "2026-10-01T08:00:00.000Z", labels: [], text: "Please process.", html: null,
-      extractedText: "Please process.", extractedHtml: null, inReplyTo: null, attachments: [],
-    }));
-    mock.method(AgentMailClient.prototype, "createDraft", async (_i: string, payload: Record<string, unknown>) => {
-      createPayloads.push(payload);
-      return baseDraft({ draftId: "draft_os101", clientId: conceptReplyClientId(messageId), inReplyTo: messageId,
-        text: String(payload.text ?? ""), html: String(payload.html ?? ""), to: (payload.to as string[]) ?? [] });
-    });
-    const result = await upsertEmailConceptReply("ws_1", "inbox_1", messageId, { body });
-    assert.equal(result.body, body);
-    assert.match(String(createPayloads[0]!.text), /EUR 18\.15/);
+    const bodies = [
+      "Thanks for sending over AgentMail invoice RLMOORV4-0001 for EUR 18.15. I'll go ahead and process it.",
+      "Thank you, I have received the Cursor invoice FD651B1A-0032 (EUR 10.65) and will process it.",
+    ];
+    for (const [index, body] of bodies.entries()) {
+      const messageId = `msg_os101_${index}`;
+      const createPayloads: Record<string, unknown>[] = [];
+      mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
+      mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+        inboxId: "inbox_1", threadId: "thread_1", messageId, subject: "Invoice",
+        from: "Ada Lovelace <ada@example.com>", to: ["remon@example.com"], preview: null,
+        timestamp: "2026-10-01T08:00:00.000Z", labels: [], text: "Please process.", html: null,
+        extractedText: "Please process.", extractedHtml: null, inReplyTo: null, attachments: [],
+      }));
+      mock.method(AgentMailClient.prototype, "createDraft", async (_i: string, payload: Record<string, unknown>) => {
+        createPayloads.push(payload);
+        return baseDraft({ draftId: `draft_os101_${index}`, clientId: conceptReplyClientId(messageId), inReplyTo: messageId,
+          text: String(payload.text ?? ""), html: String(payload.html ?? ""), to: (payload.to as string[]) ?? [] });
+      });
+      const result = await upsertEmailConceptReply("ws_1", "inbox_1", messageId, { body });
+      assert.equal(result.body, body);
+      assert.match(String(createPayloads[0]!.text), body.includes("18.15") ? /EUR 18\.15/ : /EUR 10\.65/);
+      assert.match(String(createPayloads[0]!.html), body.includes("18.15") ? /EUR 18\.15/ : /EUR 10\.65/);
+      assert.ok(String(createPayloads[0]!.text).includes(body));
+      assert.ok(String(createPayloads[0]!.html).includes(body.replace(/&/g, "&amp;")) || String(createPayloads[0]!.html).includes(body));
+    }
   });
 
   it("OS-101: Moneybird import parent refuses concept-reply with 422", async () => {
