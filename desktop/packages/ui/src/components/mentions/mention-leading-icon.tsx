@@ -15,8 +15,8 @@ import type { MentionKind } from "../../mentions/mention-tokens.js";
 export function MentionLeadingIcon({
   kind,
   status,
-  projectIcon,
-  projectType,
+  projectIcon: _projectIcon,
+  projectType: _projectType,
   contact,
   organization,
   size = 16,
