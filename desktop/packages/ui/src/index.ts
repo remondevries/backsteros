@@ -484,6 +484,18 @@ export {
   type EmailThreadCommentBubbleProps,
 } from "./components/email/email-thread-comment-bubble.js";
 export {
+  EmailThreadDetailsSpacer,
+  type EmailThreadDetailsSpacerProps,
+} from "./components/email/email-thread-details-spacer.js";
+export {
+  findLiveEmailThreadDetailsKey,
+  groupEmailThreadTimeline,
+  isEmailThreadPrimaryKind,
+  type EmailThreadTimelineItem,
+  type EmailThreadTimelineKind,
+  type EmailThreadTimelineSegment,
+} from "./email/email-thread-timeline.js";
+export {
   TaskMentionBlockChip,
   type TaskMentionBlockChipProps,
   type TaskMentionBlockChipTask,

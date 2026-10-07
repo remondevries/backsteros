@@ -1,4 +1,12 @@
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { AgentMailMessageDetail, TaskLink } from "@backsteros/contracts";
 import {
   contactMatchesEmailAddress,
@@ -12,6 +20,7 @@ import {
   EmailThreadMessageCard,
   EmailThreadCommentBubble,
   EmailThreadCommentComposer,
+  EmailThreadDetailsSpacer,
   EmailAgentActionCards,
   EmailThreadMinimap,
   TaskMentionBlockChip,
@@ -26,6 +35,8 @@ import {
   migrateLegacyTaskStatus,
   buildReplyRecipients,
   emailMailboxFromDisplay,
+  findLiveEmailThreadDetailsKey,
+  groupEmailThreadTimeline,
   parseReplyToAddress,
   replySubject as formatReplySubject,
   useMentionCatalogOptional,
@@ -47,6 +58,7 @@ import {
   type EmailComposerMeetingSubmit,
   type EmailComposerTaskSubmit,
   type EmailMailbox,
+  type EmailThreadTimelineItem,
   type SearchableDropdownOption,
   TaskStatusIcon,
 } from "@backsteros/ui";
@@ -200,6 +212,13 @@ export function EmailThreadDetail({
   const [agentActionMode, setAgentActionMode] =
     useState<EmailAgentActionCardId>("reply_draft");
   const [entityCreateSending, setEntityCreateSending] = useState(false);
+  /** User-expanded "View details" runs between emails (agent notes / tasks / meetings). */
+  const [expandedThreadDetails, setExpandedThreadDetails] = useState(
+    () => new Set<string>(),
+  );
+  useLayoutEffect(() => {
+    setExpandedThreadDetails(new Set());
+  }, [inboxId, messageId]);
   // Dock mode changes grow clearance + autofocus — pin until layout settles.
   const pinnedThreadScrollTopRef = useRef<number | null>(null);
   const editingConceptDraft =
@@ -923,6 +942,7 @@ export function EmailThreadDetail({
           };
       return {
         key: `email:${entry.messageId}`,
+        kind: "email" as const,
         at: Number.isFinite(parsed) ? parsed : 0,
         node: (
           <EmailThreadMessageCard
@@ -1044,6 +1064,7 @@ export function EmailThreadDetail({
         return [
           {
             key: `comment-task:${comment.id}`,
+            kind: "detail" as const,
             at,
             node: (
               <div className="email-thread-agent-task">
@@ -1092,6 +1113,7 @@ export function EmailThreadDetail({
         return [
           {
             key: `comment-meeting:${comment.id}`,
+            kind: "detail" as const,
             at,
             node: (
               <div className="email-thread-agent-task">
@@ -1139,6 +1161,7 @@ export function EmailThreadDetail({
       return [
         {
           key: `comment:${comment.id}`,
+          kind: "detail" as const,
           at,
           node: (
             <EmailThreadCommentBubble
@@ -1156,18 +1179,52 @@ export function EmailThreadDetail({
       ? [
           {
             key: `reply:${conceptDraftId ?? "draft"}`,
+            kind: "reply" as const,
             at: replyTimestampMs,
             node: replyChrome,
           },
         ]
       : []),
-  ].sort((a, b) => a.at - b.at);
+  ].sort((a, b) => a.at - b.at) as EmailThreadTimelineItem<ReactNode>[];
+  const timelineSegments = groupEmailThreadTimeline(timelineItems);
+  const liveDetailsKey = findLiveEmailThreadDetailsKey(timelineSegments);
+  const agentBusy =
+    commentAgentWorking || draftAgentWorking || showDraftWorking;
   const threadTimeline = (
     <div className="email-thread">
       {status}
-      {timelineItems.map((item) => (
-        <Fragment key={item.key}>{item.node}</Fragment>
-      ))}
+      {timelineSegments.map((segment) => {
+        if (segment.type === "email") {
+          return <Fragment key={segment.key}>{segment.item.node}</Fragment>;
+        }
+        const forceExpanded = agentBusy && segment.key === liveDetailsKey;
+        const detailNodes = segment.items.map((item) => (
+          <Fragment key={item.key}>{item.node}</Fragment>
+        ));
+        // While Judith is working, keep the live conversation visible.
+        // Collapse into a spacer once the draft / result is ready.
+        if (forceExpanded) {
+          return <Fragment key={segment.key}>{detailNodes}</Fragment>;
+        }
+        const expanded = expandedThreadDetails.has(segment.key);
+        return (
+          <EmailThreadDetailsSpacer
+            key={segment.key}
+            count={segment.items.length}
+            expanded={expanded}
+            onToggle={() => {
+              setExpandedThreadDetails((current) => {
+                const next = new Set(current);
+                if (next.has(segment.key)) next.delete(segment.key);
+                else next.add(segment.key);
+                return next;
+              });
+            }}
+          >
+            {detailNodes}
+          </EmailThreadDetailsSpacer>
+        );
+      })}
       {commentAgentWorking ? (
         <div
           className={`email-thread-working-row${
