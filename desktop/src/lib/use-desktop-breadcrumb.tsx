@@ -14,15 +14,17 @@ function ChromeLink({
   to,
   className,
   children,
+  onClick,
 }: {
   to: string;
   className?: string;
   children: ReactNode;
+  onClick?: () => void;
 }) {
   // Warm keep-alive flip (same as sidebar) — raw TanStack Link rematches the
   // router and can leave lastHref stuck on the detail while the URL goes list.
   return (
-    <RouterLink to={to} className={className}>
+    <RouterLink to={to} className={className} onClick={onClick}>
       {children}
     </RouterLink>
   );

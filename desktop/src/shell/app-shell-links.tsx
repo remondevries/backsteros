@@ -97,6 +97,7 @@ export function RouterLink({
           event.preventDefault();
           event.stopPropagation();
           event.nativeEvent.stopImmediatePropagation();
+          onClick?.(event);
           return;
         }
         // Warm project open can leave the router on /catalog while

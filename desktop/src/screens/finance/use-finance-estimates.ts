@@ -2,6 +2,7 @@ import type { BacksterosApiClient } from "@backsteros/api-client";
 import type {
   ClientEstimate,
   CreateClientEstimateInput,
+  UpdateClientEstimateInput,
 } from "@backsteros/contracts";
 import type { FinanceNavId } from "@backsteros/ui";
 import { useCallback, useEffect, useState } from "react";
@@ -30,8 +31,12 @@ export function useFinanceEstimates({
       );
       setEstimates(body.estimates ?? []);
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load estimates";
       setError(
-        err instanceof Error ? err.message : "Failed to load estimates",
+        /status 404\b/i.test(message)
+          ? "Estimates API is not available on this core yet (404). Rebuild local-core / redeploy cloud on a commit that includes LDP-20."
+          : message,
       );
       setEstimates([]);
     } finally {
@@ -40,7 +45,11 @@ export function useFinanceEstimates({
   }, [client]);
 
   useEffect(() => {
-    if (navId !== "estimates") return;
+    if (navId !== "estimates") {
+      // Leaving Estimates should drop detail selection so returning shows the list.
+      setSelectedEstimateId(null);
+      return;
+    }
     void refresh();
   }, [navId, refresh]);
 
@@ -71,6 +80,49 @@ export function useFinanceEstimates({
     [client],
   );
 
+  const updateEstimate = useCallback(
+    async (id: string, patch: UpdateClientEstimateInput) => {
+      setError(null);
+      // Optimistic merge so multi-select fields (e.g. toContactIds) update
+      // immediately even if an older core omits them from the PATCH response.
+      setEstimates((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+      );
+      try {
+        const updated = await client.requestJson<ClientEstimate>(
+          `/api/v1/finance/estimates/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          },
+        );
+        setEstimates((prev) =>
+          prev.map((row) =>
+            row.id === id
+              ? {
+                  ...updated,
+                  // Prefer local patch values when the server build does not
+                  // yet echo newer fields.
+                  toContactIds:
+                    patch.toContactIds !== undefined
+                      ? patch.toContactIds
+                      : (updated.toContactIds ?? row.toContactIds ?? []),
+                }
+              : row,
+          ),
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to update estimate",
+        );
+        void refresh();
+        throw err;
+      }
+    },
+    [client, refresh],
+  );
+
   return {
     estimates,
     estimatesLoading: loading,
@@ -79,6 +131,7 @@ export function useFinanceEstimates({
     selectedEstimateId,
     setSelectedEstimateId,
     createEstimate,
+    updateEstimate,
     refreshEstimates: refresh,
   };
 }

@@ -1920,6 +1920,8 @@ export const clientEstimates = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Workspace-scoped display number for ES-{n}. */
+    number: integer("number"),
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "set null",
     }),
@@ -1929,10 +1931,21 @@ export const clientEstimates = pgTable(
     title: text("title").notNull(),
     subtitle: text("subtitle"),
     clientLabel: text("client_label"),
+    authorContactId: text("author_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
     authorName: text("author_name"),
+    /** Portal recipients ("To") — who may see this estimate in the client portal. */
+    toContactIds: jsonb("to_contact_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     versionLabel: text("version_label"),
+    /** Display / due date label (e.g. "oktober 2026"), not necessarily ISO. */
     documentDate: text("document_date"),
-    status: text("status").notNull().default("draft"),
+    status: text("status").notNull().default("concept"),
+    /** Quoted total in cents (EUR). */
+    totalAmountCents: bigint("total_amount_cents", { mode: "number" }),
     proposalMarkdown: text("proposal_markdown").notNull().default(""),
     estimateMarkdown: text("estimate_markdown").notNull().default(""),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -1949,6 +1962,10 @@ export const clientEstimates = pgTable(
     index("client_estimates_organization_id_idx").on(table.organizationId),
     index("client_estimates_deleted_at_idx").on(table.deletedAt),
     index("client_estimates_status_idx").on(table.workspaceId, table.status),
+    index("client_estimates_author_contact_id_idx").on(table.authorContactId),
+    uniqueIndex("client_estimates_workspace_number_uidx")
+      .on(table.workspaceId, table.number)
+      .where(sql`${table.number} is not null and ${table.deletedAt} is null`),
   ],
 );
 

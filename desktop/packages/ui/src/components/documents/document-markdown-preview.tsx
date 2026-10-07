@@ -18,6 +18,11 @@ import remarkGfm from "remark-gfm";
 import { ClientLink } from "../../shared/client-link.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
 import { documentHeadingMinimapSectionId } from "../../documents/document-heading-minimap.js";
+import {
+  extractMermaidSourceFromCodeChildren,
+  isMermaidCodeClassName,
+  normalizeDocDiagramMarkdown,
+} from "../../documents/markdown-doc-diagrams.js";
 import { hasBlockMarkdown } from "../../documents/markdown-preview-blocks.js";
 import {
   normalizeMarkdownTaskLists,
@@ -26,6 +31,7 @@ import {
 import { getTaskListItemChecked } from "../../documents/markdown-task-list-checked.js";
 import { MarkdownTaskListInteractProvider } from "../../documents/markdown-task-list-interact.js";
 import { MarkdownTaskCheckbox } from "./markdown-task-checkbox.js";
+import { MermaidDiagram } from "./mermaid-diagram.js";
 import {
   useMentionCatalogOptional,
   useResolveMentionTokensInContent,
@@ -215,6 +221,33 @@ const markdownPreviewComponents: Components = {
   },
   img({ src, alt }) {
     return <MarkdownPreviewImage src={src} alt={alt} />;
+  },
+  pre({ children, className: preClassName }) {
+    const child = Children.toArray(children)[0];
+    if (isValidElement(child)) {
+      const childClassName =
+        typeof child.props === "object" &&
+        child.props &&
+        "className" in child.props
+          ? String((child.props as { className?: string }).className ?? "")
+          : "";
+      if (
+        isMermaidCodeClassName(preClassName) ||
+        isMermaidCodeClassName(childClassName)
+      ) {
+        const source =
+          extractMermaidSourceFromCodeChildren(
+            (child.props as { children?: unknown }).children,
+          ) ??
+          extractMermaidSourceFromCodeChildren(children) ??
+          "";
+        return <MermaidDiagram source={source} />;
+      }
+    } else if (isMermaidCodeClassName(preClassName)) {
+      const source = extractMermaidSourceFromCodeChildren(children) ?? "";
+      return <MermaidDiagram source={source} />;
+    }
+    return <pre className={preClassName}>{children}</pre>;
   },
   li(props) {
     const { children, className, ...rest } = props;
@@ -1389,7 +1422,12 @@ export function DocumentMarkdownPreview({
   );
   useResolveMentionTokensInContent(mentionTokens);
 
-  useContentPreviewLinkNavigation({ containerRef, body });
+  const normalizedBody = useMemo(
+    () => normalizeDocDiagramMarkdown(body),
+    [body],
+  );
+
+  useContentPreviewLinkNavigation({ containerRef, body: normalizedBody });
 
   // Stamp heading ids in DOM order so the document minimap can scroll-to-section.
   // Matches deriveDocumentHeadingMinimapItems for normal ATX bodies.
@@ -1403,14 +1441,14 @@ export function DocumentMarkdownPreview({
         documentHeadingMinimapSectionId(index),
       );
     });
-  }, [body]);
+  }, [normalizedBody]);
 
-  const trimmed = body.trim();
+  const trimmed = normalizedBody.trim();
   if (!trimmed) {
     return null;
   }
 
-  const paragraphs = splitParagraphs(body);
+  const paragraphs = splitParagraphs(normalizedBody);
 
   return (
     <MarkdownImageResolveContext.Provider value={resolveImageSrc ?? null}>

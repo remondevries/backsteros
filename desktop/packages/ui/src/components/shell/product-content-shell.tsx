@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
+import { ContentSidePanelLayoutProvider } from "./content-side-panel-layout-context.js";
 import {
   ProductContentTabs,
   type ProductContentTabsProps,
@@ -18,6 +19,11 @@ export type ProductContentShellProps = ProductContentTabsProps & {
   showSidePanel?: boolean;
   /** User-collapsed via ⇧[ — width animates to 0 when set. */
   sidePanelCollapsed?: boolean;
+  /**
+   * Slim rail kept in-flow while collapsed (finance nav). Content can use the
+   * reclaimed width for secondary nav such as a document outline.
+   */
+  sidePanelRail?: boolean;
   /** True while the left panel width is interpolating. */
   sidePanelAnimating?: boolean;
   /** Optional breadcrumb / chrome row above page scroll. */
@@ -45,6 +51,7 @@ export function ProductContentShell({
   sidePanel,
   showSidePanel = false,
   sidePanelCollapsed = false,
+  sidePanelRail = false,
   sidePanelAnimating = false,
   chromeHeader,
   statusBar,
@@ -52,43 +59,50 @@ export function ProductContentShell({
 }: ProductContentShellProps) {
   const panelInFlow = Boolean(showSidePanel && sidePanel);
   const panelKeepAliveHidden = Boolean(sidePanel) && !panelInFlow;
+  const layoutCollapsed = panelInFlow && sidePanelCollapsed;
+  const layoutRail = panelInFlow && sidePanelRail;
 
   return (
     <section className="workspace">
       <ProductContentTabs {...tabsProps} />
-      <div
-        className={[
-          "content-frame",
-          panelInFlow ? "content-frame-with-side" : "content-frame-main-only",
-          panelInFlow && sidePanelCollapsed ? "is-side-panel-collapsed" : null,
-          panelInFlow && sidePanelAnimating ? "is-side-panel-animating" : null,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        data-side-panel-collapsed={
-          panelInFlow && sidePanelCollapsed ? "true" : "false"
-        }
+      <ContentSidePanelLayoutProvider
+        collapsed={layoutCollapsed}
+        rail={layoutRail}
       >
-        {sidePanel != null ? (
-          <div
-            className={
-              panelInFlow
-                ? "content-side-panel-slot"
-                : "pointer-events-none invisible absolute inset-0 overflow-hidden"
-            }
-            {...(panelKeepAliveHidden
-              ? { inert: true, "aria-hidden": true }
-              : {})}
-            style={panelKeepAliveHidden ? HIDDEN_SIDE_PANEL_STYLE : undefined}
-          >
-            {sidePanel}
-          </div>
-        ) : null}
-        <main className="main-slot">
-          {chromeHeader}
-          <div className="page-scroll">{children}</div>
-        </main>
-      </div>
+        <div
+          className={[
+            "content-frame",
+            panelInFlow ? "content-frame-with-side" : "content-frame-main-only",
+            layoutCollapsed ? "is-side-panel-collapsed" : null,
+            layoutRail ? "is-side-panel-rail" : null,
+            panelInFlow && sidePanelAnimating ? "is-side-panel-animating" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          data-side-panel-collapsed={layoutCollapsed ? "true" : "false"}
+          data-side-panel-rail={layoutRail ? "true" : "false"}
+        >
+          {sidePanel != null ? (
+            <div
+              className={
+                panelInFlow
+                  ? "content-side-panel-slot"
+                  : "pointer-events-none invisible absolute inset-0 overflow-hidden"
+              }
+              {...(panelKeepAliveHidden
+                ? { inert: true, "aria-hidden": true }
+                : {})}
+              style={panelKeepAliveHidden ? HIDDEN_SIDE_PANEL_STYLE : undefined}
+            >
+              {sidePanel}
+            </div>
+          ) : null}
+          <main className="main-slot">
+            {chromeHeader}
+            <div className="page-scroll">{children}</div>
+          </main>
+        </div>
+      </ContentSidePanelLayoutProvider>
       {statusBar}
     </section>
   );

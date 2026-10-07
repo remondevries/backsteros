@@ -3,7 +3,7 @@
  * Used by document preview so lists/headings are siblings, not nested.
  */
 export function hasBlockMarkdown(content: string): boolean {
-  return /^(?:[ \t]*#{1,6}[ \t]|[ \t]*[-*+][ \t]|[ \t]*\d+[.)][ \t]|[ \t]*```|[ \t]*>[ \t]|[ \t]*\|.+\||[ \t]*<(?:ol|ul|pre|table|blockquote)\b)/im.test(
+  return /^(?:[ \t]*#{1,6}[ \t]|[ \t]*[-*+][ \t]|[ \t]*\d+[.)][ \t]|[ \t]*```|[ \t]*>[ \t]|[ \t]*\|.+\||[ \t]*<(?:ol|ul|pre|table|blockquote|figure)\b)/im.test(
     content,
   );
 }
