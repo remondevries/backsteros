@@ -678,6 +678,7 @@ export async function withAuth(c: Context, next: Next) {
     c.req.path.startsWith("/api/v1/sync") ||
     c.req.path.startsWith("/api/v1/powersync") ||
     c.req.path === "/api/v1/webhooks/agentmail" ||
+    c.req.path === "/api/v1/webhooks/social/zernio" ||
     c.req.path.startsWith("/api/v1/public/avatars/") ||
     c.req.path.startsWith("/api/v1/public/spaces/") ||
     c.req.path.startsWith("/api/v1/public/file-task-callbacks/") ||

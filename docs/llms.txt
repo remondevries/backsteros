@@ -42,6 +42,7 @@
 | Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020, ADR-035), **16-linear-shaped-sync**, **17-desktop-without-docker**, 15-tauri-ipc-profiling |
 | PDFs / markdown / search | 06-storage-and-search, 10-decisions-log (ADR-035), 03-data-model |
 | Changing stack choices | 10-decisions-log, 02-tech-stack |
+| Social / Zernio / owned accounts | 03-data-model (Social entities), 10-decisions-log (ADR-036), `core/server/src/social/` |
 
 ## Conventions
 

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   EMAIL_STATUS_LABEL_NAMES,
+  canPromoteEmailThreadWorkflowStatus,
   emailStatusLabelName,
   emailStatusLabelPatch,
   migrateLegacyEmailStatus,
@@ -51,5 +52,31 @@ describe("emailStatusLabelPatch", () => {
         "Triage",
       ].sort(),
     );
+  });
+});
+
+describe("canPromoteEmailThreadWorkflowStatus", () => {
+  it("allows in_progress from early triage statuses only", () => {
+    assert.equal(canPromoteEmailThreadWorkflowStatus("triage", "in_progress"), true);
+    assert.equal(
+      canPromoteEmailThreadWorkflowStatus("ready_to_start", "in_progress"),
+      true,
+    );
+    assert.equal(canPromoteEmailThreadWorkflowStatus("backlog", "in_progress"), true);
+    assert.equal(
+      canPromoteEmailThreadWorkflowStatus("in_review", "in_progress"),
+      false,
+    );
+    assert.equal(
+      canPromoteEmailThreadWorkflowStatus("on_hold", "in_progress"),
+      false,
+    );
+  });
+
+  it("allows in_review from in_progress and earlier", () => {
+    assert.equal(canPromoteEmailThreadWorkflowStatus("in_progress", "in_review"), true);
+    assert.equal(canPromoteEmailThreadWorkflowStatus("triage", "in_review"), true);
+    assert.equal(canPromoteEmailThreadWorkflowStatus("completed", "in_review"), false);
+    assert.equal(canPromoteEmailThreadWorkflowStatus("in_review", "in_review"), false);
   });
 });

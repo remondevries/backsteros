@@ -1123,6 +1123,24 @@ function asNullableString(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/**
+ * Prefer snake_case, then camelCase — but keep explicit `null` clears.
+ * `payload.snake ?? payload.camel` is wrong: `null ?? x` skips the clear.
+ */
+function payloadValue(
+  payload: Record<string, unknown>,
+  snake: string,
+  camel: string,
+): unknown {
+  if (Object.prototype.hasOwnProperty.call(payload, snake)) {
+    return payload[snake];
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, camel)) {
+    return payload[camel];
+  }
+  return undefined;
+}
+
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
@@ -2070,81 +2088,101 @@ function mapTaskUpsert(
   payload: Record<string, unknown>,
 ): CreateTaskInput | UpdateTaskInput {
   return {
-    projectId: asNullableString(payload.project_id ?? payload.projectId),
-    contactId: asNullableString(payload.contact_id ?? payload.contactId),
-    assigneeId: asNullableString(payload.assignee_id ?? payload.assigneeId),
+    projectId: asNullableString(
+      payloadValue(payload, "project_id", "projectId"),
+    ),
+    contactId: asNullableString(
+      payloadValue(payload, "contact_id", "contactId"),
+    ),
+    assigneeId: asNullableString(
+      payloadValue(payload, "assignee_id", "assigneeId"),
+    ),
     relatedContactIds: parseStringIdArray(
-      payload.related_contact_ids ?? payload.relatedContactIds,
+      payloadValue(payload, "related_contact_ids", "relatedContactIds"),
     ),
     relatedOrganizationIds: parseStringIdArray(
-      payload.related_organization_ids ?? payload.relatedOrganizationIds,
+      payloadValue(payload, "related_organization_ids", "relatedOrganizationIds"),
     ),
     linkedEmailIds: parseStringIdArray(
-      payload.linked_email_ids ?? payload.linkedEmailIds,
+      payloadValue(payload, "linked_email_ids", "linkedEmailIds"),
     ),
-    labelIds: parseStringIdArray(payload.label_ids ?? payload.labelIds),
+    labelIds: parseStringIdArray(
+      payloadValue(payload, "label_ids", "labelIds"),
+    ),
     title: asString(payload.title),
     description: asString(payload.description),
     status: asString(payload.status) as Task["status"] | undefined,
     priority: asNumber(payload.priority),
-    sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
-    dueDate: asNullableString(payload.due_date ?? payload.dueDate),
-    dueEndDate: asNullableString(payload.due_end_date ?? payload.dueEndDate),
-    triagedAt: asNullableString(payload.triaged_at ?? payload.triagedAt),
+    sortOrder: asNumber(payloadValue(payload, "sort_order", "sortOrder")),
+    dueDate: asNullableString(payloadValue(payload, "due_date", "dueDate")),
+    dueEndDate: asNullableString(
+      payloadValue(payload, "due_end_date", "dueEndDate"),
+    ),
+    triagedAt: asNullableString(
+      payloadValue(payload, "triaged_at", "triagedAt"),
+    ),
     inbox: asBoolean(payload.inbox),
     support: asBoolean(payload.support),
     notification: asBoolean(payload.notification),
     links: parseTaskLinks(payload.links),
     agentChatId: asNullableString(
-      payload.agent_chat_id ?? payload.agentChatId,
+      payloadValue(payload, "agent_chat_id", "agentChatId"),
     ),
     agentWorkingContactId: asNullableString(
-      payload.agent_working_contact_id ?? payload.agentWorkingContactId,
+      payloadValue(payload, "agent_working_contact_id", "agentWorkingContactId"),
     ),
     agentWorkingLabel: asNullableString(
-      payload.agent_working_label ?? payload.agentWorkingLabel,
+      payloadValue(payload, "agent_working_label", "agentWorkingLabel"),
     ),
     agentWorkingKind: (() => {
       const raw = asNullableString(
-        payload.agent_working_kind ?? payload.agentWorkingKind,
+        payloadValue(payload, "agent_working_kind", "agentWorkingKind"),
       );
       if (raw === undefined) return undefined;
       if (raw === "working" || raw === "reviewing") return raw;
       return null;
     })(),
     linkedCommitShas: parseStringIdArray(
-      payload.linked_commit_shas ?? payload.linkedCommitShas,
+      payloadValue(payload, "linked_commit_shas", "linkedCommitShas"),
     ),
     automateCompletion: asBoolean(
-      payload.automate_completion ?? payload.automateCompletion,
+      payloadValue(payload, "automate_completion", "automateCompletion"),
     ),
     autoReviewDeliveryStatus: asAutoReviewDeliveryStatus(
-      payload.auto_review_delivery_status ?? payload.autoReviewDeliveryStatus,
+      payloadValue(
+        payload,
+        "auto_review_delivery_status",
+        "autoReviewDeliveryStatus",
+      ),
     ),
     addLinkedCommitShas: parseStringIdArray(
-      payload.add_linked_commit_shas ?? payload.addLinkedCommitShas,
+      payloadValue(payload, "add_linked_commit_shas", "addLinkedCommitShas"),
     ),
     removeLinkedCommitShas: parseStringIdArray(
-      payload.remove_linked_commit_shas ?? payload.removeLinkedCommitShas,
+      payloadValue(
+        payload,
+        "remove_linked_commit_shas",
+        "removeLinkedCommitShas",
+      ),
     ),
-    habitId: asNullableString(payload.habit_id ?? payload.habitId),
+    habitId: asNullableString(payloadValue(payload, "habit_id", "habitId")),
     trackedMinutes: asNullableNumber(
-      payload.tracked_minutes ?? payload.trackedMinutes,
+      payloadValue(payload, "tracked_minutes", "trackedMinutes"),
     ),
     trackedDurationSeconds: asNullableNumber(
-      payload.tracked_duration_seconds ?? payload.trackedDurationSeconds,
+      payloadValue(payload, "tracked_duration_seconds", "trackedDurationSeconds"),
     ),
     agentInboxApprovedAt: asNullableString(
-      payload.agent_inbox_approved_at ?? payload.agentInboxApprovedAt,
+      payloadValue(payload, "agent_inbox_approved_at", "agentInboxApprovedAt"),
     ),
     acknowledgeInboxUpdate: asBoolean(
-      payload.acknowledge_inbox_update ?? payload.acknowledgeInboxUpdate,
+      payloadValue(payload, "acknowledge_inbox_update", "acknowledgeInboxUpdate"),
     ),
     agentCreatedAt: asNullableString(
-      payload.agent_created_at ?? payload.agentCreatedAt,
+      payloadValue(payload, "agent_created_at", "agentCreatedAt"),
     ),
     inboxUpdatedAt: asNullableString(
-      payload.inbox_updated_at ?? payload.inboxUpdatedAt,
+      payloadValue(payload, "inbox_updated_at", "inboxUpdatedAt"),
     ),
   };
 }

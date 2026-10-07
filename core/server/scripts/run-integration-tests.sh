@@ -190,6 +190,8 @@ if [[ "$use_existing" != "1" ]]; then
   echo "[integration] running tests…"
   (
     cd "$SERVER_DIR"
+    # Do not inherit a live local-core hybrid role from the developer shell.
+    unset CORE_REPLICATION_ROLE CORE_REPLICATION_PEER_URL CORE_REPLICATION_SECRET
     DATABASE_URL="$RESOLVED_DATABASE_URL" \
       BACKSTEROS_INTEGRATION_TEST=1 \
       CORE_REPLICATION_RECONCILE=0 \
@@ -215,6 +217,8 @@ echo "[integration] migrating…"
 echo "[integration] running tests…"
 (
   cd "$SERVER_DIR"
+  # Do not inherit a live local-core hybrid role from the developer shell.
+  unset CORE_REPLICATION_ROLE CORE_REPLICATION_PEER_URL CORE_REPLICATION_SECRET
   DATABASE_URL="$RESOLVED_DATABASE_URL" \
     BACKSTEROS_INTEGRATION_TEST=1 \
     CORE_REPLICATION_RECONCILE=0 \

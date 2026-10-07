@@ -558,3 +558,24 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-036: Social adapter layer + Zernio owned-account provider
+
+**Status:** Accepted (2026-10-07)  
+**Context:** We need publishing, comments, DMs, and analytics for owned social accounts. Zernio is the chosen backend (DOC-1683), but it is a small, fast-changing vendor. The rest of BacksterOS must not couple to its payloads or routes.  
+**Decision:**
+
+- Put a vendor-agnostic adapter layer in `core/server/src/social/`:
+  - `OwnedAccountAdapter` — act as yourself (publish / schedule / edit / delete, comments, optional messaging, analytics, webhook verify/translate).
+  - `PublicFeedAdapter` — watch others (later; e.g. official X API).
+  - Normalized types: `SocialAccount`, `SocialPost`, `SocialComment`, `SocialConversation`, `SocialMessage`, plus per-account `SocialCapabilities` flags. UI reads flags; it never hard-codes platform rules.
+- First implementation: `ZernioOwnedAccountAdapter` under `core/server/src/social/providers/zernio/`. Vendor HTTP, OpenAPI shapes, HMAC webhooks (`X-Zernio-Signature` / `X-Zernio-Event-Id`), and rate limits stay inside that module. Callers use only the adapter interface.
+- **Template integrations mirrored:** Mapbox (settings + `workspace_integration_secrets`) and AgentMail (webhook verify, dedupe, public ingest path).
+- Secrets: `zernio_api_key`, `zernio_profile_id`, webhook id/secret/url, analytics cursor on `workspace_integration_secrets` (never PowerSync to clients).
+- Storage: `social_*` tables are **Tier C** (server-primary, paginated REST later); media URLs are Tier D pointers. Webhook event ids live in `social_webhook_events` for idempotency. Ack webhooks fast; process in a background job.
+- One Zernio profile per workspace. Headless connect/disconnect from Settings → Integrations → Social. Platforms per DOC-1683 (Pinterest out; YouTube publish manual).
+- Isolation: unit test fails if `ZernioClient` / `zernio.com` / provider imports leak outside `providers/zernio` (except `app/social-routes.ts` wiring).
+
+**Consequences:** Composer/calendar/inbox/Support tickets stay later build-plan steps. Poll fallback required for X DMs (`dmWebhooks=false`). Dashboards read `social_analytics_snapshots`, not live Zernio.
+
+---
+

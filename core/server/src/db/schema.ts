@@ -145,6 +145,15 @@ export const workspaceIntegrationSecrets = pgTable(
       withTimezone: true,
     }),
     cloudflareApiToken: text("cloudflare_api_token"),
+    /** Zernio (owned-account social provider) API key — never returned in full. */
+    zernioApiKey: text("zernio_api_key"),
+    /** One Zernio profile per workspace / client. */
+    zernioProfileId: text("zernio_profile_id"),
+    zernioWebhookId: text("zernio_webhook_id"),
+    zernioWebhookSecret: text("zernio_webhook_secret"),
+    zernioWebhookUrl: text("zernio_webhook_url"),
+    /** Cursor from analytics.synced / GET /v1/analytics/delta. */
+    zernioAnalyticsCursor: text("zernio_analytics_cursor"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -2245,3 +2254,272 @@ export const emailAgentCallbacks = pgTable(
 );
 
 export type DbEmailAgentCallback = typeof emailAgentCallbacks.$inferSelect;
+
+/**
+ * Connected / followed social accounts (Tier C metadata for owned accounts).
+ * Bodies of posts/comments/messages are also Tier C — no PowerSync bootstrap.
+ */
+export const socialAccounts = pgTable(
+  "social_accounts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    relation: text("relation").notNull().default("connected"),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    handle: text("handle"),
+    displayName: text("display_name"),
+    url: text("url"),
+    contactId: text("contact_id"),
+    organizationId: text("organization_id"),
+    capabilities: jsonb("capabilities")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    disconnected: boolean("disconnected").notNull().default(false),
+    needsReconnect: boolean("needs_reconnect").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("social_accounts_workspace_id_idx").on(table.workspaceId),
+    uniqueIndex("social_accounts_workspace_provider_external_uidx").on(
+      table.workspaceId,
+      table.provider,
+      table.externalId,
+    ),
+  ],
+);
+
+export type DbSocialAccount = typeof socialAccounts.$inferSelect;
+
+/** Tier C — social post bodies; media URLs are Tier D pointers. */
+export const socialPosts = pgTable(
+  "social_posts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => socialAccounts.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    url: text("url"),
+    text: text("text").notNull().default(""),
+    media: jsonb("media")
+      .$type<{ kind: string; url: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    status: text("status").notNull().default("draft"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    engagement: jsonb("engagement").$type<Record<string, unknown> | null>(),
+    contactId: text("contact_id"),
+    organizationId: text("organization_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("social_posts_workspace_id_idx").on(table.workspaceId),
+    index("social_posts_account_id_idx").on(table.accountId),
+    uniqueIndex("social_posts_workspace_provider_external_uidx").on(
+      table.workspaceId,
+      table.provider,
+      table.externalId,
+    ),
+  ],
+);
+
+export type DbSocialPost = typeof socialPosts.$inferSelect;
+
+/** Tier C — comments on own posts. */
+export const socialComments = pgTable(
+  "social_comments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    postId: text("post_id")
+      .notNull()
+      .references(() => socialPosts.id, { onDelete: "cascade" }),
+    accountId: text("account_id").references(() => socialAccounts.id, {
+      onDelete: "set null",
+    }),
+    externalId: text("external_id").notNull(),
+    authorHandle: text("author_handle").notNull().default(""),
+    authorExternalId: text("author_external_id"),
+    text: text("text").notNull().default(""),
+    parentCommentId: text("parent_comment_id"),
+    hidden: boolean("hidden").notNull().default(false),
+    contactId: text("contact_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("social_comments_workspace_id_idx").on(table.workspaceId),
+    index("social_comments_post_id_idx").on(table.postId),
+    uniqueIndex("social_comments_workspace_external_uidx").on(
+      table.workspaceId,
+      table.externalId,
+    ),
+  ],
+);
+
+export type DbSocialComment = typeof socialComments.$inferSelect;
+
+/** Tier C — DM / mention threads. */
+export const socialConversations = pgTable(
+  "social_conversations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => socialAccounts.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    kind: text("kind").notNull().default("dm"),
+    participantHandle: text("participant_handle"),
+    participantExternalId: text("participant_external_id"),
+    contactId: text("contact_id"),
+    ticketId: text("ticket_id"),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("social_conversations_workspace_id_idx").on(table.workspaceId),
+    uniqueIndex("social_conversations_workspace_provider_external_uidx").on(
+      table.workspaceId,
+      table.provider,
+      table.externalId,
+    ),
+  ],
+);
+
+export type DbSocialConversation = typeof socialConversations.$inferSelect;
+
+/** Tier C — messages inside social conversations. */
+export const socialMessages = pgTable(
+  "social_messages",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => socialConversations.id, { onDelete: "cascade" }),
+    externalId: text("external_id"),
+    direction: text("direction").notNull(),
+    text: text("text").notNull().default(""),
+    status: text("status"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("social_messages_workspace_id_idx").on(table.workspaceId),
+    index("social_messages_conversation_id_idx").on(table.conversationId),
+  ],
+);
+
+export type DbSocialMessage = typeof socialMessages.$inferSelect;
+
+/**
+ * Provider webhook event-id dedupe store (Zernio retries 7×).
+ * Not PowerSynced.
+ */
+export const socialWebhookEvents = pgTable(
+  "social_webhook_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    eventId: text("event_id").notNull(),
+    eventType: text("event_type"),
+    processedAt: timestamp("processed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("social_webhook_events_provider_event_uidx").on(
+      table.provider,
+      table.eventId,
+    ),
+    index("social_webhook_events_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type DbSocialWebhookEvent = typeof socialWebhookEvents.$inferSelect;
+
+/** Tier C analytics snapshots — dashboards read our DB, not live Zernio. */
+export const socialAnalyticsSnapshots = pgTable(
+  "social_analytics_snapshots",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id").references(() => socialAccounts.id, {
+      onDelete: "set null",
+    }),
+    postExternalId: text("post_external_id"),
+    platform: text("platform"),
+    capturedAt: timestamp("captured_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    metrics: jsonb("metrics")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("social_analytics_snapshots_workspace_id_idx").on(table.workspaceId),
+    index("social_analytics_snapshots_account_id_idx").on(table.accountId),
+  ],
+);
+
+export type DbSocialAnalyticsSnapshot =
+  typeof socialAnalyticsSnapshots.$inferSelect;

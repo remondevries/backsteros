@@ -21,6 +21,10 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
+  canPromoteEmailThreadWorkflowStatus,
+  type EmailWorkflowPromoteStatus,
+} from "../lib/email-status-labels.js";
+import {
   getContactById,
   getOrganizationById,
 } from "./circle-domain.js";
@@ -792,6 +796,43 @@ export async function patchEmailThreadMetadataLeaderAware(
     }
   }
   return meta;
+}
+
+/**
+ * Best-effort auto-promote while the reply agent works (`in_progress`) or after
+ * a composed draft is ready (`in_review`). Never downgrades terminal statuses.
+ */
+export async function promoteEmailThreadWorkflowStatus(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  next: EmailWorkflowPromoteStatus,
+): Promise<EmailThreadMetadata | null> {
+  try {
+    const meta = await getOrCreateEmailThreadMetadata(
+      workspaceId,
+      inboxId,
+      threadKey,
+    );
+    if (!canPromoteEmailThreadWorkflowStatus(meta.status, next)) {
+      return meta;
+    }
+    return await patchEmailThreadMetadataLeaderAware(
+      workspaceId,
+      inboxId,
+      threadKey,
+      { status: next },
+    );
+  } catch (error) {
+    console.warn(
+      "[email] workflow status promote failed",
+      inboxId,
+      threadKey,
+      next,
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
 }
 
 function toEmailThreadComment(row: DbEmailThreadComment): EmailThreadComment {

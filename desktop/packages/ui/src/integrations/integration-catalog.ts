@@ -7,6 +7,7 @@ export type WorkspaceIntegrationId =
   | "moneybird"
   | "mapbox"
   | "email"
+  | "social"
   | "whoop"
   | "auto-review";
 
@@ -60,6 +61,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "E-mail",
     description: "AgentMail inboxes for incoming messages in Inbox",
     faviconHost: "agentmail.to",
+  },
+  {
+    id: "social",
+    title: "Social",
+    description: "Owned social accounts (publish, comments, DMs) via adapter",
+    faviconHost: "zernio.com",
   },
   {
     id: "whoop",

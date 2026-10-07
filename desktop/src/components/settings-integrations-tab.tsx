@@ -8,6 +8,7 @@ import type {
   GithubSettings,
   MapboxSettings,
   MoneybirdSettings,
+  SocialSettings,
   TransipSettings,
 } from "@backsteros/contracts";
 import {
@@ -32,6 +33,7 @@ import { SettingsEmailTab } from "./settings-email-tab";
 import { SettingsGithubTab } from "./settings-github-tab";
 import { SettingsMapboxTab } from "./settings-mapbox-tab";
 import { SettingsMoneybirdTab } from "./settings-moneybird-tab";
+import { SettingsSocialTab } from "./settings-social-tab";
 import { SettingsTransipTab } from "./settings-transip-tab";
 import { SettingsWhoopTab } from "./settings-whoop-tab";
 import { SettingsAutoReviewWebhookTab } from "./settings-auto-review-webhook-tab";
@@ -147,6 +149,14 @@ export function SettingsIntegrationsTab({
         "email",
         () =>
           client.requestJson<AgentMailSettings>("/api/v1/settings/agentmail"),
+        (body) => ({
+          configured: body.apiKeyConfigured,
+          connected: body.connected,
+        }),
+      ),
+      settle(
+        "social",
+        () => client.requestJson<SocialSettings>("/api/v1/settings/social"),
         (body) => ({
           configured: body.apiKeyConfigured,
           connected: body.connected,
@@ -303,6 +313,13 @@ export function SettingsIntegrationsTab({
         ) : null}
         {activeId === "email" && activeMeta ? (
           <SettingsEmailTab
+            title={activeMeta.title}
+            description={activeMeta.description}
+            hideHeader
+          />
+        ) : null}
+        {activeId === "social" && activeMeta ? (
+          <SettingsSocialTab
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader

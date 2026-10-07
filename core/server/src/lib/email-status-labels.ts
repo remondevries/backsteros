@@ -70,3 +70,31 @@ export function emailStatusLabelPatch(status: string): {
     removeLabels: EMAIL_STATUS_LABEL_NAMES.filter((name) => name !== target),
   };
 }
+
+/** Auto-promotions while the reply agent writes / finishes a draft. */
+export type EmailWorkflowPromoteStatus = "in_progress" | "in_review";
+
+/**
+ * Whether a thread may auto-move into `next` (never downgrades past review /
+ * completed / canceled / on_hold / concept).
+ */
+export function canPromoteEmailThreadWorkflowStatus(
+  current: string,
+  next: EmailWorkflowPromoteStatus,
+): boolean {
+  const status = migrateLegacyEmailStatus(current);
+  if (status === next) return false;
+  if (next === "in_progress") {
+    return (
+      status === "triage" ||
+      status === "ready_to_start" ||
+      status === "backlog"
+    );
+  }
+  return (
+    status === "triage" ||
+    status === "ready_to_start" ||
+    status === "backlog" ||
+    status === "in_progress"
+  );
+}

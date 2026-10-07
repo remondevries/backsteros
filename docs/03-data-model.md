@@ -53,6 +53,18 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 | Financial import batch | — (server audit) | Raw CSV in vault (`.backsteros/finance-imports/…`) |
 | Financial transaction | C | Append-only **ledger** fields; classification (`organizationId`, `projectId`, `categoryId`, `goalId`, `notes`) is patchable; paginated REST; **no** PowerSync |
 
+## Social entities (OS-98 foundation)
+
+Owned-account social data sits behind `OwnedAccountAdapter` in `core/server/src/social/` (ADR-036). Contact/org handle bookmarks stay on Tier A `social_accounts` jsonb; connected accounts and bodies do **not** go on contact rows.
+
+| Entity | Tier | Notes |
+| --- | --- | --- |
+| Social account (connected) | C | `social_accounts` — provider, platform, capabilities, disconnect flags; paginated REST; **no** PowerSync bootstrap |
+| Social post / comment / conversation / message | C | Bodies in Postgres; media URLs are Tier D pointers |
+| Social analytics snapshot | C | Synced from provider (`analytics.synced` + delta); dashboards read our DB |
+| Social webhook event id | — (server audit) | Idempotency for provider retries |
+| Integration secrets (Zernio API key, webhook secret, profile id, analytics cursor) | — (server only) | `workspace_integration_secrets`; same pattern as Moneybird / Mapbox / Cursor |
+
 ## Future entities
 
 | Entity | Tier | Notes |
