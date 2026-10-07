@@ -17,6 +17,10 @@ export const TASK_DETAIL_SIDE_PANEL_WIDTH_KEY_WIDE =
 const TASK_DETAIL_SIDE_PANEL_WIDTH_KEY_PREFIX =
   "backsteros-desktop.task-detail-side-panel-width.task.";
 
+/** Global open/closed preference for the task Changes rail (Inbox + task detail). */
+export const TASK_DETAIL_SIDE_PANEL_COLLAPSED_KEY =
+  "backsteros-desktop.task-detail-side-panel-collapsed";
+
 /**
  * Shared floor for both columns (task + agent Chat/Terminal), all project types.
  */
@@ -72,6 +76,40 @@ function clamp(value: number, min: number, max: number) {
 /** localStorage key for a task’s remembered panel width. */
 export function taskDetailSidePanelWidthKey(taskId: string): string {
   return `${TASK_DETAIL_SIDE_PANEL_WIDTH_KEY_PREFIX}${taskId}`;
+}
+
+/**
+ * Remembered Changes-rail collapsed preference across task switches / restarts.
+ * Defaults to open (`false`) when nothing is stored.
+ */
+export function readTaskDetailSidePanelCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(TASK_DETAIL_SIDE_PANEL_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeTaskDetailSidePanelCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      TASK_DETAIL_SIDE_PANEL_COLLAPSED_KEY,
+      collapsed ? "1" : "0",
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/** Visual collapse: empty rails stay collapsed; otherwise use the remembered choice. */
+export function resolveTaskDetailSidePanelCollapsed(
+  surfaceCount: number,
+  preferredCollapsed: boolean = readTaskDetailSidePanelCollapsed(),
+): boolean {
+  if (surfaceCount <= 0) return true;
+  return preferredCollapsed;
 }
 
 export function defaultTaskDetailSidePanelWidth(

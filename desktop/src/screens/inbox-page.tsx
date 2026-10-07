@@ -561,7 +561,6 @@ function InboxPageBody() {
         </>
       ) : null}
       <DesktopTaskLayout
-        key={`inbox-task-layout-${selectedTask.id}`}
         taskId={selectedTask.id}
         preferWideTaskPanel={!canLinkCommit}
         sidePanel={linkedCommitPanel}

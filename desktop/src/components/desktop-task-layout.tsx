@@ -17,9 +17,11 @@ import { DesktopTaskChangesCollapsedStrip } from "./desktop-task-changes-collaps
 import type { DesktopTaskChangesSurface } from "./desktop-task-changes-collapsed-strip";
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import {
+  resolveTaskDetailSidePanelCollapsed,
   resolveTaskLayoutColumnWidths,
   TASK_DETAIL_SIDE_PANEL_NUDGE_STEP,
   useTaskDetailSidePanelWidth,
+  writeTaskDetailSidePanelCollapsed,
   type TaskLayoutCollapseMode,
 } from "../lib/task-detail-side-panel-layout";
 import { resolveTaskPanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
@@ -81,14 +83,21 @@ export function DesktopTaskLayout({
 }: DesktopTaskLayoutProps) {
   const hasSidePanel = sidePanel != null;
   const layoutElRef = useRef<HTMLDivElement | null>(null);
-  const [sideCollapsed, setSideCollapsed] = useState(
-    () => sidePanel != null && sidePanelSurfaces.length === 0,
+  const [sideCollapsed, setSideCollapsed] = useState(() =>
+    hasSidePanel
+      ? resolveTaskDetailSidePanelCollapsed(sidePanelSurfaces.length)
+      : false,
   );
   const [collapseAnimating, setCollapseAnimating] = useState(false);
   const collapseAnimTimerRef = useRef<number | null>(null);
   const collapseRafRef = useRef<number | null>(null);
   const previousTaskIdRef = useRef<string | null>(null);
   const previousSurfaceCountRef = useRef(sidePanelSurfaces.length);
+
+  const setSideCollapsedPreferring = useCallback((collapsed: boolean) => {
+    writeTaskDetailSidePanelCollapsed(collapsed);
+    setSideCollapsed(collapsed);
+  }, []);
 
   const {
     containerRef,
@@ -179,8 +188,11 @@ export function DesktopTaskLayout({
     if (previousTaskIdRef.current === taskId) return;
     previousTaskIdRef.current = taskId;
     previousSurfaceCountRef.current = sidePanelSurfaces.length;
-    // Empty Changes rail: start collapsed so the task body gets the width.
-    setSideCollapsed(sidePanelSurfaces.length === 0);
+    // Keep the user's open/closed choice across Inbox / task switches.
+    // Empty Changes rails stay collapsed so they do not steal width.
+    setSideCollapsed(
+      resolveTaskDetailSidePanelCollapsed(sidePanelSurfaces.length),
+    );
   }, [hasSidePanel, sidePanelSurfaces.length, taskId]);
 
   useEffect(() => {
@@ -190,24 +202,37 @@ export function DesktopTaskLayout({
     if (previousCount === nextCount) return;
     previousSurfaceCountRef.current = nextCount;
     if (nextCount === 0) {
+      // Forced by empty rail — do not overwrite the remembered preference.
       beginCollapseAnimation(() => setSideCollapsed(true));
       return;
     }
     if (previousCount === 0 && nextCount > 0) {
-      beginCollapseAnimation(() => setSideCollapsed(false));
+      // First linked commit: open so the new commit is visible.
+      beginCollapseAnimation(() => setSideCollapsedPreferring(false));
     }
-  }, [beginCollapseAnimation, hasSidePanel, sidePanelSurfaces.length]);
+  }, [
+    beginCollapseAnimation,
+    hasSidePanel,
+    setSideCollapsedPreferring,
+    sidePanelSurfaces.length,
+  ]);
 
   const hideSidePanel = useCallback(() => {
-    beginCollapseAnimation(() => setSideCollapsed(true));
-  }, [beginCollapseAnimation]);
+    beginCollapseAnimation(() => setSideCollapsedPreferring(true));
+  }, [beginCollapseAnimation, setSideCollapsedPreferring]);
 
   const showSidePanel = useCallback(() => {
-    beginCollapseAnimation(() => setSideCollapsed(false));
-  }, [beginCollapseAnimation]);
+    beginCollapseAnimation(() => setSideCollapsedPreferring(false));
+  }, [beginCollapseAnimation, setSideCollapsedPreferring]);
 
   const toggleSidePanel = useCallback(() => {
-    beginCollapseAnimation(() => setSideCollapsed((current) => !current));
+    beginCollapseAnimation(() => {
+      setSideCollapsed((current) => {
+        const next = !current;
+        writeTaskDetailSidePanelCollapsed(next);
+        return next;
+      });
+    });
   }, [beginCollapseAnimation]);
 
   useEffect(() => {
