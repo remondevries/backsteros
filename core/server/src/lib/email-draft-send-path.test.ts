@@ -10,8 +10,9 @@ import {
   planDraftSendBodies,
   resolveEmailReplyTemplates,
   sanitizeAgentReplyBody,
+  NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
 } from "./email-reply-assembler.js";
-import { AgentMailClient } from "./agentmail-client.js";
+import { AgentMailApiError, AgentMailClient } from "./agentmail-client.js";
 import type { AgentMailDraftDetail } from "./agentmail-client.js";
 import {
   resolveDraftListThreadKey,
@@ -1074,4 +1075,67 @@ describe("send self-only To correction + concept subject preserve", () => {
     assert.equal(draft.subject, "Quote");
     assert.doesNotMatch(String(draft.subject), /^Re:/);
   });
+
+  it("OS-101: upsertEmailConceptReply keeps EUR 18.15 body intact", async () => {
+    stubService();
+    const body = "Thanks for sending over AgentMail invoice RLMOORV4-0001 for EUR 18.15. I'll go ahead and process it.";
+    const messageId = "msg_os101_0";
+    const createPayloads: Record<string, unknown>[] = [];
+    mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1", threadId: "thread_1", messageId, subject: "Invoice",
+      from: "Ada Lovelace <ada@example.com>", to: ["remon@example.com"], preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z", labels: [], text: "Please process.", html: null,
+      extractedText: "Please process.", extractedHtml: null, inReplyTo: null, attachments: [],
+    }));
+    mock.method(AgentMailClient.prototype, "createDraft", async (_i: string, payload: Record<string, unknown>) => {
+      createPayloads.push(payload);
+      return baseDraft({ draftId: "draft_os101", clientId: conceptReplyClientId(messageId), inReplyTo: messageId,
+        text: String(payload.text ?? ""), html: String(payload.html ?? ""), to: (payload.to as string[]) ?? [] });
+    });
+    const result = await upsertEmailConceptReply("ws_1", "inbox_1", messageId, { body });
+    assert.equal(result.body, body);
+    assert.match(String(createPayloads[0]!.text), /EUR 18\.15/);
+  });
+
+  it("OS-101: Moneybird import parent refuses concept-reply with 422", async () => {
+    stubService();
+    let createCalled = 0;
+    mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1", threadId: "thread_1", messageId: "msg_moneybird", subject: "Purchase import",
+      from: "Remon <remon@example.com>", to: ["lemo-desig-7aa4efe6@inkomend.moneybird.nl"], preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z", labels: [], text: "Forwarded.", html: null,
+      extractedText: "Forwarded.", extractedHtml: null, inReplyTo: null, attachments: [],
+    }));
+    mock.method(AgentMailClient.prototype, "createDraft", async () => { createCalled += 1; throw new Error("no"); });
+    await assert.rejects(
+      () => upsertEmailConceptReply("ws_1", "inbox_1", "msg_moneybird", { body: "Thanks for EUR 18.15." }),
+      (error: unknown) => error instanceof AgentMailApiError && error.status === 422 && error.message === NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
+    );
+    assert.equal(createCalled, 0);
+  });
+
+  it("OS-101: bare info@ gets nameless greeting; john@ gets John", async () => {
+    stubService();
+    mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () =>
+      resolveEmailReplyTemplates({ greetingTemplateEn: "To {firstName},", signOffTemplateEn: "Sincerely,\n{name}", signOffName: "Ralph" }),
+    );
+    for (const [from, expectedGreeting] of [["info@example.com", "Hello,"], ["john@example.com", "To John,"]] as const) {
+      const messageId = `msg_greet_${from.split("@")[0]}`;
+      mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
+      mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+        inboxId: "inbox_1", threadId: "thread_1", messageId, subject: "Hello", from, to: ["remon@example.com"],
+        preview: null, timestamp: "2026-10-01T08:00:00.000Z", labels: [], text: "Hi", html: null,
+        extractedText: "Hi", extractedHtml: null, inReplyTo: null, attachments: [],
+      }));
+      mock.method(AgentMailClient.prototype, "createDraft", async (_i: string, payload: Record<string, unknown>) =>
+        baseDraft({ draftId: `draft_${messageId}`, clientId: conceptReplyClientId(messageId), inReplyTo: messageId,
+          text: String(payload.text ?? ""), html: String(payload.html ?? ""), to: (payload.to as string[]) ?? [from] }),
+      );
+      const result = await upsertEmailConceptReply("ws_1", "inbox_1", messageId, { body: "Thanks for your note." });
+      assert.equal(result.greeting, expectedGreeting);
+    }
+  });
+
 });

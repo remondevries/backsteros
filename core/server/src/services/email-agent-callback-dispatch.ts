@@ -2,7 +2,9 @@ import type {
   EmailAgentCallbackResult,
 } from "@backsteros/contracts";
 
+import { AgentMailApiError } from "../lib/agentmail-client.js";
 import { newId } from "../lib/crypto.js";
+import { NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE } from "../lib/email-reply-assembler.js";
 import { emailMessageLinkHref } from "../lib/email-grok-wake.js";
 import * as agentmailSettingsService from "./agentmail-settings.js";
 import { resolveEmailAgentSuccessIntent } from "./email-agent-callback-intent.js";
@@ -16,6 +18,71 @@ export type EmailAgentCallbackRow = {
   workspaceId: string;
   inboxId: string;
   messageId: string;
+};
+
+/** Injectable seams for unit tests (mock.method). */
+export const emailAgentCallbackDispatchDeps = {
+  upsertEmailConceptReply: (
+    workspaceId: string,
+    inboxId: string,
+    messageId: string,
+    input: string | {
+      body: string;
+      to?: string | string[] | null;
+      cc?: string | string[] | null;
+      subject?: string | null;
+    },
+  ) =>
+    agentmailSettingsService.upsertEmailConceptReply(
+      workspaceId,
+      inboxId,
+      messageId,
+      input,
+    ),
+  getAgentMailMessage: (
+    workspaceId: string,
+    inboxId: string,
+    messageId: string,
+  ) =>
+    agentmailSettingsService.getAgentMailMessage(
+      workspaceId,
+      inboxId,
+      messageId,
+    ),
+  getOrCreateEmailThreadMetadata: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+  ) =>
+    emailThreadsService.getOrCreateEmailThreadMetadata(
+      workspaceId,
+      inboxId,
+      threadKey,
+    ),
+  createEmailThreadComment: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+    input: { body: string; author: "agent" | "user" },
+  ) =>
+    emailThreadsService.createEmailThreadComment(
+      workspaceId,
+      inboxId,
+      threadKey,
+      input,
+    ),
+  promoteEmailThreadWorkflowStatus: (
+    workspaceId: string,
+    inboxId: string,
+    threadKey: string,
+    next: "in_progress" | "in_review",
+  ) =>
+    emailThreadsService.promoteEmailThreadWorkflowStatus(
+      workspaceId,
+      inboxId,
+      threadKey,
+      next,
+    ),
 };
 
 function appendEmailContext(description: string | null | undefined, input: {
@@ -43,7 +110,7 @@ async function loadThreadContext(row: EmailAgentCallbackRow): Promise<{
   subject: string;
   from: string;
 }> {
-  const message = await agentmailSettingsService
+  const message = await emailAgentCallbackDispatchDeps
     .getAgentMailMessage(row.workspaceId, row.inboxId, row.messageId)
     .catch(() => null);
 
@@ -51,11 +118,12 @@ async function loadThreadContext(row: EmailAgentCallbackRow): Promise<{
     threadId: message?.threadId ?? null,
     messageId: row.messageId,
   });
-  const metadata = await emailThreadsService.getOrCreateEmailThreadMetadata(
-    row.workspaceId,
-    row.inboxId,
-    threadKey,
-  );
+  const metadata =
+    await emailAgentCallbackDispatchDeps.getOrCreateEmailThreadMetadata(
+      row.workspaceId,
+      row.inboxId,
+      threadKey,
+    );
 
   return {
     threadKey,
@@ -73,7 +141,7 @@ async function postAgentThreadNote(
   threadKey: string,
   message: string,
 ): Promise<void> {
-  await emailThreadsService.createEmailThreadComment(
+  await emailAgentCallbackDispatchDeps.createEmailThreadComment(
     row.workspaceId,
     row.inboxId,
     threadKey,
@@ -99,21 +167,67 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
     if (!agentBody) {
       throw new Error("body is required for reply_draft");
     }
-    // Prefer body-only so stored headers survive agent rewrites; honour cc/to
-    // when the callback explicitly includes them.
-    const draft = await agentmailSettingsService.upsertEmailConceptReply(
-      input.row.workspaceId,
-      input.row.inboxId,
-      input.row.messageId,
-      {
-        body: agentBody,
-        ...(input.body.to !== undefined ? { to: input.body.to } : {}),
-        ...(input.body.cc !== undefined ? { cc: input.body.cc } : {}),
-        ...(input.body.subject != null && input.body.subject !== undefined
-          ? { subject: input.body.subject }
-          : {}),
-      },
-    );
+    let draft: Awaited<
+      ReturnType<typeof emailAgentCallbackDispatchDeps.upsertEmailConceptReply>
+    >;
+    try {
+      draft = await emailAgentCallbackDispatchDeps.upsertEmailConceptReply(
+        input.row.workspaceId,
+        input.row.inboxId,
+        input.row.messageId,
+        {
+          body: agentBody,
+          ...(input.body.to !== undefined ? { to: input.body.to } : {}),
+          ...(input.body.cc !== undefined ? { cc: input.body.cc } : {}),
+          ...(input.body.subject != null && input.body.subject !== undefined
+            ? { subject: input.body.subject }
+            : {}),
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE;
+      const isNoReplyable =
+        (error instanceof AgentMailApiError && error.status === 422) ||
+        message.includes("Moneybird import address") ||
+        message === NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE;
+      if (isNoReplyable) {
+        try {
+          const ctx = await loadThreadContext(input.row);
+          await postAgentThreadNote(
+            input.row,
+            ctx.threadKey,
+            `Could not create reply draft: ${message}`,
+          );
+        } catch (noteError) {
+          console.warn(
+            "[email] reply_draft failure note failed",
+            input.row.inboxId,
+            input.row.messageId,
+            noteError instanceof Error ? noteError.message : noteError,
+          );
+        }
+      }
+      throw error;
+    }
+    try {
+      const ctx = await loadThreadContext(input.row);
+      await emailAgentCallbackDispatchDeps.promoteEmailThreadWorkflowStatus(
+        input.row.workspaceId,
+        input.row.inboxId,
+        ctx.threadKey,
+        "in_review",
+      );
+    } catch (error) {
+      console.warn(
+        "[email] in_review promote after reply_draft failed",
+        input.row.inboxId,
+        input.row.messageId,
+        error instanceof Error ? error.message : error,
+      );
+    }
     return {
       ok: true,
       requestId: input.body.requestId,

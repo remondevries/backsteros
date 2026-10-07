@@ -53,6 +53,7 @@ import {
   assembleEmailHtml,
   assembleReplyEmail,
   assertAssembledPreservesEditableBody,
+  assertHasReplyableConceptRecipient,
   assertNoDraftBodyLoss,
   assertValidEmailDraftHeaders,
   mergeEmailDraftHeaders,
@@ -60,6 +61,8 @@ import {
   DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME,
   detectEmailLanguage,
   EMAIL_SIGN_OFF_AVATAR_CID,
+  filterReplyableEmailAddresses,
+  NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
   normalizeComposeRecipients,
   parseReplyToAddress,
   parseSenderFirstName,
@@ -1846,19 +1849,23 @@ export async function upsertEmailConceptReply(
     fallbackTo: replyParty,
     inboxEmail,
   });
-  const nextTo = merged.to;
   const nextCc = merged.cc;
   const nextSubject = merged.subject;
-  if (nextTo.length === 0) {
+  const nextTo = filterReplyableEmailAddresses(merged.to);
+  try {
+    assertHasReplyableConceptRecipient(nextTo);
+  } catch (error) {
     throw new AgentMailApiError(
-      400,
+      422,
       "",
-      "To requires at least one valid email address.",
+      error instanceof Error
+        ? error.message
+        : NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
     );
   }
 
   const assembled = assembleReplyEmail({
-    from: replyParty,
+    from: replyParty || nextTo[0] || "",
     to: nextTo,
     cc: nextCc,
     subject: nextSubject,
@@ -2039,9 +2046,20 @@ export async function startEmailAgentDraft(
     message.extractedText?.trim() ||
     message.preview?.trim() ||
     "";
+  const inboxEmailForLanguage = await resolveInboxEmail(client, inboxId);
+  const replyPartyForLanguage = resolveReplyPartyFromMessage(
+    {
+      from: message.from ?? "",
+      to: message.to ?? [],
+      cc: message.cc ?? [],
+    },
+    inboxEmailForLanguage,
+  );
   const language = resolveEmailAgentLanguage({
     contactLanguages,
-    counterpartEmail: counterpartEmailFromMessage(message.from),
+    counterpartEmail: counterpartEmailFromMessage(
+      replyPartyForLanguage || message.from,
+    ),
     messageText,
   });
 
@@ -2050,7 +2068,7 @@ export async function startEmailAgentDraft(
     : conceptDraft?.text?.trim() && templates
       ? resolveEditableDraftBody(
           conceptDraft.text,
-          message.from ?? "",
+          replyPartyForLanguage || message.from || "",
           templates,
         )
       : null;
@@ -2328,9 +2346,11 @@ async function ensureDraftRecipientForReply(
   let nextTo =
     storedTo.length > 0
       ? correctSelfOnlyTo(storedTo, inboxEmail, replyFrom)
-      : normalizeComposeRecipients(replyFrom);
+      : filterReplyableEmailAddresses(normalizeComposeRecipients(replyFrom));
   if (nextTo.length === 0) {
-    nextTo = normalizeComposeRecipients(replyFrom);
+    nextTo = filterReplyableEmailAddresses(
+      normalizeComposeRecipients(replyFrom),
+    );
   }
   if (
     nextTo.length === 0 ||
@@ -2387,9 +2407,11 @@ async function ensureDraftHasAssembledShell(
   let nextTo =
     storedTo.length > 0
       ? correctSelfOnlyTo(storedTo, inboxEmail, replyFrom)
-      : normalizeComposeRecipients(replyFrom);
+      : filterReplyableEmailAddresses(normalizeComposeRecipients(replyFrom));
   if (nextTo.length === 0) {
-    nextTo = normalizeComposeRecipients(replyFrom);
+    nextTo = filterReplyableEmailAddresses(
+      normalizeComposeRecipients(replyFrom),
+    );
   }
   const greetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
   const editableBody = resolveEditableDraftBody(

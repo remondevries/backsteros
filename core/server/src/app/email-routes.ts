@@ -858,12 +858,14 @@ export function registerEmailRoutes(app: Hono) {
               : error,
         });
         if (error instanceof AgentMailApiError) {
+          const status =
+            error.status >= 400 && error.status < 500 ? error.status : 400;
           return c.json(
             {
               error: error.message,
-              code: error.status === 404 ? "not_found" : "bad_request",
+              code: status === 404 ? "not_found" : "bad_request",
             },
-            error.status === 404 ? 404 : 400,
+            status as 400 | 404 | 422,
           );
         }
         const message =

@@ -13,16 +13,49 @@ function capitalizePersonNameToken(name: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-/** First name for greeting — `Ada Lovelace <ada@…>` → `Ada`. */
+const ROLE_LOCAL_PARTS = new Set([
+  "info", "admin", "noreply", "no-reply", "donotreply", "do-not-reply",
+  "financials", "invoices", "billing", "accounts", "support", "hello",
+  "team", "contact", "office", "sales", "mail", "postmaster", "webmaster",
+  "help", "service", "notifications", "notify", "newsletter", "orders",
+  "receipt", "booking",
+]);
+
+export function isPersonalFirstNameLocalPart(localPart: string): boolean {
+  const segment = localPart.split(/[._-]/)[0]?.trim() ?? "";
+  if (segment.length < 2 || segment.length > 20) return false;
+  if (!/^[A-Za-z]+$/.test(segment)) return false;
+  if (ROLE_LOCAL_PARTS.has(segment.toLowerCase())) return false;
+  return true;
+}
+
 export function parseSenderFirstName(from: string): string {
   const trimmed = from.trim();
-  const display = trimmed.includes("<")
-    ? trimmed.slice(0, trimmed.indexOf("<")).trim()
-    : trimmed.includes("@")
-      ? trimmed.split("@")[0] ?? trimmed
-      : trimmed;
-  const first = display.split(/\s+/).filter(Boolean)[0];
-  return capitalizePersonNameToken(first || "there");
+  if (!trimmed) return "";
+  if (trimmed.includes("<")) {
+    const display = trimmed.slice(0, trimmed.indexOf("<")).trim();
+    const first = display.split(/\s+/).filter(Boolean)[0] ?? "";
+    return capitalizePersonNameToken(first);
+  }
+  if (trimmed.includes("@")) {
+    const local = trimmed.split("@")[0] ?? "";
+    const segment = local.split(/[._-]/)[0] ?? "";
+    if (!isPersonalFirstNameLocalPart(segment)) return "";
+    return capitalizePersonNameToken(segment);
+  }
+  const first = trimmed.split(/\s+/).filter(Boolean)[0] ?? "";
+  return capitalizePersonNameToken(first);
+}
+
+export const NAMELESS_EMAIL_GREETING_EN = "Hello,";
+export const NAMELESS_EMAIL_GREETING_NL = "Goedendag,";
+
+export function namelessGreetingForTemplate(greetingTemplate: string): string {
+  const opener = greetingTemplate.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (opener in { aan: 1, beste: 1, geachte: 1, goedendag: 1 }) {
+    return NAMELESS_EMAIL_GREETING_NL;
+  }
+  return NAMELESS_EMAIL_GREETING_EN;
 }
 
 export function replySubject(originalSubject: string): string {
@@ -251,15 +284,18 @@ export function renderEmailReplyShell(
 ): { greeting: string; signOff: string; firstName: string } {
   const firstName = parseSenderFirstName(from);
   const vars = { firstName, name: templates.signOffName };
+  const greeting = firstName
+    ? renderEmailReplyTemplate(templates.greetingTemplate, vars)
+    : namelessGreetingForTemplate(templates.greetingTemplate);
   return {
     firstName,
-    greeting: renderEmailReplyTemplate(templates.greetingTemplate, vars),
+    greeting,
     signOff: renderEmailReplyTemplate(templates.signOffTemplate, vars),
   };
 }
 
 const GREETING_LINE =
-  /^(?:hi|hello|hey|dear|aan|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
+  /^(?:hi|hello|hey|dear|aan|beste|geachte|goedendag|goedemorgen|goedemiddag|goedenavond|to)\b[^,\n]{0,80},?\s*$/i;
 
 // Whole-line sign-offs only ("Thank you," / "Best regards,") — never
 // "Thank you for your interest…" body sentences.
@@ -313,34 +349,25 @@ function stripTrailingSignOff(body: string): string {
 }
 
 function stripAssembledEmailShell(body: string): string {
-  const match = body.match(
-    /^ *(?:hi|hello|hey|dear|aan|beste|geachte)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
+  // Named greetings require a name token so bare "Beste," mid-agent iterations
+  // are not mistaken for a full shelled draft.
+  const named = body.match(
+    /^ *(?:hi|hello|hey|dear|aan|beste|geachte|to)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
   );
-  return match?.[1]?.trim() ?? body;
+  if (named?.[1]) return named[1].trim();
+  const nameless = body.match(
+    /^ *(?:hello|goedendag),?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
+  );
+  return nameless?.[1]?.trim() ?? body;
 }
 
-const PS_SENTENCE_PLACEHOLDER = "\u0000BSH_PS\u0000";
-const THOUSANDS_DOT_PLACEHOLDER = "\u0000BSH_THOU\u0000";
-
-function protectSentenceSplitLiterals(text: string): string {
-  return text
-    .replace(/\bP\.S\./gi, PS_SENTENCE_PLACEHOLDER)
-    .replace(/(\d)\.(\d{3}(?:,\d+)?)/g, `$1${THOUSANDS_DOT_PLACEHOLDER}$2`);
-}
-
-function restoreSentenceSplitLiterals(text: string): string {
-  return text
-    .replaceAll(PS_SENTENCE_PLACEHOLDER, "P.S.")
-    .replaceAll(THOUSANDS_DOT_PLACEHOLDER, ".");
-}
-
-function splitIntoSentences(body: string): string[] {
-  const protectedText = protectSentenceSplitLiterals(body);
-  const parts =
-    protectedText.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g)?.map((part) =>
-      restoreSentenceSplitLiterals(part.trim()),
-    ) ?? [restoreSentenceSplitLiterals(body.trim())];
-  return parts.filter(Boolean);
+export function splitIntoSentences(body: string): string[] {
+  const trimmed = body.trim();
+  if (!trimmed) return [];
+  return trimmed
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function dedupeSentences(body: string): string {
@@ -358,6 +385,28 @@ function dedupeSentences(body: string): string {
   }
 
   return kept.join(" ").trim();
+}
+
+function lightCleanAgentReplyBody(raw: string): string {
+  return stripTrailingSignOff(stripLeadingGreetingLines(raw.trim()));
+}
+
+function nonWhitespaceLength(text: string): number {
+  return text.replace(/\s+/g, "").length;
+}
+
+function sanitizeLostNonShellText(raw: string, sanitized: string): boolean {
+  const base = lightCleanAgentReplyBody(stripAssembledEmailShell(raw.trim()));
+  if (!base) return false;
+  const blocks = splitDraftIterations(base).filter((part) => part.length >= 15);
+  if (blocks.length >= 2) {
+    if (/^\d+[.)]\s/.test(sanitized.trim())) return true;
+    return false;
+  }
+  const expected = dedupeSentences(base);
+  const expectedChars = nonWhitespaceLength(expected);
+  if (expectedChars < 8) return false;
+  return nonWhitespaceLength(sanitized) < expectedChars * 0.85;
 }
 
 function isSubstantiveParagraph(text: string): boolean {
@@ -386,15 +435,17 @@ function cleanParagraph(block: string): string {
 
 /**
  * Normalize agent output to body-only content: no greeting, sign-off, or
- * repeated draft iterations.
+ * repeated draft iterations. Never returns a truncated body.
  */
 export function sanitizeAgentReplyBody(raw: string): string {
   let body = raw.trim();
   if (!body) return "";
 
+  const light = lightCleanAgentReplyBody(stripAssembledEmailShell(body));
+
   body = stripAssembledEmailShell(body);
   body = stripLeadingGreetingLines(body);
-  body = body.replace(/(?:^|\n)(?:aan|beste|geachte),?\s*(?=\n|$)/gi, "\n");
+  body = body.replace(/(?:^|\n)(?:aan|beste|geachte|to|hello|goedendag),?\s*(?=\n|$)/gi, "\n");
   body = body.replace(/([.!?])\s*(?=Bedankt voor|Wij zijn het niet eens)/g, "$1\n\n");
   body = body.replace(/([A-Za-z])(?=Bedankt voor)/g, "$1\n\n");
 
@@ -402,18 +453,20 @@ export function sanitizeAgentReplyBody(raw: string): string {
     .map((part) => cleanParagraph(part))
     .filter(isSubstantiveParagraph);
 
+  let sanitized: string;
   if (paragraphs.length === 0) {
-    return cleanParagraph(body).trim();
-  }
-  if (paragraphs.length === 1) {
-    return paragraphs[0]!.trim();
+    sanitized = cleanParagraph(body).trim();
+  } else if (paragraphs.length === 1) {
+    sanitized = paragraphs[0]!.trim();
+  } else if (paragraphsLookLikeAgentIterations(paragraphs)) {
+    sanitized = paragraphs[paragraphs.length - 1]!.trim();
+  } else {
+    sanitized = paragraphs.join("\n\n").trim();
   }
 
-  if (paragraphsLookLikeAgentIterations(paragraphs)) {
-    return paragraphs[paragraphs.length - 1]!.trim();
-  }
-
-  return paragraphs.join("\n\n").trim();
+  if (!sanitized) return light;
+  if (sanitizeLostNonShellText(raw, sanitized)) return light;
+  return sanitized;
 }
 
 function paragraphsLookLikeAgentIterations(paragraphs: string[]): boolean {
@@ -687,9 +740,40 @@ export function assertValidEmailDraftHeaders(input: {
   }
 }
 
-/**
- * If To is only our own mailbox, replace with an external reply party when known.
- */
+export function isNonReplyableEmailAddress(
+  address: string | null | undefined,
+): boolean {
+  const addr = parseReplyToAddress(address ?? "").toLowerCase();
+  if (!addr.includes("@")) return false;
+  const at = addr.lastIndexOf("@");
+  const local = addr.slice(0, at);
+  const host = addr.slice(at + 1);
+  if (/(^|\.)inkomend\.moneybird\.nl$/.test(host)) return true;
+  const localHead = local.split(/[.+]/)[0] ?? local;
+  return (
+    localHead === "noreply" ||
+    localHead === "no-reply" ||
+    localHead === "donotreply" ||
+    localHead === "do-not-reply"
+  );
+}
+
+export function filterReplyableEmailAddresses(
+  addresses: readonly string[],
+): string[] {
+  return addresses.filter((address) => !isNonReplyableEmailAddress(address));
+}
+
+export const NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE =
+  "This thread was sent to a Moneybird import address; there is no reply recipient.";
+
+export function assertHasReplyableConceptRecipient(
+  to: readonly string[],
+): void {
+  if (filterReplyableEmailAddresses(to).length > 0) return;
+  throw new Error(NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE);
+}
+
 export function correctSelfOnlyTo(
   to: readonly string[],
   inboxEmail: string | null | undefined,
@@ -698,7 +782,9 @@ export function correctSelfOnlyTo(
   const ours = inboxEmail?.trim().toLowerCase() || null;
   if (!ours || to.length !== 1) return [...to];
   if (to[0]!.toLowerCase() !== ours) return [...to];
-  const external = normalizeComposeRecipients(externalParty ?? "");
+  const external = filterReplyableEmailAddresses(
+    normalizeComposeRecipients(externalParty ?? ""),
+  );
   return external.length > 0 ? external : [...to];
 }
 
@@ -743,8 +829,12 @@ export function mergeEmailDraftHeaders(input: {
   }
   to = correctSelfOnlyTo(to, input.inboxEmail, input.fallbackTo);
   if (to.length === 0) {
-    to = normalizeComposeRecipients(input.fallbackTo ?? "");
+    to = filterReplyableEmailAddresses(
+      normalizeComposeRecipients(input.fallbackTo ?? ""),
+    );
   }
+  const replyableTo = filterReplyableEmailAddresses(to);
+  if (replyableTo.length > 0) to = replyableTo;
 
   const cc =
     input.patch.cc !== undefined
@@ -766,13 +856,7 @@ export function renderEmailComposeShell(
     "greetingTemplate" | "signOffTemplate" | "signOffName"
   >,
 ): { greeting: string; signOff: string; firstName: string } {
-  const firstName = parseRecipientFirstName(to);
-  const vars = { firstName, name: templates.signOffName };
-  return {
-    firstName,
-    greeting: renderEmailReplyTemplate(templates.greetingTemplate, vars),
-    signOff: renderEmailReplyTemplate(templates.signOffTemplate, vars),
-  };
+  return renderEmailReplyShell(to, templates);
 }
 
 /**
@@ -810,12 +894,9 @@ export function assembleReplyEmail(input: {
   const templates = resolveTemplatesForLanguage(baseTemplates, language);
   const rawBody = input.body.trim();
   const sanitized = input.preserveBody ? rawBody : sanitizeAgentReplyBody(rawBody);
-  // Never silently drop agent text — if sanitize over-strips, keep a light clean.
   const body =
     sanitized ||
-    (rawBody
-      ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
-      : "");
+    (rawBody ? lightCleanAgentReplyBody(rawBody) : "");
   const to =
     input.to != null
       ? normalizeComposeRecipients(input.to)
@@ -869,9 +950,7 @@ export function assembleComposeEmail(input: {
   const sanitized = input.preserveBody ? rawBody : sanitizeAgentReplyBody(rawBody);
   const body =
     sanitized ||
-    (rawBody
-      ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
-      : "");
+    (rawBody ? lightCleanAgentReplyBody(rawBody) : "");
   const toAddresses = normalizeComposeRecipients(input.to);
   const ccAddresses = normalizeComposeRecipients(input.cc).filter(
     (address) =>
@@ -896,10 +975,14 @@ export function plainTextEmailToHtml(text: string): string {
   return escapeEmailHtml(text).replace(/\n/g, "<br>\n");
 }
 
-/**
- * Reply target when the opened message is our own sent mail — use the external
- * recipient instead of our inbox address.
- */
+function isReplyableExternalAddress(raw: string, ours: string | null): boolean {
+  const addr = parseReplyToAddress(raw).toLowerCase();
+  if (!addr.includes("@")) return false;
+  if (ours && addr === ours) return false;
+  if (isNonReplyableEmailAddress(addr)) return false;
+  return true;
+}
+
 export function resolveReplyPartyFromMessage(
   message: { from: string; to?: string[] | null; cc?: string[] | null },
   inboxEmail: string | null | undefined,
@@ -913,22 +996,20 @@ export function resolveReplyPartyFromMessage(
   const fromAddr = parseReplyToAddress(message.from).toLowerCase();
   if (ours && fromAddr === ours) {
     for (const raw of message.to ?? []) {
-      const addr = parseReplyToAddress(raw).toLowerCase();
-      if (addr.includes("@") && addr !== ours) return raw;
+      if (isReplyableExternalAddress(raw, ours)) return raw;
     }
     for (const raw of message.cc ?? []) {
-      const addr = parseReplyToAddress(raw).toLowerCase();
-      if (addr.includes("@") && addr !== ours) return raw;
+      if (isReplyableExternalAddress(raw, ours)) return raw;
     }
     for (const entry of threadMessages ?? []) {
-      const entryFrom = parseReplyToAddress(entry.from).toLowerCase();
-      if (entryFrom.includes("@") && entryFrom !== ours) return entry.from;
+      if (isReplyableExternalAddress(entry.from, ours)) return entry.from;
       for (const raw of [...(entry.to ?? []), ...(entry.cc ?? [])]) {
-        const addr = parseReplyToAddress(raw).toLowerCase();
-        if (addr.includes("@") && addr !== ours) return raw;
+        if (isReplyableExternalAddress(raw, ours)) return raw;
       }
     }
+    return "";
   }
+  if (isNonReplyableEmailAddress(message.from)) return "";
   return message.from;
 }
 

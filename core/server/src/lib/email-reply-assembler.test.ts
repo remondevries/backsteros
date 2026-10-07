@@ -21,6 +21,12 @@ import {
   resolveEmailReplyTemplates,
   resolveReplyPartyFromMessage,
   sanitizeAgentReplyBody,
+  splitIntoSentences,
+  assertHasReplyableConceptRecipient,
+  isNonReplyableEmailAddress,
+  NAMELESS_EMAIL_GREETING_EN,
+  NAMELESS_EMAIL_GREETING_NL,
+  NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
 } from "./email-reply-assembler.js";
 
 describe("email-reply-assembler", () => {
@@ -519,4 +525,56 @@ describe("email-reply-assembler", () => {
     });
     assert.equal(assembled.subject, "Custom subject from user");
   });
+
+  it("OS-101: sanitize keeps bodies with decimals (EUR 18.15 / 10.65)", () => {
+    const invoice1815 =
+      "Thanks for sending over AgentMail invoice RLMOORV4-0001 for EUR 18.15. I'll go ahead and process it.";
+    const invoice1065 =
+      "Thank you, I have received the Cursor invoice FD651B1A-0032 (EUR 10.65) and will process it.";
+    assert.equal(sanitizeAgentReplyBody(invoice1815), invoice1815);
+    assert.equal(sanitizeAgentReplyBody(invoice1065), invoice1065);
+  });
+
+  it("OS-101: sanitize preserves decimals, times, versions, emails, URLs, P.S.", () => {
+    for (const body of [
+      "Hierbij de boekingsregel met bedrag €17.183,09.",
+      "The call is at 15.33 today.",
+      "We shipped v1.2.3 this morning.",
+      "Reach me at financials@lemo-design.com or see https://lemo-design.com/x. Thanks again.",
+      "P.S. This still belongs in the body.",
+    ]) {
+      assert.equal(sanitizeAgentReplyBody(body).replace(/\s+/g, ""), body.trim().replace(/\s+/g, ""));
+    }
+  });
+
+  it("OS-101: splitIntoSentences never drops characters", () => {
+    const sample = "Thanks for EUR 18.15. I'll go ahead and process it.";
+    assert.equal(splitIntoSentences(sample).join(" "), sample);
+  });
+
+  it("OS-101: bare role local-parts get nameless greetings; john stays John", () => {
+    const templates = resolveEmailReplyTemplates({
+      greetingTemplateEn: "To {firstName},",
+      greetingTemplateNl: "Aan {firstName},",
+      signOffTemplateEn: "Sincerely,\n{name}",
+      signOffName: "Ralph",
+    });
+    assert.equal(parseSenderFirstName("info@example.com"), "");
+    assert.equal(parseSenderFirstName("john@example.com"), "John");
+    assert.equal(
+      assembleReplyEmail({ from: "info@example.com", subject: "Hi", body: "Thanks.", templates, languageHint: "en" }).greeting,
+      NAMELESS_EMAIL_GREETING_EN,
+    );
+    assert.equal(
+      assembleReplyEmail({ from: "john@example.com", subject: "Hi", body: "Thanks.", templates, languageHint: "en" }).greeting,
+      "To John,",
+    );
+  });
+
+  it("OS-101: Moneybird import addresses are non-replyable", () => {
+    assert.equal(isNonReplyableEmailAddress("lemo-desig-7aa4efe6@inkomend.moneybird.nl"), true);
+    assert.equal(resolveReplyPartyFromMessage({ from: "Remon <financials@lemo-design.com>", to: ["lemo-desig-7aa4efe6@inkomend.moneybird.nl"] }, "financials@lemo-design.com"), "");
+    assert.throws(() => assertHasReplyableConceptRecipient([]), (e: unknown) => e instanceof Error && e.message === NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE);
+  });
+
 });
