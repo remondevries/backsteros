@@ -180,6 +180,7 @@ export function EmailPage({
     saveConceptReply,
     promoteEmailThreadStatus,
     reloadMessageDetail,
+    listReturnHref,
     organizationId,
     contactId,
     assigneeId,

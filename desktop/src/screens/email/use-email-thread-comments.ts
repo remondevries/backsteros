@@ -5,14 +5,22 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type {
   AgentMailMessageDetail,
+  EmailAgentCoreAction,
   EmailThreadComment,
 } from "@backsteros/contracts";
-import { replySubject as formatReplySubject, type EmailDraftBodyMode } from "@backsteros/ui";
+import {
+  replySubject as formatReplySubject,
+  showAppToast,
+  type EmailDraftBodyMode,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "../../lib/api-context";
 import { resolveEditableEmailDraftBody } from "../../lib/email-draft-body";
+import { dispatchEmailListRemove } from "../../lib/use-agentmail-mailboxes";
+import { navigateToHref } from "../../router/navigate-href";
 
 import { resolveEmailThreadKey } from "./email-page-helpers";
 
@@ -37,6 +45,7 @@ export function useEmailThreadComments({
   setDraftStageWorking,
   promoteEmailThreadStatus,
   reloadMessageDetail,
+  listReturnHref = "/inbox",
 }: {
   inboxId: string | undefined;
   messageId: string | undefined;
@@ -63,12 +72,21 @@ export function useEmailThreadComments({
     messageInboxId?: string,
     reloadMessageId?: string,
   ) => void | Promise<unknown>;
+  /** Where to go after core spam/trash (same as message actions). */
+  listReturnHref?: string;
   organizationId: string | null;
   contactId: string | null;
   assigneeId: string | null;
   projectKey: string | null;
 }) {
   const { client } = useDesktopApi();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const [threadComments, setThreadComments] = useState<EmailThreadComment[]>(
     [],
   );
@@ -246,9 +264,27 @@ export function useEmailThreadComments({
         const currentDraftBody =
           resolveEditableEmailDraftBody(message.conceptDraft).trim() || null;
 
+        const clientStartedAt = Date.now();
         const started = await client.requestJson<{
           requestId: string;
           language: "en" | "nl";
+          applied?: {
+            intent: EmailAgentCoreAction;
+            durationMs: number;
+            result?: {
+              ok: boolean;
+              requestId: string;
+              intent?: "reply_draft" | "task" | "calendar" | "note";
+              body?: string;
+              draftId?: string;
+              inboxId?: string;
+              task?: { title?: string; taskId?: string };
+              event?: { title?: string; meetingId?: string };
+              message?: string;
+              error?: string;
+            };
+            blockedSender?: string | null;
+          };
         }>(
           `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/agent-draft`,
           {
@@ -261,6 +297,28 @@ export function useEmailThreadComments({
             }),
           },
         );
+
+        // Core classify→execute (OS-94): no Judith wake / no poll.
+        if (started.applied) {
+          const { intent, durationMs } = started.applied;
+          const clientMs = Date.now() - clientStartedAt;
+          showAppToast({
+            message: `Done in ${durationMs}ms (core, no agent) · client ${clientMs}ms`,
+            durationMs: 3200,
+          });
+          if (intent === "spam" || intent === "trash") {
+            dispatchEmailListRemove({
+              inboxId,
+              messageId,
+              threadId: message.threadId ?? null,
+            });
+            setMessage(null);
+            navigate(listReturnHref, { replace: true });
+            return;
+          }
+          await reloadMessageDetail?.(inboxId, messageId);
+          return;
+        }
 
         const deadline = Date.now() + 10 * 60 * 1000;
         let pollAttempt = 0;
@@ -389,8 +447,10 @@ export function useEmailThreadComments({
     [
       client,
       inboxId,
+      listReturnHref,
       message,
       messageId,
+      navigate,
       postThreadComment,
       promoteEmailThreadStatus,
       reloadMessageDetail,

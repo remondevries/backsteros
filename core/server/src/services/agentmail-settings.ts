@@ -71,6 +71,7 @@ import { getAvatar } from "./circle-domain.js";
 import * as emailThreadsService from "./email-threads.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 import { registerEmailAgentCallback } from "./email-agent-callbacks.js";
+import { decideEmailCommand } from "../lib/email-command-intent.js";
 import {
   buildEmailGrokWakePayload,
   counterpartEmailFromMessage,
@@ -78,6 +79,8 @@ import {
   resolveEmailAgentLanguage,
   wakeEmailGrokWebhook,
 } from "../lib/email-grok-wake.js";
+import { trimEmailTextForWake } from "../lib/email-wake-text.js";
+import { executeEmailCommandInCore } from "./email-command-execute.js";
 
 const INBOX_EMAIL_CACHE_MS = 5 * 60 * 1000;
 const inboxEmailCache = new Map<
@@ -1765,6 +1768,37 @@ export async function startEmailAgentDraft(
   intent?: "reply_draft" | "task" | "calendar" | "note" | null,
   currentDraftBody?: string | null,
 ): Promise<EmailAgentDraftStarted> {
+  const startedAt = Date.now();
+  const decision = decideEmailCommand({
+    prompt,
+    explicitIntent: intent ?? null,
+  });
+
+  // Fixed intents: classify→execute in core — never wake Judith.
+  if (decision.kind === "execute") {
+    const requestId = crypto.randomUUID();
+    const applied = await executeEmailCommandInCore({
+      workspaceId,
+      inboxId,
+      messageId,
+      intent: decision.intent,
+      noteMessage: decision.noteMessage,
+      requestId,
+    });
+    return {
+      requestId,
+      language: "en",
+      applied: {
+        intent: applied.intent,
+        durationMs: Date.now() - startedAt,
+        ...(applied.result ? { result: applied.result } : {}),
+        ...(applied.blockedSender !== undefined
+          ? { blockedSender: applied.blockedSender }
+          : {}),
+      },
+    };
+  }
+
   const [credentials, secretRow] = await Promise.all([
     getAgentMailCredentials(workspaceId),
     getSecretRow(workspaceId),
@@ -1805,37 +1839,46 @@ export async function startEmailAgentDraft(
   });
 
   const skipDraftScan = currentDraftBody !== undefined;
-  const [metadata, templates, conceptDraft] = await Promise.all([
-    emailThreadsService.getOrCreateEmailThreadMetadata(
-      workspaceId,
-      inboxId,
-      threadKey,
-    ),
-    skipDraftScan
-      ? Promise.resolve(null)
-      : getEmailReplyTemplatesForInbox(workspaceId, inboxId),
-    skipDraftScan
-      ? Promise.resolve(null)
-      : loadConceptDraftForThreadAcrossInboxes(client, inboxIds, [messageId]),
-  ]);
+  // Parallelize OS-54 thread fetch with the other pre-wake lookups.
+  const [metadata, templates, conceptDraft, linkedMessageIds] =
+    await Promise.all([
+      emailThreadsService.getOrCreateEmailThreadMetadata(
+        workspaceId,
+        inboxId,
+        threadKey,
+      ),
+      skipDraftScan
+        ? Promise.resolve(null)
+        : getEmailReplyTemplatesForInbox(workspaceId, inboxId),
+      skipDraftScan
+        ? Promise.resolve(null)
+        : loadConceptDraftForThreadAcrossInboxes(client, inboxIds, [messageId]),
+      collectEmailThreadMessageIds(
+        client,
+        inboxId,
+        messageId,
+        message.threadId ?? null,
+      ),
+    ]);
 
-  let contactLanguages: string[] = [];
-  if (metadata.contactId) {
-    const [contact] = await db
-      .select({ languages: contacts.languages })
-      .from(contacts)
-      .where(
-        and(
-          eq(contacts.workspaceId, workspaceId),
-          eq(contacts.id, metadata.contactId),
-          isNull(contacts.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (Array.isArray(contact?.languages)) {
-      contactLanguages = [...contact.languages];
-    }
-  }
+  const [contactLanguages, linkedTaskKeys] = await Promise.all([
+    (async (): Promise<string[]> => {
+      if (!metadata.contactId) return [];
+      const [contact] = await db
+        .select({ languages: contacts.languages })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.workspaceId, workspaceId),
+            eq(contacts.id, metadata.contactId),
+            isNull(contacts.deletedAt),
+          ),
+        )
+        .limit(1);
+      return Array.isArray(contact?.languages) ? [...contact.languages] : [];
+    })(),
+    listTaskKeysLinkedToEmailMessages(workspaceId, inboxId, linkedMessageIds),
+  ]);
 
   const messageText =
     message.text?.trim() ||
@@ -1858,18 +1901,7 @@ export async function startEmailAgentDraft(
         )
       : null;
 
-  const linkedMessageIds = await collectEmailThreadMessageIds(
-    client,
-    inboxId,
-    messageId,
-    message.threadId ?? null,
-  );
-  const linkedTaskKeys = await listTaskKeysLinkedToEmailMessages(
-    workspaceId,
-    inboxId,
-    linkedMessageIds,
-  );
-
+  const wakeIntent = decision.intent;
   const payload = buildEmailGrokWakePayload({
     requestId,
     callbackUrl: registered.callbackUrl,
@@ -1881,11 +1913,11 @@ export async function startEmailAgentDraft(
     currentDraftBody: resolvedCurrentDraftBody,
     contactId: metadata.contactId ?? null,
     linkedTaskKeys,
-    intent: intent ?? null,
+    intent: wakeIntent,
     from: message.from ?? "",
     to: message.to ?? [],
     subject: message.subject ?? "",
-    text: messageText,
+    text: trimEmailTextForWake(messageText),
   });
 
   const wake = await wakeEmailGrokWebhook({

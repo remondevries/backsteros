@@ -2592,7 +2592,7 @@ export const apiContract: AppRouter = c.router(
         404: errorSchema,
       },
       summary:
-        "Wake Grok Bot webhook for an email-thread agent command (reply draft, task, calendar, note)",
+        "Classify→execute fixed email commands in core, or wake Judith for prose (trimmed payload)",
     },
     getEmailAgentDraftCallback: {
       method: "GET",

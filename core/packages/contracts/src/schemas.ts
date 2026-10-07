@@ -3617,10 +3617,6 @@ export const emailAgentDraftInputSchema = z.object({
    */
   currentDraftBody: z.string().max(100_000).nullable().optional(),
 });
-export const emailAgentDraftStartedSchema = z.object({
-  requestId: z.string(),
-  language: z.enum(["en", "nl"]),
-});
 
 export const emailAgentCallbackTaskPayloadSchema = z.object({
   title: z.string().min(1).max(500),
@@ -3729,6 +3725,38 @@ export const emailAgentCallbackResultSchema = z.union([
 export const emailAgentCallbackPollSchema = z.object({
   pending: z.boolean(),
   result: emailAgentCallbackResultSchema.optional(),
+});
+
+/** Fixed intents core can apply without waking Judith (OS-94). */
+export const emailAgentCoreActionSchema = z.enum([
+  "spam",
+  "trash",
+  "archive",
+  "mark_read",
+  "mark_unread",
+  "task",
+  "calendar",
+  "note",
+]);
+export type EmailAgentCoreAction = z.infer<typeof emailAgentCoreActionSchema>;
+
+/**
+ * agent-draft start response. When `applied` is set, core already executed the
+ * command — clients must not poll for a Judith callback.
+ */
+export const emailAgentDraftStartedSchema = z.object({
+  requestId: z.string(),
+  language: z.enum(["en", "nl"]),
+  applied: z
+    .object({
+      intent: emailAgentCoreActionSchema,
+      /** Wall time for classify+execute (desktop before/after timing). */
+      durationMs: z.number().nonnegative(),
+      /** Present for task / calendar / note creates. */
+      result: emailAgentCallbackResultSchema.optional(),
+      blockedSender: z.string().nullable().optional(),
+    })
+    .optional(),
 });
 export const emailComposeDraftInputSchema = z.object({
   to: z.string().min(1).max(500),

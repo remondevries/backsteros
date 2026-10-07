@@ -3,6 +3,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { newId } from "../lib/crypto.js";
+import { emailMessageLinkHref } from "../lib/email-grok-wake.js";
 import * as agentmailSettingsService from "./agentmail-settings.js";
 import { resolveEmailAgentSuccessIntent } from "./email-agent-callback-intent.js";
 import * as emailThreadsService from "./email-threads.js";
@@ -158,6 +159,13 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
         dueDate: taskPayload?.dueDate ?? null,
         status: "ready_to_start",
         inbox: !projectId,
+        links: [
+          {
+            id: newId(),
+            url: emailMessageLinkHref(input.row.inboxId, input.row.messageId),
+            createdAt: new Date().toISOString(),
+          },
+        ],
       },
       newId(),
       undefined,
