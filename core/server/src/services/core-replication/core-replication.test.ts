@@ -41,6 +41,7 @@ describe("core-replication constants", () => {
     assert.ok(REPLICATED_TABLES.includes("organizations"));
     assert.ok(REPLICATED_TABLES.includes("api_keys"));
     assert.ok(REPLICATED_TABLES.includes("financial_transactions"));
+    assert.ok(REPLICATED_TABLES.includes("client_estimates"));
     assert.ok(BOOTSTRAP_TABLES.includes("workspaces"));
     assert.ok(BOOTSTRAP_TABLES.includes("users"));
     for (const table of REPLICATED_TABLES) {

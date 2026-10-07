@@ -60,6 +60,7 @@ export const HEALABLE_SOFT_UNIQUE_CONSTRAINTS = new Set([
   "tasks_habit_due_unique",
   "organizations_workspace_number_unique",
   "contacts_workspace_number_unique",
+  "client_estimates_workspace_number_uidx",
 ]);
 
 export function isHealableSoftUnique(error: unknown): boolean {
