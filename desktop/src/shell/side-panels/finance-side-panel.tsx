@@ -50,6 +50,7 @@ export function DesktopFinanceSidePanel({
   });
   const pendingKeyboardExpandRef = useRef(false);
   const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
+  const prevActiveZoneRef = useRef(activeZone);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,8 +103,16 @@ export function DesktopFinanceSidePanel({
     return slug ? financeSidePanelAccountKeyboardId(slug) : null;
   }, [pathname]);
 
+  // Only auto-expand when keyboard focus *moves into* the side panel while it
+  // is collapsed — not when the user collapses while the zone is already active
+  // (that used to close then immediately reopen).
   useEffect(() => {
-    if (activeZone === LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL && collapsed) {
+    const zoneBecameSidePanel =
+      activeZone === LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL &&
+      prevActiveZoneRef.current !== LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL;
+    prevActiveZoneRef.current = activeZone;
+
+    if (zoneBecameSidePanel && collapsed) {
       pendingKeyboardExpandRef.current = true;
       onExpand?.();
     }

@@ -3,7 +3,8 @@
 .meeting-detail-split,
 .task-detail-view,
 .task-detail-split,
-.help-article-detail-split {
+.help-article-detail-split,
+.finance-estimate-detail-split {
   display: flex;
   min-height: 0;
   width: 100%;
@@ -18,6 +19,11 @@
 .task-detail-split .detail-with-properties,
 .email-detail-split .detail-with-properties,
 .help-article-detail-split .detail-with-properties {
+  min-height: 0;
+  flex: 1;
+}
+
+.finance-estimate-detail-split > .finance-estimate-detail-scroll-shell {
   min-height: 0;
   flex: 1;
 }

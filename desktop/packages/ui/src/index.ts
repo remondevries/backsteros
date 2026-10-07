@@ -198,6 +198,17 @@ export {
 } from "./components/shell/product-content-shell.js";
 
 export {
+  ContentSidePanelLayoutProvider,
+  useContentSidePanelLayout,
+  type ContentSidePanelLayoutValue,
+} from "./components/shell/content-side-panel-layout-context.js";
+
+export {
+  DocumentHeadingOutlineNav,
+  type DocumentHeadingOutlineNavProps,
+} from "./components/documents/document-heading-outline-nav.js";
+
+export {
   ProductAppShell,
   type ProductAppShellProps,
 } from "./components/shell/product-app-shell.js";
@@ -820,6 +831,11 @@ export {
 } from "./components/calendar/timetracking-leading-stamp.js";
 
 export { TrackedTimeIcon, type TrackedTimeIconProps } from "./components/icons/tracked-time-icon.js";
+
+export {
+  EstimateIcon,
+  type EstimateIconProps,
+} from "./components/icons/estimate-icon.js";
 
 export {
   HealthCheckIcon,
@@ -1731,6 +1747,23 @@ export {
   FinanceEstimatesView,
   type FinanceEstimatesViewProps,
 } from "./components/finance/finance-estimates-view.js";
+export {
+  EstimateStatusIcon,
+  type EstimateStatusIconProps,
+} from "./components/finance/estimate-status-icon.js";
+export {
+  CLIENT_ESTIMATE_STATUSES,
+  CLIENT_ESTIMATE_STATUS_LABELS,
+  CLIENT_ESTIMATE_STATUS_ORDER,
+  CLIENT_ESTIMATE_STATUS_TASK_ICON,
+  formatEstimateDisplayId,
+  getClientEstimateStatusLabel,
+  groupEstimatesByStatus,
+  isClientEstimateStatus,
+  migrateClientEstimateStatus,
+  type ClientEstimateStatus as FinanceEstimateStatus,
+  type EstimateStatusGroup,
+} from "./finance/estimate-status.js";
 export {
   FinanceInvoiceDetailDocument,
   type FinanceInvoiceDetailDocumentProps,

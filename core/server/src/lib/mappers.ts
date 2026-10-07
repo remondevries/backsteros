@@ -434,24 +434,42 @@ export function toFinancialGoal(
   };
 }
 
+function normalizeEstimateToContactIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw.filter(
+    (id): id is string => typeof id === "string" && id.trim().length > 0,
+  );
+  return [...new Set(ids.map((id) => id.trim()))];
+}
+
 export function toClientEstimate(row: DbClientEstimate): ClientEstimate {
+  const legacy: Record<string, ClientEstimate["status"]> = {
+    draft: "concept",
+    published: "in_review",
+    archived: "declined",
+  };
   const status =
     row.status &&
     (CLIENT_ESTIMATE_STATUSES as readonly string[]).includes(row.status)
       ? (row.status as ClientEstimate["status"])
-      : "draft";
+      : (legacy[row.status ?? ""] ?? "concept");
   return {
     id: row.id,
     workspaceId: row.workspaceId,
+    number: row.number ?? null,
     organizationId: row.organizationId ?? null,
     projectId: row.projectId ?? null,
     title: row.title,
     subtitle: row.subtitle ?? null,
     clientLabel: row.clientLabel ?? null,
+    authorContactId: row.authorContactId ?? null,
     authorName: row.authorName ?? null,
+    toContactIds: normalizeEstimateToContactIds(row.toContactIds),
     versionLabel: row.versionLabel ?? null,
     documentDate: row.documentDate ?? null,
     status,
+    totalAmountCents:
+      row.totalAmountCents == null ? null : row.totalAmountCents,
     proposalMarkdown: row.proposalMarkdown ?? "",
     estimateMarkdown: row.estimateMarkdown ?? "",
     sortOrder: row.sortOrder,

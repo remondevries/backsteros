@@ -32,6 +32,7 @@ import {
   FinanceCashflowNavIcon,
   FinanceCategoriesNavIcon,
   FinanceDashboardNavIcon,
+  FinanceEstimatesNavIcon,
   FinanceGoalsNavIcon,
   FinanceInvestmentsNavIcon,
   FinanceInvoicesNavIcon,
@@ -111,7 +112,7 @@ export function FinanceSectionNavIcon({ id }: { id: FinanceNavId }) {
     case "invoices":
       return <FinanceInvoicesNavIcon {...props} />;
     case "estimates":
-      return <FinanceInvoicesNavIcon {...props} />;
+      return <FinanceEstimatesNavIcon {...props} />;
     case "goals":
       return <FinanceGoalsNavIcon {...props} />;
     case "cashflow":

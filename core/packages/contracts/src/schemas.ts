@@ -2580,25 +2580,36 @@ export const financialGoalSchema = z.object({
 
 /** Client proposal + estimate package (portal Financials → Estimates). */
 export const CLIENT_ESTIMATE_STATUSES = [
-  "draft",
-  "published",
-  "archived",
+  "concept",
+  "in_review",
+  "approved",
+  "declined",
 ] as const;
 export const clientEstimateStatusSchema = z.enum(CLIENT_ESTIMATE_STATUSES);
 
 export const clientEstimateSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
+  /** Workspace-scoped display number for ES-{n}. */
+  number: z.number().int().positive().nullable(),
   organizationId: z.string().nullable(),
   projectId: z.string().nullable(),
   title: z.string(),
   subtitle: z.string().nullable(),
   clientLabel: z.string().nullable(),
+  authorContactId: z.string().nullable(),
   authorName: z.string().nullable(),
+  /**
+   * Portal recipients ("To") — contact ids who may see this estimate.
+   * Empty = legacy org-wide portal visibility for that organization.
+   */
+  toContactIds: z.array(z.string()).default([]),
   versionLabel: z.string().nullable(),
-  /** Display date label (e.g. "oktober 2026"), not necessarily ISO. */
+  /** Display / due date label (e.g. "oktober 2026"), not necessarily ISO. */
   documentDate: z.string().nullable(),
   status: clientEstimateStatusSchema,
+  /** Quoted total in cents (EUR). */
+  totalAmountCents: z.number().int().nonnegative().nullable(),
   proposalMarkdown: z.string(),
   estimateMarkdown: z.string(),
   sortOrder: z.number().int(),
@@ -2613,15 +2624,23 @@ export const createClientEstimateSchema = z.object({
   title: z.string().min(1).max(500),
   subtitle: z.string().max(2000).nullable().optional(),
   clientLabel: z.string().max(500).nullable().optional(),
+  authorContactId: z.string().min(1).nullable().optional(),
   authorName: z.string().max(500).nullable().optional(),
+  toContactIds: z.array(z.string().min(1)).max(200).optional(),
   versionLabel: z.string().max(200).nullable().optional(),
   documentDate: z.string().max(200).nullable().optional(),
   status: clientEstimateStatusSchema.optional(),
+  totalAmountCents: z.number().int().nonnegative().nullable().optional(),
   proposalMarkdown: z.string().max(5_000_000).optional(),
   estimateMarkdown: z.string().max(5_000_000).optional(),
   sortOrder: z.number().int().optional(),
 });
-export const updateClientEstimateSchema = createClientEstimateSchema.partial();
+export const updateClientEstimateSchema = createClientEstimateSchema
+  .partial()
+  .extend({
+    organizationId: z.string().min(1).nullable().optional(),
+    projectId: z.string().min(1).nullable().optional(),
+  });
 
 export const listClientEstimatesQuerySchema = z.object({
   organizationId: z.string().optional(),

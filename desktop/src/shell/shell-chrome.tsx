@@ -143,6 +143,7 @@ function ShellChromeInner({
         showSidePanel={showSidePanelSlot}
         sidePanel={sidePanel}
         sidePanelCollapsed={sidePanelCollapsed && !financeRail}
+        sidePanelRail={financeRail}
         sidePanelAnimating={sidePanelAnimating && !financeRail}
         chromeHeader={
           chromeHeader ??

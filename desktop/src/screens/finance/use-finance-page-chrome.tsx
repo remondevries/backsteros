@@ -53,6 +53,8 @@ export function useFinancePageChrome({
   setImportOpen,
   moneybirdSyncPending,
   syncMoneybirdAccount,
+  selectedEstimate = null,
+  onClearSelectedEstimate,
   enabled = true,
 }: Pick<
   FinanceMoneybirdInvoicesData,
@@ -82,6 +84,9 @@ export function useFinancePageChrome({
     setTransactionsChrome: Dispatch<
       SetStateAction<FinanceTransactionsChromeState | null>
     >;
+    /** Selected estimate for Finance › Estimates › {title} trail. */
+    selectedEstimate?: { title: string } | null;
+    onClearSelectedEstimate?: () => void;
     enabled?: boolean;
   }) {
   const chromeActions = useMemo(() => {
@@ -179,11 +184,13 @@ export function useFinancePageChrome({
                 ? "Cash Flow"
                 : navId === "invoices"
                   ? "Invoices"
-                : navId === "investments"
-                  ? "Investments"
-                  : navId === "recurrings"
-                    ? "Recurrings"
-                    : "Finance");
+                  : navId === "estimates"
+                    ? "Estimates"
+                    : navId === "investments"
+                      ? "Investments"
+                      : navId === "recurrings"
+                        ? "Recurrings"
+                        : "Finance");
 
   const categoriesTrailingPanel = useMemo(() => {
     if (navId !== "categories" || !categoriesChrome?.hasSelection) return null;
@@ -368,7 +375,7 @@ export function useFinancePageChrome({
   }, [showTransactions, transactionsChrome]);
 
   const breadcrumbItems = useMemo(() => {
-    const items: { label: string; href?: string }[] = [
+    const items: { label: string; href?: string; onClick?: () => void }[] = [
       { label: "Finance", href: getFinanceDashboardHref() },
     ];
     if (navId === "categories" && categoriesChrome?.category) {
@@ -389,6 +396,16 @@ export function useFinancePageChrome({
     } else if (navId === "accounts" && accountsChrome?.account) {
       items.push({ label: "Accounts", href: getFinanceNavHref("accounts") });
       items.push({ label: accountsChrome.account.name });
+    } else if (navId === "estimates" && selectedEstimate) {
+      items.push({
+        label: "Estimates",
+        href: getFinanceNavHref("estimates"),
+        onClick: onClearSelectedEstimate,
+      });
+      const title = selectedEstimate.title.trim() || "Untitled estimate";
+      items.push({
+        label: title.length > 48 ? `${title.slice(0, 45)}…` : title,
+      });
     } else if (showTransactions && transactionsChrome?.transaction) {
       items.push({
         label: "Transactions",
@@ -414,7 +431,9 @@ export function useFinancePageChrome({
     categoriesChrome?.category,
     goalsChrome?.goal,
     navId,
+    onClearSelectedEstimate,
     recurringsChrome?.recurring,
+    selectedEstimate,
     showTransactions,
     transactionsChrome?.transaction,
   ]);

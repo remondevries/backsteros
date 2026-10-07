@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type {
   ClientEstimateStatus,
@@ -9,21 +9,36 @@ import type {
 import { CLIENT_ESTIMATE_STATUSES } from "@backsteros/contracts";
 
 import { db } from "../../db/index.js";
-import { clientEstimates } from "../../db/schema.js";
+import { clientEstimates, entityCounters } from "../../db/schema.js";
 import { newId } from "../../lib/crypto.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
+const LEGACY_STATUS_MAP: Record<string, ClientEstimateStatus> = {
+  draft: "concept",
+  published: "in_review",
+  archived: "declined",
+};
+
 function normalizeStatus(
   value: string | null | undefined,
 ): ClientEstimateStatus {
-  if (
-    value &&
-    (CLIENT_ESTIMATE_STATUSES as readonly string[]).includes(value)
-  ) {
+  if (!value) return "concept";
+  if ((CLIENT_ESTIMATE_STATUSES as readonly string[]).includes(value)) {
     return value as ClientEstimateStatus;
   }
-  return "draft";
+  return LEGACY_STATUS_MAP[value] ?? "concept";
+}
+
+function normalizeToContactIds(raw: string[] | undefined): string[] {
+  if (!raw) return [];
+  return [
+    ...new Set(
+      raw
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
 }
 
 function parseStatusFilter(raw: string | undefined): ClientEstimateStatus[] | null {
@@ -32,10 +47,49 @@ function parseStatusFilter(raw: string | undefined): ClientEstimateStatus[] | nu
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean)
-    .filter((part): part is ClientEstimateStatus =>
-      (CLIENT_ESTIMATE_STATUSES as readonly string[]).includes(part),
-    );
+    .map((part) => normalizeStatus(part))
+    .filter((part, index, all) => all.indexOf(part) === index);
   return values.length > 0 ? values : null;
+}
+
+async function nextEstimateNumber(
+  workspaceId: string,
+  executor: DbExecutor = db,
+) {
+  const [maxRow] = await executor
+    .select({
+      maxNumber: sql<number>`coalesce(max(${clientEstimates.number}), 0)`,
+    })
+    .from(clientEstimates)
+    .where(
+      and(
+        eq(clientEstimates.workspaceId, workspaceId),
+        isNull(clientEstimates.deletedAt),
+      ),
+    );
+  const minNext = Number(maxRow?.maxNumber ?? 0) + 1;
+
+  const [counter] = await executor
+    .insert(entityCounters)
+    .values({
+      workspaceId,
+      entity: "client_estimate",
+      scopeId: "__workspace__",
+      nextValue: minNext + 1,
+    })
+    .onConflictDoUpdate({
+      target: [
+        entityCounters.workspaceId,
+        entityCounters.entity,
+        entityCounters.scopeId,
+      ],
+      set: {
+        nextValue: sql`greatest(${entityCounters.nextValue}, ${minNext}) + 1`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ nextValue: entityCounters.nextValue });
+  return counter!.nextValue - 1;
 }
 
 export async function listClientEstimates(
@@ -90,20 +144,25 @@ export async function createClientEstimate(
   id = newId(),
   executor: DbExecutor = db,
 ) {
+  const number = await nextEstimateNumber(workspaceId, executor);
   const [row] = await executor
     .insert(clientEstimates)
     .values({
       id,
       workspaceId,
+      number,
       organizationId: input.organizationId?.trim() || null,
       projectId: input.projectId?.trim() || null,
       title: input.title.trim(),
       subtitle: input.subtitle?.trim() || null,
       clientLabel: input.clientLabel?.trim() || null,
+      authorContactId: input.authorContactId?.trim() || null,
       authorName: input.authorName?.trim() || null,
+      toContactIds: normalizeToContactIds(input.toContactIds),
       versionLabel: input.versionLabel?.trim() || null,
       documentDate: input.documentDate?.trim() || null,
       status: normalizeStatus(input.status),
+      totalAmountCents: input.totalAmountCents ?? null,
       proposalMarkdown: input.proposalMarkdown ?? "",
       estimateMarkdown: input.estimateMarkdown ?? "",
       sortOrder: input.sortOrder ?? Date.now(),
@@ -134,8 +193,14 @@ export async function updateClientEstimate(
   if (input.clientLabel !== undefined) {
     patch.clientLabel = input.clientLabel?.trim() || null;
   }
+  if (input.authorContactId !== undefined) {
+    patch.authorContactId = input.authorContactId?.trim() || null;
+  }
   if (input.authorName !== undefined) {
     patch.authorName = input.authorName?.trim() || null;
+  }
+  if (input.toContactIds !== undefined) {
+    patch.toContactIds = normalizeToContactIds(input.toContactIds);
   }
   if (input.versionLabel !== undefined) {
     patch.versionLabel = input.versionLabel?.trim() || null;
@@ -144,6 +209,9 @@ export async function updateClientEstimate(
     patch.documentDate = input.documentDate?.trim() || null;
   }
   if (input.status !== undefined) patch.status = normalizeStatus(input.status);
+  if (input.totalAmountCents !== undefined) {
+    patch.totalAmountCents = input.totalAmountCents;
+  }
   if (input.proposalMarkdown !== undefined) {
     patch.proposalMarkdown = input.proposalMarkdown;
   }

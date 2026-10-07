@@ -1,6 +1,7 @@
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { CalendarIcon } from "../icons/calendar-icon.js";
+import { EstimateIcon } from "../icons/estimate-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
@@ -449,6 +450,13 @@ export function FinanceInvoicesNavIcon({
       />
     </svg>
   );
+}
+
+export function FinanceEstimatesNavIcon({
+  className,
+  size = 16,
+}: SidebarNavIconProps) {
+  return <EstimateIcon size={size} className={className} />;
 }
 
 export function OrganizationsNavIcon({ className }: SidebarNavIconProps) {

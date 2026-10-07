@@ -5,12 +5,15 @@ import type { ComponentType, ReactNode } from "react";
 export type ContentBreadcrumbItem = {
   label: string;
   href?: string;
+  /** Fired when a non-current crumb link is activated (e.g. clear in-page selection). */
+  onClick?: () => void;
 };
 
 export type ContentBreadcrumbLinkProps = {
   to: string;
   className?: string;
   children: ReactNode;
+  onClick?: () => void;
 };
 
 export type ContentBreadcrumbProps = {
@@ -45,11 +48,19 @@ export function ContentBreadcrumb({
                 </span>
               ) : null}
               {item.href && !isLast && Link ? (
-                <Link to={item.href} className="content-breadcrumb__link">
+                <Link
+                  to={item.href}
+                  className="content-breadcrumb__link"
+                  onClick={item.onClick}
+                >
                   {item.label}
                 </Link>
               ) : item.href && !isLast ? (
-                <a href={item.href} className="content-breadcrumb__link">
+                <a
+                  href={item.href}
+                  className="content-breadcrumb__link"
+                  onClick={item.onClick}
+                >
                   {item.label}
                 </a>
               ) : (

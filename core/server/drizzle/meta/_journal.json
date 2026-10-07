@@ -1002,6 +1002,20 @@
       "when": 1795770000000,
       "tag": "0141_client_estimates",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1795780000000,
+      "tag": "0142_client_estimates_status_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1795790000000,
+      "tag": "0143_client_estimates_to_contact_ids",
+      "breakpoints": true
     }
   ]
 }

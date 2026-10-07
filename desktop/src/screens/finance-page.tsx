@@ -7,6 +7,7 @@ import {
   FinanceDashboardView,
   FinanceGoalsView,
   FinanceEstimatesView,
+  buildContactDropdownOptions,
   FinanceInvoicesView,
   FinanceRecurringsView,
   FinanceSectionPlaceholder,
@@ -21,10 +22,19 @@ import {
   type FinanceRecurringsChromeState,
   type FinanceTransactionsChromeState,
 } from "@backsteros/ui";
-import { useCallback, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "../lib/avatar-src";
 import {
   useKeepAliveActive,
   useRoutePathActive,
@@ -72,7 +82,20 @@ function FinancePageBody() {
   };
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
-  const { organizations, projects } = workspace;
+  const { organizations, projects, contacts } = workspace;
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    organizations,
+  );
+  const organizationsWithAvatars = useMemo(
+    () => withAvatarSrc(organizations, organizationAvatarSrc),
+    [organizationAvatarSrc, organizations],
+  );
+  const contactsWithAvatars = useMemo(
+    () => withAvatarSrc(contacts, contactAvatarSrc),
+    [contactAvatarSrc, contacts],
+  );
 
   const [categoriesChrome, setCategoriesChrome] =
     useState<FinanceCategoriesChromeState | null>(null);
@@ -226,7 +249,23 @@ function FinancePageBody() {
     selectedEstimateId,
     setSelectedEstimateId,
     createEstimate,
+    updateEstimate,
   } = useFinanceEstimates({ client, navId });
+
+  const estimateContactOptions = useMemo(
+    () =>
+      buildContactDropdownOptions(contactsWithAvatars).filter(
+        (option) => option.value !== DROPDOWN_NONE_VALUE,
+      ),
+    [contactsWithAvatars],
+  );
+  const estimateContactOrganizationById = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    for (const contact of contacts) {
+      map[contact.id] = contact.organizationId ?? null;
+    }
+    return map;
+  }, [contacts]);
 
   const {
     workspaceCashflow,
@@ -347,6 +386,17 @@ function FinancePageBody() {
     postTransactionBatch,
   });
 
+  const selectedEstimate = useMemo(
+    () =>
+      selectedEstimateId
+        ? (estimates.find((row) => row.id === selectedEstimateId) ?? null)
+        : null,
+    [estimates, selectedEstimateId],
+  );
+  const onClearSelectedEstimate = useCallback(() => {
+    setSelectedEstimateId(null);
+  }, [setSelectedEstimateId]);
+
   const { breadcrumbLabel } = useFinancePageChrome({
     enabled: keepAliveActive,
     navId,
@@ -359,6 +409,10 @@ function FinancePageBody() {
     accountsChrome,
     transactionsChrome,
     setTransactionsChrome,
+    selectedEstimate: selectedEstimate
+      ? { title: selectedEstimate.title }
+      : null,
+    onClearSelectedEstimate,
     moneybirdInvoicesLoading,
     loadMoneybirdInvoicesPage,
     setImportError,
@@ -537,13 +591,21 @@ function FinancePageBody() {
     main = (
       <FinanceEstimatesView
         estimates={estimates}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
+        projects={projects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          key: project.key,
+        }))}
+        contactOptions={estimateContactOptions}
+        contactOrganizationById={estimateContactOrganizationById}
         loading={estimatesLoading}
         error={estimatesError}
         selectedEstimateId={selectedEstimateId}
         onSelectedEstimateChange={setSelectedEstimateId}
         creating={estimatesCreating}
         onCreateEstimate={createEstimate}
+        onUpdateEstimate={updateEstimate}
       />
     );
   } else if (navId === "investments") {

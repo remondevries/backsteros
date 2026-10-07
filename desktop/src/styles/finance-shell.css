@@ -354,6 +354,339 @@
   padding: 0.25rem 0 1.5rem;
 }
 
+.finance-estimate-detail-scroll-shell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Far-right scrollbar: one scrollport wraps main + sticky properties rail. */
+.finance-estimate-detail-scrollport {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  container-type: size;
+}
+
+.finance-estimate-detail-scroll-row {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 100%;
+}
+
+.finance-estimate-detail-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+/* Title outline when finance nav is collapsed to a rail (reclaims left space). */
+.finance-estimate-detail-outline {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  z-index: 4;
+  box-sizing: border-box;
+  flex: 0 0 13.5rem;
+  width: 13.5rem;
+  max-width: 13.5rem;
+  min-height: 100%;
+  padding: 1.25rem 0.75rem 2rem 1rem;
+}
+
+/* Edit/Preview dock outside the scrollport, aligned to the main column. */
+.finance-estimate-detail-dock-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.finance-estimate-detail-dock-bar__main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}
+
+.finance-estimate-detail-dock-bar__rail-spacer {
+  flex-shrink: 0;
+}
+
+.finance-estimate-detail-dock-bar .content-view-mode-toggle,
+.finance-estimate-detail-dock-bar .finance-estimate-detail-view-toggle {
+  position: static;
+  right: auto;
+  bottom: auto;
+  pointer-events: auto;
+}
+
+.finance-estimate-properties-rail.resizable-side-panel {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  z-index: 5;
+  min-height: 100%;
+  overflow: visible;
+  background: transparent;
+}
+
+.finance-estimate-properties-rail .resizable-side-panel__body,
+.finance-estimate-properties-rail .detail-properties-panel__inner {
+  min-height: 0;
+  overflow: visible;
+}
+
+.finance-estimate-properties-rail .task-detail-properties-scroll {
+  overflow: visible;
+}
+
+.finance-estimates-view--detail {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: visible;
+  padding: 0.75rem 1rem 4.5rem;
+}
+
+.finance-estimates-view--detail > .finance-estimates-view__detail-header,
+.finance-estimates-view--detail > .finance-estimates-view__error {
+  flex-shrink: 0;
+}
+
+.finance-estimates-view__markdown-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  overflow: visible;
+}
+
+/* Content-sized markdown — no mid-column CodeMirror / preview scroller. */
+.finance-estimate-detail-scrollport .content-markdown-view-layout,
+.finance-estimate-detail-scrollport .content-markdown-view-layout__preview,
+.finance-estimate-detail-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  overflow: visible;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.finance-estimate-detail-scrollport .content-markdown-editor-column {
+  flex: 1 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.finance-estimate-detail-split[data-content-view-mode="edit"]
+  .finance-estimate-detail-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  min-height: calc(100cqh - 8rem);
+}
+
+.finance-estimate-detail-split[data-content-view-mode="edit"]
+  .finance-estimate-detail-scrollport
+  .document-codemirror--document-scroll,
+.finance-estimate-detail-split[data-content-view-mode="edit"]
+  .finance-estimate-detail-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.finance-estimate-detail-split[data-content-view-mode="edit"]
+  .finance-estimate-detail-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
+}
+
+@media (max-width: 1023px) {
+  .finance-estimate-detail-scroll-row {
+    flex-direction: column;
+  }
+
+  .finance-estimate-detail-outline {
+    position: static;
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0.75rem 1rem 0;
+  }
+
+  .finance-estimate-properties-rail.resizable-side-panel {
+    position: static;
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .finance-estimate-detail-dock-bar__rail-spacer {
+    display: none;
+  }
+}
+
+.finance-estimates-view__due {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.finance-estimates-view__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-estimates-view__amount {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  white-space: nowrap;
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.finance-estimates-view__version {
+  flex: 0 0 auto;
+  min-width: 3.5rem;
+  max-width: 6.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.finance-estimates-view__create-heading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.finance-estimates-view__org {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 12rem;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-size: 12px;
+}
+
+.finance-estimates-view__org span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-estimates-view__detail-header {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 1rem;
+}
+
+.finance-estimates-view__detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.finance-estimates-view__detail-title-input {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  width: auto;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--foreground);
+  background: transparent;
+}
+
+.finance-estimates-view__detail-title-input:focus {
+  outline: none;
+}
+
+.finance-estimates-view__detail-id {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-estimates-view__detail-subtitle-input {
+  margin: 0;
+  width: 100%;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  background: transparent;
+}
+
+.finance-estimates-view__detail-subtitle-input:focus {
+  outline: none;
+}
+
+.finance-estimates-view__markdown-editor {
+  flex: 1;
+  min-height: 18rem;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--background) 88%, var(--foreground));
+}
+
+.finance-estimates-view__property-input {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 0.375rem;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--background) 88%, var(--foreground));
+}
+
 .finance-estimates-view__toolbar {
   display: flex;
   align-items: center;
@@ -366,10 +699,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  border: 1px solid var(--border, #e5e2db);
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
   border-radius: 0.5rem;
   padding: 1rem;
-  background: var(--panel, #fff);
+  background: color-mix(in srgb, var(--background) 92%, var(--foreground));
+  color: var(--foreground);
 }
 
 .finance-estimates-view__field {
@@ -377,16 +711,28 @@
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
 }
 
 .finance-estimates-view__field input,
 .finance-estimates-view__field select,
 .finance-estimates-view__field textarea {
-  border: 1px solid var(--border, #e5e2db);
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
   border-radius: 0.375rem;
   padding: 0.5rem 0.65rem;
   font: inherit;
-  background: transparent;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--background) 88%, var(--foreground));
+}
+
+.finance-estimates-view__field input::placeholder,
+.finance-estimates-view__field textarea::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.finance-estimates-view__field select option {
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .finance-estimates-view__row {
@@ -410,4 +756,11 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8125rem;
   line-height: 1.45;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.finance-estimates-view__error {
+  margin: 0;
+  color: color-mix(in srgb, #f87171 80%, var(--foreground));
+  font-size: 0.8125rem;
 }
