@@ -781,6 +781,7 @@ function InboxPageBody() {
                 selectedTaskRecord?.agentWorkingContactId ?? null,
               agentWorkingContactName:
                 selectedTaskRecord?.agentWorkingContactName ?? null,
+              agentWorkingKind: selectedTaskRecord?.agentWorkingKind ?? null,
             }}
           />
         }

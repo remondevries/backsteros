@@ -49,6 +49,7 @@ export const TASK_DETAIL_SELECT = `SELECT
   t.agent_working_contact_id,
   t.agent_working_started_at,
   t.agent_working_label,
+  t.agent_working_kind,
   t.agent_created_at,
   t.agent_inbox_approved_at,
   t.tracked_minutes,

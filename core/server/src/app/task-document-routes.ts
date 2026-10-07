@@ -1521,12 +1521,14 @@ export function registerTaskDocumentRoutes(app: Hono) {
         const existingForAgentWorking =
           patchFields.agentWorkingContactId !== undefined ||
           patchFields.agentWorkingLabel !== undefined ||
+          patchFields.agentWorkingKind !== undefined ||
           patchFields.status === "in_progress"
             ? await taskProjectService.getTaskById(auth.workspaceId, taskId)
             : null;
         if (
           (patchFields.agentWorkingContactId !== undefined ||
-            patchFields.agentWorkingLabel !== undefined) &&
+            patchFields.agentWorkingLabel !== undefined ||
+            patchFields.agentWorkingKind !== undefined) &&
           !existingForAgentWorking
         ) {
           return c.json(notFound("Task"), 404);
@@ -1537,7 +1539,8 @@ export function registerTaskDocumentRoutes(app: Hono) {
           (await apiKeyService.apiKeyContactIsWorkspaceOwner(auth));
         if (
           patchFields.agentWorkingContactId !== undefined ||
-          patchFields.agentWorkingLabel !== undefined
+          patchFields.agentWorkingLabel !== undefined ||
+          patchFields.agentWorkingKind !== undefined
         ) {
           assertCanSetAgentWorking({
             canSetAny: canSetAnyAgentWorking,
@@ -1546,6 +1549,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
               existingForAgentWorking?.agentWorkingContactId ?? null,
             nextContactId: patchFields.agentWorkingContactId,
             touchesLabel: patchFields.agentWorkingLabel !== undefined,
+            touchesKind: patchFields.agentWorkingKind !== undefined,
           });
         }
 
@@ -1570,7 +1574,10 @@ export function registerTaskDocumentRoutes(app: Hono) {
           ...patchFields,
           ...resolvedRefs,
           ...(autoClaimWorking
-            ? { agentWorkingContactId: auth.contactId }
+            ? {
+                agentWorkingContactId: auth.contactId,
+                agentWorkingKind: "working" as const,
+              }
             : {}),
         };
         const actor = writeActorFromAuth(auth, activityActor);

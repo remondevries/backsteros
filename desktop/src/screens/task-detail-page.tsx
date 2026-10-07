@@ -105,6 +105,7 @@ type TaskRouteRow = {
   agentChatId?: string | null;
   agentWorkingContactId?: string | null;
   agentWorkingContactName?: string | null;
+  agentWorkingKind?: "working" | "reviewing" | null;
   linkedCommitShas?: string[] | null;
   projectName?: string | null;
   title: string;
@@ -998,6 +999,7 @@ export function TaskDetailPage({
     workingDirectory,
     agentWorkingContactId: base?.agentWorkingContactId ?? null,
     agentWorkingContactName: base?.agentWorkingContactName ?? null,
+    agentWorkingKind: base?.agentWorkingKind ?? null,
   };
 
   const activityPanel = (spellcheckControlsVisible = true) => (

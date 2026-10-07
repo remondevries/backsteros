@@ -757,6 +757,8 @@ export const tasks = pgTable(
     }),
     /** Optional chat link / label shown with the working badge. */
     agentWorkingLabel: text("agent_working_label"),
+    /** `working` (default) or `reviewing` while status is in_review (OS-96). */
+    agentWorkingKind: text("agent_working_kind"),
     /**
      * GitHub commit SHAs linked as this task’s change records (desktop Diff view).
      * Full or abbreviated SHAs as returned by the project’s GitHub API.

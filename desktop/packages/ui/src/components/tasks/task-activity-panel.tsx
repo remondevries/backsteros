@@ -738,6 +738,8 @@ export type TaskActivityPanelProps = {
   working?: boolean;
   /** When set, the working banner names this agent (OS-96). */
   workingAgentName?: string | null;
+  /** Banner verb: working (default) or reviewing (OS-96). */
+  workingAgentVerb?: "working" | "reviewing" | null;
   /** Contact id → avatar URL for assignee activity rows. */
   assigneeAvatarById?: ReadonlyMap<string, string | null>;
   /** Lowercased contact email → avatar URL for comment authors. */
@@ -783,6 +785,7 @@ export function TaskActivityPanel({
   feedRevision = 0,
   working = false,
   workingAgentName = null,
+  workingAgentVerb = null,
   assigneeAvatarById,
   avatarByEmail,
   requestJson,
@@ -1609,8 +1612,8 @@ export function TaskActivityPanel({
                 </span>
               </span>
               <div className="task-activity-event__text">
-                <strong>{workingAgentName?.trim() || "Agent"}</strong> is
-                working…
+                <strong>{workingAgentName?.trim() || "Agent"}</strong> is{" "}
+                {workingAgentVerb === "reviewing" ? "reviewing" : "working"}…
               </div>
             </li>
           ) : null}

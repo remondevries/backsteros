@@ -1437,6 +1437,7 @@ function ProjectsPageBody({
                   agentChatId: task.agentChatId,
                   agentWorkingContactId: task.agentWorkingContactId,
                   agentWorkingContactName: task.agentWorkingContactName,
+                  agentWorkingKind: task.agentWorkingKind,
                   taskStatus: task.status,
                   agentStatus,
                   workingShownOnStatusIcon: true,

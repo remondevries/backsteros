@@ -72,7 +72,10 @@ import {
 } from "../lib/storage.js";
 import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
 import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
-import { resolveAgentWorkingFields } from "../lib/agent-working.js";
+import {
+  normalizeAgentWorkingKind,
+  resolveAgentWorkingFields,
+} from "../lib/agent-working.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 import { enqueueAutoReviewDelivery } from "./auto-review-webhook.js";
@@ -1390,6 +1393,7 @@ export async function listTasksPaginated(
       agentWorkingContactId: tasks.agentWorkingContactId,
       agentWorkingStartedAt: tasks.agentWorkingStartedAt,
       agentWorkingLabel: tasks.agentWorkingLabel,
+      agentWorkingKind: tasks.agentWorkingKind,
       linkedCommitShas: tasks.linkedCommitShas,
       automateCompletion: tasks.automateCompletion,
       autoReviewDeliveryStatus: tasks.autoReviewDeliveryStatus,
@@ -1477,6 +1481,13 @@ export async function listTasksPaginated(
       agentWorkingContactId: row.agentWorkingContactId ?? null,
       agentWorkingStartedAt: row.agentWorkingStartedAt?.toISOString() ?? null,
       agentWorkingLabel: row.agentWorkingLabel ?? null,
+      agentWorkingKind:
+        row.agentWorkingKind === "working" ||
+        row.agentWorkingKind === "reviewing"
+          ? row.agentWorkingKind
+          : row.agentWorkingContactId
+            ? "working"
+            : null,
       agentWorkingContactName: row.agentWorkingContactId
         ? (contactNames.get(row.agentWorkingContactId) ?? null)
         : null,
@@ -1949,9 +1960,10 @@ async function createTaskWithExecutor(
   const writeAt = options?.updatedAt;
   const skipActivity = Boolean(options?.skipActivitySideEffects);
   const agentWorking = resolveAgentWorkingFields({
-    existing: { contactId: null, startedAt: null, label: null },
+    existing: { contactId: null, startedAt: null, label: null, kind: null },
     agentWorkingContactId: input.agentWorkingContactId,
     agentWorkingLabel: input.agentWorkingLabel,
+    agentWorkingKind: input.agentWorkingKind,
     nextStatus: status,
     now: writeAt ?? new Date(),
   });
@@ -1989,6 +2001,7 @@ async function createTaskWithExecutor(
       agentWorkingContactId: agentWorking.contactId,
       agentWorkingStartedAt: agentWorking.startedAt,
       agentWorkingLabel: agentWorking.label,
+      agentWorkingKind: agentWorking.kind,
       linkedCommitShas: input.linkedCommitShas ?? [],
       automateCompletion: input.automateCompletion ?? false,
       habitId: input.habitId ?? null,
@@ -2264,14 +2277,19 @@ export async function updateTask(
     input.removeLinkedCommitShas,
   );
 
+  const existingKind =
+    normalizeAgentWorkingKind(existing.agentWorkingKind) ??
+    (existing.agentWorkingContactId ? "working" : null);
   const agentWorking = resolveAgentWorkingFields({
     existing: {
       contactId: existing.agentWorkingContactId ?? null,
       startedAt: existing.agentWorkingStartedAt ?? null,
       label: existing.agentWorkingLabel ?? null,
+      kind: existingKind,
     },
     agentWorkingContactId: input.agentWorkingContactId,
     agentWorkingLabel: input.agentWorkingLabel,
+    agentWorkingKind: input.agentWorkingKind,
     nextStatus,
     now: writeAt,
   });
@@ -2279,7 +2297,8 @@ export async function updateTask(
     agentWorking.contactId !== (existing.agentWorkingContactId ?? null) ||
     (agentWorking.startedAt?.getTime() ?? null) !==
       (existing.agentWorkingStartedAt?.getTime() ?? null) ||
-    agentWorking.label !== (existing.agentWorkingLabel ?? null);
+    agentWorking.label !== (existing.agentWorkingLabel ?? null) ||
+    agentWorking.kind !== existingKind;
 
   const [row] = await executor
     .update(tasks)
@@ -2335,6 +2354,7 @@ export async function updateTask(
             agentWorkingContactId: agentWorking.contactId,
             agentWorkingStartedAt: agentWorking.startedAt,
             agentWorkingLabel: agentWorking.label,
+            agentWorkingKind: agentWorking.kind,
           }
         : {}),
       ...(nextLinkedCommitShas !== undefined

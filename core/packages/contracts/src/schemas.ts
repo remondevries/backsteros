@@ -517,6 +517,8 @@ export const taskSchema = z.object({
   agentWorkingStartedAt: z.string().datetime().nullable().optional(),
   /** Optional chat link / label for the working marker. */
   agentWorkingLabel: z.string().nullable().optional(),
+  /** `working` (default) or `reviewing` while the task is in review (OS-96). */
+  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
   /** Display name for {@link agentWorkingContactId} when set (OS-96). */
   agentWorkingContactName: z.string().nullable().optional(),
   /**
@@ -585,6 +587,7 @@ export const taskListItemSchema = z.object({
   agentWorkingContactId: z.string().nullable().optional(),
   agentWorkingStartedAt: z.string().datetime().nullable().optional(),
   agentWorkingLabel: z.string().nullable().optional(),
+  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
   agentWorkingContactName: z.string().nullable().optional(),
 });
 
@@ -714,6 +717,12 @@ export const createTaskSchema = z.object({
   agentWorkingContactId: z.string().min(1).max(64).nullable().optional(),
   /** Optional chat link / label with the working marker (cleared when marker clears). */
   agentWorkingLabel: z.string().max(256).nullable().optional(),
+  /**
+   * Marker kind (OS-96): `working` (default) or `reviewing`. Reviewing markers
+   * may be set while status is `in_review` and persist until the task leaves
+   * that status (or the agent clears the marker).
+   */
+  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
   /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
   linkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
   /** Enqueue auto-review when this task later moves to in_review (OS-92). */
@@ -3431,12 +3440,21 @@ export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
  */
 export const EMAIL_THREAD_STATUSES = [...TASK_STATUSES, "concept"] as const;
 export const emailThreadStatusSchema = z.enum(EMAIL_THREAD_STATUSES);
+/** One or more email addresses (string or list) for draft headers. */
+const emailRecipientListSchema = z
+  .union([
+    z.string().max(2_000),
+    z.array(z.string().min(1).max(320)).max(50),
+  ])
+  .optional();
+
 export const agentMailConceptDraftSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
   subject: z.string().nullable(),
   from: z.string().nullable(),
   to: z.array(z.string()),
+  cc: z.array(z.string()).optional(),
   /** Full assembled draft text stored in AgentMail. */
   text: z.string().nullable(),
   /** Editable body without greeting/sign-off. */
@@ -3560,6 +3578,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
     extractedText: z.string().nullable(),
     extractedHtml: z.string().nullable(),
     to: z.array(z.string()).optional(),
+    cc: z.array(z.string()).optional(),
     labels: z.array(z.string()).optional(),
     attachments: z.array(agentMailMessageAttachmentSchema).optional(),
     inboxEmail: z.string().nullable().optional(),
@@ -3575,6 +3594,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
           subject: z.string(),
           from: z.string(),
           to: z.array(z.string()),
+          cc: z.array(z.string()).optional(),
           timestamp: z.string(),
           text: z.string().nullable(),
           html: z.string().nullable(),
@@ -3600,11 +3620,17 @@ export const agentMailDraftDetailSchema = z.object({
   inReplyTo: z.string().nullable(),
   from: z.string().nullable().optional(),
   to: z.array(z.string()),
+  cc: z.array(z.string()).optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });
 export const emailConceptReplyInputSchema = z.object({
   body: z.string().min(1).max(100_000),
+  /** Override reply To (defaults from the inbound From / reply party). */
+  to: emailRecipientListSchema,
+  /** CC recipients for this reply draft. */
+  cc: emailRecipientListSchema,
+  subject: z.string().max(500).optional(),
 });
 export const emailConceptReplyResponseSchema = z.object({
   draftId: z.string(),
@@ -3616,6 +3642,7 @@ export const emailConceptReplyResponseSchema = z.object({
   signOff: z.string().nullable().optional(),
   subject: z.string().nullable().optional(),
   to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
 });
 
 /** Intents the email-thread agent may return via callback. */
@@ -3677,6 +3704,7 @@ export const emailAgentCallbackSuccessSchema = z
     signOff: z.string().max(2_000).nullable().optional(),
     subject: z.string().max(1_000).nullable().optional(),
     to: z.array(z.string().min(1).max(320)).max(50).optional(),
+    cc: z.array(z.string().min(1).max(320)).max(50).optional(),
     task: emailAgentCallbackTaskPayloadSchema.optional(),
     event: emailAgentCallbackEventPayloadSchema.optional(),
     /** Agent-visible note for intent=note (posted as thread comment). */
@@ -3784,6 +3812,7 @@ export const emailAgentDraftStartedSchema = z.object({
 });
 export const emailComposeDraftInputSchema = z.object({
   to: z.string().min(1).max(500),
+  cc: emailRecipientListSchema,
   subject: z.string().max(500),
   body: z.string().min(1).max(100_000),
   composeSessionId: z.string().min(1).max(200).optional(),
@@ -3811,10 +3840,22 @@ export const emailReportSpamResponseSchema = z.object({
   ok: z.literal(true),
   blockedSender: z.string().nullable(),
 });
-export const updateAgentMailDraftSchema = z.object({
-  /** Editable body without greeting/sign-off. */
-  body: z.string().max(100_000),
-});
+export const updateAgentMailDraftSchema = z
+  .object({
+    /** Editable body without greeting/sign-off. */
+    body: z.string().max(100_000).optional(),
+    to: emailRecipientListSchema,
+    cc: emailRecipientListSchema,
+    subject: z.string().max(500).optional(),
+  })
+  .refine(
+    (value) =>
+      value.body !== undefined ||
+      value.to !== undefined ||
+      value.cc !== undefined ||
+      value.subject !== undefined,
+    { message: "At least one of body, to, cc, or subject is required" },
+  );
 export const moneybirdSalesInvoiceSchema = z.object({
   id: z.string(),
   invoiceId: z.string().nullable(),

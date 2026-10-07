@@ -141,6 +141,7 @@ export interface BacksterosTask {
   readonly agentWorkingContactId?: string | null;
   readonly agentWorkingStartedAt?: string | null;
   readonly agentWorkingLabel?: string | null;
+  readonly agentWorkingKind?: "working" | "reviewing" | null;
   readonly agentWorkingContactName?: string | null;
 }
 

@@ -616,6 +616,7 @@ function CommunicationPageBody() {
                 selectedTaskRecord?.agentWorkingContactId ?? null,
               agentWorkingContactName:
                 selectedTaskRecord?.agentWorkingContactName ?? null,
+              agentWorkingKind: selectedTaskRecord?.agentWorkingKind ?? null,
             }}
           />
         }

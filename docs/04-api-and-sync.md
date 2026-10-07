@@ -251,9 +251,9 @@ Remon: update the shared agent skill / CLI finish flow to use status+comment and
 ### Agent-working marker (OS-96)
 
 Business agents (finance, comms, admin) that work tasks through the agents API —
-not Development-app coding sessions — can mark themselves as working so desktop
-and BacksterDEV show the same working badge as coding runs, plus the agent’s
-name.
+not Development-app coding sessions — can mark themselves as working or
+reviewing so desktop and BacksterDEV show the same badge as coding runs, plus
+the agent’s name (e.g. “Ralph is working”, “Sander is reviewing”).
 
 This is **orthogonal** to `agentChatId` (Cursor / Development session binding)
 and to ephemeral `PUT/DELETE /tasks/:id/agent-presence` heartbeats (TTL-based
@@ -266,25 +266,45 @@ coding-run presence). Coding-run behaviour is unchanged.
 | `agentWorkingContactId` | Contact id of the agent persona (e.g. Ralph) |
 | `agentWorkingStartedAt` | When the marker was set (server-stamped) |
 | `agentWorkingLabel` | Optional chat link / label |
+| `agentWorkingKind` | `working` (default) or `reviewing` |
 | `agentWorkingContactName` | Display name (response enrichment) |
 
 ```http
-# Claim (agents may only set their own contact unless owner)
+# Claim as working (agents may only set their own contact unless owner)
 PATCH /api/v1/tasks/BF-37
-{ "agentWorkingContactId": "CotMY5Bd6gv7mWOzioLbe", "agentWorkingLabel": "Ralph · BF-37" }
+{
+  "agentWorkingContactId": "CotMY5Bd6gv7mWOzioLbe",
+  "agentWorkingKind": "working",
+  "agentWorkingLabel": "Ralph · BF-37"
+}
+
+# Reviewer claims while the task is in_review
+PATCH /api/v1/tasks/OS-96
+{
+  "agentWorkingContactId": "<Sander contact id>",
+  "agentWorkingKind": "reviewing"
+}
 
 # Clear
 PATCH /api/v1/tasks/BF-37
 { "agentWorkingContactId": null }
 ```
 
+When claiming without `agentWorkingKind`, the server defaults to `reviewing` if
+status is `in_review`, otherwise `working`.
+
 **Auto-claim:** an agent persona API key (contact-bound, not the workspace
 owner) that moves a task to `in_progress` without an explicit marker sets
-`agentWorkingContactId` to that key’s contact.
+`agentWorkingContactId` to that key’s contact with kind `working`.
 
-**Auto-clear** when status becomes `completed`, `canceled`, `duplicated`,
-`on_hold`, or `in_review` (hand-off / done). Agents can also clear explicitly
-or by setting another allowed contact (owner only for other contacts).
+**Auto-clear**
+
+| Transition / event | Effect |
+| --- | --- |
+| Status → `completed`, `canceled`, `duplicated`, `on_hold` | Clear any marker |
+| Status → `in_review` | Clear a `working` marker (hand-off). A `reviewing` marker is kept |
+| Status leaves `in_review` (e.g. back to `in_progress`, or complete) | Clear a `reviewing` marker |
+| Explicit `agentWorkingContactId: null` | Clear |
 
 **Permission:** agent API keys may only set/clear their own contact. Local shell
 and owner-bound API keys may set any contact.

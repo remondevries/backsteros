@@ -79,6 +79,7 @@ export type DesktopTaskActivityPanelProps = {
     workingDirectory?: string | null;
     agentWorkingContactId?: string | null;
     agentWorkingContactName?: string | null;
+    agentWorkingKind?: "working" | "reviewing" | null;
   };
 };
 
@@ -526,6 +527,11 @@ export function DesktopTaskActivityPanel({
         feedRevision={feedRevision}
         working={working}
         workingAgentName={workingAgentName}
+        workingAgentVerb={
+          taskSummary.agentWorkingKind === "reviewing"
+            ? "reviewing"
+            : "working"
+        }
         requestJson={requestJson}
         currentUser={currentUser}
         assigneeAvatarById={assigneeAvatarById}

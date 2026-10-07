@@ -13,6 +13,7 @@ export function backsterosTaskListRowFromDetail(detail: BacksterosTaskDetail): B
     agentWorkingContactId: detail.agentWorkingContactId ?? null,
     agentWorkingStartedAt: detail.agentWorkingStartedAt ?? null,
     agentWorkingLabel: detail.agentWorkingLabel ?? null,
+    agentWorkingKind: detail.agentWorkingKind ?? null,
     agentWorkingContactName: detail.agentWorkingContactName ?? null,
   };
   if (detail.sortOrder !== undefined) {

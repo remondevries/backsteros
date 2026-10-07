@@ -204,6 +204,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     agent_working_contact_id: row.agentWorkingContactId ?? null,
     agent_working_started_at: row.agentWorkingStartedAt?.toISOString() ?? null,
     agent_working_label: row.agentWorkingLabel ?? null,
+    agent_working_kind: row.agentWorkingKind ?? null,
     linked_commit_shas: JSON.stringify(
       Array.isArray(row.linkedCommitShas) ? row.linkedCommitShas : [],
     ),
@@ -2103,6 +2104,14 @@ function mapTaskUpsert(
     agentWorkingLabel: asNullableString(
       payload.agent_working_label ?? payload.agentWorkingLabel,
     ),
+    agentWorkingKind: (() => {
+      const raw = asNullableString(
+        payload.agent_working_kind ?? payload.agentWorkingKind,
+      );
+      if (raw === undefined) return undefined;
+      if (raw === "working" || raw === "reviewing") return raw;
+      return null;
+    })(),
     linkedCommitShas: parseStringIdArray(
       payload.linked_commit_shas ?? payload.linkedCommitShas,
     ),
@@ -2333,6 +2342,7 @@ export async function applySyncChange(
             agentChatId: input.agentChatId,
             agentWorkingContactId: input.agentWorkingContactId,
             agentWorkingLabel: input.agentWorkingLabel,
+            agentWorkingKind: input.agentWorkingKind,
             linkedCommitShas: input.linkedCommitShas,
             habitId: input.habitId,
             trackedMinutes: input.trackedMinutes,
@@ -2389,6 +2399,7 @@ export async function applySyncChange(
               agentChatId: input.agentChatId,
               agentWorkingContactId: input.agentWorkingContactId,
               agentWorkingLabel: input.agentWorkingLabel,
+              agentWorkingKind: input.agentWorkingKind,
               linkedCommitShas: input.linkedCommitShas,
               habitId: input.habitId,
               trackedMinutes: input.trackedMinutes,
@@ -2450,6 +2461,7 @@ export async function applySyncChange(
               agentChatId: input.agentChatId,
               agentWorkingContactId: input.agentWorkingContactId,
               agentWorkingLabel: input.agentWorkingLabel,
+              agentWorkingKind: input.agentWorkingKind,
               linkedCommitShas: input.linkedCommitShas,
               habitId: input.habitId,
               trackedMinutes: input.trackedMinutes,

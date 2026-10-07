@@ -981,6 +981,13 @@
       "when": 1795740000000,
       "tag": "0138_task_agent_working",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1795750000000,
+      "tag": "0139_task_agent_working_kind",
+      "breakpoints": true
     }
   ]
 }

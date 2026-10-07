@@ -178,6 +178,7 @@ test("OS-96 agent working marker: set, clear, auto-clear, permission, response s
   assert.equal(claimed.body?.agentWorkingContactId, ctx.ralphId);
   assert.equal(claimed.body?.agentWorkingContactName, "Ralph");
   assert.equal(claimed.body?.agentWorkingLabel, "Ralph · BF");
+  assert.equal(claimed.body?.agentWorkingKind, "working");
   assert.equal(typeof claimed.body?.agentWorkingStartedAt, "string");
   // Coding binding untouched
   assert.equal(claimed.body?.agentChatId ?? null, null);
@@ -254,6 +255,45 @@ test("OS-96 agent working marker: set, clear, auto-clear, permission, response s
   assert.equal(autoCleared.body?.agentWorkingStartedAt, null);
   assert.equal(autoCleared.body?.agentWorkingLabel, null);
   assert.equal(autoCleared.body?.agentWorkingContactName, null);
+  assert.equal(autoCleared.body?.agentWorkingKind ?? null, null);
+
+  // Reviewer can set a reviewing marker while in_review — it persists.
+  const reviewing = await json(
+    app,
+    `/api/v1/tasks/${taskId}`,
+    ctx.otherSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        agentWorkingContactId: ctx.otherAgentId,
+        agentWorkingKind: "reviewing",
+        activityActor: "agent",
+      }),
+    },
+  );
+  assert.equal(reviewing.status, 200);
+  assert.equal(reviewing.body?.status, "in_review");
+  assert.equal(reviewing.body?.agentWorkingContactId, ctx.otherAgentId);
+  assert.equal(reviewing.body?.agentWorkingKind, "reviewing");
+  assert.equal(reviewing.body?.agentWorkingContactName, "Other Agent");
+
+  const stillReviewing = await json(
+    app,
+    `/api/v1/tasks/${taskId}`,
+    ctx.otherSecret,
+  );
+  assert.equal(stillReviewing.status, 200);
+  assert.equal(stillReviewing.body?.agentWorkingContactId, ctx.otherAgentId);
+  assert.equal(stillReviewing.body?.agentWorkingKind, "reviewing");
+
+  // Send-back to in_progress clears the reviewing marker.
+  const sentBack = await json(app, `/api/v1/tasks/${taskId}`, ctx.ownerSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "in_progress" }),
+  });
+  assert.equal(sentBack.status, 200);
+  assert.equal(sentBack.body?.agentWorkingContactId ?? null, null);
+  assert.equal(sentBack.body?.agentWorkingKind ?? null, null);
 
   // Auto-claim on in_progress for agent persona key
   const again = await json(app, `/api/v1/tasks/${taskId}`, ctx.ralphSecret, {
@@ -266,18 +306,92 @@ test("OS-96 agent working marker: set, clear, auto-clear, permission, response s
   assert.equal(again.status, 200);
   assert.equal(again.body?.agentWorkingContactId, ctx.ralphId);
   assert.equal(again.body?.agentWorkingContactName, "Ralph");
+  assert.equal(again.body?.agentWorkingKind, "working");
 
-  const cleared = await json(app, `/api/v1/tasks/${taskId}`, ctx.ralphSecret, {
+  // Working marker still clears when entering in_review again.
+  const toReviewAgain = await json(
+    app,
+    `/api/v1/tasks/${taskId}`,
+    ctx.ralphSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "in_review",
+        comment: { body: "Back for review" },
+        activityActor: "agent",
+      }),
+    },
+  );
+  assert.equal(toReviewAgain.status, 200);
+  assert.equal(toReviewAgain.body?.agentWorkingContactId ?? null, null);
+
+  const reviewAgain = await json(
+    app,
+    `/api/v1/tasks/${taskId}`,
+    ctx.otherSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        agentWorkingContactId: ctx.otherAgentId,
+        agentWorkingKind: "reviewing",
+      }),
+    },
+  );
+  assert.equal(reviewAgain.status, 200);
+  assert.equal(reviewAgain.body?.agentWorkingKind, "reviewing");
+
+  // Completing clears the reviewing marker.
+  const completed = await json(
+    app,
+    `/api/v1/tasks/${taskId}`,
+    ctx.ownerSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: "completed" }),
+    },
+  );
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body?.agentWorkingContactId ?? null, null);
+  assert.equal(completed.body?.agentWorkingKind ?? null, null);
+
+  // Fresh open task for remaining checks
+  const created2 = await json(app, "/api/v1/tasks", ctx.ralphSecret, {
+    method: "POST",
+    body: JSON.stringify({
+      title: "BF agent working 2",
+      projectId: ctx.projectId,
+      status: "ready_to_start",
+    }),
+  });
+  assert.equal(created2.status, 201);
+  const taskId2 = created2.body?.id as string;
+
+  const cleared = await json(app, `/api/v1/tasks/${taskId2}`, ctx.ralphSecret, {
     method: "PATCH",
-    body: JSON.stringify({ agentWorkingContactId: null }),
+    body: JSON.stringify({
+      agentWorkingContactId: ctx.ralphId,
+      status: "in_progress",
+    }),
   });
   assert.equal(cleared.status, 200);
-  assert.equal(cleared.body?.agentWorkingContactId, null);
+  assert.equal(cleared.body?.agentWorkingContactId, ctx.ralphId);
+
+  const clearedMarker = await json(
+    app,
+    `/api/v1/tasks/${taskId2}`,
+    ctx.ralphSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ agentWorkingContactId: null }),
+    },
+  );
+  assert.equal(clearedMarker.status, 200);
+  assert.equal(clearedMarker.body?.agentWorkingContactId, null);
 
   // Owner key does not auto-claim on in_progress
   const ownerProgress = await json(
     app,
-    `/api/v1/tasks/${taskId}`,
+    `/api/v1/tasks/${taskId2}`,
     ctx.ownerSecret,
     {
       method: "PATCH",

@@ -1,27 +1,47 @@
 /**
- * OS-96 — durable agents-API “working on this task” marker.
- * Cleared on terminal / hand-off statuses; orthogonal to agentChatId + presence.
+ * OS-96 — durable agents-API marker (`working` or `reviewing`).
+ * Orthogonal to agentChatId + ephemeral presence heartbeats.
  */
 
-export const AGENT_WORKING_CLEAR_STATUSES = new Set([
+export const AGENT_WORKING_TERMINAL_CLEAR_STATUSES = new Set([
   "completed",
   "canceled",
   "duplicated",
   "on_hold",
-  "in_review",
 ]);
+
+export type AgentWorkingKind = "working" | "reviewing";
 
 export type AgentWorkingState = {
   contactId: string | null;
   startedAt: Date | null;
   label: string | null;
+  kind: AgentWorkingKind | null;
 };
+
+export function normalizeAgentWorkingKind(
+  value: string | null | undefined,
+): AgentWorkingKind | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (trimmed === "working" || trimmed === "reviewing") return trimmed;
+  return null;
+}
+
+function emptyState(): AgentWorkingState {
+  return { contactId: null, startedAt: null, label: null, kind: null };
+}
+
+function defaultKindForStatus(status: string): AgentWorkingKind {
+  return status === "in_review" ? "reviewing" : "working";
+}
 
 export function resolveAgentWorkingFields(input: {
   existing: AgentWorkingState;
   /** Explicit PATCH — `undefined` means leave contact unchanged. */
   agentWorkingContactId?: string | null;
   agentWorkingLabel?: string | null;
+  agentWorkingKind?: AgentWorkingKind | null;
   nextStatus: string;
   now?: Date;
 }): AgentWorkingState {
@@ -29,42 +49,73 @@ export function resolveAgentWorkingFields(input: {
   let contactId = input.existing.contactId;
   let startedAt = input.existing.startedAt;
   let label = input.existing.label;
+  let kind = input.existing.kind;
 
   if (input.agentWorkingContactId !== undefined) {
     if (input.agentWorkingContactId === null) {
-      contactId = null;
-      startedAt = null;
-      label = null;
-    } else {
-      const next = input.agentWorkingContactId.trim();
-      if (!next) {
-        contactId = null;
-        startedAt = null;
-        label = null;
-      } else if (next !== contactId) {
-        contactId = next;
+      return emptyState();
+    }
+    const next = input.agentWorkingContactId.trim();
+    if (!next) {
+      return emptyState();
+    }
+    const nextKind =
+      input.agentWorkingKind !== undefined
+        ? (normalizeAgentWorkingKind(input.agentWorkingKind) ??
+          defaultKindForStatus(input.nextStatus))
+        : (kind ?? defaultKindForStatus(input.nextStatus));
+    if (next !== contactId || nextKind !== kind) {
+      contactId = next;
+      startedAt = now;
+      kind = nextKind;
+      label =
+        input.agentWorkingLabel !== undefined
+          ? normalizeLabel(input.agentWorkingLabel)
+          : next !== input.existing.contactId
+            ? null
+            : label;
+    } else if (input.agentWorkingLabel !== undefined) {
+      label = normalizeLabel(input.agentWorkingLabel);
+    }
+  } else {
+    if (input.agentWorkingKind !== undefined && contactId) {
+      const nextKind = normalizeAgentWorkingKind(input.agentWorkingKind);
+      if (nextKind && nextKind !== kind) {
+        kind = nextKind;
         startedAt = now;
-        label =
-          input.agentWorkingLabel !== undefined
-            ? normalizeLabel(input.agentWorkingLabel)
-            : null;
-      } else if (input.agentWorkingLabel !== undefined) {
-        label = normalizeLabel(input.agentWorkingLabel);
+      } else if (nextKind === null) {
+        // Explicit null kind with a contact is invalid — treat as working default.
+        kind = defaultKindForStatus(input.nextStatus);
       }
     }
-  } else if (input.agentWorkingLabel !== undefined && contactId) {
-    label = normalizeLabel(input.agentWorkingLabel);
-  }
-
-  if (AGENT_WORKING_CLEAR_STATUSES.has(input.nextStatus)) {
-    return { contactId: null, startedAt: null, label: null };
+    if (input.agentWorkingLabel !== undefined && contactId) {
+      label = normalizeLabel(input.agentWorkingLabel);
+    }
   }
 
   if (!contactId) {
-    return { contactId: null, startedAt: null, label: null };
+    return emptyState();
+  }
+  if (!kind) {
+    kind = defaultKindForStatus(input.nextStatus);
   }
 
-  return { contactId, startedAt, label };
+  // Terminal / parked — clear every marker.
+  if (AGENT_WORKING_TERMINAL_CLEAR_STATUSES.has(input.nextStatus)) {
+    return emptyState();
+  }
+
+  // Entering in_review clears a working marker; reviewing markers persist.
+  if (input.nextStatus === "in_review" && kind === "working") {
+    return emptyState();
+  }
+
+  // Leaving in_review clears a reviewing marker (send-back or other leave).
+  if (input.nextStatus !== "in_review" && kind === "reviewing") {
+    return emptyState();
+  }
+
+  return { contactId, startedAt, label, kind };
 }
 
 function normalizeLabel(value: string | null): string | null {
@@ -84,6 +135,7 @@ export function assertCanSetAgentWorking(input: {
   /** `undefined` when the patch does not touch the contact id. */
   nextContactId: string | null | undefined;
   touchesLabel: boolean;
+  touchesKind: boolean;
 }): void {
   if (input.canSetAny) return;
 
@@ -94,7 +146,6 @@ export function assertCanSetAgentWorking(input: {
 
   if (input.nextContactId !== undefined) {
     if (input.nextContactId === null) {
-      // Clear: only the current working agent (or owner) may clear.
       if (
         input.existingContactId &&
         input.existingContactId !== authContactId
@@ -109,10 +160,14 @@ export function assertCanSetAgentWorking(input: {
     return;
   }
 
-  // Label-only update: must own the current marker.
-  if (input.touchesLabel) {
+  // Label/kind-only update: must own the current marker.
+  if (input.touchesLabel || input.touchesKind) {
     if (input.existingContactId !== authContactId) {
       throw new Error("AGENT_WORKING_FORBIDDEN");
     }
   }
+}
+
+export function agentWorkingVerb(kind: AgentWorkingKind | null | undefined): string {
+  return kind === "reviewing" ? "reviewing" : "working";
 }

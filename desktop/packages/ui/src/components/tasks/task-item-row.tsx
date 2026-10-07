@@ -97,6 +97,8 @@ export type TaskItemRowTask = {
   agentWorkingContactId?: string | null;
   agentWorkingStartedAt?: number | string | null;
   agentWorkingLabel?: string | null;
+  /** `working` (default) or `reviewing` (OS-96). */
+  agentWorkingKind?: "working" | "reviewing" | null;
   /** Display name for the agents-API working contact. */
   agentWorkingContactName?: string | null;
   /** GitHub commit SHAs linked as this task’s change records. */

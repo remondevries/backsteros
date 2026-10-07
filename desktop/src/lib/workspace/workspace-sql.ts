@@ -36,6 +36,7 @@ export const TASK_LIST_COLUMNS = [
   "agent_working_contact_id",
   "agent_working_started_at",
   "agent_working_label",
+  "agent_working_kind",
   "linked_commit_shas",
   "habit_id",
   "agent_created_at",

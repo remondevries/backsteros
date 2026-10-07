@@ -922,6 +922,11 @@ export function BacksterosTaskDetailPanel() {
                       avatarSrcByContactId={avatarSrcById}
                       working={agentWorking}
                       workingActorName={workingActorName}
+                      workingActorVerb={
+                        state.status === "ready" && state.task.agentWorkingKind === "reviewing"
+                          ? "reviewing"
+                          : "working"
+                      }
                     />
                   </div>
 

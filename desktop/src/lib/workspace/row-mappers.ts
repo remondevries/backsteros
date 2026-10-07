@@ -188,6 +188,13 @@ export function mapTask(
     agentWorkingContactId: workingContactId,
     agentWorkingStartedAt: asEpoch(task.agentWorkingStartedAt ?? null),
     agentWorkingLabel: task.agentWorkingLabel ?? null,
+    agentWorkingKind:
+      task.agentWorkingKind === "working" ||
+      task.agentWorkingKind === "reviewing"
+        ? task.agentWorkingKind
+        : workingContactId
+          ? "working"
+          : null,
     agentWorkingContactName:
       task.agentWorkingContactName ??
       (workingContactId

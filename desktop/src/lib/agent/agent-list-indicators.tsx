@@ -7,11 +7,14 @@ import {
 
 import type { DesktopAgentStatusContextValue } from "./agent-status-context";
 
+type AgentWorkingKind = "working" | "reviewing";
+
 type TaskAgentBinding = {
   id: string;
   projectId?: string | null;
   agentChatId?: string | null;
   agentWorkingContactId?: string | null;
+  agentWorkingKind?: AgentWorkingKind | null;
   status?: string | null;
 };
 
@@ -21,13 +24,20 @@ function hasApiAgentWorkingMarker(task: {
   return Boolean(task.agentWorkingContactId?.trim());
 }
 
+function agentMarkerVerb(
+  kind: AgentWorkingKind | null | undefined,
+): "working" | "reviewing" {
+  return kind === "reviewing" ? "reviewing" : "working";
+}
+
 /**
  * Whether list/detail UI should show agent-working animations for this task.
  * On Hold (and terminal statuses) always read as stopped — even if the PTY
  * still reports working while waiting for input.
  *
  * Coding runs use live presence / research marks; agents-API tasks use the
- * durable `agentWorkingContactId` marker (OS-96).
+ * durable `agentWorkingContactId` marker (OS-96), including `reviewing`
+ * while status is in_review.
  */
 export function isTaskAgentWorkingForUi(
   task: {
@@ -61,6 +71,7 @@ export function renderTaskAgentTitleTrailing(options: {
   agentChatId?: string | null;
   agentWorkingContactId?: string | null;
   agentWorkingContactName?: string | null;
+  agentWorkingKind?: AgentWorkingKind | null;
   taskStatus?: string | null;
   agentStatus: Pick<
     DesktopAgentStatusContextValue,
@@ -77,6 +88,7 @@ export function renderTaskAgentTitleTrailing(options: {
     agentChatId,
     agentWorkingContactId,
     agentWorkingContactName,
+    agentWorkingKind,
     taskStatus,
     agentStatus,
     workingShownOnStatusIcon = false,
@@ -91,6 +103,7 @@ export function renderTaskAgentTitleTrailing(options: {
     Boolean(agentChatId?.trim()) ||
     apiWorking;
   const name = agentWorkingContactName?.trim() || null;
+  const verb = agentMarkerVerb(agentWorkingKind);
 
   if (agentBound) {
     return createElement(
@@ -98,9 +111,9 @@ export function renderTaskAgentTitleTrailing(options: {
       {
         className: "task-item-row__agent-badge",
         title: name
-          ? `${name} is working`
+          ? `${name} is ${verb}`
           : apiWorking
-            ? "Agent working"
+            ? `Agent ${verb}`
             : undefined,
       },
       createElement(AgentActivityIcon, {

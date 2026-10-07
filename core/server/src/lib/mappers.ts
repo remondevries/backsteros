@@ -152,6 +152,12 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     agentWorkingContactId: row.agentWorkingContactId ?? null,
     agentWorkingStartedAt: toIso(row.agentWorkingStartedAt),
     agentWorkingLabel: row.agentWorkingLabel ?? null,
+    agentWorkingKind:
+      row.agentWorkingKind === "working" || row.agentWorkingKind === "reviewing"
+        ? row.agentWorkingKind
+        : row.agentWorkingContactId
+          ? "working"
+          : null,
     linkedCommitShas: row.linkedCommitShas ?? [],
     automateCompletion: row.automateCompletion ?? false,
     autoReviewDeliveryStatus:
