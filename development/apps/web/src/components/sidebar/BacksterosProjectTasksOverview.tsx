@@ -39,6 +39,7 @@ import {
   taskSortOrderPatchesForGroup,
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
+import { mergeApiAgentWorkingTaskIds } from "~/backsteros/apiAgentWorking";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import { useBacksterosTaskActionMenu } from "~/backsteros/useBacksterosTaskActionMenu";
 import {
@@ -359,7 +360,11 @@ export function BacksterosProjectTasksOverview(props: {
     onReorderTasks,
   } = props;
   const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(() => new Set());
-  const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const presenceWorkingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const workingTaskIds = useMemo(() => {
+    if (state.status !== "ready") return presenceWorkingTaskIds;
+    return mergeApiAgentWorkingTaskIds(presenceWorkingTaskIds, state.tasks);
+  }, [presenceWorkingTaskIds, state]);
   const reorderEnabled = Boolean(onReorderTasks);
   const { openMenu: openTaskContextMenu } = useBacksterosTaskActionMenu();
 

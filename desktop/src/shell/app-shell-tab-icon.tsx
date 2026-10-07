@@ -44,10 +44,17 @@ function AppShellTabIcon({ tab }: { tab: ProductTab }) {
     });
   }
   const meta = resolveProductTabTaskMeta(tab, allTasks);
+  const liveTask = meta.taskId
+    ? (allTasks.find((task) => task.id === meta.taskId) ?? null)
+    : null;
   const working = Boolean(
     meta.taskId &&
       isTaskAgentWorkingForUi(
-        { id: meta.taskId, status: meta.taskStatus },
+        {
+          id: meta.taskId,
+          status: meta.taskStatus,
+          agentWorkingContactId: liveTask?.agentWorkingContactId,
+        },
         agentStatus,
       ),
   );

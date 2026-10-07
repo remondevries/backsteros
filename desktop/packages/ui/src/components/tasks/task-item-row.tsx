@@ -93,6 +93,12 @@ export type TaskItemRowTask = {
   updatedAt?: number;
   /** Cursor Agent chat id bound to this task (core), if any. */
   agentChatId?: string | null;
+  /** Agents-API working marker contact id (OS-96). */
+  agentWorkingContactId?: string | null;
+  agentWorkingStartedAt?: number | string | null;
+  agentWorkingLabel?: string | null;
+  /** Display name for the agents-API working contact. */
+  agentWorkingContactName?: string | null;
   /** GitHub commit SHAs linked as this task’s change records. */
   linkedCommitShas?: string[] | null;
   /** Habit definition this daily instance belongs to, if any. */

@@ -149,6 +149,9 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     notification: row.notification,
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
+    agentWorkingContactId: row.agentWorkingContactId ?? null,
+    agentWorkingStartedAt: toIso(row.agentWorkingStartedAt),
+    agentWorkingLabel: row.agentWorkingLabel ?? null,
     linkedCommitShas: row.linkedCommitShas ?? [],
     automateCompletion: row.automateCompletion ?? false,
     autoReviewDeliveryStatus:

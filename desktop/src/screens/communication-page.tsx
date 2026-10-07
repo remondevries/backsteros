@@ -612,6 +612,10 @@ function CommunicationPageBody() {
               projectId: selectedTaskRecord?.projectId ?? null,
               projectName: supportTask.projectName ?? null,
               displayId: getInboxItemDisplayId(supportTask),
+              agentWorkingContactId:
+                selectedTaskRecord?.agentWorkingContactId ?? null,
+              agentWorkingContactName:
+                selectedTaskRecord?.agentWorkingContactName ?? null,
             }}
           />
         }

@@ -72,6 +72,7 @@ import {
 } from "../lib/storage.js";
 import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
 import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
+import { resolveAgentWorkingFields } from "../lib/agent-working.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 import { enqueueAutoReviewDelivery } from "./auto-review-webhook.js";
@@ -1386,6 +1387,9 @@ export async function listTasksPaginated(
       notification: tasks.notification,
       links: tasks.links,
       agentChatId: tasks.agentChatId,
+      agentWorkingContactId: tasks.agentWorkingContactId,
+      agentWorkingStartedAt: tasks.agentWorkingStartedAt,
+      agentWorkingLabel: tasks.agentWorkingLabel,
       linkedCommitShas: tasks.linkedCommitShas,
       automateCompletion: tasks.automateCompletion,
       autoReviewDeliveryStatus: tasks.autoReviewDeliveryStatus,
@@ -1422,9 +1426,12 @@ export async function listTasksPaginated(
   const page = hasMore ? rows.slice(0, limit) : rows;
 
   const enrichment = await loadTaskLinkEnrichment(workspaceId, page, executor);
-  const assigneeNames = await getContactNameMap(
+  const contactNames = await getContactNameMap(
     workspaceId,
-    page.map((row) => row.assigneeId),
+    [
+      ...page.map((row) => row.assigneeId),
+      ...page.map((row) => row.agentWorkingContactId),
+    ],
     executor,
   );
 
@@ -1456,7 +1463,7 @@ export async function listTasksPaginated(
       priority: row.priority,
       assigneeId: row.assigneeId,
       assigneeName: row.assigneeId
-        ? (assigneeNames.get(row.assigneeId) ?? null)
+        ? (contactNames.get(row.assigneeId) ?? null)
         : null,
       projectId: row.projectId,
       projectKey: row.projectKey ?? null,
@@ -1467,6 +1474,12 @@ export async function listTasksPaginated(
       linkedEmailIds,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      agentWorkingContactId: row.agentWorkingContactId ?? null,
+      agentWorkingStartedAt: row.agentWorkingStartedAt?.toISOString() ?? null,
+      agentWorkingLabel: row.agentWorkingLabel ?? null,
+      agentWorkingContactName: row.agentWorkingContactId
+        ? (contactNames.get(row.agentWorkingContactId) ?? null)
+        : null,
       ...(filters.updatedSince
         ? { deletedAt: row.deletedAt?.toISOString() ?? null }
         : {}),
@@ -1898,6 +1911,13 @@ async function createTaskWithExecutor(
     "HABIT_NOT_FOUND",
     executor,
   );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.agentWorkingContactId,
+    contacts,
+    "AGENT_WORKING_CONTACT_NOT_FOUND",
+    executor,
+  );
 
   const number = await nextTaskNumber(
     workspaceId,
@@ -1928,6 +1948,13 @@ async function createTaskWithExecutor(
       : undefined;
   const writeAt = options?.updatedAt;
   const skipActivity = Boolean(options?.skipActivitySideEffects);
+  const agentWorking = resolveAgentWorkingFields({
+    existing: { contactId: null, startedAt: null, label: null },
+    agentWorkingContactId: input.agentWorkingContactId,
+    agentWorkingLabel: input.agentWorkingLabel,
+    nextStatus: status,
+    now: writeAt ?? new Date(),
+  });
 
   const [row] = await executor
     .insert(tasks)
@@ -1959,6 +1986,9 @@ async function createTaskWithExecutor(
       notification,
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
+      agentWorkingContactId: agentWorking.contactId,
+      agentWorkingStartedAt: agentWorking.startedAt,
+      agentWorkingLabel: agentWorking.label,
       linkedCommitShas: input.linkedCommitShas ?? [],
       automateCompletion: input.automateCompletion ?? false,
       habitId: input.habitId ?? null,
@@ -2167,6 +2197,13 @@ export async function updateTask(
     "HABIT_NOT_FOUND",
     executor,
   );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.agentWorkingContactId,
+    contacts,
+    "AGENT_WORKING_CONTACT_NOT_FOUND",
+    executor,
+  );
 
   const nextStatus = input.status ?? existing.status;
   const nextProjectId =
@@ -2227,6 +2264,23 @@ export async function updateTask(
     input.removeLinkedCommitShas,
   );
 
+  const agentWorking = resolveAgentWorkingFields({
+    existing: {
+      contactId: existing.agentWorkingContactId ?? null,
+      startedAt: existing.agentWorkingStartedAt ?? null,
+      label: existing.agentWorkingLabel ?? null,
+    },
+    agentWorkingContactId: input.agentWorkingContactId,
+    agentWorkingLabel: input.agentWorkingLabel,
+    nextStatus,
+    now: writeAt,
+  });
+  const agentWorkingChanged =
+    agentWorking.contactId !== (existing.agentWorkingContactId ?? null) ||
+    (agentWorking.startedAt?.getTime() ?? null) !==
+      (existing.agentWorkingStartedAt?.getTime() ?? null) ||
+    agentWorking.label !== (existing.agentWorkingLabel ?? null);
+
   const [row] = await executor
     .update(tasks)
     .set({
@@ -2276,6 +2330,13 @@ export async function updateTask(
       notification: input.notification,
       links: input.links,
       agentChatId: input.agentChatId,
+      ...(agentWorkingChanged
+        ? {
+            agentWorkingContactId: agentWorking.contactId,
+            agentWorkingStartedAt: agentWorking.startedAt,
+            agentWorkingLabel: agentWorking.label,
+          }
+        : {}),
       ...(nextLinkedCommitShas !== undefined
         ? { linkedCommitShas: nextLinkedCommitShas }
         : {}),

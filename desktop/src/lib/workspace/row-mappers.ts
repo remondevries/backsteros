@@ -159,10 +159,12 @@ export function resolveDuplicateTaskStatus(source: ApiTask): string {
 export function mapTask(
   task: ApiTask,
   projectsById: Map<string, ApiProject>,
+  contactsById?: Map<string, { name?: string | null }>,
 ): TaskItemRowTask {
   const project = task.projectId
     ? projectsById.get(task.projectId) ?? null
     : null;
+  const workingContactId = task.agentWorkingContactId ?? null;
   return {
     id: task.id,
     number: coerceTaskDisplayNumber(task.number) ?? 0,
@@ -183,6 +185,14 @@ export function mapTask(
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
+    agentWorkingContactId: workingContactId,
+    agentWorkingStartedAt: asEpoch(task.agentWorkingStartedAt ?? null),
+    agentWorkingLabel: task.agentWorkingLabel ?? null,
+    agentWorkingContactName:
+      task.agentWorkingContactName ??
+      (workingContactId
+        ? (contactsById?.get(workingContactId)?.name ?? null)
+        : null),
     linkedCommitShas: parseStringIdArray(task.linkedCommitShas),
     habitId: task.habitId ?? null,
     agentCreatedAt: asEpoch(task.agentCreatedAt),

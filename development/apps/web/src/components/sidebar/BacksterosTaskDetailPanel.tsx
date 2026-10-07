@@ -591,9 +591,24 @@ export function BacksterosTaskDetailPanel() {
   const avatarSrcById = useBacksterosContactAvatarSrcMap(avatarEntities);
   const organizationAvatarSrcById = useBacksterosAvatarSrcMap("organization", organizations);
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
-  const agentWorking = selection?.taskId != null && workingTaskIds.has(selection.taskId);
+  const apiWorkingContactId =
+    state.status === "ready" ? state.task.agentWorkingContactId?.trim() || null : null;
+  const agentWorking =
+    selection?.taskId != null &&
+    (workingTaskIds.has(selection.taskId) || Boolean(apiWorkingContactId));
   const agentContactId = useBacksterosSettingsStore((state) => state.agentContactId);
   const workingActorName = useMemo(() => {
+    if (state.status === "ready") {
+      const named = state.task.agentWorkingContactName?.trim();
+      if (named) return named;
+      const workingId = state.task.agentWorkingContactId?.trim() || null;
+      if (workingId) {
+        const workingContact =
+          contacts.find((contact) => contact.id === workingId) ??
+          (assignee?.id === workingId ? assignee : null);
+        if (workingContact?.name?.trim()) return workingContact.name.trim();
+      }
+    }
     const agentId = agentContactId?.trim() || null;
     const agentContact =
       agentId == null

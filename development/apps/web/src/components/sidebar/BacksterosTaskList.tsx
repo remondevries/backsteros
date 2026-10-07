@@ -26,6 +26,7 @@ import {
 
 import { isBacksterosInboxMemberTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
+import { mergeApiAgentWorkingTaskIds } from "~/backsteros/apiAgentWorking";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import { useBacksterosTaskActionMenu } from "~/backsteros/useBacksterosTaskActionMenu";
 import {
@@ -353,7 +354,11 @@ export function BacksterosTaskList(props: {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const isSearching = searchQuery.trim().length > 0;
   const reorderEnabled = Boolean(onReorderTasks) && !isSearching;
-  const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const presenceWorkingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const workingTaskIds = useMemo(() => {
+    if (state.status !== "ready") return presenceWorkingTaskIds;
+    return mergeApiAgentWorkingTaskIds(presenceWorkingTaskIds, state.tasks);
+  }, [presenceWorkingTaskIds, state]);
   const { openMenu: openTaskContextMenu } = useBacksterosTaskActionMenu();
 
   const filteredTasks = useMemo(() => {

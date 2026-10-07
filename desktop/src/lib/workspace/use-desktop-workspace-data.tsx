@@ -1067,13 +1067,21 @@ function useDesktopWorkspaceDataImpl(): {
     setApiDocuments,
   });
 
+  const contactsById = useMemo(() => {
+    const map = new Map<string, { name?: string | null }>();
+    for (const contact of rawContacts) {
+      map.set(contact.id, contact);
+    }
+    return map;
+  }, [rawContacts]);
   const mappedTasks = useMemo(
-    () => rawTasks.map((task) => mapTask(task, projectsById)),
-    [projectsById, rawTasks],
+    () => rawTasks.map((task) => mapTask(task, projectsById, contactsById)),
+    [contactsById, projectsById, rawTasks],
   );
   const mappedInboxTasks = useMemo(
-    () => rawInboxTasks.map((task) => mapTask(task, projectsById)),
-    [projectsById, rawInboxTasks],
+    () =>
+      rawInboxTasks.map((task) => mapTask(task, projectsById, contactsById)),
+    [contactsById, projectsById, rawInboxTasks],
   );
   const allTasks = useMemo(() => {
     const allTasksById = new Map<string, TaskItemRowTask>();

@@ -903,6 +903,24 @@
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
+.task-item-row__agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 12ch;
+}
+
+.task-item-row__agent-badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  font-family: inherit;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
 .task-item-row__due-leading {
   min-width: 18ch;
 }

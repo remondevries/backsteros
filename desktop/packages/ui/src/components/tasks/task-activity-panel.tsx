@@ -736,6 +736,8 @@ export type TaskActivityPanelProps = {
   /** Bump reload when a new activity was recorded out-of-band (e.g. agent turn). */
   feedRevision?: number;
   working?: boolean;
+  /** When set, the working banner names this agent (OS-96). */
+  workingAgentName?: string | null;
   /** Contact id → avatar URL for assignee activity rows. */
   assigneeAvatarById?: ReadonlyMap<string, string | null>;
   /** Lowercased contact email → avatar URL for comment authors. */
@@ -780,6 +782,7 @@ export function TaskActivityPanel({
   taskUpdatedAt,
   feedRevision = 0,
   working = false,
+  workingAgentName = null,
   assigneeAvatarById,
   avatarByEmail,
   requestJson,
@@ -1606,7 +1609,8 @@ export function TaskActivityPanel({
                 </span>
               </span>
               <div className="task-activity-event__text">
-                <strong>Agent</strong> is working…
+                <strong>{workingAgentName?.trim() || "Agent"}</strong> is
+                working…
               </div>
             </li>
           ) : null}

@@ -744,6 +744,20 @@ export const tasks = pgTable(
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
     /**
+     * Agents-API “working on this” marker (OS-96). Contact of the agent persona
+     * (e.g. Ralph). Orthogonal to `agentChatId` (coding session) and to
+     * ephemeral `task_agent_presence` heartbeats.
+     */
+    agentWorkingContactId: text("agent_working_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    agentWorkingStartedAt: timestamp("agent_working_started_at", {
+      withTimezone: true,
+    }),
+    /** Optional chat link / label shown with the working badge. */
+    agentWorkingLabel: text("agent_working_label"),
+    /**
      * GitHub commit SHAs linked as this task’s change records (desktop Diff view).
      * Full or abbreviated SHAs as returned by the project’s GitHub API.
      */

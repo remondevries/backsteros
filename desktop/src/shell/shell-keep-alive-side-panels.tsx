@@ -572,7 +572,11 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         if (item.kind !== "task") return false;
         const task = allTasksById.get(item.id);
         return isTaskAgentWorkingForUi(
-          { id: item.id, status: task?.status ?? item.status },
+          {
+            id: item.id,
+            status: task?.status ?? item.status,
+            agentWorkingContactId: task?.agentWorkingContactId,
+          },
           agentStatus,
         );
       }}
@@ -582,6 +586,8 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         return renderTaskAgentTitleTrailing({
           taskId: item.id,
           agentChatId: task?.agentChatId,
+          agentWorkingContactId: task?.agentWorkingContactId,
+          agentWorkingContactName: task?.agentWorkingContactName,
           taskStatus: task?.status,
           agentStatus,
           workingShownOnStatusIcon: true,

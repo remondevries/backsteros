@@ -32,6 +32,7 @@ import {
 
 type ContactLike = {
   id: string;
+  name?: string | null;
   email?: string | null;
 };
 
@@ -76,6 +77,8 @@ export type DesktopTaskActivityPanelProps = {
     projectName?: string | null;
     displayId?: string | null;
     workingDirectory?: string | null;
+    agentWorkingContactId?: string | null;
+    agentWorkingContactName?: string | null;
   };
 };
 
@@ -174,9 +177,27 @@ export function DesktopTaskActivityPanel({
     taskId,
   ]);
 
+  const workingAgentName = useMemo(() => {
+    const fromTask = taskSummary.agentWorkingContactName?.trim();
+    if (fromTask) return fromTask;
+    const contactId = taskSummary.agentWorkingContactId?.trim();
+    if (!contactId) return null;
+    return (
+      contacts.find((contact) => contact.id === contactId)?.name?.trim() || null
+    );
+  }, [
+    contacts,
+    taskSummary.agentWorkingContactId,
+    taskSummary.agentWorkingContactName,
+  ]);
+
   const working =
     isTaskAgentWorkingForUi(
-      { id: taskId, status: taskSummary.status },
+      {
+        id: taskId,
+        status: taskSummary.status,
+        agentWorkingContactId: taskSummary.agentWorkingContactId,
+      },
       agentStatus,
     ) || researching;
   // Research owns setTaskResearchWorking while in flight. Do not clear on
@@ -504,6 +525,7 @@ export function DesktopTaskActivityPanel({
         taskUpdatedAt={taskUpdatedAt}
         feedRevision={feedRevision}
         working={working}
+        workingAgentName={workingAgentName}
         requestJson={requestJson}
         currentUser={currentUser}
         assigneeAvatarById={assigneeAvatarById}

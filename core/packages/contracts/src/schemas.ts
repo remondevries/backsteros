@@ -509,6 +509,17 @@ export const taskSchema = z.object({
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
   /**
+   * Agents-API working marker (OS-96). Contact id of the agent persona currently
+   * working this task. Orthogonal to {@link agentChatId} (coding session).
+   */
+  agentWorkingContactId: z.string().nullable().optional(),
+  /** When the agent working marker was set (ISO). Null when cleared. */
+  agentWorkingStartedAt: z.string().datetime().nullable().optional(),
+  /** Optional chat link / label for the working marker. */
+  agentWorkingLabel: z.string().nullable().optional(),
+  /** Display name for {@link agentWorkingContactId} when set (OS-96). */
+  agentWorkingContactName: z.string().nullable().optional(),
+  /**
    * GitHub commit SHAs for this task’s change records (desktop Diff view).
    * Empty when none are linked.
    */
@@ -570,6 +581,11 @@ export const taskListItemSchema = z.object({
   deletedAt: z.string().datetime().nullable().optional(),
   /** When true, in_review enqueues Sander's auto-review webhook (OS-92). */
   automateCompletion: z.boolean().optional(),
+  /** Agents-API working marker contact id (OS-96). */
+  agentWorkingContactId: z.string().nullable().optional(),
+  agentWorkingStartedAt: z.string().datetime().nullable().optional(),
+  agentWorkingLabel: z.string().nullable().optional(),
+  agentWorkingContactName: z.string().nullable().optional(),
 });
 
 /**
@@ -690,6 +706,14 @@ export const createTaskSchema = z.object({
   notification: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
+  /**
+   * Mark / clear agents-API working (OS-96). Pass a contact id to claim, or
+   * `null` to clear. Server sets `agentWorkingStartedAt`. Agent API keys may
+   * only set their own contact (unless owner).
+   */
+  agentWorkingContactId: z.string().min(1).max(64).nullable().optional(),
+  /** Optional chat link / label with the working marker (cleared when marker clears). */
+  agentWorkingLabel: z.string().max(256).nullable().optional(),
   /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
   linkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
   /** Enqueue auto-review when this task later moves to in_review (OS-92). */

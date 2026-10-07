@@ -10,6 +10,10 @@ export function backsterosTaskListRowFromDetail(detail: BacksterosTaskDetail): B
     status: detail.status,
     dueDate: detail.dueDate,
     updatedAt: detail.updatedAt,
+    agentWorkingContactId: detail.agentWorkingContactId ?? null,
+    agentWorkingStartedAt: detail.agentWorkingStartedAt ?? null,
+    agentWorkingLabel: detail.agentWorkingLabel ?? null,
+    agentWorkingContactName: detail.agentWorkingContactName ?? null,
   };
   if (detail.sortOrder !== undefined) {
     return {

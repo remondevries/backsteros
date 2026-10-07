@@ -201,6 +201,9 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     notification: row.notification,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
+    agent_working_contact_id: row.agentWorkingContactId ?? null,
+    agent_working_started_at: row.agentWorkingStartedAt?.toISOString() ?? null,
+    agent_working_label: row.agentWorkingLabel ?? null,
     linked_commit_shas: JSON.stringify(
       Array.isArray(row.linkedCommitShas) ? row.linkedCommitShas : [],
     ),
@@ -2094,6 +2097,12 @@ function mapTaskUpsert(
     agentChatId: asNullableString(
       payload.agent_chat_id ?? payload.agentChatId,
     ),
+    agentWorkingContactId: asNullableString(
+      payload.agent_working_contact_id ?? payload.agentWorkingContactId,
+    ),
+    agentWorkingLabel: asNullableString(
+      payload.agent_working_label ?? payload.agentWorkingLabel,
+    ),
     linkedCommitShas: parseStringIdArray(
       payload.linked_commit_shas ?? payload.linkedCommitShas,
     ),
@@ -2322,6 +2331,8 @@ export async function applySyncChange(
             notification: input.notification,
             links: input.links,
             agentChatId: input.agentChatId,
+            agentWorkingContactId: input.agentWorkingContactId,
+            agentWorkingLabel: input.agentWorkingLabel,
             linkedCommitShas: input.linkedCommitShas,
             habitId: input.habitId,
             trackedMinutes: input.trackedMinutes,
@@ -2376,6 +2387,8 @@ export async function applySyncChange(
               notification: input.notification,
               links: input.links,
               agentChatId: input.agentChatId,
+              agentWorkingContactId: input.agentWorkingContactId,
+              agentWorkingLabel: input.agentWorkingLabel,
               linkedCommitShas: input.linkedCommitShas,
               habitId: input.habitId,
               trackedMinutes: input.trackedMinutes,
@@ -2435,6 +2448,8 @@ export async function applySyncChange(
               notification: input.notification,
               links: input.links,
               agentChatId: input.agentChatId,
+              agentWorkingContactId: input.agentWorkingContactId,
+              agentWorkingLabel: input.agentWorkingLabel,
               linkedCommitShas: input.linkedCommitShas,
               habitId: input.habitId,
               trackedMinutes: input.trackedMinutes,

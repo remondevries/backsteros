@@ -248,6 +248,47 @@ adds both persist (server-side dedupe).
 Remon: update the shared agent skill / CLI finish flow to use status+comment and
 `addLinkedCommitShas` instead of GET-then-replace.
 
+### Agent-working marker (OS-96)
+
+Business agents (finance, comms, admin) that work tasks through the agents API —
+not Development-app coding sessions — can mark themselves as working so desktop
+and BacksterDEV show the same working badge as coding runs, plus the agent’s
+name.
+
+This is **orthogonal** to `agentChatId` (Cursor / Development session binding)
+and to ephemeral `PUT/DELETE /tasks/:id/agent-presence` heartbeats (TTL-based
+coding-run presence). Coding-run behaviour is unchanged.
+
+**Fields** (on the task row; also on paginated list items):
+
+| Field | Meaning |
+| --- | --- |
+| `agentWorkingContactId` | Contact id of the agent persona (e.g. Ralph) |
+| `agentWorkingStartedAt` | When the marker was set (server-stamped) |
+| `agentWorkingLabel` | Optional chat link / label |
+| `agentWorkingContactName` | Display name (response enrichment) |
+
+```http
+# Claim (agents may only set their own contact unless owner)
+PATCH /api/v1/tasks/BF-37
+{ "agentWorkingContactId": "CotMY5Bd6gv7mWOzioLbe", "agentWorkingLabel": "Ralph · BF-37" }
+
+# Clear
+PATCH /api/v1/tasks/BF-37
+{ "agentWorkingContactId": null }
+```
+
+**Auto-claim:** an agent persona API key (contact-bound, not the workspace
+owner) that moves a task to `in_progress` without an explicit marker sets
+`agentWorkingContactId` to that key’s contact.
+
+**Auto-clear** when status becomes `completed`, `canceled`, `duplicated`,
+`on_hold`, or `in_review` (hand-off / done). Agents can also clear explicitly
+or by setting another allowed contact (owner only for other contacts).
+
+**Permission:** agent API keys may only set/clear their own contact. Local shell
+and owner-bound API keys may set any contact.
+
 ### Auto-review webhook (OS-92)
 
 When a task has `automateCompletion: true` and its status **transitions** to

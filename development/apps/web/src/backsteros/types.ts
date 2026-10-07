@@ -137,6 +137,11 @@ export interface BacksterosTask {
   readonly dueDate: string | null;
   readonly priority?: number;
   readonly updatedAt: string;
+  /** Agents-API working marker (OS-96). */
+  readonly agentWorkingContactId?: string | null;
+  readonly agentWorkingStartedAt?: string | null;
+  readonly agentWorkingLabel?: string | null;
+  readonly agentWorkingContactName?: string | null;
 }
 
 /** Full task payload from `GET /api/v1/tasks/:id`. */

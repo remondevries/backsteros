@@ -556,17 +556,21 @@ export async function taskWithKey(
         await taskProjectService.getProjectKeyMap(workspaceId, [row.projectId])
       ).get(row.projectId) ?? null
     : null;
+  const names = await taskProjectService.getContactNameMap(workspaceId, [
+    row.assigneeId,
+    row.agentWorkingContactId,
+  ]);
   const assigneeName = row.assigneeId
-    ? (
-        await taskProjectService.getContactNameMap(workspaceId, [
-          row.assigneeId,
-        ])
-      ).get(row.assigneeId) ?? null
+    ? (names.get(row.assigneeId) ?? null)
+    : null;
+  const agentWorkingContactName = row.agentWorkingContactId
+    ? (names.get(row.agentWorkingContactId) ?? null)
     : null;
   return {
     ...toTask(row, projectKey),
     projectKey,
     assigneeName,
+    agentWorkingContactName,
     ...(extras?.comment ? { comment: extras.comment } : {}),
     ...(extras?.comments ? { comments: extras.comments } : {}),
   };
@@ -581,17 +585,24 @@ export async function tasksWithKeys(workspaceId: string, rows: TaskRow[]) {
   );
   const names = await taskProjectService.getContactNameMap(
     workspaceId,
-    rows.map((row) => row.assigneeId),
+    [
+      ...rows.map((row) => row.assigneeId),
+      ...rows.map((row) => row.agentWorkingContactId),
+    ],
   );
   return rows.map((row) => {
     const projectKey = row.projectId ? (keys.get(row.projectId) ?? null) : null;
     const assigneeName = row.assigneeId
       ? (names.get(row.assigneeId) ?? null)
       : null;
+    const agentWorkingContactName = row.agentWorkingContactId
+      ? (names.get(row.agentWorkingContactId) ?? null)
+      : null;
     return {
       ...toTask(row, projectKey),
       projectKey,
       assigneeName,
+      agentWorkingContactName,
     };
   });
 }

@@ -491,6 +491,8 @@ function TaskListPageBody({
           : renderTaskAgentTitleTrailing({
               taskId: task.id,
               agentChatId: task.agentChatId,
+              agentWorkingContactId: task.agentWorkingContactId,
+              agentWorkingContactName: task.agentWorkingContactName,
               taskStatus: task.status,
               agentStatus,
               workingShownOnStatusIcon: true,

@@ -771,11 +771,16 @@ function InboxPageBody() {
               number: selectedTask.number ?? 0,
               title: selectedTask.title,
               description: fetchedDescription || null,
+              status: selectedTask.status,
               projectKey: resolvedProjectKey,
               projectId: project?.id ?? null,
               projectName: project?.name ?? selectedTask.projectName ?? null,
               displayId: getInboxItemDisplayId(selectedTask),
               workingDirectory: workingDirectory,
+              agentWorkingContactId:
+                selectedTaskRecord?.agentWorkingContactId ?? null,
+              agentWorkingContactName:
+                selectedTaskRecord?.agentWorkingContactName ?? null,
             }}
           />
         }

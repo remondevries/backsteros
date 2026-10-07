@@ -320,6 +320,7 @@ import {
 import { newId } from "../lib/crypto.js";
 import { db } from "../db/index.js";
 import { writeActorFromAuth, writeActorForComment } from "../lib/write-actor.js";
+import { assertCanSetAgentWorking } from "../lib/agent-working.js";
 import {
   buildAreaRestPayload,
   buildBankAccountRestPayload,
@@ -1517,6 +1518,37 @@ export function registerTaskDocumentRoutes(app: Hono) {
         const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
         if (!taskId) return c.json(notFound("Task"), 404);
 
+        const existingForAgentWorking =
+          patchFields.agentWorkingContactId !== undefined ||
+          patchFields.agentWorkingLabel !== undefined ||
+          patchFields.status === "in_progress"
+            ? await taskProjectService.getTaskById(auth.workspaceId, taskId)
+            : null;
+        if (
+          (patchFields.agentWorkingContactId !== undefined ||
+            patchFields.agentWorkingLabel !== undefined) &&
+          !existingForAgentWorking
+        ) {
+          return c.json(notFound("Task"), 404);
+        }
+
+        const canSetAnyAgentWorking =
+          isOwnerShellAuth(auth) ||
+          (await apiKeyService.apiKeyContactIsWorkspaceOwner(auth));
+        if (
+          patchFields.agentWorkingContactId !== undefined ||
+          patchFields.agentWorkingLabel !== undefined
+        ) {
+          assertCanSetAgentWorking({
+            canSetAny: canSetAnyAgentWorking,
+            authContactId: auth.contactId,
+            existingContactId:
+              existingForAgentWorking?.agentWorkingContactId ?? null,
+            nextContactId: patchFields.agentWorkingContactId,
+            touchesLabel: patchFields.agentWorkingLabel !== undefined,
+          });
+        }
+
         const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
           projectId: patchFields.projectId,
           projectKey,
@@ -1526,9 +1558,20 @@ export function registerTaskDocumentRoutes(app: Hono) {
           relatedOrganizationIds: patchFields.relatedOrganizationIds,
           linkedEmailIds: patchFields.linkedEmailIds,
         });
+        // Agent persona keys auto-claim working when they move a task in_progress
+        // (OS-96). Owner keys and local shell leave the marker alone unless set.
+        const autoClaimWorking =
+          patchFields.status === "in_progress" &&
+          patchFields.agentWorkingContactId === undefined &&
+          auth.kind === "api_key" &&
+          Boolean(auth.contactId) &&
+          !canSetAnyAgentWorking;
         const patch = {
           ...patchFields,
           ...resolvedRefs,
+          ...(autoClaimWorking
+            ? { agentWorkingContactId: auth.contactId }
+            : {}),
         };
         const actor = writeActorFromAuth(auth, activityActor);
         let row;
@@ -1699,6 +1742,31 @@ export function registerTaskDocumentRoutes(app: Hono) {
         }
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
+        }
+        if (
+          error instanceof Error &&
+          error.message === "AGENT_WORKING_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Agent working contact not found",
+              code: "agent_working_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "AGENT_WORKING_FORBIDDEN"
+        ) {
+          return c.json(
+            {
+              error:
+                "Agents may only set or clear their own working marker",
+              code: "agent_working_forbidden",
+            },
+            403,
+          );
         }
         throw error;
       }
