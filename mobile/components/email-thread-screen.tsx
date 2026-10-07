@@ -34,6 +34,7 @@ import {
   fetchEmailMessageDetail,
 } from "../lib/email-message-detail";
 import type { EmailMessageSourceDetail } from "../lib/email-message-source";
+import { buildReplyRecipients } from "../lib/email-reply-recipients";
 import {
   applyEmailThreadAgentResult,
   postEmailThreadComment,
@@ -142,6 +143,7 @@ type ThreadMessage = {
   subject: string;
   from: string;
   to: string[];
+  cc?: string[];
   timestamp: string;
   text: string | null;
   html: string | null;
@@ -338,6 +340,7 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
         subject: detail.subject,
         from: detail.from,
         to: detail.to ?? [],
+        cc: detail.cc ?? [],
         timestamp: detail.timestamp,
         text: detail.text,
         html: detail.html,
@@ -617,19 +620,77 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
     router.replace(sectionBase);
   }, [router, sectionBase]);
 
+  const openReplyComposer = useCallback(
+    (
+      entry: {
+        messageId: string;
+        subject: string;
+        from: string;
+        to?: string[] | null;
+        cc?: string[] | null;
+      },
+      replyAll: boolean,
+    ) => {
+      if (!detail) return;
+      const plan = buildReplyRecipients({
+        message: {
+          from: entry.from,
+          to: entry.to ?? [],
+          cc: entry.cc ?? [],
+        },
+        inboxEmail: detail.inboxEmail,
+        replyAll,
+        threadMessages: detail.threadMessages,
+      });
+      const subjectText = entry.subject.trim() || detail.subject?.trim() || "";
+      const replySubject = /^re:/i.test(subjectText)
+        ? subjectText
+        : subjectText
+          ? `Re: ${subjectText}`
+          : "";
+      router.push({
+        pathname: composePath,
+        params: {
+          inboxId: detail.inboxId,
+          replyTo: entry.messageId,
+          subject: replySubject,
+          replyToFrom: entry.from,
+          to: plan.to.join(", "),
+          cc: plan.cc.join(", "),
+          mode: "reply",
+        },
+      });
+    },
+    [composePath, detail, router],
+  );
+
   const onReply = useCallback(() => {
     if (!detail) return;
-    router.push({
-      pathname: composePath,
-      params: {
-        inboxId: detail.inboxId,
-        replyTo: detail.messageId,
+    openReplyComposer(
+      {
+        messageId: detail.messageId,
         subject: detail.subject ?? "",
-        replyToFrom: detail.from ?? "",
-        mode: "reply",
+        from: detail.from ?? "",
+        to: detail.to,
+        cc: detail.cc,
       },
-    });
-  }, [composePath, detail, router]);
+      false,
+    );
+  }, [detail, openReplyComposer]);
+
+  const onReplyAll = useCallback(() => {
+    if (!detail) return;
+    openReplyComposer(
+      {
+        messageId: detail.messageId,
+        subject: detail.subject ?? "",
+        from: detail.from ?? "",
+        to: detail.to,
+        cc: detail.cc,
+      },
+      true,
+    );
+  }, [detail, openReplyComposer]);
 
   const onMarkUnread = useCallback(() => {
     if (!detail || busyAction) return;
@@ -744,23 +805,6 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
       }
     },
     [client, detail, downloadingAttachmentId],
-  );
-
-  const openReplyComposer = useCallback(
-    (targetMessageId: string, targetSubject: string, targetFrom: string) => {
-      if (!detail) return;
-      router.push({
-        pathname: composePath,
-        params: {
-          inboxId: detail.inboxId,
-          replyTo: targetMessageId,
-          subject: targetSubject,
-          replyToFrom: targetFrom,
-          mode: "reply",
-        },
-      });
-    },
-    [composePath, detail, router],
   );
 
   const openForwardComposer = useCallback(
@@ -1422,16 +1466,26 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
                 }}
                 onReply={() =>
                   openReplyComposer(
-                    message.messageId,
-                    message.subject ?? detail.subject ?? "",
-                    message.from,
+                    {
+                      messageId: message.messageId,
+                      subject: message.subject ?? detail.subject ?? "",
+                      from: message.from,
+                      to: message.to,
+                      cc: message.cc,
+                    },
+                    false,
                   )
                 }
                 onReplyAll={() =>
                   openReplyComposer(
-                    detail.messageId,
-                    detail.subject ?? "",
-                    detail.from ?? "",
+                    {
+                      messageId: message.messageId,
+                      subject: message.subject ?? detail.subject ?? "",
+                      from: message.from,
+                      to: message.to,
+                      cc: message.cc,
+                    },
+                    true,
                   )
                 }
                 onForward={() =>
@@ -1510,6 +1564,17 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
             ]}
           >
             <Text style={styles.actionPrimaryLabel}>Reply</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reply all"
+            onPress={onReplyAll}
+            style={({ pressed }) => [
+              styles.actionButton,
+              pressed ? { opacity: 0.7 } : null,
+            ]}
+          >
+            <Text style={styles.actionLabel}>Reply all</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"

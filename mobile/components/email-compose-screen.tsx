@@ -26,6 +26,9 @@ import {
   discardEmailDraftDetailCache,
   fetchEmailDraftDetail,
 } from "../lib/email-message-detail";
+import {
+  normalizeEmailRecipients,
+} from "../lib/email-reply-recipients";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -49,11 +52,16 @@ export type EmailComposeScreenProps = {
   replyToFrom?: string;
   /** Reopen an existing AgentMail draft. */
   draftId?: string;
-  /** Forward / new-compose prefill (subject + quoted body). */
+  /** Forward / new-compose / reply-all prefill. */
   initialTo?: string;
+  initialCc?: string;
   initialBody?: string;
   mode?: "compose" | "reply" | "forward";
 };
+
+function joinRecipients(list: string[] | null | undefined): string {
+  return (list ?? []).join(", ");
+}
 
 /**
  * Compose, reply, or forward. Drafts are created on Save / first Send and can
@@ -66,6 +74,7 @@ export function EmailComposeScreen({
   replyToFrom,
   draftId: initialDraftId,
   initialTo,
+  initialCc,
   initialBody,
   mode: modeProp,
 }: EmailComposeScreenProps) {
@@ -92,7 +101,8 @@ export function EmailComposeScreen({
     initialInboxId || mailboxes[0]?.inboxId || "",
   );
   const [mailboxPickerOpen, setMailboxPickerOpen] = useState(false);
-  const [to, setTo] = useState(initialTo ?? "");
+  const [to, setTo] = useState(initialTo ?? (isReply ? replyToFrom ?? "" : ""));
+  const [cc, setCc] = useState(initialCc ?? "");
   const [subject, setSubject] = useState(initialSubject ?? "");
   const [body, setBody] = useState(initialBody ?? "");
   const [draftId, setDraftId] = useState<string | null>(initialDraftId ?? null);
@@ -104,6 +114,12 @@ export function EmailComposeScreen({
   const [error, setError] = useState<string | null>(null);
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const hydratedDraftRef = useRef<string | null>(null);
+  const baselineRef = useRef<{
+    to: string[];
+    cc: string[];
+    subject: string;
+    body: string;
+  } | null>(null);
 
   const selectedMailbox = mailboxes.find(
     (mailbox) => mailbox.inboxId === inboxId,
@@ -139,9 +155,20 @@ export function EmailComposeScreen({
       }
       setInboxId(detail.inboxId);
       setDraftId(detail.draftId);
-      setTo(detail.to[0] ?? "");
-      setSubject(detail.subject ?? "");
-      setBody(detail.body ?? detail.text ?? "");
+      const loadedTo = joinRecipients(detail.to);
+      const loadedCc = joinRecipients(detail.cc);
+      const loadedSubject = detail.subject ?? "";
+      const loadedBody = detail.body ?? detail.text ?? "";
+      setTo(loadedTo);
+      setCc(loadedCc);
+      setSubject(loadedSubject);
+      setBody(loadedBody);
+      baselineRef.current = {
+        to: normalizeEmailRecipients(detail.to),
+        cc: normalizeEmailRecipients(detail.cc),
+        subject: loadedSubject.trim(),
+        body: loadedBody.trim(),
+      };
       setLoadingDraft(false);
     });
     return () => {
@@ -149,27 +176,25 @@ export function EmailComposeScreen({
     };
   }, [client, initialDraftId, initialInboxId]);
 
-  const canSend = isReply
-    ? body.trim().length > 0 &&
-      Boolean(inboxId) &&
-      !sending &&
-      !loadingDraft &&
-      !agentWorking
-    : body.trim().length > 0 &&
-      to.trim().length > 0 &&
-      Boolean(inboxId) &&
-      !sending &&
-      !loadingDraft &&
-      !agentWorking;
+  const nextToList = useMemo(() => normalizeEmailRecipients(to), [to]);
+  const nextCcList = useMemo(() => normalizeEmailRecipients(cc), [cc]);
+
+  const canSend =
+    body.trim().length > 0 &&
+    nextToList.length > 0 &&
+    Boolean(inboxId) &&
+    !sending &&
+    !loadingDraft &&
+    !agentWorking;
 
   const canSave =
     body.trim().length > 0 &&
+    nextToList.length > 0 &&
     Boolean(inboxId) &&
     !saving &&
     !sending &&
     !loadingDraft &&
-    !agentWorking &&
-    (isReply || to.trim().length > 0);
+    !agentWorking;
 
   const title =
     isReply ? "Reply" : isForward ? "Forward" : draftId ? "Draft" : "New email";
@@ -177,11 +202,63 @@ export function EmailComposeScreen({
   const composeContext = useMemo(
     () => ({
       fromEmail: selectedMailbox?.email ?? "",
-      to: isReply ? replyToFrom ?? "" : to,
+      to: to || replyToFrom || "",
       subject,
       currentDraftBody: body.trim() || undefined,
     }),
-    [body, isReply, replyToFrom, selectedMailbox?.email, subject, to],
+    [body, replyToFrom, selectedMailbox?.email, subject, to],
+  );
+
+  const buildHeaderPatch = useCallback(
+    (options?: { includeBody?: string; onlyChanged?: boolean }) => {
+      const nextSubject = subject.trim();
+      const payload: {
+        body?: string;
+        to?: string[];
+        cc?: string[];
+        subject?: string;
+      } = {};
+      if (options?.includeBody !== undefined) {
+        payload.body = options.includeBody;
+      }
+      if (!options?.onlyChanged) {
+        payload.to = nextToList;
+        payload.cc = nextCcList;
+        // Never send an empty subject — omit so the server keeps stored.
+        if (nextSubject) payload.subject = nextSubject;
+        return payload;
+      }
+      const baseline = baselineRef.current;
+      if (
+        !baseline ||
+        JSON.stringify(nextToList) !== JSON.stringify(baseline.to)
+      ) {
+        payload.to = nextToList;
+      }
+      if (
+        !baseline ||
+        JSON.stringify(nextCcList) !== JSON.stringify(baseline.cc)
+      ) {
+        payload.cc = nextCcList;
+      }
+      if (nextSubject && nextSubject !== (baseline?.subject ?? "")) {
+        payload.subject = nextSubject;
+      }
+      return payload;
+    },
+    [nextCcList, nextToList, subject],
+  );
+
+  const rememberBaseline = useCallback(
+    (nextBody?: string) => {
+      baselineRef.current = {
+        to: nextToList,
+        cc: nextCcList,
+        subject: subject.trim(),
+        body: (nextBody ?? body).trim(),
+      };
+    },
+    [body, nextCcList, nextToList, subject],
   );
 
   const onAssistantTurnComplete = useCallback(
@@ -193,20 +270,21 @@ export function EmailComposeScreen({
       setError(null);
 
       if (!inboxId) return;
-      if (!isReply && !to.trim()) {
+      if (nextToList.length === 0) {
         setStatusHint("Draft ready — add a recipient to save.");
         return;
       }
 
       setSaving(true);
       try {
+        const headers = buildHeaderPatch({ includeBody: agentBody });
         if (draftId) {
           await client.requestJson(
             `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ body: agentBody }),
+              body: JSON.stringify(headers),
             },
           );
           discardEmailDraftDetailCache(inboxId, draftId);
@@ -216,7 +294,7 @@ export function EmailComposeScreen({
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ body: agentBody }),
+              body: JSON.stringify(headers),
             },
           );
           setDraftId(concept.draftId);
@@ -227,14 +305,16 @@ export function EmailComposeScreen({
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                to: to.trim(),
-                subject: subject.trim(),
+                ...headers,
+                to: nextToList.join(", "),
+                subject: subject.trim() || "(no subject)",
                 body: agentBody,
               }),
             },
           );
           setDraftId(draft.draftId);
         }
+        rememberBaseline(agentBody);
         setStatusHint("Draft updated.");
       } catch {
         setError("Could not save agent draft.");
@@ -243,40 +323,53 @@ export function EmailComposeScreen({
       }
     },
     [
+      buildHeaderPatch,
       client,
       draftId,
       inboxId,
       isReply,
+      nextToList,
+      rememberBaseline,
       replyToMessageId,
       subject,
-      to,
     ],
   );
 
   const ensureDraft = useCallback(async (): Promise<string> => {
     if (draftId) {
-      await client.requestJson(
-        `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: body.trim() }),
-        },
-      );
-      discardEmailDraftDetailCache(inboxId, draftId);
+      const bodyDirty =
+        body.trim() !== (baselineRef.current?.body ?? "").trim();
+      const patch = buildHeaderPatch({
+        onlyChanged: true,
+        ...(bodyDirty ? { includeBody: body.trim() } : {}),
+      });
+      if (Object.keys(patch).length > 0) {
+        await client.requestJson(
+          `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          },
+        );
+        discardEmailDraftDetailCache(inboxId, draftId);
+        rememberBaseline();
+      }
       return draftId;
     }
 
+    const headers = buildHeaderPatch({ includeBody: body.trim() });
     if (isReply && replyToMessageId) {
       const concept = await client.requestJson<EmailConceptReplyResponse>(
         `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(replyToMessageId)}/concept-reply`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: body.trim() }),
+          body: JSON.stringify(headers),
         },
       );
       setDraftId(concept.draftId);
+      rememberBaseline();
       return concept.draftId;
     }
 
@@ -286,23 +379,28 @@ export function EmailComposeScreen({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          to: to.trim(),
-          subject: subject.trim(),
+          to: nextToList.join(", "),
+          cc: nextCcList.join(", "),
+          subject: subject.trim() || "(no subject)",
           body: body.trim(),
         }),
       },
     );
     setDraftId(draft.draftId);
+    rememberBaseline();
     return draft.draftId;
   }, [
     body,
+    buildHeaderPatch,
     client,
     draftId,
     inboxId,
     isReply,
+    nextCcList,
+    nextToList,
+    rememberBaseline,
     replyToMessageId,
     subject,
-    to,
   ]);
 
   const onSaveDraft = useCallback(async () => {
@@ -388,7 +486,7 @@ export function EmailComposeScreen({
       }
     };
 
-    if (!draftId && !body.trim() && !to.trim()) {
+    if (!draftId && !body.trim() && !to.trim() && !cc.trim()) {
       void run();
       return;
     }
@@ -409,7 +507,7 @@ export function EmailComposeScreen({
         },
       ],
     );
-  }, [body, client, draftId, inboxId, router, sectionBase, to]);
+  }, [body, cc, client, draftId, inboxId, router, sectionBase, to]);
 
   if (loadingDraft) {
     return (
@@ -484,35 +582,45 @@ export function EmailComposeScreen({
             </View>
           ) : null}
 
-          {!isReply ? (
-            <>
-              <View style={styles.fieldRow}>
-                <Text style={styles.fieldLabel}>To</Text>
-                <TextInput
-                  value={to}
-                  onChangeText={setTo}
-                  placeholder="name@example.com"
-                  placeholderTextColor={colors.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  editable={!draftId && !agentWorking}
-                  style={[styles.fieldInput, draftId ? styles.fieldLocked : null]}
-                />
-              </View>
-              <View style={styles.fieldRow}>
-                <Text style={styles.fieldLabel}>Subject</Text>
-                <TextInput
-                  value={subject}
-                  onChangeText={setSubject}
-                  placeholder="Subject"
-                  placeholderTextColor={colors.muted}
-                  editable={!draftId && !agentWorking}
-                  style={[styles.fieldInput, draftId ? styles.fieldLocked : null]}
-                />
-              </View>
-            </>
-          ) : null}
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>To</Text>
+            <TextInput
+              value={to}
+              onChangeText={setTo}
+              placeholder="name@example.com"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!agentWorking}
+              style={styles.fieldInput}
+            />
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Cc</Text>
+            <TextInput
+              value={cc}
+              onChangeText={setCc}
+              placeholder="optional"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!agentWorking}
+              style={styles.fieldInput}
+            />
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Subject</Text>
+            <TextInput
+              value={subject}
+              onChangeText={setSubject}
+              placeholder="Subject"
+              placeholderTextColor={colors.muted}
+              editable={!agentWorking}
+              style={styles.fieldInput}
+            />
+          </View>
 
           <TextInput
             value={body}
@@ -651,9 +759,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingVertical: 0,
   },
-  fieldLocked: {
-    opacity: 0.65,
-  },
   bodyInput: {
     color: colors.foreground,
     fontSize: 16,
@@ -686,8 +791,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     minHeight: 44,
-    borderRadius: 12,
     backgroundColor: colors.foreground,
+    borderRadius: 12,
   },
   sendLabel: {
     color: colors.background,

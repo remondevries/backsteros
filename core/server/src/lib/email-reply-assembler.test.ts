@@ -4,8 +4,14 @@ import { describe, it } from "node:test";
 import {
   assembleEmailHtml,
   assembleReplyEmail,
+  assertValidEmailDraftHeaders,
+  assertAssembledPreservesEditableBody,
+  correctSelfOnlyTo,
   EMAIL_SIGN_OFF_AVATAR_CID,
   extractReplyBodyFromAssembled,
+  greetingPartyFromRecipients,
+  mergeEmailDraftHeaders,
+  normalizeComposeRecipients,
   parseReplyToAddress,
   parseSenderFirstName,
   plainTextEmailToHtml,
@@ -37,9 +43,28 @@ describe("email-reply-assembler", () => {
     });
     assert.deepEqual(assembled.to, ["ada@example.com"]);
     assert.equal(assembled.subject, "Re: Invoice");
-    assert.match(assembled.text, /^Hi Ada,/);
+    assert.equal(assembled.greeting, "Hi Ada,");
     assert.match(assembled.text, /We'll review the invoice this week\./);
     assert.match(assembled.text, /Best,\nRemon$/);
+  });
+
+  it("greets with display-name first name, not the local-part (exact)", () => {
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <a.lovelace@example.com>",
+      to: ["a.lovelace@example.com"],
+      subject: "Hello",
+      body: "Thanks for the update.",
+      templates: { signOffName: "Remon" },
+    });
+    assert.equal(assembled.greeting, "Hi Ada,");
+    assert.equal(
+      greetingPartyFromRecipients(
+        ["a.lovelace@example.com"],
+        ["a.lovelace@example.com"],
+        "Ada Lovelace <a.lovelace@example.com>",
+      ),
+      "Ada Lovelace <a.lovelace@example.com>",
+    );
   });
 
   it("html alternative preserves the sign-off footer for recipients", () => {
@@ -301,6 +326,24 @@ describe("email-reply-assembler", () => {
     assert.equal(party, "Fandy <fandy@fandy.nl>");
   });
 
+  it("normalizes recipient fields and honors To/Cc overrides on assemble", () => {
+    assert.deepEqual(
+      normalizeComposeRecipients("Ada <ada@example.com>, bob@example.com; ada@example.com"),
+      ["ada@example.com", "bob@example.com"],
+    );
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <ada@example.com>",
+      to: "bob@example.com",
+      cc: "cc@example.com, bob@example.com",
+      subject: "Hello",
+      body: "Thanks.",
+      templates: { signOffName: "Remon" },
+    });
+    assert.deepEqual(assembled.to, ["bob@example.com"]);
+    assert.deepEqual(assembled.cc, ["cc@example.com"]);
+    assert.match(assembled.greeting, /^Hi Bob,/i);
+  });
+
   it("returns empty body for greeting+sign-off shell with no middle", () => {
     const templates = resolveEmailReplyTemplates({
       greetingTemplateEn: "To {firstName},",
@@ -319,5 +362,161 @@ describe("email-reply-assembler", () => {
       resolveEditableDraftBody(assembled.text, from, templates),
       "",
     );
+  });
+
+  it("mergeEmailDraftHeaders keeps stored subject/To/Cc on body-only rewrite", () => {
+    const merged = mergeEmailDraftHeaders({
+      patch: {},
+      storedTo: ["ada@example.com", "bob@example.com"],
+      storedCc: ["cc@example.com"],
+      storedSubject: "Re: Edited subject",
+      fallbackTo: "Ada Lovelace <ada@example.com>",
+    });
+    assert.deepEqual(merged, {
+      to: ["ada@example.com", "bob@example.com"],
+      cc: ["cc@example.com"],
+      subject: "Re: Edited subject",
+    });
+  });
+
+  it("mergeEmailDraftHeaders empty-field rules and self-only To correction", () => {
+    assert.deepEqual(
+      mergeEmailDraftHeaders({
+        patch: { to: [], subject: "", cc: undefined },
+        storedTo: ["ada@example.com"],
+        storedCc: ["kept@example.com"],
+        storedSubject: "Keep me",
+      }),
+      {
+        to: ["ada@example.com"],
+        cc: ["kept@example.com"],
+        subject: "Keep me",
+      },
+    );
+    assert.deepEqual(
+      mergeEmailDraftHeaders({
+        patch: { cc: [] },
+        storedTo: ["ada@example.com"],
+        storedCc: ["clear-me@example.com"],
+        storedSubject: "Subject",
+      }).cc,
+      [],
+    );
+    assert.deepEqual(
+      correctSelfOnlyTo(
+        ["remon@example.com"],
+        "remon@example.com",
+        "Ada <ada@example.com>",
+      ),
+      ["ada@example.com"],
+    );
+  });
+
+  it("assertValidEmailDraftHeaders accepts quoted display names with commas", () => {
+    assert.doesNotThrow(() =>
+      assertValidEmailDraftHeaders({
+        to: '"Lovelace, Ada" <a.lovelace@example.com>',
+        requireTo: true,
+      }),
+    );
+    assert.deepEqual(
+      normalizeComposeRecipients(
+        '"Lovelace, Ada" <a.lovelace@example.com>, bob@example.com',
+      ),
+      ["a.lovelace@example.com", "bob@example.com"],
+    );
+  });
+
+  it("assertValidEmailDraftHeaders rejects CR/LF and empty/invalid To", () => {
+    assert.throws(
+      () =>
+        assertValidEmailDraftHeaders({
+          to: "ada@example.com\nBcc: evil@evil.com",
+          requireTo: true,
+        }),
+      /line breaks/i,
+    );
+    assert.throws(
+      () =>
+        assertValidEmailDraftHeaders({
+          subject: "Hello\r\nBcc: evil@evil.com",
+        }),
+      /line breaks/i,
+    );
+    assert.throws(
+      () => assertValidEmailDraftHeaders({ to: [], requireTo: true }),
+      /at least one valid/i,
+    );
+    assert.throws(
+      () =>
+        assertValidEmailDraftHeaders({
+          to: "bad@nodot",
+          requireTo: true,
+        }),
+      /Invalid To/i,
+    );
+    assert.throws(
+      () =>
+        assertValidEmailDraftHeaders({
+          to: "not-an-email",
+          requireTo: true,
+        }),
+      /Invalid To/i,
+    );
+    assert.doesNotThrow(() =>
+      assertValidEmailDraftHeaders({
+        to: "Ada <ada@example.com>",
+        cc: "bob@example.com",
+        subject: "Hello",
+        requireTo: true,
+      }),
+    );
+  });
+
+  it("assertAssembledPreservesEditableBody allows one-word edits and deleted paragraphs", () => {
+    const shelled = [
+      "Hi Ada,",
+      "",
+      "Thanks for the detailed update on the invoice.",
+      "",
+      "Best,",
+      "Remon",
+    ].join("\n");
+    assert.doesNotThrow(() =>
+      assertAssembledPreservesEditableBody(
+        shelled.replace(
+          "Thanks for the detailed update on the invoice.",
+          "Thanks for the update.",
+        ),
+        "Thanks for the update.",
+      ),
+    );
+    assert.doesNotThrow(() =>
+      assertAssembledPreservesEditableBody(
+        ["Hi Ada,", "", "Only this paragraph remains.", "", "Best,", "Remon"].join(
+          "\n",
+        ),
+        "Only this paragraph remains.",
+      ),
+    );
+    assert.throws(
+      () =>
+        assertAssembledPreservesEditableBody(
+          "Hi Ada,\n\nBest,\nRemon",
+          "This body was dropped entirely.",
+        ),
+      /lose text/i,
+    );
+  });
+
+  it("preserveSubject keeps an explicit user subject without Re:", () => {
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <ada@example.com>",
+      subject: "Custom subject from user",
+      body: "Hello.",
+      templates: { signOffName: "Remon" },
+      preserveSubject: true,
+    });
+    assert.equal(assembled.subject, "Custom subject from user");
   });
 });

@@ -3440,12 +3440,21 @@ export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
  */
 export const EMAIL_THREAD_STATUSES = [...TASK_STATUSES, "concept"] as const;
 export const emailThreadStatusSchema = z.enum(EMAIL_THREAD_STATUSES);
+/** One or more email addresses (string or list) for draft headers. */
+const emailRecipientListSchema = z
+  .union([
+    z.string().max(2_000),
+    z.array(z.string().min(1).max(320)).max(50),
+  ])
+  .optional();
+
 export const agentMailConceptDraftSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
   subject: z.string().nullable(),
   from: z.string().nullable(),
   to: z.array(z.string()),
+  cc: z.array(z.string()).optional(),
   /** Full assembled draft text stored in AgentMail. */
   text: z.string().nullable(),
   /** Editable body without greeting/sign-off. */
@@ -3569,6 +3578,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
     extractedText: z.string().nullable(),
     extractedHtml: z.string().nullable(),
     to: z.array(z.string()).optional(),
+    cc: z.array(z.string()).optional(),
     labels: z.array(z.string()).optional(),
     attachments: z.array(agentMailMessageAttachmentSchema).optional(),
     inboxEmail: z.string().nullable().optional(),
@@ -3584,6 +3594,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
           subject: z.string(),
           from: z.string(),
           to: z.array(z.string()),
+          cc: z.array(z.string()).optional(),
           timestamp: z.string(),
           text: z.string().nullable(),
           html: z.string().nullable(),
@@ -3609,11 +3620,17 @@ export const agentMailDraftDetailSchema = z.object({
   inReplyTo: z.string().nullable(),
   from: z.string().nullable().optional(),
   to: z.array(z.string()),
+  cc: z.array(z.string()).optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });
 export const emailConceptReplyInputSchema = z.object({
   body: z.string().min(1).max(100_000),
+  /** Override reply To (defaults from the inbound From / reply party). */
+  to: emailRecipientListSchema,
+  /** CC recipients for this reply draft. */
+  cc: emailRecipientListSchema,
+  subject: z.string().max(500).optional(),
 });
 export const emailConceptReplyResponseSchema = z.object({
   draftId: z.string(),
@@ -3625,6 +3642,7 @@ export const emailConceptReplyResponseSchema = z.object({
   signOff: z.string().nullable().optional(),
   subject: z.string().nullable().optional(),
   to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
 });
 
 /** Intents the email-thread agent may return via callback. */
@@ -3686,6 +3704,7 @@ export const emailAgentCallbackSuccessSchema = z
     signOff: z.string().max(2_000).nullable().optional(),
     subject: z.string().max(1_000).nullable().optional(),
     to: z.array(z.string().min(1).max(320)).max(50).optional(),
+    cc: z.array(z.string().min(1).max(320)).max(50).optional(),
     task: emailAgentCallbackTaskPayloadSchema.optional(),
     event: emailAgentCallbackEventPayloadSchema.optional(),
     /** Agent-visible note for intent=note (posted as thread comment). */
@@ -3792,7 +3811,12 @@ export const emailAgentDraftStartedSchema = z.object({
     .optional(),
 });
 export const emailComposeDraftInputSchema = z.object({
-  to: z.string().min(1).max(500),
+  /** String or list — mobile/desktop may send either. */
+  to: z.union([
+    z.string().min(1).max(2_000),
+    z.array(z.string().min(1).max(320)).min(1).max(50),
+  ]),
+  cc: emailRecipientListSchema,
   subject: z.string().max(500),
   body: z.string().min(1).max(100_000),
   composeSessionId: z.string().min(1).max(200).optional(),
@@ -3820,10 +3844,22 @@ export const emailReportSpamResponseSchema = z.object({
   ok: z.literal(true),
   blockedSender: z.string().nullable(),
 });
-export const updateAgentMailDraftSchema = z.object({
-  /** Editable body without greeting/sign-off. */
-  body: z.string().max(100_000),
-});
+export const updateAgentMailDraftSchema = z
+  .object({
+    /** Editable body without greeting/sign-off. */
+    body: z.string().max(100_000).optional(),
+    to: emailRecipientListSchema,
+    cc: emailRecipientListSchema,
+    subject: z.string().max(500).optional(),
+  })
+  .refine(
+    (value) =>
+      value.body !== undefined ||
+      value.to !== undefined ||
+      value.cc !== undefined ||
+      value.subject !== undefined,
+    { message: "At least one of body, to, cc, or subject is required" },
+  );
 export const moneybirdSalesInvoiceSchema = z.object({
   id: z.string(),
   invoiceId: z.string().nullable(),

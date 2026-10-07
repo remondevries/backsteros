@@ -841,7 +841,7 @@ export function registerEmailRoutes(app: Hono) {
             auth.workspaceId,
             inboxId,
             messageId,
-            parsed.data.body,
+            parsed.data,
           ),
         );
       } catch (error) {
@@ -1049,7 +1049,7 @@ export function registerEmailRoutes(app: Hono) {
             auth.workspaceId,
             inboxId,
             draftId,
-            c.req.valid("json").body,
+            c.req.valid("json"),
           ),
         );
       } catch (error) {

@@ -7,7 +7,10 @@ import {
 
 import { formatMeetingDisplayId, getCalendarMeetingHref } from "../meetings/meetings.js";
 import { formatTaskDisplayId, INBOX_TASK_KEY } from "../tasks/task-display-id.js";
-import { withEmailInboxListContext } from "../email/email.js";
+import {
+  getEmailDetailHref,
+  withEmailInboxListContext,
+} from "../email/email.js";
 import {
   getInboxAttentionGroupKey,
   getInboxItemDisplayId,
@@ -131,7 +134,9 @@ export function buildInboxTriageEmailNotificationFromListItem(
     subject: item.title,
     partyLabel: item.partyLabel,
     href: withEmailInboxListContext(
-      `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+      getEmailDetailHref(item.inboxId, item.messageId, {
+        draftId: item.draftId,
+      }),
     ),
   });
 }

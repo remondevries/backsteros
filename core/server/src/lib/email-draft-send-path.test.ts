@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it, mock } from "node:test";
 
 import {
+  assertAssembledPreservesEditableBody,
   assertNoDraftBodyLoss,
   assembleReplyEmail,
   draftHasStoredShell,
@@ -16,12 +17,16 @@ import {
   resolveDraftListThreadKey,
   shouldAssignDraftConceptStatus,
 } from "./agentmail-email-list.js";
+import { conceptReplyClientId } from "./agentmail-email-list.js";
 import {
   agentMailDraftLifecycleDeps,
   deleteAgentMailDraft,
   ensureDraftEmailThreadRegistered,
+  getAgentMailDraft,
   sendAgentMailDraft,
   syncAgentMailEmailStatusLabel,
+  updateAgentMailDraft,
+  upsertEmailConceptReply,
 } from "../services/agentmail-settings.js";
 
 /** OS-48 incident body: greeting, two paragraphs, amount, P.S., Dutch sign-off. */
@@ -57,6 +62,7 @@ function baseDraft(
     inReplyTo: null,
     clientId: "bsh-compose-test",
     to: ["fandy@fandy.nl"],
+    cc: [],
     attachments: [],
     updatedAt: "2026-10-01T08:00:00.000Z",
     createdAt: "2026-10-01T08:00:00.000Z",
@@ -200,6 +206,20 @@ describe("email draft send path helpers", () => {
     ].join("\n");
     // Length can stay high with greeting/sign-off padding — still refuse.
     assert.throws(() => assertNoDraftBodyLoss(stored, next), /lose text/i);
+  });
+
+  it("send path: unchanged shelled draft stays use_stored (no body re-save)", () => {
+    // OS-87: client send must not PATCH an unchanged body; stored draft goes
+    // out byte-for-byte via use_stored (assertNoDraftBodyLoss only on body PATCH).
+    const plan = planDraftSendBodies({
+      text: OS48_STORED_DRAFT,
+      html: OS48_STORED_HTML,
+      signOffName: "Remon",
+    });
+    assert.equal(plan.kind, "use_stored");
+    if (plan.kind === "use_stored") {
+      assert.equal(plan.text, OS48_STORED_DRAFT);
+    }
   });
 
   it("preserveBody keeps OS-48 paragraphs that sanitize alone used to drop", () => {
@@ -374,6 +394,7 @@ describe("sendAgentMailDraft (mocked AgentMail client)", () => {
       inboxIds: ["inbox_1"],
     }));
     mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () => TEMPLATES);
+    mock.method(agentMailDraftLifecycleDeps, "resolveSignOffAvatar", async () => null);
     mock.method(agentMailDraftLifecycleDeps, "patchThread", async () => null);
     mock.method(agentMailDraftLifecycleDeps, "deleteThread", async () => true);
     mock.method(agentMailDraftLifecycleDeps, "getOrCreateThread", async () => ({
@@ -624,5 +645,433 @@ describe("sendAgentMailDraft (mocked AgentMail client)", () => {
       updateBodies.filter((body) => "text" in body || "html" in body).length,
       0,
     );
+  });
+});
+
+describe("updateAgentMailDraft / getAgentMailDraft (service paths)", () => {
+  const REPLY_FROM = "Ada Lovelace <a.lovelace@example.com>";
+  const TEMPLATES_EN = resolveEmailReplyTemplates({
+    greetingTemplateEn: "Hi {firstName},",
+    signOffTemplateEn: "Best,\n{name}",
+    signOffName: "Remon",
+  });
+
+  function stubDraftService() {
+    mock.method(agentMailDraftLifecycleDeps, "getCredentials", async () => ({
+      apiKey: "am_test_fake_key",
+      inboxId: "inbox_1",
+      inboxIds: ["inbox_1"],
+    }));
+    mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () => TEMPLATES_EN);
+    mock.method(agentMailDraftLifecycleDeps, "resolveSignOffAvatar", async () => null);
+    mock.method(agentMailDraftLifecycleDeps, "getOrCreateThread", async () => ({
+      id: "meta",
+      inboxId: "inbox_1",
+      threadKey: "draft:x",
+      number: 1,
+      displayId: "E-1",
+      status: "concept",
+      priority: 0,
+      dueDate: null,
+      organizationId: null,
+      contactId: null,
+      assigneeId: null,
+      projectId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    mock.method(agentMailDraftLifecycleDeps, "patchThread", async () => null);
+    mock.method(AgentMailClient.prototype, "listInboxes", async () => [
+      { inboxId: "inbox_1", email: "remon@example.com", displayName: null },
+    ]);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      messageId: "msg_parent",
+      subject: "Hello Ada",
+      from: REPLY_FROM,
+      to: ["remon@example.com"],
+      preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z",
+      labels: [],
+      text: "Please reply.",
+      html: null,
+      extractedText: "Please reply.",
+      extractedHtml: null,
+      inReplyTo: null,
+      attachments: [],
+    }));
+    mock.method(AgentMailClient.prototype, "getThread", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      subject: "Hello Ada",
+      messages: [],
+    }));
+  }
+
+  function shelledAdaDraft(
+    overrides: Partial<AgentMailDraftDetail> = {},
+  ): AgentMailDraftDetail {
+    const body = "We'll review this week.";
+    const text = ["Hi Ada,", "", body, "", "Best,", "Remon"].join("\n");
+    return baseDraft({
+      draftId: "draft_ada",
+      subject: "Re: Hello Ada",
+      text,
+      html: plainTextEmailToHtml(text),
+      to: ["a.lovelace@example.com"],
+      cc: [],
+      inReplyTo: "msg_parent",
+      ...overrides,
+    });
+  }
+
+  it("GET/PATCH/send greeting uses display name when To is bare (Hi Ada,)", async () => {
+    stubDraftService();
+    let draft = shelledAdaDraft({
+      // Wrong greeting from a prior bare-To assembly — GET must still report Hi Ada,.
+      text: ["Hi A.lovelace,", "", "We'll review this week.", "", "Best,", "Remon"].join(
+        "\n",
+      ),
+    });
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+
+    const got = await getAgentMailDraft("ws_1", "inbox_1", "draft_ada");
+    assert.equal(got.greeting, "Hi Ada,");
+
+    const updateBodies: Record<string, unknown>[] = [];
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        updateBodies.push(body);
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+
+    const patched = await updateAgentMailDraft("ws_1", "inbox_1", "draft_ada", {
+      body: "We'll review this week.",
+    });
+    assert.equal(patched.greeting, "Hi Ada,");
+    const textUpdate = updateBodies.find((body) => typeof body.text === "string");
+    assert.match(String(textUpdate?.text ?? ""), /^Hi Ada,/);
+
+    // Send reassembly path (unshelled → reassemble) must greet Ada, not A.lovelace.
+    const unshelled = shelledAdaDraft({
+      text: "We'll review this week.",
+      html: null,
+    });
+    draft = unshelled;
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    mock.method(agentMailDraftLifecycleDeps, "deleteThread", async () => true);
+    mock.method(AgentMailClient.prototype, "sendDraft", async () => ({
+      inboxId: "inbox_1",
+      messageId: "msg_sent",
+      threadId: "thread_sent",
+    }));
+    const sendUpdates: Record<string, unknown>[] = [];
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        sendUpdates.push(body);
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+    await sendAgentMailDraft("ws_1", "inbox_1", "draft_ada");
+    const reassembled = sendUpdates.find((body) => typeof body.text === "string");
+    assert.match(String(reassembled?.text ?? ""), /^Hi Ada,/);
+  });
+
+  it("PATCH allows a one-word edit and a deleted paragraph", async () => {
+    stubDraftService();
+    const longBody = [
+      "Thanks for the detailed update on the invoice.",
+      "",
+      "We will process it on Monday.",
+    ].join("\n");
+    let draft = shelledAdaDraft({
+      text: ["Hi Ada,", "", longBody, "", "Best,", "Remon"].join("\n"),
+    });
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+
+    const oneWord = await updateAgentMailDraft("ws_1", "inbox_1", "draft_ada", {
+      body: "Thanks for the update on the invoice.\n\nWe will process it on Monday.",
+    });
+    assert.match(oneWord.body ?? "", /Thanks for the update/);
+
+    const deletedParagraph = await updateAgentMailDraft(
+      "ws_1",
+      "inbox_1",
+      "draft_ada",
+      { body: "Thanks for the update on the invoice." },
+    );
+    assert.equal(deletedParagraph.body?.trim(), "Thanks for the update on the invoice.");
+    assert.doesNotThrow(() =>
+      assertAssembledPreservesEditableBody(
+        deletedParagraph.text ?? "",
+        "Thanks for the update on the invoice.",
+      ),
+    );
+  });
+
+  it("header-only PATCH does not rewrite text/html", async () => {
+    stubDraftService();
+    const originalText = shelledAdaDraft().text;
+    let draft = shelledAdaDraft({ cc: [] });
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    const updateBodies: Record<string, unknown>[] = [];
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        updateBodies.push(body);
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+
+    await updateAgentMailDraft("ws_1", "inbox_1", "draft_ada", {
+      cc: ["bob@example.com"],
+      subject: "Custom subject",
+    });
+    assert.equal(updateBodies.length, 1);
+    assert.equal("text" in updateBodies[0]!, false);
+    assert.equal("html" in updateBodies[0]!, false);
+    assert.deepEqual(updateBodies[0]!.cc, ["bob@example.com"]);
+    assert.equal(updateBodies[0]!.subject, "Custom subject");
+    assert.equal(draft.text, originalText);
+  });
+
+  it("PATCH To rebuilds greeting for reply and compose drafts (Hi Bob,)", async () => {
+    stubDraftService();
+    for (const kind of ["reply", "compose"] as const) {
+      let draft = shelledAdaDraft({
+        draftId: `draft_${kind}`,
+        inReplyTo: kind === "reply" ? "msg_parent" : null,
+      });
+      mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+      const updateBodies: Record<string, unknown>[] = [];
+      mock.method(
+        AgentMailClient.prototype,
+        "updateDraft",
+        async (
+          _inboxId: string,
+          _draftId: string,
+          body: Record<string, unknown>,
+        ) => {
+          updateBodies.push(body);
+          draft = { ...draft, ...body } as AgentMailDraftDetail;
+          return draft;
+        },
+      );
+
+      await updateAgentMailDraft("ws_1", "inbox_1", draft.draftId, {
+        to: ["bob@example.com"],
+      });
+      const textUpdate = updateBodies.find((body) => typeof body.text === "string");
+      assert.ok(textUpdate, `${kind}: expected text rebuild`);
+      assert.match(String(textUpdate.text), /^Hi Bob,/);
+      assert.match(String(textUpdate.text), /We'll review this week\./);
+      assert.deepEqual(textUpdate.to, ["bob@example.com"]);
+    }
+  });
+});
+
+describe("send self-only To correction + concept subject preserve", () => {
+  const TEMPLATES_EN = resolveEmailReplyTemplates({
+    greetingTemplateEn: "Hi {firstName},",
+    signOffTemplateEn: "Best,\n{name}",
+    signOffName: "Remon",
+  });
+
+  function stubService() {
+    mock.method(agentMailDraftLifecycleDeps, "getCredentials", async () => ({
+      apiKey: "am_test_fake_key",
+      inboxId: "inbox_1",
+      inboxIds: ["inbox_1"],
+    }));
+    mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () => TEMPLATES_EN);
+    mock.method(agentMailDraftLifecycleDeps, "resolveSignOffAvatar", async () => null);
+    mock.method(agentMailDraftLifecycleDeps, "patchThread", async () => null);
+    mock.method(agentMailDraftLifecycleDeps, "deleteThread", async () => true);
+    mock.method(agentMailDraftLifecycleDeps, "getOrCreateThread", async () => ({
+      id: "meta",
+      inboxId: "inbox_1",
+      threadKey: "draft:x",
+      number: 1,
+      displayId: "E-1",
+      status: "concept",
+      priority: 0,
+      dueDate: null,
+      organizationId: null,
+      contactId: null,
+      assigneeId: null,
+      projectId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    mock.method(AgentMailClient.prototype, "listInboxes", async () => [
+      { inboxId: "inbox_1", email: "remon@example.com", displayName: null },
+    ]);
+  }
+
+  it("send reassembles unshelled self-only To to the external reply party", async () => {
+    stubService();
+    let draft = baseDraft({
+      draftId: "draft_self",
+      text: "We'll review this week.",
+      html: null,
+      to: ["remon@example.com"],
+      inReplyTo: "msg_parent",
+      subject: "Re: Hello",
+    });
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      messageId: "msg_parent",
+      subject: "Hello",
+      from: "Ada Lovelace <a.lovelace@example.com>",
+      to: ["remon@example.com"],
+      preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z",
+      labels: [],
+      text: "Please reply.",
+      html: null,
+      extractedText: "Please reply.",
+      extractedHtml: null,
+      inReplyTo: null,
+      attachments: [],
+    }));
+    mock.method(AgentMailClient.prototype, "getThread", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      subject: "Hello",
+      messages: [],
+    }));
+    const updateBodies: Record<string, unknown>[] = [];
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        updateBodies.push(body);
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+    mock.method(AgentMailClient.prototype, "sendDraft", async () => ({
+      inboxId: "inbox_1",
+      messageId: "msg_sent",
+      threadId: "thread_sent",
+    }));
+
+    await sendAgentMailDraft("ws_1", "inbox_1", "draft_self");
+    const reassembled = updateBodies.find((body) => typeof body.text === "string");
+    assert.ok(reassembled);
+    assert.match(String(reassembled.text), /^Hi Ada,/);
+    assert.deepEqual(reassembled.to, ["a.lovelace@example.com"]);
+  });
+
+  it("Judith body-only rewrite keeps stored subject Quote", async () => {
+    stubService();
+    const messageId = "msg_quote";
+    const clientId = conceptReplyClientId(messageId);
+    const existingText = ["Hi Ada,", "", "Old body.", "", "Best,", "Remon"].join(
+      "\n",
+    );
+    let draft = baseDraft({
+      draftId: "draft_quote",
+      clientId,
+      subject: "Quote",
+      text: existingText,
+      html: plainTextEmailToHtml(existingText),
+      to: ["a.lovelace@example.com"],
+      inReplyTo: messageId,
+    });
+    mock.method(AgentMailClient.prototype, "listDrafts", async () => [
+      {
+        inboxId: "inbox_1",
+        draftId: draft.draftId,
+        subject: draft.subject,
+        preview: null,
+        inReplyTo: messageId,
+        clientId,
+        to: draft.to,
+        cc: [],
+        updatedAt: draft.updatedAt,
+        createdAt: draft.createdAt,
+      },
+    ]);
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      messageId,
+      subject: "Original parent subject",
+      from: "Ada Lovelace <a.lovelace@example.com>",
+      to: ["remon@example.com"],
+      preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z",
+      labels: [],
+      text: "Please quote.",
+      html: null,
+      extractedText: "Please quote.",
+      extractedHtml: null,
+      inReplyTo: null,
+      attachments: [],
+    }));
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+
+    const result = await upsertEmailConceptReply(
+      "ws_1",
+      "inbox_1",
+      messageId,
+      { body: "Rewritten quote body." },
+    );
+    assert.equal(result.subject, "Quote");
+    assert.equal(draft.subject, "Quote");
+    assert.doesNotMatch(String(draft.subject), /^Re:/);
   });
 });

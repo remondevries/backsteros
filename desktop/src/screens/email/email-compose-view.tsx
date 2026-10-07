@@ -43,6 +43,8 @@ export function EmailComposeView({
     setComposeInboxId,
     composeTo,
     setComposeTo,
+    composeCc,
+    setComposeCc,
     composeSubject,
     setComposeSubject,
     composeDraft,
@@ -84,6 +86,8 @@ export function EmailComposeView({
                 }}
                 to={composeTo}
                 onToChange={setComposeTo}
+                cc={composeCc}
+                onCcChange={setComposeCc}
                 subject={composeSubject}
                 onSubjectChange={setComposeSubject}
                 body={conceptBodyDraft}

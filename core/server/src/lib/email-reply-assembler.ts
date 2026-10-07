@@ -513,6 +513,7 @@ export function resolveEditableDraftBody(
 
 export type AssembledReplyEmail = {
   to: string[];
+  cc: string[];
   subject: string;
   text: string;
   body: string;
@@ -522,11 +523,235 @@ export type AssembledReplyEmail = {
 
 export type AssembledComposeEmail = AssembledReplyEmail;
 
-function normalizeComposeRecipients(to: string | string[]): string[] {
-  const list = Array.isArray(to) ? to : [to];
-  return list
-    .map((entry) => parseReplyToAddress(entry))
-    .filter((address) => address.includes("@"));
+/**
+ * Split a comma/semicolon recipient field into display strings.
+ * Commas inside quotes or angle brackets are kept
+ * (`"Lovelace, Ada" <a@b.com>` stays one entry).
+ */
+export function splitRecipientField(raw: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let inAngle = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]!;
+    if (ch === '"' && !inAngle) {
+      inQuotes = !inQuotes;
+      current += ch;
+      continue;
+    }
+    if (ch === "<" && !inQuotes) {
+      inAngle = true;
+      current += ch;
+      continue;
+    }
+    if (ch === ">" && !inQuotes) {
+      inAngle = false;
+      current += ch;
+      continue;
+    }
+    if ((ch === "," || ch === ";") && !inQuotes && !inAngle) {
+      const trimmed = current.trim();
+      if (trimmed) out.push(trimmed);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  const trimmed = current.trim();
+  if (trimmed) out.push(trimmed);
+  return out;
+}
+
+/**
+ * Normalize To/Cc into bare-address list (deduped, order preserved).
+ * Accepts a single string, comma-separated string, or string array.
+ */
+export function normalizeComposeRecipients(
+  to: string | string[] | null | undefined,
+): string[] {
+  if (to == null) return [];
+  const list = Array.isArray(to)
+    ? to.flatMap((entry) => splitRecipientField(entry))
+    : splitRecipientField(to);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of list) {
+    const address = parseReplyToAddress(entry);
+    if (!address.includes("@")) continue;
+    const key = address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(address);
+  }
+  return out;
+}
+
+const EMAIL_ADDRESS_RE =
+  /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+
+/** True when a header string contains CR or LF (header-injection risk). */
+export function emailHeaderContainsLineBreak(value: string): boolean {
+  return /[\r\n]/.test(value);
+}
+
+/**
+ * Prefer a display-name form for greetings (`Ada Lovelace <a@…>` → Ada).
+ * Falls back to the bare normalized address only when no display form exists.
+ */
+export function greetingPartyFromRecipients(
+  preferred: string | string[] | null | undefined,
+  normalizedAddresses: readonly string[],
+  fallback = "",
+): string {
+  const rawList =
+    preferred == null
+      ? []
+      : Array.isArray(preferred)
+        ? preferred.flatMap((entry) => splitRecipientField(entry))
+        : splitRecipientField(preferred);
+  const withDisplayName = rawList.find(
+    (entry) => entry.includes("<") && entry.includes("@"),
+  )?.trim();
+  if (withDisplayName) return withDisplayName;
+
+  const firstRaw = rawList[0]?.trim() || "";
+  const primaryAddress = (
+    normalizedAddresses[0] || parseReplyToAddress(firstRaw)
+  ).toLowerCase();
+  // Stored drafts often keep bare To addresses; recover the display name from
+  // the original From when it is the same mailbox.
+  const fallbackTrimmed = fallback.trim();
+  if (fallbackTrimmed.includes("<") && primaryAddress) {
+    const fallbackAddress = parseReplyToAddress(fallbackTrimmed).toLowerCase();
+    if (fallbackAddress === primaryAddress) return fallbackTrimmed;
+  }
+  if (firstRaw) return firstRaw;
+  if (fallbackTrimmed) return fallbackTrimmed;
+  return normalizedAddresses[0] || "";
+}
+
+/**
+ * Validate draft header fields. Throws Error with a user-facing message on
+ * CR/LF, empty To, or invalid address shape. Non-empty invalid entries are
+ * rejected (not silently dropped).
+ */
+export function assertValidEmailDraftHeaders(input: {
+  to?: string | string[] | null;
+  cc?: string | string[] | null;
+  subject?: string | null;
+  /** When true, empty To is an error (create / explicit set). */
+  requireTo?: boolean;
+}): void {
+  const checkField = (
+    label: string,
+    value: string | string[] | null | undefined,
+    options?: { allowEmpty?: boolean },
+  ) => {
+    if (value == null) return;
+    const parts = Array.isArray(value)
+      ? value.flatMap((entry) => splitRecipientField(entry))
+      : splitRecipientField(value);
+    if (parts.length === 0) {
+      if (options?.allowEmpty === false) {
+        throw new Error(`${label} requires at least one valid email address.`);
+      }
+      return;
+    }
+    for (const part of parts) {
+      if (emailHeaderContainsLineBreak(part)) {
+        throw new Error(`${label} must not contain line breaks.`);
+      }
+      const address = parseReplyToAddress(part);
+      if (!address.includes("@") || !EMAIL_ADDRESS_RE.test(address)) {
+        throw new Error(`Invalid ${label} address: ${part}`);
+      }
+    }
+  };
+
+  if (input.subject != null && emailHeaderContainsLineBreak(input.subject)) {
+    throw new Error("Subject must not contain line breaks.");
+  }
+  if (input.cc !== undefined) {
+    checkField("Cc", input.cc, { allowEmpty: true });
+  }
+  if (input.to === undefined) return;
+  checkField("To", input.to, {
+    allowEmpty: input.requireTo === false,
+  });
+  if (input.requireTo !== false) {
+    const to = normalizeComposeRecipients(input.to);
+    if (to.length === 0) {
+      throw new Error("To requires at least one valid email address.");
+    }
+  }
+}
+
+/**
+ * If To is only our own mailbox, replace with an external reply party when known.
+ */
+export function correctSelfOnlyTo(
+  to: readonly string[],
+  inboxEmail: string | null | undefined,
+  externalParty: string | string[] | null | undefined,
+): string[] {
+  const ours = inboxEmail?.trim().toLowerCase() || null;
+  if (!ours || to.length !== 1) return [...to];
+  if (to[0]!.toLowerCase() !== ours) return [...to];
+  const external = normalizeComposeRecipients(externalParty ?? "");
+  return external.length > 0 ? external : [...to];
+}
+
+export type MergedEmailDraftHeaders = {
+  to: string[];
+  cc: string[];
+  subject: string;
+};
+
+/**
+ * Merge a PATCH onto stored draft headers.
+ * - Empty subject keeps stored subject.
+ * - Empty To keeps stored To (never wipe with []).
+ * - Explicit `cc` (including []) replaces stored Cc; omit keeps it.
+ */
+export function mergeEmailDraftHeaders(input: {
+  patch: {
+    to?: string | string[] | null;
+    cc?: string | string[] | null;
+    subject?: string | null;
+  };
+  storedTo: readonly string[];
+  storedCc: readonly string[];
+  storedSubject: string;
+  /** Used when both patch and stored To are empty. */
+  fallbackTo?: string | string[] | null;
+  inboxEmail?: string | null;
+}): MergedEmailDraftHeaders {
+  const storedSubject = input.storedSubject.trim();
+  const patchSubject = (input.patch.subject ?? "").trim();
+  const subject =
+    input.patch.subject !== undefined && patchSubject
+      ? patchSubject
+      : storedSubject;
+
+  let to =
+    input.patch.to !== undefined
+      ? normalizeComposeRecipients(input.patch.to)
+      : [...input.storedTo];
+  if (to.length === 0) {
+    to = [...input.storedTo];
+  }
+  to = correctSelfOnlyTo(to, input.inboxEmail, input.fallbackTo);
+  if (to.length === 0) {
+    to = normalizeComposeRecipients(input.fallbackTo ?? "");
+  }
+
+  const cc =
+    input.patch.cc !== undefined
+      ? normalizeComposeRecipients(input.patch.cc)
+      : [...input.storedCc];
+
+  return { to, cc, subject };
 }
 
 /** First name for greeting — uses the primary recipient. */
@@ -558,6 +783,9 @@ export function assembleReplyEmail(input: {
   from: string;
   subject: string;
   body: string;
+  /** Override To (defaults to the reply party in `from`). */
+  to?: string | string[] | null;
+  cc?: string | string[] | null;
   templates?: Partial<
     EmailReplyTemplateSettings & {
       greetingTemplate?: string;
@@ -569,6 +797,11 @@ export function assembleReplyEmail(input: {
   contextText?: string | null;
   /** When true, do not run agent sanitizer (stored user edits / send path). */
   preserveBody?: boolean;
+  /**
+   * When true, use `subject` as-is (user-edited). When false/omitted, prefix
+   * `Re:` like a fresh reply to the parent subject.
+   */
+  preserveSubject?: boolean;
 }): AssembledReplyEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language =
@@ -583,11 +816,27 @@ export function assembleReplyEmail(input: {
     (rawBody
       ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
       : "");
-  const { greeting, signOff } = renderEmailReplyShell(input.from, templates);
+  const to =
+    input.to != null
+      ? normalizeComposeRecipients(input.to)
+      : normalizeComposeRecipients(input.from);
+  const cc = normalizeComposeRecipients(input.cc).filter(
+    (address) => !to.some((entry) => entry.toLowerCase() === address.toLowerCase()),
+  );
+  // Prefer To (or From) raw form; fall back to `from` display name when To is bare.
+  const greetingParty = greetingPartyFromRecipients(
+    input.to != null ? input.to : input.from,
+    to,
+    input.from,
+  );
+  const { greeting, signOff } = renderEmailReplyShell(greetingParty, templates);
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
-    to: [parseReplyToAddress(input.from)],
-    subject: replySubject(input.subject),
+    to,
+    cc,
+    subject: input.preserveSubject
+      ? input.subject.trim() || "(no subject)"
+      : replySubject(input.subject),
     text,
     body,
     greeting,
@@ -601,6 +850,7 @@ export function assembleReplyEmail(input: {
  */
 export function assembleComposeEmail(input: {
   to: string | string[];
+  cc?: string | string[] | null;
   subject: string;
   body: string;
   templates?: Partial<
@@ -623,13 +873,16 @@ export function assembleComposeEmail(input: {
       ? stripTrailingSignOff(stripLeadingGreetingLines(rawBody))
       : "");
   const toAddresses = normalizeComposeRecipients(input.to);
-  const primaryTo = Array.isArray(input.to)
-    ? (input.to[0]?.trim() ?? "")
-    : input.to.trim();
+  const ccAddresses = normalizeComposeRecipients(input.cc).filter(
+    (address) =>
+      !toAddresses.some((entry) => entry.toLowerCase() === address.toLowerCase()),
+  );
+  const primaryTo = greetingPartyFromRecipients(input.to, toAddresses, "");
   const { greeting, signOff } = renderEmailComposeShell(primaryTo, templates);
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
     to: toAddresses,
+    cc: ccAddresses,
     subject: input.subject.trim() || "(no subject)",
     text,
     body,
@@ -648,9 +901,13 @@ export function plainTextEmailToHtml(text: string): string {
  * recipient instead of our inbox address.
  */
 export function resolveReplyPartyFromMessage(
-  message: { from: string; to?: string[] | null },
+  message: { from: string; to?: string[] | null; cc?: string[] | null },
   inboxEmail: string | null | undefined,
-  threadMessages?: readonly { from: string; to?: string[] | null }[],
+  threadMessages?: readonly {
+    from: string;
+    to?: string[] | null;
+    cc?: string[] | null;
+  }[],
 ): string {
   const ours = inboxEmail?.trim().toLowerCase() || null;
   const fromAddr = parseReplyToAddress(message.from).toLowerCase();
@@ -659,10 +916,14 @@ export function resolveReplyPartyFromMessage(
       const addr = parseReplyToAddress(raw).toLowerCase();
       if (addr.includes("@") && addr !== ours) return raw;
     }
+    for (const raw of message.cc ?? []) {
+      const addr = parseReplyToAddress(raw).toLowerCase();
+      if (addr.includes("@") && addr !== ours) return raw;
+    }
     for (const entry of threadMessages ?? []) {
       const entryFrom = parseReplyToAddress(entry.from).toLowerCase();
       if (entryFrom.includes("@") && entryFrom !== ours) return entry.from;
-      for (const raw of entry.to ?? []) {
+      for (const raw of [...(entry.to ?? []), ...(entry.cc ?? [])]) {
         const addr = parseReplyToAddress(raw).toLowerCase();
         if (addr.includes("@") && addr !== ours) return raw;
       }
@@ -776,6 +1037,24 @@ export function planDraftSendBodies(input: {
 
 function normalizeParagraphForLossCheck(paragraph: string): string {
   return paragraph.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * After reassembly, the shelled text must still contain the user's editable
+ * body unchanged (one-word edits and deleted paragraphs are allowed).
+ */
+export function assertAssembledPreservesEditableBody(
+  assembledText: string,
+  editableBody: string,
+): void {
+  const body = editableBody.replace(/\r\n/g, "\n").trim();
+  if (!body) return;
+  const text = assembledText.replace(/\r\n/g, "\n");
+  if (!text.includes(body)) {
+    throw new Error(
+      "Draft body would lose text when assembling for send. Edit the concept in the app and try again.",
+    );
+  }
 }
 
 /** Reject send/update when re-assembly would drop a large share of stored text. */

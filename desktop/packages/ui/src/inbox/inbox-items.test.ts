@@ -8,6 +8,7 @@ import {
   getInboxAttentionGroupKey,
   getInboxAttentionKeyboardItemIds,
   getInboxHrefAfterRemovingItem,
+  getEmailTaskListHref,
   getInboxItemDisplayId,
   getInboxItemHref,
   groupInboxItemsByAttentionStatus,
@@ -452,6 +453,32 @@ test("email inbox items group by status and link to email routes", () => {
   assert.equal(groups[0]?.status, "triage");
   assert.equal(groups[0]?.label, "Triage");
   assert.equal(groups[1]?.status, "in_progress");
+});
+
+test("standalone draft emails link to /drafts/:id (not message path)", () => {
+  const draft = buildInboxEmailListItem({
+    inboxId: "remon@lemo-design.com",
+    messageId: "cd8b0f45-18cf-45a3-b46b-1ff6cb8f06bc",
+    draftId: "cd8b0f45-18cf-45a3-b46b-1ff6cb8f06bc",
+    title: "testing",
+    status: "concept",
+    displayId: "E-135",
+    number: 135,
+    updatedAt: 10,
+  });
+  assert.equal(
+    getInboxItemHref(draft),
+    "/email/remon%40lemo-design.com/drafts/cd8b0f45-18cf-45a3-b46b-1ff6cb8f06bc?list=inbox",
+  );
+  assert.equal(
+    getEmailTaskListHref({
+      listKind: "email",
+      emailInboxId: draft.inboxId,
+      emailMessageId: draft.messageId,
+      emailDraftId: draft.draftId,
+    }),
+    "/email/remon%40lemo-design.com/drafts/cd8b0f45-18cf-45a3-b46b-1ff6cb8f06bc?list=tasks",
+  );
 });
 
 test("emailBelongsInInbox keeps undated untriaged mail; excludes today-or-later due", () => {

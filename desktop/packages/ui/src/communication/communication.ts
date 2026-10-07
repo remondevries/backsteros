@@ -5,6 +5,7 @@ import {
   type InboxListItem,
 } from "../inbox/inbox-items.js";
 import {
+  getEmailDetailHref,
   parseEmailDraftPath,
   parseEmailMessagePath,
   withEmailListContext,
@@ -365,7 +366,9 @@ export function getCommunicationItemHref(
   if (item.kind === "email") {
     return withCommunicationListContext(
       withEmailListContext(
-        `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+        getEmailDetailHref(item.inboxId, item.messageId, {
+          draftId: item.draftId,
+        }),
         "communication",
       ),
       { channel, inboxId, status },

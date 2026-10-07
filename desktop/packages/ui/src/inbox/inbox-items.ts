@@ -10,6 +10,7 @@ import { formatMeetingDisplayId, getCalendarMeetingHref } from "../meetings/meet
 import { formatLocalYmd } from "../tasks/task-due-date.js";
 import {
   formatEmailListPartyLabel,
+  getEmailDetailHref,
   withEmailInboxListContext,
   withEmailListContext,
 } from "../email/email.js";
@@ -585,7 +586,7 @@ export function inboxListItemToTaskItemRowTask(
 export function getEmailTaskListHref(
   task: Pick<
     TaskItemRowTask,
-    "listKind" | "emailInboxId" | "emailMessageId"
+    "listKind" | "emailInboxId" | "emailMessageId" | "emailDraftId"
   >,
   options?: { list?: "tasks" | "project" },
 ): string | null {
@@ -596,7 +597,11 @@ export function getEmailTaskListHref(
   ) {
     return null;
   }
-  const href = `/email/${encodeURIComponent(task.emailInboxId.trim())}/${encodeURIComponent(task.emailMessageId.trim())}`;
+  const href = getEmailDetailHref(
+    task.emailInboxId.trim(),
+    task.emailMessageId.trim(),
+    { draftId: task.emailDraftId },
+  );
   const list = options?.list ?? "tasks";
   return withEmailListContext(href, list);
 }
@@ -635,7 +640,9 @@ export function getInboxItemHref(
   }
   if (item.kind === "email") {
     return withEmailInboxListContext(
-      `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+      getEmailDetailHref(item.inboxId, item.messageId, {
+        draftId: item.draftId,
+      }),
     );
   }
   if (item.kind === "meeting") {
@@ -685,7 +692,9 @@ export function buildInboxItemHrefById(
       hrefById.set(
         item.id,
         withEmailInboxListContext(
-          `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+          getEmailDetailHref(item.inboxId, item.messageId, {
+            draftId: item.draftId,
+          }),
         ),
       );
       continue;

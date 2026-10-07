@@ -13,6 +13,8 @@ import type {
   EmailSendDraftResponse,
 } from "@backsteros/contracts";
 import {
+  buildEmailDraftHeaderPatch,
+  normalizeEmailRecipients,
   parseReplyToAddress,
   replySubject as formatReplySubject,
   type EmailDraftBodyMode,
@@ -97,6 +99,7 @@ export function useEmailDraftActions({
     () => composeSession.inboxId ?? "",
   );
   const [composeTo, setComposeTo] = useState("");
+  const [composeCc, setComposeCc] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeDraft, setComposeDraft] = useState<AgentMailDraftDetail | null>(
     null,
@@ -107,6 +110,7 @@ export function useEmailDraftActions({
   const [replyComposeOpen, setReplyComposeOpen] = useState(false);
   const [replyInboxId, setReplyInboxId] = useState("");
   const [replyTo, setReplyTo] = useState("");
+  const [replyCc, setReplyCc] = useState("");
   const [replySubjectText, setReplySubjectText] = useState("");
 
   useEffect(() => {
@@ -131,32 +135,49 @@ export function useEmailDraftActions({
     message?.conceptDraft?.text,
   ]);
 
+  const replyHeadersSeededForDraftRef = useRef<string | null>(null);
+
   useEffect(() => {
     setReplyComposeOpen(false);
     setReplyInboxId("");
     setReplyTo("");
+    setReplyCc("");
     setReplySubjectText("");
+    replyHeadersSeededForDraftRef.current = null;
   }, [messageId]);
 
   useEffect(() => {
     if (!message || isCompose) return;
-    if (message.conceptDraft) {
-      setReplyComposeOpen(true);
-      setReplyInboxId(message.conceptDraft.inboxId?.trim() || inboxId || "");
-      setReplyTo(
-        message.conceptDraft.to?.[0]?.trim() ||
-          parseReplyToAddress(message.from),
-      );
-      setReplySubjectText(
-        message.conceptDraft.subject?.trim() ||
-          formatReplySubject(message.subject),
-      );
-    }
+    const concept = message.conceptDraft;
+    if (!concept) return;
+    setReplyComposeOpen(true);
+    setReplyInboxId(concept.inboxId?.trim() || inboxId || "");
+    // Seed To / Cc / Subject once per draft id — agent body rewrites must not
+    // clobber recipients the user already edited.
+    if (replyHeadersSeededForDraftRef.current === concept.draftId) return;
+    replyHeadersSeededForDraftRef.current = concept.draftId;
+    // Keep Reply-all / manual header edits made before the first draft id arrives.
+    setReplyTo((current) =>
+      current.trim()
+        ? current
+        : (concept.to ?? []).join(", ") || parseReplyToAddress(message.from),
+    );
+    setReplyCc((current) =>
+      current.trim() ? current : (concept.cc ?? []).join(", "),
+    );
+    setReplySubjectText((current) =>
+      current.trim()
+        ? current
+        : concept.subject?.trim() || formatReplySubject(message.subject),
+    );
   }, [
     inboxId,
     isCompose,
     message,
-    message?.conceptDraft,
+    message?.conceptDraft?.draftId,
+    message?.conceptDraft?.to,
+    message?.conceptDraft?.cc,
+    message?.conceptDraft?.subject,
     message?.from,
     message?.messageId,
     message?.subject,
@@ -199,7 +220,8 @@ export function useEmailDraftActions({
       .then((loaded) => {
         if (cancelled) return;
         setComposeDraft(loaded);
-        setComposeTo(loaded.to[0]?.trim() ?? "");
+        setComposeTo((loaded.to ?? []).join(", "));
+        setComposeCc((loaded.cc ?? []).join(", "));
         setComposeSubject(loaded.subject?.trim() ?? "");
         setConceptBodyDraft(resolveEditableEmailDraftBody(loaded));
       })
@@ -245,6 +267,40 @@ export function useEmailDraftActions({
     });
   }, [composeSession, isCompose]);
 
+  /** True when this screen owns editable To / Cc / Subject chrome. */
+  const ownsDraftHeaders = Boolean(
+    isCompose || composeDraft?.draftId || (message && replyComposeOpen),
+  );
+
+  const draftHeaderPayload = useCallback(
+    (options?: { includeBody?: string; onlyChanged?: boolean }) => {
+      const usingCompose = Boolean(isCompose || composeDraft?.draftId);
+      const baseline = composeDraft ?? draft ?? message?.conceptDraft ?? null;
+      return buildEmailDraftHeaderPatch({
+        ownsHeaders: ownsDraftHeaders,
+        onlyChanged: options?.onlyChanged,
+        to: usingCompose ? composeTo : replyTo,
+        cc: usingCompose ? composeCc : replyCc,
+        subject: usingCompose ? composeSubject : replySubjectText,
+        baseline,
+        includeBody: options?.includeBody,
+      });
+    },
+    [
+      composeCc,
+      composeDraft,
+      composeSubject,
+      composeTo,
+      draft,
+      isCompose,
+      message?.conceptDraft,
+      ownsDraftHeaders,
+      replyCc,
+      replySubjectText,
+      replyTo,
+    ],
+  );
+
   const saveConceptDraftBody = useCallback(
     async (targetInboxId: string, targetDraftId: string, body: string) => {
       if (conceptBodySavingRef.current) return;
@@ -257,16 +313,25 @@ export function useEmailDraftActions({
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ body }),
+            body: JSON.stringify(draftHeaderPayload({ includeBody: body })),
           },
         );
         if (draftId && draft) {
           setDraft(updated);
         } else if (composeDraft?.draftId) {
           setComposeDraft(updated);
+          setComposeTo((updated.to ?? []).join(", "));
+          setComposeCc((updated.cc ?? []).join(", "));
+          setComposeSubject(updated.subject?.trim() ?? composeSubject);
         } else if (messageId && inboxId) {
           const reloaded = await reloadMessageDetail(inboxId, messageId);
           setMessage(reloaded);
+          setReplyTo((updated.to ?? []).join(", "));
+          setReplyCc((updated.cc ?? []).join(", "));
+          setReplySubjectText(
+            updated.subject?.trim() ||
+              formatReplySubject(reloaded.subject),
+          );
         }
         setConceptBodyDraft(
           resolveEditableEmailDraftBody(updated) || body,
@@ -284,7 +349,17 @@ export function useEmailDraftActions({
         setConceptBodySaving(false);
       }
     },
-    [client, composeDraft?.draftId, draft, draftId, inboxId, messageId, reloadMessageDetail],
+    [
+      client,
+      composeDraft?.draftId,
+      composeSubject,
+      draft,
+      draftHeaderPayload,
+      draftId,
+      inboxId,
+      messageId,
+      reloadMessageDetail,
+    ],
   );
 
   const saveConceptReply = useCallback(
@@ -297,16 +372,25 @@ export function useEmailDraftActions({
       setConceptSaving(true);
       setConceptError(null);
       try {
+        const headers = draftHeaderPayload();
         const saved = await client.requestJson<{
           draftId: string;
           inboxId: string;
           inReplyToMessageId?: string | null;
+          to?: string[];
+          cc?: string[];
+          subject?: string | null;
         }>(
           `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/concept-reply`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ body: agentBody }),
+            body: JSON.stringify({
+              body: agentBody,
+              to: headers.to,
+              cc: headers.cc,
+              subject: headers.subject,
+            }),
           },
         );
         try {
@@ -330,6 +414,7 @@ export function useEmailDraftActions({
                   subject: draftDetail.subject,
                   from: draftDetail.from ?? null,
                   to: draftDetail.to ?? [],
+                  cc: draftDetail.cc ?? [],
                   text: draftDetail.text,
                   body: resolveEditableEmailDraftBody(draftDetail),
                   greeting: draftDetail.greeting ?? null,
@@ -338,6 +423,12 @@ export function useEmailDraftActions({
                   updatedAt: draftDetail.updatedAt,
                 },
               });
+              setReplyTo((draftDetail.to ?? []).join(", "));
+              setReplyCc((draftDetail.cc ?? []).join(", "));
+              setReplySubjectText(
+                draftDetail.subject?.trim() ||
+                  formatReplySubject(message?.subject ?? ""),
+              );
             } catch (draftError) {
               console.warn("[email] concept draft fetch failed:", draftError);
             }
@@ -360,7 +451,7 @@ export function useEmailDraftActions({
         setConceptSaving(false);
       }
     },
-    [client, inboxId, messageId],
+    [client, draftHeaderPayload, inboxId, message?.subject, messageId],
   );
 
   const saveComposeDraft = useCallback(
@@ -388,6 +479,7 @@ export function useEmailDraftActions({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: composeTo.trim(),
+              cc: normalizeEmailRecipients(composeCc),
               subject: composeSubject.trim(),
               body: agentBody,
               composeSessionId: composeSession.sessionId,
@@ -403,6 +495,8 @@ export function useEmailDraftActions({
           `/api/v1/email/inboxes/${encodeURIComponent(result.inboxId)}/drafts/${encodeURIComponent(result.draftId)}`,
         );
         setComposeDraft(loaded);
+        setComposeTo((loaded.to ?? []).join(", "));
+        setComposeCc((loaded.cc ?? []).join(", "));
         setComposeSubject(loaded.subject?.trim() ?? composeSubject);
         setConceptBodyDraft(
           resolveEditableEmailDraftBody(loaded) || agentBody,
@@ -422,6 +516,7 @@ export function useEmailDraftActions({
     },
     [
       client,
+      composeCc,
       composeInboxId,
       composeSession.sessionId,
       composeSubject,
@@ -498,6 +593,35 @@ export function useEmailDraftActions({
       setSending(true);
       setSendError(null);
       try {
+        // Only PATCH fields that changed. Never re-save an unchanged body —
+        // OS-87 sends stored shelled drafts byte-for-byte.
+        const baseline =
+          composeDraft?.draftId === targetDraftId
+            ? composeDraft
+            : draft?.draftId === targetDraftId
+              ? draft
+              : message?.conceptDraft?.draftId === targetDraftId
+                ? message.conceptDraft
+                : null;
+        const savedBody = resolveEditableEmailDraftBody(baseline);
+        const bodyDirty =
+          conceptBodyDraft.trim() !== savedBody.trim() &&
+          // Standalone draft page edits body in conceptBodyDraft too.
+          (ownsDraftHeaders || Boolean(draftId));
+        const patch = draftHeaderPayload({
+          onlyChanged: true,
+          ...(bodyDirty ? { includeBody: conceptBodyDraft } : {}),
+        });
+        if (Object.keys(patch).length > 0) {
+          await client.requestJson<AgentMailDraftDetail>(
+            `/api/v1/email/inboxes/${encodeURIComponent(draftInboxId)}/drafts/${encodeURIComponent(targetDraftId)}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patch),
+            },
+          );
+        }
         const result = await client.requestJson<EmailSendDraftResponse>(
           `/api/v1/email/inboxes/${encodeURIComponent(draftInboxId)}/drafts/${encodeURIComponent(targetDraftId)}/send`,
           { method: "POST" },
@@ -542,7 +666,21 @@ export function useEmailDraftActions({
         setSending(false);
       }
     },
-    [client, draftId, inboxId, navigate, promoteEmailThreadStatus, reloadMessageDetail, toEmailDetailHref],
+    [
+      client,
+      composeDraft,
+      conceptBodyDraft,
+      draft,
+      draftHeaderPayload,
+      draftId,
+      inboxId,
+      message?.conceptDraft,
+      navigate,
+      ownsDraftHeaders,
+      promoteEmailThreadStatus,
+      reloadMessageDetail,
+      toEmailDetailHref,
+    ],
   );
 
   const deleteDraft = useCallback(
@@ -679,6 +817,8 @@ export function useEmailDraftActions({
     setComposeInboxId,
     composeTo,
     setComposeTo,
+    composeCc,
+    setComposeCc,
     composeSubject,
     setComposeSubject,
     composeDraft,
@@ -689,6 +829,8 @@ export function useEmailDraftActions({
     setReplyInboxId,
     replyTo,
     setReplyTo,
+    replyCc,
+    setReplyCc,
     replySubjectText,
     setReplySubjectText,
     saveConceptDraftBody,

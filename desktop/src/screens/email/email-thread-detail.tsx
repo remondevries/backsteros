@@ -24,6 +24,7 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   migrateLegacyTaskStatus,
+  buildReplyRecipients,
   emailMailboxFromDisplay,
   parseReplyToAddress,
   replySubject as formatReplySubject,
@@ -153,6 +154,8 @@ export function EmailThreadDetail({
     setReplyInboxId,
     replyTo,
     setReplyTo,
+    replyCc,
+    setReplyCc,
     replySubjectText,
     setReplySubjectText,
     sendDraft,
@@ -618,10 +621,74 @@ export function EmailThreadDetail({
     replyActive && !(showDraftWorking && !replyHasBody);
   const resolvedReplyInboxId =
     replyInboxId || draftInboxId || inboxId || composeMailboxes[0]?.inboxId || "";
+  const defaultReplyRecipients = useMemo(
+    () =>
+      buildReplyRecipients({
+        message: {
+          from: message.from,
+          to: message.to ?? [],
+          cc: message.cc ?? [],
+        },
+        inboxEmail: message.inboxEmail,
+        replyAll: false,
+        threadMessages: message.threadMessages,
+      }),
+    [message.cc, message.from, message.inboxEmail, message.to, message.threadMessages],
+  );
   const resolvedReplyTo =
-    replyTo || parseReplyToAddress(message.from);
+    replyTo || defaultReplyRecipients.to.join(", ") || parseReplyToAddress(message.from);
+  const resolvedReplyCc = replyCc;
   const resolvedReplySubject =
     replySubjectText || formatReplySubject(message.subject);
+
+  const openReplyCompose = useCallback(
+    (
+      replyAll: boolean,
+      entry?: {
+        from: string;
+        to?: string[] | null;
+        cc?: string[] | null;
+        subject: string;
+      },
+    ) => {
+      const source = entry ?? {
+        from: message.from,
+        to: message.to ?? [],
+        cc: message.cc ?? [],
+        subject: message.subject,
+      };
+      const plan = buildReplyRecipients({
+        message: {
+          from: source.from,
+          to: source.to ?? [],
+          cc: source.cc ?? [],
+        },
+        inboxEmail: message.inboxEmail,
+        replyAll,
+        threadMessages: message.threadMessages,
+      });
+      setReplyTo(plan.to.join(", "));
+      setReplyCc(plan.cc.join(", "));
+      setReplySubjectText(
+        message.conceptDraft?.subject?.trim() ||
+          formatReplySubject(source.subject),
+      );
+      setReplyComposeOpen(true);
+    },
+    [
+      message.cc,
+      message.conceptDraft?.subject,
+      message.from,
+      message.inboxEmail,
+      message.subject,
+      message.to,
+      message.threadMessages,
+      setReplyCc,
+      setReplyComposeOpen,
+      setReplySubjectText,
+      setReplyTo,
+    ],
+  );
   const linkedContactForFrom = contactId
     ? contacts.find((entry) => entry.id === contactId) ?? null
     : null;
@@ -722,6 +789,8 @@ export function EmailThreadDetail({
       onInboxIdChange={setReplyInboxId}
       to={resolvedReplyTo}
       onToChange={setReplyTo}
+      cc={resolvedReplyCc}
+      onCcChange={setReplyCc}
       subject={resolvedReplySubject}
       onSubjectChange={setReplySubjectText}
       body={conceptBodyDraft}
@@ -892,8 +961,22 @@ export function EmailThreadDetail({
             toContact={contactField === "to" ? threadContactPicker : null}
             fromMailbox={fromMailboxChip}
             toMailbox={toMailboxChip}
-            onReply={() => setReplyComposeOpen(true)}
-            onReplyAll={() => setReplyComposeOpen(true)}
+            onReply={() =>
+              openReplyCompose(false, {
+                from: entry.from,
+                to: entry.to ?? [],
+                cc: entry.cc ?? [],
+                subject: entry.subject,
+              })
+            }
+            onReplyAll={() =>
+              openReplyCompose(true, {
+                from: entry.from,
+                to: entry.to ?? [],
+                cc: entry.cc ?? [],
+                subject: entry.subject,
+              })
+            }
             onForward={() =>
               startForward({
                 subject: entry.subject,

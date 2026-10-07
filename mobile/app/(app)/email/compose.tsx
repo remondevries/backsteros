@@ -14,6 +14,7 @@ export default function EmailComposeRoute() {
     replyToFrom?: string;
     draftId?: string;
     to?: string;
+    cc?: string;
     body?: string;
     mode?: string;
   }>();
@@ -30,6 +31,7 @@ export default function EmailComposeRoute() {
       replyToFrom={asParam(params.replyToFrom)}
       draftId={asParam(params.draftId)}
       initialTo={asParam(params.to)}
+      initialCc={asParam(params.cc)}
       initialBody={asParam(params.body)}
       mode={mode}
     />

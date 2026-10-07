@@ -52,11 +52,17 @@ import {
   assembleComposeEmail,
   assembleEmailHtml,
   assembleReplyEmail,
+  assertAssembledPreservesEditableBody,
   assertNoDraftBodyLoss,
+  assertValidEmailDraftHeaders,
+  mergeEmailDraftHeaders,
+  correctSelfOnlyTo,
   DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME,
   detectEmailLanguage,
   EMAIL_SIGN_OFF_AVATAR_CID,
+  normalizeComposeRecipients,
   parseReplyToAddress,
+  parseSenderFirstName,
   planDraftSendBodies,
   replySubject,
   resolveEditableDraftBody,
@@ -543,6 +549,26 @@ export async function getEmailReplyTemplatesForInbox(
   };
 }
 
+/**
+ * Greeting party for a draft: greet the To recipient. When `replyFrom` is the
+ * same mailbox as To, prefer its display-name form (`Ada Lovelace <a@…>`).
+ * When To changes to someone else, greet the new To — not the old reply party.
+ */
+function resolveDraftGreetingParty(
+  replyFrom: string | null | undefined,
+  to: readonly string[],
+): string {
+  const primaryTo = to[0]?.trim() || "";
+  const reply = replyFrom?.trim() || "";
+  if (primaryTo && reply) {
+    const toAddr = parseReplyToAddress(primaryTo).toLowerCase();
+    const replyAddr = parseReplyToAddress(reply).toLowerCase();
+    if (toAddr && replyAddr && toAddr === replyAddr) return reply;
+    return primaryTo;
+  }
+  return reply || primaryTo || "there";
+}
+
 function mapConceptDraftForApi(input: {
   draft: AgentMailDraftDetail;
   replyFrom: string;
@@ -552,28 +578,35 @@ function mapConceptDraftForApi(input: {
   contextText?: string | null;
 }) {
   const rawText = input.draft.text ?? "";
+  const draftTo = normalizeComposeRecipients(input.draft.to);
+  const draftCc = normalizeComposeRecipients(input.draft.cc);
+  const greetingParty = resolveDraftGreetingParty(input.replyFrom, draftTo);
   const editableBody = resolveEditableDraftBody(
     rawText,
-    input.replyFrom,
+    greetingParty,
     input.templates,
   );
   const isCompose = !input.draft.inReplyTo?.trim();
   const languageHint = detectEmailLanguage(editableBody, input.contextText);
   const assembled = isCompose
     ? assembleComposeEmail({
-        to: input.draft.to[0] ?? input.replyFrom,
+        to: draftTo.length > 0 ? draftTo : input.replyFrom,
+        cc: draftCc,
         subject: input.subject,
         body: editableBody,
         templates: input.templates,
         languageHint,
       })
     : assembleReplyEmail({
-        from: input.replyFrom,
+        from: greetingParty,
+        to: draftTo.length > 0 ? draftTo : input.replyFrom,
+        cc: draftCc,
         subject: input.subject,
         body: editableBody,
         templates: input.templates,
         languageHint,
         contextText: input.contextText,
+        preserveSubject: true,
       });
   return {
     draftId: input.draft.draftId,
@@ -581,6 +614,7 @@ function mapConceptDraftForApi(input: {
     subject: input.subject,
     from: input.fromEmail,
     to: input.draft.to,
+    cc: input.draft.cc ?? [],
     text: input.draft.text,
     body: editableBody || assembled.body,
     greeting: assembled.greeting,
@@ -619,6 +653,7 @@ function mapDraftDetailForApi(input: {
     inReplyTo: input.draft.inReplyTo,
     from: input.inboxEmail,
     to: input.draft.to,
+    cc: input.draft.cc ?? [],
     updatedAt: input.draft.updatedAt,
     createdAt: input.draft.createdAt,
   };
@@ -639,7 +674,9 @@ async function resolveReplyContextForDraft(
       client.getMessage(inboxId, inReplyTo),
       resolveInboxEmail(client, inboxId),
     ]);
-    let threadMessages: { from: string; to?: string[] | null }[] | undefined;
+    let threadMessages:
+      | { from: string; to?: string[] | null; cc?: string[] | null }[]
+      | undefined;
     const threadId = parent.threadId?.trim();
     if (threadId) {
       try {
@@ -647,13 +684,18 @@ async function resolveReplyContextForDraft(
         threadMessages = thread.messages.map((entry) => ({
           from: entry.from ?? "",
           to: entry.to ?? [],
+          cc: entry.cc ?? [],
         }));
       } catch {
         threadMessages = undefined;
       }
     }
     const replyFrom = resolveReplyPartyFromMessage(
-      { from: parent.from ?? "", to: parent.to ?? [] },
+      {
+        from: parent.from ?? "",
+        to: parent.to ?? [],
+        cc: parent.cc ?? [],
+      },
       inboxEmail,
       threadMessages,
     );
@@ -673,6 +715,7 @@ async function resolveReplyContextForDraft(
 export const agentMailDraftLifecycleDeps = {
   getCredentials: getAgentMailCredentials,
   getTemplates: getEmailReplyTemplatesForInbox,
+  resolveSignOffAvatar: resolveSignOffAvatarAttachment,
   getOrCreateThread: (
     workspaceId: string,
     inboxId: string,
@@ -1259,13 +1302,18 @@ async function saveConceptReplyDraft(
     );
   }
 
-  const avatar = await resolveSignOffAvatarAttachment(workspaceId, inboxId);
+  const avatar = await agentMailDraftLifecycleDeps.resolveSignOffAvatar(
+    workspaceId,
+    inboxId,
+  );
   const bodies = buildAssembledDraftBodies(assembled, avatar);
 
   // Always include to/subject — AgentMail reply-only creates (in_reply_to alone)
   // have been returning opaque "Draft not found" for some Message-IDs.
+  const cc = assembled.cc.filter((address) => address.includes("@"));
   const createPayload = {
     to,
+    ...(cc.length > 0 ? { cc } : {}),
     subject: assembled.subject,
     text: bodies.text,
     html: bodies.html,
@@ -1285,6 +1333,7 @@ async function saveConceptReplyDraft(
         text: bodies.text,
         html: bodies.html,
         to,
+        cc,
         subject: assembled.subject,
         ...draftUpdateAttachmentFields(existing, avatar),
       });
@@ -1334,6 +1383,7 @@ async function saveConceptReplyDraft(
     try {
         return await client.createDraft(inboxId, {
           to,
+          ...(cc.length > 0 ? { cc } : {}),
           subject: assembled.subject,
           text: bodies.text,
           html: bodies.html,
@@ -1350,6 +1400,7 @@ async function saveConceptReplyDraft(
         ) {
           return client.createDraft(inboxId, {
             to,
+            ...(cc.length > 0 ? { cc } : {}),
             subject: assembled.subject,
             text: bodies.text,
             html: bodies.html,
@@ -1372,13 +1423,18 @@ async function saveComposeDraft(
   const clientId = composeClientId(sessionId);
   const drafts = await listConceptDrafts(client, inboxId);
   const existing = drafts.find((draft) => draft.clientId === clientId);
-  const avatar = await resolveSignOffAvatarAttachment(workspaceId, inboxId);
+  const avatar = await agentMailDraftLifecycleDeps.resolveSignOffAvatar(
+    workspaceId,
+    inboxId,
+  );
   const bodies = buildAssembledDraftBodies(assembled, avatar);
 
+  const cc = assembled.cc.filter((address) => address.includes("@"));
   if (existing) {
     const current = await client.getDraft(inboxId, existing.draftId);
     return client.updateDraft(inboxId, existing.draftId, {
       to: assembled.to,
+      cc,
       subject: assembled.subject,
       text: bodies.text,
       html: bodies.html,
@@ -1388,6 +1444,7 @@ async function saveComposeDraft(
 
   return client.createDraft(inboxId, {
     to: assembled.to,
+    ...(cc.length > 0 ? { cc } : {}),
     subject: assembled.subject,
     text: bodies.text,
     html: bodies.html,
@@ -1606,6 +1663,7 @@ export async function getAgentMailMessage(
     extractedText: message.extractedText,
     extractedHtml: message.extractedHtml,
     to: message.to,
+    cc: message.cc,
     labels: message.labels,
     attachments: mapMessageAttachmentsForApi(message.attachments),
     inboxEmail,
@@ -1617,6 +1675,7 @@ export async function getAgentMailMessage(
       subject: entry.subject,
       from: entry.from,
       to: entry.to,
+      cc: entry.cc,
       timestamp: entry.timestamp,
       text: entry.text,
       html: entry.html,
@@ -1685,16 +1744,17 @@ export async function getAgentMailDraft(
   inboxId: string,
   draftId: string,
 ): Promise<ApiAgentMailDraftDetail> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
   const client = new AgentMailClient({ apiKey });
   const [draft, inboxEmail] = await Promise.all([
-    client.getDraft(inboxId, draftId),
+    resolveDraftAcrossInboxes(client, inboxIds, draftId, inboxId),
     resolveInboxEmail(client, inboxId),
   ]);
-  const templates = await getEmailReplyTemplatesForInbox(
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
     workspaceId,
     draft.inboxId,
   );
@@ -1712,9 +1772,16 @@ export async function upsertEmailConceptReply(
   workspaceId: string,
   inboxId: string,
   messageId: string,
-  agentBody: string,
+  input: string | {
+    body: string;
+    to?: string | string[] | null;
+    cc?: string | string[] | null;
+    subject?: string | null;
+  },
 ): Promise<EmailConceptReplyResponse> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const payload = typeof input === "string" ? { body: input } : input;
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
@@ -1722,17 +1789,78 @@ export async function upsertEmailConceptReply(
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
   const inboxEmail = await resolveInboxEmail(client, inboxId);
-  const templates = await getEmailReplyTemplatesForInbox(workspaceId, inboxId);
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
+    workspaceId,
+    inboxId,
+  );
   const replyParty = resolveReplyPartyFromMessage(
-    { from: message.from ?? "", to: message.to ?? [] },
+    { from: message.from ?? "", to: message.to ?? [], cc: message.cc ?? [] },
     inboxEmail,
   );
+
+  // Preserve stored headers on agent rewrites that only send a new body.
+  const existing = await findConceptDraftByClientIdAcrossInboxes(
+    client,
+    inboxIds,
+    messageId,
+  );
+  const storedTo = normalizeComposeRecipients(existing?.to);
+  const storedCc = normalizeComposeRecipients(existing?.cc);
+  const storedSubject = existing?.subject?.trim() || "";
+  const subjectFromPayload =
+    payload.subject !== undefined && Boolean((payload.subject ?? "").trim());
+  const preserveSubject = subjectFromPayload || Boolean(storedSubject);
+
+  try {
+    if (payload.to !== undefined || payload.cc !== undefined || payload.subject !== undefined) {
+      assertValidEmailDraftHeaders({
+        to: payload.to !== undefined ? payload.to : storedTo.length > 0 ? storedTo : replyParty,
+        cc: payload.cc,
+        subject: payload.subject,
+        requireTo: true,
+      });
+    }
+  } catch (error) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      error instanceof Error ? error.message : "Invalid draft headers",
+    );
+  }
+
+  const merged = mergeEmailDraftHeaders({
+    patch: {
+      to: payload.to,
+      cc: payload.cc,
+      subject: payload.subject,
+    },
+    storedTo,
+    storedCc,
+    storedSubject: storedSubject || message.subject,
+    fallbackTo: replyParty,
+    inboxEmail,
+  });
+  const nextTo = merged.to;
+  const nextCc = merged.cc;
+  const nextSubject = merged.subject;
+  if (nextTo.length === 0) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "To requires at least one valid email address.",
+    );
+  }
+
   const assembled = assembleReplyEmail({
     from: replyParty,
-    subject: message.subject,
-    body: agentBody,
+    to: nextTo,
+    cc: nextCc,
+    subject: nextSubject,
+    body: payload.body,
     templates,
     contextText: message.text ?? message.extractedText ?? null,
+    // Keep payload/stored subjects (e.g. "Quote"); only prefix Re: for parent fallback.
+    preserveSubject,
   });
   const draft = await saveConceptReplyDraft(
     client,
@@ -1757,6 +1885,7 @@ export async function upsertEmailConceptReply(
     signOff: assembled.signOff,
     subject: assembled.subject,
     to: assembled.to,
+    cc: assembled.cc,
   };
 }
 
@@ -2009,7 +2138,8 @@ export async function upsertEmailComposeDraft(
   workspaceId: string,
   inboxId: string,
   input: {
-    to: string;
+    to: string | string[];
+    cc?: string | string[] | null;
     subject: string;
     body: string;
     composeSessionId?: string;
@@ -2020,12 +2150,28 @@ export async function upsertEmailComposeDraft(
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
 
+  try {
+    assertValidEmailDraftHeaders({
+      to: input.to,
+      cc: input.cc,
+      subject: input.subject,
+      requireTo: true,
+    });
+  } catch (error) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      error instanceof Error ? error.message : "Invalid draft headers",
+    );
+  }
+
   const client = new AgentMailClient({ apiKey });
   const templates = await getEmailReplyTemplatesForInbox(workspaceId, inboxId);
   const composeSessionId =
     input.composeSessionId?.trim() || crypto.randomUUID();
   const assembled = assembleComposeEmail({
     to: input.to,
+    cc: input.cc,
     subject: input.subject,
     body: input.body,
     templates,
@@ -2141,11 +2287,26 @@ async function ensureDraftRecipientForReply(
   );
   const replyFrom = replyContext.replyFrom?.trim();
   if (!replyFrom) return draft;
-  const expected = parseReplyToAddress(replyFrom);
-  const current = parseReplyToAddress(draft.to[0] ?? "");
-  if (!expected.includes("@") || expected === current) return draft;
+  const inboxEmail = await resolveInboxEmail(
+    client,
+    draft.inboxId || fallbackInboxId,
+  );
+  const storedTo = normalizeComposeRecipients(draft.to);
+  let nextTo =
+    storedTo.length > 0
+      ? correctSelfOnlyTo(storedTo, inboxEmail, replyFrom)
+      : normalizeComposeRecipients(replyFrom);
+  if (nextTo.length === 0) {
+    nextTo = normalizeComposeRecipients(replyFrom);
+  }
+  if (
+    nextTo.length === 0 ||
+    JSON.stringify(nextTo) === JSON.stringify(storedTo)
+  ) {
+    return draft;
+  }
   return client.updateDraft(draft.inboxId, draft.draftId, {
-    to: [expected],
+    to: nextTo,
   });
 }
 
@@ -2184,16 +2345,32 @@ async function ensureDraftHasAssembledShell(
     }
   }
 
+  const inboxEmail = await resolveInboxEmail(
+    client,
+    draft.inboxId || fallbackInboxId,
+  );
+  const storedTo = normalizeComposeRecipients(draft.to);
+  const storedCc = normalizeComposeRecipients(draft.cc);
+  let nextTo =
+    storedTo.length > 0
+      ? correctSelfOnlyTo(storedTo, inboxEmail, replyFrom)
+      : normalizeComposeRecipients(replyFrom);
+  if (nextTo.length === 0) {
+    nextTo = normalizeComposeRecipients(replyFrom);
+  }
+  const greetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
   const editableBody = resolveEditableDraftBody(
     draft.text ?? "",
-    replyFrom || draft.to[0] || "there",
+    // Extract using the greeting that matches stored text/To (pre-correction).
+    resolveDraftGreetingParty(replyFrom, storedTo),
     templates,
   );
   const isCompose = !draft.inReplyTo?.trim();
   const languageHint = detectEmailLanguage(editableBody, contextText);
   const assembled = isCompose
     ? assembleComposeEmail({
-        to: replyFrom || draft.to[0] || "",
+        to: nextTo.length > 0 ? nextTo : replyFrom || "",
+        cc: storedCc,
         subject,
         body: editableBody,
         templates,
@@ -2201,19 +2378,22 @@ async function ensureDraftHasAssembledShell(
         preserveBody: true,
       })
     : assembleReplyEmail({
-        from: replyFrom || "there",
+        from: greetingParty,
+        to: nextTo.length > 0 ? nextTo : replyFrom || undefined,
+        cc: storedCc,
         subject,
         body: editableBody,
         templates,
         languageHint,
         contextText,
         preserveBody: true,
+        preserveSubject: true,
       });
 
   const storedText = (draft.text ?? "").replace(/\r\n/g, "\n").trim();
   const desiredText = assembled.text.replace(/\r\n/g, "\n").trim();
   assertNoDraftBodyLoss(storedText, desiredText);
-  const avatar = await resolveSignOffAvatarAttachment(
+  const avatar = await agentMailDraftLifecycleDeps.resolveSignOffAvatar(
     workspaceId,
     draft.inboxId,
   );
@@ -2234,8 +2414,12 @@ async function ensureDraftHasAssembledShell(
     !storedHtml.includes(assembled.signOff.trim()) ||
     storedHtml !== desiredHtml ||
     !hasAvatarCid;
+  const needsRecipientUpdate =
+    JSON.stringify(nextTo) !== JSON.stringify(assembled.to) ||
+    JSON.stringify(storedTo) !== JSON.stringify(assembled.to) ||
+    JSON.stringify(storedCc) !== JSON.stringify(assembled.cc);
 
-  if (!needsTextUpdate && !needsHtmlUpdate) {
+  if (!needsTextUpdate && !needsHtmlUpdate && !needsRecipientUpdate) {
     return draft;
   }
 
@@ -2243,6 +2427,7 @@ async function ensureDraftHasAssembledShell(
     text: bodies.text,
     html: desiredHtml,
     ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
+    cc: assembled.cc,
     ...(subject ? { subject } : {}),
     ...draftUpdateAttachmentFields(draft, avatar),
   });
@@ -2293,9 +2478,18 @@ export async function updateAgentMailDraft(
   workspaceId: string,
   inboxId: string,
   draftId: string,
-  body: string,
+  input:
+    | string
+    | {
+        body?: string;
+        to?: string | string[] | null;
+        cc?: string | string[] | null;
+        subject?: string | null;
+      },
 ): Promise<ApiAgentMailDraftDetail> {
-  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  const patch = typeof input === "string" ? { body: input } : input;
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
   }
@@ -2307,15 +2501,65 @@ export async function updateAgentMailDraft(
     draftId,
     inboxId,
   );
-  const templates = await getEmailReplyTemplatesForInbox(
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
     workspaceId,
     draft.inboxId,
   );
   const replyContext = await resolveReplyContextForDraft(client, draft, inboxId);
   const replyFrom = replyContext.replyFrom;
-  let subject = draft.subject?.trim() || "Reply concept";
+  const inboxEmail = await resolveInboxEmail(client, draft.inboxId || inboxId);
+  const storedTo = normalizeComposeRecipients(draft.to);
+  const storedCc = normalizeComposeRecipients(draft.cc);
+  const storedSubject = draft.subject?.trim() || "";
+  const isCompose = !draft.inReplyTo?.trim();
+  const bodyOnlyWithReplyParty =
+    patch.body !== undefined &&
+    patch.to === undefined &&
+    storedTo.length === 0 &&
+    Boolean(replyFrom?.trim());
+
+  try {
+    assertValidEmailDraftHeaders({
+      to: bodyOnlyWithReplyParty
+        ? undefined
+        : patch.to !== undefined
+          ? patch.to
+          : storedTo,
+      cc: patch.cc,
+      subject: patch.subject,
+      requireTo:
+        patch.to !== undefined ||
+        (storedTo.length === 0 && !bodyOnlyWithReplyParty),
+    });
+  } catch (error) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      error instanceof Error ? error.message : "Invalid draft headers",
+    );
+  }
+
   let contextText = replyContext.contextText;
-  if (!draft.subject?.trim() && draft.inReplyTo?.trim() && replyFrom) {
+  const merged = mergeEmailDraftHeaders({
+    patch: {
+      to: patch.to,
+      cc: patch.cc,
+      subject: patch.subject,
+    },
+    storedTo,
+    storedCc,
+    // Compose drafts must not get a synthetic "Reply concept" subject.
+    storedSubject: storedSubject || (isCompose ? "" : "Reply concept"),
+    fallbackTo: replyFrom,
+    inboxEmail,
+  });
+  let subject = merged.subject;
+  if (
+    !storedSubject &&
+    (patch.subject === undefined || !(patch.subject ?? "").trim()) &&
+    draft.inReplyTo?.trim() &&
+    replyFrom
+  ) {
     try {
       const parent = await client.getMessage(
         draft.inboxId || inboxId,
@@ -2327,27 +2571,112 @@ export async function updateAgentMailDraft(
       // Keep fallback subject.
     }
   }
-  const isCompose = !draft.inReplyTo?.trim();
-  const languageHint = detectEmailLanguage(body, contextText);
+  if (isCompose && !subject.trim()) {
+    subject = "(no subject)";
+  }
+
+  let nextTo = merged.to;
+  if (nextTo.length === 0) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "To requires at least one valid email address.",
+    );
+  }
+  const nextCc = merged.cc;
+
+  const previousGreetingParty = resolveDraftGreetingParty(replyFrom, storedTo);
+  const nextGreetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
+  const greetingPartyChanged =
+    previousGreetingParty.trim().toLowerCase() !==
+      nextGreetingParty.trim().toLowerCase() ||
+    parseSenderFirstName(previousGreetingParty) !==
+      parseSenderFirstName(nextGreetingParty);
+  const bodyProvided = patch.body !== undefined;
+  const headersOnly = !bodyProvided && !greetingPartyChanged;
+
+  const editableBody = bodyProvided
+    ? patch.body!
+    : resolveEditableDraftBody(
+        draft.text ?? "",
+        previousGreetingParty,
+        templates,
+      );
+
+  // Header-only PATCH: update To/Cc/Subject without rewriting text/HTML.
+  if (headersOnly) {
+    const headerUpdate: {
+      to?: string[];
+      cc?: string[];
+      subject?: string;
+    } = {};
+    if (
+      patch.to !== undefined ||
+      JSON.stringify(nextTo) !== JSON.stringify(storedTo)
+    ) {
+      headerUpdate.to = nextTo;
+    }
+    if (patch.cc !== undefined) {
+      headerUpdate.cc = nextCc;
+    }
+    if (
+      (patch.subject !== undefined && (patch.subject ?? "").trim()) ||
+      subject !== storedSubject
+    ) {
+      headerUpdate.subject = subject;
+    }
+    const updated =
+      Object.keys(headerUpdate).length > 0
+        ? await client.updateDraft(draft.inboxId, draft.draftId, headerUpdate)
+        : draft;
+    await ensureDraftEmailThreadRegistered(
+      workspaceId,
+      updated.inboxId,
+      updated,
+    );
+    return mapDraftDetailForApi({
+      draft: updated,
+      replyFrom: replyFrom || nextTo[0] || "",
+      templates,
+      inboxEmail,
+      contextText,
+    });
+  }
+
+  const languageHint = detectEmailLanguage(editableBody, contextText);
   const assembled = isCompose
     ? assembleComposeEmail({
-        to: replyFrom || draft.to[0] || "",
+        to: nextTo,
+        cc: nextCc,
         subject,
-        body,
+        body: editableBody,
         templates,
         languageHint,
         preserveBody: true,
       })
     : assembleReplyEmail({
-        from: replyFrom || "there",
+        from: nextGreetingParty,
+        to: nextTo,
+        cc: nextCc,
         subject,
-        body,
+        body: editableBody,
         templates,
         languageHint,
         contextText,
         preserveBody: true,
+        // Subject already resolved above — never re-prefix Re: on PATCH.
+        preserveSubject: true,
       });
-  const avatar = await resolveSignOffAvatarAttachment(
+  try {
+    assertAssembledPreservesEditableBody(assembled.text, editableBody);
+  } catch (error) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      error instanceof Error ? error.message : "Draft body would lose text",
+    );
+  }
+  const avatar = await agentMailDraftLifecycleDeps.resolveSignOffAvatar(
     workspaceId,
     draft.inboxId,
   );
@@ -2355,7 +2684,9 @@ export async function updateAgentMailDraft(
   const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
     text: bodies.text,
     html: bodies.html,
-    ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
+    to: assembled.to,
+    cc: assembled.cc,
+    subject: assembled.subject,
     ...draftUpdateAttachmentFields(draft, avatar),
   });
   await ensureDraftEmailThreadRegistered(
@@ -2363,10 +2694,9 @@ export async function updateAgentMailDraft(
     updated.inboxId,
     updated,
   );
-  const inboxEmail = await resolveInboxEmail(client, updated.inboxId);
   return mapDraftDetailForApi({
     draft: updated,
-    replyFrom,
+    replyFrom: replyFrom || nextTo[0] || "",
     templates,
     inboxEmail,
     contextText,

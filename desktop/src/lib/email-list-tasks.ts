@@ -46,6 +46,7 @@ export function mapEmailMessagesToTaskRows(
     return buildTaskListEmailItem({
       inboxId: item.inboxId,
       messageId: item.id,
+      draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
       threadId: item.threadId,
       title: item.subject,
       from: item.from,
@@ -58,14 +59,14 @@ export function mapEmailMessagesToTaskRows(
       projectKey: item.projectKey,
       projectName: item.projectName,
       contactId: item.contactId,
-    contactName: item.contactName,
-    mailboxLabel: mailbox.label,
-    mailboxAvatarSrc: mailbox.avatarSrc,
-    emailThreadId: item.emailThreadId,
-    number: item.number,
-    displayId: item.displayId,
-    unread: item.unread === true,
-  });
+      contactName: item.contactName,
+      mailboxLabel: mailbox.label,
+      mailboxAvatarSrc: mailbox.avatarSrc,
+      emailThreadId: item.emailThreadId,
+      number: item.number,
+      displayId: item.displayId,
+      unread: item.unread === true,
+    });
   });
 }
 

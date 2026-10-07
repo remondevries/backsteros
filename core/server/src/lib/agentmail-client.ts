@@ -117,6 +117,7 @@ export type AgentMailMessageDetail = AgentMailMessageSummary & {
   extractedText: string | null;
   extractedHtml: string | null;
   to: string[];
+  cc: string[];
   inReplyTo: string | null;
   attachments: AgentMailMessageAttachment[];
 };
@@ -145,6 +146,7 @@ export type AgentMailDraftAttachment = AgentMailMessageAttachment;
 export type AgentMailDraftDetail = AgentMailDraftSummary & {
   html: string | null;
   to: string[];
+  cc: string[];
   attachments: AgentMailDraftAttachment[];
 };
 
@@ -210,6 +212,7 @@ export function mapAgentMailMessageDetail(
     extractedText: asOptionalString(raw.extracted_text),
     extractedHtml: asOptionalString(raw.extracted_html),
     to: mapAddressList(raw.to),
+    cc: mapAddressList(raw.cc),
     inReplyTo: asOptionalString(raw.in_reply_to),
     attachments: mapAgentMailAttachments(raw.attachments),
   };
@@ -245,6 +248,7 @@ export function mapAgentMailDraftDetail(
     ...mapAgentMailDraftSummary(raw),
     html: asOptionalString(raw.html),
     to: mapAddressList(raw.to),
+    cc: mapAddressList(raw.cc),
     attachments: mapAgentMailAttachments(raw.attachments),
   };
 }
@@ -804,6 +808,7 @@ export function mergeAgentMailMessageDetail(
     extractedText: overlay.extractedText ?? base.extractedText,
     extractedHtml: overlay.extractedHtml ?? base.extractedHtml,
     to: overlay.to.length > 0 ? overlay.to : base.to,
+    cc: overlay.cc.length > 0 ? overlay.cc : base.cc,
     labels: overlay.labels.length > 0 ? overlay.labels : base.labels,
     inReplyTo: overlay.inReplyTo ?? base.inReplyTo,
     attachments:

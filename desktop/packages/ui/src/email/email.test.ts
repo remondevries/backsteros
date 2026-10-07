@@ -13,6 +13,7 @@ import {
   formatEmailPersonWithAddress,
   formatEmailListPartyLabel,
   getEmailComposeHref,
+  getEmailDetailHref,
   getEmailDraftHref,
   getEmailItemHref,
   getEmailListItemHref,
@@ -24,6 +25,8 @@ import {
   isEmailPath,
   parseEmailDraftPath,
   parseEmailMessagePath,
+  buildEmailDraftHeaderPatch,
+  buildReplyRecipients,
   parseReplyToAddress,
   preserveEmailInboxListContext,
   replySubject,
@@ -222,6 +225,11 @@ test("groupEmailItemsByMailbox keeps empty inboxes visible", () => {
     true,
   );
   assert.equal(getEmailItemHref("a", "1"), "/email/a/1");
+  assert.equal(
+    getEmailDetailHref("a", "msg_1", { draftId: "d1" }),
+    "/email/a/drafts/d1",
+  );
+  assert.equal(getEmailDetailHref("a", "msg_1"), "/email/a/msg_1");
 });
 
 test("groupEmailItemsByStatus uses task statuses and defaults missing status to Triage", () => {
@@ -477,4 +485,97 @@ test("emailMessageHtmlBody uses raw html when extracted html is missing", () => 
 
 test("emailMessageBody is an alias for plain body", () => {
   assert.equal(emailMessageBody, emailMessagePlainBody);
+});
+
+test("buildReplyRecipients separates reply vs reply-all", () => {
+  const message = {
+    from: "Ada <ada@example.com>",
+    to: ["Remon <remon@example.com>", "Bob <bob@example.com>"],
+    cc: ["Cc <cc@example.com>"],
+  };
+  assert.deepEqual(
+    buildReplyRecipients({
+      message,
+      inboxEmail: "remon@example.com",
+      replyAll: false,
+    }),
+    { to: ["ada@example.com"], cc: [] },
+  );
+  assert.deepEqual(
+    buildReplyRecipients({
+      message,
+      inboxEmail: "remon@example.com",
+      replyAll: true,
+    }),
+    { to: ["ada@example.com"], cc: ["bob@example.com", "cc@example.com"] },
+  );
+});
+
+test("standalone draft page patch omits subject and Cc it does not own", () => {
+  assert.deepEqual(
+    buildEmailDraftHeaderPatch({
+      ownsHeaders: false,
+      to: "",
+      cc: "",
+      subject: "",
+      includeBody: "Keep body only",
+      baseline: {
+        to: ["ada@example.com"],
+        cc: ["cc@example.com"],
+        subject: "Re: Keep me",
+      },
+    }),
+    { body: "Keep body only" },
+  );
+});
+
+test("send onlyChanged omits unchanged body and headers", () => {
+  assert.deepEqual(
+    buildEmailDraftHeaderPatch({
+      ownsHeaders: true,
+      onlyChanged: true,
+      to: "ada@example.com, bob@example.com",
+      cc: "cc@example.com",
+      subject: "Re: Keep me",
+      baseline: {
+        to: ["ada@example.com", "bob@example.com"],
+        cc: ["cc@example.com"],
+        subject: "Re: Keep me",
+      },
+    }),
+    {},
+  );
+  assert.deepEqual(
+    buildEmailDraftHeaderPatch({
+      ownsHeaders: true,
+      onlyChanged: true,
+      to: "ada@example.com",
+      cc: "new-cc@example.com",
+      subject: "Re: Keep me",
+      baseline: {
+        to: ["ada@example.com"],
+        cc: ["cc@example.com"],
+        subject: "Re: Keep me",
+      },
+      includeBody: "edited body",
+    }),
+    {
+      body: "edited body",
+      cc: ["new-cc@example.com"],
+    },
+  );
+});
+
+test("Reply-all Cc is included in the first concept-reply payload", () => {
+  // Before a draft id exists, ownsHeaders is true once reply chrome is open.
+  const patch = buildEmailDraftHeaderPatch({
+    ownsHeaders: true,
+    to: "ada@example.com",
+    cc: "bob@example.com, cc@example.com",
+    subject: "Re: Hello",
+    includeBody: "Thanks.",
+  });
+  assert.deepEqual(patch.to, ["ada@example.com"]);
+  assert.deepEqual(patch.cc, ["bob@example.com", "cc@example.com"]);
+  assert.equal(patch.subject, "Re: Hello");
 });

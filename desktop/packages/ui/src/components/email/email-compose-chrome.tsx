@@ -27,6 +27,9 @@ export type EmailComposeChromeProps = {
   onInboxIdChange: (inboxId: string) => void;
   to: string;
   onToChange: (to: string) => void;
+  /** Comma-separated CC recipients (optional). */
+  cc?: string;
+  onCcChange?: (cc: string) => void;
   subject: string;
   onSubjectChange: (subject: string) => void;
   body: string;
@@ -66,6 +69,8 @@ export function EmailComposeChrome({
   onInboxIdChange,
   to,
   onToChange,
+  cc = "",
+  onCcChange,
   subject,
   onSubjectChange,
   body,
@@ -229,6 +234,22 @@ export function EmailComposeChrome({
             </dd>
           )}
         </div>
+        {onCcChange ? (
+          <div className="email-thread-message__header-row">
+            <dt>Cc</dt>
+            <dd>
+              <input
+                type="text"
+                className="email-compose-field"
+                value={cc}
+                disabled={interactionLocked}
+                placeholder="cc@example.com, other@example.com"
+                aria-label="Cc"
+                onChange={(event) => onCcChange(event.target.value)}
+              />
+            </dd>
+          </div>
+        ) : null}
         <div className="email-thread-message__header-row">
           <dt>Subject</dt>
           <dd>

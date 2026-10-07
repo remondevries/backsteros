@@ -336,6 +336,7 @@ export function useEmailThreadComments({
               signOff?: string | null;
               subject?: string | null;
               to?: string[];
+              cc?: string[];
               task?: { title?: string; taskId?: string };
               event?: { title?: string; meetingId?: string };
               message?: string;
@@ -374,6 +375,10 @@ export function useEmailThreadComments({
                   poll.result.to?.filter((entry) => entry.trim()) ??
                   message.conceptDraft?.to ??
                   [];
+                const cc =
+                  poll.result.cc?.filter((entry) => entry.trim()) ??
+                  message.conceptDraft?.cc ??
+                  [];
                 setMessage((current) => {
                   if (!current) return current;
                   return {
@@ -385,6 +390,7 @@ export function useEmailThreadComments({
                       subject,
                       from: message.conceptDraft?.from ?? null,
                       to,
+                      cc,
                       text: message.conceptDraft?.text ?? null,
                       body: nextBody || message.conceptDraft?.body || null,
                       greeting,

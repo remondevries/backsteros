@@ -99,11 +99,20 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
     if (!agentBody) {
       throw new Error("body is required for reply_draft");
     }
+    // Prefer body-only so stored headers survive agent rewrites; honour cc/to
+    // when the callback explicitly includes them.
     const draft = await agentmailSettingsService.upsertEmailConceptReply(
       input.row.workspaceId,
       input.row.inboxId,
       input.row.messageId,
-      agentBody,
+      {
+        body: agentBody,
+        ...(input.body.to !== undefined ? { to: input.body.to } : {}),
+        ...(input.body.cc !== undefined ? { cc: input.body.cc } : {}),
+        ...(input.body.subject != null && input.body.subject !== undefined
+          ? { subject: input.body.subject }
+          : {}),
+      },
     );
     return {
       ok: true,
@@ -116,6 +125,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
       signOff: draft.signOff ?? null,
       subject: draft.subject ?? null,
       to: draft.to ?? [],
+      cc: draft.cc ?? [],
     };
   }
 
