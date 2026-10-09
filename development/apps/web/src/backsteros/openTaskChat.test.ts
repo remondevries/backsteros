@@ -245,6 +245,54 @@ describe("openTaskChat helpers", () => {
     expect(navigations[0]?.params?.threadId).toBe("thread-control");
   });
 
+  it("open always refetches control bindings even when a local thread binding exists", async () => {
+    useBacksterosTaskChatStore.getState().setBinding(task.id, {
+      ...threadBinding,
+      threadId: "thread-stale-local",
+    });
+    fetchControlBindingsMock.mockResolvedValue({
+      ok: true,
+      bindings: [
+        {
+          taskId: task.id,
+          kind: "thread",
+          threadId: "thread-control-live",
+          environmentId: "env-1",
+          t3ProjectId: "project-1",
+          backsterosProjectId: "bos-1",
+          projectTitle: "BacksterDEV",
+          title: "Control thread",
+          displayId: "BDV-35",
+        },
+      ],
+    });
+
+    const navigations: Array<{
+      to: string;
+      params?: Record<string, string>;
+    }> = [];
+
+    await openBacksterosTaskChat({
+      task,
+      backsterosProject,
+      projects: [t3Project],
+      navigate: async (opts) => {
+        navigations.push(opts);
+      },
+    });
+
+    expect(fetchControlBindingsMock).toHaveBeenCalledOnce();
+    expect(useBacksterosTaskChatStore.getState().getBinding(task.id)?.threadId).toBe(
+      "thread-control-live",
+    );
+    expect(navigations).toEqual([
+      {
+        to: "/$environmentId/$threadId",
+        params: { environmentId: "env-1", threadId: "thread-control-live" },
+      },
+    ]);
+  });
+
   it("clears a task chat into a fresh draft for the same task", async () => {
     useBacksterosTaskChatStore.getState().setBinding("task-a", draftBinding);
     const navigations: Array<{

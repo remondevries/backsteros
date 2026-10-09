@@ -58,26 +58,20 @@ export function mergeControlBindingsIntoTaskChatStore(
   return applied;
 }
 
-function controlAuthHeaders(): HeadersInit {
+function controlAuthHeaders(includeApiKey: boolean): HeadersInit {
   const headers: Record<string, string> = { Accept: "application/json" };
+  if (!includeApiKey) return headers;
   const { apiKey } = readBacksterosConnectionSettings();
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`;
+  if (apiKey.trim()) {
+    headers.Authorization = `Bearer ${apiKey.trim()}`;
   }
   return headers;
 }
 
-export async function fetchControlBindings(signal?: AbortSignal): Promise<{
+async function readControlBindingsResponse(response: Response): Promise<{
   readonly ok: boolean;
   readonly bindings: ReadonlyArray<ControlSessionBinding>;
 }> {
-  const response = await fetch("/api/backsteros/control/bindings", {
-    method: "GET",
-    credentials: "include",
-    headers: controlAuthHeaders(),
-    ...(signal ? { signal } : {}),
-    cache: "no-store",
-  });
   if (!response.ok) {
     return { ok: false, bindings: [] };
   }
@@ -85,10 +79,44 @@ export async function fetchControlBindings(signal?: AbortSignal): Promise<{
     ok?: boolean;
     bindings?: ReadonlyArray<ControlSessionBinding>;
   };
+  const bindings = Array.isArray(payload.bindings) ? payload.bindings : [];
+  // Accept either an explicit ok:true or a well-formed bindings list — the
+  // rail must still hydrate when a proxy strips the ok flag.
   return {
-    ok: payload.ok === true,
-    bindings: Array.isArray(payload.bindings) ? payload.bindings : [],
+    ok: payload.ok === true || bindings.length > 0,
+    bindings,
   };
+}
+
+export async function fetchControlBindings(signal?: AbortSignal): Promise<{
+  readonly ok: boolean;
+  readonly bindings: ReadonlyArray<ControlSessionBinding>;
+}> {
+  const init = {
+    method: "GET" as const,
+    credentials: "include" as const,
+    ...(signal ? { signal } : {}),
+    cache: "no-store" as const,
+  };
+  // Prefer pairing-session cookies. Only send the BacksterOS API key when the
+  // cookie-authenticated request is rejected — a mismatched Bearer key was
+  // previously treated as a pairing token and 401'd the whole Inbox open path.
+  const cookieResponse = await fetch("/api/backsteros/control/bindings", {
+    ...init,
+    headers: controlAuthHeaders(false),
+  });
+  if (cookieResponse.ok || cookieResponse.status !== 401) {
+    return readControlBindingsResponse(cookieResponse);
+  }
+  const { apiKey } = readBacksterosConnectionSettings();
+  if (!apiKey.trim()) {
+    return { ok: false, bindings: [] };
+  }
+  const apiKeyResponse = await fetch("/api/backsteros/control/bindings", {
+    ...init,
+    headers: controlAuthHeaders(true),
+  });
+  return readControlBindingsResponse(apiKeyResponse);
 }
 
 export async function pushControlBinding(binding: {
@@ -102,17 +130,33 @@ export async function pushControlBinding(binding: {
   readonly displayId: string | null;
 }): Promise<boolean> {
   try {
-    const response = await fetch("/api/backsteros/control/bindings", {
+    const body = JSON.stringify(binding);
+    const cookieResponse = await fetch("/api/backsteros/control/bindings", {
       method: "PUT",
       credentials: "include",
       headers: {
-        ...controlAuthHeaders(),
+        ...controlAuthHeaders(false),
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(binding),
+      body,
       cache: "no-store",
     });
-    return response.ok;
+    if (cookieResponse.ok || cookieResponse.status !== 401) {
+      return cookieResponse.ok;
+    }
+    const { apiKey } = readBacksterosConnectionSettings();
+    if (!apiKey.trim()) return false;
+    const apiKeyResponse = await fetch("/api/backsteros/control/bindings", {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        ...controlAuthHeaders(true),
+        "Content-Type": "application/json",
+      },
+      body,
+      cache: "no-store",
+    });
+    return apiKeyResponse.ok;
   } catch {
     return false;
   }

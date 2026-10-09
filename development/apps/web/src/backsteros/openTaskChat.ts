@@ -216,11 +216,19 @@ export async function openBacksterosTaskChat(input: {
     if (!projectRef) return;
   }
 
+  // Prefer a live control/server thread over any local draft or stale thread.
+  // Local drafts are only the pre-start gate; the control API binding file is
+  // authoritative (Inbox open after Sander/control-API start). Always refetch
+  // so a leftover kickoff draft cannot win after a 0.0.45 store wipe/desync.
+  const controlThread = await resolveControlThreadBindingForTask(input.task.id);
+  if (controlThread) {
+    await commitAndNavigateTaskBinding(input, controlThread);
+    return;
+  }
+
   let existing = useBacksterosTaskChatStore.getState().getBinding(input.task.id);
   // Drafts bound to a previous T3 project (BacksterOS cwd remapped) must not be
-  // reused — they keep the old working directory / empty providers. Thread
-  // bindings with a mismatched t3ProjectId are left alone so we never destroy a
-  // live server thread; control/API thread reuse still wins below.
+  // reused — they keep the old working directory / empty providers.
   if (
     existing?.kind === "draft" &&
     (existing.t3ProjectId !== projectRef.projectId ||
@@ -232,17 +240,6 @@ export async function openBacksterosTaskChat(input: {
   }
 
   const healed = existing ? healBinding(input.task.id, existing) : null;
-
-  // Prefer a live control/server thread over a local kickoff draft (or empty).
-  // Local drafts are only the pre-start gate; the control API thread is authoritative.
-  if (!healed || healed.kind === "draft") {
-    const controlThread = await resolveControlThreadBindingForTask(input.task.id);
-    if (controlThread) {
-      await commitAndNavigateTaskBinding(input, controlThread);
-      return;
-    }
-  }
-
   if (healed) {
     await commitAndNavigateTaskBinding(input, healed);
     return;
@@ -260,23 +257,24 @@ export async function openBacksterosTaskChat(input: {
 
 /**
  * Resolve a server/control thread binding for a task before creating a kickoff
- * draft. Uses the local store when already synced; otherwise fetches bindings.
+ * draft. Always fetches bindings when possible so Inbox open cannot reuse a
+ * stale local draft; falls back to an already-synced local thread binding.
  */
 async function resolveControlThreadBindingForTask(
   taskId: string,
 ): Promise<BacksterosTaskChatBinding | null> {
-  const local = useBacksterosTaskChatStore.getState().getBinding(taskId);
-  if (local?.kind === "thread") return local;
-
   try {
     const result = await fetchControlBindings();
-    if (!result.ok) return null;
-    mergeControlBindingsIntoTaskChatStore(result.bindings);
-    const after = useBacksterosTaskChatStore.getState().getBinding(taskId);
-    return after?.kind === "thread" ? after : null;
+    if (result.ok) {
+      mergeControlBindingsIntoTaskChatStore(result.bindings);
+      const after = useBacksterosTaskChatStore.getState().getBinding(taskId);
+      if (after?.kind === "thread") return after;
+    }
   } catch {
-    return null;
+    // Fall through to any already-synced local thread binding.
   }
+  const local = useBacksterosTaskChatStore.getState().getBinding(taskId);
+  return local?.kind === "thread" ? local : null;
 }
 
 async function commitAndNavigateTaskBinding(
