@@ -12,6 +12,7 @@ import { isPastCompletedMeeting } from "../../meetings/meeting-status.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { GoogleIcon } from "../icons/google-icon.js";
 import { BirthdayCalendarIcon } from "./birthday-calendar-icon.js";
 import { MeetingCalendarStatusIcon } from "./meeting-calendar-status-icon.js";
 
@@ -69,12 +70,17 @@ export function CalendarTaskEventContent({
       ? "Untitled meeting"
       : entity.entityType === "birthday"
         ? "Birthday"
-        : habitId
-          ? "Untitled habit"
-          : "Untitled task");
+        : entity.entityType === "external"
+          ? "Calendar event"
+          : habitId
+            ? "Untitled habit"
+            : "Untitled task");
   const projectName = readProjectName(arg.event.extendedProps);
   const durationMs = calendarEventDurationMs(arg.event.start, arg.event.end);
-  const expanded = calendarEventHasExpandedContent(durationMs);
+  // All-day chips (Google birthdays, tasks, …) are always a single icon+title
+  // row — day-long FC ranges would otherwise trip the timed expanded layout.
+  const expanded =
+    !arg.event.allDay && calendarEventHasExpandedContent(durationMs);
   const meetingFinished =
     entity.entityType === "meeting" &&
     readMeetingFinished(arg.event.extendedProps);
@@ -88,6 +94,11 @@ export function CalendarTaskEventContent({
       <BirthdayCalendarIcon
         size={12}
         className="task-calendar-event__status-icon birthday-calendar-event__icon"
+      />
+    ) : entity.entityType === "external" ? (
+      <GoogleIcon
+        size={12}
+        className="task-calendar-event__status-icon external-calendar-event__icon"
       />
     ) : entity.entityType === "meeting" ? (
       <MeetingCalendarStatusIcon
@@ -145,13 +156,25 @@ export function CalendarTaskEventContent({
       {expanded && projectName ? (
         <span className="task-calendar-event__project">{projectName}</span>
       ) : null}
-      <div className="task-calendar-event__row">
-        {statusIcon}
-        {arg.timeText ? (
-          <span className="task-calendar-event__time">{arg.timeText}</span>
-        ) : null}
-        <span className="task-calendar-event__title">{title}</span>
-      </div>
+      {expanded ? (
+        <>
+          <div className="task-calendar-event__row">
+            {statusIcon}
+            {arg.timeText ? (
+              <span className="task-calendar-event__time">{arg.timeText}</span>
+            ) : null}
+          </div>
+          <span className="task-calendar-event__title">{title}</span>
+        </>
+      ) : (
+        <div className="task-calendar-event__row">
+          {statusIcon}
+          <span className="task-calendar-event__title">{title}</span>
+          {arg.timeText ? (
+            <span className="task-calendar-event__time">{arg.timeText}</span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

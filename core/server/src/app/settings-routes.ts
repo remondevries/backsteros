@@ -56,6 +56,8 @@ import {
   updateFinancialTransactionSchema,
   updateMoneybirdSettingsSchema,
   updateMapboxSettingsSchema,
+  updateGoogleCalendarSettingsSchema,
+  listExternalCalendarEventsQuerySchema,
   mapboxGeocodeQuerySchema,
   mapboxStaticMapQuerySchema,
   updateGithubSettingsSchema,
@@ -225,6 +227,8 @@ import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as mapboxSettingsService from "../services/mapbox-settings.js";
+import * as googleCalendarSettingsService from "../services/google-calendar-settings.js";
+import { GoogleCalendarApiError } from "../lib/google-calendar-client.js";
 import * as githubSettingsService from "../services/github-settings.js";
 import * as agentmailSettingsService from "../services/agentmail-settings.js";
 import * as autoReviewWebhookService from "../services/auto-review-webhook.js";
@@ -600,6 +604,141 @@ export function registerSettingsRoutes(app: Hono) {
     return c.json(
       await mapboxSettingsService.testMapboxConnection(auth.workspaceId),
     );
+  });
+  app.get("/api/v1/settings/google-calendar", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const origin = new URL(c.req.url).origin;
+    return c.json(
+      await googleCalendarSettingsService.getGoogleCalendarSettings(
+        auth.workspaceId,
+        origin,
+      ),
+    );
+  });
+  app.patch("/api/v1/settings/google-calendar", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateGoogleCalendarSettingsSchema.safeParse(
+      await c.req.json(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid Google Calendar settings", code: "bad_request" },
+        400,
+      );
+    }
+    const origin = new URL(c.req.url).origin;
+    return c.json(
+      await googleCalendarSettingsService.updateGoogleCalendarSettings(
+        auth.workspaceId,
+        parsed.data,
+        origin,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/google-calendar/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await googleCalendarSettingsService.testGoogleCalendarConnection(
+        auth.workspaceId,
+      ),
+    );
+  });
+  app.post("/api/v1/settings/google-calendar/oauth/start", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    try {
+      const origin = new URL(c.req.url).origin;
+      return c.json(
+        await googleCalendarSettingsService.startGoogleCalendarOAuth(
+          auth.workspaceId,
+          origin,
+        ),
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not start Google Calendar OAuth",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+  });
+  app.get("/api/v1/settings/google-calendar/oauth/callback", async (c) => {
+    const result =
+      await googleCalendarSettingsService.completeGoogleCalendarOAuth({
+        code: c.req.query("code") ?? null,
+        state: c.req.query("state") ?? null,
+        error: c.req.query("error") ?? null,
+      });
+    const title = result.ok ? "Google Calendar connected" : "Connection failed";
+    const color = result.ok ? "#166534" : "#991b1b";
+    return c.html(
+      `<!doctype html><html><head><meta charset="utf-8"/><title>${title}</title></head><body style="font-family:system-ui,sans-serif;padding:2rem;max-width:36rem;line-height:1.5"><h1 style="color:${color}">${title}</h1><p>${result.message.replace(/</g, "&lt;")}</p><p>You can close this tab and return to BacksterOS Settings → Integrations → Google Calendar.</p></body></html>`,
+      result.ok ? 200 : 400,
+    );
+  });
+  app.get("/api/v1/settings/google-calendar/calendars", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    try {
+      const calendars =
+        await googleCalendarSettingsService.listGoogleCalendars(
+          auth.workspaceId,
+        );
+      return c.json({ calendars });
+    } catch (error) {
+      const message =
+        error instanceof GoogleCalendarApiError || error instanceof Error
+          ? error.message
+          : "Could not list Google calendars";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.post("/api/v1/settings/google-calendar/sync", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    return c.json(
+      await googleCalendarSettingsService.syncGoogleCalendar(auth.workspaceId),
+    );
+  });
+  app.post("/api/v1/webhooks/google-calendar", async (c) => {
+    const result =
+      await googleCalendarSettingsService.handleGoogleCalendarWebhook({
+        channelId: c.req.header("X-Goog-Channel-ID") ?? null,
+        channelToken: c.req.header("X-Goog-Channel-Token") ?? null,
+        resourceState: c.req.header("X-Goog-Resource-State") ?? null,
+      });
+    return c.body(null, result.status);
+  });
+  app.get("/api/v1/external-calendar-events", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read") && !can(auth, "settings:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const parsed = listExternalCalendarEventsQuerySchema.safeParse({
+      from: c.req.query("from") || undefined,
+      to: c.req.query("to") || undefined,
+      provider: c.req.query("provider") || undefined,
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid external calendar query", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json({
+      events: await googleCalendarSettingsService.listExternalCalendarEvents(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    });
   });
   app.get("/api/v1/settings/github", async (c) => {
     const auth = getAuth(c);

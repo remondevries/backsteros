@@ -5,12 +5,50 @@ import {
   addDaysDate,
   calendarWeekStripAnchorShiftWeeks,
   calendarWeekStripDates,
+  calendarWeekStripDayIndexMondayStart,
   calendarWeekStripPaneIndex,
+  calendarWeekStripPaneWidthPx,
+  calendarWeekStripScrollLeftForDate,
+  CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX,
   CALENDAR_WEEK_STRIP_CENTER_INDEX,
+  CALENDAR_WEEK_STRIP_DAY_COUNT,
   CALENDAR_WEEK_STRIP_PANE_COUNT,
   formatLocalYmd,
   startOfWeekMondayDate,
 } from "./calendar-week-strip.js";
+
+test("calendarWeekStripPaneWidthPx is seven fixed day columns", () => {
+  assert.equal(CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX, 300);
+  assert.equal(CALENDAR_WEEK_STRIP_DAY_COUNT, 7);
+  assert.equal(calendarWeekStripPaneWidthPx(), 2100);
+});
+
+test("calendarWeekStripDayIndexMondayStart uses Monday=0", () => {
+  assert.equal(
+    calendarWeekStripDayIndexMondayStart(new Date(2026, 9, 5)),
+    0,
+  ); // Mon
+  assert.equal(
+    calendarWeekStripDayIndexMondayStart(new Date(2026, 9, 8)),
+    3,
+  ); // Thu
+  assert.equal(
+    calendarWeekStripDayIndexMondayStart(new Date(2026, 9, 11)),
+    6,
+  ); // Sun
+});
+
+test("calendarWeekStripScrollLeftForDate centers the day column", () => {
+  // Center pane starts at 2100*2=4200. Thursday (index 3) center at 4200+900+150=5250.
+  // Viewport 1500 → scrollLeft = 5250 - 750 = 4500.
+  assert.equal(
+    calendarWeekStripScrollLeftForDate({
+      date: new Date(2026, 9, 8),
+      viewportWidthPx: 1500,
+    }),
+    4500,
+  );
+});
 
 test("startOfWeekMondayDate uses Monday start", () => {
   assert.equal(

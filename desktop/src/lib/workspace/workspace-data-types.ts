@@ -214,6 +214,7 @@ export type DesktopWorkspaceData = {
     format?: "video_call" | "in_person" | "phone_call";
     location?: string | null;
     locationOrganizationId?: string | null;
+    externalCalendarEventId?: string | null;
   }) => Promise<{ id: string; number: number | null }>;
   /**
    * Copy a meeting to a new time slot (e.g. calendar Alt-drag).

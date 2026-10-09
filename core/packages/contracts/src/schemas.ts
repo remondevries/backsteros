@@ -3145,6 +3145,88 @@ export const mapboxTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
 });
 
+/** Google Calendar integration (OAuth + read-only event sync — ADR-037). */
+export const googleCalendarSettingsSchema = z.object({
+  clientIdConfigured: z.boolean(),
+  clientSecretConfigured: z.boolean(),
+  refreshTokenConfigured: z.boolean(),
+  connected: z.boolean(),
+  accountEmail: z.string().nullable(),
+  selectedCalendarIds: z.array(z.string()),
+  lastSyncedAt: z.string().datetime().nullable(),
+  /** Redirect URI to register on the Google Cloud OAuth client. */
+  oauthRedirectUri: z.string(),
+  /** True when an HTTPS webhook base is configured and at least one watch channel is active. */
+  pushEnabled: z.boolean(),
+  pushWebhookUrl: z.string().nullable(),
+  pushChannelCount: z.number().int().nonnegative(),
+  pushError: z.string().nullable(),
+});
+export const updateGoogleCalendarSettingsSchema = z.object({
+  /** OAuth client id; empty string clears. Omit to leave unchanged. */
+  clientId: z.string().optional(),
+  /** OAuth client secret; empty string clears. Omit to leave unchanged. */
+  clientSecret: z.string().optional(),
+  /** Refresh token (power-user paste); empty string clears. Omit to leave unchanged. */
+  refreshToken: z.string().optional(),
+  /** Calendar ids to sync; empty = primary only on next sync. */
+  selectedCalendarIds: z.array(z.string().min(1).max(200)).max(50).optional(),
+});
+export const googleCalendarTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  accountEmail: z.string().nullable(),
+  calendarCount: z.number().int().nullable(),
+});
+export const googleCalendarOAuthStartResultSchema = z.object({
+  authorizeUrl: z.string().url(),
+  redirectUri: z.string(),
+});
+export const googleCalendarCalendarSummarySchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  primary: z.boolean(),
+  selected: z.boolean(),
+});
+export const googleCalendarCalendarsResponseSchema = z.object({
+  calendars: z.array(googleCalendarCalendarSummarySchema),
+});
+export const googleCalendarSyncResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  upserted: z.number().int(),
+  removed: z.number().int(),
+  calendarCount: z.number().int(),
+  lastSyncedAt: z.string().datetime().nullable(),
+});
+export const externalCalendarEventSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  calendarId: z.string(),
+  externalId: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  location: z.string().nullable(),
+  status: z.string().nullable(),
+  htmlLink: z.string().nullable(),
+  startAt: isoDateSchema.nullable(),
+  endAt: isoDateSchema.nullable(),
+  allDay: z.boolean(),
+  startDate: z.string().nullable(),
+  endDate: z.string().nullable(),
+  updatedAt: isoDateSchema,
+  /** Backster meeting notes shell linked to this Google (etc.) block, if any. */
+  linkedMeetingId: z.string().nullable().optional(),
+});
+export const listExternalCalendarEventsQuerySchema = z.object({
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
+  provider: z.string().min(1).max(64).optional(),
+});
+export const listExternalCalendarEventsResponseSchema = z.object({
+  events: z.array(externalCalendarEventSchema),
+});
+
 /** GitHub integration (workspace PAT; optional Clerk OAuth still supported). */
 export const githubSettingsSchema = z.object({
   apiTokenConfigured: z.boolean(),
@@ -4419,6 +4501,8 @@ export type UpdateHabitInput = z.infer<typeof updateHabitSchema>;
 export type RecordHabitDayInput = z.infer<typeof recordHabitDaySchema>;
 
 export const createMeetingSchema = z.object({
+  /** Client-generated id for optimistic creates (same pattern as tasks). */
+  id: z.string().min(1).max(64).optional(),
   title: z.string().min(1).max(500).optional(),
   summary: z.string().max(100000).nullable().optional(),
   notes: z.string().max(100000).nullable().optional(),
@@ -4435,6 +4519,8 @@ export const createMeetingSchema = z.object({
   locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** Attach this meeting as notes for a Google Calendar (etc.) agenda block. */
+  externalCalendarEventId: z.string().nullable().optional(),
 });
 
 export const updateMeetingSchema = z
@@ -4538,6 +4624,8 @@ export const meetingSchema = z.object({
   locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** Linked Google (etc.) agenda block — schedule owned there (ADR-037). */
+  externalCalendarEventId: z.string().nullable().optional(),
   /** External update flag — surfaces in the Updated inbox group. */
   inboxUpdatedAt: z.string().datetime().nullable().optional(),
   sortOrder: z.number().int(),
@@ -4876,6 +4964,28 @@ export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
+export type GoogleCalendarSettings = z.infer<
+  typeof googleCalendarSettingsSchema
+>;
+export type UpdateGoogleCalendarSettingsInput = z.infer<
+  typeof updateGoogleCalendarSettingsSchema
+>;
+export type GoogleCalendarTestConnectionResult = z.infer<
+  typeof googleCalendarTestConnectionResultSchema
+>;
+export type GoogleCalendarOAuthStartResult = z.infer<
+  typeof googleCalendarOAuthStartResultSchema
+>;
+export type GoogleCalendarCalendarSummary = z.infer<
+  typeof googleCalendarCalendarSummarySchema
+>;
+export type GoogleCalendarSyncResult = z.infer<
+  typeof googleCalendarSyncResultSchema
+>;
+export type ExternalCalendarEvent = z.infer<typeof externalCalendarEventSchema>;
+export type ListExternalCalendarEventsQuery = z.infer<
+  typeof listExternalCalendarEventsQuerySchema
+>;
 export type UpdateMapboxSettingsInput = z.infer<
   typeof updateMapboxSettingsSchema
 >;

@@ -442,6 +442,7 @@ export function mapMeeting(
     endAt: meeting.endAt,
     trackedMinutes: meeting.trackedMinutes ?? null,
     trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
+    externalCalendarEventId: meeting.externalCalendarEventId ?? null,
     createdAt: meeting.createdAt ?? null,
   };
 }

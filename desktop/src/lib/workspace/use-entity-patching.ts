@@ -590,6 +590,7 @@ export function useWorkspaceEntityPatching({
           endAt: row.endAt,
           trackedMinutes: row.trackedMinutes,
           trackedDurationSeconds: row.trackedDurationSeconds,
+          externalCalendarEventId: row.externalCalendarEventId,
           sortOrder: row.sortOrder,
           updatedAt: row.updatedAt,
         });
@@ -612,6 +613,7 @@ export function useWorkspaceEntityPatching({
                 location: row.location ?? null,
                 startAt: row.startAt,
                 endAt: row.endAt,
+                externalCalendarEventId: row.externalCalendarEventId ?? null,
               }),
             );
           } catch (error) {
@@ -923,16 +925,23 @@ export function useWorkspaceEntityPatching({
           : undefined;
       }
       if (table === "meetings") {
+        // Optimistic first — never block the title/schedule UI on Google/REST.
         applyLiveMeetingOptimisticPatch(id, values);
-        const updated = await client.requestJson<ApiMeeting>(path, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(values),
-        });
-        await applyMeetingServerRow(updated);
-        if (meetingPatchNeedsApiRefresh) {
-          void softRefreshApiMeetings();
-        }
+        void client
+          .requestJson<ApiMeeting>(path, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(values),
+          })
+          .then((updated) => {
+            void applyMeetingServerRow(updated);
+            if (meetingPatchNeedsApiRefresh) {
+              void softRefreshApiMeetings();
+            }
+          })
+          .catch((error) => {
+            console.warn("[desktop] meeting patch REST failed", error);
+          });
         return;
       }
       await client.requestJson(path, {

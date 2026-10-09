@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  useLayoutEffect,
+  type SyntheticEvent,
+} from "react";
 
 import type {
   MeetingWeekdayHoursEntry,
@@ -52,6 +60,10 @@ import {
   type CalendarBirthdayPopoverContact,
 } from "./calendar-birthday-event-popover.js";
 import {
+  CalendarExternalEventPopover,
+  type CalendarExternalPopoverEvent,
+} from "./calendar-external-event-popover.js";
+import {
   CalendarTaskEventPopover,
   type CalendarTaskPopoverTask,
 } from "./calendar-task-event-popover.js";
@@ -65,6 +77,8 @@ import { CALENDAR_GRID_KEYBOARD_ITEM_ATTR } from "../../calendar/calendar-grid-k
 import {
   addDaysDate,
   calendarWeekStripDates,
+  calendarWeekStripPaneWidthPx,
+  calendarWeekStripScrollLeftForDate,
   CALENDAR_WEEK_STRIP_CENTER_INDEX,
   CALENDAR_WEEK_STRIP_PANE_COUNT,
   formatLocalYmd,
@@ -141,6 +155,11 @@ export type CalendarViewProps = {
   onBirthdaySendEmail?: (contactId: string) => void;
   /** Opens the meeting detail overlay (narrow panel by default). */
   onMeetingOpen?: (meetingId: string) => void;
+  /** Attach Backster notes to a Google (etc.) agenda block. */
+  onAttachExternalNotes?: (
+    event: CalendarExternalPopoverEvent,
+  ) => void | Promise<void>;
+  attachingExternalNotes?: boolean;
   /** Habit day tasks keyed by local `YYYY-MM-DD` (shown above each day's events). */
   dayHabitsByDate?: ReadonlyMap<string, readonly CalendarHabitIconItem[]>;
   onToggleDayHabit?: (
@@ -181,6 +200,8 @@ export function CalendarView({
   onBirthdayAddMeeting,
   onBirthdaySendEmail,
   onMeetingOpen,
+  onAttachExternalNotes,
+  attachingExternalNotes = false,
   dayHabitsByDate,
   onToggleDayHabit,
   viewMode: controlledViewMode,
@@ -219,6 +240,34 @@ export function CalendarView({
   const [weekAnchorYmd, setWeekAnchorYmd] = useState(() =>
     formatLocalYmd(startOfWeekMondayDate(new Date())),
   );
+  const weekAnchorYmdRef = useRef(weekAnchorYmd);
+  weekAnchorYmdRef.current = weekAnchorYmd;
+  /** When set, week-strip layout scroll centers this day (Today / gotoDate). */
+  const pendingWeekFocusDateRef = useRef<Date | null>(null);
+  /** Dedupe FC `eventClick` with the all-day DOM click fallback. */
+  const lastCalendarEventOpenMsRef = useRef(0);
+  /**
+   * After opening a chip popover, ignore same-chip re-entry until this time so
+   * pointerup+click (one gesture) does not toggle closed; a later click closes.
+   */
+  const popoverToggleIgnoreUntilMsRef = useRef(0);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  const openCalendarEventFromFcRef = useRef<
+    (info: {
+      event: {
+        id: string;
+        title: string;
+        start: Date | null;
+        end: Date | null;
+        startStr: string;
+        endStr: string;
+        extendedProps: Record<string, unknown>;
+      };
+      el: HTMLElement;
+      jsEvent?: Event;
+    }) => void
+  >(() => {});
   const [monthAnchorYmd, setMonthAnchorYmd] = useState(() =>
     formatMonthAnchorYmd(new Date()),
   );
@@ -232,10 +281,18 @@ export function CalendarView({
     occurrenceDate: string | null;
     anchorRect: DOMRect;
   } | null>(null);
+  const [openExternalPopover, setOpenExternalPopover] = useState<{
+    event: CalendarExternalPopoverEvent;
+    anchorRect: DOMRect;
+  } | null>(null);
   const [visibleRange, setVisibleRange] = useState<{
     start: Date;
     end: Date;
   } | null>(null);
+  /** Avoid closing popovers on spurious FullCalendar datesSet (same range). */
+  const visibleRangeMsRef = useRef<{ start: number; end: number } | null>(
+    null,
+  );
   const [activeGridView, setActiveGridView] = useState<string | null>(null);
   const fixedMirrorParent =
     typeof document !== "undefined" ? document.body : undefined;
@@ -307,6 +364,23 @@ export function CalendarView({
     };
   }, []);
 
+  const scrollWeekStripToDate = useCallback((date: Date) => {
+    const strip = weekStripRef.current;
+    if (!strip || strip.clientWidth <= 0) return;
+    const pane = strip.querySelector<HTMLElement>(
+      ".calendar-week-strip__pane",
+    );
+    const paneWidth = pane?.offsetWidth || calendarWeekStripPaneWidthPx();
+    const dayColumnWidthPx = paneWidth / 7;
+    strip.scrollLeft = calendarWeekStripScrollLeftForDate({
+      date,
+      viewportWidthPx: strip.clientWidth,
+      dayColumnWidthPx,
+      paneCount: CALENDAR_WEEK_STRIP_PANE_COUNT,
+      centerPaneIndex: CALENDAR_WEEK_STRIP_CENTER_INDEX,
+    });
+  }, []);
+
   // FullCalendar's gotoDate uses flushSync. Queue it outside React's layout
   // lifecycle while keeping it in the same frame, before the next paint.
   useLayoutEffect(() => {
@@ -316,17 +390,26 @@ export function CalendarView({
       if (cancelled) return;
       syncWeekStripDates();
       const strip = weekStripRef.current;
-      if (strip && strip.clientWidth > 0) {
-        strip.scrollLeft = calendarStripCenterScrollOffset(
-          strip.clientWidth,
-          CALENDAR_WEEK_STRIP_PANE_COUNT,
-        );
+      if (!strip || strip.clientWidth <= 0) return;
+      const focusDate = pendingWeekFocusDateRef.current;
+      pendingWeekFocusDateRef.current = null;
+      if (focusDate) {
+        scrollWeekStripToDate(focusDate);
+        return;
       }
+      const pane = strip.querySelector<HTMLElement>(
+        ".calendar-week-strip__pane",
+      );
+      const paneWidth = pane?.offsetWidth || calendarWeekStripPaneWidthPx();
+      strip.scrollLeft = calendarStripCenterScrollOffset(
+        paneWidth,
+        CALENDAR_WEEK_STRIP_PANE_COUNT,
+      );
     });
     return () => {
       cancelled = true;
     };
-  }, [isWeekStrip, syncWeekStripDates, weekAnchorYmd]);
+  }, [isWeekStrip, scrollWeekStripToDate, syncWeekStripDates, weekAnchorYmd]);
 
   const monthStripDates = useMemo(
     () => calendarMonthStripDates(parseMonthAnchorYmd(monthAnchorYmd)),
@@ -406,18 +489,31 @@ export function CalendarView({
         return;
       }
 
+      const focusWeekDate = (date: Date) => {
+        const mondayYmd = formatLocalYmd(startOfWeekMondayDate(date));
+        pendingWeekFocusDateRef.current = date;
+        if (mondayYmd === weekAnchorYmdRef.current) {
+          // Same week — layout effect will not re-run; scroll now.
+          queueMicrotask(() => {
+            if (pendingWeekFocusDateRef.current !== date) return;
+            pendingWeekFocusDateRef.current = null;
+            scrollWeekStripToDate(date);
+          });
+          return;
+        }
+        setWeekAnchorYmd(mondayYmd);
+      };
+
       const proxy = {
         prev: () => shiftWeekAnchor(-1),
         next: () => shiftWeekAnchor(1),
         today: () => {
-          setWeekAnchorYmd(
-            formatLocalYmd(startOfWeekMondayDate(new Date())),
-          );
+          focusWeekDate(new Date());
         },
         gotoDate: (dateInput: Date | string) => {
           const date =
             typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-          setWeekAnchorYmd(formatLocalYmd(startOfWeekMondayDate(date)));
+          focusWeekDate(date);
         },
         incrementDate: (delta: {
           days?: number;
@@ -456,7 +552,7 @@ export function CalendarView({
       calendarApiRef.current = proxy;
       onCalendarApi?.(proxy);
     },
-    [onCalendarApi, shiftWeekAnchor],
+    [onCalendarApi, scrollWeekStripToDate, shiftWeekAnchor],
   );
 
   const publishMonthStripApi = useCallback(
@@ -721,6 +817,7 @@ export function CalendarView({
   const closePopovers = useCallback(() => {
     setOpenTaskPopover(null);
     setOpenBirthdayPopover(null);
+    setOpenExternalPopover(null);
   }, []);
 
   useEffect(() => {
@@ -728,7 +825,9 @@ export function CalendarView({
   }, [onTaskPopoverChange, openTaskPopover?.task.id]);
 
   const calendarEntityPopoverOpen =
-    openTaskPopover != null || openBirthdayPopover != null;
+    openTaskPopover != null ||
+    openBirthdayPopover != null ||
+    openExternalPopover != null;
 
   useListDismissDetailShortcut({
     enabled: calendarEntityPopoverOpen,
@@ -739,7 +838,9 @@ export function CalendarView({
     (
       eventLike: {
         id: string;
+        title?: string;
         start?: string | Date | null;
+        end?: string | Date | null;
         extendedProps: Record<string, unknown>;
       },
       anchorRect: DOMRect,
@@ -768,32 +869,102 @@ export function CalendarView({
 
       if (entity.entityType === "birthday") {
         if (openBirthdayPopover?.contact.id === entity.entityId) {
+          // Same-chip click toggles closed; ignore the trailing half of the
+          // open gesture (pointerup + click).
+          if (performance.now() < popoverToggleIgnoreUntilMsRef.current) {
+            return;
+          }
           closePopovers();
           return;
         }
-        if (resolveBirthdayContact) {
-          const contact = resolveBirthdayContact(entity.entityId);
-          if (contact) {
-            closePopovers();
-            const start = eventLike.start;
-            const occurrenceDate =
-              typeof start === "string" && start.length >= 10
-                ? start.slice(0, 10)
-                : start instanceof Date && !Number.isNaN(start.getTime())
-                  ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`
-                  : null;
-            setOpenBirthdayPopover({ contact, occurrenceDate, anchorRect });
+        const resolved = resolveBirthdayContact?.(entity.entityId) ?? null;
+        const fallbackName =
+          (typeof eventLike.extendedProps.contactName === "string" &&
+            eventLike.extendedProps.contactName.trim()) ||
+          eventLike.title?.replace(/\s*'s birthday$/i, "").trim() ||
+          "Contact";
+        const contact = resolved ?? {
+          id: entity.entityId,
+          name: fallbackName,
+        };
+        if (!entity.entityId) return;
+        closePopovers();
+        const start = eventLike.start;
+        const occurrenceDate =
+          typeof start === "string" && start.length >= 10
+            ? start.slice(0, 10)
+            : start instanceof Date && !Number.isNaN(start.getTime())
+              ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`
+              : null;
+        popoverToggleIgnoreUntilMsRef.current = performance.now() + 300;
+        setOpenBirthdayPopover({ contact, occurrenceDate, anchorRect });
+        return;
+      }
+
+      if (entity.entityType === "external") {
+        if (openExternalPopover?.event.id === entity.entityId) {
+          if (performance.now() < popoverToggleIgnoreUntilMsRef.current) {
             return;
           }
+          closePopovers();
+          return;
         }
-        onBirthdayOpen?.(entity.entityId);
+        const props = eventLike.extendedProps;
+        const toIso = (value: string | Date | null | undefined) => {
+          if (typeof value === "string" && value.trim()) return value;
+          if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return value.toISOString();
+          }
+          return null;
+        };
+        const startAt = toIso(eventLike.start);
+        const endAt =
+          toIso(eventLike.end) ??
+          (typeof props.endAt === "string" ? props.endAt : null);
+        closePopovers();
+        popoverToggleIgnoreUntilMsRef.current = performance.now() + 300;
+        setOpenExternalPopover({
+          event: {
+            id: entity.entityId,
+            provider:
+              typeof props.provider === "string"
+                ? props.provider
+                : "google_calendar",
+            title: eventLike.title?.trim() || "(No title)",
+            startAt,
+            endAt,
+            allDay: props.allDay === true,
+            startDate:
+              typeof props.startDate === "string" ? props.startDate : null,
+            endDate: typeof props.endDate === "string" ? props.endDate : null,
+            location:
+              typeof props.location === "string" ? props.location : null,
+            description:
+              typeof props.description === "string" ? props.description : null,
+            htmlLink:
+              typeof props.htmlLink === "string" ? props.htmlLink : null,
+            linkedMeetingId:
+              typeof props.linkedMeetingId === "string"
+                ? props.linkedMeetingId
+                : null,
+          },
+          anchorRect,
+        });
         return;
       }
 
       if (resolveTask) {
         const task = resolveTask(entity.entityId);
         if (task) {
+          if (openTaskPopover?.task.id === entity.entityId) {
+            if (performance.now() < popoverToggleIgnoreUntilMsRef.current) {
+              return;
+            }
+            closePopovers();
+            return;
+          }
           closePopovers();
+          popoverToggleIgnoreUntilMsRef.current = performance.now() + 300;
           setOpenTaskPopover({ task, anchorRect });
           return;
         }
@@ -802,10 +973,11 @@ export function CalendarView({
     },
     [
       closePopovers,
-      onBirthdayOpen,
       onMeetingOpen,
       onTaskOpen,
       openBirthdayPopover?.contact.id,
+      openExternalPopover?.event.id,
+      openTaskPopover?.task.id,
       resolveBirthdayContact,
       resolveTask,
     ],
@@ -857,7 +1029,9 @@ export function CalendarView({
       openCalendarEvent(
         {
           id: event.id,
+          title: event.title,
           start: event.start,
+          end: event.end,
           extendedProps: event.extendedProps,
         },
         anchorEl?.getBoundingClientRect() ?? new DOMRect(),
@@ -914,6 +1088,69 @@ export function CalendarView({
     });
     observer.observe(container);
     return () => observer.disconnect();
+  }, []);
+
+  // FullCalendar daygrid chips are <a> tags. Packed all-day lanes re-layout and
+  // restore an empty href without remounting — that reloads the current URL.
+  useEffect(() => {
+    const root = mainRef.current;
+    if (!root) return;
+
+    const neutralizeAnchor = (el: Element) => {
+      if (!(el instanceof HTMLAnchorElement)) return;
+      if (!el.classList.contains("fc-event")) return;
+      if (!el.hasAttribute("href")) return;
+      el.removeAttribute("href");
+      el.setAttribute("role", "button");
+    };
+
+    const scan = (node: Node) => {
+      if (!(node instanceof Element)) return;
+      neutralizeAnchor(node);
+      for (const anchor of node.querySelectorAll("a.fc-event")) {
+        neutralizeAnchor(anchor);
+      }
+    };
+
+    scan(root);
+
+    const mo = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (
+          mutation.type === "attributes" &&
+          mutation.attributeName === "href" &&
+          mutation.target instanceof Element
+        ) {
+          neutralizeAnchor(mutation.target);
+          continue;
+        }
+        for (const node of mutation.addedNodes) {
+          scan(node);
+        }
+      }
+    });
+    mo.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["href"],
+    });
+
+    const preventEmptyFcNav = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a.fc-event");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute("href");
+      if (href == null || href === "" || href === "#") {
+        event.preventDefault();
+      }
+    };
+    root.addEventListener("click", preventEmptyFcNav, true);
+    return () => {
+      mo.disconnect();
+      root.removeEventListener("click", preventEmptyFcNav, true);
+    };
   }, []);
 
   useEffect(() => () => onCalendarApi?.(null), [onCalendarApi]);
@@ -978,6 +1215,12 @@ export function CalendarView({
   };
 
   const handleDatesSet = (info: DatesSetArg) => {
+    const startMs = info.start.getTime();
+    const endMs = info.end.getTime();
+    const prev = visibleRangeMsRef.current;
+    const rangeChanged =
+      !prev || prev.start !== startMs || prev.end !== endMs;
+    visibleRangeMsRef.current = { start: startMs, end: endMs };
     setVisibleRange({ start: info.start, end: info.end });
     setActiveGridView(info.view.type);
     onRangeTitleChange?.(info.view.title);
@@ -985,7 +1228,12 @@ export function CalendarView({
     if (mode !== viewMode) {
       updateViewMode(mode);
     }
-    closePopovers();
+    // Packed all-day days (e.g. Simone on Oct 2) reflow and re-fire datesSet
+    // with the same range — closing here made the birthday popover vanish and
+    // left FC's empty <a href> to reload the page on the trailing click.
+    if (rangeChanged) {
+      closePopovers();
+    }
     if (info.view.type === "listWeek") {
       requestAnimationFrame(() => syncListDayHabits(mainRef.current));
     }
@@ -1020,7 +1268,7 @@ export function CalendarView({
     options?: { duplicate?: boolean },
   ) => {
     const entity = calendarEntityFromEvent(event);
-    if (entity.entityType === "birthday") {
+    if (entity.entityType === "birthday" || entity.entityType === "external") {
       revert();
       return;
     }
@@ -1116,7 +1364,7 @@ export function CalendarView({
   const handleEventReceive = (info: EventReceiveArg) => {
     closePopovers();
     const entity = calendarEntityFromEvent(info.event);
-    if (entity.entityType === "birthday") {
+    if (entity.entityType === "birthday" || entity.entityType === "external") {
       info.revert();
       return;
     }
@@ -1171,6 +1419,58 @@ export function CalendarView({
     void Promise.resolve(onCreateMeetingFromSelect(range));
   };
 
+  const openCalendarEventFromFc = useCallback(
+    (info: {
+      event: {
+        id: string;
+        title: string;
+        start: Date | null;
+        end: Date | null;
+        startStr: string;
+        endStr: string;
+        extendedProps: Record<string, unknown>;
+      };
+      el: HTMLElement;
+      jsEvent?: Event;
+    }) => {
+      if (
+        info.event.extendedProps.entityType ===
+        MEETINGS_AVAILABILITY_MARKER_TYPE
+      ) {
+        return;
+      }
+      const habitId = info.event.extendedProps.habitId;
+      if (
+        info.event.extendedProps.entityType === "task" &&
+        typeof habitId === "string" &&
+        habitId.trim()
+      ) {
+        return;
+      }
+      const now = performance.now();
+      // FC eventClick + DOM fallback can both fire for one gesture; the second
+      // would toggle the birthday popover closed immediately.
+      if (now - lastCalendarEventOpenMsRef.current < 80) {
+        return;
+      }
+      lastCalendarEventOpenMsRef.current = now;
+      info.jsEvent?.preventDefault?.();
+      info.jsEvent?.stopPropagation?.();
+      openCalendarEvent(
+        {
+          id: info.event.id,
+          title: info.event.title,
+          start: info.event.startStr || info.event.start,
+          end: info.event.endStr || info.event.end,
+          extendedProps: info.event.extendedProps,
+        },
+        info.el.getBoundingClientRect(),
+      );
+    },
+    [openCalendarEvent],
+  );
+  openCalendarEventFromFcRef.current = openCalendarEventFromFc;
+
   const handleEventClick = (info: EventClickArg) => {
     if (
       info.event.extendedProps.entityType === MEETINGS_AVAILABILITY_MARKER_TYPE ||
@@ -1178,22 +1478,99 @@ export function CalendarView({
     ) {
       return;
     }
-    // Habit blocks are not meeting/task detail surfaces — no popover / overlay.
-    const habitId = info.event.extendedProps.habitId;
-    if (typeof habitId === "string" && habitId.trim()) {
-      return;
-    }
-    info.jsEvent.preventDefault();
-    info.jsEvent.stopPropagation();
-    openCalendarEvent(
-      {
-        id: info.event.id,
-        start: info.event.startStr || info.event.start,
-        extendedProps: info.event.extendedProps as Record<string, unknown>,
-      },
-      info.el.getBoundingClientRect(),
-    );
+    openCalendarEventFromFc(info);
   };
+
+  const handleEventDidMountWithAllDayClick = useCallback(
+    (info: Parameters<typeof handleEventDidMount>[0]) => {
+      handleEventDidMount(info);
+      if (info.event.display === "background") return;
+      // Packed all-day days (e.g. Oct 2) re-layout the lane and restore an
+      // empty href on <a class="fc-event"> — that reloads the current page.
+      if (info.el instanceof HTMLAnchorElement) {
+        info.el.removeAttribute("href");
+        info.el.setAttribute("role", "button");
+      }
+      const entity = calendarEntityFromEvent({
+        id: info.event.id,
+        extendedProps: info.event.extendedProps as Record<string, unknown>,
+      });
+      info.el.setAttribute("data-calendar-entity-type", entity.entityType);
+      info.el.setAttribute("data-calendar-entity-id", entity.entityId);
+      const startYmd = (
+        info.event.startStr ||
+        (info.event.start instanceof Date && !Number.isNaN(info.event.start.getTime())
+          ? formatLocalYmd(info.event.start)
+          : "")
+      ).slice(0, 10);
+      if (startYmd) {
+        info.el.setAttribute("data-calendar-event-start", startYmd);
+      }
+    },
+    [handleEventDidMount],
+  );
+
+  const handleEventWillUnmountWithAllDayClick = useCallback(
+    (info: Parameters<typeof handleEventWillUnmount>[0]) => {
+      info.el.removeAttribute("data-calendar-entity-type");
+      info.el.removeAttribute("data-calendar-entity-id");
+      info.el.removeAttribute("data-calendar-event-start");
+      handleEventWillUnmount(info);
+    },
+    [handleEventWillUnmount],
+  );
+
+  const handleAllDayChipCapture = useCallback(
+    (event: SyntheticEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const eventEl = target.closest<HTMLElement>(".fc-event");
+      if (!eventEl) return;
+      if (event.type === "click") {
+        event.preventDefault();
+      }
+      const native = event.nativeEvent;
+      if ("button" in native && (native as MouseEvent).button !== 0) return;
+      const entityType =
+        eventEl.getAttribute("data-calendar-entity-type") ||
+        (eventEl.classList.contains("birthday-calendar-event")
+          ? "birthday"
+          : "");
+      const isAllDayChip =
+        entityType === "birthday" ||
+        entityType === "external" ||
+        (entityType === "task" && eventEl.classList.contains("fc-daygrid-event"));
+      if (!isAllDayChip) return;
+      event.stopPropagation();
+      const navId =
+        eventEl.getAttribute(CALENDAR_GRID_KEYBOARD_ITEM_ATTR)?.trim() || "";
+      const listed = navId
+        ? eventsRef.current.find((entry) => entry.id === navId)
+        : undefined;
+      const startYmd = eventEl.getAttribute("data-calendar-event-start");
+      const listedStart =
+        typeof listed?.start === "string" ? listed.start : startYmd || "";
+      openCalendarEventFromFcRef.current({
+        event: {
+          id: listed?.id || navId,
+          title: listed?.title || eventEl.textContent?.trim() || "",
+          start: null,
+          end: null,
+          startStr: listedStart,
+          endStr: typeof listed?.end === "string" ? listed.end : "",
+          extendedProps: listed?.extendedProps ?? {
+            entityType,
+            contactId: eventEl.getAttribute("data-calendar-entity-id"),
+            externalEventId: eventEl.getAttribute("data-calendar-entity-id"),
+            taskId: eventEl.getAttribute("data-calendar-entity-id"),
+          },
+        },
+        el: eventEl,
+        jsEvent: native,
+      });
+    },
+    [],
+  );
 
   const popoverTask =
     openTaskPopover && resolveTask
@@ -1220,6 +1597,8 @@ export function CalendarView({
     firstDay: 1,
     nowIndicator: true,
     dayMaxEventRows: true,
+    // Birthdays set `order: 0` so they stay above all-day tasks in the lane.
+    eventOrder: "order,start,-duration,allDay,title",
     slotDuration: "00:30:00",
     snapDuration: "00:15:00",
     fixedMirrorParent,
@@ -1229,10 +1608,14 @@ export function CalendarView({
     eventResizableFromStart: true,
     eventDragMinDistance: 8,
     eventAllow: (_span: unknown, moving: { extendedProps?: Record<string, unknown> } | null) =>
-      moving?.extendedProps?.entityType !== "birthday",
+      moving?.extendedProps?.entityType !== "birthday" &&
+      moving?.extendedProps?.entityType !== "external",
     droppable: true,
     selectable: selectEnabled,
     selectMirror: selectEnabled,
+    // Timed grid only — all-day select is ignored for meeting create, and
+    // allowing it steals clicks from all-day chips (birthdays / day tasks).
+    selectAllow: (span: { allDay: boolean }) => !span.allDay,
     select: selectEnabled ? handleDateSelect : undefined,
     eventDragStart: handleEventDragStart,
     eventDragStop: handleEventDragStop,
@@ -1241,8 +1624,8 @@ export function CalendarView({
     eventReceive: handleEventReceive,
     eventClick: handleEventClick,
     eventContent: renderCalendarTaskEventContent,
-    eventDidMount: handleEventDidMount,
-    eventWillUnmount: handleEventWillUnmount,
+    eventDidMount: handleEventDidMountWithAllDayClick,
+    eventWillUnmount: handleEventWillUnmountWithAllDayClick,
     dayCellDidMount,
     dayCellWillUnmount,
     dayHeaderDidMount,
@@ -1280,6 +1663,8 @@ export function CalendarView({
         className="calendar-view-main"
         ref={mainRef}
         {...gridListContainerProps}
+        onPointerUpCapture={handleAllDayChipCapture}
+        onClickCapture={handleAllDayChipCapture}
       >
         {isWeekStrip ? (
           <div className="calendar-week-strip-shell">
@@ -1476,6 +1861,15 @@ export function CalendarView({
         onAddTask={onBirthdayAddTask}
         onAddMeeting={onBirthdayAddMeeting}
         onSendEmail={onBirthdaySendEmail}
+      />
+      <CalendarExternalEventPopover
+        open={openExternalPopover != null}
+        event={openExternalPopover?.event ?? null}
+        anchorRect={openExternalPopover?.anchorRect ?? null}
+        onClose={() => setOpenExternalPopover(null)}
+        attaching={attachingExternalNotes}
+        onAttachNotes={onAttachExternalNotes}
+        onOpenNotes={onMeetingOpen}
       />
     </div>
   );

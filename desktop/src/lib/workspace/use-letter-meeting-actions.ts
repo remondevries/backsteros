@@ -9,6 +9,7 @@ import {
   PENDING_ENTITY_NUMBER,
   optimisticLocalMetadataCreate,
 } from "./optimistic-local-metadata-create";
+import { resolveEntityNumberAfterLocalCreate } from "./resolve-entity-number-after-local-create";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 const MEETING_CREATE_FORMATS = [
@@ -155,6 +156,7 @@ export function useWorkspaceLetterMeetingActions({
       format?: MeetingCreateFormat;
       location?: string | null;
       locationOrganizationId?: string | null;
+      externalCalendarEventId?: string | null;
     }) => {
       if (!authenticated) throw new Error("Sign in to create meetings.");
       const format = normalizeMeetingCreateFormat(input.format);
@@ -180,8 +182,22 @@ export function useWorkspaceLetterMeetingActions({
         ...(input.locationOrganizationId !== undefined
           ? { locationOrganizationId: input.locationOrganizationId }
           : {}),
+        ...(input.externalCalendarEventId !== undefined
+          ? { externalCalendarEventId: input.externalCalendarEventId }
+          : {}),
       };
-      if (powerSync.ready && powerSync.createMetadata) {
+      // Google Convert must persist externalCalendarEventId on the server.
+      // A PowerSync-only insert can flash the meeting then vanish when upload
+      // drops/rejects the new column — use awaited REST for linked creates.
+      const preferRestForExternalLink = Boolean(
+        meetingBody.externalCalendarEventId,
+      );
+
+      if (
+        powerSync.ready &&
+        powerSync.createMetadata &&
+        !preferRestForExternalLink
+      ) {
         const id = crypto.randomUUID().replace(/-/g, "");
         const now = new Date().toISOString();
         const meeting = {
@@ -202,7 +218,9 @@ export function useWorkspaceLetterMeetingActions({
             return [meeting, ...rows];
           });
         };
-        const { number } = await optimisticLocalMetadataCreate({
+        // Return as soon as the local row exists — number resolution polls the
+        // server and made Convert to Event feel stuck on "Converting…".
+        await optimisticLocalMetadataCreate({
           id,
           applyOptimistic,
           rollback: () =>
@@ -216,31 +234,68 @@ export function useWorkspaceLetterMeetingActions({
               id,
             ),
           errorLabel: "local meeting create",
-          resolveNumberAfterUpload: {
-            client,
-            powerSync,
-            fetchPath: `/api/v1/meetings/${encodeURIComponent(id)}`,
-            setters: [setApiMeetings],
-          },
         });
-        return { id: meeting.id, number };
+        void resolveEntityNumberAfterLocalCreate(
+          client,
+          powerSync,
+          `/api/v1/meetings/${encodeURIComponent(id)}`,
+          id,
+          setApiMeetings,
+        ).catch((error) => {
+          console.warn("[desktop] meeting number resolve failed", error);
+        });
+        return { id: meeting.id, number: null };
       }
 
-      const meeting = await client.requestJson<ApiMeeting>("/api/v1/meetings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(meetingBody),
-      });
+      // REST path: optimistic row, await POST so Convert cannot keep a meeting
+      // the server is about to reject (then silently roll back).
+      const id = crypto.randomUUID().replace(/-/g, "");
+      const now = new Date().toISOString();
+      const optimistic = {
+        id,
+        number: PENDING_ENTITY_NUMBER,
+        ...meetingBody,
+        createdAt: now,
+        updatedAt: now,
+      } as ApiMeeting;
       setApiMeetings((rows) => {
-        if (!rows) return [meeting];
-        if (rows.some((entry) => entry.id === meeting.id)) {
+        if (!rows) return [optimistic];
+        if (rows.some((entry) => entry.id === id)) {
           return rows.map((entry) =>
-            entry.id === meeting.id ? meeting : entry,
+            entry.id === id ? optimistic : entry,
           );
         }
-        return [meeting, ...rows];
+        return [optimistic, ...rows];
       });
-      return { id: meeting.id, number: meeting.number };
+      try {
+        const meeting = await client.requestJson<ApiMeeting>(
+          "/api/v1/meetings",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...meetingBody, id }),
+          },
+        );
+        setApiMeetings((rows) => {
+          if (!rows) return [meeting];
+          if (rows.some((entry) => entry.id === meeting.id)) {
+            return rows.map((entry) =>
+              entry.id === meeting.id ? meeting : entry,
+            );
+          }
+          // Server may have ignored client id — replace optimistic row.
+          return [meeting, ...rows.filter((entry) => entry.id !== id)];
+        });
+        return { id: meeting.id, number: meeting.number ?? null };
+      } catch (error) {
+        setApiMeetings(
+          (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+        );
+        console.warn("[desktop] meeting create failed", error);
+        throw error instanceof Error
+          ? error
+          : new Error("Meeting create failed");
+      }
     },
     [authenticated, client, powerSync, setApiMeetings, toSnakeFields],
   );

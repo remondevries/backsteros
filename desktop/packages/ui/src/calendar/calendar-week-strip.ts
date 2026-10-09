@@ -2,6 +2,50 @@
 
 import { calendarStripCenterIndex } from "./calendar-strip-geometry.js";
 
+/** Fixed day column width in the week strip (readable chips + horizontal pan). */
+export const CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX = 300;
+
+export const CALENDAR_WEEK_STRIP_DAY_COUNT = 7;
+
+export function calendarWeekStripPaneWidthPx(
+  dayColumnWidthPx: number = CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX,
+): number {
+  return dayColumnWidthPx * CALENDAR_WEEK_STRIP_DAY_COUNT;
+}
+
+/** 0 = Monday … 6 = Sunday (matches FullCalendar `firstDay: 1`). */
+export function calendarWeekStripDayIndexMondayStart(date: Date): number {
+  const day = date.getDay();
+  return day === 0 ? 6 : day - 1;
+}
+
+/**
+ * ScrollLeft that puts `date`'s day column in the center of the viewport,
+ * within the center week pane of the infinite strip.
+ */
+export function calendarWeekStripScrollLeftForDate(options: {
+  date: Date;
+  viewportWidthPx: number;
+  dayColumnWidthPx?: number;
+  paneCount?: number;
+  centerPaneIndex?: number;
+}): number {
+  const dayColumnWidthPx =
+    options.dayColumnWidthPx ?? CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX;
+  const paneCount = options.paneCount ?? CALENDAR_WEEK_STRIP_PANE_COUNT;
+  const centerPaneIndex =
+    options.centerPaneIndex ?? calendarStripCenterIndex(paneCount);
+  const paneWidth = calendarWeekStripPaneWidthPx(dayColumnWidthPx);
+  const viewportWidthPx = Math.max(1, options.viewportWidthPx);
+  const dayIndex = calendarWeekStripDayIndexMondayStart(options.date);
+  const dayCenter =
+    paneWidth * centerPaneIndex +
+    dayIndex * dayColumnWidthPx +
+    dayColumnWidthPx / 2;
+  const maxScroll = Math.max(0, paneWidth * paneCount - viewportWidthPx);
+  return Math.max(0, Math.min(maxScroll, dayCenter - viewportWidthPx / 2));
+}
+
 /** Five panes keep ±2 weeks warm without the cost of many time-grids. */
 export const CALENDAR_WEEK_STRIP_PANE_COUNT = 5;
 

@@ -15,6 +15,7 @@ export const LEGACY_INTEGRATION_SETTINGS_TABS = [
   "cloudflare",
   "moneybird",
   "mapbox",
+  "google-calendar",
   "email",
   "whoop",
 ] as const;

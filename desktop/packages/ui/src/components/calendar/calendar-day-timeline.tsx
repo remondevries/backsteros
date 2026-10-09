@@ -161,6 +161,10 @@ export function CalendarDayTimeline({
     options?: { duplicate?: boolean },
   ) => {
     const entity = calendarEntityFromEvent(event);
+    if (entity.entityType === "birthday" || entity.entityType === "external") {
+      revert();
+      return;
+    }
     if (entity.entityType === "meeting") {
       const patch = calendarChangeToMeetingPatch({
         start: event.start,

@@ -69,6 +69,10 @@ export function shouldIncludeTaskInCalendarUi(task: CalendarTaskLike): boolean {
   return true;
 }
 
+/** Lower sorts above in the all-day lane (FullCalendar `eventOrder`). */
+export const CALENDAR_EVENT_ORDER_BIRTHDAY = 0;
+export const CALENDAR_EVENT_ORDER_DEFAULT = 100;
+
 export type TaskCalendarEvent = {
   id: string;
   title: string;
@@ -76,6 +80,11 @@ export type TaskCalendarEvent = {
   start: string;
   end?: string;
   allDay: boolean;
+  /**
+   * Same-day stack order for FullCalendar (`eventOrder: "order,…"`).
+   * Birthdays use {@link CALENDAR_EVENT_ORDER_BIRTHDAY} so they stay on top.
+   */
+  order?: number;
   /** Birthdays are display-only markers. */
   editable?: boolean;
   startEditable?: boolean;
@@ -105,11 +114,30 @@ export type TaskCalendarEvent = {
         active?: boolean;
         /** Local-only meeting draft; never resolve it as a persisted entity. */
         draft?: boolean;
+        /** Backster `external_calendar_events.id` this meeting replaced. */
+        externalCalendarEventId?: string | null;
+        /** Provider-native id (Google Calendar `event.id`) when known. */
+        providerEventId?: string | null;
       }
     | {
         entityType: "birthday";
         contactId: string;
         contactName: string;
+      }
+    | {
+        entityType: "external";
+        externalEventId: string;
+        provider: string;
+        /** Provider-native id (Google Calendar `event.id`). */
+        providerEventId?: string | null;
+        htmlLink?: string | null;
+        location?: string | null;
+        description?: string | null;
+        linkedMeetingId?: string | null;
+        allDay?: boolean;
+        startDate?: string | null;
+        endDate?: string | null;
+        endAt?: string | null;
       };
   /** Optional — timeline blocks use `.task-calendar-event` CSS instead. */
   backgroundColor?: string;
@@ -138,6 +166,8 @@ export type MeetingCalendarLike = {
   title: string;
   startAt: number | Date | string | null;
   endAt: number | Date | string | null;
+  /** Linked Google block — schedule syncs both ways; chip is this meeting. */
+  externalCalendarEventId?: string | null;
   createdAt?: number | Date | string | null;
   status?: string | null;
   projectName?: string | null;
@@ -233,6 +263,7 @@ export function taskToCalendarEvent(
   const base = {
     id: task.id,
     title: task.title || (habitId ? "Untitled habit" : "Untitled task"),
+    order: CALENDAR_EVENT_ORDER_DEFAULT,
     classNames: taskCalendarEventClassNames(task.status, {
       habit: Boolean(habitId),
     }),
@@ -389,14 +420,44 @@ export function openEndedMeetingVisualEnd(
   return new Date(Math.max(fromStart, fromNow));
 }
 
+function meetingCalendarExtendedProps(
+  meeting: MeetingCalendarLike,
+  extras: {
+    finished: boolean;
+    openEnded: boolean;
+    active: boolean;
+    endAt?: string;
+    draft?: boolean;
+    providerEventId?: string | null;
+  },
+): Extract<TaskCalendarEvent["extendedProps"], { entityType: "meeting" }> {
+  const externalCalendarEventId =
+    meeting.externalCalendarEventId?.trim() || null;
+  return {
+    entityType: "meeting",
+    meetingId: meeting.id,
+    projectName: meeting.projectName?.trim() || null,
+    status: meeting.status ?? null,
+    finished: extras.finished,
+    openEnded: extras.openEnded,
+    active: extras.active,
+    ...(extras.endAt ? { endAt: extras.endAt } : {}),
+    ...(extras.draft ? { draft: true } : {}),
+    externalCalendarEventId,
+    providerEventId: extras.providerEventId?.trim() || null,
+  };
+}
+
 export function meetingToCalendarEvent(
   meeting: MeetingCalendarLike,
   now = new Date(),
+  options?: { providerEventId?: string | null },
 ): TaskCalendarEvent | null {
   const start = toValidDate(meeting.startAt);
   const end = toValidDate(meeting.endAt);
   const title = meeting.title || "Untitled meeting";
   const active = isMeetingCurrentlyActive(meeting, now);
+  const providerEventId = options?.providerEventId ?? null;
 
   // No schedule yet — all-day on the created day (or today).
   if (!start && !end) {
@@ -406,19 +467,17 @@ export function meetingToCalendarEvent(
       title,
       start: formatLocalYmd(daySource),
       allDay: true,
+      order: CALENDAR_EVENT_ORDER_DEFAULT,
       classNames: [
         ...meetingCalendarEventClassNames(false, false),
         "meeting-calendar-event--all-day",
       ],
-      extendedProps: {
-        entityType: "meeting",
-        meetingId: meeting.id,
-        projectName: meeting.projectName?.trim() || null,
-        status: meeting.status ?? null,
+      extendedProps: meetingCalendarExtendedProps(meeting, {
         finished: false,
         openEnded: false,
         active: false,
-      },
+        providerEventId,
+      }),
     };
   }
 
@@ -431,16 +490,14 @@ export function meetingToCalendarEvent(
       start: start.toISOString(),
       end: visualEnd.toISOString(),
       allDay: false,
+      order: CALENDAR_EVENT_ORDER_DEFAULT,
       classNames: meetingCalendarEventClassNames(false, true),
-      extendedProps: {
-        entityType: "meeting",
-        meetingId: meeting.id,
-        projectName: meeting.projectName?.trim() || null,
-        status: meeting.status ?? null,
+      extendedProps: meetingCalendarExtendedProps(meeting, {
         finished: false,
         openEnded: true,
         active,
-      },
+        providerEventId,
+      }),
     };
   }
 
@@ -452,27 +509,31 @@ export function meetingToCalendarEvent(
     start: start.toISOString(),
     end: end.toISOString(),
     allDay: false,
+    order: CALENDAR_EVENT_ORDER_DEFAULT,
     classNames: meetingCalendarEventClassNames(finished, false),
-    extendedProps: {
-      entityType: "meeting",
-      meetingId: meeting.id,
-      projectName: meeting.projectName?.trim() || null,
-      status: meeting.status ?? null,
-      endAt: end.toISOString(),
+    extendedProps: meetingCalendarExtendedProps(meeting, {
       finished,
       openEnded: false,
       active,
-    },
+      endAt: end.toISOString(),
+      providerEventId,
+    }),
   };
 }
 
 export function meetingsToCalendarEvents(
   meetings: MeetingCalendarLike[],
   now = new Date(),
+  providerEventIdByExternalId?: ReadonlyMap<string, string>,
 ): TaskCalendarEvent[] {
   const events: TaskCalendarEvent[] = [];
   for (const meeting of meetings) {
-    const event = meetingToCalendarEvent(meeting, now);
+    // Linked meetings own the editable grid chip (Google stays in sync via API).
+    const linkId = meeting.externalCalendarEventId?.trim() || "";
+    const providerEventId = linkId
+      ? (providerEventIdByExternalId?.get(linkId) ?? null)
+      : null;
+    const event = meetingToCalendarEvent(meeting, now, { providerEventId });
     if (event) events.push(event);
   }
   return events;
@@ -506,7 +567,10 @@ export function meetingsToCalendarEventsForDate(
 export function calendarEntityFromEvent(event: {
   id: string;
   extendedProps: Record<string, unknown>;
-}): { entityType: "task" | "meeting" | "birthday"; entityId: string } {
+}): {
+  entityType: "task" | "meeting" | "birthday" | "external";
+  entityId: string;
+} {
   const props = event.extendedProps;
   if (props.entityType === "meeting") {
     const meetingId = props.meetingId;
@@ -518,6 +582,17 @@ export function calendarEntityFromEvent(event: {
     const contactId = props.contactId;
     if (typeof contactId === "string" && contactId) {
       return { entityType: "birthday", entityId: contactId };
+    }
+    // `birthday:{contactId}:{year}` — recover if extendedProps were dropped.
+    const fromId = /^birthday:([^:]+):\d{4}$/.exec(event.id);
+    if (fromId?.[1]) {
+      return { entityType: "birthday", entityId: fromId[1] };
+    }
+  }
+  if (props.entityType === "external") {
+    const externalEventId = props.externalEventId;
+    if (typeof externalEventId === "string" && externalEventId) {
+      return { entityType: "external", entityId: externalEventId };
     }
   }
   const taskId = props.taskId;
@@ -571,22 +646,196 @@ export function calendarSelectionToMeetingRange(
   };
 }
 
-/** Merge task, meeting, and optional birthday events for a single FullCalendar feed. */
+function normalizeCalendarEventTitle(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** External event ids that already have a Backster meeting shell on the grid. */
+export function linkedExternalCalendarEventIds(
+  meetings: MeetingCalendarLike[],
+  externalEvents: ExternalCalendarEventLike[] = [],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const meeting of meetings) {
+    const externalId = meeting.externalCalendarEventId?.trim();
+    if (externalId) ids.add(externalId);
+  }
+  // Also honor API `linkedMeetingId` when that meeting is actually on the grid.
+  // PowerSync can lag the meeting.externalCalendarEventId column; without this
+  // Convert leaves the Google chip beside the meeting chip.
+  if (externalEvents.length === 0) return ids;
+  const meetingIds = new Set(meetings.map((meeting) => meeting.id));
+  for (const event of externalEvents) {
+    const linkedMeetingId = event.linkedMeetingId?.trim();
+    if (linkedMeetingId && meetingIds.has(linkedMeetingId)) {
+      ids.add(event.id);
+    }
+  }
+  // Meetings created outside Convert (or before the link column existed) share
+  // title + start with the Google row but have no ids — e.g. Simone's
+  // "Verjaardag Simone de Vries" on Oct 2. Hide the Google duplicate.
+  const unmatchedMeetings = meetings.filter(
+    (meeting) => !meeting.externalCalendarEventId?.trim(),
+  );
+  if (unmatchedMeetings.length === 0) return ids;
+  for (const event of externalEvents) {
+    if (ids.has(event.id)) continue;
+    if (event.allDay) continue;
+    const extStart = toValidDate(event.startAt);
+    if (!extStart) continue;
+    const extStartIso = extStart.toISOString();
+    const extTitle = normalizeCalendarEventTitle(event.title);
+    if (!extTitle) continue;
+    for (const meeting of unmatchedMeetings) {
+      const meetingStart = toValidDate(meeting.startAt);
+      if (!meetingStart) continue;
+      if (meetingStart.toISOString() !== extStartIso) continue;
+      if (normalizeCalendarEventTitle(meeting.title) !== extTitle) continue;
+      ids.add(event.id);
+      break;
+    }
+  }
+  return ids;
+}
+
+/** Merge task, meeting, birthday, and optional external calendar events. */
 export function mergeCalendarGridEvents(
   tasks: CalendarTaskLike[],
   meetings: MeetingCalendarLike[],
   now = new Date(),
   birthdays: BirthdayCalendarLike[] = [],
   yearSpan?: { fromYear: number; toYear: number },
+  externalEvents: ExternalCalendarEventLike[] = [],
 ): TaskCalendarEvent[] {
   const year = now.getFullYear();
   const fromYear = yearSpan?.fromYear ?? year - 1;
   const toYear = yearSpan?.toYear ?? year + 1;
+  // Hide Google only once the linked meeting is actually in `meetings` — never
+  // on a sticky client-side `linkedMeetingId` alone (that raced Convert and
+  // blanked the chip before the meeting row landed).
+  const linkedExternalIds = linkedExternalCalendarEventIds(
+    meetings,
+    externalEvents,
+  );
+  const providerEventIdByExternalId = new Map<string, string>();
+  for (const event of externalEvents) {
+    const providerEventId = event.externalId?.trim() || event.providerEventId?.trim();
+    if (providerEventId) {
+      providerEventIdByExternalId.set(event.id, providerEventId);
+    }
+  }
   return [
-    ...tasksToCalendarEvents(tasks),
-    ...meetingsToCalendarEvents(meetings, now),
+    // Birthdays first so all-day stack keeps them above tasks when `order` ties.
     ...birthdaysToCalendarEvents(birthdays, fromYear, toYear),
+    ...tasksToCalendarEvents(tasks),
+    ...meetingsToCalendarEvents(meetings, now, providerEventIdByExternalId),
+    ...externalCalendarEventsToCalendarEvents(externalEvents, linkedExternalIds),
   ];
+}
+
+export type ExternalCalendarEventLike = {
+  id: string;
+  provider: string;
+  /** Provider-native event id (Google Calendar `event.id`). */
+  externalId?: string | null;
+  /** Alias used by some client caches for `externalId`. */
+  providerEventId?: string | null;
+  title: string;
+  startAt?: string | null;
+  endAt?: string | null;
+  allDay: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  htmlLink?: string | null;
+  location?: string | null;
+  description?: string | null;
+  linkedMeetingId?: string | null;
+};
+
+/** Read-only remote calendar blocks (Google Calendar first — ADR-037). */
+export function externalCalendarEventsToCalendarEvents(
+  events: ExternalCalendarEventLike[],
+  /** When set, skip blocks that already have a meeting chip on the grid. */
+  linkedExternalIds?: ReadonlySet<string>,
+): TaskCalendarEvent[] {
+  const result: TaskCalendarEvent[] = [];
+  for (const event of events) {
+    // Prefer the editable meeting chip once that meeting is in the meetings list.
+    if (linkedExternalIds?.has(event.id)) continue;
+    const title = event.title.trim() || "(No title)";
+    const linkedMeetingId = event.linkedMeetingId?.trim() || null;
+    const providerEventId =
+      event.externalId?.trim() || event.providerEventId?.trim() || null;
+    if (event.allDay && event.startDate?.trim()) {
+      const startDate = event.startDate.trim();
+      // Include start in the FC id so a moved block is remove+add (FullCalendar
+      // can keep the old instance range when only `start` changes for same id).
+      result.push({
+        id: `external:${event.id}:${startDate}`,
+        title,
+        start: startDate,
+        end: event.endDate?.trim() || undefined,
+        allDay: true,
+        order: CALENDAR_EVENT_ORDER_DEFAULT,
+        editable: false,
+        startEditable: false,
+        durationEditable: false,
+        classNames: [
+          "task-calendar-event",
+          "external-calendar-event",
+          `external-calendar-event--${event.provider}`,
+        ],
+        extendedProps: {
+          entityType: "external",
+          externalEventId: event.id,
+          provider: event.provider,
+          providerEventId,
+          htmlLink: event.htmlLink ?? null,
+          location: event.location ?? null,
+          description: event.description ?? null,
+          linkedMeetingId,
+          allDay: true,
+          startDate,
+          endDate: event.endDate?.trim() || null,
+        },
+      });
+      continue;
+    }
+    const start = toValidDate(event.startAt);
+    if (!start) continue;
+    const end = toValidDate(event.endAt);
+    const startIso = start.toISOString();
+    const endIso = end ? end.toISOString() : null;
+    result.push({
+      id: `external:${event.id}:${startIso}`,
+      title,
+      start: startIso,
+      end: endIso ?? undefined,
+      allDay: false,
+      order: CALENDAR_EVENT_ORDER_DEFAULT,
+      editable: false,
+      startEditable: false,
+      durationEditable: false,
+      classNames: [
+        "task-calendar-event",
+        "external-calendar-event",
+        `external-calendar-event--${event.provider}`,
+      ],
+      extendedProps: {
+        entityType: "external",
+        externalEventId: event.id,
+        provider: event.provider,
+        providerEventId,
+        htmlLink: event.htmlLink ?? null,
+        location: event.location ?? null,
+        description: event.description ?? null,
+        linkedMeetingId,
+        allDay: false,
+        endAt: endIso,
+      },
+    });
+  }
+  return result;
 }
 
 export type BirthdayCalendarLike = {
@@ -629,6 +878,7 @@ export function birthdaysToCalendarEvents(
         title: `${contact.name.trim() || "Contact"}'s birthday`,
         start,
         allDay: true,
+        order: CALENDAR_EVENT_ORDER_BIRTHDAY,
         editable: false,
         startEditable: false,
         durationEditable: false,

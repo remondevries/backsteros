@@ -726,6 +726,7 @@ export function fillMissingMeetingPropertiesFromApi<
     attendeePortalEmails?: unknown;
     format?: string | null;
     locationOrganizationId?: string | null;
+    externalCalendarEventId?: string | null;
     updatedAt?: string | number | Date | null;
   },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
@@ -754,6 +755,26 @@ export function fillMissingMeetingPropertiesFromApi<
       updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)
     ) {
       next = { ...next, projectId: api.projectId };
+    }
+
+    const localExternal =
+      typeof row.externalCalendarEventId === "string"
+        ? row.externalCalendarEventId.trim()
+        : "";
+    const apiExternal =
+      typeof api.externalCalendarEventId === "string"
+        ? api.externalCalendarEventId.trim()
+        : "";
+    // PowerSync can lag or omit the Google link column — restore from REST so
+    // the calendar can hide the duplicate Google chip after Convert.
+    if (!localExternal && apiExternal) {
+      next = { ...next, externalCalendarEventId: api.externalCalendarEventId };
+    } else if (
+      apiExternal &&
+      apiExternal !== localExternal &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, externalCalendarEventId: api.externalCalendarEventId };
     }
 
     const localOrg =

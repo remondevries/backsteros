@@ -636,10 +636,15 @@ export {
   meetingsToCalendarEvents,
   meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
+  linkedExternalCalendarEventIds,
   birthdaysToCalendarEvents,
+  externalCalendarEventsToCalendarEvents,
   normalizeBirthdayYmd,
   unscheduledCalendarTasks,
+  CALENDAR_EVENT_ORDER_BIRTHDAY,
+  CALENDAR_EVENT_ORDER_DEFAULT,
   type BirthdayCalendarLike,
+  type ExternalCalendarEventLike,
   type CalendarEventChange,
   type CalendarTaskLike,
   type MeetingCalendarLike,
@@ -930,9 +935,20 @@ export {
 } from "./components/calendar/calendar-birthday-event-popover.js";
 
 export {
+  CalendarExternalEventPopover,
+  type CalendarExternalEventPopoverProps,
+  type CalendarExternalPopoverEvent,
+} from "./components/calendar/calendar-external-event-popover.js";
+
+export {
   BirthdayCalendarIcon,
   type BirthdayCalendarIconProps,
 } from "./components/calendar/birthday-calendar-icon.js";
+
+export {
+  GoogleIcon,
+  type GoogleIconProps,
+} from "./components/icons/google-icon.js";
 
 export {
   CalendarHabitsIconRow,
@@ -988,8 +1004,13 @@ export {
   addDaysDate,
   calendarWeekStripAnchorShiftWeeks,
   calendarWeekStripDates,
+  calendarWeekStripDayIndexMondayStart,
   calendarWeekStripPaneIndex,
+  calendarWeekStripPaneWidthPx,
+  calendarWeekStripScrollLeftForDate,
+  CALENDAR_WEEK_DAY_COLUMN_WIDTH_PX,
   CALENDAR_WEEK_STRIP_CENTER_INDEX,
+  CALENDAR_WEEK_STRIP_DAY_COUNT,
   CALENDAR_WEEK_STRIP_PANE_COUNT,
   startOfWeekMondayDate,
 } from "./calendar/calendar-week-strip.js";

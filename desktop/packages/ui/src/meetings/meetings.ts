@@ -158,6 +158,8 @@ export type MeetingListItem = {
   endAt: number | Date | string | null;
   trackedMinutes?: number | null;
   trackedDurationSeconds?: number | null;
+  /** Linked Google (etc.) agenda block — meeting chip owns the grid slot. */
+  externalCalendarEventId?: string | null;
   inboxUpdatedAt?: number | Date | string | null;
   createdAt?: number | Date | string | null;
 };

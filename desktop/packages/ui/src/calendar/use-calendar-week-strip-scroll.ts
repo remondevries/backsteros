@@ -3,7 +3,10 @@ import { type RefObject, useEffect, useRef } from "react";
 import { resolveCalendarHorizontalPanWheel } from "./calendar-horizontal-date-pan.js";
 import { calendarStripCenterIndex } from "./calendar-strip-geometry.js";
 import { createCalendarStripRecycleController } from "./calendar-strip-scroll-recycle.js";
-import { CALENDAR_WEEK_STRIP_PANE_COUNT } from "./calendar-week-strip.js";
+import {
+  CALENDAR_WEEK_STRIP_PANE_COUNT,
+  calendarWeekStripPaneWidthPx,
+} from "./calendar-week-strip.js";
 
 /**
  * Week strip scroll:
@@ -35,7 +38,12 @@ export function useCalendarWeekStripScroll({
     const centerIndex = calendarStripCenterIndex(paneCount);
 
     const recycle = createCalendarStripRecycleController({
-      getPaneSize: () => stripElement.clientWidth,
+      getPaneSize: () => {
+        const pane = stripElement.querySelector<HTMLElement>(
+          ".calendar-week-strip__pane",
+        );
+        return pane?.offsetWidth || calendarWeekStripPaneWidthPx();
+      },
       getScrollOffset: () => stripElement.scrollLeft,
       setScrollOffset: (value) => {
         stripElement.scrollLeft = value;

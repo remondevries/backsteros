@@ -19,6 +19,7 @@ import {
   meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
   birthdaysToCalendarEvents,
+  externalCalendarEventsToCalendarEvents,
   unscheduledCalendarTasks,
 } from "./calendar-events.js";
 
@@ -318,6 +319,32 @@ test("meetingToCalendarEvent maps timed meetings", () => {
   assert.equal(event.extendedProps.entityType, "meeting");
   assert.equal(event.extendedProps.meetingId, "m-1");
   assert.equal(event.extendedProps.finished, false);
+  if (event.extendedProps.entityType === "meeting") {
+    assert.equal(event.extendedProps.externalCalendarEventId, null);
+    assert.equal(event.extendedProps.providerEventId, null);
+  }
+});
+
+test("meetingToCalendarEvent carries the linked Google event ids", () => {
+  const start = new Date(2026, 7, 24, 9, 0);
+  const end = new Date(2026, 7, 24, 10, 0);
+  const event = meetingToCalendarEvent(
+    {
+      id: "m-1",
+      title: "Standup",
+      startAt: start,
+      endAt: end,
+      externalCalendarEventId: "ext-row-1",
+    },
+    new Date(2026, 7, 24, 8, 0),
+    { providerEventId: "google-event-abc" },
+  );
+  assert.ok(event);
+  assert.equal(event.extendedProps.entityType, "meeting");
+  if (event.extendedProps.entityType === "meeting") {
+    assert.equal(event.extendedProps.externalCalendarEventId, "ext-row-1");
+    assert.equal(event.extendedProps.providerEventId, "google-event-abc");
+  }
 });
 
 test("meetingToCalendarEvent maps unscheduled meetings as all-day", () => {
@@ -485,4 +512,305 @@ test("mergeCalendarGridEvents includes birthday markers", () => {
   );
   assert.equal(events.length, 3);
   assert.ok(events.some((event) => event.start === "2026-08-28"));
+});
+
+test("mergeCalendarGridEvents puts birthdays before same-day all-day tasks", () => {
+  const dayStart = new Date(2026, 7, 28, 12, 0);
+  const events = mergeCalendarGridEvents(
+    [
+      {
+        id: "task-1",
+        title: "All-day chore",
+        status: "ready_to_start",
+        dueDate: dayStart,
+        dueEndDate: null,
+      },
+    ],
+    [],
+    new Date(2026, 7, 28),
+    [{ id: "c1", name: "Remon", birthday: "1990-08-28" }],
+  );
+  const sameDay = events.filter((event) => event.start === "2026-08-28");
+  assert.equal(sameDay[0]?.extendedProps.entityType, "birthday");
+  assert.equal(sameDay[0]?.order, 0);
+  assert.equal(sameDay[1]?.extendedProps.entityType, "task");
+  assert.ok((sameDay[1]?.order ?? 0) > (sameDay[0]?.order ?? 0));
+});
+
+test("externalCalendarEventsToCalendarEvents maps timed and all-day Google events", () => {
+  const events = externalCalendarEventsToCalendarEvents([
+    {
+      id: "e1",
+      provider: "google_calendar",
+      externalId: "google-event-1",
+      title: "Standup",
+      startAt: "2026-10-08T09:00:00.000Z",
+      endAt: "2026-10-08T09:30:00.000Z",
+      allDay: false,
+      htmlLink: "https://calendar.google.com/event?eid=1",
+    },
+    {
+      id: "e2",
+      provider: "google_calendar",
+      title: "Offsite",
+      allDay: true,
+      startDate: "2026-10-09",
+      endDate: "2026-10-10",
+    },
+  ]);
+  assert.equal(events.length, 2);
+  assert.equal(events[0]?.extendedProps.entityType, "external");
+  assert.equal(events[0]?.editable, false);
+  if (events[0]?.extendedProps.entityType === "external") {
+    assert.equal(events[0].extendedProps.providerEventId, "google-event-1");
+  }
+  assert.equal(events[1]?.allDay, true);
+  assert.equal(events[1]?.start, "2026-10-09");
+});
+
+test("merge attaches Google providerEventId onto the linked meeting chip", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [
+      {
+        id: "m1",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        externalCalendarEventId: "e1",
+      },
+    ],
+    new Date(2026, 9, 8),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        externalId: "gcal-abc",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        allDay: false,
+        linkedMeetingId: "m1",
+      },
+    ],
+  );
+  const meeting = events.find(
+    (event) => event.extendedProps.entityType === "meeting",
+  );
+  assert.ok(meeting);
+  if (meeting?.extendedProps.entityType === "meeting") {
+    assert.equal(meeting.extendedProps.externalCalendarEventId, "e1");
+    assert.equal(meeting.extendedProps.providerEventId, "gcal-abc");
+  }
+  assert.equal(
+    events.filter((event) => event.extendedProps.entityType === "external")
+      .length,
+    0,
+  );
+});
+
+test("mergeCalendarGridEvents includes external calendar events", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [],
+    new Date(2026, 9, 8),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        allDay: false,
+      },
+    ],
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.extendedProps.entityType === "external" &&
+        event.title === "Google meet",
+    ),
+  );
+});
+
+test("linkedMeetingId alone does not hide Google until a meeting owns the link", () => {
+  const withStickyLinkOnly = mergeCalendarGridEvents(
+    [],
+    [],
+    new Date(2026, 9, 8),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        allDay: false,
+        linkedMeetingId: "m1",
+      },
+    ],
+  );
+  assert.ok(
+    withStickyLinkOnly.some(
+      (event) => event.extendedProps.entityType === "external",
+    ),
+    "Google chip must stay visible while the meeting row is still missing",
+  );
+
+  const withLinkedMeeting = mergeCalendarGridEvents(
+    [],
+    [
+      {
+        id: "m1",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        externalCalendarEventId: "e1",
+      },
+    ],
+    new Date(2026, 9, 8),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        allDay: false,
+        linkedMeetingId: "m1",
+      },
+    ],
+  );
+  assert.equal(
+    withLinkedMeeting.filter(
+      (event) => event.extendedProps.entityType === "external",
+    ).length,
+    0,
+  );
+  assert.ok(
+    withLinkedMeeting.some(
+      (event) =>
+        event.extendedProps.entityType === "meeting" &&
+        event.extendedProps.meetingId === "m1",
+    ),
+  );
+});
+
+test("API linkedMeetingId hides Google when meeting is on the grid without local external id", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [
+      {
+        id: "m1",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        // PowerSync may omit externalCalendarEventId while REST already linked.
+      },
+    ],
+    new Date(2026, 9, 8),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        title: "Google meet",
+        startAt: "2026-10-08T12:00:00.000Z",
+        endAt: "2026-10-08T13:00:00.000Z",
+        allDay: false,
+        linkedMeetingId: "m1",
+      },
+    ],
+  );
+  assert.equal(
+    events.filter((event) => event.extendedProps.entityType === "external")
+      .length,
+    0,
+  );
+  assert.ok(
+    events.some((event) => event.extendedProps.entityType === "meeting"),
+  );
+});
+
+test("same title and start hides unlinked Google beside a meeting (Simone Verjaardag)", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [
+      {
+        id: "Mx6ynVI1J8aZ9oQrW9EZs",
+        title: "Verjaardag Simone de Vries",
+        startAt: "2026-10-02T14:30:00.000Z",
+        endAt: "2026-10-02T18:00:00.000Z",
+        externalCalendarEventId: null,
+      },
+    ],
+    new Date(2026, 9, 2),
+    [],
+    undefined,
+    [
+      {
+        id: "57e8fb1a4ac37c958ce33",
+        provider: "google_calendar",
+        title: "Verjaardag Simone de Vries",
+        startAt: "2026-10-02T14:30:00.000Z",
+        endAt: "2026-10-02T18:00:00.000Z",
+        allDay: false,
+        linkedMeetingId: null,
+      },
+    ],
+  );
+  assert.equal(
+    events.filter((event) => event.extendedProps.entityType === "external")
+      .length,
+    0,
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.extendedProps.entityType === "meeting" &&
+        event.extendedProps.meetingId === "Mx6ynVI1J8aZ9oQrW9EZs",
+    ),
+  );
+});
+
+test("same start but different title keeps Google beside a meeting", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [
+      {
+        id: "m1",
+        title: "Standup",
+        startAt: "2026-10-02T14:30:00.000Z",
+        endAt: "2026-10-02T15:00:00.000Z",
+      },
+    ],
+    new Date(2026, 9, 2),
+    [],
+    undefined,
+    [
+      {
+        id: "e1",
+        provider: "google_calendar",
+        title: "Verjaardag Simone de Vries",
+        startAt: "2026-10-02T14:30:00.000Z",
+        endAt: "2026-10-02T18:00:00.000Z",
+        allDay: false,
+      },
+    ],
+  );
+  assert.equal(
+    events.filter((event) => event.extendedProps.entityType === "external")
+      .length,
+    1,
+  );
 });

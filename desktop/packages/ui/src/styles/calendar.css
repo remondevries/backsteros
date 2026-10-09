@@ -12,6 +12,8 @@
   background: transparent;
   /* Opaque grid lines — avoids brighter seams where FC cell borders overlap. */
   --calendar-grid-border: color-mix(in srgb, var(--foreground) 14%, var(--background));
+  /* Week strip: fixed day columns; strip scrolls horizontally across weeks. */
+  --calendar-week-day-column-width: 300px;
   /* Label row (28) + habit chips (18) + padding — fixed so panes/days align. */
   --calendar-col-header-height: 70px;
   --fc-page-bg-color: transparent;
@@ -93,6 +95,9 @@
 }
 
 .calendar-week-strip {
+  /* Containing block for panes — otherwise offsetParent is the shell and
+     pane.offsetLeft includes the sticky axis rail (41px), skewing scroll. */
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -116,16 +121,16 @@
 .calendar-week-strip__pane {
   position: relative;
   display: flex;
-  flex: 0 0 100%;
-  width: 100%;
+  flex: 0 0 calc(var(--calendar-week-day-column-width) * 7);
+  width: calc(var(--calendar-week-day-column-width) * 7);
   height: 100%;
-  min-width: 100%;
+  min-width: calc(var(--calendar-week-day-column-width) * 7);
   min-height: 0;
 }
 
 .calendar-week-strip__pane > .fc {
   flex: 1;
-  min-width: 0;
+  min-width: 100%;
   min-height: 0;
   width: 100%;
   height: 100%;
@@ -232,6 +237,7 @@
 }
 
 .calendar-day-strip {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -738,6 +744,18 @@
   cursor: pointer !important;
 }
 
+.calendar-view .fc .external-calendar-event__icon {
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 0.9;
+}
+
+.calendar-view .fc .fc-event.external-calendar-event,
+.calendar-view .fc .fc-event.external-calendar-event:active {
+  /* Same chip chrome as regular events — Google “G” marks the source. */
+  cursor: pointer !important;
+}
+
 /* Keep chip borders fully visible between stacked rows and above the day clip. */
 .calendar-view .fc .fc-daygrid-event.task-calendar-event {
   margin-top: 3px;
@@ -881,18 +899,29 @@
 }
 
 .task-calendar-event__time {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   opacity: 0.85;
 }
 
 .task-calendar-event__title {
+  flex: 1 1 0%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.75rem;
+}
+
+/* Expanded chips: title sits on its own line so week columns keep the name. */
+.task-calendar-event__content--expanded > .task-calendar-event__title {
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 .task-calendar-event.fc-list-event .task-calendar-event__content {
@@ -1272,6 +1301,27 @@ body.calendar-event-drag-copy
 .calendar-date-nav__btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.calendar-date-nav__btn--refresh {
+  min-width: 24px;
+  padding: 0 4px;
+  margin-left: 2px;
+}
+
+.calendar-date-nav__btn--refresh:hover:not(:disabled) {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.calendar-date-nav__sync-icon.is-spinning {
+  animation: calendar-date-nav-spin 0.8s linear infinite;
+}
+
+@keyframes calendar-date-nav-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .calendar-meeting-detail-overlay {
@@ -2547,6 +2597,55 @@ body.calendar-event-drag-copy
   color: var(--foreground);
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
   cursor: pointer;
+}
+
+.calendar-external-event-popover__accent {
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.calendar-external-event-popover__icon {
+  flex-shrink: 0;
+  color: var(--foreground);
+  opacity: 0.85;
+}
+
+.calendar-external-event-popover__location {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-fg-muted, #8b949e);
+  word-break: break-word;
+}
+
+.calendar-external-event-popover__hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-fg-muted, #8b949e);
+}
+
+.calendar-external-event-popover__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-external-event-popover__google-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted, #8b949e);
+  text-decoration: none;
+}
+
+.calendar-external-event-popover__google-link:hover {
+  color: var(--color-fg-default, #e6edf3);
+}
+
+.calendar-view .fc .fc-event.external-calendar-event--linked {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--foreground) 35%, transparent);
 }
 
 .calendar-task-event-popover__open:hover {

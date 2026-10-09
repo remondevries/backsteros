@@ -245,6 +245,7 @@ export const MEETING_LIST_COLUMNS = [
   "end_at",
   "tracked_minutes",
   "tracked_duration_seconds",
+  "external_calendar_event_id",
   "sort_order",
   "updated_at",
   "created_at",

@@ -579,3 +579,27 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-037: Google Calendar → read-only agenda ingest
+
+**Status:** Accepted (2026-10-08) — OS-104  
+**Context:** Desktop agenda/calendar already shows BacksterOS `meetings`, timed tasks, and virtual birthday markers. Meetings that live only in Google Calendar never appear. The original ask mentioned WebDAV; calendar sync is CalDAV, but the first product need is **Google Calendar** (what we use today). ICS feeds and generic CalDAV stay later.
+
+**Product tension:** A BacksterOS `meeting` is a rich CRM entity (status, attendees, portal invite/reminder, transcription, project/org links). Dumping every Google event into `meetings` would pollute CRM activity and portal email actions. Birthdays already set the pattern for **display-only calendar markers**.
+
+**Decision:**
+
+1. **v1 = Google Calendar API, read-only**, into the agenda — not bidirectional sync and not “promote every remote event to a meeting.”
+2. Store synced events in `external_calendar_events` keyed by `(workspace_id, provider, calendar_id, external_id)` — **not** as `meetings`. Render on the grid like birthdays (`editable: false`), visually distinct.
+3. OAuth client id/secret + refresh/access tokens live in `workspace_integration_secrets` (Moneybird / Mapbox pattern). Settings → Integrations → **Google Calendar**. Scopes: `calendar.readonly` + `calendar.events` (event write for Convert to Event title/time sync).
+4. Thin Google Calendar HTTP client in `core/server` (no `googleapis` dependency). Sync on demand (Settings + calendar page open) over a rolling window; tokens never go to PowerSync / client SQLite.
+5. Desktop loads events via REST (`GET /api/v1/external-calendar-events`) and merges into the FullCalendar feed. PowerSync publication deferred.
+6. **Push notifications (added):** `events.watch` → public HTTPS webhook (`GOOGLE_CALENDAR_WEBHOOK_BASE_URL`, e.g. `https://api.local.backsteros.com/api/v1/webhooks/google-calendar`). On `exists`, core re-syncs the rolling window. Channels renew when under 24h remain. Manual Sync / calendar-open remain as backup (Google push is not 100% reliable).
+7. **Convert to Event (ships with OS-104):** optional 1:1 link `meetings.external_calendar_event_id`. Title/start/end/location sync both ways (Google patch on meeting update; pull updates the linked meeting). Linked meetings show as editable agenda chips; the Google block is hidden while linked. Backster still owns project/attendees/notes.
+8. **Out of scope for v1:** CalDAV/ICS providers, RSVP bridging, auto-convert every remote event to a meeting, portal free/busy.
+
+**Later:** ICS/CalDAV; portal free/busy; attendee-email suggestions.
+
+**Alternatives rejected (for v1):** ICS-first; CalDAV-first; treating remote events as `meetings`; client-side Google OAuth only in Tauri without core token storage.
+
+---
+

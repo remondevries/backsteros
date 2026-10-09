@@ -6,6 +6,7 @@ export type WorkspaceIntegrationId =
   | "cloudflare"
   | "moneybird"
   | "mapbox"
+  | "google-calendar"
   | "email"
   | "social"
   | "whoop"
@@ -55,6 +56,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "Mapbox",
     description: "Geocode addresses and show location maps",
     faviconHost: "mapbox.com",
+  },
+  {
+    id: "google-calendar",
+    title: "Google Calendar",
+    description: "Read-only sync of Google Calendar events into the agenda",
+    faviconHost: "calendar.google.com",
   },
   {
     id: "email",

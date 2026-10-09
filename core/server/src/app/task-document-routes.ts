@@ -3524,7 +3524,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
       try {
         const body = c.req.valid("json");
         if (isRestLeaderFirstWrite()) {
-          const meetingId = newId();
+          const meetingId = body.id?.trim() || newId();
           await commitRestEntityWrite({
             workspaceId: auth.workspaceId,
             entity: "meeting",
@@ -3569,6 +3569,21 @@ export function registerTaskDocumentRoutes(app: Hono) {
         });
         return c.json(row, 201);
       } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED"
+        ) {
+          return c.json(
+            {
+              error: {
+                code: "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED",
+                message:
+                  "This Google Calendar event already has Backster notes.",
+              },
+            },
+            409,
+          );
+        }
         if (
           error instanceof Error &&
           (error.message === "INVALID_MEETING_DATES" ||

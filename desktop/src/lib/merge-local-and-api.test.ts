@@ -667,6 +667,28 @@ test("fillMissingMeetingPropertiesFromApi copies project when local omitted", ()
   assert.deepEqual(filled[0]?.attendeeContactIds, ["contact-1"]);
 });
 
+test("fillMissingMeetingPropertiesFromApi restores Google link when local omitted", () => {
+  const filled = fillMissingMeetingPropertiesFromApi(
+    [
+      {
+        id: "1",
+        projectId: null,
+        externalCalendarEventId: null,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        projectId: null,
+        externalCalendarEventId: "gcal-1",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.externalCalendarEventId, "gcal-1");
+});
+
 test("fillMissingNumberFromApi copies server number when local is null", () => {
   const filled = fillMissingNumberFromApi(
     [{ id: "1", number: null }],

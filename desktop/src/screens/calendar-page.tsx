@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { getContactEmailAddresses } from "@backsteros/contracts";
+import {
+  coerceContactEmailEntries,
+  coerceContactPhoneEntries,
+  getContactEmailAddresses,
+  type ExternalCalendarEvent,
+  type GoogleCalendarSettings,
+  type GoogleCalendarSyncResult,
+} from "@backsteros/contracts";
 import { X } from "lucide-react";
 
 import {
@@ -40,6 +47,7 @@ import {
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
   meetingCalendarEventClassNames,
   mergeCalendarGridEvents,
+  normalizeContactSocialAccounts,
   parseCalendarMeetingOverlayId,
   parseCalendarMeetingOverlayLayout,
   parseCalendarPageModeParam,
@@ -60,6 +68,7 @@ import {
   useCalendarDateNavigationShortcuts,
   type CalendarHabitIconItem,
   type CalendarBirthdayPopoverContact,
+  type CalendarExternalPopoverEvent,
   type CalendarMeetingOverlayLayout,
   type CalendarTaskOverlayLayout,
   type CalendarTaskPopoverTask,
@@ -77,6 +86,7 @@ import {
 } from "../lib/avatar-src";
 import { TimetrackingSessionsDetail } from "../components/timetracking-sessions-detail";
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
+import { useDesktopApi } from "../lib/api-context";
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
@@ -156,8 +166,14 @@ function CalendarPageBody() {
     [navigate, searchStr],
   );
   const workspace = useDesktopWorkspaceData();
+  const { client } = useDesktopApi();
   const { settings, loading: settingsLoading, setWeekdayHours } =
     useMeetingSchedulingSettings();
+  const [externalCalendarEvents, setExternalCalendarEvents] = useState<
+    ExternalCalendarEvent[]
+  >([]);
+  const [calendarRefreshing, setCalendarRefreshing] = useState(false);
+  const [attachingExternalNotes, setAttachingExternalNotes] = useState(false);
 
   const openMeetingId = parseCalendarMeetingOverlayId(searchParams.toString());
   const openTaskId = parseCalendarTaskOverlayId(searchParams.toString());
@@ -196,6 +212,8 @@ function CalendarPageBody() {
   const viewedDateRef = useRef<Date | null>(null);
   const wasFrozenRef = useRef(keepAliveFrozen);
   const meetingDraftSequenceRef = useRef(0);
+  /** Drops stale Google Calendar list responses when a newer refresh is in flight. */
+  const externalCalendarRefreshGenerationRef = useRef(0);
   const [calendarNavReady, setCalendarNavReady] = useState(false);
   const [rangeTitle, setRangeTitle] = useState("");
   const [meetingDraft, setMeetingDraft] =
@@ -231,6 +249,102 @@ function CalendarPageBody() {
     if (!keepAliveActive) return;
     void workspace.softRefreshApiMeetings().catch(() => {});
   }, [keepAliveActive, workspace.softRefreshApiMeetings]);
+
+  const refreshExternalCalendarEvents = useCallback(
+    async (options?: { forceSync?: boolean }) => {
+      const generation = ++externalCalendarRefreshGenerationRef.current;
+      const isCurrent = () =>
+        generation === externalCalendarRefreshGenerationRef.current;
+      try {
+        const settingsBody =
+          await client.requestJson<GoogleCalendarSettings>(
+            "/api/v1/settings/google-calendar",
+          );
+        if (!isCurrent()) return;
+        if (!settingsBody.connected) {
+          setExternalCalendarEvents([]);
+          return;
+        }
+        const lastSynced = settingsBody.lastSyncedAt
+          ? Date.parse(settingsBody.lastSyncedAt)
+          : 0;
+        const stale =
+          !Number.isFinite(lastSynced) ||
+          Date.now() - lastSynced > 15 * 60_000;
+        if (options?.forceSync || stale) {
+          // Sync failures must not skip the subsequent list — push/webhook may
+          // already have fresher rows, and an older in-flight list must not win.
+          try {
+            await client.requestJson<GoogleCalendarSyncResult>(
+              "/api/v1/settings/google-calendar/sync",
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: "{}",
+              },
+            );
+          } catch (error) {
+            if (options?.forceSync) {
+              console.warn(
+                "[calendar] Google Calendar sync failed:",
+                error,
+              );
+            }
+          }
+          if (!isCurrent()) return;
+        }
+        const from = new Date();
+        from.setDate(from.getDate() - 30);
+        const to = new Date();
+        to.setDate(to.getDate() + 90);
+        const body = await client.requestJson<{
+          events: ExternalCalendarEvent[];
+        }>(
+          `/api/v1/external-calendar-events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+        );
+        if (!isCurrent()) return;
+        setExternalCalendarEvents(body.events ?? []);
+      } catch (error) {
+        if (options?.forceSync) {
+          console.warn(
+            "[calendar] Google Calendar refresh failed:",
+            error,
+          );
+        }
+        // Integration may be disabled or core offline — agenda still works.
+      }
+    },
+    [client],
+  );
+
+  // Google Calendar (and later CalDAV) read-only blocks — REST cache, not PowerSync.
+  useEffect(() => {
+    if (!keepAliveActive || keepAliveFrozen) return;
+    void refreshExternalCalendarEvents();
+  }, [
+    keepAliveActive,
+    keepAliveFrozen,
+    refreshExternalCalendarEvents,
+  ]);
+
+  const handleCalendarRefresh = useCallback(() => {
+    if (calendarRefreshing) return;
+    setCalendarRefreshing(true);
+    void (async () => {
+      try {
+        await Promise.all([
+          workspace.softRefreshApiMeetings().catch(() => {}),
+          refreshExternalCalendarEvents({ forceSync: true }),
+        ]);
+      } finally {
+        setCalendarRefreshing(false);
+      }
+    })();
+  }, [
+    calendarRefreshing,
+    refreshExternalCalendarEvents,
+    workspace.softRefreshApiMeetings,
+  ]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -375,12 +489,14 @@ function CalendarPageBody() {
     () => (
       <CalendarDateNav
         disabled={!calendarNavReady}
+        refreshing={calendarRefreshing}
         onPrev={() => calendarApiRef.current?.prev()}
         onNext={() => calendarApiRef.current?.next()}
         onToday={() => calendarApiRef.current?.today?.()}
+        onRefresh={handleCalendarRefresh}
       />
     ),
-    [calendarNavReady],
+    [calendarNavReady, calendarRefreshing, handleCalendarRefresh],
   );
 
   useDesktopSectionBreadcrumb(
@@ -475,6 +591,83 @@ function CalendarPageBody() {
     [setOpenMeetingId, viewMode],
   );
 
+  const handleAttachExternalNotes = useCallback(
+    async (event: CalendarExternalPopoverEvent) => {
+      if (attachingExternalNotes) return;
+      const existing =
+        event.linkedMeetingId?.trim() ||
+        workspace.meetings.find(
+          (meeting) =>
+            meeting.externalCalendarEventId?.trim() === event.id,
+        )?.id ||
+        null;
+      if (existing) {
+        openMeetingFromGrid(existing);
+        return;
+      }
+      setAttachingExternalNotes(true);
+      const toUtcIso = (value: string | null | undefined): string | null => {
+        const trimmed = value?.trim() || null;
+        if (!trimmed) return null;
+        const parsed = new Date(trimmed);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toISOString();
+      };
+      let startAt = toUtcIso(event.startAt);
+      let endAt = toUtcIso(event.endAt);
+      if (event.allDay && event.startDate?.trim()) {
+        startAt = `${event.startDate.trim()}T09:00:00.000Z`;
+        const endDay = event.endDate?.trim() || event.startDate.trim();
+        endAt = `${endDay}T10:00:00.000Z`;
+      }
+      if (!startAt) {
+        const fallback = new Date();
+        fallback.setMinutes(0, 0, 0);
+        startAt = fallback.toISOString();
+      }
+      if (!endAt) {
+        endAt = new Date(
+          new Date(startAt).getTime() + 60 * 60 * 1000,
+        ).toISOString();
+      }
+      try {
+        // createMeeting is optimistic (local row / cache first) — open as soon
+        // as we have the client id instead of waiting on server number assign.
+        const created = await workspace.createMeeting({
+          title: event.title.trim() || "Meeting",
+          summary: event.description?.trim() || null,
+          status: "triage",
+          startAt,
+          endAt,
+          location: event.location?.trim() || null,
+          externalCalendarEventId: event.id,
+        });
+        // Stamp the Google row only after the meeting exists — merge hides the
+        // chip when linkedMeetingId points at a meeting already on the grid
+        // (or when the meeting carries externalCalendarEventId).
+        setExternalCalendarEvents((current) =>
+          current.map((entry) =>
+            entry.id === event.id
+              ? { ...entry, linkedMeetingId: created.id }
+              : entry,
+          ),
+        );
+        openMeetingFromGrid(created.id);
+        void refreshExternalCalendarEvents({ forceSync: false });
+      } catch (error) {
+        console.warn("[calendar] Convert to Event failed:", error);
+      } finally {
+        setAttachingExternalNotes(false);
+      }
+    },
+    [
+      attachingExternalNotes,
+      openMeetingFromGrid,
+      refreshExternalCalendarEvents,
+      workspace,
+    ],
+  );
+
   const openTaskFromGrid = useCallback(
     (taskId: string) => {
       setMeetingDraft(null);
@@ -516,16 +709,21 @@ function CalendarPageBody() {
             null)
           : null,
         email: contact.email ?? details?.email ?? null,
-        emails: contact.emails ?? details?.emails ?? null,
+        emails: coerceContactEmailEntries(
+          contact.emails ?? details?.emails ?? null,
+        ),
         phone: contact.phone ?? details?.phone ?? null,
-        phones: contact.phones ?? details?.phones ?? null,
+        phones: coerceContactPhoneEntries(
+          contact.phones ?? details?.phones ?? null,
+        ),
         address: contact.address ?? details?.address ?? null,
         city: contact.city ?? details?.city ?? null,
         postalCode: contact.postalCode ?? details?.postalCode ?? null,
         region: contact.region ?? details?.region ?? null,
         country: contact.country ?? details?.country ?? null,
-        socialAccounts:
+        socialAccounts: normalizeContactSocialAccounts(
           contact.socialAccounts ?? details?.socialAccounts ?? null,
+        ),
         birthday: contact.birthday ?? details?.birthday ?? null,
         avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
       };
@@ -715,11 +913,14 @@ function CalendarPageBody() {
         name: contact.name,
         birthday: contact.birthday ?? null,
       })),
+      undefined,
+      externalCalendarEvents,
     );
     frozenEventsRef.current = next;
     return next;
   }, [
     calendarNowMs,
+    externalCalendarEvents,
     keepAliveFrozen,
     workspace.allTasks,
     workspace.habits,
@@ -751,6 +952,8 @@ function CalendarPageBody() {
           endAt: meetingDraft.endAt,
           finished: false,
           draft: true,
+          externalCalendarEventId: null,
+          providerEventId: null,
         },
       },
     ];
@@ -831,6 +1034,54 @@ function CalendarPageBody() {
   const patchMeeting = useCallback(
     (values: Record<string, unknown>) => {
       if (!meeting) return;
+      const externalId = meeting.externalCalendarEventId?.trim();
+      if (externalId) {
+        const touchesSchedule =
+          values.title !== undefined ||
+          values.startAt !== undefined ||
+          values.endAt !== undefined ||
+          values.location !== undefined;
+        if (touchesSchedule) {
+          // Keep the Google cache in lockstep so a refresh cannot flash old
+          // title/times while the API push is still in flight.
+          setExternalCalendarEvents((current) =>
+            current.map((entry) => {
+              if (entry.id !== externalId) return entry;
+              return {
+                ...entry,
+                ...(typeof values.title === "string"
+                  ? { title: values.title }
+                  : {}),
+                ...(values.startAt !== undefined
+                  ? {
+                      startAt:
+                        typeof values.startAt === "string"
+                          ? values.startAt
+                          : entry.startAt,
+                    }
+                  : {}),
+                ...(values.endAt !== undefined
+                  ? {
+                      endAt:
+                        typeof values.endAt === "string"
+                          ? values.endAt
+                          : entry.endAt,
+                    }
+                  : {}),
+                ...(values.location !== undefined
+                  ? {
+                      location:
+                        typeof values.location === "string" ||
+                        values.location === null
+                          ? (values.location as string | null)
+                          : entry.location,
+                    }
+                  : {}),
+              };
+            }),
+          );
+        }
+      }
       void workspace.patchMeeting(meeting.id, values);
     },
     [meeting, workspace],
@@ -929,6 +1180,22 @@ function CalendarPageBody() {
     meetingId: string,
     patch: MeetingCalendarPatch,
   ) => {
+    const source =
+      workspace.meetings.find((entry) => entry.id === meetingId) ?? null;
+    const externalId = source?.externalCalendarEventId?.trim();
+    if (externalId) {
+      setExternalCalendarEvents((current) =>
+        current.map((entry) =>
+          entry.id === externalId
+            ? {
+                ...entry,
+                startAt: patch.startAt,
+                endAt: patch.endAt,
+              }
+            : entry,
+        ),
+      );
+    }
     void workspace.patchMeeting(meetingId, patch);
   };
 
@@ -1288,6 +1555,8 @@ function CalendarPageBody() {
       onBirthdayAddMeeting={handleBirthdayAddMeeting}
       onBirthdaySendEmail={handleBirthdaySendEmail}
       onMeetingOpen={openMeetingFromGrid}
+      onAttachExternalNotes={handleAttachExternalNotes}
+      attachingExternalNotes={attachingExternalNotes}
       dayHabitsByDate={dayHabitsByDate}
       onToggleDayHabit={handleToggleDayHabit}
     />

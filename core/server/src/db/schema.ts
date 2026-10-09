@@ -154,6 +154,38 @@ export const workspaceIntegrationSecrets = pgTable(
     zernioWebhookUrl: text("zernio_webhook_url"),
     /** Cursor from analytics.synced / GET /v1/analytics/delta. */
     zernioAnalyticsCursor: text("zernio_analytics_cursor"),
+    /** Google Calendar OAuth (ADR-037) — never returned in full. */
+    googleCalendarClientId: text("google_calendar_client_id"),
+    googleCalendarClientSecret: text("google_calendar_client_secret"),
+    googleCalendarRefreshToken: text("google_calendar_refresh_token"),
+    googleCalendarAccessToken: text("google_calendar_access_token"),
+    googleCalendarAccessTokenExpiresAt: timestamp(
+      "google_calendar_access_token_expires_at",
+      { withTimezone: true },
+    ),
+    googleCalendarAccountEmail: text("google_calendar_account_email"),
+    googleCalendarSelectedCalendarIds: jsonb(
+      "google_calendar_selected_calendar_ids",
+    )
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    googleCalendarLastSyncedAt: timestamp("google_calendar_last_synced_at", {
+      withTimezone: true,
+    }),
+    /** Active Google Calendar push channels ({ calendarId, channelId, … }[]). */
+    googleCalendarWatchChannels: jsonb("google_calendar_watch_channels")
+      .$type<
+        {
+          calendarId: string;
+          channelId: string;
+          resourceId: string;
+          expiration: string;
+          token: string;
+        }[]
+      >()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -976,6 +1008,15 @@ export const meetings = pgTable(
     trackedMinutes: integer("tracked_minutes"),
     /** Manual / timer tracked duration (whole seconds). */
     trackedDurationSeconds: integer("tracked_duration_seconds"),
+    /**
+     * Optional link to a read-only Google (etc.) agenda block — ADR-037.
+     * Schedule (title/start/end) stays owned by the external event; this meeting
+     * holds Backster notes / project / attendees.
+     */
+    externalCalendarEventId: text("external_calendar_event_id").references(
+      () => externalCalendarEvents.id,
+      { onDelete: "set null" },
+    ),
     inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -991,6 +1032,64 @@ export const meetings = pgTable(
     index("meetings_workspace_id_idx").on(table.workspaceId),
     index("meetings_workspace_number_idx").on(table.workspaceId, table.number),
     index("meetings_workspace_start_at_idx").on(table.workspaceId, table.startAt),
+    // Uniqueness for live rows is the partial index in
+    // 0146_meeting_external_calendar_link.sql (allows soft-deleted reuse).
+    index("meetings_external_calendar_event_id_idx").on(
+      table.externalCalendarEventId,
+    ),
+  ],
+);
+
+/**
+ * Read-only remote calendar events (Google Calendar first — ADR-037).
+ * Not first-class meetings; agenda display only.
+ */
+export const externalCalendarEvents = pgTable(
+  "external_calendar_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** google_calendar | caldav | ics (v1: google_calendar only). */
+    provider: text("provider").notNull(),
+    calendarId: text("calendar_id").notNull(),
+    externalId: text("external_id").notNull(),
+    icalUid: text("ical_uid"),
+    title: text("title").notNull(),
+    description: text("description"),
+    location: text("location"),
+    status: text("status"),
+    htmlLink: text("html_link"),
+    startAt: timestamp("start_at", { withTimezone: true }),
+    endAt: timestamp("end_at", { withTimezone: true }),
+    allDay: boolean("all_day").notNull().default(false),
+    /** All-day exclusive end may use YYYY-MM-DD. */
+    startDate: text("start_date"),
+    endDate: text("end_date"),
+    etag: text("etag"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("external_calendar_events_workspace_id_idx").on(table.workspaceId),
+    index("external_calendar_events_workspace_start_at_idx").on(
+      table.workspaceId,
+      table.startAt,
+    ),
+    uniqueIndex("external_calendar_events_workspace_provider_cal_ext_uidx").on(
+      table.workspaceId,
+      table.provider,
+      table.calendarId,
+      table.externalId,
+    ),
   ],
 );
 
@@ -2207,6 +2306,7 @@ export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
 export type DbHabit = typeof habits.$inferSelect;
 export type DbMeeting = typeof meetings.$inferSelect;
+export type DbExternalCalendarEvent = typeof externalCalendarEvents.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;
 export type DbAutoReviewWebhookDelivery =

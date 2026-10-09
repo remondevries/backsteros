@@ -39,6 +39,10 @@ import {
   softDeleteMeetingCrmActivities,
   syncMeetingCrmActivities,
 } from "./crm-activities.js";
+import {
+  mirrorLinkedMeetingScheduleLocally,
+  pushLinkedMeetingScheduleToGoogle,
+} from "./google-calendar-settings.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -117,6 +121,7 @@ export function toMeeting(row: DbMeeting): Meeting {
     locationOrganizationId: row.locationOrganizationId ?? null,
     trackedMinutes: row.trackedMinutes ?? null,
     trackedDurationSeconds: row.trackedDurationSeconds ?? null,
+    externalCalendarEventId: row.externalCalendarEventId ?? null,
     inboxUpdatedAt: toIso(row.inboxUpdatedAt),
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
@@ -294,6 +299,26 @@ export async function createMeetingRow(
   if (!startAt && endAt) {
     throw new Error("INVALID_MEETING_DATES");
   }
+  const externalCalendarEventId =
+    input.externalCalendarEventId === undefined
+      ? null
+      : input.externalCalendarEventId?.trim() || null;
+  if (externalCalendarEventId) {
+    const [existingLink] = await executor
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.workspaceId, workspaceId),
+          eq(meetings.externalCalendarEventId, externalCalendarEventId),
+          isNull(meetings.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (existingLink) {
+      throw new Error("EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED");
+    }
+  }
   const assignedNumber = number ?? (await nextMeetingNumber(workspaceId, executor));
   const [row] = await executor
     .insert(meetings)
@@ -314,6 +339,7 @@ export async function createMeetingRow(
       locationOrganizationId: input.locationOrganizationId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
+      externalCalendarEventId,
       startAt,
       endAt,
       sortOrder: Date.now(),
@@ -340,7 +366,7 @@ export async function createMeetingRow(
 export async function createMeeting(
   workspaceId: string,
   input: CreateMeetingInput,
-  id = newId(),
+  id = input.id?.trim() || newId(),
   executor: DbExecutor = db,
 ): Promise<Meeting> {
   const row = await createMeetingRow(workspaceId, input, id, executor);
@@ -442,6 +468,39 @@ export async function updateMeeting(
       : [],
     organizationId: row.organizationId,
   }, executor);
+
+  const scheduleTouched =
+    input.title !== undefined ||
+    input.startAt !== undefined ||
+    input.endAt !== undefined ||
+    input.location !== undefined;
+  if (scheduleTouched && row.externalCalendarEventId) {
+    const linked = {
+      title: row.title,
+      startAt: row.startAt,
+      endAt: row.endAt,
+      location: row.location ?? null,
+      externalCalendarEventId: row.externalCalendarEventId,
+    };
+    // Mirror locally before returning so clients never wait on Google.
+    try {
+      await mirrorLinkedMeetingScheduleLocally(workspaceId, linked);
+    } catch (error) {
+      console.warn(
+        "[google-calendar] local mirror linked meeting failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    void pushLinkedMeetingScheduleToGoogle(workspaceId, linked).catch(
+      (error) => {
+        console.warn(
+          "[google-calendar] push linked meeting failed:",
+          error instanceof Error ? error.message : error,
+        );
+      },
+    );
+  }
+
   return toMeeting(row);
 }
 
