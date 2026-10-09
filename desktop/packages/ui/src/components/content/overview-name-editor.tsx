@@ -296,6 +296,10 @@ export function OverviewNameEditor({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [hasAutoEdited, setHasAutoEdited] = useState(false);
+  /** Keep showing the just-saved name until props catch up (avoids stale flash). */
+  const [pendingDisplayName, setPendingDisplayName] = useState<string | null>(
+    null,
+  );
   /** Seed contenteditable once per edit session — avoid resetting caret. */
   const fitSeededRef = useRef(false);
 
@@ -303,11 +307,20 @@ export function OverviewNameEditor({
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (syncKey !== prevSyncKey) {
     setPrevSyncKey(syncKey);
-    setDraft(value);
-    setEditing(false);
-    setError(null);
-    setHasAutoEdited(false);
-    fitSeededRef.current = false;
+    if (pendingDisplayName != null && value === pendingDisplayName) {
+      setPendingDisplayName(null);
+      setDraft(value);
+    } else if (pendingDisplayName == null) {
+      setDraft(value);
+    } else {
+      // Ignore stale prop values while the optimistic name is in flight.
+      setDraft(pendingDisplayName);
+    }
+    if (!editing) {
+      setError(null);
+      setHasAutoEdited(false);
+      fitSeededRef.current = false;
+    }
   }
 
   if (autoEdit && !hasAutoEdited) {
@@ -385,6 +398,7 @@ export function OverviewNameEditor({
   }, [editing, fitContent, renameFocusRequest, value]);
 
   function cancelEditing() {
+    setPendingDisplayName(null);
     setDraft(value);
     setEditing(false);
     setError(null);
@@ -425,6 +439,7 @@ export function OverviewNameEditor({
             setError(result.error);
             return;
           }
+          setPendingDisplayName("");
           setEditing(false);
           onSaved?.("");
         });
@@ -443,6 +458,7 @@ export function OverviewNameEditor({
         return;
       }
 
+      setPendingDisplayName(trimmed);
       setEditing(false);
       onSaved?.(trimmed);
     });
@@ -468,6 +484,7 @@ export function OverviewNameEditor({
               setError(result.error);
               return;
             }
+            setPendingDisplayName("");
             setEditing(false);
             onSaved?.("");
             onLeaveTitle?.(reason);
@@ -499,11 +516,14 @@ export function OverviewNameEditor({
         return;
       }
 
+      setPendingDisplayName(trimmed);
       setEditing(false);
       onSaved?.(trimmed);
       onLeaveTitle?.(reason);
     });
   }
+
+  const displayName = pendingDisplayName ?? value;
 
   const editorClassName = fitContent
     ? "overview-name-editor overview-name-editor--fit-content"
@@ -568,16 +588,16 @@ export function OverviewNameEditor({
             setError(null);
           }}
           className="overview-name-editor__button"
-          aria-label={`Edit ${entityNamePhrase(entityLabel).toLowerCase()}: ${value}`}
+          aria-label={`Edit ${entityNamePhrase(entityLabel).toLowerCase()}: ${displayName}`}
         >
           {highlightContent ??
-            (value ||
+            (displayName ||
               (allowEmpty || fitContent ? (
                 <span className="overview-name-editor__placeholder">
                   {placeholder ?? entityLabel}
                 </span>
               ) : (
-                value
+                displayName
               )))}
         </button>
       </TitleTag>
