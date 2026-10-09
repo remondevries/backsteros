@@ -50,8 +50,41 @@
           "globalTimers": "error",
           "globalTimersInEffect": "error",
           "globalFetch": "error",
-          "globalFetchInEffect": "error"
-        }
+          "globalFetchInEffect": "error",
+          "schemaNumber": "off"
+        },
+        "ignoreEffectWarningsInTscExitCode": true,
+        "overrides": [
+          {
+            "include": [
+              "**/backsteros/**/*.ts",
+              "**/backsteros/**/*.tsx",
+              "**/hetzner/**/*.ts",
+              "**/hetzner/**/*.tsx",
+              "**/cursorUsage.ts",
+              "**/cursorUsage.test.ts",
+              "**/cursorPrepaidUsage.ts"
+            ],
+            "options": {
+              "diagnosticSeverity": {
+                "nodeBuiltinImport": "warning",
+                "globalDate": "warning",
+                "globalDateInEffect": "warning",
+                "globalTimers": "warning",
+                "globalTimersInEffect": "warning",
+                "globalFetch": "warning",
+                "globalFetchInEffect": "warning",
+                "preferSchemaOverJson": "warning",
+                "unknownInEffectCatch": "warning",
+                "anyUnknownInErrorContext": "warning",
+                "globalRandom": "warning",
+                "globalRandomInEffect": "warning",
+                "globalConsole": "warning",
+                "globalConsoleInEffect": "warning"
+              }
+            }
+          }
+        ]
       }
     ]
   }

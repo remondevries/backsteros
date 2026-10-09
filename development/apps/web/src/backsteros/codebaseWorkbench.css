@@ -43,6 +43,18 @@
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
+/* Header-hosted pill nav: single row, scroll horizontally if the strip is tight. */
+header .bos-pill-nav {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+header .bos-pill-nav::-webkit-scrollbar {
+  display: none;
+}
+
 .bos-codebase-workbench__tab-body {
   display: flex;
   min-height: 0;
@@ -57,6 +69,13 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.bos-codebase-workbench__settings-scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .bos-codebase-workbench__empty {

@@ -7,7 +7,7 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
-export class ElectronThemeSetSourceError extends Schema.TaggedErrorClass<ElectronThemeSetSourceError>()(
+export class ElectronThemeSetSourceError extends Schema.TaggedError<ElectronThemeSetSourceError>()(
   "ElectronThemeSetSourceError",
   {
     source: DesktopThemeSchema,
@@ -18,8 +18,6 @@ export class ElectronThemeSetSourceError extends Schema.TaggedErrorClass<Electro
     return `Failed to set the Electron theme source to ${this.source}.`;
   }
 }
-
-export const isElectronThemeSetSourceError = Schema.is(ElectronThemeSetSourceError);
 
 export class ElectronTheme extends Context.Service<
   ElectronTheme,

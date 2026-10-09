@@ -250,14 +250,15 @@ async function makeFixture(
     ],
     contentWidth,
   );
-  const apply = (change: { startLine: number } | undefined, _passStartLine = true) => {
+  const apply = (change: { startLine: number } | undefined, passStartLine = true) => {
     if (change === undefined) throw new Error("Expected a document change");
     file.contents = document.getText();
-    // Pierre VirtualizedFile dropped the optional startLine arg; keep the
-    // call-site arity for the test harness while matching the current API.
-    void _passStartLine;
-    void change.startLine;
-    instance.applyDocumentChange(document, undefined, false);
+    instance.applyDocumentChange(
+      document,
+      undefined,
+      false,
+      passStartLine ? change.startLine : undefined,
+    );
   };
   const append = () => {
     const position = document.positionAt(document.getText().length);

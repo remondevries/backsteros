@@ -20,8 +20,7 @@
           "globalConsole": "off",
           "globalRandom": "off",
           "globalTimers": "off",
-          "globalFetch": "off",
-          "cryptoRandomUUID": "off"
+          "globalFetch": "off"
         }
       }
     ]
@@ -33,6 +32,7 @@
     "vercel.ts",
     "test",
     "scripts/warm-dep-cache.ts",
-    "../../scripts/lib/public-config.ts"
+    "../../scripts/lib/public-config.ts",
+    "../../scripts/lib/third-party-licenses.ts"
   ]
 }

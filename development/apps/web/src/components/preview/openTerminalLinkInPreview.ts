@@ -1,4 +1,4 @@
-import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 
@@ -11,7 +11,7 @@ import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserL
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
-import { openBrowserForThread } from "~/rightPanelProjectTools";
+import { useRightPanelStore } from "~/rightPanelStore";
 
 const terminalLinkErrorContext = {
   environmentId: Schema.String,
@@ -20,7 +20,7 @@ const terminalLinkErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class TerminalLinkPreviewOpenError extends Schema.TaggedErrorClass<TerminalLinkPreviewOpenError>()(
+export class TerminalLinkPreviewOpenError extends Schema.TaggedError<TerminalLinkPreviewOpenError>()(
   "TerminalLinkPreviewOpenError",
   terminalLinkErrorContext,
 ) {
@@ -34,20 +34,19 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   readonly fallbackToBrowser: () => void;
-  readonly projectRef?: ScopedProjectRef | null;
+  /** Cmd/Ctrl-click bypasses the preference and opens in the system browser. */
+  readonly forceBrowser: boolean;
 }
 
 /**
- * Opens a terminal hyperlink where the "Open links in" setting says. Terminal
- * links are activated with the platform modifier already held, so unlike chat
- * links the modifier cannot double as the system-browser override; the setting
- * alone decides, and the system browser is the fallback whenever the in-app
- * one cannot take the URL.
+ * Opens a terminal hyperlink where the "Open links in" setting says, unless a
+ * Cmd/Ctrl-click explicitly requests the system browser.
  */
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,
 ): Promise<void> {
   const supportsPreview =
+    !input.forceBrowser &&
     isWebUrl(input.url) &&
     isPreviewSupportedInRuntime() &&
     input.threadRef.threadId.length > 0 &&
@@ -91,5 +90,5 @@ export async function openTerminalLinkInPreview<E>(
   }
   recordVisitForThread(input.threadRef, input.url);
   applyPreviewServerSnapshot(input.threadRef, result.value);
-  openBrowserForThread(input.threadRef, result.value.tabId, input.projectRef);
+  useRightPanelStore.getState().openBrowser(input.threadRef, result.value.tabId);
 }

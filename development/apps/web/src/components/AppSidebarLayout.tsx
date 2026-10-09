@@ -7,33 +7,45 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import {
-  isBareKeyShortcutBlockedByEditable,
+  isRichTextBoldShortcut,
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
-import { isMacPlatform } from "../lib/utils";
+import { isEditableFocused } from "../lib/editableFocus";
+import { isPreviewFocused } from "../lib/previewFocus";
+import { isTerminalFocused } from "../lib/terminalFocus";
+import { isModelPickerOpen } from "../modelPickerVisibility";
+import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { resolveThreadRouteRef } from "../threadRoutes";
+import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useLegacySidebarEnabled } from "../hooks/useSettings";
 import { useAgentFinishedSound } from "../hooks/useAgentFinishedSound";
-import { usePanelAnimationSettings } from "../panelAnimations";
+import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelAnimationSettings,
+  usePanelNavigationSuppression,
+} from "../panelAnimations";
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { ServersPageSidebar } from "./servers/ServersPageSidebar";
 import { PullRequestsPageSidebar } from "./pullRequest/PullRequestsPageSidebar";
 import { UsagePageSidebar } from "./usage/UsagePageSidebar";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
 import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
 import { BacksterosFileTaskModal } from "./sidebar/BacksterosFileTaskModal";
-import { useProjects } from "../state/entities";
 import { useBacksterosTaskDetailUiStore } from "../backsteros/taskDetailUiStore";
-
+import { useProjects } from "../state/entities";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -51,7 +63,7 @@ import {
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -75,11 +87,18 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
+  const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const toggleTaskDetail = useBacksterosTaskDetailUiStore((state) => state.toggleTaskDetail);
-  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
+  const environmentIdentificationMode = useEnvironmentIdentificationMode();
+  const stageBackdropVariant = useSidebarStageBackdropVariant(
+    environmentIdentificationMode === "artwork",
+  );
+  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
+    context: { usagePageOpen },
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -90,10 +109,16 @@ function SidebarControl() {
       ) {
         return;
       }
-      // Bare `[` / `⇧[` / `]` must not steal characters from editors / inputs.
-      if (isBareKeyShortcutBlockedByEditable(event)) return;
-
-      const command = resolveShortcutCommand(event, keybindings);
+      if (
+        isRichTextBoldShortcut(event) &&
+        event.target instanceof HTMLElement &&
+        event.target.closest('[data-composer-rich-text="true"]')
+      ) {
+        // The rich-text composer claims Mod+B for bold; the toggle stays
+        // available everywhere else, including the plain-text composer.
+        return;
+      }
+      const command = resolveShortcutCommand(event, keybindings, { context: { usagePageOpen } });
       if (command === "sidebar.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -101,17 +126,17 @@ function SidebarControl() {
         return;
       }
       if (command === "taskDetail.toggle") {
+        if (event.target instanceof HTMLElement && isEditableFocused(event.target)) return;
         event.preventDefault();
         event.stopPropagation();
         toggleTaskDetail();
       }
     };
 
-    // Capture so bracket chords win before the composer treats them as text
-    // (same approach as the old Mod+B sidebar toggle) — but only when not typing.
+    // Capture before focused editors consume commands such as Mod+B for rich-text formatting.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [keybindings, toggleSidebar, toggleTaskDetail]);
+  }, [keybindings, toggleSidebar, toggleTaskDetail, usagePageOpen]);
 
   return (
     // Shown only while the sidebar is collapsed — when open, the trigger lives
@@ -124,7 +149,16 @@ function SidebarControl() {
         <Tooltip>
           <TooltipTrigger
             render={
-              <SidebarTrigger className="pointer-events-auto" aria-label="Toggle main sidebar" />
+              <SidebarTrigger
+                // Over the stage artwork the trigger is a control on imagery, like the media
+                // viewer's arrows; that variant positions itself, so the layout is reset here.
+                variant={stageBackdropVariant ? "media-navigation" : "ghost"}
+                className={cn(
+                  "pointer-events-auto",
+                  stageBackdropVariant && "relative top-auto translate-y-0",
+                )}
+                aria-label="Toggle main sidebar"
+              />
             }
           />
           <TooltipPopup side="bottom">
@@ -134,6 +168,56 @@ function SidebarControl() {
       </div>
     ) : null
   );
+}
+
+// Moves through the app's route history like a browser's back/forward buttons.
+function NavigationHistoryShortcuts() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const routeThreadRef = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteRef(params),
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture]")
+      ) {
+        return;
+      }
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen: routeThreadRef
+            ? selectThreadTerminalUiState(
+                useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+                routeThreadRef,
+              ).terminalOpen
+            : false,
+          previewFocus: isPreviewFocused(),
+          previewOpen: routeThreadRef
+            ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
+              "preview"
+            : false,
+          editableFocus: isEditableFocused(event.target),
+          modelPickerOpen: isModelPickerOpen(),
+        },
+      });
+      if (command !== "navigation.back" && command !== "navigation.forward") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (command === "navigation.back") window.history.back();
+      else window.history.forward();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keybindings, routeThreadRef]);
+
+  return null;
 }
 
 // Settings swaps the thread sidebar out of the tree. Keep the lightweight
@@ -150,13 +234,18 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   useAgentFinishedSound();
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
-  // Settings / Usage / Pull Requests / Servers swap the thread sidebar out of the tree.
+  // Settings routes show the settings nav in place of whichever thread
+  // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
+  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
+  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isOnServersPage = pathname === "/servers" || pathname.startsWith("/servers/");
   const isOnPullRequestsPage =
     pathname === "/pull-requests" || pathname.startsWith("/pull-requests/");
   const isOnUsagePage = pathname === "/usage" || pathname.startsWith("/usage/");
+  const isOnBacksterosProjectPage =
+    pathname === "/backsteros/project" || pathname.startsWith("/backsteros/project/");
   const replacesThreadSidebar =
     isOnSettings || isOnUsagePage || isOnServersPage || isOnPullRequestsPage;
   const taskDetailSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
@@ -229,59 +318,78 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   useEffect(() => {
-    // Keep compose available on Servers; only clear open task detail when leaving threads.
-    if (replacesThreadSidebar) clearTaskDetail();
-  }, [clearTaskDetail, replacesThreadSidebar]);
+    // Keep compose available on Servers; clear open task detail when leaving threads
+    // or when a BacksterOS project page needs the full main column.
+    if (replacesThreadSidebar || isOnBacksterosProjectPage) clearTaskDetail();
+  }, [clearTaskDetail, isOnBacksterosProjectPage, replacesThreadSidebar]);
 
   return (
-    <SidebarProvider
-      className="h-dvh! min-h-0!"
-      data-panel-animations={panelAnimationsActive ? "true" : "false"}
-      {...(taskDetailSelection && taskDetailVisible ? { "data-task-detail-open": "true" } : {})}
-      defaultOpen
-      style={sidebarProviderStyle}
-    >
-      <ProjectProjectionRetention />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        data-app-sidebar=""
-        className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={{
-          maxWidth: sidebarMaximumWidth,
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-            nextWidth <= currentWidth ||
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-          onResize: setSidebarWidth,
-        }}
+    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
+      <SidebarProvider
+        className="h-dvh! min-h-0!"
+        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        {...(taskDetailSelection && taskDetailVisible ? { "data-task-detail-open": "true" } : {})}
+        defaultOpen
+        style={sidebarProviderStyle}
       >
-        {isOnServersPage ? (
-          <ServersPageSidebar />
-        ) : isOnPullRequestsPage ? (
-          <PullRequestsPageSidebar />
-        ) : isOnUsagePage ? (
-          <UsagePageSidebar />
-        ) : isOnSettings ? (
-          <>
-            <SidebarChromeHeader isElectron={isElectron} />
-            <SettingsSidebarNav pathname={pathname} />
-          </>
-        ) : legacySidebarEnabled ? (
-          <LegacyThreadSidebar />
-        ) : (
-          <ThreadSidebar />
-        )}
-        <SidebarRail onDoubleClick={resetSidebarWidth} />
-      </Sidebar>
-      {!replacesThreadSidebar && taskDetailSelection && taskDetailVisible ? (
-        <BacksterosTaskDetailPanel />
-      ) : null}
-      {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
-      {!replacesThreadSidebar || isOnServersPage ? <BacksterosFileTaskModal /> : null}
-      {children}
-      <SidebarControl />
-    </SidebarProvider>
+        <ProjectProjectionRetention />
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          data-app-sidebar=""
+          role="navigation"
+          aria-label={
+            isOnServersPage
+              ? "Servers"
+              : isOnPullRequestsPage
+                ? "Pull requests"
+                : isOnUsagePage
+                  ? "Usage"
+                  : isOnSettings
+                    ? "Settings"
+                    : "Threads"
+          }
+          resizable={{
+            maxWidth: sidebarMaximumWidth,
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+              nextWidth <= currentWidth ||
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            onResize: setSidebarWidth,
+          }}
+        >
+          {isOnServersPage ? (
+            <ServersPageSidebar />
+          ) : isOnPullRequestsPage ? (
+            <PullRequestsPageSidebar />
+          ) : isOnUsagePage ? (
+            <UsagePageSidebar />
+          ) : isOnSettings ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : legacySidebarEnabled ? (
+            <LegacyThreadSidebar />
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
+        {!replacesThreadSidebar &&
+        !isOnBacksterosProjectPage &&
+        taskDetailSelection &&
+        taskDetailVisible ? (
+          <BacksterosTaskDetailPanel />
+        ) : null}
+        {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
+        {!replacesThreadSidebar || isOnServersPage ? <BacksterosFileTaskModal /> : null}
+        {children}
+        <SidebarControl />
+        <NavigationHistoryShortcuts />
+        <MainAppLocationTracker />
+      </SidebarProvider>
+    </PanelAnimationSuppressionProvider>
   );
 }

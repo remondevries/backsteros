@@ -312,7 +312,7 @@ export function AppCommandsTab({
     const command = commandText.trim();
     if (!command || running) return;
 
-    const optimisticId = `pending-${crypto.randomUUID()}`;
+    const optimisticId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const optimistic: AppCommandRecord = {
       id: optimisticId,
       serverId,

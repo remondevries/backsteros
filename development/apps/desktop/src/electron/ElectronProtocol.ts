@@ -1,10 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off — BacksterOS desktop proxy reads cli.env and falls back to Node fetch when Electron.net fails for loopback.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
+import * as Path from "effect/Path";
+import * as Mime from "effect/unstable/http/Mime";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -27,7 +32,7 @@ export function getDesktopUrl(isDevelopment: boolean): string {
   return `${getDesktopOrigin(isDevelopment)}/`;
 }
 
-export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<ElectronProtocolRegistrationError>()(
+export class ElectronProtocolRegistrationError extends Schema.TaggedError<ElectronProtocolRegistrationError>()(
   "ElectronProtocolRegistrationError",
   {
     scheme: Schema.String,
@@ -39,7 +44,7 @@ export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<E
   }
 }
 
-export class ElectronProtocolUnregistrationError extends Schema.TaggedErrorClass<ElectronProtocolUnregistrationError>()(
+export class ElectronProtocolUnregistrationError extends Schema.TaggedError<ElectronProtocolUnregistrationError>()(
   "ElectronProtocolUnregistrationError",
   {
     scheme: Schema.String,
@@ -51,12 +56,12 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedErrorClass
   }
 }
 
-export interface DesktopProtocolRegistrationInput {
+// The scheme either proxies to a dev server (`targetOrigin`) or serves the
+// built client from disk (`assetDirectory`).
+export type DesktopProtocolRegistrationInput = {
   readonly scheme: string;
-  readonly targetOrigin: URL;
-  readonly backendOrigin: URL;
   readonly clerkFrontendApiHostname: string | undefined;
-}
+} & ({ readonly targetOrigin: URL } | { readonly assetDirectory: string });
 
 export class ElectronProtocol extends Context.Service<
   ElectronProtocol,
@@ -83,7 +88,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
   // the build-configured Clerk, relay, and OTLP endpoints. Those environment
   // origins are not known when this response policy is created, so restrict
   // connections by the network schemes the client supports instead of by host.
-  const connectSources = ["'self'", "http:", "https:", "ws:", "wss:"];
+  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
+  const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [
     "default-src 'self'",
@@ -94,7 +100,9 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    // Document viewers use local Blob URLs and signed assets from runtime environments.
+    // HTML viewers retain their own sandbox; the renderer's script policy stays unchanged.
+    "frame-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }
@@ -122,6 +130,9 @@ function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
+        // Custom schemes skip Chromium's V8 code cache unless they opt in.
+        // Dev stays off: Vite serves changing code at stable URLs.
+        codeCache: true,
       },
     },
     {
@@ -180,7 +191,6 @@ function readBacksterosCliEnvValue(
 function isBacksterosLocalCoreOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
-    const host = url.hostname.toLowerCase();
     const port = url.port || (url.protocol === "https:" ? "443" : "80");
     return port === "8788";
   } catch {
@@ -286,47 +296,6 @@ function backsterosUnreachableResponse(
   );
 }
 
-/**
- * Prefer Chromium `net.fetch` (matches browser cookies / session). If that
- * fails to reach local-core — common after core restarts or under Chromium
- * loopback quirks — fall back to Node's fetch.
- */
-async function fetchBacksterosUpstream(
-  targetUrl: string,
-  init: RequestInit,
-  method: string,
-): Promise<Response> {
-  try {
-    return method === "GET" || method === "HEAD"
-      ? await fetchWithTransientRetry(targetUrl, init)
-      : await Electron.net.fetch(targetUrl, init);
-  } catch (electronError) {
-    try {
-      const nodeInit: RequestInit = {
-        method: init.method,
-        headers: init.headers,
-      };
-      if (method !== "GET" && method !== "HEAD" && init.body != null) {
-        // Body may already be a locked stream after Electron.net.fetch; buffer if needed.
-        if (init.body instanceof ReadableStream) {
-          nodeInit.body = await new Response(init.body).arrayBuffer();
-        } else {
-          nodeInit.body = init.body;
-        }
-      }
-      return await fetch(targetUrl, nodeInit);
-    } catch {
-      throw electronError;
-    }
-  }
-}
-
-/**
- * Packaged desktop has no Vite proxy. Without this, `/backsteros-api/*` and
- * `/backsteros-local-core/*` are forwarded to the T3 static host and return
- * `index.html` (JSON parse errors). Product and local-core use separate
- * upstreams (BDV-37) — cloud cannot realpath Mac working copies.
- */
 async function proxyBacksterosRequest(
   request: Request,
   requestUrl: URL,
@@ -365,15 +334,12 @@ async function proxyBacksterosRequest(
   }
 }
 
-async function proxyRequest(
+async function proxyBacksterosPathIfNeeded(
   request: Request,
-  targetOrigin: URL,
   contentSecurityPolicy: string,
-): Promise<Response> {
+): Promise<Response | null> {
   const requestUrl = new URL(request.url);
-  if (requestUrl.host !== DESKTOP_HOST) {
-    return new Response(null, { status: 404 });
-  }
+  if (requestUrl.host !== DESKTOP_HOST) return null;
 
   if (isBacksterosApiPath(requestUrl.pathname)) {
     return proxyBacksterosRequest(request, requestUrl, contentSecurityPolicy, {
@@ -389,6 +355,22 @@ async function proxyRequest(
     });
   }
 
+  return null;
+}
+
+async function proxyRequest(
+  request: Request,
+  targetOrigin: URL,
+  contentSecurityPolicy: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.host !== DESKTOP_HOST) {
+    return new Response(null, { status: 404 });
+  }
+
+  const backsterResponse = await proxyBacksterosPathIfNeeded(request, contentSecurityPolicy);
+  if (backsterResponse) return backsterResponse;
+
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = stripHopByHopHeaders(request.headers);
   // Localhost control plane (`/api/backsteros/control/*`) accepts either a
@@ -401,8 +383,6 @@ async function proxyRequest(
     requestUrl.pathname === "/api/backsteros/control" ||
     requestUrl.pathname.startsWith("/api/backsteros/control/")
   ) {
-    // Prefer env/cli owner key over a stale renderer Settings key (same as
-    // /backsteros-api) — otherwise a mismatched Settings Bearer 401s bindings.
     const apiKey = resolveBacksterosApiKey();
     if (apiKey) {
       headers.set("Authorization", `Bearer ${apiKey}`);
@@ -425,6 +405,47 @@ async function proxyRequest(
 
 const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
 
+// Serves the packaged web client without a backend: files resolve within the
+// asset directory, and any other path falls back to index.html so the SPA
+// router handles it, except for asset-shaped misses (`/missing.js`) which 404.
+const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
+  request: Request,
+  assetDirectory: string,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const url = new URL(request.url);
+  if (url.host !== DESKTOP_HOST) return new Response(null, { status: 404 });
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response(null, { status: 405 });
+  }
+  const pathname = yield* Effect.try(() => decodeURIComponent(url.pathname)).pipe(
+    Effect.orElseSucceed(() => null),
+  );
+  if (pathname === null || pathname.includes("\0")) return new Response(null, { status: 400 });
+  const root = path.resolve(assetDirectory);
+  const assetPath = path.resolve(root, `.${pathname}`);
+  if (assetPath !== root && !assetPath.startsWith(root + path.sep)) {
+    return new Response(null, { status: 404 });
+  }
+  const stat = yield* fileSystem.stat(assetPath).pipe(Effect.orElseSucceed(() => null));
+  let filePath = assetPath;
+  if (stat?.type !== "File") {
+    const wantsHtml = request.headers.get("accept")?.includes("text/html") ?? false;
+    if (path.extname(assetPath) !== "" && !wantsHtml) {
+      return new Response(null, { status: 404 });
+    }
+    filePath = path.join(root, "index.html");
+  }
+  const contents = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
+  if (contents === null) return new Response(null, { status: 404 });
+  return new Response(request.method === "HEAD" ? null : new Uint8Array(contents), {
+    headers: {
+      "content-type": Option.getOrElse(Mime.getType(filePath), () => "application/octet-stream"),
+    },
+  });
+});
+
 async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
 
@@ -443,9 +464,44 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
   throw lastError;
 }
 
+/**
+ * Prefer Chromium `net.fetch` (matches browser cookies / session). If that
+ * fails to reach local-core — common after core restarts or under Chromium
+ * loopback quirks — fall back to Node's fetch.
+ */
+async function fetchBacksterosUpstream(
+  targetUrl: string,
+  init: RequestInit,
+  method: string,
+): Promise<Response> {
+  try {
+    return method === "GET" || method === "HEAD"
+      ? await fetchWithTransientRetry(targetUrl, init)
+      : await Electron.net.fetch(targetUrl, init);
+  } catch (electronError) {
+    try {
+      const nodeInit: RequestInit = {};
+      if (init.method !== undefined) nodeInit.method = init.method;
+      if (init.headers !== undefined) nodeInit.headers = init.headers;
+      if (method !== "GET" && method !== "HEAD" && init.body != null) {
+        if (init.body instanceof ReadableStream) {
+          nodeInit.body = await new Response(init.body).arrayBuffer();
+        } else {
+          nodeInit.body = init.body;
+        }
+      }
+      return await fetch(targetUrl, nodeInit);
+    } catch {
+      throw electronError;
+    }
+  }
+}
+
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
+  const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+  const runPromise = Effect.runPromiseWith(context);
 
   const registerDesktopProtocol = Effect.fn("desktop.electron.protocol.registerDesktopProtocol")(
     function* (input: DesktopProtocolRegistrationInput) {
@@ -456,9 +512,21 @@ export const make = Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.try({
           try: () => {
-            Electron.protocol.handle(input.scheme, (request) =>
-              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
-            );
+            Electron.protocol.handle(input.scheme, async (request) => {
+              const backsterResponse = await proxyBacksterosPathIfNeeded(
+                request,
+                contentSecurityPolicy,
+              );
+              if (backsterResponse) return backsterResponse;
+
+              if ("assetDirectory" in input) {
+                return withContentSecurityPolicy(
+                  await runPromise(serveDesktopAsset(request, input.assetDirectory)),
+                  contentSecurityPolicy,
+                );
+              }
+              return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+            });
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),
         }).pipe(Effect.andThen(Ref.set(registered, true))),

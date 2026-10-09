@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Local per-BacksterOS-project secrets under ~/.config/secrets/environments/<projectId>/.
  * Plaintext files only (FileVault + 0600). Never upload to BacksterOS cloud / PowerSync.

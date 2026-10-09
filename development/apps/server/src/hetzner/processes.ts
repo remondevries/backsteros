@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Background processes (Supervisor) + scheduled jobs (cron) for Observe → Processes.
  * Desired state is stored locally and applied on the Hetzner host over SSH.

@@ -1,9 +1,9 @@
 import {
   DEFAULT_BROWSER_PROFILE_ID,
+  DEFAULT_CLIENT_SETTINGS,
   FILL_PREVIEW_VIEWPORT,
   type PreviewOpenInput,
   type PreviewSessionSnapshot,
-  type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -14,22 +14,14 @@ import {
   readThreadPreviewState,
   resetPreviewStateForTests,
 } from "~/previewStateStore";
-import {
-  browserSurfaceId,
-  selectComposedRightPanelState,
-  useRightPanelStore,
-} from "~/rightPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
+import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
 import { addBrowserSurface } from "./addBrowserSurface";
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
   threadId: "thread-1" as ScopedThreadRef["threadId"],
-};
-
-const projectRef = {
-  environmentId: "local" as ScopedProjectRef["environmentId"],
-  projectId: "project-1" as ScopedProjectRef["projectId"],
 };
 
 const snapshot = (tabId: string): PreviewSessionSnapshot => ({
@@ -42,8 +34,9 @@ const snapshot = (tabId: string): PreviewSessionSnapshot => ({
 });
 
 beforeEach(() => {
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   resetPreviewStateForTests();
-  useRightPanelStore.setState({ byThreadKey: {}, byProjectKey: {}, activationClock: 0 });
+  useRightPanelStore.setState({ byThreadKey: {} });
 });
 
 describe("addBrowserSurface", () => {
@@ -54,7 +47,6 @@ describe("addBrowserSurface", () => {
 
     await addBrowserSurface({
       threadRef,
-      projectRef,
       openPreview: ({ input }) => openPreview(input),
       profileId: "profile-work",
     });
@@ -70,14 +62,10 @@ describe("addBrowserSurface", () => {
     const first = snapshot("tab-1");
     const second = snapshot("tab-2");
     applyPreviewServerSnapshot(threadRef, first);
-    useRightPanelStore.getState().openBrowser(projectRef, threadRef, first.tabId);
+    useRightPanelStore.getState().openBrowser(threadRef, first.tabId);
     const openPreview = vi.fn(async (_input: PreviewOpenInput) => AsyncResult.success(second));
 
-    await addBrowserSurface({
-      threadRef,
-      projectRef,
-      openPreview: ({ input }) => openPreview(input),
-    });
+    await addBrowserSurface({ threadRef, openPreview: ({ input }) => openPreview(input) });
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
@@ -86,15 +74,10 @@ describe("addBrowserSurface", () => {
     });
     expect(Object.keys(readThreadPreviewState(threadRef).sessions)).toEqual(["tab-1", "tab-2"]);
     expect(
-      selectComposedRightPanelState(
+      selectThreadRightPanelState(
         useRightPanelStore.getState().byThreadKey,
-        useRightPanelStore.getState().byProjectKey,
         threadRef,
-        projectRef,
       ).surfaces.map((surface) => surface.id),
-    ).toEqual([
-      browserSurfaceId("thread-1", "tab-1"),
-      browserSurfaceId("thread-1", "tab-2"),
-    ]);
+    ).toEqual(["browser:tab-1", "browser:tab-2"]);
   });
 });

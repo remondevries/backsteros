@@ -57,18 +57,21 @@ export function providerAccentSwatchForInstance(scopeKey: string): ProviderAccen
 
 /**
  * Build the stable key used to pick a composer accent.
- * Prefer the thread so switching chats changes color even when the provider is
- * the same; include the instance so switching agents in-thread also changes it.
+ * Prefer a BacksterOS task so switching tasks changes color even when the
+ * provider is the same; fall back to thread/draft. Include the instance so
+ * switching agents in-scope also changes it.
  */
 export function composerAccentScopeKey(input: {
+  taskId?: string | null | undefined;
   threadId?: string | null | undefined;
   draftKey?: string | null | undefined;
   instanceId?: string | null | undefined;
 }): string | undefined {
+  const taskId = input.taskId?.trim() || undefined;
   const threadId = input.threadId?.trim() || undefined;
   const draftKey = input.draftKey?.trim() || undefined;
   const instanceId = input.instanceId?.trim() || undefined;
-  const chatKey = threadId ?? draftKey;
+  const chatKey = taskId ? `task:${taskId}` : (threadId ?? draftKey);
   if (chatKey && instanceId) return `${chatKey}:${instanceId}`;
   return chatKey ?? instanceId;
 }
@@ -76,6 +79,8 @@ export function composerAccentScopeKey(input: {
 /**
  * Accent for composer chrome (outline + send).
  * Order: chat override → provider accent → stable hash of chat+agent scope.
+ * When a taskId is present, skip the provider accent so each task keeps a
+ * distinct random swatch (override still wins).
  */
 export function resolveProviderAccentColor(
   instanceId: string | undefined,
@@ -88,6 +93,7 @@ export function resolveProviderAccentColor(
 }
 
 export function resolveComposerAccentColor(input: {
+  taskId?: string | null | undefined;
   threadId?: string | null | undefined;
   draftKey?: string | null | undefined;
   instanceId?: string | null | undefined;
@@ -97,8 +103,11 @@ export function resolveComposerAccentColor(input: {
 }): string {
   const override = normalizeProviderAccentColor(input.overrideColor ?? undefined);
   if (override) return override;
-  const configured = normalizeProviderAccentColor(input.accentColor ?? undefined);
-  if (configured) return configured;
+  const taskId = input.taskId?.trim() || undefined;
+  if (!taskId) {
+    const configured = normalizeProviderAccentColor(input.accentColor ?? undefined);
+    if (configured) return configured;
+  }
   const scopeKey = composerAccentScopeKey(input);
   if (!scopeKey) return FALLBACK_ACCENT_COLOR;
   return providerAccentSwatchForInstance(scopeKey);

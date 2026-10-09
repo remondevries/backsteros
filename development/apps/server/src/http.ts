@@ -1,4 +1,5 @@
-import Mime from "@effect/platform-node/Mime";
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
+import * as Mime from "effect/unstable/http/Mime";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -16,7 +17,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
-  HttpBody,
   HttpClient,
   HttpClientResponse,
   HttpMiddleware,
@@ -26,13 +26,14 @@ import {
   HttpServerRespondable,
 } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import { OtlpTracer } from "effect/unstable/observability";
+import { OtlpTracer, OtlpSerialization } from "effect/unstable/observability";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as ServerConfig from "./config.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import { githubMediaResponse } from "./assets/GitHubMediaFetch.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
@@ -137,8 +138,8 @@ const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
   !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
-const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
-  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
+const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && /^(?:audio|video)\//i.test(mimeType);
 const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
   mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
 
@@ -182,7 +183,7 @@ export function assetResponseHeaders(
               ? options.mimeType
               : "application/octet-stream",
         }
-      : inlineMimeType !== undefined && isSafeInlineVideoMimeType(inlineMimeType)
+      : inlineMimeType !== undefined && isSafeInlineMediaMimeType(inlineMimeType)
         ? { "Content-Type": inlineMimeType }
         : inlineMimeType !== undefined && isSafeInlineDocumentMimeType(inlineMimeType)
           ? {
@@ -206,7 +207,7 @@ export function assetResponseHeaders(
   };
 }
 
-/** A single byte range for native video readers; unsupported range syntax uses the full file. */
+/** A single byte range for native media readers; unsupported range syntax uses the full file. */
 function assetByteRange(header: string, size: bigint) {
   const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
   if (!match || (!match[1] && !match[2])) return null;
@@ -244,16 +245,17 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   const headers = assetResponseHeaders(asset.path, asset);
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
-  const isVideo = headers["Content-Type"]?.toLowerCase().startsWith("video/") === true;
-  if (mediaFile && isVideo) {
-    // Host videos can change in place. Do not invite conditional range requests
-    // with validators that cannot establish byte-for-byte identity.
+  const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
+  if (isMedia) {
+    // Host media can change in place. Do not invite conditional range requests
+    // with validators that cannot establish byte-for-byte identity. Attachment media
+    // carries no `file`, and must not outlive the signed URL that granted it either.
     headers["Cache-Control"] = "private, no-store";
   }
   let status = 200;
   let offset = 0n;
   let bytesToRead: bigint | undefined;
-  if (isVideo) {
+  if (isMedia) {
     headers["Accept-Ranges"] = "bytes";
     // If-Range requires a matching validator. A full response is safe when we cannot validate it.
     if (method === "GET" && rangeHeader && ifRangeHeader === undefined) {
@@ -276,9 +278,12 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   if (mediaFile && mediaInfo) {
     const size = bytesToRead ?? mediaInfo.size;
-    headers["Content-Type"] ??= Mime.getType(asset.path) ?? "application/octet-stream";
+    headers["Content-Type"] ??= Option.getOrElse(
+      Mime.getType(asset.path),
+      () => "application/octet-stream",
+    );
     headers["Content-Length"] = String(size);
-    if (!isVideo) {
+    if (!isMedia) {
       headers["Last-Modified"] = mediaInfo.mtime.toUTCString();
       headers.ETag = `W/"${mediaInfo.size.toString(16)}-${mediaInfo.mtimeMs.toString(16)}"`;
     }
@@ -381,7 +386,6 @@ export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
 
 class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
   readonly cause: unknown;
-  readonly bodyJson: OtlpTracer.TraceData;
 }> {}
 
 const CURSOR_PLAN_USAGE_PATH = "/api/cursor-plan-usage";
@@ -411,10 +415,7 @@ export const cursorPlanUsageRouteLayer = HttpRouter.add(
   }),
 );
 
-/** Cursor prepaid / included token events for Usage → Prepaid.
- *  `part=summary` → KPIs/chart only; `part=events` → one 50-row page;
- *  omit → combined (parallel). Page flips should use `part=events`.
- */
+/** Cursor prepaid / included token events for Usage → Prepaid. */
 export const cursorPrepaidUsageRouteLayer = HttpRouter.add(
   "GET",
   CURSOR_PREPAID_USAGE_PATH,
@@ -465,66 +466,9 @@ export const cursorPrepaidUsageRouteLayer = HttpRouter.add(
   }),
 );
 
-export const otlpTracesProxyRouteLayer = HttpRouter.add(
-  "POST",
-  OTLP_TRACES_PROXY_PATH,
-  Effect.gen(function* () {
-    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const config = yield* ServerConfig.ServerConfig;
-    const otlpTracesUrl = config.otlpTracesUrl;
-    const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
-    const httpClient = yield* HttpClient.HttpClient;
-    const bodyJson = cast<unknown, OtlpTracer.TraceData>(yield* request.json);
-
-    yield* Effect.try({
-      try: () => decodeOtlpTraceRecords(bodyJson),
-      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause, bodyJson }),
-    }).pipe(
-      Effect.flatMap((records) => browserTraceCollector.record(records)),
-      Effect.catch((cause) =>
-        Effect.logWarning("Failed to decode browser OTLP traces", {
-          cause,
-          bodyJson,
-        }),
-      ),
-    );
-
-    if (otlpTracesUrl === undefined) {
-      return HttpServerResponse.empty({ status: 204 });
-    }
-
-    return yield* httpClient
-      .post(otlpTracesUrl, {
-        body: HttpBody.jsonUnsafe(bodyJson),
-      })
-      .pipe(
-        Effect.flatMap(HttpClientResponse.filterStatusOk),
-        Effect.as(HttpServerResponse.empty({ status: 204 })),
-        Effect.tapError((cause) =>
-          Effect.logWarning("Failed to export browser OTLP traces", {
-            cause,
-            otlpTracesUrl,
-          }),
-        ),
-        Effect.orElseSucceed(() =>
-          HttpServerResponse.text("Trace export failed.", { status: 502 }),
-        ),
-      );
-  }).pipe(
-    Effect.catchTags({
-      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-      EnvironmentInternalError: HttpServerRespondable.toResponse,
-      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-    }),
-  ),
-);
-
 /**
  * Same rewrite Vite exposes for `/backsteros-api` and `/backsteros-local-core`.
- * Packaged desktop and production static hosting otherwise SPA-fallback
- * `index.html` for those paths, which the BacksterOS client fails to parse.
- * Product and local-core must stay separate upstreams (BDV-37).
+ * Packaged desktop otherwise SPA-falls back to `index.html` for those paths.
  */
 const proxyBacksterosHttpRequest = (options: {
   readonly pathPrefix: string;
@@ -559,7 +503,6 @@ const proxyBacksterosHttpRequest = (options: {
         headers.set(name, value);
       }
     }
-    // Prefer the server/env owner key over a stale browser Settings key.
     const apiKey = resolveBacksterosApiKey();
     if (apiKey) {
       headers.set("Authorization", `Bearer ${apiKey}`);
@@ -600,9 +543,6 @@ const proxyBacksterosHttpRequest = (options: {
       }),
     );
 
-    // Buffer the upstream body and rebuild headers. Streaming `fromWeb` can
-    // throw on some Helmet/CORS header sets and surface as an empty 500 to the
-    // desktop renderer, which leaves BacksterOS lists stuck on "loading".
     const responseBytes = yield* Effect.tryPromise({
       try: async () => new Uint8Array(await response.arrayBuffer()),
       catch: (cause) => cause,
@@ -664,6 +604,79 @@ export const backsterosLocalCoreProxyRouteLayer = HttpRouter.add(
   }),
 );
 
+// Renderers export up to once a second while they have spans buffered, so
+// tracing this proxy would add more server spans than it forwards.
+// withTracerEnabled(false) drops the handler's spans, including the forward.
+// untracedRequestsLayer drops the HTTP server span.
+export const otlpTracesProxyRouteLayer = HttpRouter.add(
+  "POST",
+  OTLP_TRACES_PROXY_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const config = yield* ServerConfig.ServerConfig;
+    const otlpTracesUrl = config.otlpTracesUrl;
+    const otlpHeaders = config.otlpTracesExport.headers;
+    const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
+    const httpClient = yield* HttpClient.HttpClient;
+    const serialization = yield* OtlpSerialization.OtlpSerialization;
+    const bodyJson = cast<unknown, OtlpTracer.TraceData>(yield* request.json);
+
+    yield* Effect.try({
+      try: () => decodeOtlpTraceRecords(bodyJson),
+      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause }),
+    }).pipe(
+      Effect.flatMap((records) => browserTraceCollector.record(records)),
+      Effect.catch((cause) => Effect.logWarning("Failed to decode browser OTLP traces", { cause })),
+    );
+
+    if (otlpTracesUrl === undefined) {
+      return HttpServerResponse.empty({ status: 204 });
+    }
+
+    return yield* httpClient
+      .post(otlpTracesUrl, {
+        body: serialization.traces(bodyJson),
+        headers: otlpHeaders,
+      })
+      .pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.as(HttpServerResponse.empty({ status: 204 })),
+        Effect.tapError((cause) =>
+          Effect.logWarning("Failed to export browser OTLP traces", {
+            cause,
+            otlpTracesUrl,
+          }),
+        ),
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.text("Trace export failed.", { status: 502 }),
+        ),
+      );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+    Effect.withTracerEnabled(false),
+  ),
+);
+
+const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_PATH]);
+
+// Skips the HTTP server span for UNTRACED_REQUEST_PATHS. That span starts
+// before routing, so a route handler cannot skip it. TracerDisabledWhen is one
+// predicate for the whole server and the last layer to provide it wins, so
+// makeRoutesLayer provides this one last. Add paths here instead of providing
+// TracerDisabledWhen again; server.test.ts fails if a later layer replaces it.
+// The query string is ignored, as in routing.
+export const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+  const queryIndex = request.url.indexOf("?");
+  return UNTRACED_REQUEST_PATHS.has(
+    queryIndex === -1 ? request.url : request.url.slice(0, queryIndex),
+  );
+});
+
 export const assetRouteLayer = HttpRouter.add(
   "GET",
   `${ASSET_ROUTE_PREFIX}/*`,
@@ -686,6 +699,19 @@ export const assetRouteLayer = HttpRouter.add(
     );
     if (!asset) {
       return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    if (asset.kind === "github-media") {
+      return yield* githubMediaResponse(asset, request.headers).pipe(
+        Effect.tapError((cause) =>
+          Effect.logWarning("Failed to fetch GitHub media.", { url: asset.url, cause }),
+        ),
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.empty({
+            status: 502,
+            headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
+          }),
+        ),
+      );
     }
     return yield* assetFileResponse(
       asset,
@@ -789,7 +815,7 @@ const streamStaticFile = (file: FileSystem.File, size: bigint) =>
     Effect.fnUntraced(function* (offset: bigint) {
       if (offset >= size) return;
       const remaining = size - offset;
-      const bytes = yield* file.readAlloc(remaining < 65_536n ? remaining : 65_536n);
+      const bytes = yield* file.readAlloc(Number(remaining < 65_536n ? remaining : 65_536n));
       if (Option.isNone(bytes)) return;
       return [bytes.value, offset + BigInt(bytes.value.byteLength)] as const;
     }),
@@ -869,15 +895,20 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
       }
     }
     const fileInfo = opened.info;
+    const mimeType = Option.getOrElse(Mime.getType(filePath), () => "application/octet-stream");
+    const isHtml = mimeType === "text/html";
 
     // A hash-like name is not enough: custom static files can use the same naming pattern.
     const relativePath = path.relative(staticRoot, filePath).replaceAll("\\", "/");
     const immutable =
-      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) && immutableBuildAssets.has(relativePath);
+      !isHtml &&
+      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) &&
+      immutableBuildAssets.has(relativePath);
     const headers: Record<string, string> = {
       "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
     };
-    const modifiedAt = Option.getOrUndefined(fileInfo.mtime);
+    // Deployments can preserve HTML size and mtime while changing its bundle URLs.
+    const modifiedAt = isHtml ? undefined : Option.getOrUndefined(fileInfo.mtime);
     const etag = modifiedAt
       ? `W/"${fileInfo.size.toString(16)}-${modifiedAt.getTime().toString(16)}"`
       : undefined;
@@ -902,17 +933,14 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
         : ifModifiedSince !== undefined &&
           modifiedAt !== undefined &&
           Date.parse(modifiedAt.toUTCString()) <= Date.parse(ifModifiedSince);
-    if (unchanged) {
+    if (!isHtml && unchanged) {
       return HttpServerResponse.empty({
         status: 304,
         headers: { ...headers, Vary: "Accept-Encoding" },
       });
     }
 
-    const contentType =
-      path.extname(filePath) === ".html"
-        ? "text/html; charset=utf-8"
-        : (Mime.getType(filePath) ?? "application/octet-stream");
+    const contentType = isHtml ? "text/html; charset=utf-8" : mimeType;
     // The request scope closes the handle for GET, HEAD, 304, errors, and cancellation.
     // HEAD still passes through compression, which selects headers without reading the stream.
     return HttpServerResponse.stream(streamStaticFile(opened.file, fileInfo.size), {

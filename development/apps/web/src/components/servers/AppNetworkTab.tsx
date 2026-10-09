@@ -246,7 +246,13 @@ function SecurityRuleDialog({
                   className="gap-1.5"
                   disabled={busy}
                   onClick={() =>
-                    setCredentials([{ key: crypto.randomUUID(), username: "", password: "" }])
+                    setCredentials([
+                      {
+                        key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+                        username: "",
+                        password: "",
+                      },
+                    ])
                   }
                 >
                   <PlusIcon className="size-4" />
@@ -320,7 +326,11 @@ function SecurityRuleDialog({
                     onClick={() =>
                       setCredentials((current) => [
                         ...current,
-                        { key: crypto.randomUUID(), username: "", password: "" },
+                        {
+                          key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+                          username: "",
+                          password: "",
+                        },
                       ])
                     }
                   >

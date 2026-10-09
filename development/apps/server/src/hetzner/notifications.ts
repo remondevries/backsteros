@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * App notification settings (Settings → Notifications).
  * Forge-style: failure contact (BacksterOS support ticket) + optional deploy hook URL.

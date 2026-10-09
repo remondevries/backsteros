@@ -22,6 +22,7 @@ export interface ElectronMenuContextInput {
 export interface ElectronMenuTemplateInput {
   readonly window: Electron.BrowserWindow;
   readonly template: readonly Electron.MenuItemConstructorOptions[];
+  readonly frame?: Electron.WebFrameMain;
 }
 
 const ElectronMenuOperation = Schema.Literals([
@@ -30,7 +31,7 @@ const ElectronMenuOperation = Schema.Literals([
   "show-context-menu",
 ]);
 
-export class ElectronMenuOperationError extends Schema.TaggedErrorClass<ElectronMenuOperationError>()(
+export class ElectronMenuOperationError extends Schema.TaggedError<ElectronMenuOperationError>()(
   "ElectronMenuOperationError",
   {
     operation: ElectronMenuOperation,
@@ -79,9 +80,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       destructive: sourceItem.destructive === true,
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
-      ...(typeof sourceItem.swatchColor === "string" && sourceItem.swatchColor.trim()
-        ? { swatchColor: sourceItem.swatchColor.trim() }
-        : {}),
+      ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
     };
 
     if (sourceItem.children) {
@@ -140,21 +139,6 @@ export const make = Effect.gen(function* () {
     return destructiveMenuIconCache;
   };
 
-  const createSwatchMenuIcon = (hex: string): Option.Option<Electron.NativeImage> => {
-    if (!/^#[0-9A-Fa-f]{6}$/u.test(hex)) {
-      return Option.none();
-    }
-    try {
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect x="2" y="2" width="12" height="12" rx="2.5" ry="2.5" fill="${hex}"/></svg>`;
-      const icon = Electron.nativeImage.createFromDataURL(
-        `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
-      );
-      return icon.isEmpty() ? Option.none() : Option.some(icon);
-    } catch {
-      return Option.none();
-    }
-  };
-
   const buildTemplate = (
     entries: readonly ContextMenuItem[],
     complete: (selectedItemId: Option.Option<string>) => void,
@@ -185,6 +169,7 @@ export const make = Effect.gen(function* () {
       const itemOption: Electron.MenuItemConstructorOptions = {
         label: item.label,
         enabled: !item.disabled,
+        ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
       };
       if (item.children && item.children.length > 0) {
         itemOption.submenu = buildTemplate(item.children, complete);
@@ -195,11 +180,6 @@ export const make = Effect.gen(function* () {
         const destructiveIcon = getDestructiveMenuIcon();
         if (Option.isSome(destructiveIcon)) {
           itemOption.icon = destructiveIcon.value;
-        }
-      } else if (typeof item.swatchColor === "string") {
-        const swatchIcon = createSwatchMenuIcon(item.swatchColor);
-        if (Option.isSome(swatchIcon)) {
-          itemOption.icon = swatchIcon.value;
         }
       }
 
@@ -231,6 +211,7 @@ export const make = Effect.gen(function* () {
             try: () =>
               Electron.Menu.buildFromTemplate([...input.template]).popup({
                 window: input.window,
+                ...(input.frame ? { frame: input.frame } : {}),
               }),
             catch: (cause) =>
               new ElectronMenuOperationError({
@@ -245,7 +226,7 @@ export const make = Effect.gen(function* () {
       Effect.callback<Option.Option<string>>((resume) => {
         const normalizedItems = normalizeContextMenuItems(input.items);
         if (normalizedItems.length === 0) {
-          resume(Effect.succeed(Option.none()));
+          resume(Effect.succeedNone);
           return;
         }
 

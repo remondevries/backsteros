@@ -3,27 +3,31 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { toastManager } from "~/components/ui/toast";
 import { inferProjectTitleFromPath } from "~/lib/projectPaths";
 import { newProjectId } from "~/lib/utils";
 import { resolveDefaultProviderModelSelection } from "~/providerInstances";
-import { waitForProject } from "~/state/entities";
+import { useProjects, waitForProject } from "~/state/entities";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 /**
  * Ensures a T3 project exists for a BacksterOS local working directory,
- * creating one on the primary environment when needed.
+ * reusing a matching checkout when present and creating one otherwise.
  */
 export function useEnsureBacksterosT3Project(): (input: {
   readonly workspaceRoot: string;
   readonly title: string;
 }) => Promise<ScopedProjectRef | null> {
   const primaryEnvironment = usePrimaryEnvironment();
+  const projects = useProjects();
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
 
   return useCallback(
@@ -31,6 +35,11 @@ export function useEnsureBacksterosT3Project(): (input: {
       readonly workspaceRoot: string;
       readonly title: string;
     }): Promise<ScopedProjectRef | null> => {
+      const existing = findProjectByPath(projectsRef.current, input.workspaceRoot);
+      if (existing) {
+        return scopeProjectRef(existing.environmentId, existing.id);
+      }
+
       if (
         primaryEnvironment?.connection.phase !== "connected" ||
         primaryEnvironment.serverConfig === null
@@ -64,6 +73,11 @@ export function useEnsureBacksterosT3Project(): (input: {
       });
 
       if (result._tag === "Failure") {
+        // Another client may have created the same checkout while we were racing.
+        const raced = findProjectByPath(projectsRef.current, input.workspaceRoot);
+        if (raced) {
+          return scopeProjectRef(raced.environmentId, raced.id);
+        }
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
           toastManager.add({

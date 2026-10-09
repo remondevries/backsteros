@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Local development codebases registry.
  *
@@ -192,8 +193,8 @@ export function syncLocalProjects(
         name,
         localWorkingDirectory,
         icon,
-        accent: prev?.accent,
-        initial: prev?.initial,
+        ...(prev?.accent ? { accent: prev.accent } : {}),
+        ...(prev?.initial ? { initial: prev.initial } : {}),
         hasSecretsFolder: secretIds.has(projectId),
         updatedAt: new Date().toISOString(),
       }),

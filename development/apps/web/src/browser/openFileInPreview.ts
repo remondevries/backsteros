@@ -4,7 +4,6 @@ import type {
   EnvironmentId,
   PreviewOpenInput,
   PreviewSessionSnapshot,
-  ScopedProjectRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
@@ -22,7 +21,7 @@ import {
   isPreviewSupportedInRuntime,
   rememberPreviewUrl,
 } from "~/previewStateStore";
-import { openBrowserForThread } from "~/rightPanelProjectTools";
+import { useRightPanelStore } from "~/rightPanelStore";
 
 import {
   browserDefaultOpenProfileId,
@@ -56,7 +55,6 @@ export async function openUrlInPreview<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly url: string;
   readonly openPreview: OpenPreviewMutation<E>;
-  readonly projectRef?: ScopedProjectRef | null;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const defaults = await resolveBrowserDefaults().catch(
     (cause: unknown) => new BrowserSettingsReadError({ cause }),
@@ -79,7 +77,7 @@ export async function openUrlInPreview<E>(input: {
   return mapAtomCommandResult(result, (snapshot) => {
     applyPreviewServerSnapshot(input.threadRef, snapshot);
     rememberPreviewUrl(input.threadRef, input.url);
-    openBrowserForThread(input.threadRef, snapshot.tabId, input.projectRef);
+    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
   });
 }
 
@@ -97,7 +95,6 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     readonly input: { readonly resource: AssetResource };
   }) => Promise<AtomCommandResult<AssetCreateUrlResult, AssetError>>;
   readonly openPreview: OpenPreviewMutation<PreviewError>;
-  readonly projectRef?: ScopedProjectRef | null;
 }): Promise<
   AtomCommandResult<
     void,
@@ -138,6 +135,5 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     threadRef: input.threadRef,
     url: assetUrl,
     openPreview: input.openPreview,
-    ...(input.projectRef !== undefined ? { projectRef: input.projectRef } : {}),
   });
 }

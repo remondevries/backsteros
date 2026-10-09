@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Discover Docker / Kamal Proxy / Node / Nginx runtimes on a Hetzner host via SSH.
  */
@@ -92,12 +93,14 @@ type RemoteRuntimePayload = {
     readonly status: string;
     readonly nodeVersion: string;
     readonly npmVersion: string | null;
+    readonly appName?: string | null;
   }[];
   readonly nginx?: readonly {
     readonly containerName: string;
     readonly image: string;
     readonly status: string;
     readonly nginxVersion: string;
+    readonly appName?: string | null;
   }[];
   readonly error?: string;
 };
@@ -253,19 +256,18 @@ export async function discoverServerRuntime(serverId: string): Promise<ServerRun
     throw new Error(payload.error);
   }
 
-  const proxyServices = (payload.proxy?.services ?? [])
-    .map((service) => {
-      const name = service.name?.trim();
-      if (!name) return null;
-      const hosts = (service.options?.hosts ?? []).filter((host) => host.trim().length > 0);
-      return {
-        name,
-        hosts,
-        tls: service.options?.tls_enabled === true,
-        paused: Boolean(service.pause_controller?.state && service.pause_controller.state !== 0),
-      } satisfies DiscoveredProxyService;
-    })
-    .filter((service): service is DiscoveredProxyService => service != null);
+  const proxyServices: DiscoveredProxyService[] = [];
+  for (const service of payload.proxy?.services ?? []) {
+    const name = service.name?.trim();
+    if (!name) continue;
+    const hosts = (service.options?.hosts ?? []).filter((host) => host.trim().length > 0);
+    proxyServices.push({
+      name,
+      hosts,
+      tls: service.options?.tls_enabled === true,
+      paused: Boolean(service.pause_controller?.state && service.pause_controller.state !== 0),
+    });
+  }
 
   const hostByApp = new Map<string, string>();
   for (const service of proxyServices) {
@@ -304,30 +306,36 @@ export async function discoverServerRuntime(serverId: string): Promise<ServerRun
       ports: payload.proxy?.ports ?? [],
       services: proxyServices,
     },
-    node: (payload.node ?? []).map((entry) => ({
-      id: `${server.id}:node:${entry.containerName}`,
-      containerName: entry.containerName,
-      appName: entry.appName,
-      siteDomain:
-        (entry.appName ? hostByApp.get(entry.appName) : null) ??
-        (entry.appName ? hostByApp.get(`${entry.appName}-web`) : null) ??
-        null,
-      nodeVersion: entry.nodeVersion,
-      npmVersion: entry.npmVersion,
-      image: entry.image,
-      status: entry.status,
-    })),
-    nginx: (payload.nginx ?? []).map((entry) => ({
-      id: `${server.id}:nginx:${entry.containerName}`,
-      containerName: entry.containerName,
-      appName: entry.appName,
-      siteDomain:
-        (entry.appName ? hostByApp.get(entry.appName) : null) ??
-        (entry.appName ? hostByApp.get(`${entry.appName}-web`) : null) ??
-        null,
-      nginxVersion: entry.nginxVersion,
-      image: entry.image,
-      status: entry.status,
-    })),
+    node: (payload.node ?? []).map((entry) => {
+      const appName = entry.appName ?? null;
+      return {
+        id: `${server.id}:node:${entry.containerName}`,
+        containerName: entry.containerName,
+        appName,
+        siteDomain:
+          (appName ? hostByApp.get(appName) : null) ??
+          (appName ? hostByApp.get(`${appName}-web`) : null) ??
+          null,
+        nodeVersion: entry.nodeVersion,
+        npmVersion: entry.npmVersion,
+        image: entry.image,
+        status: entry.status,
+      };
+    }),
+    nginx: (payload.nginx ?? []).map((entry) => {
+      const appName = entry.appName ?? null;
+      return {
+        id: `${server.id}:nginx:${entry.containerName}`,
+        containerName: entry.containerName,
+        appName,
+        siteDomain:
+          (appName ? hostByApp.get(appName) : null) ??
+          (appName ? hostByApp.get(`${appName}-web`) : null) ??
+          null,
+        nginxVersion: entry.nginxVersion,
+        image: entry.image,
+        status: entry.status,
+      };
+    }),
   };
 }

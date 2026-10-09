@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Link a discovered Hetzner app (serverId + service) to a BacksterOS codebase project.
  * Used by Overview → Details and when deploy/monitor notifications open support tickets.

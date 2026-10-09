@@ -161,6 +161,7 @@ import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
 import { useBacksterosComposeShortcut } from "~/backsteros/useBacksterosComposeShortcut";
 import { useBacksterosFileTaskShortcut } from "~/backsteros/useBacksterosFileTaskShortcut";
 import { resolveBacksterosComposeProject } from "~/backsteros/resolveBacksterosComposeProject";
+import { resolveBacksterosProjectForWorkspaceRoot } from "~/backsteros/resolveT3Project";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { BacksterosWorkingLifecycle } from "~/backsteros/BacksterosWorkingLifecycle";
@@ -371,11 +372,13 @@ function SidebarThreadTooltip({
           {projectDisplayName ? (
             <div className="flex min-w-0 items-center gap-2">
               <ProjectFavicon
-                environmentId={thread.environmentId}
-                cwd={projectCwd ?? ""}
-                projectName={projectTitle ?? ""}
-                faviconPath={projectFaviconPath}
-                projectIcon={projectIcon}
+                project={{
+                  environmentId: thread.environmentId,
+                  workspaceRoot: projectCwd ?? "",
+                  title: projectTitle ?? "",
+                  faviconPath: projectFaviconPath,
+                  projectIcon: projectIcon,
+                }}
                 className="size-3 shrink-0"
               />
               <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
@@ -488,7 +491,7 @@ function SnoozePopoverButton(props: {
         </TooltipTrigger>
         <TooltipPopup>Snooze thread</TooltipPopup>
       </Tooltip>
-      <PopoverPopup side="bottom" align="end" className="w-56" viewportClassName="p-1">
+      <PopoverPopup side="bottom" align="end" className="w-56 p-1">
         {presets.map((preset) => (
           <button
             key={preset.id}
@@ -565,7 +568,6 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     Math.max(composer.images.length, composer.persistedAttachments.length) +
     composer.files.length +
     composer.terminalContexts.length +
-    composer.elementContexts.length +
     composer.previewAnnotations.length +
     composer.reviewComments.length;
   const preview =
@@ -611,11 +613,13 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             <span aria-hidden className={draftDotClassName} />
             <ProjectFavicon
-              environmentId={session.environmentId}
-              cwd={props.projectCwd ?? ""}
-              projectName={props.projectTitle ?? ""}
-              faviconPath={props.projectFaviconPath}
-              projectIcon={props.projectIcon}
+              project={{
+                environmentId: session.environmentId,
+                workspaceRoot: props.projectCwd ?? "",
+                title: props.projectTitle ?? "",
+                faviconPath: props.projectFaviconPath,
+                projectIcon: props.projectIcon,
+              }}
               className="size-4 shrink-0"
             />
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
@@ -1399,11 +1403,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               )}
             >
               <ProjectFavicon
-                environmentId={thread.environmentId}
-                cwd={props.projectCwd ?? ""}
-                projectName={props.projectTitle ?? ""}
-                faviconPath={props.projectFaviconPath}
-                projectIcon={props.projectIcon}
+                project={{
+                  environmentId: thread.environmentId,
+                  workspaceRoot: props.projectCwd ?? "",
+                  title: props.projectTitle ?? "",
+                  faviconPath: props.projectFaviconPath,
+                  projectIcon: props.projectIcon,
+                }}
                 className="size-4"
               />
             </span>
@@ -1558,11 +1564,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {draftIndicator}
               <ProjectFavicon
-                environmentId={thread.environmentId}
-                cwd={props.projectCwd ?? ""}
-                projectName={props.projectTitle ?? ""}
-                faviconPath={props.projectFaviconPath}
-                projectIcon={props.projectIcon}
+                project={{
+                  environmentId: thread.environmentId,
+                  workspaceRoot: props.projectCwd ?? "",
+                  title: props.projectTitle ?? "",
+                  faviconPath: props.projectFaviconPath,
+                  projectIcon: props.projectIcon,
+                }}
                 className="size-4 shrink-0"
               />
               {props.projectDisplayName ? (
@@ -1871,11 +1879,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           }
         >
           <ProjectFavicon
-            environmentId={thread.environmentId}
-            cwd={props.projectCwd ?? ""}
-            projectName={props.projectTitle ?? ""}
-            faviconPath={props.projectFaviconPath}
-            projectIcon={props.projectIcon}
+            project={{
+              environmentId: thread.environmentId,
+              workspaceRoot: props.projectCwd ?? "",
+              title: props.projectTitle ?? "",
+              faviconPath: props.projectFaviconPath,
+              projectIcon: props.projectIcon,
+            }}
             className="size-4 shrink-0"
           />
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
@@ -2197,7 +2207,9 @@ export default function Sidebar() {
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
   const backsterosTaskSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
-  const { state: backsterosProjectsState } = useBacksterosCodebaseProjects(isBacksterosScope);
+  // Keep projects loaded outside the BacksterOS rail so Code-mode actions
+  // (breadcrumb / project settings) can resolve a linked BacksterOS project.
+  const { state: backsterosProjectsState } = useBacksterosCodebaseProjects(true);
   const pendingLogTaskDetailRef = useRef<SidebarModeTaskDetailResume | null>(null);
   const didRestoreLogTaskDetailOnMountRef = useRef(false);
   const routeBacksterosProjectId = useParams({
@@ -2440,12 +2452,32 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
+      const workspaceRoot = projectGroup.workspaceRoot?.trim() ?? "";
+      const linked =
+        workspaceRoot && backsterosProjectsState.status === "ready"
+          ? resolveBacksterosProjectForWorkspaceRoot(
+              backsterosProjectsState.projects,
+              workspaceRoot,
+            )
+          : null;
+      if (linked) {
+        void router.navigate({
+          to: "/backsteros/project/$projectId",
+          params: { projectId: linked.id },
+          search: {
+            ...(linked.name.trim() ? { title: linked.name.trim() } : {}),
+            tab: "settings",
+            project: projectGroup.projectKey,
+          },
+        });
+        return;
+      }
       void router.navigate({
         to: "/projects/$projectKey",
         params: { projectKey: projectGroup.projectKey },
       });
     },
-    [isMobile, router, setOpenMobile],
+    [backsterosProjectsState, isMobile, router, setOpenMobile],
   );
   const handleProjectSettings = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
@@ -3767,8 +3799,10 @@ export default function Sidebar() {
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              projectFilter: null,
               isPinned,
               isSettled,
+              autoSettleEnabled: true,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
@@ -3782,6 +3816,7 @@ export default function Sidebar() {
               }),
               supports: {
                 settlement: supportsSettlement,
+                autoSettleOptOut: false,
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
@@ -4376,11 +4411,13 @@ export default function Sidebar() {
                     {scopedProjectGroup ? (
                       <span className="flex shrink-0">
                         <ProjectFavicon
-                          environmentId={scopedProjectGroup.environmentId}
-                          cwd={scopedProjectGroup.workspaceRoot}
-                          projectName={scopedProjectGroup.title}
-                          faviconPath={scopedProjectGroup.faviconPath}
-                          projectIcon={scopedProjectGroup.projectIcon}
+                          project={{
+                            environmentId: scopedProjectGroup.environmentId,
+                            workspaceRoot: scopedProjectGroup.workspaceRoot,
+                            title: scopedProjectGroup.title,
+                            faviconPath: scopedProjectGroup.faviconPath,
+                            projectIcon: scopedProjectGroup.projectIcon,
+                          }}
                           className="size-4"
                         />
                       </span>
@@ -4405,7 +4442,6 @@ export default function Sidebar() {
                         <ComboboxInput
                           aria-label="Search projects"
                           className="[&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5"
-                          inputClassName="rounded-none bg-transparent text-sm"
                           placeholder="Search projects..."
                           showTrigger={false}
                           size="sm"
@@ -4430,15 +4466,16 @@ export default function Sidebar() {
                             hideIndicator
                             value={item}
                             className="h-8 min-h-8 py-0 font-medium"
-                            contentClassName="flex min-w-0 items-center gap-2"
                           >
                             {project ? (
                               <ProjectFavicon
-                                environmentId={project.environmentId}
-                                cwd={project.workspaceRoot}
-                                projectName={project.title}
-                                faviconPath={project.faviconPath}
-                                projectIcon={project.projectIcon}
+                                project={{
+                                  environmentId: project.environmentId,
+                                  workspaceRoot: project.workspaceRoot,
+                                  title: project.title,
+                                  faviconPath: project.faviconPath,
+                                  projectIcon: project.projectIcon,
+                                }}
                                 className="size-4 shrink-0"
                               />
                             ) : (

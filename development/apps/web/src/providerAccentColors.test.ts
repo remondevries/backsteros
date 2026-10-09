@@ -76,6 +76,28 @@ describe("providerAccentColors", () => {
         instanceId: "codex",
       }),
     ).toBe("draft-1:codex");
+    expect(
+      composerAccentScopeKey({
+        taskId: "task-1",
+        threadId: "thread-1",
+        instanceId: "cursor",
+      }),
+    ).toBe("task:task-1:cursor");
+  });
+
+  it("gives different tasks different colors even on the same agent", () => {
+    const taskA = resolveComposerAccentColor({
+      taskId: "task-aaa",
+      instanceId: "cursor",
+      accentColor: "#F87171",
+    });
+    const taskB = resolveComposerAccentColor({
+      taskId: "task-bbb",
+      instanceId: "cursor",
+      accentColor: "#F87171",
+    });
+    expect(taskA).not.toBe(taskB);
+    expect(taskA).not.toBe("#F87171");
   });
 
   it("spreads different scope keys across the palette", () => {

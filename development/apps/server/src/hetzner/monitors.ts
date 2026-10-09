@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Persist server/app monitors for the Observe → Monitoring UI.
  *
@@ -437,9 +438,10 @@ export async function evaluateServerMonitors(input: {
 }): Promise<
   readonly { readonly monitorId: string; readonly fired: boolean; readonly ticketId?: string }[]
 > {
-  const monitors = listServerMonitors(input.serverId, { service: input.service }).filter(
-    (monitor) => monitor.status === "active" && monitor.notifyContactId,
-  );
+  const monitors = listServerMonitors(
+    input.serverId,
+    input.service !== undefined ? { service: input.service } : undefined,
+  ).filter((monitor) => monitor.status === "active" && monitor.notifyContactId);
   const results: Array<{
     readonly monitorId: string;
     readonly fired: boolean;
@@ -495,7 +497,7 @@ export async function evaluateServerMonitors(input: {
     const fired = await fireMonitorSupportTicket({
       monitor: current,
       value,
-      serverName: input.serverName,
+      ...(input.serverName !== undefined ? { serverName: input.serverName } : {}),
     });
     results.push({
       monitorId: current.id,

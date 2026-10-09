@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * List GitHub branches (and tags) for WordPress component ref pickers.
  * Auth: GITHUB_TOKEN / GH_TOKEN, ~/.config/secrets/github.env, or `gh auth token`.

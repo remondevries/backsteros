@@ -28,6 +28,7 @@ export function resolveComposerAccentForMenu(input: {
   });
   const overrideColor = useComposerAccentStore.getState().getOverride(key);
   return resolveComposerAccentColor({
+    taskId,
     threadId: input.threadId ?? null,
     instanceId: input.instanceId ?? null,
     accentColor: input.accentColor ?? null,

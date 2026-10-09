@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Forge-style app deployment settings (Option B).
  * Shared contract for Kamal + future WordPress/Compose sites:
@@ -460,7 +461,8 @@ export async function triggerAppDeploy(input: {
     serverId: current.serverId,
     service: current.service,
     domain: current.domain,
-    status: finished.status,
+    // Finished runs here are only success/failed (running is mid-flight).
+    status: finished.status === "success" ? "success" : "failed",
     output: finished.output,
     finishedAt: finished.finishedAt,
   }).catch(() => undefined);

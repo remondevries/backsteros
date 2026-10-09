@@ -3,9 +3,14 @@ import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { updateBacksterosTask } from "~/backsteros/client";
+import {
+  BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS,
+  type BacksterosCodebaseListTab,
+} from "~/backsteros/codebaseListTabs";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { orderedBacksterosTaskIds } from "~/backsteros/listTraversal";
 import { useListKeyboardNavStore } from "~/backsteros/listKeyboardNavStore";
+import { BacksterosPillNav } from "~/backsteros/PillNav";
 import { subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
@@ -24,6 +29,8 @@ import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadc
 import { BacksterosCodebaseProjectWorkbench } from "./BacksterosCodebaseProjectWorkbench";
 import { BacksterosProjectTasksOverview } from "./BacksterosProjectTasksOverview";
 
+import "~/backsteros/pillNav.css";
+
 /**
  * BacksterOS project home.
  * Codebase projects use the desktop-parity workbench (overview + tabs).
@@ -34,10 +41,16 @@ export function BacksterosProjectOverviewPage({
   projectId,
   fallbackTitle,
   project: projectProp,
+  tab = "tasks",
+  onTabChange,
+  t3ProjectKey = null,
 }: {
   readonly projectId: string;
   readonly fallbackTitle?: string | null;
   readonly project?: BacksterosCodebaseProject | null;
+  readonly tab?: BacksterosCodebaseListTab;
+  readonly onTabChange?: (tab: BacksterosCodebaseListTab) => void;
+  readonly t3ProjectKey?: string | null;
 }) {
   const router = useRouter();
   const projects = useProjects();
@@ -230,18 +243,32 @@ export function BacksterosProjectOverviewPage({
         electron={isElectron}
         className={cn("border-b border-border/50", isElectron && "drag-region")}
       >
-        <WorkspaceBreadcrumb ariaLabel="Project breadcrumb" className="min-w-0 flex-1">
+        <WorkspaceBreadcrumb ariaLabel="Project breadcrumb" className="min-w-0 shrink">
           <WorkspaceBreadcrumbItem current className="min-w-0">
             <h2 className="min-w-0 truncate text-sm font-medium text-foreground">{projectName}</h2>
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
+        {isCodebaseProject && onTabChange ? (
+          <div className="ml-auto min-w-0 shrink [-webkit-app-region:no-drag]">
+            <BacksterosPillNav
+              ariaLabel="Project contents"
+              items={BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}
+              value={tab}
+              onChange={onTabChange}
+            />
+          </div>
+        ) : null}
       </WorkspacePageHeader>
       {isCodebaseProject && project ? (
         <BacksterosCodebaseProjectWorkbench
           project={project}
           tasks={tasksForWorkbench}
           tasksPanel={tasksPanel}
+          tab={tab}
+          {...(onTabChange ? { onTabChange } : {})}
+          {...(t3ProjectKey ? { t3ProjectKey } : {})}
           onProjectUpdated={handleProjectUpdated}
+          hideTabBar
         />
       ) : (
         tasksPanel

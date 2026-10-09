@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -1234,7 +1235,7 @@ export const hetznerMutateLocalRuntimeRouteLayer = HttpRouter.add(
         try: () => getLocalRuntimeOverview(projectId),
         catch: (cause) => cause,
       });
-      return HttpServerResponse.jsonUnsafe({ ok: true, attachments, ...overview });
+      return HttpServerResponse.jsonUnsafe({ ok: true, ...overview, attachments });
     }
 
     if (action === "startProject" || action === "stopProject") {

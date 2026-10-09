@@ -1,7 +1,6 @@
-import { Maximize2Icon, Minimize2Icon } from "lucide-react";
+import { Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
 import { memo } from "react";
 
-import { SidePanelToggleIcon } from "~/backsteros/SidePanelToggleIcon";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -50,7 +49,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               size="sm"
               disabled={!terminalAvailable}
             >
-              <SidePanelToggleIcon size={16} rail="bottom" collapsed={!terminalOpen} />
+              <PanelBottomIcon className="size-4" />
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">
@@ -75,11 +74,11 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             size="sm"
             disabled={!rightPanelAvailable}
           >
-            <SidePanelToggleIcon size={16} rail="end" collapsed={!rightPanelOpen} />
+            <PanelRightIcon className="size-4" />
             {liveAgentCount > 0 ? (
               <span
                 aria-hidden
-                className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+                className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
               >
                 {liveAgentCount}
               </span>

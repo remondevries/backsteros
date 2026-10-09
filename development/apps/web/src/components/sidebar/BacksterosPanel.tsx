@@ -37,6 +37,7 @@ import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/typ
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosInboxAttentionTasks } from "~/backsteros/useBacksterosInboxAttentionTasks";
 import { useBacksterosProjectTasks } from "~/backsteros/useBacksterosProjectTasks";
+import { resolveT3ProjectForBacksterosProject } from "~/backsteros/resolveT3Project";
 import { useEnsureBacksterosT3Project } from "~/backsteros/useEnsureBacksterosT3Project";
 import { type BacksterosTaskStatus } from "~/backsteros/taskStatus";
 import {
@@ -45,11 +46,16 @@ import {
   threadTraversalDirectionFromCommand,
 } from "~/keybindings";
 import { isTerminalFocused } from "~/lib/terminalFocus";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "~/logicalProject";
 import { isModelPickerOpen } from "~/modelPickerVisibility";
 import { useProjects } from "~/state/entities";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
+import { useClientSettings } from "../../hooks/useSettings";
 import { toastManager } from "../ui/toast";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { BacksterosProjectList } from "./BacksterosProjectList";
@@ -69,6 +75,7 @@ function backsterosRailContentKey(input: {
 export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: string }) {
   const router = useRouter();
   const projects = useProjects();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const ensureT3Project = useEnsureBacksterosT3Project();
   const selection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
@@ -241,13 +248,20 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       if (options?.focusTasks) {
         useListKeyboardNavStore.getState().setActiveZone("main");
       }
+      const t3Project = resolveT3ProjectForBacksterosProject(projects, project);
+      const t3ProjectKey = t3Project
+        ? deriveLogicalProjectKeyFromSettings(t3Project, projectGroupingSettings)
+        : null;
       void router.navigate({
         to: "/backsteros/project/$projectId",
         params: { projectId: project.id },
-        search: project.name.trim() ? { title: project.name } : {},
+        search: {
+          ...(project.name.trim() ? { title: project.name } : {}),
+          ...(t3ProjectKey ? { project: t3ProjectKey } : {}),
+        },
       });
     },
-    [clearTaskDetail, router],
+    [clearTaskDetail, projectGroupingSettings, projects, router],
   );
 
   /** Mouse / Enter confirmation — open project and hand j/k to its task list. */
@@ -287,12 +301,19 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     clearTaskDetail();
     if (!project) return;
     useListKeyboardNavStore.getState().setActiveZone("main");
+    const t3Project = resolveT3ProjectForBacksterosProject(projects, project);
+    const t3ProjectKey = t3Project
+      ? deriveLogicalProjectKeyFromSettings(t3Project, projectGroupingSettings)
+      : null;
     void router.navigate({
       to: "/backsteros/project/$projectId",
       params: { projectId: project.id },
-      search: project.name.trim() ? { title: project.name } : {},
+      search: {
+        ...(project.name.trim() ? { title: project.name } : {}),
+        ...(t3ProjectKey ? { project: t3ProjectKey } : {}),
+      },
     });
-  }, [clearTaskDetail, router, taskListProject]);
+  }, [clearTaskDetail, projectGroupingSettings, projects, router, taskListProject]);
 
   const handleSelectProjectTask = useCallback(
     (task: BacksterosTask) => {

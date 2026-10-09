@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -61,7 +62,8 @@ describe("patchBacksterosControlTaskStatus", () => {
 
     await expect(patchBacksterosControlTaskStatus("task-1", "in_progress")).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[1]?.method ?? "GET").toBe("GET");
+    const calls = fetchMock.mock.calls as unknown as Array<[unknown, RequestInit?]>;
+    expect(calls[0]?.[1]?.method ?? "GET").toBe("GET");
   });
 
   it("skips canceled and duplicated tasks on status GET", async () => {
@@ -116,7 +118,8 @@ describe("patchBacksterosControlTaskStatus", () => {
 
       await expect(patchBacksterosControlTaskStatus("task-1", "in_review")).resolves.toBe(false);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock.mock.calls[0]?.[1]?.method ?? "GET").toBe("GET");
+      const calls = fetchMock.mock.calls as unknown as Array<[unknown, RequestInit?]>;
+      expect(calls[0]?.[1]?.method ?? "GET").toBe("GET");
     }
   });
 });

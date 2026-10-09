@@ -1,2 +1,3 @@
-# Hooks live under development/; git commits run from the monorepo root.
-vp -C development staged
+#!/usr/bin/env sh
+cd "$(dirname "$0")/.." || exit 1
+vp staged

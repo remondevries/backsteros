@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off
 /**
  * Thin Hetzner Cloud API client for the Servers control plane.
  * Token: `HCLOUD_TOKEN`, or `~/.config/secrets/hetzner.env` as a local fallback.

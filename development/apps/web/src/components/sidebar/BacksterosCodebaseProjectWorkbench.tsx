@@ -43,6 +43,7 @@ import {
 } from "~/backsteros/PullRequestDetailPane";
 import { BacksterosSearchablePropertyMenu } from "~/backsteros/SearchablePropertyMenu";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
+import { BacksterosProjectSettingsTab } from "./BacksterosProjectSettingsTab";
 import type {
   BacksterosCodebaseProject,
   BacksterosGithubCommit,
@@ -932,14 +933,22 @@ export function BacksterosCodebaseProjectWorkbench(props: {
   readonly project: BacksterosCodebaseProject;
   readonly tasks: readonly BacksterosTask[];
   readonly tasksPanel: ReactNode;
+  readonly tab?: BacksterosCodebaseListTab;
+  readonly onTabChange?: (tab: BacksterosCodebaseListTab) => void;
+  readonly t3ProjectKey?: string | null;
+  /** When tabs live in the page header, hide the in-workbench tab strip. */
+  readonly hideTabBar?: boolean;
   readonly onProjectUpdated: (project: BacksterosCodebaseProject) => void;
 }) {
-  const { project, tasks, tasksPanel, onProjectUpdated } = props;
-  const [tab, setTab] = useState<BacksterosCodebaseListTab>("tasks");
+  const { project, tasks, tasksPanel, onProjectUpdated, hideTabBar = false } = props;
+  const [uncontrolledTab, setUncontrolledTab] = useState<BacksterosCodebaseListTab>("tasks");
+  const tab = props.tab ?? uncontrolledTab;
+  const setTab = props.onTabChange ?? setUncontrolledTab;
 
   useEffect(() => {
-    setTab("tasks");
-  }, [project.id]);
+    if (props.tab !== undefined) return;
+    setUncontrolledTab("tasks");
+  }, [project.id, props.tab]);
 
   const handleProjectUpdated = useCallback(
     (updated: BacksterosCodebaseProject) => {
@@ -962,10 +971,19 @@ export function BacksterosCodebaseProjectWorkbench(props: {
         return <PullsTab project={project} />;
       case "updates":
         return <UpdatesTab project={project} tasks={tasks} />;
+      case "settings":
+        return (
+          <div className="bos-codebase-workbench__panel">
+            <BacksterosProjectSettingsTab
+              project={project}
+              {...(props.t3ProjectKey ? { t3ProjectKey: props.t3ProjectKey } : {})}
+            />
+          </div>
+        );
       default:
         return null;
     }
-  }, [project, tab, tasks, tasksPanel]);
+  }, [project, props.t3ProjectKey, tab, tasks, tasksPanel]);
 
   return (
     <div
@@ -981,14 +999,16 @@ export function BacksterosCodebaseProjectWorkbench(props: {
         />
       </aside>
       <div className="bos-codebase-workbench__main">
-        <div className="bos-codebase-workbench__tabs">
-          <BacksterosPillNav
-            ariaLabel="Project contents"
-            items={BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}
-            value={tab}
-            onChange={setTab}
-          />
-        </div>
+        {hideTabBar ? null : (
+          <div className="bos-codebase-workbench__tabs">
+            <BacksterosPillNav
+              ariaLabel="Project contents"
+              items={BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}
+              value={tab}
+              onChange={setTab}
+            />
+          </div>
+        )}
         <div className="bos-codebase-workbench__tab-body">{tabBody}</div>
       </div>
     </div>

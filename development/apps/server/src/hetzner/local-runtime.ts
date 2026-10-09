@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalFetchInEffect:off globalDate:off preferSchemaOverJson:off globalTimers:off unknownInEffectCatch:off anyUnknownInErrorContext:off catchToOrElseSucceed:off globalRandom:off
 /**
  * Local Mac Docker/OrbStack runtime overview for BacksterDEV ops.
  *
@@ -1051,10 +1052,10 @@ async function runAttachmentCommand(
       message: action === "start" ? "No start command configured" : "No stop command configured",
     };
   }
-  const cwd = resolveAttachmentCwd(attachment, projectCwd) ?? undefined;
+  const cwd = resolveAttachmentCwd(attachment, projectCwd);
   try {
     const result = await runCommand(command, [], {
-      cwd,
+      ...(cwd ? { cwd } : {}),
       shell: true,
       timeoutMs: 120_000,
     });
