@@ -185,9 +185,12 @@ describe("collectComposerInlineTokens", () => {
 
   it("stays fast on unterminated bracket runs", () => {
     // Unbounded, the label body rescanned the rest of the text from every
-    // whitespace: this input took seconds.
+    // whitespace: this input took seconds. Warm once so Vitest transform /
+    // first-call overhead is not counted against the bound.
+    const input = " [[".repeat(40_000);
+    expect(collectComposerInlineTokens(input)).toEqual([]);
     const started = performance.now();
-    expect(collectComposerInlineTokens(" [[".repeat(40_000))).toEqual([]);
+    expect(collectComposerInlineTokens(input)).toEqual([]);
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

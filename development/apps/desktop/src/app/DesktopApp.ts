@@ -167,22 +167,22 @@ const bootstrap = Effect.gen(function* () {
   yield* logBootstrapInfo("bootstrap start");
 
   const settings = yield* desktopSettings.get;
-  // The renderer is served from the bundled client (or Vite in development)
-  // rather than through the local backend, so the window can open without one.
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
-  yield* electronProtocol.registerDesktopProtocol({
-    scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
-    ...(environment.isDevelopment
-      ? { targetOrigin: Option.getOrThrow(environment.devServerUrl) }
-      : { assetDirectory: environment.clientAssetsDir }),
-    clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
-  });
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
 
   yield* snapShot.initialize;
 
   if (!settings.localEnvironmentEnabled) {
+    // No local backend: still serve the bundled (or Vite) client so Settings can
+    // re-enable the environment. Relative `/api/*` stays unavailable until then.
+    yield* electronProtocol.registerDesktopProtocol({
+      scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
+      ...(environment.isDevelopment
+        ? { targetOrigin: Option.getOrThrow(environment.devServerUrl) }
+        : { assetDirectory: environment.clientAssetsDir }),
+      clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+    });
     yield* logBootstrapInfo("bootstrap skipping local environment (disabled in settings)");
     if (!(yield* Ref.get(state.quitting))) {
       yield* desktopWindow.createMainIfBackendReady;
@@ -233,6 +233,19 @@ const bootstrap = Effect.gen(function* () {
       "bootstrap fell back to local-only because no advertised network host was available",
     );
   }
+
+  // Register after the backend origin is known so packaged `/api/*` (Cursor
+  // credits, control API) can proxy while static assets still come from disk.
+  yield* electronProtocol.registerDesktopProtocol({
+    scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
+    ...(environment.isDevelopment
+      ? { targetOrigin: Option.getOrThrow(environment.devServerUrl) }
+      : {
+          assetDirectory: environment.clientAssetsDir,
+          backendOrigin: backendConfig.httpBaseUrl,
+        }),
+    clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+  });
 
   if (!(yield* Ref.get(state.quitting))) {
     // The main window waits for the primary backend. In wsl-only mode that is

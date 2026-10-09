@@ -64,9 +64,60 @@ describe("ElectronProtocol", () => {
       assert.equal((yield* request("/%2e%2e%2fsecret.txt")).status, 404);
       assert.equal((yield* request("/%invalid")).status, 400);
       assert.equal((yield* request("/", { method: "POST" })).status, 405);
+      // Without backendOrigin, /api/* also falls through to the SPA shell.
+      const apiFallback = yield* request("/api/cursor-plan-usage");
+      assert.equal(yield* Effect.promise(() => apiFallback.text()), "<html>app</html>");
       assert.equal(netFetchMock.mock.calls.length, 0);
     }).pipe(Effect.provide(Layer.merge(protocolLayer, NodeServices.layer)), Effect.scoped),
   );
+
+  it.effect("proxies packaged /api/* to the local backend while serving assets from disk", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const directory = yield* fileSystem.makeTempDirectoryScoped();
+      yield* fileSystem.writeFileString(`${directory}/index.html`, "<html>app</html>");
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      const usageBody = '{"ok":true,"usage":{"available":true}}';
+      netFetchMock.mockResolvedValue(
+        new Response(usageBody, {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      const protocol = yield* ElectronProtocol.ElectronProtocol;
+      yield* protocol.registerDesktopProtocol({
+        scheme: "t3code",
+        assetDirectory: directory,
+        backendOrigin: new URL("http://127.0.0.1:3773/"),
+        clerkFrontendApiHostname: undefined,
+      });
+      assert.isDefined(handler);
+
+      const page = yield* Effect.promise(() => handler!(new Request("t3code://app/settings")));
+      assert.equal(yield* Effect.promise(() => page.text()), "<html>app</html>");
+
+      const api = yield* Effect.promise(() =>
+        handler!(
+          new Request("t3code://app/api/cursor-plan-usage", {
+            headers: { accept: "application/json" },
+          }),
+        ),
+      );
+      assert.equal(yield* Effect.promise(() => api.text()), usageBody);
+      assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/cursor-plan-usage");
+    }).pipe(Effect.provide(Layer.merge(protocolLayer, NodeServices.layer)), Effect.scoped),
+  );
+
+  it("classifies local backend API paths", () => {
+    assert.equal(ElectronProtocol.isDesktopBackendApiPath("/api"), true);
+    assert.equal(ElectronProtocol.isDesktopBackendApiPath("/api/cursor-plan-usage"), true);
+    assert.equal(ElectronProtocol.isDesktopBackendApiPath("/api/backsteros/control/bindings"), true);
+    assert.equal(ElectronProtocol.isDesktopBackendApiPath("/assets/main.js"), false);
+    assert.equal(ElectronProtocol.isDesktopBackendApiPath("/settings"), false);
+  });
 
   it.effect("proxies the stable renderer origin to the current app server", () =>
     Effect.gen(function* () {

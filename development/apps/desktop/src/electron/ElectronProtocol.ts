@@ -57,11 +57,24 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedError<Elec
 }
 
 // The scheme either proxies to a dev server (`targetOrigin`) or serves the
-// built client from disk (`assetDirectory`).
+// built client from disk (`assetDirectory`). Packaged mode still needs a
+// `backendOrigin` so relative `/api/*` fetches (Cursor credits, control API)
+// reach the local T3 server instead of falling through to index.html.
 export type DesktopProtocolRegistrationInput = {
   readonly scheme: string;
   readonly clerkFrontendApiHostname: string | undefined;
-} & ({ readonly targetOrigin: URL } | { readonly assetDirectory: string });
+} & (
+  | { readonly targetOrigin: URL }
+  | {
+      readonly assetDirectory: string;
+      readonly backendOrigin?: URL;
+    }
+);
+
+/** Local server HTTP routes that must not be served as SPA assets. */
+export function isDesktopBackendApiPath(pathname: string): boolean {
+  return pathname === "/api" || pathname.startsWith("/api/");
+}
 
 export class ElectronProtocol extends Context.Service<
   ElectronProtocol,
@@ -520,6 +533,17 @@ export const make = Effect.gen(function* () {
               if (backsterResponse) return backsterResponse;
 
               if ("assetDirectory" in input) {
+                const requestUrl = new URL(request.url);
+                // Bundled clients keep relative `/api/*` URLs (Cursor plan usage,
+                // Backster control). Without this hop they resolve to index.html
+                // under t3code:// and the sidebar shows "Cursor credits unavailable".
+                if (
+                  input.backendOrigin &&
+                  requestUrl.host === DESKTOP_HOST &&
+                  isDesktopBackendApiPath(requestUrl.pathname)
+                ) {
+                  return proxyRequest(request, input.backendOrigin, contentSecurityPolicy);
+                }
                 return withContentSecurityPolicy(
                   await runPromise(serveDesktopAsset(request, input.assetDirectory)),
                   contentSecurityPolicy,
