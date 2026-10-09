@@ -6,6 +6,7 @@ import {
 } from "@backsteros/contracts";
 
 import { socialPlatformIcon } from "../../contacts/social-platforms.js";
+import { normalizeContactSocialAccounts } from "../../social/social-contacts.js";
 import { formatContactAddressLine } from "./contact-overview-view.js";
 import { ClientLink } from "../../shared/client-link.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
@@ -35,7 +36,8 @@ export type ContactPeekCardContact = {
   postalCode?: string | null;
   region?: string | null;
   country?: string | null;
-  socialAccounts?: ContactPeekSocialAccount[] | null;
+  /** Array or PowerSync JSON string — normalized before render. */
+  socialAccounts?: ContactPeekSocialAccount[] | string | null;
 };
 
 export type ContactPeekCardAction = {
@@ -110,9 +112,9 @@ export function ContactPeekCard({
   const addressLine = formatContactAddressLine(contact);
   const email = primaryEmail(contact);
   const phone = primaryPhone(contact);
-  const socialAccounts = (contact.socialAccounts ?? []).filter(
-    (entry) => entry.platform?.trim() && entry.url?.trim(),
-  );
+  const socialAccounts = normalizeContactSocialAccounts(
+    contact.socialAccounts,
+  ).filter((entry) => entry.platform.trim() && entry.url.trim());
   const profileAction = normalizeAction(viewProfile);
   const hasContactRow = Boolean(email) || Boolean(phone);
   const hasSocialIcons = socialAccounts.length > 0;
