@@ -5,21 +5,46 @@ import type {
   UpdateClientEstimateInput,
 } from "@backsteros/contracts";
 import type { FinanceNavId } from "@backsteros/ui";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
 export function useFinanceEstimates({
   client,
   navId,
+  estimateIdFromPath = null,
 }: {
   client: BacksterosApiClient;
   navId: FinanceNavId | null;
+  /** Third path segment when URL is `/finance/estimates/:id`. */
+  estimateIdFromPath?: string | null;
 }) {
+  const navigate = useNavigate();
   const [estimates, setEstimates] = useState<ClientEstimate[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(
-    null,
+
+  const selectedEstimateId =
+    navId === "estimates" ? (estimateIdFromPath ?? null) : null;
+
+  const setSelectedEstimateId = useCallback(
+    (id: string | null, options?: { replace?: boolean }) => {
+      if (id) {
+        void navigate({
+          to: "/finance/$slug/$section",
+          params: { slug: "estimates", section: id },
+          replace: options?.replace,
+        });
+        return;
+      }
+      void navigate({
+        to: "/finance/$slug",
+        params: { slug: "estimates" },
+        replace: options?.replace,
+      });
+    },
+    [navigate],
   );
 
   const refresh = useCallback(async () => {
@@ -30,6 +55,7 @@ export function useFinanceEstimates({
         "/api/v1/finance/estimates",
       );
       setEstimates(body.estimates ?? []);
+      setHasLoaded(true);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load estimates";
@@ -39,6 +65,7 @@ export function useFinanceEstimates({
           : message,
       );
       setEstimates([]);
+      setHasLoaded(true);
     } finally {
       setLoading(false);
     }
@@ -46,12 +73,39 @@ export function useFinanceEstimates({
 
   useEffect(() => {
     if (navId !== "estimates") {
-      // Leaving Estimates should drop detail selection so returning shows the list.
-      setSelectedEstimateId(null);
+      setHasLoaded(false);
       return;
     }
     void refresh();
   }, [navId, refresh]);
+
+  // Stale deep link: id in URL but not in the loaded list → back to list.
+  // Skip while creating so a brand-new estimate is not bounced before state lands.
+  useEffect(() => {
+    if (
+      navId !== "estimates" ||
+      !hasLoaded ||
+      loading ||
+      creating ||
+      !estimateIdFromPath
+    ) {
+      return;
+    }
+    if (estimates.some((row) => row.id === estimateIdFromPath)) return;
+    void navigate({
+      to: "/finance/$slug",
+      params: { slug: "estimates" },
+      replace: true,
+    });
+  }, [
+    creating,
+    estimateIdFromPath,
+    estimates,
+    hasLoaded,
+    loading,
+    navId,
+    navigate,
+  ]);
 
   const createEstimate = useCallback(
     async (input: CreateClientEstimateInput) => {
@@ -67,7 +121,10 @@ export function useFinanceEstimates({
           },
         );
         setEstimates((prev) => [created, ...prev]);
-        setSelectedEstimateId(created.id);
+        void navigate({
+          to: "/finance/$slug/$section",
+          params: { slug: "estimates", section: created.id },
+        });
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to create estimate",
@@ -77,7 +134,7 @@ export function useFinanceEstimates({
         setCreating(false);
       }
     },
-    [client],
+    [client, navigate],
   );
 
   const updateEstimate = useCallback(

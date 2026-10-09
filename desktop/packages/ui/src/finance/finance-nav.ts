@@ -37,10 +37,10 @@ export const FINANCE_NAV_ITEMS: readonly FinanceNavItem[] = [
 ] as const;
 
 export const FINANCE_ACCOUNT_GROUP_IDS = [
-  "credit_cards",
+  "bank_accounts",
   "savings",
   "investments",
-  "bank_accounts",
+  "credit_cards",
 ] as const;
 
 export type FinanceAccountGroupId = (typeof FINANCE_ACCOUNT_GROUP_IDS)[number];
@@ -56,9 +56,9 @@ export const BANK_ACCOUNT_TYPE_OPTIONS: readonly {
   label: string;
 }[] = [
   { value: "bank_account", label: "Bank account" },
-  { value: "credit_card", label: "Credit card" },
   { value: "savings", label: "Savings" },
   { value: "investment", label: "Investment" },
+  { value: "credit_card", label: "Credit card" },
 ] as const;
 
 const FINANCE_NAV_ID_SET = new Set<string>(FINANCE_NAV_IDS);
@@ -83,6 +83,24 @@ export function getFinanceTransactionsHref(): string {
 
 export function getFinanceAccountHref(accountSlug: string): string {
   return `/finance/${encodeURIComponent(accountSlug)}`;
+}
+
+/** Single estimate detail — `/finance/estimates/:estimateId`. */
+export function getFinanceEstimateHref(estimateId: string): string {
+  return `${getFinanceNavHref("estimates")}/${encodeURIComponent(estimateId)}`;
+}
+
+/**
+ * When on Estimates, the optional third path segment is the selected estimate id.
+ * e.g. `/finance/estimates/abc` → `"abc"`.
+ */
+export function getFinanceEstimateIdFromPathname(
+  pathname: string,
+): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "finance" || parts[1] !== "estimates") return null;
+  const estimateId = parts[2]?.trim() || null;
+  return estimateId || null;
 }
 
 /**
@@ -242,10 +260,10 @@ export function groupBankAccountsForFinanceNav(
 ): FinanceAccountGroup[] {
   const sorted = [...accounts].sort((a, b) => a.name.localeCompare(b.name));
   const buckets: Record<FinanceAccountGroupId, BankAccount[]> = {
-    credit_cards: [],
+    bank_accounts: [],
     savings: [],
     investments: [],
-    bank_accounts: [],
+    credit_cards: [],
   };
 
   for (const account of sorted) {
@@ -253,13 +271,13 @@ export function groupBankAccountsForFinanceNav(
   }
 
   return [
-    { id: "credit_cards", label: "Credit cards", accounts: buckets.credit_cards },
-    { id: "savings", label: "Savings", accounts: buckets.savings },
-    { id: "investments", label: "Investments", accounts: buckets.investments },
     {
       id: "bank_accounts",
       label: "Bank accounts",
       accounts: buckets.bank_accounts,
     },
+    { id: "savings", label: "Savings", accounts: buckets.savings },
+    { id: "investments", label: "Investments", accounts: buckets.investments },
+    { id: "credit_cards", label: "Credit cards", accounts: buckets.credit_cards },
   ];
 }

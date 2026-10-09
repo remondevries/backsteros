@@ -916,6 +916,7 @@
   bottom: 12px;
   z-index: 50;
   margin-top: 0;
+  animation: none;
 }
 
 .finance-invoices-view__filter-dock .finance-filter-bar {

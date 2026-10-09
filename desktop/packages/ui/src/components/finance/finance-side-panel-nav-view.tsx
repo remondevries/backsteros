@@ -129,10 +129,10 @@ export function FinanceSectionNavIcon({ id }: { id: FinanceNavId }) {
 }
 
 const DEFAULT_EXPANDED_GROUPS: Record<FinanceAccountGroupId, boolean> = {
-  credit_cards: true,
+  bank_accounts: true,
   savings: true,
   investments: true,
-  bank_accounts: true,
+  credit_cards: true,
 };
 
 export function FinanceSidePanelNavView({

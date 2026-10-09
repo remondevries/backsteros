@@ -641,10 +641,15 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  flex: 1;
+  flex: 1 1 auto;
   gap: 0;
   overflow: hidden;
   padding: 0;
+}
+
+.inbox-detail-body > .finance-invoices-view {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .finance-invoices-view--embedded {
@@ -655,8 +660,11 @@
   .finance-categories-view__list-pane.finance-invoices-view__list-pane {
   position: relative;
   display: flex;
+  align-self: stretch;
+  width: 100%;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 0;

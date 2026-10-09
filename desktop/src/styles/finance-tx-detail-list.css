@@ -175,6 +175,21 @@
   font-weight: 550;
 }
 
+/* Lock page-scroll height so invoice/estimate docks stay viewport-pinned
+   while chart/list content loads (same idea as `.finance-detail`). */
+.page-scroll:has(.finance-categories-view),
+.page-scroll:has(.finance-accounts-view),
+.page-scroll:has(.finance-transactions-view),
+.page-scroll:has(.finance-invoices-view),
+.page-scroll:has(.finance-estimates-view) {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .page-scroll:has(.finance-categories-view) > .inbox-detail-layout,
 .page-scroll:has(.finance-categories-view) .inbox-detail-body,
 .page-scroll:has(.finance-accounts-view) > .inbox-detail-layout,
@@ -182,9 +197,14 @@
 .page-scroll:has(.finance-transactions-view) > .inbox-detail-layout,
 .page-scroll:has(.finance-transactions-view) .inbox-detail-body,
 .page-scroll:has(.finance-invoices-view) > .inbox-detail-layout,
-.page-scroll:has(.finance-invoices-view) .inbox-detail-body {
+.page-scroll:has(.finance-invoices-view) .inbox-detail-body,
+.page-scroll:has(.finance-estimates-view) > .inbox-detail-layout,
+.page-scroll:has(.finance-estimates-view) .inbox-detail-body {
+  display: flex;
   min-height: 0;
   height: 100%;
+  flex: 1;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -192,6 +212,7 @@
 .page-scroll:has(.finance-categories-view) .inbox-detail-body,
 .page-scroll:has(.finance-accounts-view) .inbox-detail-body,
 .page-scroll:has(.finance-transactions-view) .inbox-detail-body,
-.page-scroll:has(.finance-invoices-view) .inbox-detail-body {
+.page-scroll:has(.finance-invoices-view) .inbox-detail-body,
+.page-scroll:has(.finance-estimates-view) .inbox-detail-body {
   padding: 0;
 }

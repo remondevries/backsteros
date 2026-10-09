@@ -250,7 +250,11 @@ function FinancePageBody() {
     setSelectedEstimateId,
     createEstimate,
     updateEstimate,
-  } = useFinanceEstimates({ client, navId });
+  } = useFinanceEstimates({
+    client,
+    navId,
+    estimateIdFromPath: navId === "estimates" ? (sectionParam ?? null) : null,
+  });
 
   const estimateContactOptions = useMemo(
     () =>

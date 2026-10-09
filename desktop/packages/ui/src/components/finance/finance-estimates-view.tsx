@@ -27,11 +27,19 @@ import {
   CLIENT_ESTIMATE_STATUS_ORDER,
   type ClientEstimateStatus as UiEstimateStatus,
 } from "../../finance/estimate-status.js";
-import type { OrganizationListItem } from "../../navigation/entity-routes.js";
 import {
-  formatDueDateInputValue,
-  parseDueDateInputValue,
-} from "../../tasks/task-due-date.js";
+  estimateChartYears,
+  parseEstimateDocumentDate,
+} from "../../finance/estimate-amount-chart-series.js";
+import type { OrganizationListItem } from "../../navigation/entity-routes.js";
+import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
+import type { DocumentSummaryLine } from "../../finance/document-summary-stats.js";
+import { EstimateStatusAmountChart } from "./estimate-status-amount-chart.js";
+import {
+  FinanceDocumentChartWithSummary,
+  FinanceDocumentSummaryWidgets,
+} from "./finance-document-summary-widgets.js";
+import { FinanceYearNavigator } from "./finance-month-navigator.js";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -66,6 +74,16 @@ import {
   formatAttendeeNames,
   MeetingAttendeeLabels,
 } from "../meetings/meeting-attendee-labels.js";
+import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
+import { useListDismissDetailShortcut } from "../../list-nav/use-list-clear-selection-shortcut.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "../list-nav/list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
@@ -127,15 +145,10 @@ function formatEuroCents(cents: number | null | undefined): string {
   }).format(cents / 100);
 }
 
-/** Prefer ISO / YYYY-MM-DD; legacy free-text labels return null until re-picked. */
 function parseEstimateDueDate(
   value: string | null | undefined,
 ): Date | null {
-  if (!value?.trim()) return null;
-  const ymd = formatDueDateInputValue(value.trim());
-  if (ymd) return parseDueDateInputValue(ymd);
-  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? parseDueDateInputValue(match[1]!) : null;
+  return parseEstimateDocumentDate(value);
 }
 
 function serializeEstimateDueDate(date: Date | null): string | null {
@@ -634,7 +647,7 @@ function FinanceEstimateDetail({
               />
             </PropertyFieldGroup>
 
-            <PropertyFieldGroup label="Due date">
+            <PropertyFieldGroup label="Date">
               <TaskDueDateDropdown
                 dueDate={dueDate}
                 status={
@@ -650,7 +663,7 @@ function FinanceEstimateDetail({
                     documentDate: serializeEstimateDueDate(next),
                   });
                 }}
-                noDueDateLabel="No due date"
+                noDueDateLabel="No date"
                 labelFormat="relative"
               />
             </PropertyFieldGroup>
@@ -1024,6 +1037,25 @@ export function FinanceEstimatesView({
   const [estimateMarkdown, setEstimateMarkdown] = useState(
     "# Estimate\n\n| Item | Hours | Amount |\n| --- | --- | --- |\n| Example | 8 | € 760,00 |\n",
   );
+  const chartYearBounds = useMemo(
+    () => estimateChartYears(estimates),
+    [estimates],
+  );
+  const [chartYear, setChartYear] = useState(
+    () => chartYearBounds.latestYear,
+  );
+
+  useEffect(() => {
+    setChartYear((current) => {
+      if (current > chartYearBounds.latestYear) {
+        return chartYearBounds.latestYear;
+      }
+      if (current < chartYearBounds.earliestYear) {
+        return chartYearBounds.earliestYear;
+      }
+      return current;
+    });
+  }, [chartYearBounds.earliestYear, chartYearBounds.latestYear]);
 
   const selected = useMemo(
     () => estimates.find((row) => row.id === selectedEstimateId) ?? null,
@@ -1035,11 +1067,77 @@ export function FinanceEstimatesView({
     [estimates],
   );
 
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
+
+  const keyboardItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsed.has(group.status)) continue;
+      for (const estimate of group.estimates) {
+        ids.push(estimate.id);
+      }
+    }
+    return ids;
+  }, [collapsed, groups]);
+
+  const openEstimate = useCallback(
+    (estimateId: string) => {
+      onSelectedEstimateChange(estimateId);
+    },
+    [onSelectedEstimateChange],
+  );
+
+  const closeEstimateDetail = useCallback(() => {
+    onSelectedEstimateChange(null);
+  }, [onSelectedEstimateChange]);
+
+  useListDismissDetailShortcut({
+    enabled: selectedEstimateId != null,
+    onDismiss: closeEstimateDetail,
+  });
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId: selectedEstimateId,
+    onNavigate: openEstimate,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0 && selectedEstimateId == null,
+  });
+
   const orgNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const org of organizations) map.set(org.id, org.name);
     return map;
   }, [organizations]);
+
+  const summaryLines = useMemo((): DocumentSummaryLine[] => {
+    return estimates.map((estimate) => {
+      const orgName = estimate.organizationId
+        ? orgNameById.get(estimate.organizationId) ?? null
+        : null;
+      const label =
+        estimate.clientLabel?.trim() || orgName?.trim() || "Unknown";
+      const key =
+        estimate.organizationId?.trim() ||
+        estimate.clientLabel?.trim().toLowerCase() ||
+        label.toLowerCase();
+      return {
+        id: estimate.id,
+        date: estimate.documentDate,
+        amountCents:
+          typeof estimate.totalAmountCents === "number" &&
+          Number.isFinite(estimate.totalAmountCents)
+            ? estimate.totalAmountCents
+            : 0,
+        customerKey: key,
+        customerLabel: label,
+      };
+    });
+  }, [estimates, orgNameById]);
 
   async function handleCreate() {
     const trimmed = title.trim();
@@ -1090,6 +1188,40 @@ export function FinanceEstimatesView({
       <div className="finance-estimates-view">
         {error ? <p className="finance-estimates-view__error">{error}</p> : null}
         {loading ? <p className="finance-empty">Loading estimates…</p> : null}
+
+        {!showCreate ? (
+          <>
+            <FinanceDocumentChartWithSummary
+              chartHeader={
+                <FinanceYearNavigator
+                  year={chartYear}
+                  latestYear={chartYearBounds.latestYear}
+                  earliestYear={chartYearBounds.earliestYear}
+                  onChange={setChartYear}
+                  aria-label="Estimate year"
+                />
+              }
+              summary={
+                <FinanceDocumentSummaryWidgets
+                  lines={summaryLines}
+                  customerYear={chartYear}
+                  customersTitle="Most active customer"
+                  loading={loading}
+                />
+              }
+              chart={
+                <EstimateStatusAmountChart
+                  className="finance-estimates-view__chart"
+                  estimates={estimates}
+                  year={chartYear}
+                  loading={loading}
+                  ariaLabel="Monthly estimate totals by status"
+                  emptyMessage={`No dated estimate totals in ${chartYear} yet.`}
+                />
+              }
+            />
+          </>
+        ) : null}
 
         {showCreate ? (
           <div className="finance-estimates-view__create">
@@ -1166,12 +1298,12 @@ export function FinanceEstimatesView({
                 />
               </label>
               <div className="finance-estimates-view__field">
-                <span>Due date</span>
+                <span>Date</span>
                 <TaskDueDateDropdown
                   dueDate={createDueDate}
                   variant="property"
                   onDueDateChange={setCreateDueDate}
-                  noDueDateLabel="No due date"
+                  noDueDateLabel="No date"
                 />
               </div>
               <label className="finance-estimates-view__field">
@@ -1219,9 +1351,22 @@ export function FinanceEstimatesView({
         ) : null}
 
         {!showCreate && estimates.length > 0 ? (
-          <ul className="project-tasks-list finance-estimates-view__list">
+          <ul
+            className="project-tasks-list finance-estimates-view__list"
+            ref={listRef}
+            {...listContainerProps}
+          >
             {groups.map((group) => {
               const isCollapsed = collapsed.has(group.status);
+              const groupTotalCents = group.estimates.reduce(
+                (sum, estimate) =>
+                  sum +
+                  (typeof estimate.totalAmountCents === "number" &&
+                  Number.isFinite(estimate.totalAmountCents)
+                    ? estimate.totalAmountCents
+                    : 0),
+                0,
+              );
               return (
                 <StatusGroupSection
                   key={group.status}
@@ -1236,6 +1381,14 @@ export function FinanceEstimatesView({
                       else next.add(group.status);
                       return next;
                     })
+                  }
+                  trailing={
+                    <span
+                      className="finance-estimates-view__group-total"
+                      aria-label={`${group.label} total amount`}
+                    >
+                      {formatEuroCents(groupTotalCents)}
+                    </span>
                   }
                   onAdd={() => {
                     setCollapsed((current) => {
@@ -1262,10 +1415,21 @@ export function FinanceEstimatesView({
                           estimate.documentDate,
                         );
                         return (
-                          <li key={estimate.id} className="task-item-row-item">
+                          <li
+                            key={estimate.id}
+                            className="task-item-row-item"
+                            {...keyboardNavItemProps(estimate.id)}
+                          >
                             <button
                               type="button"
-                              className="task-item-row"
+                              className={[
+                                "task-item-row",
+                                keyboardNavListItemClass(
+                                  highlightedId === estimate.id,
+                                ),
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
                               onClick={() =>
                                 onSelectedEstimateChange(estimate.id)
                               }

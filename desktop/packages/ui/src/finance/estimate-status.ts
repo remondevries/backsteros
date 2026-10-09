@@ -27,7 +27,7 @@ export const CLIENT_ESTIMATE_STATUS_TASK_ICON: Record<
   ClientEstimateStatus,
   TaskStatus
 > = {
-  concept: "backlog",
+  concept: "ready_to_start",
   in_review: "in_review",
   approved: "completed",
   declined: "canceled",

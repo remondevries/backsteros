@@ -1582,6 +1582,8 @@ export {
   getFinanceDashboardHref,
   getFinanceTransactionsHref,
   getFinanceAccountHref,
+  getFinanceEstimateHref,
+  getFinanceEstimateIdFromPathname,
   getSelectedFinanceNavIdFromPathname,
   isFinanceNavId,
   isFinanceAccountPath,
@@ -1764,6 +1766,22 @@ export {
   type ClientEstimateStatus as FinanceEstimateStatus,
   type EstimateStatusGroup,
 } from "./finance/estimate-status.js";
+export {
+  buildEstimateStatusAmountChartSeries,
+  buildEstimateStatusMonthContributions,
+  estimateChartYears,
+  estimateStatusAmountChartHasData,
+  ESTIMATE_STATUS_CHART_COLORS,
+  parseEstimateDocumentDate,
+  type EstimateChartEstimate,
+  type EstimateStatusChartContribution,
+  type EstimateStatusChartPoint,
+  type EstimateStatusChartSeries,
+} from "./finance/estimate-amount-chart-series.js";
+export {
+  EstimateStatusAmountChart,
+  type EstimateStatusAmountChartProps,
+} from "./components/finance/estimate-status-amount-chart.js";
 export {
   FinanceInvoiceDetailDocument,
   type FinanceInvoiceDetailDocumentProps,

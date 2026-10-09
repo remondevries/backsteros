@@ -6,8 +6,10 @@ import type {
   MoneybirdSalesInvoiceSummary,
 } from "@backsteros/contracts";
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -17,15 +19,33 @@ import {
   filterFinanceInvoices,
   type FinanceInvoiceFilterRow,
 } from "../../finance/filter-finance-invoices.js";
+import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
+import { useListDismissDetailShortcut } from "../../list-nav/use-list-clear-selection-shortcut.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { getTaskStatusHeaderGradientStyle } from "../../tasks/task-status-header-gradient.js";
 import { useFinancePanelResize } from "../../finance/use-finance-panel-resize.js";
+import {
+  parseMoneyAmountToCents,
+  type DocumentSummaryLine,
+} from "../../finance/document-summary-stats.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
 import {
   DROPDOWN_NONE_VALUE,
   buildOrganizationDropdownOptions,
 } from "../dropdowns/dropdown-options.js";
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "../list-nav/list-keyboard-navigation-provider.js";
+import {
+  FinanceDocumentChartWithSummary,
+  FinanceDocumentSummaryWidgets,
+} from "./finance-document-summary-widgets.js";
 import { FinanceInvoiceDetailDocument } from "./finance-invoice-detail-document.js";
 import { FinanceInvoicesFilterBar } from "./finance-invoices-filter-bar.js";
 import { FINANCE_FILTER_ALL_VALUE } from "./finance-transactions-filter-bar.js";
@@ -228,12 +248,15 @@ export function FinanceInvoicesView({
     selectedInvoiceIdProp !== undefined
       ? selectedInvoiceIdProp
       : localSelectedId;
-  const setSelectedInvoiceId = (invoiceId: string | null) => {
-    if (selectedInvoiceIdProp === undefined) {
-      setLocalSelectedId(invoiceId);
-    }
-    onSelectedInvoiceChange?.(invoiceId);
-  };
+  const setSelectedInvoiceId = useCallback(
+    (invoiceId: string | null) => {
+      if (selectedInvoiceIdProp === undefined) {
+        setLocalSelectedId(invoiceId);
+      }
+      onSelectedInvoiceChange?.(invoiceId);
+    },
+    [onSelectedInvoiceChange, selectedInvoiceIdProp],
+  );
 
   const {
     containerRef,
@@ -379,6 +402,60 @@ export function FinanceInvoicesView({
     [filterOrganizationId, filterSearch, invoiceRows],
   );
 
+  const summaryLines = useMemo((): DocumentSummaryLine[] => {
+    return invoiceRows.map((invoice) => {
+      const linkedName = invoice.linkedOrganizationName?.trim() || null;
+      const contactName = invoice.contactName?.trim() || null;
+      const label = linkedName || contactName || "Unknown";
+      const key =
+        invoice.linkedOrganizationId?.trim() ||
+        invoice.contactId?.trim() ||
+        label.toLowerCase();
+      return {
+        id: invoice.id,
+        date: invoice.invoiceDate,
+        amountCents: parseMoneyAmountToCents(invoice.totalPriceInclTax),
+        customerKey: key,
+        customerLabel: label,
+      };
+    });
+  }, [invoiceRows]);
+
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
+
+  const keyboardItemIds = useMemo(
+    () => filteredInvoices.map((invoice) => invoice.id),
+    [filteredInvoices],
+  );
+
+  const openInvoice = useCallback(
+    (invoiceId: string) => {
+      setSelectedInvoiceId(invoiceId);
+    },
+    [setSelectedInvoiceId],
+  );
+
+  const closeInvoiceDetail = useCallback(() => {
+    setSelectedInvoiceId(null);
+  }, [setSelectedInvoiceId]);
+
+  useListDismissDetailShortcut({
+    enabled: selectedInvoiceId != null,
+    onDismiss: closeInvoiceDetail,
+  });
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId: selectedInvoiceId,
+    onNavigate: openInvoice,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0,
+  });
+
   const hasClientFilters =
     filterSearch.trim().length > 0 || filterOrganizationId != null;
 
@@ -405,27 +482,47 @@ export function FinanceInvoicesView({
       >
         <div className="finance-categories-view__list-pane finance-invoices-view__list-pane">
           <div className="finance-invoices-view__scroll">
-            <FinanceYearNavigator
-              year={year}
-              latestYear={latestYear}
-              onChange={setYear}
-              aria-label="Invoice year"
-            />
-
             {!embedded && connected ? (
-              <AccountIncomeExpenseChart
-                className="finance-invoices-view__chart"
-                cashflowYear={year}
-                cashflowMonths={revenueMonths}
-                loading={revenueLoading}
-                fullYear
-                incomeColor={MONEYBIRD_INVOICE_INCOME_COLOR}
-                incomeSeriesLabel="Invoiced"
-                expenseSeriesLabel="Expenses"
-                ariaLabel="Monthly invoiced revenue and account expenses"
-                emptyMessage={`No invoiced revenue or account expenses in ${year} yet.`}
+              <FinanceDocumentChartWithSummary
+                chartHeader={
+                  <FinanceYearNavigator
+                    year={year}
+                    latestYear={latestYear}
+                    onChange={setYear}
+                    aria-label="Invoice year"
+                  />
+                }
+                summary={
+                  <FinanceDocumentSummaryWidgets
+                    lines={summaryLines}
+                    seriesMonths={revenueMonths}
+                    customerYear={year}
+                    loading={loading || revenueLoading}
+                  />
+                }
+                chart={
+                  <AccountIncomeExpenseChart
+                    className="finance-invoices-view__chart"
+                    cashflowYear={year}
+                    cashflowMonths={revenueMonths}
+                    loading={revenueLoading}
+                    fullYear
+                    incomeColor={MONEYBIRD_INVOICE_INCOME_COLOR}
+                    incomeSeriesLabel="Invoiced"
+                    expenseSeriesLabel="Expenses"
+                    ariaLabel="Monthly invoiced revenue and account expenses"
+                    emptyMessage={`No invoiced revenue or account expenses in ${year} yet.`}
+                  />
+                }
               />
-            ) : null}
+            ) : (
+              <FinanceYearNavigator
+                year={year}
+                latestYear={latestYear}
+                onChange={setYear}
+                aria-label="Invoice year"
+              />
+            )}
 
             {!connected && onOpenSettings ? (
               <div className="finance-invoices-view__toolbar">
@@ -475,7 +572,12 @@ export function FinanceInvoicesView({
                     ))}
                   </div>
                 </div>
-                <ul className="finance-tx-list finance-invoices-list" role="list">
+                <ul
+                  className="finance-tx-list finance-invoices-list"
+                  role="list"
+                  ref={listRef}
+                  {...listContainerProps}
+                >
                   {filteredInvoices.map((invoice) => {
                     const moneybirdContactId =
                       invoice.contactId?.trim() || null;
@@ -494,9 +596,17 @@ export function FinanceInvoicesView({
                         ]
                           .filter(Boolean)
                           .join(" ")}
+                        {...keyboardNavItemProps(invoice.id)}
                       >
                         <div
-                          className="finance-tx-row__line"
+                          className={[
+                            "finance-tx-row__line",
+                            keyboardNavListItemClass(
+                              highlightedId === invoice.id,
+                            ),
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                           role="button"
                           tabIndex={0}
                           aria-pressed={isSelected}
