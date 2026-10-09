@@ -188,6 +188,18 @@ Azure Trusted Signing configuration described below.
 - Azure authentication env vars are also required (for example service principal with secret):
   `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
 
+## Upstream sync (BacksterDEV)
+
+BacksterDEV vendors T3 Code under `development/`. To bring a stable upstream tag in while keeping
+Backster-owned paths:
+
+```bash
+./scripts/sync-upstream-t3code.sh            # dry-run (default)
+./scripts/sync-upstream-t3code.sh --apply    # write (after reviewing dry-run)
+```
+
+See [upstream-sync.md](./upstream-sync.md) for pins, preserve lists, hotspots, and phases.
+
 ## Browser development
 
 `dev` and `dev:web` leave `VITE_HTTP_URL` and `VITE_WS_URL` unset so the browser resolves the backend
