@@ -65,3 +65,4 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Relay observability](./operations/relay-observability.md)
 - [Android notifications](./operations/android-notifications.md)
 - [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)
+- [BacksterDEV remote hosts](./operations/backsterdev-remote-hosts.md)
