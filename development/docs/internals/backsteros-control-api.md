@@ -74,6 +74,10 @@ remote’s `/api/orchestration/*` HTTP API (stock `t3 serve` has no control
 routes) and store the task↔thread binding locally with that remote’s
 `environmentId` so the rail opens the right chat.
 
+When both `environmentId` and `environment` / `environmentLabel` are set, they
+must refer to the same environment; a mismatch returns JSON `400` with
+`code: "environment_mismatch"` (label no longer silently overrides a wrong id).
+
 **Project resolution:** when `workspaceRoot` / `projectId` are omitted, the
 server reads the BacksterOS task's project `localWorkingDirectory`, matches it
 to a linked T3 project (same normalized-path comparison the rail uses), and
@@ -130,8 +134,14 @@ curl -sS -X POST "$ORIGIN/api/backsteros/control/message" \
 - `GET /api/backsteros/control/environments` — local environment plus registered
   remotes (`environmentId`, `label`, `httpBaseUrl`, `local`, `hasAccessToken`;
   tokens are never returned)
-- `PUT /api/backsteros/control/environments` — replace the remote registry:
+- `PUT /api/backsteros/control/environments` — **replace** the remote registry:
   `{ "environments": [{ "environmentId", "label", "httpBaseUrl", "accessToken?" }] }`
+
+Desktop catalog sync **merges** (upserts) paired bearer remotes into
+`control-environments.json` and keeps rows that exist only from a prior `PUT`
+(BDV-60). `PUT` itself still replaces the whole remote list — pass every remote
+you want to keep. Catalog rows win on `environmentId` collision (fresh pairing
+tokens).
 
 ```bash
 curl -sS "$ORIGIN/api/backsteros/control/environments" -H "$AUTH"

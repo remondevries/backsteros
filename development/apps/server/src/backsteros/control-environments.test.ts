@@ -109,4 +109,76 @@ describe("control-environments", () => {
     });
     expect(resolved).toMatchObject({ ok: false, code: "environment_not_found" });
   });
+
+  it("rejects mismatched environmentId and environmentLabel", () => {
+    const stateDir = tempStateDir();
+    writeControlEnvironments(stateDir, [
+      {
+        environmentId: "remote-1",
+        label: "development",
+        httpBaseUrl: "http://100.126.31.97:3773",
+        accessToken: "tok",
+      },
+      {
+        environmentId: "remote-2",
+        label: "lemodesign",
+        httpBaseUrl: "http://100.83.125.67:3773",
+        accessToken: "tok2",
+      },
+    ]);
+    const resolved = resolveControlEnvironmentTarget({
+      stateDir,
+      localEnvironmentId: "local-1",
+      localLabel: "MacBook",
+      environmentId: "remote-1",
+      environmentLabel: "lemodesign",
+    });
+    expect(resolved).toMatchObject({ ok: false, code: "environment_mismatch" });
+  });
+
+  it("rejects when environmentId is unknown even if label matches", () => {
+    const stateDir = tempStateDir();
+    writeControlEnvironments(stateDir, [
+      {
+        environmentId: "remote-1",
+        label: "development",
+        httpBaseUrl: "http://100.126.31.97:3773",
+        accessToken: "tok",
+      },
+    ]);
+    const resolved = resolveControlEnvironmentTarget({
+      stateDir,
+      localEnvironmentId: "local-1",
+      localLabel: "MacBook",
+      environmentId: "wrong-id",
+      environmentLabel: "development",
+    });
+    expect(resolved).toMatchObject({ ok: false, code: "environment_mismatch" });
+  });
+
+  it("accepts matching environmentId and environmentLabel", () => {
+    const stateDir = tempStateDir();
+    writeControlEnvironments(stateDir, [
+      {
+        environmentId: "remote-1",
+        label: "development",
+        httpBaseUrl: "http://100.126.31.97:3773",
+        accessToken: "tok",
+      },
+    ]);
+    const resolved = resolveControlEnvironmentTarget({
+      stateDir,
+      localEnvironmentId: "local-1",
+      localLabel: "MacBook",
+      environmentId: "remote-1",
+      environmentLabel: "Development",
+    });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.environment).toMatchObject({
+      kind: "remote",
+      environmentId: "remote-1",
+      accessToken: "tok",
+    });
+  });
 });

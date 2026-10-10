@@ -905,7 +905,7 @@ export const controlStartHandler = catchControlErrors(
     });
     if (!targetResolved.ok) {
       return yield* Effect.fail({
-        status: 404,
+        status: targetResolved.code === "environment_mismatch" ? 400 : 404,
         error: targetResolved.error,
         code: targetResolved.code,
       } satisfies ControlHttpError);

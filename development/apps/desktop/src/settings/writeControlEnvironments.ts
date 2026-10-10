@@ -2,6 +2,9 @@
 /**
  * Mirror paired bearer remotes into control-environments.json so the localhost
  * control API can start agents on those environments without Electron decrypt.
+ *
+ * Catalog sync upserts paired remotes by environmentId and preserves rows that
+ * exist only via PUT /api/backsteros/control/environments (BDV-60).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -44,14 +47,69 @@ export function controlEnvironmentsFromCatalog(
   return records;
 }
 
+/**
+ * Upsert catalog rows into the existing registry. Catalog wins on id collision;
+ * ids present only in `existing` (e.g. PUT-only remotes) are kept.
+ */
+export function mergeControlEnvironmentMirror(input: {
+  readonly existing: readonly ControlEnvironmentMirrorRecord[];
+  readonly fromCatalog: readonly ControlEnvironmentMirrorRecord[];
+}): readonly ControlEnvironmentMirrorRecord[] {
+  const byId = new Map<string, ControlEnvironmentMirrorRecord>();
+  for (const row of input.existing) {
+    byId.set(row.environmentId, row);
+  }
+  for (const row of input.fromCatalog) {
+    byId.set(row.environmentId, row);
+  }
+  return [...byId.values()];
+}
+
+function readExistingMirror(filePath: string): readonly ControlEnvironmentMirrorRecord[] {
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      environments?: unknown;
+    };
+    if (!Array.isArray(parsed.environments)) return [];
+    const rows: ControlEnvironmentMirrorRecord[] = [];
+    for (const value of parsed.environments) {
+      if (!value || typeof value !== "object") continue;
+      const row = value as Record<string, unknown>;
+      const environmentId = typeof row.environmentId === "string" ? row.environmentId.trim() : "";
+      const label = typeof row.label === "string" ? row.label.trim() : "";
+      const httpBaseUrl =
+        typeof row.httpBaseUrl === "string" ? row.httpBaseUrl.trim().replace(/\/+$/, "") : "";
+      if (!environmentId || !label || !httpBaseUrl) continue;
+      const accessToken =
+        typeof row.accessToken === "string" && row.accessToken.trim().length > 0
+          ? row.accessToken.trim()
+          : undefined;
+      rows.push({
+        environmentId,
+        label,
+        httpBaseUrl,
+        ...(accessToken ? { accessToken } : {}),
+      });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 export function writeControlEnvironmentsMirror(input: {
   readonly stateDir: string;
   readonly catalog: ConnectionCatalogDocument;
 }): void {
   const filePath = path.join(input.stateDir, "control-environments.json");
+  const environments = mergeControlEnvironmentMirror({
+    existing: readExistingMirror(filePath),
+    fromCatalog: controlEnvironmentsFromCatalog(input.catalog),
+  });
   const document = {
     version: 1 as const,
-    environments: controlEnvironmentsFromCatalog(input.catalog),
+    environments,
   };
   fs.mkdirSync(input.stateDir, { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.tmp`;

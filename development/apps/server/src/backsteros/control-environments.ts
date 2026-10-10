@@ -153,9 +153,34 @@ export type ResolvedControlEnvironment =
       readonly accessToken: string;
     };
 
+function toRemoteResolved(
+  match: ControlEnvironmentRecord,
+):
+  | { readonly ok: true; readonly environment: ResolvedControlEnvironment }
+  | { readonly ok: false; readonly error: string; readonly code: string } {
+  if (!match.accessToken) {
+    return {
+      ok: false,
+      error: `Environment '${match.label}' has no stored access token. Re-pair it in Settings → Connections or PUT /api/backsteros/control/environments with accessToken.`,
+      code: "environment_token_missing",
+    };
+  }
+  return {
+    ok: true,
+    environment: {
+      kind: "remote",
+      environmentId: match.environmentId,
+      label: match.label,
+      httpBaseUrl: match.httpBaseUrl,
+      accessToken: match.accessToken,
+    },
+  };
+}
+
 /**
  * Resolve an optional environment id or label. Omitting both selects local.
- * Matching is case-insensitive for labels.
+ * Matching is case-insensitive for labels. When both id and label are set they
+ * must refer to the same environment (otherwise `environment_mismatch`).
  */
 export function resolveControlEnvironmentTarget(input: {
   readonly stateDir: string;
@@ -179,55 +204,84 @@ export function resolveControlEnvironmentTarget(input: {
     };
   }
 
-  const localLabelMatch =
-    label !== null && label.toLowerCase() === input.localLabel.trim().toLowerCase();
-  if (
-    (id !== null && id === input.localEnvironmentId) ||
-    (label !== null && localLabelMatch && (id === null || id === input.localEnvironmentId))
-  ) {
-    return {
-      ok: true,
-      environment: {
-        kind: "local",
-        environmentId: input.localEnvironmentId,
-        label: input.localLabel,
-      },
-    };
-  }
+  const local: ResolvedControlEnvironment = {
+    kind: "local",
+    environmentId: input.localEnvironmentId,
+    label: input.localLabel,
+  };
+  const localById = id !== null && id === input.localEnvironmentId ? local : null;
+  const localByLabel =
+    label !== null && label.toLowerCase() === input.localLabel.trim().toLowerCase() ? local : null;
 
   const remotes = readControlEnvironments(input.stateDir);
-  const match =
-    (id !== null ? remotes.find((row) => row.environmentId === id) : undefined) ??
-    (label !== null
-      ? remotes.find((row) => row.label.trim().toLowerCase() === label.toLowerCase())
-      : undefined);
+  const remoteById = id !== null ? (remotes.find((row) => row.environmentId === id) ?? null) : null;
+  const remoteByLabel =
+    label !== null
+      ? (remotes.find((row) => row.label.trim().toLowerCase() === label.toLowerCase()) ?? null)
+      : null;
 
-  if (!match) {
+  const byId = localById
+    ? ({ kind: "local" as const, local: localById } as const)
+    : remoteById
+      ? ({ kind: "remote" as const, remote: remoteById } as const)
+      : null;
+  const byLabel = localByLabel
+    ? ({ kind: "local" as const, local: localByLabel } as const)
+    : remoteByLabel
+      ? ({ kind: "remote" as const, remote: remoteByLabel } as const)
+      : null;
+
+  if (id !== null && label !== null) {
+    if (!byId && !byLabel) {
+      return {
+        ok: false,
+        error: `Unknown environmentId '${id}' / label '${label}'. GET /api/backsteros/control/environments for paired remotes.`,
+        code: "environment_not_found",
+      };
+    }
+    if (!byId || !byLabel) {
+      return {
+        ok: false,
+        error: `environmentId '${id}' and environment label '${label}' do not refer to the same environment.`,
+        code: "environment_mismatch",
+      };
+    }
+    const idKey = byId.kind === "local" ? byId.local.environmentId : byId.remote.environmentId;
+    const labelKey =
+      byLabel.kind === "local" ? byLabel.local.environmentId : byLabel.remote.environmentId;
+    if (idKey !== labelKey) {
+      return {
+        ok: false,
+        error: `environmentId '${id}' and environment label '${label}' do not refer to the same environment.`,
+        code: "environment_mismatch",
+      };
+    }
+    return byId.kind === "local"
+      ? { ok: true, environment: byId.local }
+      : toRemoteResolved(byId.remote);
+  }
+
+  if (id !== null) {
+    if (!byId) {
+      return {
+        ok: false,
+        error: `Unknown environmentId '${id}'. GET /api/backsteros/control/environments for paired remotes.`,
+        code: "environment_not_found",
+      };
+    }
+    return byId.kind === "local"
+      ? { ok: true, environment: byId.local }
+      : toRemoteResolved(byId.remote);
+  }
+
+  if (!byLabel) {
     return {
       ok: false,
-      error: id
-        ? `Unknown environmentId '${id}'. GET /api/backsteros/control/environments for paired remotes.`
-        : `Unknown environment label '${label}'. GET /api/backsteros/control/environments for paired remotes.`,
+      error: `Unknown environment label '${label}'. GET /api/backsteros/control/environments for paired remotes.`,
       code: "environment_not_found",
     };
   }
-
-  if (!match.accessToken) {
-    return {
-      ok: false,
-      error: `Environment '${match.label}' has no stored access token. Re-pair it in Settings → Connections or PUT /api/backsteros/control/environments with accessToken.`,
-      code: "environment_token_missing",
-    };
-  }
-
-  return {
-    ok: true,
-    environment: {
-      kind: "remote",
-      environmentId: match.environmentId,
-      label: match.label,
-      httpBaseUrl: match.httpBaseUrl,
-      accessToken: match.accessToken,
-    },
-  };
+  return byLabel.kind === "local"
+    ? { ok: true, environment: byLabel.local }
+    : toRemoteResolved(byLabel.remote);
 }
