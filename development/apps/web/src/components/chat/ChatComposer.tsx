@@ -1460,6 +1460,8 @@ export interface ChatComposerProps {
   onCompactContext: () => void;
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
+  /** Cursor-style `/clear` / `/new` — fresh session (BacksterOS task chat or project draft). */
+  onClearChatSession: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
@@ -1493,6 +1495,8 @@ export interface ChatComposerProps {
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
+  /** When true, `/done` appears in the slash menu (BacksterOS task chat). */
+  backsterosDoneAvailable?: boolean;
 }
 
 // --------------------------------------------------------------------------
@@ -1576,6 +1580,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onCompactContext,
     onSend,
     onInterrupt,
+    onClearChatSession,
     onImplementPlanInNewThread,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
@@ -1594,6 +1599,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
     onFileOpen,
+    backsterosDoneAvailable = false,
   } = props;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
@@ -2426,6 +2432,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/model",
           description: "Switch response model for this thread",
         },
+        {
+          id: "slash:clear",
+          type: "slash-command",
+          command: "clear",
+          label: "/clear",
+          description: "Start a fresh chat session",
+        },
+        {
+          id: "slash:new",
+          type: "slash-command",
+          command: "new",
+          label: "/new",
+          description: "Start a fresh chat session",
+        },
+        // Whole-message command — only offer when `/` opens the prompt (same
+        // constraint as provider slash commands that must stand alone).
+        ...(backsterosDoneAvailable && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:done",
+                type: "slash-command",
+                command: "done",
+                label: "/done",
+                description: "Finish the BacksterOS task: commit, push, link, complete",
+              },
+            ] as const)
+          : []),
         ...(planModeUiEnabled
           ? ([
               {
@@ -2547,6 +2580,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    backsterosDoneAvailable,
     compactSlashCommandAvailable,
     composerTrigger,
     exactPullRequestLookup.data,
@@ -3683,6 +3717,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
+        if (item.command === "clear" || item.command === "new") {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          onClearChatSession();
+          return;
+        }
+        if (item.command === "done") {
+          // Replace the whole draft so leftover text cannot ride along and
+          // prevent standalone `/done` parsing in ChatView.
+          const applied = applyPromptReplacement(0, snapshot.value.length, "/done", {
+            expectedText: snapshot.value,
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            queueMicrotask(() => {
+              onSend(undefined, "foreground");
+            });
+          }
+          return;
+        }
         if (!planModeUiEnabled) return;
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
@@ -3776,6 +3835,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacement,
       composerDraftTarget,
       handleInteractionModeChange,
+      onClearChatSession,
+      onSend,
       planModeUiEnabled,
       onUsageLimitsCommand,
       resolveActiveComposerTrigger,

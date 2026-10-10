@@ -294,12 +294,16 @@ import {
 import { resolveBacksterosProjectForWorkspaceRoot } from "~/backsteros/resolveT3Project";
 import { loadTaskDescriptionComposerImages } from "~/backsteros/taskDescriptionImages";
 import {
+  clearBacksterosTaskChatSession,
   resolveActiveBacksterosTaskChatBinding,
   resolveActiveBacksterosTaskId,
 } from "~/backsteros/openTaskChat";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskKickoffGateStore } from "~/backsteros/taskKickoffGateStore";
-import { isBacksterosManagedKickoffPrompt } from "~/backsteros/taskKickoffPrompt";
+import {
+  buildBacksterosTaskDonePrompt,
+  isBacksterosManagedKickoffPrompt,
+} from "~/backsteros/taskKickoffPrompt";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { BacksterosTaskKickoffStart } from "./chat/BacksterosTaskKickoffStart";
@@ -490,6 +494,7 @@ import {
   codexArtifactTemplatePromptToAppend,
   waitForStartedServerThread,
   shouldRefocusComposerOnWindowFocus,
+  startNewThreadForProject,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -2201,6 +2206,16 @@ export default function ChatView(props: ChatViewProps) {
       activeThread ? scopeProjectRef(activeThread.environmentId, activeThread.projectId) : null,
     [activeThread?.environmentId, activeThread?.projectId],
   );
+  const handleClearChatSession = useCallback(() => {
+    if (activeBacksterosTaskId) {
+      void clearBacksterosTaskChatSession({
+        taskId: activeBacksterosTaskId,
+        navigate,
+      });
+      return;
+    }
+    startNewThreadForProject(activeProjectRef, handleNewThread);
+  }, [activeBacksterosTaskId, activeProjectRef, handleNewThread, navigate]);
   const activeProject = useProject(activeProjectRef);
   // Environment settings with the active project's overrides applied.
   const activeProjectSettings = useMemo(
@@ -7783,7 +7798,6 @@ export default function ChatView(props: ChatViewProps) {
     }
     // Providers without the legacy toggle receive their native commands unchanged.
     const standaloneSlashCommand =
-      sendInteractionModeEnabled &&
       composerImages.length === 0 &&
       composerFiles.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
@@ -7791,12 +7805,44 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
-    if (standaloneSlashCommand && multipleModelSelections === null) {
+    if (standaloneSlashCommand === "clear" && multipleModelSelections === null) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      handleClearChatSession();
+      return;
+    }
+    if (
+      sendInteractionModeEnabled &&
+      multipleModelSelections === null &&
+      (standaloneSlashCommand === "plan" || standaloneSlashCommand === "default")
+    ) {
       handleInteractionModeChange(standaloneSlashCommand);
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
       return;
+    }
+    let promptForMessage = promptForSend;
+    if (standaloneSlashCommand === "done" && multipleModelSelections === null) {
+      if (!activeBacksterosTaskId || !activeBacksterosTaskChat) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "/done is for BacksterOS task chats",
+            description: "Open a task chat, then use /done to finish it.",
+          }),
+        );
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
+      const displayId = activeBacksterosTaskChat.displayId?.trim() || activeBacksterosTaskId;
+      promptForMessage = buildBacksterosTaskDonePrompt({
+        displayId,
+        title: activeBacksterosTaskChat.title,
+      });
     }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
@@ -7841,13 +7887,13 @@ export default function ChatView(props: ChatViewProps) {
       const sendSettings = readComposerSendSettings(sendCtx);
       if (
         composerRef.current?.validateProviderInput(
-          applyClaudePromptEffortPrefix(promptForSend, sendSettings.promptEffort),
+          applyClaudePromptEffortPrefix(promptForMessage, sendSettings.promptEffort),
         ) === false
       ) {
         return;
       }
       useQueuedMessageStore.getState().enqueue(activeThreadKey, {
-        prompt: promptForSend,
+        prompt: promptForMessage,
         images: [...composerImages],
         files: [...composerFiles],
         terminalContexts: [...composerTerminalContexts],
@@ -7896,7 +7942,7 @@ export default function ChatView(props: ChatViewProps) {
       .reduce(
         (text, context) =>
           removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
-        promptForSend,
+        promptForMessage,
       )
       .trim();
     // Records bind attachments by the id each side knows: the local id for the optimistic
@@ -10312,6 +10358,7 @@ export default function ChatView(props: ChatViewProps) {
                               onCompactContext={onCompactContext}
                               onSend={onSend}
                               onInterrupt={onInterrupt}
+                              onClearChatSession={handleClearChatSession}
                               onImplementPlanInNewThread={onImplementPlanInNewThread}
                               onRespondToApproval={onRespondToApproval}
                               onSelectActivePendingUserInputOption={
@@ -10336,6 +10383,7 @@ export default function ChatView(props: ChatViewProps) {
                               setThreadError={setThreadError}
                               onExpandImage={onExpandTimelineImage}
                               onFileOpen={openFileAttachment}
+                              backsterosDoneAvailable={Boolean(activeBacksterosTaskChat)}
                             />
                           </div>
                         </ComposerSurface.Host>

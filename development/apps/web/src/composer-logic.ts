@@ -10,7 +10,8 @@ import {
 } from "./composer-editor-mentions";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "clear" | "new" | "done";
+export type ComposerStandaloneSlashCommand = "plan" | "default" | "clear" | "done";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -279,14 +280,17 @@ export function composerStateAtPromptEnd(text: string): {
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
+): ComposerStandaloneSlashCommand | null {
+  const match = /^\/(plan|default|clear|new|new-chat|newchat|done)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
   }
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
-  return "default";
+  if (command === "default") return "default";
+  if (command === "done") return "done";
+  // Cursor CLI aliases: /clear, /new, /new-chat, /newchat → fresh session.
+  return "clear";
 }
 
 export function replaceTextRange(
