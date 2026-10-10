@@ -2003,37 +2003,53 @@ function mapProjectUpsert(
       payload.cloudflare_zone_id ?? payload.cloudflareZoneId,
     ),
     localWorkingDirectory: asNullableString(
-      payload.local_working_directory ?? payload.localWorkingDirectory,
+      payloadValue(
+        payload,
+        "local_working_directory",
+        "localWorkingDirectory",
+      ),
     ),
+    // OS-106: use payloadValue so explicit null clears are not dropped by `??`.
     developmentLocation: asNullableString(
-      payload.development_location ?? payload.developmentLocation,
+      payloadValue(payload, "development_location", "developmentLocation"),
     ),
     productionLocation: asNullableString(
-      payload.production_location ?? payload.productionLocation,
+      payloadValue(payload, "production_location", "productionLocation"),
     ),
     localLocation: asNullableString(
-      payload.local_location ?? payload.localLocation,
+      payloadValue(payload, "local_location", "localLocation"),
     ),
     developmentSetupStatus: (() => {
       const raw = asNullableString(
-        payload.development_setup_status ?? payload.developmentSetupStatus,
+        payloadValue(
+          payload,
+          "development_setup_status",
+          "developmentSetupStatus",
+        ),
       );
       if (raw === undefined) return undefined;
       if (raw === "pending" || raw === "ready" || raw === "failed") return raw;
       return null;
     })(),
     developmentSetupError: asNullableString(
-      payload.development_setup_error ?? payload.developmentSetupError,
+      payloadValue(
+        payload,
+        "development_setup_error",
+        "developmentSetupError",
+      ),
     ),
     developmentSetupUpdatedAt: asNullableString(
-      payload.development_setup_updated_at ??
-        payload.developmentSetupUpdatedAt,
+      payloadValue(
+        payload,
+        "development_setup_updated_at",
+        "developmentSetupUpdatedAt",
+      ),
     ),
     healthCheckMode: asNullableString(
-      payload.health_check_mode ?? payload.healthCheckMode,
+      payloadValue(payload, "health_check_mode", "healthCheckMode"),
     ) as Project["healthCheckMode"] | undefined,
     healthCheckDomain: asNullableString(
-      payload.health_check_domain ?? payload.healthCheckDomain,
+      payloadValue(payload, "health_check_domain", "healthCheckDomain"),
     ),
     hourlyRateCents: asNullableNumber(
       payload.hourly_rate_cents ?? payload.hourlyRateCents,

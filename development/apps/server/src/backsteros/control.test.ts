@@ -163,6 +163,8 @@ describe("backsteros control helpers", () => {
         description: "Ship it",
         status: "in_progress",
         projectId: "p1",
+        executionLocation: null,
+        executionLocationLockedAt: null,
       },
       projectKey: "BDV",
       workingDirectory: "/tmp/dev",
