@@ -1976,31 +1976,64 @@ function crmActivitySnapshot(row: typeof crmActivities.$inferSelect) {
   };
 }
 
-function mapProjectUpsert(
+/**
+ * Map a sync/REST project upsert payload into create/update input.
+ * Exported for unit tests — production callers use {@link applySyncChange}.
+ *
+ * Nullable columns use {@link payloadValue} + {@link asNullableString}/
+ * {@link asNullableNumber} so explicit `null` clears are not dropped by `??`
+ * or by {@link asString} (which treats null as absent).
+ */
+export function mapProjectUpsert(
   payload: Record<string, unknown>,
 ): CreateProjectInput | UpdateProjectInput {
   return {
+    // Required / non-null columns: null must not clear — asString/asNumber
+    // map null → undefined so updateProject leaves the existing value.
     key: asString(payload.key),
     name: asString(payload.name),
-    summary: asString(payload.summary),
-    description: asString(payload.description),
-    organizationId: asNullableString(
-      payload.organization_id ?? payload.organizationId,
-    ),
-    areaId: asNullableString(payload.area_id ?? payload.areaId),
-    area: asString(payload.area) as Project["area"] | undefined,
-    startDate: asNullableString(payload.start_date ?? payload.startDate),
-    dueDate: asNullableString(payload.due_date ?? payload.dueDate),
-    icon: asString(payload.icon),
-    color: asString(payload.color),
     type: asString(payload.type) as Project["type"] | undefined,
-    provider: asNullableString(payload.provider) as Project["provider"] | undefined,
-    category: asNullableString(payload.category) as Project["category"] | undefined,
+    status: asString(payload.status) as Project["status"] | undefined,
+    priority: asNumber(payload.priority),
+    sortOrder: asNumber(
+      payloadValue(payload, "sort_order", "sortOrder"),
+    ),
+    // budgets is NOT NULL jsonb (default []); parseProjectBudgets(null) → [].
+    budgets: parseProjectBudgets(
+      Object.prototype.hasOwnProperty.call(payload, "budgets")
+        ? payload.budgets
+        : undefined,
+    ),
+    // Nullable columns — explicit null clears.
+    summary: asNullableString(payloadValue(payload, "summary", "summary")),
+    description: asNullableString(
+      payloadValue(payload, "description", "description"),
+    ),
+    organizationId: asNullableString(
+      payloadValue(payload, "organization_id", "organizationId"),
+    ),
+    areaId: asNullableString(payloadValue(payload, "area_id", "areaId")),
+    area: asNullableString(payloadValue(payload, "area", "area")) as
+      | Project["area"]
+      | null
+      | undefined,
+    startDate: asNullableString(
+      payloadValue(payload, "start_date", "startDate"),
+    ),
+    dueDate: asNullableString(payloadValue(payload, "due_date", "dueDate")),
+    icon: asNullableString(payloadValue(payload, "icon", "icon")),
+    color: asNullableString(payloadValue(payload, "color", "color")),
+    provider: asNullableString(
+      payloadValue(payload, "provider", "provider"),
+    ) as Project["provider"] | null | undefined,
+    category: asNullableString(
+      payloadValue(payload, "category", "category"),
+    ) as Project["category"] | null | undefined,
     githubRepository: asNullableString(
-      payload.github_repository ?? payload.githubRepository,
+      payloadValue(payload, "github_repository", "githubRepository"),
     ),
     cloudflareZoneId: asNullableString(
-      payload.cloudflare_zone_id ?? payload.cloudflareZoneId,
+      payloadValue(payload, "cloudflare_zone_id", "cloudflareZoneId"),
     ),
     localWorkingDirectory: asNullableString(
       payloadValue(
@@ -2009,7 +2042,6 @@ function mapProjectUpsert(
         "localWorkingDirectory",
       ),
     ),
-    // OS-106: use payloadValue so explicit null clears are not dropped by `??`.
     developmentLocation: asNullableString(
       payloadValue(payload, "development_location", "developmentLocation"),
     ),
@@ -2047,17 +2079,13 @@ function mapProjectUpsert(
     ),
     healthCheckMode: asNullableString(
       payloadValue(payload, "health_check_mode", "healthCheckMode"),
-    ) as Project["healthCheckMode"] | undefined,
+    ) as Project["healthCheckMode"] | null | undefined,
     healthCheckDomain: asNullableString(
       payloadValue(payload, "health_check_domain", "healthCheckDomain"),
     ),
     hourlyRateCents: asNullableNumber(
-      payload.hourly_rate_cents ?? payload.hourlyRateCents,
+      payloadValue(payload, "hourly_rate_cents", "hourlyRateCents"),
     ),
-    budgets: parseProjectBudgets(payload.budgets),
-    status: asString(payload.status) as Project["status"] | undefined,
-    priority: asNumber(payload.priority),
-    sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
   };
 }
 
