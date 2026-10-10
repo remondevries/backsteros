@@ -102,10 +102,9 @@ blind-prune volumes.
    that remote link.
 3. Confirm the environment label is clearly `production` (not a leftover
    `lemodesign` name).
-4. After BDV-56 lands, list remotes via
-   `GET /api/backsteros/control/environments` and start sessions with
-   `"environment": "production"` (and a `workspaceRoot` that exists on the
-   VPS).
+4. List remotes via `GET /api/backsteros/control/environments` (BDV-56) and
+   start sessions with `"environment": "production"` (and a `workspaceRoot`
+   that exists on the VPS).
 
 ## Caution for agents on production
 
