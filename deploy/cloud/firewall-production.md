@@ -11,9 +11,9 @@ Enabled **2026-10-10** (CA-39): `ufw` active + `DOCKER-USER` rules so Docker-pub
 | 22/tcp | SSH (key-only; `PasswordAuthentication no`) |
 | 80/tcp, 443/tcp | `kamal-proxy` |
 | 41641/udp | Tailscale WireGuard |
-| 8788/tcp | BacksterOS cloud API (pending review — may move to Tailscale-only) |
-| 7880/tcp, 7881/tcp, 50000–60000/udp | LiveKit (pending review) |
-| 3080/tcp | `/srv/backsteros/agents` (pending review) |
+| 8788/tcp | BacksterOS cloud API (`cloud-backsteros-1`, Docker-published) |
+| 7880/tcp, 7881/tcp, 50000–60000/udp | LiveKit (host network) |
+| 3080/tcp | `/srv/backsteros/agents` (host network) |
 
 Also: **full allow** on `tailscale0`.
 
@@ -22,11 +22,13 @@ Also: **full allow** on `tailscale0`.
 Docker publishes that must not be public: **9090** (Prometheus), **9093** (Alertmanager), **9115** (blackbox).  
 `DOCKER-USER` returns for established/related, `tailscale0`, CGNAT `100.64.0.0/10`, and TCP `80,443,8788`; then **DROPs** other traffic ingress on `eth0`.
 
+Host-network services (3080, LiveKit 7880/7881, UDP 50000–60000) are allowed via `ufw` INPUT, not `DOCKER-USER`.
+
 ## Backups on the server
 
 - Pre-change: `/home/deploy/firewall-backup-20261010-124346`
 - Post-enable: `/home/deploy/firewall-backup-enabled-20261010-124820`
-- Rollback helper (created during enable): `/home/deploy/ca39-firewall-rollback.sh`
+- Rollback helper: `/home/deploy/ca39-firewall-rollback.sh`
 
 ## Rollback
 
@@ -50,9 +52,12 @@ Or run `sudo /home/deploy/ca39-firewall-rollback.sh`.
 From another network (e.g. `lemodesign`):
 
 ```bash
-# expect OPEN: 80 443 8788 7880 ; FAIL: 9090 9093 9115
-for p in 80 443 8788 9090 9093 9115 7880; do
+# expect OPEN: 80 443 8788 7880 7881 3080 ; FAIL: 9090 9093 9115
+for p in 80 443 8788 7880 7881 3080 9090 9093 9115; do
   timeout 2 bash -c "echo >/dev/tcp/46.225.171.3/$p" && echo "$p OPEN" || echo "$p FAIL"
 done
-curl -sS -o /dev/null -w "%{http_code}\n" https://kifungo.nl/
+nc -u -z -w 2 46.225.171.3 50000 && echo "udp50000 OK"
+curl -sS -o /dev/null -w "kifungo:%{http_code}\n" https://kifungo.nl/
+curl -sS -o /dev/null -w "lemo:%{http_code}\n" https://lemo-design.com/
+curl -sS -o /dev/null -w "client:%{http_code}\n" https://client.lemo-design.com/
 ```
