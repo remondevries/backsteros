@@ -78,6 +78,8 @@ import {
 } from "../lib/agent-working.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
+import { ensureDevelopmentCheckout } from "./development-checkout.js";
+import { isExecutionLocation } from "./execution-location.js";
 import { enqueueAutoReviewDelivery } from "./auto-review-webhook.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
@@ -89,6 +91,137 @@ export type ProjectWriteOptions = {
   /** Skip vault folder rename/ensure (replica apply must not touch disks). */
   skipVaultSideEffects?: boolean;
 };
+
+type ProjectLocationInput = {
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  localLocation?: string | null;
+};
+
+function assertCodebaseLocationFields(
+  type: string,
+  input: ProjectLocationInput,
+): void {
+  const hasLocation =
+    (input.developmentLocation != null &&
+      String(input.developmentLocation).trim() !== "") ||
+    (input.productionLocation != null &&
+      String(input.productionLocation).trim() !== "") ||
+    (input.localLocation != null && String(input.localLocation).trim() !== "");
+  if (hasLocation && type !== "codebase") {
+    throw new Error("LOCATION_REQUIRES_CODEBASE");
+  }
+}
+
+function shouldTriggerDevelopmentCheckout(
+  previous: {
+    developmentLocation: string | null;
+    githubRepository: string | null;
+    type: string;
+    developmentSetupStatus: string | null;
+  } | null,
+  next: {
+    developmentLocation: string | null;
+    githubRepository: string | null;
+    type: string;
+  },
+): boolean {
+  if (next.type !== "codebase") return false;
+  const loc = next.developmentLocation?.trim() ?? "";
+  const repo = next.githubRepository?.trim() ?? "";
+  if (!loc || !repo) return false;
+  if (previous === null) return true;
+  const prevLoc = previous.developmentLocation?.trim() ?? "";
+  const prevRepo = previous.githubRepository?.trim() ?? "";
+  const firstLoc = !prevLoc && Boolean(loc);
+  const firstRepoWithLoc = Boolean(prevLoc) && !prevRepo && Boolean(repo);
+  if (!(firstLoc || firstRepoWithLoc)) return false;
+  if (previous.developmentSetupStatus === "ready" && prevLoc === loc) {
+    return false;
+  }
+  return true;
+}
+
+function shouldSkipDevelopmentCheckout(options?: ProjectWriteOptions): boolean {
+  // Cloud peer replay must not SSH; local core (and origin writes) may.
+  if (!options?.skipVaultSideEffects) return false;
+  return process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
+}
+
+async function recordDevelopmentSetupResult(
+  workspaceId: string,
+  projectId: string,
+  result: Awaited<ReturnType<typeof ensureDevelopmentCheckout>>,
+): Promise<void> {
+  if (result.status === "skipped") return;
+  const now = new Date();
+  try {
+    await db
+      .update(projects)
+      .set({
+        developmentSetupStatus: result.status === "ready" ? "ready" : "failed",
+        developmentSetupError:
+          result.status === "failed" ? result.error : null,
+        developmentSetupUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+      );
+  } catch (error) {
+    console.warn(
+      `[development-checkout] failed to persist setup status for ${projectId}: ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
+}
+
+function scheduleDevelopmentCheckout(input: {
+  workspaceId: string;
+  projectId: string;
+  githubRepository: string | null;
+  developmentLocation: string | null;
+}): void {
+  const now = new Date();
+  void db
+    .update(projects)
+    .set({
+      developmentSetupStatus: "pending",
+      developmentSetupError: null,
+      developmentSetupUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(projects.workspaceId, input.workspaceId),
+        eq(projects.id, input.projectId),
+      ),
+    )
+    .then(() =>
+      ensureDevelopmentCheckout({
+        githubRepository: input.githubRepository,
+        developmentLocation: input.developmentLocation,
+      }),
+    )
+    .then((result) =>
+      recordDevelopmentSetupResult(input.workspaceId, input.projectId, result),
+    )
+    .catch((error: unknown) => {
+      console.warn(
+        `[development-checkout] ${input.projectId}: ${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      );
+      void recordDevelopmentSetupResult(input.workspaceId, input.projectId, {
+        status: "failed",
+        error:
+          error instanceof Error
+            ? error.message.slice(0, 500)
+            : "development checkout failed",
+      });
+    });
+}
 
 /**
  * OS-42 / OS-49: peer sync replay / controlled task writes.
@@ -455,6 +588,7 @@ export async function createProject(
   if (input.githubRepository && type !== "codebase") {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
+  assertCodebaseLocationFields(type, input);
 
   const writeAt = options?.updatedAt ?? new Date();
   const [row] = await executor
@@ -479,6 +613,14 @@ export async function createProject(
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
       localWorkingDirectory: input.localWorkingDirectory ?? null,
+      developmentLocation: input.developmentLocation ?? null,
+      productionLocation: input.productionLocation ?? null,
+      localLocation: input.localLocation ?? null,
+      developmentSetupStatus: input.developmentSetupStatus ?? null,
+      developmentSetupError: input.developmentSetupError ?? null,
+      developmentSetupUpdatedAt: input.developmentSetupUpdatedAt
+        ? new Date(input.developmentSetupUpdatedAt)
+        : null,
       healthCheckMode: input.healthCheckMode ?? null,
       healthCheckDomain: input.healthCheckDomain ?? null,
       hourlyRateCents: input.hourlyRateCents ?? null,
@@ -492,6 +634,21 @@ export async function createProject(
     .returning();
 
   if (options?.skipVaultSideEffects) {
+    if (
+      !shouldSkipDevelopmentCheckout(options) &&
+      shouldTriggerDevelopmentCheckout(null, {
+        type: row.type,
+        developmentLocation: row.developmentLocation,
+        githubRepository: row.githubRepository,
+      })
+    ) {
+      scheduleDevelopmentCheckout({
+        workspaceId,
+        projectId: row.id,
+        githubRepository: row.githubRepository,
+        developmentLocation: row.developmentLocation,
+      });
+    }
     return row;
   }
 
@@ -511,11 +668,42 @@ export async function createProject(
         .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
         .returning();
       if (updated) {
+        if (
+          !shouldSkipDevelopmentCheckout(options) &&
+          shouldTriggerDevelopmentCheckout(null, {
+            type: updated.type,
+            developmentLocation: updated.developmentLocation,
+            githubRepository: updated.githubRepository,
+          })
+        ) {
+          scheduleDevelopmentCheckout({
+            workspaceId,
+            projectId: updated.id,
+            githubRepository: updated.githubRepository,
+            developmentLocation: updated.developmentLocation,
+          });
+        }
         return updated;
       }
     }
   } catch {
     // Vault may be unset — folder bootstrap happens when storage is configured.
+  }
+
+  if (
+    !shouldSkipDevelopmentCheckout(options) &&
+    shouldTriggerDevelopmentCheckout(null, {
+      type: row.type,
+      developmentLocation: row.developmentLocation,
+      githubRepository: row.githubRepository,
+    })
+  ) {
+    scheduleDevelopmentCheckout({
+      workspaceId,
+      projectId: row.id,
+      githubRepository: row.githubRepository,
+      developmentLocation: row.developmentLocation,
+    });
   }
 
   return row;
@@ -558,6 +746,13 @@ export async function updateProject(
   ) {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
+  // Reject non-empty location writes unless the resulting type is codebase.
+  // When leaving codebase, existing location columns are cleared below.
+  assertCodebaseLocationFields(nextType, {
+    developmentLocation: input.developmentLocation,
+    productionLocation: input.productionLocation,
+    localLocation: input.localLocation,
+  });
 
   // Droping codebase type clears any linked repository.
   const githubRepository =
@@ -565,7 +760,7 @@ export async function updateProject(
       ? null
       : input.githubRepository;
 
-  // Leaving codebase type clears health-check probe settings.
+  // Leaving codebase type clears health-check probe settings and locations.
   const healthCheckMode =
     input.type !== undefined && input.type !== "codebase"
       ? null
@@ -574,6 +769,13 @@ export async function updateProject(
     input.type !== undefined && input.type !== "codebase"
       ? null
       : input.healthCheckDomain;
+  const leavingCodebase =
+    input.type !== undefined && input.type !== "codebase";
+  const developmentLocation = leavingCodebase
+    ? null
+    : input.developmentLocation;
+  const productionLocation = leavingCodebase ? null : input.productionLocation;
+  const localLocation = leavingCodebase ? null : input.localLocation;
 
   // Leaving email type clears the provider category.
   const category =
@@ -621,6 +823,28 @@ export async function updateProject(
         githubRepository,
         cloudflareZoneId: input.cloudflareZoneId,
         localWorkingDirectory: input.localWorkingDirectory,
+        ...(leavingCodebase || input.developmentLocation !== undefined
+          ? { developmentLocation }
+          : {}),
+        ...(leavingCodebase || input.productionLocation !== undefined
+          ? { productionLocation }
+          : {}),
+        ...(leavingCodebase || input.localLocation !== undefined
+          ? { localLocation }
+          : {}),
+        ...(input.developmentSetupStatus !== undefined
+          ? { developmentSetupStatus: input.developmentSetupStatus }
+          : {}),
+        ...(input.developmentSetupError !== undefined
+          ? { developmentSetupError: input.developmentSetupError }
+          : {}),
+        ...(input.developmentSetupUpdatedAt !== undefined
+          ? {
+              developmentSetupUpdatedAt: input.developmentSetupUpdatedAt
+                ? new Date(input.developmentSetupUpdatedAt)
+                : null,
+            }
+          : {}),
         healthCheckMode,
         healthCheckDomain,
         hourlyRateCents: input.hourlyRateCents,
@@ -758,10 +982,37 @@ export async function updateProject(
 
   // OS-49: when renaming, wrap DB + folder rename so a vault failure rolls back
   // the key. Callers already inside a transaction pass their executor through.
-  if (keyChanging && !skipVault && executor === db) {
-    return db.transaction(async (tx) => applyRow(tx));
+  const row =
+    keyChanging && !skipVault && executor === db
+      ? await db.transaction(async (tx) => applyRow(tx))
+      : await applyRow(executor);
+
+  if (
+    row &&
+    !shouldSkipDevelopmentCheckout(options) &&
+    shouldTriggerDevelopmentCheckout(
+      {
+        developmentLocation: existing.developmentLocation,
+        githubRepository: existing.githubRepository,
+        type: existing.type,
+        developmentSetupStatus: existing.developmentSetupStatus,
+      },
+      {
+        type: row.type,
+        developmentLocation: row.developmentLocation,
+        githubRepository: row.githubRepository,
+      },
+    )
+  ) {
+    scheduleDevelopmentCheckout({
+      workspaceId,
+      projectId: row.id,
+      githubRepository: row.githubRepository,
+      developmentLocation: row.developmentLocation,
+    });
   }
-  return applyRow(executor);
+
+  return row;
 }
 
 export async function deleteProject(
@@ -1998,6 +2249,11 @@ async function createTaskWithExecutor(
       notification,
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
+      executionLocation: isExecutionLocation(input.executionLocation)
+        ? input.executionLocation
+        : null,
+      executionLocationLockedAt:
+        input.lockExecutionLocation === true ? (writeAt ?? new Date()) : null,
       agentWorkingContactId: agentWorking.contactId,
       agentWorkingStartedAt: agentWorking.startedAt,
       agentWorkingLabel: agentWorking.label,
@@ -2158,6 +2414,17 @@ export async function updateTask(
     const project = await getProjectById(workspaceId, input.projectId, executor);
     if (!project) {
       throw new Error("PROJECT_NOT_FOUND");
+    }
+  }
+  const executionLocationLocked = Boolean(existing.executionLocationLockedAt);
+  if (
+    input.executionLocation !== undefined &&
+    executionLocationLocked
+  ) {
+    const next = input.executionLocation;
+    const prev = existing.executionLocation ?? null;
+    if (next !== prev) {
+      throw new Error("EXECUTION_LOCATION_LOCKED");
     }
   }
   await assertWorkspaceReference(
@@ -2349,6 +2616,24 @@ export async function updateTask(
       notification: input.notification,
       links: input.links,
       agentChatId: input.agentChatId,
+      ...(input.executionLocation !== undefined && !executionLocationLocked
+        ? {
+            executionLocation: isExecutionLocation(input.executionLocation)
+              ? input.executionLocation
+              : null,
+          }
+        : {}),
+      ...(input.lockExecutionLocation === true && !executionLocationLocked
+        ? { executionLocationLockedAt: writeAt }
+        : {}),
+      ...(input.executionLocationLockedAt !== undefined &&
+      options?.skipActivitySideEffects
+        ? {
+            executionLocationLockedAt: input.executionLocationLockedAt
+              ? new Date(input.executionLocationLockedAt)
+              : null,
+          }
+        : {}),
       ...(agentWorkingChanged
         ? {
             agentWorkingContactId: agentWorking.contactId,

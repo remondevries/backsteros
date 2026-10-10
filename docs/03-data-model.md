@@ -16,6 +16,8 @@ Every entity type has a tier. **Enforce in PowerSync sync rules and API design.*
 | Tier | Description | Sync to client? | Example |
 | --- | --- | --- | --- |
 | **A** | Small structured records | Yes, full record | tasks, projects, contacts |
+
+Codebase projects may store per-environment execution paths (`developmentLocation`, `productionLocation`, `localLocation`) alongside the existing `localWorkingDirectory` and `githubRepository`. Tasks may override the default with `executionLocation` (`development` \| `production` \| `local`), frozen once the coding thread starts (`executionLocationLockedAt`).
 | **B** | Content **index** only | Yes, summary fields | doc title, path, snippet, letter metadata |
 | **C** | Large / server-primary | **No** bulk sync; paginated API | transaction history, workout sets |
 | **D** | Blobs | **Never** sync; fetch on demand | PDF bytes, full markdown body |

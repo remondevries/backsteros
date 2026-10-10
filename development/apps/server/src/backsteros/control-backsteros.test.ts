@@ -236,6 +236,9 @@ describe("backsterosFetch timeout + project detail fallback", () => {
       key: "OS",
       name: "BacksterOS",
       localWorkingDirectory: "/Users/me/Codebase",
+      developmentLocation: null,
+      productionLocation: null,
+      localLocation: null,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -287,6 +290,10 @@ describe("backsterosFetch timeout + project detail fallback", () => {
       key: "OS",
       name: "BacksterOS",
       localWorkingDirectory: "/tmp/os",
+      developmentLocation: null,
+      productionLocation: null,
+      localLocation: null,
     });
+    expect(resolved.task.executionLocation).toBeNull();
   });
 });

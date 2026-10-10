@@ -46,6 +46,11 @@ export type DesktopWorkspaceData = {
       organizationId?: string | null;
       type?: string;
       localWorkingDirectory?: string | null;
+      developmentLocation?: string | null;
+      productionLocation?: string | null;
+      localLocation?: string | null;
+      developmentSetupStatus?: "pending" | "ready" | "failed" | null;
+      developmentSetupError?: string | null;
       healthCheckMode?: "simple" | "advanced" | null;
       healthCheckDomain?: string | null;
       githubRepository?: string | null;

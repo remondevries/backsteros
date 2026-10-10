@@ -79,10 +79,19 @@ must refer to the same environment; a mismatch returns JSON `400` with
 `code: "environment_mismatch"` (label no longer silently overrides a wrong id).
 
 **Project resolution:** when `workspaceRoot` / `projectId` are omitted, the
-server reads the BacksterOS task's project `localWorkingDirectory`, matches it
-to a linked T3 project (same normalized-path comparison the rail uses), and
-creates/links a T3 project when none exists yet — same behavior as opening a
-task chat in the UI. Callers only need `taskRef` for the happy path.
+server resolves a workspace path from the BacksterOS task's optional
+`executionLocation` override (OS-106: `development` | `production` | `local`)
+against the project's `developmentLocation` / `productionLocation` /
+`localLocation` (falling back to `localWorkingDirectory` for local/default),
+matches it to a linked T3 project (same normalized-path comparison the rail
+uses), and creates/links a T3 project when none exists yet — same behavior as
+opening a task chat in the UI. Callers only need `taskRef` for the happy path.
+
+When `environmentId` / `environment` are omitted and the task has
+`executionLocation` `development` or `production`, the control API also infers
+that environment label (BDV-56 remote-environment option) so agents start on
+the paired remote host. Binding a thread freezes the task's execution location
+(`lockExecutionLocation`).
 
 If the BacksterOS project has no cwd and `workspaceRoot` was not provided, the
 response is JSON `409` with `code: "no_workspace"` (not a 500).

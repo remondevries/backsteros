@@ -955,6 +955,9 @@ export function useWorkspaceEntityPatching({
           "type" in values ||
           "githubRepository" in values ||
           "localWorkingDirectory" in values ||
+          "developmentLocation" in values ||
+          "productionLocation" in values ||
+          "localLocation" in values ||
           "healthCheckMode" in values ||
           "healthCheckDomain" in values ||
           "hourlyRateCents" in values ||

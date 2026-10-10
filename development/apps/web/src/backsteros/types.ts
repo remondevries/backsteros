@@ -18,6 +18,14 @@ export interface BacksterosCodebaseProject {
   readonly dueDate?: string | null;
   readonly githubRepository: string | null;
   readonly localWorkingDirectory: string | null;
+  /** OS-106: path on the development server. */
+  readonly developmentLocation?: string | null;
+  /** OS-106: path on the production server. */
+  readonly productionLocation?: string | null;
+  /** OS-106: path on the BacksterOS desktop machine. */
+  readonly localLocation?: string | null;
+  readonly developmentSetupStatus?: "pending" | "ready" | "failed" | null;
+  readonly developmentSetupError?: string | null;
   readonly healthCheckMode?: "simple" | "advanced" | null;
   readonly healthCheckDomain?: string | null;
   readonly updatedAt: string;
@@ -40,6 +48,9 @@ export type BacksterosProjectUpdatePatch = {
   readonly icon?: string | null;
   readonly githubRepository?: string | null;
   readonly localWorkingDirectory?: string | null;
+  readonly developmentLocation?: string | null;
+  readonly productionLocation?: string | null;
+  readonly localLocation?: string | null;
   readonly healthCheckMode?: "simple" | "advanced" | null;
   readonly healthCheckDomain?: string | null;
 };
@@ -143,6 +154,9 @@ export interface BacksterosTask {
   readonly agentWorkingLabel?: string | null;
   readonly agentWorkingKind?: "working" | "reviewing" | null;
   readonly agentWorkingContactName?: string | null;
+  /** OS-106: development | production | local */
+  readonly executionLocation?: "development" | "production" | "local" | null;
+  readonly executionLocationLockedAt?: string | null;
 }
 
 /** Full task payload from `GET /api/v1/tasks/:id`. */
@@ -242,6 +256,8 @@ export type BacksterosCreateTaskInput = {
   readonly notification?: boolean;
   readonly inbox?: boolean;
   readonly activityActor?: "user" | "agent";
+  /** OS-106: override project default execution location at create time. */
+  readonly executionLocation?: "development" | "production" | "local" | null;
 };
 
 /** Fields accepted by `PATCH /api/v1/tasks/:id`. */
@@ -264,6 +280,9 @@ export type BacksterosTaskUpdatePatch = {
   /** When set, BacksterOS records the status change as this actor. */
   readonly activityActor?: "user" | "agent";
   readonly automateCompletion?: boolean;
+  /** OS-106: rejected once executionLocationLockedAt is set. */
+  readonly executionLocation?: "development" | "production" | "local" | null;
+  readonly lockExecutionLocation?: boolean;
 };
 
 export type BacksterosCreateTaskActivityInput =

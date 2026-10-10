@@ -89,6 +89,17 @@ export function toProject(row: DbProject): Project {
     githubRepository: row.githubRepository ?? null,
     cloudflareZoneId: row.cloudflareZoneId ?? null,
     localWorkingDirectory: row.localWorkingDirectory ?? null,
+    developmentLocation: row.developmentLocation ?? null,
+    productionLocation: row.productionLocation ?? null,
+    localLocation: row.localLocation ?? null,
+    developmentSetupStatus:
+      row.developmentSetupStatus === "pending" ||
+      row.developmentSetupStatus === "ready" ||
+      row.developmentSetupStatus === "failed"
+        ? row.developmentSetupStatus
+        : null,
+    developmentSetupError: row.developmentSetupError ?? null,
+    developmentSetupUpdatedAt: toIso(row.developmentSetupUpdatedAt),
     healthCheckMode:
       (row.healthCheckMode as Project["healthCheckMode"]) ?? null,
     healthCheckDomain: row.healthCheckDomain ?? null,
@@ -152,6 +163,13 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     notification: row.notification,
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
+    executionLocation:
+      row.executionLocation === "development" ||
+      row.executionLocation === "production" ||
+      row.executionLocation === "local"
+        ? row.executionLocation
+        : null,
+    executionLocationLockedAt: toIso(row.executionLocationLockedAt),
     agentWorkingContactId: row.agentWorkingContactId ?? null,
     agentWorkingStartedAt: toIso(row.agentWorkingStartedAt),
     agentWorkingLabel: row.agentWorkingLabel ?? null,

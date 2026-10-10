@@ -217,6 +217,11 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   organizationId?: string | null;
   type?: string;
   localWorkingDirectory?: string | null;
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  localLocation?: string | null;
+  developmentSetupStatus?: "pending" | "ready" | "failed" | null;
+  developmentSetupError?: string | null;
   githubRepository?: string | null;
   cloudflareZoneId?: string | null;
   provider?: string | null;
@@ -301,6 +306,11 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     icon: project.icon ?? null,
     organizationId: project.organizationId ?? null,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
+    developmentLocation: project.developmentLocation ?? null,
+    productionLocation: project.productionLocation ?? null,
+    localLocation: project.localLocation ?? null,
+    developmentSetupStatus: project.developmentSetupStatus ?? null,
+    developmentSetupError: project.developmentSetupError ?? null,
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: project.cloudflareZoneId ?? null,
     provider: project.provider ?? null,

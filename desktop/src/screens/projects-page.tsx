@@ -154,6 +154,11 @@ type WorkspaceProject = ProjectOverviewRowProject & {
   organizationId?: string | null;
   type?: string;
   localWorkingDirectory?: string | null;
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  localLocation?: string | null;
+  developmentSetupStatus?: "pending" | "ready" | "failed" | null;
+  developmentSetupError?: string | null;
   githubRepository?: string | null;
   provider?: string | null;
   category?: string | null;
@@ -2051,6 +2056,11 @@ function ProjectsPageBody({
             type: "codebase",
             areaId: project.areaId ?? null,
             localWorkingDirectory: project.localWorkingDirectory ?? null,
+            developmentLocation: project.developmentLocation ?? null,
+            productionLocation: project.productionLocation ?? null,
+            localLocation: project.localLocation ?? null,
+            developmentSetupStatus: project.developmentSetupStatus ?? null,
+            developmentSetupError: project.developmentSetupError ?? null,
             githubRepository: project.githubRepository ?? null,
             healthCheckMode: project.healthCheckMode ?? null,
             healthCheckDomain: project.healthCheckDomain ?? null,
@@ -2063,6 +2073,11 @@ function ProjectsPageBody({
             organizationId: entry.organizationId ?? null,
             type: entry.type ?? "general",
             localWorkingDirectory: entry.localWorkingDirectory ?? null,
+            developmentLocation: entry.developmentLocation ?? null,
+            productionLocation: entry.productionLocation ?? null,
+            localLocation: entry.localLocation ?? null,
+            developmentSetupStatus: entry.developmentSetupStatus ?? null,
+            developmentSetupError: entry.developmentSetupError ?? null,
             githubRepository: entry.githubRepository ?? null,
             healthCheckMode: entry.healthCheckMode ?? null,
             healthCheckDomain: entry.healthCheckDomain ?? null,

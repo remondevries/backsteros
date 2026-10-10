@@ -146,11 +146,18 @@ function BacksterosCodebaseProjectDescription(props: {
 function WorkingDirectoryChip(props: {
   readonly value: string | null;
   readonly onSave: (next: string | null) => Promise<void>;
+  readonly emptyLabel?: string;
+  readonly ariaLabel?: string;
+  readonly title?: string;
+  readonly prefix?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(props.value ?? "");
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const label = workingDirectoryLabel(props.value);
+  const basename = workingDirectoryLabel(props.value);
+  const label = basename ? (props.prefix ? `${props.prefix}: ${basename}` : basename) : null;
+  const emptyLabel = props.emptyLabel ?? "Set folder…";
+  const ariaLabel = props.ariaLabel ?? "Working directory";
 
   useEffect(() => {
     setDraft(props.value ?? "");
@@ -188,7 +195,7 @@ function WorkingDirectoryChip(props: {
             }
           }}
           placeholder="/absolute/path/to/repo"
-          aria-label="Working directory"
+          aria-label={ariaLabel}
           className="bos-codebase-overview__cwd-input"
         />
       </form>
@@ -199,13 +206,13 @@ function WorkingDirectoryChip(props: {
     <button
       type="button"
       className={cn("bos-task-property-chip", !label && "bos-task-property-chip--muted")}
-      title={props.value ?? "Set working directory (required for Files / Documents)"}
+      title={props.title ?? props.value ?? "Set working directory (required for Files / Documents)"}
       onClick={() => setEditing(true)}
     >
       <span className="bos-task-property-chip__icon" aria-hidden="true">
         <BacksterosComposeFolderIcon size={PROPERTY_ICON_SIZE} />
       </span>
-      <span className="bos-task-property-chip__label">{label ?? "Set folder…"}</span>
+      <span className="bos-task-property-chip__label">{label ?? emptyLabel}</span>
     </button>
   );
 }
@@ -574,6 +581,41 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           value={detail.localWorkingDirectory}
           onSave={async (localWorkingDirectory) => {
             await applyPatch({ localWorkingDirectory }, "Could not update working directory");
+          }}
+        />
+        <WorkingDirectoryChip
+          value={detail.developmentLocation ?? null}
+          prefix="Dev"
+          emptyLabel="Dev location…"
+          ariaLabel="Development location"
+          title={
+            detail.developmentSetupError
+              ? `Development setup: ${detail.developmentSetupError}`
+              : (detail.developmentLocation ??
+                "Path on the development server (cloned once when first set)")
+          }
+          onSave={async (developmentLocation) => {
+            await applyPatch({ developmentLocation }, "Could not update development location");
+          }}
+        />
+        <WorkingDirectoryChip
+          value={detail.productionLocation ?? null}
+          prefix="Prod"
+          emptyLabel="Prod location…"
+          ariaLabel="Production location"
+          title={detail.productionLocation ?? "Path on the production server"}
+          onSave={async (productionLocation) => {
+            await applyPatch({ productionLocation }, "Could not update production location");
+          }}
+        />
+        <WorkingDirectoryChip
+          value={detail.localLocation ?? null}
+          prefix="Local"
+          emptyLabel="Local location…"
+          ariaLabel="Local location"
+          title={detail.localLocation ?? "Path on the machine running the BacksterOS desktop app"}
+          onSave={async (localLocation) => {
+            await applyPatch({ localLocation }, "Could not update local location");
           }}
         />
         <BacksterosSearchablePropertyMenu

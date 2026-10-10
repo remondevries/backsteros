@@ -134,7 +134,11 @@ export function taskApiPatchToSqlite(
     } else if (key === "projectId") sqliteValues.project_id = value;
     else if (key === "contactId") sqliteValues.contact_id = value;
     else if (key === "agentChatId") sqliteValues.agent_chat_id = value;
-    else if (key === "linkedCommitShas") {
+    else if (key === "executionLocation") {
+      sqliteValues.execution_location = value;
+    } else if (key === "executionLocationLockedAt") {
+      sqliteValues.execution_location_locked_at = value;
+    } else if (key === "linkedCommitShas") {
       sqliteValues.linked_commit_shas = Array.isArray(value)
         ? JSON.stringify(value)
         : value;
@@ -180,8 +184,13 @@ export function projectApiPatchToSqlite(
     else if (key === "githubRepository") sqliteValues.github_repository = value;
     else if (key === "localWorkingDirectory") {
       sqliteValues.local_working_directory = value;
-    }
-    else sqliteValues[key] = value;
+    } else if (key === "developmentLocation") {
+      sqliteValues.development_location = value;
+    } else if (key === "productionLocation") {
+      sqliteValues.production_location = value;
+    } else if (key === "localLocation") {
+      sqliteValues.local_location = value;
+    } else sqliteValues[key] = value;
   }
   return sqliteValues;
 }

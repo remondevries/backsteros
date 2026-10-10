@@ -197,6 +197,23 @@ export const projectSchema = z.object({
   /** Absolute local folder for agent/PTY (machine-specific; Development console). */
   localWorkingDirectory: z.string().max(4096).nullable(),
   /**
+   * Path on the development server for agent execution (codebase projects, OS-106).
+   * Distinct from {@link localWorkingDirectory}.
+   */
+  developmentLocation: z.string().max(4096).nullable(),
+  /** Path on the production server for agent execution (codebase projects, OS-106). */
+  productionLocation: z.string().max(4096).nullable(),
+  /**
+   * Path on the machine running the BacksterOS desktop app (codebase, OS-106).
+   * Distinct from {@link localWorkingDirectory} (canonical local codebase location).
+   */
+  localLocation: z.string().max(4096).nullable(),
+  /** One-time development-server clone status (OS-106): pending | ready | failed. */
+  developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable(),
+  /** Sanitized last development setup error (no secrets). */
+  developmentSetupError: z.string().max(2000).nullable(),
+  developmentSetupUpdatedAt: z.string().datetime().nullable(),
+  /**
    * Status probe mode for codebase projects.
    * `simple` = HTTPS ping of `healthCheckDomain`; `advanced` = `/healthz` later.
    */
@@ -225,6 +242,14 @@ export const projectSchema = z.object({
   deletedAt: z.string().datetime().nullable(),
 });
 
+/** Where a codebase task should run agents (OS-106). */
+export const EXECUTION_LOCATIONS = [
+  "development",
+  "production",
+  "local",
+] as const;
+export const executionLocationSchema = z.enum(EXECUTION_LOCATIONS);
+
 export const createProjectSchema = z.object({
   key: projectKeySchema,
   name: z.string().min(1).max(255),
@@ -243,6 +268,13 @@ export const createProjectSchema = z.object({
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
   cloudflareZoneId: z.string().max(64).nullable().optional(),
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
+  developmentLocation: z.string().max(4096).nullable().optional(),
+  productionLocation: z.string().max(4096).nullable().optional(),
+  localLocation: z.string().max(4096).nullable().optional(),
+  /** Server/sync-managed development checkout status (OS-106). */
+  developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable().optional(),
+  developmentSetupError: z.string().max(2000).nullable().optional(),
+  developmentSetupUpdatedAt: z.string().datetime().nullable().optional(),
   healthCheckMode: z.enum(["simple", "advanced"]).nullable().optional(),
   healthCheckDomain: z.string().max(253).nullable().optional(),
   hourlyRateCents: z.number().int().nonnegative().nullable().optional(),
@@ -509,6 +541,13 @@ export const taskSchema = z.object({
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
   /**
+   * Override of the project's default execution location (OS-106).
+   * Frozen once the coding thread starts ({@link executionLocationLockedAt}).
+   */
+  executionLocation: executionLocationSchema.nullable().optional(),
+  /** When the execution location was frozen (ISO). Null while still editable. */
+  executionLocationLockedAt: z.string().datetime().nullable().optional(),
+  /**
    * Agents-API working marker (OS-96). Contact id of the agent persona currently
    * working this task. Orthogonal to {@link agentChatId} (coding session).
    */
@@ -710,6 +749,16 @@ export const createTaskSchema = z.object({
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
   /**
+   * Override the project's default execution location at create time (OS-106).
+   * Once the coding thread starts it is frozen and further changes are rejected.
+   */
+  executionLocation: executionLocationSchema.nullable().optional(),
+  /**
+   * Freeze the execution location (set by BacksterDEV / control API when the
+   * thread starts). Cannot unlock once set.
+   */
+  lockExecutionLocation: z.boolean().optional(),
+  /**
    * Mark / clear agents-API working (OS-96). Pass a contact id to claim, or
    * `null` to clear. Server sets `agentWorkingStartedAt`. Agent API keys may
    * only set their own contact (unless owner).
@@ -768,6 +817,8 @@ export const updateTaskSchema = createTaskSchema
       .enum(["pending", "delivered", "failed"])
       .nullable()
       .optional(),
+    /** Replicated freeze timestamp for execution location (OS-106). */
+    executionLocationLockedAt: z.string().datetime().nullable().optional(),
   })
   .refine(
     (value) =>

@@ -143,6 +143,13 @@ function projectSnapshot(row: typeof projects.$inferSelect) {
     github_repository: row.githubRepository,
     cloudflare_zone_id: row.cloudflareZoneId,
     local_working_directory: row.localWorkingDirectory,
+    development_location: row.developmentLocation,
+    production_location: row.productionLocation,
+    local_location: row.localLocation,
+    development_setup_status: row.developmentSetupStatus,
+    development_setup_error: row.developmentSetupError,
+    development_setup_updated_at:
+      row.developmentSetupUpdatedAt?.toISOString() ?? null,
     health_check_mode: row.healthCheckMode,
     health_check_domain: row.healthCheckDomain,
     hourly_rate_cents: row.hourlyRateCents,
@@ -201,6 +208,9 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     notification: row.notification,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
+    execution_location: row.executionLocation ?? null,
+    execution_location_locked_at:
+      row.executionLocationLockedAt?.toISOString() ?? null,
     agent_working_contact_id: row.agentWorkingContactId ?? null,
     agent_working_started_at: row.agentWorkingStartedAt?.toISOString() ?? null,
     agent_working_label: row.agentWorkingLabel ?? null,
@@ -1995,6 +2005,30 @@ function mapProjectUpsert(
     localWorkingDirectory: asNullableString(
       payload.local_working_directory ?? payload.localWorkingDirectory,
     ),
+    developmentLocation: asNullableString(
+      payload.development_location ?? payload.developmentLocation,
+    ),
+    productionLocation: asNullableString(
+      payload.production_location ?? payload.productionLocation,
+    ),
+    localLocation: asNullableString(
+      payload.local_location ?? payload.localLocation,
+    ),
+    developmentSetupStatus: (() => {
+      const raw = asNullableString(
+        payload.development_setup_status ?? payload.developmentSetupStatus,
+      );
+      if (raw === undefined) return undefined;
+      if (raw === "pending" || raw === "ready" || raw === "failed") return raw;
+      return null;
+    })(),
+    developmentSetupError: asNullableString(
+      payload.development_setup_error ?? payload.developmentSetupError,
+    ),
+    developmentSetupUpdatedAt: asNullableString(
+      payload.development_setup_updated_at ??
+        payload.developmentSetupUpdatedAt,
+    ),
     healthCheckMode: asNullableString(
       payload.health_check_mode ?? payload.healthCheckMode,
     ) as Project["healthCheckMode"] | undefined,
@@ -2129,6 +2163,23 @@ function mapTaskUpsert(
     links: parseTaskLinks(payload.links),
     agentChatId: asNullableString(
       payloadValue(payload, "agent_chat_id", "agentChatId"),
+    ),
+    executionLocation: (() => {
+      const raw = asNullableString(
+        payloadValue(payload, "execution_location", "executionLocation"),
+      );
+      if (raw === undefined) return undefined;
+      if (raw === "development" || raw === "production" || raw === "local") {
+        return raw;
+      }
+      return null;
+    })(),
+    executionLocationLockedAt: asNullableString(
+      payloadValue(
+        payload,
+        "execution_location_locked_at",
+        "executionLocationLockedAt",
+      ),
     ),
     agentWorkingContactId: asNullableString(
       payloadValue(payload, "agent_working_contact_id", "agentWorkingContactId"),
@@ -2274,6 +2325,9 @@ export async function applySyncChange(
           githubRepository: input.githubRepository,
           cloudflareZoneId: input.cloudflareZoneId,
           localWorkingDirectory: input.localWorkingDirectory,
+          developmentLocation: input.developmentLocation,
+          productionLocation: input.productionLocation,
+          localLocation: input.localLocation,
           healthCheckMode: input.healthCheckMode,
           healthCheckDomain: input.healthCheckDomain,
           status: input.status,

@@ -284,6 +284,110 @@ function ProjectWorkingDirectoryField({
   );
 }
 
+function ProjectLocationPathField({
+  project,
+  field,
+  labelPrefix,
+  emptyLabel,
+  onProjectUpdated,
+  requestJson,
+}: {
+  project: ApiProject;
+  field: "developmentLocation" | "productionLocation" | "localLocation";
+  labelPrefix: string;
+  emptyLabel: string;
+  onProjectUpdated: (project: ApiProject) => void;
+  requestJson: CodebaseRequestJson;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(project[field] ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const value = project[field]?.trim() || null;
+  const basename = value ? workingDirectoryLabel(value) : null;
+  const label = basename ? `${labelPrefix}: ${basename}` : emptyLabel;
+
+  useEffect(() => {
+    setDraft(project[field] ?? "");
+  }, [project, field]);
+
+  if (editing) {
+    return (
+      <form
+        className="property-dropdown-trigger property-dropdown-trigger--inline-chip"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void (async () => {
+            setSaving(true);
+            setError(null);
+            const previous = project;
+            const next = draft.trim() || null;
+            try {
+              onProjectUpdated({ ...project, [field]: next });
+              const updated = await requestJson<ApiProject>(
+                `/api/v1/projects/${encodeURIComponent(project.id)}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ [field]: next }),
+                },
+              );
+              onProjectUpdated({ ...updated, [field]: next });
+              setEditing(false);
+            } catch (err) {
+              onProjectUpdated(previous);
+              setError(apiErrorMessage(err) || `Could not save ${labelPrefix} location.`);
+            } finally {
+              setSaving(false);
+            }
+          })();
+        }}
+      >
+        <input
+          autoFocus
+          value={draft}
+          disabled={saving}
+          aria-label={`${labelPrefix} location`}
+          placeholder="/absolute/path"
+          className="property-dropdown-trigger__label"
+          style={{ minWidth: "12rem", border: "none", background: "transparent" }}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(project[field] ?? "");
+              setEditing(false);
+            }
+          }}
+        />
+      </form>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={[
+        "property-dropdown-trigger",
+        "property-dropdown-trigger--inline-chip",
+        value ? null : "is-muted",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      title={error ?? value ?? emptyLabel}
+      aria-label={error ?? (value ? `${labelPrefix} location: ${value}` : emptyLabel)}
+      aria-invalid={error ? true : undefined}
+      disabled={saving}
+      onClick={() => setEditing(true)}
+    >
+      <span className="property-dropdown-trigger__icon" aria-hidden="true">
+        <ComposeFolderIcon className="" />
+      </span>
+      <span className="property-dropdown-trigger__label">{label}</span>
+    </button>
+  );
+}
+
 function ProjectGithubRepositoryField({
   project,
   onProjectUpdated,
@@ -1884,6 +1988,30 @@ export function CodebaseProjectOverviewPane({
                       onProjectUpdated={onProjectUpdated}
                       requestJson={requestJson}
                       fs={fs}
+                    />
+                    <ProjectLocationPathField
+                      project={project}
+                      field="developmentLocation"
+                      labelPrefix="Dev"
+                      emptyLabel="Dev location…"
+                      onProjectUpdated={onProjectUpdated}
+                      requestJson={requestJson}
+                    />
+                    <ProjectLocationPathField
+                      project={project}
+                      field="productionLocation"
+                      labelPrefix="Prod"
+                      emptyLabel="Prod location…"
+                      onProjectUpdated={onProjectUpdated}
+                      requestJson={requestJson}
+                    />
+                    <ProjectLocationPathField
+                      project={project}
+                      field="localLocation"
+                      labelPrefix="Local"
+                      emptyLabel="Local location…"
+                      onProjectUpdated={onProjectUpdated}
+                      requestJson={requestJson}
                     />
                     <ProjectGithubRepositoryField
                       project={project}

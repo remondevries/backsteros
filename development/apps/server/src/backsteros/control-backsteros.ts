@@ -24,6 +24,9 @@ export type BacksterosControlTask = {
   readonly description: string | null;
   readonly status: string;
   readonly projectId: string | null;
+  /** OS-106: development | production | local */
+  readonly executionLocation: string | null;
+  readonly executionLocationLockedAt: string | null;
 };
 
 export type BacksterosControlProject = {
@@ -31,6 +34,9 @@ export type BacksterosControlProject = {
   readonly key: string | null;
   readonly name: string;
   readonly localWorkingDirectory: string | null;
+  readonly developmentLocation: string | null;
+  readonly productionLocation: string | null;
+  readonly localLocation: string | null;
 };
 
 export class BacksterosTimeoutError extends Error {
@@ -128,12 +134,40 @@ function mapProjectRow(project: {
   key?: string | null;
   name: string;
   localWorkingDirectory?: string | null;
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  localLocation?: string | null;
 }): BacksterosControlProject {
   return {
     id: project.id,
     key: project.key ?? null,
     name: project.name,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
+    developmentLocation: project.developmentLocation ?? null,
+    productionLocation: project.productionLocation ?? null,
+    localLocation: project.localLocation ?? null,
+  };
+}
+
+function mapTaskRow(task: {
+  id: string;
+  number: number;
+  title: string;
+  status: string;
+  projectId?: string | null;
+  description?: string | null;
+  executionLocation?: string | null;
+  executionLocationLockedAt?: string | null;
+}): BacksterosControlTask {
+  return {
+    id: task.id,
+    number: task.number,
+    title: task.title,
+    description: task.description ?? null,
+    status: task.status,
+    projectId: task.projectId ?? null,
+    executionLocation: task.executionLocation ?? null,
+    executionLocationLockedAt: task.executionLocationLockedAt ?? null,
   };
 }
 
@@ -147,6 +181,9 @@ export async function fetchBacksterosControlProject(
       key?: string | null;
       name: string;
       localWorkingDirectory?: string | null;
+      developmentLocation?: string | null;
+      productionLocation?: string | null;
+      localLocation?: string | null;
     }>(detailPath);
     return mapProjectRow(project);
   } catch (error) {
@@ -165,6 +202,9 @@ async function listBacksterosControlProjects(): Promise<ReadonlyArray<Backsteros
       key?: string | null;
       name: string;
       localWorkingDirectory?: string | null;
+      developmentLocation?: string | null;
+      productionLocation?: string | null;
+      localLocation?: string | null;
     }>;
   }>("/api/v1/projects?type=codebase");
   return (payload.projects ?? []).map(mapProjectRow);
@@ -216,16 +256,11 @@ export async function resolveBacksterosControlTask(taskRefOrId: string): Promise
       status: string;
       projectId?: string | null;
       description?: string | null;
+      executionLocation?: string | null;
+      executionLocationLockedAt?: string | null;
     }>(`/api/v1/tasks/${encodeURIComponent(listed.id)}`);
     return {
-      task: {
-        id: detail.id,
-        number: detail.number,
-        title: detail.title,
-        description: detail.description ?? null,
-        status: detail.status,
-        projectId: detail.projectId ?? project.id,
-      },
+      task: mapTaskRow({ ...detail, projectId: detail.projectId ?? project.id }),
       project,
     };
   }
@@ -237,19 +272,37 @@ export async function resolveBacksterosControlTask(taskRefOrId: string): Promise
     status: string;
     projectId?: string | null;
     description?: string | null;
+    executionLocation?: string | null;
+    executionLocationLockedAt?: string | null;
   }>(`/api/v1/tasks/${encodeURIComponent(trimmed)}`);
   const project = detail.projectId ? await fetchBacksterosControlProject(detail.projectId) : null;
   return {
-    task: {
-      id: detail.id,
-      number: detail.number,
-      title: detail.title,
-      description: detail.description ?? null,
-      status: detail.status,
-      projectId: detail.projectId ?? null,
-    },
+    task: mapTaskRow(detail),
     project,
   };
+}
+
+/** Freeze the task's execution location once a coding thread starts (OS-106). */
+export async function lockBacksterosControlExecutionLocation(taskId: string): Promise<boolean> {
+  const origin = resolveBacksterosControlApiOrigin();
+  const apiKey = resolveBacksterosControlApiKey();
+  if (!apiKey) return false;
+  try {
+    const response = await fetch(`${origin}/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ lockExecutionLocation: true, activityActor: "agent" }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(BACKSTEROS_FETCH_TIMEOUT_MS),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 /**

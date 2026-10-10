@@ -682,6 +682,20 @@ export const projects = pgTable(
      * Not multi-device; stored so the Development console persists across reloads.
      */
     localWorkingDirectory: text("local_working_directory"),
+    /**
+     * Per-environment execution paths for `type = codebase` (OS-106).
+     * Distinct from {@link localWorkingDirectory} (canonical local codebase location).
+     */
+    developmentLocation: text("development_location"),
+    productionLocation: text("production_location"),
+    localLocation: text("local_location"),
+    /** `pending` | `ready` | `failed` — one-time development-server clone (OS-106). */
+    developmentSetupStatus: text("development_setup_status"),
+    /** Sanitized last clone/setup error (no secrets). */
+    developmentSetupError: text("development_setup_error"),
+    developmentSetupUpdatedAt: timestamp("development_setup_updated_at", {
+      withTimezone: true,
+    }),
     /** `simple` | `advanced` — codebase status probes (portal / Prometheus). */
     healthCheckMode: text("health_check_mode"),
     /** Hostname for simple probes (no scheme), e.g. quarrymill.com. */
@@ -784,6 +798,15 @@ export const tasks = pgTable(
       .default(sql`'[]'::jsonb`),
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
+    /**
+     * Optional override of the project's default execution location (OS-106).
+     * `development` | `production` | `local`. Frozen once the coding thread starts.
+     */
+    executionLocation: text("execution_location"),
+    /** Set when the execution location is frozen (thread started). */
+    executionLocationLockedAt: timestamp("execution_location_locked_at", {
+      withTimezone: true,
+    }),
     /**
      * Agents-API “working on this” marker (OS-96). Contact of the agent persona
      * (e.g. Ralph). Orthogonal to `agentChatId` (coding session) and to

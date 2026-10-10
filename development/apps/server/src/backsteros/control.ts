@@ -34,12 +34,18 @@ import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import {
   BacksterosTimeoutError,
   buildControlKickoffPrompt,
+  lockBacksterosControlExecutionLocation,
   patchBacksterosControlTaskStatus,
   resolveBacksterosControlApiKey,
   resolveBacksterosControlTask,
   type BacksterosControlProject,
   type BacksterosControlTask,
 } from "./control-backsteros.ts";
+import {
+  executionLocationEnvironmentLabel,
+  isExecutionLocation,
+  resolveExecutionWorkspacePath,
+} from "./execution-location.ts";
 import {
   listControlEnvironmentsPublic,
   readControlEnvironments,
@@ -472,9 +478,13 @@ const findThreadShellForBinding = Effect.fn("backsteros.control.findThreadShellF
 export function resolveControlWorkspaceRoot(input: {
   readonly workspaceRootOverride: string | null;
   readonly localWorkingDirectory: string | null | undefined;
+  /** Preferred path from task executionLocation + project locations (OS-106). */
+  readonly executionWorkspacePath?: string | null;
 }): { readonly workspaceRoot: string } | { readonly error: ControlHttpError } {
   const fromOverride = input.workspaceRootOverride;
   if (fromOverride) return { workspaceRoot: fromOverride };
+  const fromExecution = input.executionWorkspacePath?.trim() ?? "";
+  if (fromExecution.length > 0) return { workspaceRoot: fromExecution };
   const fromProject = input.localWorkingDirectory?.trim() ?? "";
   if (fromProject.length > 0) return { workspaceRoot: fromProject };
   return {
@@ -813,6 +823,8 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
     });
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
+    // Freeze execution location when the thread is bound (OS-106 / envLocked).
+    void lockBacksterosControlExecutionLocation(task.id);
     if (input.start) {
       void patchBacksterosControlTaskStatus(task.id, "in_progress");
     }
@@ -883,9 +895,16 @@ export const controlStartHandler = catchControlErrors(
     });
 
     const { task, project } = resolved;
+    const executionLocation = isExecutionLocation(task.executionLocation)
+      ? task.executionLocation
+      : null;
+    const executionWorkspacePath = project
+      ? resolveExecutionWorkspacePath(project, executionLocation)
+      : null;
     const workspaceResolved = resolveControlWorkspaceRoot({
       workspaceRootOverride,
       localWorkingDirectory: project?.localWorkingDirectory,
+      executionWorkspacePath,
     });
     if ("error" in workspaceResolved) {
       return yield* Effect.fail(workspaceResolved.error);
@@ -896,12 +915,14 @@ export const controlStartHandler = catchControlErrors(
     const environment = yield* ServerEnvironment.ServerEnvironment;
     const localEnvironmentId = String(yield* environment.getEnvironmentId);
     const localDescriptor = yield* environment.getDescriptor;
+    const inferredEnvironmentLabel =
+      requestedEnvironmentLabel ?? executionLocationEnvironmentLabel(executionLocation);
     const targetResolved = resolveControlEnvironmentTarget({
       stateDir: config.stateDir,
       localEnvironmentId,
       localLabel: localDescriptor.label,
       environmentId: requestedEnvironmentId,
-      environmentLabel: requestedEnvironmentLabel,
+      environmentLabel: inferredEnvironmentLabel,
     });
     if (!targetResolved.ok) {
       return yield* Effect.fail({
@@ -1136,6 +1157,8 @@ export const controlStartHandler = catchControlErrors(
     const thread = yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
+    // Freeze execution location when the thread is bound (OS-106 / envLocked).
+    void lockBacksterosControlExecutionLocation(task.id);
     if (start) {
       // Status write #1 (OS-38 audit): explicit POST /sessions start that
       // dispatched a turn → In Progress. Reaching here means dispatch

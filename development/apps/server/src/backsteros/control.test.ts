@@ -221,6 +221,16 @@ describe("backsteros control workspace resolve", () => {
     ).toMatchObject({ error: { code: "no_workspace", status: 409 } });
   });
 
+  it("prefers executionWorkspacePath over localWorkingDirectory (OS-106)", () => {
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "/Users/me/vault",
+        executionWorkspacePath: "/home/deploy/code/app",
+      }),
+    ).toEqual({ workspaceRoot: "/home/deploy/code/app" });
+  });
+
   it("matches a linked T3 project by normalized workspace path", () => {
     const projects = [
       { id: "other", workspaceRoot: "/Users/me/other" },

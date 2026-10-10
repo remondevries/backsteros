@@ -62,6 +62,12 @@ export type CodebaseWorkbenchProject = {
   icon?: string | null;
   organizationId?: string | null;
   localWorkingDirectory?: string | null;
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  localLocation?: string | null;
+  developmentSetupStatus?: "pending" | "ready" | "failed" | null;
+  developmentSetupError?: string | null;
+  developmentSetupUpdatedAt?: string | null;
   githubRepository?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
   healthCheckDomain?: string | null;
@@ -131,6 +137,12 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: null,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
+    developmentLocation: project.developmentLocation ?? null,
+    productionLocation: project.productionLocation ?? null,
+    localLocation: project.localLocation ?? null,
+    developmentSetupStatus: project.developmentSetupStatus ?? null,
+    developmentSetupError: project.developmentSetupError ?? null,
+    developmentSetupUpdatedAt: project.developmentSetupUpdatedAt ?? null,
     healthCheckMode: project.healthCheckMode ?? null,
     healthCheckDomain: project.healthCheckDomain ?? null,
     hourlyRateCents: project.hourlyRateCents ?? null,

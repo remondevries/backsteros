@@ -557,6 +557,19 @@ export function registerProjectRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "LOCATION_REQUIRES_CODEBASE"
+        ) {
+          return c.json(
+            {
+              error:
+                "Development, production, and local locations can only be set on codebase projects",
+              code: "location_requires_codebase",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -645,6 +658,19 @@ export function registerProjectRoutes(app: Hono) {
             {
               error: "GitHub repository can only be set on codebase projects",
               code: "github_repo_requires_codebase",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "LOCATION_REQUIRES_CODEBASE"
+        ) {
+          return c.json(
+            {
+              error:
+                "Development, production, and local locations can only be set on codebase projects",
+              code: "location_requires_codebase",
             },
             400,
           );

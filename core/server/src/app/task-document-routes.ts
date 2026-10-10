@@ -1775,6 +1775,19 @@ export function registerTaskDocumentRoutes(app: Hono) {
             403,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "EXECUTION_LOCATION_LOCKED"
+        ) {
+          return c.json(
+            {
+              error:
+                "Execution location is frozen once the coding thread starts",
+              code: "execution_location_locked",
+            },
+            409,
+          );
+        }
         throw error;
       }
     },

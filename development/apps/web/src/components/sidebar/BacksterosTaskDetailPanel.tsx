@@ -37,6 +37,7 @@ import { BacksterosTaskActivityTimeline } from "~/backsteros/TaskActivityTimelin
 import { BacksterosTaskCommentsSection } from "~/backsteros/TaskCommentsSection";
 import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
+import { TerminalConsoleIcon } from "~/backsteros/TerminalConsoleIcon";
 import { BacksterosTrackedTimeField } from "~/backsteros/TrackedTimeField";
 import {
   BACKSTEROS_TASK_PRIORITY_LABELS,
@@ -878,6 +879,44 @@ export function BacksterosTaskDetailPanel() {
                         void handleProjectChange(value === NO_PROJECT_VALUE ? null : value);
                       }}
                     />
+
+                    {project?.type === "codebase" ? (
+                      <BacksterosSearchablePropertyMenu
+                        label={
+                          state.task.executionLocation === "development"
+                            ? "Dev"
+                            : state.task.executionLocation === "production"
+                              ? "Prod"
+                              : state.task.executionLocation === "local"
+                                ? "Local"
+                                : "Default location"
+                        }
+                        muted={!state.task.executionLocation}
+                        icon={<TerminalConsoleIcon size={12} className="shrink-0 opacity-70" />}
+                        value={state.task.executionLocation ?? NO_PROJECT_VALUE}
+                        options={[
+                          { value: NO_PROJECT_VALUE, label: "Default location" },
+                          { value: "development", label: "Development" },
+                          { value: "production", label: "Production" },
+                          { value: "local", label: "Local" },
+                        ]}
+                        searchPlaceholder="Change execution location…"
+                        taskPropertyDropdownId="executionLocation"
+                        disabled={Boolean(state.task.executionLocationLockedAt)}
+                        onChange={(value) => {
+                          if (state.task.executionLocationLockedAt) return;
+                          void applyPatch(
+                            {
+                              executionLocation:
+                                value === NO_PROJECT_VALUE
+                                  ? null
+                                  : (value as "development" | "production" | "local"),
+                            },
+                            "Could not update execution location",
+                          );
+                        }}
+                      />
+                    ) : null}
 
                     <BacksterosRelatedPropertyChips
                       contactIds={state.task.relatedContactIds}
