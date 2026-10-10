@@ -4,6 +4,11 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { extractBearerToken, verifyReplicationSecret } from "./auth.js";
 import { verifyAvatarReplicationAuth } from "./avatar-replication.js";
 import {
+  isReplicablePrivateObjectKey,
+  readLocalPrivateObject,
+  verifyPrivateObjectReplicationAuth,
+} from "./private-object-replication.js";
+import {
   acknowledgePendingSyncEventPull,
   getCoreReplicationConfig,
   getPendingSyncEventPullAck,
@@ -705,6 +710,29 @@ export function registerCoreReplicationRoutes(app: Hono) {
         code: "not_implemented" as const,
       },
       501,
+    );
+  });
+
+  /** Serve task-image (and similar) private blobs for peer pull-on-miss (OS-90). */
+  app.get("/internal/core-replication/private-object", async (c) => {
+    if (!verifyPrivateObjectReplicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const key = c.req.query("key")?.trim() ?? "";
+    if (!isReplicablePrivateObjectKey(key)) {
+      return c.json(
+        { error: "Unsupported storage key", code: "bad_request" as const },
+        400,
+      );
+    }
+    const bytes = await readLocalPrivateObject(key);
+    if (!bytes) {
+      return c.json({ error: "Not found", code: "not_found" as const }, 404);
+    }
+    c.header("Content-Type", "application/octet-stream");
+    const body = Uint8Array.from(bytes);
+    return c.body(
+      body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
     );
   });
 

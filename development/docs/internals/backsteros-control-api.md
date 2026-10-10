@@ -120,6 +120,11 @@ rejected or errored session (or `stopped` with `lastError`) does **not** move
 the task to `in_review`; only a real successful turn completion does. A retry
 that actually dispatches a turn still marks the task `in_progress`.
 
+Starting a turn also sets the durable OS-96 agent-working marker on the task
+(`kind: working`, related agent contact or Sander, label `Coding agent running`)
+so BacksterOS desktop shows the same badge as the live session. Entering
+`in_review` clears that working marker in core.
+
 ### Status
 
 `GET /api/backsteros/control/sessions?taskRef=BDV-33`

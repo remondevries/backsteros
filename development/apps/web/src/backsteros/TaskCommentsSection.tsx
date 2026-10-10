@@ -12,6 +12,7 @@ import {
 import { formatBacksterosActivityRelativeTime } from "./activityTime";
 import { isBacksterosGoEditableTarget } from "./backsterosRailMode";
 import { BacksterosEntityAvatarIcon } from "./EntityAvatarIcon";
+import { BacksterosMarkdownPreview } from "./markdown-editor";
 import type { BacksterosTaskComment } from "./types";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { toastManager } from "~/components/ui/toast";
@@ -477,7 +478,11 @@ export function BacksterosTaskCommentsSection(props: {
         </form>
       );
     }
-    return <div className="bos-task-comment__body">{comment.body}</div>;
+    return (
+      <div className="bos-task-comment__body">
+        <BacksterosMarkdownPreview body={comment.body} />
+      </div>
+    );
   };
 
   return (

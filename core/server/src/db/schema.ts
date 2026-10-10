@@ -1721,7 +1721,7 @@ export const projectUpdates = pgTable(
   ],
 );
 
-/** Inline images pasted into task descriptions (Tier B metadata + Tier D blob). */
+/** Inline images pasted into task descriptions/comments (Tier B metadata + Tier D blob). */
 export const taskImages = pgTable(
   "task_images",
   {
@@ -1732,6 +1732,10 @@ export const taskImages = pgTable(
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
+    /** Optional comment this image was uploaded for (OS-90); still scoped by taskId. */
+    commentId: text("comment_id").references(() => taskComments.id, {
+      onDelete: "set null",
+    }),
     storageKey: text("storage_key").notNull(),
     originalFilename: text("original_filename").notNull().default(""),
     contentType: text("content_type").notNull(),
@@ -1745,6 +1749,7 @@ export const taskImages = pgTable(
   (table) => [
     index("task_images_workspace_id_idx").on(table.workspaceId),
     index("task_images_task_id_idx").on(table.taskId),
+    index("task_images_comment_id_idx").on(table.commentId),
   ],
 );
 

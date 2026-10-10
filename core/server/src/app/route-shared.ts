@@ -547,8 +547,9 @@ export async function taskWithKey(
   workspaceId: string,
   row: TaskRow,
   extras?: {
-    comment?: ReturnType<typeof toTaskComment>;
-    comments?: Array<ReturnType<typeof toTaskComment>>;
+    comment?: ReturnType<typeof toTaskComment> & { images?: unknown };
+    comments?: Array<ReturnType<typeof toTaskComment> & { images?: unknown }>;
+    images?: unknown;
   },
 ) {
   const projectKey = row.projectId
@@ -573,6 +574,7 @@ export async function taskWithKey(
     agentWorkingContactName,
     ...(extras?.comment ? { comment: extras.comment } : {}),
     ...(extras?.comments ? { comments: extras.comments } : {}),
+    ...(extras?.images ? { images: extras.images } : {}),
   };
 }
 

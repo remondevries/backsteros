@@ -293,6 +293,7 @@ add open-ended sweep items for them unless a dual-core race shows up in prod.
 | `device_push_tokens` | Device-local registration; cloud portal push waits on twin |
 | `meeting_scheduling_settings` | Twin **local-wins**; portal reads cloud copy after lag |
 | `task_attachments` metadata | Bytes stay local-core (503 on cloud); metadata twins |
+| `task_images` metadata (OS-90) | Metadata twins; bytes via shared R2 or peer pull-on-miss (`/internal/core-replication/private-object`) |
 | Letter/PDF **bytes** | Local vault only — metadata via letter `sync_events` |
 | `financial_import_batches` | Not in `REPLICATED_TABLES`; CSV blob is local storage. Transaction **rows** from CSV/Moneybird use create-via-sync + leader-first (`commitFinancialTransactionCreates`); `import_batch_id` is linked locally after apply and is not round-tripped on the sync clock |
 | `workspace_integration_secrets` | Twin for AgentMail/Moneybird credentials; not `sync_events` |

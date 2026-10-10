@@ -9,12 +9,14 @@ import {
 
 vi.mock("./client", () => ({
   fetchBacksterosTask: vi.fn(),
+  fetchBacksterosContacts: vi.fn(),
   updateBacksterosTask: vi.fn(),
 }));
 
-import { fetchBacksterosTask, updateBacksterosTask } from "./client";
+import { fetchBacksterosContacts, fetchBacksterosTask, updateBacksterosTask } from "./client";
 
 const fetchMock = vi.mocked(fetchBacksterosTask);
+const fetchContactsMock = vi.mocked(fetchBacksterosContacts);
 const updateMock = vi.mocked(updateBacksterosTask);
 
 afterEach(() => {
@@ -26,7 +28,7 @@ describe("markBacksterosTaskInProgressForAgent", () => {
     fetchMock.mockResolvedValue({
       id: "task-1",
       status: "completed",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+    } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
 
     await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledWith("task-1");
@@ -38,7 +40,7 @@ describe("markBacksterosTaskInProgressForAgent", () => {
       fetchMock.mockResolvedValue({
         id: "task-1",
         status,
-      } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+      } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
 
       await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(false);
       expect(updateMock).not.toHaveBeenCalled();
@@ -46,11 +48,12 @@ describe("markBacksterosTaskInProgressForAgent", () => {
     }
   });
 
-  it("promotes an open task to in_progress after re-reading status", async () => {
+  it("promotes an open task to in_progress with the coding-agent working marker", async () => {
     fetchMock.mockResolvedValue({
       id: "task-1",
       status: "in_review",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+      relatedContactIds: ["sander-contact"],
+    } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_progress",
@@ -58,9 +61,39 @@ describe("markBacksterosTaskInProgressForAgent", () => {
 
     await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(true);
     expect(fetchMock).toHaveBeenCalledWith("task-1");
+    expect(fetchContactsMock).not.toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalledWith("task-1", {
       status: "in_progress",
       activityActor: "agent",
+      agentWorkingContactId: "sander-contact",
+      agentWorkingKind: "working",
+      agentWorkingLabel: "Coding agent running",
+    });
+  });
+
+  it("falls back to Sander from contacts when related is empty", async () => {
+    fetchMock.mockResolvedValue({
+      id: "task-1",
+      status: "ready_to_start",
+      relatedContactIds: [],
+    } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+    fetchContactsMock.mockResolvedValue([
+      { id: "other", name: "Ralph" },
+      { id: "sander-id", name: "Sander", firstName: "Sander" },
+    ] as unknown as Awaited<ReturnType<typeof fetchBacksterosContacts>>);
+    updateMock.mockResolvedValue({
+      id: "task-1",
+      status: "in_progress",
+    } as Awaited<ReturnType<typeof updateBacksterosTask>>);
+
+    await expect(markBacksterosTaskInProgressForAgent("task-1")).resolves.toBe(true);
+    expect(fetchContactsMock).toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledWith("task-1", {
+      status: "in_progress",
+      activityActor: "agent",
+      agentWorkingContactId: "sander-id",
+      agentWorkingKind: "working",
+      agentWorkingLabel: "Coding agent running",
     });
   });
 });
@@ -70,7 +103,7 @@ describe("markBacksterosTaskInReviewForAgent", () => {
     fetchMock.mockResolvedValue({
       id: "task-1",
       status: "completed",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+    } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
 
     await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledWith("task-1");
@@ -81,7 +114,7 @@ describe("markBacksterosTaskInReviewForAgent", () => {
     fetchMock.mockResolvedValue({
       id: "task-1",
       status: "in_progress",
-    } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+    } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
     updateMock.mockResolvedValue({
       id: "task-1",
       status: "in_review",
@@ -100,7 +133,7 @@ describe("markBacksterosTaskInReviewForAgent", () => {
       fetchMock.mockResolvedValue({
         id: "task-1",
         status,
-      } as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+      } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
 
       await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
       expect(updateMock).not.toHaveBeenCalled();

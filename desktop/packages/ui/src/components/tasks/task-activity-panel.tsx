@@ -40,7 +40,11 @@ import {
 } from "../../tasks/task-status.js";
 import { AgentActivityIcon } from "./agent-activity-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
-import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+import {
+  DocumentMarkdownPreview,
+  type ResolveMarkdownImageSrc,
+} from "../documents/document-markdown-preview.js";
+import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
 import {
   TaskCommentEditor,
   type TaskCommentEditorHandle,
@@ -648,6 +652,7 @@ function CommentEditForm({
   onDraftChange,
   onCancel,
   onSave,
+  onUploadImages,
 }: {
   draft: string;
   saving: boolean;
@@ -655,6 +660,7 @@ function CommentEditForm({
   onDraftChange: (value: string) => void;
   onCancel: () => void;
   onSave: () => void;
+  onUploadImages?: UploadMarkdownImages;
 }) {
   return (
     <form
@@ -670,6 +676,7 @@ function CommentEditForm({
         variant="edit"
         value={draft}
         onChange={onDraftChange}
+        onUploadImages={onUploadImages}
         onBlur={(event) => {
           const next = event.relatedTarget;
           if (
@@ -777,6 +784,10 @@ export type TaskActivityPanelProps = {
   commentResolveMode?: TaskActivityCommentResolveMode;
   /** Fired after a ticket-mode resolve/unresolve succeeds (`true` = resolved). */
   onResolveTicket?: (resolved: boolean) => void | Promise<void>;
+  /** Authenticated resolve for task-image markdown in comment previews (OS-90). */
+  resolveImageSrc?: ResolveMarkdownImageSrc;
+  /** Paste/drop upload for comment composers (OS-90). */
+  onUploadImages?: UploadMarkdownImages;
 };
 
 export function TaskActivityPanel({
@@ -799,6 +810,8 @@ export function TaskActivityPanel({
   commentMutations,
   commentResolveMode = "thread",
   onResolveTicket,
+  resolveImageSrc,
+  onUploadImages,
 }: TaskActivityPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const editInputRef = useRef<TaskCommentEditorHandle | null>(null);
@@ -1750,6 +1763,7 @@ export function TaskActivityPanel({
               value={draft}
               onChange={setDraft}
               onSubmitShortcut={submitComposer}
+              onUploadImages={onUploadImages}
               placeholder="Leave a comment…"
               ariaLabel="Leave a comment"
             />
@@ -1849,10 +1863,14 @@ export function TaskActivityPanel({
                 onSave={() => {
                   void saveEditComment(target.id);
                 }}
+                onUploadImages={onUploadImages}
               />
             ) : (
               <div className="task-activity-comment__body">
-                <DocumentMarkdownPreview body={target.body} />
+                <DocumentMarkdownPreview
+                  body={target.body}
+                  resolveImageSrc={resolveImageSrc}
+                />
               </div>
             );
 
@@ -1999,6 +2017,7 @@ export function TaskActivityPanel({
                       }));
                     }}
                     onSubmitShortcut={() => submitReply(comment.id)}
+                    onUploadImages={onUploadImages}
                     placeholder={
                       agentReplyContinues
                         ? "Answer the agent…"

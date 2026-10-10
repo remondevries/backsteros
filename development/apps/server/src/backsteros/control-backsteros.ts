@@ -5,8 +5,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  BACKSTEROS_DEFAULT_CODING_AGENT_NAME,
   backsterosStatusForControlSession,
   canAutoPromoteBacksterosTaskStatus,
+  codingAgentWorkingMarkerPatch,
+  pickDefaultCodingAgentContactId,
+  resolveCodingAgentWorkingContactId,
 } from "@t3tools/shared/backsterosTaskAutoPromote";
 
 export { backsterosStatusForControlSession, canAutoPromoteBacksterosTaskStatus };
@@ -306,12 +310,41 @@ export async function lockBacksterosControlExecutionLocation(taskId: string): Pr
 }
 
 /**
+ * Resolve the OS-96 coding-agent contact for a Development session start:
+ * related contact on the task, else Sander by name search.
+ */
+async function resolveCodingAgentWorkingContactForControlTask(task: {
+  readonly relatedContactIds?: readonly string[] | null;
+}): Promise<string | null> {
+  const fromRelated = resolveCodingAgentWorkingContactId({
+    relatedContactIds: task.relatedContactIds,
+  });
+  if (fromRelated) return fromRelated;
+  try {
+    const payload = await backsterosFetchJson<{
+      contacts?: ReadonlyArray<{
+        id?: string | null;
+        name?: string | null;
+        firstName?: string | null;
+      }>;
+    }>(`/api/v1/contacts?q=${encodeURIComponent(BACKSTEROS_DEFAULT_CODING_AGENT_NAME)}`);
+    return pickDefaultCodingAgentContactId(payload.contacts ?? []);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Best-effort BacksterOS status write for control-API sessions. Failures are
  * swallowed — the web lifecycle hook is still the primary path when the UI is open.
  *
  * Re-reads the task first so completed/canceled/duplicated stay closed.
  * `in_review` only applies when the live status is already `in_progress`
  * (never yank backlog / ready_to_start / on_hold back to review).
+ *
+ * Starting a session (`in_progress`) also sets the durable OS-96 working marker
+ * so BacksterOS desktop shows the same “agent working” flag as the live session
+ * (BDV-53). Entering `in_review` clears a working marker in core automatically.
  */
 export async function patchBacksterosControlTaskStatus(
   taskId: string,
@@ -321,14 +354,22 @@ export async function patchBacksterosControlTaskStatus(
   const apiKey = resolveBacksterosControlApiKey();
   if (!apiKey) return false;
   try {
-    const current = await backsterosFetchJson<{ status: string }>(
-      `/api/v1/tasks/${encodeURIComponent(taskId)}`,
-    );
+    const current = await backsterosFetchJson<{
+      status: string;
+      relatedContactIds?: readonly string[] | null;
+    }>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
     if (!canAutoPromoteBacksterosTaskStatus(current.status)) {
       return false;
     }
     if (status === "in_review" && current.status !== "in_progress") {
       return false;
+    }
+    const body: Record<string, unknown> = { status, activityActor: "agent" };
+    if (status === "in_progress") {
+      const contactId = await resolveCodingAgentWorkingContactForControlTask(current);
+      if (contactId) {
+        Object.assign(body, codingAgentWorkingMarkerPatch(contactId));
+      }
     }
     const response = await fetch(`${origin}/api/v1/tasks/${encodeURIComponent(taskId)}`, {
       method: "PATCH",
@@ -337,7 +378,7 @@ export async function patchBacksterosControlTaskStatus(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ status, activityActor: "agent" }),
+      body: JSON.stringify(body),
       cache: "no-store",
       signal: AbortSignal.timeout(BACKSTEROS_FETCH_TIMEOUT_MS),
     });

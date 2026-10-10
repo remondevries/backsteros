@@ -9,7 +9,8 @@ export type InlineNode =
   | { type: "em"; children: InlineNode[] }
   | { type: "del"; children: InlineNode[] }
   | { type: "code"; value: string }
-  | { type: "link"; href: string; children: InlineNode[] };
+  | { type: "link"; href: string; children: InlineNode[] }
+  | { type: "image"; src: string; alt: string };
 
 export type TableAlignment = "left" | "center" | "right" | null;
 
@@ -194,9 +195,9 @@ export function parseInlineMarkdown(input: string): InlineNode[] {
   if (!input) return [];
 
   const nodes: InlineNode[] = [];
-  // Order: code → link → bold → strike → italic
+  // Order: code → image → link → bold → strike → italic
   const pattern =
-    /(`+)((?:(?!\1).)+?)\1|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])/gs;
+    /(`+)((?:(?!\1).)+?)\1|!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])/gs;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -209,20 +210,26 @@ export function parseInlineMarkdown(input: string): InlineNode[] {
       nodes.push({ type: "code", value: match[2] });
     } else if (match[3] !== undefined && match[4] !== undefined) {
       nodes.push({
-        type: "link",
-        href: match[4],
-        children: parseInlineMarkdown(match[3]),
+        type: "image",
+        alt: match[3],
+        src: match[4],
       });
-    } else if (match[5] !== undefined) {
-      nodes.push({ type: "strong", children: parseInlineMarkdown(match[5]) });
-    } else if (match[6] !== undefined) {
-      nodes.push({ type: "strong", children: parseInlineMarkdown(match[6]) });
+    } else if (match[5] !== undefined && match[6] !== undefined) {
+      nodes.push({
+        type: "link",
+        href: match[6],
+        children: parseInlineMarkdown(match[5]),
+      });
     } else if (match[7] !== undefined) {
-      nodes.push({ type: "del", children: parseInlineMarkdown(match[7]) });
+      nodes.push({ type: "strong", children: parseInlineMarkdown(match[7]) });
     } else if (match[8] !== undefined) {
-      nodes.push({ type: "em", children: parseInlineMarkdown(match[8]) });
+      nodes.push({ type: "strong", children: parseInlineMarkdown(match[8]) });
     } else if (match[9] !== undefined) {
-      nodes.push({ type: "em", children: parseInlineMarkdown(match[9]) });
+      nodes.push({ type: "del", children: parseInlineMarkdown(match[9]) });
+    } else if (match[10] !== undefined) {
+      nodes.push({ type: "em", children: parseInlineMarkdown(match[10]) });
+    } else if (match[11] !== undefined) {
+      nodes.push({ type: "em", children: parseInlineMarkdown(match[11]) });
     }
 
     lastIndex = match.index + match[0].length;

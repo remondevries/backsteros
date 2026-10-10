@@ -14,6 +14,8 @@ import {
   type TextStyle,
 } from "react-native";
 
+import { TaskMarkdownImage } from "./task-markdown-image";
+
 import {
   projectDetailHref,
   taskDetailHref,
@@ -185,6 +187,11 @@ function renderInlineNodes(
         </Text>
       );
     }
+    if (node.type === "image") {
+      return (
+        <TaskMarkdownImage key={key} src={node.src} alt={node.alt} />
+      );
+    }
     if (node.type === "code") {
       return (
         <Text
@@ -263,7 +270,7 @@ function renderInlineNodes(
   });
 }
 
-/** Render markdown inline formatting inside a single Text tree. */
+/** Render markdown inline formatting; images break out of the Text tree. */
 function InlineMarkdownText({
   text,
   style,
@@ -272,10 +279,48 @@ function InlineMarkdownText({
   style?: TextStyle;
 }) {
   const base = { ...bodyTextStyle, ...style };
+  const nodes = parseInlineMarkdown(text);
+  const hasImage = nodes.some((node) => node.type === "image");
+  if (!hasImage) {
+    return (
+      <Text style={base}>
+        {renderInlineNodes(nodes, "in", base)}
+      </Text>
+    );
+  }
+
+  // Split around images so RN Image is not nested inside Text.
+  const chunks: InlineNode[][] = [];
+  let current: InlineNode[] = [];
+  for (const node of nodes) {
+    if (node.type === "image") {
+      if (current.length > 0) {
+        chunks.push(current);
+        current = [];
+      }
+      chunks.push([node]);
+    } else {
+      current.push(node);
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+
   return (
-    <Text style={base}>
-      {renderInlineNodes(parseInlineMarkdown(text), "in", base)}
-    </Text>
+    <View style={{ width: "100%", gap: 4 }}>
+      {chunks.map((chunk, index) =>
+        chunk[0]?.type === "image" ? (
+          <TaskMarkdownImage
+            key={`img-${index}`}
+            src={chunk[0].src}
+            alt={chunk[0].alt}
+          />
+        ) : (
+          <Text key={`txt-${index}`} style={base}>
+            {renderInlineNodes(chunk, `c${index}`, base)}
+          </Text>
+        ),
+      )}
+    </View>
   );
 }
 

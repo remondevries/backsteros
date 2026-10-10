@@ -532,6 +532,24 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "Soft-delete task by id or key",
     },
+    listTaskImages: {
+      method: "GET",
+      path: "/api/v1/tasks/:id/images",
+      pathParams: z.object({ id: z.string() }),
+      query: z
+        .object({
+          /** When set, only images linked to this comment (OS-90). */
+          commentId: z.string().optional(),
+        })
+        .optional(),
+      responses: {
+        200: s.taskImagesResponseSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "List images for a task (optional commentId filter)",
+    },
     createTaskImage: {
       method: "POST",
       path: "/api/v1/tasks/:id/images",
@@ -540,7 +558,11 @@ export const apiContract: AppRouter = c.router(
         "x-filename": z.string().optional(),
         "content-type": z.string().optional(),
       }),
-      body: c.type<ArrayBuffer | Blob>(),
+      /**
+       * Raw image bytes (default) or JSON `{ data, contentType?, filename?, alt? }`
+       * when Content-Type is application/json (OS-90).
+       */
+      body: c.type<ArrayBuffer | Blob | s.TaskImageUploadInput>(),
       responses: {
         201: s.taskImageSchema,
         400: badRequestSchema,
@@ -548,7 +570,8 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Upload an image for embedding in a task description",
+      summary:
+        "Upload an image for embedding in a task description (raw bytes or JSON base64)",
     },
     getTaskImage: {
       method: "GET",
@@ -560,7 +583,7 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
         404: errorSchema,
       },
-      summary: "Download a task description image",
+      summary: "Download a task description or comment image",
     },
     listTaskAttachments: {
       method: "GET",

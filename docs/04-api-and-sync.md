@@ -201,14 +201,26 @@ POST  /api/v1/tasks/batch
 PATCH /api/v1/tasks/OS-51
 POST  /api/v1/tasks/OS-51/comments
       Idempotency-Key: <optional>
+      # optional images: [{ data: "<base64>", contentType?, filename?, alt? }] (max 5)
+POST  /api/v1/tasks/{id}/images
+      Content-Type: image/png   # or image/jpeg|webp|gif — raw bytes, max 10 MB
+      X-Filename: screenshot.png
+      <raw image bytes>
+POST  /api/v1/tasks/{id}/images
+      Content-Type: application/json
+      { "data": "<base64 or data-URL>", "contentType": "image/png", "filename": "shot.png", "alt": "bug", "commentId": null }
+GET   /api/v1/tasks/{id}/images
+GET   /api/v1/tasks/{id}/images/{imageId}
 POST  /api/v1/tasks/{id}/attachments
       Content-Type: application/pdf   # or image/*, message/rfc822, etc.
       X-Filename: brief.pdf
       <raw file bytes, max 25 MB>
 GET   /api/v1/tasks/{id}/attachments
 GET   /api/v1/tasks/{id}/attachments/{attachmentId}
-GET   /api/v1/tasks/OS-51?include=comments   # last 20 comments inline
+GET   /api/v1/tasks/OS-51?include=comments   # last 20 comments + images[] inline
 ```
+
+**Task description/comment images (OS-90):** JPEG/PNG/WebP/GIF only (byte sniff; SVG rejected). Same `task_images` row + vault/R2 key as desktop paste. Markdown embed: `![alt](/api/v1/tasks/{taskId}/images/{imageId})` — Bearer-auth download, no public URL. `POST`/`PATCH` `/tasks` and `POST`/`PATCH` comments accept `images: [{ data, contentType?, filename?, alt? }]` (max 5) and append markdown. `GET` task returns description-scoped `images[]`; comments include their `images[]`. Metadata twins via core-replication (`task_images`); bytes via shared R2 or peer pull-on-miss.
 
 Task file attachments (any common type: PDF, image, email `.eml`, office docs, …) require `tasks:write` / `tasks:read` and **local-core** for blob put/get (cloud-core returns `503 pdf_requires_local_core`). Metadata lists work from either role.
 
@@ -238,7 +250,13 @@ Idempotency-Key: create-os-brief-1
 GET /api/v1/tasks?paginated=true&projectId=OS
 → items include projectKey + assigneeName
 GET /api/v1/tasks/OS-51?include=comments
-→ task includes projectKey, assigneeName, comments[]
+→ task includes projectKey, assigneeName, comments[], images[]
+
+# Attach a screenshot when creating / commenting (agents)
+POST /api/v1/tasks
+{ "title": "Layout break", "projectKey": "OS", "images": [{ "data": "<base64 png>", "alt": "screenshot" }], "activityActor": "agent" }
+POST /api/v1/tasks/OS-51/comments
+{ "body": "See screenshot", "images": [{ "data": "<base64 png>" }], "activityActor": "agent" }
 ```
 
 `linkedCommitShas` on create/update still **replaces** the full list when set. Prefer
@@ -257,7 +275,10 @@ the agent’s name (e.g. “Ralph is working”, “Sander is reviewing”).
 
 This is **orthogonal** to `agentChatId` (Cursor / Development session binding)
 and to ephemeral `PUT/DELETE /tasks/:id/agent-presence` heartbeats (TTL-based
-coding-run presence). Coding-run behaviour is unchanged.
+coding-run presence). Development coding sessions (control API / Start working)
+also set this durable marker with label `Coding agent running` so desktop shows
+the same badge when the UI is closed (BDV-53); core still auto-clears it on
+`in_review`.
 
 **Fields** (on the task row; also on paginated list items):
 

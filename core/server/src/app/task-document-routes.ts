@@ -27,6 +27,7 @@ import {
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  taskImageUploadInputSchema,
   listActivitiesQuerySchema,
   updateTaskTimerSessionActorSchema,
   financialCategoryInputSchema,
@@ -144,6 +145,11 @@ import {
   resolveAvatarContentType,
   sniffAvatarContentType,
 } from "../lib/avatar-content-type.js";
+import {
+  normalizeTaskImageMimeType,
+  resolveTaskImageContentType,
+  sniffTaskImageContentType,
+} from "../lib/task-image-content-type.js";
 import {
   buildAvatarSignedUrl,
   getAvatarUrlSigningSecret,
@@ -280,6 +286,10 @@ import * as taskActivityService from "../services/task-activities.js";
 import * as taskAgentPresenceService from "../services/task-agent-presence.js";
 import * as taskCommentService from "../services/task-comments.js";
 import * as taskImageService from "../services/task-images.js";
+import {
+  attachImagesToCommentBody,
+  attachImagesToTaskDescription,
+} from "../services/task-image-attach.js";
 import * as taskAttachmentService from "../services/task-attachments.js";
 import * as taskProjectService from "../services/tasks-projects.js";
 import {
@@ -555,7 +565,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
         .filter(Boolean),
     );
     let comments:
-      | Array<ReturnType<typeof toTaskComment>>
+      | Array<ReturnType<typeof toTaskComment> & { images?: Awaited<ReturnType<typeof taskImageService.listTaskImages>> }>
       | undefined;
     if (includes.has("comments")) {
       const commentRows = await taskCommentService.listTaskComments(
@@ -564,15 +574,29 @@ export function registerTaskDocumentRoutes(app: Hono) {
         db,
         { limit: 20 },
       );
-      comments = (commentRows ?? []).map(toTaskComment);
+      const mapped = (commentRows ?? []).map(toTaskComment);
+      const byComment = await taskImageService.listTaskImagesForComments(
+        auth.workspaceId,
+        taskId,
+        mapped.map((comment) => comment.id),
+      );
+      comments = mapped.map((comment) => ({
+        ...comment,
+        images: byComment.get(comment.id) ?? [],
+      }));
     }
 
+    const images = await taskImageService.listTaskImages(
+      auth.workspaceId,
+      taskId,
+      { commentId: null },
+    );
+
     return c.json(
-      await taskWithKey(
-        auth.workspaceId,
-        row,
-        comments ? { comments } : undefined,
-      ),
+      await taskWithKey(auth.workspaceId, row, {
+        ...(comments ? { comments } : {}),
+        images: images ?? [],
+      }),
     );
   });
 
@@ -672,7 +696,18 @@ export function registerTaskDocumentRoutes(app: Hono) {
       taskId,
     );
     if (!rows) return c.json(notFound("Task"), 404);
-    return c.json({ comments: rows.map(toTaskComment) });
+    const mapped = rows.map(toTaskComment);
+    const byComment = await taskImageService.listTaskImagesForComments(
+      auth.workspaceId,
+      taskId,
+      mapped.map((comment) => comment.id),
+    );
+    return c.json({
+      comments: mapped.map((comment) => ({
+        ...comment,
+        images: byComment.get(comment.id) ?? [],
+      })),
+    });
   });
 
   app.get("/api/v1/tasks/:id/activities", async (c) => {
@@ -1033,13 +1068,50 @@ export function registerTaskDocumentRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const body = c.req.valid("json");
+      const { images: imageUploads, ...commentFields } = body;
       const taskIdRaw = c.req.param("id");
       const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
       if (!taskId) return c.json(notFound("Task"), 404);
       const actor = writeActorForComment(auth, {
-        activityActor: body.activityActor,
-        authorContactId: body.authorContactId,
+        activityActor: commentFields.activityActor,
+        authorContactId: commentFields.authorContactId,
       });
+
+      const withImages = async (
+        row: NonNullable<
+          Awaited<ReturnType<typeof taskCommentService.getTaskCommentRow>>
+        >,
+      ) => {
+        let mapped = toTaskComment(row);
+        let images: Awaited<
+          ReturnType<typeof taskImageService.listTaskImages>
+        > = [];
+        if (imageUploads?.length) {
+          const attached = await attachImagesToCommentBody(
+            auth.workspaceId,
+            taskId,
+            row.id,
+            imageUploads,
+            row.body,
+          );
+          if (!attached.ok) {
+            return {
+              status: attached.status as 400 | 404,
+              body: { error: attached.error, code: "bad_request" as const },
+            };
+          }
+          images = attached.images;
+          const refreshed = await taskCommentService.getTaskCommentRow(
+            auth.workspaceId,
+            row.id,
+          );
+          if (refreshed) mapped = toTaskComment(refreshed);
+        }
+        return {
+          status: 201 as const,
+          body: { ...mapped, images },
+        };
+      };
 
       const runCreate = async () => {
         if (isRestLeaderFirstWrite()) {
@@ -1065,8 +1137,8 @@ export function registerTaskDocumentRoutes(app: Hono) {
             entityId: commentId,
             operation: "upsert",
             payload: buildTaskCommentRestPayload(commentId, taskId, {
-              body: body.body,
-              parentCommentId: body.parentCommentId,
+              body: commentFields.body,
+              parentCommentId: commentFields.parentCommentId,
               authorUserId: profile.userId,
               authorContactId: profile.contactId,
               authorEmail: profile.email,
@@ -1082,12 +1154,12 @@ export function registerTaskDocumentRoutes(app: Hono) {
               body: { error: "Comment create failed", code: "internal" },
             };
           }
-          return { status: 201 as const, body: toTaskComment(row) };
+          return withImages(row);
         }
         const row = await taskCommentService.createTaskComment(
           auth.workspaceId,
           taskId,
-          body,
+          commentFields,
           actor,
         );
         if (!row) {
@@ -1114,7 +1186,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
           taskId,
           operation: "upsert",
         });
-        return { status: 201 as const, body: toTaskComment(row) };
+        return withImages(row);
       };
 
       const idempotencyKey = readIdempotencyKey(
@@ -1129,7 +1201,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
         : await runCreate();
       return c.json(
         result.body,
-        result.status as 201 | 404 | 500,
+        result.status as 201 | 400 | 404 | 500,
       );
     },
   );
@@ -1146,7 +1218,8 @@ export function registerTaskDocumentRoutes(app: Hono) {
       const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
       if (!taskId) return c.json(notFound("Task"), 404);
       const commentId = c.req.param("id");
-      const patch = c.req.valid("json");
+      const { images: imageUploads, ...patch } = c.req.valid("json");
+      let row;
       if (isRestLeaderFirstWrite()) {
         const existing = await taskCommentService.getTaskCommentRow(
           auth.workspaceId,
@@ -1155,49 +1228,88 @@ export function registerTaskDocumentRoutes(app: Hono) {
         if (!existing || existing.taskId !== taskId) {
           return c.json(notFound("Comment"), 404);
         }
-        await commitRestEntityWrite({
-          workspaceId: auth.workspaceId,
-          entity: "task_comment",
-          entityId: commentId,
-          operation: "upsert",
-          payload: buildTaskCommentRestPayload(commentId, taskId, patch),
-        });
-        const row = await taskCommentService.getTaskCommentRow(
+        if (Object.keys(patch).length > 0) {
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "task_comment",
+            entityId: commentId,
+            operation: "upsert",
+            payload: buildTaskCommentRestPayload(commentId, taskId, patch),
+          });
+        }
+        row = await taskCommentService.getTaskCommentRow(
           auth.workspaceId,
           commentId,
         );
         if (!row) return c.json(notFound("Comment"), 404);
-        return c.json(toTaskComment(row));
+      } else {
+        if (Object.keys(patch).length > 0) {
+          row = await taskCommentService.updateTaskComment(
+            auth.workspaceId,
+            taskId,
+            commentId,
+            patch,
+          );
+          if (!row) return c.json(notFound("Comment"), 404);
+          await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
+          const { notifyPeerOfEntityWrite } = await import(
+            "../services/core-replication/nudge.js"
+          );
+          const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+            "../services/core-replication/sync-event-live-publish.js"
+          );
+          publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
+            entity: "task_comment",
+            entityId: row.id,
+            operation: "upsert",
+            payload: { task_id: taskId },
+          });
+          notifyPeerOfEntityWrite({
+            workspaceId: auth.workspaceId,
+            reason: "rest",
+            entity: "task_comment",
+            entityId: row.id,
+            taskId,
+            operation: "upsert",
+          });
+        } else {
+          row = await taskCommentService.getTaskCommentRow(
+            auth.workspaceId,
+            commentId,
+          );
+          if (!row || row.taskId !== taskId) {
+            return c.json(notFound("Comment"), 404);
+          }
+        }
       }
-      const row = await taskCommentService.updateTaskComment(
-        auth.workspaceId,
-        taskId,
-        commentId,
-        patch,
-      );
-      if (!row) return c.json(notFound("Comment"), 404);
-      await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
-      const { notifyPeerOfEntityWrite } = await import(
-        "../services/core-replication/nudge.js"
-      );
-      const { publishWorkspaceUpdatedFromSyncEvent } = await import(
-        "../services/core-replication/sync-event-live-publish.js"
-      );
-      publishWorkspaceUpdatedFromSyncEvent(auth.workspaceId, {
-        entity: "task_comment",
-        entityId: row.id,
-        operation: "upsert",
-        payload: { task_id: taskId },
-      });
-      notifyPeerOfEntityWrite({
-        workspaceId: auth.workspaceId,
-        reason: "rest",
-        entity: "task_comment",
-        entityId: row.id,
-        taskId,
-        operation: "upsert",
-      });
-      return c.json(toTaskComment(row));
+
+      let mapped = toTaskComment(row);
+      let images =
+        (await taskImageService.listTaskImages(auth.workspaceId, taskId, {
+          commentId,
+        })) ?? [];
+      if (imageUploads?.length) {
+        const attached = await attachImagesToCommentBody(
+          auth.workspaceId,
+          taskId,
+          commentId,
+          imageUploads,
+          row.body,
+        );
+        if (!attached.ok) {
+          return c.json(
+            { error: attached.error, code: "bad_request" },
+            attached.status,
+          );
+        }
+        images = attached.images;
+        const refreshed = await taskCommentService.getTaskCommentRow(
+          auth.workspaceId,
+          commentId,
+        );
+        if (refreshed) mapped = toTaskComment(refreshed);
+      }
+      return c.json({ ...mapped, images });
     },
   );
 
@@ -1283,6 +1395,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
             id: preferredId,
             comment: inlineComment,
             projectKey,
+            images: imageUploads,
             ...createFields
           } = body;
           const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
@@ -1421,13 +1534,37 @@ export function registerTaskDocumentRoutes(app: Hono) {
             projectId: row.projectId ?? null,
             operation: "upsert",
           });
+
+          let attachedImages: Awaited<
+            ReturnType<typeof taskImageService.listTaskImages>
+          > = [];
+          if (imageUploads?.length) {
+            const attached = await attachImagesToTaskDescription(
+              auth.workspaceId,
+              row.id,
+              imageUploads,
+              row.description,
+            );
+            if (!attached.ok) {
+              return {
+                status: attached.status,
+                body: { error: attached.error, code: "bad_request" },
+              };
+            }
+            attachedImages = attached.images;
+            const refreshed = await taskProjectService.getTaskById(
+              auth.workspaceId,
+              row.id,
+            );
+            if (refreshed) row = refreshed;
+          }
+
           return {
             status: 201,
-            body: await taskWithKey(
-              auth.workspaceId,
-              row,
-              commentMapped ? { comment: commentMapped } : undefined,
-            ),
+            body: await taskWithKey(auth.workspaceId, row, {
+              ...(commentMapped ? { comment: commentMapped } : {}),
+              images: attachedImages,
+            }),
           };
         } catch (error) {
           if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -1512,6 +1649,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
           agentInboxApproved,
           comment: inlineComment,
           projectKey,
+          images: imageUploads,
           ...patchFields
         } = body;
         const taskIdRaw = c.req.param("id");
@@ -1551,6 +1689,43 @@ export function registerTaskDocumentRoutes(app: Hono) {
             touchesLabel: patchFields.agentWorkingLabel !== undefined,
             touchesKind: patchFields.agentWorkingKind !== undefined,
           });
+        }
+
+        const imagesOnlyPatch =
+          Boolean(imageUploads?.length) &&
+          !inlineComment &&
+          agentInboxApproved === undefined &&
+          Object.keys(patchFields).every(
+            (key) => key === "activityActor",
+          );
+
+        if (imagesOnlyPatch) {
+          const existing = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (!existing) return c.json(notFound("Task"), 404);
+          const attached = await attachImagesToTaskDescription(
+            auth.workspaceId,
+            taskId,
+            imageUploads!,
+            existing.description,
+          );
+          if (!attached.ok) {
+            return c.json(
+              { error: attached.error, code: "bad_request" },
+              attached.status,
+            );
+          }
+          const refreshed = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          return c.json(
+            await taskWithKey(auth.workspaceId, refreshed ?? existing, {
+              images: attached.images,
+            }),
+          );
         }
 
         const resolvedRefs = await resolveTaskWriteRefs(auth.workspaceId, {
@@ -1697,12 +1872,41 @@ export function registerTaskDocumentRoutes(app: Hono) {
             operation: "upsert",
           });
         }
-        return c.json(
-          await taskWithKey(
+
+        let attachedImages:
+          | Awaited<ReturnType<typeof taskImageService.listTaskImages>>
+          | undefined;
+        if (row && imageUploads?.length) {
+          const attached = await attachImagesToTaskDescription(
             auth.workspaceId,
-            row!,
-            commentMapped ? { comment: commentMapped } : undefined,
-          ),
+            row.id,
+            imageUploads,
+            row.description,
+          );
+          if (!attached.ok) {
+            return c.json(
+              { error: attached.error, code: "bad_request" },
+              attached.status,
+            );
+          }
+          attachedImages = attached.images;
+          const refreshed = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            row.id,
+          );
+          if (refreshed) row = refreshed;
+        } else if (row) {
+          attachedImages =
+            (await taskImageService.listTaskImages(auth.workspaceId, row.id, {
+              commentId: null,
+            })) ?? [];
+        }
+
+        return c.json(
+          await taskWithKey(auth.workspaceId, row!, {
+            ...(commentMapped ? { comment: commentMapped } : {}),
+            ...(attachedImages ? { images: attachedImages } : {}),
+          }),
         );
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -1838,10 +2042,30 @@ export function registerTaskDocumentRoutes(app: Hono) {
     return c.body(null, 204);
   });
 
+  app.get("/api/v1/tasks/:id/images", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
+    const commentId = c.req.query("commentId")?.trim() || undefined;
+    const images = await taskImageService.listTaskImages(
+      auth.workspaceId,
+      taskId,
+      commentId ? { commentId } : undefined,
+    );
+    return images
+      ? c.json({ images })
+      : c.json(notFound("Task"), 404);
+  });
+
+  // Base64 JSON can be ~4/3 of decoded size; allow headroom for one 10 MB image.
+  const MAX_TASK_IMAGE_REQUEST_BYTES = Math.ceil(MAX_TASK_IMAGE_BYTES * 1.4) + 4096;
+
   app.post(
     "/api/v1/tasks/:id/images",
     bodyLimit({
-      maxSize: MAX_TASK_IMAGE_BYTES,
+      maxSize: MAX_TASK_IMAGE_REQUEST_BYTES,
       onError: (c) =>
         c.json(
           {
@@ -1857,10 +2081,58 @@ export function registerTaskDocumentRoutes(app: Hono) {
       const taskIdRaw = c.req.param("id");
       const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
       if (!taskId) return c.json(notFound("Task"), 404);
-      const bytes = new Uint8Array(await c.req.arrayBuffer());
-      const contentType =
-        sniffAvatarContentType(bytes) ??
-        normalizeAvatarMimeType(c.req.header("Content-Type"));
+
+      const contentTypeHeader = c.req.header("Content-Type") ?? "";
+      const isJson = contentTypeHeader
+        .split(";")[0]
+        ?.trim()
+        .toLowerCase() === "application/json";
+
+      let bytes: Uint8Array;
+      let contentType: string | null;
+      let filename = c.req.header("X-Filename") ?? undefined;
+      let commentId: string | null | undefined;
+
+      if (isJson) {
+        let raw: unknown;
+        try {
+          raw = await c.req.json();
+        } catch {
+          return c.json(
+            {
+              error: "Invalid JSON body",
+              code: "bad_request",
+            },
+            400,
+          );
+        }
+        const parsed = taskImageUploadInputSchema
+          .extend({ commentId: z.string().min(1).max(64).nullable().optional() })
+          .safeParse(raw);
+        if (!parsed.success) {
+          return c.json(
+            {
+              error: "Image must be a JPG, PNG, WebP, or GIF up to 10 MB",
+              code: "bad_request",
+            },
+            400,
+          );
+        }
+        const decoded = taskImageService.decodeTaskImageUpload(parsed.data);
+        if ("error" in decoded) {
+          return c.json({ error: decoded.error, code: "bad_request" }, 400);
+        }
+        bytes = decoded.bytes;
+        contentType = decoded.contentType;
+        filename = decoded.filename ?? filename;
+        commentId = parsed.data.commentId;
+      } else {
+        bytes = new Uint8Array(await c.req.arrayBuffer());
+        contentType =
+          sniffTaskImageContentType(bytes) ??
+          normalizeTaskImageMimeType(contentTypeHeader);
+      }
+
       if (
         !contentType ||
         bytes.byteLength === 0 ||
@@ -1879,11 +2151,22 @@ export function registerTaskDocumentRoutes(app: Hono) {
         taskId,
         bytes,
         contentType,
-        c.req.header("X-Filename") ?? undefined,
+        filename,
+        { commentId },
       );
-      return image
-        ? c.json(image, 201)
-        : c.json(notFound("Task"), 404);
+      if (!image) return c.json(notFound("Task"), 404);
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "rest",
+        entity: "task",
+        entityId: taskId,
+        taskId,
+        operation: "upsert",
+      });
+      return c.json(image, 201);
     },
   );
 
@@ -1899,7 +2182,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
       c.req.param("imageId"),
     );
     if (!result) return c.json(notFound("Image"), 404);
-    const contentType = resolveAvatarContentType(
+    const contentType = resolveTaskImageContentType(
       result.row.contentType,
       result.bytes,
     );

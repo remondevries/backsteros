@@ -37,6 +37,8 @@ export const REPLICATED_TABLES = [
   "letters",
   "letter_attachments",
   "task_attachments",
+  /** Description/comment image metadata; bytes via R2 or peer pull (OS-90). */
+  "task_images",
   "meetings",
   "meeting_scheduling_settings",
   "avatars",

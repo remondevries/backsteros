@@ -25,6 +25,10 @@ import type {
   MentionSection,
 } from "../../mentions/mention-menu-types.js";
 import { DocumentMentionMenu } from "../documents/document-mention-menu.js";
+import {
+  createMarkdownImagePasteExtensions,
+  type UploadMarkdownImages,
+} from "../../documents/markdown-image-paste.js";
 
 export type TaskCommentEditorVariant = "composer" | "reply" | "edit";
 
@@ -62,6 +66,8 @@ export type TaskCommentEditorProps = {
   mentionCatalog?: MentionCatalog;
   searchMentionSections?: (query: string) => Promise<MentionSection[]>;
   editorRef?: Ref<TaskCommentEditorHandle | null>;
+  /** Paste/drop image upload for comment bodies (OS-90). */
+  onUploadImages?: UploadMarkdownImages;
 };
 
 const commentEditorBaseTheme = EditorView.theme(
@@ -134,6 +140,7 @@ export function TaskCommentEditor({
   mentionCatalog: mentionCatalogProp,
   searchMentionSections,
   editorRef,
+  onUploadImages,
 }: TaskCommentEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const [mentionController] = useState(() => new MentionMenuController());
@@ -145,6 +152,8 @@ export function TaskCommentEditor({
   const mentionsEnabled = mentionCatalog != null;
   const onSubmitShortcutRef = useRef(onSubmitShortcut);
   onSubmitShortcutRef.current = onSubmitShortcut;
+  const onUploadImagesRef = useRef(onUploadImages);
+  onUploadImagesRef.current = onUploadImages;
 
   useImperativeHandle(
     editorRef,
@@ -174,6 +183,7 @@ export function TaskCommentEditor({
       EditorView.editable.of(!disabled),
       ...(placeholder ? [cmPlaceholder(placeholder)] : []),
       ...(mentionsEnabled ? createMentionExtensions(mentionController) : []),
+      ...createMarkdownImagePasteExtensions(() => onUploadImagesRef.current),
       Prec.high(
         keymap.of([
           {

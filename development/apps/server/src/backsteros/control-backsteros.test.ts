@@ -106,6 +106,72 @@ describe("patchBacksterosControlTaskStatus", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("PATCHes in_progress with the OS-96 coding-agent working marker from related contacts", async () => {
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(
+          JSON.stringify({
+            id: "task-1",
+            status: "ready_to_start",
+            relatedContactIds: ["sander-contact"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        status: "in_progress",
+        activityActor: "agent",
+        agentWorkingContactId: "sander-contact",
+        agentWorkingKind: "working",
+        agentWorkingLabel: "Coding agent running",
+      });
+      return new Response(JSON.stringify({ id: "task-1", status: "in_progress" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(patchBacksterosControlTaskStatus("task-1", "in_progress")).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to Sander by name when the task has no related contacts", async () => {
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if ((init?.method ?? "GET") === "GET" && url.includes("/api/v1/tasks/")) {
+        return new Response(
+          JSON.stringify({ id: "task-1", status: "in_review", relatedContactIds: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if ((init?.method ?? "GET") === "GET" && url.includes("/api/v1/contacts")) {
+        expect(url).toContain("q=Sander");
+        return new Response(
+          JSON.stringify({ contacts: [{ id: "sander-id", name: "Sander", firstName: "Sander" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        status: "in_progress",
+        activityActor: "agent",
+        agentWorkingContactId: "sander-id",
+        agentWorkingKind: "working",
+        agentWorkingLabel: "Coding agent running",
+      });
+      return new Response(JSON.stringify({ id: "task-1", status: "in_progress" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(patchBacksterosControlTaskStatus("task-1", "in_progress")).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("does not PATCH in_review when the live task is backlog / ready_to_start", async () => {
     for (const status of ["backlog", "ready_to_start", "on_hold", "in_review"] as const) {
       const fetchMock = vi.fn(async () => {

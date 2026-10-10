@@ -491,6 +491,75 @@ export const taskInlineCommentSchema = z.object({
   body: z.string().min(1).max(20_000),
 });
 
+/** Max images accepted in one JSON create/update/comment request (OS-90). */
+export const MAX_TASK_IMAGES_PER_REQUEST = 5;
+
+/**
+ * Base64 image payload for agent/API uploads (OS-90).
+ * `data` may be raw base64 or a `data:<mime>;base64,…` URL.
+ */
+export const taskImageUploadInputSchema = z.object({
+  data: z.string().min(1),
+  contentType: z.string().max(128).optional(),
+  filename: z.string().max(255).optional(),
+  alt: z.string().max(200).optional(),
+});
+export const taskImagesUploadFieldSchema = z
+  .array(taskImageUploadInputSchema)
+  .max(MAX_TASK_IMAGES_PER_REQUEST);
+
+/** Inline image pasted into a task description or comment (blob fetched on demand). */
+export const taskImageSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  taskId: z.string(),
+  /** Set when the image was uploaded for a comment (OS-90). */
+  commentId: z.string().nullable().optional(),
+  contentType: z.string(),
+  byteSize: z.number().int().nonnegative(),
+  originalFilename: z.string(),
+  checksum: z.string().nullable(),
+  /** Relative API path for markdown embeds: `/api/v1/tasks/:id/images/:imageId`. */
+  url: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export const taskImageParamsSchema = z.object({
+  id: z.string(),
+  imageId: z.string(),
+});
+export const taskImagesResponseSchema = z.object({
+  images: z.array(taskImageSchema),
+});
+
+/** Build the markdown-safe content path for a task image. */
+export function taskImageContentPath(taskId: string, imageId: string): string {
+  return `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`;
+}
+
+/** Parse a relative or absolute task-image content URL. */
+export function parseTaskImageContentPath(
+  src: string,
+): { taskId: string; imageId: string } | null {
+  let path = src.trim();
+  if (!path) return null;
+  try {
+    if (/^https?:\/\//i.test(path)) {
+      path = new URL(path).pathname;
+    }
+  } catch {
+    return null;
+  }
+  const match = path.match(
+    /^\/api\/v1\/tasks\/([^/]+)\/images\/([^/]+)\/?$/,
+  );
+  if (!match?.[1] || !match[2]) return null;
+  return {
+    taskId: decodeURIComponent(match[1]),
+    imageId: decodeURIComponent(match[2]),
+  };
+}
+
 export const taskSchema = z.object({
   id: z.string(),
   projectId: z.string().nullable(),
@@ -793,6 +862,11 @@ export const createTaskSchema = z.object({
    * `comment`.
    */
   comment: taskInlineCommentSchema.optional(),
+  /**
+   * Upload images and append `![alt](url)` to the description (OS-90).
+   * Same storage as `POST /tasks/:id/images`.
+   */
+  images: taskImagesUploadFieldSchema.optional(),
 });
 
 export const updateTaskSchema = createTaskSchema
@@ -850,15 +924,19 @@ export const taskCommentSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
+  /** Images linked to this comment (OS-90). */
+  images: z.array(taskImageSchema).optional(),
 });
 
 /**
  * REST task shape including optional inline comment fields (OS-64).
  * `comment` = created in the same POST/PATCH; `comments` = GET ?include=comments.
+ * `images` = task description images (OS-90).
  */
 export const taskApiSchema = taskSchema.extend({
   comment: taskCommentSchema.optional(),
   comments: z.array(taskCommentSchema).optional(),
+  images: z.array(taskImageSchema).optional(),
 });
 
 export const createTaskCommentSchema = z.object({
@@ -875,6 +953,10 @@ export const createTaskCommentSchema = z.object({
    * Ignored for session/user auth.
    */
   authorContactId: z.string().nullable().optional(),
+  /**
+   * Upload images and append `![alt](url)` to the comment body (OS-90).
+   */
+  images: taskImagesUploadFieldSchema.optional(),
 });
 
 export const updateTaskCommentSchema = z
@@ -882,6 +964,10 @@ export const updateTaskCommentSchema = z
     body: z.string().min(1).max(20_000).optional(),
     /** Pass an ISO timestamp to resolve, or null to unresolve. Only for root comments. */
     resolvedAt: z.string().datetime().nullable().optional(),
+    /**
+     * Upload images and append `![alt](url)` to the comment body (OS-90).
+     */
+    images: taskImagesUploadFieldSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
@@ -3069,53 +3155,6 @@ export const deleteDevicePushTokenSchema = z.object({
   token: z.string().min(1),
 });
 
-/** Inline image pasted into a task description (blob fetched on demand). */
-export const taskImageSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  taskId: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  originalFilename: z.string(),
-  checksum: z.string().nullable(),
-  /** Relative API path for markdown embeds: `/api/v1/tasks/:id/images/:imageId`. */
-  url: z.string(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-});
-export const taskImageParamsSchema = z.object({
-  id: z.string(),
-  imageId: z.string(),
-});
-
-/** Build the markdown-safe content path for a task image. */
-export function taskImageContentPath(taskId: string, imageId: string): string {
-  return `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`;
-}
-
-/** Parse a relative or absolute task-image content URL. */
-export function parseTaskImageContentPath(
-  src: string,
-): { taskId: string; imageId: string } | null {
-  let path = src.trim();
-  if (!path) return null;
-  try {
-    if (/^https?:\/\//i.test(path)) {
-      path = new URL(path).pathname;
-    }
-  } catch {
-    return null;
-  }
-  const match = path.match(
-    /^\/api\/v1\/tasks\/([^/]+)\/images\/([^/]+)\/?$/,
-  );
-  if (!match?.[1] || !match[2]) return null;
-  return {
-    taskId: decodeURIComponent(match[1]),
-    imageId: decodeURIComponent(match[2]),
-  };
-}
-
 export const settingsSchema = z.record(z.unknown());
 export const settingsResponseSchema = z.object({ settings: settingsSchema });
 
@@ -5000,6 +5039,7 @@ export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
 export type AvatarSignedUrl = z.infer<typeof avatarSignedUrlSchema>;
 export type TaskImage = z.infer<typeof taskImageSchema>;
+export type TaskImageUploadInput = z.infer<typeof taskImageUploadInputSchema>;
 export type Mention = z.infer<typeof mentionSchema>;
 export type CursorSettings = z.infer<typeof cursorSettingsSchema>;
 export type AgentPtyConnection = z.infer<typeof agentPtyConnectionSchema>;

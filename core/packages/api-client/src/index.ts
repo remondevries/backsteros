@@ -581,11 +581,26 @@ export type BacksterosApiClient = {
   ): Promise<Document>;
   downloadSpaceCover(spaceDocumentId: string): Promise<Blob>;
   deleteSpaceCover(spaceDocumentId: string): Promise<Document>;
+  listTaskImages(
+    taskId: string,
+    options?: { commentId?: string },
+  ): Promise<{ images: TaskImage[] }>;
   uploadTaskImage(
     taskId: string,
     image: Blob | ArrayBuffer,
     filename?: string,
     contentType?: string,
+  ): Promise<TaskImage>;
+  /** JSON base64 upload (agents / OS-90). */
+  uploadTaskImageJson(
+    taskId: string,
+    input: {
+      data: string;
+      contentType?: string;
+      filename?: string;
+      alt?: string;
+      commentId?: string | null;
+    },
   ): Promise<TaskImage>;
   downloadTaskImage(taskId: string, imageId: string): Promise<Blob>;
   listTaskAttachments(
@@ -749,6 +764,14 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
         `/api/v1/spaces/${encodeURIComponent(spaceDocumentId)}/cover`,
         { method: "DELETE" },
       ),
+    listTaskImages: (taskId, options) => {
+      const params = new URLSearchParams();
+      if (options?.commentId) params.set("commentId", options.commentId);
+      const query = params.toString();
+      return requestJson<{ images: TaskImage[] }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/images${query ? `?${query}` : ""}`,
+      );
+    },
     uploadTaskImage: (taskId, image, filename, contentType) =>
       requestJson<TaskImage>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/images`,
@@ -759,6 +782,15 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
             ...(filename ? { "x-filename": filename } : {}),
           },
           body: image,
+        },
+      ),
+    uploadTaskImageJson: (taskId, input) =>
+      requestJson<TaskImage>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/images`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
         },
       ),
     downloadTaskImage: (taskId, imageId) =>

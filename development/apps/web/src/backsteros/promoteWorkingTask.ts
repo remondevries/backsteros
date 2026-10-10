@@ -1,11 +1,17 @@
 import { useEffect, useRef } from "react";
-import { canAutoPromoteBacksterosTaskStatus } from "@t3tools/shared/backsterosTaskAutoPromote";
+import {
+  BACKSTEROS_DEFAULT_CODING_AGENT_NAME,
+  canAutoPromoteBacksterosTaskStatus,
+  codingAgentWorkingMarkerPatch,
+  pickDefaultCodingAgentContactId,
+  resolveCodingAgentWorkingContactId,
+} from "@t3tools/shared/backsterosTaskAutoPromote";
 
 import { playAgentFinishedSoundForThread } from "~/agentFinishedSound";
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
 
-import { fetchBacksterosTask, updateBacksterosTask } from "./client";
+import { fetchBacksterosContacts, fetchBacksterosTask, updateBacksterosTask } from "./client";
 import {
   clearPendingBacksterosTaskStatus,
   setPendingBacksterosTaskStatus,
@@ -95,12 +101,30 @@ async function restoreBacksterosTaskStatusFromServer(taskId: string): Promise<vo
   }
 }
 
+async function resolveCodingAgentWorkingContactForPromote(task: {
+  readonly relatedContactIds?: readonly string[] | null | undefined;
+}): Promise<string | null> {
+  const fromRelated = resolveCodingAgentWorkingContactId({
+    relatedContactIds: task.relatedContactIds,
+  });
+  if (fromRelated) return fromRelated;
+  try {
+    const contacts = await fetchBacksterosContacts();
+    return pickDefaultCodingAgentContactId(contacts, BACKSTEROS_DEFAULT_CODING_AGENT_NAME);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Promote a task to `in_progress` when an agent starts working — mirrors
  * BacksterOS desktop `markTaskInProgressForAgent`.
  *
  * Re-reads status first (same closed-status rule as the leave timer / control
  * API) so a completed/canceled/duplicated task is never reopened at turn start.
+ *
+ * Also sets the durable OS-96 working marker (BDV-53) so BacksterOS desktop
+ * shows the coding-agent flag; core clears it when status moves to `in_review`.
  *
  * @returns true when the status write was attempted successfully.
  */
@@ -110,9 +134,11 @@ export async function markBacksterosTaskInProgressForAgent(taskId: string): Prom
   if (!canAutoPromoteBacksterosTaskStatus(status)) {
     return false;
   }
+  const contactId = await resolveCodingAgentWorkingContactForPromote(task);
   await updateBacksterosTask(taskId, {
     status: "in_progress",
     activityActor: "agent",
+    ...(contactId ? codingAgentWorkingMarkerPatch(contactId) : {}),
   });
   return true;
 }

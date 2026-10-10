@@ -37,6 +37,15 @@ describe("replicatedTablesForEntity", () => {
     assert.deepEqual(replicatedTablesForEntity("document_property_type"), [
       "document_property_types",
     ]);
+    assert.deepEqual(replicatedTablesForEntity("task"), [
+      "tasks",
+      "task_images",
+    ]);
+    assert.deepEqual(replicatedTablesForEntity("task_comment"), [
+      "task_comments",
+      "task_activities",
+      "task_images",
+    ]);
   });
 
   it("returns empty for unknown entities", () => {

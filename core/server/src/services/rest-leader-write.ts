@@ -60,6 +60,7 @@ export function buildTaskRestPayload(
       "agentInboxApproved",
       "comment",
       "projectKey",
+      "images",
     ],
     jsonStringify: [
       "links",
@@ -288,7 +289,7 @@ export function buildTaskCommentRestPayload(
 ): Record<string, unknown> {
   return {
     ...restFieldsToSyncPayload(commentId, body, {
-      skipKeys: ["activityActor", "agentInboxApproved"],
+      skipKeys: ["activityActor", "agentInboxApproved", "images"],
     }),
     task_id: taskId,
   };

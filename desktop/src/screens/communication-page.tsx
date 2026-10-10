@@ -603,6 +603,8 @@ function CommunicationPageBody() {
             }}
             activityFeedBump={activityFeedBump}
             commentResolveMode="ticket"
+            resolveImageSrc={resolveImageSrc}
+            onUploadImages={onUploadImages}
             taskSummary={{
               number: supportTask.number ?? 0,
               title: supportTask.title,

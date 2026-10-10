@@ -61,6 +61,7 @@ const TABLE_SPECS: TableSpec[] = [
   spec("letters", ["id"]),
   spec("letter_attachments", ["id"], "updated_at", { optional: true }),
   spec("task_attachments", ["id"], "updated_at", { optional: true }),
+  spec("task_images", ["id"], "updated_at", { optional: true }),
   spec("meetings", ["id"], "updated_at", { optional: true }),
   spec("meeting_scheduling_settings", ["workspace_id"], "updated_at", {
     optional: true,

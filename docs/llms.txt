@@ -37,6 +37,7 @@
 | --- | --- |
 | Starting implementation | 00-vision, 12-v2-local-computer, 09-phased-build-plan |
 | API routes / OpenAPI | 04-api-and-sync, 03-data-model, 02-tech-stack |
+| Task description/comment images (agents) | 04-api-and-sync (OS-90), agents/README.md, 03-data-model (`task_images`) |
 | PowerSync / offline | 03-data-model, **16-linear-shaped-sync**, **17-desktop-without-docker**, 04-api-and-sync, 07-performance |
 | Expo mobile | 05-clients, 07-performance, 04-api-and-sync, 12-v2-local-computer, 14-client-logic-inventory |
 | Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020, ADR-035), **16-linear-shaped-sync**, **17-desktop-without-docker**, 15-tauri-ipc-profiling |

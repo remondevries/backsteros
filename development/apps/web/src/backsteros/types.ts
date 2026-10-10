@@ -283,6 +283,10 @@ export type BacksterosTaskUpdatePatch = {
   /** OS-106: rejected once executionLocationLockedAt is set. */
   readonly executionLocation?: "development" | "production" | "local" | null;
   readonly lockExecutionLocation?: boolean;
+  /** OS-96 durable agents-API working marker. */
+  readonly agentWorkingContactId?: string | null;
+  readonly agentWorkingLabel?: string | null;
+  readonly agentWorkingKind?: "working" | "reviewing" | null;
 };
 
 export type BacksterosCreateTaskActivityInput =

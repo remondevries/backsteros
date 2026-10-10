@@ -1017,6 +1017,8 @@ export function TaskDetailPage({
       onSpellcheckReset={onSpellcheckReset}
       spellcheckControlsVisible={spellcheckControlsVisible}
       activityFeedBump={activityFeedBump}
+      resolveImageSrc={resolveImageSrc}
+      onUploadImages={onUploadImages}
       taskSummary={taskAgentSummary}
     />
   );

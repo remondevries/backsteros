@@ -767,6 +767,8 @@ function InboxPageBody() {
               await workspace.patchTask(selectedTask.id, values);
             }}
             activityFeedBump={activityFeedBump}
+            resolveImageSrc={resolveImageSrc}
+            onUploadImages={onUploadImages}
             taskSummary={{
               number: selectedTask.number ?? 0,
               title: selectedTask.title,

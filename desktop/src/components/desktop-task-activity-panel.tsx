@@ -67,6 +67,13 @@ export type DesktopTaskActivityPanelProps = {
    * complete the task. Default thread mode keeps Resolve thread UX.
    */
   commentResolveMode?: TaskActivityCommentResolveMode;
+  /** Authenticated resolve for task-image markdown in comments (OS-90). */
+  resolveImageSrc?: (
+    src: string,
+    signal?: AbortSignal,
+  ) => Promise<string | null>;
+  /** Paste/drop upload for comment composers (OS-90). */
+  onUploadImages?: (files: File[]) => Promise<string[] | null | undefined>;
   taskSummary: {
     number: number;
     title: string;
@@ -96,6 +103,8 @@ export function DesktopTaskActivityPanel({
   spellcheckControlsVisible = true,
   activityFeedBump = 0,
   commentResolveMode = "thread",
+  resolveImageSrc,
+  onUploadImages,
   taskSummary,
 }: DesktopTaskActivityPanelProps) {
   const { client } = useDesktopApi();
@@ -546,6 +555,8 @@ export function DesktopTaskActivityPanel({
         onResolveTicket={
           commentResolveMode === "ticket" ? onResolveTicket : undefined
         }
+        resolveImageSrc={resolveImageSrc}
+        onUploadImages={onUploadImages}
       />
       {spellcheckError ? (
         <p className="task-activity__error" role="alert">

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { isAgentHoldCommentBody } from "../lib/agent-hold-comment";
+import { JournalMarkdownBody } from "./journal-markdown-body";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import {
@@ -727,7 +728,9 @@ export function TaskActivityPanel({
             disabled={isSaving}
             onPress={() => startEditComment(comment)}
           >
-            <Text style={styles.commentBody}>{comment.body}</Text>
+            <View>
+              <JournalMarkdownBody body={comment.body} />
+            </View>
           </Pressable>
         )}
       </View>

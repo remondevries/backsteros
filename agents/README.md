@@ -74,6 +74,36 @@ Blocked at the door (never forwarded):
 Attach a **contact** to each agent’s API key in Settings so comments and
 activity show that person.
 
+## Task images (screenshots)
+
+Agents can attach JPEG/PNG/WebP/GIF screenshots the same way desktop paste does:
+
+```http
+# Raw bytes (same as desktop)
+POST /api/v1/tasks/{id|KEY}/images
+Content-Type: image/png
+X-Filename: shot.png
+<raw bytes, max 10 MB>
+
+# JSON base64 (handy from agent tools)
+POST /api/v1/tasks/{id|KEY}/images
+Content-Type: application/json
+{ "data": "<base64 or data-URL>", "contentType": "image/png", "filename": "shot.png", "alt": "bug" }
+
+# Or inline on create / update / comment (appends ![alt](url) to description/body)
+POST /api/v1/tasks
+{ "title": "…", "projectKey": "OS", "images": [{ "data": "<base64>" }], "activityActor": "agent" }
+POST /api/v1/tasks/OS-51/comments
+{ "body": "See shot", "images": [{ "data": "<base64>", "alt": "ui" }], "activityActor": "agent" }
+
+GET /api/v1/tasks/OS-51              # includes images[] (description-scoped)
+GET /api/v1/tasks/OS-51/images
+GET /api/v1/tasks/OS-51/images/{imageId}   # Bearer download; embed path in markdown
+```
+
+Requires `tasks:write` to upload and `tasks:read` to fetch. No public/signed URLs.
+Max 5 images per JSON create/update/comment. SVG is rejected.
+
 ## AgentMail inbound webhooks
 
 Register (or let core auto-register when `AGENTS_PUBLIC_URL` is set) a webhook

@@ -10,7 +10,7 @@ const ENTITY_REPLICATION_TABLES: Partial<
 > = {
   project: ["projects"],
   project_update: ["project_updates"],
-  task: ["tasks"],
+  task: ["tasks", "task_images"],
   task_label: ["task_labels"],
   document: ["documents"],
   area: ["areas"],
@@ -27,7 +27,7 @@ const ENTITY_REPLICATION_TABLES: Partial<
   client_estimate: ["client_estimates"],
   habit: ["habits", "tasks"],
   meeting: ["meetings", "crm_activities"],
-  task_comment: ["task_comments", "task_activities"],
+  task_comment: ["task_comments", "task_activities", "task_images"],
   contact_relationship: ["contact_relationships"],
   crm_relationship_label: ["crm_relationship_labels"],
   crm_group: ["crm_groups"],
