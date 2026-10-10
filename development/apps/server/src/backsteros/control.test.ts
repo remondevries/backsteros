@@ -530,6 +530,11 @@ describe("control API handlers (OS-38)", () => {
       Effect.provideService(ServerConfig.ServerConfig, {
         stateDir,
         attachmentsDir: path.join(stateDir, "attachments"),
+        port: 3773,
+      } as never),
+      Effect.provideService(ServerEnvironment.ServerEnvironment, {
+        getEnvironmentId: Effect.succeed("env-1"),
+        getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
       } as never),
       Effect.provideService(ProjectionSnapshotQuery, {
         getShellSnapshot: () => Effect.sync(() => ({ projects: [], threads: [threadShell()] })),
@@ -829,10 +834,14 @@ describe("control API handlers (OS-38)", () => {
         Effect.provideService(ServerConfig.ServerConfig, {
           stateDir,
           attachmentsDir: path.join(stateDir, "attachments"),
+          port: 3773,
         } as never),
         Effect.provideService(ServerEnvironment.ServerEnvironment, {
           getEnvironmentId: Effect.succeed("env-1"),
-          getDescriptor: Effect.die("unused"),
+          getDescriptor: Effect.succeed({
+            environmentId: "env-1",
+            label: "local",
+          }),
         } as never),
         Effect.provideService(ProjectionSnapshotQuery, {
           getShellSnapshot: () =>
@@ -983,6 +992,11 @@ describe("control API handlers (OS-38)", () => {
         Effect.provideService(ServerConfig.ServerConfig, {
           stateDir,
           attachmentsDir: path.join(stateDir, "attachments"),
+          port: 3773,
+        } as never),
+        Effect.provideService(ServerEnvironment.ServerEnvironment, {
+          getEnvironmentId: Effect.succeed("env-1"),
+          getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
         } as never),
         Effect.provideService(ProjectionSnapshotQuery, {
           getShellSnapshot: () =>
@@ -1091,6 +1105,11 @@ describe("control API handlers (OS-38)", () => {
         Effect.provideService(ServerConfig.ServerConfig, {
           stateDir,
           attachmentsDir: path.join(stateDir, "attachments"),
+          port: 3773,
+        } as never),
+        Effect.provideService(ServerEnvironment.ServerEnvironment, {
+          getEnvironmentId: Effect.succeed("env-1"),
+          getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
         } as never),
         Effect.provideService(ProjectionSnapshotQuery, {
           getShellSnapshot: () => Effect.sync(() => ({ projects: [], threads })),

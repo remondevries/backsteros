@@ -53,14 +53,26 @@ curl -sS -X POST "$ORIGIN/api/backsteros/control/sessions" \
 
 Body fields:
 
-| Field                 | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `taskRef` or `taskId` | yes      | `BDV-33` or the task id                                                                                                                                                                                                                                                                                                                                                                                    |
-| `prompt`              | no       | Defaults to the standard BacksterOS kickoff prompt from the task body                                                                                                                                                                                                                                                                                                                                      |
-| `start`               | no       | Default `true`. Set `false` to create/bind without starting a turn                                                                                                                                                                                                                                                                                                                                         |
-| `workspaceRoot`       | no       | Override when the BacksterOS project cwd is unset                                                                                                                                                                                                                                                                                                                                                          |
-| `projectId`           | no       | T3 project id override                                                                                                                                                                                                                                                                                                                                                                                     |
-| `modelSelection`      | no       | `{ "instanceId": "cursor", "model": "…" }`. On a **new** thread this falls back to the T3 project default (then the first authenticated provider). On an **existing** bound thread the turn uses that thread's stored selection — not the project default — so a cursor thread is not restarted as `claudeAgent`. An explicit selection on a **different driver** is rejected before dispatch (see below). |
+| Field                              | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `taskRef` or `taskId`              | yes      | `BDV-33` or the task id                                                                                                                                                                                                                                                                                                                                                                                    |
+| `prompt`                           | no       | Defaults to the standard BacksterOS kickoff prompt from the task body                                                                                                                                                                                                                                                                                                                                      |
+| `start`                            | no       | Default `true`. Set `false` to create/bind without starting a turn                                                                                                                                                                                                                                                                                                                                         |
+| `workspaceRoot`                    | no       | Override when the BacksterOS project cwd is unset. For **remote** environments this must be a path that exists on that machine.                                                                                                                                                                                                                                                                            |
+| `projectId`                        | no       | T3 project id override                                                                                                                                                                                                                                                                                                                                                                                     |
+| `environmentId`                    | no       | Paired remote (or local) environment id. Default: this server’s local environment.                                                                                                                                                                                                                                                                                                                         |
+| `environment` / `environmentLabel` | no       | Case-insensitive label alternative to `environmentId` (e.g. `development`).                                                                                                                                                                                                                                                                                                                                |
+| `modelSelection`                   | no       | `{ "instanceId": "cursor", "model": "…" }`. On a **new** thread this falls back to the T3 project default (then the first authenticated provider). On an **existing** bound thread the turn uses that thread's stored selection — not the project default — so a cursor thread is not restarted as `claudeAgent`. An explicit selection on a **different driver** is rejected before dispatch (see below). |
+
+**Environment selection:** omit `environmentId` / `environment` to run on this
+server (backward compatible). To run on a paired remote (for example the
+development Tailscale host), pass its id or label from
+`GET /api/backsteros/control/environments`. The desktop app mirrors paired
+bearer remotes into `control-environments.json` under the state dir (tokens
+included, mode `0600`). You can also `PUT` that registry. Remote starts use the
+remote’s `/api/orchestration/*` HTTP API (stock `t3 serve` has no control
+routes) and store the task↔thread binding locally with that remote’s
+`environmentId` so the rail opens the right chat.
 
 **Project resolution:** when `workspaceRoot` / `projectId` are omitted, the
 server reads the BacksterOS task's project `localWorkingDirectory`, matches it
@@ -111,6 +123,27 @@ one). Status GET is read-only: it never writes BacksterOS task status.
 curl -sS -X POST "$ORIGIN/api/backsteros/control/message" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"threadId":"<threadId>","text":"Continue — status only, no code changes."}'
+```
+
+### Environments (paired remotes)
+
+- `GET /api/backsteros/control/environments` — local environment plus registered
+  remotes (`environmentId`, `label`, `httpBaseUrl`, `local`, `hasAccessToken`;
+  tokens are never returned)
+- `PUT /api/backsteros/control/environments` — replace the remote registry:
+  `{ "environments": [{ "environmentId", "label", "httpBaseUrl", "accessToken?" }] }`
+
+```bash
+curl -sS "$ORIGIN/api/backsteros/control/environments" -H "$AUTH"
+
+curl -sS -X POST "$ORIGIN/api/backsteros/control/sessions" \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{
+    "taskRef": "BDV-56",
+    "environment": "development",
+    "workspaceRoot": "/home/deploy/agent-smoke",
+    "prompt": "Reply with exactly: bdv-56-remote-ok"
+  }'
 ```
 
 ### Bindings (rail sync)

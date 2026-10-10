@@ -5,6 +5,8 @@ import { readBacksterosAgentProfile, writeBacksterosAgentProfile } from "./agent
 import {
   controlBindingsGetHandler,
   controlBindingsPutHandler,
+  controlEnvironmentsGetHandler,
+  controlEnvironmentsPutHandler,
   controlMessageHandler,
   controlPromoteHandler,
   controlPruneHandler,
@@ -397,6 +399,7 @@ const CONTROL_SESSIONS_PROMOTE_PATH = "/api/backsteros/control/sessions/promote"
 export const CONTROL_SESSIONS_PRUNE_PATH = "/api/backsteros/control/sessions/prune";
 const CONTROL_HEALTH_PATH = "/api/backsteros/control/health";
 const CONTROL_BINDINGS_PATH = "/api/backsteros/control/bindings";
+const CONTROL_ENVIRONMENTS_PATH = "/api/backsteros/control/environments";
 const CONTROL_MESSAGE_PATH = "/api/backsteros/control/message";
 
 export const CONTROL_ROUTE_PATHS = {
@@ -405,6 +408,7 @@ export const CONTROL_ROUTE_PATHS = {
   prune: CONTROL_SESSIONS_PRUNE_PATH,
   health: CONTROL_HEALTH_PATH,
   bindings: CONTROL_BINDINGS_PATH,
+  environments: CONTROL_ENVIRONMENTS_PATH,
   message: CONTROL_MESSAGE_PATH,
 } as const;
 
@@ -462,6 +466,18 @@ export const backsterosControlBindingsPutRouteLayer = HttpRouter.add(
   controlBindingsPutHandler,
 );
 
+export const backsterosControlEnvironmentsGetRouteLayer = HttpRouter.add(
+  "GET",
+  CONTROL_ENVIRONMENTS_PATH,
+  controlEnvironmentsGetHandler,
+);
+
+export const backsterosControlEnvironmentsPutRouteLayer = HttpRouter.add(
+  "PUT",
+  CONTROL_ENVIRONMENTS_PATH,
+  controlEnvironmentsPutHandler,
+);
+
 export const backsterosControlRouteLayer = Layer.mergeAll(
   backsterosControlHealthRouteLayer,
   backsterosControlStartRouteLayer,
@@ -471,4 +487,6 @@ export const backsterosControlRouteLayer = Layer.mergeAll(
   backsterosControlMessageRouteLayer,
   backsterosControlBindingsGetRouteLayer,
   backsterosControlBindingsPutRouteLayer,
+  backsterosControlEnvironmentsGetRouteLayer,
+  backsterosControlEnvironmentsPutRouteLayer,
 );

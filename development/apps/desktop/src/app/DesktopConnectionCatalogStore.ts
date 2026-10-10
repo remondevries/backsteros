@@ -24,6 +24,7 @@ import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
+import { writeControlEnvironmentsMirror } from "../settings/writeControlEnvironments.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 const EncryptedConnectionCatalogDocument = Schema.Struct({
@@ -43,6 +44,9 @@ const RuntimeConnectionCatalogDocumentJson = Schema.fromJsonString(
   RuntimeConnectionCatalogDocument,
 );
 const encodeRuntimeConnectionCatalogDocumentJson = Schema.encodeEffect(
+  RuntimeConnectionCatalogDocumentJson,
+);
+const decodeRuntimeConnectionCatalogDocumentJson = Schema.decodeUnknownEffect(
   RuntimeConnectionCatalogDocumentJson,
 );
 
@@ -494,6 +498,19 @@ export const make = Effect.gen(function* () {
           ),
         ),
       );
+      yield* decodeRuntimeConnectionCatalogDocumentJson(decrypted).pipe(
+        Effect.map((document) => {
+          writeControlEnvironmentsMirror({
+            stateDir: environment.stateDir,
+            catalog: document,
+          });
+        }),
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not mirror control-environments.json from connection catalog.", {
+            cause,
+          }),
+        ),
+      );
       return Option.some(decrypted);
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
@@ -501,6 +518,21 @@ export const make = Effect.gen(function* () {
         return false;
       }
       yield* writeCatalog(catalog);
+      // Best-effort mirror for the localhost control API (BDV-56). Failures
+      // must not block saving the encrypted catalog.
+      yield* decodeRuntimeConnectionCatalogDocumentJson(catalog).pipe(
+        Effect.map((document) => {
+          writeControlEnvironmentsMirror({
+            stateDir: environment.stateDir,
+            catalog: document,
+          });
+        }),
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not mirror control-environments.json from connection catalog.", {
+            cause,
+          }),
+        ),
+      );
       return true;
     }),
     clear: fileSystem.remove(catalogPath, { force: true }).pipe(

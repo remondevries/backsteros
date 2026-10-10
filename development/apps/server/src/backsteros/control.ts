@@ -37,13 +37,30 @@ import {
   patchBacksterosControlTaskStatus,
   resolveBacksterosControlApiKey,
   resolveBacksterosControlTask,
+  type BacksterosControlProject,
+  type BacksterosControlTask,
 } from "./control-backsteros.ts";
+import {
+  listControlEnvironmentsPublic,
+  readControlEnvironments,
+  resolveControlEnvironmentTarget,
+  writeControlEnvironments,
+  type ControlEnvironmentRecord,
+  type ResolvedControlEnvironment,
+} from "./control-environments.ts";
 import {
   CONTROL_PENDING_DISPATCH_TIMEOUT_MS,
   clearControlPendingDispatch,
   getControlPendingDispatch,
   recordControlPendingDispatch,
 } from "./control-pending-dispatch.ts";
+import {
+  dispatchRemoteOrchestrationCommand,
+  fetchRemoteThreadShell,
+  resolveOrCreateRemoteT3Project,
+  resolveRemoteModelSelection,
+  type ControlRemoteHttpError,
+} from "./control-remote.ts";
 import {
   cancelControlSessionIdlePromote,
   maybePromoteBacksterosTaskForControlSession,
@@ -404,6 +421,53 @@ const findThreadShell = Effect.fn("backsteros.control.findThreadShell")(function
   return shell.threads.find((thread) => thread.id === threadId) ?? null;
 });
 
+function mapRemoteHttpError(cause: unknown): ControlHttpError {
+  if (cause && typeof cause === "object" && "status" in cause && "error" in cause) {
+    const remote = cause as ControlRemoteHttpError;
+    return {
+      status: remote.status,
+      error: remote.error,
+      code: remote.code,
+    };
+  }
+  return {
+    status: 502,
+    error: cause instanceof Error ? cause.message : "Remote environment request failed",
+    code: "remote_error",
+  };
+}
+
+function lookupRemoteAccess(
+  stateDir: string,
+  environmentId: string,
+): ControlEnvironmentRecord | null {
+  return (
+    readControlEnvironments(stateDir).find((row) => row.environmentId === environmentId) ?? null
+  );
+}
+
+const findThreadShellForBinding = Effect.fn("backsteros.control.findThreadShellForBinding")(
+  function* (binding: BacksterosTaskThreadBinding, localEnvironmentId: string) {
+    if (binding.environmentId === localEnvironmentId) {
+      return yield* findThreadShell(binding.threadId);
+    }
+    const config = yield* ServerConfig.ServerConfig;
+    const remote = lookupRemoteAccess(config.stateDir, binding.environmentId);
+    if (!remote?.accessToken) {
+      return null;
+    }
+    return yield* Effect.tryPromise({
+      try: () =>
+        fetchRemoteThreadShell({
+          httpBaseUrl: remote.httpBaseUrl,
+          accessToken: remote.accessToken!,
+          threadId: binding.threadId,
+        }),
+      catch: mapRemoteHttpError,
+    });
+  },
+);
+
 /** Resolve workspace root from an explicit override or BacksterOS project cwd. */
 export function resolveControlWorkspaceRoot(input: {
   readonly workspaceRootOverride: string | null;
@@ -547,6 +611,225 @@ function catchControlErrors<A, E, R>(
   );
 }
 
+const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSession")(
+  function* (input: {
+    readonly task: BacksterosControlTask;
+    readonly project: BacksterosControlProject | null;
+    readonly workspaceRoot: string;
+    readonly projectIdOverride: string | null;
+    readonly promptOverride: string | null;
+    readonly start: boolean;
+    readonly modelSelectionRaw: unknown;
+    readonly remote: Extract<ResolvedControlEnvironment, { readonly kind: "remote" }>;
+    readonly stateDir: string;
+  }) {
+    const { task, project, workspaceRoot, remote } = input;
+    const existing = findBacksterosTaskThreadBinding(input.stateDir, { taskId: task.id });
+    let threadId: string | null =
+      existing?.binding.environmentId === remote.environmentId
+        ? (existing.binding.threadId ?? null)
+        : null;
+    let created = false;
+    let existingThread: OrchestrationThreadShell | null = null;
+
+    if (threadId) {
+      const existingThreadId = threadId;
+      existingThread = yield* Effect.tryPromise({
+        try: () =>
+          fetchRemoteThreadShell({
+            httpBaseUrl: remote.httpBaseUrl,
+            accessToken: remote.accessToken,
+            threadId: existingThreadId,
+          }),
+        catch: mapRemoteHttpError,
+      });
+      if (!existingThread) threadId = null;
+    }
+
+    const remoteProjectId = yield* newId();
+    const remoteProjectCommandId = yield* newId();
+    const remoteNowIso = DateTime.formatIso(yield* DateTime.now);
+    const t3Project = yield* Effect.tryPromise({
+      try: () =>
+        resolveOrCreateRemoteT3Project({
+          httpBaseUrl: remote.httpBaseUrl,
+          accessToken: remote.accessToken,
+          workspaceRoot,
+          projectIdOverride: input.projectIdOverride,
+          preferredTitle: project?.name,
+          nowIso: remoteNowIso,
+          newIds: () => ({
+            projectId: remoteProjectId,
+            commandId: remoteProjectCommandId,
+          }),
+        }),
+      catch: mapRemoteHttpError,
+    });
+
+    if (!threadId) {
+      threadId = yield* newId();
+      created = true;
+      existingThread = null;
+    }
+
+    const displayId =
+      project?.key && task.number > 0
+        ? `${project.key}-${task.number}`
+        : (existing?.binding.displayId ?? null);
+    const title =
+      displayId != null
+        ? `${displayId} · ${task.title.trim() || "Untitled"}`
+        : task.title.trim() || "Untitled";
+
+    let preferredModel: ModelSelection | null = null;
+    if (input.modelSelectionRaw && typeof input.modelSelectionRaw === "object") {
+      const raw = input.modelSelectionRaw as Record<string, unknown>;
+      const instanceId = asNonEmptyString(raw.instanceId) ?? asNonEmptyString(raw.provider);
+      const model = asNonEmptyString(raw.model);
+      if (instanceId && model) {
+        preferredModel = createModelSelection(ProviderInstanceId.make(instanceId), model);
+      }
+    }
+
+    const modelSelection = resolveRemoteModelSelection({
+      preferred: preferredModel,
+      projectDefault: existingThread ? null : t3Project.defaultModelSelection,
+    });
+    // Prefer the existing remote thread's selection when following up.
+    const turnModelSelection = existingThread?.modelSelection ?? modelSelection;
+
+    const prompt =
+      input.promptOverride ??
+      buildControlKickoffPrompt({
+        task,
+        projectKey: project?.key ?? null,
+        workingDirectory: workspaceRoot,
+      });
+
+    const createdAt = DateTime.formatIso(yield* DateTime.now);
+    const dispatchedAtMs = Date.parse(createdAt);
+    const commandId = yield* newId();
+    const messageId = yield* newId();
+    const createThreadCommandId = yield* newId();
+
+    if (input.start) {
+      if (existingThread) {
+        cancelControlSessionIdlePromote(input.stateDir, threadId);
+      }
+      if (created) {
+        yield* Effect.tryPromise({
+          try: () =>
+            dispatchRemoteOrchestrationCommand({
+              httpBaseUrl: remote.httpBaseUrl,
+              accessToken: remote.accessToken,
+              command: {
+                type: "thread.create",
+                commandId: createThreadCommandId,
+                threadId,
+                projectId: t3Project.id,
+                title,
+                modelSelection: turnModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+                createdAt,
+              },
+            }),
+          catch: mapRemoteHttpError,
+        });
+      }
+
+      recordControlPendingDispatch(threadId, dispatchedAtMs);
+      yield* Effect.tryPromise({
+        try: () =>
+          dispatchRemoteOrchestrationCommand({
+            httpBaseUrl: remote.httpBaseUrl,
+            accessToken: remote.accessToken,
+            command: {
+              type: "thread.turn.start",
+              commandId,
+              threadId,
+              message: {
+                messageId,
+                role: "user",
+                text: prompt,
+                attachments: [],
+              },
+              modelSelection: turnModelSelection,
+              titleSeed: title,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              createdAt,
+            },
+          }),
+        catch: (cause): ControlHttpError => {
+          clearControlPendingDispatch(threadId!, dispatchedAtMs);
+          return mapRemoteHttpError(cause);
+        },
+      });
+    } else if (created) {
+      yield* Effect.tryPromise({
+        try: () =>
+          dispatchRemoteOrchestrationCommand({
+            httpBaseUrl: remote.httpBaseUrl,
+            accessToken: remote.accessToken,
+            command: {
+              type: "thread.create",
+              commandId,
+              threadId,
+              projectId: t3Project.id,
+              title,
+              modelSelection: turnModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+              createdAt,
+            },
+          }),
+        catch: mapRemoteHttpError,
+      });
+    }
+
+    const binding = writeBacksterosTaskThreadBinding(input.stateDir, task.id, {
+      threadId,
+      environmentId: remote.environmentId,
+      t3ProjectId: t3Project.id,
+      backsterosProjectId: project?.id ?? task.projectId ?? "",
+      projectTitle: project?.name ?? "",
+      title: task.title,
+      displayId,
+    });
+
+    const thread = yield* Effect.tryPromise({
+      try: () =>
+        fetchRemoteThreadShell({
+          httpBaseUrl: remote.httpBaseUrl,
+          accessToken: remote.accessToken,
+          threadId,
+        }),
+      catch: mapRemoteHttpError,
+    });
+    const now = yield* Clock.currentTimeMillis;
+    const view = toSessionView({ taskId: task.id, binding, thread, now });
+    if (input.start) {
+      void patchBacksterosControlTaskStatus(task.id, "in_progress");
+    }
+    if (view.status === "working" || view.status === "blocked") {
+      maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
+        sessionStatus: thread?.session?.status ?? null,
+        lastError: thread?.session?.lastError ?? null,
+      });
+    }
+    return HttpServerResponse.jsonUnsafe({
+      ...view,
+      created,
+      started: input.start,
+    });
+  },
+);
+
 export const controlStartHandler = catchControlErrors(
   Effect.gen(function* () {
     yield* requireControlAuth();
@@ -577,6 +860,9 @@ export const controlStartHandler = catchControlErrors(
     const workspaceRootOverride = asNonEmptyString(body.workspaceRoot);
     const start = body.start !== false;
     const modelSelectionRaw = body.modelSelection;
+    const requestedEnvironmentId = asNonEmptyString(body.environmentId);
+    const requestedEnvironmentLabel =
+      asNonEmptyString(body.environmentLabel) ?? asNonEmptyString(body.environment);
 
     const resolved = yield* Effect.tryPromise({
       try: () => resolveBacksterosControlTask(taskIdOrRef),
@@ -608,10 +894,45 @@ export const controlStartHandler = catchControlErrors(
 
     const config = yield* ServerConfig.ServerConfig;
     const environment = yield* ServerEnvironment.ServerEnvironment;
-    const environmentId = yield* environment.getEnvironmentId;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
+    const localDescriptor = yield* environment.getDescriptor;
+    const targetResolved = resolveControlEnvironmentTarget({
+      stateDir: config.stateDir,
+      localEnvironmentId,
+      localLabel: localDescriptor.label,
+      environmentId: requestedEnvironmentId,
+      environmentLabel: requestedEnvironmentLabel,
+    });
+    if (!targetResolved.ok) {
+      return yield* Effect.fail({
+        status: 404,
+        error: targetResolved.error,
+        code: targetResolved.code,
+      } satisfies ControlHttpError);
+    }
+    const target = targetResolved.environment;
+    const environmentId = target.environmentId;
+
+    if (target.kind === "remote") {
+      return yield* startRemoteControlSession({
+        task,
+        project,
+        workspaceRoot,
+        projectIdOverride,
+        promptOverride,
+        start,
+        modelSelectionRaw,
+        remote: target,
+        stateDir: config.stateDir,
+      });
+    }
+
     const existing = findBacksterosTaskThreadBinding(config.stateDir, { taskId: task.id });
 
-    let threadId: string | null = existing?.binding.threadId ?? null;
+    let threadId: string | null =
+      existing?.binding.environmentId === environmentId
+        ? (existing.binding.threadId ?? null)
+        : null;
     let created = false;
     let existingThread: OrchestrationThreadShell | null = null;
 
@@ -857,6 +1178,8 @@ export const controlStatusHandler = catchControlErrors(
     const taskRef = url.value.searchParams.get("taskRef")?.trim() || null;
     const threadId = url.value.searchParams.get("threadId")?.trim() || null;
     const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
     const now = yield* Clock.currentTimeMillis;
 
     if (!taskId && !taskRef && !threadId) {
@@ -865,7 +1188,7 @@ export const controlStatusHandler = catchControlErrors(
       for (const { taskId: boundTaskId, binding } of listBacksterosTaskThreadBindings(
         config.stateDir,
       )) {
-        const thread = yield* findThreadShell(binding.threadId);
+        const thread = yield* findThreadShellForBinding(binding, localEnvironmentId);
         sessions.push(
           toSessionView({
             taskId: boundTaskId,
@@ -903,7 +1226,7 @@ export const controlStatusHandler = catchControlErrors(
       } satisfies ControlHttpError);
     }
 
-    const thread = yield* findThreadShell(found.binding.threadId);
+    const thread = yield* findThreadShellForBinding(found.binding, localEnvironmentId);
     // Read-only (OS-38): a status GET never writes BacksterOS task status or
     // updatedAt. Promotion is POST /sessions/promote (or start/message).
     const view = toSessionView({
@@ -933,6 +1256,8 @@ export const controlPromoteHandler = catchControlErrors(
     const threadIdFilter = asNonEmptyString(body.threadId);
 
     const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
     const now = yield* Clock.currentTimeMillis;
     const sessions: ControlSessionView[] = [];
 
@@ -965,7 +1290,7 @@ export const controlPromoteHandler = catchControlErrors(
     }
 
     for (const { taskId: boundTaskId, binding } of bindings) {
-      const thread = yield* findThreadShell(binding.threadId);
+      const thread = yield* findThreadShellForBinding(binding, localEnvironmentId);
       const view = toSessionView({
         taskId: boundTaskId,
         binding,
@@ -991,11 +1316,13 @@ export const controlPruneHandler = catchControlErrors(
     yield* requireControlAuth();
 
     const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
     const pruned: string[] = [];
     for (const { taskId: boundTaskId, binding } of listBacksterosTaskThreadBindings(
       config.stateDir,
     )) {
-      const thread = yield* findThreadShell(binding.threadId);
+      const thread = yield* findThreadShellForBinding(binding, localEnvironmentId);
       if (!thread) {
         removeBacksterosTaskThreadBinding(config.stateDir, boundTaskId);
         pruned.push(boundTaskId);
@@ -1040,6 +1367,8 @@ export const controlMessageHandler = catchControlErrors(
     }
 
     const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
     const found = findBacksterosTaskThreadBinding(config.stateDir, { threadId });
     if (!found) {
       return yield* Effect.fail({
@@ -1049,7 +1378,7 @@ export const controlMessageHandler = catchControlErrors(
       } satisfies ControlHttpError);
     }
 
-    const shell = yield* findThreadShell(threadId);
+    const shell = yield* findThreadShellForBinding(found.binding, localEnvironmentId);
     if (!shell) {
       return yield* Effect.fail({
         status: 404,
@@ -1058,48 +1387,89 @@ export const controlMessageHandler = catchControlErrors(
       } satisfies ControlHttpError);
     }
 
-    const orchestrationEngine = yield* OrchestrationEngineService;
     const createdAt = DateTime.formatIso(yield* DateTime.now);
     const dispatchedAtMs = Date.parse(createdAt);
-    const command = yield* normalizeDispatchCommand({
-      type: "thread.turn.start",
-      commandId: CommandId.make(yield* newId()),
-      threadId: ThreadId.make(threadId),
-      message: {
-        messageId: MessageId.make(yield* newId()),
-        role: "user",
-        text,
-        attachments: [],
-      },
-      modelSelection: shell.modelSelection,
-      runtimeMode: shell.runtimeMode,
-      interactionMode: shell.interactionMode,
-      createdAt,
-    }).pipe(
-      Effect.mapError((cause): ControlHttpError => ({
-        status: 400,
-        error: cause instanceof Error ? cause.message : "Invalid message command",
-        code: "invalid_command",
-      })),
-    );
+    const commandId = yield* newId();
+    const messageId = yield* newId();
 
     // A message to a stopped session is accepted before the provider session
     // starts; track it so the response and following GETs read `working`.
     // Also cancel any pending idle→in_review from a prior turn (OS-73).
     cancelControlSessionIdlePromote(config.stateDir, threadId);
     recordControlPendingDispatch(threadId, dispatchedAtMs);
-    yield* orchestrationEngine.dispatch(command).pipe(
-      Effect.onError(() =>
-        Effect.sync(() => clearControlPendingDispatch(threadId, dispatchedAtMs)),
-      ),
-      Effect.mapError((cause): ControlHttpError => ({
-        status: 500,
-        error: cause instanceof Error ? cause.message : "Failed to send message",
-        code: "dispatch_failed",
-      })),
-    );
 
-    const thread = yield* findThreadShell(threadId);
+    if (found.binding.environmentId !== localEnvironmentId) {
+      const remote = lookupRemoteAccess(config.stateDir, found.binding.environmentId);
+      if (!remote?.accessToken) {
+        clearControlPendingDispatch(threadId, dispatchedAtMs);
+        return yield* Effect.fail({
+          status: 409,
+          error: `No access token for remote environment '${found.binding.environmentId}'`,
+          code: "environment_token_missing",
+        } satisfies ControlHttpError);
+      }
+      yield* Effect.tryPromise({
+        try: () =>
+          dispatchRemoteOrchestrationCommand({
+            httpBaseUrl: remote.httpBaseUrl,
+            accessToken: remote.accessToken!,
+            command: {
+              type: "thread.turn.start",
+              commandId,
+              threadId,
+              message: {
+                messageId,
+                role: "user",
+                text,
+                attachments: [],
+              },
+              modelSelection: shell.modelSelection,
+              runtimeMode: shell.runtimeMode,
+              interactionMode: shell.interactionMode,
+              createdAt,
+            },
+          }),
+        catch: (cause): ControlHttpError => {
+          clearControlPendingDispatch(threadId, dispatchedAtMs);
+          return mapRemoteHttpError(cause);
+        },
+      });
+    } else {
+      const orchestrationEngine = yield* OrchestrationEngineService;
+      const command = yield* normalizeDispatchCommand({
+        type: "thread.turn.start",
+        commandId: CommandId.make(commandId),
+        threadId: ThreadId.make(threadId),
+        message: {
+          messageId: MessageId.make(messageId),
+          role: "user",
+          text,
+          attachments: [],
+        },
+        modelSelection: shell.modelSelection,
+        runtimeMode: shell.runtimeMode,
+        interactionMode: shell.interactionMode,
+        createdAt,
+      }).pipe(
+        Effect.mapError((cause): ControlHttpError => ({
+          status: 400,
+          error: cause instanceof Error ? cause.message : "Invalid message command",
+          code: "invalid_command",
+        })),
+      );
+      yield* orchestrationEngine.dispatch(command).pipe(
+        Effect.onError(() =>
+          Effect.sync(() => clearControlPendingDispatch(threadId, dispatchedAtMs)),
+        ),
+        Effect.mapError((cause): ControlHttpError => ({
+          status: 500,
+          error: cause instanceof Error ? cause.message : "Failed to send message",
+          code: "dispatch_failed",
+        })),
+      );
+    }
+
+    const thread = yield* findThreadShellForBinding(found.binding, localEnvironmentId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: found.taskId, binding: found.binding, thread, now });
     maybePromoteBacksterosTaskForControlSession(found.taskId, view.status, {
@@ -1167,5 +1537,85 @@ export const controlBindingsPutHandler = catchControlErrors(
       displayId: asNonEmptyString(body.displayId),
     });
     return HttpServerResponse.jsonUnsafe({ ok: true, taskId, binding });
+  }),
+);
+
+export const controlEnvironmentsGetHandler = catchControlErrors(
+  Effect.gen(function* () {
+    yield* requireControlAuth();
+    const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
+    const descriptor = yield* environment.getDescriptor;
+    const environments = listControlEnvironmentsPublic({
+      stateDir: config.stateDir,
+      localEnvironmentId,
+      localLabel: descriptor.label,
+      localHttpBaseUrl: `http://127.0.0.1:${config.port}`,
+    });
+    return HttpServerResponse.jsonUnsafe({ ok: true, environments });
+  }),
+);
+
+export const controlEnvironmentsPutHandler = catchControlErrors(
+  Effect.gen(function* () {
+    yield* requireControlAuth();
+
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    if (!bodyJson || typeof bodyJson !== "object") {
+      return yield* Effect.fail({
+        status: 400,
+        error: "Expected JSON body",
+        code: "bad_request",
+      } satisfies ControlHttpError);
+    }
+    const body = bodyJson as Record<string, unknown>;
+    const rawList = Array.isArray(body.environments) ? body.environments : null;
+    if (!rawList) {
+      return yield* Effect.fail({
+        status: 400,
+        error: "environments array is required",
+        code: "bad_request",
+      } satisfies ControlHttpError);
+    }
+
+    const records: ControlEnvironmentRecord[] = [];
+    for (const entry of rawList) {
+      if (!entry || typeof entry !== "object") continue;
+      const row = entry as Record<string, unknown>;
+      const environmentId = asNonEmptyString(row.environmentId);
+      const label = asNonEmptyString(row.label);
+      const httpBaseUrl = asNonEmptyString(row.httpBaseUrl);
+      if (!environmentId || !label || !httpBaseUrl) {
+        return yield* Effect.fail({
+          status: 400,
+          error: "Each environment requires environmentId, label, and httpBaseUrl",
+          code: "bad_request",
+        } satisfies ControlHttpError);
+      }
+      const accessToken = asNonEmptyString(row.accessToken) ?? undefined;
+      records.push({
+        environmentId,
+        label,
+        httpBaseUrl,
+        ...(accessToken ? { accessToken } : {}),
+      });
+    }
+
+    const config = yield* ServerConfig.ServerConfig;
+    const environment = yield* ServerEnvironment.ServerEnvironment;
+    const localEnvironmentId = String(yield* environment.getEnvironmentId);
+    const descriptor = yield* environment.getDescriptor;
+    // Never persist the local environment as a remote row.
+    const remotes = records.filter((row) => row.environmentId !== localEnvironmentId);
+    writeControlEnvironments(config.stateDir, remotes);
+    const environments = listControlEnvironmentsPublic({
+      stateDir: config.stateDir,
+      localEnvironmentId,
+      localLabel: descriptor.label,
+      localHttpBaseUrl: `http://127.0.0.1:${config.port}`,
+    });
+    return HttpServerResponse.jsonUnsafe({ ok: true, environments });
   }),
 );
