@@ -8,13 +8,13 @@ documented in [backsteros-control-api](../internals/backsteros-control-api.md)
 
 ## Hosts
 
-| Tailscale name | Tailscale IP    | Role                         | T3 listen                         | Notes                                     |
-| -------------- | --------------- | ---------------------------- | --------------------------------- | ----------------------------------------- |
-| `development`  | `100.126.31.97` | Dedicated agent / smoke host | `0.0.0.0:3773` (`t3code.service`) | Paired; small disk footprint              |
-| `production`   | `100.75.45.22`  | CX43 VPS (cloud-core, sites) | none yet                          | 85% disk, many containers — install gated |
+| Tailscale name | Tailscale IP    | Role                                   | T3 listen                         | Notes                                       |
+| -------------- | --------------- | -------------------------------------- | --------------------------------- | ------------------------------------------- |
+| `development`  | `100.126.31.97` | Dedicated agent / smoke host           | `0.0.0.0:3773` (`t3code.service`) | Paired; small disk footprint                |
+| `lemodesign`   | `100.83.125.67` | CX33 Chatwoot + client portal (Docker) | `0.0.0.0:3773` (`t3code.service`) | User-level t3 only; do not touch Docker/ufw |
+| `production`   | `100.75.45.22`  | CX43 VPS (cloud-core, sites)           | none yet                          | 85% disk, many containers — install gated   |
 
-`lemodesign` (`100.83.125.67`) is a separate Tailscale node; do not treat it as
-`production`.
+Do not confuse `lemodesign` with `production`.
 
 ## Development (reference)
 
@@ -28,6 +28,27 @@ Already running as user `deploy`:
 Pair from BacksterDEV: **Settings → Connections → Add environment → Remote
 link**, host `http://100.126.31.97:3773`, using a pairing code from
 `t3 pair` on the host (or the one-time URL it prints).
+
+## Lemodesign (BDV-58)
+
+User-level t3 on `deploy@lemodesign` (SSH Host `lemodesign`). Chatwoot / portal
+Docker and ufw were left alone. Public internet to `:3773` stays closed; Tailscale
+`http://100.83.125.67:3773` reaches the service without an extra ufw rule on this
+host (unlike `development`, which has an explicit `3773/tcp on tailscale0` allow).
+
+- Runtime `0.0.44` under `~/.t3`; systemd user unit `t3code.service` with
+  `T3CODE_HOST=0.0.0.0` and `Linger=yes`
+- `libatomic.so.1` is user-local in `~/.local/lib` (`LD_LIBRARY_PATH`) — the
+  image lacked the package and we avoided `apt install`
+- Cursor CLI: `~/.local/bin/{agent,cursor-agent}`; provider enabled in
+  `~/.t3/userdata/settings.json`
+
+### Pair into BacksterDEV
+
+1. On the host (when Remon asks):  
+   `t3 auth pairing create --ttl 15m --label 'Remon Mac' --base-url http://100.83.125.67:3773`
+2. On the Mac: BacksterDEV **Settings → Connections → Add environment → Remote
+   link**, host `http://100.83.125.67:3773`, paste the one-time code/URL.
 
 ## Production (planned)
 
