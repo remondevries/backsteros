@@ -3,7 +3,12 @@ import { createPortal } from "react-dom";
 import { useRouter } from "@tanstack/react-router";
 
 import { BacksterosContactPersonIcon } from "~/backsteros/ContactPersonIcon";
-import { createBacksterosTask, fetchBacksterosContacts } from "~/backsteros/client";
+import {
+  createBacksterosTask,
+  fetchBacksterosContacts,
+  updateBacksterosTask,
+  uploadBacksterosTaskImage,
+} from "~/backsteros/client";
 import {
   composeTaskTabFieldFromPropertyDropdownId,
   getNextComposeTaskTabField,
@@ -17,6 +22,7 @@ import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import {
   BacksterosMarkdownDescription,
   type BacksterosMarkdownDescriptionMode,
+  type UploadMarkdownImages,
   useContentViewModeShortcut,
 } from "~/backsteros/markdown-editor";
 import { openBacksterosTaskChat } from "~/backsteros/openTaskChat";
@@ -24,6 +30,11 @@ import {
   getTaskPropertyDropdownTrigger,
   openTaskPropertyDropdown,
 } from "~/backsteros/openTaskPropertyDropdown";
+import {
+  commitPendingTaskImages,
+  revokePendingTaskImageUrls,
+  stripPendingBlobImageMarkdown,
+} from "~/backsteros/pendingTaskImages";
 import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
 import { buildBacksterosProjectPickerOptions } from "~/backsteros/projectPickerOptions";
 import {
@@ -50,6 +61,7 @@ import { useBacksterosContactAvatarSrcMap } from "~/backsteros/useBacksterosCont
 import { upsertBacksterosInboxTaskLocal } from "~/backsteros/useBacksterosInboxAttentionTasks";
 import { upsertBacksterosProjectTaskLocal } from "~/backsteros/useBacksterosProjectTasks";
 import { useEnsureBacksterosT3Project } from "~/backsteros/useEnsureBacksterosT3Project";
+import { usePendingTaskImages } from "~/backsteros/usePendingTaskImages";
 import { useTaskPropertyDropdownShortcuts } from "~/backsteros/useTaskPropertyDropdownShortcuts";
 import { useProjects } from "~/state/entities";
 import { Button } from "../ui/button";
@@ -68,6 +80,7 @@ function CreateTaskDescriptionSection(props: {
   readonly onShiftTabFromContent: () => void;
   readonly onTabFromPreview: () => void;
   readonly onEnterPreview: () => void;
+  readonly onUploadImages?: UploadMarkdownImages | undefined;
 }) {
   const {
     value,
@@ -77,6 +90,7 @@ function CreateTaskDescriptionSection(props: {
     onShiftTabFromContent,
     onTabFromPreview,
     onEnterPreview,
+    onUploadImages,
   } = props;
   const [mode, setMode] = useState<BacksterosMarkdownDescriptionMode>("edit");
   // Stay off on first open so the title keeps autofocus; turn on after leaving edit
@@ -180,6 +194,7 @@ function CreateTaskDescriptionSection(props: {
         emptyMessage="Add a description…"
         // Off on open (title autofocus); on after preview→edit so typing can start.
         focusOnEdit={focusOnEdit}
+        onUploadImages={onUploadImages}
         toggle={
           <FloatingPillToggleDock>
             <SegmentedPillToggle
@@ -223,6 +238,7 @@ export function BacksterosCreateTaskForm({
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<readonly BacksterosContact[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const { onUploadImages, takePending, restorePending } = usePendingTaskImages();
 
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -506,16 +522,54 @@ export function BacksterosCreateTaskForm({
     if (!trimmedTitle || submitting) return;
 
     setSubmitting(true);
+    const pending = takePending();
+    const pendingByBlobUrl = new Map(pending.map((entry) => [entry.blobUrl, entry.file]));
+    const draftDescription = description.trim();
+    const createDescription =
+      stripPendingBlobImageMarkdown(draftDescription, new Set(pendingByBlobUrl.keys())) || null;
+
     try {
-      const created = await createBacksterosTask({
+      let created = await createBacksterosTask({
         title: trimmedTitle,
         projectId: selectedProject.id,
-        description: description.trim() || null,
+        description: createDescription,
         status,
         priority,
         dueDate,
         assigneeId,
       });
+
+      if (pending.length > 0 && draftDescription) {
+        try {
+          const finalDescription = await commitPendingTaskImages({
+            taskId: created.id,
+            markdown: draftDescription,
+            pendingByBlobUrl,
+            upload: (taskId, file) =>
+              uploadBacksterosTaskImage(
+                taskId,
+                file,
+                file.name || "screenshot.png",
+                file.type || undefined,
+              ),
+          });
+          if (finalDescription !== (created.description ?? "").trim()) {
+            created = await updateBacksterosTask(created.id, {
+              description: finalDescription || null,
+            });
+          }
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Task created, but images failed to upload",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        } finally {
+          revokePendingTaskImageUrls(pending);
+        }
+      } else {
+        revokePendingTaskImageUrls(pending);
+      }
 
       // Paint the left rail immediately — do not wait for soft-poll (3–8s).
       const listRow = backsterosTaskListRowFromDetail(created);
@@ -532,6 +586,7 @@ export function BacksterosCreateTaskForm({
         navigate: (opts) => router.navigate(opts as never),
       });
     } catch (error) {
+      restorePending(pending);
       toastManager.add({
         type: "error",
         title: "Could not create task",
@@ -549,10 +604,12 @@ export function BacksterosCreateTaskForm({
     openTaskDetail,
     priority,
     projects,
+    restorePending,
     router,
     selectedProject,
     status,
     submitting,
+    takePending,
     title,
   ]);
 
@@ -822,6 +879,7 @@ export function BacksterosCreateTaskForm({
             onChange={setDescription}
             disabled={submitting}
             hostRef={descriptionHostRef}
+            onUploadImages={onUploadImages}
             onShiftTabFromContent={focusComposeTitle}
             onTabFromPreview={() => {
               composeTabCursorRef.current = "description";

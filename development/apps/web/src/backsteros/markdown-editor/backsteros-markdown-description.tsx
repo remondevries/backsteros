@@ -24,7 +24,7 @@ export type BacksterosMarkdownDescriptionProps = {
   toggle?: ReactNode;
   /** Double-click preview ↔ edit (desktop ContentMarkdownViewLayout parity). */
   onToggleMode?: (() => void) | undefined;
-  /** Paste/drop image upload for markdown embeds (existing tasks only). */
+  /** Paste/drop image upload for markdown embeds (existing task or pending blob: URLs). */
   onUploadImages?: UploadMarkdownImages | undefined;
 };
 

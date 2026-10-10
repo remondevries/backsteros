@@ -7,6 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -28,12 +30,25 @@ import {
 } from "~/backsteros/fileTask/fileTaskTabFlow";
 import { wakeFileTaskAgent } from "~/backsteros/fileTask/wakeFileTaskAgent";
 import { startFileTaskCallbackWatch } from "~/backsteros/fileTask/watchFileTaskCallback";
+import {
+  stashFileTaskPendingImages,
+  takeFileTaskPendingImages,
+} from "~/backsteros/fileTaskPendingImages";
 import { useBacksterosFileTaskUiStore } from "~/backsteros/fileTaskUiStore";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
+import { collectImageFiles } from "~/backsteros/markdown-editor";
 import {
   getTaskPropertyDropdownTrigger,
   openTaskPropertyDropdown,
 } from "~/backsteros/openTaskPropertyDropdown";
+import {
+  appendPendingImageMarkdown,
+  listPendingBlobUrlsInMarkdown,
+  type PendingTaskImage,
+  revokePendingTaskImageUrls,
+  stagePendingTaskImages,
+  stripPendingBlobImageMarkdown,
+} from "~/backsteros/pendingTaskImages";
 import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
 import { buildBacksterosProjectPickerOptions } from "~/backsteros/projectPickerOptions";
 import {
@@ -87,6 +102,7 @@ export function BacksterosFileTaskModal() {
   const [selectedProject, setSelectedProject] = useState<BacksterosCodebaseProject | null>(null);
   const [phase, setPhase] = useState<FileTaskPhase>("brief");
   const [brief, setBrief] = useState("");
+  const [pendingImages, setPendingImages] = useState<readonly PendingTaskImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [contacts, setContacts] = useState<readonly BacksterosContact[]>([]);
@@ -94,6 +110,8 @@ export function BacksterosFileTaskModal() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const wasOpenRef = useRef(false);
   const pendingBriefFocusRef = useRef(false);
+  const pendingImagesRef = useRef<readonly PendingTaskImage[]>([]);
+  pendingImagesRef.current = pendingImages;
 
   useEffect(() => {
     if (!initialProject) {
@@ -308,8 +326,75 @@ export function BacksterosFileTaskModal() {
     [focusFileTaskField, hasAgentChip],
   );
 
+  const stageImagesFromFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0 || submitting) return;
+      const { staged, errors } = stagePendingTaskImages(files);
+      for (const message of errors) {
+        toastManager.add({
+          type: "error",
+          title: "Could not attach image",
+          description: message,
+        });
+      }
+      if (staged.length === 0) return;
+      setPendingImages((current) => [...current, ...staged]);
+      setBrief((current) =>
+        appendPendingImageMarkdown(
+          current,
+          staged.map((entry) => entry.blobUrl),
+        ),
+      );
+      window.requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        resizeBriefField(el);
+        el.focus({ preventScroll: true });
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      });
+    },
+    [submitting],
+  );
+
+  const handleBriefPaste = useCallback(
+    (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+      const files = collectImageFiles(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      stageImagesFromFiles(files);
+    },
+    [stageImagesFromFiles],
+  );
+
+  const handleBriefDrop = useCallback(
+    (event: ReactDragEvent<HTMLTextAreaElement>) => {
+      const files = collectImageFiles(event.dataTransfer);
+      if (files.length === 0) return;
+      event.preventDefault();
+      stageImagesFromFiles(files);
+    },
+    [stageImagesFromFiles],
+  );
+
+  const handleBriefDragOver = useCallback((event: ReactDragEvent<HTMLTextAreaElement>) => {
+    const types = event.dataTransfer?.types;
+    if (!types || ![...types].includes("Files")) return;
+    event.preventDefault();
+  }, []);
+
+  const removePendingImage = useCallback((blobUrl: string) => {
+    setPendingImages((current) => {
+      const next = current.filter((entry) => entry.blobUrl !== blobUrl);
+      const removed = current.find((entry) => entry.blobUrl === blobUrl);
+      if (removed) revokePendingTaskImageUrls([removed]);
+      return next;
+    });
+    setBrief((current) => stripPendingBlobImageMarkdown(current, new Set([blobUrl])));
+  }, []);
+
   const canSend =
-    brief.trim().length > 0 &&
+    (brief.trim().length > 0 || pendingImages.length > 0) &&
     !submitting &&
     selectedProject != null &&
     selectedAgent != null &&
@@ -320,17 +405,30 @@ export function BacksterosFileTaskModal() {
     if (!selectedProject || !selectedAgent || !canSend) return;
 
     const requestId = randomUUID();
+    const staged = pendingImagesRef.current;
+    const referencedUrls = new Set(
+      listPendingBlobUrlsInMarkdown(brief, new Set(staged.map((entry) => entry.blobUrl))),
+    );
+    const toAttach = staged.filter((entry) => referencedUrls.has(entry.blobUrl));
+    const dropped = staged.filter((entry) => !referencedUrls.has(entry.blobUrl));
+    revokePendingTaskImageUrls(dropped);
+    const briefForAgent =
+      stripPendingBlobImageMarkdown(brief, referencedUrls) ||
+      (toAttach.length > 0
+        ? `Please file this task. ${toAttach.length} screenshot(s) will be attached after filing.`
+        : "");
 
     setSubmitting(true);
     setErrorMessage(null);
 
     try {
       const mailbox = await registerBacksterosFileTaskCallback(requestId);
+      stashFileTaskPendingImages(requestId, toAttach);
       await wakeFileTaskAgent({
         webhookUrl: selectedAgent.webhookUrl,
         webhookKey: selectedAgent.webhookKey,
         payload: {
-          brief: brief.trim(),
+          brief: briefForAgent,
           projectId: selectedProject.id,
           projectKey: selectedProject.key,
           assigneeId: DEFAULT_FILE_TASK_ASSIGNEE_ID,
@@ -346,15 +444,21 @@ export function BacksterosFileTaskModal() {
         agentName: selectedAgent.name.trim() || "Agent",
         projectKey: selectedProject.key,
         projectName: selectedProject.name,
-        briefPreview: brief.trim().slice(0, 120),
+        briefPreview: briefForAgent.trim().slice(0, 120),
         startedAt: Date.now(),
       });
       startFileTaskCallbackWatch(requestId);
+      // Ownership of blob URLs moved to the request stash — do not revoke here.
+      setPendingImages([]);
       setBrief("");
       setErrorMessage(null);
       setPhase("brief");
       closeFileTask();
     } catch (error) {
+      const restored = takeFileTaskPendingImages(requestId);
+      if (restored.length > 0) {
+        setPendingImages(restored);
+      }
       const message = error instanceof Error ? error.message : "An error occurred.";
       setPhase("error");
       setErrorMessage(message);
@@ -523,6 +627,25 @@ export function BacksterosFileTaskModal() {
                 </div>
               ) : null}
 
+              {pendingImages.length > 0 ? (
+                <div className="bos-file-task-image-previews" aria-label="Attached screenshots">
+                  {pendingImages.map((entry) => (
+                    <div key={entry.blobUrl} className="bos-file-task-image-preview">
+                      <img src={entry.blobUrl} alt={entry.file.name || "screenshot"} />
+                      <button
+                        type="button"
+                        className="bos-file-task-image-remove"
+                        aria-label={`Remove ${entry.file.name || "screenshot"}`}
+                        disabled={submitting}
+                        onClick={() => removePendingImage(entry.blobUrl)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="bos-file-task-composer-row">
                 <textarea
                   ref={textareaRef}
@@ -532,8 +655,11 @@ export function BacksterosFileTaskModal() {
                     setBrief(event.target.value);
                     resizeBriefField(event.currentTarget);
                   }}
+                  onPaste={handleBriefPaste}
+                  onDrop={handleBriefDrop}
+                  onDragOver={handleBriefDragOver}
                   onKeyDown={handleBriefKeyDown}
-                  placeholder="Describe the work to file…"
+                  placeholder="Describe the work to file… (paste or drop screenshots)"
                   rows={1}
                   aria-label="Task brief"
                   disabled={submitting}

@@ -53,6 +53,53 @@
   gap: 8px;
 }
 
+.bos-file-task-image-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+
+.bos-file-task-image-preview {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.bos-file-task-image-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bos-file-task-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.55);
+  color: white;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bos-file-task-image-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .bos-file-task-composer-row {
   display: flex;
   align-items: flex-end;

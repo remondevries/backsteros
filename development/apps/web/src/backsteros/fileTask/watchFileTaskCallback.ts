@@ -1,6 +1,10 @@
 import { toastManager } from "~/components/ui/toast";
 
 import { useFileTaskCreatingStore } from "../fileTaskCreatingStore";
+import {
+  attachFileTaskPendingImages,
+  discardFileTaskPendingImagesForRequest,
+} from "./attachFileTaskPendingImages";
 import { pollFileTaskCallback } from "./wakeFileTaskAgent";
 
 let activeAbort: AbortController | null = null;
@@ -19,6 +23,7 @@ export function startFileTaskCallbackWatch(requestId: string): void {
       if (abort.signal.aborted || activeRequestId !== requestId) return;
 
       if (!result.ok) {
+        discardFileTaskPendingImagesForRequest(requestId);
         const store = useFileTaskCreatingStore.getState();
         if (store.creating?.requestId === requestId) {
           store.dismissCreating();
@@ -31,9 +36,25 @@ export function startFileTaskCallbackWatch(requestId: string): void {
         return;
       }
 
+      const taskId = result.taskId?.trim() || null;
+      if (taskId) {
+        try {
+          await attachFileTaskPendingImages({ requestId, taskId });
+        } catch (error) {
+          discardFileTaskPendingImagesForRequest(requestId);
+          toastManager.add({
+            type: "error",
+            title: "Task filed, but images failed to upload",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+      } else {
+        discardFileTaskPendingImagesForRequest(requestId);
+      }
+
       useFileTaskCreatingStore.getState().markSuccess({
         requestId,
-        taskId: result.taskId ?? null,
+        taskId,
         taskRef: result.taskRef ?? null,
         title: result.title ?? null,
         summary: result.summary ?? null,
@@ -45,6 +66,7 @@ export function startFileTaskCallbackWatch(requestId: string): void {
       });
     } catch (error) {
       if (abort.signal.aborted || activeRequestId !== requestId) return;
+      discardFileTaskPendingImagesForRequest(requestId);
       const store = useFileTaskCreatingStore.getState();
       if (store.creating?.requestId === requestId) {
         store.dismissCreating();
