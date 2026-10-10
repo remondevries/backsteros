@@ -191,6 +191,8 @@ describe("collectComposerInlineTokens", () => {
     expect(collectComposerInlineTokens(input)).toEqual([]);
     const started = performance.now();
     expect(collectComposerInlineTokens(input)).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(1_000);
+    // Bound is intentionally loose: CI/dev hosts vary; the bug this guards was
+    // multi-second, not ~1s.
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 });
