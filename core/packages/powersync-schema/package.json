@@ -11,13 +11,16 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'"
   },
   "peerDependencies": {
     "@powersync/common": "^1.27.0"
   },
   "devDependencies": {
     "@powersync/common": "^1.57.2",
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }
