@@ -21,7 +21,11 @@ import {
   recordReplicationDeadLetter,
   retryReplicationDeadLetters,
 } from "../services/core-replication/dead-letters.js";
-import { setReplicationCursor, getReplicationCursor } from "../services/core-replication/cursors.js";
+import {
+  compareCursor,
+  setReplicationCursor,
+  getReplicationCursor,
+} from "../services/core-replication/cursors.js";
 import { isReplicationReconcileEnabled } from "../services/core-replication/reconcile-gate.js";
 
 // Never let reconcile touch a peer during this suite.
@@ -145,8 +149,9 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
   };
   await setReplicationCursor("projects", advanced, "pull");
   const cursor = await getReplicationCursor("projects", "pull");
-  assert.equal(cursor.rowId, incomingProjectId);
-  assert.equal(cursor.updatedAt, now);
+  // Postgres ::text may drop trailing fractional zeros (.310Z → .31Z); compare
+  // as cursors so the round-trip stays stable after OS-110 µs-preserving reads.
+  assert.equal(compareCursor(cursor, advanced), 0);
 
   // Heal the conflict, then retry the dead letter.
   await db.delete(projects).where(eq(projects.id, existingProjectId));

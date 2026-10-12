@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,6 +14,13 @@ import remarkGfm from "remark-gfm";
 import { ExpandedImageDialog } from "~/components/chat/ExpandedImageDialog";
 import type { ExpandedImagePreview } from "~/components/chat/ExpandedImagePreview";
 
+import { BacksterosMentionChip } from "../mentions/MentionChip";
+import {
+  getMentionTokenCacheKey,
+  segmentMarkdownWithMentions,
+  type MentionSegment,
+} from "../mentions/mention-tokens";
+import { useResolvedMentions } from "../mentions/useResolvedMentions";
 import { resolveBacksterosMarkdownImageSrc } from "../taskDescriptionImages";
 import {
   splitMarkdownPreviewParagraphs,
@@ -133,9 +141,103 @@ function PreviewParagraph({ content, components }: { content: string; components
   );
 }
 
+function resolveMentionLayout(
+  segments: readonly MentionSegment[],
+  index: number,
+): "inline" | "block" {
+  const segment = segments[index];
+  if (!segment || segment.type !== "mention") return "inline";
+  if (
+    segment.token.kind !== "task" &&
+    segment.token.kind !== "project" &&
+    segment.token.kind !== "letter"
+  ) {
+    return "inline";
+  }
+
+  const prev = segments[index - 1];
+  const next = segments[index + 1];
+  const prevOk =
+    prev == null || (prev.type === "markdown" && /^\s*$/.test(prev.content.replace(/^\n+/, "")));
+  const nextOk =
+    next == null || (next.type === "markdown" && /^\s*$/.test(next.content.replace(/\n+$/, "")));
+
+  // Standalone mention on its own line(s) → block card.
+  if (prev == null && next == null) return "block";
+  if (
+    prev?.type === "markdown" &&
+    (prev.content.endsWith("\n") || prev.content === "") &&
+    next?.type === "markdown" &&
+    (next.content.startsWith("\n") || next.content === "")
+  ) {
+    return "block";
+  }
+  if (prevOk && nextOk && prev?.type === "markdown" && next?.type === "markdown") {
+    const before = prev.content;
+    const after = next.content;
+    if (/(^|\n)\s*$/.test(before) && /^\s*(\n|$)/.test(after)) {
+      return "block";
+    }
+  }
+  return "inline";
+}
+
+function MentionAwareBody({ body, components }: { body: string; components: Components }) {
+  const segments = useMemo(() => segmentMarkdownWithMentions(body), [body]);
+  const { byKey } = useResolvedMentions(body);
+
+  const hasMentions = segments.some((segment) => segment.type === "mention");
+  if (!hasMentions) {
+    const paragraphs = splitMarkdownPreviewParagraphs(body);
+    return (
+      <>
+        {paragraphs.map((paragraph, index) => (
+          <PreviewParagraph
+            key={`paragraph-${index}`}
+            content={paragraph}
+            components={components}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const nodes: ReactNode[] = [];
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!;
+    if (segment.type === "mention") {
+      const layout = resolveMentionLayout(segments, index);
+      const key = getMentionTokenCacheKey(segment.token);
+      nodes.push(
+        <BacksterosMentionChip
+          key={`mention-${index}-${key}`}
+          token={segment.token}
+          resolved={byKey.get(key)}
+          layout={layout}
+        />,
+      );
+      continue;
+    }
+
+    const paragraphs = splitMarkdownPreviewParagraphs(segment.content);
+    for (let p = 0; p < paragraphs.length; p++) {
+      nodes.push(
+        <PreviewParagraph
+          key={`md-${index}-${p}`}
+          content={paragraphs[p]!}
+          components={components}
+        />,
+      );
+    }
+  }
+
+  return <>{nodes}</>;
+}
+
 /**
  * GFM preview using desktop markdown presentation classes.
  * Resolves authenticated BacksterOS task-description image embeds.
+ * Renders `[@task:…]` (and other) mention tokens as polished chips.
  * Blank lines match the editor (desktop DocumentMarkdownPreview parity).
  */
 export function BacksterosMarkdownPreview({ body, className }: BacksterosMarkdownPreviewProps) {
@@ -161,8 +263,6 @@ export function BacksterosMarkdownPreview({ body, className }: BacksterosMarkdow
     [],
   );
 
-  const paragraphs = splitMarkdownPreviewParagraphs(body);
-
   return (
     <>
       <div
@@ -174,13 +274,7 @@ export function BacksterosMarkdownPreview({ body, className }: BacksterosMarkdow
           .filter(Boolean)
           .join(" ")}
       >
-        {paragraphs.map((paragraph, index) => (
-          <PreviewParagraph
-            key={`paragraph-${index}`}
-            content={paragraph}
-            components={components}
-          />
-        ))}
+        <MentionAwareBody body={body} components={components} />
       </div>
       {expandedPreview ? (
         <ExpandedImageDialog preview={expandedPreview} onClose={() => setExpandedPreview(null)} />

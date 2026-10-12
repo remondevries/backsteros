@@ -340,3 +340,123 @@
   font-size: 0.875rem;
   line-height: 1.5;
 }
+
+/* Mention chips — ported from desktop packages/ui markdown-editor.css */
+.mention-chip-lite {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0.3em;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: baseline;
+  white-space: nowrap;
+  cursor: default;
+  text-decoration: none;
+  text-align: left;
+}
+
+button.mention-chip-lite {
+  appearance: none;
+}
+
+.mention-chip-lite--block {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+  margin: 0.35em 0;
+  padding: 10px 8px;
+  border-radius: 6px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  background: transparent;
+  white-space: nowrap;
+  vertical-align: initial;
+}
+
+.mention-chip-lite--block:hover,
+a.mention-chip-lite--block:hover,
+button.mention-chip-lite--block:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+a.mention-chip-lite,
+button.mention-chip-lite--link,
+.mention-chip-lite--link {
+  cursor: pointer;
+  color: inherit;
+}
+
+a.mention-chip-lite:hover,
+button.mention-chip-lite--link:hover,
+.mention-chip-lite--link:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.mention-chip-lite--block.mention-chip-lite--link:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.mention-chip-lite--deleted {
+  opacity: 0.6;
+}
+
+.mention-chip-lite--deleted:hover {
+  background: transparent;
+}
+
+.mention-chip-lite__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.mention-chip-lite__kind {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-weight: 600;
+}
+
+.mention-chip-lite__id {
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-chip-lite__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.mention-chip-lite__label--grow {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.mention-chip-lite__status {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  letter-spacing: -0.01em;
+}
+
+.mention-chip-lite:not(.mention-chip-lite--block) .mention-chip-lite__status {
+  font-size: 0.6875rem;
+}

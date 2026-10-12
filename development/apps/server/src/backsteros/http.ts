@@ -20,8 +20,11 @@ import {
   storeFileTaskCallbackResult,
   type FileTaskCallbackResult,
 } from "./file-task-callback.ts";
+import { writeBacksterosDesktopOpenHref } from "./open-href.ts";
 
 const AGENT_PROFILE_PATH = "/api/backsteros/agent-profile";
+/** Ask BacksterOS desktop to navigate via `~/.config/backsteros/open-href`. */
+export const OPEN_DESKTOP_HREF_PATH = "/api/backsteros/open-desktop-href";
 const FILE_TASK_WAKE_PATH = "/api/backsteros/file-task-wake";
 const FILE_TASK_CALLBACK_PATH = "/api/backsteros/file-task-callback";
 /** Same-origin proxy to Cloud Core mailbox (avoids browser CORS to agent.backsteros.com). */
@@ -80,6 +83,40 @@ export const backsterosAgentProfilePutRouteLayer = HttpRouter.add(
       contactId: typeof contactIdRaw === "string" ? contactIdRaw : null,
     });
     return HttpServerResponse.jsonUnsafe({ ok: true, ...profile });
+  }),
+);
+
+export const backsterosOpenDesktopHrefRouteLayer = HttpRouter.add(
+  "POST",
+  OPEN_DESKTOP_HREF_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const bodyJson = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null as unknown)));
+    if (!bodyJson || typeof bodyJson !== "object") {
+      return HttpServerResponse.jsonUnsafe(
+        { ok: false, error: "Expected JSON body" },
+        { status: 400 },
+      );
+    }
+    const href = asNonEmptyString((bodyJson as Record<string, unknown>).href);
+    if (!href) {
+      return HttpServerResponse.jsonUnsafe(
+        { ok: false, error: "href is required" },
+        { status: 400 },
+      );
+    }
+    try {
+      const result = writeBacksterosDesktopOpenHref(href);
+      return HttpServerResponse.jsonUnsafe(result);
+    } catch (error) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "Failed to write open-href",
+        },
+        { status: 400 },
+      );
+    }
   }),
 );
 
@@ -383,6 +420,7 @@ export const backsterosCloudFileTaskMailboxGetRouteLayer = HttpRouter.add(
 export const backsterosAgentProfileRouteLayer = Layer.mergeAll(
   backsterosAgentProfileGetRouteLayer,
   backsterosAgentProfilePutRouteLayer,
+  backsterosOpenDesktopHrefRouteLayer,
 );
 
 export const backsterosFileTaskRouteLayer = Layer.mergeAll(

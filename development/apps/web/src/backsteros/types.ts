@@ -173,6 +173,10 @@ export interface BacksterosTaskDetail extends BacksterosTask {
   readonly deletedAt: string | null;
   readonly automateCompletion?: boolean;
   readonly autoReviewDeliveryStatus?: "pending" | "delivered" | "failed" | null;
+  /** Human display key (e.g. `BDV-61`) when returned by REST. */
+  readonly key?: string;
+  /** Project key (e.g. `BDV`); null for inbox tasks. */
+  readonly projectKey?: string | null;
 }
 
 export interface BacksterosTasksResponse {
