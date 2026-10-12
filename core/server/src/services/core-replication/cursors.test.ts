@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   compareCursor,
+  cursorCoversLocalTip,
   decidePullForPeerTip,
+  isMillisecondTruncated,
   maxCursor,
   peerTipHasChanges,
   toIso,
@@ -204,5 +206,36 @@ describe("replication cursors", () => {
     };
     // pageLast is later in true time even if id sorts before since.rowId
     assert.deepEqual(maxCursor(since, pageLast), pageLast);
+  });
+
+  it("cursorCoversLocalTip treats ms-truncated cursor as covering same-row µs tip (OS-110)", () => {
+    const tip: ReplicationCursor = {
+      updatedAt: "2026-10-12T11:41:09.052205Z",
+      rowId: "user-b8ea",
+    };
+    const truncated: ReplicationCursor = {
+      updatedAt: "2026-10-12T11:41:09.052Z",
+      rowId: "user-b8ea",
+    };
+    assert.equal(isMillisecondTruncated(truncated.updatedAt), true);
+    assert.equal(isMillisecondTruncated(tip.updatedAt), false);
+    assert.equal(cursorCoversLocalTip(truncated, tip), true);
+    assert.equal(cursorCoversLocalTip(tip, tip), true);
+    // Different row in the same ms bucket is still unpushed.
+    assert.equal(
+      cursorCoversLocalTip(truncated, {
+        updatedAt: tip.updatedAt,
+        rowId: "user-other",
+      }),
+      false,
+    );
+    // Same row but a later millisecond is genuinely ahead.
+    assert.equal(
+      cursorCoversLocalTip(truncated, {
+        updatedAt: "2026-10-12T11:41:09.053205Z",
+        rowId: tip.rowId,
+      }),
+      false,
+    );
   });
 });

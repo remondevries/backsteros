@@ -1,11 +1,12 @@
-import { eq } from "drizzle-orm";
-
-import { db, sqlClient } from "../../db/index.js";
-import { coreReplicationCursors } from "../../db/schema.js";
+import { sqlClient } from "../../db/index.js";
 import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationCursor } from "./types.js";
 import { arrayElementTypeFromUdtName } from "./bind-values.js";
-import { compareCursor, maxCursor, toIso } from "./cursor-order.js";
+import {
+  compareCursor,
+  maxCursor,
+  toIso,
+} from "./cursor-order.js";
 
 export type ReplicationCursorDirection = "pull" | "push";
 export { compareCursor, maxCursor, toIso };
@@ -13,6 +14,15 @@ export { compareCursor, maxCursor, toIso };
 const EPOCH: ReplicationCursor = {
   updatedAt: new Date(0).toISOString(),
   rowId: "",
+};
+
+type CursorRow = {
+  pull_updated_at: string | null;
+  pull_row_id: string | null;
+  push_updated_at: string | null;
+  push_row_id: string | null;
+  updated_at: string;
+  row_id: string;
 };
 
 export async function tableExists(tableName: string): Promise<boolean> {
@@ -60,24 +70,24 @@ export async function listTableColumns(tableName: string): Promise<Set<string>> 
   return new Set(rows.map((row) => row.column_name));
 }
 
-function cursorFromRow(
-  row: typeof coreReplicationCursors.$inferSelect | undefined,
+function cursorFromTextRow(
+  row: CursorRow | undefined,
   direction: ReplicationCursorDirection,
 ): ReplicationCursor {
   if (!row) return { ...EPOCH };
 
   if (direction === "pull") {
-    const updatedAt = row.pullUpdatedAt ?? row.updatedAt;
+    const updatedAt = row.pull_updated_at ?? row.updated_at;
     const rowId =
-      row.pullRowId && row.pullRowId.length > 0
-        ? row.pullRowId
-        : row.rowId;
+      row.pull_row_id && row.pull_row_id.length > 0
+        ? row.pull_row_id
+        : row.row_id;
     return { updatedAt: toIso(updatedAt), rowId };
   }
 
-  const updatedAt = row.pushUpdatedAt ?? row.updatedAt;
+  const updatedAt = row.push_updated_at ?? row.updated_at;
   const rowId =
-    row.pushRowId && row.pushRowId.length > 0 ? row.pushRowId : row.rowId;
+    row.push_row_id && row.push_row_id.length > 0 ? row.push_row_id : row.row_id;
   return { updatedAt: toIso(updatedAt), rowId };
 }
 
@@ -85,13 +95,21 @@ export async function getReplicationCursor(
   table: ReplicatedTable,
   direction: ReplicationCursorDirection = "pull",
 ): Promise<ReplicationCursor> {
-  const [row] = await db
-    .select()
-    .from(coreReplicationCursors)
-    .where(eq(coreReplicationCursors.tableName, table))
-    .limit(1);
+  // ::text keeps Postgres microseconds; never pass through JS Date (ms only).
+  const rows = await sqlClient<CursorRow[]>`
+    SELECT
+      pull_updated_at::text AS pull_updated_at,
+      pull_row_id,
+      push_updated_at::text AS push_updated_at,
+      push_row_id,
+      updated_at::text AS updated_at,
+      row_id
+    FROM core_replication_cursors
+    WHERE table_name = ${table}
+    LIMIT 1
+  `;
 
-  return cursorFromRow(row, direction);
+  return cursorFromTextRow(rows[0], direction);
 }
 
 export async function setReplicationCursor(
@@ -107,50 +125,60 @@ export async function setReplicationCursor(
     return;
   }
 
-  const nextDate = new Date(next.updatedAt);
+  // Bind ISO text with ::timestamptz — never `new Date(...)`, which drops µs.
+  const nextIso = toIso(next.updatedAt);
+  const epochIso = EPOCH.updatedAt;
+
   if (direction === "pull") {
-    await db
-      .insert(coreReplicationCursors)
-      .values({
-        tableName: table,
-        updatedAt: nextDate,
-        rowId: next.rowId,
-        pullUpdatedAt: nextDate,
-        pullRowId: next.rowId,
-        pushUpdatedAt: new Date(0),
-        pushRowId: "",
-      })
-      .onConflictDoUpdate({
-        target: coreReplicationCursors.tableName,
-        set: {
-          pullUpdatedAt: nextDate,
-          pullRowId: next.rowId,
-          // Keep legacy columns aligned with pull for older readers.
-          updatedAt: nextDate,
-          rowId: next.rowId,
-        },
-      });
+    await sqlClient`
+      INSERT INTO core_replication_cursors (
+        table_name,
+        updated_at,
+        row_id,
+        pull_updated_at,
+        pull_row_id,
+        push_updated_at,
+        push_row_id
+      ) VALUES (
+        ${table},
+        ${nextIso}::timestamptz,
+        ${next.rowId},
+        ${nextIso}::timestamptz,
+        ${next.rowId},
+        ${epochIso}::timestamptz,
+        ${""}
+      )
+      ON CONFLICT (table_name) DO UPDATE SET
+        pull_updated_at = EXCLUDED.pull_updated_at,
+        pull_row_id = EXCLUDED.pull_row_id,
+        updated_at = EXCLUDED.updated_at,
+        row_id = EXCLUDED.row_id
+    `;
     return;
   }
 
-  await db
-    .insert(coreReplicationCursors)
-    .values({
-      tableName: table,
-      updatedAt: nextDate,
-      rowId: next.rowId,
-      pullUpdatedAt: new Date(0),
-      pullRowId: "",
-      pushUpdatedAt: nextDate,
-      pushRowId: next.rowId,
-    })
-    .onConflictDoUpdate({
-      target: coreReplicationCursors.tableName,
-      set: {
-        pushUpdatedAt: nextDate,
-        pushRowId: next.rowId,
-      },
-    });
+  await sqlClient`
+    INSERT INTO core_replication_cursors (
+      table_name,
+      updated_at,
+      row_id,
+      pull_updated_at,
+      pull_row_id,
+      push_updated_at,
+      push_row_id
+    ) VALUES (
+      ${table},
+      ${nextIso}::timestamptz,
+      ${next.rowId},
+      ${epochIso}::timestamptz,
+      ${""},
+      ${nextIso}::timestamptz,
+      ${next.rowId}
+    )
+    ON CONFLICT (table_name) DO UPDATE SET
+      push_updated_at = EXCLUDED.push_updated_at,
+      push_row_id = EXCLUDED.push_row_id
+  `;
 }
 
 /** Set both watermarks after bootstrap so neither direction re-sends the snapshot. */

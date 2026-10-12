@@ -1,4 +1,4 @@
-import { compareCursor } from "./cursor-order.js";
+import { cursorCoversLocalTip } from "./cursor-order.js";
 import { getReplicationCursor } from "./cursors.js";
 import { countOpenReplicationDeadLetters } from "./dead-letters.js";
 import {
@@ -54,7 +54,9 @@ export async function getPendingUnpushedState(): Promise<PendingUnpushedState> {
       fetchLocalTableTip(table),
       getReplicationCursor(table, "push"),
     ]);
-    if (!tip || compareCursor(tip, pushCursor) <= 0) {
+    // cursorCoversLocalTip also treats ms-truncated legacy cursors that still
+    // point at the tip row (Postgres µs vs JS Date ms) as caught up (OS-110).
+    if (!tip || cursorCoversLocalTip(pushCursor, tip)) {
       continue;
     }
     const count = await countLocalChangesSince(table, pushCursor);

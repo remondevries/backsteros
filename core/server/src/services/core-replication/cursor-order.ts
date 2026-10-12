@@ -63,6 +63,40 @@ export function millisecondBucket(iso: string): string {
   return sortableTime(toIso(iso)).slice(0, 23);
 }
 
+/**
+ * True when `iso` looks like a JS Date truncation (ms only, no extra µs).
+ * Used to heal legacy push/pull cursors stored via `new Date(...)`.
+ */
+export function isMillisecondTruncated(iso: string): boolean {
+  const match = toIso(iso).match(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$/i,
+  );
+  if (!match) return false;
+  const frac = match[2] ?? "";
+  // No fraction, or exactly 1–3 digits (Date#toISOString), optionally with
+  // trailing zeros that do not encode real microseconds.
+  if (frac.length <= 4) return true;
+  return /^.\d{3}0+$/.test(frac);
+}
+
+/**
+ * Whether a local tip is already covered by the push/pull cursor.
+ * Handles legacy cursors truncated to milliseconds while the tip row still
+ * carries Postgres microseconds (same rowId, same ms bucket).
+ */
+export function cursorCoversLocalTip(
+  cursor: ReplicationCursor,
+  tip: ReplicationCursor,
+): boolean {
+  if (compareCursor(tip, cursor) <= 0) return true;
+  if (tip.rowId !== cursor.rowId) return false;
+  if (millisecondBucket(tip.updatedAt) !== millisecondBucket(cursor.updatedAt)) {
+    return false;
+  }
+  // Tip is only microseconds ahead of a ms-truncated cursor for the same row.
+  return isMillisecondTruncated(cursor.updatedAt);
+}
+
 /** Compare replication watermarks: updatedAt then rowId. No DB dependency. */
 export function compareCursor(
   a: ReplicationCursor,
