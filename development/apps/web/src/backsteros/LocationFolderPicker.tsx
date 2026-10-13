@@ -111,30 +111,6 @@ export function BacksterosLocationFolderPicker(props: Props) {
           <h2 id={titleId} className="m-0 text-[15px] font-semibold text-[#ededed]">
             {props.title}
           </h2>
-          {listing ? (
-            <div className="flex shrink-0 gap-1.5">
-              <span
-                className={cn(
-                  "rounded border px-1.5 py-0.5 text-[11px] font-medium",
-                  listing.exists
-                    ? "border-emerald-400/35 text-emerald-300"
-                    : "border-amber-400/35 text-amber-300",
-                )}
-              >
-                {listing.exists ? "Exists" : "Missing"}
-              </span>
-              <span
-                className={cn(
-                  "rounded border px-1.5 py-0.5 text-[11px] font-medium",
-                  listing.writable
-                    ? "border-emerald-400/35 text-emerald-300"
-                    : "border-amber-400/35 text-amber-300",
-                )}
-              >
-                {listing.writable ? "Writable" : "Read-only"}
-              </span>
-            </div>
-          ) : null}
         </header>
 
         {manualMode ? (
@@ -156,6 +132,13 @@ export function BacksterosLocationFolderPicker(props: Props) {
           </div>
         ) : (
           <>
+            <p
+              className="m-0 min-w-0 truncate px-4 pb-1 text-[11px] text-white/55"
+              title={listing?.path}
+            >
+              {listing?.path ?? "…"}
+            </p>
+
             <nav
               className="flex flex-wrap items-center gap-0.5 px-4 pb-2"
               aria-label="Current path"
@@ -198,12 +181,6 @@ export function BacksterosLocationFolderPicker(props: Props) {
               >
                 New folder
               </button>
-              <span
-                className="min-w-0 flex-1 truncate text-[11px] text-white/55"
-                title={listing?.path}
-              >
-                {listing?.path ?? "…"}
-              </span>
             </div>
 
             {showCreate ? (

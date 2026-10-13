@@ -133,28 +133,6 @@ export function LocationFolderPicker({
           <h2 id={titleId} className="location-folder-picker__title">
             {title}
           </h2>
-          <div className="location-folder-picker__status">
-            {listing ? (
-              <>
-                <span
-                  className={[
-                    "location-folder-picker__badge",
-                    listing.exists ? "is-ok" : "is-warn",
-                  ].join(" ")}
-                >
-                  {listing.exists ? "Exists" : "Missing"}
-                </span>
-                <span
-                  className={[
-                    "location-folder-picker__badge",
-                    listing.writable ? "is-ok" : "is-warn",
-                  ].join(" ")}
-                >
-                  {listing.writable ? "Writable" : "Read-only"}
-                </span>
-              </>
-            ) : null}
-          </div>
         </header>
 
         {manualMode ? (
@@ -177,6 +155,10 @@ export function LocationFolderPicker({
           </div>
         ) : (
           <>
+            <p className="location-folder-picker__path" title={currentPath ?? ""}>
+              {currentPath ?? "…"}
+            </p>
+
             <nav
               className="location-folder-picker__crumbs"
               aria-label="Current path"
@@ -224,9 +206,6 @@ export function LocationFolderPicker({
               >
                 New folder
               </button>
-              <span className="location-folder-picker__path" title={currentPath ?? ""}>
-                {currentPath ?? "…"}
-              </span>
             </div>
 
             {showCreate ? (
