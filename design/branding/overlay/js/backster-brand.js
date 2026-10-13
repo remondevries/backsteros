@@ -10,9 +10,12 @@
       "</span>" +
     "</div>";
 
-  function findSidebar() {
+  // Prefer the scrollable menu column (same slot as the team switcher).
+  // Never inject into .dashboard-sidebar — it is grid 1fr/auto and the brand
+  // would eat the growing row and push the menu down.
+  function findMount() {
     return (
-      document.querySelector('[class*="dashboard-sidebar"]') ||
+      document.querySelector('[class*="sidebar-content"]:not([class*="sidebar-content-wrapper"]):not([class*="sidebar-content-section"]):not([class*="sidebar-content-nitrate"])') ||
       document.querySelector('[class*="sidebar-content-wrapper"]') ||
       null
     );
@@ -20,11 +23,11 @@
 
   function inject() {
     if (document.querySelector(".backster-brand")) return true;
-    var sidebar = findSidebar();
-    if (!sidebar) return false;
+    var mount = findMount();
+    if (!mount) return false;
     var wrap = document.createElement("div");
     wrap.innerHTML = BRAND_HTML;
-    sidebar.insertBefore(wrap.firstChild, sidebar.firstChild);
+    mount.insertBefore(wrap.firstChild, mount.firstChild);
     return true;
   }
 

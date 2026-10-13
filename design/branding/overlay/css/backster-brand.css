@@ -4,23 +4,24 @@
 [class*="sidebar-team-switch"],
 [class*="sidebar-organization-switch"],
 [class*="organization-team-switch"],
-[class*="selected-organization"] {
+[class*="selected-organization"],
+[class*="organizations-container"] {
   display: none !important;
 }
 
-/* Match original team-switch row height (3rem) so layout stays tight */
+/* Compact brand row in the team-switch slot (not the outer 1fr sidebar grid) */
 .backster-brand {
   display: flex;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
   width: 100%;
-  height: 3rem;
-  min-height: 3rem;
-  max-height: 3rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  max-height: 2.5rem;
   padding: 0 12px;
-  margin: 0 0 4px;
-  flex: 0 0 3rem;
+  margin: 0;
+  flex: 0 0 auto;
   overflow: hidden;
   user-select: none;
   pointer-events: none;
