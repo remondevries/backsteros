@@ -196,7 +196,7 @@ function WorkingDirectoryChip(props: {
           target={props.locationTarget}
           title={ariaLabel}
           initialPath={props.value}
-          projectId={props.projectId}
+          {...(props.projectId ? { projectId: props.projectId } : {})}
           onClose={() => setPickerOpen(false)}
           onSelect={(path) => {
             void props.onSave(path.trim() || null).then(() => setPickerOpen(false));

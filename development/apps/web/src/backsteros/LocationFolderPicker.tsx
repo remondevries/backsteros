@@ -61,9 +61,11 @@ export function BacksterosLocationFolderPicker(props: Props) {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchBacksterosLocationFs(props.target, path, {
-          projectId: props.projectId,
-        });
+        const result = await fetchBacksterosLocationFs(
+          props.target,
+          path,
+          props.projectId != null ? { projectId: props.projectId } : undefined,
+        );
         setListing(result);
         setSelectedPath(result.path);
       } catch (err) {
@@ -242,7 +244,7 @@ export function BacksterosLocationFolderPicker(props: Props) {
                         target: props.target,
                         parent: listing.path,
                         name: newFolderName.trim(),
-                        projectId: props.projectId,
+                        ...(props.projectId != null ? { projectId: props.projectId } : {}),
                       });
                       setShowCreate(false);
                       setNewFolderName("");
