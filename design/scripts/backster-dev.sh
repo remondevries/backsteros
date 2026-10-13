@@ -75,7 +75,7 @@ case "$cmd" in
       mkdir -p "$(dirname "$cfg")"
       printf '%s\n' \
         '// Local devenv flags (gitignored). See docs/technical-guide/developer/devenv.md' \
-        'var penpotFlags = "";' \
+        'var penpotFlags = "disable-dashboard-templates-section";' \
         >"$cfg"
       echo "backster-dev: created $cfg"
     fi
