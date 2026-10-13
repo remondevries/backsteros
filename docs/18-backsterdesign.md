@@ -1,11 +1,11 @@
 # 18 · BacksterDESIGN
 
-Design workspace for BacksterOS — a **forked Penpot** under `design/`, parallel to BacksterDEV under `development/`.
+Design workspace for BacksterOS — a **forked Penpot** under `design/`, parallel to BacksterDEV under `backsterdev/`.
 
 | Product | Folder | Local start |
 | --- | --- | --- |
-| BacksterOS | repo root (`core/`, `desktop/`, …) | `pnpm --filter @backsteros/desktop dev` / hub |
-| BacksterDEV | `development/` | `pnpm --filter @backsteros/development dev` |
+| BacksterOS | repo root (`core/`, `backsteros/`, …) | `pnpm --filter @backsteros/desktop dev` / hub |
+| BacksterDEV | `backsterdev/` | `pnpm --filter @backsteros/development dev` |
 | BacksterDESIGN | `design/` | `pnpm --filter @backsteros/design dev` |
 
 ## Why a fork
@@ -52,8 +52,9 @@ This is Penpot’s official **devenv** (compile frontend/backend inside Docker).
 ### Also useful
 
 ```bash
-pnpm --filter @backsteros/design penpot:status   # tree / branding checklist
-pnpm --filter @backsteros/design branding:apply # overlay onto a running *stock* frontend container
+pnpm --filter @backsteros/design penpot:status      # tree / branding checklist
+pnpm --filter @backsteros/design branding:apply     # logos + brand chrome into design/ source (+ live public/)
+pnpm --filter @backsteros/design branding:apply:host  # stock Docker host only (ssh development)
 ```
 
 ## Runtime map

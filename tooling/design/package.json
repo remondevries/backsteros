@@ -12,7 +12,8 @@
     "dev:logs": "bash ../../design/scripts/backster-dev.sh logs",
     "dev:pull": "bash ../../design/scripts/backster-dev.sh pull",
     "dev:status": "bash ../../design/scripts/backster-dev.sh status",
-    "branding:apply": "bash ../../design/branding/bin/apply-branding.sh",
+    "branding:apply": "bash ../../design/branding/bin/apply-to-source.sh",
+    "branding:apply:host": "bash ../../design/branding/bin/apply-branding.sh",
     "penpot:status": "node ./scripts/status.mjs"
   }
 }
