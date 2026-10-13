@@ -91,10 +91,6 @@ case "$cmd" in
       docker exec -u penpot -w /home/penpot/penpot/frontend/packages/ui penpot-devenv-ws0-main \
         bash -lc 'pnpm install && pnpm run build' || true
     fi
-    # Keep Backster logos / brand chrome applied (idempotent).
-    if [[ -x "$DESIGN_ROOT/branding/bin/apply-to-source.sh" ]]; then
-      "$DESIGN_ROOT/branding/bin/apply-to-source.sh" || true
-    fi
     ;;
   down|stop)
     manage stop-devenv "$@"
