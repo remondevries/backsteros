@@ -69,11 +69,28 @@ case "$cmd" in
     manage pull-devenv "$@"
     ;;
   up|start|dev)
+    # config.js is gitignored; Penpot serves HTML 404 without it → white screen.
+    cfg="$DESIGN_ROOT/frontend/resources/public/js/config.js"
+    if [[ ! -f "$cfg" ]]; then
+      mkdir -p "$(dirname "$cfg")"
+      printf '%s\n' \
+        '// Local devenv flags (gitignored). See docs/technical-guide/developer/devenv.md' \
+        'var penpotFlags = "";' \
+        >"$cfg"
+      echo "backster-dev: created $cfg"
+    fi
     echo "BacksterDESIGN: starting Penpot devenv (binds $DESIGN_ROOT → /home/penpot/penpot)"
+    echo "First compile can take several minutes (shadow-cljs + libs + ui.css)."
     manage run-devenv "$@"
     echo
     echo "Open: https://localhost:3449"
     echo "Attach: pnpm --filter @backsteros/design dev:attach"
+    # Ensure @penpot/ui CSS exists (copied into public/css/ui.css on package build).
+    if [[ ! -f "$DESIGN_ROOT/frontend/resources/public/css/ui.css" ]] && devenv_running; then
+      echo "backster-dev: building @penpot/ui (ui.css missing)…"
+      docker exec -u penpot -w /home/penpot/penpot/frontend/packages/ui penpot-devenv-ws0-main \
+        bash -lc 'pnpm install && pnpm run build' || true
+    fi
     ;;
   down|stop)
     manage stop-devenv "$@"
