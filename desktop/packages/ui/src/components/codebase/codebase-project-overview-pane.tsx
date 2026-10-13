@@ -6,6 +6,7 @@ import type {
   GithubPullRequest,
   GithubPullRequestState,
   GithubRepository,
+  LocationFsTarget,
   Organization as ApiOrganization,
   Project as ApiProject,
   Task as ApiTask,
@@ -66,6 +67,7 @@ import {
   type GithubBranchesPayload,
 } from "./github-project-cache.js";
 import { GithubPullRequestIcon } from "./github-pull-request-icon.js";
+import { LocationFolderPicker } from "./location-folder-picker.js";
 import { normalizeWorkingDirectory } from "./normalize-working-directory.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
 import { ProjectWorkingDirectoryTree } from "./project-working-directory-tree.js";
@@ -73,6 +75,15 @@ import { ProjectsSidePanelIcon } from "./projects-side-panel-icon.js";
 import type { SelectProjectFileHandler } from "./select-project-file.js";
 import { TerminalDirectoryGate } from "./terminal-directory-gate.js";
 import { useRequestResource } from "./use-request-resource.js";
+
+const LOCATION_FIELD_TARGET: Record<
+  "developmentLocation" | "productionLocation" | "localLocation",
+  LocationFsTarget
+> = {
+  developmentLocation: "development",
+  productionLocation: "production",
+  localLocation: "local",
+};
 
 const NONE_REPO_VALUE = "__none__";
 
@@ -300,91 +311,75 @@ function ProjectLocationPathField({
   requestJson: CodebaseRequestJson;
 }) {
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(project[field] ?? "");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const value = project[field]?.trim() || null;
   const basename = value ? workingDirectoryLabel(value) : null;
   const label = basename ? `${labelPrefix}: ${basename}` : emptyLabel;
+  const target = LOCATION_FIELD_TARGET[field];
 
-  useEffect(() => {
-    setDraft(project[field] ?? "");
-  }, [project, field]);
-
-  if (editing) {
-    return (
-      <form
-        className="property-dropdown-trigger property-dropdown-trigger--inline-chip"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void (async () => {
-            setSaving(true);
-            setError(null);
-            const previous = project;
-            const next = draft.trim() || null;
-            try {
-              onProjectUpdated({ ...project, [field]: next });
-              const updated = await requestJson<ApiProject>(
-                `/api/v1/projects/${encodeURIComponent(project.id)}`,
-                {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ [field]: next }),
-                },
-              );
-              onProjectUpdated({ ...updated, [field]: next });
-              setEditing(false);
-            } catch (err) {
-              onProjectUpdated(previous);
-              setError(apiErrorMessage(err) || `Could not save ${labelPrefix} location.`);
-            } finally {
-              setSaving(false);
-            }
-          })();
-        }}
-      >
-        <input
-          autoFocus
-          value={draft}
-          disabled={saving}
-          aria-label={`${labelPrefix} location`}
-          placeholder="/absolute/path"
-          className="property-dropdown-trigger__label"
-          style={{ minWidth: "12rem", border: "none", background: "transparent" }}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setDraft(project[field] ?? "");
-              setEditing(false);
-            }
-          }}
-        />
-      </form>
-    );
+  async function saveLocation(next: string | null) {
+    setSaving(true);
+    setError(null);
+    const previous = project;
+    try {
+      onProjectUpdated({ ...project, [field]: next });
+      const updated = await requestJson<ApiProject>(
+        `/api/v1/projects/${encodeURIComponent(project.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [field]: next }),
+        },
+      );
+      onProjectUpdated({ ...updated, [field]: next });
+      setPickerOpen(false);
+    } catch (err) {
+      onProjectUpdated(previous);
+      setError(
+        apiErrorMessage(err) || `Could not save ${labelPrefix} location.`,
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <button
-      type="button"
-      className={[
-        "property-dropdown-trigger",
-        "property-dropdown-trigger--inline-chip",
-        value ? null : "is-muted",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      title={error ?? value ?? emptyLabel}
-      aria-label={error ?? (value ? `${labelPrefix} location: ${value}` : emptyLabel)}
-      aria-invalid={error ? true : undefined}
-      disabled={saving}
-      onClick={() => setEditing(true)}
-    >
-      <span className="property-dropdown-trigger__icon" aria-hidden="true">
-        <ComposeFolderIcon className="" />
-      </span>
-      <span className="property-dropdown-trigger__label">{label}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        className={[
+          "property-dropdown-trigger",
+          "property-dropdown-trigger--inline-chip",
+          value ? null : "is-muted",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        title={error ?? value ?? emptyLabel}
+        aria-label={
+          error ?? (value ? `${labelPrefix} location: ${value}` : emptyLabel)
+        }
+        aria-invalid={error ? true : undefined}
+        disabled={saving}
+        onClick={() => setPickerOpen(true)}
+      >
+        <span className="property-dropdown-trigger__icon" aria-hidden="true">
+          <ComposeFolderIcon className="" />
+        </span>
+        <span className="property-dropdown-trigger__label">{label}</span>
+      </button>
+      <LocationFolderPicker
+        open={pickerOpen}
+        target={target}
+        title={`${labelPrefix} location`}
+        initialPath={value}
+        requestJson={requestJson}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(path) => {
+          void saveLocation(path.trim() || null);
+        }}
+      />
+    </>
   );
 }
 

@@ -598,6 +598,45 @@ export async function deleteBacksterosProjectUpdate(updateId: string): Promise<v
   });
 }
 
+export type BacksterosLocationFsTarget = "local" | "development" | "production";
+
+export type BacksterosLocationFsList = {
+  readonly target: BacksterosLocationFsTarget;
+  readonly base: string;
+  readonly path: string;
+  readonly exists: boolean;
+  readonly writable: boolean;
+  readonly entries: readonly {
+    readonly name: string;
+    readonly path: string;
+    readonly kind: "directory";
+  }[];
+};
+
+export async function fetchBacksterosLocationFs(
+  target: BacksterosLocationFsTarget,
+  path?: string | null,
+  signal?: AbortSignal,
+): Promise<BacksterosLocationFsList> {
+  const params = new URLSearchParams({ target });
+  if (path?.trim()) params.set("path", path.trim());
+  return backsterosFetchJson(
+    `/api/v1/location-fs?${params.toString()}`,
+    optionalSignalInit(signal),
+  );
+}
+
+export async function createBacksterosLocationFsFolder(input: {
+  readonly target: BacksterosLocationFsTarget;
+  readonly parent: string;
+  readonly name: string;
+}): Promise<{ readonly target: BacksterosLocationFsTarget; readonly path: string }> {
+  return backsterosFetchJson("/api/v1/location-fs/folders", {
+    method: "POST",
+    body: input,
+  });
+}
+
 export async function fetchBacksterosProjectFsEntries(
   projectId: string,
   path = "",

@@ -6,8 +6,10 @@ import {
   fetchBacksterosOrganizations,
   fetchBacksterosProject,
   updateBacksterosProject,
+  type BacksterosLocationFsTarget,
 } from "~/backsteros/client";
 import { BacksterosComposeFolderIcon } from "~/backsteros/ComposeFolderIcon";
+import { BacksterosLocationFolderPicker } from "~/backsteros/LocationFolderPicker";
 import { BacksterosDueDatePropertyMenu } from "~/backsteros/DueDatePropertyMenu";
 import { BacksterosGitHubIcon } from "~/backsteros/GitHubIcon";
 import { BacksterosHealthCheckIcon } from "~/backsteros/HealthCheckIcon";
@@ -150,8 +152,11 @@ function WorkingDirectoryChip(props: {
   readonly ariaLabel?: string;
   readonly title?: string;
   readonly prefix?: string;
+  /** When set, opens the in-app location folder picker (OS-111) instead of inline text. */
+  readonly locationTarget?: BacksterosLocationFsTarget;
 }) {
   const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [draft, setDraft] = useState(props.value ?? "");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const basename = workingDirectoryLabel(props.value);
@@ -168,6 +173,35 @@ function WorkingDirectoryChip(props: {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [editing]);
+
+  if (props.locationTarget) {
+    return (
+      <>
+        <button
+          type="button"
+          className={cn("bos-task-property-chip", !label && "bos-task-property-chip--muted")}
+          title={props.title ?? props.value ?? emptyLabel}
+          aria-label={ariaLabel}
+          onClick={() => setPickerOpen(true)}
+        >
+          <span className="bos-task-property-chip__icon" aria-hidden="true">
+            <BacksterosComposeFolderIcon size={PROPERTY_ICON_SIZE} />
+          </span>
+          <span className="bos-task-property-chip__label">{label ?? emptyLabel}</span>
+        </button>
+        <BacksterosLocationFolderPicker
+          open={pickerOpen}
+          target={props.locationTarget}
+          title={ariaLabel}
+          initialPath={props.value}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(path) => {
+            void props.onSave(path.trim() || null).then(() => setPickerOpen(false));
+          }}
+        />
+      </>
+    );
+  }
 
   if (editing) {
     return (
@@ -588,6 +622,7 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           prefix="Dev"
           emptyLabel="Dev location…"
           ariaLabel="Development location"
+          locationTarget="development"
           title={
             detail.developmentSetupError
               ? `Development setup: ${detail.developmentSetupError}`
@@ -603,6 +638,7 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           prefix="Prod"
           emptyLabel="Prod location…"
           ariaLabel="Production location"
+          locationTarget="production"
           title={detail.productionLocation ?? "Path on the production server"}
           onSave={async (productionLocation) => {
             await applyPatch({ productionLocation }, "Could not update production location");
@@ -613,6 +649,7 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           prefix="Local"
           emptyLabel="Local location…"
           ariaLabel="Local location"
+          locationTarget="local"
           title={detail.localLocation ?? "Path on the machine running the BacksterOS desktop app"}
           onSave={async (localLocation) => {
             await applyPatch({ localLocation }, "Could not update local location");

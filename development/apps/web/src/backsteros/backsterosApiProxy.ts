@@ -81,10 +81,14 @@ export function normalizePersistedBacksterosLocalCoreUrl(apiUrl: string): string
 
 /**
  * Paths that must hit local-core (working-copy FS), never the cloud product API.
- * Matches `/api/v1/projects/:id/fs/...` and `/api/v1/projects/:id/docs`.
+ * Matches `/api/v1/projects/:id/fs/...`, `/api/v1/projects/:id/docs`, and
+ * `/api/v1/location-fs` (OS-111 Dev/Local/Prod folder picker — local disk or SSH).
  */
 export function isBacksterosLocalCorePath(pathWithQuery: string): boolean {
   const pathOnly = pathWithQuery.split(/[?#]/, 1)[0] ?? pathWithQuery;
+  if (pathOnly === "/api/v1/location-fs" || pathOnly.startsWith("/api/v1/location-fs/")) {
+    return true;
+  }
   return /^\/api\/v1\/projects\/[^/]+\/(fs(?:\/|$)|docs$)/.test(pathOnly);
 }
 

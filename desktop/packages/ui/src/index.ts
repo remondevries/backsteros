@@ -4799,6 +4799,10 @@ export {
 } from "./components/codebase/fs-tree-create-shortcut.js";
 export { GithubCodeMenu } from "./components/codebase/github-code-menu.js";
 export { FileDeleteConfirmModal } from "./components/codebase/file-delete-confirm-modal.js";
+export {
+  LocationFolderPicker,
+  type LocationFolderPickerProps,
+} from "./components/codebase/location-folder-picker.js";
 export { UnsavedFileCloseModal } from "./components/codebase/unsaved-file-close-modal.js";
 export { FileEditorTabBar } from "./components/codebase/file-editor-tab-bar.js";
 export { FileCodeViewer } from "./components/codebase/file-code-viewer.js";

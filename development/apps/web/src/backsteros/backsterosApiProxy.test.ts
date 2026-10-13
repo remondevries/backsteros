@@ -65,10 +65,12 @@ describe("normalizePersistedBacksterosLocalCoreUrl", () => {
 });
 
 describe("isBacksterosLocalCorePath", () => {
-  it("matches project FS and docs routes", () => {
+  it("matches project FS, docs, and location-fs routes", () => {
     assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/fs/entries"), true);
     assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/fs/file?path=docs/x.md"), true);
     assert.equal(isBacksterosLocalCorePath("/api/v1/projects/abc/docs"), true);
+    assert.equal(isBacksterosLocalCorePath("/api/v1/location-fs?target=local"), true);
+    assert.equal(isBacksterosLocalCorePath("/api/v1/location-fs/folders"), true);
   });
 
   it("rejects product / GitHub routes", () => {
