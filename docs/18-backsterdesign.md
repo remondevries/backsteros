@@ -30,7 +30,7 @@ Root filter shim: `pnpm --filter @backsteros/design …` → `tooling/design/`.
 
 ## Local development (foundation)
 
-Requires **Docker**. First start pulls `penpotapp/devenv` (large).
+Requires **Docker** and **Bash 4+** (`brew install bash` on macOS — system `/bin/bash` is 3.2 and cannot run Penpot’s `manage.sh`). First start pulls `penpotapp/devenv` plus infra images (large).
 
 ```bash
 # from BacksterOS repo root
