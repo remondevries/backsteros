@@ -32,7 +32,9 @@ WORKFLOW RULE: Commit and push directly to the production branch. No pull reques
 ├── hub/                  ← macOS menu-bar local service start/stop
 ├── mobile/               ← Expo (iPhone + iPad)
 ├── desktop/              ← Tauri 2 + Vite/React
-└── agents/               ← public HTTPS door (agent.backsteros.com)
+├── agents/               ← public HTTPS door (agent.backsteros.com)
+├── development/          ← T3 Code agent console (nested)
+└── design/               ← BacksterDESIGN (Penpot fork + branding)
 ```
 
 See [STRUCTURE.md](STRUCTURE.md) and [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md).
@@ -91,6 +93,8 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `mobile/` | Expo — Clerk + PowerSync |
 | `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |
 | `agents/` | Public HTTPS door for always-on API agents |
+| `design/` | BacksterDESIGN — Penpot-based design product (fork planned under `design/penpot/`) |
+| `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
 
 ## Phase gate
 

@@ -1,0 +1,10 @@
+{
+  "name": "@backsteros/design-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "BacksterDESIGN app tree (nested; use pnpm --filter @backsteros/design from repo root)",
+  "scripts": {
+    "branding:apply": "bash ./branding/bin/apply-branding.sh",
+    "penpot:status": "node ./scripts/status.mjs"
+  }
+}

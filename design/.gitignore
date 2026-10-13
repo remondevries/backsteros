@@ -1,0 +1,8 @@
+# Vendored Penpot build artifacts (when fork lands)
+penpot/target/
+penpot/**/node_modules/
+penpot/**/.cpcache/
+penpot/**/.shadow-cljs/
+*.local.env
+.env
+.DS_Store

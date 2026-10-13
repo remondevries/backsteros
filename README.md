@@ -15,7 +15,9 @@ backsteros/
 ├── desktop/        Tauri 2 + Vite/React (macOS)
 ├── agents/         Public HTTPS door (agent.backsteros.com)
 ├── development/    T3 Code agent console (nested monorepo; own lockfile)
-└── tooling/development/  shim for `pnpm --filter @backsteros/development …`
+├── design/         BacksterDESIGN (Penpot fork home + branding)
+├── tooling/development/  shim for `pnpm --filter @backsteros/development …`
+└── tooling/design/       shim for `pnpm --filter @backsteros/design …`
 ```
 
 v1 Next apps are archived at `~/code/archive/backsteros-legacy/` (not in this workspace).
@@ -35,6 +37,7 @@ pnpm --filter @backsteros/desktop dev  # Tauri product UI
 pnpm --filter @backsteros/development dev:desktop  # T3 Code agent console (Electron)
 # browser/web stack only (no Electron window):
 pnpm --filter @backsteros/development dev
+pnpm --filter @backsteros/design penpot:status      # BacksterDESIGN scaffold status
 ```
 
 Or from each package directory: `cd mobile && pnpm dev`, `cd desktop && pnpm dev`, `cd hub && pnpm dev`.

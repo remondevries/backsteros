@@ -1,0 +1,71 @@
+/* BacksterDESIGN chrome for self-hosted Penpot */
+
+/* Hide Penpot team / organization switchers in the dashboard sidebar */
+[class*="sidebar-team-switch"],
+[class*="sidebar-organization-switch"],
+[class*="organization-team-switch"],
+[class*="selected-organization"] {
+  display: none !important;
+}
+
+/* Match original team-switch row height (3rem) so layout stays tight */
+.backster-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 3rem;
+  min-height: 3rem;
+  max-height: 3rem;
+  padding: 0 12px;
+  margin: 0 0 4px;
+  flex: 0 0 3rem;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+
+.backster-brand__mark {
+  display: block;
+  width: 20px;
+  height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.backster-brand__name {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.backster-brand__thin {
+  font-weight: 200;
+}
+
+.backster-brand__bold {
+  font-weight: 700;
+}
+
+/*
+ * Workspace (inside a file) left-header logo.
+ * Penpot applies fill:currentColor to this SVG; our mark is stroke/gradient based,
+ * so replace the sprite glyph with logo-small.svg.
+ */
+[class*="workspace_left_header"][class*="main-icon"],
+[class*="left_header__main-icon"] {
+  background: url("/images/assets/logo-small.svg") center / 20px 20px no-repeat !important;
+}
+
+[class*="workspace_left_header"][class*="main-icon"] svg,
+[class*="left_header__main-icon"] svg {
+  opacity: 0 !important;
+}

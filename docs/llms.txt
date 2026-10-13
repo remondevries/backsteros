@@ -2,7 +2,7 @@
 # Workspace: ~/code/backsteros/
 # For AI agents: load AGENTS.md first, then fetch only the docs relevant to your task.
 
-> Code: core/, mobile/, desktop/, hub/, agents/
+> Code: core/, mobile/, desktop/, hub/, agents/, development/, design/
 
 ## Entry points
 
