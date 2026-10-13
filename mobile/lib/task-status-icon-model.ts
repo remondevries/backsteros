@@ -62,7 +62,7 @@ function polarToCartesian(
   };
 }
 
-/** Pie wedge path for status progress (same math as desktop/Next). */
+/** Pie wedge path for status progress (same math as backsteros/Next). */
 export function describeTaskStatusPieWedge(
   fillRatio: number,
   radius: number = PIE_RADIUS,

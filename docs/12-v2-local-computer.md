@@ -6,31 +6,30 @@ BacksterOS v2 runs **core** on a **local computer** (any always-on workstation y
 
 ```text
 local computer
-  · hub/ (optional menu-bar stop, plus PTY and Expo)
   · core/server (API)
   · Postgres
   · files / object storage
   · PowerSync
-  · PTY sidecar (agents)
+  · PTY sidecar (agents) — `pnpm --filter @backsteros/desktop pty`
 
 shells (UI only)
   · mobile/  — Expo (iPhone + iPad, adaptive layouts)
-  · desktop/ — Tauri + React (macOS)
+  · backsteros/ — Tauri + React (macOS)
 ```
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
 
-**Today:** Opening desktop does **not** start Docker. The optional replica starts from the `com.backsteros.local-core` LaunchAgent (boot + KeepAlive), from Hub, or from the desktop process when `BACKSTEROS_START_LOCAL_REPLICA=1`. The LaunchAgent runs the API from a dedicated `origin/production` worktree (`~/.backsteros/local-core-build`), not the dirty developer checkout — see [scripts/local-core/README.md](../scripts/local-core/README.md). iOS is not on cloud-core yet.
+**Today:** Opening desktop does **not** start Docker. The optional replica starts from the `com.backsteros.local-core` LaunchAgent (boot + KeepAlive), or from the desktop process when `BACKSTEROS_START_LOCAL_REPLICA=1`. The LaunchAgent runs the API from a dedicated `origin/production` worktree (`~/.backsteros/local-core-build`), not the dirty developer checkout — see [scripts/local-core/README.md](../scripts/local-core/README.md). iOS is not on cloud-core yet.
 
-**Target (ADR-035 addendum, 2026-09-19):** Product desktop syncs its PowerSync client SQLite to cloud PowerSync and does not start Docker. The compose stack is an optional replica (Hub or an explicit flag). iOS talks only to cloud-core. Shared files live in private R2; this computer keeps a local working copy. Hub still owns PTY and Expo. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
+**Target (ADR-035 addendum, 2026-09-19):** Product desktop syncs its PowerSync client SQLite to cloud PowerSync and does not start Docker. The compose stack is an optional replica (LaunchAgent or an explicit flag). iOS talks only to cloud-core. Shared files live in private R2; this computer keeps a local working copy. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 
 ### Starting local services
 
-**Current code:** Opening the desktop app does **not** start Docker. Hub ([`hub/`](../hub/README.md)) can still start and stop that stack, and it still starts PTY (`:3101`) and Expo. Set `BACKSTEROS_START_LOCAL_REPLICA=1` if the desktop process itself should bring compose and `:8788` up. Product desktop does **not** embed the API process inside the UI, and it does not start PTY or Metro.
+**Current code:** Opening the desktop app does **not** start Docker. Set `BACKSTEROS_START_LOCAL_REPLICA=1` if the desktop process itself should bring compose and `:8788` up. Product desktop does **not** embed the API process inside the UI. PTY: `pnpm --filter @backsteros/desktop pty` (Expo: `pnpm --filter @backsteros/mobile dev`).
 
 ## Layout
 
-See [STRUCTURE.md](../STRUCTURE.md). Shared non-UI packages live under `core/packages/`. Desktop UI lives under `desktop/packages/ui/` and is **not** shared with mobile.
+See [STRUCTURE.md](../STRUCTURE.md). Shared non-UI packages live under `core/packages/`. Desktop UI lives under `backsteros/packages/ui/` and is **not** shared with mobile.
 
 ## Non-goals (for now)
 
@@ -49,7 +48,7 @@ The `pnpm --filter @backsteros/desktop pty` sidecar owns long-lived **Cursor ACP
 
 **Chat = ACP only (ADR-025, mobile):** prompts, streaming, mode (`session/set_mode`), cancel, and permissions go through Cursor ACP. There is **no shared agent TTY pane**. Switching tasks does not stop background turns — leave/return reloads the projected transcript and re-subscribes to live events.
 
-- **Desktop** — in-app Agent Chat / ACP rail **removed** (BOD-49). Use Grok or BacksterOS (development) / T3 Code. Desktop still hosts the PTY package scripts for Hub / mobile.
+- **Desktop** — in-app Agent Chat / ACP rail **removed** (BOD-49). Use Grok or BacksterOS (development) / T3 Code. Desktop still hosts the PTY package scripts for mobile.
 - **Mobile** — task agent pane: Start → `POST /agent/acp/ensure` (+ bootstrap `POST /agent/prompt`) → Chat UI. Leave/return reattaches the event subscriber only.
 - **Activity** — shared `agent-presence` + Research drive Working… indicators on desktop lists; mobile Chat still uses ACP busy/transcript projection.
 - Run the sidecar for Tailscale with e.g. `PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=… pnpm --filter @backsteros/desktop pty` (token required when bound beyond loopback).

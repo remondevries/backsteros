@@ -539,7 +539,7 @@ Flow:
 7. Periodic replication tick (`CORE_REPLICATION_INTERVAL_MS`, default 15s) remains
    the backup if a nudge was missed; post-apply publish covers tick catch-up
 
-Direction: **cloud ↔ local** (agent on cloud wakes desktop; desktop/vault edit on
+Direction: **cloud ↔ local** (agent on cloud wakes desktop; backsteros/vault edit on
 local wakes cloud). Local vault `.md` edits (`fs.watch` → metadata heal) also
 nudge the peer.
 
@@ -624,7 +624,7 @@ Client writes locally → PowerSync queue → `uploadData` → `POST /api/v1/pow
 
 ### Client write gate
 
-When PowerSync is `ready && connected`, desktop/mobile `*ViaPowerSyncOrApi` helpers skip REST (`shouldSkipRestEntityWrite`).
+When PowerSync is `ready && connected`, backsteros/mobile `*ViaPowerSyncOrApi` helpers skip REST (`shouldSkipRestEntityWrite`).
 
 **Sole REST dual-write exception:** `taskPatchRequiresRestWrite` — `agentInboxApproved: true` only. Stamps Postgres immediately so a racing pull cannot clear the local inbox sign-off before the PowerSync upload ack. Do not add further exceptions; fix upload/replication races instead. See `@backsteros/contracts` `inbox-updated.ts`.
 
@@ -645,7 +645,7 @@ Historical context (why it existed): packaged desktop could report PowerSync `re
 | 1 | Tasks, inbox tasks, projects | Immediately on auth — flips `restHydrateSettled` |
 | 2 | Documents, areas, orgs, contacts, letters, habits, meetings | `requestIdleCallback` (or timeout fallback) after wave 1 |
 
-Former implementation: [`desktop/src/lib/workspace/use-workspace-api-rows.ts`](../desktop/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts). Mobile list hydrate is cold-start / offline-only via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) + [`rest-list-hydration-policy.ts`](../mobile/lib/rest-list-hydration-policy.ts) — no REST refetch or field-merge over local rows while PowerSync is connected and SQLite has rows.
+Former implementation: [`backsteros/src/lib/workspace/use-workspace-api-rows.ts`](../backsteros/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../backsteros/src/lib/merge-local-and-api.ts). Mobile list hydrate is cold-start / offline-only via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) + [`rest-list-hydration-policy.ts`](../mobile/lib/rest-list-hydration-policy.ts) — no REST refetch or field-merge over local rows while PowerSync is connected and SQLite has rows.
 
 ### Merge rules (retiring)
 

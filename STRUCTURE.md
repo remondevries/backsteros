@@ -19,15 +19,15 @@ Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (branch `production`)
 │       ├── cli/                ← `backsteros` CLI (tasks & projects)
 │       └── powersync-schema/   ← client SQLite schema
 │
-├── hub/                        ← macOS menu-bar start/stop for local services
 ├── mobile/                     ← Expo (iPhone + iPad, adaptive UI)
-├── desktop/                    ← Tauri 2 + Vite/React (macOS)
+├── backsteros/                 ← Tauri 2 + Vite/React (macOS) — was desktop/
 │   └── packages/ui/            ← desktop-owned UI (not shared with mobile)
 ├── agents/                     ← public HTTPS door (agent.backsteros.com)
-├── development/                ← nested T3 Code monorepo (@t3tools/monorepo; own lockfile)
-├── design/                     ← BacksterDESIGN — nested Penpot fork (+ branding/, local devenv)
-├── tooling/development/        ← @backsteros/development shim → proxies into development/
-└── tooling/design/             ← @backsteros/design shim → proxies into design/
+├── backsterdev/                ← nested T3 Code monorepo (@t3tools/monorepo; own lockfile) — was development/
+│   └── shim/                   ← @backsteros/development workspace shim
+├── backstermeet/               ← BacksterMeet — Tauri 2 Director (host) app for live meetings (@backsteros/meet)
+├── backsterdesign/             ← BacksterDESIGN — nested Penpot fork (+ branding/, local devenv)
+└── tooling/design/             ← @backsteros/design shim → proxies into backsterdesign/
 ```
 
 v1 Next apps (app/admin/development/sync-demo) were moved out to
@@ -39,18 +39,20 @@ v1 Next apps (app/admin/development/sync-demo) were moved out to
 | --- | --- |
 | `core/server` | Business logic, Postgres, sync upload, OpenAPI |
 | `core/packages/*` | Shared **non-UI** contracts between core and shells; `cli` is the agent/shell `backsteros` binary |
-| `hub/` | Menu-bar control to start/stop Docker, core API, PTY |
 | `mobile/` | Expo product shell |
-| `desktop/` | Tauri product shell |
+| `backsteros/` | Tauri product shell (package name `@backsteros/desktop`) |
 | `agents/` | VPS agents door → cloud-core |
-| `development/` | Nested T3 Code agent console (not a root workspace member) |
-| `design/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
-| `tooling/development/` | Filter shim — `pnpm --filter @backsteros/development …` |
+| `backsterdev/` | Nested T3 Code agent console (not a root workspace member; shim is) |
+| `backsterdev/shim/` | Filter shim — `pnpm --filter @backsteros/development …` |
+| `backstermeet/` | BacksterMeet — Tauri 2 + Vite/React **Director** host app for live meetings (package `@backsteros/meet`, dev port 1430). Guest side is the client portal; both join one LiveKit SFU. See `backstermeet/AGENTS.md` |
+| `backsterdesign/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
+
+See [docs/20-repo-structure.md](docs/20-repo-structure.md) for the reorganization plan (`hub/` removed; `backsterdesign/` → `backsterdesign/` done).
 
 ## Runtime model
 
-**Today:** local-core on this computer (Postgres, vault files, API, PowerSync). Hub starts and stops that stack. Desktop and mobile talk to it over localhost / Tailscale.
+**Today:** local-core on this computer (Postgres, vault files, API, PowerSync). LaunchAgent / `BACKSTEROS_START_LOCAL_REPLICA=1` / desktop supervisor starts the optional replica. Desktop and mobile talk to it over localhost / Tailscale. PTY: `pnpm --filter @backsteros/desktop pty`.
 
 **Target (ADR-035):** cloud-core is the center. iOS talks only to cloud-core. Local-core is the Mac replica for the desktop app. Shared files live in private R2; this computer keeps a working copy. See [docs/10-decisions-log.md](docs/10-decisions-log.md).
 

@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 
 const tooling = dirname(dirname(fileURLToPath(import.meta.url)));
 const repo = join(tooling, "../..");
-const design = join(repo, "design");
+const design = join(repo, "backsterdesign");
 
 const checks = [
   [join(design, "frontend"), "Penpot frontend"],
@@ -15,10 +15,10 @@ const checks = [
   [join(design, "branding/bin/apply-branding.sh"), "branding apply script"],
   [join(design, "scripts/backster-dev.sh"), "local devenv wrapper"],
   [join(design, "BACKSTER.md"), "Backster entry"],
-  [join(repo, "docs/18-backsterdesign.md"), "product doc"],
+  [join(repo, "docs/19-penpot-integration.md"), "product doc"],
 ];
 
-console.log("BacksterDESIGN (design/ = Penpot fork)");
+console.log("BacksterDESIGN (backsterdesign/ = Penpot fork)");
 for (const [path, label] of checks) {
   console.log(`  ${existsSync(path) ? "✓" : "·"} ${label}`);
 }

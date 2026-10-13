@@ -1,7 +1,7 @@
 /**
  * Email list model for mobile — mirrors the pure list logic from
- * `desktop/packages/ui/src/email.ts` and the inbox rules from
- * `desktop/packages/ui/src/inbox-items.ts` (no shared visual UI; logic only).
+ * `backsteros/packages/ui/src/email.ts` and the inbox rules from
+ * `backsteros/packages/ui/src/inbox-items.ts` (no shared visual UI; logic only).
  */
 
 import type { AgentMailMessage } from "@backsteros/contracts";

@@ -1,6 +1,6 @@
 # Desktop without Docker-as-default
 
-**Status:** Desktop does not need Docker for normal use (2026-09-19). Slice 1: lists and edits via cloud PowerSync, launch does not start Docker. Slice 2: vault path is stored on this Mac (not fetched from local-core or cloud `vaultPath`). Markdown and PDFs open from that working copy or from cloud storage. Email and agent-presence streams follow the product API; if they fail they show disconnected and do not block task or project lists. **iOS / Expo cutover is deferred and out of scope.** Compose files stay. A LaunchAgent (`scripts/local-core/`) can keep the optional replica up after reboot; Hub or `BACKSTEROS_START_LOCAL_REPLICA=1` can still start it. That replica must not be a second writer.  
+**Status:** Desktop does not need Docker for normal use (2026-09-19). Slice 1: lists and edits via cloud PowerSync, launch does not start Docker. Slice 2: vault path is stored on this Mac (not fetched from local-core or cloud `vaultPath`). Markdown and PDFs open from that working copy or from cloud storage. Email and agent-presence streams follow the product API; if they fail they show disconnected and do not block task or project lists. **iOS / Expo cutover is deferred and out of scope.** Compose files stay. A LaunchAgent (`scripts/local-core/`) can keep the optional replica up after reboot; `BACKSTEROS_START_LOCAL_REPLICA=1` can still start it from the desktop process. That replica must not be a second writer.  
 **Amends:** [ADR-035](10-decisions-log.md) addendum — does not replace it.  
 **Related:** [16-linear-shaped-sync.md](16-linear-shaped-sync.md), [13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md), [12-v2-local-computer.md](12-v2-local-computer.md).
 
@@ -39,11 +39,11 @@ flowchart TB
   API -->|"forward writes"| Cloud
 ```
 
-1. Tauri setup calls `local_core::spawn_ensure_local_core()` ([desktop/src-tauri/src/lib.rs](../desktop/src-tauri/src/lib.rs)).
-2. If `http://127.0.0.1:8788/health` fails, [desktop/src-tauri/src/local_core.rs](../desktop/src-tauri/src/local_core.rs) opens Docker.app and runs `docker compose up -d postgres mongo powersync`, then `pnpm --filter @backsteros/server dev`. Quit does not stop the stack.
-3. Hub can start and stop the same containers, plus PTY (`:3101`) and Expo ([hub/README.md](../hub/README.md)). Product desktop does not start PTY or Metro.
+1. Tauri setup calls `local_core::spawn_ensure_local_core()` ([backsteros/src-tauri/src/lib.rs](../backsteros/src-tauri/src/lib.rs)).
+2. If `http://127.0.0.1:8788/health` fails, [backsteros/src-tauri/src/local_core.rs](../backsteros/src-tauri/src/local_core.rs) opens Docker.app and runs `docker compose up -d postgres mongo powersync`, then `pnpm --filter @backsteros/server dev`. Quit does not stop the stack.
+3. Optional replica: LaunchAgent or `BACKSTEROS_START_LOCAL_REPLICA=1`. PTY: `pnpm --filter @backsteros/desktop pty`. Expo: `pnpm --filter @backsteros/mobile dev`. Product desktop does not start PTY or Metro by default.
 4. Local-core cannot serve without that compose file. `DATABASE_URL` is Postgres on `:5433`. Compose is Postgres 17 (`wal_level=logical`), Mongo 7 as a single-node replica set, and `journeyapps/powersync-service` on `:8080`. Mongo exists because PowerSync bucket storage needs transactions. That is the weight, not “a database.”
-5. The UI already reads lists from SQLite ([desktop/src/lib/powersync.ts](../desktop/src/lib/powersync.ts)). Uploads go to `POST /api/v1/powersync/write` on `VITE_API_URL`, which defaults to `http://127.0.0.1:8788` ([desktop/src/lib/env.ts](../desktop/src/lib/env.ts)). Auth is the `local` shell token.
+5. The UI already reads lists from SQLite ([backsteros/src/lib/powersync.ts](../backsteros/src/lib/powersync.ts)). Uploads go to `POST /api/v1/powersync/write` on `VITE_API_URL`, which defaults to `http://127.0.0.1:8788` ([backsteros/src/lib/env.ts](../backsteros/src/lib/env.ts)). Auth is the `local` shell token.
 6. [core/server/src/lib/powersync-auth.ts](../core/server/src/lib/powersync-auth.ts) rewrites the sync URL to `http://127.0.0.1:8080` for any Tauri or localhost origin, even when `POWERSYNC_URL` is a Tailscale host.
 7. When `CORE_REPLICATION_ROLE=local`, local-core forwards writes to cloud-core. Cloud PowerSync runs on the VPS behind the `powersync` profile ([deploy/cloud/docker-compose.yml](../deploy/cloud/docker-compose.yml)). It is healthy on the tailnet. Desktop and iOS are not pointed at it yet ([deploy/cloud/README.md](../deploy/cloud/README.md)).
 

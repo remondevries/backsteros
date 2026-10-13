@@ -31,7 +31,7 @@ Frozen code: `~/code/archive/backsteros-legacy/` (`backsteros-app/`, `backsteros
 
 ## Desktop — Tauri 2 + Vite/React
 
-- Folder: `desktop/` (see ADR-019)
+- Folder: `backsteros/` (see ADR-019)
 - Tauri 2 loads a **Vite + React** SPA against **local-core** (`127.0.0.1:8788`)
 - **Does not** package or run a Next.js build / Node sidecar
 - Share non-UI packages with mobile; no shared visual UI

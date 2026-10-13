@@ -59,9 +59,9 @@ backsteros/
 ├── core/
 │   ├── server/           ← Hono API (local-core + same image as cloud-core)
 │   └── packages/         ← contracts, api-client, powersync-schema, cli
-├── desktop/              ← Tauri 2 + Vite/React
+├── backsteros/           ← Tauri 2 + Vite/React
 ├── mobile/               ← Expo
-├── hub/                  ← macOS menu-bar service control
+├── backsterdev/          ← T3 Code agent console (nested)
 └── agents/               ← public HTTPS door (agent.backsteros.com)
 ```
 

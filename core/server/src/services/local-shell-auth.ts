@@ -15,7 +15,7 @@ export {
 } from "./local-shell-auth-config.js";
 
 /**
- * Local-core desktop/mobile shells authenticate with a shared bearer instead of
+ * Local-core backsteros/mobile shells authenticate with a shared bearer instead of
  * Clerk. Network perimeter (loopback / Tailscale) is the real access control;
  * this resolves the single workspace owner so REST + PowerSync work without a
  * sign-in screen.

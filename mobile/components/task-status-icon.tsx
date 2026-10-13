@@ -13,7 +13,7 @@ type Props = {
 };
 
 /**
- * Same glyphs as desktop/Next `@backsteros/ui` TaskStatusIcon:
+ * Same glyphs as backsteros/Next `@backsteros/ui` TaskStatusIcon:
  * ring + pie wedge sized by status progress, plus triage/backlog/completed/duplicated.
  */
 export function TaskStatusIcon({ status, size = 14 }: Props) {

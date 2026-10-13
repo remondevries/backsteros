@@ -22,5 +22,5 @@ apple-codesign.p12
 deploy/cloud/powersync.generated.yaml
 
 # Accidental tsc emit into src shadows .ts under Vite (.js wins).
-desktop/packages/ui/src/**/*.js
+backsteros/packages/ui/src/**/*.js
 

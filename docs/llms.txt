@@ -2,13 +2,14 @@
 # Workspace: ~/code/backsteros/
 # For AI agents: load AGENTS.md first, then fetch only the docs relevant to your task.
 
-> Code: core/, mobile/, desktop/, hub/, agents/, development/, design/
+> Code: core/, mobile/, backsteros/, agents/, backsterdev/, backstermeet/, backsterdesign/
 
 ## Entry points
 
 - [STRUCTURE.md](../STRUCTURE.md): Folder map
 - [AGENTS.md](../AGENTS.md): Primary agent entry — rules, task→doc map, phase gate
 - [README.md](../README.md): Human overview
+- [backstermeet/AGENTS.md](../backstermeet/AGENTS.md): BacksterMeet — Tauri 2 Director (host) app for live meetings; LiveKit, meetings API, secrets, open gaps
 
 ## Specifications
 
@@ -19,7 +20,8 @@
 - [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API (dual-hydrate **deprecated** — see 16)
 - [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, product shells on cloud PowerSync, optional Mac replica, R2 files (ADR-035)
 - [docs/17-desktop-without-docker.md](17-desktop-without-docker.md): Why Docker is not the default to open desktop; boot graph, gaps, slice 1 (ADR-035 addendum)
-- [docs/18-backsterdesign.md](18-backsterdesign.md): BacksterDESIGN — Penpot fork under design/, local devenv via `@backsteros/design`
+- [docs/19-penpot-integration.md](19-penpot-integration.md): BacksterDESIGN — Penpot fork under backsterdesign/ (local devenv via `@backsteros/design`, runtime map) + BacksterOS integration: identity, MCP/webhooks, design→code, R2, branding, task mapping, deploy, open gaps
+- [docs/20-repo-structure.md](20-repo-structure.md): Repo folder reorganization — backsteros/ (was desktop/), backsterdev/ (was development/), backstermeet/ added (from ~/code/backstermeet), hub/ removed; backsterdesign/→backsterdesign/; open point on local core placement
 - [docs/06-storage-and-search.md](06-storage-and-search.md): Vault layout today; private R2 target (ADR-035)
 - [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Current hybrid behavior; target routing is ADR-035 / 16
 - [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
@@ -44,7 +46,8 @@
 | Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020, ADR-035), **16-linear-shaped-sync**, **17-desktop-without-docker**, 15-tauri-ipc-profiling |
 | PDFs / markdown / search | 06-storage-and-search, 10-decisions-log (ADR-035), 03-data-model |
 | Changing stack choices | 10-decisions-log, 02-tech-stack |
-| BacksterDESIGN / Penpot fork | **18-backsterdesign**, `design/BACKSTER.md`, `tooling/design/` |
+| BacksterDESIGN / Penpot fork | **19-penpot-integration**, `backsterdesign/BACKSTER.md`, `tooling/design/` |
+| BacksterMeet / live meetings / LiveKit Director | `backstermeet/AGENTS.md`, 05-clients (portal), **20-repo-structure** §8 (open gaps) |
 | Social / Zernio / owned accounts | 03-data-model (Social entities), 10-decisions-log (ADR-036), `core/server/src/social/` |
 
 ## Conventions

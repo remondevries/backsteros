@@ -125,7 +125,7 @@ export function extractMentionTokens(markdown: string): ParsedMentionToken[] {
 
 /** Split on blank-line runs while keeping empty rows visible in preview.
  * N consecutive newlines (N >= 2) become N - 1 blank paragraphs — matching
- * desktop/web `DocumentMarkdownPreview` so edit and preview heights stay in sync.
+ * backsteros/web `DocumentMarkdownPreview` so edit and preview heights stay in sync.
  */
 export function splitMarkdownParagraphs(body: string): string[] {
   if (!body) return [];

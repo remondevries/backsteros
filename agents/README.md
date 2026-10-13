@@ -113,7 +113,7 @@ that POSTs to:
 https://agent.backsteros.com/api/v1/webhooks/agentmail
 ```
 
-Core emits `email.updated` over `GET /api/v1/email/events` so desktop/iOS
+Core emits `email.updated` over `GET /api/v1/email/events` so backsteros/iOS
 refetch messages. This door only forwards the webhook.
 
 ## Configure

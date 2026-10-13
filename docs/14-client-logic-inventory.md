@@ -1,7 +1,7 @@
 # Client logic inventory (mobile ↔ desktop)
 
 Audit of pure logic that is mirrored between `mobile/lib/` and
-`desktop/packages/ui/` (or `desktop/src/`). Visual UI stays platform-owned —
+`backsteros/packages/ui/` (or `backsteros/src/`). Visual UI stays platform-owned —
 only string/number/array helpers should move into `@backsteros/contracts`
 (or a future `client-logic` package). See Wave B / Phase 7 of the desktop
 quality plan.
@@ -28,7 +28,7 @@ quality plan.
 | Finance chart series | `ui/finance/…` | `mobile/lib/finance-chart-series.ts` | No | Evaluate — may stay UI-specific if chart-shaped |
 | Status header gradient math | `ui/tasks/task-status-header-gradient.ts` | `mobile/lib/status-header-gradient.ts` | No | Color math → contracts; CSS stays separate |
 | Mention tokens / layout | `ui/…` | `mobile/lib/mention-tokens.ts`, `mention-layout.ts` | No | Tokens → contracts; layout may stay platform |
-| REST ↔ PowerSync merge | `desktop/src/lib/merge-local-and-api.ts` | `mobile/lib/resolve-synced-or-rest-rows.ts` | No | Shared merge module (Phase 6.4) |
+| REST ↔ PowerSync merge | `backsteros/src/lib/merge-local-and-api.ts` | `mobile/lib/resolve-synced-or-rest-rows.ts` | No | Shared merge module (Phase 6.4) |
 | Nav icons | `ui/sidebar-nav-icons.tsx` | `mobile/components/nav-icons.tsx` | **No — keep separate** | Visual parity by convention only |
 
 ## Priority extraction order (Phase 7b)

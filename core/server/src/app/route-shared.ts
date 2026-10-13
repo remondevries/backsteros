@@ -753,7 +753,7 @@ export function publishDocumentLiveFromAgent(
 }
 
 /**
- * REST/agent project writes → local SSE + peer nudge so desktop/portal
+ * REST/agent project writes → local SSE + peer nudge so backsteros/portal
  * refresh before PowerSync / the replication tick.
  */
 export function publishProjectLive(

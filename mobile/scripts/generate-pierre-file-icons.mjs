@@ -17,8 +17,8 @@ const workspaceRoot = path.resolve(mobileRoot, "..");
 function findPierreTreesPkg() {
   const candidates = [
     path.join(mobileRoot, "node_modules/@pierre/trees"),
-    path.join(workspaceRoot, "desktop/node_modules/@pierre/trees"),
-    path.join(workspaceRoot, "desktop/packages/ui/node_modules/@pierre/trees"),
+    path.join(workspaceRoot, "backsteros/node_modules/@pierre/trees"),
+    path.join(workspaceRoot, "backsteros/packages/ui/node_modules/@pierre/trees"),
     path.join(workspaceRoot, "node_modules/@pierre/trees"),
   ];
   for (const candidate of candidates) {
@@ -49,7 +49,7 @@ const { createFileTreeIconResolver } = await import(
   pathToFileURL(path.join(root, "render/iconResolver.js")).href
 );
 
-/** Keep in sync with `desktop/packages/ui/src/pierre-icons.ts`. */
+/** Keep in sync with `backsteros/packages/ui/src/pierre-icons.ts`. */
 const T3_FILE_ICON_SPRITE = `
 <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true">
   <symbol id="t3-file-icon-package-json" viewBox="0 0 32 32">

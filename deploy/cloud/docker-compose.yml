@@ -96,7 +96,7 @@ services:
       - ./powersync.generated.yaml:/config/service.yaml:ro
       - ../powersync/sync-config.yaml:/config/sync-config.yaml:ro
     ports:
-      # Loopback for on-box probes. Tailnet IP so desktop/iOS can sync. Not 0.0.0.0.
+      # Loopback for on-box probes. Tailnet IP so backsteros/iOS can sync. Not 0.0.0.0.
       - "127.0.0.1:8080:8080"
       - "100.75.45.22:8080:8080"
 

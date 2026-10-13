@@ -1,8 +1,8 @@
 # Tauri IPC profiling (desktop)
 
 Audit of `invoke` / event traffic between the Vite shell and Rust
-(`desktop/src-tauri`). Use with the dev-only counters in
-`desktop/src/lib/tauri-invoke-instrumentation.ts`.
+(`backsteros/src-tauri`). Use with the dev-only counters in
+`backsteros/src/lib/tauri-invoke-instrumentation.ts`.
 
 ## How to measure
 

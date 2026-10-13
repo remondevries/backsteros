@@ -263,9 +263,9 @@ fork of the Next deployment pipeline.
 **Decision:**
 
 - **Core** on a **local computer**: `core/server` + Postgres + files + PowerSync
-- **Shells:** `mobile/` (Expo, iPhone + iPad adaptive) and `desktop/` (Tauri + React)
+- **Shells:** `mobile/` (Expo, iPhone + iPad adaptive) and `backsteros/` (Tauri + React)
 - **Shared packages** under `core/packages/` (contracts, api-client, powersync-schema only)
-- **No shared UI** between mobile and desktop; desktop-owned UI may live under `desktop/packages/ui/`
+- **No shared UI** between mobile and desktop; desktop-owned UI may live under `backsteros/packages/ui/`
 - **Archive** v1 apps out of the active tree (Next app/admin/development, sync-demo) — reference only  
   *(moved to `~/code/archive/backsteros-legacy/`, 2026-09-09)*
 - **Naming:** use “local computer” in docs — not a specific hardware model

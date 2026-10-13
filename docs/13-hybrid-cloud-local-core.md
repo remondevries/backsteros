@@ -18,7 +18,7 @@ ship, but do not use this doc alone for replication correctness.
 
 | Goal | How |
 | --- | --- |
-| **Fast local desktop/mobile** | Shells keep using **local-core** + PowerSync + local vault |
+| **Fast local backsteros/mobile** | Shells keep using **local-core** + PowerSync + local vault |
 | **Always-on portal** | **cloud-core** on a VPS serves external consumers when the laptop is off |
 | **BacksterOS as portal foundation** | Full Tier A/B Postgres on cloud; portal filters what clients see |
 | **Full API on cloud** | `sk_live_…` keys can access the full workspace API on cloud-core |
@@ -49,7 +49,8 @@ ship, but do not use this doc alone for replication correctness.
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  local-core (local computer — primary for you)                          │
-│  · hub/ — Docker (Postgres + PowerSync) + API (:8788) + PTY (:3101)   │
+│  · LaunchAgent / desktop flag — Docker (Postgres + PowerSync) + API (:8788) │
+│  · PTY (:3101) via `pnpm --filter @backsteros/desktop pty`                │
 │  · full vault (markdown + PDFs)                                       │
 │  · agent Chat (ACP sidecar) — never on public cloud                   │
 └───────────────────────────────┬─────────────────────────────────────────┘
@@ -134,7 +135,7 @@ workspace access for owner keys.
 
 **API agents always use cloud-core** as their base URL — never the Mac
 `127.0.0.1:8788` / Tailscale IP — so writes keep working when the laptop sleeps
-and so cloud→local nudge + replication keep desktop/mobile in sync.
+and so cloud→local nudge + replication keep backsteros/mobile in sync.
 
 | Audience | Base URL |
 | --- | --- |
@@ -184,7 +185,7 @@ implemented.
 
 | Area | Status |
 | --- | --- |
-| local-core API, vault, PowerSync | **Implemented** — `core/server`, `hub/`, `deploy/` |
+| local-core API, vault, PowerSync | **Implemented** — `core/server`, `deploy/`, `scripts/local-core/` |
 | Meetings + calendar UI | **Implemented** — desktop `calendar-page`, `meetings` table |
 | Meeting scheduling settings | **Implemented** — `meeting_scheduling_settings`, weekday hours |
 | Public scheduling routes | **Implemented** — `public-scheduling-routes.ts` |
@@ -262,7 +263,7 @@ Details: [scripts/local-core/README.md](../scripts/local-core/README.md).
 
 | Repo | Role |
 | --- | --- |
-| `~/BacksterOS/Projects/OS/Codebase/` | Core, desktop, mobile, hub, specs |
+| `~/BacksterOS/Projects/OS/Codebase/` | Core, backsteros, mobile, agents, specs |
 | `~/code/client.lemo-design.com/` | Client portal (Next.js, Kamal) — external shell |
 
 Portal env: `BACKSTEROS_API_URL`, `BACKSTEROS_API_KEY` (server-only).

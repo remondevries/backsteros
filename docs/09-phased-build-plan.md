@@ -95,7 +95,7 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 ## Phase 5 — Product app (web + Tauri)
 
-**Folders (historical):** Next product web → `~/code/archive/backsteros-legacy/`; active UI is `desktop/` (Tauri).
+**Folders (historical):** Next product web → `~/code/archive/backsteros-legacy/`; active UI is `backsteros/` (Tauri).
 
 **v2:** Next.js at `backsteros.com/app` is **retired** (410 Gone, ADR-020). Desktop
 is the product shell (ADR-019) — not a Next sidecar and not Expo.

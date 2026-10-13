@@ -8,15 +8,15 @@ WORKFLOW RULE: Commit and push directly to the production branch. No pull reques
 
 1. **Commit and push directly to `production`.** It is the canonical branch of `remondevries/backsteros`. No pull requests, no feature branches, no sub-branches, no worktree branches.
 2. **Never open a PR or create a branch** unless the person who gave you the task explicitly asks for one in that session.
-3. **Run the full local test suite before every push**, from the repo root, and push only when all of it passes:
+3. **Run the full local test suite before every push**, from the repo root, and push only if all of it passes:
    ```bash
    pnpm typecheck
    pnpm test
    pnpm test:integration   # Docker Postgres :5433 → database backsteros_test (never live backsteros)
    ```
    `pnpm test:integration` creates `backsteros_test` if needed, migrates it, and refuses to run when `DATABASE_URL` points at the live local-core DB named `backsteros`. CI already uses `backsteros_test` via `INTEGRATION_USE_EXISTING_DB=1`.
-   If you changed anything under `development/`, also run `vp run -r typecheck` and `vp run -r test` inside `development/` (mobile typecheck is noisy upstream — use `vp run --filter @t3tools/mobile typecheck` when you touch mobile).
-   When `development/` is installed locally, root `pnpm typecheck` delegates a filtered package set (excludes `@t3tools/mobile`); root `pnpm test` does not run the nested T3 suite — run that inside `development/` when you change it.
+   If you changed anything under `backsterdev/`, also run `vp run -r typecheck` and `vp run -r test` inside `backsterdev/` (mobile typecheck is noisy upstream — use `vp run --filter @t3tools/mobile typecheck` when you touch mobile).
+   When `backsterdev/` is installed locally, root `pnpm typecheck` delegates a filtered package set (excludes `@t3tools/mobile`); root `pnpm test` does not run the nested T3 suite — run that inside `backsterdev/` when you change it.
 4. **If anything fails, fix it locally and rerun the suite before pushing.** Never push red, never push "to see what CI says", and never skip or disable a failing test to get green.
 5. **Local runs are the only gate.** `.github/workflows/ci.yml` runs only on pushes to `main`/`v2` and on pull requests, so nothing checks a push to `production` after it lands.
 6. Before pushing, `git pull --rebase origin production` so history stays linear, then rerun the suite if the rebase brought in new commits.
@@ -29,12 +29,12 @@ WORKFLOW RULE: Commit and push directly to the production branch. No pull reques
 ├── core/
 │   ├── server/           ← API (Hono + Postgres + OpenAPI)
 │   └── packages/         ← contracts, api-client, powersync-schema
-├── hub/                  ← macOS menu-bar local service start/stop
 ├── mobile/               ← Expo (iPhone + iPad)
-├── desktop/              ← Tauri 2 + Vite/React
+├── backsteros/           ← Tauri 2 + Vite/React (package @backsteros/desktop)
 ├── agents/               ← public HTTPS door (agent.backsteros.com)
-├── development/          ← T3 Code agent console (nested)
-└── design/               ← BacksterDESIGN (Penpot fork + branding)
+├── backsterdev/          ← T3 Code agent console (nested; was development/)
+├── backstermeet/         ← BacksterMeet — Tauri 2 Director app for live meetings (@backsteros/meet)
+└── backsterdesign/       ← BacksterDESIGN (Penpot fork + branding)
 ```
 
 See [STRUCTURE.md](STRUCTURE.md) and [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md).
@@ -78,7 +78,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 3. **Business logic lives in `core/server/`** — not in shell apps or `docs/`.
 4. **All writes pipeline** — storage → version bump → sync event → realtime push to open editors.
 5. **Do not revive** archived v1 Next apps (`~/code/archive/backsteros-legacy/`) — port into v2 paths if needed.
-6. **No shared visual UI** between `mobile/` and `desktop/` — share contracts/api-client/schema only.
+6. **No shared visual UI** between `mobile/` and `backsteros/` — share contracts/api-client/schema only.
 7. **Do not extend** `circle.remondevries.com` for new platform features.
 
 ## Subfolders (code)
@@ -91,9 +91,11 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `core/packages/cli/` | `backsteros` CLI — task/project/comment CRUD (`pnpm cli -- …`) |
 | `core/packages/powersync-schema/` | Shared PowerSync Tier A/B client schema |
 | `mobile/` | Expo — Clerk + PowerSync |
-| `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |
+| `backsteros/` | Tauri 2 + Vite/React; desktop-owned UI under `backsteros/packages/ui/` (package `@backsteros/desktop`) |
 | `agents/` | Public HTTPS door for always-on API agents |
-| `design/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
+| `backsterdev/` | Nested T3 Code agent console; filter shim at `backsterdev/shim/` (`@backsteros/development`) |
+| `backstermeet/` | BacksterMeet — Tauri 2 + Vite/React Director (host) app for live meetings; guests join via the client portal on the same LiveKit SFU. Package `@backsteros/meet`; see `backstermeet/AGENTS.md` |
+| `backsterdesign/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
 
 ## Phase gate

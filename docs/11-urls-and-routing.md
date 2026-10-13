@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `http://127.0.0.1:8788` | `core/server/` | REST, sync upload, OpenAPI (desktop / you / PTY) |
 | `http://127.0.0.1:8080` | Docker PowerSync | Sync stream (or Tailscale MagicDNS `:8080`) |
-| Desktop / mobile shells | `desktop/`, `mobile/` | UI only — talk to local core |
+| Desktop / mobile shells | `backsteros/`, `mobile/` | UI only — talk to local core |
 
 ## Always-on agents (laptop may be offline)
 
@@ -50,7 +50,7 @@ v1 Next apps were moved to `~/code/archive/backsteros-legacy/` (2026-09-09) — 
 
 ## Why separate shell codebases
 
-| | `desktop/` | `mobile/` |
+| | `backsteros/` | `mobile/` |
 | --- | --- | --- |
 | **User goal** | Do work on macOS | Do work on iPhone / iPad |
 | **Data** | PowerSync + rich editors | PowerSync + mobile layouts |
@@ -63,7 +63,7 @@ v1 Next apps were moved to `~/code/archive/backsteros-legacy/` (2026-09-09) — 
 local computer
   core/server     → http://127.0.0.1:8788
   PowerSync       → http://127.0.0.1:8080  (Docker)
-  desktop/ / mobile/ → shells against local core (+ Tailscale when needed)
+  backsteros/ / mobile/ → shells against local core (+ Tailscale when needed)
 
 VPS (Hetzner lemodesign — 46.225.171.3 / Tailscale 100.75.45.22)
   cloud-core      → :8788 (Docker; Tailscale peer for replication)

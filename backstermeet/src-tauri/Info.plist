@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>BacksterMeet needs camera access for the host preview in Director.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BacksterMeet needs microphone access when you unmute in a meeting.</string>
+</dict>
+</plist>

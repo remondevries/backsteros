@@ -2,11 +2,11 @@ packages:
   - core/server
   - core/packages/*
   - mobile
-  - desktop
-  - desktop/packages/*
-  - hub
+  - backsteros
+  - backsteros/packages/*
   - agents
-  - tooling/development
+  - backsterdev/shim
+  - backstermeet
   - tooling/design
 allowBuilds:
   '@clerk/shared': true
