@@ -24,8 +24,10 @@ test("OS-110: setReplicationCursor keeps µs so tip row does not count as unpush
   const userId = id("user");
   const workspaceId = id("workspace");
   // Postgres timestamptz with microseconds beyond JS Date milliseconds.
-  const tipIso = "2026-10-12T11:41:09.052205Z";
-  const truncatedIso = "2026-10-12T11:41:09.052Z";
+  // Far-future tip so other integration-test workspaces (updated_at = now())
+  // do not inflate countLocalChangesSince after the cursor is set.
+  const tipIso = "2099-10-12T11:41:09.052205Z";
+  const truncatedIso = "2099-10-12T11:41:09.052Z";
 
   context.after(async () => {
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
@@ -79,7 +81,7 @@ test("OS-110: setReplicationCursor keeps µs so tip row does not count as unpush
   const truncatedCursor = await getReplicationCursor("workspaces", "push");
   assert.equal(truncatedCursor.rowId, workspaceId);
   assert.ok(
-    truncatedCursor.updatedAt.startsWith("2026-10-12T11:41:09.052"),
+    truncatedCursor.updatedAt.startsWith("2099-10-12T11:41:09.052"),
     `expected ms-truncated cursor, got ${truncatedCursor.updatedAt}`,
   );
   assert.ok(
