@@ -409,6 +409,58 @@ export const projectFsListEntriesResponseSchema = z.object({
   entries: z.array(projectFsEntrySchema),
 });
 
+/** Target filesystem for project Dev/Local/Prod location picker (OS-111). */
+export const locationFsTargetSchema = z.enum([
+  "local",
+  "development",
+  "production",
+]);
+
+export const locationFsEntrySchema = z.object({
+  name: z.string(),
+  /** Absolute POSIX path. */
+  path: z.string(),
+  kind: z.literal("directory"),
+});
+
+export const locationFsListQuerySchema = z.object({
+  target: locationFsTargetSchema,
+  /** Absolute path under the target base; omit for the base itself. */
+  path: z.string().max(4096).optional(),
+});
+
+export const locationFsListResponseSchema = z.object({
+  target: locationFsTargetSchema,
+  base: z.string(),
+  path: z.string(),
+  exists: z.boolean(),
+  writable: z.boolean(),
+  entries: z.array(locationFsEntrySchema),
+});
+
+export const locationFsCreateFolderSchema = z.object({
+  target: locationFsTargetSchema,
+  parent: z.string().min(1).max(4096),
+  name: z
+    .string()
+    .min(1)
+    .max(255)
+    .refine(
+      (value) =>
+        value !== "." &&
+        value !== ".." &&
+        !value.includes("/") &&
+        !value.includes("\\") &&
+        !value.includes("\0"),
+      "Invalid folder name",
+    ),
+});
+
+export const locationFsCreateFolderResponseSchema = z.object({
+  target: locationFsTargetSchema,
+  path: z.string(),
+});
+
 export const projectRepoDocEntrySchema = z.object({
   name: z.string(),
   /** Relative path from the working directory (`docs/…` or root `AGENTS.md`). */
@@ -4893,6 +4945,17 @@ export type ProjectFsCreateEntryResponse = z.infer<
 >;
 export type ProjectFsDeleteEntryResponse = z.infer<
   typeof projectFsDeleteEntryResponseSchema
+>;
+export type LocationFsTarget = z.infer<typeof locationFsTargetSchema>;
+export type LocationFsEntry = z.infer<typeof locationFsEntrySchema>;
+export type LocationFsListResponse = z.infer<
+  typeof locationFsListResponseSchema
+>;
+export type LocationFsCreateFolderInput = z.infer<
+  typeof locationFsCreateFolderSchema
+>;
+export type LocationFsCreateFolderResponse = z.infer<
+  typeof locationFsCreateFolderResponseSchema
 >;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;

@@ -37,6 +37,8 @@ import {
   listTaskAgentPresenceQuerySchema,
   projectFsCreateEntrySchema,
   projectFsWriteFileSchema,
+  locationFsCreateFolderSchema,
+  locationFsListQuerySchema,
   reorderLetterAttachmentsSchema,
   reorderTaskAttachmentsSchema,
   spellcheckRequestSchema,
@@ -274,6 +276,7 @@ import * as projectUpdatesService from "../services/project-updates.js";
 import * as githubService from "../services/github.js";
 import { resolveGithubAccessToken } from "../services/github-auth.js";
 import * as projectFsService from "../services/project-fs.js";
+import * as locationFsService from "../services/location-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
 import * as taskActivityService from "../services/task-activities.js";
 import * as taskAgentPresenceService from "../services/task-agent-presence.js";
@@ -1946,6 +1949,66 @@ export function registerProjectRoutes(app: Hono) {
       throw error;
     }
   });
+
+  app.get("/api/v1/location-fs", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const parsed = locationFsListQuerySchema.safeParse({
+      target: c.req.query("target"),
+      path: c.req.query("path"),
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid location-fs query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await locationFsService.listLocationFs(
+        parsed.data.target,
+        parsed.data.path,
+      );
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof locationFsService.LocationFsError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.post(
+    "/api/v1/location-fs/folders",
+    zValidator("json", locationFsCreateFolderSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("projects:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const body = c.req.valid("json");
+      try {
+        const result = await locationFsService.createLocationFsFolder(
+          body.target,
+          body.parent,
+          body.name,
+        );
+        return c.json(result, 201);
+      } catch (error) {
+        if (error instanceof locationFsService.LocationFsError) {
+          return c.json(
+            { error: error.message, code: error.code },
+            error.status,
+          );
+        }
+        throw error;
+      }
+    },
+  );
 
   app.get("/api/v1/projects/:id/fs/file", async (c) => {
     const auth = getAuth(c);
