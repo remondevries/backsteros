@@ -2,9 +2,9 @@
   "name": "@backsteros/design",
   "private": true,
   "version": "0.0.0",
-  "description": "Root-workspace shim that proxies scripts into design/",
+  "description": "Root-workspace shim for BacksterDESIGN (design/ = Penpot fork)",
   "scripts": {
-    "branding:apply": "pnpm --dir ../../design branding:apply",
-    "penpot:status": "pnpm --dir ../../design penpot:status"
+    "branding:apply": "bash ../../design/branding/bin/apply-branding.sh",
+    "penpot:status": "node ./scripts/status.mjs"
   }
 }
