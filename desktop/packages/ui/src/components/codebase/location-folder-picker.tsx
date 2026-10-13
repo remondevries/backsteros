@@ -23,17 +23,6 @@ export type LocationFolderPickerProps = {
   onClose: () => void;
 };
 
-function parentPath(absolute: string, base: string): string | null {
-  const trimmed = absolute.replace(/\/+$/, "");
-  const baseTrimmed = base.replace(/\/+$/, "");
-  if (!trimmed || trimmed === baseTrimmed || trimmed === "/") return null;
-  const idx = trimmed.lastIndexOf("/");
-  if (idx <= 0) return "/";
-  const parent = trimmed.slice(0, idx) || "/";
-  if (parent.length < baseTrimmed.length) return baseTrimmed;
-  return parent;
-}
-
 function pathSegments(absolute: string, base: string): string[] {
   const baseTrimmed = base.replace(/\/+$/, "") || "/";
   const trimmed = absolute.replace(/\/+$/, "") || baseTrimmed;
@@ -121,8 +110,6 @@ export function LocationFolderPicker({
 
   const base = listing?.base ?? "";
   const crumbs = listing ? pathSegments(listing.path, listing.base) : [];
-  const canGoUp =
-    listing != null && parentPath(listing.path, listing.base) != null;
 
   return createPortal(
     <div
@@ -226,18 +213,6 @@ export function LocationFolderPicker({
             </nav>
 
             <div className="location-folder-picker__toolbar">
-              <button
-                type="button"
-                className="location-folder-picker__tool"
-                disabled={loading || !canGoUp}
-                onClick={() => {
-                  if (!listing) return;
-                  const parent = parentPath(listing.path, listing.base);
-                  if (parent) void load(parent);
-                }}
-              >
-                Up
-              </button>
               <button
                 type="button"
                 className="location-folder-picker__tool"
