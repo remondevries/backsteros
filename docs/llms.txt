@@ -22,6 +22,7 @@
 - [docs/17-desktop-without-docker.md](17-desktop-without-docker.md): Why Docker is not the default to open desktop; boot graph, gaps, slice 1 (ADR-035 addendum)
 - [docs/19-penpot-integration.md](19-penpot-integration.md): BacksterDESIGN — Penpot fork under backsterdesign/ (local devenv via `@backsteros/design`, runtime map) + BacksterOS integration: identity, MCP/webhooks, design→code, R2, branding, task mapping, deploy, open gaps
 - [docs/20-repo-structure.md](20-repo-structure.md): Repo folder reorganization — backsteros/ (was desktop/), backsterdev/ (was development/), backstermeet/ added (from ~/code/backstermeet), hub/ removed; backsterdesign/→backsterdesign/; open point on local core placement
+- [docs/21-deployment.md](21-deployment.md): Deployment decision record — `deploy/deploy` CLI (--all / --server / --<section>), server map (production / lemodesign / development), per-section plan, Penpot → lemodesign via GHCR, open decisions; not built yet
 - [docs/06-storage-and-search.md](06-storage-and-search.md): Vault layout today; private R2 target (ADR-035)
 - [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Current hybrid behavior; target routing is ADR-035 / 16
 - [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
