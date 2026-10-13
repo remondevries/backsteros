@@ -359,6 +359,7 @@ import {
 } from "../services/core-replication/leader-mutations.js";
 import { emitHabitTaskSyncChanges } from "../services/habit-task-sync.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
+import { resolveVaultPath } from "../lib/storage.js";
 import * as whoopService from "../services/whoop.js";
 import * as pushInboxTriageService from "../services/push-inbox-triage.js";
 import * as transipDomainsSyncService from "../services/transip-domains-sync.js";
@@ -1958,6 +1959,7 @@ export function registerProjectRoutes(app: Hono) {
     const parsed = locationFsListQuerySchema.safeParse({
       target: c.req.query("target"),
       path: c.req.query("path"),
+      projectId: c.req.query("projectId"),
     });
     if (!parsed.success) {
       return c.json(
@@ -1965,10 +1967,38 @@ export function registerProjectRoutes(app: Hono) {
         400,
       );
     }
+    let projectKey: string | undefined;
+    let vaultRoot: string | undefined;
+    if (parsed.data.target === "local") {
+      const projectId = await routeProjectId(
+        auth.workspaceId,
+        parsed.data.projectId!,
+      );
+      if (!projectId) return c.json(notFound("Project"), 404);
+      const project = await taskProjectService.getProjectById(
+        auth.workspaceId,
+        projectId,
+      );
+      if (!project) return c.json(notFound("Project"), 404);
+      projectKey = project.key;
+      try {
+        vaultRoot = await resolveVaultPath();
+      } catch {
+        return c.json(
+          {
+            error: "Local vault is not configured on this host",
+            code: "fs_vault_missing",
+          },
+          400,
+        );
+      }
+    }
     try {
       const result = await locationFsService.listLocationFs(
         parsed.data.target,
         parsed.data.path,
+        { vaultRoot },
+        { projectKey },
       );
       return c.json(result);
     } catch (error) {
@@ -1991,11 +2021,39 @@ export function registerProjectRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const body = c.req.valid("json");
+      let projectKey: string | undefined;
+      let vaultRoot: string | undefined;
+      if (body.target === "local") {
+        const projectId = await routeProjectId(
+          auth.workspaceId,
+          body.projectId!,
+        );
+        if (!projectId) return c.json(notFound("Project"), 404);
+        const project = await taskProjectService.getProjectById(
+          auth.workspaceId,
+          projectId,
+        );
+        if (!project) return c.json(notFound("Project"), 404);
+        projectKey = project.key;
+        try {
+          vaultRoot = await resolveVaultPath();
+        } catch {
+          return c.json(
+            {
+              error: "Local vault is not configured on this host",
+              code: "fs_vault_missing",
+            },
+            400,
+          );
+        }
+      }
       try {
         const result = await locationFsService.createLocationFsFolder(
           body.target,
           body.parent,
           body.name,
+          { vaultRoot },
+          { projectKey },
         );
         return c.json(result, 201);
       } catch (error) {

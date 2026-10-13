@@ -15,6 +15,8 @@ type Props = {
   readonly target: BacksterosLocationFsTarget;
   readonly title: string;
   readonly initialPath?: string | null;
+  /** Required when target=local — jail is Projects/{key}/… */
+  readonly projectId?: string | null;
   readonly onSelect: (path: string) => void;
   readonly onClose: () => void;
 };
@@ -59,7 +61,9 @@ export function BacksterosLocationFolderPicker(props: Props) {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchBacksterosLocationFs(props.target, path);
+        const result = await fetchBacksterosLocationFs(props.target, path, {
+          projectId: props.projectId,
+        });
         setListing(result);
         setSelectedPath(result.path);
       } catch (err) {
@@ -69,7 +73,7 @@ export function BacksterosLocationFolderPicker(props: Props) {
         setLoading(false);
       }
     },
-    [props.target],
+    [props.projectId, props.target],
   );
 
   useEffect(() => {
@@ -238,6 +242,7 @@ export function BacksterosLocationFolderPicker(props: Props) {
                         target: props.target,
                         parent: listing.path,
                         name: newFolderName.trim(),
+                        projectId: props.projectId,
                       });
                       setShowCreate(false);
                       setNewFolderName("");

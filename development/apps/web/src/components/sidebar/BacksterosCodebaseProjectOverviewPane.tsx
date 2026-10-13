@@ -154,6 +154,8 @@ function WorkingDirectoryChip(props: {
   readonly prefix?: string;
   /** When set, opens the in-app location folder picker (OS-111) instead of inline text. */
   readonly locationTarget?: BacksterosLocationFsTarget;
+  /** Required when locationTarget=local. */
+  readonly projectId?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -194,6 +196,7 @@ function WorkingDirectoryChip(props: {
           target={props.locationTarget}
           title={ariaLabel}
           initialPath={props.value}
+          projectId={props.projectId}
           onClose={() => setPickerOpen(false)}
           onSelect={(path) => {
             void props.onSave(path.trim() || null).then(() => setPickerOpen(false));
@@ -650,6 +653,7 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           emptyLabel="Local location…"
           ariaLabel="Local location"
           locationTarget="local"
+          projectId={detail.id}
           title={detail.localLocation ?? "Path on the machine running the BacksterOS desktop app"}
           onSave={async (localLocation) => {
             await applyPatch({ localLocation }, "Could not update local location");

@@ -8,34 +8,40 @@ import {
   LocationFsError,
   buildRemoteLocationFsScript,
   createLocationFsFolder,
+  defaultLocalCodebasePath,
   listLocationFs,
   normalizeAbsolutePath,
+  resolveLocalProjectBase,
   resolveLocationFsBase,
   resolveLocationFsSshHost,
 } from "./location-fs.js";
 
 describe("location-fs", () => {
-  it("resolves local base under BacksterOS/Projects by default", () => {
+  it("resolves local jail to vault Projects/{key}", () => {
     assert.equal(
-      resolveLocationFsBase("local", {
+      resolveLocalProjectBase("OS", {
         env: {},
-        homedir: () => "/Users/me",
+        vaultRoot: "/Users/me/BacksterOS",
       }),
-      path.resolve("/Users/me/BacksterOS/Projects"),
+      path.resolve("/Users/me/BacksterOS/Projects/OS"),
+    );
+    assert.equal(
+      defaultLocalCodebasePath("/Users/me/BacksterOS/Projects/OS"),
+      path.join("/Users/me/BacksterOS/Projects/OS", "Codebase"),
     );
   });
 
   it("honors env overrides for bases and SSH hosts", () => {
     const env = {
-      BACKSTEROS_LOCAL_FS_ROOT: "/tmp/local-projects",
+      BACKSTEROS_LOCAL_FS_ROOT: "/tmp/vault-root",
       BACKSTEROS_DEVELOPMENT_FS_ROOT: "/data/vault/Projects",
       BACKSTEROS_PRODUCTION_FS_ROOT: "/data/vault/Projects",
       BACKSTEROS_DEVELOPMENT_SSH_HOST: "dev-alias",
       BACKSTEROS_PRODUCTION_SSH_HOST: "prod-alias",
     };
     assert.equal(
-      resolveLocationFsBase("local", { env }),
-      path.resolve("/tmp/local-projects"),
+      resolveLocationFsBase("local", { env }, { projectKey: "OS" }),
+      path.resolve("/tmp/vault-root/Projects/OS"),
     );
     assert.equal(
       resolveLocationFsBase("development", { env }),
@@ -63,49 +69,67 @@ describe("location-fs", () => {
     );
   });
 
-  it("lists only directories under the local jail and reports writable", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "location-fs-"));
-    await mkdir(path.join(root, "alpha"));
-    await mkdir(path.join(root, "beta"));
-    await writeFile(path.join(root, "readme.txt"), "x");
-    await mkdir(path.join(root, ".hidden"));
+  it("defaults local listing into Codebase and allows Up to project root only", async () => {
+    const { realpath } = await import("node:fs/promises");
+    const vault = await mkdtemp(path.join(tmpdir(), "location-fs-vault-"));
+    const projectRoot = path.join(vault, "Projects", "OS");
+    await mkdir(path.join(projectRoot, "Codebase"), { recursive: true });
+    await mkdir(path.join(projectRoot, "Documents"), { recursive: true });
+    await writeFile(path.join(projectRoot, "readme.txt"), "x");
 
-    const listed = await listLocationFs("local", root, {
-      env: { BACKSTEROS_LOCAL_FS_ROOT: root },
-    });
-    assert.equal(listed.exists, true);
-    assert.equal(listed.writable, true);
-    assert.equal(listed.base, await import("node:fs/promises").then((fs) => fs.realpath(root)));
-    assert.deepEqual(
-      listed.entries.map((entry) => entry.name).sort(),
-      ["alpha", "beta"],
+    const listed = await listLocationFs(
+      "local",
+      undefined,
+      { vaultRoot: vault },
+      { projectKey: "OS" },
     );
-  });
+    const baseReal = await realpath(projectRoot);
+    assert.equal(listed.base, baseReal);
+    assert.equal(listed.path, path.join(baseReal, "Codebase"));
+    assert.equal(listed.exists, true);
 
-  it("refuses to browse outside the local base", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "location-fs-"));
+    const atRoot = await listLocationFs(
+      "local",
+      listed.base,
+      { vaultRoot: vault },
+      { projectKey: "OS" },
+    );
+    assert.deepEqual(
+      atRoot.entries.map((entry) => entry.name).sort(),
+      ["Codebase", "Documents"],
+    );
+
     await assert.rejects(
       () =>
-        listLocationFs("local", "/tmp", {
-          env: { BACKSTEROS_LOCAL_FS_ROOT: root },
-        }),
+        listLocationFs(
+          "local",
+          path.dirname(projectRoot),
+          { vaultRoot: vault },
+          { projectKey: "OS" },
+        ),
       (error: unknown) =>
         error instanceof LocationFsError &&
         error.code === "fs_path_outside_root",
     );
   });
 
-  it("creates a folder under the local base", async () => {
+  it("creates a folder under the local project jail", async () => {
     const { realpath } = await import("node:fs/promises");
-    const root = await mkdtemp(path.join(tmpdir(), "location-fs-"));
-    const created = await createLocationFsFolder("local", root, "new-app", {
-      env: { BACKSTEROS_LOCAL_FS_ROOT: root },
-    });
-    assert.equal(created.path, path.join(await realpath(root), "new-app"));
-    const listed = await listLocationFs("local", root, {
-      env: { BACKSTEROS_LOCAL_FS_ROOT: root },
-    });
-    assert.ok(listed.entries.some((entry) => entry.name === "new-app"));
+    const vault = await mkdtemp(path.join(tmpdir(), "location-fs-vault-"));
+    const projectRoot = path.join(vault, "Projects", "OS");
+    await mkdir(path.join(projectRoot, "Codebase"), { recursive: true });
+
+    const created = await createLocationFsFolder(
+      "local",
+      path.join(projectRoot, "Codebase"),
+      "worktrees",
+      { vaultRoot: vault },
+      { projectKey: "OS" },
+    );
+    assert.equal(
+      created.path,
+      path.join(await realpath(projectRoot), "Codebase", "worktrees"),
+    );
   });
 
   it("lists over SSH using the remote helper script", async () => {

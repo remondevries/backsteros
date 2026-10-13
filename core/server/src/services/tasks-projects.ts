@@ -63,6 +63,7 @@ import {
   touchTaskLabelsUsed,
 } from "./task-labels.js";
 import {
+  PROJECT_VAULT_CODEBASE_FOLDER,
   assertProjectVaultRenameAllowed,
   ensureProjectVaultFolders,
   removeProjectVaultFolderIfPresent,
@@ -70,6 +71,7 @@ import {
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
 } from "../lib/storage.js";
+import path from "node:path";
 import { mergeLinkedCommitShas } from "../lib/linked-commit-shas.js";
 import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
 import {
@@ -658,13 +660,30 @@ export async function createProject(
     });
     // Default agent cwd to the vault project folder when the caller did not
     // supply a local working directory (codebase repos still override this).
+    // Local execution location defaults to Projects/{KEY}/Codebase.
+    const defaultLocalLocation =
+      type === "codebase"
+        ? path.join(ensured.projectVaultPath, PROJECT_VAULT_CODEBASE_FOLDER)
+        : null;
+    const patch: {
+      localWorkingDirectory?: string;
+      localLocation?: string;
+      updatedAt: Date;
+    } = { updatedAt: writeAt };
     if (!row.localWorkingDirectory?.trim()) {
+      patch.localWorkingDirectory = ensured.projectVaultPath;
+    }
+    if (
+      defaultLocalLocation &&
+      !row.localLocation?.trim() &&
+      input.localLocation === undefined
+    ) {
+      patch.localLocation = defaultLocalLocation;
+    }
+    if (patch.localWorkingDirectory || patch.localLocation) {
       const [updated] = await executor
         .update(projects)
-        .set({
-          localWorkingDirectory: ensured.projectVaultPath,
-          updatedAt: writeAt,
-        })
+        .set(patch)
         .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
         .returning();
       if (updated) {
@@ -962,13 +981,28 @@ export async function updateProject(
       const ensured = await ensureProjectVaultFolders(row.key, undefined, {
         projectType: row.type,
       });
+      const ensurePatch: {
+        localWorkingDirectory?: string;
+        localLocation?: string;
+        updatedAt: Date;
+      } = { updatedAt: writeAt };
       if (!row.localWorkingDirectory?.trim()) {
+        ensurePatch.localWorkingDirectory = ensured.projectVaultPath;
+      }
+      if (
+        row.type === "codebase" &&
+        !row.localLocation?.trim() &&
+        input.localLocation === undefined
+      ) {
+        ensurePatch.localLocation = path.join(
+          ensured.projectVaultPath,
+          PROJECT_VAULT_CODEBASE_FOLDER,
+        );
+      }
+      if (ensurePatch.localWorkingDirectory || ensurePatch.localLocation) {
         const [updated] = await tx
           .update(projects)
-          .set({
-            localWorkingDirectory: ensured.projectVaultPath,
-            updatedAt: writeAt,
-          })
+          .set(ensurePatch)
           .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
           .returning();
         return updated ?? row;

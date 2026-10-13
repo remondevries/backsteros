@@ -16,6 +16,8 @@ export type LocationFolderPickerProps = {
   target: LocationFsTarget;
   title: string;
   initialPath?: string | null;
+  /** Required when target=local — jail is Projects/{key}/… */
+  projectId?: string | null;
   requestJson: CodebaseRequestJson;
   onSelect: (path: string) => void;
   onClose: () => void;
@@ -47,6 +49,7 @@ export function LocationFolderPicker({
   target,
   title,
   initialPath,
+  projectId,
   requestJson,
   onSelect,
   onClose,
@@ -74,6 +77,9 @@ export function LocationFolderPicker({
       try {
         const query = new URLSearchParams({ target });
         if (path?.trim()) query.set("path", path.trim());
+        if (target === "local" && projectId?.trim()) {
+          query.set("projectId", projectId.trim());
+        }
         const result = await requestJson<LocationFsListResponse>(
           `/api/v1/location-fs?${query.toString()}`,
         );
@@ -87,7 +93,7 @@ export function LocationFolderPicker({
         setLoading(false);
       }
     },
-    [requestJson, target],
+    [projectId, requestJson, target],
   );
 
   useEffect(() => {
@@ -267,6 +273,9 @@ export function LocationFolderPicker({
                             target,
                             parent: listing.path,
                             name: newFolderName.trim(),
+                            ...(target === "local" && projectId?.trim()
+                              ? { projectId: projectId.trim() }
+                              : {}),
                           }),
                         },
                       );

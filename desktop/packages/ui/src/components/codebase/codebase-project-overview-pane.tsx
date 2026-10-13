@@ -373,6 +373,7 @@ function ProjectLocationPathField({
         target={target}
         title={`${labelPrefix} location`}
         initialPath={value}
+        projectId={target === "local" ? project.id : null}
         requestJson={requestJson}
         onClose={() => setPickerOpen(false)}
         onSelect={(path) => {

@@ -423,11 +423,26 @@ export const locationFsEntrySchema = z.object({
   kind: z.literal("directory"),
 });
 
-export const locationFsListQuerySchema = z.object({
-  target: locationFsTargetSchema,
-  /** Absolute path under the target base; omit for the base itself. */
-  path: z.string().max(4096).optional(),
-});
+export const locationFsListQuerySchema = z
+  .object({
+    target: locationFsTargetSchema,
+    /** Absolute path under the target base; omit for the default (Local → …/Codebase). */
+    path: z.string().max(4096).optional(),
+    /**
+     * Required when `target=local`: jail is `Projects/{project key}` under the
+     * vault (not the whole Projects tree).
+     */
+    projectId: z.string().min(1).max(128).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.target === "local" && !value.projectId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "projectId is required for local location browsing",
+        path: ["projectId"],
+      });
+    }
+  });
 
 export const locationFsListResponseSchema = z.object({
   target: locationFsTargetSchema,
@@ -438,23 +453,35 @@ export const locationFsListResponseSchema = z.object({
   entries: z.array(locationFsEntrySchema),
 });
 
-export const locationFsCreateFolderSchema = z.object({
-  target: locationFsTargetSchema,
-  parent: z.string().min(1).max(4096),
-  name: z
-    .string()
-    .min(1)
-    .max(255)
-    .refine(
-      (value) =>
-        value !== "." &&
-        value !== ".." &&
-        !value.includes("/") &&
-        !value.includes("\\") &&
-        !value.includes("\0"),
-      "Invalid folder name",
-    ),
-});
+export const locationFsCreateFolderSchema = z
+  .object({
+    target: locationFsTargetSchema,
+    parent: z.string().min(1).max(4096),
+    name: z
+      .string()
+      .min(1)
+      .max(255)
+      .refine(
+        (value) =>
+          value !== "." &&
+          value !== ".." &&
+          !value.includes("/") &&
+          !value.includes("\\") &&
+          !value.includes("\0"),
+        "Invalid folder name",
+      ),
+    /** Required when `target=local` (same jail as list). */
+    projectId: z.string().min(1).max(128).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.target === "local" && !value.projectId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "projectId is required for local location folders",
+        path: ["projectId"],
+      });
+    }
+  });
 
 export const locationFsCreateFolderResponseSchema = z.object({
   target: locationFsTargetSchema,

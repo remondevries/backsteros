@@ -10,6 +10,11 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import {
+  PROJECT_VAULT_CODEBASE_FOLDER,
+  buildProjectVaultAbsolutePath,
+} from "../lib/storage.js";
+
 const execFileAsync = promisify(execFile);
 
 export type LocationFsTarget = "local" | "development" | "production";
@@ -61,6 +66,13 @@ export type LocationFsDeps = {
   readonly exec?: LocationFsExec;
   readonly env?: NodeJS.ProcessEnv;
   readonly homedir?: () => string;
+  /** Absolute vault root (Projects lives under this). Used for target=local. */
+  readonly vaultRoot?: string;
+};
+
+export type LocationFsScope = {
+  /** Required for target=local — jail is `{vault}/Projects/{key}`. */
+  readonly projectKey?: string;
 };
 
 const SSH_TIMEOUT_MS = 30_000;
@@ -74,16 +86,54 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Absolute path to the default Local location: `{projectBase}/Codebase`. */
+export function defaultLocalCodebasePath(projectBase: string): string {
+  return path.join(projectBase, PROJECT_VAULT_CODEBASE_FOLDER);
+}
+
+/**
+ * Resolve the local jail: `{vaultRoot}/Projects/{projectKey}`.
+ * `BACKSTEROS_LOCAL_FS_ROOT` overrides the vault root (still appends Projects/key).
+ */
+export function resolveLocalProjectBase(
+  projectKey: string,
+  deps: LocationFsDeps = {},
+): string {
+  const key = projectKey.trim();
+  if (!key) {
+    throw new LocationFsError(
+      "projectKey is required for local location browsing",
+      "fs_project_required",
+    );
+  }
+  const env = envOf(deps);
+  const rootOverride = env.BACKSTEROS_LOCAL_FS_ROOT?.trim();
+  const vaultRoot = rootOverride
+    ? path.resolve(rootOverride)
+    : deps.vaultRoot?.trim()
+      ? path.resolve(deps.vaultRoot.trim())
+      : path.resolve((deps.homedir ?? homedir)(), "BacksterOS");
+  // When override is already a …/Projects leaf, treat it as the Projects parent.
+  const projectsParent = path.basename(vaultRoot) === "Projects"
+    ? path.dirname(vaultRoot)
+    : vaultRoot;
+  return buildProjectVaultAbsolutePath(projectsParent, key);
+}
+
 export function resolveLocationFsBase(
   target: LocationFsTarget,
   deps: LocationFsDeps = {},
+  scope: LocationFsScope = {},
 ): string {
   const env = envOf(deps);
   if (target === "local") {
-    const configured = env.BACKSTEROS_LOCAL_FS_ROOT?.trim();
-    if (configured) return path.resolve(configured);
-    const home = (deps.homedir ?? homedir)();
-    return path.resolve(home, "BacksterOS", "Projects");
+    if (!scope.projectKey?.trim()) {
+      throw new LocationFsError(
+        "projectKey is required for local location browsing",
+        "fs_project_required",
+      );
+    }
+    return resolveLocalProjectBase(scope.projectKey, deps);
   }
   if (target === "development") {
     const configured = env.BACKSTEROS_DEVELOPMENT_FS_ROOT?.trim();
@@ -500,10 +550,15 @@ export async function listLocationFs(
   target: LocationFsTarget,
   pathInput?: string,
   deps: LocationFsDeps = {},
+  scope: LocationFsScope = {},
 ): Promise<LocationFsListResult> {
-  const base = resolveLocationFsBase(target, deps);
+  const base = resolveLocationFsBase(target, deps, scope);
   if (target === "local") {
-    return listLocal(base, pathInput);
+    // Default into Codebase/; Up still reaches the project root (base).
+    const resolvedPath =
+      pathInput?.trim() || defaultLocalCodebasePath(base);
+    await mkdir(defaultLocalCodebasePath(base), { recursive: true });
+    return listLocal(base, resolvedPath);
   }
   const remote = (await runRemote(
     target,
@@ -528,8 +583,9 @@ export async function createLocationFsFolder(
   parentPath: string,
   name: string,
   deps: LocationFsDeps = {},
+  scope: LocationFsScope = {},
 ): Promise<LocationFsCreateResult> {
-  const base = resolveLocationFsBase(target, deps);
+  const base = resolveLocationFsBase(target, deps, scope);
   if (target === "local") {
     return createLocalFolder(base, parentPath, name);
   }

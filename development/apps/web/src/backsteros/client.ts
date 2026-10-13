@@ -616,13 +616,19 @@ export type BacksterosLocationFsList = {
 export async function fetchBacksterosLocationFs(
   target: BacksterosLocationFsTarget,
   path?: string | null,
-  signal?: AbortSignal,
+  options?: {
+    readonly projectId?: string | null;
+    readonly signal?: AbortSignal;
+  },
 ): Promise<BacksterosLocationFsList> {
   const params = new URLSearchParams({ target });
   if (path?.trim()) params.set("path", path.trim());
+  if (target === "local" && options?.projectId?.trim()) {
+    params.set("projectId", options.projectId.trim());
+  }
   return backsterosFetchJson(
     `/api/v1/location-fs?${params.toString()}`,
-    optionalSignalInit(signal),
+    optionalSignalInit(options?.signal),
   );
 }
 
@@ -630,10 +636,18 @@ export async function createBacksterosLocationFsFolder(input: {
   readonly target: BacksterosLocationFsTarget;
   readonly parent: string;
   readonly name: string;
+  readonly projectId?: string | null;
 }): Promise<{ readonly target: BacksterosLocationFsTarget; readonly path: string }> {
   return backsterosFetchJson("/api/v1/location-fs/folders", {
     method: "POST",
-    body: input,
+    body: {
+      target: input.target,
+      parent: input.parent,
+      name: input.name,
+      ...(input.target === "local" && input.projectId?.trim()
+        ? { projectId: input.projectId.trim() }
+        : {}),
+    },
   });
 }
 
