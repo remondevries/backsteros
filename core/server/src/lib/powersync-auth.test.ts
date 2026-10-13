@@ -6,6 +6,7 @@ import {
   canMintPowerSyncToken,
   getPowerSyncUrl,
   isDesktopShellOrigin,
+  isDesignDevenvOrigin,
   isDevGatewayOrigin,
   preferLocalPowerSyncEndpoint,
 } from "./powersync-auth.js";
@@ -60,6 +61,16 @@ describe("preferLocalPowerSyncEndpoint", () => {
       }),
       false,
     );
+  });
+});
+
+describe("isDesignDevenvOrigin", () => {
+  it("admits Penpot local devenv HTTP/HTTPS ports", () => {
+    assert.equal(isDesignDevenvOrigin("http://localhost:3450"), true);
+    assert.equal(isDesignDevenvOrigin("http://127.0.0.1:3450"), true);
+    assert.equal(isDesignDevenvOrigin("https://localhost:3449"), true);
+    assert.equal(isDesignDevenvOrigin("https://127.0.0.1:3449"), true);
+    assert.equal(isDesignDevenvOrigin("http://localhost:5173"), false);
   });
 });
 

@@ -1,0 +1,139 @@
+// BacksterOS projects panel on the Penpot dashboard.
+
+@use "ds/typography.scss" as t;
+@use "ds/spacing.scss" as *;
+@use "ds/_borders.scss" as *;
+@use "ds/_sizes.scss" as *;
+@use "ds/_utils.scss" as *;
+
+.backsteros-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-m);
+  margin: 0 0 var(--sp-xl);
+  padding: var(--sp-l);
+  border: $b-1 solid var(--panel-border-color);
+  border-radius: $br-8;
+  background: var(--panel-background-color);
+  max-block-size: min(50vh, px2rem(420));
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-m);
+  flex: 0 0 auto;
+}
+
+.title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xxs);
+  min-inline-size: 0;
+}
+
+.title {
+  @include t.use-typography("title-small");
+  margin: 0;
+  color: var(--color-foreground-primary);
+}
+
+.subtitle {
+  @include t.use-typography("body-small");
+  color: var(--color-foreground-secondary);
+}
+
+.reload {
+  @include t.use-typography("body-small");
+  flex: 0 0 auto;
+  padding: var(--sp-xs) var(--sp-m);
+  border-radius: $br-8;
+  border: $b-1 solid var(--menu-background-color);
+  background: var(--menu-background-color);
+  color: var(--menu-foreground-color-hover);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+.message {
+  @include t.use-typography("body-small");
+  margin: 0;
+  color: var(--color-foreground-secondary);
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+  }
+}
+
+.error {
+  color: var(--color-accent-error, #ff6b6b);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xxs);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-m);
+  padding: var(--sp-s) var(--sp-m);
+  border-radius: $br-8;
+  background: var(--color-background-secondary, transparent);
+}
+
+.row-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-s);
+  min-inline-size: 0;
+}
+
+.key {
+  @include t.use-typography("body-small");
+  flex: 0 0 auto;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.name {
+  @include t.use-typography("body-medium");
+  color: var(--color-foreground-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  gap: var(--sp-xs);
+  flex: 0 0 auto;
+}
+
+.badge {
+  @include t.use-typography("body-small");
+  padding: 0 var(--sp-s);
+  border-radius: $br-8;
+  background: var(--color-background-quaternary, rgba(255, 255, 255, 0.08));
+  color: var(--color-foreground-secondary);
+  text-transform: lowercase;
+}
+
+.muted {
+  opacity: 0.75;
+}

@@ -43,6 +43,18 @@ export function isDesktopShellOrigin(origin: string | null | undefined): boolean
   );
 }
 
+/** BacksterDESIGN / Penpot local devenv (Caddy HTTP :3450, HTTPS :3449). */
+export function isDesignDevenvOrigin(origin: string | null | undefined): boolean {
+  if (!origin?.trim()) return false;
+  const value = origin.trim().toLowerCase();
+  return (
+    value === "http://localhost:3450" ||
+    value === "http://127.0.0.1:3450" ||
+    value === "https://localhost:3449" ||
+    value === "https://127.0.0.1:3449"
+  );
+}
+
 export function isCloudCoreRole(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
 }

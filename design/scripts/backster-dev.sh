@@ -73,10 +73,18 @@ case "$cmd" in
     cfg="$DESIGN_ROOT/frontend/resources/public/js/config.js"
     if [[ ! -f "$cfg" ]]; then
       mkdir -p "$(dirname "$cfg")"
-      printf '%s\n' \
-        '// Local devenv flags (gitignored). See docs/technical-guide/developer/devenv.md' \
-        'var penpotFlags = "disable-dashboard-templates-section";' \
-        >"$cfg"
+      if [[ -f "$DESIGN_ROOT/frontend/config.js.example" ]]; then
+        cp "$DESIGN_ROOT/frontend/config.js.example" "$cfg"
+      else
+        cat >"$cfg" <<'EOF'
+// Local devenv flags + BacksterOS bridge (gitignored).
+var penpotFlags = "disable-dashboard-templates-section";
+window.backsterosCore = {
+  baseUrl: "http://127.0.0.1:8788",
+  apiKey: "local"
+};
+EOF
+      fi
       echo "backster-dev: created $cfg"
     fi
     echo "BacksterDESIGN: starting Penpot devenv (binds $DESIGN_ROOT → /home/penpot/penpot)"

@@ -24,6 +24,7 @@ import { installOpsLogConsoleCapture } from "./lib/ops-log-buffer.js";
 import { isSpacesConfigured } from "./lib/storage.js";
 import {
   isDesktopShellOrigin,
+  isDesignDevenvOrigin,
   isDevGatewayOrigin,
 } from "./lib/powersync-auth.js";
 import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
@@ -65,7 +66,8 @@ export function createApp() {
         if (
           corsOrigins.includes(origin) ||
           isDevGatewayOrigin(origin) ||
-          isDesktopShellOrigin(origin)
+          isDesktopShellOrigin(origin) ||
+          isDesignDevenvOrigin(origin)
         ) {
           return origin;
         }

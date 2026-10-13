@@ -1,0 +1,11 @@
+// Copy to config.js (gitignored) for local BacksterDESIGN devenv.
+// Or let `pnpm --filter @backsteros/design dev` seed a default.
+
+var penpotFlags = "disable-dashboard-templates-section";
+
+// Bridge to BacksterOS local-core (read-only project list on the dashboard).
+window.backsterosCore = {
+  baseUrl: "http://127.0.0.1:8788",
+  // Local-shell token works on local-core; use a sk_live_… key if preferred.
+  apiKey: "local",
+};

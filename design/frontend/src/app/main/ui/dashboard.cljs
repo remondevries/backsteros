@@ -29,6 +29,7 @@
    [app.main.ui.dashboard.import]
    [app.main.ui.dashboard.layout-toggle :as lt]
    [app.main.ui.dashboard.libraries :refer [libraries-page*]]
+   [app.main.ui.dashboard.backsteros-projects :refer [backsteros-projects-section*]]
    [app.main.ui.dashboard.projects :refer [projects-section*]]
    [app.main.ui.dashboard.search :refer [search-page*]]
    [app.main.ui.dashboard.sidebar :refer [sidebar*]]
@@ -99,20 +100,22 @@
 
      (case section
        :dashboard-recent
-       (when (seq projects)
-         [:*
-          [:> projects-section* {:team team
-                                 :projects projects
-                                 :profile profile
-                                 :layout layout
-                                 :on-layout-change on-layout-change}]
+       [:*
+        [:> backsteros-projects-section*]
+        (when (seq projects)
+          [:*
+           [:> projects-section* {:team team
+                                  :projects projects
+                                  :profile profile
+                                  :layout layout
+                                  :on-layout-change on-layout-change}]
 
-          (when ^boolean show-templates?
-            [:> templates-section* {:profile profile
-                                    :project-id project-id
-                                    :team-id team-id
-                                    :default-project-id default-project-id
-                                    :content-width @content-width}])])
+           (when ^boolean show-templates?
+             [:> templates-section* {:profile profile
+                                     :project-id project-id
+                                     :team-id team-id
+                                     :default-project-id default-project-id
+                                     :content-width @content-width}])])]
 
        :dashboard-fonts
        [:> fonts-page* {:team team}]
