@@ -93,7 +93,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `mobile/` | Expo — Clerk + PowerSync |
 | `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |
 | `agents/` | Public HTTPS door for always-on API agents |
-| `design/` | BacksterDESIGN — Penpot-based design product (fork planned under `design/penpot/`) |
+| `design/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
 
 ## Phase gate

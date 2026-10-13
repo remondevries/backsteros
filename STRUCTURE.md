@@ -25,7 +25,7 @@ Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (branch `production`)
 │   └── packages/ui/            ← desktop-owned UI (not shared with mobile)
 ├── agents/                     ← public HTTPS door (agent.backsteros.com)
 ├── development/                ← nested T3 Code monorepo (@t3tools/monorepo; own lockfile)
-├── design/                     ← BacksterDESIGN (Penpot fork home; branding + future vendor)
+├── design/                     ← BacksterDESIGN — nested Penpot fork (+ branding/, local devenv)
 ├── tooling/development/        ← @backsteros/development shim → proxies into development/
 └── tooling/design/             ← @backsteros/design shim → proxies into design/
 ```
@@ -44,7 +44,7 @@ v1 Next apps (app/admin/development/sync-demo) were moved out to
 | `desktop/` | Tauri product shell |
 | `agents/` | VPS agents door → cloud-core |
 | `development/` | Nested T3 Code agent console (not a root workspace member) |
-| `design/` | BacksterDESIGN — Penpot-based design workspace (fork + branding; not a root workspace member) |
+| `design/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `tooling/development/` | Filter shim — `pnpm --filter @backsteros/development …` |
 | `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
 

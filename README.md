@@ -15,7 +15,7 @@ backsteros/
 ├── desktop/        Tauri 2 + Vite/React (macOS)
 ├── agents/         Public HTTPS door (agent.backsteros.com)
 ├── development/    T3 Code agent console (nested monorepo; own lockfile)
-├── design/         BacksterDESIGN (Penpot fork home + branding)
+├── design/         BacksterDESIGN (vendored Penpot fork + branding + local devenv)
 ├── tooling/development/  shim for `pnpm --filter @backsteros/development …`
 └── tooling/design/       shim for `pnpm --filter @backsteros/design …`
 ```
@@ -37,7 +37,9 @@ pnpm --filter @backsteros/desktop dev  # Tauri product UI
 pnpm --filter @backsteros/development dev:desktop  # T3 Code agent console (Electron)
 # browser/web stack only (no Electron window):
 pnpm --filter @backsteros/development dev
-pnpm --filter @backsteros/design penpot:status      # BacksterDESIGN scaffold status
+pnpm --filter @backsteros/design penpot:status      # BacksterDESIGN tree check
+pnpm --filter @backsteros/design dev                # BacksterDESIGN local Penpot devenv (Docker)
+# → https://localhost:3449
 ```
 
 Or from each package directory: `cd mobile && pnpm dev`, `cd desktop && pnpm dev`, `cd hub && pnpm dev`.
@@ -51,6 +53,7 @@ Read **[AGENTS.md](AGENTS.md)** first.
 | Doc | Topic |
 | --- | --- |
 | [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md) | v2 local-computer model |
+| [docs/18-backsterdesign.md](docs/18-backsterdesign.md) | BacksterDESIGN (Penpot fork + local devenv) |
 | [docs/09-phased-build-plan.md](docs/09-phased-build-plan.md) | Build order |
 | [docs/llms.txt](docs/llms.txt) | Full index |
 

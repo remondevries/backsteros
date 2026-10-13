@@ -2,8 +2,16 @@
   "name": "@backsteros/design",
   "private": true,
   "version": "0.0.0",
-  "description": "Root-workspace shim for BacksterDESIGN (design/ = Penpot fork)",
+  "description": "Root-workspace shim for BacksterDESIGN (design/ = Penpot fork + devenv)",
   "scripts": {
+    "dev": "bash ../../design/scripts/backster-dev.sh up",
+    "dev:up": "bash ../../design/scripts/backster-dev.sh up",
+    "dev:down": "bash ../../design/scripts/backster-dev.sh down",
+    "dev:drop": "bash ../../design/scripts/backster-dev.sh drop",
+    "dev:attach": "bash ../../design/scripts/backster-dev.sh attach",
+    "dev:logs": "bash ../../design/scripts/backster-dev.sh logs",
+    "dev:pull": "bash ../../design/scripts/backster-dev.sh pull",
+    "dev:status": "bash ../../design/scripts/backster-dev.sh status",
     "branding:apply": "bash ../../design/branding/bin/apply-branding.sh",
     "penpot:status": "node ./scripts/status.mjs"
   }
