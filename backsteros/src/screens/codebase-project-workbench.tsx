@@ -136,6 +136,7 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     category: null,
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: null,
+    penpotProjectId: null,
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     developmentLocation: project.developmentLocation ?? null,
     productionLocation: project.productionLocation ?? null,

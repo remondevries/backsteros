@@ -194,6 +194,11 @@ export const projectSchema = z.object({
   githubRepository: githubRepositoryNameSchema.nullable(),
   /** Cloudflare zone id for Domains DNS management. */
   cloudflareZoneId: z.string().max(64).nullable(),
+  /**
+   * Linked Penpot (BacksterDESIGN) project UUID.
+   * Null until staff create-or-open from the design dashboard.
+   */
+  penpotProjectId: z.string().uuid().nullable(),
   /** Absolute local folder for agent/PTY (machine-specific; Development console). */
   localWorkingDirectory: z.string().max(4096).nullable(),
   /**
@@ -267,6 +272,7 @@ export const createProjectSchema = z.object({
   category: projectEmailCategorySchema.nullable().optional(),
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
   cloudflareZoneId: z.string().max(64).nullable().optional(),
+  penpotProjectId: z.string().uuid().nullable().optional(),
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
   developmentLocation: z.string().max(4096).nullable().optional(),
   productionLocation: z.string().max(4096).nullable().optional(),

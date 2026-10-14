@@ -222,6 +222,7 @@
 
        (:dashboard-search
         :dashboard-recent
+        :dashboard-backsteros
         :dashboard-files
         :dashboard-libraries
         :dashboard-fonts

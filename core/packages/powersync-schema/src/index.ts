@@ -30,6 +30,7 @@ const projects = new Table(
     category: column.text,
     github_repository: column.text,
     cloudflare_zone_id: column.text,
+    penpot_project_id: column.text,
     local_working_directory: column.text,
     development_location: column.text,
     production_location: column.text,

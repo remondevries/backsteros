@@ -28,11 +28,3 @@
   inline-size: 100%;
 }
 
-// When there are no Penpot projects yet, still show the OS list without
-// trapping it in the $sz-64 header track.
-.dashboard-os-fallback {
-  grid-row: 1 / -1;
-  min-block-size: 0;
-  overflow: auto;
-  padding-block-end: var(--sp-l);
-}

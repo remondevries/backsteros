@@ -1,7 +1,7 @@
 # 19 · BacksterDESIGN — Penpot fork and BacksterOS integration
 
-**Status:** Design agreed (13 Oct 2026 call). Standalone spec. Mostly not implemented: today only the fork itself, the local devenv, and the stock shared instance on `development` exist.
-**Related:** [ADR-035](10-decisions-log.md) (cloud-core center, private R2), [06-storage-and-search.md](06-storage-and-search.md), [16-linear-shaped-sync.md](16-linear-shaped-sync.md), [03-data-model.md](03-data-model.md), `backsterdesign/BACKSTER.md`, `backsterdesign/deploy/README.md`. Repo folder layout (including the `backsterdesign/` → `backsterdesign/` rename): [20-repo-structure.md](20-repo-structure.md).
+**Status:** Design agreed (13 Oct 2026 call); mapping revised (14 Oct 2026). Standalone spec. Partial implementation: fork, local devenv, BacksterOS projects dashboard tab, and (in progress) project link + create-or-open for staff.
+**Related:** [ADR-035](10-decisions-log.md) (cloud-core center, private R2), [06-storage-and-search.md](06-storage-and-search.md), [16-linear-shaped-sync.md](16-linear-shaped-sync.md), [03-data-model.md](03-data-model.md), `backsterdesign/BACKSTER.md`, `backsterdesign/deploy/README.md`. Repo folder layout: [20-repo-structure.md](20-repo-structure.md).
 
 BacksterDESIGN is the design workspace for BacksterOS: a **forked Penpot** under `backsterdesign/`, parallel to BacksterDEV under `backsterdev/`. This doc is the single reference for it. §1 covers the fork and the local dev environment. §2–§8 are the integration spec: identity, MCP/API/webhooks, the design→code loop, storage, branding, task linking and UI, and deploy. §9 lists the open gaps.
 
@@ -67,20 +67,33 @@ pnpm --filter @backsteros/design branding:apply  # overlay onto a running *stock
 1. Vendor & pin Penpot in `backsterdesign/` (done).
 2. Local devenv as the default edit/run loop (done).
 3. Develop the local fork first, then promote the fork to **lemodesign** later (§8). `development` is a design runtime, not a build host — images are not built there.
-4. Land features in source (permissions, BacksterOS panels, native chrome, content-change stream); drop temporary CSS/JS injects as they are replaced.
+4. Land features in source (client chrome lock-down, BacksterOS panels, native branding, content-change stream); drop temporary CSS/JS injects as they are replaced.
 
 ### Non-goals (for now)
 
 - Replacing Penpot’s canvas engine.
 - Publishing a public SaaS fork.
+- Building a full Penpot project-ACL UI on day one (see §7 — portal allowlist + client redirect instead).
 
 ## 2. Access and identity
 
 - **BacksterOS is the only identity.** Users never see a Penpot login screen. BacksterOS signs them in to Penpot.
-- **Per-contact Penpot token.** Each contact that uses design gets a Penpot access token. It is stored **encrypted** on the contact record, server-side only, using the same pattern as other integration secrets (`workspace_integration_secrets`, ADR-037). It never goes into PowerSync or client SQLite.
-- **Opt-in toggle** per contact. If it is off, no Penpot account is created and no token is stored.
+- **Per-contact Penpot token.** Each contact that uses design (staff or client) gets a Penpot access token. It is stored **encrypted** on the contact record, server-side only, using the same pattern as other integration secrets (`workspace_integration_secrets`, ADR-037). It never goes into PowerSync or client SQLite.
+- **Opt-in toggle** per contact. If it is off, no Penpot account is created and no token is stored. Portal access that includes design also provisions the Penpot user/token.
 - **Agents use a service user, not their API key.** A BacksterOS `sk_live_` bearer key **cannot** sign in to Penpot. Penpot has its own auth (session cookie or Penpot access token). So each agent gets a **dedicated Penpot service user**, mapped to that agent's BacksterOS contact. Its Penpot token is stored encrypted on the agent contact, the same as for humans. Penpot activity then shows up under the agent contact that did it.
-- Upstream has no per-project member visibility (§1). Until the fork adds it, access is decided at the team level (see §7 mapping).
+
+### Staff vs clients in Penpot
+
+| Audience | Penpot team(s) | How they use Penpot |
+| --- | --- | --- |
+| **Lemo-Design staff** | Team `Lemo-Design` (and client teams if needed) | Full BacksterDESIGN dashboard. BacksterOS projects list mirrors core; click create-or-opens the linked Penpot project. |
+| **Clients** | Shared team `Clients` (or equivalent flag) | **No Penpot home/dashboard.** Portal is the only map. Deep-link opens one allowed file; leaving that context hard-redirects to the portal. |
+
+**Client chrome lock-down (fork):** any client-team (or client-flagged) user who hits a non-file route is hard-redirected to the client portal.
+
+**Client open allowlist (required with the above):** on file open (`get-file` / workspace entry), Penpot checks BacksterOS: may this contact access the linked project/file? If not → not-found / redirect to portal. UI redirect alone is not authorization — Client A must not open Client B’s file by UUID.
+
+BacksterOS remains the source of truth for which projects a contact may see (org linkage today; finer per-contact grants can hook the same allowlist later), same idea as [portal visibility](13-hybrid-cloud-local-core.md).
 
 ## 3. MCP, API and webhooks
 
@@ -139,18 +152,28 @@ What agents do in Penpot:
 
 | BacksterOS | Penpot |
 | --- | --- |
-| Workspace | Organization |
-| Customer (organization) | Team |
-| Project | File |
-| Task | File, page or element ID (link target) |
+| Studio / workspace | Organization `Lemo-Design` |
+| Staff workspace | Team `Lemo-Design` |
+| Client accounts | Team `Clients` (shared; isolation via allowlist + redirect, §2) |
+| Customer (organization) | Linkage on the BacksterOS project (`organizationId`) — not a Penpot team per customer |
+| **Project** | **Project** (same name; linked by id) |
+| Task / screen / deliverable | **File** (portal deep-links here) |
+| Task design link (optional) | File, page, or element ID |
 
-- One customer is one team, so team-wide upstream roles still separate customers.
-- A task links to a whole file, one page, or one element ID. With the content-change stream (§3), BacksterOS can see when the linked target changes.
-- Links are stored on the BacksterOS side, never in Penpot.
+- Staff see a Penpot project tree that matches BacksterOS projects.
+- Links are stored on the **BacksterOS** side (`projects.penpot_project_id`, and later file/page/element links on tasks). Nothing authoritative is stored only in Penpot.
+- One customer → one Penpot team is **not** required for isolation under this model; keep that option if product needs change.
+
+### Project link field
+
+- Core column: `projects.penpot_project_id` (nullable text, Penpot project UUID).
+- Exposed on the project API as `penpotProjectId`.
+- Staff click on the BacksterOS projects tab: if linked → open that Penpot project’s files; if not → create a Penpot project under the current (staff) team with the BacksterOS name, PATCH `penpotProjectId`, then open it.
 
 ### UI
 
-- **Dashboard (first slice, local):** the Penpot Projects page shows a read-only **BacksterOS projects** list (fork UI) fetched from local-core (`GET /api/v1/projects`). Config: `window.backsterosCore` in gitignored `frontend/resources/public/js/config.js` (seed from `frontend/config.js.example`; `baseUrl` + `apiKey`, default `http://127.0.0.1:8788` + `local`). CORS admits Penpot devenv origins (`isDesignDevenvOrigin`).
+- **Dashboard (staff, local):** Penpot Projects chrome includes a **BacksterOS** tab listing core projects (`GET /api/v1/projects`). Config: `window.backsterosCore` in gitignored `frontend/resources/public/js/config.js` (seed from `frontend/config.js.example`; `baseUrl` + `apiKey`). CORS admits Penpot devenv origins (`isDesignDevenvOrigin`).
+- **Clients:** no Penpot project browser. Client portal lists allowed work and opens a specific Penpot **file** URL; fork redirects any other Penpot navigation back to the portal.
 - An **instrument-panel tab** in BacksterOS (in the design context) shows the **task list** for the open file/page/element, with **time tracking** (the existing `trackedMinutes` / time entries). You do not leave the design view to see or log work.
 
 ## 8. Deploy and runtime
@@ -173,3 +196,6 @@ What agents do in Penpot:
 3. **Promotion workflow**: how a local fork build becomes images on `development` and then lemodesign (build, tag, deploy, roll back).
 4. **Server role naming**: whether and how to rename `development` so it is not read as a build host (deferred).
 5. **Observability**: logs, metrics and alerts for the Penpot instance, the MCP server and the content-change stream.
+6. **Client chrome redirect + open allowlist** in the fork (§2) — not implemented yet.
+7. **Identity bridge** (BacksterOS signs contacts into Penpot; encrypted tokens) — not implemented yet.
+8. **Task ↔ file/page/element links** and content-change stream consumers — not implemented yet.

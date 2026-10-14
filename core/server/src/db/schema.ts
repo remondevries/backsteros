@@ -678,6 +678,11 @@ export const projects = pgTable(
     /** Cloudflare zone id when linked; used for Domains DNS management. */
     cloudflareZoneId: text("cloudflare_zone_id"),
     /**
+     * Penpot (BacksterDESIGN) project UUID when linked.
+     * See docs/19-penpot-integration.md — BacksterOS project ↔ Penpot project.
+     */
+    penpotProjectId: text("penpot_project_id"),
+    /**
      * Absolute path on the developer's machine for agent/PTY cwd.
      * Not multi-device; stored so the Development console persists across reloads.
      */
@@ -730,6 +735,7 @@ export const projects = pgTable(
     index("projects_provider_idx").on(table.provider),
     index("projects_category_idx").on(table.category),
     index("projects_cloudflare_zone_id_idx").on(table.cloudflareZoneId),
+    index("projects_penpot_project_id_idx").on(table.penpotProjectId),
     index("projects_deleted_at_idx").on(table.deletedAt),
   ],
 );

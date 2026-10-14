@@ -614,6 +614,7 @@ export async function createProject(
       category: input.category ?? null,
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
+      penpotProjectId: input.penpotProjectId ?? null,
       localWorkingDirectory: input.localWorkingDirectory ?? null,
       developmentLocation: input.developmentLocation ?? null,
       productionLocation: input.productionLocation ?? null,
@@ -841,6 +842,7 @@ export async function updateProject(
         category,
         githubRepository,
         cloudflareZoneId: input.cloudflareZoneId,
+        penpotProjectId: input.penpotProjectId,
         localWorkingDirectory: input.localWorkingDirectory,
         ...(leavingCodebase || input.developmentLocation !== undefined
           ? { developmentLocation }

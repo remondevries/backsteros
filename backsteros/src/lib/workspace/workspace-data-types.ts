@@ -55,6 +55,7 @@ export type DesktopWorkspaceData = {
       healthCheckDomain?: string | null;
       githubRepository?: string | null;
       cloudflareZoneId?: string | null;
+      penpotProjectId?: string | null;
       provider?: string | null;
       category?: string | null;
     }

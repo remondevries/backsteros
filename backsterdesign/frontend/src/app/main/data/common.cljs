@@ -562,3 +562,22 @@
             params  {:team-id team-id}]
         (rx/of (modal/hide)
                (rt/nav :dashboard-deleted params options))))))
+
+(defn go-to-dashboard-backsteros
+  [& {:keys [team-id] :as options}]
+  (ptk/reify ::go-to-dashboard-backsteros
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [profile (get state :profile)
+            team-id (cond
+                      (= :default team-id)
+                      (:default-team-id profile)
+
+                      (uuid? team-id)
+                      team-id
+
+                      :else
+                      (:current-team-id state))
+            params  {:team-id team-id}]
+        (rx/of (modal/hide)
+               (rt/nav :dashboard-backsteros params options))))))

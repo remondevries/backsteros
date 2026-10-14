@@ -72,6 +72,7 @@
     ["/webhooks"             :dashboard-webhooks]
     ["/settings"             :dashboard-settings]
     ["/recent"               :dashboard-recent]
+    ["/backsteros"           :dashboard-backsteros]
     ["/search"               :dashboard-search]
     ["/fonts"                :dashboard-fonts]
     ["/fonts/providers"      :dashboard-font-providers]

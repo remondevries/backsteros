@@ -224,6 +224,7 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   developmentSetupError?: string | null;
   githubRepository?: string | null;
   cloudflareZoneId?: string | null;
+  penpotProjectId?: string | null;
   provider?: string | null;
   category?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
@@ -313,6 +314,7 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     developmentSetupError: project.developmentSetupError ?? null,
     githubRepository: project.githubRepository ?? null,
     cloudflareZoneId: project.cloudflareZoneId ?? null,
+    penpotProjectId: project.penpotProjectId ?? null,
     provider: project.provider ?? null,
     category: project.category ?? null,
     healthCheckMode: project.healthCheckMode ?? null,

@@ -23,13 +23,13 @@
    [app.main.store :as st]
    [app.main.ui.components.progress :refer [progress-notification-widget*]]
    [app.main.ui.context :as ctx]
+   [app.main.ui.dashboard.backsteros-projects :refer [backsteros-section*]]
    [app.main.ui.dashboard.deleted :refer [deleted-section*]]
    [app.main.ui.dashboard.files :refer [files-section*]]
    [app.main.ui.dashboard.fonts :refer [fonts-page* font-providers-page*]]
    [app.main.ui.dashboard.import]
    [app.main.ui.dashboard.layout-toggle :as lt]
    [app.main.ui.dashboard.libraries :refer [libraries-page*]]
-   [app.main.ui.dashboard.backsteros-projects :refer [backsteros-projects-section*]]
    [app.main.ui.dashboard.projects :refer [projects-section*]]
    [app.main.ui.dashboard.search :refer [search-page*]]
    [app.main.ui.dashboard.sidebar :refer [sidebar*]]
@@ -100,24 +100,23 @@
 
      (case section
        :dashboard-recent
-       ;; dashboard-content is a 2-row grid ($sz-64 header + 1fr). Keep the
-       ;; Penpot header as the first child; mount BacksterOS in the scroll row.
-       (if (seq projects)
-         [:*
-          [:> projects-section* {:team team
-                                 :projects projects
-                                 :profile profile
-                                 :layout layout
-                                 :on-layout-change on-layout-change}]
+       [:*
+        [:> projects-section* {:team team
+                               :projects projects
+                               :profile profile
+                               :layout layout
+                               :on-layout-change on-layout-change}]
 
-          (when ^boolean show-templates?
-            [:> templates-section* {:profile profile
-                                    :project-id project-id
-                                    :team-id team-id
-                                    :default-project-id default-project-id
-                                    :content-width @content-width}])]
-         [:div {:class (stl/css :dashboard-os-fallback)}
-          [:> backsteros-projects-section*]])
+        (when ^boolean show-templates?
+          [:> templates-section* {:profile profile
+                                  :project-id project-id
+                                  :team-id team-id
+                                  :default-project-id default-project-id
+                                  :content-width @content-width}])]
+
+       :dashboard-backsteros
+       [:> backsteros-section* {:team team
+                                :show-deleted show-deleted?}]
 
        :dashboard-fonts
        [:> fonts-page* {:team team}]

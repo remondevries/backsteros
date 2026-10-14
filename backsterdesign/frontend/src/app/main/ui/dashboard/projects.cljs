@@ -18,7 +18,6 @@
    [app.main.data.team :as dtm]
    [app.main.refs :as refs]
    [app.main.store :as st]
-   [app.main.ui.dashboard.backsteros-projects :refer [backsteros-projects-section*]]
    [app.main.ui.dashboard.deleted :as deleted]
    [app.main.ui.dashboard.grid :refer [line-grid*]]
    [app.main.ui.dashboard.inline-edition :refer [inline-edition]]
@@ -368,43 +367,39 @@
 
     (hooks/use-shortcuts ::dashboard sc/shortcuts-projects :dashboard)
 
-    (when (seq projects)
+    [:*
+     [:> header* {:can-edit can-edit
+                  :layout layout
+                  :on-change on-layout-change}]
+     [:div {:class (stl/css :projects-container)}
       [:*
-       [:> header* {:can-edit can-edit
-                    :layout layout
-                    :on-change on-layout-change}]
-       [:div {:class (stl/css :projects-container)}
-        [:*
-         ;; Lives in the 1fr scroll row (not the $sz-64 header row).
-         [:> backsteros-projects-section*]
+       (when (and show-team-hero?
+                  can-invite
+                  (not default-team?))
+         [:> team-hero* {:team team :on-close on-close}])
 
-         (when (and show-team-hero?
-                    can-invite
-                    (not default-team?))
-           [:> team-hero* {:team team :on-close on-close}])
+       [:div {:class (stl/css-case :dashboard-container true
+                                   :no-bg true
+                                   :dashboard-projects true
+                                   :with-team-hero (and (not my-penpot?)
+                                                        (not default-team?)
+                                                        show-team-hero?
+                                                        can-invite))}
 
-         [:div {:class (stl/css-case :dashboard-container true
-                                     :no-bg true
-                                     :dashboard-projects true
-                                     :with-team-hero (and (not my-penpot?)
-                                                          (not default-team?)
-                                                          show-team-hero?
-                                                          can-invite))}
+        [:> deleted/menu* {:team-id team-id
+                           :section :dashboard-recent
+                           :show-deleted show-deleted?}]
 
-          (when show-deleted?
-            [:> deleted/menu* {:team-id team-id
-                               :section :dashboard-recent}])
-
-          (for [{:keys [id] :as project} projects]
-            ;; FIXME: refactor this, looks inneficient
-            (let [files (when recent-map
-                          (->> (vals recent-map)
-                               (filterv #(= id (:project-id %)))
-                               (sort-by :modified-at #(compare %2 %1))))]
-              [:> project-item* {:project project
-                                 :team team
-                                 :files files
-                                 :can-edit can-edit
-                                 :layout layout
-                                 :is-first (= project (first projects))
-                                 :key id}]))]]]])))
+        (for [{:keys [id] :as project} projects]
+          ;; FIXME: refactor this, looks inneficient
+          (let [files (when recent-map
+                        (->> (vals recent-map)
+                             (filterv #(= id (:project-id %)))
+                             (sort-by :modified-at #(compare %2 %1))))]
+            [:> project-item* {:project project
+                               :team team
+                               :files files
+                               :can-edit can-edit
+                               :layout layout
+                               :is-first (= project (first projects))
+                               :key id}]))]]]]))

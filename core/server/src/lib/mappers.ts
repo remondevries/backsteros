@@ -88,6 +88,7 @@ export function toProject(row: DbProject): Project {
     category: (row.category as Project["category"]) ?? null,
     githubRepository: row.githubRepository ?? null,
     cloudflareZoneId: row.cloudflareZoneId ?? null,
+    penpotProjectId: row.penpotProjectId ?? null,
     localWorkingDirectory: row.localWorkingDirectory ?? null,
     developmentLocation: row.developmentLocation ?? null,
     productionLocation: row.productionLocation ?? null,

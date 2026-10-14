@@ -63,6 +63,7 @@ export const PROJECT_LIST_COLUMNS = [
   "type",
   "github_repository",
   "cloudflare_zone_id",
+  "penpot_project_id",
   "provider",
   "category",
   "local_working_directory",

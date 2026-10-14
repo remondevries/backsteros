@@ -39,6 +39,11 @@ describe("mapProjectUpsert null clears", () => {
       mapped: "cloudflareZoneId",
     },
     {
+      snake: "penpot_project_id",
+      camel: "penpotProjectId",
+      mapped: "penpotProjectId",
+    },
+    {
       snake: "local_working_directory",
       camel: "localWorkingDirectory",
       mapped: "localWorkingDirectory",

@@ -142,6 +142,7 @@ function projectSnapshot(row: typeof projects.$inferSelect) {
     category: row.category,
     github_repository: row.githubRepository,
     cloudflare_zone_id: row.cloudflareZoneId,
+    penpot_project_id: row.penpotProjectId,
     local_working_directory: row.localWorkingDirectory,
     development_location: row.developmentLocation,
     production_location: row.productionLocation,
@@ -2035,6 +2036,9 @@ export function mapProjectUpsert(
     cloudflareZoneId: asNullableString(
       payloadValue(payload, "cloudflare_zone_id", "cloudflareZoneId"),
     ),
+    penpotProjectId: asNullableString(
+      payloadValue(payload, "penpot_project_id", "penpotProjectId"),
+    ),
     localWorkingDirectory: asNullableString(
       payloadValue(
         payload,
@@ -2368,6 +2372,7 @@ export async function applySyncChange(
           category: input.category,
           githubRepository: input.githubRepository,
           cloudflareZoneId: input.cloudflareZoneId,
+          penpotProjectId: input.penpotProjectId,
           localWorkingDirectory: input.localWorkingDirectory,
           developmentLocation: input.developmentLocation,
           productionLocation: input.productionLocation,

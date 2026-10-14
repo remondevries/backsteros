@@ -190,33 +190,53 @@
 
 (mf/defc menu*
   {::mf/private true}
-  [{:keys [team-id section]}]
+  [{:keys [team-id section show-deleted]}]
   (let [on-recent-click
         (mf/use-fn
          (mf/deps team-id)
          (fn []
            (st/emit! (dcm/go-to-dashboard-recent :team-id team-id))))
 
+        on-backsteros-click
+        (mf/use-fn
+         (mf/deps team-id)
+         (fn []
+           (st/emit! (dcm/go-to-dashboard-backsteros :team-id team-id))))
+
         on-deleted-click
         (mf/use-fn
          (mf/deps team-id)
          (fn []
-           (st/emit! (dcm/go-to-dashboard-deleted :team-id team-id))))]
+           (st/emit! (dcm/go-to-dashboard-deleted :team-id team-id))))
+
+        ;; Default true when omitted (deleted page always shows trash).
+        show-deleted?
+        (not (false? show-deleted))]
 
     [:div {:class (stl/css :nav)}
      [:div {:class (stl/css :nav-inside)}
       [:div {:class [(stl/css :nav-option)
                      (stl/css-case :selected (= section :dashboard-recent))]
              :data-testid "recent-tab"
+             :role "tab"
+             :aria-selected (= section :dashboard-recent)
              :on-click on-recent-click}
        (tr "labels.recent")]
       [:div {:class [(stl/css :nav-option)
-                     (stl/css-case :selected (= section :dashboard-deleted))]
-             :variant "ghost"
-             :type "button"
-             :data-testid "deleted-tab"
-             :on-click on-deleted-click}
-       (tr "labels.deleted")]]]))
+                     (stl/css-case :selected (= section :dashboard-backsteros))]
+             :data-testid "backsteros-tab"
+             :role "tab"
+             :aria-selected (= section :dashboard-backsteros)
+             :on-click on-backsteros-click}
+       "BacksterOS"]
+      (when show-deleted?
+        [:div {:class [(stl/css :nav-option :nav-option-end)
+                       (stl/css-case :selected (= section :dashboard-deleted))]
+               :data-testid "deleted-tab"
+               :role "tab"
+               :aria-selected (= section :dashboard-deleted)
+               :on-click on-deleted-click}
+         (tr "labels.deleted")])]]))
 
 (mf/defc deleted-section*
   [{:keys [team projects layout on-layout-change]}]
@@ -298,7 +318,8 @@
        [:div {:class (stl/css :no-bg)}
 
         [:> menu* {:team-id team-id
-                   :section :dashboard-deleted}]
+                   :section :dashboard-deleted
+                   :show-deleted true}]
 
         (if (seq projects)
           [:*
