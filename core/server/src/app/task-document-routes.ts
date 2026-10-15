@@ -3956,6 +3956,21 @@ export function registerTaskDocumentRoutes(app: Hono) {
       } catch (error) {
         if (
           error instanceof Error &&
+          error.message === "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED"
+        ) {
+          return c.json(
+            {
+              error: {
+                code: "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED",
+                message:
+                  "This Google Calendar event already has Backster notes.",
+              },
+            },
+            409,
+          );
+        }
+        if (
+          error instanceof Error &&
           (error.message === "INVALID_MEETING_DATES" ||
             error.message === "MEETING_END_BEFORE_START")
         ) {

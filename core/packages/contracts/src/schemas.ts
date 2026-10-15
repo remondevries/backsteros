@@ -4725,6 +4725,8 @@ export const updateMeetingSchema = z
     locationOrganizationId: z.string().nullable().optional(),
     trackedMinutes: z.number().int().nonnegative().nullable().optional(),
     trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+    /** Link / unlink Google (etc.) agenda block — null clears the link. */
+    externalCalendarEventId: z.string().nullable().optional(),
     /** Clear the Updated inbox flag after the user views the item. */
     acknowledgeInboxUpdate: z.boolean().optional(),
     inboxUpdatedAt: z.string().datetime().nullable().optional(),

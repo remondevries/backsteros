@@ -1048,13 +1048,10 @@ export const meetings = pgTable(
     trackedDurationSeconds: integer("tracked_duration_seconds"),
     /**
      * Optional link to a read-only Google (etc.) agenda block — ADR-037.
-     * Schedule (title/start/end) stays owned by the external event; this meeting
-     * holds Backster notes / project / attendees.
+     * Opaque id (usually `external_calendar_events.id`); no FK so agents can
+     * attach before / without a synced external row (OS-116).
      */
-    externalCalendarEventId: text("external_calendar_event_id").references(
-      () => externalCalendarEvents.id,
-      { onDelete: "set null" },
-    ),
+    externalCalendarEventId: text("external_calendar_event_id"),
     inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })

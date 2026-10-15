@@ -7,6 +7,7 @@ import {
   inArray,
   isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
@@ -304,20 +305,12 @@ export async function createMeetingRow(
       ? null
       : input.externalCalendarEventId?.trim() || null;
   if (externalCalendarEventId) {
-    const [existingLink] = await executor
-      .select({ id: meetings.id })
-      .from(meetings)
-      .where(
-        and(
-          eq(meetings.workspaceId, workspaceId),
-          eq(meetings.externalCalendarEventId, externalCalendarEventId),
-          isNull(meetings.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existingLink) {
-      throw new Error("EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED");
-    }
+    await assertExternalCalendarEventAvailable(
+      workspaceId,
+      externalCalendarEventId,
+      undefined,
+      executor,
+    );
   }
   const assignedNumber = number ?? (await nextMeetingNumber(workspaceId, executor));
   const [row] = await executor
@@ -373,6 +366,30 @@ export async function createMeeting(
   return toMeeting(row);
 }
 
+async function assertExternalCalendarEventAvailable(
+  workspaceId: string,
+  externalCalendarEventId: string,
+  excludeMeetingId: string | undefined,
+  executor: DbExecutor,
+): Promise<void> {
+  const filters: SQL[] = [
+    eq(meetings.workspaceId, workspaceId),
+    eq(meetings.externalCalendarEventId, externalCalendarEventId),
+    isNull(meetings.deletedAt),
+  ];
+  if (excludeMeetingId) {
+    filters.push(ne(meetings.id, excludeMeetingId));
+  }
+  const [existingLink] = await executor
+    .select({ id: meetings.id })
+    .from(meetings)
+    .where(and(...filters))
+    .limit(1);
+  if (existingLink) {
+    throw new Error("EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED");
+  }
+}
+
 export async function updateMeeting(
   workspaceId: string,
   id: string,
@@ -405,6 +422,19 @@ export async function updateMeeting(
   }
   if (!startAt && endAt) {
     throw new Error("INVALID_MEETING_DATES");
+  }
+
+  let externalCalendarEventId: string | null | undefined = undefined;
+  if (input.externalCalendarEventId !== undefined) {
+    externalCalendarEventId = input.externalCalendarEventId?.trim() || null;
+    if (externalCalendarEventId) {
+      await assertExternalCalendarEventAvailable(
+        workspaceId,
+        externalCalendarEventId,
+        id,
+        executor,
+      );
+    }
   }
 
   let inboxUpdatedAt: Date | null | undefined = undefined;
@@ -447,6 +477,9 @@ export async function updateMeeting(
         : {}),
       ...(input.trackedDurationSeconds !== undefined
         ? { trackedDurationSeconds: input.trackedDurationSeconds }
+        : {}),
+      ...(externalCalendarEventId !== undefined
+        ? { externalCalendarEventId }
         : {}),
       ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
       startAt,
