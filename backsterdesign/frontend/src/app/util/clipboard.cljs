@@ -89,20 +89,42 @@
   []
   (js/Promise.reject (js/Error. unavailable-error-message)))
 
+(defn- write-text-exec-command
+  "Legacy fallback for environments where `navigator.clipboard.writeText`
+  is missing or rejects (common in embedded WKWebView / Tauri)."
+  [data]
+  (js/Promise.
+   (fn [resolve reject]
+     (try
+       (let [el (js/document.createElement "textarea")]
+         (set! (.-value el) data)
+         (.setAttribute el "readonly" "")
+         (unchecked-set (.-style el) "cssText" "position:fixed;left:-9999px;top:0")
+         (.appendChild js/document.body el)
+         (.focus el)
+         (.select el)
+         (let [ok? (.execCommand js/document "copy")]
+           (.removeChild js/document.body el)
+           (if ok?
+             (resolve nil)
+             (reject (js/Error. unavailable-error-message)))))
+       (catch :default cause
+         (reject cause))))))
 (defn to-clipboard
   "Write a plain-text string to the system clipboard.
 
    Always returns a Promise. Resolves on success; rejects with a clear
-   `Error` when `navigator.clipboard` is unavailable (insecure origin)
+   `Error` when no write path works (insecure origin / blocked webview)
    so callers can chain error handling instead of crashing the UI on a
    synchronous `TypeError` like #4478."
   [data]
   (assert (string? data) "`data` should be string")
   (let [clipboard (get-clipboard)]
     (if (and clipboard (unchecked-get clipboard "writeText"))
-      (.writeText ^js clipboard data)
-      (unavailable-error))))
-
+      (-> (.writeText ^js clipboard data)
+          (.catch (fn [_]
+                    (write-text-exec-command data))))
+      (write-text-exec-command data))))
 (defn- create-clipboard-item
   [mimetype promise]
   (js/ClipboardItem.

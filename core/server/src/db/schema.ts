@@ -802,6 +802,14 @@ export const tasks = pgTable(
       .$type<{ id: string; url: string; createdAt: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /**
+     * Linked BacksterDESIGN (Penpot) file / page / board ids (docs/19 §7).
+     * Optional; also mirrored from design URLs in `links` when pasted.
+     */
+    penpotFileId: text("penpot_file_id"),
+    penpotPageId: text("penpot_page_id"),
+    /** Board / frame / shape id (Penpot `board-id` query when present). */
+    penpotObjectId: text("penpot_object_id"),
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
     /**
@@ -885,6 +893,7 @@ export const tasks = pgTable(
       .on(table.workspaceId, table.notification)
       .where(sql`${table.notification} = true and ${table.deletedAt} is null`),
     index("tasks_habit_id_idx").on(table.habitId),
+    index("tasks_penpot_file_id_idx").on(table.penpotFileId),
     uniqueIndex("tasks_habit_due_unique")
       .on(table.habitId, table.dueDate)
       .where(

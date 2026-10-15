@@ -692,6 +692,13 @@ export const taskSchema = z.object({
    */
   notification: z.boolean(),
   links: z.array(taskLinkSchema),
+  /**
+   * Linked BacksterDESIGN (Penpot) file / page / board (docs/19 §7).
+   * Optional; derived from design URLs in `links` when pasted.
+   */
+  penpotFileId: z.string().uuid().nullable().optional(),
+  penpotPageId: z.string().uuid().nullable().optional(),
+  penpotObjectId: z.string().uuid().nullable().optional(),
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
   /**
@@ -901,6 +908,9 @@ export const createTaskSchema = z.object({
   /** Mark as a notification-style task (defaults false). */
   notification: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
+  penpotFileId: z.string().uuid().nullable().optional(),
+  penpotPageId: z.string().uuid().nullable().optional(),
+  penpotObjectId: z.string().uuid().nullable().optional(),
   agentChatId: z.string().max(128).nullable().optional(),
   /**
    * Override the project's default execution location at create time (OS-106).

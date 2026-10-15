@@ -163,6 +163,9 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     support: row.support,
     notification: row.notification,
     links: row.links ?? [],
+    penpotFileId: row.penpotFileId ?? null,
+    penpotPageId: row.penpotPageId ?? null,
+    penpotObjectId: row.penpotObjectId ?? null,
     agentChatId: row.agentChatId ?? null,
     executionLocation:
       row.executionLocation === "development" ||

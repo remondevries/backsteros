@@ -208,6 +208,9 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     support: row.support,
     notification: row.notification,
     links: JSON.stringify(row.links ?? []),
+    penpot_file_id: row.penpotFileId ?? null,
+    penpot_page_id: row.penpotPageId ?? null,
+    penpot_object_id: row.penpotObjectId ?? null,
     agent_chat_id: row.agentChatId ?? null,
     execution_location: row.executionLocation ?? null,
     execution_location_locked_at:
@@ -2209,6 +2212,15 @@ function mapTaskUpsert(
     support: asBoolean(payload.support),
     notification: asBoolean(payload.notification),
     links: parseTaskLinks(payload.links),
+    penpotFileId: asNullableString(
+      payloadValue(payload, "penpot_file_id", "penpotFileId"),
+    ),
+    penpotPageId: asNullableString(
+      payloadValue(payload, "penpot_page_id", "penpotPageId"),
+    ),
+    penpotObjectId: asNullableString(
+      payloadValue(payload, "penpot_object_id", "penpotObjectId"),
+    ),
     agentChatId: asNullableString(
       payloadValue(payload, "agent_chat_id", "agentChatId"),
     ),

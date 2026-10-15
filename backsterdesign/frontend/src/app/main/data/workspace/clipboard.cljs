@@ -1155,8 +1155,19 @@
   (ptk/reify ::copy-link-to-clipboard
     ptk/WatchEvent
     (watch [_ _ _]
-      (clipboard/to-clipboard (rt/get-current-href)))))
-
+      (let [href (rt/get-current-href)]
+        (if (or (not (string? href)) (str/empty? href))
+          (rx/of (ntf/show {:content (tr "errors.generic")
+                            :type :toast
+                            :level :error
+                            :timeout 5000}))
+          (->> (rx/from (clipboard/to-clipboard href))
+               (rx/map (fn [_]
+                         (ntf/show {:level :info
+                                    :type :toast
+                                    :content (tr "common.share-link.link-copied-success")
+                                    :timeout 1000})))
+               (rx/catch on-clipboard-permission-error)))))))
 (defn copy-id-to-clipboard
   [id]
   (ptk/reify ::copy-id-to-clipboard

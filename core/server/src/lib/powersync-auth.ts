@@ -30,7 +30,10 @@ export function isDevGatewayOrigin(origin: string | null | undefined): boolean {
   }
 }
 
-/** Tauri dev (`localhost:1420`) and packaged shell origins. */
+/**
+ * Tauri shell origins — BacksterOS (`:1420`), BacksterDESIGN (`:1440`),
+ * and packaged `tauri://` / `tauri.localhost` builds.
+ */
 export function isDesktopShellOrigin(origin: string | null | undefined): boolean {
   if (!origin?.trim()) return false;
   const value = origin.trim().toLowerCase();
@@ -39,7 +42,9 @@ export function isDesktopShellOrigin(origin: string | null | undefined): boolean
     value === "http://tauri.localhost" ||
     value === "https://tauri.localhost" ||
     value === "http://localhost:1420" ||
-    value === "http://127.0.0.1:1420"
+    value === "http://127.0.0.1:1420" ||
+    value === "http://localhost:1440" ||
+    value === "http://127.0.0.1:1440"
   );
 }
 

@@ -11,7 +11,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import type { TaskLink } from "@backsteros/contracts";
+import {
+  coercePenpotDesignUrl,
+  isBacksterDesignUri,
+  resolvePenpotDesignOpenUrl,
+  type TaskLink,
+} from "@backsteros/contracts";
 
 import {
   ADD_TASK_LINK_SHORTCUT_HINT,
@@ -129,6 +134,12 @@ export function normalizeTaskLinkUrl(raw: string): string | null {
     }
   }
 
+  // Penpot / BacksterDESIGN workspace → backsterdesign://workspace?…
+  const design = coercePenpotDesignUrl(trimmed);
+  if (design) {
+    return design;
+  }
+
   // Don't prepend https:// to other custom schemes (mailto:, etc.).
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^https?:/i.test(trimmed)) {
     return null;
@@ -192,9 +203,32 @@ function letterNumberFromTaskLinkUrl(url: string): number | null {
   return parseLetterSlug(match[1]);
 }
 
+export function isPenpotDesignTaskLinkUrl(url: string): boolean {
+  return (
+    isBacksterDesignUri(url) || coercePenpotDesignUrl(url) != null
+  );
+}
+
+/** Href used when opening a task link (resolves design URIs to https). */
+export function resolveTaskLinkOpenHref(
+  url: string,
+  designPublicUri = "https://localhost:3449",
+): string {
+  if (isBacksterDesignUri(url) || coercePenpotDesignUrl(url)) {
+    return (
+      resolvePenpotDesignOpenUrl(url, designPublicUri) ??
+      url
+    );
+  }
+  return coerceSparkEmailUrl(url) ?? url;
+}
+
 export function taskLinkDisplayLabel(url: string): string {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return "E-mail";
+  }
+  if (isPenpotDesignTaskLinkUrl(url)) {
+    return "Design";
   }
   if (isAppLetterTaskLinkUrl(url)) {
     const number = letterNumberFromTaskLinkUrl(url);
@@ -290,6 +324,9 @@ function TaskLinkFavicon({ url }: { url: string }) {
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return <EmailNavIcon size={16} />;
+  }
+  if (isPenpotDesignTaskLinkUrl(url)) {
+    return <ProjectOcticon icon="paintbrush" size={16} />;
   }
   if (isAppLetterTaskLinkUrl(url)) {
     return <LetterIcon size={16} />;
@@ -574,10 +611,10 @@ export function TaskLinkAttachments({
       {hasRows ? (
         <ul className="task-link-attachments__list">
           {items.map((item) => {
-            const href = coerceSparkEmailUrl(item.url) ?? item.url;
+            const href = resolveTaskLinkOpenHref(item.url);
             const internal = isInternalAppHref(href);
             const displayLabel = resolveTaskLinkAttachmentLabel(
-              href,
+              item.url,
               linkLabelOptions,
             );
             return (

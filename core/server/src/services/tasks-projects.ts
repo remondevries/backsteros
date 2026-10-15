@@ -29,6 +29,10 @@ import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
 import { db } from "../db/index.js";
 import { nudgeDynamicIslandTasksRefresh } from "../lib/dynamic-island-nudge.js";
 import {
+  normalizeTaskLinkUrls,
+  resolveTaskPenpotDesignFields,
+} from "../lib/task-penpot-design-link.js";
+import {
   areas,
   contacts,
   documents,
@@ -2254,6 +2258,13 @@ async function createTaskWithExecutor(
     nextStatus: status,
     now: writeAt ?? new Date(),
   });
+  const links = normalizeTaskLinkUrls(input.links ?? []);
+  const penpotDesign = resolveTaskPenpotDesignFields({
+    links,
+    penpotFileId: input.penpotFileId,
+    penpotPageId: input.penpotPageId,
+    penpotObjectId: input.penpotObjectId,
+  });
 
   const [row] = await executor
     .insert(tasks)
@@ -2283,7 +2294,10 @@ async function createTaskWithExecutor(
           : !input.projectId && !input.contactId),
       support,
       notification,
-      links: input.links ?? [],
+      links,
+      penpotFileId: penpotDesign.penpotFileId,
+      penpotPageId: penpotDesign.penpotPageId,
+      penpotObjectId: penpotDesign.penpotObjectId,
       agentChatId: input.agentChatId ?? null,
       executionLocation: isExecutionLocation(input.executionLocation)
         ? input.executionLocation
@@ -2650,7 +2664,33 @@ export async function updateTask(
           : undefined),
       support: input.support,
       notification: input.notification,
-      links: input.links,
+      ...(input.links !== undefined
+        ? (() => {
+            const links = normalizeTaskLinkUrls(input.links);
+            const penpotDesign = resolveTaskPenpotDesignFields({
+              links,
+              penpotFileId: input.penpotFileId,
+              penpotPageId: input.penpotPageId,
+              penpotObjectId: input.penpotObjectId,
+            });
+            return {
+              links,
+              penpotFileId: penpotDesign.penpotFileId,
+              penpotPageId: penpotDesign.penpotPageId,
+              penpotObjectId: penpotDesign.penpotObjectId,
+            };
+          })()
+        : {
+            ...(input.penpotFileId !== undefined
+              ? { penpotFileId: input.penpotFileId }
+              : {}),
+            ...(input.penpotPageId !== undefined
+              ? { penpotPageId: input.penpotPageId }
+              : {}),
+            ...(input.penpotObjectId !== undefined
+              ? { penpotObjectId: input.penpotObjectId }
+              : {}),
+          }),
       agentChatId: input.agentChatId,
       ...(input.executionLocation !== undefined && !executionLocationLocked
         ? {

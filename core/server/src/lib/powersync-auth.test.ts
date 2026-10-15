@@ -112,6 +112,10 @@ describe("getPowerSyncUrl", () => {
     process.env.CORE_REPLICATION_ROLE = "cloud";
     try {
       assert.equal(isDesktopShellOrigin("http://localhost:1420"), true);
+      assert.equal(isDesktopShellOrigin("http://127.0.0.1:1420"), true);
+      assert.equal(isDesktopShellOrigin("http://localhost:1440"), true);
+      assert.equal(isDesktopShellOrigin("http://127.0.0.1:1440"), true);
+      assert.equal(isDesktopShellOrigin("http://localhost:5173"), false);
       assert.equal(
         getPowerSyncUrl({
           origin: "http://localhost:1420",

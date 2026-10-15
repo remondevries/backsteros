@@ -16,6 +16,7 @@ export * from "./inbox-updated.js";
 export * from "./inbox-meetings.js";
 export * from "./tracked-time.js";
 export * from "./activity-feed.js";
+export * from "./penpot-design-link.js";
 export * from "./client-logic/task-due-date.js";
 export * from "./client-logic/task-involves-contact.js";
 export * from "./client-logic/financial-settlement.js";

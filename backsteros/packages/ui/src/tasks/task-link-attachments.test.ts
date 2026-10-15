@@ -5,8 +5,10 @@ import {
   isAppDocumentTaskLinkUrl,
   isAppEmailTaskLinkUrl,
   isAppLetterTaskLinkUrl,
+  isPenpotDesignTaskLinkUrl,
   normalizeTaskLinkUrl,
   resolveTaskLinkAttachmentLabel,
+  resolveTaskLinkOpenHref,
   taskLinkDisplayLabel,
   type TaskLinkPickerOption,
 } from "../components/tasks/task-link-attachments.tsx";
@@ -21,6 +23,21 @@ test("normalizeTaskLinkUrl accepts in-app email and knowledge paths", () => {
     "/spaces/handbook",
   );
   assert.equal(normalizeTaskLinkUrl("/letters/l-12"), "/letters/l-12");
+});
+
+test("normalizeTaskLinkUrl coerces Penpot workspace URLs to backsterdesign://", () => {
+  const file = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const page = "11111111-2222-3333-4444-555555555555";
+  const raw = `https://localhost:3449/#/workspace?file-id=${file}&page-id=${page}`;
+  const normalized = normalizeTaskLinkUrl(raw);
+  assert.ok(normalized);
+  assert.equal(isPenpotDesignTaskLinkUrl(normalized!), true);
+  assert.match(normalized!, /^backsterdesign:\/\/workspace\?/);
+  assert.equal(taskLinkDisplayLabel(normalized!), "Design");
+  assert.match(
+    resolveTaskLinkOpenHref(normalized!),
+    new RegExp(`file-id=${file}`),
+  );
 });
 
 test("isAppEmailTaskLinkUrl, isAppDocumentTaskLinkUrl, isAppLetterTaskLinkUrl", () => {
