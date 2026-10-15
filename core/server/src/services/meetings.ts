@@ -26,10 +26,12 @@ import {
 import { db } from "../db/index.js";
 import {
   entityCounters,
+  externalCalendarEvents,
   meetings,
   type DbMeeting,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import { externalCalendarEventId as hashExternalCalendarEventId } from "../lib/google-calendar-client.js";
 import {
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
@@ -41,13 +43,71 @@ import {
   syncMeetingCrmActivities,
 } from "./crm-activities.js";
 import {
+  GOOGLE_CALENDAR_PROVIDER,
   mirrorLinkedMeetingScheduleLocally,
   pushLinkedMeetingScheduleToGoogle,
 } from "./google-calendar-settings.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
+const EXTERNAL_CALENDAR_EVENT_ID_MAX = 512;
+
 export const MEETING_DISPLAY_KEY = "M";
+
+/** Map create/update meeting link errors to HTTP status + API error body. */
+export function meetingExternalCalendarHttpError(error: unknown): {
+  status: 400 | 409 | 422;
+  body: { error: { code: string; message: string } };
+} | null {
+  if (!(error instanceof Error)) return null;
+  switch (error.message) {
+    case "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED":
+      return {
+        status: 409,
+        body: {
+          error: {
+            code: "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED",
+            message: "This Google Calendar event already has Backster notes.",
+          },
+        },
+      };
+    case "UNKNOWN_EXTERNAL_CALENDAR_EVENT":
+      return {
+        status: 422,
+        body: {
+          error: {
+            code: "unknown_external_calendar_event",
+            message:
+              "No synced Google Calendar event matches this id. Sync Google Calendar first, or pass the stored Backster event id.",
+          },
+        },
+      };
+    case "AMBIGUOUS_EXTERNAL_CALENDAR_EVENT":
+      return {
+        status: 422,
+        body: {
+          error: {
+            code: "ambiguous_external_calendar_event",
+            message:
+              "Multiple synced Google Calendar events share this id. Pass calendarId to disambiguate.",
+          },
+        },
+      };
+    case "INVALID_EXTERNAL_CALENDAR_EVENT_ID":
+      return {
+        status: 400,
+        body: {
+          error: {
+            code: "INVALID_EXTERNAL_CALENDAR_EVENT_ID",
+            message:
+              "externalCalendarEventId must be a non-empty string (or null to unlink).",
+          },
+        },
+      };
+    default:
+      return null;
+  }
+}
 
 export function formatMeetingDisplayId(number: number): string {
   return `${MEETING_DISPLAY_KEY}-${number}`;
@@ -300,10 +360,12 @@ export async function createMeetingRow(
   if (!startAt && endAt) {
     throw new Error("INVALID_MEETING_DATES");
   }
-  const externalCalendarEventId =
-    input.externalCalendarEventId === undefined
-      ? null
-      : input.externalCalendarEventId?.trim() || null;
+  const externalCalendarEventId = await resolveExternalCalendarEventLink(
+    workspaceId,
+    input.externalCalendarEventId,
+    input.calendarId,
+    executor,
+  );
   if (externalCalendarEventId) {
     await assertExternalCalendarEventAvailable(
       workspaceId,
@@ -332,7 +394,7 @@ export async function createMeetingRow(
       locationOrganizationId: input.locationOrganizationId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
-      externalCalendarEventId,
+      externalCalendarEventId: externalCalendarEventId ?? null,
       startAt,
       endAt,
       sortOrder: Date.now(),
@@ -364,6 +426,95 @@ export async function createMeeting(
 ): Promise<Meeting> {
   const row = await createMeetingRow(workspaceId, input, id, executor);
   return toMeeting(row);
+}
+
+/**
+ * Resolve a meeting link target to `external_calendar_events.id`.
+ * Accepts an already-hashed stored id, or a raw Google (etc.) event id.
+ * Optional `calendarId` disambiguates when the raw id appears on multiple calendars.
+ */
+export async function resolveExternalCalendarEventLink(
+  workspaceId: string,
+  value: string | null | undefined,
+  calendarId: string | undefined,
+  executor: DbExecutor = db,
+): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > EXTERNAL_CALENDAR_EVENT_ID_MAX) {
+    throw new Error("INVALID_EXTERNAL_CALENDAR_EVENT_ID");
+  }
+
+  const [byStoredId] = await executor
+    .select({ id: externalCalendarEvents.id })
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        eq(externalCalendarEvents.id, trimmed),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (byStoredId) return byStoredId.id;
+
+  const calendar = calendarId?.trim() || "";
+  if (calendar) {
+    const hashed = hashExternalCalendarEventId(
+      workspaceId,
+      GOOGLE_CALENDAR_PROVIDER,
+      calendar,
+      trimmed,
+    );
+    const [byHash] = await executor
+      .select({ id: externalCalendarEvents.id })
+      .from(externalCalendarEvents)
+      .where(
+        and(
+          eq(externalCalendarEvents.workspaceId, workspaceId),
+          eq(externalCalendarEvents.id, hashed),
+          isNull(externalCalendarEvents.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (byHash) return byHash.id;
+
+    const [byProviderKeys] = await executor
+      .select({ id: externalCalendarEvents.id })
+      .from(externalCalendarEvents)
+      .where(
+        and(
+          eq(externalCalendarEvents.workspaceId, workspaceId),
+          eq(externalCalendarEvents.provider, GOOGLE_CALENDAR_PROVIDER),
+          eq(externalCalendarEvents.calendarId, calendar),
+          eq(externalCalendarEvents.externalId, trimmed),
+          isNull(externalCalendarEvents.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (byProviderKeys) return byProviderKeys.id;
+
+    throw new Error("UNKNOWN_EXTERNAL_CALENDAR_EVENT");
+  }
+
+  const matches = await executor
+    .select({ id: externalCalendarEvents.id })
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        eq(externalCalendarEvents.externalId, trimmed),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    );
+  if (matches.length === 0) {
+    throw new Error("UNKNOWN_EXTERNAL_CALENDAR_EVENT");
+  }
+  if (matches.length > 1) {
+    throw new Error("AMBIGUOUS_EXTERNAL_CALENDAR_EVENT");
+  }
+  return matches[0]!.id;
 }
 
 async function assertExternalCalendarEventAvailable(
@@ -424,17 +575,19 @@ export async function updateMeeting(
     throw new Error("INVALID_MEETING_DATES");
   }
 
-  let externalCalendarEventId: string | null | undefined = undefined;
-  if (input.externalCalendarEventId !== undefined) {
-    externalCalendarEventId = input.externalCalendarEventId?.trim() || null;
-    if (externalCalendarEventId) {
-      await assertExternalCalendarEventAvailable(
-        workspaceId,
-        externalCalendarEventId,
-        id,
-        executor,
-      );
-    }
+  const externalCalendarEventId = await resolveExternalCalendarEventLink(
+    workspaceId,
+    input.externalCalendarEventId,
+    input.calendarId,
+    executor,
+  );
+  if (externalCalendarEventId) {
+    await assertExternalCalendarEventAvailable(
+      workspaceId,
+      externalCalendarEventId,
+      id,
+      executor,
+    );
   }
 
   let inboxUpdatedAt: Date | null | undefined = undefined;

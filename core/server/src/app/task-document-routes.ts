@@ -272,7 +272,9 @@ import {
 } from "../services/cursor-spellcheck.js";
 import * as habitService from "../services/habits.js";
 import * as meetingService from "../services/meetings.js";
+import { meetingExternalCalendarHttpError } from "../services/meetings.js";
 import * as meetingSchedulingService from "../services/meeting-scheduling.js";
+import { isForeignKeyViolation } from "../services/core-replication/soft-unique-conflicts.js";
 import * as crmGroupsService from "../services/crm-groups.js";
 import * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 import * as crmActivitiesService from "../services/crm-activities.js";
@@ -3865,19 +3867,18 @@ export function registerTaskDocumentRoutes(app: Hono) {
         });
         return c.json(row, 201);
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED"
-        ) {
+        const linkError = meetingExternalCalendarHttpError(error);
+        if (linkError) return c.json(linkError.body, linkError.status);
+        if (isForeignKeyViolation(error)) {
           return c.json(
             {
               error: {
-                code: "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED",
+                code: "unknown_external_calendar_event",
                 message:
-                  "This Google Calendar event already has Backster notes.",
+                  "No synced Google Calendar event matches this id. Sync Google Calendar first, or pass the stored Backster event id.",
               },
             },
-            409,
+            422,
           );
         }
         if (
@@ -3954,19 +3955,18 @@ export function registerTaskDocumentRoutes(app: Hono) {
         });
         return c.json(row);
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED"
-        ) {
+        const linkError = meetingExternalCalendarHttpError(error);
+        if (linkError) return c.json(linkError.body, linkError.status);
+        if (isForeignKeyViolation(error)) {
           return c.json(
             {
               error: {
-                code: "EXTERNAL_CALENDAR_EVENT_ALREADY_LINKED",
+                code: "unknown_external_calendar_event",
                 message:
-                  "This Google Calendar event already has Backster notes.",
+                  "No synced Google Calendar event matches this id. Sync Google Calendar first, or pass the stored Backster event id.",
               },
             },
-            409,
+            422,
           );
         }
         if (

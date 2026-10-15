@@ -4704,8 +4704,16 @@ export const createMeetingSchema = z.object({
   locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /** Attach this meeting as notes for a Google Calendar (etc.) agenda block. */
-  externalCalendarEventId: z.string().nullable().optional(),
+  /**
+   * Attach this meeting as notes for a Google Calendar (etc.) agenda block.
+   * Accepts the stored hashed id or a raw provider event id (resolved server-side).
+   * Whitespace-only is rejected; omit the field when not linking.
+   */
+  externalCalendarEventId: z
+    .union([z.string().trim().min(1).max(512), z.null()])
+    .optional(),
+  /** Disambiguate raw Google event ids when the workspace has multiple calendars. */
+  calendarId: z.string().trim().min(1).max(1024).optional(),
 });
 
 export const updateMeetingSchema = z
@@ -4725,8 +4733,15 @@ export const updateMeetingSchema = z
     locationOrganizationId: z.string().nullable().optional(),
     trackedMinutes: z.number().int().nonnegative().nullable().optional(),
     trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-    /** Link / unlink Google (etc.) agenda block — null clears the link. */
-    externalCalendarEventId: z.string().nullable().optional(),
+    /**
+     * Link / unlink Google (etc.) agenda block — null clears the link.
+     * Accepts hashed id or raw provider event id; whitespace-only is rejected.
+     */
+    externalCalendarEventId: z
+      .union([z.string().trim().min(1).max(512), z.null()])
+      .optional(),
+    /** Disambiguate raw Google event ids when the workspace has multiple calendars. */
+    calendarId: z.string().trim().min(1).max(1024).optional(),
     /** Clear the Updated inbox flag after the user views the item. */
     acknowledgeInboxUpdate: z.boolean().optional(),
     inboxUpdatedAt: z.string().datetime().nullable().optional(),

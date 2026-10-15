@@ -1474,6 +1474,7 @@ const meetingKeys = {
   tracked_minutes: "trackedMinutes",
   tracked_duration_seconds: "trackedDurationSeconds",
   external_calendar_event_id: "externalCalendarEventId",
+  calendar_id: "calendarId",
   sort_order: "sortOrder",
   acknowledge_inbox_update: "acknowledgeInboxUpdate",
   inbox_updated_at: "inboxUpdatedAt",
