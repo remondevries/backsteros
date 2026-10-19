@@ -10,6 +10,10 @@ import {
 } from "react";
 
 import { groupTasksByStatus } from "../../tasks/group-tasks-by-status.js";
+import {
+  keyboardNavItemClass,
+  keyboardNavItemProps,
+} from "../../list-nav/keyboard-nav-item.js";
 import { flattenGroupedListItemIds } from "../../list-nav/list-keyboard-nav-index.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import {
@@ -84,6 +88,11 @@ export type ProjectTasksViewProps = {
   initialView?: ListBoardView;
   view?: ListBoardView;
   onViewChange?: (view: ListBoardView) => void;
+  /**
+   * List-view item chrome. `"card"` (default) uses the board `TaskBoardCard`
+   * under status group headers; `"row"` keeps the compact `TaskItemRow`.
+   */
+  listItemVariant?: "row" | "card";
   selectedTaskId?: string | null;
   /** Optional trailing content beside the task title (e.g. agent bound badge). */
   renderTaskTitleTrailing?: (task: TaskItemRowTask) => ReactNode;
@@ -117,6 +126,7 @@ export function ProjectTasksView({
   initialView = "list",
   view: controlledView,
   onViewChange,
+  listItemVariant = "card",
   selectedTaskId = null,
   renderTaskTitleTrailing,
   isTaskAgentWorking,
@@ -474,34 +484,75 @@ export function ProjectTasksView({
                 />
               </li>
             ) : null}
-            {group.tasks.map((task) => (
-              <TaskItemRow
-                key={task.id}
-                task={task}
-                keyboardHighlighted={highlightedId === task.id}
-                onSelect={selectTask}
-                selected={isSelected(task.id)}
-                forceShowCheckbox={hasBulkSelection}
-                onToggleSelected={(taskId, _checked, event) =>
-                  toggleSelected(taskId, Boolean(event.shiftKey))
-                }
-                showProject={false}
-                titleTrailing={renderTaskTitleTrailing?.(task)}
-                agentWorking={isTaskAgentWorking?.(task) ?? false}
-                onStatusChange={handleStatusChange}
-                onPriorityChange={handlePriorityChange}
-                onDueDateChange={handleDueDateChange}
-                onAssigneeChange={handleAssigneeChange}
-                assigneeOptions={assigneeOptions}
-                pointerReorderBind={
-                  canReorder ? bindItem(task.id, group.status) : null
-                }
-                dragging={draggingItemId === task.id}
-                showDragInsertBefore={
-                  insertBeforeKey === taskOrderKey(task.id)
-                }
-              />
-            ))}
+            {group.tasks.map((task) =>
+              listItemVariant === "card" ? (
+                <li
+                  key={task.id}
+                  className={[
+                    "project-tasks-list__card-item",
+                    "task-kanban-card-item",
+                    keyboardNavItemClass(highlightedId === task.id),
+                    draggingItemId === task.id
+                      ? "task-kanban-card-item--dragging"
+                      : null,
+                    insertBeforeKey === taskOrderKey(task.id)
+                      ? "project-tasks-list__card-item--insert-before"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  {...keyboardNavItemProps(task.id)}
+                  {...(canReorder ? bindItem(task.id, group.status) : {})}
+                >
+                  <TaskBoardCard
+                    task={task}
+                    onOpen={selectTask}
+                    onStatusChange={(status) =>
+                      handleStatusChange(task.id, status)
+                    }
+                    onPriorityChange={(priority) =>
+                      handlePriorityChange(task.id, priority)
+                    }
+                    onDueDateChange={(dueDate) =>
+                      handleDueDateChange(task.id, dueDate)
+                    }
+                    onAssigneeChange={(assigneeId) =>
+                      handleAssigneeChange(task.id, assigneeId)
+                    }
+                    assigneeOptions={assigneeOptions}
+                    agentWorking={isTaskAgentWorking?.(task) ?? false}
+                    titleTrailing={renderTaskTitleTrailing?.(task)}
+                  />
+                </li>
+              ) : (
+                <TaskItemRow
+                  key={task.id}
+                  task={task}
+                  keyboardHighlighted={highlightedId === task.id}
+                  onSelect={selectTask}
+                  selected={isSelected(task.id)}
+                  forceShowCheckbox={hasBulkSelection}
+                  onToggleSelected={(taskId, _checked, event) =>
+                    toggleSelected(taskId, Boolean(event.shiftKey))
+                  }
+                  showProject={false}
+                  titleTrailing={renderTaskTitleTrailing?.(task)}
+                  agentWorking={isTaskAgentWorking?.(task) ?? false}
+                  onStatusChange={handleStatusChange}
+                  onPriorityChange={handlePriorityChange}
+                  onDueDateChange={handleDueDateChange}
+                  onAssigneeChange={handleAssigneeChange}
+                  assigneeOptions={assigneeOptions}
+                  pointerReorderBind={
+                    canReorder ? bindItem(task.id, group.status) : null
+                  }
+                  dragging={draggingItemId === task.id}
+                  showDragInsertBefore={
+                    insertBeforeKey === taskOrderKey(task.id)
+                  }
+                />
+              ),
+            )}
           </StatusGroupSection>
         );
       })}

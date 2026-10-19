@@ -172,6 +172,28 @@
   overflow: hidden;
 }
 
+:global(.backsteros-workspace-tasks-panel) {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+:global(.backsteros-workspace-tasks-empty) {
+  margin: 0;
+  padding: var(--sp-m);
+  color: var(--color-foreground-secondary);
+  font-size: px2rem(12);
+}:global(.backsteros-project-tasks-host--workspace) {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sp-s) var(--sp-m) var(--sp-m);
+  box-sizing: border-box;
+}
+
 // Component: history-content*
 
 .history-tab {

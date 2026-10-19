@@ -21,6 +21,7 @@
    [app.main.store :as st]
    [app.main.ui.components.context-menu-a11y :refer [context-menu*]]
    [app.main.ui.components.file-uploader :refer [file-uploader]]
+   [app.main.ui.dashboard.page-header :refer [page-header*]]
    [app.main.ui.ds.product.empty-placeholder :refer [empty-placeholder*]]
    [app.main.ui.icons :as deprecated-icon]
    [app.main.ui.notifications.context-notification :refer [context-notification]]
@@ -69,9 +70,10 @@
    ::mf/private true}
   [{:keys [section team]}]
   (use-page-title team section)
-  [:header {:class (stl/css :dashboard-header) :data-testid "dashboard-header"}
-   [:div#dashboard-fonts-title {:class (stl/css :dashboard-title)}
-    [:h1 (tr "labels.fonts")]]])
+  [:> page-header* {:title (tr "labels.fonts")
+                    :title-id "dashboard-fonts-title"
+                    :nav-section :dashboard-fonts
+                    :team-id (:id team)}])
 
 (mf/defc font-variant-display-name*
   {::mf/private true}
@@ -503,12 +505,18 @@
   (l/derived :fonts st/state))
 
 (mf/defc fonts-page*
-  [{:keys [team]}]
+  [{:keys [team search-term]}]
   (let [fonts       (mf/deref ref:fonts)
         permissions (:permissions team)
-        can-edit    (:can-edit permissions)]
+        can-edit    (:can-edit permissions)
+        team-id     (:id team)]
+    (use-page-title team :fonts)
     [:*
-     [:> header* {:team team :section :fonts}]
+     [:> page-header* {:title (tr "labels.fonts")
+                       :title-id "dashboard-fonts-title"
+                       :nav-section :dashboard-fonts
+                       :search-term search-term
+                       :team-id team-id}]
      [:section {:class (stl/css :dashboard-container :dashboard-fonts)}
       (when ^boolean can-edit
         [:> uploaded-fonts* {:team team :installed-fonts fonts}])

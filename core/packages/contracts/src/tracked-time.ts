@@ -165,6 +165,55 @@ export function endFromStartAndTrackedMinutes(
   return new Date(startDate.getTime() + Math.round(minutes) * 60_000);
 }
 
+/**
+ * How long an unpaired play stays "running" without a fresh checkpoint.
+ * The first checkpoint lands at 60s. Stored duration is the task total,
+ * not proof the clock is still going — an old start with a stale
+ * `updatedAt` is abandoned and must not start the chrome clock.
+ */
+export const OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS = 3 * 60 * 1000;
+
+function storedRunningSeconds(input: {
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+}): number {
+  if (
+    input.trackedDurationSeconds != null &&
+    Number.isFinite(input.trackedDurationSeconds) &&
+    input.trackedDurationSeconds > 0
+  ) {
+    return input.trackedDurationSeconds;
+  }
+  if (
+    input.trackedMinutes != null &&
+    Number.isFinite(input.trackedMinutes) &&
+    input.trackedMinutes > 0
+  ) {
+    return input.trackedMinutes * 60;
+  }
+  return 0;
+}
+
+export function isActiveOpenRunningTimer(input: {
+  startedAtMs: number;
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+  /** Task row `updatedAt`. Checkpoints refresh this while a client is live. */
+  updatedAtMs?: number | null;
+  nowMs?: number;
+}): boolean {
+  if (!Number.isFinite(input.startedAtMs)) return false;
+  const now = input.nowMs ?? Date.now();
+  const age = now - input.startedAtMs;
+  if (age < 0) return false;
+  if (age <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS) return true;
+  if (storedRunningSeconds(input) <= 0) return false;
+  if (input.updatedAtMs == null || !Number.isFinite(input.updatedAtMs)) {
+    return false;
+  }
+  return now - input.updatedAtMs <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS;
+}
+
 /** End instant `seconds` after `start`; null when invalid. */
 export function endFromStartAndDurationSeconds(
   start: Date | string | number,

@@ -80,8 +80,13 @@ export type OverviewNameEditorProps = {
   onSaved?: (name: string) => void;
 };
 
+function resizeTitleField(el: HTMLTextAreaElement) {
+  el.style.height = "0px";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 type NameInputProps = {
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   draft: string;
   entityLabel: string;
   placeholder?: string;
@@ -95,6 +100,10 @@ type NameInputProps = {
   onLeaveTitle?: (reason: "enter" | "escape" | "tab") => void;
 };
 
+/**
+ * Wrapping textarea so edit layout matches the multi-line view button
+ * (same approach as BacksterDEV's OverviewNameEditor).
+ */
 function NameInput({
   inputRef,
   draft,
@@ -110,16 +119,17 @@ function NameInput({
   onLeaveTitle,
 }: NameInputProps) {
   return (
-    <input
+    <textarea
       ref={inputRef}
-      type="text"
+      rows={1}
       value={draft}
       {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
       onChange={(event) => {
-        const next = event.target.value;
+        const next = sanitizeSingleLineText(event.target.value);
         setDraft(next);
         onDraftChange?.(next);
         setError(null);
+        resizeTitleField(event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -288,7 +298,7 @@ export function OverviewNameEditor({
   onSave,
   onSaved,
 }: OverviewNameEditorProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const editableRef = useRef<HTMLSpanElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [editing, setEditing] = useState(autoEdit);
@@ -377,6 +387,8 @@ export function OverviewNameEditor({
     const input = inputRef.current;
     if (!input) return;
 
+    resizeTitleField(input);
+
     const focusTitle = () => {
       if (document.activeElement === input) return;
       input.focus();
@@ -385,6 +397,7 @@ export function OverviewNameEditor({
 
     focusTitle();
     const frame = requestAnimationFrame(() => {
+      resizeTitleField(input);
       focusTitle();
       requestAnimationFrame(focusTitle);
     });
@@ -396,6 +409,13 @@ export function OverviewNameEditor({
       for (const timer of timers) window.clearTimeout(timer);
     };
   }, [editing, fitContent, renameFocusRequest, value]);
+
+  useLayoutEffect(() => {
+    if (!editing || fitContent) return;
+    const input = inputRef.current;
+    if (!input) return;
+    resizeTitleField(input);
+  }, [draft, editing, fitContent]);
 
   function cancelEditing() {
     setPendingDisplayName(null);

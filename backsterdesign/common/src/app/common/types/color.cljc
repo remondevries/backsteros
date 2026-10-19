@@ -185,11 +185,11 @@
 (def ^:const warning "#FC8802")
 
 ;; new-css-system colors
-(def ^:const new-primary "#7efff5")
+(def ^:const new-primary "#f97316")
 (def ^:const new-danger "#ff3277")
 (def ^:const new-warning "#fe4811")
 (def ^:const new-primary-light "#6911d4")
-(def ^:const background-quaternary "#2e3434")
+(def ^:const background-quaternary "#1f1f20")
 (def ^:const background-quaternary-light "#eef0f2")
 (def ^:const canvas "#E8E9EA")
 (def ^:const default-pixel-grid-color "#0070E4")

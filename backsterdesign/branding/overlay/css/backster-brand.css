@@ -1,5 +1,29 @@
 /* BacksterDESIGN chrome for self-hosted Penpot */
 
+/*
+ * Tauri desktop shell: native overlay titlebar + tab strip live above the
+ * iframe. Mark the document (app.main.desktop) and tone down browser-ish
+ * chrome that would fight the shell.
+ */
+html[data-tauri-desktop="1"] {
+  --bd-tauri-chrome-safe: 0px;
+}
+
+html[data-tauri-desktop="1"] body {
+  overscroll-behavior: none;
+}
+
+/* No redundant top “app chrome” strip when framed by the desktop shell */
+html[data-tauri-desktop="1"] .backster-brand {
+  display: none !important;
+}
+
+/* Workspace logo is a “go dashboard” control — tabs replace it in Tauri. */
+html[data-tauri-desktop="1"] [class*="workspace_left_header"][class*="main-icon"],
+html[data-tauri-desktop="1"] [class*="left_header__main-icon"] {
+  display: none !important;
+}
+
 /* Hide Penpot team / organization switchers in the dashboard sidebar */
 [class*="sidebar-team-switch"],
 [class*="sidebar-organization-switch"],
@@ -9,51 +33,9 @@
   display: none !important;
 }
 
-/* Compact brand row in the team-switch slot (not the outer 1fr sidebar grid) */
+/* Legacy sidebar brand inject — hide if an old script still inserts one */
 .backster-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: 100%;
-  height: 2.5rem;
-  min-height: 2.5rem;
-  max-height: 2.5rem;
-  padding: 0 12px;
-  margin: 0;
-  flex: 0 0 auto;
-  overflow: hidden;
-  user-select: none;
-  pointer-events: none;
-}
-
-.backster-brand__mark {
-  display: block;
-  width: 20px;
-  height: 20px;
-  max-width: 20px;
-  max-height: 20px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
-.backster-brand__name {
-  display: inline-flex;
-  align-items: baseline;
-  white-space: nowrap;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  color: #fff;
-}
-
-.backster-brand__thin {
-  font-weight: 200;
-}
-
-.backster-brand__bold {
-  font-weight: 700;
+  display: none !important;
 }
 
 /*
@@ -69,4 +51,10 @@
 [class*="workspace_left_header"][class*="main-icon"] svg,
 [class*="left_header__main-icon"] svg {
   opacity: 0 !important;
+}
+
+/* Workspace file header — show file name only (no project name row). */
+[class*="workspace_left_header"][class*="project-name"],
+[class*="left_header__project-name"] {
+  display: none !important;
 }

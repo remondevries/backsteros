@@ -158,6 +158,7 @@ export {
 } from "./components/shell/sidebar-nav-icons.js";
 
 export { DevelopmentAdeLogoIcon } from "./components/icons/development-ade-logo-icon.js";
+export { BacksterDesignLogoIcon } from "./components/icons/backster-design-logo-icon.js";
 export { GlobeIcon, type GlobeIconProps } from "./components/icons/globe-icon.js";
 export {
   CloudflareIcon,
@@ -3350,6 +3351,7 @@ export {
   normalizeTaskLinkUrl,
   resolveTaskLinkAttachmentLabel,
   resolveTaskLinkOpenHref,
+  openTaskLinkHref,
   taskLinkDisplayLabel,
   type TaskFileAttachmentItem,
   type TaskLinkAttachmentKind,

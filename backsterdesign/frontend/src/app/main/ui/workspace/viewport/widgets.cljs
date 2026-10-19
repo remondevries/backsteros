@@ -109,7 +109,7 @@
                 (if (or (ctn/in-any-component? objects frame) (ctk/is-variant-container? frame))
                   "var(--assets-component-hightlight)"
                   "var(--color-accent-tertiary)")
-                "#8f9da3") ;; TODO: Set this color on the DS
+                "#a3a3a3") ;; TODO: Set this color on the DS
 
         blocked? (:blocked frame)
 

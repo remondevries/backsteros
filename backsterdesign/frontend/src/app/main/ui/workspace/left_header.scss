@@ -9,7 +9,8 @@
 .workspace-header-left {
   display: flex;
   align-items: center;
-  padding: deprecated.$s-12 deprecated.$s-12 deprecated.$s-8 deprecated.$s-12;
+  // Even vertical padding so the file name shares a centerline with the menu.
+  padding: deprecated.$s-12;
   min-height: deprecated.$s-52;
 }
 
@@ -30,6 +31,8 @@
 
 .project-tree {
   position: relative;
+  display: flex;
+  align-items: center;
   flex-grow: 1;
   flex-shrink: 1;
   min-width: 0;
@@ -37,39 +40,45 @@
   min-height: deprecated.$s-32;
 }
 
-.project-name,
-.file-name {
-  @include deprecated.uppercase-title-typography;
-  @include deprecated.text-ellipsis;
-
-  height: deprecated.$s-16;
-  width: 100%;
-  padding-bottom: deprecated.$s-2;
-  color: var(--title-foreground-color);
-  cursor: pointer;
-}
-
 .file-name {
   @include deprecated.small-title-typography;
+  @include deprecated.text-ellipsis;
 
+  // Match the main-menu button height so the status dot + title sit on the
+  // same centerline (project name row was removed; this used to be 16px tall).
+  box-sizing: border-box;
+  height: deprecated.$s-32;
+  width: 100%;
   text-transform: none;
   color: var(--title-foreground-color-hover);
   align-items: center;
   display: flex;
   flex-direction: row;
+  gap: deprecated.$s-4;
+  cursor: pointer;
 }
 
 .file-name-label {
   @include deprecated.text-ellipsis;
+  line-height: 1.2;
+}
+
+.menu-section {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: deprecated.$s-32;
 }
 
 .file-name-input {
   @include deprecated.flex-center;
 
+  box-sizing: border-box;
   width: 100%;
+  height: deprecated.$s-32;
   margin: 0;
   border: 0;
-  padding: 0;
+  padding: 0 deprecated.$s-4;
   border-radius: deprecated.$br-4;
   background-color: var(--input-background-color);
   font-size: deprecated.$fs-14;
@@ -101,7 +110,7 @@
   width: deprecated.$s-6;
   height: deprecated.$s-6;
   border-radius: 50%;
-  margin-right: deprecated.$s-4;
+  margin-right: 0;
   flex-shrink: 0;
 
   &.pending-status {

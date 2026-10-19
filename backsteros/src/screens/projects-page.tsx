@@ -1431,6 +1431,7 @@ function ProjectsPageBody({
       return (
         <ProjectTasksView
           tasks={projectTasks}
+          listItemVariant="row"
           assigneeOptions={assigneeOptions}
           view={projectTasksView}
           onViewChange={navigateProjectTasksView}

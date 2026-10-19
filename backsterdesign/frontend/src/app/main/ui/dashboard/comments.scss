@@ -78,12 +78,31 @@
   position: absolute;
   overflow: hidden;
   width: 100%;
-  z-index: deprecated.$z-index-4;
+  // Above sticky group headers (z-index 10) and tab chrome (--z-index-panels).
+  z-index: var(--z-index-notifications);
 
   hr {
     margin: 0;
     border-color: var(--color-foreground-secondary);
   }
+}
+
+.dashboard-comments-header {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  block-size: 0;
+  inline-size: 0;
+  overflow: visible;
+}
+
+.dropdown-from-header {
+  bottom: auto;
+  top: calc(100% + deprecated.$s-4);
+  right: 0;
+  left: auto;
+  width: deprecated.$s-320;
+  min-width: deprecated.$s-280;
 }
 
 .header {

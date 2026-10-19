@@ -12,8 +12,15 @@
     "dev:logs": "bash ../../backsterdesign/scripts/backster-dev.sh logs",
     "dev:pull": "bash ../../backsterdesign/scripts/backster-dev.sh pull",
     "dev:status": "bash ../../backsterdesign/scripts/backster-dev.sh status",
+    "desktop": "pnpm --filter @backsteros/design-desktop tauri:dev",
+    "desktop:dev": "pnpm --filter @backsteros/design-desktop tauri:dev",
+    "desktop:vite": "pnpm --filter @backsteros/design-desktop dev",
+    "desktop:build": "pnpm --filter @backsteros/design-desktop tauri:build",
     "branding:apply": "bash ../../backsterdesign/branding/bin/apply-to-source.sh",
     "branding:apply:host": "bash ../../backsterdesign/branding/bin/apply-branding.sh",
-    "penpot:status": "node ./scripts/status.mjs"
+    "bridge:build": "pnpm --filter @backsteros/design-bridge build",
+    "penpot:status": "node ./scripts/status.mjs",
+    "deploy:build-images": "bash ../../backsterdesign/deploy/scripts/build-images.sh",
+    "deploy:lemodesign": "bash ../../backsterdesign/deploy/scripts/deploy-lemodesign.sh"
   }
 }

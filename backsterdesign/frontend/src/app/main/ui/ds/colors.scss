@@ -6,14 +6,15 @@
 
 @use "sass:color";
 
-$mint-150: #7efff5;
-$mint-250: #00d1b8;
-$mint-700: #426158;
-$mint-150-60: #7efff599;
-$mint-250-10: #00d1b81a;
-$mint-250-70: #00d1b8b3;
+// BacksterDESIGN accent (was Penpot mint #7efff5 / #00d1b8).
+$mint-150: #f97316;
+$mint-250: #f97316;
+$mint-700: #d87b3a;
+$mint-150-60: #f9731699;
+$mint-250-10: #f973161a;
+$mint-250-70: #f97316b3;
 $green-200: #a7e8d9;
-$green-500: #2d9f8f;
+$green-500: #f97316;
 $green-950: #0a2927;
 $orange-200: #fedeac;
 $orange-500: #fe9c07;
@@ -48,7 +49,7 @@ $gray-950: #18181a;
 $gray-950-60: #18181a99;
 $gray-950-90: #18181ae6;
 $gray-900: #212426;
-$gray-800: #2e3434;
+$gray-800: #1f1f20;
 $gray-200: #e8eaee;
 $gray-100: #eef0f2;
 $gray-50: #f3f4f6;
@@ -56,7 +57,7 @@ $white: #fff;
 $white-60: #fff9;
 $white-90: #ffffffe6;
 $blue-teal-700: #495e74;
-$grayish-blue-500: #8f9da3;
+$grayish-blue-500: #a3a3a3;
 $grayish-red: #bfbfbf;
 
 :global(.light) {

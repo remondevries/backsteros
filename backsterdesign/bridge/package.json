@@ -1,0 +1,27 @@
+{
+  "name": "@backsteros/design-bridge",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "React islands for BacksterDESIGN (shared @backsteros/ui in Penpot)",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "verifyDepsBeforeRun": false,
+  "dependencies": {
+    "@backsteros/ui": "workspace:*",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}

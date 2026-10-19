@@ -24,15 +24,15 @@
    [app.main.ui.components.progress :refer [progress-notification-widget*]]
    [app.main.ui.context :as ctx]
    [app.main.ui.dashboard.backsteros-projects :refer [backsteros-section*]]
-   [app.main.ui.dashboard.deleted :refer [deleted-section*]]
+   [app.main.ui.dashboard.client-accounts :refer [client-accounts-section-page*]]
    [app.main.ui.dashboard.files :refer [files-section*]]
    [app.main.ui.dashboard.fonts :refer [fonts-page* font-providers-page*]]
    [app.main.ui.dashboard.import]
    [app.main.ui.dashboard.layout-toggle :as lt]
    [app.main.ui.dashboard.libraries :refer [libraries-page*]]
+   [app.main.ui.dashboard.nav-hotkeys :as nav-hotkeys]
    [app.main.ui.dashboard.projects :refer [projects-section*]]
    [app.main.ui.dashboard.search :refer [search-page*]]
-   [app.main.ui.dashboard.sidebar :refer [sidebar*]]
    [app.main.ui.dashboard.team :refer [team-settings-page* team-members-page* team-invitations-page* webhooks-page*]]
    [app.main.ui.dashboard.templates :refer [templates-section*]]
    [app.main.ui.hooks :as hooks]
@@ -53,7 +53,7 @@
 
 (mf/defc dashboard-content*
   {::mf/private true}
-  [{:keys [team projects project section search-term profile default-project layout on-layout-change]}]
+  [{:keys [team projects project section search-term profile default-project layout on-layout-change contact-id task-id]}]
   (let [container       (mf/use-ref)
         content-width   (mf/use-state 0)
 
@@ -80,9 +80,8 @@
         (and (contains? cf/flags :dashboard-templates-section)
              (:can-edit permissions))
 
-        show-deleted? (:can-edit permissions)
-
-        section (if (and (not show-deleted?) (= section :dashboard-deleted))
+        ;; BacksterDESIGN: no Deleted tab — send deep links to Recent.
+        section (if (= section :dashboard-deleted)
                   :dashboard-recent
                   section)]
 
@@ -105,7 +104,8 @@
                                :projects projects
                                :profile profile
                                :layout layout
-                               :on-layout-change on-layout-change}]
+                               :on-layout-change on-layout-change
+                               :search-term search-term}]
 
         (when ^boolean show-templates?
           [:> templates-section* {:profile profile
@@ -115,11 +115,15 @@
                                   :content-width @content-width}])]
 
        :dashboard-backsteros
-       [:> backsteros-section* {:team team
-                                :show-deleted show-deleted?}]
+       [:> backsteros-section* {:team team}]
+
+       :dashboard-client-accounts
+       [:> client-accounts-section-page* {:team team
+                                          :contact-id contact-id}]
 
        :dashboard-fonts
-       [:> fonts-page* {:team team}]
+       [:> fonts-page* {:team team
+                        :search-term search-term}]
 
        :dashboard-font-providers
        [:> font-providers-page* {:team team}]
@@ -130,7 +134,8 @@
           [:> files-section* {:team team
                               :project project
                               :layout layout
-                              :on-layout-change on-layout-change}]
+                              :on-layout-change on-layout-change
+                              :task-id task-id}]
           (when ^boolean show-templates?
             [:> templates-section* {:profile profile
                                     :team-id team-id
@@ -144,7 +149,8 @@
 
        :dashboard-libraries
        [:> libraries-page* {:team team
-                            :default-project default-project}]
+                            :default-project default-project
+                            :search-term search-term}]
 
        :dashboard-members
        [:> team-members-page* {:team team :profile profile}]
@@ -157,13 +163,6 @@
 
        :dashboard-settings
        [:> team-settings-page* {:team team :profile profile}]
-
-       :dashboard-deleted
-       [:> deleted-section* {:team team
-                             :projects projects
-                             :profile profile
-                             :layout layout
-                             :on-layout-change on-layout-change}]
 
        nil)]))
 
@@ -303,7 +302,7 @@
           nil)))))
 
 (mf/defc dashboard*
-  [{:keys [profile project-id team-id search-term plugin-url template section pending-action-id]}]
+  [{:keys [profile project-id team-id search-term plugin-url template section pending-action-id contact-id task-id]}]
   (let [team            (mf/deref refs/team)
         projects        (mf/deref refs/projects)
         props           (get profile :props)
@@ -332,6 +331,9 @@
            (reset! layout* (keyword value))))]
 
     (hooks/use-shortcuts ::dashboard sc/shortcuts-dashboard :dashboard)
+    ;; Refresh capture-phase g+/Shift+F handlers after shadow hot-reload.
+    (mf/with-effect []
+      (nav-hotkeys/init!))
 
     (mf/with-effect [team-id]
       (st/emit! (dd/initialize team-id))
@@ -361,15 +363,10 @@
      ;; team-id because we want to completely refresh all the
      ;; components on team change. Many components assumes that the
      ;; team is already set so don't put the team into mf/deps.
+     ;; BacksterDESIGN: sidebar removed — Recents/Projects/Clients and
+     ;; Drafts/Fonts/Libraries live in the content tab nav + page header.
      [:main {:class (stl/css :dashboard)
              :key (dm/str (:id team))}
-      [:> sidebar* {:team team
-                    :projects projects
-                    :project project
-                    :default-project default-project
-                    :profile profile
-                    :section section
-                    :search-term search-term}]
       [:> dashboard-content* {:projects projects
                               :profile profile
                               :project project
@@ -378,7 +375,9 @@
                               :search-term search-term
                               :team team
                               :layout layout
-                              :on-layout-change on-layout-change}]]]))
+                              :on-layout-change on-layout-change
+                              :contact-id contact-id
+                              :task-id task-id}]]]))
 
 (mf/defc dashboard-page*
   {::mf/lazy-load true}

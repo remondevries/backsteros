@@ -22,6 +22,7 @@
   background-color: transparent;
   border: none;
   display: inline;
+  cursor: pointer;
   color: var(--color-accent-primary);
 
   &:hover {
@@ -53,6 +54,7 @@
   display: flex;
   align-items: center;
   gap: px2rem(6);
+  cursor: pointer;
   inline-size: 100%;
   border-radius: $br-8;
   background-color: var(--button-bg-color);
@@ -85,6 +87,7 @@
   background-color: transparent;
   border: none;
   display: inline;
+  cursor: pointer;
   color: var(--color-accent-primary);
 
   &:hover {

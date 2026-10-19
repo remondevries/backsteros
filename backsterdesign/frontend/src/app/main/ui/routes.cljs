@@ -73,6 +73,7 @@
     ["/settings"             :dashboard-settings]
     ["/recent"               :dashboard-recent]
     ["/backsteros"           :dashboard-backsteros]
+    ["/client-accounts"      :dashboard-client-accounts]
     ["/search"               :dashboard-search]
     ["/fonts"                :dashboard-fonts]
     ["/fonts/providers"      :dashboard-font-providers]

@@ -241,7 +241,12 @@
   overflow: hidden;
 }
 
-.task-link-attachments__link {
+.task-link-attachments__link,
+.task-link-attachments__link:link,
+.task-link-attachments__link:visited,
+.task-link-attachments__link:hover,
+.task-link-attachments__link:focus,
+.task-link-attachments__link:active {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -254,8 +259,9 @@
   cursor: pointer;
 }
 
-.task-link-attachments__link:hover .task-link-attachments__label {
-  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+.task-link-attachments__row:hover,
+.task-link-attachments__row:focus-within {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .task-link-attachments__icon {
@@ -290,6 +296,16 @@
   text-decoration: none;
 }
 
+.task-link-attachments__product {
+  margin-right: 0.4em;
+  color: color-mix(in srgb, var(--foreground) 32%, transparent);
+  font-weight: 400;
+}
+
+.task-link-attachments__label-text {
+  color: inherit;
+}
+
 .task-link-attachments__meta {
   flex-shrink: 0;
   margin-left: 8px;
@@ -298,6 +314,48 @@
   line-height: 1.35;
 }
 
+.task-link-attachments__actions {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: center;
+  gap: 2px;
+  margin: 0 6px 0 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.task-link-attachments__row:hover .task-link-attachments__actions,
+.task-link-attachments__row:focus-within .task-link-attachments__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.task-link-attachments__action {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground, #ededed) 38%, transparent);
+  cursor: pointer;
+}
+
+.task-link-attachments__action:hover {
+  background: color-mix(in srgb, var(--foreground, #ededed) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground, #ededed) 78%, transparent);
+}
+
+/* Legacy alias — keep until call sites stop using __remove. */
 .task-link-attachments__remove {
   position: relative;
   z-index: 1;
@@ -313,13 +371,13 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  color: color-mix(in srgb, var(--foreground, #ededed) 28%, transparent);
   cursor: pointer;
 }
 
 .task-link-attachments__remove:hover {
   background: transparent;
-  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  color: color-mix(in srgb, var(--foreground, #ededed) 58%, transparent);
 }
 
 .task-link-attachments__toolbar {
@@ -334,28 +392,140 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  gap: 6px;
+  min-width: 20px;
   height: 20px;
   margin: 0;
   padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--foreground) 32%, transparent);
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
   cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.task-link-attachments__add-label {
+  white-space: nowrap;
 }
 
 .task-link-attachments__add:hover {
   background: transparent;
-  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
 }
 
 /**
  * Portaled add-attachment dialog must sit above the compose/create-task modal
  * (z-index 300). Default `.entity-delete-modal-root` is only 50.
+ *
+ * Also isolate theme tokens: in Design the portal can land outside
+ * `.bos-product-shell`, where Penpot’s accent cascade turns all text lime.
  */
 .entity-delete-modal-root[data-task-link-modal] {
   z-index: 400;
+  --foreground: #ededed;
+  color: #ededed;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal {
+  color: #ededed;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-title {
+  color: color-mix(in srgb, #ededed 92%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-body {
+  color: color-mix(in srgb, #ededed 52%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-cancel,
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-confirm,
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle-btn,
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__input,
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__result,
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__result-label,
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__section-label,
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__empty {
+  color: color-mix(in srgb, #ededed 78%, transparent);
+  font: inherit;
+  box-shadow: none;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-cancel {
+  color: color-mix(in srgb, #ededed 60%, transparent);
+  background: transparent;
+  border: none;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, #ededed 6%, transparent);
+  color: color-mix(in srgb, #ededed 88%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-confirm {
+  background: color-mix(in srgb, #ededed 12%, transparent);
+  color: color-mix(in srgb, #ededed 92%, transparent);
+  border: none;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .entity-delete-modal-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, #ededed 18%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle {
+  border-color: color-mix(in srgb, #ededed 12%, transparent);
+  background: color-mix(in srgb, #ededed 5%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle__indicator {
+  border-color: color-mix(in srgb, #ededed 12%, transparent);
+  background: color-mix(in srgb, #ededed 10%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle-btn {
+  color: color-mix(in srgb, #ededed 55%, transparent);
+  background: transparent;
+  border: none;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle-btn:hover,
+.entity-delete-modal-root[data-task-link-modal] .segmented-pill-toggle-btn.is-active {
+  color: #ededed;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__input {
+  border: 0.5px solid color-mix(in srgb, #ededed 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #ededed 5%, transparent);
+  color: #ededed;
+  outline: none;
+}
+
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__input::placeholder {
+  color: color-mix(in srgb, #ededed 35%, transparent);
+}
+
+.entity-delete-modal-root[data-task-link-modal] .task-link-attachments-modal__input:focus {
+  border-color: color-mix(in srgb, #ededed 32%, transparent);
 }
 
 .task-link-attachments-modal__form {

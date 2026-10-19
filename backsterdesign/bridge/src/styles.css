@@ -1,0 +1,460 @@
+/*
+ * Island styles for BacksterDESIGN.
+ * Do NOT `@import "tailwindcss"` — that pulls Preflight and resets the whole
+ * Penpot document (blank dashboard body). Theme + utilities only.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "@backsteros/ui/tailwind.css";
+@import "@backsteros/ui/styles.css";
+
+/* Host sits in Penpot scroll flow; keep a footprint before React mounts.
+   Horizontal inset comes from Penpot host SCSS (match file grid --sp-xxl). */
+.backsteros-project-tasks-host {
+  flex: 0 0 auto;
+  min-height: 120px;
+}
+
+/* Flush with dashboard — no card chrome; tokens only for the shared table. */
+.backsteros-project-tasks.bos-product-shell {
+  --background: transparent;
+  --foreground: var(--color-foreground-primary, #ededed);
+  --muted: var(--color-foreground-secondary, rgb(255 255 255 / 0.52));
+  --faint: rgb(255 255 255 / 0.06);
+  --border: var(--color-background-quaternary, rgb(255 255 255 / 0.1));
+  --surface: transparent;
+  --sticky-list-header-bg: var(--color-background-primary, #18181a);
+  --text-shimmer: #555963;
+  --list-column-header-color: color-mix(
+    in srgb,
+    var(--foreground) 32%,
+    transparent
+  );
+  --list-column-header-size: 11px;
+  --list-column-header-weight: 500;
+  --list-column-headers-sticky-height: calc(
+    16px + (var(--list-column-header-size) * 1.2)
+  );
+  --keyboard-nav-highlight-color: #ee7a47;
+  --keyboard-nav-highlight-bg: rgb(255 255 255 / 0.02);
+  --keyboard-nav-highlight-width: 1px;
+  --selection-background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 42%,
+    transparent
+  );
+  --font-sans: var(--font-inter, ui-sans-serif), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, ui-monospace), monospace;
+
+  color: var(--foreground);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.backsteros-project-tasks__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 10px;
+}
+
+.backsteros-project-tasks__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.backsteros-project-tasks__meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.backsteros-project-tasks__body {
+  min-height: 0;
+}
+
+.backsteros-project-tasks__empty,
+.backsteros-project-tasks__error,
+.backsteros-project-tasks__loading {
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.backsteros-project-tasks__error {
+  color: #f07178;
+}
+
+/* Workspace right sidebar — fill the panel, no dashboard page insets. */
+.backsteros-project-tasks-host--workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.backsteros-project-tasks-host--workspace .backsteros-project-tasks.bos-product-shell {
+  min-height: 100%;
+}
+
+.backsteros-project-tasks-host--workspace .backsteros-project-tasks__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0 10px;
+  background: var(--color-background-primary, #18181a);
+}
+
+/*
+ * Penpot files page owns the scroll (files-body). Kill the desktop shell’s
+ * nested overflow + sticky group headers so toolbar, files, and tasks move
+ * as one document.
+ */
+.backsteros-project-tasks .list-board-view-shell {
+  display: block;
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  position: static;
+}
+
+.backsteros-project-tasks .list-board-view-list,
+.backsteros-project-tasks .list-board-view-board {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.backsteros-project-tasks .list-column-headers,
+.backsteros-project-tasks .status-group-header-row {
+  position: static !important;
+  top: auto !important;
+  z-index: auto;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background-color: transparent;
+}
+
+.backsteros-project-tasks .status-group-header-row.is-stuck::before {
+  display: none;
+}
+
+/* Hide List/Board dock on the task list only — keep Edit/Preview on detail. */
+.backsteros-project-tasks .list-board-view-shell > .content-view-mode-toggle {
+  display: none;
+}
+
+/* Penpot global `input`/`textarea` rules (font-size, margin) fight the title. */
+.backsteros-project-tasks .overview-name-editor__input,
+.backsteros-project-tasks .overview-name-editor__button,
+.backsteros-task-detail-pane .overview-name-editor__input,
+.backsteros-task-detail-pane .overview-name-editor__button {
+  margin: 0 !important;
+  font: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  letter-spacing: inherit !important;
+  line-height: inherit !important;
+}
+
+/* —— Task detail (BacksterDEV-style) —— */
+
+.backsteros-project-tasks--detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  height: 100%;
+}
+
+.backsteros-project-tasks--detail .backsteros-project-tasks__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.backsteros-task-detail-pane {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.backsteros-task-detail-pane__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 4px 0 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-background-primary, #18181a);
+}
+
+.backsteros-task-detail-pane__back {
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.backsteros-task-detail-pane__back:hover {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+}
+
+.backsteros-task-detail-pane__chrome-end {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+
+.backsteros-task-detail-pane__timer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.backsteros-task-detail-pane__timer .tracked-time-pill-wrap {
+  gap: 0;
+}
+
+.backsteros-task-detail-pane__timer .tracked-time-pill {
+  gap: 5px;
+  min-height: 0;
+  padding: 3px 8px 3px 3px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.backsteros-task-detail-pane__timer .tracked-time-pill.is-running {
+  border-color: color-mix(in srgb, #7ee2a8 45%, transparent);
+  background: color-mix(in srgb, #7ee2a8 8%, transparent);
+}
+
+.backsteros-task-detail-pane__timer .tracked-time-pill__toggle {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.backsteros-task-detail-pane__timer .tracked-time-pill__hint {
+  display: none;
+}
+
+.backsteros-task-detail-pane .task-detail-view,
+.backsteros-task-detail-pane .content-detail-scroll {
+  min-height: 0;
+}
+
+/* Workspace host: detail fills the sidebar and scrolls as one column. */
+.backsteros-project-tasks-host--workspace
+  .backsteros-project-tasks--detail.bos-product-shell {
+  height: 100%;
+  min-height: 100%;
+}
+
+.backsteros-project-tasks-host--workspace .backsteros-task-detail-pane__chrome {
+  background: var(--color-background-primary, #18181a);
+}
+
+/*
+ * Project overview rail (BacksterDEV-style):
+ * [ list column | detail column (when open) ]
+ */
+.backsteros-project-tasks--rail {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: max-content;
+  max-width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+/*
+ * List / detail columns: width changes are instant by default.
+ * Opt into CSS transitions only with __col--motion (cold first load, or
+ * user opening/closing a task). Tab restore must never animate.
+ */
+.backsteros-project-tasks__list-col {
+  --list-col-width: 300px;
+  --list-col-duration: 280ms;
+  --list-col-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-inline-end: 0 solid transparent;
+  box-sizing: border-box;
+  background: #171718;
+  pointer-events: none;
+}
+
+.backsteros-project-tasks__list-col--open {
+  width: var(--list-col-width);
+  border-inline-end: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  pointer-events: auto;
+}
+
+.backsteros-project-tasks__list-col.backsteros-project-tasks__col--motion {
+  transition:
+    width var(--list-col-duration) var(--list-col-ease),
+    border-inline-end-width var(--list-col-duration) var(--list-col-ease);
+}
+
+.backsteros-project-tasks__list-col-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: var(--list-col-width);
+  min-width: var(--list-col-width);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.backsteros-project-tasks--rail .backsteros-project-tasks__header {
+  flex-shrink: 0;
+  padding: 12px 14px 10px;
+}
+
+.backsteros-project-tasks__list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 10px 16px;
+  box-sizing: border-box;
+}
+
+/*
+ * Detail column: closed at 0px, opens to --detail-col-width and pushes files.
+ * Padding lives on the inner (box-sizing: border-box) so left/right match —
+ * putting pad on the outer while the inner was fixed at --detail-col-width
+ * ate the right inset when overflow clipped.
+ */
+.backsteros-project-tasks__detail-col {
+  --detail-col-width: 380px;
+  --detail-col-pad-inline: 14px;
+  --detail-col-duration: 280ms;
+  --detail-col-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+  pointer-events: none;
+}
+
+.backsteros-project-tasks__detail-col--open {
+  width: var(--detail-col-width);
+  pointer-events: auto;
+}
+
+.backsteros-project-tasks__detail-col.backsteros-project-tasks__col--motion {
+  transition: width var(--detail-col-duration) var(--detail-col-ease);
+}
+
+.backsteros-project-tasks__detail-col-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: var(--detail-col-width);
+  min-width: var(--detail-col-width);
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px var(--detail-col-pad-inline) 16px;
+  box-sizing: border-box;
+}
+
+.backsteros-project-tasks-host--rail .backsteros-project-tasks.bos-product-shell {
+  height: 100%;
+  min-height: 100%;
+}
+
+.backsteros-project-tasks-host--rail .backsteros-task-detail-pane__chrome {
+  background: transparent;
+}
+
+/* Rail list: keep status headers flush; cards need room in the narrow column. */
+.backsteros-project-tasks--rail .project-tasks-list__card-item {
+  padding-inline: 0;
+}
+
+/* Hidden content-zone registrar for Penpot file cards (Tab / j/k). */
+.backsteros-files-keyboard-zone {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Synced onto Penpot file cards via data-bd-file-id (island CSS is global). */
+.bd-file-keyboard-highlight,
+.grid-item.bd-file-keyboard-highlight,
+.grid-item-button.bd-file-keyboard-highlight {
+  outline: 1px solid #ee7a47 !important;
+  outline-offset: -1px;
+}
+
+/* Penpot's global `a:hover { text-decoration: underline }` paints through
+   the attachment label. Beat it here and use a row fill instead. */
+a.task-link-attachments__link:hover,
+a.task-link-attachments__link:focus,
+a.task-link-attachments__link:active,
+a.task-link-attachments__link:link,
+a.task-link-attachments__link:visited {
+  text-decoration: none;
+}
+
+.task-link-attachments__row:hover,
+.task-link-attachments__row:focus-within {
+  background: color-mix(in srgb, var(--foreground, #ededed) 12%, transparent);
+}

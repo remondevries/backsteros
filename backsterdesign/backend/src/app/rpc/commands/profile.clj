@@ -75,7 +75,9 @@
    [:workspace-visited {:optional true} ::sm/boolean]
    [:custom-shortcuts {:optional true}
     [:map-of {:gen/max 10} :keyword [:map-of :keyword :string]]]
-   [:nudge {:optional true} schema:nudge]])
+   [:nudge {:optional true} schema:nudge]
+   ;; BacksterDESIGN: which BacksterOS contact this Penpot account maps to
+   [:backsteros-contact-id {:optional true} [:maybe ::sm/uuid]]])
 
 (def schema:profile
   [:map {:title "Profile"}

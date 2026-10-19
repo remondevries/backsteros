@@ -447,7 +447,8 @@
 }
 
 /* Borderless title field — match Next OverviewNameEditor (no boxed input chrome).
-   !important beats WKWebView UA button/input chrome that can reappear per-mount. */
+   !important beats WKWebView UA button/input chrome that can reappear per-mount.
+   Textarea wraps like the view button so edit/view layout stay aligned. */
 .overview-name-editor__input,
 .overview-name-editor__button {
   box-sizing: border-box;
@@ -468,6 +469,16 @@
   outline: none !important;
   -webkit-appearance: none !important;
   appearance: none !important;
+}
+
+textarea.overview-name-editor__input {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  field-sizing: content;
 }
 
 .overview-name-editor__fit-editable {
@@ -540,9 +551,12 @@ mark.spellcheck-fix-mark,
 }
 
 .overview-name-editor__button {
-  display: inline-flex;
+  display: block;
   text-align: left;
   cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   transition: opacity 120ms ease;
 }
 

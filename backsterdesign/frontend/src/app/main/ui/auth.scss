@@ -8,34 +8,20 @@
 @use "ds/_utils.scss" as *;
 @use "./ds/mixins.scss" as *;
 
+// BacksterDESIGN: no left illustration — centered login form only.
 .auth-section {
-  display: grid;
+  @include custom-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--sp-xxxl);
   position: relative;
   background: var(--color-background-primary);
   block-size: 100%;
   padding: var(--sp-xxxl);
   inline-size: 100%;
   overflow: auto;
-
-  @media (width <= 992px) {
-    display: flex;
-    justify-content: center;
-  }
-}
-
-.auth-section.register {
-  @include custom-scrollbar;
-
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.auth-section.register .login-illustration {
-  display: none;
 }
 
 .logo-container {
@@ -55,23 +41,9 @@
   fill: var(--color-foreground-primary);
 }
 
-.login-illustration {
-  display: flex;
-  justify-content: center;
-  grid-column: 1 / 4;
-  inline-size: 40vw;
-  block-size: auto;
-  justify-self: center;
-
-  @media (width <= 992px) {
-    display: none;
-  }
-}
-
 .auth-content {
   display: grid;
   grid-template-rows: 1fr auto;
-  grid-column: 4 / 6;
   gap: var(--sp-xxl);
   block-size: fit-content;
   max-inline-size: px2rem(412);

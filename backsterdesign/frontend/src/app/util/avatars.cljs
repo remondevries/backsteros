@@ -20,7 +20,7 @@
         canvas  (.createElement js/document "canvas")
         context (.getContext canvas "2d")
         text-color (if color
-                     "#2e3434"
+                     "#1f1f20"
                      "#fff")
         color (or color "#000000")]
 

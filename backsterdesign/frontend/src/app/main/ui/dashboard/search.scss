@@ -10,7 +10,7 @@
 
 .dashboard-container {
   flex: 1 0 0;
-  margin-right: deprecated.$s-16;
+  margin-right: 0;
   overflow-y: auto;
   width: 100%;
   border-top: deprecated.$s-1 solid var(--color-background-quaternary);
@@ -20,8 +20,9 @@
   }
 
   &.dashboard-shared {
-    width: calc(100vw - deprecated.$s-320);
-    margin-right: deprecated.$s-52;
+    // BacksterDESIGN: no left sidebar — full width.
+    width: 100%;
+    margin-right: 0;
   }
 
   &.search {
@@ -48,4 +49,12 @@
     width: deprecated.$s-32;
     height: deprecated.$s-32;
   }
+}
+
+/* Keyboard highlight for search result cards (j/k after Enter from search). */
+:global(.bd-file-keyboard-highlight),
+:global(.grid-item.bd-file-keyboard-highlight),
+:global(.grid-item-button.bd-file-keyboard-highlight) {
+  outline: 1px solid #ee7a47 !important;
+  outline-offset: -1px;
 }

@@ -128,7 +128,20 @@ fi
 
 
 function print-current-version {
-    echo -n "$(git describe --tags --match "*.*.*")";
+    # Fork lives inside the BacksterOS monorepo, which may not carry Penpot
+    # release tags. Prefer an explicit PENPOT_BUILD_VERSION, then git describe,
+    # then a stable fallback so release bundles still build.
+    if [[ -n "${PENPOT_BUILD_VERSION:-}" ]]; then
+        echo -n "$PENPOT_BUILD_VERSION";
+        return
+    fi
+    local described
+    described="$(git describe --tags --match "*.*.*" 2>/dev/null || true)"
+    if [[ -n "$described" ]]; then
+        echo -n "$described";
+        return
+    fi
+    echo -n "2.18.3-backsterdesign";
 }
 
 function setup-buildx {
@@ -732,11 +745,14 @@ function start-instance {
     # Seed the container's global git config from the values resolved on the
     # host so commits made inside the devenv carry a real author/committer. Empty
     # values are skipped — the host-identity warning is the caller's job.
+    # Never abort workspace start on a racey/unwritable .gitconfig (set -e).
     if [[ -n "$git_user_name" ]]; then
-        docker exec "$container" sudo -u penpot git config --global user.name "$git_user_name"
+        docker exec "$container" sudo -u penpot git config --global user.name "$git_user_name" \
+            || echo "[${instance}] warning: could not set git user.name" >&2
     fi
     if [[ -n "$git_user_email" ]]; then
-        docker exec "$container" sudo -u penpot git config --global user.email "$git_user_email"
+        docker exec "$container" sudo -u penpot git config --global user.email "$git_user_email" \
+            || echo "[${instance}] warning: could not set git user.email" >&2
     fi
 
     # Detached tmux so callers don't block on attach. Agentic mode adds the
@@ -1177,7 +1193,14 @@ function build {
 
     pull-devenv-if-not-exists;
     docker volume create ${PENPOT_USER_DATA_VOLUME};
-    docker run -t --rm \
+    # Only allocate a TTY when stdout is interactive. `docker run -t` with a
+    # redirected log (CI / nohup / deploy scripts) exits as soon as the parent
+    # shell loses its controlling TTY, leaving orphan build containers.
+    local -a run_args=(--rm)
+    if [[ -t 1 ]]; then
+        run_args+=(-t)
+    fi
+    docker run "${run_args[@]}" \
            --mount source=${PENPOT_USER_DATA_VOLUME},type=volume,target=/home/penpot/ \
            --mount source=`pwd`,type=bind,target=/home/penpot/penpot \
            -e EXTERNAL_UID=$CURRENT_USER_ID \
@@ -1185,6 +1208,7 @@ function build {
            -e BUILD_WASM=$BUILD_WASM \
            -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
            -e JAVA_OPTS="$JAVA_OPTS" \
+           -e PENPOT_BUILD_VERSION="${PENPOT_BUILD_VERSION:-}" \
            -w /home/penpot/penpot/$1 \
            $DEVENV_IMGNAME:$DEVENV_TAG sudo -EH -u penpot ./scripts/$script $version
 

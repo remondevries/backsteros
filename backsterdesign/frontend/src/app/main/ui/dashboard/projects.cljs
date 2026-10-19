@@ -18,11 +18,11 @@
    [app.main.data.team :as dtm]
    [app.main.refs :as refs]
    [app.main.store :as st]
-   [app.main.ui.dashboard.deleted :as deleted]
    [app.main.ui.dashboard.grid :refer [line-grid*]]
    [app.main.ui.dashboard.inline-edition :refer [inline-edition]]
-   [app.main.ui.dashboard.layout-toggle :as lt :refer [layout-toggle*]]
-   [app.main.ui.dashboard.pin-button :refer [pin-button*]]
+   [app.main.ui.dashboard.keyboard-nav :as knav]
+   [app.main.ui.dashboard.layout-toggle :refer [layout-toggle*]]
+   [app.main.ui.dashboard.page-header :refer [page-header*]]
    [app.main.ui.dashboard.project-menu :refer [project-menu*]]
    [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.product.empty-placeholder :refer [empty-placeholder*]]
@@ -48,24 +48,17 @@
 (def ^:private menu-icon
   (deprecated-icon/icon-xref :menu (stl/css :menu-icon)))
 
-(mf/defc header*
+(mf/defc projects-page-header*
   {::mf/wrap [mf/memo]
    ::mf/private true}
-  [{:keys [can-edit layout on-change]}]
-  (let [on-click (mf/use-fn #(st/emit! (dd/create-project)))]
-    [:header {:class (stl/css :dashboard-header)
-              :data-testid "dashboard-header"}
-     [:div#dashboard-projects-title {:class (stl/css :dashboard-title)}
-      [:h1 (tr "dashboard.projects-title")]]
-     [:div {:class (stl/css :dashboard-header-actions)}
-      [:> layout-toggle* {:layout layout
-                          :on-change on-change}]
-      (when can-edit
-        [:button {:class (stl/css :btn-secondary :btn-small)
-                  :on-click on-click
-                  :data-testid "new-project-button"}
-         (tr "dashboard.new-project")])]]))
-
+  [{:keys [search-term team-id]}]
+  ;; BacksterDESIGN: brand + search live in the content header.
+  ;; Layout toggle stays in Recent tab content.
+  [:> page-header* {:title "Recents"
+                    :title-id "dashboard-recent-title"
+                    :nav-section :dashboard-recent
+                    :search-term search-term
+                    :team-id team-id}])
 (mf/defc team-hero*
   {::mf/wrap [mf/memo]}
   [{:keys [team on-close]}]
@@ -103,7 +96,8 @@
       close-icon]]))
 
 (mf/defc project-item*
-  {::mf/private true}
+  {::mf/private true
+   ::mf/wrap [mf/memo]}
   [{:keys [project is-first team files can-edit layout]}]
   (let [project-id (get project :id)
         team-id    (get team :id)
@@ -133,13 +127,6 @@
          (fn []
            (st/emit! (dcm/go-to-dashboard-files :project-id project-id))))
 
-        toggle-pin
-        (mf/use-fn
-         (mf/deps project)
-         (fn [event]
-           (dom/stop-propagation event)
-           (st/emit! (dd/toggle-project-pin project))))
-
         on-menu-click
         (mf/use-fn
          (fn [event]
@@ -159,9 +146,6 @@
 
         on-menu-close
         (mf/use-fn #(swap! local assoc :menu-open false))
-
-        on-edit-open
-        (mf/use-fn #(swap! local assoc :edition true))
 
         on-edit
         (mf/use-fn
@@ -216,10 +200,10 @@
          (fn [event]
            (when (kbd/enter? event)
              (dom/stop-propagation event)
-             (on-menu-click event))))
-        title-width (/ 100 limit)]
+             (on-menu-click event))))]
 
     [:article {:class (stl/css-case :dashboard-project-row true :first is-first)}
+     ;; Group header: name + meta | rule line | hover actions (BacksterOS-style).
      [:header {:class (stl/css :project)}
       [:div {:class (stl/css :project-name-wrapper)}
        (if (:edition @local)
@@ -227,7 +211,6 @@
                              :on-end on-edit
                              :max-length 250}]
          [:h2 {:on-click on-nav
-               :style {:max-width (str title-width "%")}
                :class (stl/css :project-name)
                :title (if (:is-default project)
                         (tr "labels.drafts")
@@ -237,51 +220,42 @@
             (tr "labels.drafts")
             (:name project))])
 
+       ;; Keep count + time adjacent (no extra gap between the two spans).
        [:div {:class (stl/css :info-wrapper)}
+        [:span {:class (stl/css :info)} (str (tr "labels.num-of-files" (i18n/c file-count)))]
+        (let [time (-> (:modified-at project)
+                       (ct/timeago))]
+          [:span {:class (stl/css :recent-files-row-title-info)} (str ", " time)])]]
 
-        ;; We group these two spans under a div to avoid having extra space between them.
-        [:div
-         [:span {:class (stl/css :info)} (str (tr "labels.num-of-files" (i18n/c file-count)))]
+      [:div {:class (stl/css :project-rule) :aria-hidden true}]
 
-         (let [time (-> (:modified-at project)
-                        (ct/timeago))]
-           [:span {:class (stl/css :recent-files-row-title-info)} (str ", " time)])]
+      [:div {:class (stl/css :project-actions)}
+       (when ^boolean can-edit
+         [:button {:class (stl/css :add-file-btn)
+                   :on-click on-create-click
+                   :title (tr "dashboard.new-file")
+                   :aria-label (tr "dashboard.new-file")
+                   :data-testid "project-new-file"
+                   :on-key-down handle-create-click}
+          add-icon])
 
-        [:div {:class (stl/css-case :project-actions true
-                                    :pinned-project (:is-pinned project))}
-         (when-not (:is-default project)
-           [:> pin-button* {:class (stl/css :pin-button)
-                            :is-pinned (:is-pinned project)
-                            :on-click toggle-pin
-                            :tab-index 0}])
+       (when ^boolean can-edit
+         [:button {:class (stl/css :options-btn)
+                   :on-click on-menu-click
+                   :title (tr "dashboard.options")
+                   :aria-label (tr "dashboard.options")
+                   :data-testid "project-options"
+                   :on-key-down handle-menu-click}
+          menu-icon])
 
-         (when ^boolean can-edit
-           [:button {:class (stl/css :add-file-btn)
-                     :on-click on-create-click
-                     :title (tr "dashboard.new-file")
-                     :aria-label (tr "dashboard.new-file")
-                     :data-testid "project-new-file"
-                     :on-key-down handle-create-click}
-            add-icon])
-
-         (when ^boolean can-edit
-           [:button {:class (stl/css :options-btn)
-                     :on-click on-menu-click
-                     :title (tr "dashboard.options")
-                     :aria-label  (tr "dashboard.options")
-                     :data-testid "project-options"
-                     :on-key-down handle-menu-click}
-            menu-icon])]
-
-        (when ^boolean can-edit
-          [:> project-menu*
-           {:project project
-            :show (:menu-open @local)
-            :left (+ 24 (:x (:menu-pos @local)))
-            :top (:y (:menu-pos @local))
-            :on-edit on-edit-open
-            :on-close on-menu-close
-            :on-import on-import}])]]]
+       (when ^boolean can-edit
+         [:> project-menu*
+          {:project project
+           :show (:menu-open @local)
+           :left (+ 24 (:x (:menu-pos @local)))
+           :top (:y (:menu-pos @local))
+           :on-close on-menu-close
+           :on-import on-import}])]]
 
      [:div {:class (stl/css :grid-container) :ref rowref}
       (if ^boolean empty?
@@ -317,7 +291,7 @@
   (l/derived :recent-files st/state))
 
 (mf/defc projects-section*
-  [{:keys [team projects profile layout on-layout-change]}]
+  [{:keys [team projects profile layout on-layout-change search-term]}]
 
   (let [team-id         (get team :id)
 
@@ -336,14 +310,43 @@
         my-penpot?      (= (:default-team-id profile) team-id)
         default-team?   (:is-default team)
 
-        show-deleted?   (:can-edit permisions)
-
         projects
         (mf/with-memo [projects]
+          ;; Drafts (:is-default) only on the Drafts tab — not on Recents.
           (->> projects
                (remove :deleted-at)
+               (remove :is-default)
                (sort-by :modified-at)
                (reverse)))
+
+        ;; Index recent files once (O(files)) instead of filtering per project.
+        files-by-project
+        (mf/with-memo [recent-map]
+          (if (nil? recent-map)
+            {}
+            (->> (vals recent-map)
+                 (group-by :project-id)
+                 (into {}
+                       (map (fn [[pid fs]]
+                              [pid (->> fs
+                                        (sort-by :modified-at #(compare %2 %1))
+                                        vec)]))))))
+
+        first-project-id
+        (some-> projects first :id)
+
+        ;; Flat recent-file order matches on-screen project sections.
+        file-ids
+        (mf/with-memo [projects files-by-project]
+          (into []
+                (mapcat (fn [project]
+                          (map (comp str :id)
+                               (get files-by-project (:id project) []))))
+                projects))
+
+        highlighted* (mf/use-state nil)
+        highlighted  @highlighted*
+        highlight-ref (mf/use-ref nil)
 
         on-close
         (mf/use-fn
@@ -351,6 +354,8 @@
            (reset! show-team-hero* false)
            (st/emit! (ev/event {::ev/name "dont-show-team-up-hero"
                                 ::ev/origin "dashboard"}))))]
+
+    (knav/remember! highlight-ref highlighted)
 
     (mf/with-effect [show-team-hero?]
       (swap! storage/global assoc ::show-team-hero show-team-hero?))
@@ -362,15 +367,74 @@
         (dom/set-html-title (tr "title.dashboard.projects" tname))))
 
     (mf/with-effect [team-id]
+      (reset! highlighted* nil)
       (st/emit! (dd/fetch-recent-files team-id)
                 (dd/clear-selected-files)))
+
+    (mf/with-effect [file-ids highlighted]
+      (when (and highlighted
+                 (nil? (knav/index-of-id file-ids highlighted)))
+        (reset! highlighted* nil)))
+
+    (mf/with-effect [highlighted]
+      (knav/sync-file-highlight! highlighted)
+      (fn [] (knav/sync-file-highlight! nil)))
+
+    (mf/with-effect [file-ids]
+      (let [on-key
+            (fn [event]
+              (when (and (not (.-metaKey event))
+                         (not (.-ctrlKey event))
+                         (not (.-altKey event)))
+                (let [target (.-target event)
+                      key    (.-key event)
+                      code   (.-code event)
+                      stop!  (fn []
+                               (.preventDefault event)
+                               (.stopPropagation event)
+                               (.stopImmediatePropagation event))]
+                  (cond
+                    (or (knav/search-input-target? target)
+                        (knav/editable-target? target)
+                        (knav/editable-target? (.-activeElement js/document)))
+                    nil
+
+                    (not (seq file-ids))
+                    nil
+
+                    (= key "Escape")
+                    (when (mf/ref-val highlight-ref)
+                      (stop!)
+                      (knav/remember! highlight-ref nil)
+                      (reset! highlighted* nil))
+
+                    (or (= key "Enter") (= code "Enter") (= code "NumpadEnter"))
+                    (when-let [fid (mf/ref-val highlight-ref)]
+                      (stop!)
+                      (knav/open-file! fid))
+
+                    (or (= key "j") (= key "J") (= code "KeyJ")
+                        (= key "ArrowDown"))
+                    (when-not (.-shiftKey event)
+                      (stop!)
+                      (reset! highlighted*
+                              (knav/step-ref! highlight-ref file-ids :down)))
+
+                    (or (= key "k") (= key "K") (= code "KeyK")
+                        (= key "ArrowUp"))
+                    (when-not (.-shiftKey event)
+                      (stop!)
+                      (reset! highlighted*
+                              (knav/step-ref! highlight-ref file-ids :up)))))))]
+        (.addEventListener js/window "keydown" on-key true)
+        (fn []
+          (.removeEventListener js/window "keydown" on-key true))))
 
     (hooks/use-shortcuts ::dashboard sc/shortcuts-projects :dashboard)
 
     [:*
-     [:> header* {:can-edit can-edit
-                  :layout layout
-                  :on-change on-layout-change}]
+     [:> projects-page-header* {:search-term search-term
+                                :team-id team-id}]
      [:div {:class (stl/css :projects-container)}
       [:*
        (when (and show-team-hero?
@@ -386,20 +450,15 @@
                                                         show-team-hero?
                                                         can-invite))}
 
-        [:> deleted/menu* {:team-id team-id
-                           :section :dashboard-recent
-                           :show-deleted show-deleted?}]
+        [:div {:class (stl/css :recent-toolbar)}
+         [:> layout-toggle* {:layout layout
+                             :on-change on-layout-change}]]
 
         (for [{:keys [id] :as project} projects]
-          ;; FIXME: refactor this, looks inneficient
-          (let [files (when recent-map
-                        (->> (vals recent-map)
-                             (filterv #(= id (:project-id %)))
-                             (sort-by :modified-at #(compare %2 %1))))]
-            [:> project-item* {:project project
-                               :team team
-                               :files files
-                               :can-edit can-edit
-                               :layout layout
-                               :is-first (= project (first projects))
-                               :key id}]))]]]]))
+          [:> project-item* {:project project
+                             :team team
+                             :files (get files-by-project id [])
+                             :can-edit can-edit
+                             :layout layout
+                             :is-first (= id first-project-id)
+                             :key id}])]]]]))

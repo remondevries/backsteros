@@ -198,6 +198,30 @@ function resolveMeetingDetailPropertyScope(): HTMLElement | null {
   return null;
 }
 
+/**
+ * Open task detail surfaces (not broad shells like `.main-slot`). When one of
+ * these is mounted, property hotkeys (S/P/A/⇧D/…) prefer it over a highlighted
+ * list row — same idea as open meeting detail owning ⇧D.
+ */
+function resolveOpenTaskDetailPropertyScope(): HTMLElement | null {
+  for (const selector of [
+    ".task-detail-view",
+    ".task-detail-stacked",
+    ".task-panel-island--detail",
+    ".console-content-inbox-detail",
+  ]) {
+    const scope = document.querySelector(selector);
+    if (
+      scope instanceof HTMLElement &&
+      scope.isConnected &&
+      !isInertSubtree(scope)
+    ) {
+      return scope;
+    }
+  }
+  return null;
+}
+
 const PROJECT_IDENTITY_PROPERTY_IDS = [
   "type",
   "health",
@@ -273,6 +297,16 @@ export function openTaskPropertyDropdown(
   // Open meeting detail owns schedule (⇧D) over any highlighted list row.
   const meetingScope = resolveMeetingDetailPropertyScope();
   if (meetingScope && tryOpenInScope(meetingScope, ids)) {
+    return true;
+  }
+
+  // Open task detail owns S/P/A/⇧D/… over any highlighted list row (Design
+  // rail list+detail, BacksterDev panel, desktop detail).
+  const openTaskDetailScope = resolveOpenTaskDetailPropertyScope();
+  if (
+    openTaskDetailScope &&
+    tryOpenInScope(openTaskDetailScope, ids)
+  ) {
     return true;
   }
 

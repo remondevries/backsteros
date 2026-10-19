@@ -747,6 +747,7 @@ export function registerTaskDocumentRoutes(app: Hono) {
         trackedDurationSeconds: timer.trackedDurationSeconds,
         trackedMinutes: timer.trackedMinutes,
         projectKey: timer.projectKey,
+        updatedAt: timer.updatedAt?.toISOString() ?? null,
       })),
     });
   });

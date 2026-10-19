@@ -22,9 +22,24 @@ $thumbnail-default-height: px2rem(168);
 .dashboard-grid {
   @include t.use-typography("body-medium");
 
+  // Fill remaining space when the toolbar lives in the same scroll parent
+  // (Drafts); project files use .auto-height instead.
+  flex: 1 1 auto;
+  min-block-size: 0;
   block-size: 100%;
   overflow: hidden auto;
-  padding: 0 var(--sp-l) var(--sp-l);
+  // Match tab-nav / Drafts / Recents horizontal inset (--sp-xxl).
+  padding: var(--sp-m) var(--sp-xxl) var(--sp-l);
+
+  // Files page: share scroll with siblings (e.g. BacksterOS tasks below).
+  &.auto-height {
+    flex: 0 0 auto;
+    block-size: auto;
+    min-block-size: 0;
+    overflow: visible;
+    // Tasks sit directly under the grid — drop the trailing pad.
+    padding-block-end: 0;
+  }
 }
 
 // ─── GRID ROW ──────────────────────────────────
@@ -56,6 +71,7 @@ $thumbnail-default-height: px2rem(168);
   margin: var(--sp-m) 0;
   position: relative;
   text-align: center;
+  cursor: pointer;
 
   &.is-dragged {
     border-radius: $br-4;
@@ -160,6 +176,10 @@ $thumbnail-default-height: px2rem(168);
   background-color: transparent;
   border-radius: $br-8;
   padding-block-start: $sz-6;
+  cursor: pointer;
+  // Card edge — matches the live DevTools fix that is visible on dark chrome.
+  outline: 0.1rem solid #2f3336;
+  transition: outline-color 150ms ease;
 
   &.library-item {
     block-size: px2rem(612);
@@ -169,6 +189,7 @@ $thumbnail-default-height: px2rem(168);
   &:focus,
   &:focus-within {
     background-color: var(--color-background-tertiary);
+    outline-color: var(--color-accent-primary);
 
     .project-thumbnail-actions {
       opacity: 1;

@@ -28,16 +28,23 @@ test("normalizeTaskLinkUrl accepts in-app email and knowledge paths", () => {
 test("normalizeTaskLinkUrl coerces Penpot workspace URLs to backsterdesign://", () => {
   const file = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
   const page = "11111111-2222-3333-4444-555555555555";
+  const board = "99999999-8888-7777-6666-555555555555";
   const raw = `https://localhost:3449/#/workspace?file-id=${file}&page-id=${page}`;
   const normalized = normalizeTaskLinkUrl(raw);
   assert.ok(normalized);
   assert.equal(isPenpotDesignTaskLinkUrl(normalized!), true);
   assert.match(normalized!, /^backsterdesign:\/\/workspace\?/);
-  assert.equal(taskLinkDisplayLabel(normalized!), "Design");
+  assert.equal(taskLinkDisplayLabel(normalized!), "File");
   assert.match(
     resolveTaskLinkOpenHref(normalized!),
     new RegExp(`file-id=${file}`),
   );
+
+  const withBoard = normalizeTaskLinkUrl(
+    `${raw}&board-id=${board}`,
+  );
+  assert.ok(withBoard);
+  assert.equal(taskLinkDisplayLabel(withBoard!), "Item");
 });
 
 test("isAppEmailTaskLinkUrl, isAppDocumentTaskLinkUrl, isAppLetterTaskLinkUrl", () => {

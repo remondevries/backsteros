@@ -180,6 +180,42 @@
   }
 }
 
+.tasks-section {
+  display: flex;
+  align-items: center;
+}
+
+.tasks-button {
+  @extend %button-tertiary;
+
+  border-radius: deprecated.$br-8;
+  margin: 0;
+  height: deprecated.$s-28;
+  width: deprecated.$s-28;
+  border: none;
+
+  svg {
+    @extend %button-icon;
+
+    stroke: var(--icon-foreground);
+    height: deprecated.$s-16;
+    width: deprecated.$s-16;
+  }
+
+  &:hover {
+    background-color: transparent;
+    border: none;
+  }
+
+  &.selected {
+    background-color: var(--button-tertiary-background-color-selected);
+
+    svg {
+      stroke: var(--button-tertiary-foreground-color-active);
+    }
+  }
+}
+
 .persistence-status-widget {
   @include deprecated.flex-center;
 

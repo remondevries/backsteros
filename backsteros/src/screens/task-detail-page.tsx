@@ -1,4 +1,4 @@
-import type { ProjectUpdate } from "@backsteros/contracts";
+import type { ProjectUpdate, TaskLink } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -304,6 +304,10 @@ export function TaskDetailPage({
   const [linkedCommitShasOverride, setLinkedCommitShasOverride] = useState<
     string[] | null
   >(null);
+  /** CLI/API task.links before PowerSync list catch-up. */
+  const [fetchedLinks, setFetchedLinks] = useState<TaskLink[]>([]);
+  /** Immediate UI after attach/remove — wins over stale SQLite/hydrate. */
+  const [linksOverride, setLinksOverride] = useState<TaskLink[] | null>(null);
   const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
   const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
   const spellcheckNonceRef = useRef(0);
@@ -627,7 +631,12 @@ export function TaskDetailPage({
       projectKey: resolvedProjectKey,
       projectName: project?.name ?? base.projectName ?? null,
       description: fetchedDescription,
-      links: parseTaskLinks(taskDetails[base.id]?.links),
+      links: (() => {
+        if (linksOverride != null) return linksOverride;
+        const fromDetails = parseTaskLinks(taskDetails[base.id]?.links);
+        if (fromDetails.length > 0) return fromDetails;
+        return fetchedLinks;
+      })(),
       linkedCommitShas,
       displayId: getTaskDisplayId(
         {
@@ -641,7 +650,9 @@ export function TaskDetailPage({
     contacts,
     fetchedDescription,
     fetchedLinkedCommitShas,
+    fetchedLinks,
     linkedCommitShasOverride,
+    linksOverride,
     projects,
     taskDetails,
   ]);
@@ -671,21 +682,25 @@ export function TaskDetailPage({
     organizations,
   ]);
 
-  // When PowerSync list lag drops `linkedCommitShas` (e.g. CLI link), hydrate
-  // from REST so Changes stay visible.
+  // When PowerSync list lag drops linkedCommitShas / links (e.g. CLI attach),
+  // hydrate from REST so Changes and Design chips stay visible.
   useEffect(() => {
     if (!base?.id) {
       setFetchedLinkedCommitShas([]);
       setLinkedCommitShasOverride(null);
+      setFetchedLinks([]);
+      setLinksOverride(null);
       return;
     }
     const taskId = base.id;
     setLinkedCommitShasOverride(null);
+    setLinksOverride(null);
     let cancelled = false;
     void client
-      .requestJson<{ linkedCommitShas?: string[] | null }>(
-        `/api/v1/tasks/${encodeURIComponent(taskId)}`,
-      )
+      .requestJson<{
+        linkedCommitShas?: string[] | null;
+        links?: unknown;
+      }>(`/api/v1/tasks/${encodeURIComponent(taskId)}`)
       .then((row) => {
         if (cancelled) return;
         const shas = Array.isArray(row.linkedCommitShas)
@@ -696,9 +711,13 @@ export function TaskDetailPage({
             )
           : [];
         setFetchedLinkedCommitShas(shas);
+        setFetchedLinks(parseTaskLinks(row.links));
       })
       .catch(() => {
-        if (!cancelled) setFetchedLinkedCommitShas([]);
+        if (!cancelled) {
+          setFetchedLinkedCommitShas([]);
+          setFetchedLinks([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -944,7 +963,10 @@ export function TaskDetailPage({
     void workspace.patchTask(task.id, { description });
   };
   const changeLinks = (links: typeof task.links) => {
-    void workspace.patchTask(task.id, { links: links ?? [] });
+    const next = links ?? [];
+    setLinksOverride(next);
+    setFetchedLinks(next);
+    void workspace.patchTask(task.id, { links: next });
   };
   const saveTitle = async (title: string) => {
     const trimmed = title.trim();

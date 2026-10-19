@@ -16,11 +16,13 @@
    [app.main.data.event :as ev]
    [app.main.data.profile :as dp]
    [app.main.data.websocket :as ws]
+   [app.main.desktop :as desktop]
    [app.main.errors]
    [app.main.features :as feat]
    [app.main.rasterizer :as thr]
    [app.main.store :as st]
    [app.main.ui :as ui]
+   [app.main.ui.dashboard.nav-hotkeys :as nav-hotkeys]
    [app.main.ui.alert]
    [app.main.ui.confirm]
    [app.main.ui.css-cursors :as cur]
@@ -131,6 +133,8 @@
       (cur/init-styles)
 
       (init-ui)
+      (desktop/init!)
+      (nav-hotkeys/init!)
       (st/emit! (plugins/initialize)
                 (initialize)))))
 

@@ -1,6 +1,37 @@
 import * as esbuild from "esbuild";
+import { createRequire } from "node:module";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { execSync } from "node:child_process";
+
+const require = createRequire(import.meta.url);
+
+/**
+ * plugins-runtime imports "ses". Esbuild resolves that from the plugins tree,
+ * which often has no hoisted copy — alias to frontend's install (or .pnpm).
+ */
+function resolveSes() {
+  try {
+    return require.resolve("ses");
+  } catch {
+    /* fall through */
+  }
+  const pnpmRoot = path.resolve("node_modules/.pnpm");
+  if (!existsSync(pnpmRoot)) return null;
+  for (const name of readdirSync(pnpmRoot)) {
+    if (!name.startsWith("ses@")) continue;
+    const pkg = path.join(pnpmRoot, name, "node_modules", "ses");
+    if (existsSync(path.join(pkg, "package.json"))) {
+      try {
+        return require.resolve(pkg);
+      } catch {
+        return pkg;
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * esbuild plugin to watch a directory recursively
@@ -46,6 +77,8 @@ const rebuildNotify = {
   },
 };
 
+const sesPath = resolveSes();
+
 const config = {
   entryPoints: ["target/index.js"],
   bundle: true,
@@ -54,6 +87,7 @@ const config = {
     js: '"use strict";\nvar global = globalThis;',
   },
   outfile: "resources/public/js/libs.js",
+  ...(sesPath ? { alias: { ses: sesPath } } : {}),
   plugins: [fixReactVirtualized, rebuildNotify, watchExtraDirPlugin],
 };
 

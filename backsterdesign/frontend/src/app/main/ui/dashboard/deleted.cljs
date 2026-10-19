@@ -190,28 +190,55 @@
 
 (mf/defc menu*
   {::mf/private true}
-  [{:keys [team-id section show-deleted]}]
-  (let [on-recent-click
+  [{:keys [team-id section]}]
+  ;; BacksterDESIGN: no Deleted tab — trash is managed from BacksterOS.
+  ;; Left: Recents / Projects / Clients. Right: Drafts / Fonts / Libraries.
+  ;; File actions (+ New File, layout toggle) live in Drafts content, not here.
+  (let [profile            (mf/deref refs/profile)
+        project            (mf/deref refs/project)
+        default-project-id (:default-project-id profile)
+        drafts?            (and (= section :dashboard-files)
+                                (= (:id project) default-project-id))
+        fonts?             (= section :dashboard-fonts)
+        libs?              (= section :dashboard-libraries)
+
+        on-recent-click
         (mf/use-fn
          (mf/deps team-id)
          (fn []
            (st/emit! (dcm/go-to-dashboard-recent :team-id team-id))))
 
-        on-backsteros-click
+        on-projects-click
         (mf/use-fn
          (mf/deps team-id)
          (fn []
            (st/emit! (dcm/go-to-dashboard-backsteros :team-id team-id))))
 
-        on-deleted-click
+        on-clients-click
         (mf/use-fn
          (mf/deps team-id)
          (fn []
-           (st/emit! (dcm/go-to-dashboard-deleted :team-id team-id))))
+           (st/emit! (dcm/go-to-dashboard-client-accounts :team-id team-id))))
 
-        ;; Default true when omitted (deleted page always shows trash).
-        show-deleted?
-        (not (false? show-deleted))]
+        on-drafts-click
+        (mf/use-fn
+         (mf/deps team-id default-project-id)
+         (fn []
+           (when default-project-id
+             (st/emit! (dcm/go-to-dashboard-files :team-id team-id
+                                                  :project-id default-project-id)))))
+
+        on-fonts-click
+        (mf/use-fn
+         (mf/deps team-id)
+         (fn []
+           (st/emit! (dcm/go-to-dashboard-fonts :team-id team-id))))
+
+        on-libs-click
+        (mf/use-fn
+         (mf/deps team-id)
+         (fn []
+           (st/emit! (dcm/go-to-dashboard-libraries :team-id team-id))))]
 
     [:div {:class (stl/css :nav)}
      [:div {:class (stl/css :nav-inside)}
@@ -221,23 +248,44 @@
              :role "tab"
              :aria-selected (= section :dashboard-recent)
              :on-click on-recent-click}
-       (tr "labels.recent")]
+       "Recents"]
       [:div {:class [(stl/css :nav-option)
                      (stl/css-case :selected (= section :dashboard-backsteros))]
-             :data-testid "backsteros-tab"
+             :data-testid "projects-tab"
              :role "tab"
              :aria-selected (= section :dashboard-backsteros)
-             :on-click on-backsteros-click}
-       "BacksterOS"]
-      (when show-deleted?
-        [:div {:class [(stl/css :nav-option :nav-option-end)
-                       (stl/css-case :selected (= section :dashboard-deleted))]
-               :data-testid "deleted-tab"
-               :role "tab"
-               :aria-selected (= section :dashboard-deleted)
-               :on-click on-deleted-click}
-         (tr "labels.deleted")])]]))
+             :on-click on-projects-click}
+       "Projects"]
+      [:div {:class [(stl/css :nav-option)
+                     (stl/css-case :selected (= section :dashboard-client-accounts))]
+             :data-testid "clients-tab"
+             :role "tab"
+             :aria-selected (= section :dashboard-client-accounts)
+             :on-click on-clients-click}
+       "Clients"]
 
+      [:div {:class [(stl/css :nav-option)
+                     (stl/css :nav-option-end)
+                     (stl/css-case :selected drafts?)]
+             :data-testid "drafts-tab"
+             :role "tab"
+             :aria-selected drafts?
+             :on-click on-drafts-click}
+       (tr "labels.drafts")]
+      [:div {:class [(stl/css :nav-option)
+                     (stl/css-case :selected fonts?)]
+             :data-testid "fonts-tab"
+             :role "tab"
+             :aria-selected fonts?
+             :on-click on-fonts-click}
+       (tr "labels.fonts")]
+      [:div {:class [(stl/css :nav-option)
+                     (stl/css-case :selected libs?)]
+             :data-testid "libraries-tab"
+             :role "tab"
+             :aria-selected libs?
+             :on-click on-libs-click}
+       "Libraries"]]]))
 (mf/defc deleted-section*
   [{:keys [team projects layout on-layout-change]}]
   (let [deleted-map
@@ -318,8 +366,7 @@
        [:div {:class (stl/css :no-bg)}
 
         [:> menu* {:team-id team-id
-                   :section :dashboard-deleted
-                   :show-deleted true}]
+                   :section :dashboard-deleted}]
 
         (if (seq projects)
           [:*

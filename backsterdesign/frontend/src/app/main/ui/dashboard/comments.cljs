@@ -47,11 +47,12 @@
         [:div {:class (stl/css :unread)}])]]))
 
 (mf/defc comments-section
-  [{:keys [profile team show? on-hide-comments]}]
+  [{:keys [profile team show? on-hide-comments placement]}]
   (let [threads-map    (mf/deref refs/comment-threads)
 
         ;; FIXME: with-memo
         team-id        (:id team)
+        header?        (= placement :header)
         tgroups        (->> (vals threads-map)
                             (sort-by :modified-at)
                             (reverse)
@@ -82,9 +83,13 @@
          (st/emit! (ev/event {::ev/name "open-comment-notifications"
                               ::ev/origin "dashboard"})))))
 
-    [:div {:class (stl/css :dashboard-comments-section)}
+    [:div {:class (stl/css-case :dashboard-comments-section true
+                                :dashboard-comments-header header?)}
      [:& dropdown {:show show? :on-close on-hide-comments :dropdown-id "dashboard-comments"}
-      [:div {:class (stl/css :dropdown :comments-section :comment-threads-section)}
+      [:div {:class (stl/css-case :dropdown true
+                                  :comments-section true
+                                  :comment-threads-section true
+                                  :dropdown-from-header header?)}
        [:div {:class (stl/css :header)}
         [:h3 {:class (stl/css :header-title)} (tr "dashboard.notifications")]
         (when (seq tgroups)

@@ -3,10 +3,14 @@
 
 var penpotFlags = "disable-dashboard-templates-section";
 
-// Bridge to BacksterOS local-core (BacksterOS projects tab + create-or-open link).
+// Bridge to BacksterOS local-core (Projects + Clients tabs).
+// Use the same-origin proxy (nginx → host:8788). Plain http://127.0.0.1:8788
+// fails in the browser as mixed content (Penpot is https://localhost:3449).
 window.backsterosCore = {
-  baseUrl: "http://127.0.0.1:8788",
+  baseUrl: "/backsteros-core",
   // Local-shell token works on local-core; use a sk_live_… key if preferred.
-  // Needs projects:read + projects:write to link penpotProjectId.
+  // Needs projects:read + projects:write (link penpotProjectId),
+  // tasks:read + tasks:write (project page task list), and
+  // contacts:read + contacts:write (Client accounts project allowlist).
   apiKey: "local",
 };

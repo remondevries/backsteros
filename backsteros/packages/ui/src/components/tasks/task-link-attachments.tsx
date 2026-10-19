@@ -1,5 +1,6 @@
 "use client";
 
+import { PencilIcon } from "@primer/octicons-react";
 import {
   useCallback,
   useEffect,
@@ -14,9 +15,12 @@ import { createPortal } from "react-dom";
 import {
   coercePenpotDesignUrl,
   isBacksterDesignUri,
+  parsePenpotDesignLink,
   resolvePenpotDesignOpenUrl,
   type TaskLink,
 } from "@backsteros/contracts";
+
+const DESIGN_DESKTOP_CHANNEL = "backsterdesign-desktop";
 
 import {
   ADD_TASK_LINK_SHORTCUT_HINT,
@@ -24,6 +28,7 @@ import {
 } from "../../tasks/task-link-add-shortcut.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { BacksterDesignLogoIcon } from "../icons/backster-design-logo-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
@@ -68,6 +73,12 @@ export type TaskLinkAttachmentsProps = {
   emailOptions?: readonly TaskLinkPickerOption[];
   /** Prefer app navigation for internal hrefs. */
   onNavigate?: (href: string) => void;
+  /**
+   * Public Penpot / BacksterDESIGN origin used to resolve
+   * `backsterdesign://…` links (default `https://localhost:3449`).
+   * Pass `window.location.origin` when rendering inside Penpot.
+   */
+  designPublicUri?: string;
   /** File attachments (blob uploads; shown in the same list). */
   fileAttachments?: readonly TaskFileAttachmentItem[];
   fileUploading?: boolean;
@@ -75,6 +86,150 @@ export type TaskLinkAttachmentsProps = {
   onRemoveFile?: (attachmentId: string) => void;
   onOpenFile?: (attachmentId: string) => void;
 };
+
+/**
+ * Hash-only path for same-origin Penpot URLs (`#/workspace?…`).
+ * Penpot's router listens to hash changes; absolute https hrefs are
+ * intercepted and do nothing inside the SPA.
+ */
+export function penpotHashHref(href: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const url = new URL(href, window.location.href);
+    if (url.origin !== window.location.origin) return null;
+    if (!url.hash.startsWith("#/")) return null;
+    return url.hash;
+  } catch {
+    return null;
+  }
+}
+
+function isBacksterDesignDesktopShell(): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+  if (document.documentElement.getAttribute("data-tauri-desktop") === "1") {
+    return true;
+  }
+  const win = window as Window & {
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+  };
+  if (win.__TAURI__ != null || win.__TAURI_INTERNALS__ != null) {
+    return true;
+  }
+  return window.location.search.includes("tauri-desktop=1");
+}
+
+/**
+ * Ask the Tauri shell / Penpot desktop bridge to open a file (adds a chrome
+ * tab via `tab-upsert` after `go-to-workspace`).
+ */
+function openDesignLinkInDesktopShell(href: string): boolean {
+  if (!isBacksterDesignDesktopShell()) return false;
+  const parsed = parsePenpotDesignLink(href);
+  if (!parsed?.fileId) return false;
+
+  const message: Record<string, string> = {
+    channel: DESIGN_DESKTOP_CHANNEL,
+    type: "open-file",
+    fileId: parsed.fileId,
+  };
+  if (parsed.pageId) message.pageId = parsed.pageId;
+  if (parsed.teamId) message.teamId = parsed.teamId;
+  if (parsed.boardId) message.boardId = parsed.boardId;
+
+  window.postMessage(message, "*");
+
+  // Always ask for an explicit board reveal as well. When the file is already
+  // open, open-file navigation can be a no-op — retry a few times so select+zoom
+  // still lands after pan / page settle.
+  if (parsed.boardId) {
+    for (const ms of [0, 75, 200, 400]) {
+      window.setTimeout(() => requestBoardReveal(href), ms);
+    }
+  }
+
+  // Optimistic tab strip update (report-route also emits tab-upsert).
+  const tabUpsert = {
+    channel: DESIGN_DESKTOP_CHANNEL,
+    type: "tab-upsert" as const,
+    fileId: parsed.fileId,
+    name: "Untitled",
+    ...(parsed.pageId ? { pageId: parsed.pageId } : {}),
+    ...(parsed.teamId ? { teamId: parsed.teamId } : {}),
+    ...(parsed.boardId ? { boardId: parsed.boardId } : {}),
+  };
+  const tauri = (window as Window & {
+    __TAURI__?: { event?: { emit?: (name: string, payload: unknown) => Promise<unknown> } };
+  }).__TAURI__;
+  void tauri?.event?.emit?.("bd-from-spa", tabUpsert)?.catch?.(() => undefined);
+
+  return true;
+}
+
+/**
+ * Open a resolved task-link href. In the Tauri Design shell, routes through
+ * the desktop bridge so the chrome tab strip updates. Same-origin browser
+ * Penpot uses the hash router; cross-origin opens a new tab.
+ */
+function requestBoardReveal(href: string): void {
+  const parsed = parsePenpotDesignLink(href);
+  if (!parsed?.boardId || typeof window === "undefined") return;
+  window.postMessage(
+    {
+      channel: DESIGN_DESKTOP_CHANNEL,
+      type: "reveal-board",
+      boardId: parsed.boardId,
+      ...(parsed.pageId ? { pageId: parsed.pageId } : {}),
+      ...(parsed.fileId ? { fileId: parsed.fileId } : {}),
+    },
+    "*",
+  );
+}
+
+export function openTaskLinkHref(href: string): void {
+  if (typeof window === "undefined" || !href.trim()) return;
+
+  if (openDesignLinkInDesktopShell(href)) {
+    return;
+  }
+
+  const hash = penpotHashHref(href);
+  if (hash) {
+    // Prefer hash update so goog.History / reitit pick it up without a reload.
+    if (window.location.hash === hash) {
+      // Force a re-navigation when linking to the already-open file.
+      window.location.hash = "";
+      window.location.hash = hash;
+      requestBoardReveal(href);
+      return;
+    }
+    window.location.hash = hash;
+    requestBoardReveal(href);
+    return;
+  }
+
+  let absolute = href.trim();
+  try {
+    absolute = new URL(absolute, window.location.href).href;
+  } catch {
+    // keep absolute as trimmed href
+  }
+
+  // Do not pass a features string — WKWebView / some browsers treat
+  // "noopener,noreferrer" as window features and return null.
+  const opened = window.open(absolute, "_blank");
+  if (opened) return;
+
+  const anchor = document.createElement("a");
+  anchor.href = absolute;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
 
 /**
  * Coerce pasted / stored Spark deep links into a canonical `readdle-spark://…`
@@ -209,6 +364,32 @@ export function isPenpotDesignTaskLinkUrl(url: string): boolean {
   );
 }
 
+/** True when the design link targets a board/frame (not file-only). */
+export function isPenpotDesignBoardTaskLinkUrl(url: string): boolean {
+  const parsed = parsePenpotDesignLink(url);
+  return Boolean(parsed?.boardId);
+}
+
+function PenpotDesignBoardIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M8.85 6.15 12 3l3.15 3.15L12 9.3zm5.85 6.3 3.15-3.15L21 12.45l-3.15 3.15zm-5.85 5.4L12 14.7l3.15 3.15L12 21zM3 12l3.15-3.15L9.3 12l-3.15 3.15z" />
+    </svg>
+  );
+}
+
 /** Href used when opening a task link (resolves design URIs to https). */
 export function resolveTaskLinkOpenHref(
   url: string,
@@ -227,8 +408,11 @@ export function taskLinkDisplayLabel(url: string): string {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return "E-mail";
   }
+  if (isPenpotDesignBoardTaskLinkUrl(url)) {
+    return "Item";
+  }
   if (isPenpotDesignTaskLinkUrl(url)) {
-    return "Design";
+    return "File";
   }
   if (isAppLetterTaskLinkUrl(url)) {
     const number = letterNumberFromTaskLinkUrl(url);
@@ -321,12 +505,33 @@ function TaskLinkFavicon({ url }: { url: string }) {
   );
 }
 
+function TaskLinkAttachmentLabel({
+  url,
+  label,
+}: {
+  url: string;
+  label: string;
+}): ReactNode {
+  if (!isPenpotDesignTaskLinkUrl(url)) {
+    return label;
+  }
+  return (
+    <>
+      <span className="task-link-attachments__product">BacksterDESIGN</span>
+      <span className="task-link-attachments__label-text">{label}</span>
+    </>
+  );
+}
+
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return <EmailNavIcon size={16} />;
   }
+  if (isPenpotDesignBoardTaskLinkUrl(url)) {
+    return <PenpotDesignBoardIcon size={16} />;
+  }
   if (isPenpotDesignTaskLinkUrl(url)) {
-    return <ProjectOcticon icon="paintbrush" size={16} />;
+    return <BacksterDesignLogoIcon size={16} />;
   }
   if (isAppLetterTaskLinkUrl(url)) {
     return <LetterIcon size={16} />;
@@ -384,6 +589,7 @@ export function TaskLinkAttachments({
   letterOptions = [],
   emailOptions = [],
   onNavigate,
+  designPublicUri = "https://localhost:3449",
   fileAttachments = [],
   fileUploading = false,
   onUploadFile,
@@ -406,6 +612,7 @@ export function TaskLinkAttachments({
   const canEditLinks = Boolean(onChangeLinks) && !readOnly;
   const canEdit = canEditLinks || canUploadFiles;
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const [attachKind, setAttachKind] = useState<TaskLinkAttachmentKind>("url");
   const [draftUrl, setDraftUrl] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -417,6 +624,7 @@ export function TaskLinkAttachments({
   const titleId = useId();
 
   const openModal = useCallback(() => {
+    setEditingLinkId(null);
     setDraftUrl("");
     setSearchQuery("");
     setAttachKind(canEditLinks ? "url" : "file");
@@ -424,12 +632,27 @@ export function TaskLinkAttachments({
     setModalOpen(true);
   }, [canEditLinks]);
 
+  const openEditModal = useCallback((linkId: string, url: string) => {
+    setEditingLinkId(linkId);
+    setDraftUrl(url);
+    setSearchQuery("");
+    setAttachKind("url");
+    setFormError(null);
+    setModalOpen(true);
+  }, []);
+
   const closeModal = useCallback(() => {
     setModalOpen(false);
+    setEditingLinkId(null);
     setDraftUrl("");
     setSearchQuery("");
     setFormError(null);
   }, []);
+
+  const portalTarget =
+    typeof document !== "undefined"
+      ? (rootRef.current?.closest(".bos-product-shell") ?? document.body)
+      : null;
 
   useEffect(() => {
     if (!canEdit) {
@@ -516,6 +739,27 @@ export function TaskLinkAttachments({
     closeModal();
   }
 
+  function updateLink(linkId: string, url: string) {
+    if (!onChangeLinks) {
+      return;
+    }
+    const normalized = normalizeTaskLinkUrl(url);
+    if (!normalized) {
+      setFormError("Enter a valid URL.");
+      return;
+    }
+    if (items.some((item) => item.id !== linkId && item.url === normalized)) {
+      setFormError("This link is already attached.");
+      return;
+    }
+    const next = items.map((item) =>
+      item.id === linkId ? { ...item, url: normalized } : item,
+    );
+    setItems(next);
+    onChangeLinks(next);
+    closeModal();
+  }
+
   function handleRemove(id: string) {
     if (!onChangeLinks) {
       return;
@@ -528,6 +772,10 @@ export function TaskLinkAttachments({
   function handleSave(event?: FormEvent) {
     event?.preventDefault();
     if (attachKind !== "url") return;
+    if (editingLinkId) {
+      updateLink(editingLinkId, draftUrl);
+      return;
+    }
     appendLink(draftUrl);
   }
 
@@ -604,6 +852,11 @@ export function TaskLinkAttachments({
             onClick={openModal}
           >
             <PaperclipIcon />
+            {!hasRows ? (
+              <span className="task-link-attachments__add-label">
+                Add attachment
+              </span>
+            ) : null}
           </button>
         </div>
       ) : null}
@@ -611,20 +864,26 @@ export function TaskLinkAttachments({
       {hasRows ? (
         <ul className="task-link-attachments__list">
           {items.map((item) => {
-            const href = resolveTaskLinkOpenHref(item.url);
+            const href = resolveTaskLinkOpenHref(item.url, designPublicUri);
             const internal = isInternalAppHref(href);
+            const designLink = isPenpotDesignTaskLinkUrl(item.url);
+            const hashHref = designLink ? penpotHashHref(href) : null;
+            const anchorHref = hashHref ?? href;
+            // Design links must not use onNavigate (BacksterOS would
+            // client-route an absolute Penpot URL). Open via openTaskLinkHref.
+            const openViaHandler = Boolean(onNavigate) && internal && !designLink;
             const displayLabel = resolveTaskLinkAttachmentLabel(
               item.url,
               linkLabelOptions,
             );
             return (
             <li key={item.id} className="task-link-attachments__row">
-              {internal && onNavigate ? (
+              {openViaHandler ? (
                 <button
                   type="button"
                   className="task-link-attachments__link task-link-attachments__link--button"
                   title={href}
-                  onClick={() => onNavigate(href)}
+                  onClick={() => onNavigate?.(href)}
                 >
                   <span
                     className="task-link-attachments__icon"
@@ -633,17 +892,23 @@ export function TaskLinkAttachments({
                     <TaskLinkIcon url={href} />
                   </span>
                   <span className="task-link-attachments__label">
-                    {displayLabel}
+                    <TaskLinkAttachmentLabel url={item.url} label={displayLabel} />
                   </span>
                 </button>
               ) : (
                 <a
                   className="task-link-attachments__link"
-                  href={href}
-                  target={internal ? undefined : "_blank"}
-                  rel={internal ? undefined : "noreferrer"}
+                  href={anchorHref}
+                  target={designLink || internal ? undefined : "_blank"}
+                  rel={designLink || internal ? undefined : "noreferrer"}
                   title={href}
                   onClick={(event) => {
+                    if (designLink) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openTaskLinkHref(href);
+                      return;
+                    }
                     if (!internal || !onNavigate) return;
                     event.preventDefault();
                     onNavigate(href);
@@ -656,23 +921,39 @@ export function TaskLinkAttachments({
                     <TaskLinkIcon url={href} />
                   </span>
                   <span className="task-link-attachments__label">
-                    {displayLabel}
+                    <TaskLinkAttachmentLabel url={item.url} label={displayLabel} />
                   </span>
                 </a>
               )}
               {canEditLinks ? (
-                <button
-                  type="button"
-                  className="task-link-attachments__remove"
-                  aria-label="Remove link"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    handleRemove(item.id);
-                  }}
-                >
-                  <RemoveIcon />
-                </button>
+                <div className="task-link-attachments__actions">
+                  <button
+                    type="button"
+                    className="task-link-attachments__action"
+                    aria-label="Edit link"
+                    title="Edit link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openEditModal(item.id, item.url);
+                    }}
+                  >
+                    <PencilIcon size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    className="task-link-attachments__action"
+                    aria-label="Remove link"
+                    title="Remove link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleRemove(item.id);
+                    }}
+                  >
+                    <RemoveIcon />
+                  </button>
+                </div>
               ) : null}
             </li>
             );
@@ -721,18 +1002,21 @@ export function TaskLinkAttachments({
                 </span>
               )}
               {canUploadFiles && onRemoveFile ? (
-                <button
-                  type="button"
-                  className="task-link-attachments__remove"
-                  aria-label={`Remove ${fileName}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onRemoveFile(file.id);
-                  }}
-                >
-                  <RemoveIcon />
-                </button>
+                <div className="task-link-attachments__actions">
+                  <button
+                    type="button"
+                    className="task-link-attachments__action"
+                    aria-label={`Remove ${fileName}`}
+                    title={`Remove ${fileName}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRemoveFile(file.id);
+                    }}
+                  >
+                    <RemoveIcon />
+                  </button>
+                </div>
               ) : null}
             </li>
             );
@@ -740,7 +1024,7 @@ export function TaskLinkAttachments({
         </ul>
       ) : null}
 
-      {modalOpen && typeof document !== "undefined"
+      {modalOpen && portalTarget
         ? createPortal(
             <div
               className="entity-delete-modal-root"
@@ -760,9 +1044,9 @@ export function TaskLinkAttachments({
                 className="entity-delete-modal task-link-attachments-modal"
               >
                 <h2 id={titleId} className="entity-delete-modal-title">
-                  Add attachment
+                  {editingLinkId ? "Edit attachment" : "Add attachment"}
                 </h2>
-                {kindOptions.length > 1 ? (
+                {!editingLinkId && kindOptions.length > 1 ? (
                   <div className="task-link-attachments-modal__kind">
                     <SegmentedPillToggle
                       value={attachKind}
@@ -772,10 +1056,12 @@ export function TaskLinkAttachments({
                     />
                   </div>
                 ) : null}
-                {attachKind === "url" ? (
+                {attachKind === "url" || editingLinkId ? (
                   <>
                     <p className="entity-delete-modal-body">
-                      Paste a link to attach it to this task.
+                      {editingLinkId
+                        ? "Update the link URL for this attachment."
+                        : "Paste a link to attach it to this task."}
                     </p>
                     <form
                       className="task-link-attachments-modal__form"
@@ -947,7 +1233,7 @@ export function TaskLinkAttachments({
                 )}
               </div>
             </div>,
-            document.body,
+            portalTarget,
           )
         : null}
     </div>

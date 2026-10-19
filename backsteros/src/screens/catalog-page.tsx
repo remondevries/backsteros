@@ -906,6 +906,7 @@ function CatalogPageBody() {
         <div className="domain-project-workbench__tasks" data-list-board-view>
           <ProjectTasksView
             tasks={domainTasks}
+            listItemVariant="row"
             assigneeOptions={assigneeOptions}
             view={listView}
             onViewChange={(nextView) => {

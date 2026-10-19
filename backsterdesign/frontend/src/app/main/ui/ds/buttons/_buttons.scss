@@ -24,6 +24,7 @@
   --button-height: #{$sz-32};
 
   appearance: none;
+  cursor: pointer;
   width: var(--button-width);
   height: var(--button-height);
   background: var(--button-bg-color);
@@ -50,9 +51,11 @@
     --button-fg-color: var(--button-focus-fg-color);
   }
 
-  &:disabled {
+  &:disabled,
+  &[aria-disabled="true"] {
     --button-bg-color: var(--button-disabled-bg-color);
     --button-fg-color: var(--button-disabled-fg-color);
+    cursor: default;
   }
 }
 

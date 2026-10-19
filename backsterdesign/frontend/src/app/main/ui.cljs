@@ -132,22 +132,25 @@
   {::mf/props :obj
    ::mf/private true}
   [{:keys [team-id children]}]
-  (mf/with-effect [team-id]
-    (when (uuid? team-id)
-      (st/emit! (dtm/initialize-team team-id))
-      (fn []
-        (st/emit! (dtm/finalize-team team-id)))))
+  ;; Always deref before any conditional return — switching from a blank
+  ;; `team-id=` URL to a real id otherwise changes hook count and crashes
+  ;; React ("Rendered more hooks than during the previous render").
+  (let [team (mf/deref refs/team)
+        permissions (:permissions team)]
+    (mf/with-effect [team-id]
+      (when (uuid? team-id)
+        (st/emit! (dtm/initialize-team team-id))
+        (fn []
+          (st/emit! (dtm/finalize-team team-id)))))
 
-  (if-not (uuid? team-id)
-    nil
-    (let [{:keys [permissions] :as team} (mf/deref refs/team)]
-      (when (= team-id (:id team))
-        [:> (mf/provider ctx/current-team-id) {:value team-id}
-         [:> (mf/provider ctx/permissions) {:value permissions}
-          [:> (mf/provider ctx/can-edit?) {:value (:can-edit permissions)}
-           ;; The `:key` is mandatory here because we want to reinitialize
-           ;; all dom tree instead of simple rerender.
-           [:* {:key (str team-id)} children]]]]))))
+    (when (and (uuid? team-id)
+               (= team-id (:id team)))
+      [:> (mf/provider ctx/current-team-id) {:value team-id}
+       [:> (mf/provider ctx/permissions) {:value permissions}
+        [:> (mf/provider ctx/can-edit?) {:value (:can-edit permissions)}
+         ;; The `:key` is mandatory here because we want to reinitialize
+         ;; all dom tree instead of simple rerender.
+         [:* {:key (str team-id)} children]]]])))
 
 (mf/defc page*
   {::mf/props :obj
@@ -223,6 +226,7 @@
        (:dashboard-search
         :dashboard-recent
         :dashboard-backsteros
+        :dashboard-client-accounts
         :dashboard-files
         :dashboard-libraries
         :dashboard-fonts
@@ -235,6 +239,8 @@
        (let [params        (get params :query)
              team-id             (some-> params :team-id uuid/parse*)
              project-id          (some-> params :project-id uuid/parse*)
+             contact-id          (some-> params :contact-id str)
+             task-id             (some-> params :task-id str)
              search-term         (some-> params :search-term)
              plugin-url          (some-> params :plugin)
              template            (some-> params :template)
@@ -262,6 +268,8 @@
                                 :search-term search-term
                                 :plugin-url plugin-url
                                 :project-id project-id
+                                :contact-id contact-id
+                                :task-id task-id
                                 :template template
                                 :pending-action-id pending-action-id}]]])
 

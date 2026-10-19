@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Ship BacksterDESIGN compose + images to ssh lemodesign and (re)start the stack.
+#
+# Prerequisites:
+#   - Images built locally (./deploy/scripts/build-images.sh)
+#   - SSH host alias `lemodesign` (user deploy)
+#   - DNS design.lemo-design.com → lemodesign public IP
+#   - Caddy site block for design.lemo-design.com (see deploy/caddy/design.lemo-design.com.caddy)
+#
+# Usage:
+#   IMAGE_TAG=2.18.3 ./backsterdesign/deploy/scripts/deploy-lemodesign.sh
+#   IMAGE_TAG=2.18.3 ./backsterdesign/deploy/scripts/deploy-lemodesign.sh --compose-only
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+IMAGE_TAG="${IMAGE_TAG:-2.18.3}"
+IMAGE_NS="${IMAGE_NS:-backsterdesign}"
+REMOTE_HOST="${REMOTE_HOST:-lemodesign}"
+REMOTE_DIR="${REMOTE_DIR:-/home/deploy/backsterdesign}"
+COMPOSE_ONLY=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --compose-only) COMPOSE_ONLY=1 ;;
+    -h|--help)
+      sed -n '2,18p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "unknown arg: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+IMAGES=(
+  "${IMAGE_NS}/frontend:${IMAGE_TAG}"
+  "${IMAGE_NS}/backend:${IMAGE_TAG}"
+  "${IMAGE_NS}/exporter:${IMAGE_TAG}"
+  "${IMAGE_NS}/mcp:${IMAGE_TAG}"
+)
+
+ssh_cmd() {
+  ssh -o BatchMode=yes "$REMOTE_HOST" "$@"
+}
+
+echo "==> Ensuring remote dir ${REMOTE_DIR}…"
+ssh_cmd "mkdir -p '${REMOTE_DIR}'"
+
+echo "==> Syncing compose + env example…"
+rsync -az --delete \
+  --exclude '.env' \
+  --exclude 'scripts/' \
+  --exclude 'caddy/' \
+  "$DEPLOY_DIR/docker-compose.yaml" \
+  "$DEPLOY_DIR/.env.example" \
+  "$DEPLOY_DIR/README.md" \
+  "${REMOTE_HOST}:${REMOTE_DIR}/"
+
+if [[ "$COMPOSE_ONLY" -eq 0 ]]; then
+  for img in "${IMAGES[@]}"; do
+    if ! docker image inspect "$img" >/dev/null 2>&1; then
+      echo "missing local image: $img — run build-images.sh first" >&2
+      exit 1
+    fi
+  done
+
+  echo "==> Streaming images to ${REMOTE_HOST} (docker save | docker load)…"
+  # shellcheck disable=SC2029
+  docker save "${IMAGES[@]}" | ssh_cmd "docker load"
+else
+  echo "==> Skipping image transfer (--compose-only)"
+fi
+
+echo "==> Ensuring .env on remote…"
+ssh_cmd "cd '${REMOTE_DIR}' && if [[ ! -f .env ]]; then
+  cp .env.example .env
+  SECRET=\$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')
+  # portable-ish in-place replace
+  if grep -q '^PENPOT_SECRET_KEY=' .env; then
+    sed -i.bak \"s|^PENPOT_SECRET_KEY=.*|PENPOT_SECRET_KEY=\${SECRET}|\" .env
+  else
+    echo \"PENPOT_SECRET_KEY=\${SECRET}\" >> .env
+  fi
+  echo 'Created .env with a fresh PENPOT_SECRET_KEY'
+else
+  echo '.env already present — leaving secret untouched'
+fi
+# Keep public URI / image tag in sync with this deploy
+grep -q '^PENPOT_PUBLIC_URI=' .env || echo 'PENPOT_PUBLIC_URI=https://design.lemo-design.com' >> .env
+sed -i.bak 's|^PENPOT_PUBLIC_URI=.*|PENPOT_PUBLIC_URI=https://design.lemo-design.com|' .env
+sed -i.bak 's|^PENPOT_IMAGE_TAG=.*|PENPOT_IMAGE_TAG=${IMAGE_TAG}|' .env || true
+grep -q '^PENPOT_IMAGE_TAG=' .env || echo 'PENPOT_IMAGE_TAG=${IMAGE_TAG}' >> .env
+"
+
+echo "==> docker compose up -d…"
+ssh_cmd "cd '${REMOTE_DIR}' && docker compose -p backsterdesign --env-file .env -f docker-compose.yaml pull penpot-admin-console penpot-postgres penpot-valkey penpot-mailcatch 2>/dev/null || true
+cd '${REMOTE_DIR}' && docker compose -p backsterdesign --env-file .env -f docker-compose.yaml up -d
+cd '${REMOTE_DIR}' && docker compose -p backsterdesign ps"
+
+echo
+echo "Stack should answer on http://127.0.0.1:9001 on lemodesign."
+echo "Public URL (via Caddy): https://design.lemo-design.com"
+echo "If Caddy is not wired yet, apply deploy/caddy/design.lemo-design.com.caddy"

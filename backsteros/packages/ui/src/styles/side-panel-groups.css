@@ -374,6 +374,17 @@ button.side-panel-plain-group-label[aria-current="true"] {
   list-style: none;
 }
 
+/* Board cards stacked under list status headers (`listItemVariant="card"`). */
+.project-tasks-list__card-item {
+  margin: 0;
+  padding: 0 2px 6px;
+  list-style: none;
+}
+
+.project-tasks-list__card-item--insert-before {
+  border-top: 1px solid color-mix(in srgb, #ee7a47 50%, transparent);
+}
+
 .project-documents__main,
 .project-letters__main {
   display: flex;

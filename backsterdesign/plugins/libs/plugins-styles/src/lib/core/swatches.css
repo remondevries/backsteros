@@ -5,7 +5,7 @@
   --db-primary: #18181a;
   --db-secondary: #000000;
   --db-tertiary: #212426;
-  --db-quaternary: #2e3434;
+  --db-quaternary: #1f1f20;
 
   /*light*/
   --lb-primary: #ffffff;
@@ -18,7 +18,7 @@
   /*dark*/
 
   --df-primary: #ffffff;
-  --df-secondary: #8f9da3;
+  --df-secondary: #a3a3a3;
 
   /*light*/
   --lf-primary: #000000;
@@ -27,10 +27,10 @@
   /*ACCENT*/
 
   /*dark*/
-  --da-primary: #7efff5;
-  --da-primary-muted: #426158;
+  --da-primary: #f97316;
+  --da-primary-muted: #d87b3a;
   --da-secondary: #bb97d8;
-  --da-tertiary: #00d1b8;
+  --da-tertiary: #f97316;
   --da-quaternary: #ff6fe0;
 
   /*light*/
@@ -42,7 +42,7 @@
 
   /*STATUS COLOR*/
   --success-50: #f0f8ff;
-  --success-500: #2d9f8f;
+  --success-500: #f97316;
   --success-950: #0a2927;
   --warning-50: #fff4ed;
   --warning-500: #fe4811;

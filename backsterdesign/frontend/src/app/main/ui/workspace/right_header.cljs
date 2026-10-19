@@ -166,6 +166,7 @@
                      (dw/clear-edition-mode)
                      (-> (dw/remove-layout-flag :document-history)
                          (vary-meta assoc ::ev/origin "workspace-header"))
+                     (dw/remove-layout-flag :backsteros-tasks)
                      (dw/select-for-drawing :comments))))
 
         toggle-comments
@@ -176,6 +177,20 @@
              (st/emit! (dwc/clear-drawing))
              (active-comments))))
 
+        toggle-tasks
+        (mf/use-fn
+         (mf/deps selected-drawtool layout)
+         (fn []
+           (when (= :comments selected-drawtool)
+             (st/emit! :interrupt
+                       (dw/clear-edition-mode)
+                       (dwc/clear-drawing)))
+           (st/emit!
+            (dw/remove-layout-flag :document-history)
+            (if (contains? layout :backsteros-tasks)
+              (dw/remove-layout-flag :backsteros-tasks)
+              (dw/toggle-layout-flag :backsteros-tasks {:force? true})))))
+
         toggle-history
         (mf/use-fn
          (mf/deps selected-drawtool)
@@ -184,7 +199,8 @@
              (st/emit! :interrupt
                        (dw/clear-edition-mode)))
 
-           (st/emit! (-> (dwh/initialize-history)
+           (st/emit! (dw/remove-layout-flag :backsteros-tasks)
+                     (-> (dwh/initialize-history)
                          (vary-meta assoc ::ev/origin "workspace-header")))))
 
         open-share-dialog
@@ -226,6 +242,19 @@
        deprecated-icon/comments
        (when ^boolean has-unread-comments?
          [:div {:class (stl/css :unread)}])]]
+
+     [:div {:class (stl/css :tasks-section)}
+      [:button
+       {:title "Tasks"
+        :aria-label "Tasks"
+        :class (stl/css-case :tasks-button true
+                             :selected (contains? layout :backsteros-tasks))
+        :on-click toggle-tasks
+        :data-testid "workspace-tasks-toggle"}
+       ;; Stroke icon (same as comments/history) so it stays visible in light
+       ;; and dark themes. logo-small.svg is white-on-transparent and vanishes
+       ;; on light panels.
+       deprecated-icon/view-as-list]]
 
      (when-not ^boolean read-only?
        [:div {:class (stl/css :history-section)}

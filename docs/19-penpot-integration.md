@@ -10,6 +10,7 @@ BacksterDESIGN is the design workspace for BacksterOS: a **forked Penpot** under
 | BacksterOS | repo root (`core/`, `backsteros/`, …) | `pnpm --filter @backsteros/desktop dev` |
 | BacksterDEV | `backsterdev/` | `pnpm --filter @backsteros/development dev` |
 | BacksterDESIGN | `backsterdesign/` | `pnpm --filter @backsteros/design dev` |
+| BacksterDESIGN desktop | `backsterdesign/desktop/` | `pnpm --filter @backsteros/design-desktop tauri:dev` (needs Penpot URI) |
 
 ## 1. Fork and dev environment
 
@@ -24,6 +25,7 @@ Forking lets us own UI, permissions, and OS bridges over time. The fork is pinne
 ```text
 backsterdesign/                    ← vendored Penpot (pinned) + Backster overlays
 ├── frontend/ backend/ …      upstream tree
+├── desktop/                  Tauri 2 shell (@backsteros/design-desktop) (§8)
 ├── mcp/                      vendored official Penpot MCP server (§3)
 ├── branding/                 BacksterDESIGN assets + apply scripts (temporary, §6)
 ├── deploy/                   self-host / compose notes (remote instance)
@@ -33,6 +35,7 @@ backsterdesign/                    ← vendored Penpot (pinned) + Backster overl
 ```
 
 Root filter shim: `pnpm --filter @backsteros/design …` → `tooling/design/`.
+Desktop: `pnpm --filter @backsteros/design-desktop tauri:dev` (or `pnpm --filter @backsteros/design desktop`).
 
 ### Local development
 
@@ -52,6 +55,7 @@ pnpm --filter @backsteros/design dev:down     # stop
 | App | https://localhost:3449 (also http://localhost:3450) |
 | Source bind | `backsterdesign/` → `/home/penpot/penpot` in the devenv container |
 | Pin | Penpot **2.18.3** (see `backsterdesign/BACKSTER.md`) |
+| BacksterOS bridge | `window.backsterosCore.baseUrl` = `/backsteros-core` (same-origin nginx → host `127.0.0.1:8788`). Direct `http://127.0.0.1:8788` fails as mixed content under HTTPS. Requires local-core running; `apiKey: "local"` for local-shell. |
 
 This is Penpot’s official **devenv** (compile frontend/backend inside Docker). It is the correct way to develop on the fork — same idea as running BacksterDEV’s nested app, with a heavier toolchain.
 
@@ -182,11 +186,18 @@ What agents do in Penpot:
 | --- | --- |
 | **Source of truth** | `backsterdesign/` in this monorepo. |
 | **Local devenv** | `pnpm --filter @backsteros/design dev` → https://localhost:3449 — develop the fork here first (§1). |
-| **Shared instance (now)** | SSH host **`development`** — `/home/deploy/penpot`, stock images + temporary branding overlay (§6), team use; see `backsterdesign/deploy/README.md`. Design runtime only. |
-| **Shared instance (later)** | **lemodesign** — fork images are **promoted** here. |
+| **Desktop (Tauri)** | `backsterdesign/desktop/` — package `@backsteros/design-desktop`. Overlay titlebar + tab strip; **one** Penpot SPA in an iframe (tabs route in-SPA, no remount). |
+| **Shared instance (legacy)** | SSH host **`development`** — `/home/deploy/penpot`, stock images + branding overlay (§6). Freeze after cutover to lemodesign. |
+| **Shared instance (canonical)** | SSH host **`lemodesign`** — `/home/deploy/backsterdesign`, fork images, public URL **https://design.lemo-design.com**. Build/deploy: `backsterdesign/deploy/README.md`. |
 
 - **`development` is a design runtime, not a build host.** Agents may assume a server called "development" is where they build or run dev work. It only runs Penpot. No images are built there; don't build or run CI jobs there.
-- **Tauri wrapper:** the desktop window for Penpot (PEN-1) lives in the OS repo's **design folder** (`backsterdesign/`). It is not a separate repo and does not go under `backsteros/`.
+- **Tauri wrapper:** lives under `backsterdesign/desktop/` (`com.backsteros.design`), not under `backsteros/`. See `backsterdesign/desktop/README.md`.
+- **Desktop + remote data (v1):** the shell is local; a **child webview** (not an iframe — Penpot sends `X-Frame-Options: SAMEORIGIN`) loads `PENPOT_PUBLIC_URI` (default `https://localhost:3449`) so auth cookies stay first-party on the Penpot origin. Network to that backend is required — there is no offline file sync.
+- **Run desktop:**
+  1. Start Penpot: `pnpm --filter @backsteros/design dev` (or point at a hosted instance).
+  2. `pnpm --filter @backsteros/design-desktop tauri:dev`  
+     Or via shim: `pnpm --filter @backsteros/design desktop`.  
+     Optional: `PENPOT_PUBLIC_URI=https://your-host` / `VITE_PENPOT_PUBLIC_URI=…`.
 - A **rename** of the `development` server to make its role clearer is listed as a consideration, but it is **deferred** (§9).
 
 ## 9. Open gaps

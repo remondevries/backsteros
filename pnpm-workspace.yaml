@@ -7,6 +7,8 @@ packages:
   - agents
   - backsterdev/shim
   - backstermeet
+  - backsterdesign/desktop
+  - backsterdesign/bridge
   - tooling/design
 allowBuilds:
   '@clerk/shared': true

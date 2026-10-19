@@ -1,3 +1,4 @@
+import { isActiveOpenRunningTimer } from "@backsteros/contracts";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
@@ -473,6 +474,7 @@ export type OpenRunningTaskTimer = {
   trackedDurationSeconds: number | null;
   trackedMinutes: number | null;
   projectKey: string | null;
+  updatedAt: Date | null;
 };
 
 /** Default window for “still running” — ignores abandoned starts without a stop. */
@@ -497,6 +499,7 @@ export async function listOpenRunningTaskTimers(
     trackedDurationSeconds: number | null;
     trackedMinutes: number | null;
     projectKey: string | null;
+    updatedAt: Date | string | null;
   }>(sql`
     SELECT
       a.task_id AS "taskId",
@@ -506,6 +509,7 @@ export async function listOpenRunningTaskTimers(
       t.status AS status,
       t.tracked_duration_seconds AS "trackedDurationSeconds",
       t.tracked_minutes AS "trackedMinutes",
+      t.updated_at AS "updatedAt",
       p.key AS "projectKey"
     FROM task_activities a
     INNER JOIN tasks t
@@ -538,25 +542,53 @@ export async function listOpenRunningTaskTimers(
     trackedDurationSeconds: number | null;
     trackedMinutes: number | null;
     projectKey: string | null;
+    updatedAt: Date | string | null;
   }>;
 
-  return entries.map((row) => ({
-    taskId: row.taskId,
-    startedAt:
+  return entries.flatMap((row) => {
+    const startedAt =
       row.startedAt instanceof Date
         ? row.startedAt
-        : new Date(String(row.startedAt)),
-    title: row.title,
-    number: row.number == null ? null : Number(row.number),
-    status: row.status,
-    trackedDurationSeconds:
+        : new Date(String(row.startedAt));
+    const updatedAt =
+      row.updatedAt == null
+        ? null
+        : row.updatedAt instanceof Date
+          ? row.updatedAt
+          : new Date(String(row.updatedAt));
+    const trackedDurationSeconds =
       row.trackedDurationSeconds == null
         ? null
-        : Number(row.trackedDurationSeconds),
-    trackedMinutes:
-      row.trackedMinutes == null ? null : Number(row.trackedMinutes),
-    projectKey: row.projectKey,
-  }));
+        : Number(row.trackedDurationSeconds);
+    const trackedMinutes =
+      row.trackedMinutes == null ? null : Number(row.trackedMinutes);
+    if (
+      !isActiveOpenRunningTimer({
+        startedAtMs: startedAt.getTime(),
+        trackedDurationSeconds,
+        trackedMinutes,
+        updatedAtMs:
+          updatedAt && !Number.isNaN(updatedAt.getTime())
+            ? updatedAt.getTime()
+            : null,
+      })
+    ) {
+      return [];
+    }
+    return [
+      {
+        taskId: row.taskId,
+        startedAt,
+        title: row.title,
+        number: row.number == null ? null : Number(row.number),
+        status: row.status,
+        trackedDurationSeconds,
+        trackedMinutes,
+        projectKey: row.projectKey,
+        updatedAt,
+      },
+    ];
+  });
 }
 
 export type DeletedTaskTimerSession = {

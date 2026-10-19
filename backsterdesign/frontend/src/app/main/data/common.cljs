@@ -13,6 +13,7 @@
    [app.common.time :as ct]
    [app.common.types.organization :as cto]
    [app.common.types.team :as ctt]
+   [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.main.data.helpers :as dsh]
    [app.main.data.modal :as modal]
@@ -27,6 +28,30 @@
    [potok.v2.core :as ptk]))
 
 (declare go-to-dashboard-recent)
+
+(defn- resolve-team-id
+  "Pick a usable team id for dashboard navigation. Prefer an explicit
+  arg (uuid, parseable string, or :default), then :current-team-id,
+  then the profile default. Never returns nil when the profile has a
+  default team — empty `team-id=` URLs otherwise blank the SPA."
+  [state team-id]
+  (let [profile (get state :profile)
+        parsed  (cond
+                  (= :default team-id)
+                  (:default-team-id profile)
+
+                  (uuid? team-id)
+                  team-id
+
+                  (and (string? team-id)
+                       (not= "" team-id))
+                  (uuid/parse* team-id)
+
+                  :else
+                  nil)]
+    (or parsed
+        (:current-team-id state)
+        (:default-team-id profile))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SHARE LINK
@@ -390,18 +415,21 @@
                      ::rt/window-name "penpot-feedback")))))
 
 (defn go-to-dashboard-files
-  [& {:keys [project-id team-id] :as options}]
+  [& {:keys [project-id team-id task-id] :as options}]
   (ptk/reify ::go-to-dashboard-files
     ptk/WatchEvent
     (watch [_ state _]
       (let [profile    (get state :profile)
-            team-id    (or team-id (:current-team-id state))
+            team-id    (resolve-team-id state team-id)
             project-id (if (= project-id :default)
                          (:default-project-id profile)
                          project-id)
 
-            params     {:team-id team-id
-                        :project-id project-id}]
+            params     (cond-> {:team-id team-id
+                                :project-id project-id}
+                         (and (some? task-id)
+                              (not= "" (str task-id)))
+                         (assoc :task-id (str task-id)))]
         (rx/of (rt/nav :dashboard-files params options))))))
 
 (defn go-to-dashboard-search
@@ -429,7 +457,7 @@
   (ptk/reify ::go-to-dashboard-libraries
     ptk/WatchEvent
     (watch [_ state _]
-      (let [team-id (or team-id (:current-team-id state))]
+      (let [team-id (resolve-team-id state team-id)]
         (rx/of (rt/nav :dashboard-libraries {:team-id team-id}))))))
 
 
@@ -438,7 +466,7 @@
   (ptk/reify ::go-to-dashboard-fonts
     ptk/WatchEvent
     (watch [_ state _]
-      (let [team-id (or team-id (:current-team-id state))]
+      (let [team-id (resolve-team-id state team-id)]
         (rx/of (rt/nav :dashboard-fonts {:team-id team-id}))))))
 
 (defn go-to-dashboard-recent
@@ -446,16 +474,7 @@
   (ptk/reify ::go-to-dashboard-recent
     ptk/WatchEvent
     (watch [_ state _]
-      (let [profile (get state :profile)
-            team-id (cond
-                      (= :default team-id)
-                      (:default-team-id profile)
-
-                      (uuid? team-id)
-                      team-id
-
-                      :else
-                      (:current-team-id state))
+      (let [team-id (resolve-team-id state team-id)
             params  {:team-id team-id}]
         (rx/of (modal/hide)
                (rt/nav :dashboard-recent params options))))))
@@ -493,7 +512,7 @@
         (rx/of (rt/nav :dashboard-settings {:team-id team-id}))))))
 
 (defn go-to-workspace
-  [& {:keys [team-id file-id page-id layout] :as options}]
+  [& {:keys [team-id file-id page-id board-id layout] :as options}]
   (ptk/reify ::go-to-workspace
     ptk/WatchEvent
     (watch [_ state _]
@@ -504,10 +523,14 @@
                             (get :pages)
                             (first)))
 
+            ;; Drop dashboard-only params (e.g. open task) so they don't
+            ;; stick on the workspace URL when opening a file.
             params  (-> (rt/get-params state)
+                        (dissoc :task-id :contact-id)
                         (assoc :team-id team-id)
                         (assoc :file-id file-id)
                         (assoc :page-id page-id)
+                        (assoc :board-id board-id)
                         (update :layout  #(or layout %))
                         (d/without-nils))]
         (rx/of (rt/nav :workspace params options))))))
@@ -549,16 +572,7 @@
   (ptk/reify ::go-to-dashboard-deleted
     ptk/WatchEvent
     (watch [_ state _]
-      (let [profile (get state :profile)
-            team-id (cond
-                      (= :default team-id)
-                      (:default-team-id profile)
-
-                      (uuid? team-id)
-                      team-id
-
-                      :else
-                      (:current-team-id state))
+      (let [team-id (resolve-team-id state team-id)
             params  {:team-id team-id}]
         (rx/of (modal/hide)
                (rt/nav :dashboard-deleted params options))))))
@@ -568,16 +582,20 @@
   (ptk/reify ::go-to-dashboard-backsteros
     ptk/WatchEvent
     (watch [_ state _]
-      (let [profile (get state :profile)
-            team-id (cond
-                      (= :default team-id)
-                      (:default-team-id profile)
-
-                      (uuid? team-id)
-                      team-id
-
-                      :else
-                      (:current-team-id state))
+      (let [team-id (resolve-team-id state team-id)
             params  {:team-id team-id}]
         (rx/of (modal/hide)
                (rt/nav :dashboard-backsteros params options))))))
+
+(defn go-to-dashboard-client-accounts
+  [& {:keys [team-id contact-id]}]
+  (ptk/reify ::go-to-dashboard-client-accounts
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [team-id (resolve-team-id state team-id)
+            params  (cond-> {:team-id team-id}
+                      (and (some? contact-id)
+                           (not= "" (str contact-id)))
+                      (assoc :contact-id (str contact-id)))]
+        (rx/of (modal/hide)
+               (rt/nav :dashboard-client-accounts params))))))

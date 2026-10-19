@@ -12,13 +12,27 @@
 @use "ds/spacing.scss" as *;
 @use "ds/mixins.scss" as *;
 
-.dashboard-fonts {
-  border-top: $b-1 solid var(--color-background-quaternary);
+.dashboard-container {
   display: flex;
   flex-direction: column;
-  padding-left: px2rem(120);
-  padding-bottom: px2rem(120);
+  flex: 1 0 0;
+  inline-size: 100%;
+  margin-inline-end: 0;
+  border-block-start: $b-1 solid var(--panel-border-color);
+  min-block-size: 0;
+  overflow: hidden;
+  padding-block-end: 0;
+}
+
+.dashboard-fonts {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
   overflow-y: auto;
+  // No horizontal padding here — the shared tab nav must stay aligned
+  // with Recents / Projects / Drafts. Content blocks below get the inset.
+  padding: 0 0 var(--sp-xxxl);
 
   .btn-primary {
     font-size: px2rem(11);
@@ -31,7 +45,8 @@
   max-width: px2rem(1000);
   width: 100%;
   display: flex;
-  margin-top: var(--sp-xxl);
+  margin-top: var(--sp-m);
+  padding-inline: var(--sp-xxl);
   flex-direction: column;
 
   h3 {
@@ -249,6 +264,8 @@
   width: 100%;
   display: flex;
   flex-direction: column;
+  // Same content inset as Recents / Drafts / Projects.
+  padding: var(--sp-m) var(--sp-xxl) 0;
 
   .upload-button {
     width: px2rem(100);
@@ -262,8 +279,9 @@
 .dashboard-fonts-hero {
   @include t.use-typography("body-medium");
 
-  padding: var(--sp-xxxl) 0;
-  margin-top: px2rem(80);
+  // Horizontal inset comes from .dashboard-fonts-upload.
+  padding: 0;
+  margin: 0;
   display: flex;
   justify-content: space-between;
 

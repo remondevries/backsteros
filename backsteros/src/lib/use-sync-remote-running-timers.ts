@@ -14,6 +14,7 @@ type RemoteRunningTimerAdoption = {
   trackedDurationSeconds: number | null;
   trackedMinutes?: number | null;
   remoteStartedAtMs: number;
+  updatedAtMs?: number | null;
   onPersist: (seconds: number | null, fromTimerPause?: boolean) => void;
   onSessionChange?: (
     action: "started" | "stopped",
@@ -30,6 +31,7 @@ type RunningTimerApiRow = {
   trackedDurationSeconds: number | null;
   trackedMinutes: number | null;
   projectKey: string | null;
+  updatedAt?: string | null;
 };
 
 const POLL_INTERVAL_MS = 2_000;
@@ -88,6 +90,7 @@ export function useSyncRemoteRunningTimers(): void {
           trackedDurationSeconds: row.trackedDurationSeconds,
           trackedMinutes: row.trackedMinutes,
           remoteStartedAtMs: parseStartedAtMs(row.startedAt),
+          updatedAtMs: row.updatedAt ? parseStartedAtMs(row.updatedAt) : null,
           onPersist: (seconds: number | null) => {
             void clientRef.current
               .requestJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {

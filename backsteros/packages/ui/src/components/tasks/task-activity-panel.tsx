@@ -341,6 +341,31 @@ function activityMessage(activity: TaskActivity): ReactNode {
   return <>{name} updated this task</>;
 }
 
+function ActivityAvatarMarker({ src }: { src: string | null }) {
+  return (
+    <span
+      className="task-activity-event__marker task-activity-event__marker--avatar"
+      aria-hidden="true"
+    >
+      <EntityAvatarIcon src={src} size={12} kind="contact" />
+    </span>
+  );
+}
+
+function firstContactAvatarSrc(
+  ids: unknown,
+  avatarByContactId: ReadonlyMap<string, string | null> | undefined,
+): string | null {
+  if (!avatarByContactId || !Array.isArray(ids)) return null;
+  for (const value of ids) {
+    const id = asOptionalString(value);
+    if (!id) continue;
+    const src = avatarByContactId.get(id);
+    if (src) return src;
+  }
+  return null;
+}
+
 function ActivityLeadingIcon({
   activity,
   assigneeAvatarById,
@@ -352,6 +377,17 @@ function ActivityLeadingIcon({
   avatarByEmail?: ReadonlyMap<string, string | null>;
   currentUser: TaskActivityCurrentUser;
 }) {
+  const actorAvatarSrc = resolveActorAvatarSrc(
+    {
+      userId: activity.actorUserId,
+      contactId: activity.actorContactId,
+      email: activity.actorEmail,
+    },
+    avatarByEmail,
+    assigneeAvatarById,
+    currentUser,
+  );
+
   if (activity.type === "status_changed") {
     const status = asTaskStatus(activity.data.to);
     if (status) {
@@ -380,19 +416,23 @@ function ActivityLeadingIcon({
   }
   if (activity.type === "assignee_changed") {
     const assigneeId = asOptionalString(activity.data.to);
-    const avatarSrc = assigneeId
+    const assigneeAvatarSrc = assigneeId
       ? (assigneeAvatarById?.get(assigneeId) ?? null)
       : null;
     return (
-      <span
-        className="task-activity-event__marker task-activity-event__marker--avatar"
-        aria-hidden="true"
-      >
-        <EntityAvatarIcon src={avatarSrc} size={12} kind="contact" />
-      </span>
+      <ActivityAvatarMarker src={assigneeAvatarSrc ?? actorAvatarSrc} />
     );
   }
   if (activity.type === "related_contacts_changed") {
+    const relatedAvatarSrc = firstContactAvatarSrc(
+      activity.data.to,
+      assigneeAvatarById,
+    );
+    if (relatedAvatarSrc || actorAvatarSrc) {
+      return (
+        <ActivityAvatarMarker src={relatedAvatarSrc ?? actorAvatarSrc} />
+      );
+    }
     return (
       <span className="task-activity-event__marker" aria-hidden="true">
         <ContactPersonIcon size={12} />
@@ -414,6 +454,9 @@ function ActivityLeadingIcon({
     );
   }
   if (activity.type === "created") {
+    if (actorAvatarSrc) {
+      return <ActivityAvatarMarker src={actorAvatarSrc} />;
+    }
     return (
       <span className="task-activity-event__marker" aria-hidden="true">
         <TasksNavIcon className="task-activity-event__glyph" />
@@ -439,24 +482,7 @@ function ActivityLeadingIcon({
   }
 
   // Generic "updated this task" (and any other untyped rows): show the actor.
-  const actorAvatarSrc = resolveActorAvatarSrc(
-    {
-      userId: activity.actorUserId,
-      contactId: activity.actorContactId,
-      email: activity.actorEmail,
-    },
-    avatarByEmail,
-    assigneeAvatarById,
-    currentUser,
-  );
-  return (
-    <span
-      className="task-activity-event__marker task-activity-event__marker--avatar"
-      aria-hidden="true"
-    >
-      <EntityAvatarIcon src={actorAvatarSrc} size={12} kind="contact" />
-    </span>
-  );
+  return <ActivityAvatarMarker src={actorAvatarSrc} />;
 }
 
 type ActivityTimelineItem = {

@@ -1,0 +1,556 @@
+@use "ds/typography.scss" as t;
+@use "ds/spacing.scss" as *;
+@use "ds/_borders.scss" as *;
+@use "ds/_sizes.scss" as *;
+@use "ds/_utils.scss" as *;
+@use "ds/mixins.scss" as *;
+@use "ds/z-index.scss" as *;
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-m);
+  box-sizing: border-box;
+  min-block-size: $sz-64;
+  // Equal top/bottom inset — do not add outer padding on .dashboard-content.
+  padding-block: var(--sp-l);
+  padding-inline: var(--sp-m) var(--sp-l);
+  position: relative;
+  // Stack above sticky list headers so the notifications dropdown is not clipped.
+  z-index: var(--z-index-dropdown);
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.page-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s);
+  min-inline-size: 0;
+  flex: 1 1 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  color: inherit;
+  font: inherit;
+
+  &:hover .brand-name {
+    opacity: 0.85;
+  }
+
+  &:focus-visible {
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-2;
+    border-radius: $br-4;
+  }
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-foreground-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+
+  &:hover {
+    opacity: 0.85;
+  }
+
+  &:focus-visible {
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-2;
+    border-radius: $br-4;
+  }
+}
+
+.crumb-leaf {
+  cursor: default;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// Section nav — second breadcrumb becomes full dashboard navigation.
+// Idle: plain label. Hover / open: outline + chevron (BacksterDev pattern).
+.section-nav {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-inline-size: 0;
+}
+
+.section-nav-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-foreground-primary);
+  font: inherit;
+  line-height: 1;
+  transition: border-color 120ms ease, background-color 120ms ease;
+
+  &:hover,
+  &:focus-visible,
+  .section-nav-open & {
+    border-color: color-mix(in srgb, var(--color-foreground-primary) 14%, transparent);
+    background: color-mix(in srgb, var(--color-foreground-primary) 4%, transparent);
+  }
+
+  &:focus-visible {
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-2;
+  }
+
+  &:hover .section-nav-arrow,
+  &:focus-visible .section-nav-arrow,
+  .section-nav-open & .section-nav-arrow {
+    opacity: 0.7;
+  }
+}
+
+.section-nav-label {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.section-nav-arrow {
+  display: block;
+  inline-size: 12px;
+  block-size: 12px;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: rotate(90deg);
+  stroke: currentColor;
+  fill: none;
+  transition: opacity 120ms ease, transform 150ms ease;
+  pointer-events: none;
+
+  .section-nav-open & {
+    transform: rotate(-90deg);
+  }
+}
+
+.section-nav-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: var(--z-index-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 11rem;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 0.5px solid color-mix(in srgb, var(--color-foreground-primary) 12%, transparent);
+  border-radius: 10px;
+  background: var(--color-background-primary);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, #000 18%, transparent),
+    0 1px 0 color-mix(in srgb, var(--color-foreground-primary) 6%, transparent);
+}
+
+.section-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-foreground-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--color-foreground-primary) 6%, transparent);
+    outline: none;
+  }
+}
+
+.section-nav-item-active {
+  background: color-mix(in srgb, var(--color-foreground-primary) 5%, transparent);
+}
+
+.section-nav-item-label {
+  min-inline-size: 0;
+}
+
+.section-nav-tick {
+  display: block;
+  inline-size: 14px;
+  block-size: 14px;
+  flex-shrink: 0;
+  stroke: var(--color-foreground-secondary);
+  fill: none;
+}
+
+// Hotkey-only host on the projects list (g+p). Zero layout; menu anchors here.
+.project-jump-host {
+  position: relative;
+  inline-size: 0;
+  block-size: 0;
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+// Project switcher — same trigger chrome as section-nav; menu adds search + scroll.
+.project-nav-menu {
+  min-inline-size: 16rem;
+  max-inline-size: min(22rem, 80vw);
+  max-block-size: min(20rem, 60vh);
+  overflow: hidden auto;
+
+  .section-nav-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.project-nav-search {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin: 0 0 4px;
+  padding: 0;
+  background: var(--color-background-primary);
+
+  .search-icon {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: 12px;
+    inline-size: 14px;
+    block-size: 14px;
+    pointer-events: none;
+    stroke: var(--color-foreground-secondary);
+    fill: none;
+    transform: translateY(-50%);
+  }
+}
+
+.project-nav-search-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin: 0;
+  padding: 8px 32px 8px 10px;
+  border: 0.5px solid color-mix(in srgb, var(--color-foreground-primary) 12%, transparent);
+  border-radius: 6px;
+  background: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  outline: none;
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+    font-weight: 400;
+  }
+
+  &:focus,
+  &:focus-visible {
+    border-color: color-mix(in srgb, var(--color-foreground-primary) 28%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-foreground-primary) 10%, transparent);
+  }
+}
+
+.project-nav-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--color-foreground-secondary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.2;
+  list-style: none;
+}
+
+.project-nav-split {
+  flex: 0 0 auto;
+  margin: 4px 6px;
+  padding: 0;
+  list-style: none;
+  border: 0;
+  border-block-start: 0.5px solid
+    color-mix(in srgb, var(--color-foreground-primary) 12%, transparent);
+}
+
+.section-nav-item-unlinked {
+  color: var(--color-foreground-secondary);
+  opacity: 0.7;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 0.9;
+    background: color-mix(in srgb, var(--color-foreground-primary) 5%, transparent);
+  }
+}
+
+.brand-mark {
+  display: block;
+  inline-size: 20px;
+  block-size: 20px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.brand-name {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground-primary);
+}
+
+.brand-thin {
+  font-weight: 200;
+}
+
+.brand-bold {
+  font-weight: 700;
+}
+
+.sep {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--color-foreground-primary) 35%, transparent);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 300;
+  padding-inline: 2px;
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+
+  h1 {
+    color: var(--color-foreground-primary);
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.page-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s);
+  flex: 0 0 auto;
+  // Keep the cluster on one axis; do not let a tall input stretch the row.
+  block-size: $sz-32;
+  min-block-size: $sz-32;
+  max-block-size: $sz-32;
+}
+
+.header-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  inline-size: min(16rem, 36vw);
+  block-size: $sz-32;
+  min-block-size: $sz-32;
+  max-block-size: $sz-32;
+  overflow: hidden;
+}
+
+.header-account {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--sp-xs);
+  flex: 0 0 auto;
+  block-size: $sz-32;
+  min-block-size: $sz-32;
+  max-block-size: $sz-32;
+}
+
+.header-comments {
+  position: relative;
+  z-index: var(--z-index-notifications);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 auto;
+  block-size: $sz-32;
+  inline-size: $sz-32;
+  line-height: 0;
+
+  // Sidebar comments styles use a large bottom margin on the glyph;
+  // neutralize that here so the button sits on the same axis as search/avatar.
+  :global([class*="comments-icon"]) {
+    margin-block-end: 0 !important;
+  }
+
+  :global([class*="dashboard-comments-section"]) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    block-size: $sz-32;
+    inline-size: $sz-32;
+  }
+
+  // Dropdown host must not stretch the header row.
+  :global([class*="dashboard-comments-header"]) {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    block-size: 0;
+    inline-size: 0;
+    overflow: visible;
+    pointer-events: none;
+
+    :global([class*="dropdown"]) {
+      pointer-events: auto;
+    }
+  }
+}
+
+.avatar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 auto;
+  block-size: $sz-32;
+  inline-size: $sz-32;
+  padding: 0;
+  border: 0;
+  border-radius: $br-circle;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+
+  &:hover .avatar-img {
+    outline: 2px solid var(--color-foreground-secondary);
+    outline-offset: 1px;
+  }
+}
+
+.avatar-img {
+  display: block;
+  block-size: $sz-32;
+  inline-size: $sz-32;
+  border-radius: $br-circle;
+  object-fit: cover;
+}
+
+.search-input {
+  @include t.use-typography("body-small");
+
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: $sz-32;
+  min-block-size: $sz-32;
+  max-block-size: $sz-32;
+  margin: 0;
+  padding-block: 0;
+  padding-inline: var(--sp-m) $sz-36;
+  border: 0;
+  border-radius: $br-8;
+  background: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  outline: none;
+  line-height: 1;
+  appearance: none;
+
+  &:focus,
+  &:focus-visible {
+    // Match keyboard-nav orange so Shift+F / search focus is obvious.
+    box-shadow: inset 0 0 0 1px #ee7a47;
+  }
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+    line-height: 1;
+  }
+}
+
+.search-btn {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: var(--sp-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: $sz-24;
+  inline-size: $sz-24;
+  padding: 0;
+  border: 0;
+  border-radius: $br-4;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-foreground-secondary);
+  transform: translateY(-50%);
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+.search-icon,
+.clear-search-icon {
+  block-size: $sz-16;
+  inline-size: $sz-16;
+  fill: none;
+  stroke: currentColor;
+}

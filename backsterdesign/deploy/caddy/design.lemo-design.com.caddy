@@ -1,0 +1,14 @@
+# Append to /home/deploy/chatwoot/Caddyfile on lemodesign, then:
+#   docker exec lemodesign-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# Uses Caddy's automatic HTTPS (Let's Encrypt). Keep the Cloudflare DNS
+# record for design.lemo-design.com DNS-only (grey cloud) so the HTTP-01
+# challenge can reach :80 on this host.
+
+design.lemo-design.com {
+	encode gzip
+
+	# Frontend container is attached to chatwoot_default (same network as Caddy).
+	# Do not use 127.0.0.1 here — that is Caddy's own loopback inside its container.
+	reverse_proxy backsterdesign-penpot-frontend-1:8080
+}

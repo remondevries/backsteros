@@ -10,20 +10,24 @@
 @use "ds/_utils.scss" as *;
 
 .dashboard-container {
+  display: flex;
+  flex-direction: column;
   flex: 1 0 0;
-  margin-right: deprecated.$s-16;
-  overflow-y: auto;
+  min-block-size: 0;
+  margin-right: 0;
+  overflow: hidden;
   width: 100%;
   border-top: deprecated.$s-1 solid var(--color-background-quaternary);
-  padding-block-end: var(--sp-xxxl);
+  padding-block-end: 0;
 
   &.dashboard-projects {
     user-select: none;
   }
 
   &.dashboard-shared {
-    width: calc(100vw - deprecated.$s-320);
-    margin-right: deprecated.$s-52;
+    // BacksterDESIGN: no left sidebar — full width.
+    width: 100%;
+    margin-right: 0;
   }
 
   &.search {
@@ -31,8 +35,156 @@
   }
 }
 
+// Project overview: optional left tasks rail + files column.
+.files-layout {
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.files-layout-with-rail {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.files-tasks-rail {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: stretch;
+  min-block-size: 0;
+  max-inline-size: min(720px, 55vw);
+  border-inline-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  background: #171718;
+}
+
+// Files column — fills leftover space beside the rail; measured by the grid
+// resize observer so cards reflow when the rail width changes.
+.files-body {
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  inline-size: 0; // flex-basis via flex:1; force shrink beside max-content rail
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+// Island host is a sibling of the Rumext anchor (not a React child).
+:global(.backsteros-project-tasks-anchor) {
+  display: none;
+}
+
+// Legacy under-grid host (workspace / older mounts).
+:global(.backsteros-project-tasks-host) {
+  flex: 0 0 auto;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0 var(--sp-xxl);
+  box-sizing: border-box;
+}
+
+// Project-overview rail: shrink-wrap list (+ detail); island paints columns.
+:global(.backsteros-project-tasks-host--rail) {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  inline-size: max-content;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .new-file {
   margin-inline-end: deprecated.$s-8;
+}
+
+.drafts-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-s);
+  // Match tab-nav horizontal inset (--sp-xxl) and Recents toolbar.
+  padding: var(--sp-m) var(--sp-xxl) 0;
+}
+
+.drafts-new-file {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  block-size: deprecated.$s-32;
+  padding: 0 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--panel-border-color);
+  border-radius: deprecated.$br-8;
+  background: transparent;
+  color: var(--color-foreground-primary);
+  font-size: deprecated.$fs-12;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-foreground-primary) 8%, transparent);
+  }
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+
+  svg {
+    stroke: var(--color-foreground-secondary);
+    fill: none;
+    width: deprecated.$s-16;
+    height: deprecated.$s-16;
+
+    &:hover {
+      stroke: var(--color-accent-tertiary);
+      fill: none;
+    }
+  }
+}
+
+.back-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  margin-inline-end: deprecated.$s-8;
+  padding: deprecated.$s-4;
+  border: 0;
+  border-radius: deprecated.$br-8;
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+  line-height: 0;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+    background: color-mix(in srgb, var(--color-foreground-primary) 8%, transparent);
+  }
+
+  &:focus-visible {
+    outline: deprecated.$s-2 solid var(--color-accent-primary);
+    outline-offset: deprecated.$s-2;
+  }
+}
+
+.back-icon {
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
 }
 
 .menu-icon {
@@ -43,4 +195,18 @@
 
 .placeholder-placement {
   margin: deprecated.$s-16 deprecated.$s-32;
+}
+
+.search-empty {
+  margin: deprecated.$s-24 deprecated.$s-32;
+  color: var(--color-foreground-secondary);
+  font-size: deprecated.$fs-14;
+}
+
+/* j/k highlight on file cards (Drafts; project overview uses island CSS). */
+:global(.bd-file-keyboard-highlight),
+:global(.grid-item.bd-file-keyboard-highlight),
+:global(.grid-item-button.bd-file-keyboard-highlight) {
+  outline: 1px solid #ee7a47 !important;
+  outline-offset: -1px;
 }

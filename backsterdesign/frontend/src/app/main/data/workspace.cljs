@@ -76,6 +76,7 @@
    [app.main.refs :as refs]
    [app.main.repo :as rp]
    [app.main.router :as rt]
+   [app.main.store :as st]
    [app.plugins.register :as preg]
    [app.render-wasm :as wasm]
    [app.render-wasm.api :as wasm.api]
@@ -334,21 +335,125 @@
           (assoc :thumbnails (d/update-vals thumbnails (fn [uri] {:uri uri :rendered-at nil})))
           (update :files assoc file-id file)))))
 
+(defn- coerce-uuid
+  [value]
+  (cond
+    (uuid? value) value
+    (string? value) (uuid/parse* value)
+    :else nil))
+
+(defn- coerce-board-ids
+  "Normalize route/workspace board-id (string, uuid, or vector) to uuids."
+  [board-id]
+  (let [raw (cond
+              (nil? board-id) []
+              (vector? board-id) board-id
+              :else [board-id])]
+    (into [] (keep coerce-uuid) raw)))
+
+(defn- resolve-reveal-shape-ids
+  "Map board-id(s) to shapes that exist on `page-id`.
+
+  Accepts frame/board ids and nested shape ids. When an id is a local
+  component id (not a page object), resolves to its main instance on this page."
+  [state page-id board-ids]
+  (let [objects (when page-id
+                  (dsh/lookup-page-objects state page-id))
+        data    (dsh/lookup-file-data state)
+        resolve-id
+        (fn [id]
+          (cond
+            (and objects (contains? objects id))
+            id
+
+            :else
+            (let [component (dm/get-in data [:components id])]
+              (when (and component
+                         (= page-id (:main-instance-page component))
+                         (uuid? (:main-instance-id component)))
+                (:main-instance-id component)))))]
+    (->> board-ids
+         (keep resolve-id)
+         (filter #(and objects (contains? objects %)))
+         (into (d/ordered-set)))))
+
+(defn reveal-workspace-target
+  "Select and zoom to board/shape ids from the workspace route (or `board-id`).
+
+  No-ops when board-id is absent or none of the ids exist on the current page
+  yet — callers may schedule a retry until the page is ready.
+
+  Uses select + zoom-to-selected (same path as go-to-local-component) so a
+  second click while already on the same file still recenters after pan."
+  ([]
+   (reveal-workspace-target nil))
+  ([board-id]
+   (ptk/reify ::reveal-workspace-target
+     ptk/WatchEvent
+     (watch [_ state _]
+       (let [params    (rt/get-params state)
+             board-ids (coerce-board-ids (or board-id (get params :board-id)))
+             page-id   (or (coerce-uuid (get params :page-id))
+                           (:current-page-id state))
+             shape-ids (resolve-reveal-shape-ids state page-id board-ids)]
+         (if (seq shape-ids)
+           (rx/of (dws/select-shapes shape-ids)
+                  dwz/zoom-to-selected-shape
+                  (dwz/fit-to-shapes shape-ids))
+           (rx/empty)))))))
+
 (defn zoom-to-frame
+  "Legacy alias — prefer `reveal-workspace-target`."
   []
-  (ptk/reify ::zoom-to-frame
-    ptk/WatchEvent
-    (watch [_ state _]
-      (let [params (rt/get-params state)
-            board-id (get params :board-id)
-            board-id (cond
-                       (vector? board-id) board-id
-                       (string? board-id) [board-id])
-            frames-id (->> board-id
-                           (map uuid/uuid)
-                           (into (d/ordered-set)))]
-        (rx/of (dws/select-shapes frames-id)
-               dwz/zoom-to-selected-shape)))))
+  (reveal-workspace-target))
+
+(defn schedule-reveal-workspace-target
+  "Retry reveal until board shapes exist on the target page (or timeout).
+
+  Used after `go-to-workspace` / open-file and after hash deep-links so
+  same-file / same-page clicks still select and center.
+
+  When `board-id` is passed explicitly (desktop open-file / reveal-board),
+  do not cancel on `finalize-workspace` — same-file re-clicks must still
+  complete after a no-op nav."
+  ([]
+   (schedule-reveal-workspace-target nil))
+  ([board-id]
+   (ptk/reify ::schedule-reveal-workspace-target
+     ptk/WatchEvent
+     (watch [_ state stream]
+       (let [params0   (rt/get-params state)
+             board0    (coerce-board-ids (or board-id (get params0 :board-id)))
+             explicit? (some? board-id)
+             stoper-s  (if explicit?
+                         (rx/timer 4000)
+                         (rx/merge
+                          (rx/filter (ptk/type? ::finalize-workspace) stream)
+                          (rx/timer 4000)))]
+         (if (empty? board0)
+           (rx/empty)
+           (->> (rx/timer 0 50)
+                (rx/take-until stoper-s)
+                (rx/map (fn [_]
+                          ;; Re-read route each tick — hash nav may land after
+                          ;; this event was scheduled.
+                          (let [live         @st/state
+                                params       (rt/get-params live)
+                                board-ids    (coerce-board-ids
+                                              (or board-id (get params :board-id)))
+                                target-page  (or (coerce-uuid (get params :page-id))
+                                                 (:current-page-id live))
+                                page-id      (:current-page-id live)
+                                shape-ids    (when (and target-page
+                                                        (= page-id target-page))
+                                               (resolve-reveal-shape-ids
+                                                live page-id board-ids))]
+                            (when (seq shape-ids)
+                              true))))
+                (rx/filter true?)
+                (rx/take 1)
+                (rx/map (fn [_]
+                          (reveal-workspace-target board-id))))))))))
 
 ;; FIXME: rename to `fetch-file`
 (defn- fetch-bundle
@@ -489,11 +594,15 @@
                       (rx/take 1)
                       (rx/map #(dwl/go-to-local-component :id component-id :update-layout? (:update-layout rparams)))))
 
+               ;; Board deep-links: reveal whenever the route carries board-id
+               ;; after a viewport init (cold open). Same-file re-clicks are
+               ;; handled by `go-to-workspace` / the workspace UI schedule.
                (when (:board-id rparams)
                  (->> stream
                       (rx/filter (ptk/type? ::dwv/initialize-viewport))
                       (rx/take 1)
-                      (rx/map zoom-to-frame)))
+                      (rx/map #(schedule-reveal-workspace-target
+                                (:board-id rparams)))))
 
                (when-let [comment-id (some-> rparams :comment-id uuid/parse)]
                  (->> stream

@@ -279,30 +279,16 @@
 
 (mf/defc login-page*
   [{:keys [params]}]
-  (let [go-register
-        (mf/use-fn
-         #(st/emit! (rt/nav :auth-register params)))]
+  ;; BacksterDESIGN: no public “Create an account” — users are provisioned
+  ;; from BacksterOS when a contact is enabled as a client (docs §2).
+  [:div {:class (stl/css :wrapper)}
+   [:h1 {:class (stl/css :title)
+         :data-testid "login-title"} (tr "auth.login-account-title")]
 
-    [:div {:class (stl/css :wrapper)}
-     [:h1 {:class (stl/css :title)
-           :data-testid "login-title"} (tr "auth.login-account-title")]
+   [:p {:class (stl/css :tagline)}
+    (tr "auth.login-tagline")]
 
-     [:p {:class (stl/css :tagline)}
-      (tr "auth.login-tagline")]
+   (when (contains? cf/flags :demo-warning)
+     [:> demo-warning*])
 
-     (when (contains? cf/flags :demo-warning)
-       [:> demo-warning*])
-
-     [:> login-dialog* {:params params}]
-
-     [:hr {:class (stl/css :separator)}]
-
-     [:div {:class (stl/css :links)}
-      (when (contains? cf/flags :registration)
-        [:div {:class (stl/css :register-row)}
-         [:span {:class (stl/css :register-text)}
-          (tr "auth.register") " "]
-         [:> lk/link* {:action go-register
-                       :class (stl/css :register-link)
-                       :data-testid "register-submit"}
-          (tr "auth.register-submit")]])]]))
+   [:> login-dialog* {:params params}]])

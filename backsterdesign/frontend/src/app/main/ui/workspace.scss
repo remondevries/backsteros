@@ -20,6 +20,12 @@
   overflow: hidden;
 }
 
+:global(html[data-tauri-desktop="1"]) .workspace {
+  inline-size: 100%;
+  block-size: 100dvh;
+  max-block-size: 100dvh;
+}
+
 .workspace-loader {
   position: absolute;
   inset: 0;

@@ -13,6 +13,7 @@
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.dashboard.grid :refer [grid*]]
+   [app.main.ui.dashboard.page-header :refer [page-header*]]
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
@@ -27,7 +28,7 @@
              st/state))
 
 (mf/defc libraries-page*
-  [{:keys [team default-project]}]
+  [{:keys [team default-project search-term]}]
   (let [files
         (mf/deref refs/shared-files)
 
@@ -63,9 +64,11 @@
     (hooks/use-shortcuts ::dashboard sc/shortcuts-drafts-libraries :dashboard)
 
     [:*
-     [:header {:class (stl/css :dashboard-header) :data-testid "dashboard-header"}
-      [:div#dashboard-libraries-title {:class (stl/css :dashboard-title)}
-       [:h1 (tr "dashboard.libraries-title")]]]
+     [:> page-header* {:title (tr "dashboard.libraries-title")
+                       :title-id "dashboard-libraries-title"
+                       :nav-section :dashboard-libraries
+                       :search-term search-term
+                       :team-id team-id}]
 
      [:section {:class (stl/css :dashboard-container :no-bg :dashboard-shared)
                 :ref rowref}

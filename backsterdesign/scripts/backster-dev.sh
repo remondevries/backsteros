@@ -3,6 +3,7 @@
 set -euo pipefail
 
 DESIGN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$DESIGN_ROOT/.." && pwd)"
 cd "$DESIGN_ROOT"
 
 # Penpot manage.sh needs Bash 4+ (mapfile). macOS /bin/bash is 3.2 — prefer Homebrew.
@@ -80,7 +81,7 @@ case "$cmd" in
 // Local devenv flags + BacksterOS bridge (gitignored).
 var penpotFlags = "disable-dashboard-templates-section";
 window.backsterosCore = {
-  baseUrl: "http://127.0.0.1:8788",
+  baseUrl: "/backsteros-core",
   apiKey: "local"
 };
 EOF
@@ -93,6 +94,14 @@ EOF
     echo
     echo "Open: https://localhost:3449"
     echo "Attach: pnpm --filter @backsteros/design dev:attach"
+    # devenv image bakes nginx.conf at build time; sync bind-mounted source + reload
+    # so /backsteros-core → host:8788 works without rebuilding the image.
+    if devenv_running; then
+      docker exec -u root penpot-devenv-ws0-main bash -lc \
+        'cp /home/penpot/penpot/docker/devenv/files/nginx.conf /etc/nginx/nginx.conf && nginx -t && nginx -s reload' \
+        && echo "backster-dev: synced nginx.conf (/backsteros-core proxy)" \
+        || echo "backster-dev: warning — could not sync nginx.conf" >&2
+    fi
     # Ensure @penpot/ui CSS exists (copied into public/css/ui.css on package build).
     if [[ ! -f "$DESIGN_ROOT/frontend/resources/public/css/ui.css" ]] && devenv_running; then
       echo "backster-dev: building @penpot/ui (ui.css missing)…"
@@ -102,6 +111,12 @@ EOF
     # Keep Backster logos / brand chrome applied (idempotent).
     if [[ -x "$DESIGN_ROOT/branding/bin/apply-to-source.sh" ]]; then
       "$DESIGN_ROOT/branding/bin/apply-to-source.sh" || true
+    fi
+    # Shared @backsteros/ui task island (host build → public/js + public/css).
+    if [[ ! -f "$DESIGN_ROOT/frontend/resources/public/js/backsteros-project-tasks.js" ]]; then
+      echo "backster-dev: building @backsteros/design-bridge (project tasks island)…"
+      (cd "$REPO_ROOT" && pnpm --filter @backsteros/design-bridge build) || \
+        echo "backster-dev: warning — design-bridge build failed" >&2
     fi
     ;;
   down|stop)

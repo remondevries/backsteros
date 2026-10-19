@@ -47,3 +47,8 @@ input,
 textarea {
   font: inherit;
 }
+
+button:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}

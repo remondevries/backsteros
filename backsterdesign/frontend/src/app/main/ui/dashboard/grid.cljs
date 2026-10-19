@@ -260,7 +260,8 @@
     counter-el))
 
 (mf/defc grid-item*
-  {::mf/private true}
+  {::mf/private true
+   ::mf/wrap [mf/memo]}
   [{:keys [file origin can-edit selected-files can-restore layout]}]
   (let [node-ref      (mf/use-ref)
         menu-ref      (mf/use-ref)
@@ -307,6 +308,15 @@
                    target    (dom/get-target event)]
                (when-not (dom/child? target menu-icon)
                  (st/emit! (dcm/go-to-workspace :file-id file-id)))))))
+
+        ;; BacksterDESIGN: open on single click. Shift+click keeps multi-select.
+        on-click
+        (mf/use-fn
+         (mf/deps on-select on-navigate)
+         (fn [event]
+           (if (kbd/shift? event)
+             (on-select event)
+             (on-navigate event))))
 
         on-drag-start
         (mf/use-fn
@@ -452,7 +462,8 @@
     (if ^boolean list?
       [:li {:class (stl/css-case :grid-item true
                                  :list-item true
-                                 :library-item library-view?)}
+                                 :library-item library-view?)
+            :data-bd-file-id (dm/str file-id)}
        [:div
         {:class (stl/css-case :list-item-row true
                               :is-selected selected?)
@@ -461,9 +472,8 @@
          :title (:name file)
          :aria-label (:name file)
          :draggable (dm/str can-edit)
-         :on-click on-select
+         :on-click on-click
          :on-key-down on-key-down
-         :on-double-click on-navigate
          :on-drag-start on-drag-start
          :on-context-menu on-context-menu}
 
@@ -485,7 +495,8 @@
 
       [:li {:class (stl/css-case :grid-item true
                                  :project-thumbnail true
-                                 :library-item library-view?)}
+                                 :library-item library-view?)
+            :data-bd-file-id (dm/str file-id)}
        [:div {:class (stl/css-case :is-selected selected?
                                    :grid-item-button true)
               :ref node-ref
@@ -493,9 +504,8 @@
               :title (:name file)
               :aria-label (:name file)
               :draggable (dm/str can-edit)
-              :on-click on-select
+              :on-click on-click
               :on-key-down on-key-down
-              :on-double-click on-navigate
               :on-drag-start on-drag-start
               :on-context-menu on-context-menu}
 
@@ -522,7 +532,7 @@
          menu-element]]])))
 
 (mf/defc grid*
-  [{:keys [files project origin limit create-fn can-edit selected-files can-restore layout]}]
+  [{:keys [files project origin limit create-fn can-edit selected-files can-restore layout auto-height]}]
   (let [dragging?  (mf/use-state false)
         list?      (= layout :list)
         project-id (get project :id)
@@ -579,7 +589,8 @@
                (import-files (.-files (.-dataTransfer e))))
              (dom/prevent-default e))))]
 
-    [:div {:class (stl/css :dashboard-grid)
+    [:div {:class (stl/css-case :dashboard-grid true
+                                :auto-height (boolean auto-height))
            :dragabble (dm/str can-edit)
            :on-drag-enter on-drag-enter
            :on-drag-over on-drag-over

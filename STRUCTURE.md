@@ -27,6 +27,7 @@ Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (branch `production`)
 │   └── shim/                   ← @backsteros/development workspace shim
 ├── backstermeet/               ← BacksterMeet — Tauri 2 Director (host) app for live meetings (@backsteros/meet)
 ├── backsterdesign/             ← BacksterDESIGN — nested Penpot fork (+ branding/, local devenv)
+│   └── desktop/                ← Tauri 2 shell (@backsteros/design-desktop)
 └── tooling/design/             ← @backsteros/design shim → proxies into backsterdesign/
 ```
 
@@ -46,7 +47,8 @@ v1 Next apps (app/admin/development/sync-demo) were moved out to
 | `backsterdev/shim/` | Filter shim — `pnpm --filter @backsteros/development …` |
 | `backstermeet/` | BacksterMeet — Tauri 2 + Vite/React **Director** host app for live meetings (package `@backsteros/meet`, dev port 1430). Guest side is the client portal; both join one LiveKit SFU. See `backstermeet/AGENTS.md` |
 | `backsterdesign/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
-| `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |
+| `backsterdesign/desktop/` | Tauri 2 shell — `pnpm --filter @backsteros/design-desktop tauri:dev` (needs `PENPOT_PUBLIC_URI`) |
+| `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` (includes `desktop` scripts) |
 
 See [docs/20-repo-structure.md](docs/20-repo-structure.md) for the reorganization plan (`hub/` removed; `backsterdesign/` → `backsterdesign/` done).
 

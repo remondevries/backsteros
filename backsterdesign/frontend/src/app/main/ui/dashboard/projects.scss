@@ -16,7 +16,7 @@
 .dashboard-container {
   flex: 1 0 0;
   inline-size: 100%;
-  margin-inline-end: var(--sp-l);
+  margin-inline-end: 0;
   border-block-start: $b-1 solid var(--panel-border-color);
   overflow-y: auto;
 }
@@ -31,8 +31,9 @@
 }
 
 .dashboard-shared {
-  inline-size: calc(100vw - px2rem(320));
-  margin-inline-end: px2rem(52);
+  // BacksterDESIGN: no left sidebar — full width like other dashboard pages.
+  inline-size: 100%;
+  margin-inline-end: 0;
 }
 
 .search {
@@ -61,43 +62,59 @@
   grid-auto-rows: min-content;
 }
 
+.recent-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  // Match tab-nav horizontal inset and Drafts toolbar.
+  padding: var(--sp-m) var(--sp-xxl) 0;
+}
+
 .project {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-s);
-  inline-size: 99%;
+  gap: var(--sp-m);
+  inline-size: 100%;
   max-block-size: $sz-40;
-  padding: var(--sp-s) var(--sp-s) var(--sp-s) var(--sp-l);
+  // Align with tab-nav / grid horizontal inset.
+  padding: var(--sp-s) var(--sp-xxl);
   margin-block-start: var(--sp-l);
   border-radius: $br-4;
+  box-sizing: border-box;
 }
 
 .project-name-wrapper {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  inline-size: 100%;
+  flex: 0 1 auto;
+  min-inline-size: 0;
   min-block-size: $sz-32;
-  margin-inline-start: var(--sp-s);
+  gap: var(--sp-m);
 }
 
 .project-name {
-  @include text-ellipsis;
   @include t.use-typography("body-large");
 
+  // Natural width — the rule line absorbs leftover space (no % max-width).
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--title-foreground-color-hover);
   cursor: pointer;
-  block-size: $sz-16;
-  line-height: 0.8;
-  margin-inline-end: var(--sp-m);
+  line-height: 1.2;
+  margin-inline-end: 0;
 }
 
 .info-wrapper {
   display: flex;
   align-items: center;
-  gap: var(--sp-s);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .info,
@@ -111,10 +128,20 @@
   }
 }
 
+// BacksterOS-style group rule: fills space between meta and actions.
+.project-rule {
+  flex: 1 1 auto;
+  min-inline-size: var(--sp-l);
+  block-size: $b-1;
+  background: color-mix(in srgb, var(--color-foreground-secondary) 22%, transparent);
+}
+
 .project-actions {
   display: flex;
+  flex: 0 0 auto;
   opacity: var(--actions-opacity);
-  margin-inline-start: var(--sp-xxxl);
+  margin-inline-start: 0;
+  transition: opacity 150ms ease;
 }
 
 .add-file-btn,
@@ -257,4 +284,12 @@
     display: none;
     inline-size: 0;
   }
+}
+
+/* j/k highlight on recent file cards. */
+:global(.bd-file-keyboard-highlight),
+:global(.grid-item.bd-file-keyboard-highlight),
+:global(.grid-item-button.bd-file-keyboard-highlight) {
+  outline: 1px solid #ee7a47 !important;
+  outline-offset: -1px;
 }

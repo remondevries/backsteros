@@ -13,18 +13,27 @@
 
   background-color: var(--color-background-primary);
   display: grid;
-  grid-template-columns: $sz-40 px2rem(256) 1fr;
-  grid-template-rows: px2rem(52) 1fr;
+  // BacksterDESIGN: no left sidebar — content is full width.
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
   block-size: 100vh;
+}
+
+// Framed by BacksterDESIGN Tauri shell — native chrome sits above the iframe.
+:global(html[data-tauri-desktop="1"]) .dashboard {
+  block-size: 100dvh;
 }
 
 .dashboard-content {
   display: grid;
-  grid-template-rows: $sz-64 1fr;
+  // Header sizes from its own equal block padding (not a fixed row + top inset).
+  grid-template-rows: auto 1fr;
   position: relative;
-  grid-row: 1 / span 2;
-  padding: var(--sp-l) var(--sp-l) 0 0;
+  // No padding — header owns equal top/bottom inset; rails go edge-to-edge.
+  padding: 0;
   overflow: hidden;
+  // Fill the single-column dashboard grid (avoid 100vw + scrollbar overflow).
   inline-size: 100%;
+  min-inline-size: 0;
 }
 

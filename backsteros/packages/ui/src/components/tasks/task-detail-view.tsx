@@ -109,6 +109,11 @@ export type TaskDetailViewProps = {
    */
   showDisplayId?: boolean;
   /**
+   * When true (default), show the narrow-layout tracked-time pill on the
+   * display-id row. Set false when the host chrome already shows the timer.
+   */
+  showNarrowTimer?: boolean;
+  /**
    * Optional content rendered below the description (e.g. activity / comments).
    * Pass a render function to receive the current preview/edit mode.
    */
@@ -133,6 +138,8 @@ export type TaskDetailViewProps = {
   letterLinkOptions?: readonly TaskLinkPickerOption[];
   emailLinkOptions?: readonly TaskLinkPickerOption[];
   onNavigateLink?: (href: string) => void;
+  /** Penpot origin for resolving `backsterdesign://` links. */
+  designPublicUri?: string;
   /** Upload clipboard/drop images for Linear-style markdown embeds. */
   onUploadImages?: UploadMarkdownImages;
   /** Resolve authenticated task image URLs in the preview. */
@@ -188,6 +195,7 @@ export function TaskDetailView({
   sectionLabel = "Tasks",
   headerMeta,
   showDisplayId = true,
+  showNarrowTimer = true,
   belowDescription,
   afterAttachments,
   spellcheckHighlight = null,
@@ -205,6 +213,7 @@ export function TaskDetailView({
   letterLinkOptions,
   emailLinkOptions,
   onNavigateLink,
+  designPublicUri,
   onUploadImages,
   resolveImageSrc,
   onSaveTitle,
@@ -354,6 +363,7 @@ export function TaskDetailView({
     toggleViewMode,
   } = useMarkdownDetailEditor({
     initialValue: task.description ?? "",
+    hostRef: rootRef,
     save: (next) => {
       if (!onSaveDescription) {
         return { ok: true };
@@ -425,9 +435,9 @@ export function TaskDetailView({
     ) : null;
 
   // Narrow (chips) only: timer shares the task-id row. Wide rail keeps it in
-  // the properties panel.
+  // the properties panel. Hosts can move the pill into chrome via showNarrowTimer.
   const narrowTimerNode =
-    !usePropertiesRail && !task.support ? (
+    showNarrowTimer && !usePropertiesRail && !task.support ? (
       <div className="content-detail-display-id-row__timer">
         <TrackedTimeField
           variant="pill"
@@ -603,6 +613,7 @@ export function TaskDetailView({
                   letterOptions={letterLinkOptions}
                   emailOptions={emailLinkOptions}
                   onNavigate={onNavigateLink}
+                  designPublicUri={designPublicUri}
                   fileAttachments={fileAttachments}
                   fileUploading={fileUploading}
                   onUploadFile={onUploadFile}

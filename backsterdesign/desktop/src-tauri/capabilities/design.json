@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "design-remote",
+  "description": "Penpot child webview — remote origin IPC for tab bridge events",
+  "webviews": ["design"],
+  "remote": {
+    "urls": [
+      "https://design.lemo-design.com/*",
+      "https://localhost:3449/*",
+      "http://localhost:3449/*",
+      "https://127.0.0.1:3449/*",
+      "http://127.0.0.1:3449/*"
+    ]
+  },
+  "permissions": ["core:event:default"]
+}

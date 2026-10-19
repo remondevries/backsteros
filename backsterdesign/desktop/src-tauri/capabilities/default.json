@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for BacksterDESIGN chrome + window",
+  "windows": ["main"],
+  "webviews": ["chrome", "design"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:webview:allow-get-all-webviews",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size",
+    "core:webview:allow-set-webview-position",
+    "core:webview:allow-set-webview-size"
+  ]
+}

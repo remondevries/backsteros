@@ -26,7 +26,6 @@
                                                  dropdown-menu-item*]]
    [app.main.ui.components.link :refer [link*]]
    [app.main.ui.components.organization-avatar :refer [organization-avatar*]]
-   [app.main.ui.dashboard.comments :refer [comments-icon* comments-section]]
    [app.main.ui.dashboard.inline-edition :refer [inline-edition]]
    [app.main.ui.dashboard.project-menu :refer [project-menu*]]
    [app.main.ui.dashboard.subscription :refer [dashboard-cta*
@@ -224,7 +223,6 @@
                         :show (:menu-open local)
                         :left (:x (:menu-pos local))
                         :top (:y (:menu-pos local))
-                        :on-edit on-edit-open
                         :on-close on-menu-close}]]))
 
 (mf/defc sidebar-search*
@@ -1117,8 +1115,7 @@
              :class (stl/css-case :sidebar-content true :sidebar-content-nitrate nitrate?)}
        [:> sidebar-team-switch* {:team team :profile profile}]
 
-       [:> sidebar-search* {:search-term search-term
-                            :team-id (:id team)}]
+       ;; Search moved to the content page header (BacksterDESIGN chrome).
 
        [:div {:class (stl/css :sidebar-content-section)}
         [:ul {:class (stl/css :sidebar-nav)}
@@ -1331,19 +1328,6 @@
              (st/emit! (rt/nav section))
              (st/emit! section))))
 
-        show-comments* (mf/use-state false)
-        show-comments? @show-comments*
-
-        handle-hide-comments
-        (mf/use-fn
-         (fn []
-           (reset! show-comments* false)))
-
-        handle-show-comments
-        (mf/use-fn
-         (fn []
-           (reset! show-comments* true)))
-
         handle-click
         (mf/use-fn
          (fn [event]
@@ -1414,107 +1398,96 @@
            [:> subscription-sidebar* {:profile profile}])))
 
 
-     (when (and team profile)
-       [:& comments-section
-        {:profile profile
-         :team team
-         :show? show-comments?
-         :on-show-comments handle-show-comments
-         :on-hide-comments handle-hide-comments}])
+     ;; Dashboard: avatar + notifications live in page-header*.
+     ;; Settings (no team): keep the profile menu for logout / account.
+     (when-not team
+       [:div {:class (stl/css :profile-section)}
+        [:button {:class (stl/css :profile)
+                  :tab-index "0"
+                  :on-click handle-click
+                  :on-key-down handle-key-down
+                  :data-testid "profile-btn"}
+         [:img {:src photo
+                :class (stl/css :profile-img)
+                :alt (:fullname profile)}]
+         [:span {:class (stl/css :profile-fullname)} (:fullname profile)]]
 
-     [:div {:class (stl/css :profile-section)}
-      [:button {:class (stl/css :profile)
-                :tab-index "0"
-                :on-click handle-click
-                :on-key-down handle-key-down
-                :data-testid "profile-btn"}
-       [:img {:src photo
-              :class (stl/css :profile-img)
-              :alt (:fullname profile)}]
-       [:span {:class (stl/css :profile-fullname)} (:fullname profile)]]
+        [:> dropdown-menu* {:on-close on-close
+                            :show show-profile-menu?
+                            :id "profile-menu"
+                            :class (stl/css :profile-dropdown)}
+         [:> dropdown-menu-item* {:class (stl/css :profile-dropdown-item)
+                                  :on-click handle-set-profile
+                                  :data-testid "profile-profile-opt"}
+          (tr "labels.your-account")]
 
-      [:> dropdown-menu* {:on-close on-close
-                          :show show-profile-menu?
-                          :id "profile-menu"
-                          :class (stl/css :profile-dropdown)}
-       [:> dropdown-menu-item* {:class (stl/css :profile-dropdown-item)
-                                :on-click handle-set-profile
-                                :data-testid "profile-profile-opt"}
-        (tr "labels.your-account")]
+         [:li {:class (stl/css :profile-separator)}]
 
-       [:li {:class (stl/css :profile-separator)}]
+         [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
+                                  :on-click    on-menu-click
+                                  :on-key-down (fn [event]
+                                                 (when (kbd/enter? event)
+                                                   (on-menu-click event)))
+                                  :on-pointer-enter on-menu-pointer-enter
+                                  :on-pointer-leave on-menu-pointer-leave
+                                  :data-testid "help-learning"
+                                  :id          "help-learning"}
+          [:span {:class (stl/css :item-name)} (tr "labels.help-learning")]
+          [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
 
+         [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
+                                  :on-click    on-menu-click
+                                  :on-key-down (fn [event]
+                                                 (when (kbd/enter? event)
+                                                   (on-menu-click event)))
+                                  :on-pointer-enter on-menu-pointer-enter
+                                  :on-pointer-leave on-menu-pointer-leave
+                                  :data-testid "community-contributions"
+                                  :id          "community-contributions"}
+          [:span {:class (stl/css :item-name)} (tr "labels.community-contributions")]
+          [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
 
-       [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
-                                :on-click    on-menu-click
-                                :on-key-down (fn [event]
-                                               (when (kbd/enter? event)
-                                                 (on-menu-click event)))
-                                :on-pointer-enter on-menu-pointer-enter
-                                :on-pointer-leave on-menu-pointer-leave
-                                :data-testid "help-learning"
-                                :id          "help-learning"}
-        [:span {:class (stl/css :item-name)} (tr "labels.help-learning")]
-        [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
+         [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
+                                  :on-click    on-menu-click
+                                  :on-key-down (fn [event]
+                                                 (when (kbd/enter? event)
+                                                   (on-menu-click event)))
+                                  :on-pointer-enter on-menu-pointer-enter
+                                  :on-pointer-leave on-menu-pointer-leave
+                                  :data-testid "about-penpot"
+                                  :id          "about-penpot"}
 
-       [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
-                                :on-click    on-menu-click
-                                :on-key-down (fn [event]
-                                               (when (kbd/enter? event)
-                                                 (on-menu-click event)))
-                                :on-pointer-enter on-menu-pointer-enter
-                                :on-pointer-leave on-menu-pointer-leave
-                                :data-testid "community-contributions"
-                                :id          "community-contributions"}
-        [:span {:class (stl/css :item-name)} (tr "labels.community-contributions")]
-        [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
+          [:div {:class (stl/css :about-penpot)}
+           [:span {:class (stl/css :item-name)} (tr "labels.about-penpot")]
+           [:span {:class (stl/css :menu-version) :title version} version]]
+          [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
 
-       [:> dropdown-menu-item* {:class (stl/css-case :profile-dropdown-item true)
-                                :on-click    on-menu-click
-                                :on-key-down (fn [event]
-                                               (when (kbd/enter? event)
-                                                 (on-menu-click event)))
-                                :on-pointer-enter on-menu-pointer-enter
-                                :on-pointer-leave on-menu-pointer-leave
-                                :data-testid "about-penpot"
-                                :id          "about-penpot"}
+         [:li {:class (stl/css :profile-separator)}]
 
-        [:div {:class (stl/css :about-penpot)}
-         [:span {:class (stl/css :item-name)} (tr "labels.about-penpot")]
-         [:span {:class (stl/css :menu-version) :title version} version]]
-        [:> icon* {:icon-id i/arrow :class (stl/css :open-arrow)}]]
+         [:> dropdown-menu-item* {:class (stl/css :profile-dropdown-item :item-with-icon)
+                                  :on-click handle-logout-click
+                                  :data-testid "logout-profile-opt"}
+          exit-icon
+          (tr "labels.logout")]]
 
-       [:li {:class (stl/css :profile-separator)}]
+        (when show-profile-menu?
+          (case sub-menu
+            :help-learning
+            [:> help-learning-menu* {:on-close close-sub-menu
+                                     :on-click on-click
+                                     :on-pointer-enter on-sub-menu-pointer-enter
+                                     :on-pointer-leave on-menu-pointer-leave}]
 
-       [:> dropdown-menu-item* {:class (stl/css :profile-dropdown-item :item-with-icon)
-                                :on-click handle-logout-click
-                                :data-testid "logout-profile-opt"}
-        exit-icon
-        (tr "labels.logout")]]
+            :community-contributions
+            [:> community-contributions-menu* {:on-close close-sub-menu
+                                               :on-pointer-enter on-sub-menu-pointer-enter
+                                               :on-pointer-leave on-menu-pointer-leave}]
 
-      (when (and team profile)
-        [:> comments-icon*
-         {:profile profile
-          :on-show-comments handle-show-comments}])]
-
-     (when show-profile-menu?
-       (case sub-menu
-         :help-learning
-         [:> help-learning-menu* {:on-close close-sub-menu
-                                  :on-click on-click
-                                  :on-pointer-enter on-sub-menu-pointer-enter
-                                  :on-pointer-leave on-menu-pointer-leave}]
-
-         :community-contributions
-         [:> community-contributions-menu* {:on-close close-sub-menu
-                                            :on-pointer-enter on-sub-menu-pointer-enter
-                                            :on-pointer-leave on-menu-pointer-leave}]
-
-         :about-penpot
-         [:> about-penpot-menu* {:on-close close-sub-menu
-                                 :on-pointer-enter on-sub-menu-pointer-enter
-                                 :on-pointer-leave on-menu-pointer-leave}]
-         nil))]))
+            :about-penpot
+            [:> about-penpot-menu* {:on-close close-sub-menu
+                                    :on-pointer-enter on-sub-menu-pointer-enter
+                                    :on-pointer-leave on-menu-pointer-leave}]
+            nil))])]))
 
 (mf/defc sidebar*
   {::mf/wrap [mf/memo]}

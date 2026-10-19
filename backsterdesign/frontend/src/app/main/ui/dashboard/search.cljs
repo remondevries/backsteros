@@ -12,6 +12,8 @@
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.dashboard.grid :refer [grid*]]
+   [app.main.ui.dashboard.keyboard-nav :as knav]
+   [app.main.ui.dashboard.page-header :refer [page-header*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.icons :as deprecated-icon]
    [app.util.dom :as dom]
@@ -39,7 +41,15 @@
         selected    (mf/deref ref:selected)
 
         [rowref limit]
-        (hooks/use-dynamic-grid-item-width)]
+        (hooks/use-dynamic-grid-item-width)
+
+        highlighted* (mf/use-state nil)
+        highlighted  @highlighted*
+        highlight-ref (mf/use-ref nil)
+
+        file-ids
+        (mf/with-memo [result]
+          (mapv (comp str :id) (or result [])))]
 
     (mf/with-effect [team]
       (when team
@@ -52,10 +62,83 @@
       (st/emit! (dd/search {:search-term search-term})
                 (dd/clear-selected-files)))
 
+    (knav/remember! highlight-ref highlighted)
+
+    ;; Drop highlight when the result set changes.
+    (mf/with-effect [file-ids]
+      (knav/remember! highlight-ref nil)
+      (reset! highlighted* nil)
+      (knav/sync-file-highlight! nil))
+
+    (mf/with-effect [highlighted]
+      (knav/sync-file-highlight! highlighted)
+      (fn [] (knav/sync-file-highlight! nil)))
+
+    ;; Enter from search → highlight first · j/k move · Enter open
+    (mf/with-effect [file-ids]
+      (let [on-key
+            (fn [event]
+              (when (and (not (.-metaKey event))
+                         (not (.-ctrlKey event))
+                         (not (.-altKey event)))
+                (let [target     (.-target event)
+                      in-search? (knav/search-input-target? target)
+                      key        (.-key event)
+                      code       (.-code event)
+                      has-results? (seq file-ids)
+                      stop!      (fn []
+                                   (.preventDefault event)
+                                   (.stopPropagation event)
+                                   (.stopImmediatePropagation event))]
+                  (cond
+                    ;; Enter: first press only highlights (never opens).
+                    ;; Second press with a highlight opens that file.
+                    (and (or (= key "Enter") (= code "Enter") (= code "NumpadEnter"))
+                         has-results?)
+                    (do
+                      (stop!)
+                      (if-let [file-id (mf/ref-val highlight-ref)]
+                        (knav/open-file! file-id)
+                        (do
+                          (when in-search?
+                            (when-let [el (dom/get-element "dashboard-header-search-input")]
+                              (.blur el)))
+                          (let [id (first file-ids)]
+                            (knav/remember! highlight-ref id)
+                            (reset! highlighted* id)))))
+
+                    ;; Still typing in search — leave j/k to the input.
+                    in-search?
+                    nil
+
+                    (knav/editable-target? target)
+                    nil
+
+                    (not has-results?)
+                    nil
+
+                    (or (= key "j") (= key "J") (= code "KeyJ")
+                        (= key "ArrowDown"))
+                    (when-not (.-shiftKey event)
+                      (stop!)
+                      (reset! highlighted*
+                              (knav/step-ref! highlight-ref file-ids :down)))
+
+                    (or (= key "k") (= key "K") (= code "KeyK")
+                        (= key "ArrowUp"))
+                    (when-not (.-shiftKey event)
+                      (stop!)
+                      (reset! highlighted*
+                              (knav/step-ref! highlight-ref file-ids :up)))))))]
+        (.addEventListener js/window "keydown" on-key true)
+        (fn []
+          (.removeEventListener js/window "keydown" on-key true))))
+
     [:*
-     [:header {:class (stl/css :dashboard-header) :data-testid "dashboard-header"}
-      [:div#dashboard-search-title {:class (stl/css :dashboard-title)}
-       [:h1 (tr "dashboard.title-search")]]]
+     [:> page-header* {:title (tr "dashboard.title-search")
+                       :title-id "dashboard-search-title"
+                       :search-term search-term
+                       :team-id (get team :id)}]
 
      [:section {:class (stl/css :dashboard-container :search :no-bg)
                 :ref rowref}

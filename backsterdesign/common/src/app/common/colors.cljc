@@ -22,11 +22,11 @@
 (def warning "#FC8802")
 
 ;; new-css-system colors
-(def new-primary "#7efff5")
+(def new-primary "#f97316")
 (def new-danger "#ff3277")
 (def new-warning "#fe4811")
 (def new-primary-light "#6911d4")
-(def background-quaternary "#2e3434")
+(def background-quaternary "#1f1f20")
 (def background-quaternary-light "#eef0f2")
 (def canvas "#E8E9EA")
 

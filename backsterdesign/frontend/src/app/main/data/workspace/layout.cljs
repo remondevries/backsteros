@@ -20,6 +20,7 @@
     :comments
     :assets
     :document-history
+    :backsteros-tasks
     :hide-palettes
     :colorpalette
     :element-options
@@ -37,19 +38,23 @@
 
 (def presets
   {:assets
-   {:del #{:sitemap :layers :document-history}
+   {:del #{:sitemap :layers :document-history :backsteros-tasks}
     :add #{:assets}}
 
    :document-history
-   {:del #{:assets :layers :sitemap}
+   {:del #{:assets :layers :sitemap :backsteros-tasks}
     :add #{:document-history}}
 
+   :backsteros-tasks
+   {:del #{:document-history}
+    :add #{:backsteros-tasks}}
+
    :layers
-   {:del #{:document-history :assets}
+   {:del #{:document-history :assets :backsteros-tasks}
     :add #{:sitemap :layers}}
 
    :tokens
-   {:del #{:sitemap :layers :document-history :assets}
+   {:del #{:sitemap :layers :document-history :assets :backsteros-tasks}
     :add #{:tokens}}})
 
 (def valid-options-mode

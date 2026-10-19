@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  isActiveOpenRunningTimer,
   resolveTrackedDurationSeconds,
   trackedDurationSecondsFromElapsed,
 } from "@backsteros/contracts";
@@ -458,6 +459,21 @@ export function TrackedTimerProvider({
 
       for (const adoption of adoptions) {
         const key = buildTrackedTimerKey(adoption.kind, adoption.entityId);
+        const live = isActiveOpenRunningTimer({
+          startedAtMs: adoption.remoteStartedAtMs,
+          trackedDurationSeconds: adoption.trackedDurationSeconds,
+          trackedMinutes: adoption.trackedMinutes,
+          updatedAtMs: adoption.updatedAtMs,
+        });
+        if (!live) {
+          const existing = entriesRef.current.get(key);
+          const locallyOwned =
+            existing?.sessionStartAt != null && !existing.adoptedFromRemote;
+          if (locallyOwned) {
+            remoteKeys.add(key);
+          }
+          continue;
+        }
         remoteKeys.add(key);
         const existing = entriesRef.current.get(key);
         const isLocallyOwnedRunning =

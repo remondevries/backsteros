@@ -17,34 +17,88 @@
    [app.main.ui.dashboard.import :as udi]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
+   [app.util.object :as obj]
    [beicon.v2.core :as rx]
+   [cuerdas.core :as str]
    [potok.v2.core :as ptk]
    [rumext.v2 :as mf]))
 
+(defn- core-config
+  []
+  (let [cfg (obj/get js/window "backsterosCore")]
+    (when (some? cfg)
+      {:base-url (or (obj/get cfg "baseUrl") "")
+       :api-key  (or (obj/get cfg "apiKey") "local")})))
+
+(defn- api-fetch
+  [base-url api-key method path body]
+  (let [url (str (str/rtrim base-url "/") path)
+        headers (if (some? body)
+                  #js {"Authorization" (str "Bearer " api-key)
+                       "Accept" "application/json"
+                       "Content-Type" "application/json"}
+                  #js {"Authorization" (str "Bearer " api-key)
+                       "Accept" "application/json"})
+        opts (cond-> #js {:method method :headers headers}
+               (some? body)
+               (doto (obj/set! "body" (.stringify js/JSON body))))]
+    (-> (js/fetch url opts)
+        (.then (fn [res]
+                 (if (.-ok res)
+                   (.json res)
+                   (-> (.text res)
+                       (.then (fn [t]
+                                (throw (js/Error. (str (.-status res) " " t))))))))))))
+
+(defn- find-core-project-id-by-penpot-id!
+  "Return BacksterOS project id linked to this Penpot project, or nil."
+  [base-url api-key penpot-project-id]
+  (let [needle (str penpot-project-id)]
+    (-> (api-fetch base-url api-key "GET"
+                   "/api/v1/projects?paginated=true&limit=200" nil)
+        (.then (fn [data]
+                 (->> (or (obj/get data "items")
+                          (obj/get data "projects")
+                          #js [])
+                      (array-seq)
+                      (some (fn [row]
+                              (when (= (str (obj/get row "penpotProjectId")) needle)
+                                (obj/get row "id"))))))))))
+
+(defn- clear-core-penpot-project-id!
+  "Clear projects.penpot_project_id so the BacksterOS row is unlinked."
+  [base-url api-key backsteros-project-id]
+  (api-fetch base-url api-key "PATCH"
+             (str "/api/v1/projects/" backsteros-project-id)
+             #js {:penpotProjectId nil}))
+
+(defn- unlink-penpot-project-from-core!
+  "Best-effort: find the core project for this Penpot id and null the link."
+  [penpot-project-id]
+  (let [cfg (core-config)]
+    (if (or (nil? cfg) (nil? penpot-project-id))
+      (js/Promise.resolve nil)
+      (-> (find-core-project-id-by-penpot-id!
+           (:base-url cfg) (:api-key cfg) penpot-project-id)
+          (.then (fn [core-id]
+                   (if (nil? core-id)
+                     nil
+                     (clear-core-penpot-project-id!
+                      (:base-url cfg) (:api-key cfg) core-id))))
+          (.catch (fn [err]
+                    (js/console.warn
+                     "[backsteros] failed to clear penpotProjectId on delete"
+                     err)
+                    nil))))))
+
 (mf/defc project-menu*
-  [{:keys [project show on-edit on-close top left on-import]}]
+  [{:keys [project show on-close top left on-import]}]
   (let [top  (or top 0)
         left (or left 0)
 
         current-team-id (mf/use-ctx ctx/current-team-id)
         teams           (mf/deref refs/teams)
         teams           (-> teams (dissoc current-team-id) vals vec)
-
-        on-duplicate-success
-        (fn [new-project]
-          (st/emit! (ntf/success (tr "dashboard.success-duplicate-project"))
-                    (dcm/go-to-dashboard-files
-                     :team-id (:team-id new-project)
-                     :project-id (:id new-project))))
-
-        on-duplicate
-        (fn []
-          (st/emit! (dd/duplicate-project
-                     (with-meta project {:on-success on-duplicate-success}))))
-
-        toggle-pin
-        (fn []
-          (st/emit! (dd/toggle-project-pin project)))
 
         on-move-success
         (fn [team-id]
@@ -57,12 +111,20 @@
             #(st/emit! (ntf/success (tr "dashboard.success-move-project"))
                        (dd/move-project (with-meta data mdata)))))
 
-        delete-fn
-        (fn [_]
+        finish-delete!
+        (fn []
           (let [team-id (:team-id project)]
             (st/emit! (ntf/success (tr "dashboard.success-delete-project"))
                       (dd/delete-project project)
                       (dcm/go-to-dashboard-recent :team-id team-id))))
+
+        delete-fn
+        (fn [_]
+          ;; Unlink in core first so BacksterOS no longer points at this
+          ;; Penpot project; then soft-delete in Penpot.
+          (-> (unlink-penpot-project-from-core! (:id project))
+              (.then (fn [_] (finish-delete!)))
+              (.catch (fn [_] (finish-delete!)))))
 
         on-delete
         (fn []
@@ -83,21 +145,10 @@
         (mf/use-fn
          (fn [] (when (fn? on-import) (on-import))))
 
+        ;; BacksterDESIGN: no Rename / Duplicate / Pin — projects are owned
+        ;; by BacksterOS; keep import + delete (+ move when other teams exist).
         options
-        [(when-not (:is-default project)
-           {:name   (tr "labels.rename")
-            :id     "project-rename"
-            :handler on-edit})
-         (when-not (:is-default project)
-           {:name (tr "dashboard.duplicate")
-            :id   "project-duplicate"
-            :handler on-duplicate})
-         (when-not (:is-default project)
-           {:name (tr "dashboard.pin-unpin")
-            :id   "project-pin"
-            :handler toggle-pin})
-
-         (when (and (seq teams) (not (:is-default project)))
+        [(when (and (seq teams) (not (:is-default project)))
            {:name    (tr "dashboard.move-to")
             :id      "project-move-to"
             :options (for [team teams]
@@ -140,4 +191,3 @@
      [:> udi/import-form* {:ref file-input
                            :project-id (:id project)
                            :on-finish-import on-finish-import}]]))
-

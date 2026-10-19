@@ -31,6 +31,8 @@ export type TrackedTimerRegistration = TrackedTimerSessionMeta & {
 export type RemoteRunningTimerAdoption = TrackedTimerRegistration & {
   /** Wall-clock ms of the remote `timer_started` activity (for stop duration). */
   remoteStartedAtMs: number;
+  /** Task `updatedAt`. Absent or stale means the start is not a live session. */
+  updatedAtMs?: number | null;
 };
 
 export type TrackedTimerListItem = TrackedTimerSessionMeta & {

@@ -15,7 +15,7 @@
 .dashboard-container {
   flex: 1 0 0;
   width: 100%;
-  margin-inline-end: var(--sp-l);
+  margin-inline-end: 0;
   border-top: $b-1 solid var(--panel-border-color);
   overflow-y: auto;
   padding-block-end: var(--sp-xxxl);
@@ -58,6 +58,7 @@
 .nav-inside {
   border-bottom: $b-1 solid var(--panel-border-color);
   display: flex;
+  align-items: center;
   gap: var(--sp-l);
   justify-content: flex-start;
 }
