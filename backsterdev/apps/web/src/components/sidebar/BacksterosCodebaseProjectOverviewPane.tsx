@@ -700,10 +700,8 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
               ariaLabel="Development location"
               locationTarget="development"
               title={
-                detail.developmentSetupError
-                  ? `Development setup: ${detail.developmentSetupError}`
-                  : (detail.developmentLocation ??
-                    "Path on the development server (cloned once when first set)")
+                detail.developmentLocation ??
+                "Path on the development server"
               }
               onSave={async (developmentLocation) => {
                 await applyPatch({ developmentLocation }, "Could not update development location");

@@ -84,7 +84,6 @@ import {
 } from "../lib/agent-working.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
-import { ensureDevelopmentCheckout } from "./development-checkout.js";
 import { isExecutionLocation } from "./execution-location.js";
 import { enqueueAutoReviewDelivery } from "./auto-review-webhook.js";
 
@@ -158,116 +157,6 @@ function defaultWorkingDirectoryForType(
     return path.join(projectVaultPath, PROJECT_VAULT_CODEBASE_FOLDER);
   }
   return projectVaultPath;
-}
-
-function shouldTriggerDevelopmentCheckout(
-  previous: {
-    developmentLocation: string | null;
-    githubRepository: string | null;
-    type: string;
-    developmentSetupStatus: string | null;
-  } | null,
-  next: {
-    developmentLocation: string | null;
-    githubRepository: string | null;
-    type: string;
-  },
-): boolean {
-  if (next.type !== "codebase") return false;
-  const loc = next.developmentLocation?.trim() ?? "";
-  const repo = next.githubRepository?.trim() ?? "";
-  if (!loc || !repo) return false;
-  if (previous === null) return true;
-  const prevLoc = previous.developmentLocation?.trim() ?? "";
-  const prevRepo = previous.githubRepository?.trim() ?? "";
-  const firstLoc = !prevLoc && Boolean(loc);
-  const firstRepoWithLoc = Boolean(prevLoc) && !prevRepo && Boolean(repo);
-  if (!(firstLoc || firstRepoWithLoc)) return false;
-  if (previous.developmentSetupStatus === "ready" && prevLoc === loc) {
-    return false;
-  }
-  return true;
-}
-
-function shouldSkipDevelopmentCheckout(options?: ProjectWriteOptions): boolean {
-  // Cloud peer replay must not SSH; local core (and origin writes) may.
-  if (!options?.skipVaultSideEffects) return false;
-  return process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
-}
-
-async function recordDevelopmentSetupResult(
-  workspaceId: string,
-  projectId: string,
-  result: Awaited<ReturnType<typeof ensureDevelopmentCheckout>>,
-): Promise<void> {
-  if (result.status === "skipped") return;
-  const now = new Date();
-  try {
-    await db
-      .update(projects)
-      .set({
-        developmentSetupStatus: result.status === "ready" ? "ready" : "failed",
-        developmentSetupError:
-          result.status === "failed" ? result.error : null,
-        developmentSetupUpdatedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
-      );
-  } catch (error) {
-    console.warn(
-      `[development-checkout] failed to persist setup status for ${projectId}: ${
-        error instanceof Error ? error.message : "unknown"
-      }`,
-    );
-  }
-}
-
-function scheduleDevelopmentCheckout(input: {
-  workspaceId: string;
-  projectId: string;
-  githubRepository: string | null;
-  developmentLocation: string | null;
-}): void {
-  const now = new Date();
-  void db
-    .update(projects)
-    .set({
-      developmentSetupStatus: "pending",
-      developmentSetupError: null,
-      developmentSetupUpdatedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(projects.workspaceId, input.workspaceId),
-        eq(projects.id, input.projectId),
-      ),
-    )
-    .then(() =>
-      ensureDevelopmentCheckout({
-        githubRepository: input.githubRepository,
-        developmentLocation: input.developmentLocation,
-      }),
-    )
-    .then((result) =>
-      recordDevelopmentSetupResult(input.workspaceId, input.projectId, result),
-    )
-    .catch((error: unknown) => {
-      console.warn(
-        `[development-checkout] ${input.projectId}: ${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
-      void recordDevelopmentSetupResult(input.workspaceId, input.projectId, {
-        status: "failed",
-        error:
-          error instanceof Error
-            ? error.message.slice(0, 500)
-            : "development checkout failed",
-      });
-    });
 }
 
 /**
@@ -690,21 +579,6 @@ export async function createProject(
     .returning();
 
   if (options?.skipVaultSideEffects) {
-    if (
-      !shouldSkipDevelopmentCheckout(options) &&
-      shouldTriggerDevelopmentCheckout(null, {
-        type: row.type,
-        developmentLocation: row.developmentLocation,
-        githubRepository: row.githubRepository,
-      })
-    ) {
-      scheduleDevelopmentCheckout({
-        workspaceId,
-        projectId: row.id,
-        githubRepository: row.githubRepository,
-        developmentLocation: row.developmentLocation,
-      });
-    }
     return row;
   }
 
@@ -731,41 +605,10 @@ export async function createProject(
       .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
       .returning();
     if (updated) {
-      if (
-        !shouldSkipDevelopmentCheckout(options) &&
-        shouldTriggerDevelopmentCheckout(null, {
-          type: updated.type,
-          developmentLocation: updated.developmentLocation,
-          githubRepository: updated.githubRepository,
-        })
-      ) {
-        scheduleDevelopmentCheckout({
-          workspaceId,
-          projectId: updated.id,
-          githubRepository: updated.githubRepository,
-          developmentLocation: updated.developmentLocation,
-        });
-      }
       return updated;
     }
   } catch {
     // Vault may be unset — folder bootstrap happens when storage is configured.
-  }
-
-  if (
-    !shouldSkipDevelopmentCheckout(options) &&
-    shouldTriggerDevelopmentCheckout(null, {
-      type: row.type,
-      developmentLocation: row.developmentLocation,
-      githubRepository: row.githubRepository,
-    })
-  ) {
-    scheduleDevelopmentCheckout({
-      workspaceId,
-      projectId: row.id,
-      githubRepository: row.githubRepository,
-      developmentLocation: row.developmentLocation,
-    });
   }
 
   return row;
@@ -1093,31 +936,6 @@ export async function updateProject(
     keyChanging && !skipVault && executor === db
       ? await db.transaction(async (tx) => applyRow(tx))
       : await applyRow(executor);
-
-  if (
-    row &&
-    !shouldSkipDevelopmentCheckout(options) &&
-    shouldTriggerDevelopmentCheckout(
-      {
-        developmentLocation: existing.developmentLocation,
-        githubRepository: existing.githubRepository,
-        type: existing.type,
-        developmentSetupStatus: existing.developmentSetupStatus,
-      },
-      {
-        type: row.type,
-        developmentLocation: row.developmentLocation,
-        githubRepository: row.githubRepository,
-      },
-    )
-  ) {
-    scheduleDevelopmentCheckout({
-      workspaceId,
-      projectId: row.id,
-      githubRepository: row.githubRepository,
-      developmentLocation: row.developmentLocation,
-    });
-  }
 
   return row;
 }

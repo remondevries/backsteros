@@ -216,9 +216,12 @@ export const projectSchema = z.object({
    * write (mapped then cleared); always null on read after ensure/update.
    */
   localLocation: z.string().max(4096).nullable(),
-  /** One-time development-server clone status (OS-106): pending | ready | failed. */
+  /**
+   * Legacy development checkout status. Core no longer clones on location set;
+   * fields remain for sync/API compat and may still be cleared by clients.
+   */
   developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable(),
-  /** Sanitized last development setup error (no secrets). */
+  /** Legacy sanitized setup error (no secrets). */
   developmentSetupError: z.string().max(2000).nullable(),
   developmentSetupUpdatedAt: z.string().datetime().nullable(),
   /**
@@ -281,7 +284,7 @@ export const createProjectSchema = z.object({
   productionLocation: z.string().max(4096).nullable().optional(),
   /** @deprecated Folded into localWorkingDirectory on write. */
   localLocation: z.string().max(4096).nullable().optional(),
-  /** Server/sync-managed development checkout status (OS-106). */
+  /** Legacy; core no longer writes these on location set. */
   developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable().optional(),
   developmentSetupError: z.string().max(2000).nullable().optional(),
   developmentSetupUpdatedAt: z.string().datetime().nullable().optional(),

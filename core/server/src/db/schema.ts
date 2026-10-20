@@ -695,9 +695,9 @@ export const projects = pgTable(
     productionLocation: text("production_location"),
     /** @deprecated Folded into local_working_directory; kept for sync compat. */
     localLocation: text("local_location"),
-    /** `pending` | `ready` | `failed` — one-time development-server clone (OS-106). */
+    /** Legacy: `pending` | `ready` | `failed` — core no longer auto-clones. */
     developmentSetupStatus: text("development_setup_status"),
-    /** Sanitized last clone/setup error (no secrets). */
+    /** Legacy sanitized setup error (no secrets). */
     developmentSetupError: text("development_setup_error"),
     developmentSetupUpdatedAt: timestamp("development_setup_updated_at", {
       withTimezone: true,
