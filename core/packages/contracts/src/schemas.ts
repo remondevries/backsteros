@@ -199,7 +199,10 @@ export const projectSchema = z.object({
    * Null until staff create-or-open from the design dashboard.
    */
   penpotProjectId: z.string().uuid().nullable(),
-  /** Absolute local folder for agent/PTY (machine-specific; Development console). */
+  /**
+   * Absolute local folder for agent/PTY and `executionLocation = local`
+   * (machine-specific). For codebase projects, defaults to `{vault}/Codebase`.
+   */
   localWorkingDirectory: z.string().max(4096).nullable(),
   /**
    * Path on the development server for agent execution (codebase projects, OS-106).
@@ -209,8 +212,8 @@ export const projectSchema = z.object({
   /** Path on the production server for agent execution (codebase projects, OS-106). */
   productionLocation: z.string().max(4096).nullable(),
   /**
-   * Path on the machine running the BacksterOS desktop app (codebase, OS-106).
-   * Distinct from {@link localWorkingDirectory} (canonical local codebase location).
+   * @deprecated Folded into {@link localWorkingDirectory}. Still accepted on
+   * write (mapped then cleared); always null on read after ensure/update.
    */
   localLocation: z.string().max(4096).nullable(),
   /** One-time development-server clone status (OS-106): pending | ready | failed. */
@@ -276,6 +279,7 @@ export const createProjectSchema = z.object({
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
   developmentLocation: z.string().max(4096).nullable().optional(),
   productionLocation: z.string().max(4096).nullable().optional(),
+  /** @deprecated Folded into localWorkingDirectory on write. */
   localLocation: z.string().max(4096).nullable().optional(),
   /** Server/sync-managed development checkout status (OS-106). */
   developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable().optional(),

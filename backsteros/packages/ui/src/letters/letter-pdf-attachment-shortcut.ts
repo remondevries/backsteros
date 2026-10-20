@@ -2,10 +2,20 @@
 
 import { useEffect } from "react";
 
+import { resolveDesktopSectionTabHrefs } from "../navigation/section-tab-hrefs.js";
 import { shouldBlockPageShortcuts, shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 import { useLatestRef } from "../shared/use-latest-ref.js";
 
 export const LETTER_PDF_ATTACHMENT_SHORTCUT_MAX = 5;
+
+/** True when 1–N switch project/entity section tabs (prefer those over PDF tabs). */
+export function sectionTabsOwnDigitShortcuts(
+  pathname: string,
+  search = "",
+): boolean {
+  const tabs = resolveDesktopSectionTabHrefs(pathname, search);
+  return Boolean(tabs?.length);
+}
 
 export function parseLetterPdfAttachmentShortcutIndex(
   event: Pick<
@@ -68,6 +78,18 @@ export function useLetterPdfAttachmentShortcuts({
         return;
       }
 
+      // Project/org/contact letter routes: section tabs own 1–N (Overview…).
+      // Only steal digits on global `/letters/…` where no section tabs apply.
+      if (
+        typeof window !== "undefined" &&
+        sectionTabsOwnDigitShortcuts(
+          window.location.pathname,
+          window.location.search,
+        )
+      ) {
+        return;
+      }
+
       const attachmentId = resolveLetterPdfAttachmentShortcutTarget(
         index,
         attachmentIdsRef.current,
@@ -90,7 +112,7 @@ export function useLetterPdfAttachmentShortcuts({
       onSelectRef.current(attachmentId);
     }
 
-    // Capture so 1–5 select PDF tabs on letter pages instead of section tabs.
+    // Capture on global letter pages so 1–5 select PDF tabs before other UI.
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [attachmentIdsRef, enabled, hasLegacyPdfRef, onSelectRef]);

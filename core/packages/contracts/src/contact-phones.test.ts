@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   coerceContactPhoneEntries,
   contactPhoneRowsForEditor,
+  formatContactPhoneDisplay,
   getContactPhoneNumbers,
   normalizeContactPhonesInput,
   normalizePhoneKey,
@@ -14,6 +15,25 @@ describe("contact phones", () => {
   it("normalizes phone keys for dedup", () => {
     assert.equal(normalizePhoneKey("+31 6 15 50 80 80"), "+31615508080");
     assert.equal(normalizePhoneKey("(06) 15-50-8080"), "0615508080");
+  });
+
+  it("formats Dutch and international numbers for display", () => {
+    assert.equal(formatContactPhoneDisplay("0612345678"), "06 1234 5678");
+    assert.equal(formatContactPhoneDisplay("0201234567"), "020 123 4567");
+    assert.equal(formatContactPhoneDisplay("0721234567"), "072 123 4567");
+    assert.equal(
+      formatContactPhoneDisplay("+31612345678"),
+      "+31 6 1234 5678",
+    );
+    assert.equal(
+      formatContactPhoneDisplay("+31201234567"),
+      "+31 20 123 4567",
+    );
+    assert.equal(
+      formatContactPhoneDisplay("0031612345678"),
+      "+31 6 1234 5678",
+    );
+    assert.equal(formatContactPhoneDisplay("+1 2025551234"), "+1 202 555 1234");
   });
 
   it("collects primary and additional numbers without duplicates", () => {
@@ -76,8 +96,8 @@ describe("contact phones", () => {
         ],
       }),
       [
-        { label: "work", number: "0612345678" },
-        { label: "personal", number: "0201234567" },
+        { label: "work", number: "06 1234 5678" },
+        { label: "personal", number: "020 123 4567" },
       ],
     );
   });
@@ -89,8 +109,8 @@ describe("contact phones", () => {
         phones: [{ label: "work", number: "0201234567" }],
       }),
       [
-        { label: "personal", number: "0612345678" },
-        { label: "work", number: "0201234567" },
+        { label: "personal", number: "06 1234 5678" },
+        { label: "work", number: "020 123 4567" },
       ],
     );
   });

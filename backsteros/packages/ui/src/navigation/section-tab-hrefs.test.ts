@@ -8,6 +8,18 @@ import {
   resolveSectionTabCycleShortcut,
 } from "./section-tab-hrefs.js";
 
+/** Matches chrome `CODEBASE_LIST_TAB_OPTIONS` / hotkey CODEBASE_LIST_TABS. */
+const CODEBASE_WORKBENCH_TAB_HREFS = [
+  "/projects/demo",
+  "/projects/demo/tasks",
+  "/projects/demo/files",
+  "/projects/demo/documents",
+  "/projects/demo/commits",
+  "/projects/demo/pulls",
+  "/projects/demo/updates",
+  "/projects/demo/timetracking",
+] as const;
+
 test("projects list uses area filter tabs with Other instead of All", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects"), [
     "/projects",
@@ -26,6 +38,22 @@ test("projects list uses area filter tabs with Other instead of All", () => {
   );
 });
 
+test("projects list omits Other from number-key tabs when the bucket is empty", async () => {
+  const { setProjectsListIncludeOtherArea } = await import(
+    "../projects/project-areas.js"
+  );
+  setProjectsListIncludeOtherArea(false);
+  try {
+    assert.deepEqual(resolveDesktopSectionTabHrefs("/projects"), [
+      "/projects",
+      "/projects?area=business",
+      "/projects?area=clients",
+    ]);
+  } finally {
+    setProjectsListIncludeOtherArea(true);
+  }
+});
+
 test("project overview uses default section tabs when workbench is not mounted", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo"), [
     "/projects/demo",
@@ -37,31 +65,19 @@ test("project overview uses default section tabs when workbench is not mounted",
   ]);
 });
 
-test("codebase workbench routes use Tasks/Files/Docs/Commits/PRs/Updates tabs", () => {
-  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/files"), [
-    "/projects/demo",
-    "/projects/demo/files",
-    "/projects/demo/documents",
-    "/projects/demo/commits",
-    "/projects/demo/pulls",
-    "/projects/demo/updates",
-  ]);
-  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/commits/abc"), [
-    "/projects/demo",
-    "/projects/demo/files",
-    "/projects/demo/documents",
-    "/projects/demo/commits",
-    "/projects/demo/pulls",
-    "/projects/demo/updates",
-  ]);
-  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/pulls/12"), [
-    "/projects/demo",
-    "/projects/demo/files",
-    "/projects/demo/documents",
-    "/projects/demo/commits",
-    "/projects/demo/pulls",
-    "/projects/demo/updates",
-  ]);
+test("codebase workbench routes use Overview/Tasks/Files/Docs/Commits/PRs/Updates/Timetracking tabs", () => {
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/projects/demo/files"),
+    [...CODEBASE_WORKBENCH_TAB_HREFS],
+  );
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/projects/demo/commits/abc"),
+    [...CODEBASE_WORKBENCH_TAB_HREFS],
+  );
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/projects/demo/pulls/12"),
+    [...CODEBASE_WORKBENCH_TAB_HREFS],
+  );
 });
 
 test("standard project updates stay on default tabs when workbench is not mounted", () => {
@@ -84,6 +100,28 @@ test("standard project documents stay on default tabs when workbench is not moun
     "/projects/demo/updates",
     "/projects/demo/timetracking",
   ]);
+});
+
+test("project letters keep default section tabs so digit 1 goes to Overview", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/letters"), [
+    "/projects/demo",
+    "/projects/demo/tasks",
+    "/projects/demo/documents",
+    "/projects/demo/letters",
+    "/projects/demo/updates",
+    "/projects/demo/timetracking",
+  ]);
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/projects/demo/letters/letter-1"),
+    [
+      "/projects/demo",
+      "/projects/demo/tasks",
+      "/projects/demo/documents",
+      "/projects/demo/letters",
+      "/projects/demo/updates",
+      "/projects/demo/timetracking",
+    ],
+  );
 });
 
 test("standalone contact card tabs are Activity / Details / More (expand)", () => {
@@ -192,11 +230,13 @@ test("org-scoped codebase workbench routes use scoped tab hrefs", () => {
     resolveDesktopSectionTabHrefs("/organizations/acme/projects/demo/files"),
     [
       "/organizations/acme/projects/demo",
+      "/organizations/acme/projects/demo/tasks",
       "/organizations/acme/projects/demo/files",
       "/organizations/acme/projects/demo/documents",
       "/organizations/acme/projects/demo/commits",
       "/organizations/acme/projects/demo/pulls",
       "/organizations/acme/projects/demo/updates",
+      "/organizations/acme/projects/demo/timetracking",
     ],
   );
 });
@@ -210,12 +250,7 @@ test("mounted codebase workbench maps bare project path to list tabs", () => {
 
   try {
     assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo"), [
-      "/projects/demo",
-      "/projects/demo/files",
-      "/projects/demo/documents",
-      "/projects/demo/commits",
-      "/projects/demo/pulls",
-      "/projects/demo/updates",
+      ...CODEBASE_WORKBENCH_TAB_HREFS,
     ]);
   } finally {
     globalThis.document = previousDocument;
@@ -231,38 +266,21 @@ test("mounted codebase workbench maps documents to Docs tab", () => {
 
   try {
     assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/documents"), [
-      "/projects/demo",
-      "/projects/demo/files",
-      "/projects/demo/documents",
-      "/projects/demo/commits",
-      "/projects/demo/pulls",
-      "/projects/demo/updates",
+      ...CODEBASE_WORKBENCH_TAB_HREFS,
     ]);
     assert.deepEqual(
       resolveDesktopSectionTabHrefs("/projects/demo/documents/readme"),
-      [
-        "/projects/demo",
-        "/projects/demo/files",
-        "/projects/demo/documents",
-        "/projects/demo/commits",
-        "/projects/demo/pulls",
-        "/projects/demo/updates",
-      ],
+      [...CODEBASE_WORKBENCH_TAB_HREFS],
     );
     assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/updates"), [
-      "/projects/demo",
-      "/projects/demo/files",
-      "/projects/demo/documents",
-      "/projects/demo/commits",
-      "/projects/demo/pulls",
-      "/projects/demo/updates",
+      ...CODEBASE_WORKBENCH_TAB_HREFS,
     ]);
   } finally {
     globalThis.document = previousDocument;
   }
 });
 
-test("mounted codebase workbench keeps Tasks/Files/Docs tabs on /tasks board route", () => {
+test("mounted codebase workbench keeps workbench tabs on /tasks board route", () => {
   const previousDocument = globalThis.document;
   globalThis.document = {
     querySelector: (selector: string) =>
@@ -271,23 +289,11 @@ test("mounted codebase workbench keeps Tasks/Files/Docs tabs on /tasks board rou
 
   try {
     assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/tasks"), [
-      "/projects/demo",
-      "/projects/demo/files",
-      "/projects/demo/documents",
-      "/projects/demo/commits",
-      "/projects/demo/pulls",
-      "/projects/demo/updates",
+      ...CODEBASE_WORKBENCH_TAB_HREFS,
     ]);
     assert.deepEqual(
       resolveDesktopSectionTabHrefs("/projects/demo/tasks", "?view=board"),
-      [
-        "/projects/demo",
-        "/projects/demo/files",
-        "/projects/demo/documents",
-        "/projects/demo/commits",
-        "/projects/demo/pulls",
-        "/projects/demo/updates",
-      ],
+      [...CODEBASE_WORKBENCH_TAB_HREFS],
     );
   } finally {
     globalThis.document = previousDocument;
@@ -328,22 +334,21 @@ test("⌥[ / ⌥] resolve to previous / next section tab", () => {
 });
 
 test("findActiveSectionTabIndex matches nested codebase routes", () => {
-  const tabs = [
-    "/projects/demo",
-    "/projects/demo/files",
-    "/projects/demo/documents",
-    "/projects/demo/commits",
-    "/projects/demo/pulls",
-  ];
+  const tabs = [...CODEBASE_WORKBENCH_TAB_HREFS];
   assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo"), 0);
-  assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo/files"), 1);
+  assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo/tasks"), 1);
+  assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo/files"), 2);
   assert.equal(
     findActiveSectionTabIndex(tabs, "/projects/demo/documents/readme"),
-    2,
+    3,
   );
   assert.equal(
     findActiveSectionTabIndex(tabs, "/projects/demo/commits/abc123"),
-    3,
+    4,
+  );
+  assert.equal(
+    findActiveSectionTabIndex(tabs, "/projects/demo/timetracking"),
+    7,
   );
 });
 
@@ -378,13 +383,7 @@ test("resolveAdjacentSectionTabHref cycles tasks due pills", () => {
 });
 
 test("resolveAdjacentSectionTabHref cycles codebase workbench tabs", () => {
-  const tabs = [
-    "/projects/demo",
-    "/projects/demo/files",
-    "/projects/demo/documents",
-    "/projects/demo/commits",
-    "/projects/demo/pulls",
-  ];
+  const tabs = [...CODEBASE_WORKBENCH_TAB_HREFS];
   assert.equal(
     resolveAdjacentSectionTabHref(tabs, "/projects/demo/files", "", "next"),
     "/projects/demo/documents",
@@ -397,5 +396,14 @@ test("resolveAdjacentSectionTabHref cycles codebase workbench tabs", () => {
       "previous",
     ),
     "/projects/demo/documents",
+  );
+  assert.equal(
+    resolveAdjacentSectionTabHref(
+      tabs,
+      "/projects/demo/timetracking",
+      "",
+      "next",
+    ),
+    "/projects/demo",
   );
 });

@@ -9,6 +9,9 @@ import {
   PROJECT_AREA_FILTER_DEFAULT,
   PROJECT_AREA_FILTER_OTHER,
   PROJECT_AREA_FILTERS,
+  projectsListAreaFilters,
+  setProjectsListIncludeOtherArea,
+  visibleProjectAreaFilters,
 } from "./project-areas.js";
 
 describe("project area filters", () => {
@@ -37,6 +40,31 @@ describe("project area filters", () => {
       filterProjectsByArea(projects, "personal").map((p) => p.id),
       ["1"],
     );
+  });
+
+  it("hides Other from visible filters when the bucket is empty", () => {
+    assert.deepEqual(
+      visibleProjectAreaFilters([
+        { id: "1", area: "personal" as const },
+        { id: "2", area: "business" as const },
+      ]),
+      ["personal", "business", "clients"],
+    );
+    assert.deepEqual(
+      visibleProjectAreaFilters([{ id: "1", area: null }]),
+      PROJECT_AREA_FILTERS,
+    );
+  });
+
+  it("syncs number-key area tabs with Other visibility", () => {
+    setProjectsListIncludeOtherArea(false);
+    assert.deepEqual(projectsListAreaFilters(), [
+      "personal",
+      "business",
+      "clients",
+    ]);
+    setProjectsListIncludeOtherArea(true);
+    assert.deepEqual(projectsListAreaFilters(), PROJECT_AREA_FILTERS);
   });
 
   it("maps legacy all to Other and defaults bare URLs to Personal", () => {

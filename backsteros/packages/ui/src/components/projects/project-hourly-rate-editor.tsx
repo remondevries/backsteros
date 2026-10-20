@@ -13,17 +13,22 @@ export type ProjectHourlyRateEditorProps = {
   disabled?: boolean;
   onChange?: (next: number | null) => void;
   onSave: (next: number | null) => void;
+  /**
+   * `split` — fixed “Hourly” label | € amount (full project detail).
+   * `chip` — € amount only, matches other property chips (panel overview).
+   */
+  variant?: "split" | "chip";
 };
 
 /**
- * Hourly rate as a split pill: fixed “Hourly” label | € amount
- * (same chrome as Budget; label is not editable).
+ * Hourly rate editor — split pill or value-only property chip.
  */
 export function ProjectHourlyRateEditor({
   value,
   disabled = false,
   onChange,
   onSave,
+  variant = "split",
 }: ProjectHourlyRateEditorProps) {
   const committedRef = useRef<number | null | undefined>(undefined);
   if (
@@ -55,6 +60,70 @@ export function ProjectHourlyRateEditor({
     onSave(next);
   }
 
+  const amountInput = (
+    <>
+      <span
+        className={
+          variant === "chip"
+            ? "project-billing-value-chip__currency"
+            : "project-hourly-rate-chip__currency"
+        }
+        aria-hidden
+      >
+        €
+      </span>
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        aria-label="Hourly rate"
+        value={draft}
+        disabled={disabled}
+        placeholder="0,00"
+        size={Math.max(draft.length, "0,00".length, 4)}
+        onFocus={() => setEditing(true)}
+        onChange={(event) => {
+          const next = formatMoneyInput(event.target.value);
+          setDraft(next);
+          onChange?.(parseMoneyInput(next, { positive: true }));
+        }}
+        onBlur={(event) => commit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            (event.target as HTMLInputElement).blur();
+          }
+        }}
+        className={
+          variant === "chip"
+            ? "project-billing-value-chip__value"
+            : "contact-detail-split-chip__value"
+        }
+      />
+    </>
+  );
+
+  if (variant === "chip") {
+    return (
+      <div
+        className={[
+          "property-dropdown-trigger",
+          "property-dropdown-trigger--inline-chip",
+          "project-billing-value-chip",
+          disabled ? "property-dropdown-trigger--static" : null,
+          !draft.trim() ? "is-muted" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (!disabled) inputRef.current?.focus();
+        }}
+      >
+        {amountInput}
+      </div>
+    );
+  }
+
   return (
     <div className="contact-detail-chips">
       <div className="contact-detail-chips__row">
@@ -74,33 +143,7 @@ export function ProjectHourlyRateEditor({
           >
             Hourly
           </span>
-          <span className="project-hourly-rate-chip__currency" aria-hidden>
-            €
-          </span>
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="decimal"
-            aria-label="Hourly rate"
-            value={draft}
-            disabled={disabled}
-            placeholder="0,00"
-            size={Math.max(draft.length, "0,00".length, 4)}
-            onFocus={() => setEditing(true)}
-            onChange={(event) => {
-              const next = formatMoneyInput(event.target.value);
-              setDraft(next);
-              onChange?.(parseMoneyInput(next, { positive: true }));
-            }}
-            onBlur={(event) => commit(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                (event.target as HTMLInputElement).blur();
-              }
-            }}
-            className="contact-detail-split-chip__value"
-          />
+          {amountInput}
         </div>
       </div>
     </div>

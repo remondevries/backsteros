@@ -8,6 +8,7 @@ import {
   CodebaseFsTreeEntryIcon,
 } from "~/backsteros/CodebaseFsTreeChrome";
 import {
+  createBacksterosProjectFsEntry,
   createBacksterosProjectUpdate,
   deleteBacksterosProjectUpdate,
   fetchBacksterosGithubStatus,
@@ -21,7 +22,12 @@ import {
   fetchBacksterosProjectUpdates,
   formatBacksterosLocalCoreError,
   patchBacksterosProjectUpdate,
+  writeBacksterosProjectFsFile,
 } from "~/backsteros/client";
+import {
+  CODEBASE_PROJECT_README_FILENAME,
+  resolveCodebaseProjectReadmeFileName,
+} from "~/backsteros/codebaseProjectReadme";
 import { resolveCodebaseListSelection } from "~/backsteros/codebaseListSelection";
 import {
   BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS,
@@ -43,6 +49,10 @@ import {
 } from "~/backsteros/PullRequestDetailPane";
 import { BacksterosSearchablePropertyMenu } from "~/backsteros/SearchablePropertyMenu";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
+import {
+  BacksterosCodebaseProjectDescription,
+  BacksterosCodebaseProjectOverviewPane,
+} from "./BacksterosCodebaseProjectOverviewPane";
 import { BacksterosProjectSettingsTab } from "./BacksterosProjectSettingsTab";
 import type {
   BacksterosCodebaseProject,
@@ -55,7 +65,7 @@ import type {
 } from "~/backsteros/types";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
-import { BacksterosCodebaseProjectOverviewPane } from "./BacksterosCodebaseProjectOverviewPane";
+import { toastManager } from "../ui/toast";
 import "~/backsteros/codebaseWorkbench.css";
 import "~/backsteros/githubWorkbench.css";
 
@@ -925,6 +935,122 @@ function UpdatesTab(props: {
   );
 }
 
+function CodebaseOverviewReadmeDescription(props: {
+  readonly projectId: string;
+  readonly workingDirectory: string | null;
+}) {
+  const { projectId, workingDirectory } = props;
+  const [body, setBody] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!workingDirectory) {
+      setBody("");
+      setLoadError("Set a working directory to load README.md.");
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadError(null);
+    void (async () => {
+      try {
+        const entries = await fetchBacksterosProjectFsEntries(
+          projectId,
+          "",
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const resolvedName = resolveCodebaseProjectReadmeFileName(
+          entries
+            .filter((entry) => entry.kind === "file")
+            .map((entry) => entry.name),
+        );
+        const existing = entries.find(
+          (entry) => entry.kind === "file" && entry.name === resolvedName,
+        );
+        if (!existing) {
+          setBody("");
+          return;
+        }
+        const file = await fetchBacksterosProjectFsFile(
+          projectId,
+          existing.path,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (file.binary || file.content == null) {
+          setBody("");
+          setLoadError("README.md cannot be previewed as text.");
+          return;
+        }
+        setBody(file.content);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setBody("");
+        setLoadError(
+          error instanceof Error ? error.message : "Could not load README.md.",
+        );
+      }
+    })();
+
+    return () => controller.abort();
+  }, [projectId, workingDirectory]);
+
+  return (
+    <BacksterosCodebaseProjectDescription
+      description={body}
+      saveEnabled={Boolean(workingDirectory)}
+      emptyMessage={
+        loadError ??
+        (workingDirectory
+          ? "Add a README.md…"
+          : "Set a working directory to load README.md.")
+      }
+      placeholder={
+        workingDirectory
+          ? "Add a README.md…"
+          : "Set a working directory to load README.md."
+      }
+      onSave={async (next) => {
+        if (!workingDirectory) {
+          throw new Error("Set a working directory to save README.md.");
+        }
+        try {
+          const entries = await fetchBacksterosProjectFsEntries(projectId, "");
+          const resolvedName = resolveCodebaseProjectReadmeFileName(
+            entries
+              .filter((entry) => entry.kind === "file")
+              .map((entry) => entry.name),
+          );
+          const existing = entries.find(
+            (entry) => entry.kind === "file" && entry.name === resolvedName,
+          );
+          let path = existing?.path ?? null;
+          if (!path) {
+            const created = await createBacksterosProjectFsEntry(projectId, {
+              parent: "",
+              name: CODEBASE_PROJECT_README_FILENAME,
+              kind: "file",
+            });
+            path = created.path;
+          }
+          await writeBacksterosProjectFsFile(projectId, path, next);
+          setBody(next);
+          setLoadError(null);
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Could not save README.md",
+            description:
+              error instanceof Error ? error.message : "An error occurred.",
+          });
+          throw error;
+        }
+      }}
+    />
+  );
+}
+
 /**
  * Desktop-parity codebase project workbench for BacksterDEV:
  * left overview (description / properties / activity) + content tabs.
@@ -941,13 +1067,15 @@ export function BacksterosCodebaseProjectWorkbench(props: {
   readonly onProjectUpdated: (project: BacksterosCodebaseProject) => void;
 }) {
   const { project, tasks, tasksPanel, onProjectUpdated, hideTabBar = false } = props;
-  const [uncontrolledTab, setUncontrolledTab] = useState<BacksterosCodebaseListTab>("tasks");
+  const [uncontrolledTab, setUncontrolledTab] =
+    useState<BacksterosCodebaseListTab>("overview");
   const tab = props.tab ?? uncontrolledTab;
   const setTab = props.onTabChange ?? setUncontrolledTab;
+  const workingDirectory = project.localWorkingDirectory?.trim() || null;
 
   useEffect(() => {
     if (props.tab !== undefined) return;
-    setUncontrolledTab("tasks");
+    setUncontrolledTab("overview");
   }, [project.id, props.tab]);
 
   const handleProjectUpdated = useCallback(
@@ -959,6 +1087,29 @@ export function BacksterosCodebaseProjectWorkbench(props: {
 
   const tabBody = useMemo(() => {
     switch (tab) {
+      case "overview":
+        return (
+          <div className="bos-codebase-workbench__panel bos-codebase-workbench__overview">
+            <div className="bos-codebase-workbench__overview-column">
+              <div className="bos-codebase-workbench__overview-title bos-codebase-workbench__overview-title--icon-only">
+                <span
+                  className="bos-codebase-workbench__overview-icon"
+                  aria-hidden="true"
+                >
+                  <ProjectOcticon
+                    icon={project.icon}
+                    type={project.type}
+                    size={16}
+                  />
+                </span>
+              </div>
+              <CodebaseOverviewReadmeDescription
+                projectId={project.id}
+                workingDirectory={workingDirectory}
+              />
+            </div>
+          </div>
+        );
       case "tasks":
         return <div className="bos-codebase-workbench__panel">{tasksPanel}</div>;
       case "files":
@@ -983,7 +1134,7 @@ export function BacksterosCodebaseProjectWorkbench(props: {
       default:
         return null;
     }
-  }, [project, props.t3ProjectKey, tab, tasks, tasksPanel]);
+  }, [onProjectUpdated, project, props.t3ProjectKey, tab, tasks, tasksPanel, workingDirectory]);
 
   return (
     <div

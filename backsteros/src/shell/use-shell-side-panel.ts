@@ -6,7 +6,6 @@ import {
   isCommunicationPanelPath,
   isFinanceSectionPath,
   isInboxPanelPath,
-  isProjectDocumentsSectionPath,
   isSettingsPath,
   parseNavigationTrailPath,
 } from "@backsteros/ui/navigation";
@@ -57,14 +56,11 @@ export function useShellSidePanel() {
       ) ?? null)
     : null;
 
+  // Project documents list lives in content (codebase Docs parity) — never push chrome.
   const showSidePanel =
     !settingsPage &&
     (shouldShowContentSidePanel(panelPathname, panelSearch) ||
-      shouldShowContentSidePanel(pathname, search)) &&
-    !(
-      activeProject?.type === "codebase" &&
-      isProjectDocumentsSectionPath(panelPathname)
-    );
+      shouldShowContentSidePanel(pathname, search));
 
   const projectNavFrom = resolveProjectNavFromForPath({
     locationState: location.state,

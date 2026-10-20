@@ -45,9 +45,10 @@ Clients never talk to the filesystem directly for sync — they use the API /
 PowerSync metadata and lazy `GET …/content` or `…/pdf`.
 
 Opening a project (desktop or mobile) calls `POST /api/v1/projects/:id/ensure-vault`
-so the folder + `.cursor` skills are created on the fly if missing. When
-`localWorkingDirectory` is empty, it is set to the vault project root so agent
-sessions start inside that folder.
+so the folder + `.cursor` skills are created on the fly if missing. Every project
+vault includes `Codebase/`, `Documents/`, and `Updates/`. When
+`localWorkingDirectory` is empty, codebase projects default to
+`{vault}/Codebase` and other types to the vault project root.
 
 ## Object storage
 

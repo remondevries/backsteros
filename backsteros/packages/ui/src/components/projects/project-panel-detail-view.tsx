@@ -20,11 +20,8 @@ import {
   type ProjectStatus,
 } from "../../projects/project-status.js";
 import {
-  getProjectTypeLabel,
   migrateLegacyProjectType,
   projectTypeHasRegistrarOwnedDates,
-  PROJECT_TYPE_ORDER,
-  type ProjectType,
 } from "../../projects/project-type.js";
 import {
   getProjectProviderLabel,
@@ -39,20 +36,11 @@ import {
   type ProjectEmailCategory,
 } from "../../projects/project-email-category.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
-import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { TransipIcon } from "../icons/transip-icon.js";
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
 import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
-import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-  useMarkdownDetailEditor,
-} from "../content/content-markdown-view-layout.js";
 import { ProjectOverviewIcon } from "./project-overview-icon.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
-import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { ProjectKeyEditor } from "./project-key-editor.js";
@@ -61,7 +49,6 @@ import { formatProjectTaskProgressPercent } from "../../projects/project-progres
 import { ProjectStatusIcon } from "./project-status-icon.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navigate-row.js";
-import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -69,6 +56,8 @@ import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdo
 import { ProjectHealthCheckProperty } from "../codebase/project-health-check-property.js";
 import { ProjectBudgetsEditor } from "./project-budgets-editor.js";
 import { ProjectHourlyRateEditor } from "./project-hourly-rate-editor.js";
+import { EntityOverviewField } from "../shared/entity-overview-field.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 
 import {
   type ProjectDetailNestedArea,
@@ -93,10 +82,13 @@ export type ProjectPanelDetailViewProps = {
     | { ok: true; key?: string }
     | { ok: false; error: string };
   onSaveSummary?: (summary: string) => void | Promise<void>;
+  /**
+   * Kept for callers that previously edited description in the panel.
+   * Description now lives on the codebase Overview tab.
+   */
   onSaveDescription?: (description: string) => void | Promise<void>;
   onStatusChange?: (status: ProjectStatus) => void;
   onPriorityChange?: (priority: number) => void;
-  onTypeChange?: (type: ProjectType) => void;
   onProviderChange?: (provider: ProjectProvider | null) => void;
   onCategoryChange?: (category: ProjectEmailCategory | null) => void;
   onHealthCheckChange?: (next: {
@@ -126,9 +118,12 @@ export type ProjectPanelDetailViewProps = {
   initialSection?: ProjectSectionId;
   /** Host-provided pane for non-overview sections (tasks, letters, …). */
   renderSection?: (sectionId: ProjectSectionId) => ReactNode;
-  /** Extra controls under Properties (e.g. working directory). */
+  /**
+   * Location / path controls (working directory, GitHub, Dev, Prod).
+   * Rendered inside the Locations subgroup.
+   */
   propertiesExtra?: ReactNode;
-  /** Rendered under the description (activity feed). */
+  /** Rendered inside the Activities subgroup. */
   belowDescription?: ReactNode;
   /**
    * When set, replaces description + properties as the sole overview body
@@ -148,18 +143,16 @@ function toDate(value: number | Date | null | undefined): Date | null {
 }
 
 /**
- * Narrow-panel project overview (description + properties, or a custom body).
- * Separate from the backsteros/web `ProjectDetailView`.
+ * Narrow-panel project overview (identity + properties, or a custom body).
+ * Description is edited on the codebase Overview tab.
  */
 export function ProjectPanelDetailView({
   project,
   nestedAreas = [],
   onSaveName,
   onSaveKey,
-  onSaveDescription,
   onStatusChange,
   onPriorityChange,
-  onTypeChange,
   onProviderChange,
   onCategoryChange,
   onHealthCheckChange,
@@ -218,30 +211,6 @@ export function ProjectPanelDetailView({
   const start = toDate(project.startDate);
   const due = toDate(project.dueDate);
 
-  const {
-    value,
-    mode,
-    editorActivated,
-    editorFocusRequest,
-    error,
-    handleChange,
-    handleBlurSave,
-    setViewMode,
-    toggleViewMode,
-  } = useMarkdownDetailEditor({
-    initialValue: project.description ?? "",
-    // Description shortcuts must not steal ⌘E from documents/tasks/letters.
-    shortcutsEnabled: section === "overview",
-    save: (next) => {
-      if (!onSaveDescription) {
-        return { ok: true };
-      }
-      return Promise.resolve(onSaveDescription(next)).then(() => ({
-        ok: true as const,
-      }));
-    },
-  });
-
   const statusOptions = useMemo(
     () =>
       PROJECT_STATUS_ORDER.map((value) => ({
@@ -259,24 +228,6 @@ export function ProjectPanelDetailView({
         value: String(value),
         label: getTaskPriorityLabel(value),
         icon: <TaskPriorityIcon priority={value} size={14} />,
-      })),
-    [],
-  );
-
-  const typeOptions = useMemo(
-    () =>
-      PROJECT_TYPE_ORDER.map((value) => ({
-        value,
-        label: getProjectTypeLabel(value),
-        searchTerms: `${value} ${getProjectTypeLabel(value)}`,
-        icon:
-          value === "codebase" ? (
-            <TerminalConsoleIcon size={14} />
-          ) : value === "email" ? (
-            <MailIcon size={14} />
-          ) : (
-            <ProjectIcon size={14} />
-          ),
       })),
     [],
   );
@@ -451,135 +402,121 @@ export function ProjectPanelDetailView({
     </span>
   );
 
-  const morePropertyControls = (
-    <>
-      <PropertyDropdown
-        value={String(project.priority)}
-        options={priorityOptions}
-        onChange={(next) => onPriorityChange?.(Number(next))}
-        searchPlaceholder="Change priority…"
-        searchShortcutLabel="P"
-        ariaLabel="Priority"
-        taskPropertyDropdownId="priority"
-        fallbackIcon={
-          <TaskPriorityIcon priority={project.priority} size={14} />
-        }
-        fallbackLabel={getTaskPriorityLabel(project.priority)}
+  const priorityControl = (
+    <PropertyDropdown
+      value={String(project.priority)}
+      options={priorityOptions}
+      onChange={(next) => onPriorityChange?.(Number(next))}
+      searchPlaceholder="Change priority…"
+      searchShortcutLabel="P"
+      ariaLabel="Priority"
+      taskPropertyDropdownId="priority"
+      fallbackIcon={
+        <TaskPriorityIcon priority={project.priority} size={14} />
+      }
+      fallbackLabel={getTaskPriorityLabel(project.priority)}
+      triggerVariant={propertyTriggerVariant}
+      panelAlign={propertyPanelAlign}
+    />
+  );
+
+  const healthControl =
+    projectType === "codebase" ? (
+      <ProjectHealthCheckProperty
+        mode={project.healthCheckMode}
+        domain={project.healthCheckDomain}
+        onChange={onHealthCheckChange}
         triggerVariant={propertyTriggerVariant}
         panelAlign={propertyPanelAlign}
       />
+    ) : null;
+
+  const providerControl = (
+    <PropertyDropdown
+      value={projectProvider ?? "__none__"}
+      options={providerOptions}
+      onChange={(next) =>
+        onProviderChange?.(
+          next === "__none__" ? null : (next as ProjectProvider),
+        )
+      }
+      searchPlaceholder="Change provider…"
+      ariaLabel="Provider"
+      fallbackIcon={
+        projectProvider === "transip" ? <TransipIcon size={14} /> : null
+      }
+      fallbackLabel={
+        projectProvider
+          ? getProjectProviderLabel(projectProvider)
+          : "No provider"
+      }
+      mutedFallback={!projectProvider}
+      triggerVariant={propertyTriggerVariant}
+      panelAlign={propertyPanelAlign}
+    />
+  );
+
+  const categoryControl =
+    projectType === "email" ? (
       <PropertyDropdown
-        value={projectType}
-        options={typeOptions}
-        onChange={(next) => onTypeChange?.(next as ProjectType)}
-        searchPlaceholder="Change type…"
-        searchShortcutLabel="T"
-        ariaLabel="Type"
-        taskPropertyDropdownId="type"
-        fallbackIcon={
-          projectType === "codebase" ? (
-            <TerminalConsoleIcon size={14} />
-          ) : projectType === "email" ? (
-            <MailIcon size={14} />
-          ) : (
-            <ProjectIcon size={14} />
-          )
-        }
-        fallbackLabel={getProjectTypeLabel(projectType)}
-        triggerVariant={propertyTriggerVariant}
-        panelAlign={propertyPanelAlign}
-      />
-      <PropertyDropdown
-        value={projectProvider ?? "__none__"}
-        options={providerOptions}
+        value={projectCategory ?? "__none__"}
+        options={categoryOptions}
         onChange={(next) =>
-          onProviderChange?.(
-            next === "__none__" ? null : (next as ProjectProvider),
+          onCategoryChange?.(
+            next === "__none__" ? null : (next as ProjectEmailCategory),
           )
         }
-        searchPlaceholder="Change provider…"
-        ariaLabel="Provider"
-        fallbackIcon={
-          projectProvider === "transip" ? <TransipIcon size={14} /> : null
-        }
+        searchPlaceholder="Change category…"
+        ariaLabel="Category"
+        fallbackIcon={<MailIcon size={14} />}
         fallbackLabel={
-          projectProvider
-            ? getProjectProviderLabel(projectProvider)
-            : "No provider"
+          projectCategory
+            ? getProjectEmailCategoryLabel(projectCategory)
+            : "No category"
         }
-        mutedFallback={!projectProvider}
+        mutedFallback={!projectCategory}
         triggerVariant={propertyTriggerVariant}
         panelAlign={propertyPanelAlign}
       />
-      {projectType === "email" ? (
-        <PropertyDropdown
-          value={projectCategory ?? "__none__"}
-          options={categoryOptions}
-          onChange={(next) =>
-            onCategoryChange?.(
-              next === "__none__" ? null : (next as ProjectEmailCategory),
-            )
-          }
-          searchPlaceholder="Change category…"
-          ariaLabel="Category"
-          fallbackIcon={<MailIcon size={14} />}
-          fallbackLabel={
-            projectCategory
-              ? getProjectEmailCategoryLabel(projectCategory)
-              : "No category"
-          }
-          mutedFallback={!projectCategory}
-          triggerVariant={propertyTriggerVariant}
-          panelAlign={propertyPanelAlign}
-        />
-      ) : null}
-      {projectType === "codebase" ? (
-        <ProjectHealthCheckProperty
-          mode={project.healthCheckMode}
-          domain={project.healthCheckDomain}
-          onChange={onHealthCheckChange}
-          triggerVariant={propertyTriggerVariant}
-          panelAlign={propertyPanelAlign}
-        />
-      ) : null}
-      <span
-        className={[
-          "project-detail__meta-dates",
-          registrarOwnedDates
-            ? "project-detail__meta-dates--registrar"
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        <TaskDueDateDropdown
-          dueDate={start}
-          variant="property"
-          status="completed"
-          noDueDateLabel="No start date"
-          searchPlaceholder="tomorrow, yesterday…"
-          searchShortcutLabel="⇧S"
-          taskPropertyDropdownId="startDate"
-          showIcon
-          triggerVariant={propertyTriggerVariant}
-          labelFormat={registrarOwnedDates ? "calendar" : "relative"}
-          disabled={registrarOwnedDates}
-          onDueDateChange={onStartDateChange}
-        />
-        <span className="project-overview-row__dates-sep">›</span>
-        <TaskDueDateDropdown
-          dueDate={due}
-          status={status}
-          variant="property"
-          showIcon
-          triggerVariant={propertyTriggerVariant}
-          labelFormat={registrarOwnedDates ? "calendar" : "relative"}
-          disabled={registrarOwnedDates}
-          onDueDateChange={onDueDateChange}
-        />
-      </span>
-      {propertiesExtra}
-    </>
+    ) : null;
+
+  const datesControl = (
+    <span
+      className={[
+        "project-detail__meta-dates",
+        registrarOwnedDates
+          ? "project-detail__meta-dates--registrar"
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <TaskDueDateDropdown
+        dueDate={start}
+        variant="property"
+        status="completed"
+        noDueDateLabel="No start date"
+        searchPlaceholder="tomorrow, yesterday…"
+        searchShortcutLabel="⇧S"
+        taskPropertyDropdownId="startDate"
+        showIcon
+        triggerVariant={propertyTriggerVariant}
+        labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+        disabled={registrarOwnedDates}
+        onDueDateChange={onStartDateChange}
+      />
+      <span className="project-overview-row__dates-sep">›</span>
+      <TaskDueDateDropdown
+        dueDate={due}
+        status={status}
+        variant="property"
+        showIcon
+        triggerVariant={propertyTriggerVariant}
+        labelFormat={registrarOwnedDates ? "calendar" : "relative"}
+        disabled={registrarOwnedDates}
+        onDueDateChange={onDueDateChange}
+      />
+    </span>
   );
 
   const areaPropertyControls = (
@@ -591,9 +528,9 @@ export function ProjectPanelDetailView({
           onAreaChange?.(next === "__none__" ? null : (next as ProjectArea));
           onAreaIdChange?.(null);
         }}
-                    searchPlaceholder="Change area…"
-                    searchShortcutLabel="⇧A"
-                    ariaLabel="Area"
+        searchPlaceholder="Change area…"
+        searchShortcutLabel="⇧A"
+        ariaLabel="Area"
         taskPropertyDropdownId="area"
         fallbackIcon={null}
         fallbackLabel={
@@ -628,6 +565,9 @@ export function ProjectPanelDetailView({
     </span>
   );
 
+  const showBilling = projectAreaShowsBilling(project.area);
+  const showLocations = Boolean(propertiesExtra);
+
   return (
     <div
       className="project-detail project-detail--panel"
@@ -660,14 +600,18 @@ export function ProjectPanelDetailView({
               )}
               {progressControl}
             </div>
-            <div className="project-panel-identity__title">
-              <ProjectOverviewIcon
-                icon={project.icon}
-                type={project.type}
-                name={project.name}
-                size={18}
-                onIconChange={onIconChange}
-              />
+            {projectType === "codebase" ? null : (
+              <div className="project-panel-identity__icon">
+                <ProjectOverviewIcon
+                  icon={project.icon}
+                  type={project.type}
+                  name={project.name}
+                  size={18}
+                  onIconChange={onIconChange}
+                />
+              </div>
+            )}
+            <div className="project-panel-identity__name">
               <OverviewNameEditor
                 value={name}
                 entityLabel="Project"
@@ -687,84 +631,62 @@ export function ProjectPanelDetailView({
                 }}
               />
             </div>
-            <div className="project-panel-identity__properties task-properties-inline">
-              <div className="task-properties-inline__fields">
-                {statusControl}
-                {morePropertyControls}
-                {organizationControl}
-                {areaPropertyControls}
-              </div>
-              {projectAreaShowsBilling(project.area) ? (
-                <div className="project-panel-identity__billing">
+
+            <EntityOverviewSubgroup title="General">
+              {healthControl ? (
+                <EntityOverviewField label="Health">{healthControl}</EntityOverviewField>
+              ) : null}
+              <EntityOverviewField label="Status">{statusControl}</EntityOverviewField>
+              <EntityOverviewField label="Priority">{priorityControl}</EntityOverviewField>
+              {organizationControl ? (
+                <EntityOverviewField label="Organization">
+                  {organizationControl}
+                </EntityOverviewField>
+              ) : null}
+              <EntityOverviewField label="Provider">{providerControl}</EntityOverviewField>
+              {categoryControl ? (
+                <EntityOverviewField label="Category">
+                  {categoryControl}
+                </EntityOverviewField>
+              ) : null}
+              <EntityOverviewField label="Dates">{datesControl}</EntityOverviewField>
+              <EntityOverviewField label="Area">{areaPropertyControls}</EntityOverviewField>
+            </EntityOverviewSubgroup>
+
+            {showLocations ? (
+              <EntityOverviewSubgroup title="Locations">
+                {propertiesExtra}
+              </EntityOverviewSubgroup>
+            ) : null}
+
+            {showBilling ? (
+              <EntityOverviewSubgroup title="Financials">
+                <EntityOverviewField label="Hourly">
                   <ProjectHourlyRateEditor
                     value={project.hourlyRateCents ?? null}
                     disabled={!onHourlyRateChange}
+                    variant="chip"
                     onSave={(next) => onHourlyRateChange?.(next)}
                   />
+                </EntityOverviewField>
+                <EntityOverviewField label="Weekly">
                   <ProjectBudgetsEditor
                     budgets={project.budgets ?? []}
                     disabled={!onBudgetsChange}
+                    variant="chip"
+                    chipPeriod="weekly"
                     onSave={(next) => onBudgetsChange?.(next)}
                   />
-                </div>
-              ) : null}
-            </div>
-            <div
-              className="project-detail__description-body project-panel-identity__description"
-              data-content-view-mode={mode}
-            >
-              <ContentMarkdownViewLayout
-                mode={mode}
-                editorActivated={editorActivated}
-                onToggleMode={toggleViewMode}
-                editor={
-                  <DocumentMarkdownEditor
-                    value={value}
-                    onChange={handleChange}
-                    onBlur={handleBlurSave}
-                    focusRequest={editorFocusRequest}
-                    ariaLabel="Project description"
-                  />
-                }
-                preview={
-                  <ContentMarkdownPreviewColumn includeTopInset={false}>
-                    {value.trim() ? (
-                      <DocumentMarkdownPreview
-                        body={value}
-                        onChange={handleChange}
-                      />
-                    ) : (
-                      <p className="project-detail__description-empty">
-                        Add a project description…
-                      </p>
-                    )}
-                  </ContentMarkdownPreviewColumn>
-                }
-                toggle={
-                  <FloatingPillToggleDock>
-                    <SegmentedPillToggle
-                      value={mode}
-                      options={[
-                        { value: "edit", label: "Edit" },
-                        { value: "preview", label: "Preview" },
-                      ]}
-                      onChange={setViewMode}
-                      ariaLabel="Project description view mode"
-                    />
-                  </FloatingPillToggleDock>
-                }
-              />
-            </div>
-            {error ? (
-              <p className="project-detail__description-error" role="alert">
-                {error}
-              </p>
+                </EntityOverviewField>
+              </EntityOverviewSubgroup>
             ) : null}
+
             {belowDescription ? (
-              <div className="project-panel-identity__activity">
+              <EntityOverviewSubgroup title="Activities">
                 {belowDescription}
-              </div>
+              </EntityOverviewSubgroup>
             ) : null}
+
             {repositoriesSection ? (
               <div className="project-panel-tab-body__custom">
                 {repositoriesSection}

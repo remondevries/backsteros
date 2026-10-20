@@ -82,7 +82,7 @@ must refer to the same environment; a mismatch returns JSON `400` with
 server resolves a workspace path from the BacksterOS task's optional
 `executionLocation` override (OS-106: `development` | `production` | `local`)
 against the project's `developmentLocation` / `productionLocation` /
-`localLocation` (falling back to `localWorkingDirectory` for local/default),
+`localWorkingDirectory` (for local/default),
 matches it to a linked T3 project (same normalized-path comparison the rail
 uses), and creates/links a T3 project when none exists yet — same behavior as
 opening a task chat in the UI. Callers only need `taskRef` for the happy path.

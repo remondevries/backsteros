@@ -1,6 +1,6 @@
-;; Shared dashboard content header: BacksterDESIGN / <section▼> / <project▼>
-;; … search + notifications + avatar. Section and project crumbs use the same
-;; hover chrome (outline + chevron); click opens a switcher menu.
+;; Shared dashboard content header: BacksterDESIGN / <section> <▼> / <project> <▼>
+;; … search + notifications + avatar. Crumbs split into a label that navigates
+;; to that page and a separate chevron that opens the switcher menu.
 
 (ns app.main.ui.dashboard.page-header
   (:require-macros [app.main.style :as stl])
@@ -228,7 +228,7 @@
     :go    #(st/emit! (dcm/go-to-dashboard-libraries :team-id team-id))}])
 
 (mf/defc section-title-nav*
-  "Second breadcrumb: current section. Hover → outline + chevron; click → menu."
+  "Second breadcrumb: label navigates to this section; chevron opens switcher."
   {::mf/private true}
   [{:keys [title title-id section team-id]}]
   (let [open*              (mf/use-state false)
@@ -236,6 +236,17 @@
         profile            (mf/deref refs/profile)
         default-project-id (:default-project-id profile)
         entries            (section-nav-entries team-id default-project-id)
+        current-go         (some (fn [{:keys [id go]}]
+                                   (when (= id section) go))
+                                 entries)
+
+        on-go
+        (mf/use-fn
+         (mf/deps current-go)
+         (fn [event]
+           (dom/stop-propagation event)
+           (when current-go
+             (current-go))))
 
         on-toggle
         (mf/use-fn
@@ -246,7 +257,15 @@
         on-close
         (mf/use-fn #(reset! open* false))
 
-        on-key-down
+        on-go-key-down
+        (mf/use-fn
+         (mf/deps on-go)
+         (fn [event]
+           (when (or (kbd/enter? event) (kbd/space? event))
+             (dom/prevent-default event)
+             (on-go event))))
+
+        on-menu-key-down
         (mf/use-fn
          (mf/deps on-toggle)
          (fn [event]
@@ -259,15 +278,21 @@
      [:div {:class (stl/css-case :section-nav true
                                  :section-nav-open open?)}
       [:button {:type "button"
-                :class (stl/css :section-nav-trigger)
+                :class (stl/css :section-nav-link)
                 :id (or title-id "dashboard-page-title")
+                :aria-label (str "Go to " title)
+                :data-testid "dashboard-section-nav-link"
+                :on-click on-go
+                :on-key-down on-go-key-down}
+       [:span {:class (stl/css :section-nav-label)} title]]
+      [:button {:type "button"
+                :class (stl/css :section-nav-menu-btn)
                 :aria-haspopup "menu"
                 :aria-expanded open?
                 :aria-label (str title " — switch section")
                 :data-testid "dashboard-section-nav"
                 :on-click on-toggle
-                :on-key-down on-key-down}
-       [:span {:class (stl/css :section-nav-label)} title]
+                :on-key-down on-menu-key-down}
        (arrow-icon)]
       [:> dropdown-menu*
        {:show open?
@@ -390,21 +415,34 @@
         [{:kind :separator}])
       (map (fn [p] {:kind :project :project p :linked false}) unlinked)))))
 
-(mf/defc project-title-nav*
-  "Project switcher. Visible crumb on a single project; hotkey-only host on
-   the projects list (`:visible false`). Listens for `backster:open-project-nav`
-   (g+p) to open and focus search."
-  {::mf/private true}
-  [{:keys [project-id project-title team-id visible]}]
-  (let [visible?   (not (false? visible))
-        open*      (mf/use-state false)
-        open?      (deref open*)
-        query*     (mf/use-state "")
-        query      (deref query*)
-        rows*      (mf/use-state nil)
-        rows       (deref rows*)
-        search-ref (mf/use-ref nil)
-        penpot     (mf/deref refs/projects)
+(mf/defc project-switcher*
+  "Searchable BacksterOS project dropdown — shared by the breadcrumb crumb and
+   the create-file location picker. Same list, search, and linked/unlinked split.
+   Props:
+   - `:variant` `:breadcrumb` (label navigates + chevron opens) or `:picker`
+     (whole control opens the menu).
+   - `:on-select` `(fn [project])` — BacksterOS project row.
+   - `:active-penpot-id` / `:active-id` highlight the current row.
+   - `:listen-hotkey?` register `backster:open-project-nav` (g+p)."
+  [{:keys [label active-penpot-id active-id on-select on-label-click
+           variant visible disabled listen-hotkey? menu-id unlinked-title]}]
+  (let [variant      (or variant :breadcrumb)
+        picker?      (= variant :picker)
+        visible?     (not (false? visible))
+        menu-id      (or menu-id "dashboard-project-nav")
+        search-id    (str menu-id "-search")
+        open*        (mf/use-state false)
+        open?        (deref open*)
+        query*       (mf/use-state "")
+        query        (deref query*)
+        rows*        (mf/use-state nil)
+        rows         (deref rows*)
+        search-ref   (mf/use-ref nil)
+        penpot       (mf/deref refs/projects)
+        unlinked-tip (or unlinked-title
+                         (if picker?
+                           "Not linked to Penpot yet — will be created when you create the file"
+                           "Not linked to Penpot — open Projects to create"))
 
         entries
         (mf/with-memo [rows penpot]
@@ -421,9 +459,11 @@
 
         on-toggle
         (mf/use-fn
+         (mf/deps disabled)
          (fn [event]
            (dom/stop-propagation event)
-           (swap! open* not)))
+           (when-not disabled
+             (swap! open* not))))
 
         on-close
         (mf/use-fn
@@ -431,7 +471,16 @@
            (reset! open* false)
            (reset! query* "")))
 
-        on-key-down
+        on-label-key-down
+        (mf/use-fn
+         (mf/deps on-label-click)
+         (fn [event]
+           (when (and (fn? on-label-click)
+                      (or (kbd/enter? event) (kbd/space? event)))
+             (dom/prevent-default event)
+             (on-label-click event))))
+
+        on-menu-key-down
         (mf/use-fn
          (mf/deps on-toggle)
          (fn [event]
@@ -454,22 +503,11 @@
 
         select-project
         (mf/use-fn
-         (mf/deps team-id project-id on-close)
+         (mf/deps on-select on-close)
          (fn [project]
-           (let [penpot-id (parse-penpot-id (:penpot-project-id project))]
-             (on-close)
-             (cond
-               (and (some? penpot-id) (= penpot-id project-id))
-               nil
-
-               (some? penpot-id)
-               (st/emit! (dcm/go-to-dashboard-files
-                          :team-id team-id
-                          :project-id penpot-id))
-
-               ;; Unlinked: open Projects list so staff can create/link there.
-               :else
-               (st/emit! (dcm/go-to-dashboard-backsteros :team-id team-id))))))]
+           (on-close)
+           (when (fn? on-select)
+             (on-select project))))]
 
     (mf/with-effect []
       (try
@@ -482,7 +520,7 @@
           nil))
       js/undefined)
 
-    (mf/with-effect [open?]
+    (mf/with-effect [open? search-id]
       (when open?
         (try
           (-> (load-switcher-projects!)
@@ -492,44 +530,68 @@
               (.catch (fn [_] nil)))
           (catch :default _
             nil))
-        ;; Focus after the input mounts with the open menu.
         (js/setTimeout
          (fn []
            (when-let [node (or (mf/ref-val search-ref)
-                               (dom/get-element "dashboard-project-nav-search"))]
+                               (dom/get-element search-id))]
              (dom/focus! node)))
          0)))
 
-    (mf/with-effect [open-and-focus!]
-      (let [on-open
-            (fn [event]
-              (.preventDefault event)
-              (open-and-focus!))]
-        (.addEventListener js/window open-project-nav-event on-open)
-        (fn []
-          (.removeEventListener js/window open-project-nav-event on-open))))
+    (mf/with-effect [open-and-focus! listen-hotkey?]
+      (when listen-hotkey?
+        (let [on-open
+              (fn [event]
+                (.preventDefault event)
+                (open-and-focus!))]
+          (.addEventListener js/window open-project-nav-event on-open)
+          (fn []
+            (.removeEventListener js/window open-project-nav-event on-open)))))
 
     [:*
-     (when visible?
+     (when (and (not picker?) visible?)
        [:span {:class (stl/css :sep) :aria-hidden true} "/"])
      [:div {:class (stl/css-case :section-nav true
                                  :section-nav-open open?
-                                 :project-jump-host (not visible?))}
-      (when visible?
+                                 :project-jump-host (and (not picker?)
+                                                         (not visible?))
+                                 :project-switcher-picker picker?)}
+      (cond
+        picker?
         [:button {:type "button"
-                  :class (stl/css :section-nav-trigger)
+                  :class (stl/css :section-nav-link :project-switcher-picker-btn)
                   :aria-haspopup "menu"
                   :aria-expanded open?
-                  :aria-label (str project-title " — switch project")
-                  :data-testid "dashboard-project-nav"
+                  :aria-label (str (or label "Select project") " — choose project")
+                  :data-testid menu-id
+                  :disabled disabled
                   :on-click on-toggle
-                  :on-key-down on-key-down}
-         [:span {:class (stl/css :section-nav-label)} project-title]
-         (arrow-icon)])
+                  :on-key-down on-menu-key-down}
+         [:span {:class (stl/css :section-nav-label)}
+          (or label "Select project")]
+         (arrow-icon)]
+
+        visible?
+        [:*
+         [:button {:type "button"
+                   :class (stl/css :section-nav-link)
+                   :aria-label (str "Go to " label)
+                   :data-testid (str menu-id "-link")
+                   :on-click on-label-click
+                   :on-key-down on-label-key-down}
+          [:span {:class (stl/css :section-nav-label)} label]]
+         [:button {:type "button"
+                   :class (stl/css :section-nav-menu-btn)
+                   :aria-haspopup "menu"
+                   :aria-expanded open?
+                   :aria-label (str label " — switch project")
+                   :data-testid menu-id
+                   :on-click on-toggle
+                   :on-key-down on-menu-key-down}
+          (arrow-icon)]])
       [:> dropdown-menu*
        {:show open?
         :on-close on-close
-        :id "dashboard-project-nav"
+        :id menu-id
         :class (stl/css :section-nav-menu :project-nav-menu)}
        (when open?
          [:*
@@ -539,7 +601,7 @@
                 :on-click (fn [event]
                             (dom/stop-propagation event))}
            [:input {:ref search-ref
-                    :id "dashboard-project-nav-search"
+                    :id search-id
                     :type "text"
                     :class (stl/css :project-nav-search-input)
                     :placeholder "Search projects…"
@@ -560,29 +622,71 @@
                       :class (stl/css :project-nav-split)}]
                 (let [project (:project row)
                       id      (:id project)
-                      label   (or (:name project) (:key project) "Untitled")
+                      row-label (or (:name project) (:key project) "Untitled")
                       linked? (:linked row)
                       pid     (parse-penpot-id (:penpot-project-id project))
-                      active? (and linked? (= pid project-id))]
+                      active? (or (and (some? active-id) (= id active-id))
+                                  (and linked?
+                                       (some? active-penpot-id)
+                                       (= pid active-penpot-id)))]
                   [:> dropdown-menu-item*
                    {:key (str id)
                     :class (stl/css-case :section-nav-item true
                                          :section-nav-item-active active?
                                          :section-nav-item-unlinked (not linked?))
                     :data-testid (str "project-nav-" id)
-                    :title (when-not linked?
-                             "Not linked to Penpot — open Projects to create")
+                    :title (when-not linked? unlinked-tip)
                     :on-click (fn [event]
                                 (dom/stop-propagation event)
                                 (select-project project))}
                    [:span {:class (stl/css :section-nav-item-label)
-                           :title label}
-                    label]
+                           :title row-label}
+                    row-label]
                    (when active?
                      (tick-icon))])))
             [:li {:role "presentation"
                   :class (stl/css :project-nav-empty)}
              "No projects match"])])]]]))
+
+(mf/defc project-title-nav*
+  "Breadcrumb project crumb — wraps `project-switcher*`."
+  {::mf/private true}
+  [{:keys [project-id project-title team-id visible]}]
+  (let [on-go
+        (mf/use-fn
+         (mf/deps team-id project-id)
+         (fn [event]
+           (dom/stop-propagation event)
+           (when (some? project-id)
+             (st/emit! (dcm/go-to-dashboard-files
+                        :team-id team-id
+                        :project-id project-id)))))
+
+        on-select
+        (mf/use-fn
+         (mf/deps team-id project-id)
+         (fn [project]
+           (let [penpot-id (parse-penpot-id (:penpot-project-id project))]
+             (cond
+               (and (some? penpot-id) (= penpot-id project-id))
+               nil
+
+               (some? penpot-id)
+               (st/emit! (dcm/go-to-dashboard-files
+                          :team-id team-id
+                          :project-id penpot-id))
+
+               :else
+               (st/emit! (dcm/go-to-dashboard-backsteros :team-id team-id))))))]
+    [:> project-switcher*
+     {:variant :breadcrumb
+      :label project-title
+      :active-penpot-id project-id
+      :on-select on-select
+      :on-label-click on-go
+      :visible visible
+      :listen-hotkey? true
+      :menu-id "dashboard-project-nav"}]))
 
 (mf/defc page-header*
   ;; Optional :nav-section — when set, title becomes the section dropdown.

@@ -93,7 +93,7 @@ export function ProductHistoryToolbar({
       className={["app-side-panel-history-toolbar", className]
         .filter(Boolean)
         .join(" ")}
-      data-tauri-drag-region
+      data-tauri-drag-region="deep"
       ref={historyMenuRef}
     >
       <div className="app-side-panel-history-actions">

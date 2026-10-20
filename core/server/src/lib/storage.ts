@@ -7,7 +7,6 @@ import {
   readFile,
   rename,
   rm,
-  rmdir,
   stat,
   unlink,
   utimes,
@@ -32,20 +31,21 @@ import {
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 const SNIPPET_LENGTH = 500;
 
-/** Always created under every project vault folder. */
-export const PROJECT_VAULT_BASE_FOLDERS = ["Documents", "Updates"] as const;
-
-/** Only created when the project type is `codebase`. */
+/** Git / agent checkout area — always present under every project vault. */
 export const PROJECT_VAULT_CODEBASE_FOLDER = "Codebase" as const;
 
-/** @deprecated Prefer PROJECT_VAULT_BASE_FOLDERS + optional Codebase. */
-export const PROJECT_VAULT_AREA_FOLDERS = [
+/** Always created under every project vault folder. */
+export const PROJECT_VAULT_BASE_FOLDERS = [
   PROJECT_VAULT_CODEBASE_FOLDER,
-  ...PROJECT_VAULT_BASE_FOLDERS,
+  "Documents",
+  "Updates",
 ] as const;
 
+/** @deprecated Prefer PROJECT_VAULT_BASE_FOLDERS. */
+export const PROJECT_VAULT_AREA_FOLDERS = PROJECT_VAULT_BASE_FOLDERS;
+
 export type ProjectVaultFolderOptions = {
-  /** When `"codebase"`, also create the Codebase area folder. */
+  /** Retained for callers; Codebase is created for every project type. */
   projectType?: string | null;
 };
 
@@ -907,53 +907,20 @@ export function rewriteProjectVaultWorkingDirectory(
 }
 
 /**
- * Remove an empty Codebase area left over from older bootstraps that always
- * created it. Non-empty folders are left alone.
- */
-async function removeEmptyCodebaseFolder(projectRoot: string): Promise<void> {
-  const codebaseDir = path.join(projectRoot, PROJECT_VAULT_CODEBASE_FOLDER);
-  try {
-    const entries = await readdir(codebaseDir);
-    if (entries.length === 0) {
-      await rmdir(codebaseDir);
-    }
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code?: string }).code === "ENOENT"
-    ) {
-      return;
-    }
-    // Busy / permission / not a directory — leave as-is.
-  }
-}
-
-/**
  * Ensure every project has a vault folder (even with no documents), plus a
  * `.cursor/skills` seed so agent chats started in this folder pick up project
- * rules/skills. `Codebase/` is only created for codebase projects.
+ * rules/skills. Always includes `Codebase/`, `Documents/`, and `Updates/`.
  */
 export async function ensureProjectVaultFolders(
   projectKey: string,
   settingsVaultPath?: string | null,
-  options?: ProjectVaultFolderOptions,
+  _options?: ProjectVaultFolderOptions,
 ): Promise<EnsureProjectVaultFoldersResult> {
   const root = await resolveVaultPath(settingsVaultPath);
   const projectRoot = buildProjectVaultAbsolutePath(root, projectKey);
-  const isCodebase = options?.projectType === "codebase";
 
   for (const name of PROJECT_VAULT_BASE_FOLDERS) {
     await mkdir(path.join(projectRoot, name), { recursive: true });
-  }
-  if (isCodebase) {
-    await mkdir(
-      path.join(projectRoot, PROJECT_VAULT_CODEBASE_FOLDER),
-      { recursive: true },
-    );
-  } else {
-    await removeEmptyCodebaseFolder(projectRoot);
   }
 
   const skillDir = path.join(

@@ -101,7 +101,6 @@ export type ProjectWriteOptions = {
 type ProjectLocationInput = {
   developmentLocation?: string | null;
   productionLocation?: string | null;
-  localLocation?: string | null;
 };
 
 function assertCodebaseLocationFields(
@@ -112,11 +111,53 @@ function assertCodebaseLocationFields(
     (input.developmentLocation != null &&
       String(input.developmentLocation).trim() !== "") ||
     (input.productionLocation != null &&
-      String(input.productionLocation).trim() !== "") ||
-    (input.localLocation != null && String(input.localLocation).trim() !== "");
+      String(input.productionLocation).trim() !== "");
   if (hasLocation && type !== "codebase") {
     throw new Error("LOCATION_REQUIRES_CODEBASE");
   }
+}
+
+/**
+ * Fold deprecated `localLocation` into `localWorkingDirectory`, then clear it.
+ * Prefer an existing non-vault-root cwd; otherwise take localLocation.
+ */
+function consolidateLocalPaths(input: {
+  localWorkingDirectory?: string | null;
+  localLocation?: string | null;
+  projectVaultPath?: string | null;
+}): {
+  localWorkingDirectory: string | null | undefined;
+  /** Always null after consolidation — column kept for sync compat. */
+  localLocation: null;
+} {
+  const loc = input.localLocation?.trim() || null;
+  const cwdRaw = input.localWorkingDirectory;
+  const cwd = cwdRaw?.trim() || null;
+  const vault = input.projectVaultPath?.replace(/\/+$/, "") || null;
+  const cwdIsVault =
+    Boolean(vault) &&
+    (cwd === vault || cwd === `${vault}/` || cwd === `${vault}${path.sep}`);
+
+  if (loc && (!cwd || cwdIsVault)) {
+    return { localWorkingDirectory: loc, localLocation: null };
+  }
+  if (cwdRaw === undefined && loc) {
+    return { localWorkingDirectory: loc, localLocation: null };
+  }
+  return {
+    localWorkingDirectory: cwdRaw,
+    localLocation: null,
+  };
+}
+
+function defaultWorkingDirectoryForType(
+  type: string,
+  projectVaultPath: string,
+): string {
+  if (type === "codebase") {
+    return path.join(projectVaultPath, PROJECT_VAULT_CODEBASE_FOLDER);
+  }
+  return projectVaultPath;
 }
 
 function shouldTriggerDevelopmentCheckout(
@@ -594,7 +635,15 @@ export async function createProject(
   if (input.githubRepository && type !== "codebase") {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
-  assertCodebaseLocationFields(type, input);
+  assertCodebaseLocationFields(type, {
+    developmentLocation: input.developmentLocation,
+    productionLocation: input.productionLocation,
+  });
+
+  const consolidatedCreate = consolidateLocalPaths({
+    localWorkingDirectory: input.localWorkingDirectory,
+    localLocation: input.localLocation,
+  });
 
   const writeAt = options?.updatedAt ?? new Date();
   const [row] = await executor
@@ -619,10 +668,10 @@ export async function createProject(
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
       penpotProjectId: input.penpotProjectId ?? null,
-      localWorkingDirectory: input.localWorkingDirectory ?? null,
+      localWorkingDirectory: consolidatedCreate.localWorkingDirectory ?? null,
       developmentLocation: input.developmentLocation ?? null,
       productionLocation: input.productionLocation ?? null,
-      localLocation: input.localLocation ?? null,
+      localLocation: null,
       developmentSetupStatus: input.developmentSetupStatus ?? null,
       developmentSetupError: input.developmentSetupError ?? null,
       developmentSetupUpdatedAt: input.developmentSetupUpdatedAt
@@ -663,52 +712,41 @@ export async function createProject(
     const ensured = await ensureProjectVaultFolders(key, undefined, {
       projectType: type,
     });
-    // Default agent cwd to the vault project folder when the caller did not
-    // supply a local working directory (codebase repos still override this).
-    // Local execution location defaults to Projects/{KEY}/Codebase.
-    const defaultLocalLocation =
-      type === "codebase"
-        ? path.join(ensured.projectVaultPath, PROJECT_VAULT_CODEBASE_FOLDER)
-        : null;
+    // Default agent cwd: codebase → Projects/{KEY}/Codebase; others → vault root.
+    // Deprecated localLocation is never written.
     const patch: {
-      localWorkingDirectory?: string;
-      localLocation?: string;
+      localWorkingDirectory?: string | null;
+      localLocation: null;
       updatedAt: Date;
-    } = { updatedAt: writeAt };
+    } = { localLocation: null, updatedAt: writeAt };
     if (!row.localWorkingDirectory?.trim()) {
-      patch.localWorkingDirectory = ensured.projectVaultPath;
+      patch.localWorkingDirectory = defaultWorkingDirectoryForType(
+        type,
+        ensured.projectVaultPath,
+      );
     }
-    if (
-      defaultLocalLocation &&
-      !row.localLocation?.trim() &&
-      input.localLocation === undefined
-    ) {
-      patch.localLocation = defaultLocalLocation;
-    }
-    if (patch.localWorkingDirectory || patch.localLocation) {
-      const [updated] = await executor
-        .update(projects)
-        .set(patch)
-        .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
-        .returning();
-      if (updated) {
-        if (
-          !shouldSkipDevelopmentCheckout(options) &&
-          shouldTriggerDevelopmentCheckout(null, {
-            type: updated.type,
-            developmentLocation: updated.developmentLocation,
-            githubRepository: updated.githubRepository,
-          })
-        ) {
-          scheduleDevelopmentCheckout({
-            workspaceId,
-            projectId: updated.id,
-            githubRepository: updated.githubRepository,
-            developmentLocation: updated.developmentLocation,
-          });
-        }
-        return updated;
+    const [updated] = await executor
+      .update(projects)
+      .set(patch)
+      .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+      .returning();
+    if (updated) {
+      if (
+        !shouldSkipDevelopmentCheckout(options) &&
+        shouldTriggerDevelopmentCheckout(null, {
+          type: updated.type,
+          developmentLocation: updated.developmentLocation,
+          githubRepository: updated.githubRepository,
+        })
+      ) {
+        scheduleDevelopmentCheckout({
+          workspaceId,
+          projectId: updated.id,
+          githubRepository: updated.githubRepository,
+          developmentLocation: updated.developmentLocation,
+        });
       }
+      return updated;
     }
   } catch {
     // Vault may be unset — folder bootstrap happens when storage is configured.
@@ -770,12 +808,11 @@ export async function updateProject(
   ) {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
-  // Reject non-empty location writes unless the resulting type is codebase.
-  // When leaving codebase, existing location columns are cleared below.
+  // Reject non-empty Dev/Prod location writes unless the resulting type is codebase.
+  // When leaving codebase, existing Dev/Prod columns are cleared below.
   assertCodebaseLocationFields(nextType, {
     developmentLocation: input.developmentLocation,
     productionLocation: input.productionLocation,
-    localLocation: input.localLocation,
   });
 
   // Droping codebase type clears any linked repository.
@@ -799,7 +836,25 @@ export async function updateProject(
     ? null
     : input.developmentLocation;
   const productionLocation = leavingCodebase ? null : input.productionLocation;
-  const localLocation = leavingCodebase ? null : input.localLocation;
+
+  // Fold deprecated localLocation into localWorkingDirectory; always clear column.
+  const consolidatedUpdate = consolidateLocalPaths({
+    localWorkingDirectory:
+      input.localWorkingDirectory !== undefined
+        ? input.localWorkingDirectory
+        : existing.localWorkingDirectory,
+    localLocation:
+      input.localLocation !== undefined
+        ? input.localLocation
+        : existing.localLocation,
+  });
+  const shouldPatchLocalWorkingDirectory =
+    input.localWorkingDirectory !== undefined ||
+    input.localLocation !== undefined ||
+    Boolean(existing.localLocation?.trim());
+  const nextLocalWorkingDirectory = shouldPatchLocalWorkingDirectory
+    ? (consolidatedUpdate.localWorkingDirectory ?? null)
+    : undefined;
 
   // Leaving email type clears the provider category.
   const category =
@@ -847,15 +902,18 @@ export async function updateProject(
         githubRepository,
         cloudflareZoneId: input.cloudflareZoneId,
         penpotProjectId: input.penpotProjectId,
-        localWorkingDirectory: input.localWorkingDirectory,
+        ...(nextLocalWorkingDirectory !== undefined
+          ? { localWorkingDirectory: nextLocalWorkingDirectory }
+          : {}),
+        // Clear deprecated localLocation when folding or leaving leftover values.
+        ...(shouldPatchLocalWorkingDirectory || existing.localLocation
+          ? { localLocation: null }
+          : {}),
         ...(leavingCodebase || input.developmentLocation !== undefined
           ? { developmentLocation }
           : {}),
         ...(leavingCodebase || input.productionLocation !== undefined
           ? { productionLocation }
-          : {}),
-        ...(leavingCodebase || input.localLocation !== undefined
-          ? { localLocation }
           : {}),
         ...(input.developmentSetupStatus !== undefined
           ? { developmentSetupStatus: input.developmentSetupStatus }
@@ -987,25 +1045,34 @@ export async function updateProject(
       const ensured = await ensureProjectVaultFolders(row.key, undefined, {
         projectType: row.type,
       });
+      const folded = consolidateLocalPaths({
+        localWorkingDirectory: row.localWorkingDirectory,
+        localLocation: row.localLocation,
+        projectVaultPath: ensured.projectVaultPath,
+      });
       const ensurePatch: {
-        localWorkingDirectory?: string;
-        localLocation?: string;
+        localWorkingDirectory?: string | null;
+        localLocation?: null;
         updatedAt: Date;
       } = { updatedAt: writeAt };
-      if (!row.localWorkingDirectory?.trim()) {
-        ensurePatch.localWorkingDirectory = ensured.projectVaultPath;
+      if (!folded.localWorkingDirectory?.trim()) {
+        ensurePatch.localWorkingDirectory = defaultWorkingDirectoryForType(
+          row.type,
+          ensured.projectVaultPath,
+        );
+      } else if (
+        folded.localWorkingDirectory !== row.localWorkingDirectory ||
+        row.localLocation
+      ) {
+        ensurePatch.localWorkingDirectory = folded.localWorkingDirectory;
+      }
+      if (row.localLocation) {
+        ensurePatch.localLocation = null;
       }
       if (
-        row.type === "codebase" &&
-        !row.localLocation?.trim() &&
-        input.localLocation === undefined
+        ensurePatch.localWorkingDirectory !== undefined ||
+        ensurePatch.localLocation !== undefined
       ) {
-        ensurePatch.localLocation = path.join(
-          ensured.projectVaultPath,
-          PROJECT_VAULT_CODEBASE_FOLDER,
-        );
-      }
-      if (ensurePatch.localWorkingDirectory || ensurePatch.localLocation) {
         const [updated] = await tx
           .update(projects)
           .set(ensurePatch)

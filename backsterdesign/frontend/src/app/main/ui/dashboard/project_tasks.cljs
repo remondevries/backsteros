@@ -20,6 +20,25 @@
   []
   (obj/get js/window "BacksterDesignProjectTasks"))
 
+(defn- mount-pinned-dock-when-ready!
+  [el opts cancelled*]
+  (let [api (bridge-api)
+        project-id (obj/get opts "penpotProjectId")
+        mount-fn (when api (obj/get api "mountPinnedDock"))]
+    (cond
+      @cancelled*
+      nil
+
+      (and mount-fn el project-id (not= project-id ""))
+      (mount-fn el opts)
+
+      :else
+      (js/setTimeout
+       (fn []
+         (when-not @cancelled*
+           (mount-pinned-dock-when-ready! el opts cancelled*)))
+       50))))
+
 (defn- files->js
   [files]
   (to-array
@@ -160,3 +179,28 @@
       {:penpot-project-id penpot-project-id
        :layout "stack"
        :host-class "backsteros-project-tasks-host backsteros-project-tasks-host--workspace"}])])
+
+(mf/defc workspace-pinned-tasks-dock*
+  "Left-sidebar dock for tasks pinned from the workspace file tasks panel."
+  [{:keys [penpot-project-id on-open-task]}]
+  (let [host-ref   (mf/use-ref nil)
+        project-id (str penpot-project-id)]
+    (mf/with-effect [project-id on-open-task]
+      (let [el         (mf/ref-val host-ref)
+            cancelled* (atom false)
+            opts       (let [o #js {:penpotProjectId project-id}]
+                         (when on-open-task
+                           (obj/set o "onOpenTask" on-open-task))
+                         o)]
+        (when (and el project-id (not= project-id ""))
+          (mount-pinned-dock-when-ready! el opts cancelled*))
+        (fn []
+          (reset! cancelled* true)
+          (when el
+            (when-let [api (bridge-api)]
+              (when-let [unmount (obj/get api "unmountPinnedDock")]
+                (unmount el)))))))
+    (when (and project-id (not= project-id ""))
+      [:div {:ref host-ref
+             :class "backsteros-pinned-tasks-host"
+             :data-testid "backsteros-pinned-tasks-host"}])))

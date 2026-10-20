@@ -73,12 +73,12 @@ export type ProjectDocumentsSidePanelViewProps = {
   onVisibleNavItemIdsChange?: (ids: string[]) => void;
   onFolderActivateRef?: Ref<(folderId: string) => void>;
   /**
-   * Shown when the tree has no rows. Defaults to the vault create hint.
+   * Shown when the tree has no rows. Defaults to the Riffle empty figure.
    */
-  emptyLabel?: string;
+  emptyLabel?: ReactNode;
   /**
-   * `chrome` — app content side panel (default).
-   * `embedded` — codebase workbench Docs tab (matches Files tree chrome).
+   * `chrome` — app content side panel header chrome (legacy).
+   * `embedded` — in-content Docs list (default + codebase projects).
    */
   variant?: "chrome" | "embedded";
 };
@@ -96,8 +96,7 @@ function toTreeSource(item: KnowledgeListItem) {
 }
 
 /**
- * Chrome content side panel for project documents — mirrors KnowledgeSidePanelView
- * with project-scoped hrefs and a Documents header.
+ * Project documents tree — embedded in content or (legacy) chrome side panel.
  */
 export function ProjectDocumentsSidePanelView({
   pathname,
@@ -114,7 +113,7 @@ export function ProjectDocumentsSidePanelView({
   listContainerProps,
   onVisibleNavItemIdsChange,
   onFolderActivateRef,
-  emptyLabel = "No documents yet. Use the plus button to add one.",
+  emptyLabel,
   variant = "chrome",
 }: ProjectDocumentsSidePanelViewProps) {
   const embedded = variant === "embedded";
@@ -252,7 +251,7 @@ export function ProjectDocumentsSidePanelView({
           title={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
           onClick={() => setAddingFolder(true)}
         >
-          <FolderPlusIcon className="size-3.5" />
+          <FolderPlusIcon className="shrink-0" />
         </button>
       ) : null}
     </>
@@ -271,7 +270,9 @@ export function ProjectDocumentsSidePanelView({
         </div>
       ) : null}
       {!showList ? (
-        <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
+        emptyLabel ? (
+          <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
+        ) : null
       ) : (
         <ContentSidePanelList
           aria-label="Project documents"
@@ -311,10 +312,14 @@ export function ProjectDocumentsSidePanelView({
   );
 
   if (embedded) {
+    const showHeader = Boolean(onAdd || onCreateFolder);
     return (
       <div className="console-docs-tree">
-        {onAdd || onCreateFolder ? (
-          <div className="console-docs-tree__actions">{actions}</div>
+        {showHeader ? (
+          <div className="console-docs-tree__header">
+            <span className="console-docs-tree__header-label">Name</span>
+            <div className="console-docs-tree__header-actions">{actions}</div>
+          </div>
         ) : null}
         <div className="console-docs-tree__main">{body}</div>
       </div>

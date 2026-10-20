@@ -41,7 +41,7 @@ export function BacksterosProjectOverviewPage({
   projectId,
   fallbackTitle,
   project: projectProp,
-  tab = "tasks",
+  tab = "overview",
   onTabChange,
   t3ProjectKey = null,
 }: {

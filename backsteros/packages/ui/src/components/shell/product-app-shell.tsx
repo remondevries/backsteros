@@ -42,6 +42,16 @@ export function ProductAppShell({
       data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
       data-sidebar-animating={sidebarAnimating ? "true" : "false"}
     >
+      {/*
+        Zone behind native macOS traffic lights (left inset of the titlebar).
+        AppKit still owns the real buttons; this strip starts a window drag so
+        empty space around the lights moves the window — same as BacksterDESIGN.
+      */}
+      <div
+        className="bos-chrome-traffic-lights"
+        aria-hidden="true"
+        data-tauri-drag-region="deep"
+      />
       <aside
         className={`desktop-sidebar bos-product-sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}
       >

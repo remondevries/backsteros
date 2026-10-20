@@ -12,6 +12,7 @@
    [app.main.data.modal :as modal]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.colors :as dc]
+   [app.main.desktop :as desktop]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.icons :as deprecated-icon]
@@ -81,8 +82,12 @@
         (dom/select-text! (mf/ref-val input-ref))))
 
     [:header {:class (dm/str class " " (stl/css :workspace-header-left))}
-     [:a {:on-click go-back
-          :class (stl/css :main-icon)} deprecated-icon/logo-icon]
+     ;; Tauri shell already has dashboard chrome — keep the logo for browser only.
+     (when-not (desktop/desktop-shell?)
+       [:a {:on-click go-back
+            :class (stl/css :main-icon)
+            :aria-label (tr "labels.home")}
+        deprecated-icon/logo-icon])
      [:div {:alt (tr "workspace.sitemap")
             :class (stl/css :project-tree)}
       (if ^boolean editing?

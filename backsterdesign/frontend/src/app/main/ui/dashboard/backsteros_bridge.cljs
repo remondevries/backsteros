@@ -107,38 +107,70 @@
             (dcm/go-to-dashboard-files :team-id team-id
                                        :project-id penpot-project-id)))
 
-(defn- create-and-link-penpot-project!
-  [{:keys [base-url api-key team-id project on-linked on-error]}]
-  (let [name (or (:name project) (:key project) "Untitled")]
-    (->> (rp/cmd! :create-project {:name name :team-id team-id})
-         (rx/subs!
-          (fn [created]
-            (let [penpot-id (:id created)]
-              (-> (patch-penpot-project-id! base-url api-key (:id project) penpot-id)
-                  (.then (fn [_]
-                           (on-linked (str penpot-id))
-                           (open-penpot-project! team-id penpot-id)))
-                  (.catch (fn [err]
-                            (on-error (or (.-message err) (str err))))))))
-          (fn [err]
-            (on-error (or (.-message err) (str err))))))))
+(defn- remember-linked-id!
+  [project penpot-id-str]
+  (bos.cache/update-data!
+   cache-key
+   (fn [rows]
+     (mapv (fn [row]
+             (if (= (:id row) (:id project))
+               (assoc row :penpot-project-id penpot-id-str)
+               row))
+           (or rows []))))
+  (bos.cache/invalidate! :client-accounts-v3)
+  (bos.cache/invalidate! :client-accounts))
 
-(defn- open-existing-or-relink!
-  "Open `penpot-id` when it exists on this Penpot instance; otherwise create a
-  fresh project and rewrite the cloud-core link (stale IDs from another host)."
-  [{:keys [base-url api-key team-id project penpot-id on-linked on-error]}]
-  (->> (rp/cmd! :get-project {:id penpot-id})
-       (rx/subs!
-        (fn [_]
-          (open-penpot-project! team-id penpot-id))
-        (fn [_]
-          (create-and-link-penpot-project!
-           {:base-url base-url
-            :api-key api-key
-            :team-id team-id
-            :project project
-            :on-linked on-linked
-            :on-error on-error})))))
+(defn- create-and-link-penpot-project-p!
+  "Create a Penpot project, PATCH the BacksterOS link, resolve with uuid."
+  [{:keys [base-url api-key team-id project]}]
+  (js/Promise.
+   (fn [resolve reject]
+     (let [name (or (:name project) (:key project) "Untitled")]
+       (->> (rp/cmd! :create-project {:name name :team-id team-id})
+            (rx/subs!
+             (fn [created]
+               (let [penpot-id (:id created)]
+                 (-> (patch-penpot-project-id! base-url api-key (:id project) penpot-id)
+                     (.then (fn [_]
+                              (remember-linked-id! project (str penpot-id))
+                              (resolve penpot-id)))
+                     (.catch reject))))
+             reject))))))
+
+(defn ensure-penpot-project-id!
+  "Promise of a Penpot project uuid for this BacksterOS project.
+   Creates + links on the fly when missing or stale on this host."
+  [team-id project]
+  (js/Promise.
+   (fn [resolve reject]
+     (let [cfg (core-config)
+           fail! (fn [msg] (reject (js/Error. (str msg))))]
+       (cond
+         (nil? cfg)
+         (fail! "Configure window.backsterosCore first.")
+
+         (nil? team-id)
+         (fail! "No Penpot team selected.")
+
+         :else
+         (let [base-url (:base-url cfg)
+               api-key  (:api-key cfg)
+               create!  #(create-and-link-penpot-project-p!
+                          {:base-url base-url
+                           :api-key api-key
+                           :team-id team-id
+                           :project project})]
+           (if-let [existing (parse-penpot-id (:penpot-project-id project))]
+             (->> (rp/cmd! :get-project {:id existing})
+                  (rx/subs!
+                   (fn [_] (resolve existing))
+                   (fn [_]
+                     (-> (create!)
+                         (.then resolve)
+                         (.catch reject)))))
+             (-> (create!)
+                 (.then resolve)
+                 (.catch reject)))))))))
 
 (defn ensure-cached-projects!
   "Promise of BacksterOS project rows. Prefers the Projects-tab session cache
@@ -155,48 +187,13 @@
           :fetch! (fn []
                     (fetch-projects-p (:base-url cfg) (:api-key cfg)))})))))
 
-(defn- remember-linked-id!
-  [project penpot-id-str]
-  (bos.cache/update-data!
-   cache-key
-   (fn [rows]
-     (mapv (fn [row]
-             (if (= (:id row) (:id project))
-               (assoc row :penpot-project-id penpot-id-str)
-               row))
-           (or rows []))))
-  (bos.cache/invalidate! :client-accounts-v3)
-  (bos.cache/invalidate! :client-accounts))
-
 (defn open-or-create-project!
   "Open a linked Penpot project, or create+link then open.
    opts: `:on-error` `(fn [msg])`, `:on-linked` `(fn [penpot-id-str])`."
   [team-id project {:keys [on-error on-linked] :or {on-error identity}}]
-  (let [cfg (core-config)
-        linked! (fn [penpot-id-str]
-                  (remember-linked-id! project penpot-id-str)
-                  (when on-linked (on-linked penpot-id-str)))]
-    (cond
-      (nil? cfg)
-      (on-error "Configure window.backsterosCore first.")
-
-      (nil? team-id)
-      (on-error "No Penpot team selected.")
-
-      :else
-      (if-let [existing (parse-penpot-id (:penpot-project-id project))]
-        (open-existing-or-relink!
-         {:base-url (:base-url cfg)
-          :api-key (:api-key cfg)
-          :team-id team-id
-          :project project
-          :penpot-id existing
-          :on-linked linked!
-          :on-error on-error})
-        (create-and-link-penpot-project!
-         {:base-url (:base-url cfg)
-          :api-key  (:api-key cfg)
-          :team-id  team-id
-          :project  project
-          :on-linked linked!
-          :on-error on-error})))))
+  (-> (ensure-penpot-project-id! team-id project)
+      (.then (fn [penpot-id]
+               (when on-linked (on-linked (str penpot-id)))
+               (open-penpot-project! team-id penpot-id)))
+      (.catch (fn [err]
+                (on-error (or (.-message err) (str err)))))))

@@ -6,14 +6,18 @@ import {
 } from "react";
 
 import {
+  InboxSidePanelModeFooter,
   InboxSidePanelView,
   RegisterEntityDeleteAction,
+  filterInboxItemsByListMode,
   findInboxItemBySlugOrId,
   getInboxAttentionKeyboardItemIds,
   getInboxItemHref,
   getSelectedInboxSlugFromPathname,
+  inboxListModeLabel,
   parseEmailDraftPath,
   parseEmailMessagePath,
+  useInboxListMode,
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
@@ -45,11 +49,22 @@ export function DesktopInboxSidePanel({
   | "listContainerProps"
   | "collapsedGroups"
   | "onToggleGroup"
+  | "footer"
+  | "title"
 > &
   SidePanelNavProps) {
   const listRef = useRef<HTMLElement>(null);
   const keepAliveActive = useKeepAliveActive();
-  const { pathname, items, groupByAttentionStatus = false } = viewProps;
+  const [listMode, setListMode] = useInboxListMode();
+  const { pathname, items: allItems, groupByAttentionStatus = false } =
+    viewProps;
+  const items = useMemo(
+    () => filterInboxItemsByListMode(allItems, listMode),
+    [allItems, listMode],
+  );
+  // Agents mode is already a single list — skip the redundant "Agents" subgroup.
+  const groupItems =
+    listMode === "agents" ? false : groupByAttentionStatus;
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -76,7 +91,7 @@ export function DesktopInboxSidePanel({
         ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
         : null;
   const itemIds = useMemo(() => {
-    if (groupByAttentionStatus) {
+    if (groupItems) {
       return getInboxAttentionKeyboardItemIds(
         items,
         collapsedGroups,
@@ -87,7 +102,7 @@ export function DesktopInboxSidePanel({
     return items.map((item) => item.id);
   }, [
     collapsedGroups,
-    groupByAttentionStatus,
+    groupItems,
     items,
     viewProps.attentionGroupOverrides,
   ]);
@@ -116,6 +131,29 @@ export function DesktopInboxSidePanel({
       lastLandingKeyRef.current = null;
     }
   }, [keepAliveActive]);
+
+  // When the open row is not in this mode's list (mode switch, or cold open
+  // with a selection that belongs to the other mode), land on the first row.
+  const lastModeRef = useRef(listMode);
+  useEffect(() => {
+    if (!keepAliveActive) return;
+    const modeChanged = lastModeRef.current !== listMode;
+    lastModeRef.current = listMode;
+    if (selectedId != null) return;
+    const pathHasSelection = Boolean(selectedSlug || emailPath || draftPath);
+    if (!modeChanged && !pathHasSelection) return;
+    const first = items[0];
+    onNavigate(first ? getInboxItemHref(first, items) : "/inbox");
+  }, [
+    draftPath,
+    emailPath,
+    keepAliveActive,
+    items,
+    listMode,
+    onNavigate,
+    selectedId,
+    selectedSlug,
+  ]);
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -162,6 +200,10 @@ export function DesktopInboxSidePanel({
         })()
       : null;
 
+  const modeTitle = inboxListModeLabel(listMode);
+  const emptyLabel =
+    listMode === "agents" ? "No agent tasks." : "No notifications.";
+
   return (
     <>
       {keepAliveActive && highlightedEmailItem ? (
@@ -180,6 +222,16 @@ export function DesktopInboxSidePanel({
       ) : null}
       <InboxSidePanelView
         {...viewProps}
+        items={items}
+        title={modeTitle}
+        emptyLabel={emptyLabel}
+        groupByAttentionStatus={groupItems}
+        onCreateTask={
+          listMode === "notifications" ? viewProps.onCreateTask : undefined
+        }
+        onComposeEmail={
+          listMode === "notifications" ? viewProps.onComposeEmail : undefined
+        }
         collapsedGroups={collapsedGroups}
         onToggleGroup={(status) => {
           setCollapsedGroups((current) => {
@@ -192,6 +244,12 @@ export function DesktopInboxSidePanel({
         listRef={listRef}
         listContainerProps={listContainerProps}
         highlightedId={highlightedId}
+        footer={
+          <InboxSidePanelModeFooter
+            mode={listMode}
+            onModeChange={setListMode}
+          />
+        }
       />
     </>
   );

@@ -1,0 +1,213 @@
+/* Chrome timer strip — mirrors BacksterOS content-tabs-timer for shared dropdown. */
+
+.bos-content-tabs-timer {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.bos-content-tabs-timer__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 4px 0 2px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--color-sidebar-accent, #27272a) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-sidebar-border, #3f3f46) 80%, transparent);
+}
+
+.bos-content-tabs-timer.is-running .bos-content-tabs-timer__control {
+  border-color: color-mix(in oklab, #f97316 45%, transparent);
+}
+
+.bos-content-tabs-timer__toggle,
+.bos-content-tabs-timer__display,
+.bos-content-tabs-timer__menu,
+.bos-content-tabs-timer__pill-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bos-content-tabs-timer__toggle {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: color-mix(in oklab, currentColor 80%, transparent);
+}
+
+.bos-content-tabs-timer__toggle:hover {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.bos-content-tabs-timer.is-running .bos-content-tabs-timer__toggle {
+  color: #f97316;
+}
+
+.bos-content-tabs-timer__running-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: #f97316;
+}
+
+.bos-content-tabs-timer__pill-id {
+  max-width: 88px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: color-mix(in oklab, currentColor 90%, transparent);
+  background: color-mix(in oklab, currentColor 8%, transparent);
+}
+
+.bos-content-tabs-timer__display {
+  height: 22px;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bos-content-tabs-timer__display-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.bos-content-tabs-timer__seconds.is-live {
+  color: #f97316;
+}
+
+.bos-content-tabs-timer__menu {
+  width: 20px;
+  height: 22px;
+  border-radius: 6px;
+  color: color-mix(in oklab, currentColor 70%, transparent);
+}
+
+.bos-content-tabs-timer__menu:hover {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.bos-content-tabs-timer__dropdown {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--color-sidebar-border, #3f3f46) 90%, transparent);
+  background: var(--color-popover, #18181b);
+  color: var(--color-popover-foreground, #fafafa);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 35%);
+}
+
+.bos-content-tabs-timer__option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 2px;
+  border-radius: 0;
+  min-height: 34px;
+}
+
+/* Hover only — active fill made a nested pill inside the panel. */
+.bos-content-tabs-timer__option:hover {
+  background: color-mix(in oklab, currentColor 8%, transparent);
+}
+
+.bos-content-tabs-timer__option--active {
+  background: transparent;
+}
+
+.bos-content-tabs-timer__option-toggle,
+.bos-content-tabs-timer__option-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bos-content-tabs-timer__option-toggle:hover,
+.bos-content-tabs-timer__option-nav:hover,
+.bos-content-tabs-timer__option-main:hover {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.bos-content-tabs-timer__option--running .bos-content-tabs-timer__option-toggle {
+  color: #f97316;
+}
+
+.bos-content-tabs-timer__option-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bos-content-tabs-timer__option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.bos-content-tabs-timer__option-id {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.bos-content-tabs-timer__option-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.bos-content-tabs-timer__option-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+}

@@ -136,6 +136,11 @@ export const CONTACT_LIST_COLUMNS = [
   "social_accounts",
   "birthday",
   "languages",
+  // Portal ACL / login — required so local patches are not invisible to the
+  // watch (gap-fill from a stale apiContacts row was reverting language, etc.).
+  "portal_username",
+  "portal_password_hash",
+  "portal_settings",
   "updated_at",
   "created_at",
   "deleted_at",

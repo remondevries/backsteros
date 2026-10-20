@@ -1403,9 +1403,94 @@
   user-select: none;
 }
 
+.contact-detail-split-chip.project-key-split-chip
+  .project-hourly-rate-chip__label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.contact-detail-split-chip.project-key-split-chip {
+  cursor: pointer;
+}
+
+.project-detail__key-editor--split {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.contact-detail-split-chip.project-key-split-chip
+  .contact-detail-split-chip__value,
+.contact-detail-split-chip.project-key-split-chip
+  .contact-detail-split-chip__value--button {
+  min-width: 3ch;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
 .contact-detail-split-chip.project-billing-chip
   .contact-detail-split-chip__value {
   padding-inline: 4px 10px;
+}
+
+.contact-detail-split-chip.project-billing-chip.project-key-split-chip
+  .contact-detail-split-chip__value,
+.contact-detail-split-chip.project-billing-chip.project-key-split-chip
+  .contact-detail-split-chip__value--button {
+  padding-inline: 12px 10px;
+}
+
+/* Value-only billing chips (panel overview) — match property inline chips. */
+.project-billing-value-chip {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  cursor: text;
+}
+
+.project-billing-value-chip:not(.property-dropdown-trigger--static) {
+  pointer-events: auto;
+}
+
+.project-billing-value-chip .project-billing-value-chip__value {
+  pointer-events: auto;
+  cursor: text;
+}
+
+.project-billing-value-chip.is-muted {
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.project-billing-value-chip__currency {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.project-billing-value-chip__value {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+  outline: none;
+}
+
+.project-billing-value-chip__value::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
 }
 
 .project-panel-identity__billing {
@@ -1857,6 +1942,41 @@
   cursor: pointer;
 }
 
+/* Reuses entity-overview-subgroup header (label + rule). */
+.contact-detail-chips__more {
+  margin-top: 2px;
+}
+
+/* Quieter than property values / subgroup titles. */
+.contact-detail-chips__more .entity-overview-subgroup__label {
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-weight: 500;
+}
+
+button.contact-detail-chips__more:hover:not(:disabled)
+  .entity-overview-subgroup__label {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+/*
+ * Span the full Details field row (property label + value), not only the
+ * value column — matches subgroup rules that run edge to edge.
+ * Label width 108px + field gap 12px (see .entity-overview-field__label).
+ */
+.entity-overview-field:not(.entity-overview-field--stacked)
+  > .contact-detail-chips
+  > .contact-detail-chips__more {
+  margin-left: calc(-108px - 12px);
+  width: calc(100% + 108px + 12px);
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.contact-detail-chips__more:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .contact-detail-chips__add {
   box-sizing: border-box;
   display: inline-flex;
@@ -2000,16 +2120,45 @@
   margin-top: 0;
 }
 
+.entity-overview-subgroup.is-collapsed {
+  gap: 0;
+}
+
 .entity-overview-subgroup__header {
   display: flex;
   width: 100%;
   min-width: 0;
   align-items: center;
   gap: 8px;
+  margin: 0;
   padding: 0 0 2px;
+  border: none;
+  background: transparent;
   color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  font: inherit;
   font-size: 12px;
   font-weight: 500;
+  text-align: left;
+  cursor: default;
+}
+
+button.entity-overview-subgroup__header {
+  cursor: pointer;
+}
+
+button.entity-overview-subgroup__header:hover .entity-overview-subgroup__label {
+  color: var(--foreground);
+}
+
+button.entity-overview-subgroup__header:hover
+  .entity-overview-subgroup__chevron {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+button.entity-overview-subgroup__header:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .entity-overview-subgroup__label {
@@ -2017,6 +2166,25 @@
   color: color-mix(in srgb, var(--foreground) 88%, transparent);
   font-size: 0.8125rem;
   font-weight: 600;
+  transition: color 120ms ease;
+}
+
+.entity-overview-subgroup__chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  transition: transform 150ms ease, color 120ms ease;
+}
+
+.entity-overview-subgroup__header[aria-expanded="false"]
+  .entity-overview-subgroup__chevron {
+  transform: rotate(-90deg);
+}
+
+.entity-overview-subgroup__chevron svg {
+  display: block;
 }
 
 .entity-overview-subgroup__rule {
@@ -2033,11 +2201,21 @@
   gap: 16px;
 }
 
+.entity-overview-subgroup__fields[hidden] {
+  display: none;
+}
+
 .entity-overview-field {
   display: flex;
   min-width: 0;
   align-items: flex-start;
   gap: 12px;
+}
+
+.entity-overview-field--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .entity-overview-field__label {
@@ -2049,9 +2227,23 @@
   font-weight: 400;
 }
 
+.entity-overview-field--stacked > .entity-overview-field__label {
+  width: auto;
+  padding-top: 0;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
 .entity-overview-field > :not(.entity-overview-field__label) {
   min-width: 0;
   flex: 1;
+}
+
+.entity-overview-field--stacked > :not(.entity-overview-field__label) {
+  flex: none;
+  width: 100%;
 }
 
 .entity-overview-field__value {

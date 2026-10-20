@@ -29,19 +29,44 @@ import {
   InboxListItemRow,
   type InboxListItemLinkComponent,
 } from "./inbox-list-item-row.js";
-import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
+import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import {
   VirtualizedOverviewList,
   OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
 } from "../../list-nav/virtualized-overview-list.js";
 import { InboxSidePanelSkeleton } from "../skeletons/inbox-side-panel-skeleton.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import { AgentActivityIcon } from "../tasks/agent-activity-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 
 const EMPTY_COLLAPSED_GROUPS: ReadonlySet<string> = new Set();
+
+function inboxAttentionGroupIcon(status: string, label: string) {
+  if (status === "updated") {
+    return (
+      <TaskStatusIcon
+        status="triage"
+        size={14}
+        title={label}
+        notification
+        inboxUpdatedAt={Date.now()}
+      />
+    );
+  }
+  if (status === "agents") {
+    return <AgentActivityIcon size={14} />;
+  }
+  if (status === "overdue") {
+    return <TaskStatusIcon status="on_hold" size={14} title={label} />;
+  }
+  if (isTaskStatus(status)) {
+    return <TaskStatusIcon status={status} size={14} title={label} />;
+  }
+  return <InboxItemTypeIcon kind="letter" size={14} />;
+}
 
 export type InboxSidePanelViewProps = {
   pathname: string;
@@ -58,16 +83,26 @@ export type InboxSidePanelViewProps = {
   onCreatedTask?: (taskId: string) => void;
   /** Compose a new email (navigates to email compose). */
   onComposeEmail?: () => void;
+  /**
+   * @deprecated Unused — side-panel rows are navigation-only (no property
+   * dropdowns). Kept optional so existing hosts can keep passing handlers.
+   */
   projectOptions?: SearchableDropdownOption<string>[];
+  /** @deprecated See `projectOptions`. */
   assigneeOptions?: SearchableDropdownOption<string>[];
+  /** @deprecated See `projectOptions`. */
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
+  /** @deprecated See `projectOptions`. */
   onPriorityChange?: (taskId: string, priority: number) => void;
+  /** @deprecated See `projectOptions`. */
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
+  /** @deprecated See `projectOptions`. */
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
+  /** @deprecated See `projectOptions`. */
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
   /**
    * Group tasks into collapsible subgroups (Updated / Triage / On Hold / …)
-   * with the shared label + rule line used on Projects/Areas.
+   * with the shared status-group headers used on Tasks.
    */
   groupByAttentionStatus?: boolean;
   /**
@@ -121,13 +156,6 @@ export function InboxSidePanelView({
   onCreateTask,
   onCreatedTask,
   onComposeEmail,
-  projectOptions,
-  assigneeOptions,
-  onStatusChange,
-  onPriorityChange,
-  onDueDateChange,
-  onProjectChange,
-  onAssigneeChange,
   groupByAttentionStatus = false,
   attentionGroupOverrides,
   collapsedGroups = EMPTY_COLLAPSED_GROUPS,
@@ -231,13 +259,6 @@ export function InboxSidePanelView({
         minimized={minimized}
         titleTrailing={minimized ? null : renderTitleTrailing?.(item) ?? null}
         agentWorking={isItemAgentWorking?.(item) ?? false}
-        projectOptions={minimized ? undefined : projectOptions}
-        assigneeOptions={minimized ? undefined : assigneeOptions}
-        onStatusChange={minimized ? undefined : onStatusChange}
-        onPriorityChange={minimized ? undefined : onPriorityChange}
-        onDueDateChange={minimized ? undefined : onDueDateChange}
-        onProjectChange={minimized ? undefined : onProjectChange}
-        onAssigneeChange={minimized ? undefined : onAssigneeChange}
       />
     );
   }
@@ -245,7 +266,7 @@ export function InboxSidePanelView({
   return (
     <div
       className={`app-content-side-panel${minimized ? " is-minimized" : ""}${
-        footer ? " communication-side-panel--with-filter-footer" : ""
+        footer ? " inbox-side-panel--with-mode-footer" : ""
       }`}
     >
       {showHeader ? (
@@ -337,31 +358,19 @@ export function InboxSidePanelView({
                       className="side-panel-plain-group-header side-panel-plain-group-header--minimized"
                       title={row.label}
                     >
-                      {isTaskStatus(row.status) ? (
-                        <TaskStatusIcon
-                          status={row.status}
-                          size={14}
-                          title={row.label}
-                        />
-                      ) : row.status === "overdue" ? (
-                        <TaskStatusIcon
-                          status="on_hold"
-                          size={14}
-                          title={row.label}
-                        />
-                      ) : (
-                        <InboxItemTypeIcon kind="letter" />
-                      )}
+                      {inboxAttentionGroupIcon(row.status, row.label)}
                       <span className="sr-only">{row.label}</span>
                     </li>
                   ) : (
-                    <button
-                      type="button"
-                      className="side-panel-plain-group-header w-full text-left"
-                      onClick={() => onToggleGroup?.(row.status)}
+                    <StatusGroupSection
+                      groupKey={row.status}
+                      title={row.label}
+                      collapsed={collapsedGroups.has(row.status)}
+                      onToggle={() => onToggleGroup?.(row.status)}
+                      icon={inboxAttentionGroupIcon(row.status, row.label)}
                     >
-                      {row.label}
-                    </button>
+                      {null}
+                    </StatusGroupSection>
                   );
                 }
                 return renderRow(row.item!);
@@ -381,34 +390,22 @@ export function InboxSidePanelView({
                         className="side-panel-plain-group-header side-panel-plain-group-header--minimized"
                         title={group.label}
                       >
-                        {isTaskStatus(group.status) ? (
-                          <TaskStatusIcon
-                            status={group.status}
-                            size={14}
-                            title={group.label}
-                          />
-                        ) : group.status === "overdue" ? (
-                          <TaskStatusIcon
-                            status="on_hold"
-                            size={14}
-                            title={group.label}
-                          />
-                        ) : (
-                          <InboxItemTypeIcon kind="letter" />
-                        )}
+                        {inboxAttentionGroupIcon(group.status, group.label)}
                         <span className="sr-only">{group.label}</span>
                       </li>
                       {group.items.map((item) => renderRow(item))}
                     </Fragment>
                   ) : (
-                    <ProjectTypeGroupSection
+                    <StatusGroupSection
                       key={group.status}
+                      groupKey={group.status}
                       title={group.label}
                       collapsed={collapsedGroups.has(group.status)}
                       onToggle={() => onToggleGroup?.(group.status)}
+                      icon={inboxAttentionGroupIcon(group.status, group.label)}
                     >
                       {group.items.map((item) => renderRow(item))}
-                    </ProjectTypeGroupSection>
+                    </StatusGroupSection>
                   ),
                 )
               : items.map((item) => renderRow(item))}

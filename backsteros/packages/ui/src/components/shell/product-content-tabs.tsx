@@ -59,7 +59,7 @@ export function ProductContentTabs({
   historyToolbar = null,
 }: ProductContentTabsProps) {
   return (
-    <header className="content-tabs-bar-row" data-tauri-drag-region>
+    <header className="content-tabs-bar-row" data-tauri-drag-region="deep">
       {historyToolbar ? (
         <ProductHistoryToolbar
           {...historyToolbar}
@@ -83,6 +83,7 @@ export function ProductContentTabs({
                   role="tab"
                   tabIndex={-1}
                   aria-selected={isActive}
+                  data-tauri-drag-region="false"
                   className={[
                     "content-tab",
                     isActive ? "content-tab-active" : null,
@@ -116,6 +117,7 @@ export function ProductContentTabs({
                       className="content-tab-close"
                       aria-label={`Close ${tab.title}`}
                       title={`Close ${tab.title}`}
+                      data-tauri-drag-region="false"
                       onClick={(event) => {
                         event.stopPropagation();
                         onCloseTab(tab.id);
@@ -133,6 +135,7 @@ export function ProductContentTabs({
             type="button"
             className="content-tab-add"
             aria-label="Open new tab"
+            data-tauri-drag-region="false"
             onClick={onOpenNewTab}
           >
             <SidePanelPlusIcon />

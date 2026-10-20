@@ -6,13 +6,16 @@ import {
   CATALOG_PROJECT_TYPE_FILTERS,
   filterCatalogProjectsByType,
   filterProjectsByType,
+  filterProjectsListByType,
   getCatalogListTypeHref,
   getProjectTypeFilterLabel,
+  isProjectsListProjectType,
   parseCatalogProjectTypeFilter,
   parseProjectTypeFilter,
   parseProjectTypeFilterFromLocation,
   PROJECT_TYPE_FILTER_ALL,
   PROJECT_TYPE_FILTERS,
+  PROJECTS_LIST_PROJECT_TYPES,
   projectTypeForCatalogCreate,
 } from "./project-type-filters.js";
 
@@ -67,6 +70,25 @@ describe("project-type-filters", () => {
       "email",
     ]);
     assert.equal(CATALOG_DEFAULT_PROJECT_TYPE, "codebase");
+  });
+
+  it("projects list keeps only Default and Codebase", () => {
+    const projects = [
+      { id: "1", type: "codebase" },
+      { id: "2", type: "general" },
+      { id: "3", type: null },
+      { id: "4", type: "email" },
+      { id: "5", type: "webhosting" },
+    ];
+    assert.deepEqual(PROJECTS_LIST_PROJECT_TYPES, ["general", "codebase"]);
+    assert.deepEqual(
+      filterProjectsListByType(projects).map((p) => p.id),
+      ["1", "2", "3"],
+    );
+    assert.equal(isProjectsListProjectType("general"), true);
+    assert.equal(isProjectsListProjectType("codebase"), true);
+    assert.equal(isProjectsListProjectType(null), true);
+    assert.equal(isProjectsListProjectType("email"), false);
   });
 
   it("parses filter values and builds catalog hrefs", () => {

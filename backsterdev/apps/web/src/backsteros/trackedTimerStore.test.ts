@@ -6,10 +6,12 @@ import {
   getTrackedTimerElapsedSeconds,
   isTrackedTimerPersistRefused,
   isTrackedTimerRunning,
+  listRecentTrackedTimers,
   pauseTrackedTimer,
   resetTrackedTimerStoreForTests,
   setTrackedTimerRefusePersist,
   startTrackedTimer,
+  syncRemoteRunningTimers,
   syncTrackedTimerDuration,
 } from "./trackedTimerStore";
 
@@ -155,5 +157,156 @@ describe("trackedTimerStore", () => {
     expect(onSessionChange).not.toHaveBeenCalled();
     expect(onPersist).not.toHaveBeenCalled();
     expect(isTrackedTimerRunning("task-1")).toBe(false);
+  });
+
+  it("adopts a live remote running timer without firing session callbacks", () => {
+    const onSessionChange = vi.fn();
+    const startedAt = Date.now() - 10_000;
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-1",
+        remoteStartedAtMs: startedAt,
+        // Fresh checkpoint: 120 total after 10s wall → base 110.
+        trackedDurationSeconds: 120,
+        trackedMinutes: 2,
+        updatedAtMs: Date.now(),
+        isRunning: true,
+        title: "Ship it",
+        subtitle: "OS-1",
+        onSessionChange,
+      },
+    ]);
+
+    expect(isTrackedTimerRunning("task-1")).toBe(true);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(120);
+    expect(onSessionChange).not.toHaveBeenCalled();
+    expect(listRecentTrackedTimers()).toHaveLength(1);
+    expect(listRecentTrackedTimers()[0]?.title).toBe("Ship it");
+
+    vi.advanceTimersByTime(3_000);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(123);
+  });
+
+  it("keeps the same elapsed when a late sync re-adopts the same remote start", () => {
+    const startedAt = Date.now();
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-1",
+        remoteStartedAtMs: startedAt,
+        trackedDurationSeconds: 0,
+        isRunning: true,
+      },
+    ]);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(0);
+
+    vi.advanceTimersByTime(5_000);
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-1",
+        remoteStartedAtMs: startedAt,
+        trackedDurationSeconds: 0,
+        isRunning: true,
+      },
+    ]);
+    // Must stay at 5s — adopt-at-Date.now() used to reset and show 0 again.
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(5);
+
+    vi.advanceTimersByTime(5_000);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(10);
+  });
+
+  it("seeds a paused remote timer into the recent list", () => {
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-2",
+        remoteStartedAtMs: Date.now() - 60_000,
+        lastTimerAtMs: Date.now() - 30_000,
+        trackedDurationSeconds: 90,
+        isRunning: false,
+        title: "Paused work",
+        subtitle: "BSH-2",
+      },
+    ]);
+
+    expect(isTrackedTimerRunning("task-2")).toBe(false);
+    expect(getTrackedTimerElapsedSeconds("task-2")).toBe(90);
+    expect(listRecentTrackedTimers().map((row) => row.key)).toEqual(["task-2"]);
+  });
+
+  it("keeps a locally owned timer when remote sync repeats", () => {
+    startTrackedTimer("task-1", 30);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(30);
+
+    vi.advanceTimersByTime(5_000);
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-1",
+        remoteStartedAtMs: Date.now() - 60_000,
+        trackedDurationSeconds: 999,
+        updatedAtMs: Date.now(),
+        isRunning: true,
+      },
+    ]);
+
+    // Local clock must not jump to the remote seeded total.
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(35);
+  });
+
+  it("keeps a paused chrome row when running-timers sync omits it", () => {
+    syncRemoteRunningTimers([
+      {
+        taskId: "task-1",
+        remoteStartedAtMs: Date.now(),
+        trackedDurationSeconds: 40,
+        updatedAtMs: Date.now(),
+        isRunning: true,
+      },
+    ]);
+    expect(isTrackedTimerRunning("task-1")).toBe(true);
+
+    vi.advanceTimersByTime(2_000);
+    // running-timers fallback — do not pruneAbsent
+    syncRemoteRunningTimers([]);
+
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+    expect(listRecentTrackedTimers()).toHaveLength(1);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(42);
+  });
+
+  it("drops an adopted remote timer when recent-timers membership omits it", () => {
+    syncRemoteRunningTimers(
+      [
+        {
+          taskId: "task-1",
+          remoteStartedAtMs: Date.now(),
+          trackedDurationSeconds: 40,
+          updatedAtMs: Date.now(),
+          isRunning: true,
+        },
+      ],
+      { pruneAbsent: true },
+    );
+    expect(isTrackedTimerRunning("task-1")).toBe(true);
+
+    vi.advanceTimersByTime(2_000);
+    syncRemoteRunningTimers([], { pruneAbsent: true });
+
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+    expect(listRecentTrackedTimers()).toHaveLength(0);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(0);
+  });
+
+  it("keeps a locally paused timer after stop", () => {
+    startTrackedTimer("task-1", 10);
+    vi.advanceTimersByTime(5_000);
+    pauseTrackedTimer("task-1");
+
+    expect(isTrackedTimerRunning("task-1")).toBe(false);
+    expect(listRecentTrackedTimers()).toHaveLength(1);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(15);
+
+    syncRemoteRunningTimers([]);
+    expect(listRecentTrackedTimers()).toHaveLength(1);
+    expect(getTrackedTimerElapsedSeconds("task-1")).toBe(15);
   });
 });

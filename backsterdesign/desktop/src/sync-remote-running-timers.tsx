@@ -2,11 +2,9 @@ import { useEffect, useRef } from "react";
 import {
   getProjectTaskHref,
   getTaskDisplayId,
-} from "@backsteros/ui";
-import {
   useTrackedTimer,
   type RemoteRunningTimerAdoption,
-} from "@backsteros/ui/shell";
+} from "@backsteros/ui";
 
 import { coreRequestJson, readCoreConfig } from "./core-config";
 
@@ -20,9 +18,11 @@ type FocusedTaskResponse = {
   task?: FocusedTaskResponse;
 };
 
-type RunningTimerApiRow = {
+type RecentTimerApiRow = {
   taskId: string;
   startedAt: string;
+  lastTimerAt?: string;
+  isRunning?: boolean;
   title: string;
   number: number | null;
   status: string | null;
@@ -81,8 +81,8 @@ function parseStartedAtMs(value: string): number {
 }
 
 /**
- * Mirrors open task timers from local-core into TrackedTimerProvider so the
- * chrome ContentTabsTimer strip stays live (same approach as BacksterOS).
+ * Mirrors open task timers from cloud-core into TrackedTimerProvider so the
+ * chrome ContentTabsTimer strip stays live (same leader as BacksterOS / DEV).
  */
 export function SyncRemoteRunningTimers({
   taskId = null,
@@ -91,7 +91,10 @@ export function SyncRemoteRunningTimers({
   taskId?: string | null;
 }) {
   const timer = useTrackedTimer() as ReturnType<typeof useTrackedTimer> & {
-    syncRemoteRunningTimers: (adoptions: RemoteRunningTimerAdoption[]) => void;
+    syncRemoteRunningTimers: (
+      adoptions: RemoteRunningTimerAdoption[],
+      options?: { pruneAbsent?: boolean },
+    ) => void;
   };
   const config = useRef(readCoreConfig());
   const syncRef = useRef(timer.syncRemoteRunningTimers);
@@ -198,7 +201,10 @@ export function SyncRemoteRunningTimers({
     let inFlight = false;
     const cfg = config.current;
 
-    const apply = (rows: RunningTimerApiRow[]) => {
+    const apply = (
+      rows: RecentTimerApiRow[],
+      options?: { pruneAbsent?: boolean },
+    ) => {
       const sync = syncRef.current;
       if (!sync) return;
 
@@ -211,6 +217,9 @@ export function SyncRemoteRunningTimers({
           projectKey && number != null
             ? getProjectTaskHref(projectKey, number)
             : `/tasks/${encodeURIComponent(taskId)}`;
+        const lastTimerAtMs = parseStartedAtMs(
+          row.lastTimerAt ?? row.startedAt,
+        );
 
         return {
           kind: "task" as const,
@@ -222,6 +231,8 @@ export function SyncRemoteRunningTimers({
           trackedDurationSeconds: row.trackedDurationSeconds,
           trackedMinutes: row.trackedMinutes,
           remoteStartedAtMs: parseStartedAtMs(row.startedAt),
+          lastTimerAtMs,
+          isRunning: row.isRunning,
           updatedAtMs: row.updatedAt ? parseStartedAtMs(row.updatedAt) : null,
           onPersist: (seconds: number | null) => {
             void coreRequestJson(cfg, `/api/v1/tasks/${encodeURIComponent(taskId)}`, {
@@ -254,19 +265,36 @@ export function SyncRemoteRunningTimers({
         };
       });
 
-      sync(adoptions);
+      sync(adoptions, options);
     };
 
     const poll = async () => {
       if (cancelled || inFlight) return;
       inFlight = true;
       try {
-        const body = await coreRequestJson<{ timers: RunningTimerApiRow[] }>(
-          cfg,
-          "/api/v1/running-timers",
-        );
+        let rows: RecentTimerApiRow[] = [];
+        let pruneAbsent = false;
+        try {
+          const body = await coreRequestJson<{ timers: RecentTimerApiRow[] }>(
+            cfg,
+            "/api/v1/recent-timers",
+          );
+          rows = body.timers ?? [];
+          pruneAbsent = true;
+        } catch {
+          // Core without recent-timers — keep paused chrome rows.
+          const body = await coreRequestJson<{ timers: RecentTimerApiRow[] }>(
+            cfg,
+            "/api/v1/running-timers",
+          );
+          rows = (body.timers ?? []).map((row) => ({
+            ...row,
+            isRunning: true,
+            lastTimerAt: row.startedAt,
+          }));
+        }
         if (cancelled) return;
-        apply(body.timers ?? []);
+        apply(rows, { pruneAbsent });
       } catch {
         // Best-effort; next tick retries.
       } finally {

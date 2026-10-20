@@ -50,6 +50,37 @@ test("isCodebaseWorkbenchPath treats documents as a workbench route", () => {
   assert.equal(isCodebaseWorkbenchPath("/projects/demo", "demo"), false);
 });
 
+test("parseCodebaseWorkbenchPath maps bare path to Overview", () => {
+  assert.deepEqual(parseCodebaseWorkbenchPath("/projects/demo", "demo"), {
+    tab: "overview",
+    commitSha: null,
+    pullNumber: null,
+    filePath: null,
+    documentPath: null,
+  });
+});
+
+test("parseCodebaseWorkbenchPath maps /tasks to Tasks tab", () => {
+  assert.deepEqual(parseCodebaseWorkbenchPath("/projects/demo/tasks", "demo"), {
+    tab: "tasks",
+    commitSha: null,
+    pullNumber: null,
+    filePath: null,
+    documentPath: null,
+  });
+});
+
+test("getCodebaseWorkbenchHref builds Overview and Tasks routes", () => {
+  assert.equal(
+    getCodebaseWorkbenchHref("demo", { tab: "overview" }),
+    "/projects/demo",
+  );
+  assert.equal(
+    getCodebaseWorkbenchHref("demo", { tab: "tasks" }),
+    "/projects/demo/tasks",
+  );
+});
+
 test("parseCodebaseWorkbenchPath maps updates to Updates tab", () => {
   assert.deepEqual(parseCodebaseWorkbenchPath("/projects/demo/updates", "demo"), {
     tab: "updates",

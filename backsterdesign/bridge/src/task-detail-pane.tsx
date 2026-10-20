@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   EntityHeaderActionsShell,
   EntityHeaderActionsSlot,
+  getProjectTaskHref,
   getTaskDisplayId,
   RegisterEntityDeleteAction,
+  RegisterEntityMenuItems,
   TaskActivityPanel,
   TaskDetailView,
   TrackedTimeField,
+  type EntityExtraMenuItem,
   type SearchableDropdownOption,
   type TaskDetailViewTask,
   type TaskItemRowTask,
@@ -64,6 +67,10 @@ export type TaskDetailPaneProps = {
   onTaskPatched: (taskId: string, patch: Partial<TaskItemRowTask>) => void;
   /** Called after a successful soft-delete so the host can close detail. */
   onTaskDeleted?: () => void;
+  /** Workspace stack: show Pin / Unpin in the ⋯ menu. */
+  pinEnabled?: boolean;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 };
 
 function resolveAssigneeName(
@@ -142,6 +149,9 @@ export function TaskDetailPane({
   onBack,
   onTaskPatched,
   onTaskDeleted,
+  pinEnabled = false,
+  pinned = false,
+  onTogglePin,
 }: TaskDetailPaneProps) {
   const [apiTask, setApiTask] = useState<ApiTask | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -262,6 +272,28 @@ export function TaskDetailPane({
     [config, taskId],
   );
 
+  const timerSession = useMemo(() => {
+    if (!detailTask || detailTask.support) return null;
+    const projectKey =
+      detailTask.projectKey?.trim() || project.key?.trim() || null;
+    const number = listTask?.number ?? null;
+    const displayId =
+      detailTask.displayId?.trim() ||
+      getTaskDisplayId({ number, projectKey }, projectKey);
+    const href =
+      projectKey && number != null
+        ? getProjectTaskHref(projectKey, number)
+        : `/tasks/${encodeURIComponent(taskId)}`;
+    return {
+      kind: "task" as const,
+      entityId: taskId,
+      title: detailTask.title?.trim() || displayId || "Task",
+      subtitle: displayId,
+      statusKey: detailTask.status,
+      href,
+    };
+  }, [detailTask, listTask?.number, project.key, taskId]);
+
   const handleDeleteTask = useCallback(async () => {
     try {
       await deleteTask(config, taskId);
@@ -280,6 +312,19 @@ export function TaskDetailPane({
   const deleteEntityLabel =
     detailTask?.displayId?.trim() || detailTask?.title?.trim() || "task";
 
+  const pinMenuItems = useMemo((): EntityExtraMenuItem[] => {
+    if (!pinEnabled || !onTogglePin) return [];
+    return [
+      {
+        id: "pin",
+        label: pinned ? "Unpin" : "Pin",
+        onSelect: () => {
+          onTogglePin();
+        },
+      },
+    ];
+  }, [onTogglePin, pinEnabled, pinned]);
+
   return (
     <EntityHeaderActionsShell>
     <div
@@ -290,6 +335,9 @@ export function TaskDetailPane({
         entityLabel={deleteEntityLabel}
         onDelete={handleDeleteTask}
       />
+      {pinMenuItems.length > 0 ? (
+        <RegisterEntityMenuItems items={pinMenuItems} />
+      ) : null}
       <header className="backsteros-task-detail-pane__chrome">
         <button
           type="button"
@@ -318,6 +366,7 @@ export function TaskDetailPane({
                   );
                 }}
                 onTimerSessionChange={onTimerSessionChange}
+                timerSession={timerSession}
               />
             </div>
           ) : null}
@@ -421,6 +470,7 @@ export function TaskDetailPane({
             );
           }}
           onTimerSessionChange={onTimerSessionChange}
+          timerSession={timerSession}
           belowDescription={
             <TaskActivityPanel
               taskId={taskId}

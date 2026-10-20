@@ -28,7 +28,8 @@
    [app.main.ui.ds.layout.tab-switcher :refer [tab-switcher*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.hooks.resize :refer [use-resize-hook]]
-   [app.main.ui.dashboard.project-tasks :refer [workspace-tasks-panel*]]
+   [app.main.ui.dashboard.project-tasks :refer [workspace-pinned-tasks-dock*
+                                               workspace-tasks-panel*]]
    [app.main.ui.workspace.comments :refer [comments-sidebar*]]
    [app.main.ui.workspace.left-header :refer [left-header*]]
    [app.main.ui.workspace.right-header :refer [right-header*]]
@@ -121,6 +122,7 @@
   (let [options-mode   (mf/deref refs/options-mode-global)
         project        (mf/deref refs/project)
         file-id        (get file :id)
+        penpot-project-id (:id project)
 
         design-tokens? (features/use-feature "design-tokens/v1")
         mode-inspect?  (= options-mode :inspect)
@@ -172,7 +174,16 @@
 
         tabs-action-button
         (mf/with-memo []
-          (mf/html [:> collapse-button* {}]))]
+          (mf/html [:> collapse-button* {}]))
+
+        on-open-pinned-task
+        (mf/use-fn
+         (mf/deps layout)
+         (fn [_task-id]
+           ;; Ensure the workspace tasks panel is visible, then the island
+           ;; selects the task via the open-pinned-task event.
+           (when-not (contains? layout :backsteros-tasks)
+             (st/emit! (dw/toggle-layout-flag :backsteros-tasks {:force? true})))))]
 
     [:> (mf/provider muc/sidebar) {:value :left}
      [:aside {:ref parent-ref
@@ -201,28 +212,32 @@
         [:> debug-panel* {:class (stl/css :left-sidebar-content)}]
 
         :else
-        [:div {:class (stl/css  :left-sidebar-content)}
-         [:> tab-switcher* {:tabs tabs
-                            :default "layers"
-                            :selected (name section)
-                            :on-change on-tab-change
-                            :class (stl/css :left-sidebar-tabs)
-                            :action-button-position "start"
-                            :action-button tabs-action-button}
+        [:*
+         [:div {:class (stl/css  :left-sidebar-content)}
+          [:> tab-switcher* {:tabs tabs
+                             :default "layers"
+                             :selected (name section)
+                             :on-change on-tab-change
+                             :class (stl/css :left-sidebar-tabs)
+                             :action-button-position "start"
+                             :action-button tabs-action-button}
 
-          (case section
-            :assets
-            [:> assets-toolbox* {:size (- width  58)
-                                 :file-id file-id}]
+           (case section
+             :assets
+             [:> assets-toolbox* {:size (- width  58)
+                                  :file-id file-id}]
 
-            :tokens
-            [:> tokens-sidebar-tab* {:tokens-lib tokens-lib
-                                     :active-tokens active-tokens
-                                     :resolved-active-tokens resolved-active-tokens}]
+             :tokens
+             [:> tokens-sidebar-tab* {:tokens-lib tokens-lib
+                                      :active-tokens active-tokens
+                                      :resolved-active-tokens resolved-active-tokens}]
 
-            :layers
-            [:> layers-content* {:layout layout
-                                 :width width}])]])]]))
+             :layers
+             [:> layers-content* {:layout layout
+                                  :width width}])]]
+         [:> workspace-pinned-tasks-dock*
+          {:penpot-project-id penpot-project-id
+           :on-open-task on-open-pinned-task}]])]]))
 
 ;; --- Right Sidebar (Component)
 

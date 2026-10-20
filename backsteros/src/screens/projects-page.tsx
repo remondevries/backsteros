@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-router";
 
 import {
+  CODEBASE_LIST_TAB_OPTIONS,
   DocumentsEmptyCreateView,
   DocumentDetailIcon,
   DocumentDetailSkeleton,
@@ -21,9 +22,12 @@ import {
   ProjectTimetrackingView,
   ProjectsOverviewView,
   DomainDetailView,
+  PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
+  RegisterEntityMenuItems,
   RegisterPageTitle,
+  buildProjectTypeExtraMenuItem,
   primeTabTitle,
   LIST_BOARD_VIEW_SEARCH_PARAM,
   TASKS_LIST_BOARD_STORAGE_KEY,
@@ -41,6 +45,7 @@ import {
   formatMeetingDisplayId,
   formatMonthLong,
   getCalendarMeetingHref,
+  getCodebaseWorkbenchHref,
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
   getOrganizationSectionHref,
@@ -62,6 +67,7 @@ import {
   localMonthKey,
   localWeekKey,
   organizationMatchesSlug,
+  parseCodebaseWorkbenchPath,
   parseListBoardViewFromLocation,
   parseProjectAreaFilterFromLocation,
   persistListBoardView,
@@ -69,6 +75,7 @@ import {
   resolveLetterDetailHref,
   serializeDocumentBody,
   timetrackingWeekPeriod,
+  type CodebaseGithubListTab,
   type DomainRegistrarContact,
   type KnowledgeListItem,
   type ListBoardView,
@@ -77,6 +84,7 @@ import {
   type ProjectRouteScope,
   type ProjectSectionId,
   type ProjectStatus,
+  type ProjectType,
   type TaskStatus,
   type TimetrackingEntry,
   type TimetrackingPeriod,
@@ -134,7 +142,9 @@ import { useDomainProjectApi } from "../lib/use-domain-project-api";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
 import { DomainProjectWorkbench } from "./domain-project-workbench";
 import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
+import { DesktopProjectLettersListPanel } from "./project-letters-list-panel";
 import { CodebaseRepoDocsDetail } from "./codebase-repo-docs-detail";
+import { handleDocumentTreeReorder } from "../shell/document-tree-reorder";
 import {
   projectTypeFromLocationState,
   projectNavFromLocationState,
@@ -350,12 +360,60 @@ function ProjectsPageBody({
         recalledProjectType(selected.id) === "codebase" ||
         recalledProjectType(selected.key) === "codebase"),
   );
+  const [repoDocsRefreshToken, setRepoDocsRefreshToken] = useState(0);
   const repoDocs = useCodebaseRepoDocs({
     projectId: selected?.id ?? null,
     enabled:
       selectedIsCodebase &&
       Boolean(selected?.localWorkingDirectory?.trim()),
+    refreshToken: repoDocsRefreshToken,
   });
+  const createCodebaseRepoDocEntry = useCallback(
+    async (input: {
+      parentFolderId: string | null;
+      name: string;
+      kind: "file" | "directory";
+    }) => {
+      if (!selected) {
+        throw new Error("No project selected.");
+      }
+      const parent = input.parentFolderId?.trim() || "docs";
+      // Ensure the docs/ root exists when creating at the docs tree root.
+      if (parent === "docs") {
+        try {
+          await client.requestJson(
+            `/api/v1/projects/${encodeURIComponent(selected.id)}/fs/entries`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                parent: "",
+                name: "docs",
+                kind: "directory",
+              }),
+            },
+          );
+        } catch {
+          // Already exists — continue creating the entry under docs/.
+        }
+      }
+      const created = await client.requestJson<{ path: string }>(
+        `/api/v1/projects/${encodeURIComponent(selected.id)}/fs/entries`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parent,
+            name: input.name,
+            kind: input.kind,
+          }),
+        },
+      );
+      setRepoDocsRefreshToken((token) => token + 1);
+      return created;
+    },
+    [client, selected],
+  );
   const getCodebaseRepoDocHref = useCallback(
     (pathOrId: string) => {
       if (!selected) return pathOrId;
@@ -367,7 +425,9 @@ function ProjectsPageBody({
     ? "Set a working directory to browse repository docs."
     : repoDocs.loading
       ? "Loading documents…"
-      : (repoDocs.error ?? "No docs in this repository.");
+      : repoDocs.error
+        ? repoDocs.error
+        : undefined;
 
   useEnsureProjectVault(selected?.id);
 
@@ -376,12 +436,6 @@ function ProjectsPageBody({
   const activeSection: ProjectSectionId = routeSlug
     ? getActiveProjectSection(location.pathname, routeSlug)
     : "overview";
-
-  const sectionLabel =
-    activeSection === "overview"
-      ? null
-      : (PROJECT_SECTIONS.find((entry) => entry.id === activeSection)?.label ??
-        null);
 
   const projectDocuments = useMemo(() => {
     if (!selected) return [];
@@ -647,6 +701,115 @@ function ProjectsPageBody({
     ? projectsListHref
     : standaloneListHref;
 
+  // Primitives only — object identity from workspace rows must not recreate
+  // chrome header nodes (useRegisterChromeHeader setStates on every new node
+  // and will ANR / leak if actions churn every render).
+  const selectedId = selected?.id ?? null;
+  const selectedKey = selected?.key ?? null;
+  const selectedType = selected?.type ?? null;
+  const navTypeFromState = projectTypeFromLocationState(location.state);
+  const cachedSelectedType =
+    selectedId != null
+      ? (recalledProjectType(selectedId) ??
+        (selectedKey != null ? recalledProjectType(selectedKey) : null))
+      : null;
+
+  const selectedEffectiveType = useMemo(() => {
+    if (selectedId == null) return null;
+    if (
+      navTypeFromState === "codebase" ||
+      cachedSelectedType === "codebase" ||
+      selectedType === "codebase"
+    ) {
+      return "codebase" as const;
+    }
+    if (
+      navTypeFromState === "domeinname" ||
+      cachedSelectedType === "domeinname" ||
+      selectedType === "domeinname"
+    ) {
+      return "domeinname" as const;
+    }
+    return (selectedType ?? navTypeFromState ?? cachedSelectedType ?? "general") as string;
+  }, [cachedSelectedType, navTypeFromState, selectedId, selectedType]);
+
+  // Letters (and any non-workbench section) must not fall back to "overview" —
+  // that wrongly keeps the codebase pill strip selected on Overview while
+  // content is Letters, and makes digit `1` look like a no-op.
+  const codebaseWorkbenchTab =
+    selectedKey != null && selectedEffectiveType === "codebase"
+      ? (parseCodebaseWorkbenchPath(location.pathname, selectedKey)?.tab ??
+        null)
+      : null;
+
+  const onCodebaseChromeTabChange = useCallback(
+    (tab: CodebaseGithubListTab) => {
+      if (!selectedKey) return;
+      navigate(getCodebaseWorkbenchHref(selectedKey, { tab }, routeScope), {
+        replace: true,
+      });
+    },
+    [navigate, routeScope, selectedKey],
+  );
+
+  const onProjectChromeSectionChange = useCallback(
+    (section: ProjectSectionId) => {
+      if (!selectedKey) return;
+      navigate(getScopedProjectSectionHref(selectedKey, section, routeScope), {
+        replace: true,
+      });
+    },
+    [navigate, routeScope, selectedKey],
+  );
+
+  const generalSectionTabItems = useMemo(
+    () =>
+      PROJECT_SECTIONS.map((entry) => ({
+        value: entry.id,
+        label: entry.label,
+      })),
+    [],
+  );
+
+  const projectChromeTabs = useMemo(() => {
+    if (!selectedKey || !keepAliveActive) return null;
+
+    if (selectedEffectiveType === "codebase" && codebaseWorkbenchTab != null) {
+      return (
+        <PillNav
+          ariaLabel="Project contents"
+          className="project-chrome-section-tabs"
+          items={CODEBASE_LIST_TAB_OPTIONS}
+          value={codebaseWorkbenchTab}
+          onChange={onCodebaseChromeTabChange}
+          slidingIndicator
+        />
+      );
+    }
+
+    if (selectedEffectiveType === "domeinname") return null;
+
+    return (
+      <PillNav
+        ariaLabel="Project sections"
+        className="project-chrome-section-tabs"
+        items={generalSectionTabItems}
+        value={activeSection}
+        onChange={onProjectChromeSectionChange}
+        slidingIndicator
+      />
+    );
+  }, [
+    activeSection,
+    codebaseWorkbenchTab,
+    generalSectionTabItems,
+    keepAliveActive,
+    onCodebaseChromeTabChange,
+    onProjectChromeSectionChange,
+    selectedEffectiveType,
+    selectedKey,
+  ]);
+
   useDesktopSectionBreadcrumb(
     selected
       ? organizationRouteParam && organizationName
@@ -662,29 +825,13 @@ function ProjectsPageBody({
             {
               label: selected.name,
               href:
-                activeSection === "overview"
+                activeSection === "overview" && !selectedDocument && !letterBreadcrumbTitle
                   ? undefined
                   : getScopedProjectSectionHref(
                       selected.key,
                       "overview",
                       routeScope),
             },
-            ...(sectionLabel
-              ? [
-                  {
-                    label: sectionLabel,
-                    href:
-                      (activeSection === "documents" && selectedDocument) ||
-                      (activeSection === "letters" &&
-                        (selectedLetter || composingLetter))
-                        ? getScopedProjectSectionHref(
-                            selected.key,
-                            activeSection,
-                            routeScope)
-                        : undefined,
-                  },
-                ]
-              : []),
             ...(selectedDocument ? [{ label: selectedDocument.title }] : []),
             ...(letterBreadcrumbTitle
               ? [{ label: letterBreadcrumbTitle }]
@@ -695,36 +842,20 @@ function ProjectsPageBody({
             {
               label: selected.name,
               href:
-                activeSection === "overview"
+                activeSection === "overview" && !selectedDocument && !letterBreadcrumbTitle
                   ? undefined
                   : getScopedProjectSectionHref(
                       selected.key,
                       "overview",
                       routeScope),
             },
-            ...(sectionLabel
-              ? [
-                  {
-                    label: sectionLabel,
-                    href:
-                      (activeSection === "documents" && selectedDocument) ||
-                      (activeSection === "letters" &&
-                        (selectedLetter || composingLetter))
-                        ? getScopedProjectSectionHref(
-                            selected.key,
-                            activeSection,
-                            routeScope)
-                        : undefined,
-                  },
-                ]
-              : []),
             ...(selectedDocument ? [{ label: selectedDocument.title }] : []),
             ...(letterBreadcrumbTitle
               ? [{ label: letterBreadcrumbTitle }]
               : []),
           ]
       : [{ label: "Projects" }],
-    { enabled: keepAliveActive });
+    { enabled: keepAliveActive, actions: projectChromeTabs });
 
   const handleDeleteProject = useCallback(async () => {
     if (!selected) {
@@ -769,6 +900,44 @@ function ProjectsPageBody({
       }
     },
     [navigate, organizationRouteParam, routeScope, selected, workspace]);
+
+  const handleProjectTypeChange = useCallback(
+    (type: ProjectType) => {
+      if (!selected) return;
+      const patch: {
+        type: string;
+        category?: null;
+        healthCheckMode?: null;
+        healthCheckDomain?: null;
+      } = { type };
+      if (type !== "email") {
+        patch.category = null;
+      }
+      if (type !== "codebase") {
+        patch.healthCheckMode = null;
+        patch.healthCheckDomain = null;
+      }
+      setProjectOverlay((current) => ({
+        ...current,
+        [selected.id]: { ...current[selected.id], ...patch },
+      }));
+      void workspace.patchProject(selected.id, patch);
+    },
+    [selected, workspace],
+  );
+
+  const projectTypeMenuItems = useMemo(
+    () =>
+      selected
+        ? [
+            buildProjectTypeExtraMenuItem(
+              selected.type,
+              handleProjectTypeChange,
+            ),
+          ]
+        : [],
+    [handleProjectTypeChange, selected],
+  );
 
   const handleDeleteLetter = useCallback(async () => {
     if (!selectedLetter || !selected) {
@@ -1339,13 +1508,15 @@ function ProjectsPageBody({
 
   function navigateProjectTasksView(nextView: ListBoardView) {
     persistListBoardView(nextView, TASKS_LIST_BOARD_STORAGE_KEY);
-    // Codebase projects keep list/board on the workbench base path so the
-    // left sidebar stays mounted (same as list view). Default projects use
+    // Codebase projects use `/tasks` (Overview owns the bare project path).
+    // Domain workbench keeps tasks on the base path. Default projects use
     // the `/tasks` section route.
     const base =
-      effectiveType === "codebase" || effectiveType === "domeinname"
-        ? getScopedProjectBasePath(projectKey, routeScope)
-        : getScopedProjectSectionHref(projectKey, "tasks", routeScope);
+      effectiveType === "codebase"
+        ? getScopedProjectSectionHref(projectKey, "tasks", routeScope)
+        : effectiveType === "domeinname"
+          ? getScopedProjectBasePath(projectKey, routeScope)
+          : getScopedProjectSectionHref(projectKey, "tasks", routeScope);
     navigate(
       nextView === "board"
         ? `${base}?${LIST_BOARD_VIEW_SEARCH_PARAM}=board`
@@ -1598,9 +1769,46 @@ function ProjectsPageBody({
       const showCompose =
         composingLetter || projectLetters.length === 0;
 
-      return (
-        <ProjectLettersView>
-          {showCompose ? (
+      const lettersListPanel = (
+        <DesktopProjectLettersListPanel
+          keyboardEnabled={keepAliveActive}
+          pathname={location.pathname}
+          items={projectLetters}
+          getLetterHref={(letter) =>
+            resolveLetterDetailHref({
+              id: letter.id,
+              number: letter.number,
+              listBaseHref: getScopedProjectSectionHref(
+                projectKey,
+                "letters",
+                routeScope,
+              ),
+            })
+          }
+          onAdd={() => {
+            void workspace
+              .createLetter({
+                title: "New letter",
+                projectId: project.id,
+              })
+              .then((created) => {
+                const href = resolveLetterDetailHref({
+                  id: created.id,
+                  number: created.number,
+                  listBaseHref: getScopedProjectSectionHref(
+                    projectKey,
+                    "letters",
+                    routeScope,
+                  ),
+                });
+                primeTabTitle(href, "New letter");
+                navigate(href);
+              });
+          }}
+        />
+      );
+
+      const lettersDetail = showCompose ? (
             <LetterComposeView
               organizationOptions={letterOrganizationOptions}
               contacts={contacts}
@@ -1868,7 +2076,11 @@ function ProjectsPageBody({
                 }}
               />
             </>
-          ) : null}
+          ) : null;
+
+      return (
+        <ProjectLettersView listPanel={lettersListPanel}>
+          {lettersDetail}
         </ProjectLettersView>
       );
     }
@@ -1877,150 +2089,215 @@ function ProjectsPageBody({
       const showEmptyCreate =
         composingDocument || readableProjectDocuments.length === 0;
 
-      return (
-        <ProjectDocumentsView>
-          {showEmptyCreate ? (
-            <DocumentsEmptyCreateView
-              creating={creatingDocument}
-              onCreate={async ({ title, content }) => {
-                setCreatingDocument(true);
-                try {
-                  const created = await workspace.createProjectDocument({
-                    projectId: project.id,
-                    title,
-                    content,
-                  });
-                  const item: KnowledgeListItem = {
-                    id: created.id,
-                    title,
-                    path: created.path,
-                    projectId: project.id,
-                    kind: "document",
-                    contentVersion: created.contentVersion,
-                  };
-                  setLocalDocuments((current) =>
-                    current.some((entry) => entry.id === created.id)
-                      ? current
-                      : [...current, item]);
-                  writeDocumentContentCache(created.id, {
-                    content,
-                    contentVersion: created.contentVersion,
-                  });
-                  setPendingEditDocumentId(created.id);
-                  setOmittedDocumentIds([]);
-                  setComposingDocument(false);
-                  navigate(
-                    getScopedProjectDocumentHref(
-                      projectKey,
-                      created.path || created.id,
-                      routeScope),
-                    { replace: true });
-                  return created;
-                } finally {
-                  setCreatingDocument(false);
-                }
-              }}
-            />
-          ) : documentPath && !selectedDocument ? (
-            <DocumentDetailSkeleton />
-          ) : selectedDocument ? (
-            documentContent.loading ? (
-              <DocumentDetailSkeleton />
-            ) : (
-              <>
-                <RegisterEntityDeleteAction
-                  entityLabel={`document "${selectedDocument.title}"`}
-                  onDelete={handleDeleteDocument}
-                />
-                <DocumentDetailWithProperties
-                  sectionLabel="Documents"
-                  title={selectedDocument.title}
-                  resetKey={selectedDocument.id}
-                  startInEditMode={
-                    pendingEditDocumentId === selectedDocument.id
-                  }
-                  icon={
-                    <DocumentDetailIcon
-                      documentId={selectedDocument.id}
-                      icon={selectedDocument.icon ?? null}
-                      title={selectedDocument.title}
-                      onSaveIcon={(icon) =>
-                        workspace.updateDocumentIcon(selectedDocument.id, icon)
-                      }
-                    />
-                  }
-                  headerAccessory={
-                    <TrackedTimeField
-                      variant="pill"
-                      trackedDurationSeconds={
-                        selectedDocument.trackedDurationSeconds ?? null
-                      }
-                      trackedMinutes={selectedDocument.trackedMinutes ?? null}
-                      onTrackedDurationSecondsChange={(seconds) => {
-                        const trackedMinutes =
-                          seconds != null && seconds >= 60
-                            ? Math.floor(seconds / 60)
-                            : null;
-                        void workspace.patchDocument(selectedDocument.id, {
-                          trackedDurationSeconds: seconds,
-                          trackedMinutes,
-                          ...(seconds != null && seconds > 0
-                            ? { lastTrackedAt: new Date().toISOString() }
-                            : {}),
-                        });
-                      }}
-                      timerSession={{
-                        kind: "document",
-                        entityId: selectedDocument.id,
-                        title: selectedDocument.title,
-                        subtitle: null,
-                        statusKey: null,
-                        href: getScopedProjectDocumentHref(
-                          projectKey,
-                          selectedDocument.path?.trim() || selectedDocument.id,
-                          routeScope,
-                        ),
-                      }}
-                    />
-                  }
-                  initialBody={getDocumentEditorBody(
-                    documentContent.initialBody,
-                    selectedDocument.title)}
-                  onSave={async (nextEditorBody) => {
-                    return documentContent.onSave(
-                      serializeDocumentBody(nextEditorBody, {
-                        sourceContent: documentContent.initialBody,
-                      }),
-                    );
-                  }}
-                  onSaveTitle={async (title) => {
-                    const result = await workspace.renameDocument(
-                      selectedDocument.id,
-                      title);
-                    if (result.ok) {
-                      setLocalDocuments((current) =>
-                        current.map((doc) =>
-                          doc.id === selectedDocument.id
-                            ? { ...doc, title: title.trim() }
-                            : doc));
-                    }
-                    return result;
-                  }}
-                  documentProperties={{
-                    ...documentPropertiesFromApiDocument(selectedDocument),
-                    onSave: handleSaveDocumentProperties,
-                  }}
-                  propertyTypes={documentPropertyTypes}
-                  contactOptions={assigneeOptions}
-                  taskOptions={documentTaskOptions}
-                  projectOptions={documentProjectOptions}
-                />
-              </>
+      const documentsListPanel = (
+        <DesktopCodebaseDocsListPanel
+          keyboardEnabled={keepAliveActive}
+          pathname={location.pathname}
+          items={projectDocuments}
+          getDocumentHref={(pathOrId) =>
+            getScopedProjectDocumentHref(projectKey, pathOrId, routeScope)
+          }
+          onAdd={(parentFolderId) => {
+            void workspace
+              .createProjectDocument({
+                projectId: project.id,
+                title: "Untitled",
+                parentId: parentFolderId,
+              })
+              .then((created) => {
+                navigate(
+                  getScopedProjectDocumentHref(
+                    projectKey,
+                    created.path || created.id,
+                    routeScope,
+                  ),
+                );
+              });
+          }}
+          onCreateFolder={async ({ title, parentId }) => {
+            try {
+              await workspace.createProjectFolder({
+                projectId: project.id,
+                title,
+                parentId,
+              });
+              return { ok: true };
+            } catch (error) {
+              return {
+                ok: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not create folder.",
+              };
+            }
+          }}
+          onRename={(id, title) => workspace.renameDocument(id, title)}
+          onDelete={(id) => workspace.deleteDocument(id)}
+          onReorderTreeItem={(request) =>
+            handleDocumentTreeReorder(
+              request,
+              projectDocuments.map((item) => ({
+                id: item.id,
+                title: item.title,
+                path: item.path ?? item.id,
+                kind: item.kind === "folder" ? "folder" : "document",
+                parentId: item.parentId ?? null,
+                sortOrder: item.sortOrder ?? 0,
+                icon: item.icon ?? null,
+              })),
+              workspace,
             )
-          ) : (
-            // Index with docs present — skeleton while auto-open redirects (Next parity).
-            <DocumentDetailSkeleton />
-          )}
+          }
+        />
+      );
+
+      const documentsDetail = showEmptyCreate ? (
+        <DocumentsEmptyCreateView
+          creating={creatingDocument}
+          onCreate={async ({ title, content }) => {
+            setCreatingDocument(true);
+            try {
+              const created = await workspace.createProjectDocument({
+                projectId: project.id,
+                title,
+                content,
+              });
+              const item: KnowledgeListItem = {
+                id: created.id,
+                title,
+                path: created.path,
+                projectId: project.id,
+                kind: "document",
+                contentVersion: created.contentVersion,
+              };
+              setLocalDocuments((current) =>
+                current.some((entry) => entry.id === created.id)
+                  ? current
+                  : [...current, item]);
+              writeDocumentContentCache(created.id, {
+                content,
+                contentVersion: created.contentVersion,
+              });
+              setPendingEditDocumentId(created.id);
+              setOmittedDocumentIds([]);
+              setComposingDocument(false);
+              navigate(
+                getScopedProjectDocumentHref(
+                  projectKey,
+                  created.path || created.id,
+                  routeScope),
+                { replace: true });
+              return created;
+            } finally {
+              setCreatingDocument(false);
+            }
+          }}
+        />
+      ) : documentPath && !selectedDocument ? (
+        <DocumentDetailSkeleton />
+      ) : selectedDocument ? (
+        documentContent.loading ? (
+          <DocumentDetailSkeleton />
+        ) : (
+          <>
+            <RegisterEntityDeleteAction
+              entityLabel={`document "${selectedDocument.title}"`}
+              onDelete={handleDeleteDocument}
+            />
+            <DocumentDetailWithProperties
+              sectionLabel="Documents"
+              title={selectedDocument.title}
+              resetKey={selectedDocument.id}
+              startInEditMode={
+                pendingEditDocumentId === selectedDocument.id
+              }
+              icon={
+                <DocumentDetailIcon
+                  documentId={selectedDocument.id}
+                  icon={selectedDocument.icon ?? null}
+                  title={selectedDocument.title}
+                  onSaveIcon={(icon) =>
+                    workspace.updateDocumentIcon(selectedDocument.id, icon)
+                  }
+                />
+              }
+              headerAccessory={
+                <TrackedTimeField
+                  variant="pill"
+                  trackedDurationSeconds={
+                    selectedDocument.trackedDurationSeconds ?? null
+                  }
+                  trackedMinutes={selectedDocument.trackedMinutes ?? null}
+                  onTrackedDurationSecondsChange={(seconds) => {
+                    const trackedMinutes =
+                      seconds != null && seconds >= 60
+                        ? Math.floor(seconds / 60)
+                        : null;
+                    void workspace.patchDocument(selectedDocument.id, {
+                      trackedDurationSeconds: seconds,
+                      trackedMinutes,
+                      ...(seconds != null && seconds > 0
+                        ? { lastTrackedAt: new Date().toISOString() }
+                        : {}),
+                    });
+                  }}
+                  timerSession={{
+                    kind: "document",
+                    entityId: selectedDocument.id,
+                    title: selectedDocument.title,
+                    subtitle: null,
+                    statusKey: null,
+                    href: getScopedProjectDocumentHref(
+                      projectKey,
+                      selectedDocument.path?.trim() || selectedDocument.id,
+                      routeScope,
+                    ),
+                  }}
+                />
+              }
+              initialBody={getDocumentEditorBody(
+                documentContent.initialBody,
+                selectedDocument.title)}
+              onSave={async (nextEditorBody) => {
+                return documentContent.onSave(
+                  serializeDocumentBody(nextEditorBody, {
+                    sourceContent: documentContent.initialBody,
+                  }),
+                );
+              }}
+              onSaveTitle={async (title) => {
+                const result = await workspace.renameDocument(
+                  selectedDocument.id,
+                  title);
+                if (result.ok) {
+                  setLocalDocuments((current) =>
+                    current.map((doc) =>
+                      doc.id === selectedDocument.id
+                        ? { ...doc, title: title.trim() }
+                        : doc));
+                }
+                return result;
+              }}
+              documentProperties={{
+                ...documentPropertiesFromApiDocument(selectedDocument),
+                onSave: handleSaveDocumentProperties,
+              }}
+              propertyTypes={documentPropertyTypes}
+              contactOptions={assigneeOptions}
+              taskOptions={documentTaskOptions}
+              projectOptions={documentProjectOptions}
+            />
+          </>
+        )
+      ) : (
+        // Index with docs present — skeleton while auto-open redirects (Next parity).
+        <DocumentDetailSkeleton />
+      );
+
+      return (
+        <ProjectDocumentsView listPanel={documentsListPanel}>
+          {documentsDetail}
         </ProjectDocumentsView>
       );
     }
@@ -2045,6 +2322,7 @@ function ProjectsPageBody({
           entityLabel={`project "${project.name}"`}
           onDuplicate={handleDuplicateProject}
         />
+        <RegisterEntityMenuItems items={projectTypeMenuItems} />
         <RegisterEntityDeleteAction
           entityLabel={`project "${project.name}"`}
           onDelete={handleDeleteProject}
@@ -2089,6 +2367,7 @@ function ProjectsPageBody({
           taskProgress={taskProgress}
           routeScope={routeScope}
           pathname={location.pathname}
+          hideTabBar
           tasksPanel={renderSection("tasks")}
           docsPanel={
             <CodebaseRepoDocsDetail
@@ -2112,6 +2391,33 @@ function ProjectsPageBody({
               items={repoDocs.items}
               getDocumentHref={getCodebaseRepoDocHref}
               emptyLabel={codebaseDocsEmptyLabel}
+              onAdd={(parentFolderId) => {
+                void createCodebaseRepoDocEntry({
+                  parentFolderId,
+                  name: "Untitled.md",
+                  kind: "file",
+                }).then((created) => {
+                  navigate(getCodebaseRepoDocHref(created.path));
+                });
+              }}
+              onCreateFolder={async ({ title, parentId }) => {
+                try {
+                  await createCodebaseRepoDocEntry({
+                    parentFolderId: parentId,
+                    name: title,
+                    kind: "directory",
+                  });
+                  return { ok: true };
+                } catch (error) {
+                  return {
+                    ok: false,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Could not create folder.",
+                  };
+                }
+              }}
             />
           }
           onCreateOrganizationFromQuery={(query) => {
@@ -2340,6 +2646,7 @@ function ProjectsPageBody({
           entityLabel={`project "${project.name}"`}
           onDuplicate={handleDuplicateProject}
         />
+        <RegisterEntityMenuItems items={projectTypeMenuItems} />
         <RegisterEntityDeleteAction
           entityLabel={`project "${project.name}"`}
           onDelete={handleDeleteProject}
@@ -2376,19 +2683,18 @@ function ProjectsPageBody({
         href={location.pathname}
         title={project.name}
       />
-      {activeSection === "overview" ? (
-        <>
-          <RegisterEntityDuplicateAction
-            confirm="project"
-            entityLabel={`project "${project.name}"`}
-            onDuplicate={handleDuplicateProject}
-          />
-          <RegisterEntityDeleteAction
-            entityLabel={`project "${project.name}"`}
-            onDelete={handleDeleteProject}
-          />
-        </>
-      ) : null}
+      {/* Keep ⋯ on every section (Tasks/Docs/Letters/…) — nested detail
+          screens may override Delete; Duplicate stays project-scoped. */}
+      <RegisterEntityDuplicateAction
+        confirm="project"
+        entityLabel={`project "${project.name}"`}
+        onDuplicate={handleDuplicateProject}
+      />
+      <RegisterEntityMenuItems items={projectTypeMenuItems} />
+      <RegisterEntityDeleteAction
+        entityLabel={`project "${project.name}"`}
+        onDelete={handleDeleteProject}
+      />
       <ProjectDetailView
         project={{
           ...project,
@@ -2405,6 +2711,7 @@ function ProjectsPageBody({
           taskProgress,
         }}
         copyIdShortcutEnabled={keepAliveActive}
+        hideSectionNav
         nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
         section={activeSection}
         onSectionChange={handleSectionChange}
@@ -2481,23 +2788,6 @@ function ProjectsPageBody({
         onPriorityChange={(priority) => {
           patchSelected({ priority });
           void workspace.patchProject(project.id, { priority });
-        }}
-        onTypeChange={(type) => {
-          const patch: {
-            type: string;
-            category?: null;
-            healthCheckMode?: null;
-            healthCheckDomain?: null;
-          } = { type };
-          if (type !== "email") {
-            patch.category = null;
-          }
-          if (type !== "codebase") {
-            patch.healthCheckMode = null;
-            patch.healthCheckDomain = null;
-          }
-          patchSelected(patch);
-          void workspace.patchProject(project.id, patch);
         }}
         onProviderChange={(provider) => {
           const patch: {

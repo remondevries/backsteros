@@ -24,14 +24,16 @@ import {
   getProjectAreaFilterLabel,
   PROJECT_AREA_FILTER_DEFAULT,
   PROJECT_AREA_FILTER_OTHER,
-  PROJECT_AREA_FILTERS,
   PROJECT_AREAS,
   isDefinedProjectArea,
+  setProjectsListIncludeOtherArea,
+  visibleProjectAreaFilters,
   type ProjectArea,
   type ProjectAreaFilter,
 } from "../../projects/project-areas.js";
 import {
   filterCatalogProjectsByType,
+  filterProjectsListByType,
   getProjectTypeFilterLabel,
   PROJECT_TYPE_FILTER_ALL,
   CATALOG_PROJECT_TYPE_FILTERS,
@@ -461,6 +463,21 @@ export function ProjectsOverviewView({
     [localProjects],
   );
 
+  const selectProject = useCallback(
+    (projectKey: string) => {
+      onSelectProject?.(projectKey);
+    },
+    [onSelectProject],
+  );
+
+  const activateProjectById = useCallback(
+    (projectId: string) => {
+      const project = localProjects.find((entry) => entry.id === projectId);
+      if (project) onSelectProject?.(project.key);
+    },
+    [localProjects, onSelectProject],
+  );
+
   const {
     draggingItemId,
     insertBeforeKey,
@@ -474,14 +491,15 @@ export function ProjectsOverviewView({
     groupAppendOrderKey: (groupKey) =>
       projectGroupAppendOrderKey(migrateLegacyProjectStatus(groupKey)),
     onReorder: handlePointerReorder,
+    onItemActivate: activateProjectById,
   });
 
-  const selectProject = useCallback(
+  const selectProjectFromClick = useCallback(
     (projectKey: string) => {
       if (consumeClickSuppression()) return;
-      onSelectProject?.(projectKey);
+      selectProject(projectKey);
     },
-    [consumeClickSuppression, onSelectProject],
+    [consumeClickSuppression, selectProject],
   );
 
   const filtered = useMemo(() => {
@@ -492,7 +510,7 @@ export function ProjectsOverviewView({
       : localProjects;
     const byType = showTypeFilters
       ? filterCatalogProjectsByType(byArea, typeFilter)
-      : byArea;
+      : filterProjectsListByType(byArea);
     if (!listTypeToFilter.query) return byType;
     return byType.filter((project) =>
       listItemMatchesTypeToFilter(
@@ -679,10 +697,44 @@ export function ProjectsOverviewView({
     }
   };
 
-  const areaPillItems = PROJECT_AREA_FILTERS.map((value) => ({
+  const areaFilterUniverse = useMemo(
+    () =>
+      showTypeFilters
+        ? localProjects
+        : filterProjectsListByType(localProjects),
+    [localProjects, showTypeFilters],
+  );
+  const areaFilters = useMemo(
+    () => visibleProjectAreaFilters(areaFilterUniverse),
+    [areaFilterUniverse],
+  );
+  const areaPillItems = areaFilters.map((value) => ({
     value,
     label: getProjectAreaFilterLabel(value),
   }));
+  const includeOtherArea = areaFilters.includes(PROJECT_AREA_FILTER_OTHER);
+
+  useEffect(() => {
+    if (!showAreaFilters) return;
+    setProjectsListIncludeOtherArea(includeOtherArea);
+    return () => setProjectsListIncludeOtherArea(true);
+  }, [showAreaFilters, includeOtherArea]);
+
+  useEffect(() => {
+    if (!showAreaFilters) return;
+    if (area !== PROJECT_AREA_FILTER_OTHER || includeOtherArea) return;
+    onAreaChange?.(PROJECT_AREA_FILTER_DEFAULT);
+    if (controlledArea === undefined) {
+      setUncontrolledArea(PROJECT_AREA_FILTER_DEFAULT);
+    }
+  }, [
+    showAreaFilters,
+    area,
+    includeOtherArea,
+    onAreaChange,
+    controlledArea,
+  ]);
+
   const typePillItems = CATALOG_PROJECT_TYPE_FILTERS.map((value) => ({
     value,
     label: getProjectTypeFilterLabel(value),
@@ -822,7 +874,7 @@ export function ProjectsOverviewView({
                       forceShowCheckbox={hasBulkSelection}
                       keyboardHighlighted={highlightedId === project.id}
                       agentWorking={workingProjectIds?.has(project.id) ?? false}
-                      onSelect={selectProject}
+                      onSelect={selectProjectFromClick}
                       onToggleSelected={(projectId, _checked, event) =>
                         toggleSelected(projectId, Boolean(event?.shiftKey))
                       }

@@ -3,14 +3,14 @@
 
 var penpotFlags = "disable-dashboard-templates-section";
 
-// Bridge to BacksterOS local-core (Projects + Clients tabs).
-// Use the same-origin proxy (nginx → host:8788). Plain http://127.0.0.1:8788
-// fails in the browser as mixed content (Penpot is https://localhost:3449).
+// Bridge to BacksterOS cloud-core (Projects + Clients + timer chrome).
+// Use the public agents door so local DESIGN matches OS / DEV timers.
+// Hosted design.lemo-design.com keeps baseUrl "/backsteros-core" (Caddy → VPS).
 window.backsterosCore = {
-  baseUrl: "/backsteros-core",
-  // Local-shell token works on local-core; use a sk_live_… key if preferred.
+  baseUrl: "https://agent.backsteros.com",
+  // Owner sk_live_… from ~/.config/backsteros/cli.env (seeded by backster-dev.sh).
   // Needs projects:read + projects:write (link penpotProjectId),
-  // tasks:read + tasks:write (project page task list), and
+  // tasks:read + tasks:write (project page task list + timers), and
   // contacts:read + contacts:write (Client accounts project allowlist).
-  apiKey: "local",
+  apiKey: "sk_live_REPLACE_ME",
 };

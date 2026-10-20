@@ -81,9 +81,9 @@ else fail "config.js missing (run ./scripts/backster-dev.sh status)"; fi
 check_http "local https root" "https://localhost:3449/"
 check_http "local config.js" "https://localhost:3449/js/config.js"
 check_flag_in_url "local config" "https://localhost:3449/js/config.js" "disable-dashboard-templates-section"
-check_flag_in_url "local config" "https://localhost:3449/js/config.js" 'baseUrl: "/backsteros-core"'
-check_http "local /backsteros-core health" "https://localhost:3449/backsteros-core/api/v1/health"
-check_http "local-core :8788" "http://127.0.0.1:8788/api/v1/health"
+check_flag_in_url "local config" "https://localhost:3449/js/config.js" 'baseUrl: "https://agent.backsteros.com"'
+check_http "cloud-core agent door" "https://agent.backsteros.com/api/v1/health"
+check_http "local-core :8788 (optional FS replica)" "http://127.0.0.1:8788/api/v1/health"
 staff_login "local" "https://localhost:3449"
 
 MAIN_JS="$DESIGN_ROOT/frontend/resources/public/js/main.js"

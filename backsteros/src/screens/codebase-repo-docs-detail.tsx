@@ -1,5 +1,6 @@
 import {
   DocumentDetailSkeleton,
+  HairlineEmptyFigure,
   MarkdownDocumentDetailView,
   ProjectDocumentsView,
   TrackedTimeField,
@@ -17,6 +18,22 @@ function DocsStatus({ message }: { message: string }) {
       <div className="console-pane">
         <div className="console-pane-body">
           <p className="console-github-pane-status">{message}</p>
+        </div>
+      </div>
+    </ProjectDocumentsView>
+  );
+}
+
+function DocsEmptyFigure() {
+  return (
+    <ProjectDocumentsView>
+      <div className="console-pane">
+        <div className="console-pane-body">
+          <HairlineEmptyFigure
+            size={220}
+            label="No documents"
+            caption="No documents"
+          />
         </div>
       </div>
     </ProjectDocumentsView>
@@ -81,7 +98,7 @@ export function CodebaseRepoDocsDetail({
     return <DocsStatus message={error} />;
   }
   if (readable.length === 0) {
-    return <DocsStatus message="No docs in this repository." />;
+    return <DocsEmptyFigure />;
   }
   if (!selected) {
     if (documentPath && !loading) {

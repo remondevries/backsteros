@@ -12,8 +12,10 @@ import {
   CODEBASE_LIST_TAB_OPTIONS,
   CommitDetailPane,
   FileDetailPane,
+  HairlineEmptyFigure,
   PillNav,
   ProjectCommitHistory,
+  ProjectOverviewDescriptionPane,
   PullRequestDetailPane,
   getCodebaseWorkbenchHref,
   normalizeWorkingDirectory,
@@ -45,6 +47,7 @@ import {
 import { resolvePanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
+import { useCodebaseProjectReadme } from "../lib/codebase-project-readme";
 import { createRestProjectFs } from "../lib/project-fs-rest";
 import { isTauriRuntime } from "../lib/tauri-runtime";
 import { navigateToHref } from "../router/navigate-href";
@@ -105,6 +108,8 @@ type Props = {
   updatesPanel?: ReactNode;
   /** Project-scoped time report shown on the Timetracking tab. */
   timetrackingPanel?: ReactNode;
+  /** When true, tabs live in the product chrome header (next to ⋯). */
+  hideTabBar?: boolean;
   fs?: ProjectFsClient;
 };
 
@@ -173,6 +178,7 @@ export function CodebaseProjectWorkbench({
   docsPanel,
   updatesPanel,
   timetrackingPanel,
+  hideTabBar = false,
   fs = projectFs,
 }: Props) {
   const routerNavigate = useNavigate();
@@ -195,7 +201,7 @@ export function CodebaseProjectWorkbench({
   const selection = useMemo(
     () =>
       parseCodebaseWorkbenchPath(pathname, project.key) ?? {
-        tab: "tasks" as const,
+        tab: "overview" as const,
         commitSha: null,
         pullNumber: null,
         filePath: null,
@@ -274,6 +280,12 @@ export function CodebaseProjectWorkbench({
       requestJson,
     });
   }, [fs, project.id, requestJson, workingDirectory]);
+
+  const overviewReadme = useCodebaseProjectReadme({
+    enabled: selection.tab === "overview",
+    workingDirectory,
+    fs: resolvedFs,
+  });
 
   const [selectedCommit, setSelectedCommit] = useState<{
     commit: GithubCommit;
@@ -826,11 +838,13 @@ export function CodebaseProjectWorkbench({
       />
     );
   } else if (selection.tab === "commits" || selection.tab === "pulls") {
+    const githubEmptyCaption =
+      selection.tab === "commits" ? "No commits" : "No pull requests";
     detail = (
       <div className="console-pane">
         <div className="console-pane-body">
           {!githubStatus.loading && githubStatus.connected === false ? (
-            <div className="console-github-pane-status">
+            <div className="console-github-pane-status console-github-pane-status--centered">
               <p>GitHub is not connected.</p>
               {githubStatus.reason ? <p>{githubStatus.reason}</p> : null}
               <p>
@@ -849,16 +863,13 @@ export function CodebaseProjectWorkbench({
                 </button>
               </p>
             </div>
-          ) : !apiProject.githubRepository ? (
-            <div className="console-github-pane-status">
-              <p>
-                Select a GitHub repository above the list to load history.
-              </p>
-            </div>
           ) : (
-            <div className="console-github-pane-status">
-              <p>Select an item from the list.</p>
-            </div>
+            <HairlineEmptyFigure
+              figure="hub"
+              size={220}
+              label={githubEmptyCaption}
+              caption={githubEmptyCaption}
+            />
           )}
         </div>
       </div>
@@ -867,13 +878,17 @@ export function CodebaseProjectWorkbench({
     detail = (
       <div className="console-pane">
         <div className="console-pane-body">
-          <div className="console-github-pane-status">
-            <p>
-              {workingDirectory
-                ? "Select a file from the tree."
-                : "Set a working directory to browse local files."}
-            </p>
-          </div>
+          {workingDirectory ? (
+            <HairlineEmptyFigure
+              size={220}
+              label="No files"
+              caption="No files"
+            />
+          ) : (
+            <div className="console-github-pane-status">
+              <p>Set a working directory to browse local files.</p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -883,13 +898,42 @@ export function CodebaseProjectWorkbench({
         {docsPanel ?? (
           <div className="console-pane">
             <div className="console-pane-body">
-              <div className="console-github-pane-status">
-                <p>Select a document from the list.</p>
-              </div>
+              <HairlineEmptyFigure
+                size={220}
+                label="No documents"
+                caption="No documents"
+              />
             </div>
           </div>
         )}
       </div>
+    );
+  } else if (selection.tab === "overview") {
+    detail = (
+      <ProjectOverviewDescriptionPane
+        name={apiProject.name}
+        icon={apiProject.icon}
+        type={apiProject.type}
+        description={overviewReadme.body}
+        emptyHint={
+          overviewReadme.error ??
+          (workingDirectory
+            ? "Add a README.md…"
+            : "Set a working directory to load README.md.")
+        }
+        shortcutsEnabled={keepAliveActive && Boolean(workingDirectory)}
+        onIconChange={async (nextIcon) => {
+          setApiProject((current) => ({ ...current, icon: nextIcon }));
+          onProjectPatched({ icon: nextIcon });
+        }}
+        onSaveDescription={
+          workingDirectory
+            ? async (description) => {
+                await overviewReadme.save(description);
+              }
+            : undefined
+        }
+      />
     );
   } else if (selection.tab === "tasks") {
     detail = (
@@ -949,11 +993,9 @@ export function CodebaseProjectWorkbench({
     selection.tab === "docs" ||
     selection.tab === "commits" ||
     selection.tab === "pulls";
-  const itemDetailOpen =
-    (selection.tab === "files" && Boolean(activeFilePath)) ||
-    (selection.tab === "docs" && Boolean(selection.documentPath)) ||
-    (selection.tab === "commits" && Boolean(selection.commitSha)) ||
-    (selection.tab === "pulls" && selection.pullNumber != null);
+  // Keep the left list column for Files/Docs/Commits/PRs even when nothing is
+  // selected, so create actions and empty-state chrome stay visible.
+  const showListDetailSplit = contentListTab;
 
   return (
     <div
@@ -1011,31 +1053,31 @@ export function CodebaseProjectWorkbench({
         />
       </div>
       <div className="codebase-project-workbench__detail">
-        <div className="projects-overview__area-nav codebase-project-workbench__tabs">
-          <PillNav
-            ariaLabel="Project contents"
-            className="projects-overview__area-pills"
-            items={CODEBASE_LIST_TAB_OPTIONS}
-            value={selection.tab}
-            onChange={handleTabChange}
-          />
-        </div>
+        {hideTabBar ? null : (
+          <div className="projects-overview__area-nav codebase-project-workbench__tabs">
+            <PillNav
+              ariaLabel="Project contents"
+              className="projects-overview__area-pills"
+              items={CODEBASE_LIST_TAB_OPTIONS}
+              value={selection.tab}
+              onChange={handleTabChange}
+            />
+          </div>
+        )}
         <div className="codebase-project-workbench__tab-body">
           {contentListTab ? (
             <div
               ref={tabListContainerRef}
               className={[
                 "codebase-project-workbench__list-detail",
-                itemDetailOpen
+                showListDetailSplit
                   ? null
                   : "codebase-project-workbench__list-detail--list-only",
                 selection.tab === "docs" ||
                 selection.tab === "commits" ||
+                selection.tab === "pulls" ||
                 selection.tab === "files"
                   ? "codebase-project-workbench__list-detail--framed"
-                  : null,
-                selection.tab === "files"
-                  ? "codebase-project-workbench__list-detail--files"
                   : null,
                 isTabListResizing ? "is-resizing" : null,
               ]
@@ -1065,7 +1107,7 @@ export function CodebaseProjectWorkbench({
                   githubRefreshToken={githubRefreshToken}
                   showTabs={false}
                 />
-                {itemDetailOpen ? (
+                {showListDetailSplit ? (
                   <div
                     role="separator"
                     aria-orientation="vertical"
@@ -1081,7 +1123,7 @@ export function CodebaseProjectWorkbench({
                   />
                 ) : null}
               </div>
-              {itemDetailOpen ? (
+              {showListDetailSplit ? (
                 <div className="codebase-project-workbench__tab-detail">
                   {detail}
                 </div>

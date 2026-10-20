@@ -30,7 +30,6 @@ import {
   getFirstInboxItemHref,
   getJournalHref,
   getOrganizationsGroupHref,
-  getScopedProjectSectionHref,
   getSelectedSpaceRootFromPathname,
   getSocialHref,
   getUniqueListItemRouteParam,
@@ -50,11 +49,7 @@ import {
 } from "@backsteros/ui";
 import {
   getKnowledgeHref,
-  getProjectRouteParamFromPathname,
-  getProjectRouteScopeFromPathname,
-  getScopedProjectDocumentHref,
   getTodayJournalDateSlug,
-  isProjectLettersSectionPath,
 } from "@backsteros/ui/navigation";
 
 import { useDesktopApi } from "../lib/api-context";
@@ -105,7 +100,6 @@ import {
   DesktopJournalSidePanel,
   DesktopKnowledgeSidePanel,
   DesktopLettersSidePanel,
-  DesktopProjectDocumentsSidePanel,
   DesktopSocialSidePanel,
 } from "./app-shell-side-panels-lazy";
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
@@ -155,7 +149,7 @@ export function resolveSidePanelTree(
 export function keepAliveSidePanelTree(
   surface: Surface,
   onNavigate: PanelNav,
-  pathname = "",
+  _pathname = "",
 ): ReactNode {
   switch (surface) {
     case "inbox":
@@ -168,11 +162,9 @@ export function keepAliveSidePanelTree(
       return <HabitsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "knowledge":
       return <KnowledgeKeepAliveSidePanel onNavigate={onNavigate} />;
-    case "projects": {
-      const parts = pathname.split("/").filter(Boolean);
-      if (parts.length < 2) return null;
-      return <ProjectKeepAliveSidePanel onNavigate={onNavigate} />;
-    }
+    case "projects":
+      // Documents / letters lists are embedded in project content.
+      return null;
     case "contacts":
       return <ContactsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "organizations":
@@ -882,152 +874,6 @@ export function KnowledgeKeepAliveSidePanel({
             // Restore real parent for root-level items when reordering.
             parentId:
               item.parentId ?? spaceRoot?.id ?? null,
-            sortOrder: item.sortOrder ?? 0,
-            icon: item.icon ?? null,
-          })),
-          workspaceActions,
-        )
-      }
-    />
-  );
-}
-
-export function ProjectKeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const { pathname } = useShellLocation();
-  const lettersReady = useWorkspaceSurfaceReady("letters");
-  const { projectDocuments } = useDesktopWorkspaceDocuments();
-  const { letters, projects } = useDesktopWorkspaceProjects();
-  const workspaceActions = useDesktopWorkspaceActions();
-  const projectRouteParam = getProjectRouteParamFromPathname(pathname);
-  const projectRouteScope = getProjectRouteScopeFromPathname(pathname);
-  const activeProject = projectRouteParam
-    ? (projects.find(
-        (project) =>
-          project.id === projectRouteParam ||
-          project.key.toLowerCase() === projectRouteParam.toLowerCase(),
-      ) ?? null)
-    : null;
-
-  const projectDocumentsForPanel = useMemo(() => {
-    if (!activeProject) return [];
-    return projectDocuments.filter(
-      (document) => document.projectId === activeProject.id,
-    );
-  }, [activeProject, projectDocuments]);
-
-  const projectLettersForPanel = useMemo(() => {
-    if (!activeProject) return [];
-    return letters.filter(
-      (letter) =>
-        letter.projectId === activeProject.id ||
-        (letter.projectKey &&
-          letter.projectKey.toLowerCase() === activeProject.key.toLowerCase()),
-    );
-  }, [activeProject, letters]);
-
-  if (!activeProject) return null;
-  const projectKey = activeProject.key;
-
-  if (isProjectLettersSectionPath(pathname)) {
-    return (
-      <DesktopLettersSidePanel
-        onNavigate={onNavigate}
-        pathname={pathname}
-        items={projectLettersForPanel}
-        loading={!lettersReady}
-        getLetterHref={(letter) =>
-          resolveLetterDetailHref({
-            id: letter.id,
-            number: letter.number,
-            listBaseHref: getScopedProjectSectionHref(
-              projectKey,
-              "letters",
-              projectRouteScope,
-            ),
-          })
-        }
-        onAdd={() => {
-          void workspaceActions
-            .createLetter({
-              title: "New letter",
-              projectId: activeProject.id,
-            })
-            .then((created) => {
-              const href = resolveLetterDetailHref({
-                id: created.id,
-                number: created.number,
-                listBaseHref: getScopedProjectSectionHref(
-                  projectKey,
-                  "letters",
-                  projectRouteScope,
-                ),
-              });
-              primeTabTitle(href, "New letter");
-              onNavigate(href);
-            });
-        }}
-      />
-    );
-  }
-
-  return (
-    <DesktopProjectDocumentsSidePanel
-      onNavigate={onNavigate}
-      pathname={pathname}
-      items={projectDocumentsForPanel}
-      getDocumentHref={(pathOrId) =>
-        getScopedProjectDocumentHref(projectKey, pathOrId, projectRouteScope)
-      }
-      onAdd={(parentFolderId) => {
-        void workspaceActions
-          .createProjectDocument({
-            projectId: activeProject.id,
-            title: "Untitled",
-            parentId: parentFolderId,
-          })
-          .then((created) => {
-            onNavigate(
-              getScopedProjectDocumentHref(
-                projectKey,
-                created.path || created.id,
-                projectRouteScope,
-              ),
-            );
-          });
-      }}
-      onCreateFolder={async ({ title, parentId }) => {
-        try {
-          await workspaceActions.createProjectFolder({
-            projectId: activeProject.id,
-            title,
-            parentId,
-          });
-          return { ok: true };
-        } catch (error) {
-          return {
-            ok: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not create folder.",
-          };
-        }
-      }}
-      onRename={(id, title) => workspaceActions.renameDocument(id, title)}
-      onDelete={(id) => workspaceActions.deleteDocument(id)}
-      onReorderTreeItem={(request) =>
-        handleDocumentTreeReorder(
-          request,
-          projectDocumentsForPanel.map((item) => ({
-            id: item.id,
-            title: item.title,
-            path: item.path ?? item.id,
-            kind: item.kind === "folder" ? "folder" : "document",
-            parentId: item.parentId ?? null,
             sortOrder: item.sortOrder ?? 0,
             icon: item.icon ?? null,
           })),

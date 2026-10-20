@@ -116,6 +116,7 @@ body.app-is-dragging * {
 }
 
 .task-kanban-card {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   width: 100%;
@@ -134,6 +135,52 @@ body.app-is-dragging * {
   transition:
     border-color 120ms ease,
     background 120ms ease;
+}
+
+.task-kanban-card-pin {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-end: 6px;
+  z-index: 2;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #171718 88%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.task-kanban-card--pinnable:hover .task-kanban-card-pin,
+.task-kanban-card--pinnable:focus-within .task-kanban-card-pin,
+.task-kanban-card--pinned .task-kanban-card-pin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.task-kanban-card-pin:hover,
+.task-kanban-card-pin:focus-visible {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, #171718);
+  outline: none;
+}
+
+.task-kanban-card--pinned .task-kanban-card-pin {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--foreground) 24%, transparent);
 }
 
 .task-kanban-card:hover,

@@ -683,16 +683,17 @@ export const projects = pgTable(
      */
     penpotProjectId: text("penpot_project_id"),
     /**
-     * Absolute path on the developer's machine for agent/PTY cwd.
-     * Not multi-device; stored so the Development console persists across reloads.
+     * Absolute path on the developer's machine for agent/PTY cwd and local
+     * execution. Not multi-device; for codebase defaults to `{vault}/Codebase`.
      */
     localWorkingDirectory: text("local_working_directory"),
     /**
-     * Per-environment execution paths for `type = codebase` (OS-106).
-     * Distinct from {@link localWorkingDirectory} (canonical local codebase location).
+     * Remote execution paths for `type = codebase` (OS-106).
+     * Local runs use {@link localWorkingDirectory} only.
      */
     developmentLocation: text("development_location"),
     productionLocation: text("production_location"),
+    /** @deprecated Folded into local_working_directory; kept for sync compat. */
     localLocation: text("local_location"),
     /** `pending` | `ready` | `failed` — one-time development-server clone (OS-106). */
     developmentSetupStatus: text("development_setup_status"),

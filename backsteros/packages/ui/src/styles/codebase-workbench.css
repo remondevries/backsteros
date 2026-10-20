@@ -2278,6 +2278,11 @@
   overflow: hidden;
 }
 
+.console-fs-tree-pane > .console-docs-tree {
+  min-height: 0;
+  flex: 1;
+}
+
 .console-docs-tree {
   min-width: 0;
   min-height: 0;
@@ -2296,6 +2301,38 @@
   padding: 0 2px 4px;
 }
 
+.console-docs-tree__header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 4px 6px 8px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-docs-tree__header-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.console-docs-tree__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.console-docs-tree__header-actions .app-side-panel-section-action {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.console-docs-tree__header-actions .app-side-panel-section-action:hover {
+  color: var(--foreground);
+}
+
 .console-docs-tree__main {
   min-width: 0;
   min-height: 0;
@@ -2312,6 +2349,15 @@
 .console-docs-tree__main .app-content-side-panel-empty {
   padding: 12px 8px;
   font-size: 13px;
+}
+
+.console-docs-tree__main .app-content-side-panel-empty:has(.hairline-empty-figure) {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .console-fs-tree {
@@ -3057,6 +3103,16 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   height: 100%;
 }
 
+/* Overview tab reuses document embedded scroll + centered 800px column. */
+.codebase-project-workbench__overview.markdown-document-embedded {
+  height: 100%;
+}
+
+.codebase-project-workbench__overview .project-overview-icon__trigger {
+  width: 32px;
+  height: 32px;
+}
+
 .codebase-project-workbench__detail > .console-github-pane-status {
   padding: 16px;
 }
@@ -3126,20 +3182,80 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   flex-shrink: 0;
 }
 
-.project-panel-identity__title {
+.project-panel-identity__icon {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
   min-width: 0;
 }
 
-.project-panel-identity__title .overview-name-editor {
+.project-panel-identity__name {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
+.project-panel-identity__name .overview-name-editor {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
-.project-panel-identity__title .content-detail-title {
+.project-panel-identity__name .content-detail-title {
   font-size: 20px;
+}
+
+.project-panel-identity > .entity-overview-subgroup {
+  margin-top: 4px;
+}
+
+.project-panel-identity .entity-overview-subgroup__fields {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.project-panel-identity .entity-overview-field {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.project-panel-identity .entity-overview-field__label {
+  box-sizing: border-box;
+  width: 7.25rem;
+  flex: 0 0 7.25rem;
+  padding-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.project-panel-identity .entity-overview-field > :not(.entity-overview-field__label) {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* Keep chips/dropdowns hug content on the left — don't stretch or center. */
+.project-panel-identity .entity-overview-field .searchable-dropdown-root,
+.project-panel-identity .entity-overview-field .property-dropdown,
+.project-panel-identity .entity-overview-field .property-dropdown-navigate-row,
+.project-panel-identity .entity-overview-field .property-dropdown-trigger,
+.project-panel-identity .entity-overview-field .contact-detail-chips,
+.project-panel-identity .entity-overview-field .project-detail__meta-dates,
+.project-panel-identity .entity-overview-field .project-detail__area-fields {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: 0;
+  flex: none;
+  align-self: flex-start;
+  justify-content: flex-start;
 }
 
 .project-panel-identity .project-detail__description-body,
@@ -3154,14 +3270,9 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   overflow: visible;
 }
 
-.project-panel-identity__activity {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
-}
-
-.project-panel-identity__activity .task-activity {
+.project-panel-identity .entity-overview-subgroup[data-subgroup="Activities"] .task-activity {
   max-width: none;
+  width: 100%;
 }
 
 .codebase-project-workbench__tabs {
@@ -3178,6 +3289,7 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   overflow: hidden;
 }
 
+.codebase-project-workbench__tab-body > .codebase-project-workbench__overview,
 .codebase-project-workbench__tab-body > .codebase-project-workbench__tasks,
 .codebase-project-workbench__tab-body > .codebase-project-workbench__updates,
 .codebase-project-workbench__tab-body > .codebase-project-workbench__timetracking,
@@ -3216,23 +3328,8 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
     .codebase-project-workbench__list-detail--list-only
   )
   .codebase-project-workbench__tab-list {
-  border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-}
-
-.codebase-project-workbench__list-detail--framed:not(
-    .codebase-project-workbench__list-detail--list-only
-  )
-  .codebase-project-workbench__tab-list {
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  /* Same divider as documents/files and the project side panel. */
   border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  border-top-right-radius: 8px;
-}
-
-.codebase-project-workbench__list-detail--files:not(
-    .codebase-project-workbench__list-detail--list-only
-  )
-  .codebase-project-workbench__tab-list {
-  border-top-right-radius: 0;
 }
 
 .codebase-project-workbench__list-detail--framed:not(

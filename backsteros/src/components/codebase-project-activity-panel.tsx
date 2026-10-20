@@ -1,16 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskActivity } from "@backsteros/contracts";
 import {
   TASK_SYSTEM_ACTIVITY_TYPES,
   activityTypesQuery,
 } from "@backsteros/contracts";
 import {
+  AgentActivityIcon,
+  ContactPersonIcon,
+  DefaultProjectIcon,
   getTaskPriorityLabel,
   getTaskStatusLabel,
   isTaskStatus,
+  migrateLegacyTaskStatus,
+  TaskDueDateIcon,
+  TaskPriorityIcon,
+  TaskStatusIcon,
+  TasksNavIcon,
 } from "@backsteros/ui";
+import { Play } from "lucide-react";
 
 import { usePowerSyncQuery } from "../lib/powersync-context";
 
@@ -117,6 +126,52 @@ function describeActivity(
   if (type === "timer_stopped") return "stopped a timer";
   if (type === "agent_worked") return "worked on the task";
   return type.replace(/_/g, " ");
+}
+
+/** Type markers matching task-detail activity (project feed has no avatar map). */
+function ProjectActivityLeadingIcon({
+  type,
+  data,
+}: {
+  type: string;
+  data: Record<string, unknown>;
+}): ReactNode {
+  if (type === "status_changed" && typeof data.to === "string" && data.to.trim()) {
+    const status = isTaskStatus(data.to)
+      ? data.to
+      : migrateLegacyTaskStatus(data.to);
+    return <TaskStatusIcon status={status} size={12} />;
+  }
+  if (type === "priority_changed") {
+    const priority = typeof data.to === "number" ? data.to : Number(data.to);
+    return (
+      <TaskPriorityIcon
+        priority={Number.isFinite(priority) ? priority : 0}
+        size={12}
+      />
+    );
+  }
+  if (type === "due_date_changed") {
+    return <TaskDueDateIcon active={data.to != null} size={12} />;
+  }
+  if (type === "assignee_changed" || type === "related_contacts_changed") {
+    return <ContactPersonIcon size={12} />;
+  }
+  if (type === "project_changed") {
+    return <DefaultProjectIcon size={12} />;
+  }
+  if (type === "timer_started" || type === "timer_stopped") {
+    return <Play size={12} className="task-activity-event__glyph" aria-hidden />;
+  }
+  if (type === "agent_worked") {
+    return (
+      <AgentActivityIcon size={12} className="task-activity-event__glyph" />
+    );
+  }
+  if (type === "created") {
+    return <TasksNavIcon className="task-activity-event__glyph" />;
+  }
+  return <span className="task-activity-event__glyph-fallback" />;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -341,9 +396,6 @@ export function CodebaseProjectActivityPanel({
 
   return (
     <section className="task-activity" aria-label="Project activity">
-      <header className="task-activity__header">
-        <h3 className="task-activity__title">Activity</h3>
-      </header>
       <div className="task-activity__feed">
         {loading ? <p className="task-activity__empty">Loading activity…</p> : null}
         {!loading && error ? (
@@ -376,7 +428,12 @@ export function CodebaseProjectActivityPanel({
                       className="task-activity-event__rail"
                       aria-hidden="true"
                     >
-                      <span className="task-activity-event__marker" />
+                      <span className="task-activity-event__marker" aria-hidden="true">
+                        <ProjectActivityLeadingIcon
+                          type={row.type}
+                          data={row.data}
+                        />
+                      </span>
                     </span>
                   </span>
                   <div className="task-activity-event__text">

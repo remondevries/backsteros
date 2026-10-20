@@ -56,6 +56,7 @@ export type ProjectFsClient = {
 };
 
 export type CodebaseGithubListTab =
+  | "overview"
   | "tasks"
   | "timetracking"
   | "files"

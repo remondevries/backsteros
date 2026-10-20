@@ -160,9 +160,12 @@ export function ContactPortalTabView({
   onSendPasswordReset,
   onSendInvite,
 }: ContactPortalTabViewProps) {
+  const settingsContentKey = JSON.stringify(normalizePortalSettings(settings));
   const initial = useMemo(
     () => normalizePortalSettings(settings),
-    [settings],
+    // Content key — PowerSync re-emits a new `settings` object every watch tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+    [settingsContentKey],
   );
   const [draft, setDraft] = useState<ContactPortalSettings>(initial);
   const [username, setUsername] = useState(portalUsername ?? "");
@@ -176,6 +179,11 @@ export function ContactPortalTabView({
   const usernameRef = useRef(username);
   /** Optimistic username while REST/PowerSync props catch up — avoids revert flicker. */
   const pendingUsernameRef = useRef<string | null>(null);
+  /**
+   * Optimistic portal settings (languages, toggles, …) while props catch up.
+   * Same race as username: PowerSync identity churn was wiping draft via setDraft(initial).
+   */
+  const pendingSettingsKeyRef = useRef<string | null>(null);
   const portalUsernamePropRef = useRef(portalUsername ?? "");
 
   useEffect(() => {
@@ -190,9 +198,20 @@ export function ContactPortalTabView({
     portalUsernamePropRef.current = portalUsername ?? "";
   }, [portalUsername]);
 
-  // Settings object identity changes often (PowerSync). Never reset username here.
+  // Settings object identity changes often (PowerSync). Hold optimistic draft
+  // until the synced content matches the pending write (languages, ACL, …).
   useEffect(() => {
+    const incomingKey = JSON.stringify(initial);
+    if (pendingSettingsKeyRef.current !== null) {
+      if (incomingKey === pendingSettingsKeyRef.current) {
+        pendingSettingsKeyRef.current = null;
+        setDraft(initial);
+        draftRef.current = initial;
+      }
+      return;
+    }
     setDraft(initial);
+    draftRef.current = initial;
   }, [initial]);
 
   useEffect(() => {
@@ -328,7 +347,9 @@ export function ContactPortalTabView({
     portalUsername?: string | null;
     portalPassword?: string | null;
   }): Promise<void> {
-    const nextSettings = input.settings ?? draftRef.current;
+    const nextSettings = input.settings
+      ? normalizePortalSettings(input.settings)
+      : draftRef.current;
     const nextUsername =
       input.portalUsername !== undefined
         ? input.portalUsername
@@ -336,8 +357,9 @@ export function ContactPortalTabView({
           portalUsernamePropRef.current.trim() ||
           null;
     if (input.settings) {
-      setDraft(input.settings);
-      draftRef.current = input.settings;
+      pendingSettingsKeyRef.current = JSON.stringify(nextSettings);
+      setDraft(nextSettings);
+      draftRef.current = nextSettings;
     }
     if (input.portalUsername !== undefined) {
       const display = input.portalUsername ?? "";
@@ -353,6 +375,11 @@ export function ContactPortalTabView({
           input.portalPassword !== undefined ? input.portalPassword : null,
       }),
     ).catch((error) => {
+      if (input.settings) {
+        pendingSettingsKeyRef.current = null;
+        setDraft(initial);
+        draftRef.current = initial;
+      }
       if (input.portalUsername !== undefined) {
         pendingUsernameRef.current = null;
         const revert = portalUsernamePropRef.current;
@@ -639,10 +666,13 @@ export function ContactPortalTabView({
           languages={draft.languages}
           onChange={(next) => {
             const languages = coerceContactLanguages(next).slice(0, 1);
-            setDraft((current) => ({
-              ...current,
+            const nextSettings = normalizePortalSettings({
+              ...draftRef.current,
               languages,
-            }));
+            });
+            pendingSettingsKeyRef.current = JSON.stringify(nextSettings);
+            setDraft(nextSettings);
+            draftRef.current = nextSettings;
           }}
           onSave={(next) => {
             patchSettings({

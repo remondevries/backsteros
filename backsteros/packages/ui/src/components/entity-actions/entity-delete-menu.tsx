@@ -48,7 +48,18 @@ export function EntityDeleteMenu() {
       label: item.label,
       danger: item.danger,
       disabled: busy || Boolean(item.disabled),
+      trailingLabel: item.trailingLabel,
+      submenu: item.submenu?.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        selected: entry.selected,
+        disabled: busy || Boolean(entry.disabled),
+        onSelect: entry.onSelect,
+      })),
       onSelect: () => {
+        if (item.submenu?.length) {
+          return;
+        }
         if (item.confirm) {
           openDeleteModal({
             entityLabel: item.confirm.entityLabel,

@@ -53,30 +53,68 @@
   margin: 0;
   padding: 0;
   min-height: 0;
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
   box-sizing: border-box;
 }
 
 .backsteros-project-tasks__header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 10px;
+  align-items: center;
+  flex-shrink: 0;
+  /* Match .backsteros-project-tasks__list-scroll horizontal inset (10px). */
+  padding: 10px 10px 8px;
+  box-sizing: border-box;
 }
 
-.backsteros-project-tasks__title {
+.backsteros-project-tasks__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
+}
+
+.backsteros-project-tasks__search-icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 10px;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  pointer-events: none;
+}
+
+.backsteros-project-tasks__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px 7px 30px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  font: inherit;
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-weight: 500;
+  line-height: 1.2;
+  outline: none;
 }
 
-.backsteros-project-tasks__meta {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
+.backsteros-project-tasks__search-input::placeholder {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 400;
+}
+
+.backsteros-project-tasks__search-input:focus,
+.backsteros-project-tasks__search-input:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.backsteros-project-tasks__search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .backsteros-project-tasks__body {
@@ -113,7 +151,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 8px 0 10px;
+  padding: 8px 10px 8px;
   background: var(--color-background-primary, #18181a);
 }
 
@@ -160,7 +198,9 @@
 .backsteros-project-tasks .overview-name-editor__input,
 .backsteros-project-tasks .overview-name-editor__button,
 .backsteros-task-detail-pane .overview-name-editor__input,
-.backsteros-task-detail-pane .overview-name-editor__button {
+.backsteros-task-detail-pane .overview-name-editor__button,
+.backsteros-pinned-task-popover .overview-name-editor__input,
+.backsteros-pinned-task-popover .overview-name-editor__button {
   margin: 0 !important;
   font: inherit !important;
   font-size: inherit !important;
@@ -193,6 +233,7 @@
 }
 
 .backsteros-task-detail-pane__chrome {
+  --task-detail-chrome-inline: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -206,7 +247,13 @@
 }
 
 .backsteros-task-detail-pane__back {
+  /*
+   * Slide with margin — not transform. Penpot/Tailwind often zero `transform`
+   * on buttons, and macOS reduce-motion kills transform transitions.
+   * Margin still animates and is unaffected by prefers-reduced-motion.
+   */
   margin: 0;
+  margin-inline-start: 0;
   padding: 4px 8px;
   border: 0;
   border-radius: 6px;
@@ -216,9 +263,14 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  transition:
+    margin-inline-start 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .backsteros-task-detail-pane__back:hover {
+  margin-inline-start: var(--task-detail-chrome-inline, 10px);
   background: rgb(255 255 255 / 0.06);
   color: var(--foreground);
 }
@@ -229,6 +281,40 @@
   align-items: center;
   gap: 6px;
   margin-inline-start: auto;
+}
+
+/*
+ * Portaled ⋯ menu mounts on document.body. Island shell uses
+ * --background: transparent — give the panel a solid surface + item colors
+ * so Penpot button/link styles do not paint Delete yellow.
+ */
+[data-entity-header-action-menu].entity-header-action-menu {
+  --foreground: var(--color-foreground-primary, #ededed);
+  --background: var(--color-background-tertiary, #2e2e32);
+  --sidebar-surface-1: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+  background: var(--color-background-tertiary, #2e2e32);
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.45);
+}
+
+[data-entity-header-action-menu] .entity-header-action-menu__item {
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+
+[data-entity-header-action-menu] .entity-header-action-menu__item:hover:not(:disabled) {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+[data-entity-header-action-menu] .entity-header-action-menu-item-danger {
+  color: #f87171;
+}
+
+[data-entity-header-action-menu]
+  .entity-header-action-menu-item-danger:hover:not(:disabled) {
+  color: #fca5a5;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
 }
 
 .backsteros-task-detail-pane__timer {
@@ -350,7 +436,8 @@
 
 .backsteros-project-tasks--rail .backsteros-project-tasks__header {
   flex-shrink: 0;
-  padding: 12px 14px 10px;
+  /* Same 10px inline pad as __list-scroll so the field lines up with cards. */
+  padding: 10px 10px 8px;
 }
 
 .backsteros-project-tasks__list-scroll {
@@ -457,4 +544,541 @@ a.task-link-attachments__link:visited {
 .task-link-attachments__row:hover,
 .task-link-attachments__row:focus-within {
   background: color-mix(in srgb, var(--foreground, #ededed) 12%, transparent);
+}
+
+/* Workspace left sidebar — pinned tasks dock */
+.backsteros-pinned-tasks-dock {
+  --pinned-dock-header-height: 34px;
+  --pinned-dock-inline-pad: 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-sizing: border-box;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border-block-start: 0.5px solid
+    color-mix(in srgb, var(--foreground, #ededed) 12%, transparent);
+  background: var(--color-background-primary, #18181a);
+}
+
+.backsteros-pinned-tasks-dock--collapsed {
+  height: auto;
+  overflow: visible;
+  padding-block: 8px;
+  padding-inline: var(--pinned-dock-inline-pad);
+}
+
+.backsteros-pinned-tasks-dock--resizing {
+  user-select: none;
+}
+
+.backsteros-pinned-tasks-dock__resize {
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline: 0;
+  z-index: 3;
+  height: 7px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.backsteros-pinned-tasks-dock__resize::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline: 28%;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.backsteros-pinned-tasks-dock__resize:hover::after,
+.backsteros-pinned-tasks-dock--resizing .backsteros-pinned-tasks-dock__resize::after {
+  background: color-mix(in srgb, var(--foreground, #ededed) 28%, transparent);
+}
+
+.backsteros-pinned-tasks-dock__header {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: var(--pinned-dock-header-height);
+  padding-block: 8px 10px;
+  padding-inline: var(--pinned-dock-inline-pad);
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.backsteros-pinned-tasks-dock--collapsed .backsteros-pinned-tasks-dock__header {
+  position: relative;
+  inset: auto;
+  min-height: 0;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.backsteros-pinned-tasks-dock__header::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--color-background-primary, #18181a) 0%,
+    color-mix(
+        in srgb,
+        var(--color-background-primary, #18181a) 72%,
+        transparent
+      )
+      45%,
+    transparent 100%
+  );
+}
+
+.backsteros-pinned-tasks-dock__header > * {
+  pointer-events: auto;
+}
+
+.backsteros-pinned-tasks-dock__toggle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.backsteros-pinned-tasks-dock__toggle:hover .backsteros-pinned-tasks-dock__title,
+.backsteros-pinned-tasks-dock__toggle:hover .backsteros-pinned-tasks-dock__chevron {
+  color: color-mix(in srgb, var(--foreground, #ededed) 78%, transparent);
+}
+
+.backsteros-pinned-tasks-dock__chevron {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground, #ededed) 48%, transparent);
+  transform: rotate(90deg);
+  transition: transform 140ms ease, color 120ms ease;
+}
+
+.backsteros-pinned-tasks-dock__chevron[data-collapsed="true"] {
+  transform: rotate(0deg);
+}
+
+.backsteros-pinned-tasks-dock__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground, #ededed) 55%, transparent);
+  transition: color 120ms ease;
+}
+
+.backsteros-pinned-tasks-dock__count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground, #ededed) 40%, transparent);
+}
+
+.backsteros-pinned-tasks-dock__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-height: 0;
+  margin: 0;
+  /* Edge-to-edge scrollport — pad content, keep the scrollbar on the rail. */
+  padding-block: var(--pinned-dock-header-height) 10px;
+  padding-inline: var(--pinned-dock-inline-pad);
+  list-style: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.backsteros-pinned-tasks-dock__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  touch-action: none;
+}
+
+.backsteros-pinned-tasks-dock__item--dragging {
+  z-index: 1;
+  opacity: 0.72;
+}
+
+.backsteros-pinned-tasks-dock--reordering {
+  user-select: none;
+}
+
+.backsteros-pinned-tasks-dock__open {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground, #ededed) 10%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground, #ededed) 3%, transparent);
+  color: var(--foreground, #ededed);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Only while actively dragging — hover stays a normal pointer. */
+body.backsteros-pinned-tasks-reordering,
+body.backsteros-pinned-tasks-reordering * {
+  cursor: grabbing !important;
+}
+
+.backsteros-pinned-tasks-dock__item--dragging .backsteros-pinned-tasks-dock__open {
+  border-color: color-mix(in srgb, var(--foreground, #ededed) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground, #ededed) 10%, transparent);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.35);
+}
+
+.backsteros-pinned-tasks-dock__item:hover .backsteros-pinned-tasks-dock__open,
+.backsteros-pinned-tasks-dock__item:focus-within .backsteros-pinned-tasks-dock__open {
+  padding-inline-end: 28px;
+}
+
+.backsteros-pinned-tasks-dock__open:hover {
+  background: color-mix(in srgb, var(--foreground, #ededed) 7%, transparent);
+  border-color: color-mix(in srgb, var(--foreground, #ededed) 18%, transparent);
+}
+
+.backsteros-pinned-tasks-dock__id {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground, #ededed) 45%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.backsteros-pinned-tasks-dock__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.backsteros-pinned-tasks-dock__unpin {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 4px;
+  z-index: 1;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground, #ededed) 55%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.backsteros-pinned-tasks-dock__item:hover .backsteros-pinned-tasks-dock__unpin,
+.backsteros-pinned-tasks-dock__item:focus-within .backsteros-pinned-tasks-dock__unpin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.backsteros-pinned-tasks-dock__unpin:hover {
+  color: var(--foreground, #ededed);
+  background: color-mix(in srgb, var(--foreground, #ededed) 10%, transparent);
+}
+
+.backsteros-pinned-tasks-dock__open--active {
+  background: color-mix(in srgb, var(--foreground, #ededed) 10%, transparent);
+  border-color: color-mix(in srgb, var(--foreground, #ededed) 24%, transparent);
+}
+
+/* Anchored pinned-task detail (portaled to body — not a full-screen modal). */
+/*
+ * Portaled property menus (status/priority/assignee/due) must sit above the
+ * pinned popover (10050). Shared for the whole island so rail detail works too.
+ */
+[data-searchable-dropdown-panel],
+[data-due-date-calendar-popover],
+[data-task-link-modal] {
+  z-index: 10120 !important;
+}
+
+.backsteros-pinned-task-popover {
+  --pinned-popover-bg: #1c1c1e;
+  --keyboard-nav-highlight-color: #ee7a47;
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+  position: fixed;
+  z-index: 10050;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Grow with content; one scroll only when it hits the viewport. */
+  max-height: calc(100vh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground, #ededed) 16%, transparent);
+  border-radius: 10px;
+  background: var(--pinned-popover-bg);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.45),
+    0 1px 0 color-mix(in srgb, var(--foreground, #ededed) 6%, transparent);
+  color: var(--foreground, #ededed);
+  pointer-events: auto;
+}
+
+.backsteros-pinned-task-popover--sized {
+  max-height: none;
+}
+
+/*
+ * Sticky chrome: same fade as the pinned-tasks dock header so the id / timer
+ * / expand / close stay readable while the body scrolls underneath.
+ */
+.backsteros-pinned-task-popover__header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-inline: -12px;
+  padding: 10px 12px 22px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  isolation: isolate;
+}
+
+.backsteros-pinned-task-popover__header::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--pinned-popover-bg) 0%,
+    var(--pinned-popover-bg) 55%,
+    color-mix(in srgb, var(--pinned-popover-bg) 88%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+.backsteros-pinned-task-popover--dragging,
+.backsteros-pinned-task-popover--resizing {
+  user-select: none;
+}
+
+.backsteros-pinned-task-popover--dragging .backsteros-pinned-task-popover__header {
+  cursor: grabbing;
+}
+
+.backsteros-pinned-task-popover__resize {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.backsteros-pinned-task-popover__resize--e {
+  inset-block: 10px 14px;
+  inset-inline-end: -3px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.backsteros-pinned-task-popover__resize--s {
+  inset-inline: 10px 14px;
+  inset-block-end: -3px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.backsteros-pinned-task-popover__resize--se {
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.backsteros-pinned-task-popover__header-end {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+  touch-action: auto;
+}
+
+.backsteros-pinned-task-popover__id {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--foreground, #ededed) 48%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backsteros-pinned-task-popover__timer {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.backsteros-pinned-task-popover__timer .tracked-time-pill-wrap {
+  margin: 0;
+}
+
+.backsteros-pinned-task-popover__timer .tracked-time-pill {
+  min-height: 22px;
+  padding: 0 6px 0 4px;
+  font-size: 11px;
+}
+
+.backsteros-pinned-task-popover__timer .tracked-time-pill__toggle {
+  width: 16px;
+  height: 16px;
+}
+
+.backsteros-pinned-task-popover__timer .tracked-time-pill__hint {
+  display: none;
+}
+
+.backsteros-pinned-task-popover__expand,
+.backsteros-pinned-task-popover__close {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground, #ededed) 50%, transparent);
+  cursor: pointer;
+}
+
+.backsteros-pinned-task-popover__expand {
+  color: color-mix(in srgb, var(--foreground, #ededed) 55%, transparent);
+}
+
+.backsteros-pinned-task-popover__close {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.backsteros-pinned-task-popover__expand:hover,
+.backsteros-pinned-task-popover__close:hover {
+  color: var(--foreground, #ededed);
+  background: color-mix(in srgb, var(--foreground, #ededed) 8%, transparent);
+}
+
+.backsteros-pinned-task-popover__expand svg {
+  display: block;
+}
+
+/* Full TaskDetailView (editable title + property chips) inside the popover. */
+.backsteros-pinned-task-popover__detail {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.backsteros-pinned-task-popover__detail .task-detail-view {
+  min-width: 0;
+  gap: 8px;
+}
+
+.backsteros-pinned-task-popover__detail .content-detail-title-header,
+.backsteros-pinned-task-popover__detail .task-detail-stacked__properties,
+.backsteros-pinned-task-popover__detail .task-detail-stacked__content {
+  min-width: 0;
+}
+
+.backsteros-pinned-task-popover__detail .task-properties-inline__fields {
+  gap: 6px;
+}
+
+.backsteros-pinned-task-popover__detail .content-markdown-preview-column,
+.backsteros-pinned-task-popover__detail
+  .content-markdown-preview-column.content-markdown-preview-column--no-top,
+.backsteros-pinned-task-popover__detail .content-markdown-editor-column {
+  padding: 0;
+}
+
+.backsteros-pinned-task-popover__detail .task-detail-attachments,
+.backsteros-pinned-task-popover__detail .task-link-attachments {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+}
+
+.backsteros-pinned-task-popover__detail .task-link-attachments__row {
+  font-size: 11px;
+}
+
+/* Keep the shared TaskDetailView hairline only — do not add a second border. */
+.backsteros-pinned-task-popover__detail .task-detail-below-description {
+  margin-top: 4px;
+}
+
+.backsteros-pinned-task-popover__detail .task-activity {
+  gap: 8px;
+}
+
+.backsteros-pinned-task-popover__detail .task-activity__title {
+  font-size: 11px;
+}
+
+.backsteros-pinned-task-popover__detail .task-activity__feed {
+  gap: 0;
+}
+
+.backsteros-pinned-task-popover__hint {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground, #ededed) 42%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
 }

@@ -214,6 +214,49 @@ export function isActiveOpenRunningTimer(input: {
   return now - input.updatedAtMs <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS;
 }
 
+/**
+ * Wall-clock anchor for chrome that mirrors a cloud running timer.
+ * Uses `remoteStartedAtMs` so every client shows the same elapsed time
+ * regardless of when it first adopted the row (adopt-at-`Date.now()` drifted).
+ *
+ * Soft checkpoints bump stored duration to the task total at `updatedAtMs`.
+ * Reconstruct `baseSeconds = tracked - wall_at_checkpoint`. Before the first
+ * checkpoint, treat tracked as the pre-session total at play.
+ */
+export function adoptRemoteRunningTimerClock(input: {
+  remoteStartedAtMs: number;
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+  updatedAtMs?: number | null;
+  nowMs?: number;
+}): { sessionStartAt: number; baseSeconds: number } {
+  const start = input.remoteStartedAtMs;
+  const now = input.nowMs ?? Date.now();
+  const seeded = storedRunningSeconds(input);
+  if (!Number.isFinite(start)) {
+    return { sessionStartAt: now, baseSeconds: seeded };
+  }
+
+  const updatedAt = input.updatedAtMs;
+  if (
+    updatedAt != null &&
+    Number.isFinite(updatedAt) &&
+    updatedAt >= start &&
+    now - updatedAt <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS
+  ) {
+    const wallAtCheckpoint = Math.max(
+      0,
+      Math.floor((updatedAt - start) / 1000),
+    );
+    return {
+      sessionStartAt: start,
+      baseSeconds: Math.max(0, seeded - wallAtCheckpoint),
+    };
+  }
+
+  return { sessionStartAt: start, baseSeconds: seeded };
+}
+
 /** End instant `seconds` after `start`; null when invalid. */
 export function endFromStartAndDurationSeconds(
   start: Date | string | number,

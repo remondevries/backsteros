@@ -1,6 +1,7 @@
 import {
   CONTACT_PHONE_LABELS,
   contactPhoneRowsForEditor,
+  formatContactPhoneDisplay,
   splitContactPhoneRows,
   type ContactPhoneEntry,
   type ContactPhoneLabel,
@@ -86,8 +87,12 @@ export function ContactPhonesEditor({
   }
 
   function commitRows(next: ContactPhoneEntry[]) {
-    setRows(next);
-    const parent = rowsToParent(next);
+    const formatted = next.map((row) => ({
+      ...row,
+      number: formatContactPhoneDisplay(row.number),
+    }));
+    setRows(formatted);
+    const parent = rowsToParent(formatted);
     onChange(parent);
     onSave({ phone: parent.phone || null, phones: parent.phones });
   }

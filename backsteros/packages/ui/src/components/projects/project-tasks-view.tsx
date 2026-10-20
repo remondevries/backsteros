@@ -105,6 +105,10 @@ export type ProjectTasksViewProps = {
   taskIdColumnCh?: number;
   /** Plain D deletes the keyboard-highlighted task (confirm modal). */
   onDeleteTask?: (task: TaskItemRowTask) => Promise<EntityDeleteResult>;
+  /** Workspace file editor: pin control on cards. */
+  showPin?: boolean;
+  pinnedTaskIds?: ReadonlySet<string> | readonly string[];
+  onTogglePin?: (task: TaskItemRowTask) => void;
 };
 
 /**
@@ -132,7 +136,16 @@ export function ProjectTasksView({
   isTaskAgentWorking,
   taskIdColumnCh: taskIdColumnChProp,
   onDeleteTask,
+  showPin = false,
+  pinnedTaskIds,
+  onTogglePin,
 }: ProjectTasksViewProps) {
+  const pinnedIds = useMemo(() => {
+    if (!pinnedTaskIds) return new Set<string>();
+    return pinnedTaskIds instanceof Set
+      ? pinnedTaskIds
+      : new Set(pinnedTaskIds);
+  }, [pinnedTaskIds]);
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
   const view = controlledView ?? uncontrolledView;
@@ -522,6 +535,11 @@ export function ProjectTasksView({
                     assigneeOptions={assigneeOptions}
                     agentWorking={isTaskAgentWorking?.(task) ?? false}
                     titleTrailing={renderTaskTitleTrailing?.(task)}
+                    showPin={showPin}
+                    pinned={pinnedIds.has(task.id)}
+                    onTogglePin={
+                      onTogglePin ? () => onTogglePin(task) : undefined
+                    }
                   />
                 </li>
               ) : (
@@ -598,6 +616,9 @@ export function ProjectTasksView({
           assigneeOptions={assigneeOptions}
           agentWorking={isTaskAgentWorking?.(task) ?? false}
           titleTrailing={renderTaskTitleTrailing?.(task)}
+          showPin={showPin}
+          pinned={pinnedIds.has(task.id)}
+          onTogglePin={onTogglePin ? () => onTogglePin(task) : undefined}
         />
       )}
     />

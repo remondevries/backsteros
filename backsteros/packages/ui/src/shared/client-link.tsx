@@ -40,6 +40,11 @@ export function ClientLinkProvider({
   );
 }
 
+/** Host SPA link when `ClientLinkProvider` is mounted; otherwise null. */
+export function useClientLinkComponent(): ClientLinkComponent | null {
+  return useContext(ClientLinkContext);
+}
+
 /**
  * In-app link. Uses the host-provided Link (e.g. React Router) when available;
  * falls back to a plain anchor. Forwards refs/props so HoverCard `asChild` works.

@@ -70,7 +70,6 @@ const SIDE_PANEL_LOADERS: Partial<
   finance: () => import("../shell/side-panels/finance-side-panel"),
   knowledge: () => import("../shell/side-panels/knowledge-side-panel"),
   letters: () => import("../shell/side-panels/letters-side-panel"),
-  projects: () => import("../shell/side-panels/project-documents-side-panel"),
 };
 
 /** Side-panel modules are a second lazy() graph — first visit used to wait on them. */

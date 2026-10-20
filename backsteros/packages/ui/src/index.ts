@@ -468,6 +468,27 @@ export {
   type InboxSidePanelViewProps,
 } from "./components/inbox/inbox-side-panel-view.js";
 export {
+  InboxSidePanelModeFooter,
+  type InboxSidePanelModeFooterProps,
+} from "./components/inbox/inbox-side-panel-mode-footer.js";
+export {
+  DEFAULT_INBOX_LIST_MODE,
+  INBOX_LIST_MODE_OPTIONS,
+  filterInboxItemsByListMode,
+  inboxItemIsAgentMode,
+  inboxListModeLabel,
+  inboxListModes,
+  isInboxListMode,
+  parseInboxListMode,
+  type InboxListMode,
+} from "./inbox/inbox-list-mode.js";
+export {
+  readInboxListMode,
+  subscribeInboxListMode,
+  writeInboxListMode,
+} from "./inbox/inbox-list-mode-storage.js";
+export { useInboxListMode } from "./inbox/use-inbox-list-mode.js";
+export {
   EmailSidePanelView,
   type EmailSidePanelViewProps,
 } from "./components/email/email-side-panel-view.js";
@@ -2039,6 +2060,8 @@ export {
   type ProjectType,
 } from "./projects/project-type.js";
 
+export { buildProjectTypeExtraMenuItem } from "./projects/project-type-menu-item.js";
+
 export {
   PROJECT_PROVIDERS,
   PROJECT_PROVIDER_ORDER,
@@ -2073,9 +2096,12 @@ export {
   CATALOG_DEFAULT_PROJECT_TYPE,
   CATALOG_PROJECT_TYPE_FILTERS,
   CATALOG_PROJECT_TYPE_FILTER_ORDER,
+  PROJECTS_LIST_PROJECT_TYPES,
   PROJECT_TYPE_SEARCH_PARAM,
   filterProjectsByType,
+  filterProjectsListByType,
   filterCatalogProjectsByType,
+  isProjectsListProjectType,
   getProjectTypeFilterLabel,
   isProjectTypeFilter,
   isCatalogProjectTypeFilter,
@@ -2155,6 +2181,10 @@ export {
   EntityOverviewSubgroup,
   type EntityOverviewSubgroupProps,
 } from "./components/shared/entity-overview-subgroup.js";
+export {
+  EntityOverviewField,
+  type EntityOverviewFieldProps,
+} from "./components/shared/entity-overview-field.js";
 export {
   EntityAddressFields,
   type EntityAddressFieldsProps,
@@ -2449,6 +2479,9 @@ export {
   PROJECT_AREA_FILTER_OTHER,
   PROJECT_AREA_LABELS,
   PROJECT_AREA_FILTERS,
+  visibleProjectAreaFilters,
+  projectsListAreaFilters,
+  setProjectsListIncludeOtherArea,
   PROJECT_AREA_ORDER,
   PROJECT_AREA_SEARCH_PARAM,
   getProjectAreaFilterLabel,
@@ -2464,6 +2497,11 @@ export {
 } from "./projects/project-areas.js";
 
 export { PillNav, type PillNavProps, type PillNavItem } from "./components/shared/pill-nav.js";
+export {
+  HairlineEmptyFigure,
+  type HairlineEmptyFigureKind,
+  type HairlineEmptyFigureProps,
+} from "./components/shared/hairline-empty-figure.js";
 
 export {
   ListBoardViewShell,
@@ -2758,6 +2796,11 @@ export {
 } from "./components/projects/project-detail-view.js";
 
 export {
+  ProjectPropertiesDisplay,
+  type ProjectPropertiesDisplayProps,
+} from "./components/projects/project-properties-display.js";
+
+export {
   ProjectHourlyRateEditor,
   type ProjectHourlyRateEditorProps,
 } from "./components/projects/project-hourly-rate-editor.js";
@@ -2771,6 +2814,10 @@ export {
   ProjectPanelDetailView,
   type ProjectPanelDetailViewProps,
 } from "./components/projects/project-panel-detail-view.js";
+export {
+  ProjectOverviewDescriptionPane,
+  type ProjectOverviewDescriptionPaneProps,
+} from "./components/projects/project-overview-description-pane.js";
 export {
   DomainDetailView,
   type DomainDetailViewProps,
@@ -3028,6 +3075,7 @@ export {
   MEETING_PROPERTIES_PANEL_WIDTH_KEY,
   HELP_ARTICLE_PROPERTIES_PANEL_WIDTH_KEY,
   DOCUMENT_PROPERTIES_PANEL_WIDTH_KEY,
+  PROJECT_PROPERTIES_PANEL_WIDTH_KEY,
   SPACE_SETTINGS_PANEL_WIDTH_KEY,
   isTaskDetailPath,
 } from "./content/properties-panel.js";
@@ -3135,6 +3183,7 @@ export {
 export {
   ClientLink,
   ClientLinkProvider,
+  useClientLinkComponent,
   type ClientLinkComponent,
   type ClientLinkProps,
 } from "./shared/client-link.js";
@@ -3432,6 +3481,7 @@ export {
   EntityActionsMenu,
   type EntityActionsMenuItem,
   type EntityActionsMenuProps,
+  type EntityActionsMenuSubItem,
 } from "./components/entity-actions/entity-actions-menu.js";
 
 export { RegisterEntityDeleteAction } from "./components/entity-actions/register-entity-delete-action.js";
@@ -3448,6 +3498,7 @@ export {
   type EntityDuplicateConfig,
   type EntityDuplicateOptions,
   type EntityExtraMenuItem,
+  type EntityExtraMenuSubItem,
 } from "./components/entity-actions/entity-header-actions-context.js";
 
 export {
@@ -4840,6 +4891,12 @@ export {
   parseCodebaseWorkbenchPath,
   type CodebaseWorkbenchSelection,
 } from "./codebase/codebase-workbench-path.js";
+
+export {
+  CODEBASE_PROJECT_README_FILENAME,
+  isCodebaseProjectReadmeFileName,
+  resolveCodebaseProjectReadmeFileName,
+} from "./codebase/codebase-project-readme.js";
 
 export {
   isCodebaseDetailEditorFocused,

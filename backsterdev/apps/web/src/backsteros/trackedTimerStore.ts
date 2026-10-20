@@ -1,4 +1,9 @@
-import { trackedDurationSecondsFromElapsed } from "./trackedTime";
+import {
+  adoptRemoteRunningTimerClock,
+  isActiveOpenRunningTimer,
+  resolveTrackedDurationSeconds,
+  trackedDurationSecondsFromElapsed,
+} from "./trackedTime";
 
 const CHECKPOINT_INTERVAL_MS = 60_000;
 
@@ -7,13 +12,52 @@ export type TrackedTimerSessionCallbacks = {
   readonly onSessionChange: ((action: "start" | "pause", seconds?: number | null) => void) | null;
 };
 
+/** Recent / running timer row from GET /api/v1/recent-timers. */
+export type RemoteRunningTimerAdoption = {
+  readonly taskId: string;
+  readonly remoteStartedAtMs: number;
+  readonly trackedDurationSeconds: number | null;
+  readonly trackedMinutes?: number | null;
+  readonly updatedAtMs?: number | null;
+  readonly isRunning?: boolean;
+  readonly lastTimerAtMs?: number | null;
+  readonly title?: string | null;
+  readonly subtitle?: string | null;
+  readonly statusKey?: string | null;
+  readonly href?: string | null;
+  readonly onPersist?: ((seconds: number | null) => void) | null;
+  readonly onSessionChange?:
+    | ((action: "start" | "pause", seconds?: number | null) => void)
+    | null;
+};
+
+export type TrackedTimerListItem = {
+  readonly key: string;
+  readonly title: string;
+  readonly subtitle: string | null;
+  readonly statusKey: string | null;
+  readonly href: string | null;
+  readonly elapsedSeconds: number;
+  readonly isRunning: boolean;
+  readonly isActive: boolean;
+  readonly lastActiveAt: number;
+};
+
 type TrackedTimerEntry = {
   key: string;
   baseSeconds: number;
   accumulatedSeconds: number;
   sessionStartAt: number | null;
+  startedAt: number | null;
+  lastActiveAt: number;
+  title: string;
+  subtitle: string | null;
+  statusKey: string | null;
+  href: string | null;
   /** When true, checkpoint/pause must not PATCH tracked time (closed task). */
   refusePersist: boolean;
+  /** True when this session/row was mirrored from another client. */
+  adoptedFromRemote: boolean;
   onPersist: ((seconds: number | null) => void) | null;
   onSessionChange: ((action: "start" | "pause", seconds?: number | null) => void) | null;
 };
@@ -22,6 +66,7 @@ const entries = new Map<string, TrackedTimerEntry>();
 const listeners = new Set<() => void>();
 
 let version = 0;
+let activeKey: string | null = null;
 let tickIntervalId: number | null = null;
 let checkpointIntervalId: number | null = null;
 
@@ -85,7 +130,14 @@ function ensureEntry(key: string): TrackedTimerEntry {
     baseSeconds: 0,
     accumulatedSeconds: 0,
     sessionStartAt: null,
+    startedAt: null,
+    lastActiveAt: Date.now(),
+    title: "Task",
+    subtitle: null,
+    statusKey: null,
+    href: null,
     refusePersist: false,
+    adoptedFromRemote: false,
     onPersist: null,
     onSessionChange: null,
   };
@@ -129,6 +181,22 @@ function checkpointAllRunning(persist = true): boolean {
   return changed;
 }
 
+function applyMeta(
+  entry: TrackedTimerEntry,
+  adoption: RemoteRunningTimerAdoption,
+): void {
+  if (adoption.title?.trim()) entry.title = adoption.title.trim();
+  if (adoption.subtitle !== undefined) {
+    entry.subtitle = adoption.subtitle?.trim() || null;
+  }
+  if (adoption.statusKey !== undefined) {
+    entry.statusKey = adoption.statusKey;
+  }
+  if (adoption.href !== undefined) {
+    entry.href = adoption.href;
+  }
+}
+
 /** Subscribe to timer store changes (ticks, start/pause, checkpoints). */
 export function subscribeTrackedTimers(listener: () => void): () => void {
   listeners.add(listener);
@@ -155,6 +223,47 @@ export function getTrackedTimerElapsedSeconds(key: string): number {
 /** Keys with an active session — used to reconcile list/sync status updates. */
 export function listRunningTrackedTimerKeys(): readonly string[] {
   return listRunningKeys();
+}
+
+export function getTrackedTimerActiveKey(): string | null {
+  if (activeKey && entries.has(activeKey)) return activeKey;
+  const running = listRunningKeys();
+  return running[0] ?? null;
+}
+
+export function setTrackedTimerActiveKey(key: string | null): void {
+  if (key === activeKey) return;
+  activeKey = key;
+  emit();
+}
+
+export function listRecentTrackedTimers(): readonly TrackedTimerListItem[] {
+  const active = getTrackedTimerActiveKey();
+  return [...entries.values()]
+    .filter(
+      (entry) =>
+        entry.sessionStartAt != null ||
+        entry.startedAt != null ||
+        entry.accumulatedSeconds > 0 ||
+        entry.baseSeconds > 0,
+    )
+    .sort((a, b) => {
+      const aStart = a.startedAt ?? a.lastActiveAt;
+      const bStart = b.startedAt ?? b.lastActiveAt;
+      if (aStart !== bStart) return aStart - bStart;
+      return a.key.localeCompare(b.key);
+    })
+    .map((entry) => ({
+      key: entry.key,
+      title: entry.title,
+      subtitle: entry.subtitle,
+      statusKey: entry.statusKey,
+      href: entry.href,
+      elapsedSeconds: elapsedSecondsForEntry(entry),
+      isRunning: entry.sessionStartAt != null,
+      lastActiveAt: entry.lastActiveAt,
+      isActive: active === entry.key,
+    }));
 }
 
 export function isTrackedTimerPersistRefused(key: string): boolean {
@@ -238,6 +347,10 @@ export function startTrackedTimer(
     options?.startedAtMs != null && Number.isFinite(options.startedAtMs)
       ? options.startedAtMs
       : Date.now();
+  entry.startedAt = entry.startedAt ?? Date.now();
+  entry.lastActiveAt = Date.now();
+  entry.adoptedFromRemote = false;
+  activeKey = key;
   entries.set(key, entry);
   // Silent = server (or another client) already recorded timer_started.
   if (!options?.silent) {
@@ -264,6 +377,8 @@ export function pauseTrackedTimer(
   entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, totalSeconds);
   entry.baseSeconds = entry.accumulatedSeconds;
   entry.sessionStartAt = null;
+  entry.adoptedFromRemote = false;
+  entry.lastActiveAt = Date.now();
   entries.set(key, entry);
 
   if (!options?.silent) {
@@ -295,9 +410,196 @@ export function checkpointTrackedTimers(persist = true): boolean {
   return checkpointAllRunning(persist);
 }
 
+export type SyncRemoteRunningTimersOptions = {
+  /**
+   * When true (recent-timers membership), drop chrome rows absent from the
+   * payload. When false/omitted (running-timers fallback), fold missing live
+   * clocks to paused and keep them visible.
+   */
+  readonly pruneAbsent?: boolean;
+};
+
+/**
+ * Mirror recent / running timers into the local store so BacksterDEV chrome
+ * matches OS / DESIGN. Locally owned sessions win.
+ */
+export function syncRemoteRunningTimers(
+  adoptions: readonly RemoteRunningTimerAdoption[],
+  options?: SyncRemoteRunningTimersOptions,
+): void {
+  const pruneAbsent = options?.pruneAbsent === true;
+  const remoteKeys = new Set<string>();
+  let changed = false;
+
+  for (const adoption of adoptions) {
+    const key = adoption.taskId.trim();
+    if (!key) continue;
+
+    const lastTimerAtMs =
+      adoption.lastTimerAtMs != null && Number.isFinite(adoption.lastTimerAtMs)
+        ? adoption.lastTimerAtMs
+        : adoption.remoteStartedAtMs;
+    const live =
+      adoption.isRunning !== undefined
+        ? adoption.isRunning
+        : isActiveOpenRunningTimer({
+            startedAtMs: adoption.remoteStartedAtMs,
+            trackedDurationSeconds: adoption.trackedDurationSeconds,
+            ...(adoption.trackedMinutes !== undefined
+              ? { trackedMinutes: adoption.trackedMinutes }
+              : {}),
+            ...(adoption.updatedAtMs !== undefined
+              ? { updatedAtMs: adoption.updatedAtMs }
+              : {}),
+          });
+
+    remoteKeys.add(key);
+    const existing = entries.get(key);
+    const isLocallyOwnedRunning =
+      existing?.sessionStartAt != null && !existing.adoptedFromRemote;
+
+    if (isLocallyOwnedRunning) {
+      applyMeta(existing, adoption);
+      if (adoption.onPersist) existing.onPersist = adoption.onPersist;
+      if (adoption.onSessionChange) {
+        existing.onSessionChange = adoption.onSessionChange;
+      }
+      entries.set(key, existing);
+      continue;
+    }
+
+    const propSeconds =
+      resolveTrackedDurationSeconds({
+        trackedDurationSeconds: adoption.trackedDurationSeconds,
+        trackedMinutes: adoption.trackedMinutes,
+      }) ?? 0;
+    const rememberedSeconds = existing
+      ? Math.max(existing.accumulatedSeconds, existing.baseSeconds)
+      : 0;
+    const seededSeconds = Math.max(0, propSeconds, rememberedSeconds);
+
+    if (live) {
+      const clock = adoptRemoteRunningTimerClock({
+        remoteStartedAtMs: adoption.remoteStartedAtMs,
+        trackedDurationSeconds: adoption.trackedDurationSeconds,
+        ...(adoption.trackedMinutes !== undefined
+          ? { trackedMinutes: adoption.trackedMinutes }
+          : {}),
+        ...(adoption.updatedAtMs !== undefined
+          ? { updatedAtMs: adoption.updatedAtMs }
+          : {}),
+      });
+
+      if (existing?.sessionStartAt != null && existing.adoptedFromRemote) {
+        applyMeta(existing, adoption);
+        existing.baseSeconds = clock.baseSeconds;
+        existing.accumulatedSeconds = Math.max(
+          existing.accumulatedSeconds,
+          clock.baseSeconds,
+        );
+        existing.sessionStartAt = clock.sessionStartAt;
+        if (adoption.onPersist) existing.onPersist = adoption.onPersist;
+        if (adoption.onSessionChange) {
+          existing.onSessionChange = adoption.onSessionChange;
+        }
+        entries.set(key, existing);
+        changed = true;
+        continue;
+      }
+
+      const entry = ensureEntry(key);
+      if (entry.refusePersist) continue;
+      applyMeta(entry, adoption);
+      entry.baseSeconds = clock.baseSeconds;
+      entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, clock.baseSeconds);
+      entry.sessionStartAt = clock.sessionStartAt;
+      entry.startedAt = entry.startedAt ?? adoption.remoteStartedAtMs;
+      entry.lastActiveAt = Date.now();
+      entry.adoptedFromRemote = true;
+      if (adoption.onPersist) entry.onPersist = adoption.onPersist;
+      if (adoption.onSessionChange) {
+        entry.onSessionChange = adoption.onSessionChange;
+      }
+      if (activeKey == null) activeKey = key;
+      entries.set(key, entry);
+      changed = true;
+      continue;
+    }
+
+    // Paused / abandoned — seed dropdown membership.
+    if (existing?.sessionStartAt != null && existing.adoptedFromRemote) {
+      const elapsed = elapsedSecondsForEntry(existing);
+      const folded = Math.max(existing.accumulatedSeconds, elapsed, seededSeconds);
+      applyMeta(existing, adoption);
+      existing.accumulatedSeconds = folded;
+      existing.baseSeconds = folded;
+      existing.sessionStartAt = null;
+      existing.startedAt = lastTimerAtMs;
+      existing.lastActiveAt = lastTimerAtMs;
+      existing.adoptedFromRemote = true;
+      if (adoption.onPersist) existing.onPersist = adoption.onPersist;
+      if (adoption.onSessionChange) {
+        existing.onSessionChange = adoption.onSessionChange;
+      }
+      entries.set(key, existing);
+      changed = true;
+      continue;
+    }
+
+    const entry = ensureEntry(key);
+    if (entry.refusePersist) continue;
+    applyMeta(entry, adoption);
+    entry.baseSeconds = Math.max(entry.baseSeconds, seededSeconds);
+    entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, seededSeconds);
+    entry.sessionStartAt = null;
+    entry.startedAt = entry.startedAt ?? lastTimerAtMs;
+    entry.lastActiveAt = lastTimerAtMs;
+    entry.adoptedFromRemote = true;
+    if (adoption.onPersist) entry.onPersist = adoption.onPersist;
+    if (adoption.onSessionChange) {
+      entry.onSessionChange = adoption.onSessionChange;
+    }
+    if (activeKey == null) activeKey = key;
+    entries.set(key, entry);
+    changed = true;
+  }
+
+  for (const entry of [...entries.values()]) {
+    if (!entry.adoptedFromRemote) continue;
+    if (remoteKeys.has(entry.key)) continue;
+    if (entry.sessionStartAt != null) {
+      const elapsed = elapsedSecondsForEntry(entry);
+      entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, elapsed);
+      entry.baseSeconds = entry.accumulatedSeconds;
+      entry.sessionStartAt = null;
+      entry.lastActiveAt = Date.now();
+      entry.adoptedFromRemote = false;
+      entries.set(entry.key, entry);
+      // Keep paused chrome when running-timers fallback omits the row.
+      if (!pruneAbsent) {
+        changed = true;
+        continue;
+      }
+    } else if (!pruneAbsent) {
+      continue;
+    }
+    entries.delete(entry.key);
+    if (activeKey === entry.key) activeKey = null;
+    changed = true;
+  }
+
+  if (!changed) {
+    ensureHeartbeat();
+    return;
+  }
+  ensureHeartbeat();
+  emit();
+}
+
 /** Test helper — clears in-memory sessions and heartbeats. */
 export function resetTrackedTimerStoreForTests(): void {
   entries.clear();
+  activeKey = null;
   if (typeof window !== "undefined") {
     if (tickIntervalId != null) {
       window.clearInterval(tickIntervalId);

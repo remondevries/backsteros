@@ -182,7 +182,7 @@ describe("shouldKeepAliveSidePanelSurface", () => {
     assert.equal(keepAliveSidePanelSurface("/projects"), "projects");
   });
 
-  it("keeps the project documents panel only on a standalone project slug", () => {
+  it("keeps the project side-panel surface only on a standalone project slug", () => {
     assert.equal(
       shouldKeepAliveSidePanelSurface("projects", "/projects/CA"),
       true,

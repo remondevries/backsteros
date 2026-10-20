@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   CONTACT_LANGUAGES,
   coerceContactLanguages,
@@ -98,18 +98,31 @@ export function ContactLanguagesEditor({
     rowsFromRemote(remote, selectionMode),
   );
   const [rowsSource, setRowsSource] = useState(remoteKey);
+  /** Hold chips while parent/PowerSync briefly echo the pre-save value. */
+  const pendingKeyRef = useRef<string | null>(null);
 
   if (remoteKey !== rowsSource) {
     const priorSource = rowsSource;
-    setRowsSource(remoteKey);
-    // Adopt remote only when local committed values still match the prior
-    // source (no in-flight edits). Keep trailing draft chips in multi mode.
-    if (languagesKey(committedFrom(rows)) === priorSource) {
-      if (selectionMode === "single") {
+    if (pendingKeyRef.current !== null) {
+      if (remoteKey === pendingKeyRef.current) {
+        pendingKeyRef.current = null;
+        setRowsSource(remoteKey);
         setRows(rowsFromRemote(remote, selectionMode));
       } else {
-        const drafts = rows.filter((row) => row.code == null);
-        setRows([...rowsFromRemote(remote, selectionMode), ...drafts]);
+        // Advance source without adopting so render does not loop; keep chips.
+        setRowsSource(remoteKey);
+      }
+    } else {
+      setRowsSource(remoteKey);
+      // Adopt remote only when local committed values still match the prior
+      // source (no in-flight edits). Keep trailing draft chips in multi mode.
+      if (languagesKey(committedFrom(rows)) === priorSource) {
+        if (selectionMode === "single") {
+          setRows(rowsFromRemote(remote, selectionMode));
+        } else {
+          const drafts = rows.filter((row) => row.code == null);
+          setRows([...rowsFromRemote(remote, selectionMode), ...drafts]);
+        }
       }
     }
   }
@@ -117,6 +130,7 @@ export function ContactLanguagesEditor({
   function persistCommitted(committed: ContactLanguage[]) {
     const next =
       selectionMode === "single" ? committed.slice(0, 1) : committed;
+    pendingKeyRef.current = languagesKey(next);
     onChange(next);
     onSave(next);
   }

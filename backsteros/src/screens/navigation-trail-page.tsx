@@ -11,9 +11,11 @@ import {
   OrganizationOverviewView,
   ProjectDetailView,
   ProjectOverviewSkeleton,
+  RegisterEntityMenuItems,
   TaskDetailSkeleton,
   buildOrganizationDropdownOptions,
   buildProjectKeyRenameRedirectPath,
+  buildProjectTypeExtraMenuItem,
   formatJournalEntryTitle,
   getContactsHref,
   getDocumentEditorBody,
@@ -32,6 +34,7 @@ import {
   serializeDocumentBody,
   type NavigationTrail,
   type NavigationTrailEntityRef,
+  type ProjectType,
 } from "@backsteros/ui";
 
 import { useDesktopDocumentContent } from "../lib/use-document-content";
@@ -582,8 +585,32 @@ function TrailProjectLeaf({
   const total = tasks.length;
   const completed = tasks.filter((task) => task.status === "completed").length;
 
+  const typeMenuItems = useMemo(
+    () => [
+      buildProjectTypeExtraMenuItem(project.type, (type: ProjectType) => {
+        const patch: {
+          type: string;
+          category?: null;
+          healthCheckMode?: null;
+          healthCheckDomain?: null;
+        } = { type };
+        if (type !== "email") {
+          patch.category = null;
+        }
+        if (type !== "codebase") {
+          patch.healthCheckMode = null;
+          patch.healthCheckDomain = null;
+        }
+        void workspace.patchProject(project.id, patch);
+      }),
+    ],
+    [project.id, project.type, workspace],
+  );
+
   return (
-    <ProjectDetailView
+    <>
+      <RegisterEntityMenuItems items={typeMenuItems} />
+      <ProjectDetailView
       project={{
         id: project.id,
         key: project.key,
@@ -653,22 +680,6 @@ function TrailProjectLeaf({
       onPriorityChange={(priority) => {
         void workspace.patchProject(project.id, { priority });
       }}
-      onTypeChange={(type) => {
-        const patch: {
-          type: string;
-          category?: null;
-          healthCheckMode?: null;
-          healthCheckDomain?: null;
-        } = { type };
-        if (type !== "email") {
-          patch.category = null;
-        }
-        if (type !== "codebase") {
-          patch.healthCheckMode = null;
-          patch.healthCheckDomain = null;
-        }
-        void workspace.patchProject(project.id, patch);
-      }}
       onProviderChange={(provider) => {
         const patch: {
           provider: string | null;
@@ -722,6 +733,7 @@ function TrailProjectLeaf({
       }}
       section="overview"
     />
+    </>
   );
 }
 

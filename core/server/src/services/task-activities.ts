@@ -12,13 +12,24 @@ import {
   shouldAutoStopTaskTimer,
   timerActorFromAssignee,
 } from "./task-auto-timer.js";
+import {
+  RECENT_TASK_TIMER_LIMIT,
+  RECENT_TASK_TIMER_MAX_AGE_MS,
+  toRecentTaskTimer,
+  type RecentTaskTimer,
+  type RecentTaskTimerRow,
+} from "./task-recent-timers.js";
 
 export {
   nextTrackedDurationAfterAutoStop,
   shouldAutoStartTaskTimer,
   shouldAutoStopTaskTimer,
   timerActorFromAssignee,
+  RECENT_TASK_TIMER_LIMIT,
+  RECENT_TASK_TIMER_MAX_AGE_MS,
+  toRecentTaskTimer,
 };
+export type { RecentTaskTimer, RecentTaskTimerRow };
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -589,6 +600,67 @@ export async function listOpenRunningTaskTimers(
       },
     ];
   });
+}
+
+/**
+ * Distinct tasks with recent timer activity (start or stop), for shared chrome
+ * dropdowns. Includes paused sessions; `isRunning` uses the same live check as
+ * `listOpenRunningTaskTimers`.
+ */
+export async function listRecentTaskTimers(
+  workspaceId: string,
+  options?: {
+    maxAgeMs?: number;
+    limit?: number;
+  },
+): Promise<RecentTaskTimer[]> {
+  const maxAgeMs = Math.max(
+    0,
+    options?.maxAgeMs ?? RECENT_TASK_TIMER_MAX_AGE_MS,
+  );
+  const limit = Math.min(
+    100,
+    Math.max(1, Math.floor(options?.limit ?? RECENT_TASK_TIMER_LIMIT)),
+  );
+  const since = new Date(Date.now() - maxAgeMs);
+  const sinceIso = since.toISOString();
+  const rows = await db.execute<RecentTaskTimerRow>(sql`
+    SELECT
+      a.task_id AS "taskId",
+      a.created_at AS "lastTimerAt",
+      a.type AS "latestType",
+      t.title AS title,
+      t.number AS number,
+      t.status AS status,
+      t.tracked_duration_seconds AS "trackedDurationSeconds",
+      t.tracked_minutes AS "trackedMinutes",
+      t.updated_at AS "updatedAt",
+      p.key AS "projectKey"
+    FROM task_activities a
+    INNER JOIN tasks t
+      ON t.id = a.task_id
+      AND t.workspace_id = ${workspaceId}
+      AND t.deleted_at IS NULL
+    LEFT JOIN projects p
+      ON p.id = t.project_id
+      AND p.deleted_at IS NULL
+    WHERE a.workspace_id = ${workspaceId}
+      AND a.type IN ('timer_started', 'timer_stopped')
+      AND a.created_at >= ${sinceIso}::timestamptz
+      AND a.created_at = (
+        SELECT MAX(c.created_at)
+        FROM task_activities c
+        WHERE c.task_id = a.task_id
+          AND c.workspace_id = ${workspaceId}
+          AND c.type IN ('timer_started', 'timer_stopped')
+      )
+    ORDER BY a.created_at ASC
+    LIMIT ${limit}
+  `);
+
+  const list = Array.isArray(rows) ? rows : (rows as { rows?: unknown }).rows;
+  const entries = (Array.isArray(list) ? list : []) as RecentTaskTimerRow[];
+  return entries.map((row) => toRecentTaskTimer(row));
 }
 
 export type DeletedTaskTimerSession = {

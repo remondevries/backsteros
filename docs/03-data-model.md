@@ -17,7 +17,7 @@ Every entity type has a tier. **Enforce in PowerSync sync rules and API design.*
 | --- | --- | --- | --- |
 | **A** | Small structured records | Yes, full record | tasks, projects (incl. optional `penpotProjectId` link to BacksterDESIGN), contacts |
 
-Codebase projects may store per-environment execution paths (`developmentLocation`, `productionLocation`, `localLocation`) alongside the existing `localWorkingDirectory` and `githubRepository`. Tasks may override the default with `executionLocation` (`development` \| `production` \| `local`), frozen once the coding thread starts (`executionLocationLockedAt`).
+Codebase projects may store remote execution paths (`developmentLocation`, `productionLocation`) alongside `localWorkingDirectory` (canonical local path; defaults to `{vault}/Codebase`) and `githubRepository`. Every project vault includes a `Codebase/` folder. Tasks may override the default with `executionLocation` (`development` \| `production` \| `local`), frozen once the coding thread starts (`executionLocationLockedAt`). Deprecated `localLocation` is folded into `localWorkingDirectory`.
 | **B** | Content **index** only | Yes, summary fields | doc title, path, snippet, letter metadata |
 | **C** | Large / server-primary | **No** bulk sync; paginated API | transaction history, workout sets |
 | **D** | Blobs | **Never** sync; fetch on demand | PDF bytes, full markdown body |

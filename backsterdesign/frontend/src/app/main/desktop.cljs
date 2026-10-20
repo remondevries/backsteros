@@ -11,11 +11,13 @@
   via postMessage + in-SPA routing (no remount of main.js / WASM)."
   (:require
    [app.common.uuid :as uuid]
+   [app.main.data.auth :as da]
    [app.main.data.common :as dcm]
    [app.main.data.modal :as modal]
    [app.main.data.workspace :as dw]
    [app.main.router :as rt]
    [app.main.store :as st]
+   [app.main.ui.dashboard.create-file-location-modal :as create-file]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -34,6 +36,8 @@
 (defonce ^:private *last-dashboard (atom nil))
 ;; Last dashboard snapshot posted to the shell (avoids spam / duplicates).
 (defonce ^:private *last-posted-dashboard (atom nil))
+
+(declare report-route!)
 
 (defn- mark-desktop!
   []
@@ -143,7 +147,12 @@
         "shell-ready"
         (do
           (mark-desktop!)
-          (post! {:type "spa-ready"}))
+          (post! {:type "spa-ready"})
+          ;; Force a fresh route-changed so the shell re-shows tab chrome
+          ;; after remount / session restore (same route can be a no-op).
+          (reset! *last-route nil)
+          (reset! *last-authenticated nil)
+          (report-route! @st/state))
 
         "open-file"
         (let [file-id  (parse-id (unchecked-get data "fileId"))
@@ -223,6 +232,9 @@
               params    (js-params->clj (unchecked-get data "params"))]
           (seed-dashboard! route-str params)
           (go-to-remembered-dashboard! team-id))
+
+        "new-file"
+        (create-file/show!)
 
         nil))))
 
@@ -317,7 +329,7 @@
                                  (some? (:team-id dash-params)))
                         {:name route-name
                          :params dash-params})
-        authenticated? (some? (:profile state))
+        authenticated? (da/is-authenticated? (:profile state))
         route-changed? (not= route-key @*last-route)
         auth-changed? (not= authenticated? @*last-authenticated)
         dash-changed? (and (some? dash-snapshot)

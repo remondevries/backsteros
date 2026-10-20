@@ -8,8 +8,12 @@ export type ExecutionLocation = "development" | "production" | "local";
 export type ProjectLocationFields = {
   readonly developmentLocation?: string | null;
   readonly productionLocation?: string | null;
+  /**
+   * @deprecated Folded into {@link localWorkingDirectory}. Kept optional so
+   * older payloads still type-check; ignored at resolve time.
+   */
   readonly localLocation?: string | null;
-  /** Canonical local codebase location (existing field). */
+  /** Canonical local path (agent/PTY cwd and `executionLocation = local`). */
   readonly localWorkingDirectory?: string | null;
 };
 
@@ -20,8 +24,8 @@ export function isExecutionLocation(
 }
 
 /**
- * Path for a given execution location. For `local`, prefers `localLocation`
- * then falls back to `localWorkingDirectory`.
+ * Path for a given execution location. `local` (and the unset default) use
+ * {@link localWorkingDirectory} only — `localLocation` was consolidated into it.
  */
 export function resolveExecutionWorkspacePath(
   project: ProjectLocationFields,
@@ -33,10 +37,7 @@ export function resolveExecutionWorkspacePath(
   if (executionLocation === "production") {
     return trimPath(project.productionLocation);
   }
-  if (executionLocation === "local") {
-    return trimPath(project.localLocation) ?? trimPath(project.localWorkingDirectory);
-  }
-  // No override — keep historical default (local working directory).
+  // `local` and unset both use the single canonical local working directory.
   return trimPath(project.localWorkingDirectory);
 }
 

@@ -62,6 +62,11 @@ export type LettersSidePanelViewProps = {
    */
   collapsedKeys?: ReadonlySet<string>;
   onToggleCollapsed?: (status: string) => void;
+  /**
+   * `chrome` — app content side panel header (global `/letters`).
+   * `embedded` — in-content project Letters list (Documents parity).
+   */
+  variant?: "chrome" | "embedded";
 };
 
 export function LettersSidePanelView({
@@ -84,7 +89,9 @@ export function LettersSidePanelView({
   title = "Letters",
   collapsedKeys: controlledCollapsedKeys,
   onToggleCollapsed,
+  variant = "chrome",
 }: LettersSidePanelViewProps) {
+  const embedded = variant === "embedded";
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const groups = groupLettersByStatus(items);
   const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState<
@@ -106,92 +113,102 @@ export function LettersSidePanelView({
     });
   }
 
+  const actions = onAdd ? (
+    <button
+      type="button"
+      className="app-side-panel-section-action"
+      aria-label="Create letter"
+      onClick={onAdd}
+    >
+      <SidePanelPlusIcon />
+    </button>
+  ) : (
+    <Link
+      to={composeHref}
+      className="app-side-panel-section-action"
+      aria-label="Upload letter"
+      onClick={onCompose}
+    >
+      <SidePanelPlusIcon />
+    </Link>
+  );
+
+  const body =
+    loading && !items.length ? (
+      <LettersSidePanelSkeleton />
+    ) : !items.length ? (
+      <ContentSidePanelEmpty>
+        No letters yet. Use the plus button to upload one.
+      </ContentSidePanelEmpty>
+    ) : (
+      <ContentSidePanelList
+        aria-label="Letters"
+        ref={listRef}
+        {...listContainerProps}
+      >
+        {groups.map((group) => {
+          const isCollapsed = collapsed.has(group.status);
+          return (
+            <StatusGroupSection
+              key={group.status}
+              groupKey={group.status}
+              title={group.label}
+              collapsed={isCollapsed}
+              onToggle={() => toggleCollapsed(group.status)}
+            >
+              {group.letters.map((letter) => {
+                const isActive = letterMatchesSlug(letter, selectedSlug);
+                const href = getLetterHref(letter);
+                return (
+                  <li key={letter.id} data-keyboard-nav-item={letter.id}>
+                    <Link
+                      to={href}
+                      className={sidePanelItemClass({
+                        active: isActive,
+                        keyboardHighlighted: highlightedId === letter.id,
+                      })}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <span
+                        className="app-side-panel-item-icon"
+                        aria-hidden="true"
+                      >
+                        <LetterIcon size={14} />
+                      </span>
+                      <span className="letter-display-id">
+                        {letter.number != null
+                          ? formatLetterDisplayId(letter.number)
+                          : letter.id.slice(0, 8)}
+                      </span>
+                      <span className="app-side-panel-item-label">
+                        {letter.title}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </StatusGroupSection>
+          );
+        })}
+      </ContentSidePanelList>
+    );
+
+  if (embedded) {
+    return (
+      <div className="console-docs-tree">
+        <div className="console-docs-tree__header">
+          <span className="console-docs-tree__header-label">Name</span>
+          <div className="console-docs-tree__header-actions">{actions}</div>
+        </div>
+        <div className="console-docs-tree__main">{body}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-content-side-panel app-content-side-panel--letters">
-      <ContentSidePanelHeader
-        title={title}
-        actions={
-          onAdd ? (
-            <button
-              type="button"
-              className="app-side-panel-section-action"
-              aria-label="Create letter"
-              onClick={onAdd}
-            >
-              <SidePanelPlusIcon />
-            </button>
-          ) : (
-            <Link
-              to={composeHref}
-              className="app-side-panel-section-action"
-              aria-label="Upload letter"
-              onClick={onCompose}
-            >
-              <SidePanelPlusIcon />
-            </Link>
-          )
-        }
-      />
-      <div className="app-content-side-panel-main">
-        {loading && !items.length ? (
-          <LettersSidePanelSkeleton />
-        ) : !items.length ? (
-          <ContentSidePanelEmpty>
-            No letters yet. Use the plus button to upload one.
-          </ContentSidePanelEmpty>
-        ) : (
-          <ContentSidePanelList
-            aria-label="Letters"
-            ref={listRef}
-            {...listContainerProps}
-          >
-            {groups.map((group) => {
-              const isCollapsed = collapsed.has(group.status);
-              return (
-                <StatusGroupSection
-                  key={group.status}
-                  groupKey={group.status}
-                  title={group.label}
-                  collapsed={isCollapsed}
-                  onToggle={() => toggleCollapsed(group.status)}
-                >
-                  {group.letters.map((letter) => {
-                    const isActive = letterMatchesSlug(letter, selectedSlug);
-                    const href = getLetterHref(letter);
-                    return (
-                      <li key={letter.id} data-keyboard-nav-item={letter.id}>
-                        <Link
-                          to={href}
-                          className={sidePanelItemClass({
-                            active: isActive,
-                            keyboardHighlighted: highlightedId === letter.id,
-                          })}
-                          aria-current={isActive ? "page" : undefined}
-                        >
-                          <span
-                            className="app-side-panel-item-icon"
-                            aria-hidden="true"
-                          >
-                            <LetterIcon size={14} />
-                          </span>
-                          <span className="letter-display-id">
-                            {letter.number != null
-                              ? formatLetterDisplayId(letter.number)
-                              : letter.id.slice(0, 8)}
-                          </span>
-                          <span className="app-side-panel-item-label">
-                            {letter.title}
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </StatusGroupSection>
-              );
-            })}
-          </ContentSidePanelList>
-        )}
-      </div>
+      <ContentSidePanelHeader title={title} actions={actions} />
+      <div className="app-content-side-panel-main">{body}</div>
     </div>
   );
 }

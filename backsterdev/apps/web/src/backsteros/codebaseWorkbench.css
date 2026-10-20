@@ -71,6 +71,44 @@ header .bos-pill-nav::-webkit-scrollbar {
   overflow: hidden;
 }
 
+.bos-codebase-workbench__overview {
+  overflow: auto;
+}
+
+.bos-codebase-workbench__overview-column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.bos-codebase-workbench__overview-title {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bos-codebase-workbench__overview-title--icon-only {
+  gap: 0;
+}
+
+.bos-codebase-workbench__overview-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
 .bos-codebase-workbench__settings-scroll {
   display: flex;
   min-height: 0;
@@ -164,6 +202,111 @@ header .bos-pill-nav::-webkit-scrollbar {
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.bos-codebase-overview__icon-row {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 2px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.bos-codebase-overview__name-row {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.bos-entity-overview-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.bos-entity-overview-subgroup__header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 2px;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bos-entity-overview-subgroup__label {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.bos-entity-overview-subgroup__rule {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  height: 0;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.bos-entity-overview-subgroup__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bos-entity-overview-field {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.bos-entity-overview-field__label {
+  box-sizing: border-box;
+  width: 7.25rem;
+  flex: 0 0 7.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.bos-entity-overview-field > :not(.bos-entity-overview-field__label) {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.bos-entity-overview-field .bos-task-property-chip,
+.bos-entity-overview-field [class*="property-menu"],
+.bos-entity-overview-field > :not(.bos-entity-overview-field__label) > * {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: 0;
+  flex: none;
+  align-self: flex-start;
+}
+
+.bos-task-detail-properties--stacked {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.bos-task-detail-properties--stacked > * {
+  width: auto;
+  max-width: 100%;
 }
 
 .bos-codebase-overview__section-label {

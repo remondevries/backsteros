@@ -10,8 +10,7 @@ describe("execution-location", () => {
   const project = {
     developmentLocation: "/home/deploy/code/app",
     productionLocation: "/var/www/app",
-    localLocation: "/Users/me/Projects/app",
-    localWorkingDirectory: "/Users/me/Vault/app",
+    localWorkingDirectory: "/Users/me/Vault/app/Codebase",
   };
 
   it("resolves each override path", () => {
@@ -25,21 +24,24 @@ describe("execution-location", () => {
     );
     assert.equal(
       resolveExecutionWorkspacePath(project, "local"),
-      "/Users/me/Projects/app",
+      "/Users/me/Vault/app/Codebase",
     );
   });
 
-  it("falls back to localWorkingDirectory for local and default", () => {
+  it("uses localWorkingDirectory for local and default (ignores deprecated localLocation)", () => {
     assert.equal(
       resolveExecutionWorkspacePath(
-        { ...project, localLocation: null },
+        {
+          ...project,
+          localLocation: "/Users/me/Projects/app",
+        },
         "local",
       ),
-      "/Users/me/Vault/app",
+      "/Users/me/Vault/app/Codebase",
     );
     assert.equal(
       resolveExecutionWorkspacePath(project, null),
-      "/Users/me/Vault/app",
+      "/Users/me/Vault/app/Codebase",
     );
   });
 

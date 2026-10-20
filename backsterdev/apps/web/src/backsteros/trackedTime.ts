@@ -1,5 +1,90 @@
 /** Tracked-time helpers mirroring `@backsteros/contracts` tracked-time. */
 
+/**
+ * How long an unpaired play stays "running" without a fresh checkpoint.
+ * Mirrors `OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS` in contracts.
+ */
+export const OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS = 3 * 60 * 1000;
+
+function storedRunningSeconds(input: {
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+}): number {
+  if (
+    input.trackedDurationSeconds != null &&
+    Number.isFinite(input.trackedDurationSeconds) &&
+    input.trackedDurationSeconds > 0
+  ) {
+    return input.trackedDurationSeconds;
+  }
+  if (
+    input.trackedMinutes != null &&
+    Number.isFinite(input.trackedMinutes) &&
+    input.trackedMinutes > 0
+  ) {
+    return input.trackedMinutes * 60;
+  }
+  return 0;
+}
+
+/** True when a remote unpaired `timer_started` should still drive a live clock. */
+export function isActiveOpenRunningTimer(input: {
+  startedAtMs: number;
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+  updatedAtMs?: number | null;
+  nowMs?: number;
+}): boolean {
+  if (!Number.isFinite(input.startedAtMs)) return false;
+  const now = input.nowMs ?? Date.now();
+  const age = now - input.startedAtMs;
+  if (age < 0) return false;
+  if (age <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS) return true;
+  if (storedRunningSeconds(input) <= 0) return false;
+  if (input.updatedAtMs == null || !Number.isFinite(input.updatedAtMs)) {
+    return false;
+  }
+  return now - input.updatedAtMs <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS;
+}
+
+/**
+ * Shared wall clock for adopted remote running timers (mirrors contracts).
+ * Anchors at `remoteStartedAtMs` so OS / DESIGN / DEV show the same elapsed.
+ */
+export function adoptRemoteRunningTimerClock(input: {
+  remoteStartedAtMs: number;
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
+  updatedAtMs?: number | null;
+  nowMs?: number;
+}): { sessionStartAt: number; baseSeconds: number } {
+  const start = input.remoteStartedAtMs;
+  const now = input.nowMs ?? Date.now();
+  const seeded = storedRunningSeconds(input);
+  if (!Number.isFinite(start)) {
+    return { sessionStartAt: now, baseSeconds: seeded };
+  }
+
+  const updatedAt = input.updatedAtMs;
+  if (
+    updatedAt != null &&
+    Number.isFinite(updatedAt) &&
+    updatedAt >= start &&
+    now - updatedAt <= OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS
+  ) {
+    const wallAtCheckpoint = Math.max(
+      0,
+      Math.floor((updatedAt - start) / 1000),
+    );
+    return {
+      sessionStartAt: start,
+      baseSeconds: Math.max(0, seeded - wallAtCheckpoint),
+    };
+  }
+
+  return { sessionStartAt: start, baseSeconds: seeded };
+}
+
 /** Manual input / stored duration display `HH:MM:SS`. */
 export function formatTrackedTimeInput(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || !Number.isFinite(totalSeconds) || totalSeconds <= 0) {

@@ -61,40 +61,76 @@ devenv_running() {
   docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^penpot-devenv-ws0-main$'
 }
 
+# Owner sk_live_… for cloud-core timer / Projects bridge (never print the value).
+read_cli_api_key() {
+  local cli_env="${HOME}/.config/backsteros/cli.env"
+  [[ -f "$cli_env" ]] || return 0
+  local line
+  line="$(grep -E '^(export[[:space:]]+)?BACKSTEROS_API_KEY=' "$cli_env" | head -1 || true)"
+  [[ -n "$line" ]] || return 0
+  line="${line#*=}"
+  line="${line%\"}"
+  line="${line#\"}"
+  line="${line%\'}"
+  line="${line#\'}"
+  printf '%s' "$line"
+}
+
 # config.js is gitignored; without it nginx 404s and default flags show
 # Libraries & Templates (enable-dashboard-templates-section).
+# Timer chrome + Projects bridge use cloud-core (agent.backsteros.com).
 ensure_frontend_config_js() {
   local cfg="$DESIGN_ROOT/frontend/resources/public/js/config.js"
-  if [[ -f "$cfg" ]]; then
-    if grep -q 'disable-dashboard-templates-section' "$cfg"; then
-      return 0
+  local api_key
+  api_key="$(read_cli_api_key || true)"
+
+  mkdir -p "$(dirname "$cfg")"
+  if [[ ! -f "$cfg" ]]; then
+    if [[ -f "$DESIGN_ROOT/frontend/config.js.example" ]]; then
+      cp "$DESIGN_ROOT/frontend/config.js.example" "$cfg"
+    else
+      cat >"$cfg" <<'EOF'
+// Local devenv flags + BacksterOS cloud-core bridge (gitignored).
+var penpotFlags = "disable-dashboard-templates-section";
+window.backsterosCore = {
+  baseUrl: "https://agent.backsteros.com",
+  apiKey: "sk_live_REPLACE_ME"
+};
+EOF
     fi
-    # Keep existing bridge settings; only add the hide-templates flag.
+    echo "backster-dev: created $cfg"
+  fi
+
+  if ! grep -q 'disable-dashboard-templates-section' "$cfg"; then
     if grep -q 'var penpotFlags' "$cfg"; then
       sed -i.bak -E \
         's/var penpotFlags = "([^"]*)"/var penpotFlags = "\1 disable-dashboard-templates-section"/' \
         "$cfg"
-      # de-dupe if sed ran twice
       perl -i -pe 's/(disable-dashboard-templates-section\s*)+/$1/g' "$cfg" 2>/dev/null || true
       rm -f "${cfg}.bak"
       echo "backster-dev: added disable-dashboard-templates-section to $cfg"
-      return 0
     fi
   fi
-  mkdir -p "$(dirname "$cfg")"
-  if [[ -f "$DESIGN_ROOT/frontend/config.js.example" ]]; then
-    cp "$DESIGN_ROOT/frontend/config.js.example" "$cfg"
-  else
-    cat >"$cfg" <<'EOF'
-// Local devenv flags + BacksterOS bridge (gitignored).
-var penpotFlags = "disable-dashboard-templates-section";
-window.backsterosCore = {
-  baseUrl: "/backsteros-core",
-  apiKey: "local"
-};
-EOF
+
+  # Point local devenv at cloud-core (same timer list as OS / DEV).
+  if grep -qE 'baseUrl:[[:space:]]*"/backsteros-core"' "$cfg" \
+    || grep -qE 'baseUrl:[[:space:]]*"http://127\.0\.0\.1:8788"' "$cfg" \
+    || grep -qE 'apiKey:[[:space:]]*"local"' "$cfg"; then
+    perl -i -pe 's|baseUrl:\s*"[^"]*"|baseUrl: "https://agent.backsteros.com"|' "$cfg"
+    if [[ -n "$api_key" && "$api_key" == sk_live_* ]]; then
+      # Escape for double-quoted JS string (key is hex-ish; still quote-safe).
+      local escaped
+      escaped="$(printf '%s' "$api_key" | sed 's/[\\"]/\\&/g')"
+      perl -i -pe "s|apiKey:\\s*\"[^\"]*\"|apiKey: \"${escaped}\"|" "$cfg"
+    fi
+    echo "backster-dev: pointed config.js at cloud-core (agent.backsteros.com)"
+  elif [[ -n "$api_key" && "$api_key" == sk_live_* ]] \
+    && grep -qE 'apiKey:[[:space:]]*"sk_live_REPLACE_ME"' "$cfg"; then
+    local escaped
+    escaped="$(printf '%s' "$api_key" | sed 's/[\\"]/\\&/g')"
+    perl -i -pe "s|apiKey:\\s*\"[^\"]*\"|apiKey: \"${escaped}\"|" "$cfg"
+    echo "backster-dev: filled cloud-core apiKey from cli.env"
   fi
-  echo "backster-dev: created $cfg"
 }
 
 cmd="${1:-help}"

@@ -205,6 +205,8 @@ fn punch_timer_menu_hole(view: &objc2_app_kit::NSView, hole: &MenuHole) {
     use objc2_core_graphics::{CGPath, CGMutablePath};
     use objc2_quartz_core::{CALayer, CAShapeLayer};
 
+    // Undo any prior full-hide experiment so Penpot stays visible.
+    view.setHidden(false);
     view.setWantsLayer(true);
     let Some(layer) = view.layer() else {
         return;
@@ -227,10 +229,10 @@ fn punch_timer_menu_hole(view: &objc2_app_kit::NSView, hole: &MenuHole) {
     let Some(content) = window.contentView() else {
         return;
     };
-    // Room for the menu shadow, in window CSS pixels (top-left origin).
-    const PAD_X: f64 = 18.0;
-    const PAD_TOP: f64 = 10.0;
-    const PAD_BOTTOM: f64 = 32.0;
+    // Room for the menu shadow + right-edge nav chevron (top-left origin).
+    const PAD_X: f64 = 36.0;
+    const PAD_TOP: f64 = 14.0;
+    const PAD_BOTTOM: f64 = 40.0;
     let content_h = NSView::bounds(&content).size.height;
     let menu_in_content = objc2_foundation::NSRect {
         origin: objc2_foundation::NSPoint {
@@ -546,6 +548,8 @@ fn set_timer_menu_overlay(
     if let Ok(mut guard) = TIMER_MENU_HOLE.lock() {
         *guard = hole;
     }
+    // Punch a click-through hole in the Penpot webview over the menu only —
+    // keep the design content visible underneath.
     apply_timer_menu_hole(&app, &hole)
 }
 

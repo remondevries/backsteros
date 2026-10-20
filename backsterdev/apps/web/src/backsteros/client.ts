@@ -323,6 +323,43 @@ export async function fetchBacksterosTask(
   );
 }
 
+export type BacksterosRunningTimer = {
+  readonly taskId: string;
+  readonly startedAt: string;
+  readonly title: string;
+  readonly number: number | null;
+  readonly status: string | null;
+  readonly trackedDurationSeconds: number | null;
+  readonly trackedMinutes: number | null;
+  readonly projectKey: string | null;
+  readonly updatedAt?: string | null;
+};
+
+export type BacksterosRecentTimer = BacksterosRunningTimer & {
+  readonly lastTimerAt?: string;
+  readonly isRunning?: boolean;
+};
+
+/** Open `timer_started` rows for cross-client chrome / pill sync. */
+export async function fetchBacksterosRunningTimers(
+  signal?: AbortSignal,
+): Promise<readonly BacksterosRunningTimer[]> {
+  const payload = await backsterosFetchJson<{
+    timers?: readonly BacksterosRunningTimer[];
+  }>("/api/v1/running-timers", optionalSignalInit(signal));
+  return payload.timers ?? [];
+}
+
+/** Recent timers (running + paused) for shared chrome dropdown membership. */
+export async function fetchBacksterosRecentTimers(
+  signal?: AbortSignal,
+): Promise<readonly BacksterosRecentTimer[]> {
+  const payload = await backsterosFetchJson<{
+    timers?: readonly BacksterosRecentTimer[];
+  }>("/api/v1/recent-timers", optionalSignalInit(signal));
+  return payload.timers ?? [];
+}
+
 const BACKSTEROS_SYSTEM_ACTIVITY_TYPES = [
   "created",
   "status_changed",
@@ -696,6 +733,52 @@ export async function fetchBacksterosProjectFsFile(
   return backsterosFetchJson(
     `/api/v1/projects/${encodeURIComponent(projectId)}/fs/file?${params.toString()}`,
     optionalSignalInit(signal),
+  );
+}
+
+export async function createBacksterosProjectFsEntry(
+  projectId: string,
+  input: {
+    readonly parent?: string;
+    readonly name: string;
+    readonly kind: "file" | "directory";
+  },
+): Promise<{
+  readonly path: string;
+  readonly name: string;
+  readonly kind: "file" | "directory";
+  readonly parent: string;
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/fs/entries`,
+    {
+      method: "POST",
+      body: {
+        parent: input.parent ?? "",
+        name: input.name,
+        kind: input.kind,
+      },
+    },
+  );
+}
+
+export async function writeBacksterosProjectFsFile(
+  projectId: string,
+  path: string,
+  content: string,
+): Promise<{
+  readonly path: string;
+  readonly name: string;
+  readonly size: number;
+  readonly binary: boolean;
+  readonly content: string;
+}> {
+  return backsterosFetchJson(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/fs/file`,
+    {
+      method: "PUT",
+      body: { path, content },
+    },
   );
 }
 

@@ -20,7 +20,6 @@ import {
 } from "~/backsteros/markdown-editor";
 import { BacksterosOrganizationIcon } from "~/backsteros/OrganizationIcon";
 import { BacksterosOverviewNameEditor } from "~/backsteros/OverviewNameEditor";
-import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
 import { BacksterosProjectStatusIcon } from "~/backsteros/ProjectStatusIcon";
 import {
   BacksterosProjectProgressRing,
@@ -86,21 +85,30 @@ function normalizeHealthDomain(raw: string): string | null {
   return candidate;
 }
 
-function BacksterosCodebaseProjectDescription(props: {
+/** Description editor for the codebase Overview tab (main pane). */
+export function BacksterosCodebaseProjectDescription(props: {
   readonly description: string | null;
-  readonly onSave: (next: string | null) => Promise<void>;
+  readonly emptyMessage?: string;
+  readonly placeholder?: string;
+  readonly saveEnabled?: boolean;
+  readonly onSave: (next: string) => Promise<void>;
 }) {
-  const { description, onSave } = props;
+  const {
+    description,
+    onSave,
+    emptyMessage = "Add a project description…",
+    placeholder = "Add a project description…",
+    saveEnabled = true,
+  } = props;
   const descriptionHostRef = useRef<HTMLDivElement | null>(null);
 
   const saveDescription = useCallback(
     async (nextValue: string) => {
-      const next = nextValue.trim() || null;
-      const current = description?.trim() || null;
-      if (next === current) return;
-      await onSave(next);
+      if (!saveEnabled) return;
+      if (nextValue === (description ?? "")) return;
+      await onSave(nextValue);
     },
-    [description, onSave],
+    [description, onSave, saveEnabled],
   );
 
   const { value, mode, handleChange, handleBlurSave, setViewMode, toggleViewMode } =
@@ -110,7 +118,7 @@ function BacksterosCodebaseProjectDescription(props: {
     });
 
   useContentViewModeShortcut({
-    enabled: true,
+    enabled: saveEnabled,
     onToggle: toggleViewMode,
     onForcePreview: () => setViewMode("preview"),
     hostRef: descriptionHostRef,
@@ -124,8 +132,8 @@ function BacksterosCodebaseProjectDescription(props: {
         onChange={handleChange}
         onBlur={handleBlurSave}
         ariaLabel="Project description"
-        placeholder="Add a project description…"
-        emptyMessage="Add a project description…"
+        placeholder={placeholder}
+        emptyMessage={emptyMessage}
         onToggleMode={toggleViewMode}
         toggle={
           <FloatingPillToggleDock>
@@ -447,7 +455,7 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
     organizations.find((org) => org.id === detail.organizationId)?.name ?? "No organization";
 
   return (
-    <div className="bos-codebase-workbench__side-scroll">
+    <div className="bos-codebase-workbench__side-scroll bos-codebase-overview">
       <div className="bos-codebase-overview__key-row">
         {detail.key ? <p className="bos-codebase-overview__key">{detail.key}</p> : <span />}
         <span
@@ -458,237 +466,279 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
           <BacksterosProjectProgressRing progress={taskProgress} size={16} />
         </span>
       </div>
-      <div className="bos-codebase-overview__title-row">
-        <span className="mt-1 shrink-0 text-muted-foreground">
-          <ProjectOcticon icon={detail.icon} type={detail.type} size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <BacksterosOverviewNameEditor
-            value={detail.name}
-            entityLabel="Project"
-            resetKey={detail.id}
-            renameFocusRequest={titleRenameFocusRequest}
-            onSave={handleSaveName}
-          />
+      <div className="bos-codebase-overview__name-row">
+        <BacksterosOverviewNameEditor
+          value={detail.name}
+          entityLabel="Project"
+          resetKey={detail.id}
+          renameFocusRequest={titleRenameFocusRequest}
+          onSave={handleSaveName}
+        />
+      </div>
+
+      <div className="bos-entity-overview-subgroup" data-subgroup="General">
+        <div className="bos-entity-overview-subgroup__header">
+          <span className="bos-entity-overview-subgroup__label">General</span>
+          <span className="bos-entity-overview-subgroup__rule" aria-hidden="true" />
+        </div>
+        <div className="bos-entity-overview-subgroup__fields bos-task-detail-properties bos-task-detail-properties--stacked">
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Health</span>
+            <BacksterosSearchablePropertyMenu
+              label={
+                healthDomain
+                  ? healthMode === "advanced"
+                    ? `Advanced · ${healthDomain}`
+                    : healthDomain
+                  : healthMode === "advanced"
+                    ? "Advanced"
+                    : "No health check"
+              }
+              muted={!healthDomain && healthMode !== "advanced"}
+              icon={<BacksterosHealthCheckIcon size={PROPERTY_ICON_SIZE} />}
+              value={healthDomain || healthMode === "advanced" ? healthMode : NONE_VALUE}
+              options={healthOptions}
+              searchPlaceholder="Health check…"
+              taskPropertyDropdownId="healthCheck"
+              onChange={(value) => {
+                if (value === NONE_VALUE) {
+                  void applyPatch(
+                    { healthCheckMode: null, healthCheckDomain: null },
+                    "Could not update health check",
+                  );
+                  return;
+                }
+                if (value === "advanced") {
+                  void applyPatch(
+                    { healthCheckMode: "advanced", healthCheckDomain: healthDomain },
+                    "Could not update health check",
+                  );
+                  return;
+                }
+                const nextDomain = window.prompt("Health check domain", healthDomain ?? "");
+                if (nextDomain == null) return;
+                const normalized = normalizeHealthDomain(nextDomain);
+                if (!normalized) {
+                  toastManager.add({
+                    type: "error",
+                    title: "Invalid domain",
+                    description: "Enter a hostname like app.example.com",
+                  });
+                  return;
+                }
+                void applyPatch(
+                  { healthCheckMode: "simple", healthCheckDomain: normalized },
+                  "Could not update health check",
+                );
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Type</span>
+            <span className="bos-task-property-chip bos-task-property-chip--static" title="Type">
+              <span className="bos-task-property-chip__icon" aria-hidden="true">
+                <TerminalConsoleIcon size={PROPERTY_ICON_SIZE} />
+              </span>
+              <span className="bos-task-property-chip__label">Codebase</span>
+            </span>
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Status</span>
+            <BacksterosSearchablePropertyMenu
+              label={getBacksterosProjectStatusLabel(statusValue)}
+              icon={
+                <BacksterosProjectStatusIcon
+                  status={statusValue}
+                  size={PROPERTY_ICON_SIZE}
+                  className="shrink-0"
+                />
+              }
+              value={statusValue}
+              options={statusOptions}
+              searchPlaceholder="Change status…"
+              taskPropertyDropdownId="projectStatus"
+              onChange={(value) => {
+                void applyPatch(
+                  { status: value as BacksterosProjectStatus },
+                  "Could not update status",
+                );
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Priority</span>
+            <BacksterosSearchablePropertyMenu
+              label={getBacksterosTaskPriorityLabel(priorityValue)}
+              icon={<BacksterosTaskPriorityIcon priority={priorityValue} size={PROPERTY_ICON_SIZE} />}
+              value={String(priorityValue)}
+              options={priorityOptions}
+              searchPlaceholder="Change priority…"
+              taskPropertyDropdownId="projectPriority"
+              onChange={(value) => {
+                void applyPatch({ priority: Number(value) }, "Could not update priority");
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Organization</span>
+            <BacksterosSearchablePropertyMenu
+              label={organizationLabel}
+              muted={!detail.organizationId}
+              icon={<BacksterosOrganizationIcon size={PROPERTY_ICON_SIZE} />}
+              value={detail.organizationId ?? NONE_VALUE}
+              options={organizationOptions}
+              searchPlaceholder="Change organization…"
+              taskPropertyDropdownId="organization"
+              onChange={(value) => {
+                void applyPatch(
+                  { organizationId: value === NONE_VALUE ? null : value },
+                  "Could not update organization",
+                );
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Start date</span>
+            <BacksterosDueDatePropertyMenu
+              dueDate={detail.startDate ?? null}
+              status="completed"
+              emptyLabel="No start date"
+              ariaLabel="Change start date"
+              iconSize={PROPERTY_ICON_SIZE}
+              taskPropertyDropdownId="startDate"
+              onChange={(startDate) => {
+                void applyPatch({ startDate }, "Could not update start date");
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Due date</span>
+            <BacksterosDueDatePropertyMenu
+              dueDate={detail.dueDate ?? null}
+              status={detail.status}
+              emptyLabel="No due date"
+              ariaLabel="Change due date"
+              iconSize={PROPERTY_ICON_SIZE}
+              taskPropertyDropdownId="dueDate"
+              onChange={(dueDate) => {
+                void applyPatch({ dueDate }, "Could not update due date");
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Area</span>
+            <BacksterosSearchablePropertyMenu
+              label={areaValue === NONE_VALUE ? "No area" : AREA_LABELS[areaValue]}
+              muted={areaValue === NONE_VALUE}
+              icon={null}
+              value={areaValue}
+              options={areaOptions}
+              searchPlaceholder="Change area…"
+              taskPropertyDropdownId="area"
+              onChange={(value) => {
+                void applyPatch(
+                  {
+                    area:
+                      value === NONE_VALUE ? null : (value as "personal" | "business" | "clients"),
+                    areaId: null,
+                  },
+                  "Could not update area",
+                );
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="bos-task-detail-properties">
-        <BacksterosSearchablePropertyMenu
-          label={getBacksterosProjectStatusLabel(statusValue)}
-          icon={
-            <BacksterosProjectStatusIcon
-              status={statusValue}
-              size={PROPERTY_ICON_SIZE}
-              className="shrink-0"
+      <div className="bos-entity-overview-subgroup" data-subgroup="Locations">
+        <div className="bos-entity-overview-subgroup__header">
+          <span className="bos-entity-overview-subgroup__label">Locations</span>
+          <span className="bos-entity-overview-subgroup__rule" aria-hidden="true" />
+        </div>
+        <div className="bos-entity-overview-subgroup__fields bos-task-detail-properties bos-task-detail-properties--stacked">
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">GitHub</span>
+            <BacksterosSearchablePropertyMenu
+              label={detail.githubRepository?.trim() || "No repository"}
+              muted={!detail.githubRepository?.trim()}
+              icon={<BacksterosGitHubIcon size={PROPERTY_ICON_SIZE} />}
+              value={detail.githubRepository?.trim() || NONE_VALUE}
+              options={repositoryOptions}
+              searchPlaceholder="Change repository…"
+              taskPropertyDropdownId="githubRepository"
+              onChange={(value) => {
+                void applyPatch(
+                  { githubRepository: value === NONE_VALUE ? null : value },
+                  "Could not update repository",
+                );
+              }}
             />
-          }
-          value={statusValue}
-          options={statusOptions}
-          searchPlaceholder="Change status…"
-          taskPropertyDropdownId="projectStatus"
-          onChange={(value) => {
-            void applyPatch(
-              { status: value as BacksterosProjectStatus },
-              "Could not update status",
-            );
-          }}
-        />
-        <BacksterosSearchablePropertyMenu
-          label={getBacksterosTaskPriorityLabel(priorityValue)}
-          icon={<BacksterosTaskPriorityIcon priority={priorityValue} size={PROPERTY_ICON_SIZE} />}
-          value={String(priorityValue)}
-          options={priorityOptions}
-          searchPlaceholder="Change priority…"
-          taskPropertyDropdownId="projectPriority"
-          onChange={(value) => {
-            void applyPatch({ priority: Number(value) }, "Could not update priority");
-          }}
-        />
-        <span className="bos-task-property-chip bos-task-property-chip--static" title="Type">
-          <span className="bos-task-property-chip__icon" aria-hidden="true">
-            <TerminalConsoleIcon size={PROPERTY_ICON_SIZE} />
-          </span>
-          <span className="bos-task-property-chip__label">Codebase</span>
-        </span>
-        <BacksterosSearchablePropertyMenu
-          label={
-            healthDomain
-              ? healthMode === "advanced"
-                ? `Advanced · ${healthDomain}`
-                : healthDomain
-              : healthMode === "advanced"
-                ? "Advanced"
-                : "No health check"
-          }
-          muted={!healthDomain && healthMode !== "advanced"}
-          icon={<BacksterosHealthCheckIcon size={PROPERTY_ICON_SIZE} />}
-          value={healthDomain || healthMode === "advanced" ? healthMode : NONE_VALUE}
-          options={healthOptions}
-          searchPlaceholder="Health check…"
-          taskPropertyDropdownId="healthCheck"
-          onChange={(value) => {
-            if (value === NONE_VALUE) {
-              void applyPatch(
-                { healthCheckMode: null, healthCheckDomain: null },
-                "Could not update health check",
-              );
-              return;
-            }
-            if (value === "advanced") {
-              void applyPatch(
-                { healthCheckMode: "advanced", healthCheckDomain: healthDomain },
-                "Could not update health check",
-              );
-              return;
-            }
-            const nextDomain = window.prompt("Health check domain", healthDomain ?? "");
-            if (nextDomain == null) return;
-            const normalized = normalizeHealthDomain(nextDomain);
-            if (!normalized) {
-              toastManager.add({
-                type: "error",
-                title: "Invalid domain",
-                description: "Enter a hostname like app.example.com",
-              });
-              return;
-            }
-            void applyPatch(
-              { healthCheckMode: "simple", healthCheckDomain: normalized },
-              "Could not update health check",
-            );
-          }}
-        />
-        <BacksterosDueDatePropertyMenu
-          dueDate={detail.startDate ?? null}
-          status="completed"
-          emptyLabel="No start date"
-          ariaLabel="Change start date"
-          iconSize={PROPERTY_ICON_SIZE}
-          taskPropertyDropdownId="startDate"
-          onChange={(startDate) => {
-            void applyPatch({ startDate }, "Could not update start date");
-          }}
-        />
-        <BacksterosDueDatePropertyMenu
-          dueDate={detail.dueDate ?? null}
-          status={detail.status}
-          emptyLabel="No due date"
-          ariaLabel="Change due date"
-          iconSize={PROPERTY_ICON_SIZE}
-          taskPropertyDropdownId="dueDate"
-          onChange={(dueDate) => {
-            void applyPatch({ dueDate }, "Could not update due date");
-          }}
-        />
-        <BacksterosSearchablePropertyMenu
-          label={organizationLabel}
-          muted={!detail.organizationId}
-          icon={<BacksterosOrganizationIcon size={PROPERTY_ICON_SIZE} />}
-          value={detail.organizationId ?? NONE_VALUE}
-          options={organizationOptions}
-          searchPlaceholder="Change organization…"
-          taskPropertyDropdownId="organization"
-          onChange={(value) => {
-            void applyPatch(
-              { organizationId: value === NONE_VALUE ? null : value },
-              "Could not update organization",
-            );
-          }}
-        />
-        <BacksterosSearchablePropertyMenu
-          label={areaValue === NONE_VALUE ? "No area" : AREA_LABELS[areaValue]}
-          muted={areaValue === NONE_VALUE}
-          icon={null}
-          value={areaValue}
-          options={areaOptions}
-          searchPlaceholder="Change area…"
-          taskPropertyDropdownId="area"
-          onChange={(value) => {
-            void applyPatch(
-              {
-                area: value === NONE_VALUE ? null : (value as "personal" | "business" | "clients"),
-                areaId: null,
-              },
-              "Could not update area",
-            );
-          }}
-        />
-        <WorkingDirectoryChip
-          value={detail.localWorkingDirectory}
-          onSave={async (localWorkingDirectory) => {
-            await applyPatch({ localWorkingDirectory }, "Could not update working directory");
-          }}
-        />
-        <WorkingDirectoryChip
-          value={detail.developmentLocation ?? null}
-          prefix="Dev"
-          emptyLabel="Dev location…"
-          ariaLabel="Development location"
-          locationTarget="development"
-          title={
-            detail.developmentSetupError
-              ? `Development setup: ${detail.developmentSetupError}`
-              : (detail.developmentLocation ??
-                "Path on the development server (cloned once when first set)")
-          }
-          onSave={async (developmentLocation) => {
-            await applyPatch({ developmentLocation }, "Could not update development location");
-          }}
-        />
-        <WorkingDirectoryChip
-          value={detail.productionLocation ?? null}
-          prefix="Prod"
-          emptyLabel="Prod location…"
-          ariaLabel="Production location"
-          locationTarget="production"
-          title={detail.productionLocation ?? "Path on the production server"}
-          onSave={async (productionLocation) => {
-            await applyPatch({ productionLocation }, "Could not update production location");
-          }}
-        />
-        <WorkingDirectoryChip
-          value={detail.localLocation ?? null}
-          prefix="Local"
-          emptyLabel="Local location…"
-          ariaLabel="Local location"
-          locationTarget="local"
-          projectId={detail.id}
-          title={detail.localLocation ?? "Path on the machine running the BacksterOS desktop app"}
-          onSave={async (localLocation) => {
-            await applyPatch({ localLocation }, "Could not update local location");
-          }}
-        />
-        <BacksterosSearchablePropertyMenu
-          label={detail.githubRepository?.trim() || "No repository"}
-          muted={!detail.githubRepository?.trim()}
-          icon={<BacksterosGitHubIcon size={PROPERTY_ICON_SIZE} />}
-          value={detail.githubRepository?.trim() || NONE_VALUE}
-          options={repositoryOptions}
-          searchPlaceholder="Change repository…"
-          taskPropertyDropdownId="githubRepository"
-          onChange={(value) => {
-            void applyPatch(
-              { githubRepository: value === NONE_VALUE ? null : value },
-              "Could not update repository",
-            );
-          }}
-        />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Local</span>
+            <WorkingDirectoryChip
+              value={detail.localWorkingDirectory}
+              emptyLabel="Set folder…"
+              ariaLabel="Local location"
+              locationTarget="local"
+              projectId={detail.id}
+              title={
+                detail.localWorkingDirectory ??
+                "Local working directory (required before starting an agent)"
+              }
+              onSave={async (localWorkingDirectory) => {
+                await applyPatch({ localWorkingDirectory }, "Could not update working directory");
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Development</span>
+            <WorkingDirectoryChip
+              value={detail.developmentLocation ?? null}
+              prefix="Dev"
+              emptyLabel="Dev location…"
+              ariaLabel="Development location"
+              locationTarget="development"
+              title={
+                detail.developmentSetupError
+                  ? `Development setup: ${detail.developmentSetupError}`
+                  : (detail.developmentLocation ??
+                    "Path on the development server (cloned once when first set)")
+              }
+              onSave={async (developmentLocation) => {
+                await applyPatch({ developmentLocation }, "Could not update development location");
+              }}
+            />
+          </div>
+          <div className="bos-entity-overview-field">
+            <span className="bos-entity-overview-field__label">Production</span>
+            <WorkingDirectoryChip
+              value={detail.productionLocation ?? null}
+              prefix="Prod"
+              emptyLabel="Prod location…"
+              ariaLabel="Production location"
+              locationTarget="production"
+              title={detail.productionLocation ?? "Path on the production server"}
+              onSave={async (productionLocation) => {
+                await applyPatch({ productionLocation }, "Could not update production location");
+              }}
+            />
+          </div>
+        </div>
       </div>
 
-      <BacksterosCodebaseProjectDescription
-        description={detail.description ?? null}
-        onSave={async (next) => {
-          await applyPatch({ description: next }, "Could not update description");
-        }}
-      />
-
-      <div className="mt-5">
-        <BacksterosCodebaseProjectActivityPanel
-          projectId={detail.id}
-          projectKey={detail.key}
-          tasks={tasks}
-        />
+      <div className="bos-entity-overview-subgroup" data-subgroup="Activities">
+        <div className="bos-entity-overview-subgroup__header">
+          <span className="bos-entity-overview-subgroup__label">Activities</span>
+          <span className="bos-entity-overview-subgroup__rule" aria-hidden="true" />
+        </div>
+        <div className="bos-entity-overview-subgroup__fields">
+          <BacksterosCodebaseProjectActivityPanel
+            projectId={detail.id}
+            projectKey={detail.key}
+            tasks={tasks}
+          />
+        </div>
       </div>
     </div>
   );

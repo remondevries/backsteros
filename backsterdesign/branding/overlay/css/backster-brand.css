@@ -1,5 +1,31 @@
 /* BacksterDESIGN chrome for self-hosted Penpot */
 
+:root {
+  /* Match BacksterOS accent — used for text caret + keyboard focus. */
+  --keyboard-nav-highlight-color: #ee7a47;
+}
+
+/*
+ * Orange text insertion caret (same as BacksterOS inputs / editors).
+ * Skip native controls that never show a caret.
+ */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+/*
+ * Canvas text editor keeps a fill-driven caret for contrast on shapes.
+ */
+[class*="v2_editor"],
+[class*="v2_editor"] *,
+[class*="text-editor"],
+[class*="text-editor"] * {
+  caret-color: var(--text-editor-caret-color, currentColor);
+}
+
 /*
  * Tauri desktop shell: native overlay titlebar + tab strip live above the
  * iframe. Mark the document (app.main.desktop) and tone down browser-ish

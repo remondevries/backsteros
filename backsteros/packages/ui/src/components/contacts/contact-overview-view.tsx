@@ -1,10 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { GearIcon, XIcon } from "@primer/octicons-react";
 
-import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
+import {
+  adoptRemoteField,
+  adoptRemoteKeyedField,
+} from "../../shared/adopt-remote-field.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
@@ -327,6 +337,11 @@ export function ContactOverviewView({
   const [languagesSource, setLanguagesSource] = useState(
     languagesKey(remoteLanguages),
   );
+  /** In-flight JSON keys — ignore PowerSync flaps until remote matches. */
+  const pendingEmailsKeyRef = useRef<string | null>(null);
+  const pendingPhonesKeyRef = useRef<string | null>(null);
+  const pendingSocialAccountsKeyRef = useRef<string | null>(null);
+  const pendingLanguagesKeyRef = useRef<string | null>(null);
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [lastNameFocusRequest, setLastNameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(contact.id);
@@ -380,6 +395,10 @@ export function ContactOverviewView({
     setBirthdaySource(remoteBirthday);
     setLanguages(remoteLanguages);
     setLanguagesSource(languagesKey(remoteLanguages));
+    pendingEmailsKeyRef.current = null;
+    pendingPhonesKeyRef.current = null;
+    pendingSocialAccountsKeyRef.current = null;
+    pendingLanguagesKeyRef.current = null;
   } else {
     adoptRemoteField(
       remoteFirstName,
@@ -449,37 +468,53 @@ export function ContactOverviewView({
       setBirthdaySource,
     );
 
-    const remoteSocialKey = socialAccountsKey(remoteSocialAccounts);
-    if (remoteSocialKey !== socialAccountsSource) {
-      setSocialAccountsSource(remoteSocialKey);
-      if (socialAccountsKey(socialAccounts) === socialAccountsSource) {
-        setSocialAccounts(remoteSocialAccounts);
-      }
-    }
+    adoptRemoteKeyedField({
+      remoteKey: socialAccountsKey(remoteSocialAccounts),
+      localKey: socialAccountsKey(socialAccounts),
+      sourceKey: socialAccountsSource,
+      pendingKey: pendingSocialAccountsKeyRef.current,
+      setSource: setSocialAccountsSource,
+      setLocalFromRemote: () => setSocialAccounts(remoteSocialAccounts),
+      clearPending: () => {
+        pendingSocialAccountsKeyRef.current = null;
+      },
+    });
 
-    const remoteEmailsKey = emailsKey(remoteEmails);
-    if (remoteEmailsKey !== emailsSource) {
-      setEmailsSource(remoteEmailsKey);
-      if (emailsKey(emails) === emailsSource) {
-        setEmails(remoteEmails);
-      }
-    }
+    adoptRemoteKeyedField({
+      remoteKey: emailsKey(remoteEmails),
+      localKey: emailsKey(emails),
+      sourceKey: emailsSource,
+      pendingKey: pendingEmailsKeyRef.current,
+      setSource: setEmailsSource,
+      setLocalFromRemote: () => setEmails(remoteEmails),
+      clearPending: () => {
+        pendingEmailsKeyRef.current = null;
+      },
+    });
 
-    const remotePhonesKey = phonesKey(remotePhones);
-    if (remotePhonesKey !== phonesSource) {
-      setPhonesSource(remotePhonesKey);
-      if (phonesKey(phones) === phonesSource) {
-        setPhones(remotePhones);
-      }
-    }
+    adoptRemoteKeyedField({
+      remoteKey: phonesKey(remotePhones),
+      localKey: phonesKey(phones),
+      sourceKey: phonesSource,
+      pendingKey: pendingPhonesKeyRef.current,
+      setSource: setPhonesSource,
+      setLocalFromRemote: () => setPhones(remotePhones),
+      clearPending: () => {
+        pendingPhonesKeyRef.current = null;
+      },
+    });
 
-    const remoteLanguagesKey = languagesKey(remoteLanguages);
-    if (remoteLanguagesKey !== languagesSource) {
-      setLanguagesSource(remoteLanguagesKey);
-      if (languagesKey(languages) === languagesSource) {
-        setLanguages(remoteLanguages);
-      }
-    }
+    adoptRemoteKeyedField({
+      remoteKey: languagesKey(remoteLanguages),
+      localKey: languagesKey(languages),
+      sourceKey: languagesSource,
+      pendingKey: pendingLanguagesKeyRef.current,
+      setSource: setLanguagesSource,
+      setLocalFromRemote: () => setLanguages(remoteLanguages),
+      clearPending: () => {
+        pendingLanguagesKeyRef.current = null;
+      },
+    });
   }
 
   function persist(patch: ContactOverviewDetails) {
@@ -509,16 +544,18 @@ export function ContactOverviewView({
     emails: ContactEmailEntry[];
   }) {
     const nextEmail = next.email ?? "";
+    const nextEmailsKey = emailsKey(next.emails);
     setEmail(nextEmail);
     setEmails(next.emails);
     const emailMatches = nextEmail === (contact.email ?? "");
-    const emailsMatch =
-      emailsKey(next.emails) === emailsKey(contact.emails ?? []);
+    const emailsMatch = nextEmailsKey === emailsKey(contact.emails ?? []);
     if (emailMatches && emailsMatch) {
       setEmailSource(nextEmail);
-      setEmailsSource(emailsKey(next.emails));
+      setEmailsSource(nextEmailsKey);
+      pendingEmailsKeyRef.current = null;
       return;
     }
+    pendingEmailsKeyRef.current = nextEmailsKey;
     persist({ email: next.email, emails: next.emails });
   }
 
@@ -527,26 +564,31 @@ export function ContactOverviewView({
     phones: ContactPhoneEntry[];
   }) {
     const nextPhone = next.phone ?? "";
+    const nextPhonesKey = phonesKey(next.phones);
     setPhone(nextPhone);
     setPhones(next.phones);
     const phoneMatches = nextPhone === (contact.phone ?? "");
-    const phonesMatch =
-      phonesKey(next.phones) === phonesKey(contact.phones ?? []);
+    const phonesMatch = nextPhonesKey === phonesKey(contact.phones ?? []);
     if (phoneMatches && phonesMatch) {
       setPhoneSource(nextPhone);
-      setPhonesSource(phonesKey(next.phones));
+      setPhonesSource(nextPhonesKey);
+      pendingPhonesKeyRef.current = null;
       return;
     }
+    pendingPhonesKeyRef.current = nextPhonesKey;
     persist({ phone: next.phone, phones: next.phones });
   }
 
   function saveLanguages(next: ContactLanguage[]) {
     const normalized = coerceContactLanguages(next);
+    const nextKey = languagesKey(normalized);
     setLanguages(normalized);
-    if (languagesKey(normalized) === languagesKey(remoteLanguages)) {
-      setLanguagesSource(languagesKey(normalized));
+    if (nextKey === languagesKey(remoteLanguages)) {
+      setLanguagesSource(nextKey);
+      pendingLanguagesKeyRef.current = null;
       return;
     }
+    pendingLanguagesKeyRef.current = nextKey;
     persist({ languages: normalized });
   }
 
@@ -562,14 +604,14 @@ export function ContactOverviewView({
 
   function saveSocialAccounts(nextAccounts: ContactSocialAccount[]) {
     const normalized = normalizeSocialAccounts(nextAccounts);
+    const nextKey = socialAccountsKey(normalized);
     setSocialAccounts(normalized);
-    if (
-      socialAccountsKey(normalized) ===
-      socialAccountsKey(contact.socialAccounts ?? [])
-    ) {
-      setSocialAccountsSource(socialAccountsKey(normalized));
+    if (nextKey === socialAccountsKey(contact.socialAccounts ?? [])) {
+      setSocialAccountsSource(nextKey);
+      pendingSocialAccountsKeyRef.current = null;
       return;
     }
+    pendingSocialAccountsKeyRef.current = nextKey;
     persist({ socialAccounts: normalized });
   }
 

@@ -18,7 +18,7 @@ import {
   type GroupedListPointerReorderRequest,
 } from "./grouped-list-pointer-reorder.js";
 
-const DRAG_THRESHOLD_PX = 5;
+const DRAG_THRESHOLD_PX = 10;
 
 export type GroupedListPointerItemBind = {
   [LIST_REORDER_ITEM_ATTR]: string;
@@ -44,6 +44,12 @@ export type UseGroupedListPointerReorderOptions = {
   itemLayout?: "list" | "grid";
   /** Next sibling in a group — required for grid after-item drops. */
   getNextItemId?: (itemId: string, groupKey: string) => string | null;
+  /**
+   * Fired on pointerup when the gesture never crossed the drag threshold.
+   * Prefer this over relying on `click` when rows also bind pointer reorder —
+   * a prior drag can leave click-suppression set and swallow the next open.
+   */
+  onItemActivate?: (itemId: string) => void;
 };
 
 export type { GroupedListPointerReorderRequest };
@@ -60,6 +66,7 @@ export function useGroupedListPointerReorder({
   onReorder,
   itemLayout = "list",
   getNextItemId,
+  onItemActivate,
 }: UseGroupedListPointerReorderOptions) {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [insertBeforeKey, setInsertBeforeKey] = useState<string | null>(null);
@@ -79,6 +86,7 @@ export function useGroupedListPointerReorder({
   const groupAppendOrderKeyRef = useRef(groupAppendOrderKey);
   const onReorderRef = useRef(onReorder);
   const getNextItemIdRef = useRef(getNextItemId);
+  const onItemActivateRef = useRef(onItemActivate);
   const suppressClickRef = useRef(false);
   const stopSelectStartRef = useRef<(() => void) | null>(null);
 
@@ -101,6 +109,10 @@ export function useGroupedListPointerReorder({
   useEffect(() => {
     getNextItemIdRef.current = getNextItemId;
   }, [getNextItemId]);
+
+  useEffect(() => {
+    onItemActivateRef.current = onItemActivate;
+  }, [onItemActivate]);
 
   useEffect(() => {
     if (!draggingItemId) return;
@@ -167,13 +179,31 @@ export function useGroupedListPointerReorder({
 
       const target = pendingTargetRef.current;
       const didDrag = origin.active;
+      const itemId = origin.id;
+      const fromGroupKey = origin.fromGroupKey;
       clearDrag();
 
-      if (!didDrag || !target) return;
+      if (!didDrag) {
+        // Open via pointerup so a stuck suppress flag from an earlier drag
+        // cannot eat this gesture. Suppress the trailing `click` if we handle it.
+        if (onItemActivateRef.current) {
+          suppressClickRef.current = true;
+          onItemActivateRef.current(itemId);
+        }
+        return;
+      }
+
+      // If no `click` follows this drag (common after a long move), clear
+      // suppression so the *next* intentional open is not swallowed.
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+
+      if (!target) return;
 
       const request = groupedListPointerDropToRequest({
-        itemId: origin.id,
-        fromGroupKey: origin.fromGroupKey,
+        itemId,
+        fromGroupKey,
         target,
         getNextItemId: getNextItemIdRef.current,
       });
@@ -210,6 +240,8 @@ export function useGroupedListPointerReorder({
         window.removeEventListener("selectstart", preventSelectStart);
       };
 
+      // Fresh gesture — do not inherit suppress from a prior drag without click.
+      suppressClickRef.current = false;
       originRef.current = {
         id: itemId,
         fromGroupKey,

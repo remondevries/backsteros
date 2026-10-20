@@ -5,6 +5,7 @@ export type ExecutionLocation = "development" | "production" | "local";
 export type ProjectLocationFields = {
   readonly developmentLocation?: string | null;
   readonly productionLocation?: string | null;
+  /** @deprecated Folded into localWorkingDirectory; ignored at resolve time. */
   readonly localLocation?: string | null;
   readonly localWorkingDirectory?: string | null;
 };
@@ -23,9 +24,7 @@ export function resolveExecutionWorkspacePath(
   if (executionLocation === "production") {
     return trimPath(project.productionLocation);
   }
-  if (executionLocation === "local") {
-    return trimPath(project.localLocation) ?? trimPath(project.localWorkingDirectory);
-  }
+  // `local` and unset both use the single canonical local working directory.
   return trimPath(project.localWorkingDirectory);
 }
 

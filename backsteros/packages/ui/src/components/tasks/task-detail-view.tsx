@@ -604,22 +604,30 @@ export function TaskDetailView({
                   ariaLabel="Task description"
                   emptyMessage="Add a description…"
                   preview={descriptionPreview}
-                  toggle={usePropertiesRail ? undefined : viewModeDock}
                 />
-                <TaskLinkAttachments
-                  links={task.links}
-                  onChangeLinks={onChangeLinks}
-                  documentOptions={documentLinkOptions}
-                  letterOptions={letterLinkOptions}
-                  emailOptions={emailLinkOptions}
-                  onNavigate={onNavigateLink}
-                  designPublicUri={designPublicUri}
-                  fileAttachments={fileAttachments}
-                  fileUploading={fileUploading}
-                  onUploadFile={onUploadFile}
-                  onRemoveFile={onRemoveFile}
-                  onOpenFile={onOpenFile}
-                />
+                <div className="task-detail-description-tools">
+                  <div className="task-detail-description-tools__attachments">
+                    <TaskLinkAttachments
+                      links={task.links}
+                      onChangeLinks={onChangeLinks}
+                      documentOptions={documentLinkOptions}
+                      letterOptions={letterLinkOptions}
+                      emailOptions={emailLinkOptions}
+                      onNavigate={onNavigateLink}
+                      designPublicUri={designPublicUri}
+                      fileAttachments={fileAttachments}
+                      fileUploading={fileUploading}
+                      onUploadFile={onUploadFile}
+                      onRemoveFile={onRemoveFile}
+                      onOpenFile={onOpenFile}
+                    />
+                  </div>
+                  {!usePropertiesRail ? (
+                    <div className="task-detail-description-tools__view-mode">
+                      {viewModeToggle}
+                    </div>
+                  ) : null}
+                </div>
                 {afterAttachments}
                 {belowDescriptionNode}
                 {errorNode}

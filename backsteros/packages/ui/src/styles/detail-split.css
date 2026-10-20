@@ -4,7 +4,8 @@
 .task-detail-view,
 .task-detail-split,
 .help-article-detail-split,
-.finance-estimate-detail-split {
+.finance-estimate-detail-split,
+.project-detail-split {
   display: flex;
   min-height: 0;
   width: 100%;
@@ -18,7 +19,26 @@
 .meeting-detail-split .detail-with-properties,
 .task-detail-split .detail-with-properties,
 .email-detail-split .detail-with-properties,
-.help-article-detail-split .detail-with-properties {
+.help-article-detail-split .detail-with-properties,
+.project-detail-split .detail-with-properties {
+  min-height: 0;
+  flex: 1;
+}
+
+.project-detail-split .project-detail__overview-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-detail-split .project-detail__overview-top {
+  flex-shrink: 0;
+}
+
+.project-detail-split .project-detail__description--expanded {
   min-height: 0;
   flex: 1;
 }
@@ -384,7 +404,49 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 20px;
+  /* Match `.segmented-pill-toggle` outer height so the paperclip centers
+   * with Preview/Edit when both sit on the description-tools row. */
+  min-height: 26px;
+}
+
+/*
+ * Paperclip + Preview/Edit on one row; attachment chips on a full-width row
+ * below. `display: contents` lifts toolbar/list out of the nested wrappers so
+ * the list can `flex-basis: 100%` across the whole tools strip.
+ */
+.task-detail-description-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-detail-description-tools__attachments,
+.task-detail-description-tools .task-link-attachments {
+  display: contents;
+}
+
+.task-detail-description-tools .task-link-attachments__toolbar {
+  flex: 1 1 auto;
+  min-width: 0;
+  order: 1;
+}
+
+.task-detail-description-tools__view-mode {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 26px;
+  order: 2;
+}
+
+.task-detail-description-tools .task-link-attachments__list {
+  order: 3;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
 }
 
 .task-link-attachments__add {
@@ -405,10 +467,6 @@
   font: inherit;
   font-size: 12px;
   line-height: 1;
-}
-
-.task-link-attachments__add-label {
-  white-space: nowrap;
 }
 
 .task-link-attachments__add:hover {

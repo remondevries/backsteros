@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import {
   CONTACT_PHONE_LABELS,
   contactPhoneRowsForEditor,
+  formatContactPhoneDisplay,
   normalizeContactPhoneLabel,
   splitContactPhoneRows,
   type ContactPhoneEntry,
@@ -15,6 +16,7 @@ import { XIcon } from "@primer/octicons-react";
 
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import { ContactDetailChipsMore } from "./contact-detail-chips-more.js";
 
 export type { ContactPhoneEntry, ContactPhoneLabel };
 
@@ -84,6 +86,9 @@ function rowsKey(rows: ContactPhoneEditorRow[]): string {
   return JSON.stringify(rows);
 }
 
+/** Collapse long phone lists so the Details field stays scannable. */
+const PHONE_CHIPS_COLLAPSED_LIMIT = 3;
+
 /**
  * Phone numbers as split pills: category dropdown | number input.
  */
@@ -108,6 +113,7 @@ export function ContactPhonesEditor<
   const remoteKey = rowsKey(remoteRows);
   const [rows, setRows] = useState(remoteRows);
   const [rowsSource, setRowsSource] = useState(remoteKey);
+  const [listExpanded, setListExpanded] = useState(false);
   const numberInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   if (remoteKey !== rowsSource) {
@@ -115,6 +121,7 @@ export function ContactPhonesEditor<
     setRowsSource(remoteKey);
     if (rowsKey(rows) === priorSource) {
       setRows(remoteRows);
+      setListExpanded(false);
     }
   }
 
@@ -134,8 +141,13 @@ export function ContactPhonesEditor<
   }
 
   function commitRows(next: ContactPhoneEditorRow[]) {
-    setRows(next);
-    const split = splitRows(next);
+    // Format on blur/save only — live typing must not rewrite the value mid-keystroke.
+    const formatted = next.map((row) => ({
+      ...row,
+      number: formatContactPhoneDisplay(row.number),
+    }));
+    setRows(formatted);
+    const split = splitRows(formatted);
     onChange({
       phone: split.phone ?? "",
       phones: split.phones,
@@ -180,6 +192,7 @@ export function ContactPhonesEditor<
   function addRow() {
     if (disabled || rows.length >= 20) return;
     const next = [...rows, { label: defaultLabel, number: "" }];
+    setListExpanded(true);
     setLocalRows(next);
     requestAnimationFrame(() => {
       numberInputRefs.current.get(next.length - 1)?.focus();
@@ -194,10 +207,17 @@ export function ContactPhonesEditor<
       return index === rows.length - 1;
     });
 
+  const hiddenCount = Math.max(0, chips.length - PHONE_CHIPS_COLLAPSED_LIMIT);
+  const showCollapseToggle = hiddenCount > 0;
+  const visibleChips =
+    listExpanded || !showCollapseToggle
+      ? chips
+      : chips.slice(0, PHONE_CHIPS_COLLAPSED_LIMIT);
+
   return (
     <div className="contact-detail-chips">
       <div className="contact-detail-chips__row">
-        {chips.map(({ entry, index }) => {
+        {visibleChips.map(({ entry, index }) => {
           const label = labelDisplay(entry.label);
           const canRemove = Boolean(entry.number.trim()) || rows.length > 1;
           return (
@@ -301,6 +321,14 @@ export function ContactPhonesEditor<
           <SidePanelPlusIcon />
         </button>
       </div>
+      {showCollapseToggle ? (
+        <ContactDetailChipsMore
+          expanded={listExpanded}
+          hiddenCount={hiddenCount}
+          disabled={disabled}
+          onToggle={() => setListExpanded((open) => !open)}
+        />
+      ) : null}
     </div>
   );
 }

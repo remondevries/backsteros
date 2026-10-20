@@ -41,6 +41,8 @@ import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { ServersPageSidebar } from "./servers/ServersPageSidebar";
 import { PullRequestsPageSidebar } from "./pullRequest/PullRequestsPageSidebar";
 import { UsagePageSidebar } from "./usage/UsagePageSidebar";
+import { BacksterosContentTabsTimer } from "../backsteros/BacksterosContentTabsTimer";
+import { SyncRemoteRunningTimers } from "../backsteros/SyncRemoteRunningTimers";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
 import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
 import { BacksterosFileTaskModal } from "./sidebar/BacksterosFileTaskModal";
@@ -386,6 +388,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
         {!replacesThreadSidebar || isOnServersPage ? <BacksterosFileTaskModal /> : null}
         {children}
+        <SyncRemoteRunningTimers />
+        <div
+          className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[calc(var(--workspace-controls-right)+2.75rem)] z-50 flex h-[var(--workspace-topbar-height)] items-center"
+          data-backsteros-content-tabs-timer=""
+        >
+          <BacksterosContentTabsTimer />
+        </div>
         <SidebarControl />
         <NavigationHistoryShortcuts />
         <MainAppLocationTracker />

@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
@@ -23,10 +24,60 @@ import { useTrackedTimerOptional } from "../../tracked-timer/tracked-timer-conte
 import type { TrackedTimerListItem } from "../../tracked-timer/tracked-timer-types.js";
 import { getTaskStatusIdBadgeStyle } from "../../tasks/task-status-header-gradient.js";
 
-const PANEL_MIN_WIDTH = 260;
-const PANEL_MAX_WIDTH = 400;
+const PANEL_MIN_WIDTH = 390;
+const PANEL_MAX_WIDTH = 600;
 const PANEL_GAP = 6;
 const VIEWPORT_PADDING = 8;
+
+/**
+ * Real app URI on the anchor (`href`) so hosts/status-bar see the path.
+ * Navigation is always driven through `onNavigate` — do not rely on SPA Link
+ * or a bare `<a>` default (DESIGN chrome must invoke open_backsteros_href).
+ */
+function ContentTabsTimerOptionNav({
+  href,
+  entityId,
+  label,
+  onNavigate,
+  onClose,
+}: {
+  href: string;
+  entityId: string;
+  label: string;
+  onNavigate: (href: string) => void;
+  onClose: () => void;
+}) {
+  const trimmed =
+    href.trim() ||
+    (entityId.trim() ? `/tasks/${encodeURIComponent(entityId.trim())}` : "");
+  if (!trimmed) return null;
+
+  const go = (event: ReactPointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onNavigate(trimmed);
+    onClose();
+  };
+
+  return (
+    <a
+      href={trimmed}
+      className="content-tabs-timer__option-nav"
+      aria-label={label}
+      title={label}
+      data-tauri-drag-region="false"
+      // pointerdown: DESIGN menu sits under a native webview hole; click can be lost.
+      onPointerDown={go}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <ChevronRightIcon size={12} aria-hidden="true" />
+    </a>
+  );
+}
 
 function splitDurationDisplay(totalSeconds: number): {
   head: string;
@@ -66,6 +117,7 @@ function ContentTabsTimerMenu({
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({
     visibility: "hidden",
   });
+
 
   const updatePosition = useCallback(() => {
     const anchor = anchorRef.current;
@@ -151,6 +203,7 @@ function ContentTabsTimerMenu({
       className="content-tabs-timer__dropdown"
       style={panelStyle}
       role="menu"
+      data-tauri-drag-region="false"
     >
       {menuTimers.map((entry) => {
         const displayId = entry.subtitle?.trim() || null;
@@ -192,9 +245,16 @@ function ContentTabsTimerMenu({
               type="button"
               role="menuitem"
               className="content-tabs-timer__option-main"
-              aria-label={`Select timer for ${entry.title}`}
+              aria-label={`Open ${entry.title}`}
               onClick={() => {
+                // Title row opens the task (same as the chevron) — large hit target.
                 onSelect(entry.key);
+                const href =
+                  entry.href.trim() ||
+                  (entry.entityId.trim()
+                    ? `/tasks/${encodeURIComponent(entry.entityId.trim())}`
+                    : "");
+                if (href) onNavigate(href);
                 onClose();
               }}
             >
@@ -230,19 +290,13 @@ function ContentTabsTimerMenu({
                 {formatTrackedDuration(getElapsedSeconds(entry.key))}
               </span>
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="content-tabs-timer__option-nav"
-              aria-label={navigateLabel}
-              title={navigateLabel}
-              onClick={() => {
-                onNavigate(entry.href);
-                onClose();
-              }}
-            >
-              <ChevronRightIcon size={12} aria-hidden="true" />
-            </button>
+            <ContentTabsTimerOptionNav
+              href={entry.href}
+              entityId={entry.entityId}
+              label={navigateLabel}
+              onNavigate={onNavigate}
+              onClose={onClose}
+            />
           </div>
         );
       })}
@@ -257,19 +311,24 @@ export function ContentTabsTimer() {
   const controlRef = useRef<HTMLDivElement>(null);
 
   const runningCount = timer?.runningKeys.length ?? 0;
-  const displayKey =
-    timer?.activeKey ??
-    timer?.resolvedRunningKey ??
-    timer?.recentTimers[0]?.key ??
-    null;
-  const activeTimer = useMemo(
-    () =>
-      displayKey
-        ? (timer?.recentTimers.find((entry) => entry.key === displayKey) ??
-          null)
-        : null,
-    [displayKey, timer?.recentTimers],
-  );
+  const recentTimers = timer?.recentTimers ?? [];
+  const activeTimer = useMemo(() => {
+    if (!timer || recentTimers.length === 0) return null;
+    const active = timer.activeKey
+      ? (recentTimers.find((entry) => entry.key === timer.activeKey) ?? null)
+      : null;
+    const running = timer.resolvedRunningKey
+      ? (recentTimers.find(
+          (entry) => entry.key === timer.resolvedRunningKey,
+        ) ?? null)
+      : null;
+    // When something is running, the chrome follows that clock across apps —
+    // a paused local "focused" selection must not hide the live shared timer.
+    if (running && (!active || !active.isRunning)) {
+      return running;
+    }
+    return active ?? running ?? recentTimers[0] ?? null;
+  }, [recentTimers, timer]);
   const timerTick = timer?.timerTick ?? 0;
 
   if (!timer || !activeTimer) {
@@ -384,7 +443,11 @@ export function ContentTabsTimer() {
         getElapsedSeconds={timer.getElapsedSeconds}
         onSelect={(key) => timer.selectTimer(key, { navigate: false })}
         onToggle={(key) => timer.toggleTimer(key)}
-        onNavigate={(href) => timer.onNavigate?.(href)}
+        onNavigate={(href) => {
+          const next = href.trim();
+          if (!next) return;
+          timer.onNavigate?.(next);
+        }}
       />
     </div>
   );

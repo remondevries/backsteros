@@ -26,6 +26,8 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
 import { FileTypeIcon } from "../documents/file-type-icon.js";
+import { FolderPlusIcon } from "../icons/folder-plus-icon.js";
+import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { FileDeleteConfirmModal } from "./file-delete-confirm-modal.js";
 import { FsTreeInlineCreate } from "./fs-tree-inline-create.js";
 import {
@@ -634,10 +636,35 @@ export function ProjectWorkingDirectoryTree({
     );
   }
 
-  const showEmptyHint = entries.length === 0 && !pendingCreate;
-
   return (
     <>
+    <div className="console-docs-tree">
+      <div className="console-docs-tree__header">
+        <span className="console-docs-tree__header-label">Name</span>
+        <div className="console-docs-tree__header-actions">
+          <button
+            type="button"
+            className="app-side-panel-section-action"
+            aria-label="Create file (C)"
+            title="Create file (C)"
+            disabled={pendingCreate != null}
+            onClick={() => beginCreate("file")}
+          >
+            <SidePanelPlusIcon />
+          </button>
+          <button
+            type="button"
+            className="app-side-panel-section-action"
+            aria-label="Create folder (⇧C)"
+            title="Create folder (⇧C)"
+            disabled={pendingCreate != null}
+            onClick={() => beginCreate("directory")}
+          >
+            <FolderPlusIcon className="shrink-0" />
+          </button>
+        </div>
+      </div>
+      <div className="console-docs-tree__main">
     <ul
       ref={treeRef}
       className="console-fs-tree"
@@ -652,12 +679,6 @@ export function ProjectWorkingDirectoryTree({
           onCancel={() => setPendingCreate(null)}
           onSubmit={submitCreate}
         />
-      ) : null}
-
-      {showEmptyHint ? (
-        <li className="console-fs-tree-status" role="presentation">
-          Empty — press C for a file, ⇧C for a folder.
-        </li>
       ) : null}
 
       {visibleNodes.map((node) => {
@@ -762,6 +783,8 @@ export function ProjectWorkingDirectoryTree({
         );
       })}
     </ul>
+      </div>
+    </div>
 
     {pendingDelete ? (
       <FileDeleteConfirmModal

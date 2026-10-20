@@ -56,6 +56,40 @@ export const PROJECT_AREA_FILTERS: ProjectAreaFilter[] = [
   PROJECT_AREA_FILTER_OTHER,
 ];
 
+/**
+ * Area pills / number-key tabs for the Projects list.
+ * Hides Other when no project is missing a defined area.
+ */
+export function visibleProjectAreaFilters<
+  T extends { area: ProjectArea | null },
+>(projects: readonly T[]): ProjectAreaFilter[] {
+  const hasOther = projects.some(
+    (project) => !isDefinedProjectArea(project.area),
+  );
+  if (hasOther) {
+    return PROJECT_AREA_FILTERS;
+  }
+  return PROJECT_AREA_FILTERS.filter(
+    (area) => area !== PROJECT_AREA_FILTER_OTHER,
+  );
+}
+
+/** Syncs number-key tabs with whether the Other pill is shown. */
+let projectsListIncludeOtherArea = true;
+
+export function setProjectsListIncludeOtherArea(include: boolean): void {
+  projectsListIncludeOtherArea = include;
+}
+
+export function projectsListAreaFilters(): ProjectAreaFilter[] {
+  if (projectsListIncludeOtherArea) {
+    return PROJECT_AREA_FILTERS;
+  }
+  return PROJECT_AREA_FILTERS.filter(
+    (area) => area !== PROJECT_AREA_FILTER_OTHER,
+  );
+}
+
 /** Area order for number-key tabs. */
 export const PROJECT_AREA_ORDER: ProjectArea[] = [...PROJECT_AREAS];
 

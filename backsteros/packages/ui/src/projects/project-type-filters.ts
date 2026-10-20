@@ -18,6 +18,22 @@ export const CATALOG_PROJECT_TYPES: readonly ProjectType[] =
 export const CATALOG_DEFAULT_PROJECT_TYPE: ProjectType =
   CATALOG_PROJECT_TYPES[0] ?? "codebase";
 
+/**
+ * Types shown on the Projects list — Default + Codebase only.
+ * IT Service / Webhosting / Domains / E-mail live under Catalog.
+ */
+export const PROJECTS_LIST_PROJECT_TYPES: readonly ProjectType[] = [
+  "general",
+  "codebase",
+];
+
+export function isProjectsListProjectType(
+  type: string | null | undefined,
+): boolean {
+  const resolved = migrateLegacyProjectType(type);
+  return (PROJECTS_LIST_PROJECT_TYPES as readonly string[]).includes(resolved);
+}
+
 export function getProjectTypeFilterLabel(filter: ProjectTypeFilter): string {
   if (filter === PROJECT_TYPE_FILTER_ALL) {
     return "All";
@@ -34,6 +50,15 @@ export function filterProjectsByType<T extends { type?: string | null }>(
   }
   return projects.filter(
     (project) => migrateLegacyProjectType(project.type) === type,
+  );
+}
+
+/** Projects list: Default/`general` + Codebase only. */
+export function filterProjectsListByType<T extends { type?: string | null }>(
+  projects: readonly T[],
+): T[] {
+  return projects.filter((project) =>
+    isProjectsListProjectType(project.type),
   );
 }
 

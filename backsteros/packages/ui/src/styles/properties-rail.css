@@ -158,6 +158,13 @@
   padding: 0 8px;
 }
 
+.entity-properties-section__header-end {
+  display: inline-flex;
+  margin-left: auto;
+  align-items: center;
+  min-width: 0;
+}
+
 .entity-properties-section__title {
   margin: 0;
   color: color-mix(in srgb, var(--foreground) 50%, transparent);

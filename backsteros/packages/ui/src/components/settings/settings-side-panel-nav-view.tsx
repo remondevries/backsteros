@@ -69,7 +69,7 @@ export function SettingsSidePanelNavView({
         {historyToolbar ?? (
           <div
             className="app-side-panel-history-toolbar"
-            data-tauri-drag-region
+            data-tauri-drag-region="deep"
             aria-hidden="true"
           />
         )}

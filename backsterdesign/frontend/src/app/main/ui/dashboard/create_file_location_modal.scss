@@ -1,0 +1,114 @@
+@use "ds/_utils.scss" as *;
+@use "ds/_sizes.scss" as *;
+@use "ds/_borders.scss" as *;
+@use "ds/typography.scss" as *;
+
+.modal-overlay {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-index-set);
+  background-color: var(--color-overlay-default);
+}
+
+.modal-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xxl);
+  min-inline-size: px2rem(420);
+  max-inline-size: $sz-512;
+  padding: var(--sp-xxxl);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+  border: $b-2 solid var(--color-background-quaternary);
+}
+
+.modal-title {
+  color: var(--color-foreground-primary);
+  padding-inline-end: var(--sp-xxl);
+}
+
+.modal-close-btn {
+  position: absolute;
+  inset-block-start: var(--sp-m);
+  inset-inline-end: var(--sp-m);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-l);
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+  padding: var(--sp-m);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background: transparent;
+  cursor: pointer;
+  text-align: start;
+  color: inherit;
+  font: inherit;
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-foreground-primary) 4%, transparent);
+  }
+
+  &.is-selected {
+    border-color: var(--color-accent-primary);
+    background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+  }
+}
+
+.choice-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s);
+}
+
+.choice-radio {
+  flex-shrink: 0;
+  inline-size: 14px;
+  block-size: 14px;
+  margin: 0;
+  accent-color: var(--color-accent-primary);
+}
+
+.choice-label {
+  @include use-typography("title-small");
+  color: var(--color-foreground-primary);
+}
+
+.choice-hint {
+  @include use-typography("body-small");
+  color: var(--color-foreground-secondary);
+  padding-inline-start: calc(14px + var(--sp-s));
+}
+
+.project-select {
+  position: relative;
+  margin-inline-start: calc(14px + var(--sp-s));
+  margin-block-start: var(--sp-s);
+  // Match breadcrumb section-nav chrome so the shared switcher sits cleanly.
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-foreground-primary) 4%, transparent);
+  border: 0.5px solid
+    color-mix(in srgb, var(--color-foreground-primary) 14%, transparent);
+}
+
+.error {
+  @include use-typography("body-small");
+  color: var(--color-accent-error);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-l);
+}

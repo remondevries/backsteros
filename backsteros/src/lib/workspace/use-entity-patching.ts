@@ -877,6 +877,13 @@ export function useWorkspaceEntityPatching({
           if (typeof values.status === "string") {
             nudgeDynamicIslandTasksRefresh();
           }
+        } else if (table === "contacts") {
+          // Portal settings / languages / channels: keep apiContacts in sync so
+          // fillMissingLongTextFromApi does not re-apply a stale REST snapshot
+          // over the optimistic SQLite row (language select flipping back).
+          applyApiContactPatch(id, optimisticValues);
+        } else if (table === "organizations") {
+          applyApiOrganizationPatch(id, optimisticValues);
         }
         const mustAwaitRest =
           authenticated &&

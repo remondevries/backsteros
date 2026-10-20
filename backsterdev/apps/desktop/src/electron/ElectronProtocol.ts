@@ -223,7 +223,7 @@ export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env)
     if (isBacksterosLocalCoreOrigin(cleaned)) continue;
     return cleaned;
   }
-  return "https://api.local.backsteros.com";
+  return "https://agent.backsteros.com";
 }
 
 /** Mac local-core for working-copy FS (`/fs/*`, `/docs`). Default loopback :8788. */

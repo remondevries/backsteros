@@ -11,7 +11,6 @@ import { ContentDetailTitleHeader } from "../content/content-detail-title-header
 import {
   type ResolveMarkdownImageSrc,
 } from "../documents/document-markdown-preview.js";
-import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -279,19 +278,23 @@ export function TaskStackedDetailView({
             resolveImageSrc={resolveImageSrc}
             ariaLabel="Task description"
             emptyMessage="Add a description…"
-            toggle={
-              <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
-            }
           />
-          <TaskLinkAttachments
-            links={task.links}
-            onChangeLinks={onChangeLinks}
-            fileAttachments={fileAttachments}
-            fileUploading={fileUploading}
-            onUploadFile={onUploadFile}
-            onRemoveFile={onRemoveFile}
-            onOpenFile={onOpenFile}
-          />
+          <div className="task-detail-description-tools">
+            <div className="task-detail-description-tools__attachments">
+              <TaskLinkAttachments
+                links={task.links}
+                onChangeLinks={onChangeLinks}
+                fileAttachments={fileAttachments}
+                fileUploading={fileUploading}
+                onUploadFile={onUploadFile}
+                onRemoveFile={onRemoveFile}
+                onOpenFile={onOpenFile}
+              />
+            </div>
+            <div className="task-detail-description-tools__view-mode">
+              {viewModeToggle}
+            </div>
+          </div>
           {belowDescription ? (
             <div className="task-detail-below-description">
               {belowDescription}

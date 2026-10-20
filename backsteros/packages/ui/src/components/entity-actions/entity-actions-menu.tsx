@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "@primer/octicons-react";
 import {
   useCallback,
   useEffect,
@@ -18,6 +19,14 @@ const PANEL_GAP = 8;
 const VIEWPORT_PADDING = 8;
 const PANEL_MIN_WIDTH = 168;
 
+export type EntityActionsMenuSubItem = {
+  id: string;
+  label: string;
+  onSelect: () => void;
+  selected?: boolean;
+  disabled?: boolean;
+};
+
 export type EntityActionsMenuItem = {
   id: string;
   label: string;
@@ -26,6 +35,10 @@ export type EntityActionsMenuItem = {
   disabled?: boolean;
   /** Optional leading 16px icon. */
   icon?: ReactNode;
+  /** Current value shown trailing the label (e.g. project type). */
+  trailingLabel?: string;
+  /** When set, selecting the item drills into this submenu instead of running onSelect. */
+  submenu?: readonly EntityActionsMenuSubItem[];
 };
 
 export type EntityActionsMenuProps = {
@@ -43,7 +56,8 @@ export type EntityActionsMenuProps = {
 
 /**
  * Three-dot overflow menu used by entity header actions (delete, etc.).
- * Portal-positioned panel aligned to the trigger.
+ * Portal-positioned panel aligned to the trigger. Items may open a one-level
+ * drill-down submenu (e.g. project Type).
  */
 export function EntityActionsMenu({
   items,
@@ -58,10 +72,16 @@ export function EntityActionsMenu({
   const panelRef = useRef<HTMLDivElement>(null);
   const mounted = useMounted();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [submenuId, setSubmenuId] = useState<string | null>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({
     position: "fixed",
     visibility: "hidden",
   });
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    setSubmenuId(null);
+  }, []);
 
   const updatePanelPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -102,7 +122,7 @@ export function EntityActionsMenu({
       updatePanelPosition();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [menuOpen, updatePanelPosition]);
+  }, [menuOpen, submenuId, updatePanelPosition]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -123,6 +143,7 @@ export function EntityActionsMenu({
 
   useEffect(() => {
     if (!menuOpen) {
+      setSubmenuId(null);
       return;
     }
 
@@ -139,13 +160,17 @@ export function EntityActionsMenu({
         return;
       }
 
-      setMenuOpen(false);
+      closeMenu();
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
+      if (event.key !== "Escape") return;
+      if (submenuId != null) {
+        event.preventDefault();
+        setSubmenuId(null);
+        return;
       }
+      closeMenu();
     }
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -154,49 +179,117 @@ export function EntityActionsMenu({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [closeMenu, menuOpen, submenuId]);
 
   if (!mounted || items.length === 0) {
     return null;
   }
+
+  const submenuParent =
+    submenuId != null ? items.find((item) => item.id === submenuId) : null;
+  const submenuItems = submenuParent?.submenu;
 
   const menuPanel = menuOpen ? (
     <div
       ref={panelRef}
       id={menuId}
       className="entity-header-action-menu"
+      data-entity-header-action-menu=""
       style={panelStyle}
       role="menu"
-      aria-label={ariaLabel}
+      aria-label={
+        submenuParent
+          ? `${submenuParent.label} options`
+          : ariaLabel
+      }
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <div className="app-side-panel-profile-menu-section">
-        {items.map((item) => (
+      {submenuParent && submenuItems ? (
+        <div className="entity-header-action-menu__section">
           <button
-            key={item.id}
             type="button"
-            role="menuitem"
-            disabled={disabled || item.disabled}
-            onClick={() => {
-              setMenuOpen(false);
-              item.onSelect();
-            }}
-            className={`app-side-panel-item app-side-panel-profile-menu-item${
-              item.danger ? " entity-header-action-menu-item-danger" : ""
-            }`}
+            className="entity-header-action-menu__back"
+            onClick={() => setSubmenuId(null)}
           >
-            {item.icon ? (
+            <ChevronLeftIcon size={14} />
+            <span>{submenuParent.label}</span>
+          </button>
+          {submenuItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={Boolean(item.selected)}
+              disabled={disabled || item.disabled}
+              onClick={() => {
+                closeMenu();
+                item.onSelect();
+              }}
+              className="entity-header-action-menu__item entity-header-action-menu__item--check"
+            >
               <span
-                className="entity-header-action-menu-item-icon"
+                className="entity-header-action-menu__check"
                 aria-hidden="true"
               >
-                {item.icon}
+                {item.selected ? <CheckIcon size={14} /> : null}
               </span>
-            ) : null}
-            <span className="app-side-panel-item-label">{item.label}</span>
-          </button>
-        ))}
-      </div>
+              <span className="entity-header-action-menu__label">
+                {item.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="entity-header-action-menu__section">
+          {items.map((item) => {
+            const hasSubmenu = Boolean(item.submenu?.length);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitem"
+                disabled={disabled || item.disabled}
+                onClick={() => {
+                  if (hasSubmenu) {
+                    setSubmenuId(item.id);
+                    return;
+                  }
+                  closeMenu();
+                  item.onSelect();
+                }}
+                className={`entity-header-action-menu__item${
+                  item.danger ? " entity-header-action-menu-item-danger" : ""
+                }`}
+              >
+                {item.icon ? (
+                  <span
+                    className="entity-header-action-menu-item-icon"
+                    aria-hidden="true"
+                  >
+                    {item.icon}
+                  </span>
+                ) : null}
+                <span className="entity-header-action-menu__label">
+                  {item.label}
+                </span>
+                {item.trailingLabel ? (
+                  <span className="entity-header-action-menu__trailing">
+                    {item.trailingLabel}
+                  </span>
+                ) : null}
+                {hasSubmenu ? (
+                  <span
+                    className="entity-header-action-menu__chevron"
+                    aria-hidden="true"
+                  >
+                    <ChevronRightIcon size={14} />
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   ) : null;
 
@@ -217,7 +310,10 @@ export function EntityActionsMenu({
         onClick={(event) => {
           event.stopPropagation();
           event.preventDefault();
-          setMenuOpen((open) => !open);
+          setMenuOpen((open) => {
+            if (open) setSubmenuId(null);
+            return !open;
+          });
         }}
         onMouseDown={(event) => event.stopPropagation()}
         className={triggerClassName}

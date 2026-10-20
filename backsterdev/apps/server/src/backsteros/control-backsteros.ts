@@ -15,7 +15,8 @@ import {
 
 export { backsterosStatusForControlSession, canAutoPromoteBacksterosTaskStatus };
 
-const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
+/** Public cloud-core door — control + timer chrome share this leader. */
+const DEFAULT_BACKSTEROS_API_URL = "https://agent.backsteros.com";
 const DISPLAY_ID_RE = /^([A-Za-z0-9]{2,3})-(\d+)$/;
 
 /** Fail fast when local-core (or any BacksterOS API) stalls — e.g. hung GET /projects/{id}. */
@@ -77,11 +78,28 @@ function readCliEnvValue(key: "BACKSTEROS_API_KEY" | "BACKSTEROS_API_URL"): stri
   }
 }
 
+function isBacksterosLocalCoreOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    return port === "8788";
+  } catch {
+    return false;
+  }
+}
+
 export function resolveBacksterosControlApiOrigin(): string {
-  const fromEnv = process.env.BACKSTEROS_API_URL?.trim() || "";
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
-  const fromCli = readCliEnvValue("BACKSTEROS_API_URL");
-  if (fromCli) return fromCli.replace(/\/$/, "");
+  // Skip local-core (:8788) — product/control API must hit cloud-core so
+  // timers and task writes match BacksterOS / DESIGN.
+  for (const candidate of [
+    process.env.BACKSTEROS_API_URL?.trim() || "",
+    readCliEnvValue("BACKSTEROS_API_URL"),
+  ]) {
+    if (!candidate) continue;
+    const cleaned = candidate.replace(/\/$/, "");
+    if (isBacksterosLocalCoreOrigin(cleaned)) continue;
+    return cleaned;
+  }
   return DEFAULT_BACKSTEROS_API_URL;
 }
 

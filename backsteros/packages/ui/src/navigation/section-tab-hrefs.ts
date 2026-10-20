@@ -28,7 +28,7 @@ import {
 } from "../list-nav/list-board-view.js";
 import {
   getProjectsListAreaHref,
-  PROJECT_AREA_FILTERS,
+  projectsListAreaFilters,
   type ProjectAreaFilter,
 } from "../projects/project-areas.js";
 import {
@@ -52,14 +52,19 @@ import {
   TASKS_DUE_FILTERS,
 } from "../tasks/tasks-due-filters.js";
 
-/** 1 = Tasks, 2 = Files, 3 = Docs, 4 = Commits, 5 = PRs, 6 = Updates. */
+/**
+ * Must match `CODEBASE_LIST_TAB_OPTIONS` order (chrome pills).
+ * 1 Overview · 2 Tasks · 3 Files · 4 Docs · 5 Commits · 6 PRs · 7 Updates · 8 Timetracking
+ */
 const CODEBASE_LIST_TABS: readonly CodebaseGithubListTab[] = [
+  "overview",
   "tasks",
   "files",
   "docs",
   "commits",
   "pulls",
   "updates",
+  "timetracking",
 ];
 
 function parseViewFromSearch(search = ""): ListBoardView {
@@ -86,14 +91,13 @@ function resolveCodebaseListTabHrefs(
 
 /**
  * Prefer development-layout tabs when the path is a workbench route
- * (files/docs/commits/pulls/updates) or the codebase workbench is mounted on
- * the bare project overview. Otherwise keep the default Overview/Tasks/Documents/…
+ * (files/docs/commits/pulls/…) or the codebase workbench is mounted on the
+ * bare project overview. Otherwise keep the default Overview/Tasks/Documents/…
  * section tabs.
  *
- * `/documents` parses as the Docs workbench tab, but on general projects the
- * workbench is not mounted — keep the standard Documents section tabs there.
- * `/updates` is a workbench tab on codebase projects; general projects keep the
- * Updates section chrome.
+ * Shared sections (`tasks`, `documents`, `updates`, `timetracking`) parse as
+ * workbench tabs on codebase projects, but when the workbench is not mounted
+ * (general projects) keep the standard section-tab set so 1–6 stay correct.
  */
 function resolveProjectSectionTabHrefs(
   pathname: string,
@@ -102,22 +106,24 @@ function resolveProjectSectionTabHrefs(
 ): string[] {
   const workbench = parseCodebaseWorkbenchPath(pathname, projectKey);
   if (workbench != null) {
-    const docsWithoutWorkbench =
-      workbench.tab === "docs" && !isCodebaseWorkbenchMounted();
-    const updatesWithoutWorkbench =
-      workbench.tab === "updates" && !isCodebaseWorkbenchMounted();
-    // files / docs / commits / pulls / updates are codebase-only routes (when mounted).
+    const mounted = isCodebaseWorkbenchMounted();
+    const sharedWithoutWorkbench =
+      (workbench.tab === "tasks" ||
+        workbench.tab === "docs" ||
+        workbench.tab === "updates" ||
+        workbench.tab === "timetracking") &&
+      !mounted;
+    // files / commits / pulls are codebase-only; shared tabs need the mount.
     if (
-      !docsWithoutWorkbench &&
-      !updatesWithoutWorkbench &&
-      (workbench.tab !== "tasks" || isCodebaseWorkbenchMounted())
+      !sharedWithoutWorkbench &&
+      (workbench.tab !== "overview" || mounted)
     ) {
       return resolveCodebaseListTabHrefs(projectKey, scope);
     }
   }
 
   // Board/list on `/tasks` (or other non-workbench path segments) still
-  // mounts the codebase workbench — keep 1–6 on Tasks/Files/Docs/Commits/PRs/Updates.
+  // mounts the codebase workbench — keep 1–N on Overview/Tasks/Files/….
   if (isCodebaseWorkbenchMounted()) {
     return resolveCodebaseListTabHrefs(projectKey, scope);
   }
@@ -137,7 +143,8 @@ function resolveProjectSectionTabHrefs(
  * Ordered section tab hrefs for desktop routes (1 = first tab).
  * Matches Next resolveSectionTabHrefs for tasks due, projects areas,
  * and project/contact/organization entity sections. On codebase projects,
- * 1–5 map to Tasks / Files / Docs / Commits / PRs while that layout is active.
+ * 1–N map to Overview / Tasks / Files / Docs / Commits / PRs / Updates /
+ * Timetracking while that layout is active.
  *
  * Task detail routes return null so 1–5 stay free for the task layout
  * (agent option keys, etc.) instead of jumping to Files / Documents / ….
@@ -158,7 +165,7 @@ export function resolveDesktopSectionTabHrefs(
   }
 
   if (path === "/projects") {
-    return PROJECT_AREA_FILTERS.map((area: ProjectAreaFilter) =>
+    return projectsListAreaFilters().map((area: ProjectAreaFilter) =>
       getProjectsListAreaHref(area, view),
     );
   }

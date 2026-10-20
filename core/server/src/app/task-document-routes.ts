@@ -752,6 +752,35 @@ export function registerTaskDocumentRoutes(app: Hono) {
     });
   });
 
+  /**
+   * Recent task timers (running + paused) for shared chrome dropdowns across
+   * OS / DESIGN / DEV. Membership and order are workspace-scoped.
+   */
+  app.get("/api/v1/recent-timers", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const timers = await taskActivityService.listRecentTaskTimers(
+      auth.workspaceId,
+    );
+    return c.json({
+      timers: timers.map((timer) => ({
+        taskId: timer.taskId,
+        startedAt: timer.startedAt.toISOString(),
+        lastTimerAt: timer.lastTimerAt.toISOString(),
+        isRunning: timer.isRunning,
+        title: timer.title,
+        number: timer.number,
+        status: timer.status,
+        trackedDurationSeconds: timer.trackedDurationSeconds,
+        trackedMinutes: timer.trackedMinutes,
+        projectKey: timer.projectKey,
+        updatedAt: timer.updatedAt?.toISOString() ?? null,
+      })),
+    });
+  });
+
   app.get(
     "/api/v1/agent-presence",
     zValidator("query", listTaskAgentPresenceQuerySchema),

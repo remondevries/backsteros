@@ -24,6 +24,13 @@ export type ProjectBudgetsEditorProps = {
   disabled?: boolean;
   onChange?: (next: ProjectBudgetEntry[]) => void;
   onSave: (next: ProjectBudgetEntry[]) => void;
+  /**
+   * `split` — period dropdown | € amount (full project detail).
+   * `chip` — € amount only (panel overview; period kept in data).
+   */
+  variant?: "split" | "chip";
+  /** Period used when creating a new budget in `chip` mode (default weekly). */
+  chipPeriod?: ProjectBudgetPeriod;
 };
 
 type EditorRow = {
@@ -36,10 +43,13 @@ const PERIOD_OPTIONS = PROJECT_BUDGET_PERIODS.map((value) => ({
   label: getProjectBudgetPeriodLabel(value),
 }));
 
-function rowFromBudgets(budgets: readonly ProjectBudgetEntry[]): EditorRow {
+function rowFromBudgets(
+  budgets: readonly ProjectBudgetEntry[],
+  fallbackPeriod: ProjectBudgetPeriod,
+): EditorRow {
   const entry = budgets[0];
   if (!entry) {
-    return { period: "monthly", amountText: "" };
+    return { period: fallbackPeriod, amountText: "" };
   }
   return {
     period: entry.period,
@@ -61,15 +71,17 @@ function toEntries(row: EditorRow): ProjectBudgetEntry[] {
 }
 
 /**
- * Single budget pill: period dropdown | € amount.
- * Keeps a local committed row so a lagging empty prop cannot flash back to 0.
+ * Budget amount editor — split pill with period, or value-only property chip.
  */
 export function ProjectBudgetsEditor({
   budgets,
   disabled = false,
   onChange,
   onSave,
+  variant = "split",
+  chipPeriod = "weekly",
 }: ProjectBudgetsEditorProps) {
+  const fallbackPeriod = variant === "chip" ? chipPeriod : "monthly";
   const committedRef = useRef<ProjectBudgetEntry[] | undefined>(undefined);
   const propKey = budgetsKey(budgets);
   if (
@@ -80,7 +92,7 @@ export function ProjectBudgetsEditor({
   }
 
   const effectiveBudgets = committedRef.current ?? budgets;
-  const remoteRow = rowFromBudgets(effectiveBudgets);
+  const remoteRow = rowFromBudgets(effectiveBudgets, fallbackPeriod);
   const [row, setRow] = useState(remoteRow);
   const [editing, setEditing] = useState(false);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -101,7 +113,7 @@ export function ProjectBudgetsEditor({
     const entries = toEntries(next);
     const resolved =
       entries.length > 0
-        ? rowFromBudgets(entries)
+        ? rowFromBudgets(entries, fallbackPeriod)
         : { period: next.period, amountText: "" };
     committedRef.current = entries;
     setRow(resolved);
@@ -130,6 +142,71 @@ export function ProjectBudgetsEditor({
   }
 
   const label = getProjectBudgetPeriodLabel(row.period);
+
+  const amountInput = (
+    <>
+      <span
+        className={
+          variant === "chip"
+            ? "project-billing-value-chip__currency"
+            : "project-budget-chip__currency"
+        }
+        aria-hidden
+      >
+        €
+      </span>
+      <input
+        ref={amountInputRef}
+        type="text"
+        inputMode="decimal"
+        aria-label="Budget amount"
+        value={row.amountText}
+        disabled={disabled}
+        placeholder="0,00"
+        size={Math.max(row.amountText.length, "0,00".length, 4)}
+        onFocus={() => setEditing(true)}
+        onChange={(event) =>
+          setLocalRow({
+            ...row,
+            amountText: formatMoneyInput(event.target.value),
+          })
+        }
+        onBlur={(event) => commitAmount(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            (event.target as HTMLInputElement).blur();
+          }
+        }}
+        className={
+          variant === "chip"
+            ? "project-billing-value-chip__value"
+            : "contact-detail-split-chip__value"
+        }
+      />
+    </>
+  );
+
+  if (variant === "chip") {
+    return (
+      <div
+        className={[
+          "property-dropdown-trigger",
+          "property-dropdown-trigger--inline-chip",
+          "project-billing-value-chip",
+          disabled ? "property-dropdown-trigger--static" : null,
+          !row.amountText.trim() ? "is-muted" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (!disabled) amountInputRef.current?.focus();
+        }}
+      >
+        {amountInput}
+      </div>
+    );
+  }
 
   return (
     <div className="contact-detail-chips">
@@ -178,34 +255,7 @@ export function ProjectBudgetsEditor({
               </button>
             )}
           />
-          <span className="project-budget-chip__currency" aria-hidden>
-            €
-          </span>
-          <input
-            ref={amountInputRef}
-            type="text"
-            inputMode="decimal"
-            aria-label="Budget amount"
-            value={row.amountText}
-            disabled={disabled}
-            placeholder="0,00"
-            size={Math.max(row.amountText.length, "0,00".length, 4)}
-            onFocus={() => setEditing(true)}
-            onChange={(event) =>
-              setLocalRow({
-                ...row,
-                amountText: formatMoneyInput(event.target.value),
-              })
-            }
-            onBlur={(event) => commitAmount(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                (event.target as HTMLInputElement).blur();
-              }
-            }}
-            className="contact-detail-split-chip__value"
-          />
+          {amountInput}
         </div>
       </div>
     </div>

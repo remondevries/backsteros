@@ -228,13 +228,3 @@
 .version-snapshot-menu-btn {
   visibility: hidden;
 }
-
-.cta {
-  @include t.use-typography("body-small");
-
-  color: var(--color-foreground-secondary);
-
-  a {
-    color: var(--color-accent-primary);
-  }
-}

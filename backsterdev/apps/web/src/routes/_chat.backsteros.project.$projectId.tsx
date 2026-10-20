@@ -46,7 +46,7 @@ function BacksterosProjectOverviewRouteView() {
           return {
             ...(title ? { title } : {}),
             ...(projectKey ? { project: projectKey } : {}),
-            ...(tab === "tasks" ? {} : { tab }),
+            ...(tab === "overview" ? {} : { tab }),
           };
         },
         replace: true,
@@ -69,7 +69,7 @@ function BacksterosProjectOverviewRouteView() {
         projectId={projectId}
         fallbackTitle={search.title ?? null}
         project={project}
-        tab={search.tab ?? "tasks"}
+        tab={search.tab ?? "overview"}
         onTabChange={handleTabChange}
         {...(search.project ? { t3ProjectKey: search.project } : {})}
       />

@@ -40,6 +40,7 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
+import { EntityOverviewField } from "../shared/entity-overview-field.js";
 import { ProjectPanelDetailView } from "../projects/project-panel-detail-view.js";
 import type { ProjectDetailNestedArea } from "../projects/project-detail-view.js";
 import { ProjectPanelOverviewSkeleton } from "../skeletons/project-panel-overview-skeleton.js";
@@ -77,17 +78,17 @@ import { TerminalDirectoryGate } from "./terminal-directory-gate.js";
 import { useRequestResource } from "./use-request-resource.js";
 
 const LOCATION_FIELD_TARGET: Record<
-  "developmentLocation" | "productionLocation" | "localLocation",
+  "developmentLocation" | "productionLocation",
   LocationFsTarget
 > = {
   developmentLocation: "development",
   productionLocation: "production",
-  localLocation: "local",
 };
 
 const NONE_REPO_VALUE = "__none__";
 
 const CODEBASE_LIST_TAB_OPTIONS = [
+  { value: "overview" as const, label: "Overview" },
   { value: "tasks" as const, label: "Tasks" },
   { value: "files" as const, label: "Files" },
   { value: "docs" as const, label: "Documents" },
@@ -102,7 +103,7 @@ export { CODEBASE_LIST_TAB_OPTIONS };
 const GITHUB_LIST_TAB_ICONS: Record<
   Exclude<
     CodebaseGithubListTab,
-    "tasks" | "timetracking" | "files" | "docs" | "updates"
+    "overview" | "tasks" | "timetracking" | "files" | "docs" | "updates"
   >,
   string
 > = {
@@ -111,6 +112,9 @@ const GITHUB_LIST_TAB_ICONS: Record<
 };
 
 function ProjectListTabIcon({ tab }: { tab: CodebaseGithubListTab }) {
+  if (tab === "overview") {
+    return <ProjectOcticon icon="note" size={14} />;
+  }
   if (tab === "tasks") {
     return <TasksNavIcon className="project-github-list-toggle__tasks-icon" />;
   }
@@ -214,84 +218,94 @@ function ProjectWorkingDirectoryField({
   project,
   onProjectUpdated,
   requestJson,
-  fs,
 }: {
   project: ApiProject;
   onProjectUpdated: (project: ApiProject) => void;
   requestJson: CodebaseRequestJson;
-  fs: ProjectFsClient;
 }) {
   const [saving, setSaving] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const directory = normalizeWorkingDirectory(project.localWorkingDirectory);
 
   const hasDirectory = Boolean(directory);
-  const label = hasDirectory
-    ? workingDirectoryLabel(directory!)
-    : "Set folder…";
+  const basename = hasDirectory ? workingDirectoryLabel(directory!) : null;
+  const label = basename ?? "Set folder…";
+
+  async function saveLocation(next: string | null) {
+    if (!next) return;
+    setSaving(true);
+    setError(null);
+    const previous = project;
+    try {
+      // Apply the picked path immediately — leader-first PATCH can return
+      // a stale row before local replication catches up, which left the
+      // chip stuck on the previous value (or empty).
+      onProjectUpdated(withPickedWorkingDirectory(project, next));
+      const updated = await requestJson<ApiProject>(
+        `/api/v1/projects/${encodeURIComponent(project.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ localWorkingDirectory: next }),
+        },
+      );
+      onProjectUpdated(withPickedWorkingDirectory(updated, next));
+      setPickerOpen(false);
+    } catch (err) {
+      onProjectUpdated(previous);
+      setError(apiErrorMessage(err) || "Could not save working directory.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <button
-      type="button"
-      {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "workspace" }}
-      className={[
-        "property-dropdown-trigger",
-        "property-dropdown-trigger--inline-chip",
-        hasDirectory ? null : "is-muted",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      title={
-        error ??
-        directory ??
-        "Choose working directory (required before starting an agent)"
-      }
-      aria-label={
-        error
-          ? error
-          : hasDirectory
-            ? `Working directory: ${directory}`
-            : "Choose working directory (required before starting an agent)"
-      }
-      aria-invalid={error ? true : undefined}
-      disabled={saving}
-      onClick={() => {
-        void (async () => {
-          setSaving(true);
-          setError(null);
-          const previous = project;
-          try {
-            const next = await fs.pickDirectory(directory ?? undefined);
-            if (!next) return;
-            // Apply the picked path immediately — leader-first PATCH can return
-            // a stale row before local replication catches up, which left the
-            // chip stuck on the previous value (or empty).
-            onProjectUpdated(withPickedWorkingDirectory(project, next));
-            const updated = await requestJson<ApiProject>(
-              `/api/v1/projects/${encodeURIComponent(project.id)}`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ localWorkingDirectory: next }),
-              },
-            );
-            onProjectUpdated(withPickedWorkingDirectory(updated, next));
-          } catch (err) {
-            onProjectUpdated(previous);
-            setError(
-              apiErrorMessage(err) || "Could not save working directory.",
-            );
-          } finally {
-            setSaving(false);
-          }
-        })();
-      }}
-    >
-      <span className="property-dropdown-trigger__icon" aria-hidden="true">
-        <ComposeFolderIcon className="" />
-      </span>
-      <span className="property-dropdown-trigger__label">{label}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "workspace" }}
+        className={[
+          "property-dropdown-trigger",
+          "property-dropdown-trigger--inline-chip",
+          hasDirectory ? null : "is-muted",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        title={
+          error ??
+          directory ??
+          "Local working directory (required before starting an agent)"
+        }
+        aria-label={
+          error
+            ? error
+            : hasDirectory
+              ? `Local location: ${directory}`
+              : "Choose local working directory (required before starting an agent)"
+        }
+        aria-invalid={error ? true : undefined}
+        disabled={saving}
+        onClick={() => setPickerOpen(true)}
+      >
+        <span className="property-dropdown-trigger__icon" aria-hidden="true">
+          <ComposeFolderIcon className="" />
+        </span>
+        <span className="property-dropdown-trigger__label">{label}</span>
+      </button>
+      <LocationFolderPicker
+        open={pickerOpen}
+        target="local"
+        title="Local location"
+        initialPath={directory}
+        projectId={project.id}
+        requestJson={requestJson}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(path) => {
+          void saveLocation(path.trim() || null);
+        }}
+      />
+    </>
   );
 }
 
@@ -304,7 +318,7 @@ function ProjectLocationPathField({
   requestJson,
 }: {
   project: ApiProject;
-  field: "developmentLocation" | "productionLocation" | "localLocation";
+  field: "developmentLocation" | "productionLocation";
   labelPrefix: string;
   emptyLabel: string;
   onProjectUpdated: (project: ApiProject) => void;
@@ -315,7 +329,11 @@ function ProjectLocationPathField({
   const [error, setError] = useState<string | null>(null);
   const value = project[field]?.trim() || null;
   const basename = value ? workingDirectoryLabel(value) : null;
-  const label = basename ? `${labelPrefix}: ${basename}` : emptyLabel;
+  const label = basename
+    ? labelPrefix
+      ? `${labelPrefix}: ${basename}`
+      : basename
+    : emptyLabel;
   const target = LOCATION_FIELD_TARGET[field];
 
   async function saveLocation(next: string | null) {
@@ -371,7 +389,15 @@ function ProjectLocationPathField({
       <LocationFolderPicker
         open={pickerOpen}
         target={target}
-        title={`${labelPrefix} location`}
+        title={
+          field === "developmentLocation"
+            ? "Development location"
+            : field === "productionLocation"
+              ? "Production location"
+              : labelPrefix
+                ? `${labelPrefix} location`
+                : "Location"
+        }
         initialPath={value}
         projectId={target === "local" ? project.id : null}
         requestJson={requestJson}
@@ -1089,7 +1115,13 @@ export function ProjectCommitHistory({
       return;
     }
 
-    if (listTab === "tasks" || githubItemIds.length === 0) return;
+    if (
+      listTab === "overview" ||
+      listTab === "tasks" ||
+      githubItemIds.length === 0
+    ) {
+      return;
+    }
 
     // 4 / 5 or commits/PRs pill — activate once the list has rows.
     if (tabChanged || projectChanged) {
@@ -1319,18 +1351,8 @@ export function ProjectCommitHistory({
 
       {listTab === "docs" && !minimized ? (
         <div className="console-fs-tree-pane console-fs-tree-pane--docs">
-          {docsListPanel ?? (
-            <p className="console-github-pane-status">No documents yet.</p>
-          )}
+          {docsListPanel ?? null}
         </div>
-      ) : null}
-
-      {!project.githubRepository &&
-      (listTab === "commits" || listTab === "pulls") &&
-      !minimized ? (
-        <p className="console-github-pane-status">
-          Link a GitHub repository to browse commits and pull requests.
-        </p>
       ) : null}
 
       {project.githubRepository &&
@@ -1354,16 +1376,6 @@ export function ProjectCommitHistory({
                 <div className="console-fs-tree-status">
                   <p className="console-github-pane-status">Loading commits…</p>
                 </div>
-              ) : null}
-
-              {!minimized &&
-              !commitsLoading &&
-              !commitsError &&
-              commits.length === 0 &&
-              selectedBranch ? (
-                <p className="console-github-pane-status">
-                  No commits on this branch.
-                </p>
               ) : null}
 
               {commits.length > 0 ? (
@@ -1475,15 +1487,6 @@ export function ProjectCommitHistory({
                     Loading pull requests…
                   </p>
                 </div>
-              ) : null}
-
-              {!minimized &&
-              !pullsLoading &&
-              !pullsError &&
-              pullRequests.length === 0 ? (
-                <p className="console-github-pane-status">
-                  No pull requests.
-                </p>
               ) : null}
 
               {pullRequests.length > 0 ? (
@@ -1661,7 +1664,7 @@ export function CodebaseProjectOverviewPane({
   onProjectUpdated,
   requestJson,
   fs,
-  githubListTab = "tasks",
+  githubListTab = "overview",
   onGithubListTabChange,
   selectedCommitSha,
   onSelectCommit,
@@ -1905,7 +1908,8 @@ export function CodebaseProjectOverviewPane({
               );
             })}
           </div>
-          {githubListTab !== "tasks" &&
+          {githubListTab !== "overview" &&
+          githubListTab !== "tasks" &&
           githubListTab !== "files" &&
           githubListTab !== "docs" ? (
             <ProjectCommitHistory
@@ -1979,42 +1983,41 @@ export function CodebaseProjectOverviewPane({
           belowDescription={belowDescription}
                 propertiesExtra={
                   <>
-                    <ProjectWorkingDirectoryField
-                      project={project}
-                      onProjectUpdated={onProjectUpdated}
-                      requestJson={requestJson}
-                      fs={fs}
-                    />
-                    <ProjectLocationPathField
-                      project={project}
-                      field="developmentLocation"
-                      labelPrefix="Dev"
-                      emptyLabel="Dev location…"
-                      onProjectUpdated={onProjectUpdated}
-                      requestJson={requestJson}
-                    />
-                    <ProjectLocationPathField
-                      project={project}
-                      field="productionLocation"
-                      labelPrefix="Prod"
-                      emptyLabel="Prod location…"
-                      onProjectUpdated={onProjectUpdated}
-                      requestJson={requestJson}
-                    />
-                    <ProjectLocationPathField
-                      project={project}
-                      field="localLocation"
-                      labelPrefix="Local"
-                      emptyLabel="Local location…"
-                      onProjectUpdated={onProjectUpdated}
-                      requestJson={requestJson}
-                    />
-                    <ProjectGithubRepositoryField
-                      project={project}
-                      onProjectUpdated={onProjectUpdated}
-                      requestJson={requestJson}
-                      githubRefreshToken={githubRefreshToken}
-                    />
+                    <EntityOverviewField label="GitHub">
+                      <ProjectGithubRepositoryField
+                        project={project}
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                        githubRefreshToken={githubRefreshToken}
+                      />
+                    </EntityOverviewField>
+                    <EntityOverviewField label="Local">
+                      <ProjectWorkingDirectoryField
+                        project={project}
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                      />
+                    </EntityOverviewField>
+                    <EntityOverviewField label="Development">
+                      <ProjectLocationPathField
+                        project={project}
+                        field="developmentLocation"
+                        labelPrefix=""
+                        emptyLabel="Set folder…"
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                      />
+                    </EntityOverviewField>
+                    <EntityOverviewField label="Production">
+                      <ProjectLocationPathField
+                        project={project}
+                        field="productionLocation"
+                        labelPrefix=""
+                        emptyLabel="Set folder…"
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                      />
+                    </EntityOverviewField>
                   </>
                 }
                 onHealthCheckChange={(next) => {
@@ -2079,22 +2082,6 @@ export function CodebaseProjectOverviewPane({
                 }}
                 onPriorityChange={(priority) => {
                   void patchProject({ priority }).catch(() => undefined);
-                }}
-                onTypeChange={(type) => {
-                  const patch: {
-                    type: string;
-                    category?: null;
-                    healthCheckMode?: null;
-                    healthCheckDomain?: null;
-                  } = { type };
-                  if (type !== "email") {
-                    patch.category = null;
-                  }
-                  if (type !== "codebase") {
-                    patch.healthCheckMode = null;
-                    patch.healthCheckDomain = null;
-                  }
-                  void patchProject(patch).catch(() => undefined);
                 }}
                 onProviderChange={(provider) => {
                   const patch: {

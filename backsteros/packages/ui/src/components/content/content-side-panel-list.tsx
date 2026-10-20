@@ -19,5 +19,5 @@ export function ContentSidePanelList({
 }
 
 export function ContentSidePanelEmpty({ children }: { children: ReactNode }) {
-  return <p className="app-content-side-panel-empty">{children}</p>;
+  return <div className="app-content-side-panel-empty">{children}</div>;
 }

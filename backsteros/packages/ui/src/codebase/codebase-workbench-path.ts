@@ -18,6 +18,7 @@ export type CodebaseWorkbenchSelection = {
 };
 
 const CODEBASE_TABS: readonly CodebaseGithubListTab[] = [
+  "overview",
   "tasks",
   "timetracking",
   "files",
@@ -47,8 +48,9 @@ function emptySelection(
 
 /**
  * Parse codebase workbench selection from a project pathname.
- * Recognizes `/projects/:slug/{files,documents,commits,pulls,updates,timetracking}`
- * (and org-scoped equivalents). Overview / Tasks tab is the bare project path.
+ * Recognizes `/projects/:slug/{tasks,files,documents,commits,pulls,updates,timetracking}`
+ * (and org-scoped equivalents). Overview is the bare project path (same as
+ * default project type).
  *
  * `/documents` is a workbench Docs tab on codebase projects; section-tab
  * shortcuts still treat it as a standard project section when the workbench
@@ -74,15 +76,22 @@ export function parseCodebaseWorkbenchPath(
     .map((segment) => decodeURIComponent(segment));
 
   if (segments.length === 0) {
-    return emptySelection("tasks");
+    return emptySelection("overview");
   }
 
   const head = segments[0]!;
 
-  // Standard project sections — not workbench tabs (except documents → Docs,
-  // updates → Updates, timetracking → Timetracking on codebase projects).
-  if (head === "tasks" || head === "letters" || head === "overview") {
+  // Standard project sections that are not workbench tabs.
+  if (head === "letters") {
     return null;
+  }
+
+  if (head === "overview") {
+    return emptySelection("overview");
+  }
+
+  if (head === "tasks") {
+    return emptySelection("tasks");
   }
 
   if (head === "timetracking") {
@@ -146,9 +155,13 @@ export function getCodebaseWorkbenchHref(
   scope?: ProjectRouteScope | null,
 ): string {
   const base = getScopedProjectBasePath(projectKey, scope ?? undefined);
-  const tab = selection.tab ?? "tasks";
+  const tab = selection.tab ?? "overview";
 
-  if (tab === "tasks") return base;
+  if (tab === "overview") return base;
+
+  if (tab === "tasks") {
+    return `${base}/tasks`;
+  }
 
   if (tab === "files") {
     if (selection.filePath) {
@@ -193,11 +206,13 @@ export function getCodebaseWorkbenchHref(
   return base;
 }
 
-/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls/updates/timetracking). */
+/** True when pathname is a codebase workbench sub-route (not Overview). */
 export function isCodebaseWorkbenchPath(
   pathname: string,
   projectRouteParam: string,
 ): boolean {
   const parsed = parseCodebaseWorkbenchPath(pathname, projectRouteParam);
-  return parsed != null && parsed.tab !== "tasks";
+  return (
+    parsed != null && parsed.tab !== "overview"
+  );
 }

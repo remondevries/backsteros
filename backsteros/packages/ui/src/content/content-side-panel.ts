@@ -8,11 +8,7 @@ import {
 } from "../navigation/entity-routes.js";
 import { isSocialSectionPath } from "../social/social-contacts.js";
 import { isCommunicationSectionPath } from "../communication/communication.js";
-import {
-  isLettersSectionPath,
-  isProjectLettersSectionPath,
-} from "../letters/letters.js";
-import { isProjectDocumentsSectionPath } from "../documents/should-handle-document-tree-create-folder-shortcut.js";
+import { isLettersSectionPath } from "../letters/letters.js";
 
 export { isEmailPath } from "../email/email.js";
 
@@ -53,9 +49,7 @@ export function shouldShowContentSidePanel(
     isOrganizationSectionPath(pathname) ||
     isCommunicationSectionPath(pathname) ||
     isSocialSectionPath(pathname) ||
-    isFinanceSectionPath(pathname) ||
-    isProjectDocumentsSectionPath(pathname) ||
-    isProjectLettersSectionPath(pathname)
+    isFinanceSectionPath(pathname)
   );
 }
 
@@ -63,12 +57,6 @@ export function getContentSidePanelWidthKey(
   pathname: string,
   search = "",
 ): string {
-  if (isProjectDocumentsSectionPath(pathname)) {
-    return DOCUMENTS_LIST_PANEL_WIDTH_KEY;
-  }
-  if (isProjectLettersSectionPath(pathname)) {
-    return LETTERS_LIST_PANEL_WIDTH_KEY;
-  }
   if (isKnowledgeSectionPath(pathname)) {
     return KNOWLEDGE_LIST_PANEL_WIDTH_KEY;
   }

@@ -7,6 +7,8 @@ import { ChevronDownIcon } from "../icons/chevron-down-icon.js";
 export type EntityPropertiesSectionProps = {
   title: string;
   children: ReactNode;
+  /** Optional content pinned to the top-right of the card header. */
+  headerEnd?: ReactNode;
   /** Start collapsed (title only). Default false. */
   defaultCollapsed?: boolean;
 };
@@ -15,6 +17,7 @@ export type EntityPropertiesSectionProps = {
 export function EntityPropertiesSection({
   title,
   children,
+  headerEnd,
   defaultCollapsed = false,
 }: EntityPropertiesSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
@@ -41,6 +44,9 @@ export function EntityPropertiesSection({
         >
           <ChevronDownIcon size={12} />
         </button>
+        {headerEnd ? (
+          <div className="entity-properties-section__header-end">{headerEnd}</div>
+        ) : null}
       </header>
       {collapsed ? null : (
         <div id={bodyId} className="entity-properties-section__body">

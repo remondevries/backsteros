@@ -3,7 +3,7 @@
 - Replaces Penpot logos / favicon / sprites
 - Hides the dashboard team/organization switcher
 - Injects a static **BacksterDESIGN** brand row (system-ui, thin + bold)
-- Hides Libraries & Templates via `disable-dashboard-templates-section` (see `config.js` / devenv)
+- Hides Libraries & Templates in the dashboard UI (removed tray; `disable-dashboard-templates-section` in `config.js` as belt-and-braces)
 
 ## Local fork (`backsterdesign/` devenv)
 

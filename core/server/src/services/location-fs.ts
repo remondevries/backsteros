@@ -1,8 +1,9 @@
 /**
- * Directory browser for project Development / Local / Production location
- * fields (OS-111). Local lists the host filesystem; development/production
- * list over SSH (same host aliases as OS-106 checkout). Paths are jailed under
- * a configurable base so the picker never walks the server root.
+ * Directory browser for project Development / Production location fields and
+ * the local working-directory picker (OS-111). Local lists the host filesystem;
+ * development/production list over SSH (same host aliases as OS-106 checkout).
+ * Paths are jailed under a configurable base so the picker never walks the
+ * server root. Local defaults to `{projectBase}/Codebase`.
  */
 import { access, constants, mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";

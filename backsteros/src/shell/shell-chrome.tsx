@@ -14,6 +14,7 @@ import { resolveHistoryEntryDisplay } from "@backsteros/ui/navigation";
 
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DevTrafficLights } from "../components/dev-traffic-lights";
+import { useWindowChromeDrag } from "../lib/window-drag";
 import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
@@ -60,6 +61,7 @@ function ShellChromeInner({
   const chromeHeader = useChromeHeader();
   const { tabsState, history, activateTab, closeTab, openNewTab } = tabs;
   const showSidePanelSlot = showSidePanel && Boolean(sidePanel);
+  useWindowChromeDrag();
 
   const sidebar = settingsPage ? (
     <SettingsSidePanelNavView

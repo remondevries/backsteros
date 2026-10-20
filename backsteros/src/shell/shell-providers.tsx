@@ -4,13 +4,13 @@ import {
   EntityHeaderActionsShell,
   MentionNavigationProvider,
 } from "@backsteros/ui";
+import { TrackedTimerProvider } from "@backsteros/ui";
 import {
   ChromeHeaderProvider,
   ClientLinkProvider,
   CommandPaletteProvider,
   ListKeyboardNavigationProvider,
   RegisterPageTitleProvider,
-  TrackedTimerProvider,
 } from "@backsteros/ui/shell";
 
 import { InboxListSessionProvider } from "../lib/inbox/inbox-list-session-context";

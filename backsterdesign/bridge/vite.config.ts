@@ -23,6 +23,9 @@ const ISLAND_TOKEN_HOSTS = [
   ".backsteros-project-tasks.bos-product-shell",
   "[data-searchable-dropdown-panel]",
   "[data-due-date-calendar-popover]",
+  "[data-pinned-task-popover]",
+  "[data-task-link-modal]",
+  "[data-entity-header-action-menu]",
 ].join(",");
 
 function sanitizeIslandCss(css: string): string {

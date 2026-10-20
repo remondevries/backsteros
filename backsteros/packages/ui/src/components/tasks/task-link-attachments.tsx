@@ -852,11 +852,6 @@ export function TaskLinkAttachments({
             onClick={openModal}
           >
             <PaperclipIcon />
-            {!hasRows ? (
-              <span className="task-link-attachments__add-label">
-                Add attachment
-              </span>
-            ) : null}
           </button>
         </div>
       ) : null}

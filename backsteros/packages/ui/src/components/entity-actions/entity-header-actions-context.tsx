@@ -48,11 +48,23 @@ export type EntityDuplicateConfig = {
   entityLabel?: string;
 };
 
+export type EntityExtraMenuSubItem = {
+  id: string;
+  label: string;
+  selected?: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+};
+
 export type EntityExtraMenuItem = {
   id: string;
   label: string;
   danger?: boolean;
   disabled?: boolean;
+  /** Trailing hint (e.g. current project type label). */
+  trailingLabel?: string;
+  /** Drill-down choices; when set, `onSelect` is unused for the parent row. */
+  submenu?: readonly EntityExtraMenuSubItem[];
   /**
    * When set, selecting the item opens the shared confirm modal, then runs
    * `onSelect` as the confirmed action.

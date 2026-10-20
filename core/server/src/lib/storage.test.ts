@@ -478,31 +478,16 @@ test("ensureProjectVaultFolders creates areas, .cursor skill, and is idempotent"
   }
 });
 
-test("ensureProjectVaultFolders omits Codebase for non-codebase projects", async () => {
+test("ensureProjectVaultFolders creates Codebase for every project type", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "backsteros-vault-"));
   setVaultPathCache(root);
   try {
     const ensured = await ensureProjectVaultFolders("GEN", undefined, {
       projectType: "general",
     });
-    await access(path.join(ensured.projectVaultPath, "Documents"));
-    await access(path.join(ensured.projectVaultPath, "Updates"));
-    await assert.rejects(
-      () => access(path.join(ensured.projectVaultPath, "Codebase")),
-      (error: NodeJS.ErrnoException) => error.code === "ENOENT",
-    );
-
-    // Empty leftover Codebase from older bootstraps is removed.
-    await mkdir(path.join(ensured.projectVaultPath, "Codebase"), {
-      recursive: true,
-    });
-    await ensureProjectVaultFolders("GEN", undefined, {
-      projectType: "general",
-    });
-    await assert.rejects(
-      () => access(path.join(ensured.projectVaultPath, "Codebase")),
-      (error: NodeJS.ErrnoException) => error.code === "ENOENT",
-    );
+    for (const name of ["Codebase", "Documents", "Updates"] as const) {
+      await access(path.join(ensured.projectVaultPath, name));
+    }
   } finally {
     setVaultPathCache(null);
     await rm(root, { recursive: true, force: true });

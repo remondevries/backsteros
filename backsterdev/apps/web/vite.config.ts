@@ -226,8 +226,20 @@ export default defineConfig(() => {
         clientFiles: ["./src/main.tsx"],
       },
       ...(() => {
+        const isLocalCoreOrigin = (origin: string): boolean => {
+          try {
+            const url = new URL(origin);
+            const port = url.port || (url.protocol === "https:" ? "443" : "80");
+            return port === "8788";
+          } catch {
+            return false;
+          }
+        };
+        const rawProductUrl = process.env.BACKSTEROS_API_URL?.trim() || "";
         const backsterosApiUrl = (
-          process.env.BACKSTEROS_API_URL?.trim() || "https://api.local.backsteros.com"
+          rawProductUrl && !isLocalCoreOrigin(rawProductUrl)
+            ? rawProductUrl
+            : "https://agent.backsteros.com"
         ).replace(/\/$/, "");
         const backsterosLocalCoreUrl = (
           process.env.BACKSTEROS_LOCAL_CORE_URL?.trim() || "http://127.0.0.1:8788"

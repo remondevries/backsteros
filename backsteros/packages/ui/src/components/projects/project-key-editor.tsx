@@ -15,13 +15,16 @@ export type ProjectKeyEditorProps = {
     | Promise<{ ok: true; key?: string } | { ok: false; error: string }>
     | { ok: true; key?: string }
     | { ok: false; error: string };
-  /** `displayId` matches the task code above a title (no ID pill). */
-  variant?: "pill" | "displayId";
+  /**
+   * `pill` — compact ID pill (legacy overview).
+   * `displayId` — bare code above a title (panel identity).
+   * `split` — prefix | value chip (Hourly/Weekly billing style).
+   */
+  variant?: "pill" | "displayId" | "split";
 };
 
 /**
- * Inline project ID (key) editor — click pill to edit, Enter/blur to save.
- * Mirrors Next `ProjectOverviewKeyEditor`.
+ * Inline project ID (key) editor — click to edit, Enter/blur to save.
  */
 export function ProjectKeyEditor({
   value,
@@ -29,6 +32,7 @@ export function ProjectKeyEditor({
   variant = "pill",
 }: ProjectKeyEditorProps) {
   const displayId = variant === "displayId";
+  const split = variant === "split";
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -82,6 +86,91 @@ export function ProjectKeyEditor({
     });
   }
 
+  const keyInput = (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      onChange={(event) => {
+        setDraft(normalizeProjectKey(event.target.value));
+        setError(null);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelEditing();
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          save();
+        }
+      }}
+      onBlur={() => {
+        if (!isPending) {
+          save();
+        }
+      }}
+      disabled={isPending}
+      maxLength={3}
+      aria-label="Project ID"
+      size={Math.max(draft.length, 2)}
+      className={
+        split ? "contact-detail-split-chip__value" : "project-detail__key-input"
+      }
+    />
+  );
+
+  if (split) {
+    return (
+      <div className="project-detail__key-editor project-detail__key-editor--split">
+        <div
+          className={[
+            "contact-detail-split-chip",
+            "project-billing-chip",
+            "project-key-split-chip",
+            !value.trim() ? "is-muted" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => {
+            if (!editing) {
+              setEditing(true);
+              setError(null);
+            }
+          }}
+        >
+          <span
+            className="contact-detail-split-chip__label contact-detail-split-chip__label--muted project-hourly-rate-chip__label"
+            aria-hidden
+          >
+            ID
+          </span>
+          {editing ? (
+            keyInput
+          ) : (
+            <button
+              type="button"
+              className="contact-detail-split-chip__value contact-detail-split-chip__value--button"
+              aria-label={`Edit project ID: ${value}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setEditing(true);
+                setError(null);
+              }}
+            >
+              {value}
+            </button>
+          )}
+        </div>
+        {error ? (
+          <p className="project-detail__key-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   if (editing) {
     return (
       <div
@@ -95,34 +184,7 @@ export function ProjectKeyEditor({
           {displayId ? null : (
             <span className="project-detail__key-label">ID</span>
           )}
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            onChange={(event) => {
-              setDraft(normalizeProjectKey(event.target.value));
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                cancelEditing();
-              }
-              if (event.key === "Enter") {
-                event.preventDefault();
-                save();
-              }
-            }}
-            onBlur={() => {
-              if (!isPending) {
-                save();
-              }
-            }}
-            disabled={isPending}
-            maxLength={3}
-            aria-label="Project ID"
-            className="project-detail__key-input"
-          />
+          {keyInput}
         </span>
         {error ? (
           <p className="project-detail__key-error" role="alert">

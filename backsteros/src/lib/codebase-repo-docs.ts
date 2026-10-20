@@ -69,13 +69,15 @@ function isAbortError(error: unknown): boolean {
 export function useCodebaseRepoDocs(options: {
   projectId: string | null;
   enabled: boolean;
+  /** Bump to reload the docs tree after create/delete. */
+  refreshToken?: number;
 }): {
   items: KnowledgeListItem[];
   docsPresent: boolean;
   loading: boolean;
   error: string | null;
 } {
-  const { projectId, enabled } = options;
+  const { projectId, enabled, refreshToken = 0 } = options;
   const { client } = useDesktopApi();
   const [state, setState] = useState<{
     items: KnowledgeListItem[];
@@ -101,12 +103,11 @@ export function useCodebaseRepoDocs(options: {
     }
 
     const controller = new AbortController();
-    setState({
-      items: [],
-      docsPresent: false,
-      loading: true,
+    setState((current) => ({
+      ...current,
+      loading: current.items.length === 0,
       error: null,
-    });
+    }));
 
     void client
       .requestJson<CodebaseRepoDocsResponse>(
@@ -133,7 +134,7 @@ export function useCodebaseRepoDocs(options: {
       });
 
     return () => controller.abort();
-  }, [client, enabled, projectId]);
+  }, [client, enabled, projectId, refreshToken]);
 
   return state;
 }

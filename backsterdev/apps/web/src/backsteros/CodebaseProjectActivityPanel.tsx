@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BacksterosActivityLeadingIcon } from "~/backsteros/activityMessage";
 import { formatBacksterosActivityRelativeTime } from "~/backsteros/activityTime";
 import { fetchBacksterosProjectActivities } from "~/backsteros/client";
 import { getBacksterosTaskPriorityLabel } from "~/backsteros/taskDetailFormat";
@@ -93,6 +94,22 @@ function keepElementInView(el: HTMLElement | null) {
     node = node.parentElement;
   }
   el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+}
+
+function activityStubForIcon(row: ProjectActivityRow): BacksterosTaskActivity {
+  return {
+    id: row.id,
+    taskId: "",
+    type: row.type,
+    actorUserId: null,
+    actorContactId: null,
+    actorEmail: null,
+    actorName: row.actorName,
+    data: row.data,
+    createdAt: row.createdAt,
+    taskNumber: row.taskNumber,
+    taskTitle: row.taskTitle,
+  };
 }
 
 function toRow(activity: BacksterosTaskActivity): ProjectActivityRow {
@@ -221,12 +238,9 @@ export function BacksterosCodebaseProjectActivityPanel(props: {
   return (
     <section
       className="bos-task-activity"
-      aria-label="Activity"
+      aria-label="Activities"
       aria-busy={loadingMore || undefined}
     >
-      <header className="bos-task-activity__header">
-        <h3 className="bos-task-activity__title">Activity</h3>
-      </header>
       <div className="bos-task-activity__feed">
         {loading ? <p className="bos-task-activity__empty">Loading activity…</p> : null}
         {error ? (
@@ -255,7 +269,11 @@ export function BacksterosCodebaseProjectActivityPanel(props: {
                 >
                   <span className="bos-task-activity-event__leading">
                     <span className="bos-task-activity-event__rail" aria-hidden="true">
-                      <span className="bos-task-activity-event__marker" />
+                      <span className="bos-task-activity-event__marker" aria-hidden="true">
+                        <BacksterosActivityLeadingIcon
+                          activity={activityStubForIcon(row)}
+                        />
+                      </span>
                     </span>
                   </span>
                   <div className="bos-task-activity-event__text">

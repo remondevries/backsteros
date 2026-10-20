@@ -66,6 +66,7 @@ export {
 export {
   ClientLink,
   ClientLinkProvider,
+  useClientLinkComponent,
   type ClientLinkComponent,
   type ClientLinkProps,
 } from "../shared/client-link.js";

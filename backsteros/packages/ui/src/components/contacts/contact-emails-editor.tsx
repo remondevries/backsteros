@@ -15,6 +15,7 @@ import { XIcon } from "@primer/octicons-react";
 
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import { ContactDetailChipsMore } from "./contact-detail-chips-more.js";
 
 export type { ContactEmailEntry, ContactEmailLabel };
 
@@ -84,6 +85,9 @@ function rowsKey(rows: ContactEmailEditorRow[]): string {
   return JSON.stringify(rows);
 }
 
+/** Collapse long email lists so the Details field stays scannable. */
+const EMAIL_CHIPS_COLLAPSED_LIMIT = 3;
+
 /**
  * Email addresses as split pills: category dropdown | address input.
  */
@@ -108,6 +112,7 @@ export function ContactEmailsEditor<
   const remoteKey = rowsKey(remoteRows);
   const [rows, setRows] = useState(remoteRows);
   const [rowsSource, setRowsSource] = useState(remoteKey);
+  const [listExpanded, setListExpanded] = useState(false);
   const addressInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   if (remoteKey !== rowsSource) {
@@ -115,6 +120,7 @@ export function ContactEmailsEditor<
     setRowsSource(remoteKey);
     if (rowsKey(rows) === priorSource) {
       setRows(remoteRows);
+      setListExpanded(false);
     }
   }
 
@@ -180,6 +186,7 @@ export function ContactEmailsEditor<
   function addRow() {
     if (disabled || rows.length >= 20) return;
     const next = [...rows, { label: defaultLabel, address: "" }];
+    setListExpanded(true);
     setLocalRows(next);
     requestAnimationFrame(() => {
       addressInputRefs.current.get(next.length - 1)?.focus();
@@ -194,10 +201,17 @@ export function ContactEmailsEditor<
       return index === rows.length - 1;
     });
 
+  const hiddenCount = Math.max(0, chips.length - EMAIL_CHIPS_COLLAPSED_LIMIT);
+  const showCollapseToggle = hiddenCount > 0;
+  const visibleChips =
+    listExpanded || !showCollapseToggle
+      ? chips
+      : chips.slice(0, EMAIL_CHIPS_COLLAPSED_LIMIT);
+
   return (
     <div className="contact-detail-chips">
       <div className="contact-detail-chips__row">
-        {chips.map(({ entry, index }) => {
+        {visibleChips.map(({ entry, index }) => {
           const label = labelDisplay(entry.label);
           const canRemove = Boolean(entry.address.trim()) || rows.length > 1;
           return (
@@ -305,6 +319,14 @@ export function ContactEmailsEditor<
           <SidePanelPlusIcon />
         </button>
       </div>
+      {showCollapseToggle ? (
+        <ContactDetailChipsMore
+          expanded={listExpanded}
+          hiddenCount={hiddenCount}
+          disabled={disabled}
+          onToggle={() => setListExpanded((open) => !open)}
+        />
+      ) : null}
     </div>
   );
 }

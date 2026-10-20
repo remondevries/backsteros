@@ -25,6 +25,7 @@
    [app.main.ui.dashboard.nav-hotkeys :as nav-hotkeys]
    [app.main.ui.alert]
    [app.main.ui.confirm]
+   [app.main.ui.dashboard.create-file-location-modal]
    [app.main.ui.css-cursors :as cur]
    [app.main.ui.delete-shared]
    [app.main.ui.routes :as rt]

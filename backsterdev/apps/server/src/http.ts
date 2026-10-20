@@ -64,7 +64,8 @@ import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./ht
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const BACKSTEROS_API_PATH_PREFIX = "/backsteros-api";
 const BACKSTEROS_LOCAL_CORE_PATH_PREFIX = "/backsteros-local-core";
-const DEFAULT_BACKSTEROS_API_URL = "https://api.local.backsteros.com";
+/** Public cloud-core door — product API / timers (FS stays on local-core). */
+const DEFAULT_BACKSTEROS_API_URL = "https://agent.backsteros.com";
 const DEFAULT_BACKSTEROS_LOCAL_CORE_URL = "http://127.0.0.1:8788";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = [
@@ -96,11 +97,30 @@ function readBacksterosCliEnvValue(
   }
 }
 
+/** True when origin is Mac local-core (:8788) — never a product/gateway upstream. */
+function isBacksterosLocalCoreOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    return port === "8788";
+  } catch {
+    return false;
+  }
+}
+
 function resolveBacksterosApiOrigin(): string {
-  const fromEnv = process.env.BACKSTEROS_API_URL?.trim() || "";
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
-  const fromCli = readBacksterosCliEnvValue("BACKSTEROS_API_URL");
-  if (fromCli) return fromCli.replace(/\/$/, "");
+  // BDV-37 / timer chrome: product API must hit cloud-core. A stale shell
+  // export or cli.env pointing at local-core (:8788) must not win — FS uses
+  // BACKSTEROS_LOCAL_CORE_URL / /backsteros-local-core instead.
+  for (const candidate of [
+    process.env.BACKSTEROS_API_URL?.trim() || "",
+    readBacksterosCliEnvValue("BACKSTEROS_API_URL"),
+  ]) {
+    if (!candidate) continue;
+    const cleaned = candidate.replace(/\/$/, "");
+    if (isBacksterosLocalCoreOrigin(cleaned)) continue;
+    return cleaned;
+  }
   return DEFAULT_BACKSTEROS_API_URL;
 }
 

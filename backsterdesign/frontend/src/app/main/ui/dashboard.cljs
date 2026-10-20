@@ -34,7 +34,6 @@
    [app.main.ui.dashboard.projects :refer [projects-section*]]
    [app.main.ui.dashboard.search :refer [search-page*]]
    [app.main.ui.dashboard.team :refer [team-settings-page* team-members-page* team-invitations-page* webhooks-page*]]
-   [app.main.ui.dashboard.templates :refer [templates-section*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.modal :refer [modal-container*]]
    [app.main.ui.workspace.plugins]
@@ -54,42 +53,18 @@
 (mf/defc dashboard-content*
   {::mf/private true}
   [{:keys [team projects project section search-term profile default-project layout on-layout-change contact-id task-id]}]
-  (let [container       (mf/use-ref)
-        content-width   (mf/use-state 0)
-
-        project-id      (:id project)
-        team-id         (:id team)
-
-        permissions     (:permissions team)
-
-        default-project-id
-        (get default-project :id)
-
-        on-resize
-        (mf/use-fn
-         (fn [_]
-           (let [dom   (mf/ref-val container)
-                 width (obj/get dom "clientWidth")]
-             (reset! content-width width))))
+  (let [container (mf/use-ref)
 
         clear-selected-fn
         (mf/use-fn
          #(st/emit! (dd/clear-selected-files)))
 
-        show-templates?
-        (and (contains? cf/flags :dashboard-templates-section)
-             (:can-edit permissions))
-
         ;; BacksterDESIGN: no Deleted tab — send deep links to Recent.
+        ;; Also never show the Libraries & Templates tray (flag alone is
+        ;; easy to miss when config.js is missing or the webview caches).
         section (if (= section :dashboard-deleted)
                   :dashboard-recent
                   section)]
-
-    (mf/with-effect []
-      (let [key1 (events/listen js/window "resize" on-resize)]
-        #(events/unlistenByKey key1)))
-
-    (mf/use-effect on-resize)
 
     [:div {:class (stl/css :dashboard-content)
            :on-click clear-selected-fn
@@ -99,20 +74,12 @@
 
      (case section
        :dashboard-recent
-       [:*
-        [:> projects-section* {:team team
-                               :projects projects
-                               :profile profile
-                               :layout layout
-                               :on-layout-change on-layout-change
-                               :search-term search-term}]
-
-        (when ^boolean show-templates?
-          [:> templates-section* {:profile profile
-                                  :project-id project-id
-                                  :team-id team-id
-                                  :default-project-id default-project-id
-                                  :content-width @content-width}])]
+       [:> projects-section* {:team team
+                              :projects projects
+                              :profile profile
+                              :layout layout
+                              :on-layout-change on-layout-change
+                              :search-term search-term}]
 
        :dashboard-backsteros
        [:> backsteros-section* {:team team}]
@@ -130,18 +97,11 @@
 
        :dashboard-files
        (when project
-         [:*
-          [:> files-section* {:team team
-                              :project project
-                              :layout layout
-                              :on-layout-change on-layout-change
-                              :task-id task-id}]
-          (when ^boolean show-templates?
-            [:> templates-section* {:profile profile
-                                    :team-id team-id
-                                    :project-id project-id
-                                    :default-project-id default-project-id
-                                    :content-width @content-width}])])
+         [:> files-section* {:team team
+                             :project project
+                             :layout layout
+                             :on-layout-change on-layout-change
+                             :task-id task-id}])
 
        :dashboard-search
        [:> search-page* {:team team

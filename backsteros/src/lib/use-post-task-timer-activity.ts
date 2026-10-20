@@ -1,17 +1,15 @@
 import { useCallback } from "react";
 
-import { useDesktopApi } from "./api-context";
+import { cloudCoreRequestJson } from "./cloud-core-api";
 
 /**
- * Posts timer_started / timer_stopped activities for a task and bumps the
- * activity feed so the new rows appear without a full page refresh.
+ * Posts timer_started / timer_stopped to cloud-core so OS / DESIGN / DEV
+ * chrome see the same running timer. Bumps the activity feed on success.
  */
 export function usePostTaskTimerActivity(
   taskId: string | null | undefined,
   onPosted?: () => void,
 ) {
-  const { client } = useDesktopApi();
-
   return useCallback(
     (action: "start" | "pause", sessionSeconds?: number | null) => {
       if (!taskId) return;
@@ -27,15 +25,13 @@ export function usePostTaskTimerActivity(
                 ),
               },
             };
-      void client
-        .requestJson(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          },
-        )
+      void cloudCoreRequestJson(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      )
         .then(() => {
           onPosted?.();
         })
@@ -43,6 +39,6 @@ export function usePostTaskTimerActivity(
           // Activity feed is best-effort; tracked time still persists separately.
         });
     },
-    [client, onPosted, taskId],
+    [onPosted, taskId],
   );
 }

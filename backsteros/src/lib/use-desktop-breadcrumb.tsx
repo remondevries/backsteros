@@ -75,7 +75,11 @@ export function useDesktopSectionBreadcrumb(
         className={className}
         actions={
           <>
-            {actions}
+            {actions ? (
+              <div className="content-chrome-header__section-tabs">
+                {actions}
+              </div>
+            ) : null}
             {hideEntityActionsSlot ? null : <EntityHeaderActionsSlot />}
           </>
         }

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { getProjectTaskHref, getTaskDisplayId } from "@backsteros/ui";
 import { useTrackedTimer } from "@backsteros/ui/shell";
 
-import { useDesktopApi } from "./api-context";
+import { cloudCoreRequestJson } from "./cloud-core-api";
 
 type RemoteRunningTimerAdoption = {
   kind: "task";
@@ -15,6 +15,8 @@ type RemoteRunningTimerAdoption = {
   trackedMinutes?: number | null;
   remoteStartedAtMs: number;
   updatedAtMs?: number | null;
+  isRunning?: boolean;
+  lastTimerAtMs?: number | null;
   onPersist: (seconds: number | null, fromTimerPause?: boolean) => void;
   onSessionChange?: (
     action: "started" | "stopped",
@@ -22,9 +24,11 @@ type RemoteRunningTimerAdoption = {
   ) => void;
 };
 
-type RunningTimerApiRow = {
+type RecentTimerApiRow = {
   taskId: string;
   startedAt: string;
+  lastTimerAt?: string;
+  isRunning?: boolean;
   title: string;
   number: number | null;
   status: string | null;
@@ -42,20 +46,17 @@ function parseStartedAtMs(value: string): number {
 }
 
 /**
- * Keeps the top-right timer strip in sync with open `timer_started` activities
- * from any client (e.g. backsteros-development).
- *
- * Uses REST against local-core — PowerSync `task_activities` can lag or stall,
- * so activity-based local SQL is not reliable for live chrome.
+ * Keeps the top-right timer strip + dropdown in sync with recent timers from
+ * any client (OS / DESIGN / DEV) via cloud-core GET /api/v1/recent-timers.
  */
 export function useSyncRemoteRunningTimers(): void {
   const timer = useTrackedTimer() as ReturnType<typeof useTrackedTimer> & {
-    syncRemoteRunningTimers: (adoptions: RemoteRunningTimerAdoption[]) => void;
+    syncRemoteRunningTimers: (
+      adoptions: RemoteRunningTimerAdoption[],
+      options?: { pruneAbsent?: boolean },
+    ) => void;
   };
-  const { client } = useDesktopApi();
 
-  const clientRef = useRef(client);
-  clientRef.current = client;
   const syncRef = useRef(timer.syncRemoteRunningTimers);
   syncRef.current = timer.syncRemoteRunningTimers;
 
@@ -63,7 +64,10 @@ export function useSyncRemoteRunningTimers(): void {
     let cancelled = false;
     let inFlight = false;
 
-    const apply = (rows: RunningTimerApiRow[]) => {
+    const apply = (
+      rows: RecentTimerApiRow[],
+      options?: { pruneAbsent?: boolean },
+    ) => {
       const sync = syncRef.current;
       if (!sync) return;
 
@@ -79,6 +83,9 @@ export function useSyncRemoteRunningTimers(): void {
           projectKey && number != null
             ? getProjectTaskHref(projectKey, number)
             : `/tasks/${encodeURIComponent(taskId)}`;
+        const lastTimerAtMs = parseStartedAtMs(
+          row.lastTimerAt ?? row.startedAt,
+        );
 
         return {
           kind: "task" as const,
@@ -90,59 +97,74 @@ export function useSyncRemoteRunningTimers(): void {
           trackedDurationSeconds: row.trackedDurationSeconds,
           trackedMinutes: row.trackedMinutes,
           remoteStartedAtMs: parseStartedAtMs(row.startedAt),
+          lastTimerAtMs,
+          isRunning: row.isRunning,
           updatedAtMs: row.updatedAt ? parseStartedAtMs(row.updatedAt) : null,
           onPersist: (seconds: number | null) => {
-            void clientRef.current
-              .requestJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+            void cloudCoreRequestJson(
+              `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+              {
                 method: "PATCH",
-                headers: { "content-type": "application/json" },
                 body: JSON.stringify({ trackedDurationSeconds: seconds }),
-              })
-              .catch(() => {
-                // Soft checkpoint / pause persist is best-effort from chrome.
-              });
+              },
+            ).catch(() => {
+              // Soft checkpoint / pause persist is best-effort from chrome.
+            });
           },
           onSessionChange: (
             action: "started" | "stopped",
             sessionSeconds?: number,
           ) => {
             if (action === "started") return;
-            void clientRef.current
-              .requestJson(
-                `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    type: "timer_stopped",
-                    data: {
-                      durationSeconds: Math.max(
-                        0,
-                        Math.round(sessionSeconds ?? 0),
-                      ),
-                    },
-                  }),
-                },
-              )
-              .catch(() => {
-                // Activity feed is best-effort.
-              });
+            void cloudCoreRequestJson(
+              `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  type: "timer_stopped",
+                  data: {
+                    durationSeconds: Math.max(
+                      0,
+                      Math.round(sessionSeconds ?? 0),
+                    ),
+                  },
+                }),
+              },
+            ).catch(() => {
+              // Activity feed is best-effort.
+            });
           },
         };
       });
 
-      sync(adoptions);
+      sync(adoptions, options);
     };
 
     const poll = async () => {
       if (cancelled || inFlight) return;
       inFlight = true;
       try {
-        const body = await clientRef.current.requestJson<{
-          timers: RunningTimerApiRow[];
-        }>("/api/v1/running-timers");
+        let rows: RecentTimerApiRow[] = [];
+        let pruneAbsent = false;
+        try {
+          const body = await cloudCoreRequestJson<{
+            timers: RecentTimerApiRow[];
+          }>("/api/v1/recent-timers");
+          rows = body.timers ?? [];
+          pruneAbsent = true;
+        } catch {
+          // Cloud without recent-timers yet — keep paused chrome rows.
+          const body = await cloudCoreRequestJson<{
+            timers: RecentTimerApiRow[];
+          }>("/api/v1/running-timers");
+          rows = (body.timers ?? []).map((row) => ({
+            ...row,
+            isRunning: true,
+            lastTimerAt: row.startedAt,
+          }));
+        }
         if (cancelled) return;
-        apply(body.timers ?? []);
+        apply(rows, { pruneAbsent });
       } catch {
         // Poll is best-effort; next tick retries.
       } finally {

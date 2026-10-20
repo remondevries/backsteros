@@ -49,6 +49,10 @@
   gap: 12px;
 }
 
+.content-detail-icon-title--icon-only {
+  gap: 0;
+}
+
 .content-detail-icon-title__title {
   min-width: 0;
   width: 100%;

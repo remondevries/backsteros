@@ -165,10 +165,11 @@
   position: fixed;
   z-index: 1200;
   display: flex;
-  min-width: 260px;
-  max-width: min(400px, 70vw);
+  min-width: 390px;
+  max-width: min(600px, 70vw);
   flex-direction: column;
-  padding: 4px;
+  padding: 0;
+  overflow: hidden;
   border: 0.5px solid var(--tab-border);
   border-radius: 12px;
   background: var(--surface-elevated, var(--tab-bg-active));
@@ -180,14 +181,18 @@
   width: 100%;
   align-items: center;
   gap: 2px;
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--tab-text);
   font-size: 12px;
 }
 
-.content-tabs-timer__option:hover,
+/* Hover only — active fill made a nested pill inside the panel. */
+.content-tabs-timer__option:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--tab-text-active);
+}
+
 .content-tabs-timer__option--active {
-  background: var(--tab-bg-active);
   color: var(--tab-text-active);
 }
 
@@ -231,7 +236,7 @@
   gap: 12px;
   padding: 8px 4px 8px 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -245,6 +250,7 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 28px;
   height: 28px;
   margin-right: 4px;
@@ -252,6 +258,7 @@
   border-radius: 6px;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-decoration: none;
   cursor: pointer;
   transition:
     color 120ms ease,
@@ -579,7 +586,7 @@
 .content-chrome-header {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
+  align-items: stretch;
   box-sizing: border-box;
   height: var(--content-chrome-header-height);
   min-height: var(--content-chrome-header-height);

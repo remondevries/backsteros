@@ -6,12 +6,35 @@
  * When collapsed, the tabs bar becomes the leftmost chrome and needs the same inset.
  */
 .bos-product-shell {
+  position: relative;
   /* Traffic lights at x:16 + ~54px cluster + gap → clear the titlebar controls. */
   --bos-traffic-light-inset: 88px;
   /* Top empty band above the tab/history controls (avoid padding-top — clips in WKWebView). */
   --bos-chrome-gutter: 12px;
   /* Control band height — tight around 30px tab pills (was 44px). */
   --bos-tabs-band-height: 36px;
+}
+
+/*
+ * Zone behind native macOS traffic lights (left inset of the titlebar).
+ * AppKit still owns the real buttons; this strip starts a window drag so
+ * empty space around the lights moves the window (BacksterDESIGN pattern).
+ * Do not use -webkit-app-region: drag — WKWebView can swallow pointer events
+ * so Tauri startDragging never runs.
+ */
+.bos-chrome-traffic-lights {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  /* Below sidebar / tabs chrome so buttons stay clickable; fills empty inset. */
+  z-index: 1;
+  width: var(--bos-traffic-light-inset);
+  height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
+  cursor: default;
+}
+
+.bos-product-shell.is-window-fullscreen .bos-chrome-traffic-lights {
+  width: var(--bos-fullscreen-chrome-inset, 8px);
 }
 
 .bos-product-shell .app-side-panel-history-toolbar {
@@ -157,7 +180,8 @@
 
 /*
  * Overlay titlebar + drag regions: keep the workspace content interactive.
- * Without this, WKWebView can treat large areas as drag and swallow clicks.
+ * Window move uses Tauri startDragging() (see useWindowChromeDrag), not
+ * -webkit-app-region: drag (which WKWebView can swallow).
  */
 .bos-product-shell .workspace,
 .bos-product-shell .main-slot,

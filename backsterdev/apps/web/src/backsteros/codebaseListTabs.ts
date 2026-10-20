@@ -1,5 +1,6 @@
 /** Mirrors `@backsteros/ui` `CODEBASE_LIST_TAB_OPTIONS`, plus T3 project settings. */
 export const BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS = [
+  { value: "overview" as const, label: "Overview" },
   { value: "tasks" as const, label: "Tasks" },
   { value: "files" as const, label: "Files" },
   { value: "docs" as const, label: "Documents" },

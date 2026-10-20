@@ -103,7 +103,11 @@
 
 .left-sidebar {
   display: grid;
-  grid-template: "header header" px2rem(52) "content resize" 1fr / 1fr 0;
+  grid-template:
+    "header header" px2rem(52)
+    "content resize" minmax(0, 1fr)
+    "pinned resize" auto
+    / 1fr 0;
   position: relative;
   grid-area: left-sidebar;
   min-inline-size: var(--left-sidebar-width);
@@ -123,6 +127,13 @@
   grid-area: content;
   inset-inline-end: calc(-1 * var(--sp-s));
   min-block-size: 0;
+  overflow: hidden;
+}
+
+:global(.backsteros-pinned-tasks-host) {
+  grid-area: pinned;
+  min-block-size: 0;
+  max-block-size: min(70vh, 560px);
   overflow: hidden;
 }
 

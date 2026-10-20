@@ -41,6 +41,14 @@ import {
   type DesignFileNavItem,
 } from "./files-keyboard-zone.js";
 import { mapTask } from "./map-task.js";
+import {
+  consumePendingOpenPinnedTask,
+  getPinnedTaskIds,
+  OPEN_PINNED_TASK,
+  PINNED_TASKS_CHANGED,
+  togglePinnedTask,
+  toPinnedSnap,
+} from "./pinned-tasks-store.js";
 import { TaskDetailPane } from "./task-detail-pane.js";
 import { useAvatarSrcMap, withAvatarSrc } from "./use-avatar-src-map.js";
 
@@ -48,6 +56,83 @@ import { useAvatarSrcMap, withAvatarSrc } from "./use-avatar-src-map.js";
 export type ProjectTasksLayout = "stack" | "rail";
 
 export type { DesignFileNavItem };
+
+function filterTasks(
+  tasks: TaskItemRowTask[],
+  query: string,
+): TaskItemRowTask[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return tasks;
+  return tasks.filter((task) => {
+    const displayId =
+      task.projectKey != null
+        ? `${task.projectKey}-${task.number}`
+        : String(task.number);
+    return (
+      task.title.toLowerCase().includes(needle) ||
+      displayId.toLowerCase().includes(needle) ||
+      String(task.number).includes(needle) ||
+      (task.status ?? "").toLowerCase().includes(needle) ||
+      (task.projectKey ?? "").toLowerCase().includes(needle)
+    );
+  });
+}
+
+function TasksSearchIcon() {
+  return (
+    <svg
+      className="backsteros-project-tasks__search-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+    >
+      <circle
+        cx="7"
+        cy="7"
+        r="4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10.5 10.5L14 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function TasksSearchHeader({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <header className="backsteros-project-tasks__header">
+      <label className="backsteros-project-tasks__search">
+        <TasksSearchIcon />
+        <input
+          type="search"
+          className="backsteros-project-tasks__search-input"
+          placeholder="Search tasks…"
+          aria-label="Search tasks"
+          value={value}
+          disabled={disabled}
+          autoComplete="off"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+    </header>
+  );
+}
 
 export type ProjectTasksAppProps = {
   penpotProjectId: string;
@@ -208,6 +293,12 @@ export function ProjectTasksApp({
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
     () => initialTaskId,
   );
+  const [taskQuery, setTaskQuery] = useState("");
+  /** Pinning is workspace (file editor) only — stack layout, not dashboard rail. */
+  const pinEnabled = layout === "stack";
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() =>
+    pinEnabled ? getPinnedTaskIds(penpotProjectId) : new Set(),
+  );
   const isRail = layout === "rail";
 
   // Restore path: columns start at their final width — no width transition.
@@ -287,6 +378,50 @@ export function ProjectTasksApp({
     setSelectedTaskId(normalized);
     onTaskIdChangeRef.current?.(normalized);
   }, []);
+
+  useEffect(() => {
+    if (!pinEnabled) {
+      setPinnedIds(new Set());
+      return;
+    }
+    setPinnedIds(getPinnedTaskIds(penpotProjectId));
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ penpotProjectId?: string }>)
+        .detail;
+      if (
+        detail?.penpotProjectId &&
+        detail.penpotProjectId !== penpotProjectId
+      ) {
+        return;
+      }
+      setPinnedIds(getPinnedTaskIds(penpotProjectId));
+    };
+    window.addEventListener(PINNED_TASKS_CHANGED, onChanged);
+    return () => window.removeEventListener(PINNED_TASKS_CHANGED, onChanged);
+  }, [pinEnabled, penpotProjectId]);
+
+  useEffect(() => {
+    if (!pinEnabled) return;
+    const pending = consumePendingOpenPinnedTask();
+    if (pending) selectTask(pending);
+    const onOpen = (event: Event) => {
+      const taskId = (event as CustomEvent<{ taskId?: string }>).detail
+        ?.taskId;
+      if (typeof taskId === "string" && taskId) {
+        selectTask(taskId);
+      }
+    };
+    window.addEventListener(OPEN_PINNED_TASK, onOpen);
+    return () => window.removeEventListener(OPEN_PINNED_TASK, onOpen);
+  }, [pinEnabled, selectTask]);
+
+  const onTogglePin = useCallback(
+    (task: TaskItemRowTask) => {
+      if (!pinEnabled) return;
+      togglePinnedTask(penpotProjectId, toPinnedSnap(task));
+    },
+    [pinEnabled, penpotProjectId],
+  );
 
   const patchLocal = useCallback(
     (id: string, patch: Partial<TaskItemRowTask>) => {
@@ -619,10 +754,17 @@ export function ProjectTasksApp({
     );
   }
 
+  const visibleTasks =
+    state.kind === "ready"
+      ? filterTasks(state.tasks, taskQuery).filter(
+          (task) => !(pinEnabled && pinnedIds.has(task.id)),
+        )
+      : [];
+
   const listPane =
     state.kind === "ready" && !replaceWithDetail ? (
       <ProjectTasksView
-        tasks={state.tasks}
+        tasks={visibleTasks}
         listItemVariant="card"
         selectedTaskId={selectedTaskId}
         onSelectTask={selectTask}
@@ -636,6 +778,9 @@ export function ProjectTasksApp({
         onDeleteTask={onDeleteTask}
         onBulkDelete={onBulkDelete}
         onReorder={onReorder}
+        showPin={pinEnabled}
+        pinnedTaskIds={pinnedIds}
+        onTogglePin={pinEnabled ? onTogglePin : undefined}
       />
     ) : null;
 
@@ -656,15 +801,21 @@ export function ProjectTasksApp({
         onTaskDeleted={() => {
           removeLocal([selectedTaskId]);
         }}
+        pinEnabled={pinEnabled}
+        pinned={
+          pinEnabled && selectedTaskId
+            ? pinnedIds.has(selectedTaskId)
+            : false
+        }
+        onTogglePin={
+          pinEnabled && selectedListTask
+            ? () => onTogglePin(selectedListTask)
+            : undefined
+        }
       />
     ) : showingDetail && state.kind === "loading" ? (
       <p className="backsteros-project-tasks__loading">Loading task…</p>
     ) : null;
-
-  const meta =
-    state.kind === "ready"
-      ? `${state.project.key} · ${state.tasks.length} task${state.tasks.length === 1 ? "" : "s"}`
-      : null;
 
   return (
     <CommandPaletteProvider>
@@ -709,16 +860,10 @@ export function ProjectTasksApp({
                     </div>
                   ) : (
                     <>
-                      <header className="backsteros-project-tasks__header">
-                        <h2 className="backsteros-project-tasks__title">
-                          Tasks
-                        </h2>
-                        {meta ? (
-                          <p className="backsteros-project-tasks__meta">
-                            {meta}
-                          </p>
-                        ) : null}
-                      </header>
+                      <TasksSearchHeader
+                        value={taskQuery}
+                        onChange={setTaskQuery}
+                      />
                       <div className="backsteros-project-tasks__list-scroll">
                         {listPane}
                       </div>
@@ -752,12 +897,10 @@ export function ProjectTasksApp({
             <div className="backsteros-project-tasks__body">{detailPane}</div>
           ) : (
             <>
-              <header className="backsteros-project-tasks__header">
-                <h2 className="backsteros-project-tasks__title">Tasks</h2>
-                {meta ? (
-                  <p className="backsteros-project-tasks__meta">{meta}</p>
-                ) : null}
-              </header>
+              <TasksSearchHeader
+                value={taskQuery}
+                onChange={setTaskQuery}
+              />
               <div className="backsteros-project-tasks__body">{listPane}</div>
             </>
           )}

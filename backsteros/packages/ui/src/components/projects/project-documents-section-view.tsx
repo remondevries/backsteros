@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 
 import type { KnowledgeListItem } from "../../navigation/entity-routes.js";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import { DocumentIcon } from "../documents/document-icon.js";
+import { HairlineEmptyFigure } from "../shared/hairline-empty-figure.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -18,7 +19,7 @@ export type ProjectDocumentsSectionViewProps = {
   documents: KnowledgeListItem[];
   onSelectDocument?: (document: KnowledgeListItem) => void;
   selectedDocumentId?: string | null;
-  emptyMessage?: string;
+  emptyMessage?: ReactNode;
 };
 
 /** Project documents pane — flat list matching the web project docs index. */
@@ -26,13 +27,20 @@ export function ProjectDocumentsSectionView({
   documents,
   onSelectDocument,
   selectedDocumentId = null,
-  emptyMessage = "No documents in this project yet.",
+  emptyMessage,
 }: ProjectDocumentsSectionViewProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
   const itemIds = documents.map((document) => document.id);
+  const resolvedEmpty = emptyMessage ?? (
+    <HairlineEmptyFigure
+      size={200}
+      label="No documents"
+      caption="No documents"
+    />
+  );
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -49,7 +57,11 @@ export function ProjectDocumentsSectionView({
   if (!documents.length) {
     return (
       <div className="project-detail__placeholder">
-        <p className="overview-empty">{emptyMessage}</p>
+        {typeof resolvedEmpty === "string" ? (
+          <p className="overview-empty">{resolvedEmpty}</p>
+        ) : (
+          resolvedEmpty
+        )}
       </div>
     );
   }

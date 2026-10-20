@@ -1,7 +1,12 @@
-import { ContentTabsTimer, useTabShortcuts } from "@backsteros/ui";
-import { TrackedTimerProvider } from "@backsteros/ui/shell";
+import {
+  ContentTabsTimer,
+  TrackedTimerProvider,
+  useTabShortcuts,
+} from "@backsteros/ui";
+
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   useCallback,
   useEffect,
@@ -33,6 +38,20 @@ const DASHBOARD_TAB_ID = "__dashboard__";
  * (`trafficLightPosition.y: 24` → center ~30).
  */
 const TRAFFIC_LIGHT = { x: 16, y: 24 };
+
+/**
+ * Start a window drag from the chrome webview.
+ * Must invoke synchronously on mousedown (dynamic import loses the gesture).
+ * Requires `core:window:allow-start-dragging` in capabilities.
+ */
+function startWindowDrag(event: { button: number }): void {
+  if (event.button !== 0 || !isTauri()) return;
+  void getCurrentWindow()
+    .startDragging()
+    .catch((err: unknown) => {
+      console.error("[chrome] startDragging failed", err);
+    });
+}
 
 function PlusIcon() {
   return (
@@ -183,12 +202,15 @@ export default function App() {
       if (open && key === lastKey) return;
       open = true;
       lastKey = key;
+      // Extra pad so the right-edge chevron stays inside the design-webview hole.
+      const padX = 28;
+      const padY = 12;
       void invoke("set_timer_menu_overlay", {
         open: true,
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
+        x: rect.left - padX,
+        y: rect.top - padY,
+        width: rect.width + padX * 2,
+        height: rect.height + padY * 2,
       }).catch(() => {});
     };
     const observer = new MutationObserver(() => {
@@ -262,6 +284,9 @@ export default function App() {
     // A missing file/project leaves the design webview blank with no recovery.
     setTabs([]);
     setActiveFileId(null);
+    // Restoring implies a prior signed-in session — show tab chrome immediately
+    // even if the SPA's next route-changed is a no-op (same dashboard route).
+    setSignedIn(true);
     if (teamId) {
       setDashboard({ name: "dashboard-recent", params: { "team-id": teamId } });
       void postToSpa({
@@ -333,8 +358,15 @@ export default function App() {
     }
 
     if (msg.type === "route-changed") {
-      if (msg.authenticated === false || msg.route === "auth") {
+      // Only hide chrome on the login screen. Ignore boot flickers where
+      // profile is briefly nil (authenticated:false + route "other") — those
+      // used to hide the dashboard / plus buttons after reload.
+      if (msg.route === "auth") {
         setSignedIn(false);
+        setTabs([]);
+        setActiveFileId(null);
+        setDashboard(null);
+        sessionRestoredRef.current = false;
       } else if (
         msg.authenticated === true ||
         msg.route === "dashboard" ||
@@ -378,6 +410,7 @@ export default function App() {
         });
       } else if (msg.route === "dashboard") {
         setActiveFileId(null);
+        setSignedIn(true);
         if (msg.dashboardName) {
           setDashboard({
             name: msg.dashboardName,
@@ -501,6 +534,10 @@ export default function App() {
     );
   }, []);
 
+  const openNewFile = useCallback(() => {
+    void postToSpa({ channel: BRIDGE_CHANNEL, type: "new-file" });
+  }, []);
+
   const focusTabRef = useRef(focusTab);
   focusTabRef.current = focusTab;
   const goDashboardRef = useRef(goDashboard);
@@ -553,7 +590,7 @@ export default function App() {
   useTabShortcuts({
     enabled: true,
     activeTabId: activeFileId ?? DASHBOARD_TAB_ID,
-    openNewTab: goDashboard,
+    openNewTab: openNewFile,
     closeTab: (tabId) => {
       if (tabId === DASHBOARD_TAB_ID) return;
       closeTab(tabId);
@@ -581,13 +618,24 @@ export default function App() {
   }, [focusTabAtIndex]);
 
   const onDashboard = activeFileId === null;
+  // Persist chrome across SPA boot races: once we have a session or a
+  // confirmed signed-in route, keep home + plus visible until auth.
+  const showTabChrome =
+    signedIn || dashboard != null || tabs.length > 0 || activeFileId != null;
 
   return (
     <TrackedTimerProvider
       onNavigate={(href) => {
         if (!href.startsWith("/") || href.startsWith("//")) return;
         if (isTauri()) {
-          void invoke("open_backsteros_href", { href }).catch(() => {});
+          void invoke("open_backsteros_href", { href }).then(
+            () => {
+              console.info("[BacksterDESIGN] open_backsteros_href", href);
+            },
+            (err: unknown) => {
+              console.error("[BacksterDESIGN] open_backsteros_href failed", href, err);
+            },
+          );
           return;
         }
         window.open(href, "_blank", "noopener");
@@ -601,8 +649,30 @@ export default function App() {
         }
       />
       <div className="shell">
-      <header className="chrome" data-tauri-drag-region>
-        {signedIn && (
+      <header
+        className="chrome"
+        data-tauri-drag-region="deep"
+        onMouseDown={(event) => {
+          // Only empty chrome / drag strips — interactive children opt out.
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest('[data-tauri-drag-region="false"]')) return;
+          if (target.closest("button, a, input, [role='tab'], [role='menuitem']")) {
+            return;
+          }
+          startWindowDrag(event);
+        }}
+      >
+        <div
+          className="chrome__traffic-lights"
+          aria-hidden="true"
+          data-tauri-drag-region="deep"
+          onMouseDown={(event) => {
+            event.stopPropagation();
+            startWindowDrag(event);
+          }}
+        />
+        {showTabChrome && (
         <button
           type="button"
           className={`chrome__home${onDashboard ? " is-active" : ""}`}
@@ -672,14 +742,14 @@ export default function App() {
             })}
           </div>
 
-          {signedIn && (
+          {showTabChrome && (
           <button
             type="button"
             className="content-tab-add"
-            aria-label="Go to dashboard"
-            title="Go to dashboard"
+            aria-label="New file"
+            title="New file"
             data-tauri-drag-region="false"
-            onClick={goDashboard}
+            onClick={openNewFile}
           >
             <PlusIcon />
           </button>

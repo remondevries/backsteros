@@ -54,6 +54,11 @@ export type ShellToSpaMessage =
       /** Seed SPA `*last-dashboard` on cold start (e.g. `dashboard-files`). */
       routeName?: string;
       params?: Record<string, string>;
+    }
+  | {
+      channel: typeof BRIDGE_CHANNEL;
+      /** Open the create-file location picker in the SPA. */
+      type: "new-file";
     };
 
 export type SpaToShellMessage =

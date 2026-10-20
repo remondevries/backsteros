@@ -103,7 +103,7 @@ export function DocumentTreeSidePanelView({
   Link,
   title,
   listAriaLabel,
-  emptyLabel = "No documents yet. Use the plus button to add one.",
+  emptyLabel,
   getSelectedSlug,
   getDocumentHref,
   onAdd,
@@ -256,7 +256,7 @@ export function DocumentTreeSidePanelView({
           title={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
           onClick={() => setAddingFolder(true)}
         >
-          <FolderPlusIcon className="size-3.5" />
+          <FolderPlusIcon className="shrink-0" />
         </button>
       ) : null}
     </>
@@ -303,15 +303,21 @@ export function DocumentTreeSidePanelView({
   ));
 
   if (embedded) {
+    const showHeader = Boolean(onAdd || onCreateFolder);
     return (
       <div className="console-docs-tree">
-        {onAdd || onCreateFolder ? (
-          <div className="console-docs-tree__actions">{actions}</div>
+        {showHeader ? (
+          <div className="console-docs-tree__header">
+            <span className="console-docs-tree__header-label">Name</span>
+            <div className="console-docs-tree__header-actions">{actions}</div>
+          </div>
         ) : null}
         <div className="console-docs-tree__main">
           {beforeBody}
           {!showList ? (
-            <p className="app-content-side-panel-empty">{emptyLabel}</p>
+            emptyLabel ? (
+              <div className="app-content-side-panel-empty">{emptyLabel}</div>
+            ) : null
           ) : (
             <nav
               ref={listRef}
