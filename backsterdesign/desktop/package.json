@@ -10,7 +10,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "PENPOT_PUBLIC_URI=https://localhost:3449 tauri dev",
+    "tauri:dev:hosted": "PENPOT_PUBLIC_URI=https://design.lemo-design.com tauri dev",
     "tauri:build": "tauri build",
     "typecheck": "tsc --noEmit"
   },

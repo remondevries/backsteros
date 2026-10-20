@@ -14,6 +14,7 @@
    [app.main.refs :as refs]
    [app.main.repo :as rp]
    [app.main.store :as st]
+   [app.main.ui.dashboard.backsteros-bridge :as bos.bridge]
    [app.main.ui.dashboard.backsteros-cache :as bos.cache]
    [app.main.ui.dashboard.keyboard-nav :as knav]
    [app.main.ui.dashboard.page-header :refer [page-header*]]
@@ -888,48 +889,23 @@
         (mf/use-fn
          (mf/deps cfg team-id)
          (fn [project]
-           (cond
-             (nil? cfg)
-             (swap! state* assoc :action-error "Configure window.backsterosCore first.")
-
-             (nil? team-id)
-             (swap! state* assoc :action-error "No Penpot team selected.")
-
-             :else
-             (let [existing (parse-penpot-id (:penpot-project-id project))]
-               (swap! state* assoc :busy-id (:id project) :action-error nil)
-               (if existing
-                 (do
-                   (swap! state* assoc :busy-id nil)
-                   (open-penpot-project! team-id existing))
-                 (create-and-link-penpot-project!
-                  {:base-url (:base-url cfg)
-                   :api-key (:api-key cfg)
-                   :team-id team-id
-                   :project project
-                   :on-linked (fn [penpot-id-str]
-                                (swap! state*
-                                       (fn [s]
-                                         (-> s
-                                             (assoc :busy-id nil)
-                                             (update :items
-                                                     (fn [rows]
-                                                       (mapv (fn [row]
-                                                               (if (= (:id row) (:id project))
-                                                                 (assoc row :penpot-project-id penpot-id-str)
-                                                                 row))
-                                                             rows))))))
-                                (bos.cache/update-data!
-                                 cache-key
-                                 (fn [rows]
-                                   (mapv (fn [row]
-                                           (if (= (:id row) (:id project))
-                                             (assoc row :penpot-project-id penpot-id-str)
-                                             row))
-                                         (or rows []))))
-                                (bos.cache/invalidate! :client-accounts))
-                   :on-error (fn [msg]
-                               (swap! state* assoc :busy-id nil :action-error msg))}))))))]
+           (swap! state* assoc :busy-id (:id project) :action-error nil)
+           (bos.bridge/open-or-create-project!
+            team-id project
+            {:on-linked (fn [penpot-id-str]
+                          (swap! state*
+                                 (fn [s]
+                                   (-> s
+                                       (assoc :busy-id nil)
+                                       (update :items
+                                               (fn [rows]
+                                                 (mapv (fn [row]
+                                                         (if (= (:id row) (:id project))
+                                                           (assoc row :penpot-project-id penpot-id-str)
+                                                           row))
+                                                       rows)))))))
+             :on-error (fn [msg]
+                         (swap! state* assoc :busy-id nil :action-error msg))})))]
 
     (knav/remember! highlight-ref highlighted-id)
 

@@ -56,14 +56,45 @@ IMAGE_TAG=2.18.3 bash backsterdesign/deploy/scripts/deploy-lemodesign.sh
 Creates `/home/deploy/backsterdesign`, loads images, writes `.env` (secret once),
 `docker compose up -d`. Frontend is on `127.0.0.1:9001`; Caddy exposes HTTPS.
 
+Uploaded media and design file blobs use Cloudflare R2 (`PENPOT_OBJECTS_STORAGE_BACKEND=s3`,
+`PENPOT_FILE_DATA_BACKEND=storage`) in the private bucket `backsteros-files`.
+Postgres on lemodesign keeps rows and pointers. Set `PENPOT_OBJECTS_STORAGE_S3_*`
+and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in the remote `.env` before
+the first `up`. The deploy script does not overwrite those keys.
+
+### Projects / Clients tabs (BacksterOS)
+
+Set `BACKSTEROS_API_KEY` (`sk_live_…`) in the remote `.env`. Deploy writes
+`config.js` (`window.backsterosCore`) and mounts it into the frontend container.
+Caddy proxies `/backsteros-core/*` to cloud-core origin `http://46.225.171.3:8788`
+(see `deploy/caddy/design.lemo-design.com.caddy`). Do not send that hop through
+Cloudflare — agent.backsteros.com returns 1010 for lemodesign’s IP. Reload Caddy
+after changing the site block.
+
+## 4b. Data vs local devenv
+
+Hosted blobs go to R2; local devenv uses RustFS. Postgres is separate on each
+side. Do **not** point local at the production R2 bucket for day-to-day work —
+local writes would corrupt live objects.
+
+Staff password can match (`~/.config/secrets/backsterdesign.env` +
+`scripts/ensure-staff-account.sh` on local; PREPL on lemodesign for hosted).
+Design **files** stay on one side unless you run an explicit one-way migrate.
+
 ## 5. Point Tauri / clients
 
-```bash
-# desktop shell
-PENPOT_PUBLIC_URI=https://design.lemo-design.com pnpm --filter @backsteros/design-desktop tauri:dev
-```
+Two tracks (see `desktop/README.md`):
 
-Default in `backsterdesign/desktop` should match the public URI once cut over.
+| Command | Penpot |
+| --- | --- |
+| `pnpm --filter @backsteros/design-desktop tauri:dev` | local `https://localhost:3449` |
+| `pnpm --filter @backsteros/design-desktop tauri:dev:hosted` | this host |
+| `pnpm --filter @backsteros/design-desktop tauri:build` | this host (installed app) |
+
+```bash
+# smoke-test the shell against the live fork after deploy
+pnpm --filter @backsteros/design-desktop tauri:dev:hosted
+```
 
 ## 6. Freeze `ssh development`
 

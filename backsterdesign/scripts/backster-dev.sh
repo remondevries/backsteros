@@ -44,6 +44,8 @@ BacksterDESIGN local devenv
   logs                 Tail devenv compose logs
   pull                 Pull penpotapp/devenv image
   status               Show tree pin + whether devenv containers are up
+  ensure-staff         Sync staff email/password from ~/.config/secrets/backsterdesign.env
+  audit                Check local + hosted setup (no secrets printed)
   help                 This help
 
 Examples (from repo root):
@@ -59,6 +61,42 @@ devenv_running() {
   docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^penpot-devenv-ws0-main$'
 }
 
+# config.js is gitignored; without it nginx 404s and default flags show
+# Libraries & Templates (enable-dashboard-templates-section).
+ensure_frontend_config_js() {
+  local cfg="$DESIGN_ROOT/frontend/resources/public/js/config.js"
+  if [[ -f "$cfg" ]]; then
+    if grep -q 'disable-dashboard-templates-section' "$cfg"; then
+      return 0
+    fi
+    # Keep existing bridge settings; only add the hide-templates flag.
+    if grep -q 'var penpotFlags' "$cfg"; then
+      sed -i.bak -E \
+        's/var penpotFlags = "([^"]*)"/var penpotFlags = "\1 disable-dashboard-templates-section"/' \
+        "$cfg"
+      # de-dupe if sed ran twice
+      perl -i -pe 's/(disable-dashboard-templates-section\s*)+/$1/g' "$cfg" 2>/dev/null || true
+      rm -f "${cfg}.bak"
+      echo "backster-dev: added disable-dashboard-templates-section to $cfg"
+      return 0
+    fi
+  fi
+  mkdir -p "$(dirname "$cfg")"
+  if [[ -f "$DESIGN_ROOT/frontend/config.js.example" ]]; then
+    cp "$DESIGN_ROOT/frontend/config.js.example" "$cfg"
+  else
+    cat >"$cfg" <<'EOF'
+// Local devenv flags + BacksterOS bridge (gitignored).
+var penpotFlags = "disable-dashboard-templates-section";
+window.backsterosCore = {
+  baseUrl: "/backsteros-core",
+  apiKey: "local"
+};
+EOF
+  fi
+  echo "backster-dev: created $cfg"
+}
+
 cmd="${1:-help}"
 shift || true
 
@@ -70,24 +108,7 @@ case "$cmd" in
     manage pull-devenv "$@"
     ;;
   up|start|dev)
-    # config.js is gitignored; Penpot serves HTML 404 without it → white screen.
-    cfg="$DESIGN_ROOT/frontend/resources/public/js/config.js"
-    if [[ ! -f "$cfg" ]]; then
-      mkdir -p "$(dirname "$cfg")"
-      if [[ -f "$DESIGN_ROOT/frontend/config.js.example" ]]; then
-        cp "$DESIGN_ROOT/frontend/config.js.example" "$cfg"
-      else
-        cat >"$cfg" <<'EOF'
-// Local devenv flags + BacksterOS bridge (gitignored).
-var penpotFlags = "disable-dashboard-templates-section";
-window.backsterosCore = {
-  baseUrl: "/backsteros-core",
-  apiKey: "local"
-};
-EOF
-      fi
-      echo "backster-dev: created $cfg"
-    fi
+    ensure_frontend_config_js
     echo "BacksterDESIGN: starting Penpot devenv (binds $DESIGN_ROOT → /home/penpot/penpot)"
     echo "First compile can take several minutes (shadow-cljs + libs + ui.css)."
     manage run-devenv "$@"
@@ -132,6 +153,7 @@ EOF
     manage log-devenv "$@"
     ;;
   status)
+    ensure_frontend_config_js
     echo "BacksterDESIGN devenv"
     echo "  source: $DESIGN_ROOT"
     echo "  bash:   $BASH_BIN"
@@ -142,10 +164,17 @@ EOF
     if devenv_running; then
       echo "  devenv: running (penpot-devenv-ws0-main)"
       echo "  url:    https://localhost:3449"
+      echo "  config: frontend/resources/public/js/config.js (templates disabled)"
     else
       echo "  devenv: stopped"
       echo "  start:  pnpm --filter @backsteros/design dev"
     fi
+    ;;
+  ensure-staff)
+    "$DESIGN_ROOT/scripts/ensure-staff-account.sh" local
+    ;;
+  audit)
+    "$DESIGN_ROOT/scripts/audit-setup.sh"
     ;;
   *)
     echo "backster-dev: unknown command '$cmd'" >&2

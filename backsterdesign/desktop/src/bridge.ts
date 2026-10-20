@@ -204,14 +204,18 @@ export function persistTabs(
   }
 }
 
-/** Resolve the Penpot origin the iframe loads. Cookies stay first-party there. */
+/** Resolve the Penpot origin the design webview loads. Cookies stay first-party there. */
 export function resolvePenpotPublicUri(): string {
   const fromEnv =
     import.meta.env.VITE_PENPOT_PUBLIC_URI ||
     import.meta.env.PENPOT_PUBLIC_URI ||
     "";
   const trimmed = fromEnv.trim().replace(/\/$/, "");
-  return trimmed || "https://design.lemo-design.com";
+  if (trimmed) return trimmed;
+  // Vite/Tauri `dev` → local devenv; production build → hosted fork.
+  return import.meta.env.DEV
+    ? "https://localhost:3449"
+    : "https://design.lemo-design.com";
 }
 
 export function penpotFrameSrc(baseUri: string): string {

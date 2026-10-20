@@ -1,8 +1,51 @@
 # BacksterDESIGN desktop (`@backsteros/design-desktop`)
 
 Tauri 2 shell for BacksterDESIGN: overlay titlebar, native tab strip, **one**
-embedded Penpot SPA (iframe). Switching tabs routes inside the SPA — it does
+embedded Penpot SPA (webview). Switching tabs routes inside the SPA — it does
 not remount `main.js` or bootstrap WASM again.
+
+## Two tracks: local vs hosted
+
+| Track | When | Penpot origin |
+| --- | --- | --- |
+| **Dev** | Change / test the fork | `https://localhost:3449` (local devenv) |
+| **Real work** | Staff + clients | `https://design.lemo-design.com` (lemodesign) |
+
+- `pnpm … tauri:dev` → **local** by default.
+- Installed / `tauri:build` app → **hosted** by default.
+- Local and hosted are **separate databases and object stores**. Staff login can
+  match (see below); design **files do not live-sync**.
+
+Promote fork changes with the deploy flow in `../deploy/README.md`.
+
+### Same staff login on local
+
+Credentials live in `~/.config/secrets/backsterdesign.env` (not in git). After
+devenv is up:
+
+```bash
+pnpm --filter @backsteros/design exec bash ../../backsterdesign/scripts/backster-dev.sh ensure-staff
+# or: backsterdesign/scripts/ensure-staff-account.sh local
+```
+
+That sets `accounts@lemo-design.com` on local PREPL to the same password as
+hosted. Hosted is updated the same way via PREPL on lemodesign when the password
+changes.
+
+### Design files / R2 (no live sync)
+
+| | Local devenv | Hosted (`design.lemo-design.com`) |
+| --- | --- | --- |
+| Metadata | local Postgres | Postgres on lemodesign |
+| Blobs | local RustFS (S3) | Cloudflare R2 (`backsteros-files`) |
+
+A Penpot file needs **both** the DB rows and the blobs. Pointing local at the
+production R2 bucket (or sharing one live DB) would let a broken local build
+overwrite real work — we do **not** do that.
+
+Use local for code changes and throwaway files. Use the hosted app for real
+client work. When you need a one-way copy (local → hosted or a hosted snapshot
+→ local), that is a deliberate migrate/export — not continuous sync.
 
 ## Auth / cookies (v1)
 
@@ -25,16 +68,31 @@ Then restart the desktop app.
 
 ## Run
 
-Requires a reachable Penpot backend (local devenv or hosted).
+### Day-to-day development (local Penpot)
 
 ```bash
-# Day-to-day: hosted fork (default URI)
-pnpm --filter @backsteros/design-desktop tauri:dev
+# Terminal A — local fork (Docker)
+pnpm --filter @backsteros/design dev
+# → https://localhost:3449
 
-# Fork / CLJS work against local devenv
-pnpm --filter @backsteros/design dev   # Terminal A
-export PENPOT_PUBLIC_URI=https://localhost:3449
-pnpm --filter @backsteros/design-desktop tauri:dev   # Terminal B
+# Terminal B — desktop shell (defaults to localhost:3449)
+pnpm --filter @backsteros/design-desktop tauri:dev
+```
+
+Staff login: same email/password as hosted after `ensure-staff` (see above).
+
+### Point the shell at hosted (optional)
+
+```bash
+pnpm --filter @backsteros/design-desktop tauri:dev:hosted
+# or: PENPOT_PUBLIC_URI=https://design.lemo-design.com pnpm --filter @backsteros/design-desktop tauri:dev
+```
+
+### Production desktop build
+
+```bash
+pnpm --filter @backsteros/design-desktop tauri:build
+# ships with https://design.lemo-design.com
 ```
 
 Or Vite-only (browser preview of chrome):
@@ -45,11 +103,9 @@ pnpm --filter @backsteros/design-desktop dev
 
 ### Environment
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PENPOT_PUBLIC_URI` / `VITE_PENPOT_PUBLIC_URI` | `https://design.lemo-design.com` | Origin loaded in the design webview |
-
-Local devenv override: `PENPOT_PUBLIC_URI=https://localhost:3449`.
+| Variable | Dev default | Release default | Meaning |
+| --- | --- | --- | --- |
+| `PENPOT_PUBLIC_URI` / `VITE_PENPOT_PUBLIC_URI` | `https://localhost:3449` | `https://design.lemo-design.com` | Origin loaded in the design webview |
 
 ## Tabs
 

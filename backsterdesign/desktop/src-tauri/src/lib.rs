@@ -73,8 +73,14 @@ static HIT_TEST_HOOKED: AtomicBool = AtomicBool::new(false);
 fn penpot_public_uri() -> String {
     std::env::var("PENPOT_PUBLIC_URI")
         .or_else(|_| std::env::var("VITE_PENPOT_PUBLIC_URI"))
-        // Canonical hosted fork; override with localhost:3449 for local devenv.
-        .unwrap_or_else(|_| "https://design.lemo-design.com".to_string())
+        // Dev builds → local devenv; release builds → hosted fork.
+        .unwrap_or_else(|_| {
+            if cfg!(debug_assertions) {
+                "https://localhost:3449".to_string()
+            } else {
+                "https://design.lemo-design.com".to_string()
+            }
+        })
         .trim_end_matches('/')
         .to_string()
 }

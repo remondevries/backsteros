@@ -192,12 +192,12 @@ What agents do in Penpot:
 
 - **`development` is a design runtime, not a build host.** Agents may assume a server called "development" is where they build or run dev work. It only runs Penpot. No images are built there; don't build or run CI jobs there.
 - **Tauri wrapper:** lives under `backsterdesign/desktop/` (`com.backsteros.design`), not under `backsteros/`. See `backsterdesign/desktop/README.md`.
-- **Desktop + remote data (v1):** the shell is local; a **child webview** (not an iframe — Penpot sends `X-Frame-Options: SAMEORIGIN`) loads `PENPOT_PUBLIC_URI` (default `https://localhost:3449`) so auth cookies stay first-party on the Penpot origin. Network to that backend is required — there is no offline file sync.
-- **Run desktop:**
-  1. Start Penpot: `pnpm --filter @backsteros/design dev` (or point at a hosted instance).
+- **Desktop + remote data (v1):** the shell is local; a **child webview** (not an iframe — Penpot sends `X-Frame-Options: SAMEORIGIN`) loads `PENPOT_PUBLIC_URI` so auth cookies stay first-party on the Penpot origin. Network to that backend is required — there is no offline file sync.
+- **Two tracks:** `tauri:dev` → local devenv (`https://localhost:3449`); `tauri:build` / installed app → hosted (`https://design.lemo-design.com`). Override with `PENPOT_PUBLIC_URI` or `tauri:dev:hosted`. Local and hosted DBs are separate.
+- **Run desktop (dev):**
+  1. Start Penpot: `pnpm --filter @backsteros/design dev`.
   2. `pnpm --filter @backsteros/design-desktop tauri:dev`  
-     Or via shim: `pnpm --filter @backsteros/design desktop`.  
-     Optional: `PENPOT_PUBLIC_URI=https://your-host` / `VITE_PENPOT_PUBLIC_URI=…`.
+     Or via shim: `pnpm --filter @backsteros/design desktop`.
 - A **rename** of the `development` server to make its role clearer is listed as a consideration, but it is **deferred** (§9).
 
 ## 9. Open gaps

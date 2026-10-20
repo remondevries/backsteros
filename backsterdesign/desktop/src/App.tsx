@@ -256,31 +256,27 @@ export default function App() {
   const restoreSessionToSpa = useCallback((): boolean => {
     if (!hasPersistedSession()) return false;
 
-    const currentTabs = tabsRef.current;
-    const currentActive = activeFileIdRef.current;
-    const currentDashboard = dashboardRef.current;
+    const teamId = dashboardRef.current?.params["team-id"];
 
-    if (currentActive) {
-      const tab = currentTabs.find((t) => t.fileId === currentActive);
-      if (tab) {
-        void postToSpa({
-          channel: BRIDGE_CHANNEL,
-          type: "focus-tab",
-          fileId: tab.fileId,
-          teamId: tab.teamId,
-          pageId: tab.pageId,
-          boardId: tab.boardId,
-        });
-        return true;
-      }
+    // Do not restore file tabs or dashboard-files project routes across hosts.
+    // A missing file/project leaves the design webview blank with no recovery.
+    setTabs([]);
+    setActiveFileId(null);
+    if (teamId) {
+      setDashboard({ name: "dashboard-recent", params: { "team-id": teamId } });
+      void postToSpa({
+        channel: BRIDGE_CHANNEL,
+        type: "go-dashboard",
+        teamId,
+        routeName: "dashboard-recent",
+        params: { "team-id": teamId },
+      });
+      return true;
     }
 
     void postToSpa({
       channel: BRIDGE_CHANNEL,
       type: "go-dashboard",
-      teamId: currentDashboard?.params["team-id"],
-      routeName: currentDashboard?.name,
-      params: currentDashboard?.params,
     });
     return true;
   }, [hasPersistedSession]);
@@ -487,13 +483,22 @@ export default function App() {
   const goDashboard = useCallback(() => {
     setActiveFileId(null);
     const remembered = dashboardRef.current;
+    const teamId = remembered?.params["team-id"];
+    // Always land on Recents for the team — never re-open a remembered
+    // dashboard-files project-id. Stale IDs from another Penpot host leave
+    // the design webview blank and make this button look broken.
     void postToSpa({
       channel: BRIDGE_CHANNEL,
       type: "go-dashboard",
-      teamId: remembered?.params["team-id"],
-      routeName: remembered?.name,
-      params: remembered?.params,
+      teamId,
+      routeName: "dashboard-recent",
+      params: teamId ? { "team-id": teamId } : undefined,
     });
+    setDashboard(
+      teamId
+        ? { name: "dashboard-recent", params: { "team-id": teamId } }
+        : null,
+    );
   }, []);
 
   const focusTabRef = useRef(focusTab);

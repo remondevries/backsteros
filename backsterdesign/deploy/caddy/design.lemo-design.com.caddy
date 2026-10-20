@@ -8,7 +8,17 @@
 design.lemo-design.com {
 	encode gzip
 
+	# Same-origin bridge for the Projects / Clients tabs
+	# (window.backsterosCore.baseUrl = "/backsteros-core").
+	# Talks to cloud-core origin directly — Cloudflare on agent.backsteros.com
+	# returns 1010 for lemodesign's datacenter IP.
+	handle_path /backsteros-core/* {
+		reverse_proxy http://46.225.171.3:8788
+	}
+
 	# Frontend container is attached to chatwoot_default (same network as Caddy).
 	# Do not use 127.0.0.1 here — that is Caddy's own loopback inside its container.
-	reverse_proxy backsterdesign-penpot-frontend-1:8080
+	handle {
+		reverse_proxy backsterdesign-penpot-frontend-1:8080
+	}
 }

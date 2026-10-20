@@ -16,6 +16,7 @@
    [app.main.data.dashboard :as dd]
    [app.main.repo :as rp]
    [app.main.store :as st]
+   [app.main.ui.dashboard.backsteros-bridge :as bos.bridge]
    [app.main.ui.dashboard.backsteros-cache :as bos.cache]
    [app.main.ui.dashboard.keyboard-nav :as knav]
    [app.main.ui.dashboard.page-header :refer [page-header*]]
@@ -885,51 +886,33 @@
         (mf/use-fn
          (mf/deps cfg team-id)
          (fn [project]
-           (cond
-             (nil? cfg)
-             (swap! state* assoc :action-error "Configure window.backsterosCore first.")
-
-             (nil? team-id)
-             (swap! state* assoc :action-error "No Penpot team selected.")
-
-             :else
-             (let [existing (parse-penpot-id (:penpot-project-id project))]
-               (swap! state* assoc :busy? true :action-error nil)
-               (if existing
-                 (do
-                   (swap! state* assoc :busy? false)
-                   (open-penpot-project! team-id existing))
-                 (create-and-link-penpot-project!
-                  {:base-url (:base-url cfg)
-                   :api-key (:api-key cfg)
-                   :team-id team-id
-                   :project project
-                   :on-linked (fn [penpot-id-str]
-                                (swap! state*
-                                       (fn [s]
-                                         (-> s
-                                             (assoc :busy? false)
-                                             (update :projects
-                                                     (fn [rows]
-                                                       (mapv (fn [row]
-                                                               (if (= (:id row) (:id project))
-                                                                 (assoc row :penpot-project-id penpot-id-str)
-                                                                 row))
-                                                             rows))))))
-                                (bos.cache/update-data!
-                                 cache-key
-                                 (fn [bundle]
-                                   (update bundle :projects
-                                           (fn [rows]
-                                             (mapv (fn [row]
-                                                     (if (= (:id row) (:id project))
-                                                       (assoc row :penpot-project-id penpot-id-str)
-                                                       row))
-                                                   (or rows []))))))
-                                ;; Projects tab keeps its own enriched list.
-                                (bos.cache/invalidate! :backsteros-projects))
-                   :on-error (fn [msg]
-                               (swap! state* assoc :busy? false :action-error msg))}))))))]
+           (swap! state* assoc :busy? true :action-error nil)
+           (bos.bridge/open-or-create-project!
+            team-id project
+            {:on-linked (fn [penpot-id-str]
+                          (swap! state*
+                                 (fn [s]
+                                   (-> s
+                                       (assoc :busy? false)
+                                       (update :projects
+                                               (fn [rows]
+                                                 (mapv (fn [row]
+                                                         (if (= (:id row) (:id project))
+                                                           (assoc row :penpot-project-id penpot-id-str)
+                                                           row))
+                                                       rows))))))
+                          (bos.cache/update-data!
+                           cache-key
+                           (fn [bundle]
+                             (update bundle :projects
+                                     (fn [rows]
+                                       (mapv (fn [row]
+                                               (if (= (:id row) (:id project))
+                                                 (assoc row :penpot-project-id penpot-id-str)
+                                                 row))
+                                             (or rows [])))))))
+             :on-error (fn [msg]
+                         (swap! state* assoc :busy? false :action-error msg))})))]
 
     ;; Key handlers read these refs. use-state deref stays on the render
     ;; that created a stable callback, so j/k would otherwise stick.
