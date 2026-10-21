@@ -13,6 +13,9 @@ import { and, eq, inArray, isNull, max } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { contacts, organizations } from "../db/schema.js";
 import { MAX_AVATAR_BYTES } from "../lib/upload-limits.js";
+
+/** Inline PHOTO in CardDAV responses — large avatars blow up iOS sync (tens of MB). */
+const MAX_CARDDAV_PHOTO_BYTES = 64_000;
 import {
   type AuthContext,
   logUnauthorizedRequest,
@@ -218,9 +221,14 @@ async function collectionCtag(workspaceId: string): Promise<string> {
 async function personalPhoto(
   workspaceId: string,
   contactId: string,
+  opts?: { maxBytes?: number },
 ): Promise<{ contentType: string; bytes: Uint8Array } | null> {
   const result = await circleService.getAvatar(workspaceId, "contact", contactId);
   if (!result?.bytes?.length) return null;
+  const maxBytes = opts?.maxBytes ?? MAX_CARDDAV_PHOTO_BYTES;
+  if (result.bytes.byteLength > maxBytes) {
+    return null;
+  }
   return {
     contentType: result.row.contentType || "image/jpeg",
     bytes: result.bytes,
@@ -268,6 +276,14 @@ function principalProps(requested: Set<string>): string {
   return parts.join("");
 }
 
+function supportedReportSetXml(): string {
+  return `<D:supported-report-set>
+      <D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>
+      <D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>
+      <D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>
+    </D:supported-report-set>`;
+}
+
 function homeSetProps(requested: Set<string>): string {
   const parts: string[] = [];
   if (wantsProp(requested, "resourcetype")) {
@@ -281,10 +297,18 @@ function homeSetProps(requested: Set<string>): string {
       `<D:current-user-principal><D:href>${xmlEscape(principalHref())}</D:href></D:current-user-principal>`,
     );
   }
+  if (wantsProp(requested, "principal-URL")) {
+    parts.push(
+      `<D:principal-URL><D:href>${xmlEscape(principalHref())}</D:href></D:principal-URL>`,
+    );
+  }
   if (wantsProp(requested, "addressbook-home-set")) {
     parts.push(
       `<C:addressbook-home-set><D:href>${xmlEscape(homeSetHref())}</D:href></C:addressbook-home-set>`,
     );
+  }
+  if (wantsProp(requested, "supported-report-set")) {
+    parts.push(supportedReportSetXml());
   }
   if (wantsProp(requested, "current-user-privilege-set")) {
     parts.push(privilegeSetXml());
@@ -342,6 +366,9 @@ function addressbookProps(ctag: string, requested: Set<string>): string {
     parts.push(
       `<C:supported-address-data><C:address-data-type content-type="text/vcard" version="3.0"/></C:supported-address-data>`,
     );
+  }
+  if (wantsProp(requested, "supported-report-set")) {
+    parts.push(supportedReportSetXml());
   }
   if (wantsProp(requested, "sync-token")) {
     parts.push(
@@ -554,11 +581,8 @@ async function propfindAddressbook(c: Context) {
   if (depthHeader(c) >= 1) {
     const sources = await loadContactSources(auth.workspaceId);
     for (const source of sources) {
-      const photo =
-        wantsProp(requested, "address-data") || requested.has("*")
-          ? await personalPhoto(auth.workspaceId, source.id)
-          : null;
-      const vcard = formatVCard(source, photo);
+      // No PHOTO in collection PROPFIND — bulk inline avatars break iOS verify.
+      const vcard = formatVCard(source, null);
       responses.push({
         href: contactHref(source.id),
         propstats: [
@@ -594,10 +618,8 @@ async function reportAddressbook(c: Context) {
   if (requested.size === 0) requested.add("*");
   const responses = [];
   for (const source of sources) {
-    const photo = includeData
-      ? await personalPhoto(auth.workspaceId, source.id)
-      : null;
-    const vcard = formatVCard(source, photo);
+    // Skip PHOTO in REPORT (was ~57MB / 47 contacts → iOS verification timeout).
+    const vcard = formatVCard(source, null);
     responses.push({
       href: contactHref(source.id),
       propstats: [
@@ -608,7 +630,15 @@ async function reportAddressbook(c: Context) {
       ],
     });
   }
-  return c.body(multistatus(responses), 207, davHeaders());
+  const xml = multistatus(responses);
+  cardDavLog(c, 207, {
+    handler: "report",
+    auth: auth.apiKeyName ?? auth.kind,
+    contacts: responses.length,
+    bytes: xml.length,
+    includeData,
+  });
+  return c.body(xml, 207, davHeaders());
 }
 
 async function getContactVcf(c: Context, file: string) {
