@@ -5,23 +5,24 @@
  *   # cloud:
  *   BRANDFETCH_CLIENT_ID=… WORKSPACE_ID=ws_legacy_default pnpm exec tsx src/scripts/hydrate-org-brandfetch-avatars.ts
  */
-import { brandfetchClientIdFromEnv, hydrateOrganizationLogosFromBrandfetch } from "../services/brandfetch-org-avatar.js";
+import {
+  brandfetchApiKeyFromEnv,
+  hydrateOrganizationLogosFromBrandfetch,
+} from "../services/brandfetch-org-avatar.js";
 
 async function main() {
   const workspaceId =
     process.env.WORKSPACE_ID?.trim() || "ws_legacy_default";
-  const clientId = brandfetchClientIdFromEnv();
-  if (!clientId) {
-    console.error(
-      "Set BRANDFETCH_CLIENT_ID (or VITE_BRANDFETCH_CLIENT_ID) before hydrating.",
-    );
+  const apiKey = brandfetchApiKeyFromEnv();
+  if (!apiKey) {
+    console.error("Set BRANDFETCH_API_KEY before hydrating.");
     process.exit(1);
   }
   console.log(
-    `Hydrating Brandfetch logos for workspace=${workspaceId} (client id present, len=${clientId.length})…`,
+    `Hydrating Brandfetch logos for workspace=${workspaceId} (api key present, len=${apiKey.length})…`,
   );
   const result = await hydrateOrganizationLogosFromBrandfetch(workspaceId, {
-    concurrency: 4,
+    concurrency: 3,
     force: process.env.FORCE === "1",
   });
   console.log(JSON.stringify(result));

@@ -58,7 +58,8 @@ services:
       # Optional short CardDAV Basic password (iOS Contacts). Prefer API keys long-term.
       CARDDAV_PASSWORD: ${CARDDAV_PASSWORD:-}
       CARDDAV_WORKSPACE_ID: ${CARDDAV_WORKSPACE_ID:-ws_legacy_default}
-      # Public Brandfetch client id — persist org logos from website for CardDAV.
+      # Brandfetch Brand API key — persist org logos for CardDAV (CDN is display-only).
+      BRANDFETCH_API_KEY: ${BRANDFETCH_API_KEY:-}
       BRANDFETCH_CLIENT_ID: ${BRANDFETCH_CLIENT_ID:-}
     ports:
       - "8788:8788"
