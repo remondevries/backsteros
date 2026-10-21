@@ -54,7 +54,9 @@ IMAGE_TAG=2.18.3 bash backsterdesign/deploy/scripts/deploy-lemodesign.sh
 ```
 
 Creates `/home/deploy/backsterdesign`, loads images, writes `.env` (secret once),
-`docker compose up -d`. Frontend is on `127.0.0.1:9001`; Caddy exposes HTTPS.
+`docker compose up -d`, then copies `branding/overlay` `backster-brand.css` /
+`backster-brand.js` into the frontend container (linked from `index.html` but
+not baked into the image). Frontend is on `127.0.0.1:9001`; Caddy exposes HTTPS.
 
 Uploaded media and design file blobs use Cloudflare R2 (`PENPOT_OBJECTS_STORAGE_BACKEND=s3`,
 `PENPOT_FILE_DATA_BACKEND=storage`) in the private bucket `backsteros-files`.

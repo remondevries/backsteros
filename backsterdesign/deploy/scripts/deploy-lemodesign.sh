@@ -15,10 +15,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DESIGN_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
+BRAND_OVERLAY="${DESIGN_ROOT}/branding/overlay"
 IMAGE_TAG="${IMAGE_TAG:-2.18.3}"
 IMAGE_NS="${IMAGE_NS:-backsterdesign}"
 REMOTE_HOST="${REMOTE_HOST:-lemodesign}"
 REMOTE_DIR="${REMOTE_DIR:-/home/deploy/backsterdesign}"
+FRONTEND_CONTAINER="${FRONTEND_CONTAINER:-backsterdesign-penpot-frontend-1}"
 COMPOSE_ONLY=0
 
 for arg in "$@"; do
@@ -133,6 +136,31 @@ echo "==> docker compose up -d…"
 ssh_cmd "cd '${REMOTE_DIR}' && docker compose -p backsterdesign --env-file .env -f docker-compose.yaml pull penpot-admin-console penpot-postgres penpot-valkey penpot-mailcatch 2>/dev/null || true
 cd '${REMOTE_DIR}' && docker compose -p backsterdesign --env-file .env -f docker-compose.yaml up -d
 cd '${REMOTE_DIR}' && docker compose -p backsterdesign ps"
+
+# Release images link backster-brand.* from index.html but do not bake the
+# overlay files in. Copy them after recreate so selection CSS / logos stay live.
+echo "==> Applying branding overlay into ${FRONTEND_CONTAINER}…"
+if [[ ! -f "${BRAND_OVERLAY}/css/backster-brand.css" || ! -f "${BRAND_OVERLAY}/js/backster-brand.js" ]]; then
+  echo "missing branding overlay under ${BRAND_OVERLAY}" >&2
+  exit 1
+fi
+ssh_cmd "mkdir -p '${REMOTE_DIR}/branding-overlay/css' '${REMOTE_DIR}/branding-overlay/js'"
+rsync -az \
+  "${BRAND_OVERLAY}/css/backster-brand.css" \
+  "${BRAND_OVERLAY}/js/backster-brand.js" \
+  "${REMOTE_HOST}:${REMOTE_DIR}/branding-overlay/"
+# rsync of two files into a dir keeps names; normalize layout for docker cp.
+ssh_cmd "mkdir -p '${REMOTE_DIR}/branding-overlay/css' '${REMOTE_DIR}/branding-overlay/js'
+if [[ -f '${REMOTE_DIR}/branding-overlay/backster-brand.css' ]]; then
+  mv -f '${REMOTE_DIR}/branding-overlay/backster-brand.css' '${REMOTE_DIR}/branding-overlay/css/'
+fi
+if [[ -f '${REMOTE_DIR}/branding-overlay/backster-brand.js' ]]; then
+  mv -f '${REMOTE_DIR}/branding-overlay/backster-brand.js' '${REMOTE_DIR}/branding-overlay/js/'
+fi
+docker exec '${FRONTEND_CONTAINER}' mkdir -p /var/www/app/css /var/www/app/js
+docker cp '${REMOTE_DIR}/branding-overlay/css/backster-brand.css' '${FRONTEND_CONTAINER}:/var/www/app/css/backster-brand.css'
+docker cp '${REMOTE_DIR}/branding-overlay/js/backster-brand.js' '${FRONTEND_CONTAINER}:/var/www/app/js/backster-brand.js'
+docker exec '${FRONTEND_CONTAINER}' ls -la /var/www/app/css/backster-brand.css /var/www/app/js/backster-brand.js"
 
 echo
 echo "Stack should answer on http://127.0.0.1:9001 on lemodesign."
