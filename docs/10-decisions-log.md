@@ -612,7 +612,7 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 1. **CardDAV protocol adapter in cloud-core** (`core/server` routes under `/dav/` + `/.well-known/carddav`) — not a separate DAV product.
 2. **Public host:** `https://contacts.backsteros.com` → Caddy on lemodesign → cloud-core `:8788`.
-3. **Auth:** dedicated `sk_live_…` API key with scope **`carddav`** only. iOS uses HTTP Basic (username arbitrary, e.g. `carddav`; password = the secret). No anonymous PROPFIND.
+3. **Auth:** dedicated `sk_live_…` API key with scope **`carddav`** only. iOS uses HTTP Basic (username `backsteros`; password = the secret). No anonymous PROPFIND.
 4. **Contents:** all non-deleted workspace contacts (every CRM group). One address book collection.
 5. **Sync:** bidirectional; **last-write-wins** on the contact row (`updated_at` / existing write + sync pipeline). Stable vCard `UID` = `contacts.id`.
 6. **Avatar:** personal contact photo only (`entityType=contact` / `avatar_storage_key`). Never portal avatar.

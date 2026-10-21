@@ -13,13 +13,13 @@ See [ADR-038](10-decisions-log.md) and [URLs](11-urls-and-routing.md).
 
 1. Settings → Contacts → Accounts → Add Account → Other → **Add CardDAV Account**.
 2. Server: `contacts.backsteros.com`
-3. User Name: `carddav`
+3. User Name: `backsteros`
 4. Password: the `sk_live_…` secret
 5. Description: `BacksterOS` (optional)
 
 If iOS asks for an account URL:
 
-`https://contacts.backsteros.com/dav/addressbooks/carddav/contacts/`
+`https://contacts.backsteros.com/dav/addressbooks/backsteros/contacts/`
 
 ## Behaviour
 

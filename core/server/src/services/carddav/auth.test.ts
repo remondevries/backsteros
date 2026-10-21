@@ -5,12 +5,12 @@ import { hasCardDavScope, parseBasicAuthCredentials } from "./auth.js";
 import type { AuthContext } from "../../middleware/auth.js";
 
 test("parseBasicAuthCredentials decodes username and password", () => {
-  const token = Buffer.from("carddav:sk_live_testhidden", "utf8").toString(
+  const token = Buffer.from("backsteros:sk_live_testhidden", "utf8").toString(
     "base64",
   );
   const parsed = parseBasicAuthCredentials(`Basic ${token}`);
   assert.deepEqual(parsed, {
-    username: "carddav",
+    username: "backsteros",
     password: "sk_live_testhidden",
   });
 });

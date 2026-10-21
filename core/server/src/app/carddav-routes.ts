@@ -30,7 +30,7 @@ import {
 import { recordContactRestSyncEvent } from "../services/sync.js";
 import { nudgeContactLive } from "./route-shared.js";
 
-const PRINCIPAL = "carddav";
+const PRINCIPAL = "backsteros";
 const ADDRESSBOOK_PATH = `/dav/addressbooks/${PRINCIPAL}/contacts/`;
 const PRINCIPAL_PATH = `/dav/principals/${PRINCIPAL}/`;
 const ADDRESSBOOK_HOME = `/dav/addressbooks/${PRINCIPAL}/`;
