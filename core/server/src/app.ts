@@ -9,6 +9,7 @@ import { generateOpenApi } from "@ts-rest/open-api";
 import { fullApiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
+import { registerCardDavRoutes } from "./app/carddav-routes.js";
 import { registerFileTaskCallbackRoutes } from "./app/file-task-callback-routes.js";
 import { registerEmailAgentCallbackRoutes } from "./app/email-agent-callback-routes.js";
 import { registerPublicSchedulingRoutes } from "./app/public-scheduling-routes.js";
@@ -73,8 +74,25 @@ export function createApp() {
         }
         return undefined;
       },
-      allowHeaders: ["Authorization", "Content-Type", "X-Filename"],
-      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowHeaders: [
+        "Authorization",
+        "Content-Type",
+        "X-Filename",
+        "Depth",
+        "Prefer",
+        "If-Match",
+        "If-None-Match",
+      ],
+      allowMethods: [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+        "PROPFIND",
+        "REPORT",
+      ],
     }),
   );
   app.use(
@@ -138,6 +156,8 @@ export function createApp() {
   registerOpsRoutes(api);
   registerDynamicIslandRoutes(api);
   registerCoreReplicationRoutes(api);
+  // CardDAV lives outside /api/v1 (iOS Contacts / Basic auth).
+  registerCardDavRoutes(api);
   app.route("/", api);
 
   return app;

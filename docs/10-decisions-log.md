@@ -603,3 +603,24 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-038: CardDAV address book on cloud-core (iOS Contacts)
+
+**Status:** Accepted (2026-10-21)  
+**Context:** Move away from Google Contacts. iOS Contacts speaks CardDAV. BacksterOS already owns contacts in Postgres (cloud-core + local replica). A separate Baïkal/Radicale store would create a second system of record.
+
+**Decision:**
+
+1. **CardDAV protocol adapter in cloud-core** (`core/server` routes under `/dav/` + `/.well-known/carddav`) — not a separate DAV product.
+2. **Public host:** `https://contacts.backsteros.com` → Caddy on lemodesign → cloud-core `:8788`.
+3. **Auth:** dedicated `sk_live_…` API key with scope **`carddav`** only. iOS uses HTTP Basic (username arbitrary, e.g. `carddav`; password = the secret). No anonymous PROPFIND.
+4. **Contents:** all non-deleted workspace contacts (every CRM group). One address book collection.
+5. **Sync:** bidirectional; **last-write-wins** on the contact row (`updated_at` / existing write + sync pipeline). Stable vCard `UID` = `contacts.id`.
+6. **Avatar:** personal contact photo only (`entityType=contact` / `avatar_storage_key`). Never portal avatar.
+7. **v1 out of scope:** CalDAV/calendar, group-filtered books, Google Contacts import tooling, serving CardDAV from local-core.
+
+**Consequences:** Create a CardDAV key in Settings → API keys with only `carddav`. Desktop/mobile keep using REST/PowerSync; iPhone edits replicate via core replication like any other contact write.
+
+**Alternatives rejected:** Radicale/Baïkal as the address book; syncing portal avatars; CalDAV in the same cut.
+
+---
+

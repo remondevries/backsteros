@@ -69,6 +69,8 @@ export const API_KEY_SCOPES = [
   "avatars:read",
   "avatars:write",
   "search:query",
+  /** CardDAV door only — unlocks contacts.backsteros.com address book sync. */
+  "carddav",
 ] as const;
 
 /** @deprecated Prefer BANK_ACCOUNT_TYPES — kept for older clients during transition. */

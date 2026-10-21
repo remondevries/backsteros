@@ -13,7 +13,8 @@
 | URL | Purpose |
 | --- | --- |
 | `https://agent.backsteros.com` | Public agents HTTPS door → **cloud-core** on the VPS |
-| `http://100.75.45.22:8788` | Cloud-core on Tailscale (Hetzner `lemodesign`; same data twin) |
+| `https://contacts.backsteros.com` | CardDAV address book (iOS Contacts) → cloud-core `/dav/` |
+| `http://100.83.125.67:8788` | Cloud-core on Tailscale (Hetzner `lemodesign`; same data twin) |
 
 Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale
 `:8788`). Do **not** point them at the Mac — that dies when the laptop sleeps.
@@ -65,11 +66,23 @@ local computer
   PowerSync       → http://127.0.0.1:8080  (Docker)
   backsteros/ / mobile/ → shells against local core (+ Tailscale when needed)
 
-VPS (Hetzner lemodesign — 46.225.171.3 / Tailscale 100.75.45.22)
+VPS (Hetzner lemodesign — 188.34.196.92 / Tailscale 100.83.125.67)
   cloud-core      → :8788 (Docker; Tailscale peer for replication)
-  agents door     → https://agent.backsteros.com → kamal-proxy → :3080 → cloud-core
-  portal / n8n    → kamal-proxy on same box
+  agents door     → https://agent.backsteros.com → Caddy → :3080 → cloud-core
+  CardDAV         → https://contacts.backsteros.com → Caddy → :8788 (/dav/)
+  portal          → client.lemo-design.com (compose + Caddy on same box)
 ```
+
+## CardDAV (iOS Contacts)
+
+| Item | Value |
+| --- | --- |
+| Server | `contacts.backsteros.com` |
+| Account URL (advanced) | `https://contacts.backsteros.com/dav/addressbooks/carddav/contacts/` |
+| Username | `carddav` (any non-empty string is fine) |
+| Password | `sk_live_…` API key with scope **`carddav` only** |
+
+Create the key in BacksterOS Settings → API keys. Without that scope, CardDAV returns 401.
 
 
 ## Desktop Finance routes (v2)
