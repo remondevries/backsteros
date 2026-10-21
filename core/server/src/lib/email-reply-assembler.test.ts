@@ -305,6 +305,59 @@ describe("email-reply-assembler", () => {
     assert.match(sanitizeAgentReplyBody(body), /P\.S\./);
   });
 
+  it("OS-117: sanitize keeps numbered-list drafts (shared words across items)", () => {
+    // Items 4 and 5 share "hebben", "websites", "geslaagde" — the old
+    // 3-shared-word heuristic collapsed the body to item 5 only.
+    const body = [
+      "Allereerst gecondoleerd met het verlies van je moeder. Dat wensen we niemand toe.",
+      "",
+      "Hieronder per punt wat we hebben gecontroleerd en waar we staan:",
+      "",
+      "1. PHP-versies: beide websites draaien op PHP 8.3.30 (Ubuntu 24.04). De patch voor PHP 8.3 komt donderdagavond.",
+      "",
+      "2. Patch: er is vandaag om 16:00 Nederlandse tijd een security release aangekondigd op php.net voor kritieke kwetsbaarheden (CVSS 9.2).",
+      "",
+      "3. Aanvullende maatregelen: we hebben de WAF-regels aangescherpt via Cloudflare en rate limiting toegepast.",
+      "",
+      "4. Offline halen: we adviseren de websites online te houden en de logs te blijven monitoren op misbruik. Er zijn geen aanwijzingen voor een geslaagde aanval.",
+      "",
+      "5. Toegangslogs: we hebben de logs van de afgelopen 8 dagen bekeken. Daarin zien we normaal geautomatiseerd scanverkeer, 97 pogingen met een oudere PHP-exploit die op beide websites niet werkt, en ongeveer 26 duizend verzoeken naar bekende aanvalspaden, die allemaal zijn geblokkeerd. Er zijn geen aanwijzingen voor een geslaagde aanval.",
+    ].join("\n");
+    const sanitized = sanitizeAgentReplyBody(body);
+    const paragraphs = sanitized
+      .split(/\n\s*\n+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    assert.equal(paragraphs.length, 7);
+    assert.match(sanitized, /1\. PHP-versies/);
+    assert.match(sanitized, /4\. Offline halen/);
+    assert.match(sanitized, /5\. Toegangslogs/);
+
+    const from = "Goudswaard <info@goudswaardadvies.nl>";
+    const templates = resolveEmailReplyTemplates({
+      greetingTemplateNl: "Aan {firstName},",
+      signOffTemplateNl: "Met vriendelijke groet,\n{name}",
+      signOffName: "Remon de Vries\nLemo-Design",
+    });
+    const assembled = assembleReplyEmail({
+      from,
+      subject: "Urgente controle",
+      body,
+      templates,
+      languageHint: "nl",
+      preserveBody: true,
+    });
+    const editable = resolveEditableDraftBody(
+      assembled.text,
+      from,
+      templates,
+    );
+    assert.equal(
+      editable.split(/\n\s*\n+/).filter((part) => part.trim()).length,
+      7,
+    );
+  });
+
   it("capitalizes greeting first names", () => {
     const assembled = assembleReplyEmail({
       from: "fandy@fandy.nl",

@@ -6,6 +6,9 @@ const GREETING_LINE =
 const SIGN_OFF_BLOCK =
   /\n+(?:best|thanks|thank you|sincerely|regards|cheers|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards),?\s*\n[\s\S]*$/i;
 
+/** Numbered (`1.`) or bulleted (`-` / `*` / `•`) paragraph openers. */
+const LIST_PARAGRAPH = /^(?:\d+[.)]\s+|[-*•]\s+)/;
+
 export function stripEmailDraftShell(
   body: string,
   shell?: { greeting?: string | null; signOff?: string | null },
@@ -34,11 +37,53 @@ export function stripEmailDraftShell(
   return next.trim();
 }
 
+function isListParagraph(text: string): boolean {
+  return LIST_PARAGRAPH.test(text.trim());
+}
+
+function longWords(text: string): string[] {
+  return text.split(/\s+/).filter((word) => word.length > 4);
+}
+
+/**
+ * Near-duplicate rewrite detection for raw agent output only.
+ * Complementary paragraphs (including numbered lists) must not match.
+ */
+function nearDuplicateParagraphs(a: string, b: string): boolean {
+  if (a === b) return true;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  // Containment only when the shorter block is a substantial rewrite fragment.
+  if (
+    shorter.length >= 40 &&
+    longer.includes(shorter) &&
+    shorter.length / longer.length >= 0.5
+  ) {
+    return true;
+  }
+  const setA = new Set(longWords(a));
+  const setB = new Set(longWords(b));
+  if (setA.size === 0 || setB.size === 0) return false;
+  let shared = 0;
+  for (const word of setA) {
+    if (setB.has(word)) shared += 1;
+  }
+  const overlap = shared / Math.min(setA.size, setB.size);
+  const lenRatio =
+    Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  return overlap >= 0.65 && lenRatio >= 0.45;
+}
+
 /**
  * True when earlier paragraphs look like discarded draft attempts of the last
  * one (agent iteration noise). Distinct complementary paragraphs stay.
  */
 function paragraphsLookLikeAgentIterations(paragraphs: string[]): boolean {
+  // Numbered / bulleted items are complementary content, never rewrite noise.
+  if (paragraphs.some((paragraph) => isListParagraph(paragraph))) {
+    return false;
+  }
+
   const last = (paragraphs[paragraphs.length - 1] ?? "")
     .replace(/\s+/g, " ")
     .trim()
@@ -50,21 +95,16 @@ function paragraphsLookLikeAgentIterations(paragraphs: string[]): boolean {
       .trim()
       .toLowerCase();
     if (!earlier) continue;
-    if (earlier === last || last.includes(earlier) || earlier.includes(last)) {
-      return true;
-    }
-    const earlierWords = new Set(
-      earlier.split(/\s+/).filter((word) => word.length > 4),
-    );
-    let sharedLongWords = 0;
-    for (const word of last.split(/\s+/)) {
-      if (word.length > 4 && earlierWords.has(word)) sharedLongWords += 1;
-    }
-    if (sharedLongWords >= 3) return true;
+    if (nearDuplicateParagraphs(earlier, last)) return true;
   }
   return false;
 }
 
+/**
+ * Normalize raw agent reply text: strip greeting/sign-off and collapse obvious
+ * rewrite iterations. Do not use this for already-saved draft bodies — use
+ * {@link resolveEditableEmailDraftBody} instead.
+ */
 export function extractAgentReplyBody(text: string): string {
   let body = text.trim();
   if (!body) return "";
@@ -97,7 +137,11 @@ export function extractAgentReplyBody(text: string): string {
   return body.trim();
 }
 
-/** Prefer API `body`; fall back to extracting from stored full `text`. */
+/**
+ * Prefer API `body`; fall back to stored full `text`.
+ * Saved drafts are shown as-is after greeting/sign-off strip — never run the
+ * agent rewrite-collapse heuristic here (OS-117).
+ */
 export function resolveEditableEmailDraftBody(
   draft:
     | {
@@ -111,13 +155,15 @@ export function resolveEditableEmailDraftBody(
 ): string {
   if (!draft) return "";
   const shell = { greeting: draft.greeting, signOff: draft.signOff };
-  const fromBody = draft.body?.trim();
-  if (fromBody) {
-    return extractAgentReplyBody(
-      stripEmailDraftShell(draft.body ?? fromBody, shell),
-    );
+  const source = draft.body?.trim() || draft.text?.trim() || "";
+  if (!source) return "";
+
+  let next = stripEmailDraftShell(source, shell);
+  const lines = next.split("\n");
+  while (lines.length > 0 && GREETING_LINE.test(lines[0]?.trim() ?? "")) {
+    lines.shift();
   }
-  const rawText = draft.text?.trim();
-  if (!rawText) return "";
-  return extractAgentReplyBody(stripEmailDraftShell(rawText, shell));
+  next = lines.join("\n").trim();
+  next = next.replace(SIGN_OFF_BLOCK, "").trim();
+  return next;
 }

@@ -573,7 +573,12 @@ back through the agents door. Simple core-executed intents (OS-94) stay local.
 POST /api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft
 GET  /api/v1/email/agent-draft-callbacks/:requestId
 POST /api/v1/public/email-agent-callbacks/:requestId?token=…
+PATCH /api/v1/email/inboxes/:inboxId/drafts/:draftId
 ```
+
+**Draft PATCH body (OS-117):** accepts only `body`, `to`, `cc`, and `subject`.
+Do not send `text` or `html` — core rebuilds those from `body` plus the
+greeting/sign-off shell.
 
 **Wake (core → Judith):** `requestId`, `callbackUrl`, `userPrompt`, inbox/message/thread
 ids, `email { from, to, subject, text }`, `language`, optional `currentDraftBody`,

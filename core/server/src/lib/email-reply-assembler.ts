@@ -469,23 +469,59 @@ export function sanitizeAgentReplyBody(raw: string): string {
   return sanitized;
 }
 
+/** Numbered (`1.`) or bulleted (`-` / `*` / `•`) paragraph openers. */
+const LIST_PARAGRAPH = /^(?:\d+[.)]\s+|[-*•]\s+)/;
+
+function isListParagraph(text: string): boolean {
+  return LIST_PARAGRAPH.test(text.trim());
+}
+
+function longWords(text: string): string[] {
+  return text.split(/\s+/).filter((word) => word.length > 4);
+}
+
+/**
+ * Near-duplicate rewrite detection for raw agent output only.
+ * Complementary paragraphs (including numbered lists) must not match.
+ */
+function nearDuplicateParagraphs(a: string, b: string): boolean {
+  if (a === b) return true;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (
+    shorter.length >= 40 &&
+    longer.includes(shorter) &&
+    shorter.length / longer.length >= 0.5
+  ) {
+    return true;
+  }
+  const setA = new Set(longWords(a));
+  const setB = new Set(longWords(b));
+  if (setA.size === 0 || setB.size === 0) return false;
+  let shared = 0;
+  for (const word of setA) {
+    if (setB.has(word)) shared += 1;
+  }
+  const overlap = shared / Math.min(setA.size, setB.size);
+  const lenRatio =
+    Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  return overlap >= 0.65 && lenRatio >= 0.45;
+}
+
 function paragraphsLookLikeAgentIterations(paragraphs: string[]): boolean {
-  const last = normalizeWhitespace(paragraphs[paragraphs.length - 1] ?? "").toLowerCase();
+  // Numbered / bulleted items are complementary content, never rewrite noise.
+  if (paragraphs.some((paragraph) => isListParagraph(paragraph))) {
+    return false;
+  }
+
+  const last = normalizeWhitespace(
+    paragraphs[paragraphs.length - 1] ?? "",
+  ).toLowerCase();
   if (!last) return true;
   for (let index = 0; index < paragraphs.length - 1; index += 1) {
     const earlier = normalizeWhitespace(paragraphs[index] ?? "").toLowerCase();
     if (!earlier) continue;
-    if (earlier === last || last.includes(earlier) || earlier.includes(last)) {
-      return true;
-    }
-    const earlierWords = new Set(
-      earlier.split(/\s+/).filter((word) => word.length > 4),
-    );
-    let sharedLongWords = 0;
-    for (const word of last.split(/\s+/)) {
-      if (word.length > 4 && earlierWords.has(word)) sharedLongWords += 1;
-    }
-    if (sharedLongWords >= 3) return true;
+    if (nearDuplicateParagraphs(earlier, last)) return true;
   }
   return false;
 }
@@ -534,7 +570,9 @@ export function extractReplyBodyFromAssembled(
     const body = extractReplyBodyWithTemplates(trimmed, from, resolved);
     if (body) return body;
   }
-  return sanitizeAgentReplyBody(trimmed);
+  // Saved / assembled text: strip shell only — never collapse rewrite iterations
+  // (that heuristic is for raw agent output via sanitizeAgentReplyBody).
+  return lightCleanAgentReplyBody(stripAssembledEmailShell(trimmed));
 }
 
 /**
@@ -561,7 +599,7 @@ export function resolveEditableDraftBody(
 
   const extracted = extractReplyBodyFromAssembled(trimmed, from, templates).trim();
   if (extracted) return extracted;
-  return sanitizeAgentReplyBody(trimmed);
+  return lightCleanAgentReplyBody(stripAssembledEmailShell(trimmed));
 }
 
 export type AssembledReplyEmail = {
