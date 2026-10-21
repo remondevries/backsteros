@@ -9,12 +9,14 @@ See [ADR-038](10-decisions-log.md) and [URLs](11-urls-and-routing.md).
 3. Enable **only** the `carddav` scope (do not grant `tasks:*` / `documents:*`).
 4. Copy the `sk_live_…` secret once — that is the CardDAV password.
 
+Alternatively, cloud-core may set `CARDDAV_PASSWORD` (short shared Basic password) for device testing. Prefer a scoped API key for long-term use.
+
 ## Add the account on iPhone / iPad
 
 1. Settings → Contacts → Accounts → Add Account → Other → **Add CardDAV Account**.
 2. Server: `contacts.backsteros.com`
 3. User Name: `backsteros`
-4. Password: the `sk_live_…` secret
+4. Password: the `sk_live_…` secret (or `CARDDAV_PASSWORD` if configured)
 5. Description: `BacksterOS` (optional)
 
 If iOS asks for an account URL:

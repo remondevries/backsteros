@@ -226,7 +226,7 @@ export async function resolveAuth(authorization: string | undefined): Promise<Au
 
 /**
  * Resolve auth from Bearer (API) or Basic (CardDAV).
- * Basic password must be a live `sk_live_…` API key secret.
+ * Basic password: live `sk_live_…` API key, or optional `CARDDAV_PASSWORD`.
  */
 export async function resolveAuthFlexible(
   authorization: string | undefined,
@@ -234,14 +234,19 @@ export async function resolveAuthFlexible(
   const bearer = await resolveAuth(authorization);
   if (bearer) return bearer;
 
-  const { parseBasicAuthCredentials, isApiKeySecret } = await import(
-    "../services/carddav/auth.js"
-  );
+  const {
+    parseBasicAuthCredentials,
+    isApiKeySecret,
+    authenticateCardDavSharedPassword,
+  } = await import("../services/carddav/auth.js");
   const basic = parseBasicAuthCredentials(authorization);
   if (!basic?.password) return null;
-  if (!isApiKeySecret(basic.password)) return null;
 
-  const auth = await authenticateApiKey(basic.password);
+  const auth =
+    authenticateCardDavSharedPassword(basic.password) ??
+    (isApiKeySecret(basic.password)
+      ? await authenticateApiKey(basic.password)
+      : null);
   if (auth) {
     try {
       await warmVaultPathCache(auth.workspaceId);
