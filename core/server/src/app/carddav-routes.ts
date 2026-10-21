@@ -34,6 +34,7 @@ import { nudgeContactLive } from "./route-shared.js";
 
 /** Address book root — use this as the iOS CardDAV account URL. */
 const ADDRESSBOOK_PATH = "/dav/";
+const PUBLIC_ORIGIN = "https://contacts.backsteros.com";
 
 function davChallenge() {
   return {
@@ -61,8 +62,19 @@ async function requireCardDavAuth(c: Context, next: Next) {
   await next();
 }
 
+function absoluteHref(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${PUBLIC_ORIGIN}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function contactHref(contactId: string): string {
-  return `${ADDRESSBOOK_PATH}${encodeURIComponent(contactId)}.vcf`;
+  return absoluteHref(
+    `${ADDRESSBOOK_PATH}${encodeURIComponent(contactId)}.vcf`,
+  );
+}
+
+function addressbookHref(): string {
+  return absoluteHref(ADDRESSBOOK_PATH);
 }
 
 function depthHeader(c: Context): number {
@@ -156,22 +168,21 @@ function addressbookProps(ctag: string, requested: Set<string>): string {
   if (wantsProp(requested, "displayname")) {
     parts.push("<D:displayname>BacksterOS Contacts</D:displayname>");
   }
-  if (wantsProp(requested, "getctag")) {
-    parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
-  }
+  // iOS expects getctag on address books for sync.
+  parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
   if (wantsProp(requested, "current-user-principal")) {
     parts.push(
-      `<D:current-user-principal><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></D:current-user-principal>`,
+      `<D:current-user-principal><D:href>${xmlEscape(addressbookHref())}</D:href></D:current-user-principal>`,
     );
   }
   if (wantsProp(requested, "principal-URL")) {
     parts.push(
-      `<D:principal-URL><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></D:principal-URL>`,
+      `<D:principal-URL><D:href>${xmlEscape(addressbookHref())}</D:href></D:principal-URL>`,
     );
   }
   if (wantsProp(requested, "addressbook-home-set")) {
     parts.push(
-      `<C:addressbook-home-set><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></C:addressbook-home-set>`,
+      `<C:addressbook-home-set><D:href>${xmlEscape(addressbookHref())}</D:href></C:addressbook-home-set>`,
     );
   }
   if (wantsProp(requested, "current-user-privilege-set")) {
@@ -232,7 +243,7 @@ async function propfindAddressbook(c: Context) {
   const ctag = await collectionCtag(auth.workspaceId);
   const responses = [
     {
-      href: ADDRESSBOOK_PATH,
+      href: addressbookHref(),
       propstats: [
         {
           status: "HTTP/1.1 200 OK",
@@ -468,7 +479,11 @@ export function registerCardDavRoutes(app: Hono) {
   app.use("/dav", requireCardDavAuth);
   app.use("/dav/*", requireCardDavAuth);
 
-  app.all("/.well-known/carddav", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
+  // iOS discovers via /.well-known/carddav — return 207 here (do NOT 301;
+  // Apple often drops Basic credentials across redirects → "verification failed").
+  app.on("PROPFIND", "/.well-known/carddav", propfindAddressbook);
+  app.on("REPORT", "/.well-known/carddav", reportAddressbook);
+  app.get("/.well-known/carddav", (c) => c.redirect(addressbookHref(), 301));
 
   // Legacy long paths → clean /dav/
   app.all("/dav/addressbooks/*", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
