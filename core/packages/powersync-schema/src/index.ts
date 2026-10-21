@@ -193,6 +193,8 @@ const contacts = new Table(
     summary: column.text,
     avatar_storage_key: column.text,
     avatar_content_type: column.text,
+    portal_avatar_storage_key: column.text,
+    portal_avatar_content_type: column.text,
     sort_order: column.integer,
     phone: column.text,
     phones: column.text,

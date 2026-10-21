@@ -90,6 +90,69 @@ export function mergeLocalWithPendingApiCreates<T extends { id: string }>(
  * This is **not** full REST list merge — callers must only put SSE (or
  * equivalent) rows into `overlayById`, never the cold-start hydrate array.
  */
+function avatarStorageKeyOf(row: object): string {
+  if (!("avatarStorageKey" in row)) return "";
+  const value = (row as { avatarStorageKey?: unknown }).avatarStorageKey;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function portalAvatarStorageKeyOf(row: object): string {
+  if (!("portalAvatarStorageKey" in row)) return "";
+  const value = (row as { portalAvatarStorageKey?: unknown })
+    .portalAvatarStorageKey;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Optimistic live rows sometimes omit avatar keys entirely (sparse property
+ * patches). Prefer the live row for everything else, but keep a local avatar
+ * when the key is absent on live — not when live explicitly sets null (clear).
+ */
+function preferLiveRetainingLocalAvatar<T extends object>(local: T, live: T): T {
+  let next = live;
+  if (
+    !(
+      "avatarStorageKey" in live &&
+      (live as { avatarStorageKey?: unknown }).avatarStorageKey !== undefined
+    )
+  ) {
+    const localKey = avatarStorageKeyOf(local);
+    if (localKey) {
+      const localType =
+        "avatarContentType" in local
+          ? (local as { avatarContentType?: string | null }).avatarContentType
+          : null;
+      next = {
+        ...next,
+        avatarStorageKey: localKey,
+        avatarContentType: localType ?? null,
+      };
+    }
+  }
+  if (
+    !(
+      "portalAvatarStorageKey" in live &&
+      (live as { portalAvatarStorageKey?: unknown }).portalAvatarStorageKey !==
+        undefined
+    )
+  ) {
+    const localPortalKey = portalAvatarStorageKeyOf(local);
+    if (localPortalKey) {
+      const localPortalType =
+        "portalAvatarContentType" in local
+          ? (local as { portalAvatarContentType?: string | null })
+              .portalAvatarContentType
+          : null;
+      next = {
+        ...next,
+        portalAvatarStorageKey: localPortalKey,
+        portalAvatarContentType: localPortalType ?? null,
+      };
+    }
+  }
+  return next;
+}
+
 export function applyLiveEntityOverlay<
   T extends { id: string; updatedAt?: string | number | Date | null },
 >(
@@ -111,7 +174,7 @@ export function applyLiveEntityOverlay<
     // Prefer live on ties so optimistic clears (dueDate → null) win over a
     // same-ms SQLite watch that still has the previous date.
     if (updatedAtMs(live.updatedAt) >= updatedAtMs(local.updatedAt)) {
-      return live;
+      return preferLiveRetainingLocalAvatar(local, live);
     }
     return local;
   });
@@ -385,6 +448,47 @@ export function fillMissingMoneybirdContactIdFromApi<
       return { ...row, moneybirdContactId: api.moneybirdContactId };
     }
     return row;
+  });
+}
+
+/**
+ * Always copy avatar keys from API when local/live is missing them.
+ * Unlike {@link fillMissingLongTextFromApi}, this is not cold-start gated —
+ * PowerSync often lags `avatar_storage_key`, and optimistic live overlays can
+ * omit it, which blanked contact/org marks even while core still had the file.
+ */
+export function fillMissingAvatarFieldsFromApi<
+  T extends {
+    id: string;
+    avatarStorageKey?: string | null;
+    avatarContentType?: string | null;
+    portalAvatarStorageKey?: string | null;
+    portalAvatarContentType?: string | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    let next = row;
+    if (!avatarStorageKeyOf(next) && avatarStorageKeyOf(api)) {
+      next = {
+        ...next,
+        avatarStorageKey: api.avatarStorageKey,
+        avatarContentType:
+          api.avatarContentType ?? next.avatarContentType ?? null,
+      };
+    }
+    if (!portalAvatarStorageKeyOf(next) && portalAvatarStorageKeyOf(api)) {
+      next = {
+        ...next,
+        portalAvatarStorageKey: api.portalAvatarStorageKey,
+        portalAvatarContentType:
+          api.portalAvatarContentType ?? next.portalAvatarContentType ?? null,
+      };
+    }
+    return next;
   });
 }
 

@@ -6,6 +6,7 @@ import {
 import {
   CONTACT_SECTIONS,
   getActiveContactSection,
+  readContactCardSectionIdsFromDom,
 } from "../contacts/contact-sections.js";
 import {
   getContactOverlayHref,
@@ -213,22 +214,28 @@ export function resolveDesktopSectionTabHrefs(
   const contactMatch = path.match(/^\/contacts\/([^/]+)(?:\/|$)/);
   if (contactMatch && contactMatch[1] !== "new") {
     const slug = decodeURIComponent(contactMatch[1]!);
-    // Expanded workspace: 1–5 are Meetings/Emails/… (handled on the page).
+    // Expanded workspace: digits are owned by contacts-page (card sections +
+    // expand offset + Meetings/Emails/… tabs).
     if (parseContactOverlayLayout(search) === "page") {
       return null;
     }
-    // Narrow card: 1 Activity, 2 Details, 3 More… (expand to page layout).
+    // Narrow card: 1…N = visible card sections (Activity / Details, plus Portal /
+    // Logs for clients); N+1 expands. Workspace tabs start at N+2 once expanded.
     const groupId = parseCrmGroupId(search);
     const section = getActiveContactSection(path, slug);
-    return [
-      getContactOverlayHref(slug, { groupId }),
-      getContactOverlayHref(slug, { section: "details", groupId }),
+    const cardSectionIds = readContactCardSectionIdsFromDom();
+    const cardHrefs = cardSectionIds.map((id) =>
       getContactOverlayHref(slug, {
-        section: section === "overview" ? undefined : section,
-        layout: "page",
+        section: id === "overview" ? undefined : id,
         groupId,
       }),
-    ];
+    );
+    const expandHref = getContactOverlayHref(slug, {
+      section: section === "overview" ? undefined : section,
+      layout: "page",
+      groupId,
+    });
+    return [...cardHrefs, expandHref];
   }
 
   const organizationMatch = path.match(/^\/organizations\/([^/]+)(?:\/|$)/);

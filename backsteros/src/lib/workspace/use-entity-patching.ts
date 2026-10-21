@@ -104,6 +104,8 @@ export function useWorkspaceEntityPatching({
   getMeetingById,
   setLiveTasksById,
   getTaskById,
+  setLiveContactsById,
+  getContactById,
   getLocalTaskStatus,
 }: {
   authenticated: boolean;
@@ -130,6 +132,10 @@ export function useWorkspaceEntityPatching({
     updater: (current: Map<string, ApiTask>) => Map<string, ApiTask>,
   ) => void;
   getTaskById?: (id: string) => ApiTask | null | undefined;
+  setLiveContactsById?: (
+    updater: (current: Map<string, ApiContact>) => Map<string, ApiContact>,
+  ) => void;
+  getContactById?: (id: string) => ApiContact | null | undefined;
   /**
    * PowerSync-local status for optimistic API cache merges. Due-date (and
    * other non-status) patches must not re-base onto a stale REST row that
@@ -328,6 +334,59 @@ export function useWorkspaceEntityPatching({
     [setApiContacts],
   );
 
+  /**
+   * Optimistic contact fields that win over lagging PowerSync via live overlay
+   * (languages / emails / phones / social / portal). Without this, SQLite watch
+   * lag leaves resolveLocalOrApiRows on the pre-patch row while apiContacts is
+   * ignored — second language / channel edits appear to revert.
+   */
+  const applyLiveContactOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      if (!setLiveContactsById) {
+        applyApiContactPatch(id, values);
+        return;
+      }
+      const nextUpdatedAt = new Date().toISOString();
+      const base = getContactById?.(id) ?? null;
+      setLiveContactsById((current) => {
+        const previous = current.get(id) ?? base;
+        if (!previous) return current;
+        const merged = {
+          ...previous,
+          ...values,
+          updatedAt: nextUpdatedAt,
+        } as ApiContact;
+        // Property patches must not blank avatar keys — a sparse live row with
+        // a newer updatedAt would hide marks until reload.
+        if (
+          !merged.avatarStorageKey &&
+          previous.avatarStorageKey &&
+          values.avatarStorageKey === undefined
+        ) {
+          merged.avatarStorageKey = previous.avatarStorageKey;
+          merged.avatarContentType =
+            previous.avatarContentType ?? merged.avatarContentType ?? null;
+        }
+        if (
+          !merged.portalAvatarStorageKey &&
+          previous.portalAvatarStorageKey &&
+          values.portalAvatarStorageKey === undefined
+        ) {
+          merged.portalAvatarStorageKey = previous.portalAvatarStorageKey;
+          merged.portalAvatarContentType =
+            previous.portalAvatarContentType ??
+            merged.portalAvatarContentType ??
+            null;
+        }
+        const next = new Map(current);
+        next.set(id, merged);
+        return next;
+      });
+      applyApiContactPatch(id, values);
+    },
+    [applyApiContactPatch, getContactById, setLiveContactsById],
+  );
+
   const applyApiLetterPatch = useCallback(
     (id: string, values: Record<string, unknown>) => {
       const nextUpdatedAt = new Date().toISOString();
@@ -412,7 +471,7 @@ export function useWorkspaceEntityPatching({
         applyApiOrganizationPatch(id, values);
       }
       if (table === "contacts") {
-        applyApiContactPatch(id, values);
+        applyLiveContactOptimisticPatch(id, values);
       }
       if (table === "letters") {
         applyApiLetterPatch(id, values);
@@ -434,7 +493,7 @@ export function useWorkspaceEntityPatching({
       }
     },
     [
-      applyApiContactPatch,
+      applyLiveContactOptimisticPatch,
       applyApiDocumentPatch,
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
@@ -878,10 +937,10 @@ export function useWorkspaceEntityPatching({
             nudgeDynamicIslandTasksRefresh();
           }
         } else if (table === "contacts") {
-          // Portal settings / languages / channels: keep apiContacts in sync so
-          // fillMissingLongTextFromApi does not re-apply a stale REST snapshot
-          // over the optimistic SQLite row (language select flipping back).
-          applyApiContactPatch(id, optimisticValues);
+          // Languages / emails / phones / social / portal: live overlay so the
+          // detail pane keeps the optimistic row while PowerSync watch lags
+          // (resolveLocalOrApiRows ignores newer apiContacts once SQLite has rows).
+          applyLiveContactOptimisticPatch(id, optimisticValues);
         } else if (table === "organizations") {
           applyApiOrganizationPatch(id, optimisticValues);
         }
@@ -977,14 +1036,14 @@ export function useWorkspaceEntityPatching({
         applyApiOrganizationPatch(id, values);
       }
       if (table === "contacts") {
-        applyApiContactPatch(id, values);
+        applyLiveContactOptimisticPatch(id, values);
       }
       if (table === "letters") {
         applyApiLetterPatch(id, values);
       }
     },
     [
-      applyApiContactPatch,
+      applyLiveContactOptimisticPatch,
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
       applyOptimisticEntityPatch,
@@ -1033,6 +1092,12 @@ export function useWorkspaceEntityPatching({
     }
     if (table === "contacts") {
       setApiContacts((rows) => rows?.filter((row) => row.id !== id) ?? null);
+      setLiveContactsById?.((current) => {
+        if (!current.has(id)) return current;
+        const next = new Map(current);
+        next.delete(id);
+        return next;
+      });
       return;
     }
     if (table === "organizations") {
@@ -1050,6 +1115,7 @@ export function useWorkspaceEntityPatching({
     setApiOrganizations,
     setApiProjects,
     setApiTasks,
+    setLiveContactsById,
     setLiveMeetingsById,
   ]);
 

@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
-  CONTACT_CARD_SECTIONS,
   CONTACT_SECTIONS,
   type ContactSectionConfig,
   type ContactSectionId,
@@ -16,21 +15,10 @@ import {
   type ContactOverviewViewProps,
 } from "./contact-overview-view.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
-import { PillNav } from "../shared/pill-nav.js";
-
-const CONTACT_MORE_TAB = {
-  value: "more" as const,
-  label: "More...",
-};
-
-function isCardOnlySections(sections: readonly ContactSectionConfig[]): boolean {
-  const baseIds = CONTACT_CARD_SECTIONS.map((entry) => entry.id);
-  const withoutPortal = sections.filter((entry) => entry.id !== "portal");
-  return (
-    withoutPortal.length === baseIds.length &&
-    withoutPortal.every((entry, index) => entry.id === baseIds[index])
-  );
-}
+import {
+  SegmentedPillToggle,
+  type SegmentedPillToggleOption,
+} from "../list-nav/list-board-view-shell.js";
 
 export type ContactDetailViewProps = {
   contact: ContactOverviewViewContact;
@@ -56,22 +44,19 @@ export type ContactDetailViewProps = {
   onSectionChange?: (section: ContactSectionId) => void;
   initialSection?: ContactSectionId;
   renderSection?: (sectionId: ContactSectionId) => ReactNode;
-  /** When false, hide section tabs (e.g. nested task/letter detail). Default true. */
+  /** When false, hide section toggle (e.g. nested task/letter detail). Default true. */
   showSectionNav?: boolean;
   /**
-   * Tabs on the profile card. Standalone contacts use
-   * `CONTACT_CARD_SECTIONS` (Activity / Details); org-scoped keeps all sections.
+   * Sections on the profile card. Standalone contacts use
+   * `resolveContactCardSections` (Activity / Details, plus Portal / Logs for
+   * clients); org-scoped keeps all sections. Expand is the chrome icon + the
+   * next digit after the last card section — not a toggle option.
    */
   sections?: readonly ContactSectionConfig[];
-  /**
-   * When set, appends a "More..." tab after Details that expands the overlay
-   * (same as the expand control). Only for the narrow card.
-   */
-  onMore?: () => void;
 };
 
 /**
- * Contact detail shell — avatar header + tabs stay put; only the tab body scrolls.
+ * Contact detail shell — cover + section toggle stay put; only the body scrolls.
  */
 export function ContactDetailView({
   contact,
@@ -97,7 +82,6 @@ export function ContactDetailView({
   renderSection,
   showSectionNav = true,
   sections = CONTACT_SECTIONS,
-  onMore,
 }: ContactDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ContactSectionId>(initialSection);
@@ -113,16 +97,24 @@ export function ContactDetailView({
     rememberContactSection(section);
   }, [section]);
 
-  type NavValue = ContactSectionId | "more";
-  const showMoreTab = Boolean(onMore) || isCardOnlySections(sections);
-  const sectionItems: { value: NavValue; label: string }[] = [
-    ...sections.map((entry) => ({
-      value: entry.id as NavValue,
-      label: entry.label,
-    })),
-    ...(showMoreTab ? [CONTACT_MORE_TAB] : []),
-  ];
-  const navSection: NavValue = sections.some((entry) => entry.id === section)
+  const sectionOptions = useMemo<SegmentedPillToggleOption<ContactSectionId>[]>(
+    () =>
+      sections.map((entry, index) => ({
+        value: entry.id,
+        label: entry.label,
+        // Digits 1…N match visible card sections; N+1 expands (chrome / shortcuts).
+        shortcut: String(index + 1),
+      })),
+    [sections],
+  );
+  const cardSectionIdsAttr = useMemo(
+    () => sections.map((entry) => entry.id).join(","),
+    [sections],
+  );
+
+  const navSection: ContactSectionId = sections.some(
+    (entry) => entry.id === section,
+  )
     ? section
     : "overview";
 
@@ -133,14 +125,6 @@ export function ContactDetailView({
       : section === "details"
         ? "details"
         : "section";
-
-  function handleNavChange(next: NavValue) {
-    if (next === "more") {
-      onMore?.();
-      return;
-    }
-    setSection(next);
-  }
 
   return (
     <div className="contact-detail" data-content-detail>
@@ -172,13 +156,15 @@ export function ContactDetailView({
           activitySlot={activitySlot}
           sectionNavSlot={
             showSectionNav ? (
-              <div className="contact-section-tabs">
-                <PillNav
-                  className="contact-section-tabs__nav"
+              <div
+                className="contact-section-tabs"
+                data-contact-card-section-ids={cardSectionIdsAttr}
+              >
+                <SegmentedPillToggle
                   ariaLabel="Contact sections"
-                  items={sectionItems}
                   value={navSection}
-                  onChange={handleNavChange}
+                  options={sectionOptions}
+                  onChange={setSection}
                 />
               </div>
             ) : null

@@ -15,6 +15,7 @@ import {
   fillMissingTaskFlagsFromApi,
   fillMissingTypeFromApi,
   applyLiveEntityOverlay,
+  fillMissingAvatarFieldsFromApi,
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
   mergeLocalDocumentsWithLiveApi,
@@ -206,6 +207,92 @@ test("applyLiveEntityOverlay prefers live clear on equal updatedAt", () => {
   ]);
   const merged = applyLiveEntityOverlay(localTasks, overlay);
   assert.equal(merged[0]?.dueDate, null);
+});
+
+test("applyLiveEntityOverlay keeps local avatar when live overlay omits it", () => {
+  const local = [
+    {
+      id: "c1",
+      name: "Fandy Benjamins",
+      avatarStorageKey: ".backsteros/avatars/c1/avatar",
+      avatarContentType: "image/png",
+      languages: ["nl"],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  // Sparse optimistic patch — no avatarStorageKey own-property.
+  const overlay = new Map([
+    [
+      "c1",
+      {
+        id: "c1",
+        name: "Fandy Benjamins",
+        languages: ["nl", "en"],
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  ]);
+  const merged = applyLiveEntityOverlay(local, overlay);
+  assert.equal(merged[0]?.languages?.join(","), "nl,en");
+  assert.equal(merged[0]?.avatarStorageKey, ".backsteros/avatars/c1/avatar");
+  assert.equal(merged[0]?.avatarContentType, "image/png");
+});
+
+test("applyLiveEntityOverlay honors explicit live avatar clear", () => {
+  const local = [
+    {
+      id: "c1",
+      avatarStorageKey: ".backsteros/avatars/c1/avatar",
+      avatarContentType: "image/png",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const overlay = new Map([
+    [
+      "c1",
+      {
+        id: "c1",
+        avatarStorageKey: null as string | null,
+        avatarContentType: null as string | null,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  ]);
+  const merged = applyLiveEntityOverlay(local, overlay);
+  assert.equal(merged[0]?.avatarStorageKey, null);
+});
+
+test("fillMissingAvatarFieldsFromApi copies keys even when local already has rows", () => {
+  const merged = fillMissingAvatarFieldsFromApi(
+    [
+      {
+        id: "c1",
+        avatarStorageKey: null,
+        avatarContentType: null,
+      },
+      {
+        id: "c2",
+        avatarStorageKey: ".backsteros/avatars/c2/avatar",
+        avatarContentType: "image/jpeg",
+      },
+    ],
+    [
+      {
+        id: "c1",
+        avatarStorageKey: ".backsteros/avatars/c1/avatar",
+        avatarContentType: "image/png",
+      },
+      {
+        id: "c2",
+        avatarStorageKey: ".backsteros/avatars/c2/other",
+        avatarContentType: "image/png",
+      },
+    ],
+  );
+  assert.equal(merged[0]?.avatarStorageKey, ".backsteros/avatars/c1/avatar");
+  assert.equal(merged[0]?.avatarContentType, "image/png");
+  // Existing local key wins — do not clobber with API.
+  assert.equal(merged[1]?.avatarStorageKey, ".backsteros/avatars/c2/avatar");
 });
 
 test("applyLiveEntityOverlay hides deleted ids until PowerSync drops them", () => {

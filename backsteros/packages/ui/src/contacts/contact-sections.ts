@@ -17,9 +17,10 @@ export type ContactSectionConfig = {
 };
 
 /**
- * Tabs shown on the standalone contact profile card (Activity / Details / Portal).
- * A "More..." tab is appended in the UI to expand the workspace.
- * Tasks + Letters live in that expanded workspace.
+ * Base sections on the standalone contact profile card (Activity / Details).
+ * Clients also get Portal (+ Logs when configured) via `resolveContactCardSections`.
+ * Expand is the chrome icon + the next digit after the last card section — not a
+ * toggle option. Tasks / Letters / … live in the expanded workspace (digits after expand).
  */
 export const CONTACT_CARD_SECTIONS: readonly ContactSectionConfig[] = [
   { id: "overview", label: "Activity", segment: "", supportsDetail: false },
@@ -30,6 +31,49 @@ export const CONTACT_CARD_SECTIONS: readonly ContactSectionConfig[] = [
     supportsDetail: false,
   },
 ];
+
+/** DOM hook so digit shortcuts can see which card sections are mounted. */
+export const CONTACT_CARD_SECTION_IDS_ATTR = "data-contact-card-section-ids";
+
+/**
+ * Card section ids currently shown on the contact rail (comma-separated attribute).
+ * Falls back to Activity / Details when the rail is not mounted (tests, SSR).
+ */
+export function readContactCardSectionIdsFromDom(): readonly ContactSectionId[] {
+  if (typeof document === "undefined") {
+    return CONTACT_CARD_SECTIONS.map((section) => section.id);
+  }
+  const node = document.querySelector(`[${CONTACT_CARD_SECTION_IDS_ATTR}]`);
+  const raw = node?.getAttribute(CONTACT_CARD_SECTION_IDS_ATTR)?.trim();
+  if (!raw) {
+    return CONTACT_CARD_SECTIONS.map((section) => section.id);
+  }
+  const ids: ContactSectionId[] = [];
+  for (const part of raw.split(",")) {
+    const id = part.trim();
+    if (
+      id === "overview" ||
+      id === "details" ||
+      id === "portal" ||
+      id === "logs"
+    ) {
+      ids.push(id);
+    }
+  }
+  return ids.length > 0
+    ? ids
+    : CONTACT_CARD_SECTIONS.map((section) => section.id);
+}
+
+/**
+ * 0-based digit index of the first expanded-workspace tab.
+ * Card sections occupy 1…N; expand is N+1; workspace starts at N+2.
+ */
+export function contactExpandedWorkspaceDigitStartIndex(
+  cardSectionCount: number,
+): number {
+  return Math.max(0, cardSectionCount) + 1;
+}
 
 export const CONTACT_PORTAL_SECTION: ContactSectionConfig = {
   id: "portal",
@@ -69,7 +113,7 @@ export function isContactCardSectionId(
   );
 }
 
-/** Card tabs for a contact — Portal (+ Logs when configured) before More. */
+/** Card sections for a contact — Portal (+ Logs when configured). */
 export function resolveContactCardSections(options?: {
   showPortal?: boolean;
   showPortalLogs?: boolean;

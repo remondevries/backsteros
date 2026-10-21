@@ -671,6 +671,8 @@ export async function prepareContactWriteBody<T extends Record<string, unknown>>
 export function avatarEntityToSyncEntity(entityType: string): SyncEntity | null {
   if (entityType === "organization") return "organization";
   if (entityType === "contact") return "contact";
+  // Portal avatar lives on the contact row (portal_avatar_* columns).
+  if (entityType === "avatar_portal") return "contact";
   if (entityType === "bank_account") return "bank_account";
   return null;
 }

@@ -1239,6 +1239,7 @@ export function useWorkspaceApiRows({
     setLiveMeetingsById,
     liveDeletedMeetingIds,
     liveContactsById,
+    setLiveContactsById,
     liveDeletedContactIds,
     liveOrganizationsById,
     liveDeletedOrganizationIds,

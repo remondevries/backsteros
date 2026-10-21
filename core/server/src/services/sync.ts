@@ -340,6 +340,8 @@ function contactSnapshot(row: typeof contacts.$inferSelect) {
     summary: row.summary,
     avatar_storage_key: row.avatarStorageKey,
     avatar_content_type: row.avatarContentType,
+    portal_avatar_storage_key: row.portalAvatarStorageKey ?? null,
+    portal_avatar_content_type: row.portalAvatarContentType ?? null,
     sort_order: row.sortOrder,
     phone: row.phone,
     phones: JSON.stringify(row.phones ?? []),
@@ -1333,6 +1335,8 @@ const contactKeys = {
   portal_settings: "portalSettings",
   avatar_storage_key: "avatarStorageKey",
   avatar_content_type: "avatarContentType",
+  portal_avatar_storage_key: "portalAvatarStorageKey",
+  portal_avatar_content_type: "portalAvatarContentType",
 };
 
 function normalizeOrganizationSyncPayload(

@@ -87,9 +87,12 @@ export async function subscribeEmailInboxEvents(input: {
   // without rejecting read), we never reconnect and miss webhook fan-out.
   const idleMs = 45_000;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Idle recycle must not surface as "Email live updates are disconnected". */
+  let idleRecycle = false;
   const armIdle = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
+      idleRecycle = true;
       void reader.cancel().catch(() => {});
     }, idleMs);
   };
@@ -136,7 +139,7 @@ export async function subscribeEmailInboxEvents(input: {
       }
     }
   } catch (error) {
-    if (input.signal.aborted) return;
+    if (input.signal.aborted || idleRecycle) return;
     input.onError?.(error);
     throw error;
   } finally {

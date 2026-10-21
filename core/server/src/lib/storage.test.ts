@@ -356,6 +356,10 @@ test("storage keys follow Obsidian vault layout", () => {
     ".backsteros/avatars/contact_1/avatar",
   );
   assert.equal(
+    buildPrivateStorageKey("ws_123", "avatars", "contact_1", "avatar-portal"),
+    ".backsteros/avatars/contact_1/avatar-portal",
+  );
+  assert.equal(
     buildPrivateStorageKey(
       "ws_123",
       "attachments",

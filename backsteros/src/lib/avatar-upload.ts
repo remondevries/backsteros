@@ -4,9 +4,15 @@ export type DesktopAvatarActionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+export type DesktopAvatarKind =
+  | "contact"
+  | "avatar_portal"
+  | "organization"
+  | "bank_account";
+
 export async function uploadDesktopAvatar(
   client: BacksterosApiClient,
-  kind: "contact" | "organization" | "bank_account",
+  kind: DesktopAvatarKind,
   entityId: string,
   file: File,
 ): Promise<DesktopAvatarActionResult> {
@@ -24,7 +30,7 @@ export async function uploadDesktopAvatar(
 
 export async function removeDesktopAvatar(
   client: BacksterosApiClient,
-  kind: "contact" | "organization" | "bank_account",
+  kind: DesktopAvatarKind,
   entityId: string,
 ): Promise<DesktopAvatarActionResult> {
   try {

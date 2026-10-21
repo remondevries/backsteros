@@ -99,9 +99,12 @@ export async function subscribeAgentPresenceEvents(input: {
   let buffer = "";
   const idleMs = 45_000;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Idle recycle must not surface as "Agent presence is disconnected". */
+  let idleRecycle = false;
   const armIdle = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
+      idleRecycle = true;
       void reader.cancel().catch(() => {});
     }, idleMs);
   };
@@ -133,7 +136,7 @@ export async function subscribeAgentPresenceEvents(input: {
       }
     }
   } catch (error) {
-    if (input.signal.aborted) return;
+    if (input.signal.aborted || idleRecycle) return;
     input.onError?.(error);
     throw error;
   } finally {

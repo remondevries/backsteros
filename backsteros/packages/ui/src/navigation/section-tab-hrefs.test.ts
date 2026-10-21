@@ -124,7 +124,7 @@ test("project letters keep default section tabs so digit 1 goes to Overview", ()
   );
 });
 
-test("standalone contact card tabs are Activity / Details / More (expand)", () => {
+test("standalone contact card tabs are Activity / Details / expand (no portal)", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/contacts/c-1"), [
     "/contacts/c-1",
     "/contacts/c-1/details",
@@ -143,6 +143,40 @@ test("standalone contact card tabs are Activity / Details / More (expand)", () =
       "/contacts/c-1?contactLayout=page&crmGroup=g1",
     ],
   );
+});
+
+test("standalone contact card tabs include Portal / Logs before expand when mounted", () => {
+  const previousDocument = globalThis.document;
+  globalThis.document = {
+    querySelector: (selector: string) =>
+      selector === "[data-contact-card-section-ids]"
+        ? {
+            getAttribute: (name: string) =>
+              name === "data-contact-card-section-ids"
+                ? "overview,details,portal,logs"
+                : null,
+          }
+        : null,
+  } as unknown as Document;
+
+  try {
+    assert.deepEqual(resolveDesktopSectionTabHrefs("/contacts/c-1"), [
+      "/contacts/c-1",
+      "/contacts/c-1/details",
+      "/contacts/c-1/portal",
+      "/contacts/c-1/logs",
+      "/contacts/c-1?contactLayout=page",
+    ]);
+    assert.deepEqual(resolveDesktopSectionTabHrefs("/contacts/c-1/portal"), [
+      "/contacts/c-1",
+      "/contacts/c-1/details",
+      "/contacts/c-1/portal",
+      "/contacts/c-1/logs",
+      "/contacts/c-1/portal?contactLayout=page",
+    ]);
+  } finally {
+    globalThis.document = previousDocument;
+  }
 });
 
 test("expanded contact overlay disables section-tab number shortcuts", () => {

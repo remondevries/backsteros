@@ -2318,6 +2318,9 @@ const contactWritableFieldsSchema = z.object({
   /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
   avatarStorageKey: z.string().nullable().optional(),
   avatarContentType: z.string().nullable().optional(),
+  /** Portal avatar blob key — set via `avatar_portal` PUT / sync. */
+  portalAvatarStorageKey: z.string().nullable().optional(),
+  portalAvatarContentType: z.string().nullable().optional(),
   /** Client portal login username (unique per workspace when set). */
   portalUsername: z.string().trim().min(1).max(128).nullable().optional(),
   /**
@@ -2365,6 +2368,9 @@ export const contactSchema = z.object({
   summary: z.string().nullable(),
   avatarStorageKey: z.string().nullable(),
   avatarContentType: z.string().nullable(),
+  /** Client portal avatar — not the personal contact photo. */
+  portalAvatarStorageKey: z.string().nullable().optional(),
+  portalAvatarContentType: z.string().nullable().optional(),
   sortOrder: z.number().int(),
   phone: z.string().nullable(),
   phones: z.array(

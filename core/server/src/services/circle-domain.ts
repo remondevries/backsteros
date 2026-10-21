@@ -91,6 +91,8 @@ type ContactInput = {
   summary?: string | null;
   avatarStorageKey?: string | null;
   avatarContentType?: string | null;
+  portalAvatarStorageKey?: string | null;
+  portalAvatarContentType?: string | null;
   sortOrder?: number;
   phone?: string | null;
   phones?: { label: "personal" | "work" | "other"; number: string }[];
@@ -1758,6 +1760,12 @@ export async function reorderLetterAttachments(
   });
 }
 
+function avatarObjectFileName(entityType: string): string {
+  // Portal avatar shares the contact id but must not overwrite the personal blob.
+  if (entityType === "avatar_portal") return "avatar-portal";
+  return "avatar";
+}
+
 export async function putAvatar(
   workspaceId: string,
   entityType: string,
@@ -1768,7 +1776,12 @@ export async function putAvatar(
 ) {
   const updateEntityColumns = options?.updateEntityColumns !== false;
   const id = newId();
-  const key = buildPrivateStorageKey(workspaceId, "avatars", entityId, "avatar");
+  const key = buildPrivateStorageKey(
+    workspaceId,
+    "avatars",
+    entityId,
+    avatarObjectFileName(entityType),
+  );
   const stored = await putObject(key, bytes, contentType);
   const [row] = await db
     .insert(avatars)
@@ -1805,6 +1818,15 @@ export async function putAvatar(
       await db
         .update(contacts)
         .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
+        .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
+    } else if (entityType === "avatar_portal") {
+      await db
+        .update(contacts)
+        .set({
+          portalAvatarStorageKey: key,
+          portalAvatarContentType: contentType,
+          updatedAt: new Date(),
+        })
         .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
     } else if (entityType === "bank_account") {
       await db
@@ -1898,6 +1920,17 @@ export async function deleteAvatar(
         .set({
           avatarStorageKey: null,
           avatarContentType: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
+        );
+    } else if (entityType === "avatar_portal") {
+      await db
+        .update(contacts)
+        .set({
+          portalAvatarStorageKey: null,
+          portalAvatarContentType: null,
           updatedAt: new Date(),
         })
         .where(

@@ -796,10 +796,18 @@ export function registerLetterRoutes(app: Hono) {
                   avatarContentType: row.contentType,
                 })
               : syncEntity === "contact"
-                ? buildContactRestPayload(entityId, {
-                    avatarStorageKey: row.storageKey,
-                    avatarContentType: row.contentType,
-                  })
+                ? buildContactRestPayload(
+                    entityId,
+                    entityType === "avatar_portal"
+                      ? {
+                          portalAvatarStorageKey: row.storageKey,
+                          portalAvatarContentType: row.contentType,
+                        }
+                      : {
+                          avatarStorageKey: row.storageKey,
+                          avatarContentType: row.contentType,
+                        },
+                  )
                 : buildBankAccountRestPayload(entityId, {
                     avatarStorageKey: row.storageKey,
                     avatarContentType: row.contentType,
@@ -986,10 +994,18 @@ export function registerLetterRoutes(app: Hono) {
                 avatarContentType: null,
               })
             : syncEntity === "contact"
-              ? buildContactRestPayload(entityId, {
-                  avatarStorageKey: null,
-                  avatarContentType: null,
-                })
+              ? buildContactRestPayload(
+                  entityId,
+                  entityType === "avatar_portal"
+                    ? {
+                        portalAvatarStorageKey: null,
+                        portalAvatarContentType: null,
+                      }
+                    : {
+                        avatarStorageKey: null,
+                        avatarContentType: null,
+                      },
+                )
               : buildBankAccountRestPayload(entityId, {
                   avatarStorageKey: null,
                   avatarContentType: null,

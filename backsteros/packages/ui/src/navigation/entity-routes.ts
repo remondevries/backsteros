@@ -123,6 +123,8 @@ export type ContactListItem = {
   region?: string | null;
   country?: string | null;
   avatarStorageKey?: string | null;
+  /** Client portal avatar (separate from personal `avatarStorageKey`). */
+  portalAvatarStorageKey?: string | null;
   avatarUpdatedAt?: number | null;
   /** Epoch ms for recency (command palette recent list). */
   updatedAt?: number | null;

@@ -122,6 +122,8 @@ export const CONTACT_LIST_COLUMNS = [
   "title",
   "avatar_storage_key",
   "avatar_content_type",
+  "portal_avatar_storage_key",
+  "portal_avatar_content_type",
   "sort_order",
   "phone",
   "phones",

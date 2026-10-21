@@ -727,22 +727,27 @@
 }
 
 .contact-overview__header {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 16px;
-  text-align: left;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.contact-overview__cover {
+  flex-shrink: 0;
+  width: 100%;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
 }
 
 .contact-overview__chrome {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
-}
-
-.contact-overview__avatar {
-  flex-shrink: 0;
 }
 
 .contact-overview__identity {
@@ -750,8 +755,8 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
 .contact-overview__identity .overview-name-editor__button,
@@ -760,7 +765,7 @@
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.3;
-  text-align: left;
+  text-align: center;
 }
 
 .overview-name-editor__placeholder {
@@ -772,6 +777,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
@@ -779,8 +785,8 @@
 
 .contact-overview__groups-dropdown {
   display: inline-flex;
-  margin-left: auto;
-  max-width: min(100%, 14rem);
+  justify-content: center;
+  max-width: 100%;
   min-width: 0;
   flex-shrink: 0;
 }
@@ -792,11 +798,48 @@
   min-width: 0;
 }
 
+.contact-overview__groups-trigger {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  padding-block: 2px;
+}
+
+/* Beat `.property-dropdown-trigger--inline-chip` so badges sit bare — no
+   shared pill outline / fill around the group labels. */
+.contact-overview__groups-trigger.contact-overview__groups-trigger--badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: auto;
+  min-height: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.contact-overview__groups-trigger.contact-overview__groups-trigger--badges:hover:not(:disabled),
+.contact-overview__groups-trigger.contact-overview__groups-trigger--badges.is-open,
+.contact-overview__groups-trigger.contact-overview__groups-trigger--badges:focus-visible {
+  border: none;
+  background: transparent;
+}
+
+.contact-overview__groups-trigger--badges .crm-group-label {
+  /* Nested badges are decorative — the outer button opens the picker. */
+  pointer-events: none;
+}
+
 .contact-overview__name-row .overview-name-editor {
   display: inline-flex;
   flex: 0 0 auto;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   width: max-content;
   min-width: 0;
   max-width: 100%;
@@ -874,13 +917,14 @@
 }
 
 .contact-overview__header .entity-overview__display-id {
-  text-align: left;
+  text-align: center;
 }
 
 .contact-overview__subtitle {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0 0.3em;
   margin: 0;
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
@@ -937,8 +981,6 @@
   display: inline-flex;
   max-width: min(100%, 22rem);
   min-width: 0;
-  /* Cancel trigger padding-left so "at" ↔ icon spacing matches title ↔ "at". */
-  margin-inline-start: -4px;
 }
 
 .contact-overview__org-dropdown .searchable-dropdown-root,
@@ -2716,6 +2758,25 @@ button.entity-overview-subgroup__header:focus-visible {
   gap: 4px;
 }
 
+.contact-portal-tab__avatar-field {
+  align-items: center;
+}
+
+.contact-portal-tab__avatar {
+  display: inline-flex;
+  justify-content: center;
+}
+
+.contact-portal-tab__avatar .avatar-upload {
+  width: auto;
+}
+
+.contact-portal-tab__avatar .avatar-upload__frame,
+.contact-portal-tab__avatar .avatar-upload__button {
+  width: 56px;
+  height: 56px;
+}
+
 .contact-portal-tab__field-label {
   font-size: 0.75rem;
   font-weight: 500;
@@ -3105,7 +3166,24 @@ button.entity-overview-subgroup__header:focus-visible {
   padding: 8px 8px 0;
 }
 
-.contact-section-tabs,
+.contact-section-tabs {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+
+.contact-overview__chrome .contact-section-tabs {
+  margin-top: 0;
+}
+
+.contact-section-tabs .segmented-pill-toggle {
+  width: auto;
+  max-width: 100%;
+}
+
 .organization-section-tabs,
 .meeting-detail-view__tabs {
   width: 100%;
@@ -3113,12 +3191,10 @@ button.entity-overview-subgroup__header:focus-visible {
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
-.contact-overview__chrome .contact-section-tabs,
 .organization-overview__chrome .organization-section-tabs {
   margin-top: 0;
 }
 
-.contact-section-tabs__nav.app-pill-nav,
 .organization-section-tabs__nav.app-pill-nav,
 .meeting-detail-view__tabs-nav.app-pill-nav {
   display: flex;
@@ -3131,7 +3207,6 @@ button.entity-overview-subgroup__header:focus-visible {
   border-radius: 0;
 }
 
-.contact-section-tabs__nav .app-pill-nav-item,
 .organization-section-tabs__nav .app-pill-nav-item,
 .meeting-detail-view__tabs-nav .app-pill-nav-item {
   flex: 0 0 auto;
@@ -3148,14 +3223,12 @@ button.entity-overview-subgroup__header:focus-visible {
   margin-bottom: -1px;
 }
 
-.contact-section-tabs__nav .app-pill-nav-item:hover,
 .organization-section-tabs__nav .app-pill-nav-item:hover,
 .meeting-detail-view__tabs-nav .app-pill-nav-item:hover {
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 78%, transparent);
 }
 
-.contact-section-tabs__nav .app-pill-nav-item.is-active,
 .organization-section-tabs__nav .app-pill-nav-item.is-active,
 .meeting-detail-view__tabs-nav .app-pill-nav-item.is-active {
   background: transparent;
@@ -3164,7 +3237,6 @@ button.entity-overview-subgroup__header:focus-visible {
   box-shadow: none;
 }
 
-.contact-section-tabs__nav .app-pill-nav-item-count,
 .organization-section-tabs__nav .app-pill-nav-item-count,
 .meeting-detail-view__tabs-nav .app-pill-nav-item-count {
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
@@ -3215,9 +3287,14 @@ button.entity-overview-subgroup__header:focus-visible {
   flex: 1;
   gap: 0;
   overflow: hidden;
-  /* Tabs sit full-bleed; header + scroll keep the inset. */
-  padding-inline: 0;
-  padding-bottom: 0;
+  /* Cover + tabs sit full-bleed; identity + scroll keep the inset. */
+  padding: 0;
+}
+
+.contact-detail__overview .contact-overview__chrome {
+  /* Pull identity (badges → title → name) up over the cover fade. */
+  margin-top: -36px;
+  padding-top: 0;
 }
 
 .contact-detail__overview .contact-overview__header {
@@ -3236,24 +3313,15 @@ button.entity-overview-subgroup__header:focus-visible {
 }
 
 .contact-detail__avatar {
-  display: inline-flex;
-  width: 64px;
-  height: 64px;
+  display: flex;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   align-items: center;
   justify-content: center;
-  border: 0.5px solid rgb(255 255 255 / 0.1);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 0.05);
+  border: none;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
   color: color-mix(in srgb, var(--foreground) 75%, transparent);
-}
-
-.contact-overview__avatar .avatar-upload__button {
-  width: 64px;
-  height: 64px;
-}
-
-.contact-overview__avatar .avatar-upload__meta {
-  max-width: 64px;
 }
 
 /* Contacts / organizations / catalog domains — list + right profile rail. */
@@ -3570,15 +3638,55 @@ button.entity-overview-subgroup__header:focus-visible {
   position: relative;
 }
 
-.contact-detail-panel__body .entity-overview {
-  /* Clear absolute expand/hide chrome above the avatar/title. */
+.contact-detail-panel__body .contact-overview.entity-overview {
+  /* Cover sits flush under expand/hide; chrome floats over the photo. */
+  padding-top: 0;
+}
+
+.contact-detail-panel__body .organization-overview.entity-overview {
+  /* Orgs still use the circular mark — clear the absolute chrome. */
   padding-top: 32px;
 }
 
-/* Hide toggle only — expand sits in the top chrome gutter, not beside the name. */
-.contact-detail-panel__body .contact-overview__header,
+/* Orgs keep room for the hide toggle beside the name; contacts are centered. */
 .contact-detail-panel__body .organization-overview__header {
   padding-right: 36px;
+}
+
+.contact-detail-panel__body .contact-overview__cover {
+  position: relative;
+}
+
+/* Top scrim keeps expand/hide readable; bottom fade blends into the panel. */
+.contact-detail-panel__body .contact-overview__cover::before,
+.contact-detail-panel__body .contact-overview__cover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.contact-detail-panel__body .contact-overview__cover::before {
+  top: 0;
+  height: 56px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--background) 55%, transparent),
+    transparent
+  );
+}
+
+.contact-detail-panel__body .contact-overview__cover::after {
+  bottom: 0;
+  height: 42%;
+  background: linear-gradient(
+    to top,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 72%, transparent) 35%,
+    transparent 100%
+  );
 }
 
 .contact-detail-panel__body {

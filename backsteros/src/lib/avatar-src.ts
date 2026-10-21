@@ -10,7 +10,7 @@ type AvatarEntity = {
   avatarUpdatedAt?: number | null;
 };
 
-type AvatarKind = "contact" | "organization" | "bank_account";
+type AvatarKind = "contact" | "avatar_portal" | "organization" | "bank_account";
 
 const avatarObjectUrlCache = new Map<string, string>();
 

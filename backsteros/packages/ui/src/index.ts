@@ -4026,11 +4026,13 @@ export {
 } from "./components/letters/scoped-letters-list-view.js";
 
 export {
+  CONTACT_CARD_SECTION_IDS_ATTR,
   CONTACT_CARD_SECTIONS,
   CONTACT_PORTAL_SECTION,
   CONTACT_PORTAL_LOGS_SECTION,
   CONTACT_SECTIONS,
   CONTACT_SECTION_IDS,
+  contactExpandedWorkspaceDigitStartIndex,
   getActiveContactSection,
   getContactSectionHref,
   getContactSectionSegment,
@@ -4038,6 +4040,7 @@ export {
   isContactSectionDetailPath,
   isContactSectionId,
   parseContactSectionId,
+  readContactCardSectionIdsFromDom,
   resolveContactCardSections,
   shouldShowContactNav,
   type ContactSectionConfig,

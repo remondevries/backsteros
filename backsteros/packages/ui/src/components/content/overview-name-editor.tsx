@@ -315,7 +315,20 @@ export function OverviewNameEditor({
 
   const syncKey = `${resetKey ?? ""}|${value}`;
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
-  if (syncKey !== prevSyncKey) {
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    // Entity switch (e.g. another contact) — never keep the prior row's
+    // optimistic pending name or last names bleed across selections
+    // ("Erwin" + stuck "Snijder").
+    setPrevResetKey(resetKey);
+    setPrevSyncKey(syncKey);
+    setPendingDisplayName(null);
+    setDraft(value);
+    setEditing(false);
+    setError(null);
+    setHasAutoEdited(false);
+    fitSeededRef.current = false;
+  } else if (syncKey !== prevSyncKey) {
     setPrevSyncKey(syncKey);
     if (pendingDisplayName != null && value === pendingDisplayName) {
       setPendingDisplayName(null);

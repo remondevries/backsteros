@@ -6,7 +6,7 @@ import { MoneybirdIcon } from "../icons/moneybird-icon.js";
 
 export type AvatarActionResult = { ok: true } | { ok: false; error: string };
 
-export type AvatarUploadShape = "circle" | "rounded-square";
+export type AvatarUploadShape = "circle" | "rounded-square" | "cover";
 
 export type AvatarUploadProps = {
   displayName: string;
@@ -14,7 +14,10 @@ export type AvatarUploadProps = {
   onUpload: (file: File) => Promise<AvatarActionResult>;
   onRemove?: () => Promise<AvatarActionResult>;
   onSuccess?: () => void;
-  /** Defaults to circle (contacts/orgs). Bank accounts use rounded-square. */
+  /**
+   * Defaults to circle (orgs). Bank accounts use rounded-square.
+   * Contact detail rails use cover (edge-to-edge hero).
+   */
   shape?: AvatarUploadShape;
   /** When true, accept SVG uploads in addition to raster formats. */
   allowSvg?: boolean;
@@ -58,8 +61,8 @@ function TrashIcon() {
 }
 
 /**
- * Avatar upload/remove control — circular by default (contacts/orgs),
- * optional rounded-square + SVG for bank logos.
+ * Avatar upload/remove control — circular by default (orgs),
+ * optional rounded-square + SVG for bank logos, cover for contact rails.
  */
 export function AvatarUpload({
   displayName,
@@ -141,7 +144,14 @@ export function AvatarUpload({
   const showMeta = showHint || showTextRemove || Boolean(error);
 
   return (
-    <div className="avatar-upload">
+    <div
+      className={[
+        "avatar-upload",
+        shape === "cover" ? "avatar-upload--cover" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="avatar-upload__frame">
         <button
           type="button"
@@ -150,6 +160,7 @@ export function AvatarUpload({
             shape === "rounded-square"
               ? "avatar-upload__button--rounded-square"
               : null,
+            shape === "cover" ? "avatar-upload__button--cover" : null,
             showImage ? "avatar-upload__button--image" : null,
           ]
             .filter(Boolean)

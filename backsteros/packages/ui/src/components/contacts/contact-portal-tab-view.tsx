@@ -10,6 +10,10 @@ import {
   type ContactPortalSettings,
 } from "@backsteros/contracts";
 
+import {
+  AvatarUpload,
+  type AvatarActionResult,
+} from "../entity/avatar-upload.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { SwitchToggle } from "../shared/switch-toggle.js";
@@ -53,6 +57,12 @@ export type ContactPortalTabViewProps = {
   onSendPasswordReset?: () => void | Promise<void>;
   /** Staff: invite the contact to choose their own portal password. */
   onSendInvite?: () => void | Promise<void>;
+  /** Display name for the portal avatar control. */
+  displayName?: string;
+  /** Object URL / blob URL for the portal avatar (not the personal contact photo). */
+  portalAvatarSrc?: string | null;
+  onUploadPortalAvatar?: (file: File) => Promise<AvatarActionResult>;
+  onRemovePortalAvatar?: () => Promise<AvatarActionResult>;
 };
 
 function SettingToggleRow({
@@ -159,6 +169,10 @@ export function ContactPortalTabView({
   onSave,
   onSendPasswordReset,
   onSendInvite,
+  displayName = "Contact",
+  portalAvatarSrc = null,
+  onUploadPortalAvatar,
+  onRemovePortalAvatar,
 }: ContactPortalTabViewProps) {
   const settingsContentKey = JSON.stringify(normalizePortalSettings(settings));
   const initial = useMemo(
@@ -455,6 +469,20 @@ export function ContactPortalTabView({
   return (
     <div className="contact-portal-tab entity-overview__details flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
       <EntityOverviewSubgroup title="Account">
+        {onUploadPortalAvatar ? (
+          <div className="contact-portal-tab__field contact-portal-tab__avatar-field">
+            <div className="contact-portal-tab__avatar">
+              <AvatarUpload
+                displayName={displayName}
+                avatarSrc={portalAvatarSrc}
+                shape="circle"
+                showHint={false}
+                onUpload={onUploadPortalAvatar}
+                onRemove={onRemovePortalAvatar}
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="contact-portal-tab__field">
           <span className="contact-portal-tab__field-label">Username</span>
           {emailOptions.length === 0 && !username.trim() ? (

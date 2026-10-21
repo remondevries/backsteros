@@ -576,6 +576,9 @@ export function mapContact(
     region: (contact as { region?: string | null }).region ?? null,
     country: contact.country ?? null,
     avatarStorageKey: contact.avatarStorageKey ?? null,
+    portalAvatarStorageKey:
+      (contact as { portalAvatarStorageKey?: string | null })
+        .portalAvatarStorageKey ?? null,
     avatarUpdatedAt: asEpoch(contact.updatedAt),
     updatedAt: asEpoch(contact.updatedAt),
     birthday: contact.birthday ?? null,

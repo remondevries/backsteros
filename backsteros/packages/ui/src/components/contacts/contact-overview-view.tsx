@@ -30,7 +30,10 @@ import {
   formatRegionLabel,
 } from "../../geo/country-region.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
-import { CrmGroupColorDot } from "../crm/crm-group-label.js";
+import {
+  CrmGroupColorDot,
+  CrmGroupLabel,
+} from "../crm/crm-group-label.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { EntityAddressFields } from "../shared/entity-address-fields.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
@@ -236,7 +239,7 @@ export function formatContactAddressLine(parts: {
 }
 
 /**
- * Presentational contact overview — name + details fields (no avatar upload).
+ * Presentational contact overview — edge-to-edge cover, name, and details.
  */
 export function ContactOverviewView({
   contact,
@@ -659,23 +662,17 @@ export function ContactOverviewView({
       })),
     [groupOptions],
   );
-  const selectedGroupOptions = useMemo(
+  const selectedGroups = useMemo(
     () =>
-      groupDropdownOptions.filter((option) =>
-        selectedGroupIds.includes(option.value),
+      (groupOptions ?? []).filter((group) =>
+        selectedGroupIds.includes(group.id),
       ),
-    [groupDropdownOptions, selectedGroupIds],
+    [groupOptions, selectedGroupIds],
   );
-  const groupsTriggerLabel =
-    selectedGroupOptions.length === 0
-      ? "No groups"
-      : selectedGroupOptions.length === 1
-        ? selectedGroupOptions[0]!.label
-        : `${selectedGroupOptions.length} groups`;
-  const groupsTriggerIcon =
-    selectedGroupOptions[0]?.icon ?? (
-      <CrmGroupColorDot color={null} size={10} />
-    );
+  const groupsTriggerAriaLabel =
+    selectedGroups.length === 0
+      ? "Add group"
+      : `Groups: ${selectedGroups.map((group) => group.name).join(", ")}`;
 
   const detailsFields = (
     <section className="entity-overview__details contact-details" aria-label="Contact details">
@@ -939,12 +936,121 @@ export function ContactOverviewView({
 
   return (
     <article className="entity-overview contact-overview">
+      {headerAccessory ? (
+        <div className="contact-overview__cover">{headerAccessory}</div>
+      ) : null}
       <div className="contact-overview__chrome">
       <header className="entity-overview__header contact-overview__header">
-        {headerAccessory ? (
-          <div className="contact-overview__avatar">{headerAccessory}</div>
-        ) : null}
         <div className="contact-overview__identity">
+          {groupOptions ? (
+            <div className="contact-overview__groups-dropdown">
+              <SearchableDropdown
+                multiple
+                values={selectedGroupIds}
+                options={groupDropdownOptions}
+                onValuesChange={(next) => {
+                  setSelectedGroupIds(next);
+                  onMemberGroupIdsChange?.(next);
+                }}
+                searchPlaceholder="Search groups…"
+                ariaLabel="Groups"
+                emptySelectionLabel="Add group"
+                className="property-dropdown property-dropdown--inline-chip"
+                panelAlign="start"
+                panelWidth={280}
+                renderTrigger={({
+                  open,
+                  disabled,
+                  triggerId,
+                  onToggle,
+                }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label={groupsTriggerAriaLabel}
+                    title={groupsTriggerAriaLabel}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggle();
+                    }}
+                    className={[
+                      "property-dropdown-trigger",
+                      "property-dropdown-trigger--inline-chip",
+                      "contact-overview__groups-trigger",
+                      "contact-overview__groups-trigger--badges",
+                      open ? "is-open" : null,
+                      selectedGroups.length === 0 ? "is-muted" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    {selectedGroups.length > 0 ? (
+                      selectedGroups.map((group) => (
+                        <CrmGroupLabel
+                          key={group.id}
+                          name={group.name}
+                          color={group.color}
+                          compact
+                        />
+                      ))
+                    ) : (
+                      <span className="property-dropdown-trigger__label">
+                        Add group
+                      </span>
+                    )}
+                  </button>
+                )}
+              />
+            </div>
+          ) : null}
+          <div className="contact-overview__subtitle">
+            <OverviewNameEditor
+              value={title}
+              entityLabel="Add title"
+              resetKey={`${contact.id}:title`}
+              allowEmpty
+              fitContent
+              as="span"
+              titleClassName="contact-overview__job-title"
+              onSave={(next) => {
+                saveTitle(next);
+                return { ok: true };
+              }}
+            />
+            <span className="contact-overview__subtitle-at" aria-hidden="true">
+              ·
+            </span>
+            <span className="contact-overview__org-dropdown">
+              <PropertyDropdown
+                value={organizationId || DROPDOWN_NONE_VALUE}
+                options={organizationDropdownOptions}
+                onChange={(next) => {
+                  const resolved = resolveDropdownNone(next) ?? "";
+                  setOrganizationId(resolved);
+                  persist({
+                    organizationId: resolved || null,
+                  });
+                }}
+                searchPlaceholder="Search organizations…"
+                ariaLabel="Organization"
+                fallbackIcon={<OrganizationIcon size={14} />}
+                fallbackLabel="No organization"
+                mutedFallback
+                panelAlign="start"
+                panelWidth={280}
+                createFromQueryLabel={
+                  onCreateOrganizationFromQuery
+                    ? (query) =>
+                        getCreateEntityFromQueryLabel("organization", query)
+                    : undefined
+                }
+                onCreateFromQuery={onCreateOrganizationFromQuery}
+              />
+            </span>
+          </div>
           <div className="contact-overview__name-row">
             <OverviewNameEditor
               value={firstName}
@@ -1011,108 +1117,6 @@ export function ContactOverviewView({
                 return result;
               }}
             />
-            {groupOptions ? (
-              <span className="contact-overview__groups-dropdown">
-                <SearchableDropdown
-                  multiple
-                  values={selectedGroupIds}
-                  options={groupDropdownOptions}
-                  onValuesChange={(next) => {
-                    setSelectedGroupIds(next);
-                    onMemberGroupIdsChange?.(next);
-                  }}
-                  searchPlaceholder="Search groups…"
-                  ariaLabel="Groups"
-                  emptySelectionLabel="No groups"
-                  className="property-dropdown property-dropdown--inline-chip"
-                  panelAlign="end"
-                  panelWidth={280}
-                  renderTrigger={({
-                    open,
-                    disabled,
-                    triggerId,
-                    onToggle,
-                  }) => (
-                    <button
-                      type="button"
-                      id={triggerId}
-                      disabled={disabled}
-                      aria-haspopup="listbox"
-                      aria-expanded={open}
-                      aria-label={`Groups: ${groupsTriggerLabel}`}
-                      title={groupsTriggerLabel}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggle();
-                      }}
-                      className={[
-                        "property-dropdown-trigger",
-                        "property-dropdown-trigger--inline-chip",
-                        open ? "is-open" : null,
-                        selectedGroupIds.length === 0 ? "is-muted" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      <span
-                        className="property-dropdown-trigger__icon"
-                        aria-hidden="true"
-                      >
-                        {groupsTriggerIcon}
-                      </span>
-                      <span className="property-dropdown-trigger__label">
-                        {groupsTriggerLabel}
-                      </span>
-                    </button>
-                  )}
-                />
-              </span>
-            ) : null}
-          </div>
-          <div className="contact-overview__subtitle">
-            <OverviewNameEditor
-              value={title}
-              entityLabel="Add title"
-              resetKey={`${contact.id}:title`}
-              allowEmpty
-              fitContent
-              as="span"
-              titleClassName="contact-overview__job-title"
-              onSave={(next) => {
-                saveTitle(next);
-                return { ok: true };
-              }}
-            />
-            <span className="contact-overview__subtitle-at" aria-hidden="true">
-              ·
-            </span>
-            <span className="contact-overview__org-dropdown">
-              <PropertyDropdown
-                value={organizationId || DROPDOWN_NONE_VALUE}
-                options={organizationDropdownOptions}
-                onChange={(next) => {
-                  const resolved = resolveDropdownNone(next) ?? "";
-                  setOrganizationId(resolved);
-                  persist({
-                    organizationId: resolved || null,
-                  });
-                }}
-                searchPlaceholder="Search organizations…"
-                ariaLabel="Organization"
-                fallbackIcon={<OrganizationIcon size={14} />}
-                fallbackLabel="No organization"
-                mutedFallback
-                panelAlign="start"
-                panelWidth={280}
-                createFromQueryLabel={
-                  onCreateOrganizationFromQuery
-                    ? (query) =>
-                        getCreateEntityFromQueryLabel("organization", query)
-                    : undefined
-                }
-                onCreateFromQuery={onCreateOrganizationFromQuery}
-              />
-            </span>
           </div>
           {addressLine ? (
             <p className="contact-overview__subtitle contact-overview__subtitle--muted">

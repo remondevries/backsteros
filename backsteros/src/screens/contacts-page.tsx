@@ -24,6 +24,7 @@ import {
   CONTACT_DETAIL_EXPAND_FADE_MS,
   CONTACT_EXPANDED_WORKSPACE_TAB_IDS,
   CONTACT_SECTIONS,
+  contactExpandedWorkspaceDigitStartIndex,
   ContactPortalTabView,
   ContactPortalLogsTabView,
   CrmActivityFeedView,
@@ -185,6 +186,9 @@ export function ContactsPage({
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
+  const [portalAvatarOverride, setPortalAvatarOverride] = useState<
+    string | null | undefined
+  >(undefined);
   const [mapboxConfigured, setMapboxConfigured] = useState(false);
   const [mapImageSrc, setMapImageSrc] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
@@ -195,6 +199,21 @@ export function ContactsPage({
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
     keepAliveFrozen ? [] : contacts,
+  );
+  const portalAvatarEntities = useMemo(
+    () =>
+      contacts
+        .filter((entry) => entry.portalAvatarStorageKey)
+        .map((entry) => ({
+          id: entry.id,
+          avatarStorageKey: entry.portalAvatarStorageKey,
+          avatarUpdatedAt: entry.avatarUpdatedAt,
+        })),
+    [contacts],
+  );
+  const portalAvatarSrcMap = useDesktopAvatarSrcMap(
+    "avatar_portal",
+    keepAliveFrozen ? [] : portalAvatarEntities,
   );
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
@@ -604,6 +623,10 @@ export function ContactsPage({
 
   useEffect(() => {
     setAvatarOverride(undefined);
+    setPortalAvatarOverride((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return undefined;
+    });
   }, [panelContactId]);
 
   // Keep Activity / Details / Portal in sync with the URL. Re-apply when the
@@ -1309,21 +1332,47 @@ export function ContactsPage({
       ) {
         const tabIndex = parseSectionTabIndex(event.key);
         if (tabIndex != null) {
-          const tab = CONTACT_EXPANDED_WORKSPACE_TAB_IDS[tabIndex];
-          if (tab) {
-            if (!shouldHandleGlobalShortcut(event)) return;
+          if (!shouldHandleGlobalShortcut(event)) return;
+          const cardCount = contactProfileSections.length;
+          // 1…N card sections (Activity / Details / Portal / Logs).
+          if (tabIndex < cardCount) {
+            const next = contactProfileSections[tabIndex]?.id;
+            if (!next) return;
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
-            setWorkspaceTab(tab);
-            if (workspaceDetail && selectedSlugValue) {
+            setCardSection(next);
+            if (!workspaceDetail && selectedSlugValue) {
               navigate(
                 getContactOverlayHref(selectedSlugValue, {
+                  section: next === "overview" ? undefined : next,
                   layout: "page",
                   groupId: effectiveGroupId,
                 }),
+                { replace: true },
               );
             }
+            return;
+          }
+          // N+1 = expand (already expanded — no-op).
+          const workspaceStart =
+            contactExpandedWorkspaceDigitStartIndex(cardCount);
+          if (tabIndex < workspaceStart) return;
+          // N+2… = Meetings / Emails / Tasks / Letters / Social.
+          const tab =
+            CONTACT_EXPANDED_WORKSPACE_TAB_IDS[tabIndex - workspaceStart];
+          if (!tab) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          setWorkspaceTab(tab);
+          if (workspaceDetail && selectedSlugValue) {
+            navigate(
+              getContactOverlayHref(selectedSlugValue, {
+                layout: "page",
+                groupId: effectiveGroupId,
+              }),
+            );
           }
           return;
         }
@@ -1346,12 +1395,13 @@ export function ContactsPage({
     beginDetailCollapseAnimation,
     closeOverlay,
     collapseOverlay,
+    contactProfileSections,
+    effectiveGroupId,
     isStandalone,
     keepAliveActive,
     navigate,
     overlayLayout,
     selected,
-    selectedGroupId,
     selectedSlugValue,
     workspaceDetail,
   ]);
@@ -1412,6 +1462,42 @@ export function ContactsPage({
             .map((entry) => entry.portalUsername?.trim().toLowerCase())
             .filter((value): value is string => Boolean(value))}
           error={portalSaveError}
+          displayName={contact.name}
+          portalAvatarSrc={
+            portalAvatarOverride === undefined
+              ? (portalAvatarSrcMap[contact.id] ?? null)
+              : portalAvatarOverride
+          }
+          onUploadPortalAvatar={async (file) => {
+            const result = await uploadDesktopAvatar(
+              client,
+              "avatar_portal",
+              contact.id,
+              file,
+            );
+            if (result.ok) {
+              const url = URL.createObjectURL(file);
+              setPortalAvatarOverride((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return url;
+              });
+            }
+            return result;
+          }}
+          onRemovePortalAvatar={async () => {
+            const result = await removeDesktopAvatar(
+              client,
+              "avatar_portal",
+              contact.id,
+            );
+            if (result.ok) {
+              setPortalAvatarOverride((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return null;
+              });
+            }
+            return result;
+          }}
           onSave={async ({ settings, portalUsername, portalPassword }) => {
             setPortalSaveError(null);
             try {
@@ -1771,7 +1857,6 @@ export function ContactsPage({
         sections={contactProfileSections}
         section={profileSection}
         onSectionChange={handleSectionChange}
-        onMore={isStandalone ? expandOverlay : undefined}
         renderSection={renderSection}
         relationshipsSlot={
           <ContactRelationshipsListView
@@ -1899,6 +1984,7 @@ export function ContactsPage({
           <AvatarUpload
             displayName={contact.name}
             avatarSrc={avatarSrc}
+            shape="cover"
             showHint={false}
             onUpload={async (file) => {
               const result = await uploadDesktopAvatar(

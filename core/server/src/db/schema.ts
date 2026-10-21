@@ -280,6 +280,9 @@ export const contacts = pgTable(
     summary: text("summary"),
     avatarStorageKey: text("avatar_storage_key"),
     avatarContentType: text("avatar_content_type"),
+    /** Client-portal avatar — separate from the personal contact photo. */
+    portalAvatarStorageKey: text("portal_avatar_storage_key"),
+    portalAvatarContentType: text("portal_avatar_content_type"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     phone: text("phone"),
     /** Labeled numbers (`{ label, number }[]`), including primary for its type. */

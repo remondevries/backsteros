@@ -46,6 +46,7 @@ import {
   fillMissingLinkedCommitShasFromApi,
   fillMissingLongTextFromApi,
   fillMissingMeetingPropertiesFromApi,
+  fillMissingAvatarFieldsFromApi,
   fillMissingMoneybirdContactIdFromApi,
   fillMissingNumberFromApi,
   fillMissingParentFromApi,
@@ -268,6 +269,7 @@ function useDesktopWorkspaceDataImpl(): {
     setLiveMeetingsById,
     liveDeletedMeetingIds,
     liveContactsById,
+    setLiveContactsById,
     liveDeletedContactIds,
     liveOrganizationsById,
     liveDeletedOrganizationIds,
@@ -500,38 +502,39 @@ function useDesktopWorkspaceDataImpl(): {
         (row) => snakeRow(row) as ApiOrganization,
       ) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiOrganizations);
-    return applyLiveEntityOverlay(
-      fillMissingLongTextFromApi(
-        fillMissingMoneybirdContactIdFromApi(
-          mergeLocalWithPendingApiCreates(
-            resolveLocalOrApiRows(localMapped, apiOrganizations),
-            apiOrganizations,
+    return fillMissingAvatarFieldsFromApi(
+      applyLiveEntityOverlay(
+        fillMissingLongTextFromApi(
+          fillMissingMoneybirdContactIdFromApi(
+            mergeLocalWithPendingApiCreates(
+              resolveLocalOrApiRows(localMapped, apiOrganizations),
+              apiOrganizations,
+            ),
+            fillFrom,
           ),
           fillFrom,
+          [
+            "summary",
+            "notes",
+            "size",
+            "socialAccounts",
+            "region",
+            "chamberOfCommerce",
+            "taxNumber",
+            "latitude",
+            "longitude",
+            "address",
+            "city",
+            "postalCode",
+            "country",
+            "emails",
+            "phones",
+          ],
         ),
-        fillFrom,
-        [
-          "summary",
-          "notes",
-          "size",
-          "socialAccounts",
-          "region",
-          "chamberOfCommerce",
-          "taxNumber",
-          "latitude",
-          "longitude",
-          "address",
-          "city",
-          "postalCode",
-          "country",
-          "emails",
-          "phones",
-          "avatarStorageKey",
-          "avatarContentType",
-        ],
+        liveOrganizationsById,
+        { deletedIds: liveDeletedOrganizationIds },
       ),
-      liveOrganizationsById,
-      { deletedIds: liveDeletedOrganizationIds },
+      apiOrganizations,
     );
   }, [
     apiOrganizations,
@@ -713,45 +716,46 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
-    return applyLiveEntityOverlay(
-      fillMissingLongTextFromApi(
-        // Same race as tasks: optimistic create lands in apiContacts before the
-        // PowerSync watch mirrors the INSERT — without this, the new contact is
-        // dropped from membership and open/create flashes "Not found".
-        mergeLocalWithPendingApiCreates(
-          resolveLocalOrApiRows(localMapped, apiContacts),
-          apiContacts,
+    return fillMissingAvatarFieldsFromApi(
+      applyLiveEntityOverlay(
+        fillMissingLongTextFromApi(
+          // Same race as tasks: optimistic create lands in apiContacts before the
+          // PowerSync watch mirrors the INSERT — without this, the new contact is
+          // dropped from membership and open/create flashes "Not found".
+          mergeLocalWithPendingApiCreates(
+            resolveLocalOrApiRows(localMapped, apiContacts),
+            apiContacts,
+          ),
+          fillFrom,
+          [
+            "summary",
+            "notes",
+            "title",
+            "birthday",
+            "firstName",
+            "lastName",
+            "organizationId",
+            "emails",
+            "phones",
+            "languages",
+            "socialAccounts",
+            "latitude",
+            "longitude",
+            "address",
+            "city",
+            "postalCode",
+            "country",
+            "region",
+            "portalUsername",
+            "portalSettings",
+          ],
         ),
-        fillFrom,
-        [
-          "summary",
-          "notes",
-          "title",
-          "birthday",
-          "firstName",
-          "lastName",
-          "organizationId",
-          "emails",
-          "phones",
-          "languages",
-          "socialAccounts",
-          "latitude",
-          "longitude",
-          "address",
-          "city",
-          "postalCode",
-          "country",
-          "region",
-          "portalUsername",
-          "portalSettings",
-          // Avatar keys — local PowerSync can lag; without these the inbox
-          // assignee mark never downloads and falls back to a letter.
-          "avatarStorageKey",
-          "avatarContentType",
-        ],
+        liveContactsById,
+        { deletedIds: liveDeletedContactIds },
       ),
-      liveContactsById,
-      { deletedIds: liveDeletedContactIds },
+      // Always — cold-start gating left avatar keys blank once SQLite had rows,
+      // and optimistic live overlays could omit them (Fandy etc. lost marks).
+      apiContacts,
     );
   }, [
     apiContacts,
@@ -963,6 +967,15 @@ function useDesktopWorkspaceDataImpl(): {
     [liveTasksById, localInboxTasks, localTasks],
   );
 
+  const getContactById = useCallback(
+    (id: string) => {
+      const fromLive = liveContactsById.get(id);
+      if (fromLive) return fromLive;
+      return rawContacts.find((contact) => contact.id === id) ?? null;
+    },
+    [liveContactsById, rawContacts],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -991,6 +1004,8 @@ function useDesktopWorkspaceDataImpl(): {
     getMeetingById,
     setLiveTasksById,
     getTaskById,
+    setLiveContactsById,
+    getContactById,
     getLocalTaskStatus,
   });
 
