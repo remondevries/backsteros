@@ -45,9 +45,36 @@ async function main() {
           "avatar-portal",
         );
 
-    if (sharedPersonalKey) {
-      const object = await getObject(key);
-      await putObject(portalKey, object.bytes, row.contentType);
+    // Ensure the portal blob exists at the portal key (DB may already point
+    // at avatar-portal after a metadata-only sync while the vault still only
+    // has the legacy shared `/avatar` object).
+    let portalBytes: Uint8Array | null = null;
+    try {
+      portalBytes = (await getObject(portalKey)).bytes;
+    } catch {
+      portalBytes = null;
+    }
+    if (!portalBytes) {
+      const sourceKey = sharedPersonalKey
+        ? key
+        : buildPrivateStorageKey(
+            row.workspaceId,
+            "avatars",
+            row.entityId,
+            "avatar",
+          );
+      try {
+        const object = await getObject(sourceKey);
+        await putObject(portalKey, object.bytes, row.contentType);
+      } catch (error) {
+        console.warn(
+          `skip blob copy contact=${row.entityId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    if (sharedPersonalKey || row.storageKey !== portalKey) {
       await db
         .update(avatars)
         .set({

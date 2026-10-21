@@ -1863,8 +1863,15 @@ export async function getAvatar(workspaceId: string, entityType: string, entityI
     .limit(1);
   if (!row) return null;
   assertPrivateStorageKey(workspaceId, row.storageKey);
-  const object = await getObject(row.storageKey);
-  return { row, bytes: object.bytes };
+  try {
+    const object = await getObject(row.storageKey);
+    return { row, bytes: object.bytes };
+  } catch (error) {
+    if (error instanceof Error && error.message === "STORAGE_OBJECT_NOT_FOUND") {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function deleteAvatar(
