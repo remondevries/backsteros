@@ -22,6 +22,7 @@ import * as circleService from "../services/circle-domain.js";
 import { hasCardDavScope } from "../services/carddav/auth.js";
 import { optimizeCardDavPhoto } from "../services/carddav/photo.js";
 import {
+  CARDDAV_CARD_REV,
   contactEtag,
   formatVCard,
   parseVCard,
@@ -213,7 +214,8 @@ async function collectionCtag(workspaceId: string): Promise<string> {
       and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt)),
     );
   const latest = row?.latest ?? new Date(0);
-  return `"ctag-${latest.getTime()}"`;
+  // Include card rev so clients re-sync when PHOTO policy changes.
+  return `"ctag-${latest.getTime()}-${CARDDAV_CARD_REV}"`;
 }
 
 async function personalPhoto(

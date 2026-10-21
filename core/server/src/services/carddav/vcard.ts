@@ -131,8 +131,14 @@ function photoTypeFromContentType(contentType: string): string {
   return "JPEG";
 }
 
+/**
+ * Bump when CardDAV wire representation changes (e.g. photo policy) so iOS
+ * invalidates cached etags and re-downloads address-data.
+ */
+export const CARDDAV_CARD_REV = "p3";
+
 export function contactEtag(contact: { id: string; updatedAt: Date }): string {
-  return `"${contact.updatedAt.getTime()}-${contact.id}"`;
+  return `"${contact.updatedAt.getTime()}-${contact.id}-${CARDDAV_CARD_REV}"`;
 }
 
 export function formatVCard(
@@ -187,7 +193,8 @@ export function formatVCard(
   if (photo?.bytes?.length) {
     const type = photoTypeFromContentType(photo.contentType || "image/jpeg");
     const b64 = Buffer.from(photo.bytes).toString("base64");
-    lines.push(`PHOTO;ENCODING=b;TYPE=${type}:${b64}`);
+    // ENCODING=B + TYPE=JPEG — iOS skips PHOTO when TYPE is missing (Apple/TB quirks).
+    lines.push(`PHOTO;ENCODING=B;TYPE=${type}:${b64}`);
   }
   lines.push(`REV:${contact.updatedAt.toISOString().replace(/\.\d{3}Z$/, "Z")}`);
   lines.push("END:VCARD");

@@ -59,7 +59,7 @@ test("parseVCard round-trips core fields", () => {
 test("parseVCard embeds PHOTO bytes", () => {
   const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
   const vcf = formatVCard(sample, { contentType: "image/jpeg", bytes });
-  assert.match(vcf, /PHOTO;ENCODING=b;TYPE=JPEG:/);
+  assert.match(vcf, /PHOTO;ENCODING=B;TYPE=JPEG:/);
   const parsed = parseVCard(vcf);
   assert.ok(parsed?.photo);
   assert.equal(parsed!.photo!.contentType, "image/jpeg");
