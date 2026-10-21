@@ -13,9 +13,6 @@ import { and, eq, inArray, isNull, max } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { contacts, organizations } from "../db/schema.js";
 import { MAX_AVATAR_BYTES } from "../lib/upload-limits.js";
-
-/** Inline PHOTO in CardDAV responses — large avatars blow up iOS sync (tens of MB). */
-const MAX_CARDDAV_PHOTO_BYTES = 64_000;
 import {
   type AuthContext,
   logUnauthorizedRequest,
@@ -23,6 +20,7 @@ import {
 } from "../middleware/auth.js";
 import * as circleService from "../services/circle-domain.js";
 import { hasCardDavScope } from "../services/carddav/auth.js";
+import { optimizeCardDavPhoto } from "../services/carddav/photo.js";
 import {
   contactEtag,
   formatVCard,
@@ -221,18 +219,13 @@ async function collectionCtag(workspaceId: string): Promise<string> {
 async function personalPhoto(
   workspaceId: string,
   contactId: string,
-  opts?: { maxBytes?: number },
 ): Promise<{ contentType: string; bytes: Uint8Array } | null> {
   const result = await circleService.getAvatar(workspaceId, "contact", contactId);
   if (!result?.bytes?.length) return null;
-  const maxBytes = opts?.maxBytes ?? MAX_CARDDAV_PHOTO_BYTES;
-  if (result.bytes.byteLength > maxBytes) {
-    return null;
-  }
-  return {
-    contentType: result.row.contentType || "image/jpeg",
-    bytes: result.bytes,
-  };
+  return optimizeCardDavPhoto(
+    result.bytes,
+    result.row.contentType || "image/jpeg",
+  );
 }
 
 function privilegeSetXml(): string {
@@ -580,9 +573,13 @@ async function propfindAddressbook(c: Context) {
 
   if (depthHeader(c) >= 1) {
     const sources = await loadContactSources(auth.workspaceId);
+    const wantData =
+      wantsProp(requested, "address-data") || requested.has("*");
     for (const source of sources) {
-      // No PHOTO in collection PROPFIND — bulk inline avatars break iOS verify.
-      const vcard = formatVCard(source, null);
+      const photo = wantData
+        ? await personalPhoto(auth.workspaceId, source.id)
+        : null;
+      const vcard = formatVCard(source, photo);
       responses.push({
         href: contactHref(source.id),
         propstats: [
@@ -617,9 +614,13 @@ async function reportAddressbook(c: Context) {
   const requested = parseRequestedProps(body);
   if (requested.size === 0) requested.add("*");
   const responses = [];
+  let photos = 0;
   for (const source of sources) {
-    // Skip PHOTO in REPORT (was ~57MB / 47 contacts → iOS verification timeout).
-    const vcard = formatVCard(source, null);
+    const photo = includeData
+      ? await personalPhoto(auth.workspaceId, source.id)
+      : null;
+    if (photo) photos += 1;
+    const vcard = formatVCard(source, photo);
     responses.push({
       href: contactHref(source.id),
       propstats: [
@@ -635,6 +636,7 @@ async function reportAddressbook(c: Context) {
     handler: "report",
     auth: auth.apiKeyName ?? auth.kind,
     contacts: responses.length,
+    photos,
     bytes: xml.length,
     includeData,
   });

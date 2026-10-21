@@ -28,7 +28,7 @@ If iOS asks for an account URL:
 - Shows **all** workspace contacts (every CRM group).
 - Edits on the phone write to cloud-core and replicate to local-core / desktop (last-write-wins).
 - Edits in BacksterOS appear on the phone on the next CardDAV sync.
-- Contact photo = **personal** avatar only (not the portal avatar).
+- Contact photo = **personal** avatar only (not the portal avatar). Large avatars are resized to ≤256px JPEG for CardDAV so iOS sync stays small.
 
 ## Ops
 

@@ -1775,6 +1775,17 @@ export async function putAvatar(
   options?: { updateEntityColumns?: boolean },
 ) {
   const updateEntityColumns = options?.updateEntityColumns !== false;
+  let storeBytes = bytes;
+  let storeType = contentType;
+  // Personal contact avatars are synced to iOS via CardDAV — keep them ≤512px.
+  if (entityType === "contact") {
+    const { optimizeContactAvatarForStorage } = await import(
+      "./carddav/photo.js"
+    );
+    const optimized = await optimizeContactAvatarForStorage(bytes, contentType);
+    storeBytes = optimized.bytes;
+    storeType = optimized.contentType;
+  }
   const id = newId();
   const key = buildPrivateStorageKey(
     workspaceId,
@@ -1782,7 +1793,7 @@ export async function putAvatar(
     entityId,
     avatarObjectFileName(entityType),
   );
-  const stored = await putObject(key, bytes, contentType);
+  const stored = await putObject(key, storeBytes, storeType);
   const [row] = await db
     .insert(avatars)
     .values({
@@ -1791,18 +1802,18 @@ export async function putAvatar(
       entityType,
       entityId,
       storageKey: key,
-      contentType,
+      contentType: storeType,
       byteSize: stored.byteSize,
-      checksum: checksumForContent(bytes),
+      checksum: checksumForContent(storeBytes),
       contentEtag: stored.etag,
     })
     .onConflictDoUpdate({
       target: [avatars.workspaceId, avatars.entityType, avatars.entityId],
       set: {
         storageKey: key,
-        contentType,
+        contentType: storeType,
         byteSize: stored.byteSize,
-        checksum: checksumForContent(bytes),
+        checksum: checksumForContent(storeBytes),
         contentEtag: stored.etag,
         updatedAt: new Date(),
       },
@@ -1812,19 +1823,19 @@ export async function putAvatar(
     if (entityType === "organization") {
       await db
         .update(organizations)
-        .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
+        .set({ avatarStorageKey: key, avatarContentType: storeType, updatedAt: new Date() })
         .where(and(eq(organizations.workspaceId, workspaceId), eq(organizations.id, entityId)));
     } else if (entityType === "contact") {
       await db
         .update(contacts)
-        .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
+        .set({ avatarStorageKey: key, avatarContentType: storeType, updatedAt: new Date() })
         .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
     } else if (entityType === "bank_account") {
       await db
         .update(bankAccounts)
         .set({
           avatarStorageKey: key,
-          avatarContentType: contentType,
+          avatarContentType: storeType,
           updatedAt: new Date(),
         })
         .where(

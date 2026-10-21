@@ -21,6 +21,8 @@ RUN pnpm --filter @backsteros/server build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
+# sharp (CardDAV avatar resize) needs musl-friendly libc on Alpine.
+RUN apk add --no-cache libc6-compat
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY --from=build /app /app
