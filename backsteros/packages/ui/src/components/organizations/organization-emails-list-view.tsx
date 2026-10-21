@@ -13,8 +13,10 @@ import {
 import { keyboardNavItemProps } from "../../list-nav/keyboard-nav-item.js";
 import {
   COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  cappedStatusVisibleCount,
   mapStatusGroupsWithCompletedCap,
   nextCompletedStatusVisibleCount,
+  type CappedStatusVisibleCounts,
 } from "../../list-nav/completed-status-list-cap.js";
 import { flattenGroupedListItemIds } from "../../list-nav/list-keyboard-nav-index.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
@@ -60,9 +62,8 @@ export function OrganizationEmailsListView({
 
   const [localEmails, setLocalEmails] = useState(scopedEmails);
   const [collapsed, setCollapsed] = useState<Set<TaskStatus>>(() => new Set());
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(
-    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
-  );
+  const [cappedVisibleByStatus, setCappedVisibleByStatus] =
+    useState<CappedStatusVisibleCounts>({});
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_MAIN,
@@ -73,7 +74,7 @@ export function OrganizationEmailsListView({
   }, [scopedEmails]);
 
   useEffect(() => {
-    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+    setCappedVisibleByStatus({});
   }, [organizationId]);
 
   const groupsFull = useMemo(
@@ -82,12 +83,25 @@ export function OrganizationEmailsListView({
   );
 
   const groups = useMemo(
-    () => mapStatusGroupsWithCompletedCap(groupsFull, completedVisibleCount),
-    [completedVisibleCount, groupsFull],
+    () => mapStatusGroupsWithCompletedCap(groupsFull, cappedVisibleByStatus),
+    [cappedVisibleByStatus, groupsFull],
   );
 
-  const completedTotal =
-    groupsFull.find((group) => group.status === "completed")?.items.length ?? 0;
+  function showMoreForStatus(status: string) {
+    const total =
+      groupsFull.find((group) => group.status === status)?.items.length ?? 0;
+    setCappedVisibleByStatus((current) => ({
+      ...current,
+      [status]: nextCompletedStatusVisibleCount(
+        cappedStatusVisibleCount(
+          status,
+          current,
+          COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+        ),
+        total,
+      ),
+    }));
+  }
 
   const itemIds = useMemo(
     () =>
@@ -207,11 +221,7 @@ export function OrganizationEmailsListView({
               })}
               <StatusGroupShowMoreButton
                 hiddenCount={group.hiddenCount}
-                onShowMore={() =>
-                  setCompletedVisibleCount((current) =>
-                    nextCompletedStatusVisibleCount(current, completedTotal),
-                  )
-                }
+                onShowMore={() => showMoreForStatus(group.status)}
               />
             </StatusGroupSection>
           );

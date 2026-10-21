@@ -85,6 +85,16 @@ test("emailMessageHtmlBody prefers substantive raw html over empty extracted htm
   );
 });
 
+test("emailMessageHtmlBody prefers full html when extracted omits quotes", () => {
+  assert.equal(
+    emailMessageHtmlBody({
+      extractedHtml: "<p>New reply</p>",
+      html: "<p>New reply</p><blockquote>Earlier message</blockquote>",
+    }),
+    "<p>New reply</p><blockquote>Earlier message</blockquote>",
+  );
+});
+
 test("parseEmailHtmlContentIds normalizes angle-bracket cids", () => {
   assert.deepEqual(
     parseEmailHtmlContentIds(

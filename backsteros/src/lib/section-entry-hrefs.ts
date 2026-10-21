@@ -120,11 +120,12 @@ export function rememberWorkspaceSectionEntries(input: {
   letters: readonly { id: string; number?: number | null }[];
   knowledgeDocuments: readonly KnowledgeListItem[];
 }): void {
-  // Seed only — section roots always open these first items (never last-place).
-  const seed: Partial<Record<SectionEntryKey, string | null>> = {};
-  if (peekSectionEntryHref("inbox") == null) {
-    seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
-  }
+  // Inbox membership churns (approve / complete / ack). Always sync the seed to
+  // the live first row — or null when empty — so `/inbox` never resurrects a
+  // finished item in the detail pane.
+  const seed: Partial<Record<SectionEntryKey, string | null>> = {
+    inbox: getFirstInboxItemHref(input.inboxItems) ?? null,
+  };
   if (peekSectionEntryHref("communication") == null) {
     seed.communication = "/communication";
   }

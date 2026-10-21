@@ -120,7 +120,8 @@ export type InboxSidePanelViewProps = {
   renderTitleTrailing?: (item: InboxListItem) => ReactNode;
   /** When true for an item, its status icon becomes the agent-working pulse. */
   isItemAgentWorking?: (item: InboxListItem) => boolean;
-  emptyLabel?: string;
+  /** Empty-list copy. Pass `null` for a blank list (Hairline empty lives in content). */
+  emptyLabel?: ReactNode | null;
   /** Side panel header title (defaults to Inbox). */
   title?: string;
   /** Override list hrefs (e.g. Communication routes instead of Inbox). */
@@ -338,7 +339,9 @@ export function InboxSidePanelView({
             <InboxSidePanelSkeleton />
           </div>
         ) : !items.length && !composing ? (
-          <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
+          emptyLabel != null ? (
+            <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
+          ) : null
         ) : items.length ? (
           useVirtualList ? (
             <VirtualizedOverviewList

@@ -40,9 +40,16 @@ describe("extractEmailHtmlBody", () => {
 });
 
 describe("body pickers", () => {
-  it("prefers extracted text for plain body", () => {
+  it("prefers full text over extracted for plain body (quoted replies)", () => {
     assert.equal(
-      emailMessagePlainBody({ extractedText: "clean", text: "raw" }),
+      emailMessagePlainBody({ extractedText: "clean", text: "raw\n\n> quoted" }),
+      "raw\n\n> quoted",
+    );
+  });
+
+  it("falls back to extracted text when full text is missing", () => {
+    assert.equal(
+      emailMessagePlainBody({ extractedText: "clean", text: null }),
       "clean",
     );
   });

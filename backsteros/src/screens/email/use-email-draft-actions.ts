@@ -115,18 +115,55 @@ export function useEmailDraftActions({
   const [replyTo, setReplyTo] = useState("");
   const [replyCc, setReplyCc] = useState("");
   const [replySubjectText, setReplySubjectText] = useState("");
+  const conceptBodyModeRef = useRef(conceptBodyMode);
+  conceptBodyModeRef.current = conceptBodyMode;
+  /** Last body we successfully PATCH'd — ignore stale reloads until the server matches. */
+  const lastSavedConceptRef = useRef<{
+    body: string;
+    updatedAt: string;
+  } | null>(null);
 
   useEffect(() => {
     const editableBody =
       resolveEditableEmailDraftBody(draft) ||
       resolveEditableEmailDraftBody(message?.conceptDraft);
+    const serverUpdatedAt =
+      draft?.updatedAt ?? message?.conceptDraft?.updatedAt ?? "";
+    const editing = conceptBodyModeRef.current === "edit";
     setConceptBodyDraft((current) => {
       // Keep a locally painted agent body while message detail catches up —
       // wiping to "" flashes the empty "Message the agent…" shell.
       if (!editableBody.trim() && current.trim()) return current;
+      const saved = lastSavedConceptRef.current;
+      if (saved != null && editableBody === saved.body) {
+        lastSavedConceptRef.current = null;
+      } else if (
+        saved != null &&
+        current === saved.body &&
+        editableBody !== saved.body &&
+        (!serverUpdatedAt || serverUpdatedAt <= saved.updatedAt)
+      ) {
+        // Open-thread poll / mailbox reload still has the pre-edit snapshot.
+        return current;
+      } else if (
+        saved != null &&
+        serverUpdatedAt &&
+        serverUpdatedAt > saved.updatedAt
+      ) {
+        // Newer server revision (e.g. agent rewrite) — adopt it.
+        lastSavedConceptRef.current = null;
+      }
+      // Do not clobber in-progress edits when a stale message reload arrives.
+      if (editing && current.trim() && current !== editableBody) {
+        return current;
+      }
       return editableBody;
     });
-    setConceptBodyMode("preview");
+    // Identity / server updates jump back to preview — but not while the user
+    // is mid-edit (Preview itself flips the mode after save).
+    if (!editing) {
+      setConceptBodyMode("preview");
+    }
   }, [
     draft?.draftId,
     draft?.updatedAt,
@@ -243,7 +280,15 @@ export function useEmailDraftActions({
 
   useEffect(() => {
     if (!isCompose) return;
-    setConceptBodyDraft(resolveEditableEmailDraftBody(composeDraft));
+    const editableBody = resolveEditableEmailDraftBody(composeDraft);
+    const editing = conceptBodyModeRef.current === "edit";
+    setConceptBodyDraft((current) => {
+      if (!editableBody.trim() && current.trim()) return current;
+      if (editing && current.trim() && current !== editableBody) {
+        return current;
+      }
+      return editableBody;
+    });
     // Keep the user's Preview/Edit choice; only seed "edit" for a brand-new compose.
   }, [
     composeDraft?.draftId,
@@ -319,6 +364,12 @@ export function useEmailDraftActions({
             body: JSON.stringify(draftHeaderPayload({ includeBody: body })),
           },
         );
+        const nextEditable =
+          resolveEditableEmailDraftBody(updated) || body;
+        lastSavedConceptRef.current = {
+          body: nextEditable,
+          updatedAt: updated.updatedAt,
+        };
         if (draftId && draft) {
           setDraft(updated);
         } else if (composeDraft?.draftId) {
@@ -328,7 +379,26 @@ export function useEmailDraftActions({
           setComposeSubject(updated.subject?.trim() ?? composeSubject);
         } else if (messageId && inboxId) {
           const reloaded = await reloadMessageDetail(inboxId, messageId);
-          setMessage(reloaded);
+          // Prefer the PATCH response over reload — message detail can lag and
+          // would otherwise reset Preview back to the pre-edit body.
+          setMessage({
+            ...reloaded,
+            conceptDraftId: updated.draftId ?? reloaded.conceptDraftId,
+            conceptDraft: {
+              draftId: updated.draftId,
+              inboxId: updated.inboxId || inboxId,
+              subject: updated.subject,
+              from: updated.from ?? null,
+              to: updated.to ?? [],
+              cc: updated.cc ?? [],
+              text: updated.text,
+              body: nextEditable,
+              greeting: updated.greeting ?? null,
+              signOff: updated.signOff ?? null,
+              preview: updated.preview,
+              updatedAt: updated.updatedAt,
+            },
+          });
           setReplyTo((updated.to ?? []).join(", "));
           setReplyCc((updated.cc ?? []).join(", "));
           setReplySubjectText(
@@ -336,9 +406,7 @@ export function useEmailDraftActions({
               formatReplySubject(reloaded.subject),
           );
         }
-        setConceptBodyDraft(
-          resolveEditableEmailDraftBody(updated) || body,
-        );
+        setConceptBodyDraft(nextEditable);
         requestMailboxReload();
       } catch (caught) {
         setConceptError(
@@ -497,9 +565,13 @@ export function useEmailDraftActions({
         setComposeTo((loaded.to ?? []).join(", "));
         setComposeCc((loaded.cc ?? []).join(", "));
         setComposeSubject(loaded.subject?.trim() ?? composeSubject);
-        setConceptBodyDraft(
-          resolveEditableEmailDraftBody(loaded) || agentBody,
-        );
+        const nextEditable =
+          resolveEditableEmailDraftBody(loaded) || agentBody;
+        lastSavedConceptRef.current = {
+          body: nextEditable,
+          updatedAt: loaded.updatedAt,
+        };
+        setConceptBodyDraft(nextEditable);
         requestMailboxReload();
       } catch (caught) {
         setConceptError(

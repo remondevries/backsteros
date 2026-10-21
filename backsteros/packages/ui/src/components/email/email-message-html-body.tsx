@@ -9,6 +9,7 @@ import {
   resolveEmailInlineAttachments,
   type EmailMessageInlineAttachment,
 } from "../../email/email-message-html.js";
+import { collectTrailingHtmlEmailQuoteNodes } from "../../email/email-quote-collapse.js";
 
 export type EmailMessageHtmlBodyProps = {
   html: string;
@@ -69,6 +70,39 @@ function applyCachedInlineAttachments(
   return objectUrls;
 }
 
+/** Collapse trailing blockquotes / gmail_quote blocks behind a native disclosure. */
+function collapseHtmlEmailQuotes(root: ShadowRoot): void {
+  const nodes = collectTrailingHtmlEmailQuoteNodes(root);
+  if (nodes.length === 0) return;
+  const first = nodes[0]!;
+  const parent = first.parentElement;
+  if (!parent) return;
+
+  const details = document.createElement("details");
+  details.className = "email-quote-details";
+  const summary = document.createElement("summary");
+  summary.className = "email-quote-toggle";
+  summary.textContent = "···";
+  summary.setAttribute("aria-label", "Show quoted text");
+  details.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "email-quote-block";
+  parent.insertBefore(details, first);
+  for (const node of nodes) {
+    body.appendChild(node);
+  }
+  details.appendChild(body);
+
+  details.addEventListener("toggle", () => {
+    summary.setAttribute(
+      "aria-label",
+      details.open ? "Hide quoted text" : "Show quoted text",
+    );
+    summary.textContent = details.open ? "Hide quoted text" : "···";
+  });
+}
+
 /**
  * Rendered email body in a shadow root so message styles stay isolated.
  */
@@ -112,6 +146,7 @@ export function EmailMessageHtmlBody({
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.innerHTML = `${buildEmailShadowStyles()}${markup}`;
+    collapseHtmlEmailQuotes(shadow);
 
     const cachedUrls = applyCachedInlineAttachments(
       shadow,

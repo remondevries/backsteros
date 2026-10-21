@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
+  HairlineEmptyFigure,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   TaskDetailView,
@@ -13,6 +14,7 @@ import {
   buildProjectDropdownOptions,
   buildTaskRelatedDropdownOptions,
   encodeTaskSlug,
+  filterInboxItemsByListMode,
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
   getInboxHrefAfterRemovingItem,
@@ -21,6 +23,7 @@ import {
   getProjectTaskHref,
   resolveDuplicatedTaskHref,
   resolveSupportParties,
+  useInboxListMode,
   type InboxTaskListItem,
 } from "@backsteros/ui";
 
@@ -43,6 +46,7 @@ import {
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
+import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import {
   useKeepAliveActive,
   useKeepAliveFrozen,
@@ -122,7 +126,14 @@ function InboxPageBody() {
   const { itemId: routeItemId } = useShellParams() as { itemId?: string };
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
+  const [listMode] = useInboxListMode();
   const inboxItems = useDesktopWorkspaceInboxItems();
+  // Side panel filters by Notifications / Agents — detail must use the same
+  // slice, or an empty Agents list still keeps a Notifications task open.
+  const modeInboxItems = useMemo(
+    () => filterInboxItemsByListMode(inboxItems, listMode),
+    [inboxItems, listMode],
+  );
   const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
   const { knowledgeDocuments, projectDocuments } =
@@ -169,7 +180,7 @@ function InboxPageBody() {
   const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
   const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
 
-  const firstInboxHref = getFirstInboxItemHref(inboxItems);
+  const firstInboxHref = getFirstInboxItemHref(modeInboxItems);
   const firstInboxItemId =
     !routeItemId && firstInboxHref?.startsWith("/inbox/")
       ? firstInboxHref.slice("/inbox/".length).split("/")[0]
@@ -195,10 +206,46 @@ function InboxPageBody() {
   const inList = useMemo(
     () =>
       selectedTask
-        ? inboxItems.some((item) => item.id === selectedTask.id)
+        ? modeInboxItems.some((item) => item.id === selectedTask.id)
         : false,
-    [inboxItems, selectedTask],
+    [modeInboxItems, selectedTask],
   );
+
+  // When the open row leaves the current mode list (approve / complete / mode
+  // switch / …), leave the detail too — otherwise allTasks fallback keeps
+  // showing a finished or other-mode item while the side panel is empty.
+  // Skip while the moved-to-project banner is up.
+  const leftInboxNavKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!keepAliveActive || keepAliveFrozen || movedNotice) {
+      leftInboxNavKeyRef.current = null;
+      return;
+    }
+    if (!selectedTask || inList) {
+      leftInboxNavKeyRef.current = null;
+      return;
+    }
+    const nextHref =
+      getInboxHrefAfterRemovingItem(modeInboxItems, selectedTask.id) ?? null;
+    const target = nextHref ?? "/inbox";
+    const navKey = `${selectedTask.id}:${listMode}:${target}`;
+    // Avoid warm-flip storms when keep-alive still resolves the finished row.
+    if (leftInboxNavKeyRef.current === navKey) return;
+    leftInboxNavKeyRef.current = navKey;
+    // Clear the section-root seed before navigating to `/inbox`, otherwise
+    // resolveAppHref expands back to this finished item.
+    rememberSectionEntryHrefs({ inbox: nextHref });
+    navigateToHref(navigate, target, { replace: true });
+  }, [
+    keepAliveActive,
+    keepAliveFrozen,
+    inList,
+    listMode,
+    modeInboxItems,
+    movedNotice,
+    navigate,
+    selectedTask,
+  ]);
 
   // Inbox list items omit assignee; join full task row for detail chrome.
   const selectedTaskRecord = useMemo(
@@ -241,8 +288,11 @@ function InboxPageBody() {
   });
 
   const displayId = selectedTask ? getInboxItemDisplayId(selectedTask) : null;
+  const showDetailChrome = Boolean(
+    selectedTask && (inList || movedNotice),
+  );
   useDesktopSectionBreadcrumb(
-    selectedTask
+    showDetailChrome && selectedTask
       ? [
           { label: "Inbox", href: "/inbox" },
           {
@@ -427,11 +477,24 @@ function InboxPageBody() {
     },
     [projects, selectedTask, workspace]);
 
-  if (!selectedTask) {
+  // Hide detail when the URL still points at a row outside this mode's list
+  // (e.g. Agents empty while a Notifications task remains in the path).
+  // Keep rendering when the moved-to-project banner is up.
+  if (!selectedTask || (!inList && !movedNotice)) {
+    const notFound = Boolean(!selectedTask && itemId);
     return (
-      <div className="inbox-detail-layout">
+      <div className="inbox-detail-layout" data-content-detail>
         <div className="inbox-detail-empty">
-          <p>{itemId ? "Item not found." : "Inbox is empty."}</p>
+          {notFound ? (
+            <p>Item not found.</p>
+          ) : (
+            <HairlineEmptyFigure
+              figure="stack"
+              size={220}
+              label="No Notifications"
+              caption="No Notifications"
+            />
+          )}
         </div>
       </div>
     );
@@ -743,12 +806,15 @@ function InboxPageBody() {
         }}
         onAgentInboxApprove={() => {
           const nextHref = getInboxHrefAfterRemovingItem(
-            inboxItems,
+            modeInboxItems,
             selectedTask.id);
           unpinInboxListItem(selectedTask.id);
           void workspace.patchTask(selectedTask.id, {
             agentInboxApproved: true,
           });
+          // Seed must update before `/inbox` resolve — otherwise the finished
+          // row is expanded back into the detail pane.
+          rememberSectionEntryHrefs({ inbox: nextHref ?? null });
           navigateToHref(navigate, nextHref ?? "/inbox", {
             replace: true,
           });

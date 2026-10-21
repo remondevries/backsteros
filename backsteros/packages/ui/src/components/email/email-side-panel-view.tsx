@@ -21,8 +21,10 @@ import {
 } from "../../email/email.js";
 import {
   COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  cappedStatusVisibleCount,
   mapStatusGroupsWithCompletedCap,
   nextCompletedStatusVisibleCount,
+  type CappedStatusVisibleCounts,
 } from "../../list-nav/completed-status-list-cap.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
@@ -257,9 +259,8 @@ export function EmailSidePanelView({
 }: EmailSidePanelViewProps) {
   const groupsFull = useMemo(() => groupEmailItemsByStatus(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(
-    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
-  );
+  const [cappedVisibleByStatus, setCappedVisibleByStatus] =
+    useState<CappedStatusVisibleCounts>({});
 
   const mailboxScopeKey = useMemo(
     () => mailboxes.map((mailbox) => mailbox.inboxId).join("\0"),
@@ -267,16 +268,13 @@ export function EmailSidePanelView({
   );
 
   useEffect(() => {
-    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+    setCappedVisibleByStatus({});
   }, [mailboxScopeKey]);
 
   const groups = useMemo(
-    () => mapStatusGroupsWithCompletedCap(groupsFull, completedVisibleCount),
-    [completedVisibleCount, groupsFull],
+    () => mapStatusGroupsWithCompletedCap(groupsFull, cappedVisibleByStatus),
+    [cappedVisibleByStatus, groupsFull],
   );
-
-  const completedTotal =
-    groupsFull.find((group) => group.status === "completed")?.items.length ?? 0;
 
   function toggleGroup(status: string) {
     setCollapsed((current) => {
@@ -287,10 +285,20 @@ export function EmailSidePanelView({
     });
   }
 
-  function showMoreCompleted() {
-    setCompletedVisibleCount((current) =>
-      nextCompletedStatusVisibleCount(current, completedTotal),
-    );
+  function showMoreForStatus(status: string) {
+    const total =
+      groupsFull.find((group) => group.status === status)?.items.length ?? 0;
+    setCappedVisibleByStatus((current) => ({
+      ...current,
+      [status]: nextCompletedStatusVisibleCount(
+        cappedStatusVisibleCount(
+          status,
+          current,
+          COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+        ),
+        total,
+      ),
+    }));
   }
 
   let body: ReactNode;
@@ -337,7 +345,7 @@ export function EmailSidePanelView({
             ))}
             <StatusGroupShowMoreButton
               hiddenCount={group.hiddenCount}
-              onShowMore={showMoreCompleted}
+              onShowMore={() => showMoreForStatus(group.status)}
             />
           </StatusGroupSection>
         ))}

@@ -70,11 +70,13 @@ export function emailMessagePlainBody(message: {
   extractedHtml?: string | null;
   html?: string | null;
 }): string {
-  const extracted = message.extractedText?.trim();
-  if (extracted) return extracted;
+  // Prefer full `text` over AgentMail `extractedText` — extracted strips
+  // quoted reply chains, so Plain would hide history that Source still shows.
   const text = message.text?.trim();
   if (text) return text;
-  const html = (message.extractedHtml ?? message.html ?? "").trim();
+  const extracted = message.extractedText?.trim();
+  if (extracted) return extracted;
+  const html = (message.html ?? message.extractedHtml ?? "").trim();
   if (!html) return "";
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -89,12 +91,13 @@ export function emailMessageHtmlBody(message: {
   extractedHtml?: string | null;
   html?: string | null;
 }): string | null {
-  const extractedHtml = message.extractedHtml?.trim();
+  // Prefer full `html` over `extractedHtml` for the same quoted-reply reason.
   const rawHtml = message.html?.trim();
-  if (isSubstantiveEmailHtml(extractedHtml)) return extractedHtml!;
   if (isSubstantiveEmailHtml(rawHtml)) return rawHtml!;
+  const extractedHtml = message.extractedHtml?.trim();
+  if (isSubstantiveEmailHtml(extractedHtml)) return extractedHtml!;
 
-  const plain = message.extractedText?.trim() || message.text?.trim() || "";
+  const plain = message.text?.trim() || message.extractedText?.trim() || "";
   if (!plain) return null;
   return plainTextEmailToHtml(plain);
 }

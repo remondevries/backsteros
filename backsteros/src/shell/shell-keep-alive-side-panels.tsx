@@ -26,10 +26,12 @@ import {
   filterDocumentsForHelpArticleScope,
   filterDocumentsForSpaceRoot,
   findHelpArticleIndividualRoot,
+  findInboxItemBySlugOrId,
   getContactsGroupHref,
   getFirstInboxItemHref,
   getJournalHref,
   getOrganizationsGroupHref,
+  getSelectedInboxSlugFromPathname,
   getSelectedSpaceRootFromPathname,
   getSocialHref,
   getUniqueListItemRouteParam,
@@ -40,6 +42,8 @@ import {
   isSupportCenterDocumentPath,
   normalizeContactSocialAccounts,
   parseCrmGroupId,
+  parseEmailDraftPath,
+  parseEmailMessagePath,
   resolveEmailThreadMetadataKey,
   resolveLetterDetailHref,
   useHelpArticleAudienceMap,
@@ -380,11 +384,45 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     ]);
   }, [emailInboxItems, frozen, workspaceInboxItems]);
 
+  const selectedInboxItemId = useMemo(() => {
+    const candidates: InboxListItem[] = [
+      ...baseInboxItems,
+      ...[...pinnedItems.values()].map((pin) => pin.item),
+    ];
+    const draftPath = parseEmailDraftPath(pathname);
+    if (draftPath) {
+      return (
+        candidates.find(
+          (entry) =>
+            entry.kind === "email" &&
+            entry.inboxId === draftPath.inboxId &&
+            (entry.draftId === draftPath.draftId ||
+              entry.messageId === draftPath.draftId),
+        )?.id ?? null
+      );
+    }
+    const emailPath = parseEmailMessagePath(pathname);
+    if (emailPath) {
+      return (
+        candidates.find(
+          (entry) =>
+            entry.kind === "email" &&
+            entry.inboxId === emailPath.inboxId &&
+            entry.messageId === emailPath.messageId,
+        )?.id ?? null
+      );
+    }
+    const slug = getSelectedInboxSlugFromPathname(pathname);
+    if (!slug) return null;
+    return findInboxItemBySlugOrId(candidates, slug)?.id ?? slug;
+  }, [baseInboxItems, pathname, pinnedItems]);
+
   const inboxItemsWithEmail = useInboxSessionList(
     !frozen,
     inboxNotificationsReady,
     baseInboxItems,
     pinnedItems,
+    selectedInboxItemId,
   );
 
   const inboxAttentionGroupOverrides = useMemo(

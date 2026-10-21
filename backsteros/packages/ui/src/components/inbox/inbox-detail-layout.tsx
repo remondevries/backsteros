@@ -8,6 +8,7 @@ import {
 } from "../../inbox/inbox-items.js";
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel, isTaskStatus } from "../../tasks/task-status.js";
+import { HairlineEmptyFigure } from "../shared/hairline-empty-figure.js";
 
 export type InboxDetailLayoutProps = {
   item: InboxListItem | null;
@@ -82,13 +83,15 @@ export function InboxDetailLayout({
 
   if (!item) {
     return (
-      <div className="inbox-detail-layout">
+      <div className="inbox-detail-layout" data-content-detail>
         <InboxDetailBreadcrumb label="" />
         <div className="inbox-detail-empty">
-          <p>
-            Your inbox is empty. Use capture in the side panel to add a triage
-            task.
-          </p>
+          <HairlineEmptyFigure
+            figure="stack"
+            size={220}
+            label="No Notifications"
+            caption="No Notifications"
+          />
         </div>
       </div>
     );

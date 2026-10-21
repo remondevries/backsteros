@@ -33,8 +33,10 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import {
   COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  cappedStatusVisibleCount,
   mapStatusGroupsWithCompletedCap,
   nextCompletedStatusVisibleCount,
+  type CappedStatusVisibleCounts,
 } from "../../list-nav/completed-status-list-cap.js";
 import {
   OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
@@ -158,9 +160,8 @@ export function CommunicationOverviewView({
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(
-    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
-  );
+  const [cappedVisibleByStatus, setCappedVisibleByStatus] =
+    useState<CappedStatusVisibleCounts>({});
 
   const channelLabel =
     titleProp?.trim() ||
@@ -174,18 +175,14 @@ export function CommunicationOverviewView({
   );
 
   useEffect(() => {
-    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+    setCappedVisibleByStatus({});
   }, [channel, inboxId, status]);
 
   const statusGroups = useMemo(
     () =>
-      mapStatusGroupsWithCompletedCap(statusGroupsFull, completedVisibleCount),
-    [completedVisibleCount, statusGroupsFull],
+      mapStatusGroupsWithCompletedCap(statusGroupsFull, cappedVisibleByStatus),
+    [cappedVisibleByStatus, statusGroupsFull],
   );
-
-  const completedTotal =
-    statusGroupsFull.find((group) => group.status === "completed")?.items
-      .length ?? 0;
 
   const itemIds = useMemo(() => {
     const ids: string[] = [];
@@ -369,10 +366,21 @@ export function CommunicationOverviewView({
     });
   }
 
-  function showMoreCompleted() {
-    setCompletedVisibleCount((current) =>
-      nextCompletedStatusVisibleCount(current, completedTotal),
-    );
+  function showMoreForStatus(status: string) {
+    const total =
+      statusGroupsFull.find((group) => group.status === status)?.items.length ??
+      0;
+    setCappedVisibleByStatus((current) => ({
+      ...current,
+      [status]: nextCompletedStatusVisibleCount(
+        cappedStatusVisibleCount(
+          status,
+          current,
+          COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+        ),
+        total,
+      ),
+    }));
   }
 
   function renderRow(item: InboxListItem) {
@@ -483,7 +491,7 @@ export function CommunicationOverviewView({
                 <StatusGroupShowMoreButton
                   as="div"
                   hiddenCount={row.hiddenCount}
-                  onShowMore={showMoreCompleted}
+                  onShowMore={() => showMoreForStatus(row.status)}
                 />
               );
             }
@@ -520,7 +528,7 @@ export function CommunicationOverviewView({
                       {group.items.map((item) => renderRow(item))}
                       <StatusGroupShowMoreButton
                         hiddenCount={group.hiddenCount}
-                        onShowMore={showMoreCompleted}
+                        onShowMore={() => showMoreForStatus(group.status)}
                       />
                     </>
                   )}

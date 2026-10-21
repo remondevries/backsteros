@@ -36,6 +36,7 @@
 .console-pane-body:has(> .console-github-pane-status--centered),
 .project-documents__main:has(> .hairline-empty-figure),
 .project-detail__placeholder:has(> .hairline-empty-figure),
+.inbox-detail-empty:has(> .hairline-empty-figure),
 .app-content-side-panel-empty:has(.hairline-empty-figure),
 .console-docs-tree__main > .app-content-side-panel-empty:has(.hairline-empty-figure),
 .console-fs-tree:has(> .console-fs-tree-status .hairline-empty-figure),
@@ -45,6 +46,22 @@
   min-height: 0;
   align-items: center;
   justify-content: center;
+}
+
+/* Inbox empty fills the keep-alive content pane (same as task detail). */
+.inbox-detail-layout[data-content-detail]:has(> .inbox-detail-empty) {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.inbox-detail-layout[data-content-detail] > .inbox-detail-empty:has(> .hairline-empty-figure) {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  padding: 24px 16px;
 }
 
 .console-pane-body > .console-github-pane-status--centered {

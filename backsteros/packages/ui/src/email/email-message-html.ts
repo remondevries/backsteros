@@ -99,6 +99,44 @@ export function buildEmailShadowStyles(): string {
     img[data-inline-cid] { visibility: visible; }
     a, a :where(span, font, strong, em, b, i, u) { color: #6eb6ff !important; }
     table { max-width: 100%; }
+    blockquote {
+      margin: 0.5rem 0 0;
+      padding-left: 10px;
+      border-left: 2px solid #3a3a3e;
+      color: #9a9aa0 !important;
+    }
+    .email-quote-details {
+      margin-top: 0.65rem;
+    }
+    .email-quote-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      margin: 0;
+      padding: 0.15rem 0.4rem;
+      border: 0.5px solid rgb(255 255 255 / 0.12);
+      border-radius: 6px;
+      background: rgb(255 255 255 / 0.04);
+      color: #9a9aa0;
+      font: inherit;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      line-height: 1.2;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+    .email-quote-toggle::-webkit-details-marker { display: none; }
+    .email-quote-toggle:hover,
+    .email-quote-toggle:focus-visible {
+      color: #d4d4d4;
+      background: rgb(255 255 255 / 0.08);
+      outline: none;
+    }
+    .email-quote-block {
+      margin-top: 0.55rem;
+      color: #9a9aa0 !important;
+    }
   </style>`;
 }
 

@@ -18,8 +18,14 @@ function withoutInboxUpdatedFlag(item: InboxListItem): InboxListItem {
 function mergeItemMaps(
   sortedItems: readonly InboxListItem[],
   pinnedItems: ReadonlyMap<string, InboxSessionPin>,
+  selectedItemId: string | null,
 ): Map<string, InboxListItem> {
   const byItemId = new Map(sortedItems.map((item) => [item.id, item] as const));
+  // When the live inbox is empty, never resurrect pin-only ghosts — otherwise
+  // the last acked Updated row stays forever (and auto-select keeps reopening it).
+  if (sortedItems.length === 0) {
+    return byItemId;
+  }
 
   for (const [itemId, pin] of pinnedItems) {
     const existing = byItemId.get(itemId);
@@ -28,10 +34,9 @@ function mergeItemMaps(
       byItemId.set(itemId, withoutInboxUpdatedFlag(existing));
       continue;
     }
-    // Pin-only rows are for acknowledging Updated without the row jumping.
-    // Do not resurrect tasks that left the inbox for other reasons (future due,
-    // completed, etc.) with a stale due date.
-    if (pin.attentionGroup === "updated") {
+    // Pin-only rows are for acknowledging Updated without the row jumping
+    // while that item is still open among remaining live rows.
+    if (pin.attentionGroup === "updated" && selectedItemId === itemId) {
       byItemId.set(itemId, withoutInboxUpdatedFlag(pin.item));
     }
   }
@@ -96,10 +101,20 @@ export function buildInboxSessionList(input: {
   sortedItems: readonly InboxListItem[];
   pinnedItems: ReadonlyMap<string, InboxSessionPin>;
   displayOrder: readonly string[];
+  /**
+   * Open inbox row id. Pin-only Updated ghosts stay only while this matches —
+   * otherwise the list can go fully empty after the last item is finished.
+   */
+  selectedItemId?: string | null;
   referenceDate?: Date;
 }): { items: InboxListItem[]; displayOrder: string[] } {
   const referenceDate = input.referenceDate ?? new Date();
-  const byItemId = mergeItemMaps(input.sortedItems, input.pinnedItems);
+  const selectedItemId = input.selectedItemId ?? null;
+  const byItemId = mergeItemMaps(
+    input.sortedItems,
+    input.pinnedItems,
+    selectedItemId,
+  );
 
   if (input.displayOrder.length === 0) {
     const order = input.sortedItems.map((item) => item.id);

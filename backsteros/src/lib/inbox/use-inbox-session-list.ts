@@ -12,6 +12,7 @@ export function useInboxSessionList(
   ready: boolean,
   sortedItems: readonly InboxListItem[],
   pinnedItems: ReadonlyMap<string, InboxSessionPin>,
+  selectedItemId: string | null = null,
 ): InboxListItem[] {
   const displayOrderRef = useRef<string[]>([]);
 
@@ -28,8 +29,9 @@ export function useInboxSessionList(
       sortedItems,
       pinnedItems,
       displayOrder: displayOrderRef.current,
+      selectedItemId,
     });
     displayOrderRef.current = displayOrder;
     return items;
-  }, [inInboxPanel, pinnedItems, ready, sortedItems]);
+  }, [inInboxPanel, pinnedItems, ready, selectedItemId, sortedItems]);
 }

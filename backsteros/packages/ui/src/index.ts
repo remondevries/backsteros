@@ -591,6 +591,18 @@ export {
   type EmailMessageHtmlBodyProps,
 } from "./components/email/email-message-html-body.js";
 export {
+  EmailPlainBody,
+  type EmailPlainBodyProps,
+} from "./components/email/email-plain-body.js";
+export {
+  collectTrailingHtmlEmailQuoteNodes,
+  findPlainTextEmailQuoteStart,
+  getHtmlEmailQuoteSelector,
+  isHtmlEmailQuoteNode,
+  splitPlainTextEmailQuotes,
+  type SplitPlainTextEmailQuotesResult,
+} from "./email/email-quote-collapse.js";
+export {
   resolveEmailInlineAttachments,
   type EmailMessageInlineAttachment,
 } from "./email/email-message-html.js";
@@ -1958,11 +1970,16 @@ export {
 } from "./components/list-nav/status-group-show-more.js";
 
 export {
+  CAPPED_STATUS_LIST_STATUSES,
   COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
   COMPLETED_STATUS_LIST_PAGE_SIZE,
+  cappedStatusVisibleCount,
+  isCappedStatusListStatus,
   mapStatusGroupsWithCompletedCap,
   nextCompletedStatusVisibleCount,
   sliceCompletedStatusItems,
+  type CappedStatusListStatus,
+  type CappedStatusVisibleCounts,
   type CompletedStatusSlice,
 } from "./list-nav/completed-status-list-cap.js";
 

@@ -27,6 +27,7 @@ import { EmailComposeBodyStage } from "./email-compose-body-stage.js";
 import { EmailDraftSignOffShell } from "./email-draft-sign-off-shell.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { EmailMessageHtmlBody } from "./email-message-html-body.js";
+import { EmailPlainBody } from "./email-plain-body.js";
 import {
   plainTextEmailToHtml,
   type EmailMessageInlineAttachment,
@@ -848,10 +849,8 @@ function EmailThreadMessageCardComponent({
           loadInlineAttachment={resolvedLoadInlineAttachment}
           peekInlineAttachment={resolvedPeekInlineAttachment}
         />
-      ) : trimmedBody ? (
-        trimmedBody
       ) : (
-        emptyBodyLabel
+        <EmailPlainBody text={trimmedBody} emptyLabel={emptyBodyLabel} />
       )}
     </div>
   );

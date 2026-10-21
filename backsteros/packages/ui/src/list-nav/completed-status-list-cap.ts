@@ -1,17 +1,48 @@
-/** Initial visible rows in a Completed status group before Show more. */
-export const COMPLETED_STATUS_LIST_INITIAL_VISIBLE = 50;
+/** Initial visible rows in a capped status group before Show more. */
+export const COMPLETED_STATUS_LIST_INITIAL_VISIBLE = 25;
 
 /** Extra rows revealed each time Show more is clicked. */
-export const COMPLETED_STATUS_LIST_PAGE_SIZE = 50;
+export const COMPLETED_STATUS_LIST_PAGE_SIZE = 25;
+
+/** Terminal status groups that grow large and should start capped. */
+export const CAPPED_STATUS_LIST_STATUSES = [
+  "completed",
+  "canceled",
+  "duplicated",
+] as const;
+
+export type CappedStatusListStatus =
+  (typeof CAPPED_STATUS_LIST_STATUSES)[number];
 
 export type CompletedStatusSlice<T> = {
   visibleItems: readonly T[];
   hiddenCount: number;
 };
 
+export type CappedStatusVisibleCounts = Readonly<
+  Partial<Record<string, number>>
+>;
+
+export function isCappedStatusListStatus(
+  status: string,
+): status is CappedStatusListStatus {
+  return (CAPPED_STATUS_LIST_STATUSES as readonly string[]).includes(status);
+}
+
+export function cappedStatusVisibleCount(
+  status: string,
+  visibleCounts: CappedStatusVisibleCounts,
+  fallback: number = COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+): number {
+  const configured = visibleCounts[status];
+  if (typeof configured === "number" && Number.isFinite(configured)) {
+    return Math.max(0, Math.floor(configured));
+  }
+  return Math.max(0, Math.floor(fallback));
+}
+
 /**
- * Cap a Completed status group's rows for list performance.
- * Non-completed groups should pass through without calling this.
+ * Cap a status group's rows for list performance.
  */
 export function sliceCompletedStatusItems<T>(
   items: readonly T[],
@@ -38,23 +69,34 @@ export function nextCompletedStatusVisibleCount(
 }
 
 /**
- * Apply the completed-group cap to status-grouped lists.
- * Only the `completed` status is sliced; other groups are unchanged.
+ * Apply the terminal-group cap to status-grouped lists.
+ * `completed`, `canceled`, and `duplicated` are sliced; other groups pass through.
  */
 export function mapStatusGroupsWithCompletedCap<
   TItem,
   TGroup extends { status: string; items: readonly TItem[] },
 >(
   groups: readonly TGroup[],
-  completedVisibleCount: number,
+  visibleCounts:
+    | number
+    | CappedStatusVisibleCounts = COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
 ): Array<TGroup & { hiddenCount: number }> {
+  const counts: CappedStatusVisibleCounts =
+    typeof visibleCounts === "number"
+      ? {
+          completed: visibleCounts,
+          canceled: visibleCounts,
+          duplicated: visibleCounts,
+        }
+      : visibleCounts;
+
   return groups.map((group) => {
-    if (group.status !== "completed") {
+    if (!isCappedStatusListStatus(group.status)) {
       return { ...group, items: group.items, hiddenCount: 0 };
     }
     const { visibleItems, hiddenCount } = sliceCompletedStatusItems(
       group.items,
-      completedVisibleCount,
+      cappedStatusVisibleCount(group.status, counts),
     );
     return { ...group, items: visibleItems, hiddenCount };
   });

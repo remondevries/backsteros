@@ -1879,6 +1879,38 @@
   line-height: 1.55;
 }
 
+/* Collapsed quoted reply history (plain + HTML shadow styles mirror these). */
+.email-quote-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0;
+  padding: 0.15rem 0.45rem;
+  border: 0.5px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.04);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  cursor: pointer;
+  vertical-align: baseline;
+  user-select: none;
+}
+
+.email-quote-toggle:hover,
+.email-quote-toggle:focus-visible {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  background: rgb(255 255 255 / 0.08);
+  outline: none;
+}
+
+.email-quote-block {
+  margin-top: 0.55rem;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
 .email-thread-message__body--html {
   white-space: normal;
   border-radius: 6px;
@@ -1981,6 +2013,38 @@
   line-height: 1.55;
 }
 
+/* Draft letter preview: one muted ink for greeting, body, and sign-off.
+   Markdown heading rules otherwise snap to full --foreground and read as a
+   different gray mid-letter. */
+.email-draft-body-compose,
+.email-draft-body-compose .content-markdown-preview-body,
+.email-draft-body-compose .content-markdown-preview-body--rendered,
+.email-draft-body-compose .content-markdown-preview-body--rendered :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  b,
+  em,
+  i,
+  code,
+  a,
+  li,
+  p,
+  span
+) {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.email-draft-body-compose
+  .content-markdown-preview-body--rendered
+  .content-markdown-preview-link {
+  color: color-mix(in srgb, var(--foreground) 55%, #6eb6ff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .email-draft-body-compose {
   display: flex;
   flex-direction: column;
@@ -2031,7 +2095,7 @@
 .email-draft-body-compose__shell {
   margin: 0;
   white-space: pre-wrap;
-  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  color: inherit;
   font-size: 0.9rem;
   line-height: 1.55;
   user-select: none;
@@ -2057,7 +2121,7 @@
 .email-draft-sign-off__text {
   margin: 0;
   white-space: pre-wrap;
-  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  color: inherit;
   font-size: 0.9rem;
   line-height: 1.55;
 }
@@ -2066,12 +2130,13 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
 .email-draft-body-preview__shell {
   margin: 0;
   white-space: pre-wrap;
-  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  color: inherit;
   font-size: 0.9rem;
   line-height: 1.55;
 }

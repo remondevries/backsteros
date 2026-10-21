@@ -444,7 +444,18 @@ test("stripEmailDraftShell removes greeting already shown above the body", () =>
   );
 });
 
-test("emailMessagePlainBody prefers extracted text over html", () => {
+test("emailMessagePlainBody prefers full text over extracted (quoted replies)", () => {
+  assert.equal(
+    emailMessagePlainBody({
+      extractedText: "Hello",
+      text: "Hello\n\nOn Mon, Ada wrote:\n> Prior",
+      html: "<p>Hello</p>",
+    }),
+    "Hello\n\nOn Mon, Ada wrote:\n> Prior",
+  );
+});
+
+test("emailMessagePlainBody falls back to extracted when text is missing", () => {
   assert.equal(
     emailMessagePlainBody({
       extractedText: "Hello",
@@ -463,23 +474,23 @@ test("emailMessagePlainBody strips tags from html fallback", () => {
   );
 });
 
-test("emailMessageHtmlBody prefers extracted html", () => {
+test("emailMessageHtmlBody prefers full html over extracted", () => {
   assert.equal(
     emailMessageHtmlBody({
-      extractedHtml: "<p>Rendered</p>",
-      html: "<p>Raw</p>",
+      extractedHtml: "<p>New only</p>",
+      html: "<p>New only</p><blockquote>Quoted</blockquote>",
     }),
-    "<p>Rendered</p>",
+    "<p>New only</p><blockquote>Quoted</blockquote>",
   );
 });
 
-test("emailMessageHtmlBody uses raw html when extracted html is missing", () => {
+test("emailMessageHtmlBody uses extracted html when raw html is missing", () => {
   assert.equal(
     emailMessageHtmlBody({
       extractedText: "Plain",
-      html: "<p>Raw</p>",
+      extractedHtml: "<p>Extracted</p>",
     }),
-    "<p>Raw</p>",
+    "<p>Extracted</p>",
   );
 });
 

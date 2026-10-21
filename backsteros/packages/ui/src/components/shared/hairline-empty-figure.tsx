@@ -1,9 +1,9 @@
 "use client";
 
-import { Hub, Riffle } from "@lucasmarkes/hairline/react";
+import { Hub, Riffle, Stack } from "@lucasmarkes/hairline/react";
 import type { ReactNode } from "react";
 
-export type HairlineEmptyFigureKind = "riffle" | "hub";
+export type HairlineEmptyFigureKind = "riffle" | "hub" | "stack";
 
 export type HairlineEmptyFigureProps = {
   /** Accessible name for the figure. */
@@ -12,10 +12,19 @@ export type HairlineEmptyFigureProps = {
   caption?: ReactNode;
   /** Figure width in CSS pixels. Docs recommend 160–240 for empty states. */
   size?: number;
-  /** Hairline figure — Riffle for docs/files, Hub for commits/PRs. */
+  /**
+   * Hairline figure — Riffle for docs/files, Hub for commits/PRs,
+   * Stack for inbox.
+   */
   figure?: HairlineEmptyFigureKind;
   className?: string;
 };
+
+const FIGURE_BY_KIND = {
+  riffle: Riffle,
+  hub: Hub,
+  stack: Stack,
+} as const;
 
 /**
  * Hairline pointer-reactive empty-state illustration for content panes.
@@ -28,7 +37,7 @@ export function HairlineEmptyFigure({
   figure = "riffle",
   className = "",
 }: HairlineEmptyFigureProps) {
-  const Figure = figure === "hub" ? Hub : Riffle;
+  const Figure = FIGURE_BY_KIND[figure];
 
   return (
     <div

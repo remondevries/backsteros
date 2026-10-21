@@ -8,7 +8,9 @@ import {
   firstLetterHref,
   firstOrganizationHref,
   rememberSectionEntryHrefs,
+  rememberWorkspaceSectionEntries,
 } from "./section-entry-hrefs";
+import { peekSectionEntryHref } from "./section-entry-store";
 import {
   keepAliveSidePanelSurface,
   shouldKeepAliveSidePanelSurface,
@@ -24,6 +26,21 @@ afterEach(() => {
     organizations: null,
     letters: null,
     knowledge: null,
+  });
+});
+
+describe("rememberWorkspaceSectionEntries", () => {
+  it("clears the inbox seed when the live inbox is empty", () => {
+    rememberSectionEntryHrefs({ inbox: "/inbox/stale" });
+    rememberWorkspaceSectionEntries({
+      inboxItems: [],
+      contacts: [],
+      organizations: [],
+      letters: [],
+      knowledgeDocuments: [],
+    });
+    assert.equal(peekSectionEntryHref("inbox"), null);
+    assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox");
   });
 });
 

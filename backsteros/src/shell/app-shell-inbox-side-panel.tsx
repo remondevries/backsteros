@@ -201,8 +201,6 @@ export function DesktopInboxSidePanel({
       : null;
 
   const modeTitle = inboxListModeLabel(listMode);
-  const emptyLabel =
-    listMode === "agents" ? "No agent tasks." : "No notifications.";
 
   return (
     <>
@@ -224,7 +222,7 @@ export function DesktopInboxSidePanel({
         {...viewProps}
         items={items}
         title={modeTitle}
-        emptyLabel={emptyLabel}
+        emptyLabel={null}
         groupByAttentionStatus={groupItems}
         onCreateTask={
           listMode === "notifications" ? viewProps.onCreateTask : undefined
