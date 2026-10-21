@@ -3782,19 +3782,22 @@ button.entity-overview-subgroup__header:focus-visible {
 .contacts-overview__body {
   display: flex;
   min-width: 0;
-  flex: 1;
+  /* Leave most of the row for groups + socials so those stay one line. */
+  flex: 0 1 34%;
+  max-width: 380px;
   flex-direction: column;
   gap: 2px;
 }
 
 .contacts-overview__groups {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   align-items: center;
   gap: 6px;
-  flex: 0 1 auto;
-  max-width: min(48%, 320px);
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
   margin-left: 8px;
 }
 

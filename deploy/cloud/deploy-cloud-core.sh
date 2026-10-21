@@ -6,7 +6,9 @@
 #   ./deploy/cloud/deploy-cloud-core.sh
 #
 # Optional env:
-#   CLOUD_SSH_HOST=backsteros.com          — default; see ~/.ssh/config (sudo user, not root)
+#   CLOUD_SSH_HOST=lemodesign   — live cloud-core host (default). Do NOT use
+#                                 ssh production / hetzner (46.225.171.3) — that
+#                                 box has no cloud-core compose.
 #   REMOTE_COMPOSE_DIR=/root/backsteros/deploy/cloud
 #   SKIP_PROOF=1          — skip prove-crm-powersync-leader after deploy
 #   SKIP_BUILD=1          — reuse existing backsteros-cloud:latest image
@@ -15,12 +17,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-CLOUD_SSH_HOST="${CLOUD_SSH_HOST:-hetzner}"
+# Live cloud-core runs on lemodesign (188.34.196.92 / Tailscale 100.83.125.67).
+CLOUD_SSH_HOST="${CLOUD_SSH_HOST:-lemodesign}"
 # Compose lives under root's clone; deploy user has passwordless sudo.
 REMOTE_COMPOSE_DIR="${REMOTE_COMPOSE_DIR:-/root/backsteros/deploy/cloud}"
 REMOTE_COMPOSE="sudo docker compose -f ${REMOTE_COMPOSE_DIR}/docker-compose.yml --project-directory ${REMOTE_COMPOSE_DIR}"
 
 echo "==> Target: ${CLOUD_SSH_HOST}"
+if [[ "${CLOUD_SSH_HOST}" == "hetzner" || "${CLOUD_SSH_HOST}" == "production" || "${CLOUD_SSH_HOST}" == "46.225.171.3" ]]; then
+  echo "error: ${CLOUD_SSH_HOST} is the Kamal/build VPS — cloud-core lives on lemodesign." >&2
+  echo "  Use: CLOUD_SSH_HOST=lemodesign ./deploy/cloud/deploy-cloud-core.sh" >&2
+  exit 1
+fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   echo "==> Building backsteros-cloud:latest (linux/amd64)…"
