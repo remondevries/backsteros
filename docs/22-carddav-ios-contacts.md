@@ -25,13 +25,15 @@ If iOS asks for an account URL:
 
 ## Behaviour
 
-- Shows **all** workspace contacts (every CRM group).
+- Two address books (iOS may list both under the account):
+  - **BacksterOS Contacts** — people (`/dav/contacts/`)
+  - **BacksterOS Organizations** — company cards (`/dav/organizations/`, `X-ABShowAs:COMPANY`)
 - Edits on the phone write to cloud-core and replicate to local-core / desktop (last-write-wins).
 - Edits in BacksterOS appear on the phone on the next CardDAV sync.
-- Contact photo = **personal** avatar only (not the portal avatar). CardDAV serves ≤512px JPEG ≤160 KB (under [Apple’s](https://support.apple.com/en-us/103188) 224 KB photo / 256 KB vCard caps; Nextcloud peers use 256px). Full-size originals were what blew up sync (~57 MB REPORT).
+- Contact photo = **personal** avatar only (not the portal avatar). Organization photo = the same **organization** avatar the API uses. CardDAV serves ≤512px JPEG ≤160 KB (under [Apple’s](https://support.apple.com/en-us/103188) 224 KB photo / 256 KB vCard caps).
 
 ## Ops
 
 - DNS: Cloudflare A `contacts.backsteros.com` → lemodesign `188.34.196.92` (**DNS only**, not proxied — CF browser integrity breaks CardDAV from iOS).
 - TLS: Caddy on lemodesign (`/home/deploy/chatwoot/Caddyfile`) reverse_proxy to `172.18.0.1:8788`.
-- App routes: `/.well-known/carddav` → principal; `/dav/` home-set; `/dav/contacts/` address book.
+- App routes: `/.well-known/carddav` → principal; `/dav/` home-set; `/dav/contacts/` people; `/dav/organizations/` company cards.

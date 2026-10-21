@@ -1777,8 +1777,8 @@ export async function putAvatar(
   const updateEntityColumns = options?.updateEntityColumns !== false;
   let storeBytes = bytes;
   let storeType = contentType;
-  // Personal contact avatars are synced to iOS via CardDAV — keep them ≤512px.
-  if (entityType === "contact") {
+  // Contact + organization avatars sync to iOS CardDAV — keep stored sizes sane.
+  if (entityType === "contact" || entityType === "organization") {
     const { optimizeContactAvatarForStorage } = await import(
       "./carddav/photo.js"
     );

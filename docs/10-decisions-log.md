@@ -613,9 +613,9 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 1. **CardDAV protocol adapter in cloud-core** (`core/server` routes under `/dav/` + `/.well-known/carddav`) — not a separate DAV product.
 2. **Public host:** `https://contacts.backsteros.com` → Caddy on lemodesign → cloud-core `:8788`.
 3. **Auth:** dedicated `sk_live_…` API key with scope **`carddav`** only. iOS uses HTTP Basic (username `backsteros`; password = the secret). No anonymous PROPFIND.
-4. **Contents:** all non-deleted workspace contacts (every CRM group). One address book collection.
-5. **Sync:** bidirectional; **last-write-wins** on the contact row (`updated_at` / existing write + sync pipeline). Stable vCard `UID` = `contacts.id`.
-6. **Avatar:** personal contact photo only (`entityType=contact` / `avatar_storage_key`). Never portal avatar.
+4. **Contents:** two address books under `/dav/` — **Contacts** (`/dav/contacts/`, people) and **Organizations** (`/dav/organizations/`, Apple company cards with `X-ABShowAs:COMPANY`). All non-deleted workspace rows.
+5. **Sync:** bidirectional; **last-write-wins** (`updated_at` / existing write + sync pipeline). Stable vCard `UID` = `contacts.id` or `organizations.id`.
+6. **Avatar:** contact personal photo (`entityType=contact`); org cards use the same organization avatar as the REST API (`entityType=organization`). Never portal avatar.
 7. **v1 out of scope:** CalDAV/calendar, group-filtered books, Google Contacts import tooling, serving CardDAV from local-core.
 
 **Consequences:** Create a CardDAV key in Settings → API keys with only `carddav`. Desktop/mobile keep using REST/PowerSync; iPhone edits replicate via core replication like any other contact write.
