@@ -5,6 +5,8 @@ import sharp from "sharp";
 
 import {
   CARDDAV_PHOTO_MAX_BYTES,
+  CARDDAV_PHOTO_MAX_EDGE,
+  CONTACT_AVATAR_STORE_EDGE,
   optimizeCardDavPhoto,
   optimizeContactAvatarForStorage,
 } from "./photo.js";
@@ -32,7 +34,7 @@ test("optimizeCardDavPhoto shrinks a large JPEG under the CardDAV budget", async
   assert.ok(out.bytes.byteLength <= CARDDAV_PHOTO_MAX_BYTES);
   assert.ok(out.bytes.byteLength > 500);
   const meta = await sharp(Buffer.from(out.bytes)).metadata();
-  assert.ok((meta.width ?? 9999) <= 256);
+  assert.ok((meta.width ?? 9999) <= CARDDAV_PHOTO_MAX_EDGE);
 });
 
 test("optimizeContactAvatarForStorage caps huge uploads", async () => {
@@ -41,6 +43,6 @@ test("optimizeContactAvatarForStorage caps huge uploads", async () => {
   assert.equal(out.contentType, "image/jpeg");
   assert.ok(out.bytes.byteLength < input.byteLength);
   const meta = await sharp(Buffer.from(out.bytes)).metadata();
-  assert.ok((meta.width ?? 9999) <= 512);
-  assert.ok((meta.height ?? 9999) <= 512);
+  assert.ok((meta.width ?? 9999) <= CONTACT_AVATAR_STORE_EDGE);
+  assert.ok((meta.height ?? 9999) <= CONTACT_AVATAR_STORE_EDGE);
 });

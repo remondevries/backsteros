@@ -1,14 +1,30 @@
 /**
  * Resize/compress contact photos for CardDAV (iOS).
- * Large personal avatars (~MBs) make addressbook-query REPORT explode;
- * iOS then times out verification or skips PHOTO.
+ *
+ * Sources of truth for limits:
+ * - Apple iCloud Contacts: max photo 224 KB; max contact/vCard 256 KB
+ *   (https://support.apple.com/en-us/103188)
+ * - Nextcloud Contacts stores ≤256×256 (crop UI up to 512×512)
+ * - iOS only accepts inline base64 PHOTO (not remote URIs)
+ *
+ * We target ≤512px JPEG at ≤160 KB binary so base64 (~213 KB) + text
+ * stays under Apple’s 256 KB card limit, while looking sharp on Retina.
+ * The failure mode we hit was bulk REPORT of multi‑MB originals (~57 MB),
+ * not a hard Apple pixel limit.
  */
 import sharp from "sharp";
 
-/** Target max edge for CardDAV PHOTO (contact list thumbs). */
-export const CARDDAV_PHOTO_MAX_EDGE = 256;
-/** Soft byte budget after JPEG encode (base64 expands ~4/3). */
-export const CARDDAV_PHOTO_MAX_BYTES = 48_000;
+/** Max edge for CardDAV PHOTO — Retina-friendly contact detail. */
+export const CARDDAV_PHOTO_MAX_EDGE = 512;
+/**
+ * Max JPEG bytes before base64. Apple allows 224 KB photo / 256 KB card;
+ * leave headroom for text and XML escaping.
+ */
+export const CARDDAV_PHOTO_MAX_BYTES = 160_000;
+
+/** Stored personal avatars (BacksterOS UI) — higher than CardDAV wire size. */
+export const CONTACT_AVATAR_STORE_EDGE = 1024;
+export const CONTACT_AVATAR_STORE_MAX_BYTES = 300_000;
 
 export type CardDavPhoto = {
   contentType: string;
@@ -27,21 +43,29 @@ export async function optimizeCardDavPhoto(
 
   try {
     let edge = CARDDAV_PHOTO_MAX_EDGE;
-    let quality = 75;
+    let quality = 82;
     let out = await encodeJpeg(bytes, edge, quality);
 
+    while (out.byteLength > CARDDAV_PHOTO_MAX_BYTES && quality > 50) {
+      quality -= 8;
+      out = await encodeJpeg(bytes, edge, quality);
+    }
+    if (out.byteLength > CARDDAV_PHOTO_MAX_BYTES) {
+      edge = 384;
+      quality = 78;
+      out = await encodeJpeg(bytes, edge, quality);
+    }
     while (out.byteLength > CARDDAV_PHOTO_MAX_BYTES && quality > 45) {
-      quality -= 10;
+      quality -= 8;
       out = await encodeJpeg(bytes, edge, quality);
     }
     if (out.byteLength > CARDDAV_PHOTO_MAX_BYTES) {
-      edge = 192;
-      quality = 70;
+      edge = 256;
+      quality = 72;
       out = await encodeJpeg(bytes, edge, quality);
     }
-    if (out.byteLength > CARDDAV_PHOTO_MAX_BYTES) {
-      edge = 128;
-      quality = 65;
+    while (out.byteLength > CARDDAV_PHOTO_MAX_BYTES && quality > 40) {
+      quality -= 8;
       out = await encodeJpeg(bytes, edge, quality);
     }
 
@@ -52,24 +76,30 @@ export async function optimizeCardDavPhoto(
 }
 
 /**
- * Normalize personal contact avatars on upload (store a sane size).
- * Leaves small images alone; large ones become ≤512px JPEG.
+ * Normalize personal contact avatars on upload (store a sane size for the app).
+ * CardDAV still re-encodes to {@link CARDDAV_PHOTO_MAX_*} on sync.
  */
 export async function optimizeContactAvatarForStorage(
   bytes: Uint8Array,
   contentType: string,
 ): Promise<CardDavPhoto> {
-  const MAX_STORE_EDGE = 512;
-  const MAX_STORE_BYTES = 200_000;
   if (
-    bytes.byteLength <= MAX_STORE_BYTES &&
+    bytes.byteLength <= CONTACT_AVATAR_STORE_MAX_BYTES &&
     /jpeg|jpg/i.test(contentType) &&
-    !(await isWiderThan(bytes, MAX_STORE_EDGE))
+    !(await isWiderThan(bytes, CONTACT_AVATAR_STORE_EDGE))
   ) {
     return { contentType, bytes };
   }
   try {
-    const out = await encodeJpeg(bytes, MAX_STORE_EDGE, 82);
+    let quality = 85;
+    let out = await encodeJpeg(bytes, CONTACT_AVATAR_STORE_EDGE, quality);
+    while (
+      out.byteLength > CONTACT_AVATAR_STORE_MAX_BYTES &&
+      quality > 55
+    ) {
+      quality -= 8;
+      out = await encodeJpeg(bytes, CONTACT_AVATAR_STORE_EDGE, quality);
+    }
     return { contentType: "image/jpeg", bytes: new Uint8Array(out) };
   } catch {
     return { contentType, bytes };

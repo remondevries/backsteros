@@ -28,7 +28,7 @@ If iOS asks for an account URL:
 - Shows **all** workspace contacts (every CRM group).
 - Edits on the phone write to cloud-core and replicate to local-core / desktop (last-write-wins).
 - Edits in BacksterOS appear on the phone on the next CardDAV sync.
-- Contact photo = **personal** avatar only (not the portal avatar). Large avatars are resized to ≤256px JPEG for CardDAV so iOS sync stays small.
+- Contact photo = **personal** avatar only (not the portal avatar). CardDAV serves ≤512px JPEG ≤160 KB (under [Apple’s](https://support.apple.com/en-us/103188) 224 KB photo / 256 KB vCard caps; Nextcloud peers use 256px). Full-size originals were what blew up sync (~57 MB REPORT).
 
 ## Ops
 
