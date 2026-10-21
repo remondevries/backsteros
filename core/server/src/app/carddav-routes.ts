@@ -2,7 +2,10 @@
  * CardDAV address book for BacksterOS contacts (iOS Contacts ↔ Postgres).
  * Public host: contacts.backsteros.com → cloud-core.
  *
- * Clean URL: the address book *is* `/dav/` (contacts at `/dav/{id}.vcf`).
+ * Hierarchy (RFC 6352 / iOS discovery):
+ *   /dav/principals/me/  — principal
+ *   /dav/                — addressbook-home-set (lists address books)
+ *   /dav/contacts/       — the address book (vCards as children)
  */
 import type { Context, Hono, Next } from "hono";
 import { and, eq, inArray, isNull, max } from "drizzle-orm";
@@ -32,8 +35,9 @@ import {
 import { recordContactRestSyncEvent } from "../services/sync.js";
 import { nudgeContactLive } from "./route-shared.js";
 
-/** Address book root — use this as the iOS CardDAV account URL. */
-const ADDRESSBOOK_PATH = "/dav/";
+const PRINCIPAL_PATH = "/dav/principals/me/";
+const HOME_SET_PATH = "/dav/";
+const ADDRESSBOOK_PATH = "/dav/contacts/";
 const PUBLIC_ORIGIN = "https://contacts.backsteros.com";
 
 function davChallenge() {
@@ -67,14 +71,22 @@ function absoluteHref(path: string): string {
   return `${PUBLIC_ORIGIN}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function contactHref(contactId: string): string {
-  return absoluteHref(
-    `${ADDRESSBOOK_PATH}${encodeURIComponent(contactId)}.vcf`,
-  );
+function principalHref(): string {
+  return absoluteHref(PRINCIPAL_PATH);
+}
+
+function homeSetHref(): string {
+  return absoluteHref(HOME_SET_PATH);
 }
 
 function addressbookHref(): string {
   return absoluteHref(ADDRESSBOOK_PATH);
+}
+
+function contactHref(contactId: string): string {
+  return absoluteHref(
+    `${ADDRESSBOOK_PATH}${encodeURIComponent(contactId)}.vcf`,
+  );
 }
 
 function depthHeader(c: Context): number {
@@ -82,6 +94,13 @@ function depthHeader(c: Context): number {
   if (raw === "infinity") return 1;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? n : 1;
+}
+
+function davHeaders() {
+  return {
+    "Content-Type": "application/xml; charset=utf-8",
+    DAV: "1, 3, addressbook, sync-collection",
+  };
 }
 
 async function loadContactSources(
@@ -158,43 +177,118 @@ async function personalPhoto(
   };
 }
 
-function addressbookProps(ctag: string, requested: Set<string>): string {
-  const parts: string[] = [];
-  if (wantsProp(requested, "resourcetype")) {
-    parts.push(
-      "<D:resourcetype><D:collection/><D:principal/><C:addressbook/></D:resourcetype>",
-    );
-  }
-  if (wantsProp(requested, "displayname")) {
-    parts.push("<D:displayname>BacksterOS Contacts</D:displayname>");
-  }
-  // iOS expects getctag on address books for sync.
-  parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
-  if (wantsProp(requested, "current-user-principal")) {
-    parts.push(
-      `<D:current-user-principal><D:href>${xmlEscape(addressbookHref())}</D:href></D:current-user-principal>`,
-    );
-  }
-  if (wantsProp(requested, "principal-URL")) {
-    parts.push(
-      `<D:principal-URL><D:href>${xmlEscape(addressbookHref())}</D:href></D:principal-URL>`,
-    );
-  }
-  if (wantsProp(requested, "addressbook-home-set")) {
-    parts.push(
-      `<C:addressbook-home-set><D:href>${xmlEscape(addressbookHref())}</D:href></C:addressbook-home-set>`,
-    );
-  }
-  if (wantsProp(requested, "current-user-privilege-set")) {
-    parts.push(`<D:current-user-privilege-set>
+function privilegeSetXml(): string {
+  return `<D:current-user-privilege-set>
       <D:privilege><D:read/></D:privilege>
       <D:privilege><D:write/></D:privilege>
       <D:privilege><D:write-content/></D:privilege>
       <D:privilege><D:bind/></D:privilege>
       <D:privilege><D:unbind/></D:privilege>
-    </D:current-user-privilege-set>`);
+    </D:current-user-privilege-set>`;
+}
+
+function principalProps(requested: Set<string>): string {
+  const parts: string[] = [];
+  if (wantsProp(requested, "resourcetype")) {
+    parts.push(
+      "<D:resourcetype><D:collection/><D:principal/></D:resourcetype>",
+    );
   }
-  if (wantsProp(requested, "supported-address-data") || wantsProp(requested, "address-data")) {
+  if (wantsProp(requested, "displayname")) {
+    parts.push("<D:displayname>BacksterOS</D:displayname>");
+  }
+  if (wantsProp(requested, "current-user-principal")) {
+    parts.push(
+      `<D:current-user-principal><D:href>${xmlEscape(principalHref())}</D:href></D:current-user-principal>`,
+    );
+  }
+  if (wantsProp(requested, "principal-URL")) {
+    parts.push(
+      `<D:principal-URL><D:href>${xmlEscape(principalHref())}</D:href></D:principal-URL>`,
+    );
+  }
+  if (wantsProp(requested, "addressbook-home-set")) {
+    parts.push(
+      `<C:addressbook-home-set><D:href>${xmlEscape(homeSetHref())}</D:href></C:addressbook-home-set>`,
+    );
+  }
+  if (wantsProp(requested, "current-user-privilege-set")) {
+    parts.push(privilegeSetXml());
+  }
+  return parts.join("");
+}
+
+function homeSetProps(requested: Set<string>): string {
+  const parts: string[] = [];
+  if (wantsProp(requested, "resourcetype")) {
+    parts.push("<D:resourcetype><D:collection/></D:resourcetype>");
+  }
+  if (wantsProp(requested, "displayname")) {
+    parts.push("<D:displayname>Address Books</D:displayname>");
+  }
+  if (wantsProp(requested, "current-user-principal")) {
+    parts.push(
+      `<D:current-user-principal><D:href>${xmlEscape(principalHref())}</D:href></D:current-user-principal>`,
+    );
+  }
+  if (wantsProp(requested, "addressbook-home-set")) {
+    parts.push(
+      `<C:addressbook-home-set><D:href>${xmlEscape(homeSetHref())}</D:href></C:addressbook-home-set>`,
+    );
+  }
+  if (wantsProp(requested, "current-user-privilege-set")) {
+    parts.push(privilegeSetXml());
+  }
+  return parts.join("");
+}
+
+function addressbookChildProps(ctag: string, requested: Set<string>): string {
+  const parts: string[] = [];
+  if (wantsProp(requested, "resourcetype")) {
+    parts.push(
+      "<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>",
+    );
+  }
+  if (wantsProp(requested, "displayname")) {
+    parts.push("<D:displayname>BacksterOS Contacts</D:displayname>");
+  }
+  parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
+  return parts.join("");
+}
+
+function addressbookProps(ctag: string, requested: Set<string>): string {
+  const parts: string[] = [];
+  if (wantsProp(requested, "resourcetype")) {
+    parts.push(
+      "<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>",
+    );
+  }
+  if (wantsProp(requested, "displayname")) {
+    parts.push("<D:displayname>BacksterOS Contacts</D:displayname>");
+  }
+  parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
+  if (wantsProp(requested, "current-user-principal")) {
+    parts.push(
+      `<D:current-user-principal><D:href>${xmlEscape(principalHref())}</D:href></D:current-user-principal>`,
+    );
+  }
+  if (wantsProp(requested, "principal-URL")) {
+    parts.push(
+      `<D:principal-URL><D:href>${xmlEscape(principalHref())}</D:href></D:principal-URL>`,
+    );
+  }
+  if (wantsProp(requested, "addressbook-home-set")) {
+    parts.push(
+      `<C:addressbook-home-set><D:href>${xmlEscape(homeSetHref())}</D:href></C:addressbook-home-set>`,
+    );
+  }
+  if (wantsProp(requested, "current-user-privilege-set")) {
+    parts.push(privilegeSetXml());
+  }
+  if (
+    wantsProp(requested, "supported-address-data") ||
+    wantsProp(requested, "address-data")
+  ) {
     parts.push(
       `<C:supported-address-data><C:address-data-type content-type="text/vcard" version="3.0"/></C:supported-address-data>`,
     );
@@ -234,6 +328,58 @@ function contactPropsXml(
     );
   }
   return parts.join("");
+}
+
+async function propfindPrincipal(c: Context) {
+  const body = await c.req.text();
+  const requested = parseRequestedProps(body);
+  return c.body(
+    multistatus([
+      {
+        href: principalHref(),
+        propstats: [
+          {
+            status: "HTTP/1.1 200 OK",
+            propsXml: principalProps(requested),
+          },
+        ],
+      },
+    ]),
+    207,
+    davHeaders(),
+  );
+}
+
+async function propfindHomeSet(c: Context) {
+  const auth = c.get("auth") as AuthContext;
+  const body = await c.req.text();
+  const requested = parseRequestedProps(body);
+  const ctag = await collectionCtag(auth.workspaceId);
+  const responses = [
+    {
+      href: homeSetHref(),
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: homeSetProps(requested),
+        },
+      ],
+    },
+  ];
+
+  if (depthHeader(c) >= 1) {
+    responses.push({
+      href: addressbookHref(),
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: addressbookChildProps(ctag, requested),
+        },
+      ],
+    });
+  }
+
+  return c.body(multistatus(responses), 207, davHeaders());
 }
 
 async function propfindAddressbook(c: Context) {
@@ -278,10 +424,7 @@ async function propfindAddressbook(c: Context) {
     }
   }
 
-  return c.body(multistatus(responses), 207, {
-    "Content-Type": "application/xml; charset=utf-8",
-    DAV: "1, 3, addressbook, sync-collection",
-  });
+  return c.body(multistatus(responses), 207, davHeaders());
 }
 
 async function reportAddressbook(c: Context) {
@@ -307,10 +450,7 @@ async function reportAddressbook(c: Context) {
       ],
     });
   }
-  return c.body(multistatus(responses), 207, {
-    "Content-Type": "application/xml; charset=utf-8",
-    DAV: "1, 3, addressbook, sync-collection",
-  });
+  return c.body(multistatus(responses), 207, davHeaders());
 }
 
 async function getContactVcf(c: Context, file: string) {
@@ -474,46 +614,61 @@ async function deleteContactVcf(c: Context, file: string) {
   return c.body(null, 204);
 }
 
+function optionsDav(c: Context) {
+  return c.body(null, 204, {
+    Allow: "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
+    DAV: "1, 3, addressbook, sync-collection",
+  });
+}
+
 export function registerCardDavRoutes(app: Hono) {
   app.use("/.well-known/carddav", requireCardDavAuth);
   app.use("/dav", requireCardDavAuth);
   app.use("/dav/*", requireCardDavAuth);
 
-  // iOS discovers via /.well-known/carddav — return 207 here (do NOT 301;
-  // Apple often drops Basic credentials across redirects → "verification failed").
-  app.on("PROPFIND", "/.well-known/carddav", propfindAddressbook);
-  app.on("REPORT", "/.well-known/carddav", reportAddressbook);
-  app.get("/.well-known/carddav", (c) => c.redirect(addressbookHref(), 301));
+  // iOS discovers via /.well-known/carddav — answer with 207 (no 301;
+  // Apple often drops Basic credentials across redirects).
+  app.on("PROPFIND", "/.well-known/carddav", propfindPrincipal);
+  app.get("/.well-known/carddav", (c) => c.redirect(principalHref(), 301));
+  app.options("/.well-known/carddav", optionsDav);
 
-  // Legacy long paths → clean /dav/
-  app.all("/dav/addressbooks/*", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
-  app.all("/dav/principals/*", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
+  app.on("PROPFIND", "/dav/principals/me", propfindPrincipal);
+  app.on("PROPFIND", "/dav/principals/me/", propfindPrincipal);
+  app.options("/dav/principals/me", optionsDav);
+  app.options("/dav/principals/me/", optionsDav);
 
-  app.on("PROPFIND", "/dav", propfindAddressbook);
-  app.on("PROPFIND", "/dav/", propfindAddressbook);
-  app.on("REPORT", "/dav", reportAddressbook);
-  app.on("REPORT", "/dav/", reportAddressbook);
+  app.on("PROPFIND", "/dav", propfindHomeSet);
+  app.on("PROPFIND", "/dav/", propfindHomeSet);
+  app.options("/dav", optionsDav);
+  app.options("/dav/", optionsDav);
 
-  app.get("/dav/:file", (c) => getContactVcf(c, c.req.param("file")));
-  app.put("/dav/:file", (c) => putContactVcf(c, c.req.param("file")));
-  app.delete("/dav/:file", (c) => deleteContactVcf(c, c.req.param("file")));
+  app.on("PROPFIND", "/dav/contacts", propfindAddressbook);
+  app.on("PROPFIND", "/dav/contacts/", propfindAddressbook);
+  app.on("REPORT", "/dav/contacts", reportAddressbook);
+  app.on("REPORT", "/dav/contacts/", reportAddressbook);
+  app.options("/dav/contacts", optionsDav);
+  app.options("/dav/contacts/", optionsDav);
 
-  app.options("/dav", (c) =>
-    c.body(null, 204, {
-      Allow: "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
-      DAV: "1, 3, addressbook, sync-collection",
-    }),
+  app.get("/dav/contacts/:file", (c) => getContactVcf(c, c.req.param("file")));
+  app.put("/dav/contacts/:file", (c) => putContactVcf(c, c.req.param("file")));
+  app.delete("/dav/contacts/:file", (c) =>
+    deleteContactVcf(c, c.req.param("file")),
   );
-  app.options("/dav/*", (c) =>
-    c.body(null, 204, {
-      Allow: "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
-      DAV: "1, 3, addressbook, sync-collection",
-    }),
-  );
-  app.options("/.well-known/carddav", (c) =>
-    c.body(null, 204, {
-      Allow: "OPTIONS, PROPFIND, GET",
-      DAV: "1, 3, addressbook",
-    }),
-  );
+
+  // Legacy flat /dav/{id}.vcf → same handlers (pre-hierarchy clients).
+  app.get("/dav/:file", (c) => {
+    const file = c.req.param("file");
+    if (file === "contacts" || file === "principals") return c.notFound();
+    return getContactVcf(c, file);
+  });
+  app.put("/dav/:file", (c) => {
+    const file = c.req.param("file");
+    if (file === "contacts" || file === "principals") return c.notFound();
+    return putContactVcf(c, file);
+  });
+  app.delete("/dav/:file", (c) => {
+    const file = c.req.param("file");
+    if (file === "contacts" || file === "principals") return c.notFound();
+    return deleteContactVcf(c, file);
+  });
 }

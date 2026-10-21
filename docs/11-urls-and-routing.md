@@ -13,7 +13,7 @@
 | URL | Purpose |
 | --- | --- |
 | `https://agent.backsteros.com` | Public agents HTTPS door → **cloud-core** on the VPS |
-| `https://contacts.backsteros.com` | CardDAV address book (iOS Contacts) → cloud-core `/dav/` |
+| `https://contacts.backsteros.com` | CardDAV (iOS Contacts) → cloud-core `/dav/` home-set, `/dav/contacts/` book (DNS-only) |
 | `http://100.83.125.67:8788` | Cloud-core on Tailscale (Hetzner `lemodesign`; same data twin) |
 
 Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale

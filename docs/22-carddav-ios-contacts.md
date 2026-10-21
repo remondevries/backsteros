@@ -30,6 +30,6 @@ If iOS asks for an account URL:
 
 ## Ops
 
-- DNS: Cloudflare A `contacts.backsteros.com` → lemodesign `188.34.196.92` (proxied).
+- DNS: Cloudflare A `contacts.backsteros.com` → lemodesign `188.34.196.92` (**DNS only**, not proxied — CF browser integrity breaks CardDAV from iOS).
 - TLS: Caddy on lemodesign (`/home/deploy/chatwoot/Caddyfile`) reverse_proxy to `172.18.0.1:8788`.
-- App routes: cloud-core `/.well-known/carddav` and `/dav/*`.
+- App routes: `/.well-known/carddav` → principal; `/dav/` home-set; `/dav/contacts/` address book.
