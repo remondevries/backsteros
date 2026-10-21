@@ -30,15 +30,12 @@
   text-size-adjust: none;
   font-kerning: normal;
 
+  // Transparent glyphs (WASM paints them); orange fill is the visible highlight.
   &::selection,
   *::selection {
     color: transparent;
     -webkit-text-fill-color: transparent; // WebKit/Safari
-  }
-
-  &::selection,
-  *::selection {
-    color: transparent;
+    background-color: var(--text-editor-selection-background-color);
   }
 
   [data-itype="paragraph"] {

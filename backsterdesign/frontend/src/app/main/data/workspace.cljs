@@ -594,15 +594,10 @@
                       (rx/take 1)
                       (rx/map #(dwl/go-to-local-component :id component-id :update-layout? (:update-layout rparams)))))
 
-               ;; Board deep-links: reveal whenever the route carries board-id
-               ;; after a viewport init (cold open). Same-file re-clicks are
-               ;; handled by `go-to-workspace` / the workspace UI schedule.
-               (when (:board-id rparams)
-                 (->> stream
-                      (rx/filter (ptk/type? ::dwv/initialize-viewport))
-                      (rx/take 1)
-                      (rx/map #(schedule-reveal-workspace-target
-                                (:board-id rparams)))))
+               ;; Board deep-links: workspace UI effect on
+               ;; file-id/page-id/board-id/file-loaded? is the single reveal
+               ;; path (see `workspace*`). Do not also schedule here — that
+               ;; double-zooms on cold open.
 
                (when-let [comment-id (some-> rparams :comment-id uuid/parse)]
                  (->> stream

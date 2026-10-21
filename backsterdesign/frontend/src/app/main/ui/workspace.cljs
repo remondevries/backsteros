@@ -195,7 +195,7 @@
 
 (mf/defc workspace*
   {::mf/wrap [mf/memo]}
-  [{:keys [team-id project-id file-id page-id layout-name]}]
+  [{:keys [team-id project-id file-id page-id board-id layout-name]}]
 
   (let [layout           (mf/deref refs/workspace-layout)
         wglobal          (mf/deref refs/workspace-global)
@@ -222,7 +222,10 @@
 
         first-frame-rendered?  (mf/use-state false)
 
-        background-color (:background-color wglobal)]
+        background-color (:background-color wglobal)
+
+        ;; Stabilize board-id for effect deps (uuid vs string vs 1-vector).
+        board-id         (hooks/use-equal-memo board-id)]
 
     (mf/with-effect []
       (st/emit! (dps/initialize-persistence)
@@ -248,6 +251,14 @@
     (mf/with-effect [file-id page-id file-loaded?]
       (when (and file-loaded? (not page-id))
         (st/emit! (dcm/go-to-workspace :file-id file-id ::rt/replace true))))
+
+    ;; Board deep-link reveal: single path for cold open, page switch, and
+    ;; same-file board-id changes. Retries until page objects exist.
+    ;; Same-board re-clicks with an unchanged route use desktop reveal-board
+    ;; / hash force-refresh (board-id briefly clears then restores).
+    (mf/with-effect [file-id page-id board-id file-loaded?]
+      (when (and file-loaded? page-id board-id)
+        (st/emit! (dw/schedule-reveal-workspace-target board-id))))
 
     (mf/with-effect [file-id page-id]
       (reset! first-frame-rendered? false))
@@ -289,11 +300,13 @@
 
 (mf/defc workspace-page*
   {::mf/lazy-load true}
-  [{:keys [file-id page-id] :as props}]
-  (let [file-id (hooks/use-equal-memo file-id)
-        page-id (hooks/use-equal-memo page-id)
-        props   (mf/spread-props props {:file-id file-id
-                                        :page-id page-id})]
+  [{:keys [file-id page-id board-id] :as props}]
+  (let [file-id  (hooks/use-equal-memo file-id)
+        page-id  (hooks/use-equal-memo page-id)
+        board-id (hooks/use-equal-memo board-id)
+        props    (mf/spread-props props {:file-id file-id
+                                         :page-id page-id
+                                         :board-id board-id})]
 
     (when (uuid? file-id)
       [:> workspace* props])))

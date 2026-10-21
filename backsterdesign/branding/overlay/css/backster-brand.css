@@ -34,7 +34,7 @@ body.light {
 /*
  * Orange caret + selectable text in form fields only.
  * Do NOT style [contenteditable] globally — the canvas text editor is
- * contenteditable with transparent glyphs + Skia selection imposters.
+ * contenteditable with transparent glyphs and its own ::selection fill.
  */
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
 textarea {
@@ -55,8 +55,9 @@ textarea::selection {
 }
 
 /*
- * Canvas text editor: fill-driven caret + fully transparent native selection
- * so only the Skia / DOM imposters show the highlight.
+ * Canvas text editor (text-editor/v2 + render-wasm): glyphs are transparent so
+ * the WASM canvas shows through; selection highlight is CSS ::selection fill.
+ * (text-editor-wasm/v1 draws selection in Skia and uses opacity:0 on its input.)
  */
 [class*="v2_editor"],
 [class*="v2_editor"] *,
@@ -71,7 +72,13 @@ textarea::selection {
 [class*="v2_editor"] *::selection,
 [class*="text-editor"] ::selection,
 [class*="text-editor"]::selection,
-[class*="text-editor"] *::selection,
+[class*="text-editor"] *::selection {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background: var(--text-editor-selection-background-color, rgba(238, 122, 71, 0.7)) !important;
+}
+
+/* WASM capture surface is opacity:0; keep native selection fully invisible. */
 #text-editor-wasm-input::selection,
 #text-editor-wasm-input *::selection {
   color: transparent !important;

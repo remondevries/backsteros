@@ -278,11 +278,15 @@
              team-id    (some-> params :team-id uuid/parse*)
              file-id    (some-> params :file-id uuid/parse*)
              page-id    (some-> params :page-id uuid/parse*)
+             ;; Scalar only — multi board-id query values use the last id
+             ;; (same as other query params). Deep-links pass a single board.
+             board-id   (some-> (rt/get-query-param params :board-id) uuid/parse*)
              layout     (some-> params :layout keyword)]
          [:> team-container* {:team-id team-id}
           [:> workspace-page* {:team-id team-id
                                :file-id file-id
                                :page-id page-id
+                               :board-id board-id
                                :layout-name layout
                                :key file-id}]])
 
