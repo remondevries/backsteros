@@ -47,9 +47,31 @@ function davChallenge() {
   };
 }
 
+function cardDavLog(
+  c: Context,
+  status: number,
+  extra: Record<string, string | number | boolean | undefined>,
+) {
+  const path = new URL(c.req.url).pathname;
+  const ua = c.req.header("User-Agent") ?? "-";
+  const depth = c.req.header("Depth") ?? "-";
+  const parts = Object.entries(extra)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .join(" ");
+  console.info(
+    `[carddav] ${c.req.method} ${path} → ${status} depth=${JSON.stringify(depth)} ua=${JSON.stringify(ua)}${parts ? ` ${parts}` : ""}`,
+  );
+}
+
 async function requireCardDavAuth(c: Context, next: Next) {
   const auth = await resolveAuthFlexible(c.req.header("Authorization"));
   if (!auth || !hasCardDavScope(auth)) {
+    cardDavLog(c, 401, {
+      auth: "fail",
+      hasAuthorization: Boolean(c.req.header("Authorization")),
+      scopeOk: auth ? hasCardDavScope(auth) : false,
+    });
     void logUnauthorizedRequest({
       method: c.req.method,
       path: new URL(c.req.url).pathname,
@@ -64,6 +86,34 @@ async function requireCardDavAuth(c: Context, next: Next) {
   }
   c.set("auth", auth);
   await next();
+}
+
+function withCardDavAuth(
+  handler: (c: Context) => Response | Promise<Response | void> | void,
+) {
+  return async (c: Context) => {
+    const auth = await resolveAuthFlexible(c.req.header("Authorization"));
+    if (!auth || !hasCardDavScope(auth)) {
+      cardDavLog(c, 401, {
+        auth: "fail",
+        hasAuthorization: Boolean(c.req.header("Authorization")),
+        scopeOk: auth ? hasCardDavScope(auth) : false,
+      });
+      void logUnauthorizedRequest({
+        method: c.req.method,
+        path: new URL(c.req.url).pathname,
+        userAgent: c.req.header("User-Agent"),
+        authorization: c.req.header("Authorization"),
+      });
+      return c.text(
+        '<?xml version="1.0"?><d:error xmlns:d="DAV:"><d:need-privileges/></d:error>',
+        401,
+        davChallenge(),
+      );
+    }
+    c.set("auth", auth);
+    return handler(c);
+  };
 }
 
 function absoluteHref(path: string): string {
@@ -331,12 +381,24 @@ function contactPropsXml(
 }
 
 async function propfindPrincipal(c: Context) {
+  const auth = c.get("auth") as AuthContext | undefined;
   const body = await c.req.text();
   const requested = parseRequestedProps(body);
+  const path = new URL(c.req.url).pathname;
+  const href =
+    path.startsWith("/principals")
+      ? absoluteHref(path.endsWith("/") ? path : `${path}/`)
+      : principalHref();
+  cardDavLog(c, 207, {
+    handler: "principal",
+    auth: auth?.apiKeyName ?? auth?.kind ?? "ok",
+    props: [...requested].join(",") || "-",
+    href,
+  });
   return c.body(
     multistatus([
       {
-        href: principalHref(),
+        href,
         propstats: [
           {
             status: "HTTP/1.1 200 OK",
@@ -348,6 +410,90 @@ async function propfindPrincipal(c: Context) {
     207,
     davHeaders(),
   );
+}
+
+/** Root `/` — iOS probes here after well-known for current-user-principal. */
+async function propfindRoot(c: Context) {
+  const auth = c.get("auth") as AuthContext | undefined;
+  const body = await c.req.text();
+  const requested = parseRequestedProps(body);
+  cardDavLog(c, 207, {
+    handler: "root",
+    auth: auth?.apiKeyName ?? auth?.kind ?? "ok",
+    props: [...requested].join(",") || "-",
+  });
+  return c.body(
+    multistatus([
+      {
+        href: absoluteHref("/"),
+        propstats: [
+          {
+            status: "HTTP/1.1 200 OK",
+            propsXml: principalProps(requested),
+          },
+        ],
+      },
+    ]),
+    207,
+    davHeaders(),
+  );
+}
+
+/** `/principals/` collection — iOS often walks here looking for a principal child. */
+async function propfindPrincipalsCollection(c: Context) {
+  const auth = c.get("auth") as AuthContext | undefined;
+  const body = await c.req.text();
+  const requested = parseRequestedProps(body);
+  const responses = [
+    {
+      href: absoluteHref("/principals/"),
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: (() => {
+            const parts: string[] = [];
+            if (wantsProp(requested, "resourcetype")) {
+              parts.push(
+                "<D:resourcetype><D:collection/></D:resourcetype>",
+              );
+            }
+            if (wantsProp(requested, "displayname")) {
+              parts.push("<D:displayname>Principals</D:displayname>");
+            }
+            if (wantsProp(requested, "current-user-principal")) {
+              parts.push(
+                `<D:current-user-principal><D:href>${xmlEscape(principalHref())}</D:href></D:current-user-principal>`,
+              );
+            }
+            if (wantsProp(requested, "addressbook-home-set")) {
+              parts.push(
+                `<C:addressbook-home-set><D:href>${xmlEscape(homeSetHref())}</D:href></C:addressbook-home-set>`,
+              );
+            }
+            return parts.join("");
+          })(),
+        },
+      ],
+    },
+  ];
+  if (depthHeader(c) >= 1) {
+    responses.push({
+      href: absoluteHref("/principals/me/"),
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: principalProps(requested),
+        },
+      ],
+    });
+  }
+  cardDavLog(c, 207, {
+    handler: "principals-collection",
+    auth: auth?.apiKeyName ?? auth?.kind ?? "ok",
+    props: [...requested].join(",") || "-",
+    children: depthHeader(c) >= 1 ? 1 : 0,
+  });
+  return c.body(multistatus(responses), 207, davHeaders());
 }
 
 async function propfindHomeSet(c: Context) {
@@ -379,6 +525,12 @@ async function propfindHomeSet(c: Context) {
     });
   }
 
+  cardDavLog(c, 207, {
+    handler: "home-set",
+    auth: auth.apiKeyName ?? auth.kind,
+    props: [...requested].join(",") || "-",
+    children: depthHeader(c) >= 1 ? 1 : 0,
+  });
   return c.body(multistatus(responses), 207, davHeaders());
 }
 
@@ -424,6 +576,12 @@ async function propfindAddressbook(c: Context) {
     }
   }
 
+  cardDavLog(c, 207, {
+    handler: "addressbook",
+    auth: auth.apiKeyName ?? auth.kind,
+    props: [...requested].join(",") || "-",
+    contacts: Math.max(0, responses.length - 1),
+  });
   return c.body(multistatus(responses), 207, davHeaders());
 }
 
@@ -625,12 +783,27 @@ export function registerCardDavRoutes(app: Hono) {
   app.use("/.well-known/carddav", requireCardDavAuth);
   app.use("/dav", requireCardDavAuth);
   app.use("/dav/*", requireCardDavAuth);
+  app.use("/principals", requireCardDavAuth);
+  app.use("/principals/*", requireCardDavAuth);
 
   // iOS discovers via /.well-known/carddav — answer with 207 (no 301;
   // Apple often drops Basic credentials across redirects).
   app.on("PROPFIND", "/.well-known/carddav", propfindPrincipal);
   app.get("/.well-known/carddav", (c) => c.redirect(principalHref(), 301));
   app.options("/.well-known/carddav", optionsDav);
+
+  // iOS also PROPFINDs `/` and `/principals/` after well-known (was 404 → verify fail).
+  app.on("PROPFIND", "/", withCardDavAuth(propfindRoot));
+  app.options("/", withCardDavAuth(optionsDav));
+
+  app.on("PROPFIND", "/principals", propfindPrincipalsCollection);
+  app.on("PROPFIND", "/principals/", propfindPrincipalsCollection);
+  app.on("PROPFIND", "/principals/me", propfindPrincipal);
+  app.on("PROPFIND", "/principals/me/", propfindPrincipal);
+  app.options("/principals", optionsDav);
+  app.options("/principals/", optionsDav);
+  app.options("/principals/me", optionsDav);
+  app.options("/principals/me/", optionsDav);
 
   app.on("PROPFIND", "/dav/principals/me", propfindPrincipal);
   app.on("PROPFIND", "/dav/principals/me/", propfindPrincipal);

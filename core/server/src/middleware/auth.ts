@@ -80,14 +80,35 @@ export async function logUnauthorizedRequest(input: {
   userAgent?: string | null;
   authorization?: string | null;
 }): Promise<void> {
-  const token = getBearerToken(input.authorization ?? undefined);
-  const kind = bearerKindLabel(token);
-  let keyName = kind;
-  if (kind === "api_key" && token) {
-    try {
-      keyName = await resolveApiKeyNameForAudit(token);
-    } catch {
-      keyName = "unknown";
+  const authorization = input.authorization ?? undefined;
+  let keyName: string;
+  if (authorization?.startsWith("Basic ")) {
+    // Never log the password — only whether Basic was present / looks like an API key.
+    const { parseBasicAuthCredentials, isApiKeySecret } = await import(
+      "../services/carddav/auth.js"
+    );
+    const basic = parseBasicAuthCredentials(authorization);
+    if (!basic?.password) {
+      keyName = "basic_malformed";
+    } else if (isApiKeySecret(basic.password)) {
+      try {
+        keyName = `basic:${await resolveApiKeyNameForAudit(basic.password)}`;
+      } catch {
+        keyName = "basic:api_key_unknown";
+      }
+    } else {
+      keyName = `basic:shared_or_other user=${JSON.stringify(basic.username)} len=${basic.password.length}`;
+    }
+  } else {
+    const token = getBearerToken(authorization);
+    const kind = bearerKindLabel(token);
+    keyName = kind;
+    if (kind === "api_key" && token) {
+      try {
+        keyName = await resolveApiKeyNameForAudit(token);
+      } catch {
+        keyName = "unknown";
+      }
     }
   }
 
