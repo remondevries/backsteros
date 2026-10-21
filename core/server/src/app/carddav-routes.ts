@@ -1,6 +1,8 @@
 /**
  * CardDAV address book for BacksterOS contacts (iOS Contacts ↔ Postgres).
  * Public host: contacts.backsteros.com → cloud-core.
+ *
+ * Clean URL: the address book *is* `/dav/` (contacts at `/dav/{id}.vcf`).
  */
 import type { Context, Hono, Next } from "hono";
 import { and, eq, inArray, isNull, max } from "drizzle-orm";
@@ -30,10 +32,8 @@ import {
 import { recordContactRestSyncEvent } from "../services/sync.js";
 import { nudgeContactLive } from "./route-shared.js";
 
-const PRINCIPAL = "backsteros";
-const ADDRESSBOOK_PATH = `/dav/addressbooks/${PRINCIPAL}/contacts/`;
-const PRINCIPAL_PATH = `/dav/principals/${PRINCIPAL}/`;
-const ADDRESSBOOK_HOME = `/dav/addressbooks/${PRINCIPAL}/`;
+/** Address book root — use this as the iOS CardDAV account URL. */
+const ADDRESSBOOK_PATH = "/dav/";
 
 function davChallenge() {
   return {
@@ -150,14 +150,29 @@ function addressbookProps(ctag: string, requested: Set<string>): string {
   const parts: string[] = [];
   if (wantsProp(requested, "resourcetype")) {
     parts.push(
-      "<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>",
+      "<D:resourcetype><D:collection/><D:principal/><C:addressbook/></D:resourcetype>",
     );
   }
   if (wantsProp(requested, "displayname")) {
     parts.push("<D:displayname>BacksterOS Contacts</D:displayname>");
   }
-  if (wantsProp(requested, "getctag") || wantsProp(requested, "getctag")) {
+  if (wantsProp(requested, "getctag")) {
     parts.push(`<CS:getctag>${xmlEscape(ctag)}</CS:getctag>`);
+  }
+  if (wantsProp(requested, "current-user-principal")) {
+    parts.push(
+      `<D:current-user-principal><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></D:current-user-principal>`,
+    );
+  }
+  if (wantsProp(requested, "principal-URL")) {
+    parts.push(
+      `<D:principal-URL><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></D:principal-URL>`,
+    );
+  }
+  if (wantsProp(requested, "addressbook-home-set")) {
+    parts.push(
+      `<C:addressbook-home-set><D:href>${xmlEscape(ADDRESSBOOK_PATH)}</D:href></C:addressbook-home-set>`,
+    );
   }
   if (wantsProp(requested, "current-user-privilege-set")) {
     parts.push(`<D:current-user-privilege-set>
@@ -174,7 +189,9 @@ function addressbookProps(ctag: string, requested: Set<string>): string {
     );
   }
   if (wantsProp(requested, "sync-token")) {
-    parts.push(`<D:sync-token>https://contacts.backsteros.com/sync/${xmlEscape(ctag.replaceAll('"', ""))}</D:sync-token>`);
+    parts.push(
+      `<D:sync-token>https://contacts.backsteros.com/sync/${xmlEscape(ctag.replaceAll('"', ""))}</D:sync-token>`,
+    );
   }
   return parts.join("");
 }
@@ -208,347 +225,276 @@ function contactPropsXml(
   return parts.join("");
 }
 
-export function registerCardDavRoutes(app: Hono) {
-  app.use("/.well-known/carddav", requireCardDavAuth);
-  app.use("/dav/*", requireCardDavAuth);
+async function propfindAddressbook(c: Context) {
+  const auth = c.get("auth") as AuthContext;
+  const body = await c.req.text();
+  const requested = parseRequestedProps(body);
+  const ctag = await collectionCtag(auth.workspaceId);
+  const responses = [
+    {
+      href: ADDRESSBOOK_PATH,
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: addressbookProps(ctag, requested),
+        },
+      ],
+    },
+  ];
 
-  app.all("/.well-known/carddav", (c) => {
-    return c.redirect(ADDRESSBOOK_HOME, 301);
-  });
-
-  // Root DAV discovery
-  app.on("PROPFIND", "/dav/", async (c) => {
-    const body = await c.req.text();
-    const requested = parseRequestedProps(body);
-    const props: string[] = [];
-    if (wantsProp(requested, "current-user-principal")) {
-      props.push(
-        `<D:current-user-principal><D:href>${xmlEscape(PRINCIPAL_PATH)}</D:href></D:current-user-principal>`,
-      );
-    }
-    if (wantsProp(requested, "resourcetype")) {
-      props.push("<D:resourcetype><D:collection/></D:resourcetype>");
-    }
-    const xml = multistatus([
-      {
-        href: "/dav/",
-        propstats: [
-          { status: "HTTP/1.1 200 OK", propsXml: props.join("") || "<D:resourcetype><D:collection/></D:resourcetype>" },
-        ],
-      },
-    ]);
-    return c.body(xml, 207, { "Content-Type": "application/xml; charset=utf-8" });
-  });
-
-  app.on("PROPFIND", "/dav/principals/:name/", async (c) => {
-    const body = await c.req.text();
-    const requested = parseRequestedProps(body);
-    const props: string[] = [];
-    if (wantsProp(requested, "resourcetype")) {
-      props.push(
-        "<D:resourcetype><D:collection/><D:principal/></D:resourcetype>",
-      );
-    }
-    if (wantsProp(requested, "displayname")) {
-      props.push("<D:displayname>BacksterOS</D:displayname>");
-    }
-    if (wantsProp(requested, "addressbook-home-set")) {
-      props.push(
-        `<C:addressbook-home-set><D:href>${xmlEscape(ADDRESSBOOK_HOME)}</D:href></C:addressbook-home-set>`,
-      );
-    }
-    if (wantsProp(requested, "principal-URL")) {
-      props.push(
-        `<D:principal-URL><D:href>${xmlEscape(PRINCIPAL_PATH)}</D:href></D:principal-URL>`,
-      );
-    }
-    const xml = multistatus([
-      {
-        href: PRINCIPAL_PATH,
-        propstats: [{ status: "HTTP/1.1 200 OK", propsXml: props.join("") }],
-      },
-    ]);
-    return c.body(xml, 207, { "Content-Type": "application/xml; charset=utf-8" });
-  });
-
-  app.on("PROPFIND", "/dav/addressbooks/:name/", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const body = await c.req.text();
-    const requested = parseRequestedProps(body);
-    const ctag = await collectionCtag(auth.workspaceId);
-    const responses = [
-      {
-        href: ADDRESSBOOK_HOME,
-        propstats: [
-          {
-            status: "HTTP/1.1 200 OK",
-            propsXml:
-              "<D:resourcetype><D:collection/></D:resourcetype><D:displayname>Address books</D:displayname>",
-          },
-        ],
-      },
-    ];
-    if (depthHeader(c) >= 1) {
-      responses.push({
-        href: ADDRESSBOOK_PATH,
-        propstats: [
-          {
-            status: "HTTP/1.1 200 OK",
-            propsXml: addressbookProps(ctag, requested),
-          },
-        ],
-      });
-    }
-    return c.body(multistatus(responses), 207, {
-      "Content-Type": "application/xml; charset=utf-8",
-    });
-  });
-
-  app.on("PROPFIND", "/dav/addressbooks/:name/contacts/", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const body = await c.req.text();
-    const requested = parseRequestedProps(body);
-    const ctag = await collectionCtag(auth.workspaceId);
-    const responses = [
-      {
-        href: ADDRESSBOOK_PATH,
-        propstats: [
-          {
-            status: "HTTP/1.1 200 OK",
-            propsXml: addressbookProps(ctag, requested),
-          },
-        ],
-      },
-    ];
-
-    if (depthHeader(c) >= 1) {
-      const sources = await loadContactSources(auth.workspaceId);
-      for (const source of sources) {
-        const photo = wantsProp(requested, "address-data") || requested.has("*")
+  if (depthHeader(c) >= 1) {
+    const sources = await loadContactSources(auth.workspaceId);
+    for (const source of sources) {
+      const photo =
+        wantsProp(requested, "address-data") || requested.has("*")
           ? await personalPhoto(auth.workspaceId, source.id)
           : null;
-        const vcard = formatVCard(source, photo);
-        responses.push({
-          href: contactHref(source.id),
-          propstats: [
-            {
-              status: "HTTP/1.1 200 OK",
-              propsXml: contactPropsXml(
-                source,
-                vcard,
-                requested,
-                wantsProp(requested, "address-data"),
-              ),
-            },
-          ],
-        });
-      }
-    }
-
-    return c.body(multistatus(responses), 207, {
-      "Content-Type": "application/xml; charset=utf-8",
-    });
-  });
-
-  app.on("REPORT", "/dav/addressbooks/:name/contacts/", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const body = await c.req.text();
-    const includeData = /address-data/i.test(body);
-    const sources = await loadContactSources(auth.workspaceId);
-    const requested = parseRequestedProps(body);
-    if (requested.size === 0) requested.add("*");
-    const responses = [];
-    for (const source of sources) {
-      const photo = includeData
-        ? await personalPhoto(auth.workspaceId, source.id)
-        : null;
       const vcard = formatVCard(source, photo);
       responses.push({
         href: contactHref(source.id),
         propstats: [
           {
             status: "HTTP/1.1 200 OK",
-            propsXml: contactPropsXml(source, vcard, requested, includeData),
+            propsXml: contactPropsXml(
+              source,
+              vcard,
+              requested,
+              wantsProp(requested, "address-data"),
+            ),
           },
         ],
       });
     }
-    return c.body(multistatus(responses), 207, {
-      "Content-Type": "application/xml; charset=utf-8",
-      DAV: "1, 3, addressbook, sync-collection",
-    });
-  });
+  }
 
-  app.get("/dav/addressbooks/:name/contacts/:file", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const file = c.req.param("file");
-    if (!file.endsWith(".vcf")) return c.notFound();
-    const id = decodeURIComponent(file.replace(/\.vcf$/i, ""));
-    const row = await circleService.getContactById(auth.workspaceId, id);
-    if (!row) return c.notFound();
-    const source: ContactVCardSource = {
-      id: row.id,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      name: row.name,
-      title: row.title,
-      email: row.email,
-      emails: row.emails ?? [],
-      phone: row.phone,
-      phones: row.phones ?? [],
-      address: row.address,
-      city: row.city,
-      postalCode: row.postalCode,
-      region: row.region,
-      country: row.country,
-      birthday: row.birthday,
-      socialAccounts: row.socialAccounts ?? [],
-      notes: row.notes,
-      updatedAt: row.updatedAt,
-    };
-    if (row.organizationId) {
-      const org = await circleService.getOrganizationById(
-        auth.workspaceId,
-        row.organizationId,
-      );
-      source.organizationName = org?.name ?? null;
-    }
-    const photo = await personalPhoto(auth.workspaceId, row.id);
+  return c.body(multistatus(responses), 207, {
+    "Content-Type": "application/xml; charset=utf-8",
+    DAV: "1, 3, addressbook, sync-collection",
+  });
+}
+
+async function reportAddressbook(c: Context) {
+  const auth = c.get("auth") as AuthContext;
+  const body = await c.req.text();
+  const includeData = /address-data/i.test(body);
+  const sources = await loadContactSources(auth.workspaceId);
+  const requested = parseRequestedProps(body);
+  if (requested.size === 0) requested.add("*");
+  const responses = [];
+  for (const source of sources) {
+    const photo = includeData
+      ? await personalPhoto(auth.workspaceId, source.id)
+      : null;
     const vcard = formatVCard(source, photo);
-    const etag = contactEtag(source);
-    const ifNoneMatch = c.req.header("If-None-Match");
-    if (ifNoneMatch && ifNoneMatch === etag) {
-      return c.body(null, 304, { ETag: etag });
-    }
-    return c.body(vcard, 200, {
-      "Content-Type": "text/vcard; charset=utf-8",
-      ETag: etag,
+    responses.push({
+      href: contactHref(source.id),
+      propstats: [
+        {
+          status: "HTTP/1.1 200 OK",
+          propsXml: contactPropsXml(source, vcard, requested, includeData),
+        },
+      ],
     });
+  }
+  return c.body(multistatus(responses), 207, {
+    "Content-Type": "application/xml; charset=utf-8",
+    DAV: "1, 3, addressbook, sync-collection",
   });
+}
 
-  app.put("/dav/addressbooks/:name/contacts/:file", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const file = c.req.param("file");
-    if (!file.endsWith(".vcf")) {
-      return c.text("Not a vCard resource", 400);
-    }
-    const idFromPath = decodeURIComponent(file.replace(/\.vcf$/i, ""));
-    const raw = await c.req.text();
-    const parsed = parseVCard(raw, idFromPath);
-    if (!parsed) {
-      return c.text("Invalid vCard", 400);
-    }
-    const contactId = parsed.uid || idFromPath;
+async function getContactVcf(c: Context, file: string) {
+  const auth = c.get("auth") as AuthContext;
+  if (!file.endsWith(".vcf")) return c.notFound();
+  const id = decodeURIComponent(file.replace(/\.vcf$/i, ""));
+  const row = await circleService.getContactById(auth.workspaceId, id);
+  if (!row) return c.notFound();
+  const source: ContactVCardSource = {
+    id: row.id,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    name: row.name,
+    title: row.title,
+    email: row.email,
+    emails: row.emails ?? [],
+    phone: row.phone,
+    phones: row.phones ?? [],
+    address: row.address,
+    city: row.city,
+    postalCode: row.postalCode,
+    region: row.region,
+    country: row.country,
+    birthday: row.birthday,
+    socialAccounts: row.socialAccounts ?? [],
+    notes: row.notes,
+    updatedAt: row.updatedAt,
+  };
+  if (row.organizationId) {
+    const org = await circleService.getOrganizationById(
+      auth.workspaceId,
+      row.organizationId,
+    );
+    source.organizationName = org?.name ?? null;
+  }
+  const photo = await personalPhoto(auth.workspaceId, row.id);
+  const vcard = formatVCard(source, photo);
+  const etag = contactEtag(source);
+  const ifNoneMatch = c.req.header("If-None-Match");
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return c.body(null, 304, { ETag: etag });
+  }
+  return c.body(vcard, 200, {
+    "Content-Type": "text/vcard; charset=utf-8",
+    ETag: etag,
+  });
+}
 
-    const ifMatch = c.req.header("If-Match");
-    const existing = await circleService.getContactById(
+async function putContactVcf(c: Context, file: string) {
+  const auth = c.get("auth") as AuthContext;
+  if (!file.endsWith(".vcf")) {
+    return c.text("Not a vCard resource", 400);
+  }
+  const idFromPath = decodeURIComponent(file.replace(/\.vcf$/i, ""));
+  const raw = await c.req.text();
+  const parsed = parseVCard(raw, idFromPath);
+  if (!parsed) {
+    return c.text("Invalid vCard", 400);
+  }
+  const contactId = parsed.uid || idFromPath;
+
+  const ifMatch = c.req.header("If-Match");
+  const existing = await circleService.getContactById(
+    auth.workspaceId,
+    contactId,
+  );
+  if (ifMatch && ifMatch !== "*" && existing) {
+    const current = contactEtag(existing);
+    if (ifMatch !== current) {
+      return c.body(null, 412, { ETag: current });
+    }
+  }
+
+  const patch = {
+    firstName: parsed.firstName,
+    lastName: parsed.lastName,
+    title: parsed.title,
+    emails: parsed.emails,
+    email: parsed.emails[0]?.address ?? null,
+    phones: parsed.phones,
+    phone: parsed.phones[0]?.number ?? null,
+    address: parsed.address,
+    city: parsed.city,
+    postalCode: parsed.postalCode,
+    region: parsed.region,
+    country: parsed.country,
+    birthday: parsed.birthday,
+    socialAccounts: parsed.socialAccounts,
+    notes: parsed.notes,
+  };
+
+  const keyBase = [parsed.firstName, parsed.lastName]
+    .filter(Boolean)
+    .join("-")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+
+  let row;
+  if (existing) {
+    row = await circleService.updateContact(
       auth.workspaceId,
       contactId,
+      patch,
     );
-    if (ifMatch && ifMatch !== "*" && existing) {
-      const current = contactEtag(existing);
-      if (ifMatch !== current) {
-        return c.body(null, 412, { ETag: current });
-      }
+  } else {
+    row = await circleService.createContact(
+      auth.workspaceId,
+      {
+        ...patch,
+        key:
+          keyBase ||
+          contactId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 21) ||
+          contactId,
+        firstName: patch.firstName || "Contact",
+      },
+      contactId,
+    );
+  }
+  if (!row) {
+    return c.text("Contact write failed", 500);
+  }
+
+  if (parsed.photo?.bytes?.length) {
+    if (parsed.photo.bytes.byteLength > MAX_AVATAR_BYTES) {
+      return c.text("Photo too large", 413);
     }
+    await circleService.putAvatar(
+      auth.workspaceId,
+      "contact",
+      row.id,
+      parsed.photo.bytes,
+      parsed.photo.contentType || "image/jpeg",
+    );
+    const refreshed = await circleService.getContactById(
+      auth.workspaceId,
+      row.id,
+    );
+    if (refreshed) row = refreshed;
+  }
 
-    const patch = {
-      firstName: parsed.firstName,
-      lastName: parsed.lastName,
-      title: parsed.title,
-      emails: parsed.emails,
-      email: parsed.emails[0]?.address ?? null,
-      phones: parsed.phones,
-      phone: parsed.phones[0]?.number ?? null,
-      address: parsed.address,
-      city: parsed.city,
-      postalCode: parsed.postalCode,
-      region: parsed.region,
-      country: parsed.country,
-      birthday: parsed.birthday,
-      socialAccounts: parsed.socialAccounts,
-      notes: parsed.notes,
-    };
+  await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+  nudgeContactLive(auth, row.id, "upsert");
 
-    const keyBase = [parsed.firstName, parsed.lastName]
-      .filter(Boolean)
-      .join("-")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40);
-
-    let row;
-    if (existing) {
-      row = await circleService.updateContact(
-        auth.workspaceId,
-        contactId,
-        patch,
-      );
-    } else {
-      row = await circleService.createContact(
-        auth.workspaceId,
-        {
-          ...patch,
-          key: keyBase || contactId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 21) || contactId,
-          firstName: patch.firstName || "Contact",
-        },
-        contactId,
-      );
-    }
-    if (!row) {
-      return c.text("Contact write failed", 500);
-    }
-
-    if (parsed.photo?.bytes?.length) {
-      if (parsed.photo.bytes.byteLength > MAX_AVATAR_BYTES) {
-        return c.text("Photo too large", 413);
-      }
-      await circleService.putAvatar(
-        auth.workspaceId,
-        "contact",
-        row.id,
-        parsed.photo.bytes,
-        parsed.photo.contentType || "image/jpeg",
-      );
-      const refreshed = await circleService.getContactById(
-        auth.workspaceId,
-        row.id,
-      );
-      if (refreshed) row = refreshed;
-    }
-
-    await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
-    nudgeContactLive(auth, row.id, "upsert");
-
-    const etag = contactEtag(row);
-    return c.body(null, existing ? 204 : 201, {
-      ETag: etag,
-      Location: contactHref(row.id),
-    });
+  const etag = contactEtag(row);
+  return c.body(null, existing ? 204 : 201, {
+    ETag: etag,
+    Location: contactHref(row.id),
   });
+}
 
-  app.delete("/dav/addressbooks/:name/contacts/:file", async (c) => {
-    const auth = c.get("auth") as AuthContext;
-    const file = c.req.param("file");
-    if (!file.endsWith(".vcf")) return c.notFound();
-    const id = decodeURIComponent(file.replace(/\.vcf$/i, ""));
-    const row = await circleService.deleteContact(auth.workspaceId, id);
-    if (!row) return c.notFound();
-    await recordContactRestSyncEvent(auth.workspaceId, row, "delete");
-    nudgeContactLive(auth, row.id, "delete");
-    return c.body(null, 204);
-  });
+async function deleteContactVcf(c: Context, file: string) {
+  const auth = c.get("auth") as AuthContext;
+  if (!file.endsWith(".vcf")) return c.notFound();
+  const id = decodeURIComponent(file.replace(/\.vcf$/i, ""));
+  const row = await circleService.deleteContact(auth.workspaceId, id);
+  if (!row) return c.notFound();
+  await recordContactRestSyncEvent(auth.workspaceId, row, "delete");
+  nudgeContactLive(auth, row.id, "delete");
+  return c.body(null, 204);
+}
 
-  // OPTIONS for DAV discovery
-  app.options("/dav/*", (c) =>
+export function registerCardDavRoutes(app: Hono) {
+  app.use("/.well-known/carddav", requireCardDavAuth);
+  app.use("/dav", requireCardDavAuth);
+  app.use("/dav/*", requireCardDavAuth);
+
+  app.all("/.well-known/carddav", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
+
+  // Legacy long paths → clean /dav/
+  app.all("/dav/addressbooks/*", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
+  app.all("/dav/principals/*", (c) => c.redirect(ADDRESSBOOK_PATH, 301));
+
+  app.on("PROPFIND", "/dav", propfindAddressbook);
+  app.on("PROPFIND", "/dav/", propfindAddressbook);
+  app.on("REPORT", "/dav", reportAddressbook);
+  app.on("REPORT", "/dav/", reportAddressbook);
+
+  app.get("/dav/:file", (c) => getContactVcf(c, c.req.param("file")));
+  app.put("/dav/:file", (c) => putContactVcf(c, c.req.param("file")));
+  app.delete("/dav/:file", (c) => deleteContactVcf(c, c.req.param("file")));
+
+  app.options("/dav", (c) =>
     c.body(null, 204, {
-      Allow:
-        "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
+      Allow: "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
       DAV: "1, 3, addressbook, sync-collection",
     }),
   );
-
+  app.options("/dav/*", (c) =>
+    c.body(null, 204, {
+      Allow: "OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT",
+      DAV: "1, 3, addressbook, sync-collection",
+    }),
+  );
   app.options("/.well-known/carddav", (c) =>
     c.body(null, 204, {
       Allow: "OPTIONS, PROPFIND, GET",

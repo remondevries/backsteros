@@ -19,7 +19,7 @@ See [ADR-038](10-decisions-log.md) and [URLs](11-urls-and-routing.md).
 
 If iOS asks for an account URL:
 
-`https://contacts.backsteros.com/dav/addressbooks/backsteros/contacts/`
+`https://contacts.backsteros.com/dav`
 
 ## Behaviour
 

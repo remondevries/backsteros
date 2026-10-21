@@ -78,7 +78,7 @@ VPS (Hetzner lemodesign — 188.34.196.92 / Tailscale 100.83.125.67)
 | Item | Value |
 | --- | --- |
 | Server | `contacts.backsteros.com` |
-| Account URL (advanced) | `https://contacts.backsteros.com/dav/addressbooks/backsteros/contacts/` |
+| Account URL (advanced) | `https://contacts.backsteros.com/dav` |
 | Username | `backsteros` |
 | Password | `sk_live_…` API key with scope **`carddav` only** |
 
