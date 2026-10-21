@@ -29,6 +29,7 @@ import {
   type EmailInboxUpdatedDetail,
 } from "../../lib/use-agentmail-mailboxes";
 import { WORKSPACE_EMAIL_UPDATED_EVENT } from "../../lib/workspace-events";
+import { isEmailAgentRequestActive } from "./email-page-helpers";
 
 /** Catch-up while email SSE is live (SSE + events are primary). */
 const OPEN_THREAD_CATCHUP_POLL_MS = 60_000;
@@ -150,6 +151,11 @@ export function useEmailMessageDetail({
       ].join("|");
     let lastFingerprint = "";
     const refreshOpenThread = () => {
+      // Property patches (and status auto-promote on reply) sync via
+      // WORKSPACE_EMAIL_UPDATED and force-reload the open thread. While an
+      // agent-draft POST is in flight that reload contends for WebKit's
+      // connection pool and can abort the draft start as "Fetch is aborted".
+      if (isEmailAgentRequestActive()) return;
       void reloadMessageDetail(inboxId, messageId)
         .then((reloaded) => {
           const nextFingerprint = detailFingerprint(reloaded);

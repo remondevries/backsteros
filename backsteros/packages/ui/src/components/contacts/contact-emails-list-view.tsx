@@ -16,6 +16,11 @@ import {
   type EmailListItem,
 } from "../../email/email.js";
 import { keyboardNavItemProps } from "../../list-nav/keyboard-nav-item.js";
+import {
+  COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  mapStatusGroupsWithCompletedCap,
+  nextCompletedStatusVisibleCount,
+} from "../../list-nav/completed-status-list-cap.js";
 import { flattenGroupedListItemIds } from "../../list-nav/list-keyboard-nav-index.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import { type TaskStatus } from "../../tasks/task-status.js";
@@ -24,6 +29,7 @@ import {
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
+import { StatusGroupShowMoreButton } from "../list-nav/status-group-show-more.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 
 export type ContactEmailsListViewProps = {
@@ -87,6 +93,9 @@ export function ContactEmailsListView({
 
   const [localEmails, setLocalEmails] = useState(scopedEmails);
   const [collapsed, setCollapsed] = useState<Set<TaskStatus>>(() => new Set());
+  const [completedVisibleCount, setCompletedVisibleCount] = useState(
+    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  );
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_MAIN,
@@ -96,10 +105,22 @@ export function ContactEmailsListView({
     setLocalEmails(scopedEmails);
   }, [scopedEmails]);
 
-  const groups = useMemo(
+  useEffect(() => {
+    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+  }, [contactId]);
+
+  const groupsFull = useMemo(
     () => groupEmailItemsByStatus(localEmails, { includeEmpty: true }),
     [localEmails],
   );
+
+  const groups = useMemo(
+    () => mapStatusGroupsWithCompletedCap(groupsFull, completedVisibleCount),
+    [completedVisibleCount, groupsFull],
+  );
+
+  const completedTotal =
+    groupsFull.find((group) => group.status === "completed")?.items.length ?? 0;
 
   const itemIds = useMemo(
     () =>
@@ -229,6 +250,14 @@ export function ContactEmailsListView({
                   </li>
                 );
               })}
+              <StatusGroupShowMoreButton
+                hiddenCount={group.hiddenCount}
+                onShowMore={() =>
+                  setCompletedVisibleCount((current) =>
+                    nextCompletedStatusVisibleCount(current, completedTotal),
+                  )
+                }
+              />
             </StatusGroupSection>
           );
         })}

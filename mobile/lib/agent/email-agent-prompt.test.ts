@@ -21,6 +21,15 @@ describe("extractAgentReplyBody", () => {
     );
   });
 
+  it("keeps complementary paragraphs", () => {
+    const body = [
+      "Bedankt voor de herinnering. We hebben je rol inmiddels weer teruggezet van eigenaar naar boekhouder, dus je bent geen eigenaar meer.",
+      "",
+      "Dat kon omdat het probleem in de iOS-app van Moneybird met het overmaken van geld is opgelost, waardoor de eigenaarsrol niet meer nodig is.",
+    ].join("\n");
+    assert.equal(extractAgentReplyBody(body), body.trim());
+  });
+
   it("returns empty for blank input", () => {
     assert.equal(extractAgentReplyBody("  "), "");
   });

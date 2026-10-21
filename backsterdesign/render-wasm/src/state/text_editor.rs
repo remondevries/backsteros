@@ -100,7 +100,8 @@ pub enum TextEditorEvent {
 }
 
 /// FIXME: It should be better to get these constants from the frontend through the API.
-const SELECTION_COLOR: Color = Color::from_argb(127, 0, 209, 184);
+/// Backster orange @ ~70% alpha (matches --text-editor-selection-background-color).
+const SELECTION_COLOR: Color = Color::from_argb(178, 238, 122, 71);
 const CURSOR_COLOR: Color = Color::WHITE;
 const CURSOR_WIDTH: f32 = 1.0;
 const CURSOR_BLINK_INTERVAL_MS: f32 = 530.0;

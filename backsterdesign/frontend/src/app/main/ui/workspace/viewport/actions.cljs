@@ -23,6 +23,7 @@
    [app.main.store :as st]
    [app.main.ui.workspace.sidebar.assets.components :as wsac]
    [app.main.ui.workspace.viewport.viewport-ref :as uwvv]
+   [app.main.data.workspace.texts :as dwt]
    [app.util.dom :as dom]
    [app.util.dom.dnd :as dnd]
    [app.util.dom.normalize-wheel :as nw]
@@ -56,42 +57,51 @@
        ;; https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture
        (if editor
          (.setPointerCapture editor (.-pointerId event))
-         (.setPointerCapture target (.-pointerId event))))
+         (.setPointerCapture target (.-pointerId event)))
 
-     (when (or (dom/class? (dom/get-target event) "viewport-controls")
-               (dom/class? (dom/get-target event) "viewport-selrect")
-               (dom/child? (dom/get-target event) (dom/query ".grid-layout-editor")))
+       (when (or (dom/class? target "viewport-controls")
+                 (dom/class? target "viewport-selrect")
+                 (dom/child? target (dom/query ".grid-layout-editor")))
 
-       (dom/stop-propagation event)
+         (dom/stop-propagation event)
 
-       (when-not @z?
-         (let [native-event  (dom/event->native-event event)
-               ctrl?  (kbd/ctrl? native-event)
-               meta?  (kbd/meta? native-event)
-               shift? (kbd/shift? native-event)
-               alt?   (kbd/alt? native-event)
-               mod?   (kbd/mod? native-event)
+         (when-not @z?
+           (let [native-event  (dom/event->native-event event)
+                 ctrl?  (kbd/ctrl? native-event)
+                 meta?  (kbd/meta? native-event)
+                 shift? (kbd/shift? native-event)
+                 alt?   (kbd/alt? native-event)
+                 mod?   (kbd/mod? native-event)
 
-               left-click?   (and (not panning) (dom/left-mouse? event))
-               middle-click? (and (not panning) (dom/middle-mouse? event))]
+                 left-click?   (and (not panning) (dom/left-mouse? event))
+                 middle-click? (and (not panning) (dom/middle-mouse? event))]
 
-           (cond
-             (or middle-click? (and left-click? @space?))
-             (do
-               (dom/prevent-default event)
-               (if mod?
-                 (let [raw-pt   (dom/get-client-position native-event)
-                       pt       (uwvv/point->viewport raw-pt)]
-                   (st/emit! (dw/start-zooming pt)))
-                 (st/emit! (dw/start-panning))))
+             (cond
+               (or middle-click? (and left-click? @space?))
+               (do
+                 (dom/prevent-default event)
+                 (if mod?
+                   (let [raw-pt   (dom/get-client-position native-event)
+                         pt       (uwvv/point->viewport raw-pt)]
+                     (st/emit! (dw/start-zooming pt)))
+                   (st/emit! (dw/start-panning))))
 
-             left-click?
-             (do
-               (st/emit! (mse/->MouseEvent :down ctrl? shift? alt? meta?)
-                         ::dwsp/interrupt)
+               left-click?
+               (do
+                 (st/emit! (mse/->MouseEvent :down ctrl? shift? alt? meta?)
+                           ::dwsp/interrupt)
 
-               (when (and (not= edition id) (or text-editing? grid-editing?))
-                 (st/emit! (dw/clear-edition-mode)))
+                 ;; Leave text edition when the click is outside the editor
+                 ;; surface — including a click on the same text shape
+                 ;; (selection chrome / WASM pixels). Otherwise the editor
+                 ;; blurs to opacity 0 while :edition stays set and
+                 ;; double-click can no longer re-enter. Grid edition still
+                 ;; only clears when the click targets a different shape.
+                 (when (or (and text-editing?
+                                (not (txu/some-text-editor-content? target)))
+                           (and grid-editing?
+                                (not= edition id)))
+                   (st/emit! (dw/clear-edition-mode)))
 
                (when (and (not text-editing?)
                           (not blocked)
@@ -113,7 +123,7 @@
 
                    (not drawing-tool)
                    (when-not read-only?
-                     (st/emit! (dw/start-move-selected id shift?)))))))))))))
+                     (st/emit! (dw/start-move-selected id shift?))))))))))))))
 
 (defn on-move-selected
   [hover hover-ids selected space? z? read-only?]
@@ -233,6 +243,11 @@
           (fn []
             (when (and (not drawing-path?) shape)
               (cond
+                ;; Already editing this text but the surface blurred
+                ;; (opacity 0) — refocus instead of no-op.
+                (and (= type :text) (= id edition) (not read-only?))
+                (st/emit! (dwt/focus-editor))
+
                 (and editable? (not= id edition) (not read-only?))
                 (do
                   (st/emit! (dw/select-shape id)

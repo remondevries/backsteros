@@ -54,6 +54,7 @@ export function useWorkspaceTaskActions({
       assigneeId?: string | null;
       relatedContactIds?: string[];
       relatedOrganizationIds?: string[];
+      linkedEmailIds?: string[];
       dueDate?: string | null;
       links?: TaskLink[];
       /**
@@ -82,6 +83,9 @@ export function useWorkspaceTaskActions({
         ...(input.relatedOrganizationIds &&
         input.relatedOrganizationIds.length > 0
           ? { relatedOrganizationIds: input.relatedOrganizationIds }
+          : {}),
+        ...(input.linkedEmailIds && input.linkedEmailIds.length > 0
+          ? { linkedEmailIds: input.linkedEmailIds }
           : {}),
         dueDate: toApiDueDateIso(input.dueDate),
         inbox,
@@ -231,6 +235,7 @@ export function useWorkspaceTaskActions({
       assigneeId?: string | null;
       relatedContactIds?: string[];
       relatedOrganizationIds?: string[];
+      linkedEmailIds?: string[];
       dueDate?: string | null;
       links?: TaskLink[];
       support?: boolean;
@@ -255,6 +260,9 @@ export function useWorkspaceTaskActions({
         ...(input.relatedOrganizationIds &&
         input.relatedOrganizationIds.length > 0
           ? { relatedOrganizationIds: input.relatedOrganizationIds }
+          : {}),
+        ...(input.linkedEmailIds && input.linkedEmailIds.length > 0
+          ? { linkedEmailIds: input.linkedEmailIds }
           : {}),
         dueDate: toApiDueDateIso(input.dueDate),
         inbox: false,

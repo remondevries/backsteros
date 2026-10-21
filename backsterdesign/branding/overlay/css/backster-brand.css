@@ -3,27 +3,80 @@
 :root {
   /* Match BacksterOS accent — used for text caret + keyboard focus. */
   --keyboard-nav-highlight-color: #ee7a47;
+  /*
+   * Canvas text selection (Skia imposters / WASM) needs a translucent fill
+   * so glyphs stay readable. Form-field ::selection uses the solid accent.
+   * Match upstream ~70% alpha so the highlight reads clearly in both themes.
+   */
+  --da-tertiary-10: rgba(238, 122, 71, 0.1);
+  --da-tertiary-70: rgba(238, 122, 71, 0.7);
+  --la-tertiary-10: rgba(238, 122, 71, 0.1);
+  --la-tertiary-70: rgba(238, 122, 71, 0.7);
+  --text-editor-selection-background-color: rgba(238, 122, 71, 0.7);
 }
 
+/* .light reassigns the selection token in main.css — keep it orange. */
+.light,
+body.light {
+  --la-tertiary-10: rgba(238, 122, 71, 0.1);
+  --la-tertiary-70: rgba(238, 122, 71, 0.7);
+  --text-editor-selection-background-color: rgba(238, 122, 71, 0.7);
+  --color-accent-background-select: #ee7a47;
+}
+
+/* Keep layer / asset DnD working in WebKit (user-select:text ancestors break it). */
+[draggable="true"],
+[draggable=""] {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-user-drag: element;
+}
 /*
- * Orange text insertion caret (same as BacksterOS inputs / editors).
- * Skip native controls that never show a caret.
+ * Orange caret + selectable text in form fields only.
+ * Do NOT style [contenteditable] globally — the canvas text editor is
+ * contenteditable with transparent glyphs + Skia selection imposters.
  */
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
-textarea,
-[contenteditable="true"],
-[contenteditable=""] {
+textarea {
   caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+  /* Ancestors use user-select:none; WebKit needs this for a visible highlight. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /*
- * Canvas text editor keeps a fill-driven caret for contrast on shapes.
+ * Form-field selection only. A global ::selection paints orange/white over
+ * the canvas editor’s transparent text and fights the Skia imposters.
+ */
+input::selection,
+textarea::selection {
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  color: #fff;
+}
+
+/*
+ * Canvas text editor: fill-driven caret + fully transparent native selection
+ * so only the Skia / DOM imposters show the highlight.
  */
 [class*="v2_editor"],
 [class*="v2_editor"] *,
 [class*="text-editor"],
-[class*="text-editor"] * {
+[class*="text-editor"] *,
+#text-editor-wasm-input {
   caret-color: var(--text-editor-caret-color, currentColor);
+}
+
+[class*="v2_editor"] ::selection,
+[class*="v2_editor"]::selection,
+[class*="v2_editor"] *::selection,
+[class*="text-editor"] ::selection,
+[class*="text-editor"]::selection,
+[class*="text-editor"] *::selection,
+#text-editor-wasm-input::selection,
+#text-editor-wasm-input *::selection {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background: transparent !important;
 }
 
 /*

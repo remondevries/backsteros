@@ -96,8 +96,8 @@
   }
 
   &::selection {
-    background: var(--color-accent-background-select);
-    color: var(--color-static-white);
+    background: var(--color-accent-background-select, #ee7a47);
+    color: var(--color-static-white, #fff);
   }
 
   &::placeholder {

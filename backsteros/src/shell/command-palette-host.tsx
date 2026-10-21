@@ -10,6 +10,7 @@ import {
   getSelectedOrganizationSlugFromPathname,
   getUniqueListItemRouteParam,
   resolveListItemFromSlug,
+  resolveOrganizationAvatarSrc,
   selectRecentCommandPaletteContacts,
   selectRecentCommandPaletteOrganizations,
   useCommandPaletteState,
@@ -17,6 +18,7 @@ import {
 
 import { useCommandPaletteSearchFn } from "../lib/command-palette-search";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import { getBrandfetchClientId } from "../lib/brandfetch";
 import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
@@ -80,7 +82,12 @@ export function CommandPaletteHost() {
           href: getOrganizationsHref(
             getUniqueListItemRouteParam(organization, organizations),
           ),
-          avatarSrc: organizationAvatarSrcById[organization.id] ?? null,
+          avatarSrc: resolveOrganizationAvatarSrc({
+            uploadedSrc: organizationAvatarSrcById[organization.id] ?? null,
+            avatarStorageKey: organization.avatarStorageKey,
+            website: organization.website,
+            brandfetchClientId: getBrandfetchClientId(),
+          }),
           updatedAt:
             organization.updatedAt ?? organization.avatarUpdatedAt ?? null,
         })),

@@ -487,9 +487,7 @@ export function ProjectTasksApp({
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(catalog.contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(catalog.contacts, { avatarSrcById: contactAvatarSrc }),
     [catalog.contacts, contactAvatarSrc],
   );
 

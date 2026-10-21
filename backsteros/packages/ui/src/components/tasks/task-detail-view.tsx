@@ -605,28 +605,30 @@ export function TaskDetailView({
                   emptyMessage="Add a description…"
                   preview={descriptionPreview}
                 />
-                <div className="task-detail-description-tools">
-                  <div className="task-detail-description-tools__attachments">
-                    <TaskLinkAttachments
-                      links={task.links}
-                      onChangeLinks={onChangeLinks}
-                      documentOptions={documentLinkOptions}
-                      letterOptions={letterLinkOptions}
-                      emailOptions={emailLinkOptions}
-                      onNavigate={onNavigateLink}
-                      designPublicUri={designPublicUri}
-                      fileAttachments={fileAttachments}
-                      fileUploading={fileUploading}
-                      onUploadFile={onUploadFile}
-                      onRemoveFile={onRemoveFile}
-                      onOpenFile={onOpenFile}
-                    />
-                  </div>
-                  {!usePropertiesRail ? (
-                    <div className="task-detail-description-tools__view-mode">
-                      {viewModeToggle}
+                <div className="task-detail-tools-column">
+                  <div className="task-detail-description-tools">
+                    <div className="task-detail-description-tools__attachments">
+                      <TaskLinkAttachments
+                        links={task.links}
+                        onChangeLinks={onChangeLinks}
+                        documentOptions={documentLinkOptions}
+                        letterOptions={letterLinkOptions}
+                        emailOptions={emailLinkOptions}
+                        onNavigate={onNavigateLink}
+                        designPublicUri={designPublicUri}
+                        fileAttachments={fileAttachments}
+                        fileUploading={fileUploading}
+                        onUploadFile={onUploadFile}
+                        onRemoveFile={onRemoveFile}
+                        onOpenFile={onOpenFile}
+                      />
                     </div>
-                  ) : null}
+                    {!usePropertiesRail ? (
+                      <div className="task-detail-description-tools__view-mode">
+                        {viewModeToggle}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 {afterAttachments}
                 {belowDescriptionNode}

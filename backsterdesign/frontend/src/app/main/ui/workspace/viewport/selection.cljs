@@ -47,7 +47,7 @@
 
 (mf/defc selection-rect
   {::mf/wrap-props false}
-  [{:keys [transform rect zoom color on-move-selected on-context-menu]}]
+  [{:keys [transform rect zoom color on-move-selected on-context-menu on-double-click]}]
   (let [x      (dm/get-prop rect :x)
         y      (dm/get-prop rect :y)
         width  (dm/get-prop rect :width)
@@ -75,6 +75,7 @@
       :transform (str transform)
       :on-pointer-down on-move-selected
       :on-context-menu on-context-menu
+      :on-double-click on-double-click
       :style {:stroke color
               :stroke-width (/ selection-rect-width zoom)
               :fill "none"}}]))
@@ -301,13 +302,14 @@
          (mf/deps shape-id position shape-type)
          (fn [event]
            (when (= shape-type :text)
-             ;; Prevent the viewport double-click handler from entering text editor
-             (dom/stop-propagation event)
              (let [grow-type (case position
                                :right :auto-width
                                :bottom :auto-height
                                nil)]
+               ;; Only right/bottom toggle grow-type. Left/top must not
+               ;; swallow the event — that blocked double-click re-edit.
                (when (some? grow-type)
+                 (dom/stop-propagation event)
                  (let [uid (js/Symbol)]
                    (st/emit! (dwu/start-undo-transaction uid)
                              (dwsh/update-shapes [shape-id] #(assoc % :grow-type grow-type)))
@@ -343,7 +345,7 @@
                      :stroke-width 0}}]]))
 
 (mf/defc controls-selection*
-  [{:keys [shape zoom color on-move-selected on-context-menu disabled]}]
+  [{:keys [shape zoom color on-move-selected on-context-menu on-double-click disabled]}]
   (let [selrect-transform (mf/deref refs/workspace-selrect)
         transform-type    (mf/deref refs/current-transform)
         [selrect transform] (dsh/get-selrect selrect-transform shape)]
@@ -358,7 +360,8 @@
                            :zoom zoom
                            :color color
                            :on-move-selected on-move-selected
-                           :on-context-menu on-context-menu}]])))
+                           :on-context-menu on-context-menu
+                           :on-double-click on-double-click}]])))
 
 (mf/defc controls-handlers*
   {::mf/private true}
@@ -552,13 +555,29 @@
 (mf/defc single-selection*
   {::mf/private true}
   [{:keys [shape zoom color disabled on-move-selected on-context-menu]}]
-  [:> controls-selection*
-   {:shape shape
-    :zoom zoom
-    :color color
-    :disabled disabled
-    :on-move-selected on-move-selected
-    :on-context-menu on-context-menu}])
+  (let [shape-id   (dm/get-prop shape :id)
+        shape-type (dm/get-prop shape :type)
+        read-only? (mf/use-ctx ctx/workspace-read-only?)
+
+        on-double-click
+        (mf/use-fn
+         (mf/deps shape-id shape-type read-only?)
+         (fn [event]
+           ;; Selection chrome sits above the viewport hit target; without
+           ;; this, double-click on an already-selected text never reaches
+           ;; start-editing-selected.
+           (when (and (= shape-type :text) (not read-only?))
+             (dom/stop-propagation event)
+             (st/emit! (dw/select-shape shape-id)
+                       (dw/start-editing-selected)))))]
+    [:> controls-selection*
+     {:shape shape
+      :zoom zoom
+      :color color
+      :disabled disabled
+      :on-move-selected on-move-selected
+      :on-context-menu on-context-menu
+      :on-double-click on-double-click}]))
 
 (mf/defc area*
   [{:keys [shapes edition zoom disabled on-move-selected on-context-menu]}]

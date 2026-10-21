@@ -351,6 +351,7 @@ export function InboxSidePanelView({
               }}
               className="app-content-side-panel-body"
               estimatedItemSize={minimized ? 28 : 40}
+              extraData={highlightedId}
               renderRow={(row) => {
                 if (row.kind === "header") {
                   return minimized ? (

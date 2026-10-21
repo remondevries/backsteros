@@ -45,10 +45,7 @@ import {
 } from "../lib/email-message-detail-cache";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { patchEmailTaskListItem } from "../lib/email-list-tasks";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
@@ -296,9 +293,7 @@ function CommunicationPageBody() {
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(workspace.contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, workspace.contacts],
   );
   const projectOptions = useMemo(
@@ -319,7 +314,7 @@ function CommunicationPageBody() {
       buildTaskRelatedDropdownOptions({
         contactOptions: assigneeOptions,
         organizationOptions: buildOrganizationDropdownOptions(
-          withAvatarSrc(workspace.organizations, organizationAvatarSrc),
+          withOrganizationAvatarSrc(workspace.organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
         emailOptions: emailRelatedOptions,

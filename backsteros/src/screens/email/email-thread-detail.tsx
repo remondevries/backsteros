@@ -73,10 +73,7 @@ import {
 } from "../../lib/email-meeting-card";
 import { useDesktopApi } from "../../lib/api-context";
 import { useAgentMail } from "../../lib/agentmail-context";
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../../lib/avatar-src";
 import {
   fetchInlineAttachmentBlob,
   peekInlineAttachmentBlob,
@@ -283,24 +280,20 @@ export function EmailThreadDetail({
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc),
+        withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
       ),
     [organizationAvatarSrc, organizations],
   );
 
   const contactOptions = useMemo(
     () =>
-      buildContactDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc),
-      ),
+      buildContactDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
 
@@ -452,6 +445,9 @@ export function EmailThreadDetail({
           createdAt: new Date().toISOString(),
         };
         const relatedContactIds = contactId ? [contactId] : undefined;
+        // Related property on the email is driven by task.linkedEmailIds —
+        // auto-link so the new task appears without a manual Related pick.
+        const linkedEmailIds = emailThreadId ? [emailThreadId] : undefined;
         const created = input.projectId
           ? await workspace.createProjectTask({
               projectId: input.projectId,
@@ -462,6 +458,7 @@ export function EmailThreadDetail({
               dueDate: input.dueDate,
               assigneeId: input.assigneeId,
               relatedContactIds,
+              linkedEmailIds,
               links: [emailLink],
             })
           : await workspace.createInboxTask({
@@ -472,6 +469,7 @@ export function EmailThreadDetail({
               dueDate: input.dueDate,
               assigneeId: input.assigneeId,
               relatedContactIds,
+              linkedEmailIds,
               links: [emailLink],
             });
 
@@ -519,11 +517,11 @@ export function EmailThreadDetail({
     },
     [
       contactId,
+      emailThreadId,
       inboxId,
       messageId,
       postThreadComment,
       projects,
-      organizations,
       setConceptError,
       workspace,
     ],

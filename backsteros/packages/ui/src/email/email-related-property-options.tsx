@@ -1,8 +1,7 @@
 "use client";
 
-import { MailIcon } from "@primer/octicons-react";
-
 import type { SearchableDropdownOption } from "../components/dropdowns/searchable-dropdown.js";
+import { InboxItemTypeIcon } from "../components/inbox/inbox-item-type-icon.js";
 import { buildEmailRelatedPropertyOptionData } from "./email-related-property-option-data.js";
 import type { EmailListItem } from "./email.js";
 
@@ -11,6 +10,6 @@ export function buildEmailRelatedPropertyOptions(
 ): SearchableDropdownOption<string>[] {
   return buildEmailRelatedPropertyOptionData(messages).map((option) => ({
     ...option,
-    icon: <MailIcon size={14} />,
+    icon: <InboxItemTypeIcon kind="email" size={14} />,
   }));
 }

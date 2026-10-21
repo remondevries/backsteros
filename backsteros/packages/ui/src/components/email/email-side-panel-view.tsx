@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 
 import {
   emailListItemIsSelected,
@@ -13,6 +19,11 @@ import {
   type EmailListItem,
   type EmailMailbox,
 } from "../../email/email.js";
+import {
+  COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  mapStatusGroupsWithCompletedCap,
+  nextCompletedStatusVisibleCount,
+} from "../../list-nav/completed-status-list-cap.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import { ContentSidePanelHeader } from "../content/content-side-panel-header.js";
@@ -23,6 +34,7 @@ import {
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
+import { StatusGroupShowMoreButton } from "../list-nav/status-group-show-more.js";
 import {
   TaskListDueDateLabel,
   TaskListPriorityMark,
@@ -243,8 +255,28 @@ export function EmailSidePanelView({
   composeHref = getEmailComposeHref(),
   onCompose,
 }: EmailSidePanelViewProps) {
-  const groups = useMemo(() => groupEmailItemsByStatus(items), [items]);
+  const groupsFull = useMemo(() => groupEmailItemsByStatus(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [completedVisibleCount, setCompletedVisibleCount] = useState(
+    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  );
+
+  const mailboxScopeKey = useMemo(
+    () => mailboxes.map((mailbox) => mailbox.inboxId).join("\0"),
+    [mailboxes],
+  );
+
+  useEffect(() => {
+    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+  }, [mailboxScopeKey]);
+
+  const groups = useMemo(
+    () => mapStatusGroupsWithCompletedCap(groupsFull, completedVisibleCount),
+    [completedVisibleCount, groupsFull],
+  );
+
+  const completedTotal =
+    groupsFull.find((group) => group.status === "completed")?.items.length ?? 0;
 
   function toggleGroup(status: string) {
     setCollapsed((current) => {
@@ -253,6 +285,12 @@ export function EmailSidePanelView({
       else next.add(status);
       return next;
     });
+  }
+
+  function showMoreCompleted() {
+    setCompletedVisibleCount((current) =>
+      nextCompletedStatusVisibleCount(current, completedTotal),
+    );
   }
 
   let body: ReactNode;
@@ -297,6 +335,10 @@ export function EmailSidePanelView({
                 LinkComponent={LinkComponent}
               />
             ))}
+            <StatusGroupShowMoreButton
+              hiddenCount={group.hiddenCount}
+              onShowMore={showMoreCompleted}
+            />
           </StatusGroupSection>
         ))}
       </ContentSidePanelList>

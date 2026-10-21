@@ -279,20 +279,22 @@ export function TaskStackedDetailView({
             ariaLabel="Task description"
             emptyMessage="Add a description…"
           />
-          <div className="task-detail-description-tools">
-            <div className="task-detail-description-tools__attachments">
-              <TaskLinkAttachments
-                links={task.links}
-                onChangeLinks={onChangeLinks}
-                fileAttachments={fileAttachments}
-                fileUploading={fileUploading}
-                onUploadFile={onUploadFile}
-                onRemoveFile={onRemoveFile}
-                onOpenFile={onOpenFile}
-              />
-            </div>
-            <div className="task-detail-description-tools__view-mode">
-              {viewModeToggle}
+          <div className="task-detail-tools-column">
+            <div className="task-detail-description-tools">
+              <div className="task-detail-description-tools__attachments">
+                <TaskLinkAttachments
+                  links={task.links}
+                  onChangeLinks={onChangeLinks}
+                  fileAttachments={fileAttachments}
+                  fileUploading={fileUploading}
+                  onUploadFile={onUploadFile}
+                  onRemoveFile={onRemoveFile}
+                  onOpenFile={onOpenFile}
+                />
+              </div>
+              <div className="task-detail-description-tools__view-mode">
+                {viewModeToggle}
+              </div>
             </div>
           </div>
           {belowDescription ? (

@@ -299,33 +299,6 @@ function DetailTextChip({
   );
 }
 
-/** Read-only value chip — shrink-wraps content (no split-chip min-width). */
-function DetailValueChip({
-  children,
-  muted = false,
-}: {
-  children: ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <div className="contact-detail-chips">
-      <div className="contact-detail-chips__row">
-        <span
-          className={[
-            "contact-detail-chip",
-            "contact-detail-chip--static",
-            muted ? "is-muted" : null,
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          {children}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Organization overview — same card chrome as contacts: avatar/name header,
  * section tabs, then a scrolling body (Activity / Details / section).
@@ -594,9 +567,6 @@ export function OrganizationOverviewView({
   const countryLabel = formatCountryLabel(country) || country.trim();
   const regionLabel = formatRegionLabel(country, region) || region.trim();
   const canExpandMap = Boolean(mapImageSrc);
-  const chamberOfCommerceDisplay = chamberOfCommerce.trim();
-  const taxNumberDisplay = taxNumber.trim();
-
   useEffect(() => {
     if (!mapExpanded && !locationEditing) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -698,16 +668,37 @@ export function OrganizationOverviewView({
             }}
           />
         </DetailsField>
-        {chamberOfCommerceDisplay ? (
-          <DetailsField label="Chamber of Commerce">
-            <DetailValueChip>{chamberOfCommerceDisplay}</DetailValueChip>
-          </DetailsField>
-        ) : null}
-        {taxNumberDisplay ? (
-          <DetailsField label="VAT Number">
-            <DetailValueChip>{taxNumberDisplay}</DetailValueChip>
-          </DetailsField>
-        ) : null}
+        <DetailsField
+          label="Chamber of Commerce"
+          htmlFor="organization-chamber-of-commerce"
+        >
+          <DetailTextChip
+            id="organization-chamber-of-commerce"
+            value={chamberOfCommerce}
+            placeholder="KvK / CoC number"
+            autoComplete="off"
+            onChange={setChamberOfCommerce}
+            onCommit={(next) => {
+              const trimmed = next.trim();
+              setChamberOfCommerce(trimmed);
+              persist({ chamberOfCommerce: trimmed || null });
+            }}
+          />
+        </DetailsField>
+        <DetailsField label="VAT Number" htmlFor="organization-vat-number">
+          <DetailTextChip
+            id="organization-vat-number"
+            value={taxNumber}
+            placeholder="BTW / VAT number"
+            autoComplete="off"
+            onChange={setTaxNumber}
+            onCommit={(next) => {
+              const trimmed = next.trim();
+              setTaxNumber(trimmed);
+              persist({ taxNumber: trimmed || null });
+            }}
+          />
+        </DetailsField>
         <DetailsField label="Size">
           <div className="contact-detail-chips">
             <div className="contact-detail-chips__row">

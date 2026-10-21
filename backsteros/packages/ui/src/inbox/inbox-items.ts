@@ -74,6 +74,10 @@ export type InboxTaskListItem = {
   projectIcon: string | null;
   contactKey: string | null;
   assigneeId: string | null;
+  /** Resolved contact name for the assignee mark (avoids “Assigned” / “A” fallback). */
+  assigneeName?: string | null;
+  /** Resolved avatar blob URL for the assignee mark. */
+  assigneeAvatarSrc?: string | null;
   priority: number;
   dueDate: number | null;
   updatedAt: number;
@@ -125,6 +129,8 @@ export type InboxEmailListItem = {
   dueDate: number | null;
   updatedAt: number;
   assigneeId: string | null;
+  assigneeName?: string | null;
+  assigneeAvatarSrc?: string | null;
   projectId: string | null;
   projectKey: string | null;
   projectName: string | null;
@@ -257,6 +263,8 @@ export function buildInboxTaskListItem(input: {
   projectName?: string | null;
   projectIcon?: string | null;
   assigneeId?: string | null;
+  assigneeName?: string | null;
+  assigneeAvatarSrc?: string | null;
   inbox?: boolean | null;
   agentCreatedAt?: number | Date | string | null;
   agentInboxApprovedAt?: number | Date | string | null;
@@ -286,6 +294,8 @@ export function buildInboxTaskListItem(input: {
     projectIcon: input.projectIcon ?? null,
     contactKey: null,
     assigneeId: input.assigneeId ?? null,
+    assigneeName: input.assigneeName ?? null,
+    assigneeAvatarSrc: input.assigneeAvatarSrc ?? null,
     priority: input.priority ?? 0,
     dueDate: input.dueDate ?? null,
     updatedAt: input.updatedAt ?? Date.now(),
@@ -314,6 +324,8 @@ export function buildInboxEmailListItem(input: {
   dueDate?: number | string | Date | null;
   updatedAt?: number;
   assigneeId?: string | null;
+  assigneeName?: string | null;
+  assigneeAvatarSrc?: string | null;
   projectId?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
@@ -372,6 +384,8 @@ export function buildInboxEmailListItem(input: {
     dueDate: dueDate != null && Number.isFinite(dueDate) ? dueDate : null,
     updatedAt: input.updatedAt ?? Date.now(),
     assigneeId: input.assigneeId ?? null,
+    assigneeName: input.assigneeName ?? null,
+    assigneeAvatarSrc: input.assigneeAvatarSrc ?? null,
     projectId: input.projectId ?? null,
     projectKey: input.projectKey ?? null,
     projectName: input.projectName ?? null,

@@ -82,7 +82,6 @@ import {
 
 import {
   useDesktopAvatarSrcMap,
-  withAvatarSrc,
 } from "../lib/avatar-src";
 import { TimetrackingSessionsDetail } from "../components/timetracking-sessions-detail";
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
@@ -376,9 +375,7 @@ function CalendarPageBody() {
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(workspace.contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, workspace.contacts],
   );
 

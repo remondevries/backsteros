@@ -34,6 +34,7 @@ import { useDesktopApi } from "../lib/api-context";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
+  withOrganizationAvatarSrc,
 } from "../lib/avatar-src";
 import {
   useKeepAliveActive,
@@ -89,7 +90,7 @@ function FinancePageBody() {
     organizations,
   );
   const organizationsWithAvatars = useMemo(
-    () => withAvatarSrc(organizations, organizationAvatarSrc),
+    () => withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
     [organizationAvatarSrc, organizations],
   );
   const contactsWithAvatars = useMemo(

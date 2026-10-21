@@ -141,6 +141,11 @@ function ContentTabsTimerMenu(props: {
       style={panelStyle}
       role="menu"
     >
+      {menuTimers.length === 0 ? (
+        <p className="bos-content-tabs-timer__empty" role="status">
+          Open a task to start tracking time.
+        </p>
+      ) : null}
       {menuTimers.map((entry) => {
         const displayId = entry.subtitle?.trim() || null;
         const navigateLabel = displayId
@@ -276,19 +281,19 @@ export function BacksterosContentTabsTimer() {
     }
   }, []);
 
-  if (!activeTimer) {
-    return null;
-  }
-
-  const elapsedSeconds = getTrackedTimerElapsedSeconds(activeTimer.key);
+  const idle = activeTimer == null;
+  const elapsedSeconds = activeTimer
+    ? getTrackedTimerElapsedSeconds(activeTimer.key)
+    : 0;
   const liveDisplay = splitDurationDisplay(elapsedSeconds);
-  const displayId = activeTimer.subtitle?.trim() || null;
-  const headerRunning = activeTimer.isRunning;
+  const displayId = activeTimer?.subtitle?.trim() || null;
+  const headerRunning = Boolean(activeTimer?.isRunning);
 
   return (
     <div
       className={[
         "bos-content-tabs-timer",
+        idle ? "is-idle" : null,
         runningCount > 0 ? "is-running" : null,
         runningCount > 1 ? "has-multiple-running" : null,
       ]
@@ -300,9 +305,20 @@ export function BacksterosContentTabsTimer() {
         <button
           type="button"
           className="bos-content-tabs-timer__toggle"
-          aria-label={headerRunning ? "Pause timer" : "Start timer"}
+          aria-label={
+            idle
+              ? "No timer yet — open a task to start tracking"
+              : headerRunning
+                ? "Pause timer"
+                : "Start timer"
+          }
           aria-pressed={headerRunning}
-          onClick={() => onToggle(activeTimer.key)}
+          title={idle ? "Open a task to start tracking time" : undefined}
+          disabled={idle}
+          onClick={() => {
+            if (!activeTimer) return;
+            onToggle(activeTimer.key);
+          }}
         >
           {headerRunning ? (
             <Pause className="size-3" aria-hidden="true" />
@@ -318,7 +334,7 @@ export function BacksterosContentTabsTimer() {
             {runningCount}
           </span>
         ) : null}
-        {displayId ? (
+        {displayId && activeTimer ? (
           <button
             type="button"
             className="bos-content-tabs-timer__pill-id"
@@ -371,7 +387,7 @@ export function BacksterosContentTabsTimer() {
         open={open}
         onClose={() => setOpen(false)}
         anchorRef={controlRef}
-        activeKey={activeTimer.key}
+        activeKey={activeTimer?.key ?? ""}
         onSelect={(key) => setTrackedTimerActiveKey(key)}
         onToggle={onToggle}
         onNavigate={(taskId) => {

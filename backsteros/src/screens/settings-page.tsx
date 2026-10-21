@@ -82,7 +82,7 @@ function SettingsAccountTab({
 
   const options = useMemo(
     () =>
-      buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
 

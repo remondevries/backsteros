@@ -7,7 +7,7 @@ import {
 } from "@backsteros/ui";
 
 import { useAgentMail } from "../lib/agentmail-context";
-import { useDesktopAvatarSrcMap, withAvatarSrc } from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withAvatarSrc, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import {
   buildMentionCatalogFromEmailMessages,
   buildMentionCatalogFromWorkspace,
@@ -65,7 +65,7 @@ function AppShellMentionCatalogTree({
 
   const liveCatalog = useMemo(() => {
     const contactsWithAvatars = withAvatarSrc(contacts, contactAvatarSrc);
-    const organizationsWithAvatars = withAvatarSrc(
+    const organizationsWithAvatars = withOrganizationAvatarSrc(
       organizations,
       organizationAvatarSrc,
     );

@@ -112,9 +112,13 @@
 }
 
 .task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon svg,
-.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon svg {
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon svg,
+.task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon img,
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon img {
   width: 12px;
   height: 12px;
+  border-radius: 9999px;
+  object-fit: cover;
 }
 
 .task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__label,
@@ -421,6 +425,27 @@
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+}
+
+/*
+ * Explicit column wrapper (not a child combinator): rail mode uses
+ * `display: contents` ancestors, so `>` selectors miss the tools strip.
+ * Same 800px column as description / activity; rows stay `width: 100%`
+ * inside. Match the 1rem inset used by title / markdown / activity.
+ * BacksterDESIGN pin popover overrides this to full-bleed.
+ */
+.task-detail-tools-column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 12px auto 0;
+  min-width: 0;
+  padding-inline: 1rem;
+}
+
+/* Narrow stacked chrome already supplies inset — don’t double-pad. */
+.task-detail-stacked .task-detail-tools-column {
+  padding-inline: 0;
 }
 
 .task-detail-description-tools__attachments,

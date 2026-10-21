@@ -26,10 +26,7 @@ import { navigateToHref } from "../router/navigate-href";
 import { useTasksRouteSearch } from "../router/use-tasks-route-search";
 import { TaskDetailPage, type TaskDetailBootstrap } from "./task-detail-page";
 
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -192,9 +189,9 @@ function TaskListPageBody({
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        keepAliveFrozen ? contacts : withAvatarSrc(contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(contacts, {
+        avatarSrcById: keepAliveFrozen ? undefined : contactAvatarSrc,
+      }),
     [contactAvatarSrc, contacts, keepAliveFrozen],
   );
 

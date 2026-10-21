@@ -55,7 +55,6 @@ import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-jo
 import { DevelopmentDeploymentsSidePanel } from "../components/development-deployments-side-panel";
 import {
   useDesktopAvatarSrcMap,
-  withAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
@@ -278,9 +277,7 @@ function CatalogPageBody() {
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(workspace.contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, workspace.contacts],
   );
 

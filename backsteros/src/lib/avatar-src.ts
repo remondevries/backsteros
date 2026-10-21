@@ -1,6 +1,8 @@
 import { startTransition, useEffect, useMemo, useState } from "react";
+import { resolveOrganizationAvatarSrc } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
+import { getBrandfetchClientId } from "./brandfetch";
 
 type AvatarEntity = {
   id: string;
@@ -121,12 +123,38 @@ export function useDesktopAvatarSrcMap(
   return cached ?? urls;
 }
 
-export function withAvatarSrc<T extends { id: string }>(
+export function withAvatarSrc<T extends { id: string; avatarSrc?: string | null }>(
   entities: T[],
   srcById: Record<string, string>,
 ): Array<T & { avatarSrc?: string | null }> {
   return entities.map((entry) => ({
     ...entry,
-    avatarSrc: srcById[entry.id] ?? null,
+    // Prefer the live blob map; keep any already-resolved src while loading.
+    avatarSrc: srcById[entry.id] ?? entry.avatarSrc ?? null,
+  }));
+}
+
+type OrganizationAvatarEntity = {
+  id: string;
+  website?: string | null;
+  avatarStorageKey?: string | null;
+};
+
+/**
+ * Prefer a stored/manual upload; otherwise Brandfetch from `website`.
+ */
+export function withOrganizationAvatarSrc<T extends OrganizationAvatarEntity>(
+  entities: T[],
+  uploadedById: Record<string, string>,
+): Array<T & { avatarSrc?: string | null }> {
+  const clientId = getBrandfetchClientId();
+  return entities.map((entry) => ({
+    ...entry,
+    avatarSrc: resolveOrganizationAvatarSrc({
+      uploadedSrc: uploadedById[entry.id] ?? null,
+      avatarStorageKey: entry.avatarStorageKey,
+      website: entry.website,
+      brandfetchClientId: clientId,
+    }),
   }));
 }

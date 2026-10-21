@@ -65,6 +65,10 @@
   margin-left: auto;
 }
 
+.content-tabs-timer.is-idle .content-tabs-timer__control {
+  color: color-mix(in srgb, var(--tab-text) 72%, transparent);
+}
+
 .content-tabs-timer__control {
   display: inline-flex;
   height: 28px;
@@ -74,6 +78,23 @@
   border-radius: 9px;
   background: var(--tab-bg);
   color: var(--tab-text);
+}
+
+.content-tabs-timer__toggle:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.content-tabs-timer__toggle:disabled:hover {
+  color: inherit;
+}
+
+.content-tabs-timer__empty {
+  margin: 0;
+  padding: 12px 14px;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .content-tabs-timer__toggle,

@@ -29,10 +29,7 @@ import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
@@ -307,8 +304,7 @@ function InboxPageBody() {
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc)),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts]);
 
   const relatedOptions = useMemo(
@@ -316,7 +312,7 @@ function InboxPageBody() {
       buildTaskRelatedDropdownOptions({
         contactOptions: assigneeOptions,
         organizationOptions: buildOrganizationDropdownOptions(
-          withAvatarSrc(organizations, organizationAvatarSrc),
+          withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
         emailOptions: emailRelatedOptions,

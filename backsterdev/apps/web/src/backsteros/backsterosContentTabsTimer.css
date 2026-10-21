@@ -23,6 +23,23 @@
   border-color: color-mix(in oklab, #f97316 45%, transparent);
 }
 
+.bos-content-tabs-timer.is-idle .bos-content-tabs-timer__control {
+  opacity: 0.85;
+}
+
+.bos-content-tabs-timer__toggle:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.bos-content-tabs-timer__empty {
+  margin: 0;
+  padding: 12px 14px;
+  color: color-mix(in oklab, var(--color-muted-foreground, #a1a1aa) 90%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .bos-content-tabs-timer__toggle,
 .bos-content-tabs-timer__display,
 .bos-content-tabs-timer__menu,

@@ -88,7 +88,19 @@ fn penpot_public_uri() -> String {
 fn penpot_frame_url() -> Result<url::Url, String> {
     let base = penpot_public_uri();
     let mut url = url::Url::parse(&base).map_err(|e| e.to_string())?;
-    url.query_pairs_mut().append_pair("tauri-desktop", "1");
+    // Bust WKWebView HTTP cache so devenv cljs-runtime modules are not stale
+    // after a shadow-cljs rebuild (dev only — release pins a fixed host build).
+    let bust = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.append_pair("tauri-desktop", "1");
+        if cfg!(debug_assertions) {
+            pairs.append_pair("_cb", &bust.to_string());
+        }
+    }
     Ok(url)
 }
 

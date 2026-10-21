@@ -32,10 +32,16 @@ import {
   useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import {
+  COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  mapStatusGroupsWithCompletedCap,
+  nextCompletedStatusVisibleCount,
+} from "../../list-nav/completed-status-list-cap.js";
+import {
   OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
   VirtualizedOverviewList,
 } from "../../list-nav/virtualized-overview-list.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
+import { StatusGroupShowMoreButton } from "../list-nav/status-group-show-more.js";
 import type { InboxListItemLinkComponent } from "../inbox/inbox-list-item-row.js";
 import {
   TaskBulkEditBar,
@@ -152,6 +158,9 @@ export function CommunicationOverviewView({
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [completedVisibleCount, setCompletedVisibleCount] = useState(
+    COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  );
 
   const channelLabel =
     titleProp?.trim() ||
@@ -159,10 +168,24 @@ export function CommunicationOverviewView({
       ?.label ||
     "Everything";
 
-  const statusGroups = useMemo(
+  const statusGroupsFull = useMemo(
     () => groupCommunicationItemsByStatus(items),
     [items],
   );
+
+  useEffect(() => {
+    setCompletedVisibleCount(COMPLETED_STATUS_LIST_INITIAL_VISIBLE);
+  }, [channel, inboxId, status]);
+
+  const statusGroups = useMemo(
+    () =>
+      mapStatusGroupsWithCompletedCap(statusGroupsFull, completedVisibleCount),
+    [completedVisibleCount, statusGroupsFull],
+  );
+
+  const completedTotal =
+    statusGroupsFull.find((group) => group.status === "completed")?.items
+      .length ?? 0;
 
   const itemIds = useMemo(() => {
     const ids: string[] = [];
@@ -287,6 +310,19 @@ export function CommunicationOverviewView({
 
   const useVirtualList = items.length >= OVERVIEW_LIST_VIRTUALIZE_THRESHOLD;
 
+  /** Bust LegendList cell recycle when selection / highlight chrome changes. */
+  const listRenderExtraData = useMemo(
+    () => ({
+      highlightedId,
+      hasBulkSelection,
+      selectedKey:
+        selectedIds.size === 0
+          ? ""
+          : Array.from(selectedIds).sort().join("\0"),
+    }),
+    [hasBulkSelection, highlightedId, selectedIds],
+  );
+
   const virtualRows = useMemo(() => {
     if (!useVirtualList) return [];
     return statusGroups.flatMap((group) => {
@@ -300,15 +336,26 @@ export function CommunicationOverviewView({
         estimatedSize: 36,
       };
       if (collapsed) return [header];
+      const itemRows = group.items.map((item) => ({
+        key: `${item.kind}-${item.id}`,
+        kind: "item" as const,
+        itemId: item.id,
+        item,
+        estimatedSize: 36,
+      }));
+      if (group.hiddenCount <= 0) {
+        return [header, ...itemRows];
+      }
       return [
         header,
-        ...group.items.map((item) => ({
-          key: `${item.kind}-${item.id}`,
-          kind: "item" as const,
-          itemId: item.id,
-          item,
-          estimatedSize: 36,
-        })),
+        ...itemRows,
+        {
+          key: `show-more:${group.status}`,
+          kind: "showMore" as const,
+          status: group.status,
+          hiddenCount: group.hiddenCount,
+          estimatedSize: 28,
+        },
       ];
     });
   }, [collapsedGroups, statusGroups, useVirtualList]);
@@ -320,6 +367,12 @@ export function CommunicationOverviewView({
       else next.add(status);
       return next;
     });
+  }
+
+  function showMoreCompleted() {
+    setCompletedVisibleCount((current) =>
+      nextCompletedStatusVisibleCount(current, completedTotal),
+    );
   }
 
   function renderRow(item: InboxListItem) {
@@ -416,6 +469,7 @@ export function CommunicationOverviewView({
             .filter(Boolean)
             .join(" ")}
           estimatedItemSize={36}
+          extraData={listRenderExtraData}
           renderRow={(row) => {
             if (row.kind === "header") {
               return renderStatusHeader({
@@ -423,6 +477,15 @@ export function CommunicationOverviewView({
                 label: row.label,
                 collapsed: row.collapsed,
               });
+            }
+            if (row.kind === "showMore") {
+              return (
+                <StatusGroupShowMoreButton
+                  as="div"
+                  hiddenCount={row.hiddenCount}
+                  onShowMore={showMoreCompleted}
+                />
+              );
             }
             return renderRow(row.item);
           }}
@@ -452,7 +515,15 @@ export function CommunicationOverviewView({
               >
                 {collapsed
                   ? null
-                  : group.items.map((item) => renderRow(item))}
+                  : (
+                    <>
+                      {group.items.map((item) => renderRow(item))}
+                      <StatusGroupShowMoreButton
+                        hiddenCount={group.hiddenCount}
+                        onShowMore={showMoreCompleted}
+                      />
+                    </>
+                  )}
               </StatusGroupSection>
             );
           })}

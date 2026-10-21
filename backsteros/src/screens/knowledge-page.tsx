@@ -63,7 +63,6 @@ import {
 
 import {
   useDesktopAvatarSrcMap,
-  withAvatarSrc,
 } from "../lib/avatar-src";
 import {
   clearDesktopSpaceCoverPreview,
@@ -680,9 +679,7 @@ function KnowledgePageBody() {
 
   const contactOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
   const { types: documentPropertyTypes } = useDocumentPropertyTypes(

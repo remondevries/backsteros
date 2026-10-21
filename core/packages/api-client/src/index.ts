@@ -217,7 +217,15 @@ function createFetcher(options: ApiClientOptions): ApiFetcher {
   };
 }
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * Extra fields for `requestJson` / `requestBinary` (stripped before `fetch`).
+ * Use `timeoutMs: 0` to disable the default hang timeout (SSE-style).
+ */
+export type ApiRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal {
   if (
@@ -279,26 +287,45 @@ function mergeAbortSignals(
   return controller.signal;
 }
 
-function withRequestTimeout(init: RequestInit = {}): RequestInit {
+function splitApiRequestInit(init: ApiRequestInit = {}): {
+  fetchInit: RequestInit;
+  timeoutMs: number;
+} {
+  const { timeoutMs, ...fetchInit } = init;
+  return {
+    fetchInit,
+    timeoutMs:
+      typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
+        ? Math.max(0, timeoutMs)
+        : DEFAULT_REQUEST_TIMEOUT_MS,
+  };
+}
+
+function withRequestTimeout(
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+): RequestInit {
+  if (timeoutMs <= 0) return init;
   return {
     ...init,
-    signal: mergeAbortSignals(init.signal, DEFAULT_REQUEST_TIMEOUT_MS),
+    signal: mergeAbortSignals(init.signal, timeoutMs),
   };
 }
 
 async function rawRequest(
   options: ApiClientOptions,
   path: string,
-  init: RequestInit = {},
+  init: ApiRequestInit = {},
 ): Promise<unknown> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
   // Token resolve can outlive a React effect cleanup; bail before fetch so
   // aborted loads reject as AbortError instead of WebKit's opaque "Load failed".
   const headers = await authorizationHeaders(options);
-  const timedInit = withRequestTimeout(init);
+  const { fetchInit, timeoutMs } = splitApiRequestInit(init);
+  const timedInit = withRequestTimeout(fetchInit, timeoutMs);
   throwIfAborted(timedInit.signal);
-  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  new Headers(fetchInit.headers).forEach((value, name) => headers.set(name, value));
   // JSON string bodies from `requestJson` callers often omit Content-Type;
   // without it Hono leaves `c.req.valid("json")` empty and PATCHes no-op.
   if (
@@ -346,14 +373,15 @@ async function rawStreamRequest(
 async function rawBinaryRequest(
   options: ApiClientOptions,
   path: string,
-  init: RequestInit = {},
+  init: ApiRequestInit = {},
 ): Promise<Blob> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
   const headers = await authorizationHeaders(options);
-  const timedInit = withRequestTimeout(init);
+  const { fetchInit, timeoutMs } = splitApiRequestInit(init);
+  const timedInit = withRequestTimeout(fetchInit, timeoutMs);
   throwIfAborted(timedInit.signal);
-  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  new Headers(fetchInit.headers).forEach((value, name) => headers.set(name, value));
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
     ...timedInit,
     headers,
@@ -535,8 +563,8 @@ export type BacksterosContractClient = MainApiContractClient &
 
 export type BacksterosApiClient = {
   contract: BacksterosContractClient;
-  requestJson<T>(path: string, init?: RequestInit): Promise<T>;
-  requestBinary(path: string, init?: RequestInit): Promise<Blob>;
+  requestJson<T>(path: string, init?: ApiRequestInit): Promise<T>;
+  requestBinary(path: string, init?: ApiRequestInit): Promise<Blob>;
   /** Long-lived fetch (SSE). Does not apply the default request timeout. */
   requestStream(path: string, init?: RequestInit): Promise<Response>;
   getPowerSyncCredentials(): Promise<PowerSyncCredentials>;
@@ -641,9 +669,9 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
     normalized.baseUrl,
     fetcher,
   ) as unknown as BacksterosContractClient;
-  const requestJson = <T>(path: string, init?: RequestInit) =>
+  const requestJson = <T>(path: string, init?: ApiRequestInit) =>
     rawRequest(normalized, path, init) as Promise<T>;
-  const requestBinary = (path: string, init?: RequestInit) =>
+  const requestBinary = (path: string, init?: ApiRequestInit) =>
     rawBinaryRequest(normalized, path, init);
   const requestStream = (path: string, init?: RequestInit) =>
     rawStreamRequest(normalized, path, init);

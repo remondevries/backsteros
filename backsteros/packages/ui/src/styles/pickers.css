@@ -10,6 +10,29 @@
   position: relative;
 }
 
+.avatar-upload__link-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  z-index: 2;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--background, #0a0a0a);
+  pointer-events: none;
+  line-height: 0;
+}
+
+.avatar-upload__link-dot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .avatar-upload__button {
   position: relative;
   display: block;

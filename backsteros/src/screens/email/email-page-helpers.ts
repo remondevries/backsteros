@@ -26,6 +26,15 @@ export function requestMailboxReload() {
   window.dispatchEvent(new CustomEvent("backsteros-email-mailboxes-reload"));
 }
 
+export {
+  EMAIL_AGENT_DRAFT_START_TIMEOUT_MS,
+  beginEmailAgentRequest,
+  endEmailAgentRequest,
+  isEmailAgentRequestActive,
+  isEmailFetchAbortError,
+  emailRequestErrorMessage,
+} from "./email-request-errors.js";
+
 export const EMAIL_THREAD_BODY_VIEW_MODE_KEY = "backsteros:email-thread-body-view-mode";
 
 export function readEmailThreadBodyViewMode(): EmailThreadBodyViewMode {

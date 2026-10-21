@@ -71,6 +71,16 @@ function orgIcon(size = 14, avatarSrc?: string | null): ReactNode {
   return <OrganizationIcon size={size} className="text-foreground/70" />;
 }
 
+function resolveContactAvatarSrc(
+  contact: AssigneeDropdownContact,
+  avatarSrcById?: Readonly<Record<string, string | null | undefined>>,
+): string | null {
+  const fromMap = avatarSrcById?.[contact.id];
+  if (typeof fromMap === "string" && fromMap.trim()) return fromMap.trim();
+  const fromContact = contact.avatarSrc?.trim();
+  return fromContact || null;
+}
+
 function projectStatusGlyph(size = 14, status?: string | null): ReactNode {
   return <ProjectStatusIcon status={status ?? "backlog"} size={size} />;
 }
@@ -78,13 +88,19 @@ function projectStatusGlyph(size = 14, status?: string | null): ReactNode {
 /**
  * Assignee options — label is the contact name (or “Unassigned”).
  * Icons use the person glyph by default; uploaded avatars replace it when present.
+ * Pass `avatarSrcById` from the desktop/design avatar map so every surface
+ * resolves the same way (do not build assignee menus without it when avatars exist).
  * List rows also use `avatarSrc` for initial/avatar marks.
  */
 export function buildAssigneeDropdownOptions(
   contacts: AssigneeDropdownContact[],
-  options?: { iconSize?: number },
+  options?: {
+    iconSize?: number;
+    avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+  },
 ): SearchableDropdownOption<string>[] {
   const iconSize = options?.iconSize ?? 14;
+  const avatarSrcById = options?.avatarSrcById;
   return [
     {
       value: DROPDOWN_NONE_VALUE,
@@ -92,24 +108,27 @@ export function buildAssigneeDropdownOptions(
       searchTerms: "unassigned none",
       icon: personIcon(iconSize),
     },
-    ...contacts.map((contact) => ({
-      value: contact.id,
-      label: contact.name,
-      searchTerms: [
-        contact.name,
-        contact.firstName ?? "",
-        contact.lastName ?? "",
-        contact.email ?? "",
-        ...(contact.emails ?? []).map((entry) =>
-          typeof entry === "string" ? entry : (entry.address ?? ""),
-        ),
-        contact.organizationName ?? "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-      icon: personIcon(iconSize, contact.avatarSrc),
-      avatarSrc: contact.avatarSrc ?? null,
-    })),
+    ...contacts.map((contact) => {
+      const avatarSrc = resolveContactAvatarSrc(contact, avatarSrcById);
+      return {
+        value: contact.id,
+        label: contact.name,
+        searchTerms: [
+          contact.name,
+          contact.firstName ?? "",
+          contact.lastName ?? "",
+          contact.email ?? "",
+          ...(contact.emails ?? []).map((entry) =>
+            typeof entry === "string" ? entry : (entry.address ?? ""),
+          ),
+          contact.organizationName ?? "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        icon: personIcon(iconSize, avatarSrc),
+        avatarSrc,
+      };
+    }),
   ];
 }
 
@@ -118,7 +137,10 @@ export function buildAssigneeDropdownOptions(
  */
 export function buildContactDropdownOptions(
   contacts: AssigneeDropdownContact[],
-  options?: { iconSize?: number },
+  options?: {
+    iconSize?: number;
+    avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+  },
 ): SearchableDropdownOption<string>[] {
   return buildAssigneeDropdownOptions(contacts, options).map((option) =>
     option.value === DROPDOWN_NONE_VALUE

@@ -1048,7 +1048,9 @@ body.backsteros-pinned-tasks-reordering * {
 }
 
 .backsteros-pinned-task-popover__detail .task-detail-attachments,
-.backsteros-pinned-task-popover__detail .task-link-attachments {
+.backsteros-pinned-task-popover__detail .task-link-attachments,
+.backsteros-pinned-task-popover__detail .task-detail-description-tools,
+.backsteros-pinned-task-popover__detail .task-detail-tools-column {
   max-width: none;
   margin: 0;
   padding: 0;

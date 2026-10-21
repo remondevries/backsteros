@@ -255,3 +255,35 @@ test("rejects with AbortError when the signal aborts while resolving the token",
   );
   assert.equal(fetchCalled, false);
 });
+
+test("requestJson timeoutMs: 0 skips the default hang timeout", async () => {
+  let seenSignal: AbortSignal | null | undefined;
+  const client = createApiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (_input, init) => {
+      seenSignal = init?.signal;
+      return Response.json({ ok: true });
+    },
+  });
+
+  await client.requestJson("/api/v1/health", { timeoutMs: 0 });
+  assert.equal(seenSignal, undefined);
+});
+
+test("requestJson does not forward timeoutMs into fetch init", async () => {
+  let seenKeys: string[] = [];
+  const client = createApiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (_input, init) => {
+      seenKeys = Object.keys(init ?? {});
+      return Response.json({ ok: true });
+    },
+  });
+
+  await client.requestJson("/api/v1/health", {
+    method: "POST",
+    timeoutMs: 120_000,
+    body: "{}",
+  });
+  assert.equal(seenKeys.includes("timeoutMs"), false);
+});

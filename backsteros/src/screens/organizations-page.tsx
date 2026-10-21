@@ -37,8 +37,10 @@ import {
   OrganizationContactsListView,
   OrganizationDetailOverlay,
   OrganizationDetailView,
+  OrganizationEmailsListView,
   OrganizationTransactionsSection,
   OrganizationsOverviewView,
+  getEmailListItemHref,
   ORGANIZATION_CARD_SECTIONS,
   ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
   ORGANIZATION_DETAIL_CONTENT_FADE_MS,
@@ -69,6 +71,7 @@ import {
   primeTabTitle,
   PROJECTS_LIST_BOARD_STORAGE_KEY,
   resolveListItemFromSlug,
+  resolveOrganizationAvatarSrc,
   resolveOrganizationWorkspaceTabs,
   shouldHandleGlobalShortcut,
   type ContactListItem,
@@ -90,6 +93,7 @@ import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
 } from "../lib/avatar-upload";
+import { getBrandfetchClientId } from "../lib/brandfetch";
 import {
   useCrmActivityFeed,
   useCrmGroupOrganizationIds,
@@ -110,6 +114,7 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { type ProjectLocationState } from "../lib/project-type-cache";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
+import { useAgentMail } from "../lib/agentmail-context";
 import { navigateToHref } from "../router/navigate-href";
 
 function asCoord(value: unknown): number | null {
@@ -178,6 +183,7 @@ export function OrganizationsPage() {
     section?: string;
   };
   const workspace = useDesktopWorkspaceData();
+  const agentMail = useAgentMail();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
@@ -770,10 +776,15 @@ export function OrganizationsPage() {
 
         const current = organizationDetailsRef.current[panelOrganizationId];
         const patch: Record<string, string | null> = {};
-        if ((current?.chamberOfCommerce ?? null) !== nextChamber) {
+        // Pull CoC / VAT from Moneybird only when present — never blank local
+        // fields just because Moneybird left them empty.
+        if (
+          nextChamber &&
+          (current?.chamberOfCommerce ?? null) !== nextChamber
+        ) {
           patch.chamberOfCommerce = nextChamber;
         }
-        if ((current?.taxNumber ?? null) !== nextTax) {
+        if (nextTax && (current?.taxNumber ?? null) !== nextTax) {
           patch.taxNumber = nextTax;
         }
         if (hasMoneybirdAddress) {
@@ -899,8 +910,8 @@ export function OrganizationsPage() {
   }, [sectionParam]);
 
   // Invalid section segment → overview. Legacy full-page workspace tabs
-  // (`/projects`, `/contacts`, `/letters`, `/transactions`, `/invoices`) →
-  // expanded overlay layout with the matching workspace tab.
+  // (`/projects`, `/contacts`, `/letters`, `/emails`, `/transactions`,
+  // `/invoices`) → expanded overlay layout with the matching workspace tab.
   useEffect(() => {
     if (!keepAliveActive) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
@@ -908,6 +919,7 @@ export function OrganizationsPage() {
       sectionParam === "projects" ||
       sectionParam === "contacts" ||
       sectionParam === "letters" ||
+      sectionParam === "emails" ||
       sectionParam === "transactions" ||
       sectionParam === "invoices"
     ) {
@@ -1295,10 +1307,21 @@ export function OrganizationsPage() {
   }, [contactAvatarSrc, contacts, selected, workspace.contactDetails]);
 
   const overviewOrganizations = useMemo((): OrganizationListItem[] => {
-    const mapped = organizations.map((org) => ({
-      ...org,
-      avatarSrc: organizationAvatarSrc[org.id] ?? org.avatarSrc ?? null,
-    }));
+    const clientId = getBrandfetchClientId();
+    const mapped = organizations.map((org) => {
+      const detailsWebsite =
+        workspace.organizationDetails[org.id]?.website ?? org.website;
+      return {
+        ...org,
+        website: detailsWebsite ?? org.website ?? null,
+        avatarSrc: resolveOrganizationAvatarSrc({
+          uploadedSrc: organizationAvatarSrc[org.id] ?? org.avatarSrc ?? null,
+          avatarStorageKey: org.avatarStorageKey,
+          website: detailsWebsite ?? org.website,
+          brandfetchClientId: clientId,
+        }),
+      };
+    });
     if (!effectiveGroupId) return mapped;
     return mapped.filter((org) =>
       groupMembers.organizationIds.has(org.id),
@@ -1308,6 +1331,7 @@ export function OrganizationsPage() {
     organizationAvatarSrc,
     organizations,
     selectedGroupId,
+    workspace.organizationDetails,
   ]);
 
   const openOrganization = useCallback(
@@ -1857,6 +1881,18 @@ export function OrganizationsPage() {
       );
     }
 
+    if (sectionId === "emails") {
+      return (
+        <OrganizationEmailsListView
+          organizationId={organization.id}
+          emails={keepAliveFrozen ? [] : agentMail.messages}
+          onSelectEmail={(email) => {
+            navigate(getEmailListItemHref(email));
+          }}
+        />
+      );
+    }
+
     if (sectionId === "contacts") {
       return (
         <OrganizationContactsListView
@@ -1939,8 +1975,25 @@ export function OrganizationsPage() {
     const organization = panelOrganization ?? selected;
     if (!organization) return null;
     const syncedAvatarSrc = organizationAvatarSrc[organization.id] ?? null;
-    const avatarSrc =
+    // Local override: blob after upload, or null after remove (prefer Brandfetch again).
+    const uploadedSrc =
       avatarOverride !== undefined ? avatarOverride : syncedAvatarSrc;
+    const storedKey =
+      avatarOverride === null
+        ? null
+        : (details?.avatarStorageKey ??
+          organization.avatarStorageKey ??
+          null);
+    const avatarSrc = resolveOrganizationAvatarSrc({
+      uploadedSrc,
+      avatarStorageKey: storedKey,
+      website: details?.website ?? organization.website,
+      brandfetchClientId: getBrandfetchClientId(),
+    });
+    const canRemoveManualAvatar = Boolean(
+      storedKey?.trim() ||
+        (avatarOverride !== undefined && avatarOverride != null),
+    );
 
     return (
       <OrganizationDetailView
@@ -2008,6 +2061,9 @@ export function OrganizationsPage() {
             displayName={organization.name}
             avatarSrc={avatarSrc}
             showHint={false}
+            linkDot={Boolean(
+              (details?.moneybirdContactId ?? moneybirdContactId)?.trim(),
+            )}
             onUpload={async (file) => {
               const result = await uploadDesktopAvatar(
                 client,
@@ -2024,20 +2080,24 @@ export function OrganizationsPage() {
               }
               return result;
             }}
-            onRemove={async () => {
-              const result = await removeDesktopAvatar(
-                client,
-                "organization",
-                organization.id,
-              );
-              if (result.ok) {
-                setAvatarOverride((current) => {
-                  if (current) URL.revokeObjectURL(current);
-                  return null;
-                });
-              }
-              return result;
-            }}
+            onRemove={
+              canRemoveManualAvatar
+                ? async () => {
+                    const result = await removeDesktopAvatar(
+                      client,
+                      "organization",
+                      organization.id,
+                    );
+                    if (result.ok) {
+                      setAvatarOverride((current) => {
+                        if (current) URL.revokeObjectURL(current);
+                        return null;
+                      });
+                    }
+                    return result;
+                  }
+                : undefined
+            }
           />
         }
         onSaveName={async (name) => {
@@ -2063,9 +2123,21 @@ export function OrganizationsPage() {
 
   const organizationTabTitle = selected?.name ?? "Organizations";
   const organizationTabAvatarSrc = selected
-    ? (avatarOverride !== undefined
-        ? avatarOverride
-        : (organizationAvatarSrc[selected.id] ?? null))
+    ? resolveOrganizationAvatarSrc({
+        uploadedSrc:
+          avatarOverride !== undefined
+            ? avatarOverride
+            : (organizationAvatarSrc[selected.id] ?? null),
+        avatarStorageKey:
+          avatarOverride === null
+            ? null
+            : (workspace.organizationDetails[selected.id]?.avatarStorageKey ??
+              selected.avatarStorageKey),
+        website:
+          workspace.organizationDetails[selected.id]?.website ??
+          selected.website,
+        brandfetchClientId: getBrandfetchClientId(),
+      })
     : null;
 
   // Standalone list + resizable right detail rail (hide/show with ]).

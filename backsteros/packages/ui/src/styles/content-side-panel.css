@@ -537,6 +537,17 @@ body.is-resizing {
   justify-content: center;
 }
 
+.entity-list-avatar-wrap {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  overflow: visible;
+}
+
 .entity-list-avatar {
   box-sizing: border-box;
   display: inline-flex;
@@ -557,6 +568,11 @@ body.is-resizing {
   border-radius: 4px;
 }
 
+.entity-list-avatar--empty {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
 .entity-list-avatar--top {
   align-self: flex-start;
   margin-top: 2px;
@@ -569,6 +585,19 @@ body.is-resizing {
   max-width: none;
   object-fit: cover;
   object-position: center;
+}
+
+.entity-list-avatar__link-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #3b82f6;
+  box-shadow: 0 0 0 1.5px var(--background, #0a0a0a);
+  pointer-events: none;
 }
 
 .app-side-panel-item-label {

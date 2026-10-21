@@ -261,7 +261,8 @@
       (ts/schedule
        (fn []
          (let [editor  (:workspace-editor @st/state)
-               element (when editor (.-element editor))]
+               element (when editor (.-element editor))
+               wasm-el (js/document.getElementById "text-editor-wasm-input")]
            (cond
              ;; V1 (DraftEditor)
              (and (some? editor) (.-focus editor))
@@ -269,7 +270,11 @@
 
              ;; V2
              (and element (.-focus element))
-             (.focus ^js element))))))))
+             (.focus ^js element)
+
+             ;; WASM / v3 capture surface (opacity-0 blur recovery)
+             (and (some? wasm-el) (.-focus wasm-el))
+             (.focus ^js wasm-el))))))))
 
 (defn gen-name
   [editor]

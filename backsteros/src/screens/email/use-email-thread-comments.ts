@@ -22,7 +22,13 @@ import { resolveEditableEmailDraftBody } from "../../lib/email-draft-body";
 import { dispatchEmailListRemove } from "../../lib/use-agentmail-mailboxes";
 import { navigateToHref } from "../../router/navigate-href";
 
-import { resolveEmailThreadKey } from "./email-page-helpers";
+import {
+  beginEmailAgentRequest,
+  EMAIL_AGENT_DRAFT_START_TIMEOUT_MS,
+  emailRequestErrorMessage,
+  endEmailAgentRequest,
+  resolveEmailThreadKey,
+} from "./email-page-helpers";
 
 /** Fast then back off so we notice Grok finishing without hammering forever. */
 const AGENT_DRAFT_POLL_INTERVALS_MS = [
@@ -155,9 +161,7 @@ export function useEmailThreadComments({
             });
           }
           setConceptError(
-            caught instanceof Error
-              ? caught.message
-              : "Could not delete comment.",
+            emailRequestErrorMessage(caught, "Could not delete comment."),
           );
         });
     },
@@ -187,9 +191,7 @@ export function useEmailThreadComments({
         setSelectedCommentId(null);
       } catch (caught) {
         setConceptError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not update comment.",
+          emailRequestErrorMessage(caught, "Could not update comment."),
         );
       } finally {
         setSavingCommentId(null);
@@ -232,9 +234,7 @@ export function useEmailThreadComments({
         await postThreadComment(prompt, "user");
       } catch (caught) {
         setConceptError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not save note.",
+          emailRequestErrorMessage(caught, "Could not save note."),
         );
       } finally {
         setCommentSending(false);
@@ -255,6 +255,7 @@ export function useEmailThreadComments({
       setConceptError(null);
       setDraftStageWorking(true);
       promoteEmailThreadStatus("in_progress");
+      beginEmailAgentRequest();
       try {
         // Wake Grok immediately — do not wait for the thread comment round-trip.
         void postThreadComment(prompt, "user").catch((caught) => {
@@ -290,6 +291,10 @@ export function useEmailThreadComments({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            // Cloud forward allows 60s; default client hang timeout is 45s and
+            // WebKit reports that as "Fetch is aborted" (esp. while a property
+            // patch also refreshes the open thread).
+            timeoutMs: EMAIL_AGENT_DRAFT_START_TIMEOUT_MS,
             body: JSON.stringify({
               prompt,
               currentDraftBody,
@@ -441,11 +446,13 @@ export function useEmailThreadComments({
         throw new Error("Timed out waiting for the agent.");
       } catch (caught) {
         setConceptError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not complete agent request.",
+          emailRequestErrorMessage(
+            caught,
+            "Could not complete agent request.",
+          ),
         );
       } finally {
+        endEmailAgentRequest();
         setCommentSending(false);
         setDraftStageWorking(false);
       }

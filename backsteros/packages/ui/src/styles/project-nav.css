@@ -3664,6 +3664,7 @@ button.entity-overview-subgroup__header:focus-visible {
 }
 
 .contacts-overview__row > .entity-list-avatar,
+.contacts-overview__row > .entity-list-avatar-wrap,
 .contacts-overview__row > [class*="entity-list-avatar"] {
   flex-shrink: 0;
   align-self: flex-start;

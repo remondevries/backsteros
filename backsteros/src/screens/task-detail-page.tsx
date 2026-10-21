@@ -53,10 +53,7 @@ import {
 } from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
 import { useTaskLabelDropdownOptions } from "../lib/task-label-options";
@@ -555,8 +552,7 @@ export function TaskDetailPage({
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc)),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts]);
 
   const relatedOptions = useMemo(
@@ -564,7 +560,7 @@ export function TaskDetailPage({
       buildTaskRelatedDropdownOptions({
         contactOptions: assigneeOptions,
         organizationOptions: buildOrganizationDropdownOptions(
-          withAvatarSrc(organizations, organizationAvatarSrc),
+          withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
           { includeNone: false },
         ),
         emailOptions: emailRelatedOptions,

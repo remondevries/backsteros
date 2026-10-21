@@ -41,9 +41,13 @@ body {
   scrollbar-width: thin;
 }
 
-::selection {
-  background: var(--color-accent-background-select);
-  color: var(--color-static-white);
+// Form fields only — never global. Canvas text editors use transparent
+// ::selection + Skia imposters; a page-wide rule paints over those glyphs.
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"])::selection,
+textarea::selection {
+  // Fallback solid accent: CSS vars can fail to paint ::selection in some WebKits.
+  background: var(--color-accent-background-select, #ee7a47);
+  color: var(--color-static-white, #fff);
 }
 
 img {
@@ -133,6 +137,15 @@ input[type="number"] {
 
 [contenteditable] {
   user-select: text;
+  -webkit-user-select: text;
+}
+
+// Workspace/dashboard set user-select:none on ancestors; without an explicit
+// text allowlist, WebKit often paints no selection highlight in form fields.
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 input,

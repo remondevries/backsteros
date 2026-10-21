@@ -227,9 +227,19 @@ export function InboxListItemRowComponent({
   const assigneeOption = assigneeOptions.find(
     (entry) => entry.value === (assigneeId ?? DROPDOWN_NONE_VALUE),
   );
+  const itemAssigneeName =
+    item.kind === "task" || item.kind === "email"
+      ? item.assigneeName?.trim() || null
+      : null;
+  const itemAssigneeAvatarSrc =
+    item.kind === "task" || item.kind === "email"
+      ? (item.assigneeAvatarSrc ?? null)
+      : null;
   const assigneeLabel = assigneeId
-    ? (assigneeOption?.label ?? "Assigned")
+    ? (assigneeOption?.label ?? itemAssigneeName ?? "Assigned")
     : "Unassigned";
+  const assigneeAvatarSrc =
+    assigneeOption?.avatarSrc ?? itemAssigneeAvatarSrc ?? null;
   const statusControl = canEditStatus ? (
     <span className="inbox-list-item-field">
       <DeferredSearchableDropdown
@@ -510,7 +520,7 @@ export function InboxListItemRowComponent({
                         <span className="inbox-list-item-assignee-avatar">
                           <AssigneeListMark
                             label={assigneeLabel}
-                            avatarSrc={assigneeOption?.avatarSrc}
+                            avatarSrc={assigneeAvatarSrc}
                             unassigned={!assigneeId}
                             size={18}
                           />
@@ -528,7 +538,7 @@ export function InboxListItemRowComponent({
                     <span className="inbox-list-item-assignee-avatar">
                       <AssigneeListMark
                         label={assigneeLabel}
-                        avatarSrc={assigneeOption?.avatarSrc}
+                        avatarSrc={assigneeAvatarSrc}
                         unassigned={!assigneeId}
                         size={18}
                       />

@@ -281,11 +281,14 @@
 }
 
 .property-dropdown-trigger__icon .entity-list-avatar,
-.property-dropdown-trigger__icon .finance-account-dropdown-avatar-fallback {
+.property-dropdown-trigger__icon .finance-account-dropdown-avatar-fallback,
+.property-dropdown-trigger__icon img {
   width: 18px;
   height: 18px;
   min-width: 18px;
   min-height: 18px;
+  border-radius: 9999px;
+  object-fit: cover;
 }
 
 .property-dropdown-trigger.is-muted .property-dropdown-trigger__icon {
@@ -446,11 +449,14 @@
 
 .searchable-dropdown-panel__option-icon .entity-list-avatar,
 .searchable-dropdown-panel__option-icon
-  .finance-account-dropdown-avatar-fallback {
+  .finance-account-dropdown-avatar-fallback,
+.searchable-dropdown-panel__option-icon img {
   width: 18px;
   height: 18px;
   min-width: 18px;
   min-height: 18px;
+  border-radius: 9999px;
+  object-fit: cover;
 }
 
 .searchable-dropdown-panel__option-label {

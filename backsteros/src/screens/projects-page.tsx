@@ -102,10 +102,7 @@ import {
   renderTaskAgentTitleTrailing,
 } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import {
   documentPropertiesFromApiDocument,
@@ -1255,7 +1252,7 @@ function ProjectsPageBody({
   const projectList = workspace.projects;
 
   const assigneeOptions = useMemo(
-    () => buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+    () => buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts]);
   const { types: documentPropertyTypes } = useDocumentPropertyTypes(
     selectedDocument?.projectId ?? selected?.id,
@@ -1265,7 +1262,7 @@ function ProjectsPageBody({
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc),
+        withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
         { includeNone: false }),
     [organizationAvatarSrc, organizations]);
 
@@ -1281,7 +1278,7 @@ function ProjectsPageBody({
   const letterOrganizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc)),
+        withOrganizationAvatarSrc(organizations, organizationAvatarSrc)),
     [organizationAvatarSrc, organizations]);
 
   const projectOptions = useMemo(
@@ -2040,8 +2037,11 @@ function ProjectsPageBody({
                   record?.organizationId
                     ? contacts.filter(
                         (contact) =>
-                          contact.organizationId === record.organizationId)
-                    : [])}
+                          contact.organizationId === record.organizationId,
+                      )
+                    : contacts,
+                  { avatarSrcById: contactAvatarSrc },
+                )}
                 projectOptions={projectOptions}
                 organizationNavigateHref={
                   record?.organizationId

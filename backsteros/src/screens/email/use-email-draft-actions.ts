@@ -34,7 +34,10 @@ import {
 import { createRequestAbortSignal } from "../../lib/request-timeout";
 import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
 
-import { requestMailboxReload } from "./email-page-helpers";
+import {
+  emailRequestErrorMessage,
+  requestMailboxReload,
+} from "./email-page-helpers";
 import { navigateToHref } from "../../router/navigate-href";
 import { pinEmailThreadScrollDuringUpdate } from "./email-thread-scroll-pin";
 
@@ -338,11 +341,9 @@ export function useEmailDraftActions({
         );
         requestMailboxReload();
       } catch (caught) {
-        const messageText =
-          caught instanceof Error
-            ? caught.message
-            : "Could not save draft changes.";
-        setConceptError(messageText);
+        setConceptError(
+          emailRequestErrorMessage(caught, "Could not save draft changes."),
+        );
         throw caught;
       } finally {
         conceptBodySavingRef.current = false;
@@ -440,11 +441,9 @@ export function useEmailDraftActions({
         }
         requestMailboxReload();
       } catch (caught) {
-        const messageText =
-          caught instanceof Error
-            ? caught.message
-            : "Could not save reply concept.";
-        setConceptError(messageText);
+        setConceptError(
+          emailRequestErrorMessage(caught, "Could not save reply concept."),
+        );
         console.warn("[email] concept-reply failed:", caught);
       } finally {
         conceptSavingRef.current = false;
@@ -503,11 +502,9 @@ export function useEmailDraftActions({
         );
         requestMailboxReload();
       } catch (caught) {
-        const messageText =
-          caught instanceof Error
-            ? caught.message
-            : "Could not save compose draft.";
-        setConceptError(messageText);
+        setConceptError(
+          emailRequestErrorMessage(caught, "Could not save compose draft."),
+        );
         console.warn("[email] compose-draft failed:", caught);
       } finally {
         conceptSavingRef.current = false;
@@ -640,10 +637,26 @@ export function useEmailDraftActions({
             messageId: returnToMessageId,
             threadId: result.threadId ?? null,
             status: "on_hold",
+            conceptDraftId: null,
           });
+          // Close reply chrome immediately — send deletes the draft; a lingering
+          // conceptDraft link from reload must not reopen the composer.
+          setConceptBodyDraft("");
+          setReplyComposeOpen(false);
+          setReplyInboxId("");
+          setReplyTo("");
+          setReplyCc("");
+          setReplySubjectText("");
+          replyHeadersSeededForDraftRef.current = null;
           const reloaded = await reloadMessageDetail(targetInbox, returnToMessageId);
           setDraft(null);
-          setMessage(reloaded);
+          setComposeDraft(null);
+          setMessage({
+            ...reloaded,
+            conceptDraft: null,
+            conceptDraftId: null,
+            conceptPreview: null,
+          });
           if (draftId) {
             navigate(toEmailDetailHref(targetInbox, returnToMessageId), {
               replace: true,
@@ -658,7 +671,7 @@ export function useEmailDraftActions({
         navigate("/inbox", { replace: true });
       } catch (caught) {
         setSendError(
-          caught instanceof Error ? caught.message : "Could not send draft.",
+          emailRequestErrorMessage(caught, "Could not send draft."),
         );
         console.warn("[email] send draft failed:", caught);
       } finally {
@@ -769,9 +782,7 @@ export function useEmailDraftActions({
         })
         .catch((caught) => {
           setSendError(
-            caught instanceof Error
-              ? caught.message
-              : "Could not delete draft.",
+            emailRequestErrorMessage(caught, "Could not delete draft."),
           );
           console.warn("[email] delete draft failed:", caught);
           requestMailboxReload();

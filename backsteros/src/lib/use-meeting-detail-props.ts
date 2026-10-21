@@ -11,10 +11,7 @@ import {
   type MeetingPropertiesMeeting,
 } from "@backsteros/ui";
 
-import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "./avatar-src";
+import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "./avatar-src";
 import type { DesktopWorkspaceData } from "./workspace/workspace-data-types";
 
 export { parseMeetingAttendeeContactIdsFromRow } from "./workspace/row-mappers";
@@ -57,7 +54,7 @@ export function useMeetingDetailViewProps(
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(workspace.organizations, organizationAvatarSrc).map(
+        withOrganizationAvatarSrc(workspace.organizations, organizationAvatarSrc).map(
           (org) => ({
             id: org.id,
             name: org.name,
@@ -70,9 +67,7 @@ export function useMeetingDetailViewProps(
 
   const contactOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(workspace.contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, workspace.contacts],
   );
 

@@ -106,7 +106,13 @@ export function OrganizationsSidePanelView({
                       })}
                       aria-current={isActive ? "page" : undefined}
                     >
-                      <EntityListAvatar src={organization.avatarSrc} size={16} />
+                      <EntityListAvatar
+                        src={organization.avatarSrc}
+                        size={16}
+                        linkDot={Boolean(
+                          organization.moneybirdContactId?.trim(),
+                        )}
+                      />
                       <span className="app-side-panel-item-label">
                         {organization.name}
                       </span>

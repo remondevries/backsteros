@@ -11,6 +11,11 @@ import { PropertyDropdown, type PropertyDropdownTriggerVariant } from "../dropdo
 
 export type ComposeAssigneeDropdownProps = {
   contacts: AssigneeDropdownContact[];
+  /**
+   * Live avatar blob URLs by contact id. Always pass from the host avatar map
+   * so compose matches task-property assignee menus.
+   */
+  avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
   value: string | null;
   onChange: (assigneeId: string | null) => void;
   disabled?: boolean;
@@ -26,6 +31,7 @@ export type ComposeAssigneeDropdownProps = {
  */
 export function ComposeAssigneeDropdown({
   contacts,
+  avatarSrcById,
   value,
   onChange,
   disabled = false,
@@ -33,7 +39,7 @@ export function ComposeAssigneeDropdown({
   taskPropertyDropdownId = "assignee",
   triggerVariant = "default",
 }: ComposeAssigneeDropdownProps) {
-  const options = buildAssigneeDropdownOptions(contacts);
+  const options = buildAssigneeDropdownOptions(contacts, { avatarSrcById });
 
   if (contacts.length === 0) {
     return null;

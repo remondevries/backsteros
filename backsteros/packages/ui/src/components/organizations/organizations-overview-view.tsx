@@ -153,7 +153,11 @@ export function OrganizationsOverviewView({
             }
           }}
         >
-          <EntityListAvatar src={organization.avatarSrc} size={20} />
+          <EntityListAvatar
+            src={organization.avatarSrc}
+            size={20}
+            linkDot={Boolean(organization.moneybirdContactId?.trim())}
+          />
           <div className="contacts-overview__body">
             <div className="contacts-overview__title-row">
               <span className="contacts-overview__name">

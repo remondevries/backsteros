@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { MoneybirdIcon } from "../icons/moneybird-icon.js";
+
 export type AvatarActionResult = { ok: true } | { ok: false; error: string };
 
 export type AvatarUploadShape = "circle" | "rounded-square";
@@ -23,6 +25,9 @@ export type AvatarUploadProps = {
    * Prefer the hover trash button (default when `onRemove` is set).
    */
   showRemove?: boolean;
+  /** Blue corner dot — e.g. organization linked to Moneybird. */
+  linkDot?: boolean;
+  linkDotLabel?: string;
 };
 
 function AvatarPlaceholder({ name }: { name: string }) {
@@ -66,6 +71,8 @@ export function AvatarUpload({
   allowSvg = false,
   showHint = true,
   showRemove = false,
+  linkDot = false,
+  linkDotLabel = "Linked to Moneybird",
 }: AvatarUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +185,16 @@ export function AvatarUpload({
           >
             <TrashIcon />
           </button>
+        ) : null}
+        {linkDot ? (
+          <span
+            className="avatar-upload__link-dot"
+            title={linkDotLabel}
+            aria-label={linkDotLabel}
+            role="img"
+          >
+            <MoneybirdIcon size={18} />
+          </span>
         ) : null}
         <input
           ref={fileInputRef}

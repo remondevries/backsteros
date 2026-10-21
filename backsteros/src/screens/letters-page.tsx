@@ -20,7 +20,7 @@ import {
 import { LetterPdfPreview } from "../components/letter-pdf-viewer";
 import {
   useDesktopAvatarSrcMap,
-  withAvatarSrc,
+  withOrganizationAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
@@ -197,15 +197,14 @@ function LettersPageBody({
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc)),
+        withOrganizationAvatarSrc(organizations, organizationAvatarSrc)),
     [organizationAvatarSrc, organizations]);
 
   const contactOptions = useMemo(() => {
     const scoped = organizationId
       ? contacts.filter((contact) => contact.organizationId === organizationId)
       : contacts;
-    return buildContactDropdownOptions(
-      withAvatarSrc(scoped, contactAvatarSrc));
+    return buildContactDropdownOptions(scoped, { avatarSrcById: contactAvatarSrc });
   }, [contactAvatarSrc, contacts, organizationId]);
 
   const projectOptions = useMemo(

@@ -47,7 +47,7 @@ import {
 } from "../lib/project-type-cache";
 import {
   useDesktopAvatarSrcMap,
-  withAvatarSrc,
+  withOrganizationAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { LettersPage } from "./letters-page";
@@ -710,7 +710,7 @@ function TrailProjectLeaf({
         void workspace.patchProject(project.id, { budgets });
       }}
       organizationOptions={buildOrganizationDropdownOptions(
-        withAvatarSrc(workspace.organizations, organizationAvatarSrc),
+        withOrganizationAvatarSrc(workspace.organizations, organizationAvatarSrc),
       )}
       organizationNavigateHref={
         project.organizationId
@@ -764,7 +764,7 @@ function TrailContactLeaf({
         organizationId: contact.organizationId,
         organizationName: contact.organizationName,
       }}
-      organizationOptions={withAvatarSrc(
+      organizationOptions={withOrganizationAvatarSrc(
         workspace.organizations,
         organizationAvatarSrc,
       ).map((org) => ({

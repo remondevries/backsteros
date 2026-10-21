@@ -770,6 +770,26 @@ export function TasksOverviewView({
     ],
   );
 
+  const listRenderExtraData = useMemo(
+    () => ({
+      highlightedId,
+      hasBulkSelection,
+      selectedKey:
+        selectedIds.size === 0
+          ? ""
+          : Array.from(selectedIds).sort().join("\0"),
+      draggingItemId,
+      insertBeforeKey,
+    }),
+    [
+      draggingItemId,
+      hasBulkSelection,
+      highlightedId,
+      insertBeforeKey,
+      selectedIds,
+    ],
+  );
+
   const listContent = useVirtualList ? (
     <VirtualizedOverviewList
       rows={virtualRows}
@@ -778,6 +798,7 @@ export function TasksOverviewView({
       listContainerProps={listContainerProps}
       style={taskIdColumnStyle}
       className={hasBulkSelection ? "has-bulk-selection" : undefined}
+      extraData={listRenderExtraData}
       renderRow={renderVirtualRow}
     />
   ) : (

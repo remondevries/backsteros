@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  formatContactPhoneDisplay,
   getContactEmailAddresses,
   getContactPhoneNumbers,
 } from "@backsteros/contracts";
@@ -137,11 +138,12 @@ export function ContactsOverviewView({
         email: contact.email,
         emails: contact.emails,
       })[0] ?? null;
-    const phone =
+    const phoneRaw =
       getContactPhoneNumbers({
         phone: contact.phone,
         phones: contact.phones,
       })[0] ?? null;
+    const phone = phoneRaw ? formatContactPhoneDisplay(phoneRaw) : null;
     const groups = contact.groups ?? [];
     const socialAccounts = (contact.socialAccounts ?? []).filter(
       (entry) => entry.platform.trim() && entry.url.trim(),

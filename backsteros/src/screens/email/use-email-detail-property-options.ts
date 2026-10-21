@@ -6,7 +6,10 @@ import {
   buildProjectDropdownOptions,
 } from "@backsteros/ui";
 
-import { useDesktopAvatarSrcMap, withAvatarSrc } from "../../lib/avatar-src";
+import {
+  useDesktopAvatarSrcMap,
+  withOrganizationAvatarSrc,
+} from "../../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../../lib/workspace-data";
 
 export function useEmailDetailPropertyOptions(
@@ -21,20 +24,20 @@ export function useEmailDetailPropertyOptions(
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc),
+        withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
       ),
     [organizationAvatarSrc, organizations],
   );
 
   const contactOptions = useMemo(
     () =>
-      buildContactDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+      buildContactDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contactAvatarSrc, contacts],
   );
 

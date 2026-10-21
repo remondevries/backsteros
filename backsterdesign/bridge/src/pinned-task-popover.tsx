@@ -338,9 +338,7 @@ export function PinnedTaskPopover({
 
   const assigneeOptions = useMemo(
     () =>
-      buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc),
-      ),
+      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
     [contacts, contactAvatarSrc],
   );
 

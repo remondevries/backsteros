@@ -309,18 +309,25 @@ export function EmailComposeChrome({
 
   return (
     <article
-      className={`email-thread-message is-concept is-compose${
-        !hasLetterBody ? " is-empty-draft" : ""
-      }`}
+      className={[
+        "email-thread-message",
+        "is-concept",
+        "is-compose",
+        variant === "reply" ? "is-reply" : null,
+        !hasLetterBody ? "is-empty-draft" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
-      <div className="email-thread-message__header">
-        <h2 className="email-thread-message__subject">
-          {subject.trim() || "New email"}
-        </h2>
-        <span className="email-thread-message__concept-label">
-          {variant === "reply" ? "Reply" : "Compose"}
-        </span>
-      </div>
+      {/* Reply already has Subject under Cc — skip the duplicate title row. */}
+      {variant === "compose" ? (
+        <div className="email-thread-message__header">
+          <h2 className="email-thread-message__subject">
+            {subject.trim() || "New email"}
+          </h2>
+          <span className="email-thread-message__concept-label">Compose</span>
+        </div>
+      ) : null}
       <EmailComposeBodyStage body={body} agentWorking={agentWorking}>
         {letterContent}
       </EmailComposeBodyStage>

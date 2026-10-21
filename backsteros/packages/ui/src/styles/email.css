@@ -1319,6 +1319,13 @@
   background: #1a1a1a;
 }
 
+/* Reply has no title row — pull the gray header chrome flush to the card top. */
+.email-thread-message.is-concept.is-compose.is-reply .email-thread-message__identity {
+  margin-top: -1rem;
+  padding-top: 0.7rem;
+  border-radius: 8px 8px 0 0;
+}
+
 .email-thread-message__header-start {
   display: flex;
   min-width: 0;
@@ -1893,6 +1900,18 @@
   line-height: 1.55;
 }
 
+/*
+ * Our outbound HTML (and many inbound clients) bake in #222/#444 for light
+ * mail apps — nearly invisible on the dark thread canvas. Sent cards always
+ * use our assembled markup, so inherit the UI foreground instead.
+ */
+.email-thread-message.is-sent .email-thread-message__html-body,
+.email-thread-message.is-sent
+  .email-thread-message__html-body
+  :where(div, p, span, td, th, li, font) {
+  color: color-mix(in srgb, var(--foreground) 88%, transparent) !important;
+}
+
 .email-thread-message__html-body img {
   max-width: 100%;
   height: auto;
@@ -1900,6 +1919,10 @@
 
 .email-thread-message__html-body a {
   color: #6eb6ff;
+}
+
+.email-thread-message.is-sent .email-thread-message__html-body a {
+  color: #6eb6ff !important;
 }
 
 .email-thread-message__html-body table {

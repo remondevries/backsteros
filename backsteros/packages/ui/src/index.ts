@@ -1953,6 +1953,20 @@ export {
 } from "./components/list-nav/status-group-section.js";
 
 export {
+  StatusGroupShowMoreButton,
+  type StatusGroupShowMoreButtonProps,
+} from "./components/list-nav/status-group-show-more.js";
+
+export {
+  COMPLETED_STATUS_LIST_INITIAL_VISIBLE,
+  COMPLETED_STATUS_LIST_PAGE_SIZE,
+  mapStatusGroupsWithCompletedCap,
+  nextCompletedStatusVisibleCount,
+  sliceCompletedStatusItems,
+  type CompletedStatusSlice,
+} from "./list-nav/completed-status-list-cap.js";
+
+export {
   OrganizationsSidePanelView,
   type OrganizationsSidePanelViewProps,
 } from "./components/organizations/organizations-side-panel-view.js";
@@ -3967,6 +3981,14 @@ export {
 } from "./organizations/organization-overlay.js";
 
 export {
+  brandfetchLogoUrl,
+  brandfetchLogoUrlFromWebsite,
+  registrableDomainFromWebsite,
+  resolveOrganizationAvatarSrc,
+  type BrandfetchLogoUrlOptions,
+} from "./organizations/brandfetch-logo.js";
+
+export {
   OrganizationTransactionsSection,
   type OrganizationTransactionsSectionProps,
 } from "./components/organizations/organization-transactions-section.js";
@@ -3975,6 +3997,11 @@ export {
   OrganizationContactsListView,
   type OrganizationContactsListViewProps,
 } from "./components/organizations/organization-contacts-list-view.js";
+
+export {
+  OrganizationEmailsListView,
+  type OrganizationEmailsListViewProps,
+} from "./components/organizations/organization-emails-list-view.js";
 
 export {
   ScopedLettersListView,

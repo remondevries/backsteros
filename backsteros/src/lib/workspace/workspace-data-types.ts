@@ -163,6 +163,7 @@ export type DesktopWorkspaceData = {
     assigneeId?: string | null;
     relatedContactIds?: string[];
     relatedOrganizationIds?: string[];
+    linkedEmailIds?: string[];
     dueDate?: string | null;
     links?: TaskLink[];
     /** Default true. Pass false for Today/Tomorrow due-list creates. */
@@ -179,6 +180,7 @@ export type DesktopWorkspaceData = {
     assigneeId?: string | null;
     relatedContactIds?: string[];
     relatedOrganizationIds?: string[];
+    linkedEmailIds?: string[];
     dueDate?: string | null;
     links?: TaskLink[];
     /** Mark as a Communication support ticket. */

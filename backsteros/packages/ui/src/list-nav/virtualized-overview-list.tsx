@@ -42,6 +42,13 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
   style,
   estimatedItemSize = 40,
   renderRow,
+  /**
+   * Values that affect row chrome but not `rows` identity (selection, highlight,
+   * bulk-checkbox visibility). LegendList recycles cells and only re-renders
+   * them when `data` or `extraData` changes — without this, checkboxes look
+   * stuck while bulk actions still work.
+   */
+  extraData,
 }: {
   rows: readonly T[];
   highlightedId: string | null;
@@ -51,6 +58,7 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
   style?: CSSProperties;
   estimatedItemSize?: number;
   renderRow: (row: T) => ReactNode;
+  extraData?: unknown;
 }): ReactElement {
   const legendRef = useRef<LegendListRef | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -83,7 +91,7 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
     ({ item }: LegendListRenderItemProps<T>) => (
       <div className="overview-virtual-row">{renderRow(item)}</div>
     ),
-    [renderRow],
+    [extraData, renderRow],
   );
 
   return (
@@ -103,6 +111,7 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
         estimatedItemSize={estimatedItemSize}
+        extraData={extraData}
         recycleItems
         className="legend-list-scroll"
         style={{ height: "100%", minHeight: 0 }}

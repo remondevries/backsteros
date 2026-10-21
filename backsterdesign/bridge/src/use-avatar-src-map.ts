@@ -134,13 +134,15 @@ export function useAvatarSrcMap(
   return cached ?? urls;
 }
 
-export function withAvatarSrc<T extends { id: string }>(
+export function withAvatarSrc<
+  T extends { id: string; avatarSrc?: string | null },
+>(
   entities: readonly T[],
   srcById: Record<string, string>,
 ): Array<T & { avatarSrc?: string | null }> {
   return entities.map((entry) => ({
     ...entry,
-    avatarSrc: srcById[entry.id] ?? null,
+    avatarSrc: srcById[entry.id] ?? entry.avatarSrc ?? null,
   }));
 }
 

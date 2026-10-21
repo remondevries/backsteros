@@ -10,6 +10,7 @@ export const ORGANIZATION_SECTION_IDS = [
   "activity",
   "projects",
   "letters",
+  "emails",
   "contacts",
   "transactions",
   "invoices",
@@ -36,6 +37,7 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "activity", label: "Activity" },
   { id: "projects", label: "Projects" },
   { id: "letters", label: "Letters" },
+  { id: "emails", label: "E-mails" },
   { id: "contacts", label: "Contacts" },
   { id: "transactions", label: "Transactions" },
   { id: "invoices", label: "Invoices" },
@@ -47,6 +49,7 @@ export const ORGANIZATION_BASE_SECTION_IDS = [
   "activity",
   "projects",
   "letters",
+  "emails",
   "contacts",
 ] as const satisfies readonly OrganizationSectionId[];
 

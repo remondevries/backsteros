@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  buildEmailShadowStyles,
   extractEmailHtmlBody,
   isSubstantiveEmailHtml,
   parseEmailHtmlContentIds,
@@ -54,6 +55,12 @@ test("prepareEmailHtmlForDisplay sanitizes extracted body", () => {
     prepareEmailHtmlForDisplay("<p onclick='x'>Hi</p>"),
     "<p>Hi</p>",
   );
+});
+
+test("buildEmailShadowStyles overrides baked-in dark text colors", () => {
+  const styles = buildEmailShadowStyles();
+  assert.match(styles, /color:\s*#d4d4d4\s*!important/);
+  assert.match(styles, /a,\s*a :where/);
 });
 
 test("emailMessageHtmlBody falls back to formatted plain text", () => {

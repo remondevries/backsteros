@@ -526,6 +526,8 @@ function useDesktopWorkspaceDataImpl(): {
           "country",
           "emails",
           "phones",
+          "avatarStorageKey",
+          "avatarContentType",
         ],
       ),
       liveOrganizationsById,
@@ -742,6 +744,10 @@ function useDesktopWorkspaceDataImpl(): {
           "region",
           "portalUsername",
           "portalSettings",
+          // Avatar keys — local PowerSync can lag; without these the inbox
+          // assignee mark never downloads and falls back to a letter.
+          "avatarStorageKey",
+          "avatarContentType",
         ],
       ),
       liveContactsById,

@@ -9,7 +9,7 @@ describe("resolveVisibleOrganizationSections", () => {
   it("hides finance tabs by default", () => {
     assert.deepEqual(
       resolveVisibleOrganizationSections().map((entry) => entry.id),
-      ["overview", "activity", "projects", "letters", "contacts"],
+      ["overview", "activity", "projects", "letters", "emails", "contacts"],
     );
   });
 
@@ -24,6 +24,7 @@ describe("resolveVisibleOrganizationSections", () => {
         "activity",
         "projects",
         "letters",
+        "emails",
         "contacts",
         "transactions",
         "invoices",
@@ -38,6 +39,7 @@ describe("resolveVisibleOrganizationSections", () => {
         "activity",
         "projects",
         "letters",
+        "emails",
         "contacts",
         "transactions",
       ],
@@ -46,7 +48,15 @@ describe("resolveVisibleOrganizationSections", () => {
       resolveVisibleOrganizationSections({
         hasInvoices: true,
       }).map((entry) => entry.id),
-      ["overview", "activity", "projects", "letters", "contacts", "invoices"],
+      [
+        "overview",
+        "activity",
+        "projects",
+        "letters",
+        "emails",
+        "contacts",
+        "invoices",
+      ],
     );
   });
 });

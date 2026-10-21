@@ -87,10 +87,17 @@ export function buildEmailShadowStyles(): string {
       border-radius: 6px;
       overflow: hidden;
     }
+    /*
+     * Outbound / many inbound HTML emails bake in #222/#444 for light clients.
+     * Those inline colors beat :host inheritance — force UI-readable text.
+     */
+    :host, :host :where(div, p, span, td, th, li, font, strong, em, b, i, u) {
+      color: #d4d4d4 !important;
+    }
     img { max-width: 100%; height: auto; }
     img[src^="cid:"] { visibility: hidden; }
     img[data-inline-cid] { visibility: visible; }
-    a { color: #6eb6ff; }
+    a, a :where(span, font, strong, em, b, i, u) { color: #6eb6ff !important; }
     table { max-width: 100%; }
   </style>`;
 }

@@ -228,10 +228,13 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     frozen ? NO_ENTITIES : organizations,
   );
 
-  const composeContacts = useMemo(
-    () => (frozen ? [] : withAvatarSrc(contacts, contactAvatarSrc)),
-    [contactAvatarSrc, contacts, frozen],
-  );
+  const contactsById = useMemo(() => {
+    const map = new Map<string, (typeof contacts)[number]>();
+    for (const contact of contacts) {
+      map.set(contact.id, contact);
+    }
+    return map;
+  }, [contacts]);
 
   const inboxNotificationsReady = inboxReady;
   const inboxNotificationsActive = !frozen && isInboxPath(pathname);
@@ -283,11 +286,19 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         ) {
           continue;
         }
-        next.push(merged);
+        const assigneeId = merged.assigneeId;
+        const assignee = assigneeId ? contactsById.get(assigneeId) : null;
+        next.push({
+          ...merged,
+          assigneeName: assignee?.name?.trim() || merged.assigneeName || null,
+          assigneeAvatarSrc: assigneeId
+            ? (contactAvatarSrc[assigneeId] ?? merged.assigneeAvatarSrc ?? null)
+            : null,
+        });
       }
       return next;
     },
-    [allTasks, inboxItems, organizationAvatarSrc],
+    [allTasks, contactAvatarSrc, contactsById, inboxItems, organizationAvatarSrc],
   );
 
   const agentMailListSignature = useMemo(
@@ -342,6 +353,12 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           mailboxAvatarSrc: mailbox?.contactId
             ? contactAvatarSrc[mailbox.contactId] ?? null
             : null,
+          assigneeName: item.assigneeId
+            ? contactsById.get(item.assigneeId)?.name?.trim() || null
+            : null,
+          assigneeAvatarSrc: item.assigneeId
+            ? contactAvatarSrc[item.assigneeId] ?? null
+            : null,
           unread: item.unread === true,
         });
       });
@@ -349,6 +366,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     agentMail.mailboxes,
     agentMailListSignature,
     contactAvatarSrc,
+    contactsById,
     frozen,
   ]);
 
@@ -462,8 +480,11 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
   );
 
   const inboxAssigneeOptions = useMemo(
-    () => buildAssigneeDropdownOptions(composeContacts),
-    [composeContacts],
+    () =>
+      buildAssigneeDropdownOptions(contacts, {
+        avatarSrcById: frozen ? undefined : contactAvatarSrc,
+      }),
+    [contactAvatarSrc, contacts, frozen],
   );
 
   const allTasksById = useMemo(() => {
