@@ -86,6 +86,11 @@ export function ContactRelationshipsListView({
   const [type, setType] = useState("friend");
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  /** Keep a chip visible until PowerSync/REST list catches up after save. */
+  const [optimisticItems, setOptimisticItems] = useState<
+    ContactRelationshipListItemView[]
+  >([]);
   const [labelModal, setLabelModal] = useState<{
     mode: "create" | "edit";
     labelId: string | null;
@@ -106,13 +111,36 @@ export function ContactRelationshipsListView({
   const typeRef = useRef(type);
   typeRef.current = type;
 
-  const sorted = useMemo(
-    () =>
-      [...items].sort((a, b) =>
-        a.relatedContactName.localeCompare(b.relatedContactName),
+  const sorted = useMemo(() => {
+    const seen = new Set(items.map((item) => item.id));
+    const pending = optimisticItems.filter((item) => {
+      if (seen.has(item.id)) return false;
+      // Drop once the real row arrives (same pair + type).
+      return !items.some(
+        (entry) =>
+          entry.relatedContactId === item.relatedContactId &&
+          entry.type === item.type,
+      );
+    });
+    return [...items, ...pending].sort((a, b) =>
+      a.relatedContactName.localeCompare(b.relatedContactName),
+    );
+  }, [items, optimisticItems]);
+
+  useEffect(() => {
+    if (optimisticItems.length === 0) return;
+    setOptimisticItems((current) =>
+      current.filter(
+        (item) =>
+          !items.some(
+            (entry) =>
+              entry.id === item.id ||
+              (entry.relatedContactId === item.relatedContactId &&
+                entry.type === item.type),
+          ),
       ),
-    [items],
-  );
+    );
+  }, [items, optimisticItems.length]);
 
   const contactDropdownOptions = useMemo(
     () =>
@@ -135,6 +163,13 @@ export function ContactRelationshipsListView({
     () => expandRelationshipLabelSides(relationshipLabels),
     [relationshipLabels],
   );
+
+  // Keep the draft type on a real catalog slug once labels arrive.
+  useEffect(() => {
+    if (sideOptions.length === 0) return;
+    if (sideOptions.some((option) => option.value === type)) return;
+    setType(sideOptions[0]!.value);
+  }, [sideOptions, type]);
 
   const selectedTypeLabel =
     sideOptions.find((option) => option.value === type)?.label ??
@@ -171,6 +206,19 @@ export function ContactRelationshipsListView({
     return rows;
   }, [onDeleteLabel, onUpdateLabel, sideOptions]);
 
+  function resetDraft(nextType = "friend") {
+    setToContactId("");
+    setType(nextType);
+    setAddError(null);
+  }
+
+  function closeDraft(options?: { clear?: boolean }) {
+    setAdding(false);
+    if (options?.clear !== false) {
+      resetDraft(sideOptions[0]?.value ?? "friend");
+    }
+  }
+
   useEffect(() => {
     if (!adding) return;
     function handlePointerDown(event: PointerEvent) {
@@ -185,12 +233,28 @@ export function ContactRelationshipsListView({
       ) {
         return;
       }
-      setAdding(false);
+      // Never discard a save in flight — the dropdown close can click-through
+      // onto the page and look like an outside dismiss.
+      if (busyRef.current) return;
+      const draftType = typeRef.current;
+      const draftContactId = toContactIdRef.current;
+      if (
+        draftContactId &&
+        draftType &&
+        draftType !== OTHER_RELATIONSHIP_TYPE_VALUE
+      ) {
+        void tryAdd({
+          type: draftType,
+          toContactId: draftContactId,
+        });
+        return;
+      }
+      closeDraft();
     }
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () =>
       window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [adding]);
+  }, [adding, sideOptions]);
 
   async function tryAdd(next?: { type?: string; toContactId?: string }) {
     const nextType = next?.type ?? typeRef.current;
@@ -202,17 +266,45 @@ export function ContactRelationshipsListView({
       nextType === OTHER_RELATIONSHIP_TYPE_VALUE ||
       busyRef.current
     ) {
-      return;
+      return false;
     }
     busyRef.current = true;
     setBusy(true);
+    setAddError(null);
+    const relatedName =
+      contactOptions.find((entry) => entry.id === nextContactId)?.name ??
+      "Contact";
+    const typeLabel =
+      sideOptions.find((option) => option.value === nextType)?.label ??
+      formatRelationshipTypeLabel(nextType);
+    const optimisticId = `optimistic:${nextContactId}:${nextType}`;
     try {
       await onAdd({ toContactId: nextContactId, type: nextType });
-      setToContactId("");
-      setType("friend");
-      setAdding(false);
+      setOptimisticItems((current) => [
+        ...current.filter(
+          (entry) =>
+            !(
+              entry.relatedContactId === nextContactId &&
+              entry.type === nextType
+            ),
+        ),
+        {
+          id: optimisticId,
+          type: nextType,
+          typeLabel,
+          relatedContactId: nextContactId,
+          relatedContactName: relatedName,
+          direction: "outgoing",
+        },
+      ]);
+      closeDraft({ clear: true });
+      return true;
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to save relationship";
       console.warn("[contacts] add relationship failed", err);
+      setAddError(message);
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -404,7 +496,7 @@ export function ContactRelationshipsListView({
                   </span>
                   {item.relatedContactName}
                 </button>
-                {onRemove ? (
+                {onRemove && !item.id.startsWith("optimistic:") ? (
                   <button
                     type="button"
                     className="contact-detail-split-chip__remove"
@@ -490,11 +582,12 @@ export function ContactRelationshipsListView({
               aria-label="Add relationship"
               title="Add relationship"
               onClick={() => {
-                setAdding((open) => !open);
                 if (adding) {
-                  setToContactId("");
-                  setType("friend");
+                  closeDraft({ clear: true });
+                  return;
                 }
+                resetDraft(sideOptions[0]?.value ?? "friend");
+                setAdding(true);
               }}
             >
               <SidePanelPlusIcon />
@@ -502,9 +595,9 @@ export function ContactRelationshipsListView({
           ) : null}
         </div>
 
-        {error ? (
+        {error || addError ? (
           <p className="task-activity__error" role="alert">
-            {error}
+            {addError ?? error}
           </p>
         ) : null}
         {labelUi}
@@ -616,9 +709,9 @@ export function ContactRelationshipsListView({
         </div>
       ) : null}
 
-      {error ? (
+      {error || addError ? (
         <p className="task-activity__error" role="alert">
-          {error}
+          {addError ?? error}
         </p>
       ) : null}
       {loading ? (

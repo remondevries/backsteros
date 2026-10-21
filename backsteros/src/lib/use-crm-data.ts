@@ -334,10 +334,19 @@ export function useContactRelationships(
           await reloadRest();
         }
       } catch (err) {
-        const message =
+        let message =
           err instanceof Error ? err.message : "Failed to save relationship";
+        if (/related contact not found/i.test(message)) {
+          message = "That contact is not available yet. Try again in a moment.";
+        } else if (/contact not found/i.test(message)) {
+          message = "This contact is not available yet. Try again in a moment.";
+        } else if (/relationship.?exists|already exists/i.test(message)) {
+          message = "That relationship already exists.";
+        } else if (/self.?relationship/i.test(message)) {
+          message = "A contact cannot be related to itself.";
+        }
         setError(message);
-        throw err instanceof Error ? err : new Error(message);
+        throw new Error(message);
       }
     },
     [client, contactId, localEnabled, powerSync, reloadRest],
