@@ -145,19 +145,11 @@ if [[ ! -f "${BRAND_OVERLAY}/css/backster-brand.css" || ! -f "${BRAND_OVERLAY}/j
   exit 1
 fi
 ssh_cmd "mkdir -p '${REMOTE_DIR}/branding-overlay/css' '${REMOTE_DIR}/branding-overlay/js'"
-rsync -az \
-  "${BRAND_OVERLAY}/css/backster-brand.css" \
-  "${BRAND_OVERLAY}/js/backster-brand.js" \
-  "${REMOTE_HOST}:${REMOTE_DIR}/branding-overlay/"
-# rsync of two files into a dir keeps names; normalize layout for docker cp.
-ssh_cmd "mkdir -p '${REMOTE_DIR}/branding-overlay/css' '${REMOTE_DIR}/branding-overlay/js'
-if [[ -f '${REMOTE_DIR}/branding-overlay/backster-brand.css' ]]; then
-  mv -f '${REMOTE_DIR}/branding-overlay/backster-brand.css' '${REMOTE_DIR}/branding-overlay/css/'
-fi
-if [[ -f '${REMOTE_DIR}/branding-overlay/backster-brand.js' ]]; then
-  mv -f '${REMOTE_DIR}/branding-overlay/backster-brand.js' '${REMOTE_DIR}/branding-overlay/js/'
-fi
-docker exec '${FRONTEND_CONTAINER}' mkdir -p /var/www/app/css /var/www/app/js
+rsync -az "${BRAND_OVERLAY}/css/backster-brand.css" \
+  "${REMOTE_HOST}:${REMOTE_DIR}/branding-overlay/css/backster-brand.css"
+rsync -az "${BRAND_OVERLAY}/js/backster-brand.js" \
+  "${REMOTE_HOST}:${REMOTE_DIR}/branding-overlay/js/backster-brand.js"
+ssh_cmd "docker exec '${FRONTEND_CONTAINER}' mkdir -p /var/www/app/css /var/www/app/js
 docker cp '${REMOTE_DIR}/branding-overlay/css/backster-brand.css' '${FRONTEND_CONTAINER}:/var/www/app/css/backster-brand.css'
 docker cp '${REMOTE_DIR}/branding-overlay/js/backster-brand.js' '${FRONTEND_CONTAINER}:/var/www/app/js/backster-brand.js'
 docker exec '${FRONTEND_CONTAINER}' ls -la /var/www/app/css/backster-brand.css /var/www/app/js/backster-brand.js"
