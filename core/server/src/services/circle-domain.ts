@@ -1819,15 +1819,6 @@ export async function putAvatar(
         .update(contacts)
         .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
         .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
-    } else if (entityType === "avatar_portal") {
-      await db
-        .update(contacts)
-        .set({
-          portalAvatarStorageKey: key,
-          portalAvatarContentType: contentType,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
     } else if (entityType === "bank_account") {
       await db
         .update(bankAccounts)
@@ -1840,6 +1831,20 @@ export async function putAvatar(
           and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
         );
     }
+  }
+  // Portal avatar columns always persist with the blob write — even under
+  // leader-first (`updateEntityColumns: false`) — so a successful portal upload
+  // cannot leave `portal_avatar_*` null while overwriting the personal `/avatar`
+  // object (legacy shared-key bug).
+  if (entityType === "avatar_portal") {
+    await db
+      .update(contacts)
+      .set({
+        portalAvatarStorageKey: key,
+        portalAvatarContentType: contentType,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
   }
   return row!;
 }
@@ -1925,17 +1930,6 @@ export async function deleteAvatar(
         .where(
           and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
         );
-    } else if (entityType === "avatar_portal") {
-      await db
-        .update(contacts)
-        .set({
-          portalAvatarStorageKey: null,
-          portalAvatarContentType: null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
-        );
     } else if (entityType === "bank_account") {
       await db
         .update(bankAccounts)
@@ -1948,6 +1942,18 @@ export async function deleteAvatar(
           and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
         );
     }
+  }
+  if (entityType === "avatar_portal") {
+    await db
+      .update(contacts)
+      .set({
+        portalAvatarStorageKey: null,
+        portalAvatarContentType: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
+      );
   }
 
   return row;
