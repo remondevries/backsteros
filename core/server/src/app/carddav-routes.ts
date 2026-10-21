@@ -265,16 +265,42 @@ async function personalPhoto(
   );
 }
 
-/** Same organization avatar the REST API serves (`entityType=organization`). */
+/**
+ * Organization avatar for CardDAV PHOTO (same blob as REST).
+ * Optional Brandfetch hydrate is only for single-card GET — never in bulk
+ * REPORT (would timeout iOS). Use the hydrate script for backfill.
+ */
 async function organizationPhoto(
   workspaceId: string,
   organizationId: string,
+  opts?: { website?: string | null; hydrateBrandfetch?: boolean },
 ): Promise<{ contentType: string; bytes: Uint8Array } | null> {
-  const result = await circleService.getAvatar(
+  let result = await circleService.getAvatar(
     workspaceId,
     "organization",
     organizationId,
   );
+  if (
+    !result?.bytes?.length &&
+    opts?.hydrateBrandfetch &&
+    opts.website
+  ) {
+    const { ensureOrganizationLogoFromBrandfetch } = await import(
+      "../services/brandfetch-org-avatar.js"
+    );
+    const ensured = await ensureOrganizationLogoFromBrandfetch(workspaceId, {
+      id: organizationId,
+      website: opts.website,
+      avatarStorageKey: null,
+    });
+    if (ensured.status === "stored") {
+      result = await circleService.getAvatar(
+        workspaceId,
+        "organization",
+        organizationId,
+      );
+    }
+  }
   if (!result?.bytes?.length) return null;
   return optimizeCardDavPhoto(
     result.bytes,
@@ -1097,7 +1123,10 @@ async function getOrganizationVcf(c: Context, file: string) {
     notes: row.notes,
     updatedAt: row.updatedAt,
   };
-  const photo = await organizationPhoto(auth.workspaceId, row.id);
+  const photo = await organizationPhoto(auth.workspaceId, row.id, {
+    website: row.website,
+    hydrateBrandfetch: true,
+  });
   const vcard = formatOrganizationVCard(source, photo);
   const etag = organizationEtag(source);
   const ifNoneMatch = c.req.header("If-None-Match");

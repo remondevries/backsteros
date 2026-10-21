@@ -30,7 +30,7 @@ If iOS asks for an account URL:
   - **BacksterOS Organizations** — company cards (`/dav/organizations/`, `X-ABShowAs:COMPANY`)
 - Edits on the phone write to cloud-core and replicate to local-core / desktop (last-write-wins).
 - Edits in BacksterOS appear on the phone on the next CardDAV sync.
-- Contact photo = **personal** avatar only (not the portal avatar). Organization photo = the same **organization** avatar the API uses. CardDAV serves ≤512px JPEG ≤160 KB (under [Apple’s](https://support.apple.com/en-us/103188) 224 KB photo / 256 KB vCard caps).
+- Contact photo = **personal** avatar only (not the portal avatar). Organization photo = the same **organization** avatar the API uses. Desktop Brandfetch CDN logos are display-only until stored; cloud can hydrate them via Brandfetch into `avatars` (`BRANDFETCH_CLIENT_ID` + `hydrate-org-brandfetch-avatars` script) so CardDAV can sync them. CardDAV serves ≤512px JPEG ≤160 KB (under [Apple’s](https://support.apple.com/en-us/103188) caps).
 
 ## Ops
 
