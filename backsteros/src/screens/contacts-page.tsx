@@ -291,10 +291,8 @@ export function ContactsPage({
   const pinnedWasSelectedRef = useRef(false);
   const [workspaceTab, setWorkspaceTab] =
     useState<ContactExpandedWorkspaceTabId>("meetings");
-  /** Activity / Details / Portal on the profile card — local so they never close workspace entities. */
-  const [cardSection, setCardSection] = useState<
-    "overview" | "details" | "portal" | "logs"
-  >("overview");
+  /** Profile card section — local so they never close workspace entities. */
+  const [cardSection, setCardSection] = useState<ContactSectionId>("overview");
   const [portalSaveError, setPortalSaveError] = useState<string | null>(null);
 
   useEffect(() => {
