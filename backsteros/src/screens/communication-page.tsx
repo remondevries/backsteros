@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import {
   COMMUNICATION_LIST_FILTER_OPTIONS,
+  CommunicationChatView,
   CommunicationOverviewView,
   FinanceSyncIcon,
   TaskDetailView,
@@ -63,6 +64,7 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
+import { useChatInbox } from "../lib/chat/use-chat-inbox";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { parseTaskLinks } from "../lib/workspace/row-mappers";
 import { RouterLink } from "../shell/app-shell-links";
@@ -84,6 +86,13 @@ function CommunicationPageBody() {
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const communicationItems = useCommunicationListItems();
+  const channel = useMemo(
+    () => parseCommunicationChannelFromSearch(location.searchStr),
+    [location.searchStr],
+  );
+  const chatInbox = useChatInbox({
+    enabled: keepAliveActive && channel === "chat",
+  });
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -151,10 +160,6 @@ function CommunicationPageBody() {
     [supportTask, workspace.allTasks],
   );
 
-  const channel = useMemo(
-    () => parseCommunicationChannelFromSearch(location.searchStr),
-    [location.searchStr],
-  );
   const inboxId = useMemo(
     () => parseCommunicationInboxIdFromSearch(location.searchStr),
     [location.searchStr],
@@ -471,6 +476,27 @@ function CommunicationPageBody() {
 
   if (location.pathname.startsWith("/email/")) {
     return null;
+  }
+
+  if (channel === "chat") {
+    return (
+      <CommunicationChatView
+        conversations={chatInbox.conversations}
+        selectedId={chatInbox.selectedId}
+        detail={chatInbox.detail}
+        loading={chatInbox.loading}
+        detailLoading={chatInbox.detailLoading}
+        sending={chatInbox.sending}
+        error={chatInbox.error}
+        onSelect={chatInbox.selectConversation}
+        onRefresh={() => {
+          void chatInbox.refresh();
+        }}
+        onSend={chatInbox.sendMessage}
+        onResolve={chatInbox.resolve}
+        onReopen={chatInbox.reopen}
+      />
+    );
   }
 
   if (!supportTask) {

@@ -3794,6 +3794,11 @@ export {
 } from "./components/communication/communication-overview-view.js";
 
 export {
+  CommunicationChatView,
+  type CommunicationChatViewProps,
+} from "./components/communication/communication-chat-view.js";
+
+export {
   ContactEmailsEditor,
   type ContactEmailsEditorProps,
   type ContactEmailEntry,

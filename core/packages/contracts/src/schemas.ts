@@ -3363,6 +3363,91 @@ export const brandfetchTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
 });
 
+/** Chatwoot integration (website chat → Communication Chat). */
+export const chatwootSettingsSchema = z.object({
+  baseUrl: z.string().nullable(),
+  accountId: z.string().nullable(),
+  apiTokenConfigured: z.boolean(),
+  apiTokenPreview: z.string().nullable(),
+  webhookSecretConfigured: z.boolean(),
+  connected: z.boolean(),
+  /** Suggested public webhook URL to paste into Chatwoot. */
+  webhookUrl: z.string().nullable(),
+});
+export const updateChatwootSettingsSchema = z.object({
+  baseUrl: z.string().optional(),
+  accountId: z.string().optional(),
+  /** User access token; empty string clears. Omit to leave unchanged. */
+  apiAccessToken: z.string().optional(),
+  /** Webhook HMAC secret; empty string clears. Omit to leave unchanged. */
+  webhookSecret: z.string().optional(),
+});
+export const chatwootTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  inboxCount: z.number().int().nullable(),
+});
+
+export const chatConversationStatusSchema = z.enum([
+  "open",
+  "resolved",
+  "pending",
+  "snoozed",
+]);
+export const chatConversationSchema = z.object({
+  id: z.string(),
+  externalId: z.string(),
+  inboxId: z.string().nullable(),
+  inboxName: z.string().nullable(),
+  channelType: z.string().nullable(),
+  status: chatConversationStatusSchema,
+  contactName: z.string().nullable(),
+  contactEmail: z.string().nullable(),
+  contactPhone: z.string().nullable(),
+  contactAvatarUrl: z.string().nullable(),
+  lastMessagePreview: z.string().nullable(),
+  lastActivityAt: z.string().datetime().nullable(),
+  unread: z.boolean(),
+  updatedAt: z.string().datetime(),
+});
+export const chatMessageDirectionSchema = z.enum([
+  "incoming",
+  "outgoing",
+  "activity",
+]);
+export const chatMessageSchema = z.object({
+  id: z.string(),
+  conversationId: z.string(),
+  externalId: z.string(),
+  direction: chatMessageDirectionSchema,
+  content: z.string(),
+  contentType: z.string().nullable(),
+  senderName: z.string().nullable(),
+  private: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+export const chatConversationDetailSchema = chatConversationSchema.extend({
+  messages: z.array(chatMessageSchema),
+});
+export const listChatConversationsQuerySchema = z.object({
+  status: chatConversationStatusSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export const createChatMessageInputSchema = z.object({
+  content: z.string().min(1).max(10_000),
+  private: z.boolean().optional(),
+});
+export const updateChatConversationInputSchema = z.object({
+  status: chatConversationStatusSchema.optional(),
+});
+export const chatConversationsListSchema = z.object({
+  conversations: z.array(chatConversationSchema),
+});
+export const chatSyncResultSchema = z.object({
+  imported: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+});
+
 /** Google Calendar integration (OAuth + read-only event sync — ADR-037). */
 export const googleCalendarSettingsSchema = z.object({
   clientIdConfigured: z.boolean(),
@@ -5218,6 +5303,29 @@ export type UpdateBrandfetchSettingsInput = z.infer<
 export type BrandfetchTestConnectionResult = z.infer<
   typeof brandfetchTestConnectionResultSchema
 >;
+export type ChatwootSettings = z.infer<typeof chatwootSettingsSchema>;
+export type UpdateChatwootSettingsInput = z.infer<
+  typeof updateChatwootSettingsSchema
+>;
+export type ChatwootTestConnectionResult = z.infer<
+  typeof chatwootTestConnectionResultSchema
+>;
+export type ChatConversation = z.infer<typeof chatConversationSchema>;
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export type ChatConversationDetail = z.infer<
+  typeof chatConversationDetailSchema
+>;
+export type ListChatConversationsQuery = z.infer<
+  typeof listChatConversationsQuerySchema
+>;
+export type CreateChatMessageInput = z.infer<
+  typeof createChatMessageInputSchema
+>;
+export type UpdateChatConversationInput = z.infer<
+  typeof updateChatConversationInputSchema
+>;
+export type ChatConversationsList = z.infer<typeof chatConversationsListSchema>;
+export type ChatSyncResult = z.infer<typeof chatSyncResultSchema>;
 export type GoogleCalendarSettings = z.infer<
   typeof googleCalendarSettingsSchema
 >;

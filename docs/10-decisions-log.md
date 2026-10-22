@@ -639,4 +639,24 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-040: Chatwoot → Communication Chat (native agent inbox)
+
+**Status:** Accepted (2026-10-22)  
+**Context:** client.lemo-design.com uses Chatwoot (`support-api.lemo-design.com`) for the website widget. Agents should list threads, reply, and get notified inside BacksterOS Communication → Chat without logging into Chatwoot. WhatsApp stays out of scope for v1.
+
+**Decision:**
+
+1. Keep the visitor widget on Chatwoot. BacksterOS is the agent inbox only.
+2. Store User Access Token + base URL + account id + webhook HMAC secret in `workspace_integration_secrets` (never PowerSync). Settings → Integrations → **Chatwoot**.
+3. Mirror conversations/messages into Tier C tables `chat_conversations` / `chat_messages` (+ `chat_webhook_events` for delivery dedupe). Desktop loads via REST; no bulk PowerSync of chat bodies.
+4. Ingest via signed account webhooks (`POST /api/v1/webhooks/chatwoot`, `X-Chatwoot-Signature` = HMAC-SHA256 of `{timestamp}.{raw_body}`). Bootstrap/open sync via Platform API pull. Replies and resolve proxy through Chatwoot Platform API.
+5. Live updates: in-process `chat.updated` fan-out → `GET /api/v1/chat/events` SSE (AgentMail pattern). Desktop may show native notifications on incoming messages.
+6. v1 channel filter: website / web widget inboxes only when channel type is known; WhatsApp and API inboxes skipped on bootstrap.
+
+**Out of scope for v1:** WhatsApp; Chatwoot admin embed; mobile chat UI; auto CRM contact create from chat contacts.
+
+**Alternatives rejected:** Embedding Chatwoot admin in desktop; syncing chat via PowerSync; using AgentMail-style for website chat.
+
+---
+
 

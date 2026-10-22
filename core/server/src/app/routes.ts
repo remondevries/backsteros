@@ -136,6 +136,7 @@ import { registerCrmRoutes } from "./crm-routes.js";
 import { registerLetterRoutes } from "./letter-routes.js";
 import { registerSettingsRoutes } from "./settings-routes.js";
 import { registerEmailRoutes } from "./email-routes.js";
+import { registerChatRoutes } from "./chat-routes.js";
 import { registerSocialRoutes } from "./social-routes.js";
 import { withAuth, sanitizeWorkspaceSettings } from "./route-shared.js";
 import { registerFinanceRoutes } from "./finance-routes.js";
@@ -387,6 +388,7 @@ export function registerApiRoutes(app: Hono) {
   registerLetterRoutes(app);
   registerSettingsRoutes(app);
   registerEmailRoutes(app);
+  registerChatRoutes(app);
   registerSocialRoutes(app);
   registerFinanceRoutes(app);
   registerAgentAiRoutes(app);

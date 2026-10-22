@@ -1,0 +1,229 @@
+/* Communication → Chat (Chatwoot mirror). */
+
+.communication-chat {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  flex: 1;
+  overflow: hidden;
+  background: var(--background, #0a0a0a);
+  color: var(--foreground, #f5f5f5);
+}
+
+.communication-chat__list {
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, 38%);
+  min-width: 16rem;
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  min-height: 0;
+}
+
+.communication-chat__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.communication-chat__list-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.communication-chat__list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.communication-chat__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.communication-chat__row:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.communication-chat__row.is-active {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.communication-chat__row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.communication-chat__row-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.communication-chat__row-meta {
+  font-size: 0.72rem;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.communication-chat__row-preview {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communication-chat__row.is-unread .communication-chat__row-name,
+.communication-chat__row.is-unread .communication-chat__row-preview {
+  opacity: 1;
+  font-weight: 650;
+}
+
+.communication-chat__thread {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.communication-chat__thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.communication-chat__thread-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.communication-chat__thread-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.communication-chat__messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.communication-chat__bubble {
+  max-width: min(36rem, 88%);
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  align-self: flex-start;
+}
+
+.communication-chat__bubble.is-outgoing {
+  align-self: flex-end;
+  background: color-mix(in srgb, #3b82f6 35%, transparent);
+}
+
+.communication-chat__bubble.is-activity {
+  align-self: center;
+  max-width: 90%;
+  background: transparent;
+  opacity: 0.7;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.communication-chat__bubble-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.communication-chat__bubble-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.communication-chat__composer {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.85rem 1.1rem 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.communication-chat__composer textarea {
+  flex: 1;
+  min-height: 2.75rem;
+  max-height: 8rem;
+  resize: vertical;
+  border-radius: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: inherit;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+
+.communication-chat__composer button,
+.communication-chat__list-header button,
+.communication-chat__thread-header button {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: inherit;
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.communication-chat__composer button:disabled,
+.communication-chat__list-header button:disabled,
+.communication-chat__thread-header button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.communication-chat__empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.communication-chat__error {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  color: #f87171;
+  font-size: 0.85rem;
+}

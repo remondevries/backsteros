@@ -54,6 +54,8 @@ services:
       POWERSYNC_AUDIENCE: ${POWERSYNC_AUDIENCE:-backsteros-powersync}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8788}
+      # HTTPS origin for Chatwoot account webhooks (Settings → Chatwoot).
+      CHATWOOT_WEBHOOK_BASE_URL: ${CHATWOOT_WEBHOOK_BASE_URL:-}
       AVATAR_URL_SIGNING_SECRET: ${AVATAR_URL_SIGNING_SECRET:-}
       # Optional short CardDAV Basic password (iOS Contacts). Prefer API keys long-term.
       CARDDAV_PASSWORD: ${CARDDAV_PASSWORD:-}

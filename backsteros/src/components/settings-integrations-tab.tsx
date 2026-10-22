@@ -4,6 +4,7 @@ import type {
   AgentMailSettings,
   AutoReviewWebhookSettings,
   BrandfetchSettings,
+  ChatwootSettings,
   CloudflareSettings,
   CursorSettings,
   GithubSettings,
@@ -35,6 +36,7 @@ import { SettingsEmailTab } from "./settings-email-tab";
 import { SettingsGithubTab } from "./settings-github-tab";
 import { SettingsGoogleCalendarTab } from "./settings-google-calendar-tab";
 import { SettingsBrandfetchTab } from "./settings-brandfetch-tab";
+import { SettingsChatwootTab } from "./settings-chatwoot-tab";
 import { SettingsMapboxTab } from "./settings-mapbox-tab";
 import { SettingsMoneybirdTab } from "./settings-moneybird-tab";
 import { SettingsSocialTab } from "./settings-social-tab";
@@ -157,6 +159,15 @@ export function SettingsIntegrationsTab({
           ),
         (body) => ({
           configured: body.apiKeyConfigured || body.envKeyConfigured,
+          connected: body.connected,
+        }),
+      ),
+      settle(
+        "chatwoot",
+        () =>
+          client.requestJson<ChatwootSettings>("/api/v1/settings/chatwoot"),
+        (body) => ({
+          configured: body.apiTokenConfigured,
           connected: body.connected,
         }),
       ),
@@ -340,6 +351,13 @@ export function SettingsIntegrationsTab({
         ) : null}
         {activeId === "brandfetch" && activeMeta ? (
           <SettingsBrandfetchTab
+            title={activeMeta.title}
+            description={activeMeta.description}
+            hideHeader
+          />
+        ) : null}
+        {activeId === "chatwoot" && activeMeta ? (
+          <SettingsChatwootTab
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader

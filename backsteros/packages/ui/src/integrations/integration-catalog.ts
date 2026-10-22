@@ -7,6 +7,7 @@ export type WorkspaceIntegrationId =
   | "moneybird"
   | "mapbox"
   | "brandfetch"
+  | "chatwoot"
   | "google-calendar"
   | "email"
   | "social"
@@ -63,6 +64,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "Brandfetch",
     description: "Organization logos for CardDAV and company cards",
     faviconHost: "brandfetch.com",
+  },
+  {
+    id: "chatwoot",
+    title: "Chatwoot",
+    description: "Website chat inbox for Communication → Chat",
+    faviconHost: "chatwoot.com",
   },
   {
     id: "google-calendar",

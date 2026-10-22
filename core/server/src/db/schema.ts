@@ -136,6 +136,11 @@ export const workspaceIntegrationSecrets = pgTable(
     mapboxAccessToken: text("mapbox_access_token"),
     /** Brandfetch Brand API key — persist org logos for CardDAV / API. */
     brandfetchApiKey: text("brandfetch_api_key"),
+    /** Chatwoot (website chat) — agent inbox for Communication → Chat. */
+    chatwootBaseUrl: text("chatwoot_base_url"),
+    chatwootAccountId: text("chatwoot_account_id"),
+    chatwootApiAccessToken: text("chatwoot_api_access_token"),
+    chatwootWebhookSecret: text("chatwoot_webhook_secret"),
     githubApiToken: text("github_api_token"),
     transipAccessToken: text("transip_access_token"),
     /** TransIP control-panel login — used with private key to mint JWTs. */
@@ -2733,3 +2738,105 @@ export const socialAnalyticsSnapshots = pgTable(
 
 export type DbSocialAnalyticsSnapshot =
   typeof socialAnalyticsSnapshots.$inferSelect;
+
+/**
+ * Chatwoot conversation mirror for Communication → Chat (ADR-040).
+ * Tier C — not PowerSynced; desktop loads via REST.
+ */
+export const chatConversations = pgTable(
+  "chat_conversations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    inboxId: text("inbox_id"),
+    inboxName: text("inbox_name"),
+    channelType: text("channel_type"),
+    status: text("status").notNull().default("open"),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    contactAvatarUrl: text("contact_avatar_url"),
+    lastMessagePreview: text("last_message_preview"),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    unread: boolean("unread").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("chat_conversations_workspace_external_uidx").on(
+      table.workspaceId,
+      table.externalId,
+    ),
+    index("chat_conversations_workspace_id_idx").on(table.workspaceId),
+    index("chat_conversations_workspace_activity_idx").on(
+      table.workspaceId,
+      table.lastActivityAt,
+    ),
+  ],
+);
+
+export type DbChatConversation = typeof chatConversations.$inferSelect;
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => chatConversations.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    direction: text("direction").notNull(),
+    content: text("content").notNull().default(""),
+    contentType: text("content_type"),
+    senderName: text("sender_name"),
+    private: boolean("private").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("chat_messages_workspace_external_uidx").on(
+      table.workspaceId,
+      table.externalId,
+    ),
+    index("chat_messages_conversation_id_idx").on(table.conversationId),
+    index("chat_messages_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type DbChatMessage = typeof chatMessages.$inferSelect;
+
+export const chatWebhookEvents = pgTable(
+  "chat_webhook_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    deliveryId: text("delivery_id").notNull(),
+    eventType: text("event_type"),
+    processedAt: timestamp("processed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("chat_webhook_events_delivery_uidx").on(table.deliveryId),
+    index("chat_webhook_events_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type DbChatWebhookEvent = typeof chatWebhookEvents.$inferSelect;
