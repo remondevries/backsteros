@@ -56,6 +56,10 @@ export const REPLICATED_TABLES = [
   "client_estimates",
   "document_property_types",
   "auto_review_webhook_deliveries",
+  /** Chatwoot website-chat mirror (Communication → Chat). Tier C; REST on each core. */
+  "chat_conversations",
+  "chat_messages",
+  "chat_webhook_events",
 ] as const;
 
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];

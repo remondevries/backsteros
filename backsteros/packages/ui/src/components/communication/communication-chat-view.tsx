@@ -106,7 +106,7 @@ export function CommunicationChatView({
   };
 
   return (
-    <div className="communication-chat">
+    <div className="communication-chat" data-list-board-view>
       <aside className="communication-chat__list">
         <div className="communication-chat__list-header">
           <h2>Chat</h2>
@@ -116,8 +116,13 @@ export function CommunicationChatView({
         </div>
         {error ? <p className="communication-chat__error">{error}</p> : null}
         <div className="communication-chat__list-scroll">
-          {conversations.length === 0 && !loading ? (
-            <div className="communication-chat__empty">No chats yet.</div>
+          {conversations.length === 0 && loading ? (
+            <div className="communication-chat__empty">Loading chats…</div>
+          ) : conversations.length === 0 ? (
+            <div className="communication-chat__empty">
+              No website chats yet. Messages from the client portal widget show
+              up here.
+            </div>
           ) : (
             conversations.map((row) => {
               const active = row.id === selectedId;

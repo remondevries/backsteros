@@ -2,13 +2,26 @@
 
 .communication-chat {
   display: flex;
+  box-sizing: border-box;
   min-height: 0;
   height: 100%;
   width: 100%;
   flex: 1;
+  flex-direction: row;
   overflow: hidden;
   background: var(--background, #0a0a0a);
   color: var(--foreground, #f5f5f5);
+}
+
+/* Fill the keep-alive / page-scroll frame (same contract as overview boards). */
+.page-scroll:has(> .communication-chat),
+.bos-product-shell .page-scroll:has(> .communication-chat) {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .communication-chat__list {

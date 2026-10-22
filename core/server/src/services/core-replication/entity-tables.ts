@@ -45,6 +45,8 @@ const ENTITY_REPLICATION_TABLES: Partial<
   api_key: ["api_keys"],
   space_publish_setting: ["space_publish_settings"],
   space_site_key: ["space_site_keys"],
+  chat_conversation: ["chat_conversations", "chat_messages"],
+  chat_message: ["chat_messages", "chat_conversations"],
 };
 
 export function replicatedTablesForEntity(

@@ -82,6 +82,9 @@ const TABLE_SPECS: TableSpec[] = [
   spec("auto_review_webhook_deliveries", ["id"], "updated_at", {
     optional: true,
   }),
+  spec("chat_conversations", ["id"], "updated_at", { optional: true }),
+  spec("chat_messages", ["id"], "updated_at", { optional: true }),
+  spec("chat_webhook_events", ["id"], "processed_at", { optional: true }),
 ];
 
 const specByName = new Map<KnownTable, TableSpec>(

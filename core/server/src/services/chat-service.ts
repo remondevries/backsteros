@@ -44,6 +44,21 @@ import {
   listChatwootWebhookSecrets,
   type ChatwootWebhookSecretRow,
 } from "./chatwoot-settings.js";
+import { notifyPeerOfEntityWrite } from "./core-replication/nudge.js";
+
+function nudgeChatTwin(
+  workspaceId: string,
+  conversationId: string,
+  reason: string,
+): void {
+  notifyPeerOfEntityWrite({
+    workspaceId,
+    entity: "chat_conversation",
+    entityId: conversationId,
+    reason,
+    operation: "upsert",
+  });
+}
 
 const STATUS_SET = new Set(["open", "resolved", "pending", "snoozed"]);
 
@@ -351,6 +366,7 @@ export async function createChatMessage(
     messageId: message.id,
     kind: "message",
   });
+  nudgeChatTwin(workspaceId, conversation.id, "chat.message.create");
   return mapMessage(message);
 }
 
@@ -399,6 +415,7 @@ export async function updateChatConversation(
       messageId: null,
       kind: "conversation",
     });
+    nudgeChatTwin(workspaceId, conversation.id, "chat.conversation.update");
     return mapConversation(updated!);
   }
 
@@ -479,6 +496,15 @@ export async function syncChatwootConversations(
     }
   }
 
+  if (imported + updated > 0) {
+    notifyPeerOfEntityWrite({
+      workspaceId,
+      entity: "chat_conversation",
+      entityId: workspaceId,
+      reason: "chat.sync",
+      operation: "upsert",
+    });
+  }
   return { imported, updated };
 }
 
@@ -561,6 +587,7 @@ async function ingestWebhookForWorkspace(
       messageId: stored.id,
       kind: "message",
     });
+    nudgeChatTwin(workspaceId, conversation.id, "chat.webhook.message");
     return { published: true };
   }
 
@@ -581,6 +608,7 @@ async function ingestWebhookForWorkspace(
       messageId: null,
       kind: "conversation",
     });
+    nudgeChatTwin(workspaceId, conversation.id, "chat.webhook.conversation");
     return { published: true };
   }
 
