@@ -21,6 +21,7 @@ export const BACKSTEROS_TASK_STATUS_COLORS: Record<
   ready_to_start: { light: "oklch(0.72 0 0)", dark: "oklch(0.913 0 0)" },
   in_progress: { light: "#c9a21f", dark: "#e9c141" },
   on_hold: { light: "#c44f4b", dark: "#da615d" },
+  waiting: { light: "#3a86a8", dark: "#4a9ec8" },
   in_review: { light: "#3f8a3d", dark: "#52a450" },
   completed: { light: "#4f57b0", dark: "#606acc" },
   canceled: { light: "oklch(0.62 0 0)", dark: "oklch(0.913 0 0)" },

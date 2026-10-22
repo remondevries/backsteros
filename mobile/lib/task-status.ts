@@ -6,6 +6,7 @@ export const TASK_STATUSES = [
   "ready_to_start",
   "in_progress",
   "on_hold",
+  "waiting",
   "in_review",
   "completed",
   "canceled",
@@ -20,6 +21,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   ready_to_start: "Ready to Start",
   in_progress: "In Progress",
   on_hold: "On Hold",
+  waiting: "Waiting",
   in_review: "In Review",
   completed: "Completed",
   canceled: "Canceled",
@@ -38,6 +40,7 @@ export const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
   ready_to_start: "#e8e8e8",
   in_progress: "#e9c141",
   on_hold: "#da615d",
+  waiting: "#4a9ec8",
   in_review: "#52a450",
   completed: "#606acc",
   canceled: "#e8e8e8",
@@ -55,6 +58,7 @@ export function migrateLegacyTaskStatus(status: string | null | undefined): Task
     case "ready_to_start":
     case "in_progress":
     case "on_hold":
+    case "waiting":
     case "in_review":
     case "completed":
     case "canceled":

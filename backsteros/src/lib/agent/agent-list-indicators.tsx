@@ -50,6 +50,7 @@ export function isTaskAgentWorkingForUi(
   const status = migrateLegacyTaskStatus(task.status ?? "ready_to_start");
   if (
     status === "on_hold" ||
+    status === "waiting" ||
     status === "completed" ||
     status === "canceled" ||
     status === "duplicated"

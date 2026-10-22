@@ -856,7 +856,17 @@ export function TaskDetailPage({
     : [];
 
   const patchStatus = (next: string) => {
-    void workspace.patchTask(task.id, { status: next });
+    const patch: { status: string; followUpDate?: string } = { status: next };
+    if (next === "waiting") {
+      const existingFollowUp =
+        allTasks.find((entry) => entry.id === task.id)?.followUpDate ?? null;
+      if (existingFollowUp == null) {
+        const followUp = new Date();
+        followUp.setUTCDate(followUp.getUTCDate() + 7);
+        patch.followUpDate = followUp.toISOString();
+      }
+    }
+    void workspace.patchTask(task.id, patch);
   };
   const patchPriority = (next: number) => {
     void workspace.patchTask(task.id, { priority: next });
@@ -872,6 +882,11 @@ export function TaskDetailPage({
   const patchDueDate = (next: Date | null) => {
     void workspace.patchTask(task.id, {
       dueDate: next ? next.toISOString() : null,
+    });
+  };
+  const patchFollowUpDate = (next: Date | null) => {
+    void workspace.patchTask(task.id, {
+      followUpDate: next ? next.toISOString() : null,
     });
   };
   const patchAssignee = (next: string | null) => {
@@ -1101,6 +1116,7 @@ export function TaskDetailPage({
             href: location.pathname,
           }}
           onDueDateChange={patchDueDate}
+          onFollowUpDateChange={patchFollowUpDate}
           onAssigneeChange={patchAssignee}
           onRelatedChange={patchRelated}
           onLabelChange={patchLabels}

@@ -1,6 +1,7 @@
 export const AGENT_ATTENTION_NOTIFY_STATUSES = [
   "in_review",
   "on_hold",
+  "waiting",
 ] as const;
 
 export type AgentAttentionNotifyStatus =
@@ -18,7 +19,9 @@ export type AgentAttentionNotificationPayload = {
 export function isAgentAttentionNotifyStatus(
   status: string | null | undefined,
 ): status is AgentAttentionNotifyStatus {
-  return status === "in_review" || status === "on_hold";
+  return (
+    status === "in_review" || status === "on_hold" || status === "waiting"
+  );
 }
 
 export function agentAttentionNotificationKey(
@@ -49,6 +52,16 @@ export function buildAgentAttentionNotification(input: {
     };
   }
 
+  if (input.status === "waiting") {
+    return {
+      key: agentAttentionNotificationKey(input.id, input.status),
+      kind: "agent_task",
+      title: "Waiting on external",
+      body: taskLabel,
+      href: input.href,
+    };
+  }
+
   return {
     key: agentAttentionNotificationKey(input.id, input.status),
     kind: "agent_task",
@@ -58,7 +71,7 @@ export function buildAgentAttentionNotification(input: {
   };
 }
 
-/** Server push when an agent moves a task into In Review or On Hold. */
+/** Server push when an agent moves a task into In Review, On Hold, or Waiting. */
 export function taskStatusChangeQualifiesForAgentAttentionPush(input: {
   previousStatus: string;
   nextStatus: string;

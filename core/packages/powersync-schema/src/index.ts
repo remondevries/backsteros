@@ -67,6 +67,7 @@ const tasks = new Table(
     sort_order: column.integer,
     due_date: column.text,
     due_end_date: column.text,
+    follow_up_date: column.text,
     triaged_at: column.text,
     inbox: column.integer,
     support: column.integer,

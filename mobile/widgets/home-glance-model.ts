@@ -381,6 +381,8 @@ export function inboxStatusIconForStatus(
       return "circle.lefthalf.filled";
     case "on_hold":
       return "circle.bottomhalf.filled";
+    case "waiting":
+      return "clock.circle";
     case "in_review":
       return "circle.inset.filled";
     case "completed":
@@ -402,6 +404,7 @@ const INBOX_STATUS_ICON_COLORS: Record<
   ready_to_start: "#1c1c1e",
   in_progress: "#a67c00",
   on_hold: "#b83f3b",
+  waiting: "#3a86a8",
   in_review: "#2f6e2e",
   completed: "#3f4a9e",
   canceled: "#4a4a4e",

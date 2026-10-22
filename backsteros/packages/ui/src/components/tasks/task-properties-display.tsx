@@ -52,6 +52,8 @@ export type TaskPropertiesDisplayTask = {
   priority: number;
   dueDate?: number | Date | null;
   dueEndDate?: number | Date | null;
+  /** Chase date while status is `waiting`. */
+  followUpDate?: number | Date | null;
   assigneeId?: string | null;
   assigneeName?: string | null;
   relatedContactIds?: string[] | null;
@@ -79,6 +81,7 @@ export type TaskPropertiesDisplayProps = {
   statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
+  onFollowUpDateChange?: (followUpDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: TaskRelatedSelection) => void;
   onLabelChange?: (labelIds: string[]) => void;
@@ -124,6 +127,7 @@ export function TaskPropertiesDisplay({
   statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
+  onFollowUpDateChange,
   onAssigneeChange,
   onRelatedChange,
   onLabelChange,
@@ -243,6 +247,19 @@ export function TaskPropertiesDisplay({
               disabled={disabled}
               onDueDateChange={onDueDateChange}
             />
+            {status === "waiting" ? (
+              <TaskDueDateDropdown
+                dueDate={toDate(task?.followUpDate)}
+                status={status}
+                variant="property"
+                disabled={disabled}
+                onDueDateChange={onFollowUpDateChange}
+                noDueDateLabel="No follow-up"
+                searchPlaceholder="Change follow-up…"
+                searchShortcutLabel="F"
+                taskPropertyDropdownId={null}
+              />
+            ) : null}
             <PropertyFieldGroup label="Assignee">
               {canEditAssignee ? (
                 <PropertyDropdownNavigateRow navigateHref={assigneeNavigateHref}>

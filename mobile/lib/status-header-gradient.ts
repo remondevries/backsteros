@@ -31,6 +31,10 @@ const TASK_STATUS_HEADER_GRADIENTS: Record<TaskStatus, StatusHeaderGradient> = {
     from: "#cb686110",
     to: "#ffffff05",
   },
+  waiting: {
+    from: "#4a9ec810",
+    to: "#ffffff05",
+  },
   in_review: {
     from: "#67a25a10",
     to: "#ffffff05",

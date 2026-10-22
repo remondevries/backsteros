@@ -5,6 +5,7 @@ export type InboxUpdatedKind = (typeof INBOX_UPDATED_KINDS)[number];
 /** Statuses where an external update should surface in the Updated inbox group. */
 export const INBOX_UPDATED_ATTENTION_STATUSES = [
   "in_progress",
+  "waiting",
   "on_hold",
   "in_review",
 ] as const;

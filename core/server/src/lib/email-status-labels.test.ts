@@ -50,6 +50,7 @@ describe("emailStatusLabelPatch", () => {
         "On Hold",
         "Ready to Start",
         "Triage",
+        "Waiting",
       ].sort(),
     );
   });

@@ -17,6 +17,7 @@ const STATUS_HEADER_GRADIENTS: Record<BacksterosTaskStatus, StatusHeaderGradient
   ready_to_start: { from: "#ffffff05", to: "#ffffff05" },
   in_progress: { from: "#e3c25910", to: "#ffffff05" },
   on_hold: { from: "#cb686110", to: "#ffffff05" },
+  waiting: { from: "#4a9ec810", to: "#ffffff05" },
   in_review: { from: "#67a25a10", to: "#ffffff05" },
   completed: { from: "#626ac610", to: "#ffffff05" },
   canceled: { from: "#bfc2c705", to: "#ffffff05" },

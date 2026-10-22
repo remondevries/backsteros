@@ -17,6 +17,7 @@ export const INBOX_ATTENTION_STATUS_ORDER = [
   "agents",
   "overdue",
   "triage",
+  "waiting",
   "on_hold",
   "in_review",
 ] as const;
@@ -25,6 +26,7 @@ export type InboxAttentionStatus =
   (typeof INBOX_ATTENTION_STATUS_ORDER)[number];
 
 export const INBOX_ATTENTION_REAL_STATUSES = [
+  "waiting",
   "on_hold",
   "in_review",
 ] as const satisfies readonly TaskStatus[];
@@ -157,6 +159,7 @@ export function getInboxAttentionGroupKey(
   if (input.inbox === true || input.inbox === 1 || status === "triage") {
     return "triage";
   }
+  if (status === "waiting") return "waiting";
   if (status === "on_hold") return "on_hold";
   if (status === "in_review") return "in_review";
   return "other";

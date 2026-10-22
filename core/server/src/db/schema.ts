@@ -796,6 +796,11 @@ export const tasks = pgTable(
     dueDate: timestamp("due_date", { withTimezone: true }),
     /** Optional end of a timed calendar block; null = all-day due date. */
     dueEndDate: timestamp("due_end_date", { withTimezone: true }),
+    /**
+     * When to chase an external blocker (`waiting` status). Same storage as
+     * {@link dueDate}.
+     */
+    followUpDate: timestamp("follow_up_date", { withTimezone: true }),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
     inbox: boolean("inbox").notNull().default(false),
     /**
@@ -896,6 +901,10 @@ export const tasks = pgTable(
     index("tasks_contact_id_idx").on(table.contactId),
     index("tasks_assignee_id_idx").on(table.assigneeId),
     index("tasks_workspace_due_date_idx").on(table.workspaceId, table.dueDate),
+    index("tasks_workspace_follow_up_date_idx").on(
+      table.workspaceId,
+      table.followUpDate,
+    ),
     index("tasks_status_idx").on(table.status),
     index("tasks_workspace_support_idx")
       .on(table.workspaceId, table.support)

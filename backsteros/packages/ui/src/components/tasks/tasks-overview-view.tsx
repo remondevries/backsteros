@@ -246,15 +246,33 @@ export function TasksOverviewView({
 
   const handleStatusChange = useCallback(
     (taskId: string, status: TaskStatus) => {
-      patchTask(taskId, { status });
-      setLocalTasks((current) =>
-        current.map((task) =>
-          task.id === taskId ? { ...task, status } : task,
+      const current = localTasks.find((task) => task.id === taskId);
+      const patch: {
+        status: TaskStatus;
+        followUpDate?: number | null;
+      } = { status };
+      if (status === "waiting" && current?.followUpDate == null) {
+        const followUp = new Date();
+        followUp.setUTCDate(followUp.getUTCDate() + 7);
+        patch.followUpDate = followUp.getTime();
+      }
+      patchTask(taskId, patch);
+      setLocalTasks((rows) =>
+        rows.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                status,
+                ...(patch.followUpDate !== undefined
+                  ? { followUpDate: patch.followUpDate }
+                  : {}),
+              }
+            : task,
         ),
       );
       onStatusChange?.(taskId, status);
     },
-    [onStatusChange, patchTask],
+    [localTasks, onStatusChange, patchTask],
   );
 
   const handlePriorityChange = useCallback(

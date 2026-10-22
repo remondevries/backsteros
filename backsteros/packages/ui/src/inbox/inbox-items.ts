@@ -45,6 +45,7 @@ export const INBOX_ATTENTION_STATUS_ORDER = [
   "overdue",
   "triage",
   "in_progress",
+  "waiting",
   "on_hold",
   "in_review",
 ] as const;
@@ -58,6 +59,7 @@ export type InboxAttentionStatus =
  */
 export const INBOX_ATTENTION_REAL_STATUSES = [
   "in_progress",
+  "waiting",
   "on_hold",
   "in_review",
 ] as const satisfies readonly TaskStatus[];
@@ -976,6 +978,7 @@ function getTaskInboxAttentionGroupKey(
     return "triage";
   }
   if (status === "in_progress") return "in_progress";
+  if (status === "waiting") return "waiting";
   if (status === "on_hold") return "on_hold";
   if (status === "in_review") return "in_review";
   return "other";

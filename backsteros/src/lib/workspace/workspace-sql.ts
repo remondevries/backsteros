@@ -17,6 +17,7 @@ export const TASK_LIST_COLUMNS = [
   "priority",
   "due_date",
   "due_end_date",
+  "follow_up_date",
   "project_id",
   "contact_id",
   "assignee_id",

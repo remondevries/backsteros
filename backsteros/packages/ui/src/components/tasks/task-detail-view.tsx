@@ -158,6 +158,7 @@ export type TaskDetailViewProps = {
   statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
+  onFollowUpDateChange?: (followUpDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
   onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
   onLabelChange?: (labelIds: string[]) => void;
@@ -222,6 +223,7 @@ export function TaskDetailView({
   statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
+  onFollowUpDateChange,
   onAssigneeChange,
   onRelatedChange,
   onLabelChange,
@@ -652,6 +654,7 @@ export function TaskDetailView({
                 statusDisabled={statusDisabled}
                 onPriorityChange={onPriorityChange}
                 onDueDateChange={onDueDateChange}
+                onFollowUpDateChange={onFollowUpDateChange}
                 onAssigneeChange={onAssigneeChange}
                 onRelatedChange={onRelatedChange}
                 onLabelChange={onLabelChange}

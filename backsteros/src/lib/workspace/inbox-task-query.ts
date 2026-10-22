@@ -20,7 +20,7 @@ export const INBOX_TASKS_WHERE_SQL = `
       agent_created_at IS NOT NULL
       AND agent_inbox_approved_at IS NULL
     )
-    OR status IN ('on_hold', 'in_review')
+    OR status IN ('on_hold', 'waiting', 'in_review')
     OR (
       due_date IS NOT NULL
       AND date(due_date, 'localtime') < date('now', 'localtime')

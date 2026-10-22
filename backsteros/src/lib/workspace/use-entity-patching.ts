@@ -710,8 +710,15 @@ export function useWorkspaceEntityPatching({
         } catch (error) {
           // Local SQLite may lag schema (e.g. new columns). Still hit REST.
           console.warn("[desktop] local metadata patch failed", error);
-          if (table === "tasks" && "dueEndDate" in localValues) {
-            const { dueEndDate: _dueEndDate, ...rest } = localValues;
+          if (
+            table === "tasks" &&
+            ("dueEndDate" in localValues || "followUpDate" in localValues)
+          ) {
+            const {
+              dueEndDate: _dueEndDate,
+              followUpDate: _followUpDate,
+              ...rest
+            } = localValues;
             if (Object.keys(rest).length > 0) {
               try {
                 await powerSync.patchMetadata!("tasks", id, toSnakeFields(rest));

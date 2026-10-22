@@ -79,6 +79,7 @@ function attentionGroupRank(groupKey: string): number {
     "agents",
     "overdue",
     "in_progress",
+    "waiting",
     "on_hold",
     "in_review",
     "other",

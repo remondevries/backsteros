@@ -133,6 +133,7 @@ export function adaptTaskStatusOklch(
 const DEFAULT_STATUS_HEX: Record<string, string> = {
   triage: "#ee7a47",
   on_hold: "#da615d",
+  waiting: "#4a9ec8",
   in_progress: "#e9c141",
   in_review: "#52a450",
   completed: "#606acc",
@@ -144,6 +145,7 @@ const DEFAULT_STATUS_OKLCH: Record<string, TaskStatusOklch> = {
   ready_to_start: { l: 0.913, c: 0, h: 0 },
   in_progress: { l: 0.831, c: 0.17, h: 85.0 },
   on_hold: { l: 0.78, c: 0.12, h: 55.0 },
+  waiting: { l: 0.72, c: 0.1, h: 230.0 },
   in_review: { l: 0.79, c: 0.16, h: 305.0 },
   completed: { l: 0.571, c: 0.17, h: 274.4 },
   canceled: { l: 0.913, c: 0, h: 0 },

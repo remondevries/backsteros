@@ -9,6 +9,7 @@ import {
 describe("getOptionalTaskStatusLabel", () => {
   it("returns readable labels for known statuses", () => {
     assert.equal(getOptionalTaskStatusLabel("completed"), "Completed");
+    assert.equal(getOptionalTaskStatusLabel("waiting"), "Waiting");
     assert.equal(
       getOptionalTaskStatusLabel("ready_to_start"),
       getTaskStatusLabel("ready_to_start"),

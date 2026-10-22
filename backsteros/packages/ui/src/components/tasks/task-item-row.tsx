@@ -70,6 +70,8 @@ export type TaskItemRowTask = {
   dueDate: number | Date | null;
   /** End of a timed calendar block (epoch ms); null/absent = all-day due date. */
   dueEndDate?: number | Date | null;
+  /** Chase date while status is `waiting` (epoch ms). */
+  followUpDate?: number | Date | null;
   projectId: string | null;
   projectKey?: string | null;
   projectName?: string | null;

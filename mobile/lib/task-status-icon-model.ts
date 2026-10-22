@@ -20,6 +20,7 @@ const RING_FILL_BY_STATUS: Partial<Record<TaskStatus, number>> = {
   ready_to_start: 0.18,
   in_progress: 0.48,
   on_hold: 0.34,
+  waiting: 0.55,
   in_review: 0.72,
   canceled: 0,
 };

@@ -24,7 +24,10 @@ import type {
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@backsteros/contracts";
-import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
+import {
+  shouldClearInboxUpdatedOnUserWrite,
+  taskPatchKeepsWaitingFollowUp,
+} from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import { nudgeDynamicIslandTasksRefresh } from "../lib/dynamic-island-nudge.js";
@@ -1145,6 +1148,26 @@ function dueDateSqlCondition(filter: DueDateFilter): SQL {
   )!;
 }
 
+function followUpDateSqlCondition(filter: DueDateFilter): SQL {
+  if (filter.op === "before") {
+    return and(
+      isNotNull(tasks.followUpDate),
+      lt(tasks.followUpDate, filter.date),
+    )!;
+  }
+  if (filter.op === "after") {
+    return and(
+      isNotNull(tasks.followUpDate),
+      gt(tasks.followUpDate, filter.date),
+    )!;
+  }
+  return and(
+    isNotNull(tasks.followUpDate),
+    gte(tasks.followUpDate, filter.start),
+    lte(tasks.followUpDate, filter.end),
+  )!;
+}
+
 function relatedContactOrCondition(ids: string[]): SQL | undefined {
   if (!ids.length) return undefined;
   return or(
@@ -1306,6 +1329,9 @@ function buildPaginatedTaskConditions(
   if (linkedEmails) conditions.push(linkedEmails);
   if (filters.dueDate) {
     conditions.push(dueDateSqlCondition(filters.dueDate));
+  }
+  if (filters.followUpDate) {
+    conditions.push(followUpDateSqlCondition(filters.followUpDate));
   }
   if (filters.inbox !== undefined) {
     conditions.push(eq(tasks.inbox, filters.inbox));
@@ -1560,6 +1586,7 @@ export async function listTasksPaginated(
       sortOrder: tasks.sortOrder,
       dueDate: tasks.dueDate,
       dueEndDate: tasks.dueEndDate,
+      followUpDate: tasks.followUpDate,
       triagedAt: tasks.triagedAt,
       inbox: tasks.inbox,
       support: tasks.support,
@@ -1648,6 +1675,7 @@ export async function listTasksPaginated(
       projectId: row.projectId,
       projectKey: row.projectKey ?? null,
       dueDate: row.dueDate?.toISOString() ?? null,
+      followUpDate: row.followUpDate?.toISOString() ?? null,
       linkedDocumentIds: links.linkedDocumentIds,
       linkedContactIds,
       linkedTaskIds: links.linkedTaskIds,
@@ -2116,7 +2144,17 @@ async function createTaskWithExecutor(
   const notification = input.notification ?? false;
   const status =
     input.status ??
-    (support || notification ? "triage" : "ready_to_start");
+    (support || notification ? "triage" : "backlog");
+  if (
+    !taskPatchKeepsWaitingFollowUp({
+      currentStatus: status,
+      currentFollowUpDate: null,
+      nextStatus: status,
+      nextFollowUpDate: input.followUpDate,
+    })
+  ) {
+    throw new Error("WAITING_FOLLOW_UP_REQUIRED");
+  }
   const agentInbox =
     options?.authKind === "api_key" || actor?.kind === "agent";
   const agentCreatedAt =
@@ -2171,6 +2209,7 @@ async function createTaskWithExecutor(
       sortOrder: input.sortOrder ?? 0,
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       dueEndDate: input.dueEndDate ? new Date(input.dueEndDate) : null,
+      followUpDate: input.followUpDate ? new Date(input.followUpDate) : null,
       triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
       inbox:
         input.inbox ??
@@ -2343,6 +2382,17 @@ export async function updateTask(
     : await existingQuery;
   if (!existing) {
     return null;
+  }
+
+  if (
+    !taskPatchKeepsWaitingFollowUp({
+      currentStatus: existing.status,
+      currentFollowUpDate: existing.followUpDate?.toISOString() ?? null,
+      nextStatus: input.status,
+      nextFollowUpDate: input.followUpDate,
+    })
+  ) {
+    throw new Error("WAITING_FOLLOW_UP_REQUIRED");
   }
 
   if (input.projectId) {
@@ -2535,6 +2585,12 @@ export async function updateTask(
           ? undefined
           : input.dueEndDate
             ? new Date(input.dueEndDate)
+            : null,
+      followUpDate:
+        input.followUpDate === undefined
+          ? undefined
+          : input.followUpDate
+            ? new Date(input.followUpDate)
             : null,
       triagedAt:
         input.triagedAt === undefined

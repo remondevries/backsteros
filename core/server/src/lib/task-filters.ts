@@ -35,6 +35,7 @@ export const TASK_LIST_KNOWN_QUERY_KEYS = new Set([
   "status",
   "assigneeId",
   "dueDate",
+  "followUpDate",
   "linkedDocuments",
   "contactId",
   "relatedContactId",
@@ -62,6 +63,7 @@ export const TASK_LIST_PAGINATED_ONLY_KEYS = [
   "sort",
   "includeTotalCount",
   "dueDate",
+  "followUpDate",
   "linkedDocuments",
   "linkedTasks",
   "linkedEmails",
@@ -146,13 +148,14 @@ function parseDateValue(raw: string, field: string): Date {
 }
 
 /**
- * dueDate range syntax (single query param value):
+ * Date-range filter syntax (single query param value):
  * - before:<iso|YYYY-MM-DD>
  * - after:<iso|YYYY-MM-DD>
  * - between:<start>,<end>
  */
-export function parseDueDateFilter(
+export function parseDateRangeFilter(
   raw: string | string[] | undefined | null,
+  field: "dueDate" | "followUpDate" = "dueDate",
 ): DueDateFilter | undefined {
   if (raw == null) return undefined;
   const value = (Array.isArray(raw) ? raw[0] : raw)?.trim();
@@ -162,13 +165,13 @@ export function parseDueDateFilter(
   if (lower.startsWith("before:")) {
     return {
       op: "before",
-      date: parseDateValue(value.slice("before:".length), "dueDate"),
+      date: parseDateValue(value.slice("before:".length), field),
     };
   }
   if (lower.startsWith("after:")) {
     return {
       op: "after",
-      date: parseDateValue(value.slice("after:".length), "dueDate"),
+      date: parseDateValue(value.slice("after:".length), field),
     };
   }
   if (lower.startsWith("between:")) {
@@ -176,25 +179,32 @@ export function parseDueDateFilter(
     const comma = rest.indexOf(",");
     if (comma < 0) {
       throw new TaskFilterError(
-        "dueDate between requires start,end",
-        "dueDate",
+        `${field} between requires start,end`,
+        field,
       );
     }
-    const start = parseDateValue(rest.slice(0, comma), "dueDate");
-    const end = parseDateValue(rest.slice(comma + 1), "dueDate");
+    const start = parseDateValue(rest.slice(0, comma), field);
+    const end = parseDateValue(rest.slice(comma + 1), field);
     if (end.getTime() < start.getTime()) {
       throw new TaskFilterError(
-        "dueDate between end must be >= start",
-        "dueDate",
+        `${field} between end must be >= start`,
+        field,
       );
     }
     return { op: "between", start, end };
   }
 
   throw new TaskFilterError(
-    "dueDate must be before:<date>, after:<date>, or between:<start>,<end>",
-    "dueDate",
+    `${field} must be before:<date>, after:<date>, or between:<start>,<end>`,
+    field,
   );
+}
+
+/** @deprecated Prefer {@link parseDateRangeFilter}. */
+export function parseDueDateFilter(
+  raw: string | string[] | undefined | null,
+): DueDateFilter | undefined {
+  return parseDateRangeFilter(raw, "dueDate");
 }
 
 export function parseTaskListLimit(
@@ -237,6 +247,8 @@ export type ParsedTaskListQuery = {
   linkedTaskIds: string[];
   linkedEmailIds: string[];
   dueDate?: DueDateFilter;
+  /** Same range ops as {@link dueDate}, applied to `follow_up_date`. */
+  followUpDate?: DueDateFilter;
   /**
    * Change feed (OS-45): only tasks with updatedAt >= this instant. Also
    * returns soft-deleted tasks (with `deletedAt`) and, unless `status` is
@@ -335,6 +347,8 @@ export function parseTaskListQuery(
   // pass junk keep their prior empty-match behavior unless they opt in.
   const dueDateRaw = firstString(raw.dueDate);
   let dueDate: DueDateFilter | undefined;
+  const followUpDateRaw = firstString(raw.followUpDate);
+  let followUpDate: DueDateFilter | undefined;
   const sortRaw = firstString(raw.sort);
 
   const paginatedFlag =
@@ -363,7 +377,10 @@ export function parseTaskListQuery(
       }
     }
     if (dueDateRaw != null) {
-      dueDate = parseDueDateFilter(dueDateRaw);
+      dueDate = parseDateRangeFilter(dueDateRaw, "dueDate");
+    }
+    if (followUpDateRaw != null) {
+      followUpDate = parseDateRangeFilter(followUpDateRaw, "followUpDate");
     }
     if (updatedSinceRaw != null) {
       updatedSince = parseDateValue(updatedSinceRaw, "updatedSince");
@@ -388,6 +405,7 @@ export function parseTaskListQuery(
     linkedTaskIds,
     linkedEmailIds,
     dueDate,
+    followUpDate,
     updatedSince,
     inbox: parseOptionalBoolean(raw.inbox, "inbox"),
     support: parseOptionalBoolean(raw.support, "support"),
@@ -498,6 +516,17 @@ export function formatTaskDisplayKey(
  * Pure AND/OR match helper for unit tests (mirrors SQL filter semantics
  * for scalar fields; link filters are SQL-only).
  */
+function matchesDateRangeFilter(
+  value: Date | null | undefined,
+  filter: DueDateFilter,
+): boolean {
+  if (!value) return false;
+  const t = value.getTime();
+  if (filter.op === "before") return t < filter.date.getTime();
+  if (filter.op === "after") return t > filter.date.getTime();
+  return t >= filter.start.getTime() && t <= filter.end.getTime();
+}
+
 export function taskRowMatchesScalarFilters(
   row: {
     projectId: string | null;
@@ -506,6 +535,7 @@ export function taskRowMatchesScalarFilters(
     contactId: string | null;
     relatedContactIds: string[];
     dueDate: Date | null;
+    followUpDate?: Date | null;
   },
   filters: Pick<
     ParsedTaskListQuery,
@@ -515,6 +545,7 @@ export function taskRowMatchesScalarFilters(
     | "contactIds"
     | "relatedContactIds"
     | "dueDate"
+    | "followUpDate"
   >,
 ): boolean {
   if (filters.projectIds.length && !filters.projectIds.includes(row.projectId ?? "")) {
@@ -547,23 +578,14 @@ export function taskRowMatchesScalarFilters(
     );
     if (!hit) return false;
   }
-  if (filters.dueDate) {
-    if (!row.dueDate) return false;
-    const t = row.dueDate.getTime();
-    if (filters.dueDate.op === "before" && !(t < filters.dueDate.date.getTime())) {
-      return false;
-    }
-    if (filters.dueDate.op === "after" && !(t > filters.dueDate.date.getTime())) {
-      return false;
-    }
-    if (filters.dueDate.op === "between") {
-      if (
-        t < filters.dueDate.start.getTime() ||
-        t > filters.dueDate.end.getTime()
-      ) {
-        return false;
-      }
-    }
+  if (filters.dueDate && !matchesDateRangeFilter(row.dueDate, filters.dueDate)) {
+    return false;
+  }
+  if (
+    filters.followUpDate &&
+    !matchesDateRangeFilter(row.followUpDate ?? null, filters.followUpDate)
+  ) {
+    return false;
   }
   return true;
 }

@@ -119,6 +119,7 @@ export function taskApiPatchToSqlite(
   for (const [key, value] of Object.entries(values)) {
     if (key === "dueDate") sqliteValues.due_date = value;
     else if (key === "dueEndDate") sqliteValues.due_end_date = value;
+    else if (key === "followUpDate") sqliteValues.follow_up_date = value;
     else if (key === "trackedMinutes") sqliteValues.tracked_minutes = value;
     else if (key === "trackedDurationSeconds") {
       sqliteValues.tracked_duration_seconds = value;

@@ -158,6 +158,7 @@ export function toTask(row: DbTask, projectKey?: string | null): Task {
     sortOrder: row.sortOrder,
     dueDate: toIso(row.dueDate),
     dueEndDate: toIso(row.dueEndDate),
+    followUpDate: toIso(row.followUpDate),
     triagedAt: toIso(row.triagedAt),
     inbox: row.inbox,
     support: row.support,

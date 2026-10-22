@@ -12,6 +12,7 @@ export const TASK_STATUSES = [
   "ready_to_start",
   "in_progress",
   "on_hold",
+  "waiting",
   "in_review",
   "completed",
   "canceled",
@@ -688,6 +689,11 @@ export const taskSchema = z.object({
   dueDate: z.string().datetime().nullable(),
   /** End of a timed calendar block; null = all-day due date. */
   dueEndDate: z.string().datetime().nullable().optional(),
+  /**
+   * When to chase an external blocker (`waiting` status). Same shape as
+   * {@link dueDate}. Required when status is `waiting`.
+   */
+  followUpDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable(),
   inbox: z.boolean(),
   /**
@@ -782,6 +788,8 @@ export const taskListItemSchema = z.object({
   /** Project key (e.g. `OS`); null for inbox tasks (OS-64). */
   projectKey: z.string().nullable().optional(),
   dueDate: z.string().datetime().nullable(),
+  /** Chase date while status is `waiting` (same shape as dueDate). */
+  followUpDate: z.string().datetime().nullable().optional(),
   linkedDocumentIds: z.array(z.string()),
   linkedContactIds: z.array(z.string()),
   linkedTaskIds: z.array(z.string()),
@@ -833,6 +841,12 @@ export const listTasksQuerySchema = z.object({
    * (ISO datetime or YYYY-MM-DD). Opt-in to paginated response.
    */
   dueDate: z.string().optional(),
+  /**
+   * Same range syntax as {@link dueDate}, applied to `followUpDate`.
+   * Useful with `status=waiting` to find chase-due tasks
+   * (e.g. `followUpDate=before:2026-10-23`).
+   */
+  followUpDate: z.string().optional(),
   /** Document id or comma-separated list (bidirectional via front-matter linkedTasks). */
   linkedDocuments: z.string().optional(),
   /** Task id or key (OS-28) or a comma list — co-linked tasks via shared documents. */
@@ -884,7 +898,7 @@ export const listTasksResponseSchema = z.union([
   listTasksPaginatedResponseSchema,
 ]);
 
-export const createTaskSchema = z.object({
+const createTaskFieldsSchema = z.object({
   /** Client-generated id for offline-first / PowerSync dual-write creates. */
   id: z.string().min(1).max(64).optional(),
   /** Project id or key. Prefer {@link projectKey} when you only know the key. */
@@ -910,6 +924,12 @@ export const createTaskSchema = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   /** End of a timed calendar block; null = all-day due date. */
   dueEndDate: z.string().datetime().nullable().optional(),
+  /**
+   * Chase date for external blockers. Required when status is `waiting`
+   * (create, or update that moves into / stays in waiting without an
+   * existing follow-up). Prefer a comment naming who/what you wait on.
+   */
+  followUpDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable().optional(),
   inbox: z.boolean().optional(),
   /** Mark as a client support ticket (defaults false). */
@@ -973,7 +993,17 @@ export const createTaskSchema = z.object({
   images: taskImagesUploadFieldSchema.optional(),
 });
 
-export const updateTaskSchema = createTaskSchema
+export const createTaskSchema = createTaskFieldsSchema.refine(
+  (value) =>
+    value.status !== "waiting" ||
+    (typeof value.followUpDate === "string" && value.followUpDate.length > 0),
+  {
+    message: "followUpDate is required when status is waiting",
+    path: ["followUpDate"],
+  },
+);
+
+export const updateTaskSchema = createTaskFieldsSchema
   .partial()
   .extend({
     /** Clerk-only sign-off — removes task from Agents inbox subgroup. */
@@ -1012,6 +1042,30 @@ export const updateTaskSchema = createTaskSchema
       message: "At least one field is required",
     },
   );
+
+/**
+ * Whether a waiting task still has a chase date after applying a patch.
+ * Used by the API when status stays `waiting` and followUpDate is cleared.
+ */
+export function taskPatchKeepsWaitingFollowUp(input: {
+  currentStatus: string;
+  currentFollowUpDate: string | null | undefined;
+  nextStatus?: string | null;
+  nextFollowUpDate?: string | null;
+}): boolean {
+  const nextStatus = input.nextStatus ?? input.currentStatus;
+  if (nextStatus !== "waiting") return true;
+  if (input.nextFollowUpDate !== undefined) {
+    return (
+      typeof input.nextFollowUpDate === "string" &&
+      input.nextFollowUpDate.length > 0
+    );
+  }
+  return (
+    typeof input.currentFollowUpDate === "string" &&
+    input.currentFollowUpDate.length > 0
+  );
+}
 
 export const taskCommentSchema = z.object({
   id: z.string(),

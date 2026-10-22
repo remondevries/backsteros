@@ -183,10 +183,23 @@ Pass `status=all` for every known status, or an explicit comma list
 (e.g. `status=completed,canceled`). Giving `status` or `updatedSince`
 suppresses the default, the hint, and `appliedDefaults`.
 
+`waiting` is an **open** status (blocked on someone outside our control — a
+client, supplier, or other external person). It is separate from `in_review`
+(internal check) and `on_hold` (we are stuck and need help). Paginated lists
+keep `waiting` visible by default. Tasks in `waiting` should set
+`followUpDate` (same ISO datetime shape as `dueDate`) and preferably a comment
+naming who/what we wait on. Create with `status=waiting` requires
+`followUpDate`. Chase due rows with:
+
+```http
+GET /api/v1/tasks?paginated=true&status=waiting&followUpDate=before:2026-10-23
+```
+
 ```http
 GET  /api/v1/tasks?paginated=true&projectId=OS&includeTotalCount=true
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=all
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
+GET  /api/v1/tasks?paginated=true&status=waiting
 ```
 
 ### Write (agents)

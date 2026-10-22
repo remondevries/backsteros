@@ -173,6 +173,7 @@ export function mapTask(
     priority: task.priority,
     dueDate: asEpoch(task.dueDate),
     dueEndDate: asEpoch(task.dueEndDate ?? null),
+    followUpDate: asEpoch(task.followUpDate ?? null),
     projectId: task.projectId,
     projectKey: project?.key ?? null,
     projectName: project?.name ?? null,

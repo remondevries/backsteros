@@ -203,6 +203,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     sort_order: row.sortOrder,
     due_date: row.dueDate?.toISOString() ?? null,
     due_end_date: row.dueEndDate?.toISOString() ?? null,
+    follow_up_date: row.followUpDate?.toISOString() ?? null,
     triaged_at: row.triagedAt?.toISOString() ?? null,
     inbox: row.inbox,
     support: row.support,
@@ -2210,6 +2211,9 @@ function mapTaskUpsert(
     dueEndDate: asNullableString(
       payloadValue(payload, "due_end_date", "dueEndDate"),
     ),
+    followUpDate: asNullableString(
+      payloadValue(payload, "follow_up_date", "followUpDate"),
+    ),
     triagedAt: asNullableString(
       payloadValue(payload, "triaged_at", "triagedAt"),
     ),
@@ -2494,6 +2498,7 @@ export async function applySyncChange(
             sortOrder: input.sortOrder,
             dueDate: input.dueDate,
             dueEndDate: input.dueEndDate,
+            followUpDate: input.followUpDate,
             triagedAt: input.triagedAt,
             inbox: input.inbox,
             support: input.support,
@@ -2551,6 +2556,7 @@ export async function applySyncChange(
               sortOrder: input.sortOrder,
               dueDate: input.dueDate,
               dueEndDate: input.dueEndDate,
+              followUpDate: input.followUpDate,
               triagedAt: input.triagedAt,
               inbox: projectId ? input.inbox : true,
               support: input.support,
@@ -2613,6 +2619,7 @@ export async function applySyncChange(
               sortOrder: input.sortOrder,
               dueDate: input.dueDate,
               dueEndDate: input.dueEndDate,
+              followUpDate: input.followUpDate,
               triagedAt: input.triagedAt,
               inbox: input.inbox,
               support: input.support,

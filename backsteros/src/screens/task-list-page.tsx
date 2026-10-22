@@ -368,7 +368,15 @@ function TaskListPageBody({
           void patchEmailTaskListItem(client, task, { status });
           return;
         }
-        void workspace.patchTask(taskId, { status });
+        const patch: { status: typeof status; followUpDate?: string } = {
+          status,
+        };
+        if (status === "waiting" && task?.followUpDate == null) {
+          const followUp = new Date();
+          followUp.setUTCDate(followUp.getUTCDate() + 7);
+          patch.followUpDate = followUp.toISOString();
+        }
+        void workspace.patchTask(taskId, patch);
       }}
       onPriorityChange={(taskId, priority) => {
         const task = findListTask(taskId);

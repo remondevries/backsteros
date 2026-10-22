@@ -1602,6 +1602,19 @@ export function registerTaskDocumentRoutes(app: Hono) {
           if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
             return { status: 404, body: notFound("Project") };
           }
+          if (
+            error instanceof Error &&
+            error.message === "WAITING_FOLLOW_UP_REQUIRED"
+          ) {
+            return {
+              status: 400,
+              body: {
+                error:
+                  "followUpDate is required when status is waiting",
+                code: "waiting_follow_up_required",
+              },
+            };
+          }
           if (error instanceof Error && error.message === "ASSIGNEE_NOT_FOUND") {
             return {
               status: 400,
@@ -2022,6 +2035,19 @@ export function registerTaskDocumentRoutes(app: Hono) {
               code: "execution_location_locked",
             },
             409,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "WAITING_FOLLOW_UP_REQUIRED"
+        ) {
+          return c.json(
+            {
+              error:
+                "followUpDate is required when status is waiting (and cannot be cleared while waiting)",
+              code: "waiting_follow_up_required",
+            },
+            400,
           );
         }
         throw error;

@@ -281,6 +281,12 @@ describe("task filter parsing", () => {
       [...TASK_LIST_DEFAULT_EXCLUDED_STATUSES],
       ["completed", "canceled", "duplicated"],
     );
+    assert.ok(TASK_STATUSES.includes("waiting"));
+    assert.ok(
+      !(TASK_LIST_DEFAULT_EXCLUDED_STATUSES as readonly string[]).includes(
+        "waiting",
+      ),
+    );
 
     const withStatus = parseTaskListQuery({
       paginated: "true",
@@ -293,6 +299,45 @@ describe("task filter parsing", () => {
       updatedSince: "2026-10-01T00:00:00.000Z",
     });
     assert.equal(taskListUsesDefaultStatusExclusion(feed), false);
+  });
+
+  it("accepts status=waiting and followUpDate range filters", () => {
+    const waiting = parseTaskListQuery({
+      paginated: "true",
+      status: "waiting",
+      followUpDate: "before:2026-10-23",
+    });
+    assert.deepEqual(waiting.statuses, ["waiting"]);
+    assert.equal(waiting.followUpDate?.op, "before");
+    assert.ok(
+      taskRowMatchesScalarFilters(
+        {
+          projectId: null,
+          status: "waiting",
+          assigneeId: null,
+          contactId: null,
+          relatedContactIds: [],
+          dueDate: null,
+          followUpDate: new Date("2026-10-22T12:00:00.000Z"),
+        },
+        waiting,
+      ),
+    );
+    assert.equal(
+      taskRowMatchesScalarFilters(
+        {
+          projectId: null,
+          status: "waiting",
+          assigneeId: null,
+          contactId: null,
+          relatedContactIds: [],
+          dueDate: null,
+          followUpDate: new Date("2026-10-24T12:00:00.000Z"),
+        },
+        waiting,
+      ),
+      false,
+    );
   });
 });
 

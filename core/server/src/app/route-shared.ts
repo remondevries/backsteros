@@ -525,7 +525,7 @@ export const letterSchema = z.object({
   title: z.string().min(1).max(500),
   icon: z.string().max(128).nullable().optional(),
   context: z.string().max(20_000).nullable().optional(),
-  status: z.enum(["triage", "backlog", "ready_to_start", "in_progress", "on_hold", "in_review", "completed", "canceled", "duplicated"]).optional(),
+  status: z.enum(["triage", "backlog", "ready_to_start", "in_progress", "on_hold", "waiting", "in_review", "completed", "canceled", "duplicated"]).optional(),
   dueDate: z.string().datetime().nullable().optional(),
   receivedDate: z.string().datetime().nullable().optional(),
   direction: z.enum(["incoming", "outgoing"]).optional(),

@@ -287,7 +287,7 @@ test("groupEmailItemsByStatus uses task statuses and defaults missing status to 
   assert.equal(groups[3]?.label, "Completed");
 
   const withEmpty = groupEmailItemsByStatus(items, { includeEmpty: true });
-  assert.equal(withEmpty.length, 9);
+  assert.equal(withEmpty.length, 10);
   assert.equal(
     withEmpty.find((group) => group.status === "on_hold")?.items.length,
     0,

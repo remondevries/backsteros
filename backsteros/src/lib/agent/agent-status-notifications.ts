@@ -5,6 +5,7 @@
 export const AGENT_ATTENTION_NOTIFY_STATUSES = [
   "in_review",
   "on_hold",
+  "waiting",
 ] as const;
 
 export type AgentAttentionNotifyStatus =
@@ -31,7 +32,9 @@ export function isRecentlyPatchedLocally(taskId: string): boolean {
 export function isAgentAttentionNotifyStatus(
   status: string | null | undefined,
 ): status is AgentAttentionNotifyStatus {
-  return status === "in_review" || status === "on_hold";
+  return (
+    status === "in_review" || status === "on_hold" || status === "waiting"
+  );
 }
 
 export function buildAgentStatusNotification(input: {
@@ -40,7 +43,11 @@ export function buildAgentStatusNotification(input: {
   displayId?: string | null;
 }): { title: string; body: string } {
   const statusLabel =
-    input.status === "in_review" ? "In Review" : "On Hold";
+    input.status === "in_review"
+      ? "In Review"
+      : input.status === "waiting"
+        ? "Waiting"
+        : "On Hold";
   const taskLabel = input.displayId?.trim()
     ? `${input.displayId.trim()} ${input.title}`.trim()
     : input.title.trim() || "Task";
