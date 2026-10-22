@@ -27,15 +27,30 @@ export function useChatInbox(options?: { enabled?: boolean }) {
     if (!enabled) return;
     setLoading(true);
     setError(null);
-    try {
+    const attempt = async () => {
       const body = await client.requestJson<ChatConversationsList>(
         "/api/v1/chat/conversations?limit=50",
       );
       setConversations(body.conversations);
+    };
+    try {
+      await attempt();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not load chat conversations.",
-      );
+      // WebKit surfaces transient local-core blips as "Load failed".
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await attempt();
+      } catch (retryErr) {
+        const message =
+          retryErr instanceof Error
+            ? retryErr.message
+            : "Could not load chat conversations.";
+        setError(
+          message === "Load failed" || message === "Failed to fetch"
+            ? "Could not reach local-core. Try Refresh in a moment."
+            : message,
+        );
+      }
     } finally {
       setLoading(false);
     }
