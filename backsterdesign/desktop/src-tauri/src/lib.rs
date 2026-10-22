@@ -654,6 +654,15 @@ const TOGGLE_CONTENT_VIEW_MODE_JS: &str =
 const FORCE_CONTENT_PREVIEW_JS: &str =
     "window.dispatchEvent(new CustomEvent('backsteros:force-content-preview'))";
 
+/// Dispatched when ⌘Z / Ctrl+Z fires. Stock Edit → Undo claims the accelerator
+/// and never reaches Penpot's workspace undo stack (same class of bug as ⌘A/⌘E).
+const WORKSPACE_UNDO_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsterdesign:undo'))";
+
+/// Dispatched when ⌘⇧Z / Ctrl+⇧Z (or ⌘Y) fires — see WORKSPACE_UNDO_JS.
+const WORKSPACE_REDO_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsterdesign:redo'))";
+
 /// Eval a script in the Penpot (design) webview where the React island lives.
 fn eval_in_design(app: &AppHandle, script: &str) {
     if let Some(webview) = app.get_webview(DESIGN_LABEL) {
@@ -667,6 +676,14 @@ fn dispatch_toggle_content_view_mode(app: &AppHandle) {
 
 fn dispatch_force_content_preview(app: &AppHandle) {
     eval_in_design(app, FORCE_CONTENT_PREVIEW_JS);
+}
+
+fn dispatch_workspace_undo(app: &AppHandle) {
+    eval_in_design(app, WORKSPACE_UNDO_JS);
+}
+
+fn dispatch_workspace_redo(app: &AppHandle) {
+    eval_in_design(app, WORKSPACE_REDO_JS);
 }
 
 /// Custom menu: no Close Window (its ⌘W must close file tabs, not the app).
@@ -707,12 +724,22 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
             .accelerator("CmdOrCtrl+P")
             .build(handle)?;
 
+    // Custom Undo/Redo so ⌘Z / ⌘⇧Z reach Penpot (stock `.undo()`/`.redo()`
+    // claim the accelerator and never notify the design webview). ⌘Y is left
+    // to mousetrap once the stock Redo accelerator is gone.
+    let undo_item = MenuItemBuilder::with_id("workspace-undo", "Undo")
+        .accelerator("CmdOrCtrl+Z")
+        .build(handle)?;
+    let redo_item = MenuItemBuilder::with_id("workspace-redo", "Redo")
+        .accelerator("CmdOrCtrl+Shift+Z")
+        .build(handle)?;
+
     let edit_submenu = SubmenuBuilder::new(handle, "Edit")
         .item(&toggle_view_mode_item)
         .item(&force_preview_item)
         .separator()
-        .undo()
-        .redo()
+        .item(&undo_item)
+        .item(&redo_item)
         .separator()
         .cut()
         .copy()
@@ -783,6 +810,12 @@ pub fn run() {
                 }
                 "force-content-preview" => {
                     dispatch_force_content_preview(app);
+                }
+                "workspace-undo" => {
+                    dispatch_workspace_undo(app);
+                }
+                "workspace-redo" => {
+                    dispatch_workspace_redo(app);
                 }
                 _ => {}
             }

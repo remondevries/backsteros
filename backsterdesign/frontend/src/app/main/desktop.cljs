@@ -15,6 +15,8 @@
    [app.main.data.common :as dcm]
    [app.main.data.modal :as modal]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.undo :as dwu]
+   [app.main.refs :as refs]
    [app.main.router :as rt]
    [app.main.store :as st]
    [app.main.ui.dashboard.create-file-location-modal :as create-file]
@@ -298,6 +300,30 @@
             (.stopPropagation event)
             (post! {:type "focus-tab-index" :index index})))))))
 
+(defn- emit-workspace-undo-redo!
+  [event]
+  (let [can-edit?  (:can-edit (deref refs/permissions))
+        read-only? (deref refs/workspace-read-only?)]
+    (when (and can-edit? (not read-only?))
+      (st/emit! event))))
+
+(defn- on-native-undo
+  "Handle Edit → Undo from the Tauri menu (⌘Z). Inputs keep browser undo;
+   the canvas uses Penpot's workspace undo stack."
+  [_]
+  (let [target (.-activeElement js/document)]
+    (if (editable-shortcut-target? target)
+      (.execCommand js/document "undo")
+      (emit-workspace-undo-redo! dwu/undo))))
+
+(defn- on-native-redo
+  "Handle Edit → Redo from the Tauri menu (⌘⇧Z / ⌘Y)."
+  [_]
+  (let [target (.-activeElement js/document)]
+    (if (editable-shortcut-target? target)
+      (.execCommand js/document "redo")
+      (emit-workspace-undo-redo! dwu/redo))))
+
 (defn- report-route!
   [state]
   (let [route-name (get-in state [:route :data :name])
@@ -387,6 +413,10 @@
 
   (.addEventListener js/window "message" on-window-message)
   (.addEventListener js/window "keydown" on-tab-chrome-keydown true)
+  ;; Native Edit → Undo/Redo (see desktop/src-tauri menu) — WKWebView never
+  ;; delivers ⌘Z / ⌘⇧Z to mousetrap while the stock accelerators are claimed.
+  (.addEventListener js/window "backsterdesign:undo" on-native-undo)
+  (.addEventListener js/window "backsterdesign:redo" on-native-redo)
 
   (watch-state!)
 
