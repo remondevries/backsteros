@@ -204,6 +204,10 @@ export function CommunicationChatView({
             <div className="communication-chat__messages">
               {detailLoading && !detail ? (
                 <div className="communication-chat__empty">Loading thread…</div>
+              ) : (detail?.messages?.length ?? 0) === 0 ? (
+                <div className="communication-chat__empty">
+                  No messages in this conversation yet.
+                </div>
               ) : (
                 (detail?.messages ?? []).map((message) => (
                   <MessageBubble key={message.id} message={message} />

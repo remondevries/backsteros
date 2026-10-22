@@ -113,6 +113,8 @@ async function findConversationByExternalId(
   workspaceId: string,
   externalId: string,
 ): Promise<DbChatConversation | null> {
+  // Include soft-deleted rows — unique (workspace, external_id) still holds,
+  // and sync/webhooks must revive the row instead of inserting a duplicate.
   const [row] = await db
     .select()
     .from(chatConversations)
@@ -120,7 +122,6 @@ async function findConversationByExternalId(
       and(
         eq(chatConversations.workspaceId, workspaceId),
         eq(chatConversations.externalId, externalId),
-        isNull(chatConversations.deletedAt),
       ),
     )
     .limit(1);
@@ -218,9 +219,12 @@ export async function upsertMessageFromChatwoot(
   const createdAt = new Date(summary.createdAt);
   const direction = summary.messageType;
   if (existing) {
+    // Always re-link conversationId — webhook bugs may have attached the
+    // message to a wrong/deleted conversation; sync must move it.
     const [updated] = await db
       .update(chatMessages)
       .set({
+        conversationId,
         content: summary.content,
         contentType: summary.contentType,
         direction,
@@ -432,19 +436,21 @@ export async function syncChatwootConversations(
   const client = createChatwootClient(credentials);
   const inboxes = await client.listInboxes();
   const inboxNameById = new Map(inboxes.map((inbox) => [inbox.id, inbox.name]));
-  // Website widgets only for v1 — skip WhatsApp / other channels when labeled.
+  // Portal chat for v1: Website / WebWidget and Chatwoot API inboxes
+  // (client.lemo-design.com uses Channel::Api). Skip WhatsApp.
   const websiteInboxIds = new Set(
     inboxes
       .filter((inbox) => {
         const channel = (inbox.channelType ?? "").toLowerCase();
         if (!channel) return true;
         if (channel.includes("whatsapp")) return false;
-        if (channel.includes("api")) return false;
         return (
           channel.includes("web") ||
           channel.includes("widget") ||
           channel.includes("website") ||
-          channel.includes("channel::webwidget")
+          channel.includes("api") ||
+          channel.includes("channel::webwidget") ||
+          channel.includes("channel::api")
         );
       })
       .map((inbox) => inbox.id),
