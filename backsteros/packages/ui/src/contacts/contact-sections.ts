@@ -147,6 +147,24 @@ export function resolveChatContactCardSections(options?: {
   return sections;
 }
 
+/**
+ * Communication → Chat email rail: Details only until an organization or
+ * contact is linked; then the same Activity / Contact (+ Portal) tabs as chat.
+ */
+export function resolveCommunicationEmailCardSections(options?: {
+  linked?: boolean;
+  showPortal?: boolean;
+  showPortalLogs?: boolean;
+}): ContactSectionConfig[] {
+  if (!options?.linked) {
+    return [CHAT_CONTACT_CONVERSATION_SECTION];
+  }
+  return resolveChatContactCardSections({
+    showPortal: options.showPortal,
+    showPortalLogs: options.showPortalLogs,
+  });
+}
+
 /** Card sections for a contact — Portal (+ Logs when configured). */
 export function resolveContactCardSections(options?: {
   showPortal?: boolean;

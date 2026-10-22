@@ -8,6 +8,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type UIEvent,
 } from "react";
 import type {
@@ -19,8 +20,15 @@ import type {
 import {
   chatConversationToTaskItemRowTask,
   chatStatusToTaskStatus,
-  groupChatConversationsByStatus,
 } from "../../communication/chat-conversation-list-item.js";
+import {
+  emailListItemPartyName,
+  groupCommunicationChatListRows,
+} from "../../communication/communication-chat-list-row.js";
+import {
+  inboxListItemToTaskItemRowTask,
+  type InboxEmailListItem,
+} from "../../inbox/inbox-items.js";
 import {
   keyboardNavItemClass,
   keyboardNavItemProps,
@@ -29,6 +37,8 @@ import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
+import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
+import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskBoardCard } from "../tasks/task-board-card.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 
@@ -78,6 +88,19 @@ function chatConversationAgeLabel(row: ChatConversation): {
   return {
     label,
     title: Number.isFinite(ms) ? new Date(ms).toLocaleString() : undefined,
+  };
+}
+
+function emailAgeLabel(item: InboxEmailListItem): {
+  label: string;
+  title: string | undefined;
+} {
+  const raw = item.updatedAt;
+  const label = formatRelativeAgeLabel(raw);
+  if (!label || raw == null) return { label: "", title: undefined };
+  return {
+    label,
+    title: Number.isFinite(raw) ? new Date(raw).toLocaleString() : undefined,
   };
 }
 
@@ -170,7 +193,9 @@ function insertAtCaret(
 
 export type CommunicationChatViewProps = {
   conversations: ChatConversation[];
+  emails?: InboxEmailListItem[];
   selectedId: string | null;
+  selectedEmailId?: string | null;
   detail: ChatConversationDetail | null;
   loading?: boolean;
   detailLoading?: boolean;
@@ -179,10 +204,15 @@ export type CommunicationChatViewProps = {
   typingIds?: ReadonlySet<string>;
   /** Prefer BacksterOS contact avatars when a visitor is matched. */
   resolveAvatarSrc?: (conversation: ChatConversation) => string | null | undefined;
+  /** Prefer BacksterOS contact avatars for email party rows. */
+  resolveEmailAvatarSrc?: (item: InboxEmailListItem) => string | null | undefined;
   onSelect: (conversationId: string) => void;
+  onSelectEmail?: (emailId: string) => void;
   onSend: (content: string) => Promise<void> | void;
   /** Notify Chatwoot that the agent is typing (drives the website widget). */
   onTypingChange?: (typing: boolean) => void;
+  /** Compact email thread for the center pane when an email row is selected. */
+  emailThreadSlot?: ReactNode;
 };
 
 /** Compact clock under bubbles — matches Lemo `aui-message-timestamp`. */
@@ -230,6 +260,23 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           {clock}
         </time>
       ) : null}
+    </div>
+  );
+}
+
+/** Matches client.lemo-design.com `AgentTypingIndicator` — bouncing dots. */
+function ContactTypingIndicator() {
+  return (
+    <div
+      className="communication-chat__message is-incoming communication-chat__typing"
+      aria-live="polite"
+      aria-label="Contact is typing"
+    >
+      <span className="communication-chat__typing-dots" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </span>
     </div>
   );
 }
@@ -439,16 +486,21 @@ function ChatComposer({
 
 export function CommunicationChatView({
   conversations,
+  emails = [],
   selectedId,
+  selectedEmailId = null,
   detail,
   loading = false,
   detailLoading = false,
   error = null,
   typingIds,
   resolveAvatarSrc,
+  resolveEmailAvatarSrc,
   onSelect,
+  onSelectEmail,
   onSend,
   onTypingChange,
+  emailThreadSlot = null,
 }: CommunicationChatViewProps) {
   const [draft, setDraft] = useState("");
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -460,9 +512,15 @@ export function CommunicationChatView({
   const stickToBottomRef = useRef(true);
   const prevSelectedIdRef = useRef<string | null>(null);
   const statusGroups = useMemo(
-    () => groupChatConversationsByStatus(conversations),
-    [conversations],
+    () => groupCommunicationChatListRows(conversations, emails),
+    [conversations, emails],
   );
+  const listEmpty = conversations.length === 0 && emails.length === 0;
+  const emailSelected = Boolean(selectedEmailId);
+  const selectedIsTyping =
+    !emailSelected &&
+    selectedId != null &&
+    typingIds?.has(selectedId) === true;
 
   function toggleGroup(status: string) {
     setCollapsedGroups((prev) => {
@@ -494,6 +552,7 @@ export function CommunicationChatView({
   );
 
   useEffect(() => {
+    if (emailSelected) return;
     const selectedChanged = prevSelectedIdRef.current !== selectedId;
     prevSelectedIdRef.current = selectedId;
     if (selectedChanged) {
@@ -509,7 +568,14 @@ export function CommunicationChatView({
       const el = messagesRef.current;
       if (el) updateNearBottom(el);
     }
-  }, [detail?.messages.length, selectedId, scrollToBottom, updateNearBottom]);
+  }, [
+    detail?.messages.length,
+    emailSelected,
+    selectedId,
+    selectedIsTyping,
+    scrollToBottom,
+    updateNearBottom,
+  ]);
 
   useEffect(() => {
     setDraft("");
@@ -531,17 +597,17 @@ export function CommunicationChatView({
       <aside className="communication-chat__list">
         {error ? <p className="communication-chat__error">{error}</p> : null}
         <div className="communication-chat__list-scroll">
-          {conversations.length === 0 && loading ? (
-            <div className="communication-chat__empty">Loading chats…</div>
-          ) : conversations.length === 0 ? (
+          {listEmpty && loading ? (
+            <div className="communication-chat__empty">Loading…</div>
+          ) : listEmpty ? (
             <div className="communication-chat__empty">
-              No website chats yet. Messages from the client portal widget show
-              up here.
+              No chats or emails yet. Website widget chats and AgentMail
+              messages show up here.
             </div>
           ) : (
             <ul
               className="overview-grouped-list communication-chat__task-list"
-              aria-label="Chat conversations"
+              aria-label="Chats and emails"
             >
               {statusGroups.map((group) => {
                 const collapsed = collapsedGroups.has(group.status);
@@ -560,24 +626,144 @@ export function CommunicationChatView({
                       />
                     }
                   >
-                    {group.conversations.map((row) => {
-                      const task = chatConversationToTaskItemRowTask(row);
-                      const preview = row.lastMessagePreview?.trim() || "";
+                    {group.rows.map((row) => {
+                      if (row.kind === "email") {
+                        const item = row.item;
+                        const task = inboxListItemToTaskItemRowTask(item);
+                        if (!task) return null;
+                        const personLabel = emailListItemPartyName(item);
+                        const avatarSrc =
+                          resolveEmailAvatarSrc?.(item)?.trim() || null;
+                        const avatarKind =
+                          item.contactId?.trim()
+                            ? "contact"
+                            : item.organizationId?.trim()
+                              ? "organization"
+                              : "contact";
+                        const age = emailAgeLabel(item);
+                        const active = item.id === selectedEmailId;
+                        return (
+                          <li
+                            key={item.id}
+                            className={[
+                              "project-tasks-list__card-item",
+                              "task-kanban-card-item",
+                              "communication-chat__card-item",
+                              keyboardNavItemClass(active),
+                              active
+                                ? "communication-chat__card-item--active"
+                                : null,
+                              item.unread
+                                ? "communication-chat__card-item--unread"
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            {...keyboardNavItemProps(item.id)}
+                          >
+                            <TaskBoardCard
+                              task={{
+                                ...task,
+                                title: item.title?.trim() || "(no subject)",
+                                emailPartyLabel: null,
+                                emailDirection: null,
+                              }}
+                              onOpen={() => onSelectEmail?.(item.id)}
+                              showDueDate
+                              showDisplayId={false}
+                              showStatus={false}
+                              showEmailMark={false}
+                              leadingSlot={
+                                <span
+                                  className="communication-chat__card-avatar-wrap"
+                                  title={personLabel}
+                                >
+                                  <span
+                                    className="communication-chat__card-avatar"
+                                    aria-hidden="true"
+                                  >
+                                    {avatarSrc ? (
+                                      <EntityAvatarIcon
+                                        src={avatarSrc}
+                                        size={CHAT_CARD_AVATAR_SIZE}
+                                        kind={avatarKind}
+                                      />
+                                    ) : avatarKind === "organization" ? (
+                                      <OrganizationIcon
+                                        size={Math.round(
+                                          CHAT_CARD_AVATAR_SIZE * 0.55,
+                                        )}
+                                      />
+                                    ) : (
+                                      <ContactPersonIcon
+                                        size={Math.round(
+                                          CHAT_CARD_AVATAR_SIZE * 0.55,
+                                        )}
+                                      />
+                                    )}
+                                  </span>
+                                  <span
+                                    className="communication-chat__card-kind communication-chat__card-kind--email"
+                                    title={
+                                      item.unread ? "Unread email" : "Email"
+                                    }
+                                    aria-label={
+                                      item.unread ? "Unread email" : "Email"
+                                    }
+                                  >
+                                    <InboxItemTypeIcon
+                                      kind="email"
+                                      size={9}
+                                      unread={item.unread === true}
+                                    />
+                                  </span>
+                                </span>
+                              }
+                              topLeadingSlot={
+                                <span
+                                  className="communication-chat__card-name"
+                                  title={personLabel}
+                                >
+                                  {personLabel}
+                                </span>
+                              }
+                              ownerSlot={
+                                age.label ? (
+                                  <span
+                                    className="communication-chat__card-age"
+                                    title={age.title}
+                                  >
+                                    {age.label}
+                                  </span>
+                                ) : null
+                              }
+                            />
+                          </li>
+                        );
+                      }
+
+                      const conversation = row.conversation;
+                      const task =
+                        chatConversationToTaskItemRowTask(conversation);
+                      const preview =
+                        conversation.lastMessagePreview?.trim() || "";
                       const personLabel =
-                        row.contactName?.trim() ||
-                        row.contactEmail?.trim() ||
-                        row.contactPhone?.trim() ||
+                        conversation.contactName?.trim() ||
+                        conversation.contactEmail?.trim() ||
+                        conversation.contactPhone?.trim() ||
                         "Visitor";
                       const avatarSrc =
-                        resolveAvatarSrc?.(row)?.trim() ||
-                        row.contactAvatarUrl?.trim() ||
+                        resolveAvatarSrc?.(conversation)?.trim() ||
+                        conversation.contactAvatarUrl?.trim() ||
                         null;
-                      const age = chatConversationAgeLabel(row);
-                      const active = row.id === selectedId;
-                      const isTyping = typingIds?.has(row.id) === true;
+                      const age = chatConversationAgeLabel(conversation);
+                      const active =
+                        !emailSelected && conversation.id === selectedId;
+                      const isTyping =
+                        typingIds?.has(conversation.id) === true;
                       return (
                         <li
-                          key={row.id}
+                          key={conversation.id}
                           className={[
                             "project-tasks-list__card-item",
                             "task-kanban-card-item",
@@ -586,7 +772,7 @@ export function CommunicationChatView({
                             active
                               ? "communication-chat__card-item--active"
                               : null,
-                            row.unread
+                            conversation.unread
                               ? "communication-chat__card-item--unread"
                               : null,
                             isTyping
@@ -595,7 +781,7 @@ export function CommunicationChatView({
                           ]
                             .filter(Boolean)
                             .join(" ")}
-                          {...keyboardNavItemProps(row.id)}
+                          {...keyboardNavItemProps(conversation.id)}
                         >
                           <TaskBoardCard
                             task={{
@@ -603,7 +789,7 @@ export function CommunicationChatView({
                               // Title row shows the last message; name sits with age.
                               title: preview,
                             }}
-                            onOpen={() => onSelect(row.id)}
+                            onOpen={() => onSelect(conversation.id)}
                             showDueDate
                             showDisplayId={false}
                             showStatus={false}
@@ -681,7 +867,13 @@ export function CommunicationChatView({
       </aside>
 
       <section className="communication-chat__thread">
-        {!selectedId ? (
+        {emailSelected ? (
+          emailThreadSlot ?? (
+            <div className="communication-chat__empty">
+              Select an email to read the thread.
+            </div>
+          )
+        ) : !selectedId ? (
           <div className="communication-chat__empty">
             Select a conversation to read and reply.
           </div>
@@ -698,14 +890,18 @@ export function CommunicationChatView({
                     <div className="communication-chat__empty">
                       Loading thread…
                     </div>
-                  ) : (detail?.messages?.length ?? 0) === 0 ? (
+                  ) : (detail?.messages?.length ?? 0) === 0 &&
+                    !selectedIsTyping ? (
                     <div className="communication-chat__empty">
                       No messages in this conversation yet.
                     </div>
                   ) : (
-                    (detail?.messages ?? []).map((message) => (
-                      <MessageBubble key={message.id} message={message} />
-                    ))
+                    <>
+                      {(detail?.messages ?? []).map((message) => (
+                        <MessageBubble key={message.id} message={message} />
+                      ))}
+                      {selectedIsTyping ? <ContactTypingIndicator /> : null}
+                    </>
                   )}
                   <div ref={messagesEndRef} />
                 </div>

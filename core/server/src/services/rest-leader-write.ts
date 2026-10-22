@@ -252,7 +252,9 @@ export function buildEmailThreadRestPayload(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
   const payload = {
-    ...restFieldsToSyncPayload(threadId, body),
+    ...restFieldsToSyncPayload(threadId, body, {
+      jsonStringify: ["message_parties", "message_party"],
+    }),
     inbox_id: inboxId,
     thread_key: threadKey,
   };

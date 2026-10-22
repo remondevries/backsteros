@@ -200,8 +200,12 @@ export function useChatInbox(options?: UseChatInboxOptions) {
   );
 
   const selectConversation = useCallback(
-    (conversationId: string) => {
+    (conversationId: string | null) => {
       setSelectedId(conversationId);
+      if (!conversationId) {
+        setDetail(null);
+        return;
+      }
       void loadDetail(conversationId);
     },
     [loadDetail],

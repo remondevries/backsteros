@@ -8,12 +8,15 @@ import {
   FinanceSyncIcon,
   TaskDetailView,
   buildAssigneeDropdownOptions,
+  buildContactDropdownOptions,
   buildEmailRelatedPropertyOptions,
   buildInboxTaskListItem,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildTaskDueDatePatch,
   buildTaskRelatedDropdownOptions,
+  emailListItemPartyEmail,
+  emailListItemPartyName,
   emailMailboxLabel,
   encodeTaskSlug,
   filterCommunicationListItems,
@@ -25,7 +28,10 @@ import {
   parseCommunicationChannelFromSearch,
   parseCommunicationInboxIdFromSearch,
   parseCommunicationStatusFromSearch,
+  resolveEmailThreadMetadataKey,
+  resolveOrganizationAvatarSrc,
   resolveSupportParties,
+  type EmailMessagePartyMap,
   type InboxEmailListItem,
   type InboxListItem,
   type InboxTaskListItem,
@@ -34,6 +40,10 @@ import {
 } from "@backsteros/ui";
 
 import { DesktopChatContactDetailPanel } from "../components/desktop-chat-contact-detail-panel";
+import {
+  DesktopCommunicationEmailThread,
+  type CommunicationEmailActiveParty,
+} from "../components/desktop-communication-email-thread";
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
@@ -48,6 +58,10 @@ import {
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
 import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
+import { getBrandfetchClientId } from "../lib/brandfetch";
+import {
+  normalizeContactEmails,
+} from "../lib/contact-row-normalizers";
 import { patchEmailTaskListItem } from "../lib/email-list-tasks";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
@@ -101,15 +115,38 @@ function CommunicationPageBody() {
   const [chatContactCollapsed, setChatContactCollapsed] = useState(false);
   const [chatContactExpanded, setChatContactExpanded] = useState(false);
   const [chatMainFaded, setChatMainFaded] = useState(false);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [selectedEmailMessageId, setSelectedEmailMessageId] = useState<
+    string | null
+  >(null);
+  const [emailActiveParty, setEmailActiveParty] =
+    useState<CommunicationEmailActiveParty | null>(null);
+  const [emailMessageParties, setEmailMessageParties] =
+    useState<EmailMessagePartyMap>({});
 
   useEffect(() => {
-    if (chatInbox.selectedId) {
+    if (chatInbox.selectedId || selectedEmailId) {
       setChatContactCollapsed(false);
     } else {
       setChatContactExpanded(false);
       setChatMainFaded(false);
     }
-  }, [chatInbox.selectedId]);
+  }, [chatInbox.selectedId, selectedEmailId]);
+
+  useEffect(() => {
+    if (channel !== "chat" && selectedEmailId) {
+      setSelectedEmailId(null);
+      setSelectedEmailMessageId(null);
+      setEmailActiveParty(null);
+      setEmailMessageParties({});
+    }
+  }, [channel, selectedEmailId]);
+
+  useEffect(() => {
+    setSelectedEmailMessageId(null);
+    setEmailActiveParty(null);
+    setEmailMessageParties({});
+  }, [selectedEmailId]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -533,21 +570,178 @@ function CommunicationPageBody() {
   }
 
   if (channel === "chat") {
-    const selectedConversation =
-      chatInbox.conversations.find(
-        (row) => row.id === chatInbox.selectedId,
-      ) ?? chatInbox.detail;
-    const matchedContact = selectedConversation
-      ? matchChatContact(workspace.contacts, {
-          contactEmail:
-            chatInbox.detail?.contactEmail ??
-            selectedConversation.contactEmail,
-          contactPhone:
-            chatInbox.detail?.contactPhone ??
-            selectedConversation.contactPhone,
-        })
-      : null;
-    const chatContactPanelOpen = Boolean(chatInbox.selectedId);
+    const chatEmails = communicationItems.filter(
+      (entry): entry is InboxEmailListItem => entry.kind === "email",
+    );
+    const selectedEmail =
+      selectedEmailId == null
+        ? null
+        : (chatEmails.find((entry) => entry.id === selectedEmailId) ?? null);
+    const selectedConversation = selectedEmail
+      ? null
+      : (chatInbox.conversations.find(
+          (row) => row.id === chatInbox.selectedId,
+        ) ?? chatInbox.detail);
+    const emailPartyEmail =
+      emailActiveParty?.address?.trim() ||
+      (selectedEmail ? emailListItemPartyEmail(selectedEmail) : null);
+    // Per-message party only — never fall back to thread-level contactId, or
+    // linking message B would paint contact B onto message A.
+    const selectedMessageParty =
+      selectedEmailMessageId?.trim()
+        ? (emailMessageParties[selectedEmailMessageId.trim()] ??
+          (emailActiveParty?.messageId === selectedEmailMessageId
+            ? {
+                contactId: emailActiveParty.contactId,
+                organizationId: emailActiveParty.organizationId,
+              }
+            : null))
+        : emailActiveParty
+          ? {
+              contactId: emailActiveParty.contactId,
+              organizationId: emailActiveParty.organizationId,
+            }
+          : null;
+    const matchedContact = selectedEmail
+      ? selectedMessageParty?.contactId?.trim()
+        ? (workspace.contacts.find(
+            (contact) => contact.id === selectedMessageParty.contactId,
+          ) ?? null)
+        : matchChatContact(workspace.contacts, {
+            contactEmail: emailPartyEmail,
+          })
+      : selectedConversation
+        ? matchChatContact(workspace.contacts, {
+            contactEmail:
+              chatInbox.detail?.contactEmail ??
+              selectedConversation.contactEmail,
+            contactPhone:
+              chatInbox.detail?.contactPhone ??
+              selectedConversation.contactPhone,
+          })
+        : null;
+    const chatContactPanelOpen = Boolean(
+      chatInbox.selectedId || selectedEmailId,
+    );
+    const contactPickerOptions = buildContactDropdownOptions(
+      workspace.contacts,
+      { avatarSrcById: contactAvatarSrc },
+    );
+    const organizationPickerOptions = buildOrganizationDropdownOptions(
+      withOrganizationAvatarSrc(
+        workspace.organizations,
+        organizationAvatarSrc,
+      ),
+      { includeNone: false },
+    );
+
+    const selectChat = (conversationId: string) => {
+      setSelectedEmailId(null);
+      setSelectedEmailMessageId(null);
+      setEmailActiveParty(null);
+      setEmailMessageParties({});
+      chatInbox.selectConversation(conversationId);
+    };
+    const selectEmail = (emailId: string) => {
+      chatInbox.selectConversation(null);
+      setSelectedEmailId(emailId);
+      setSelectedEmailMessageId(null);
+      setEmailActiveParty(null);
+      setEmailMessageParties({});
+      const item = chatEmails.find((entry) => entry.id === emailId);
+      if (!item) return;
+      if (item.draftId?.trim()) {
+        prefetchEmailDraftDetail(client, item.inboxId, item.draftId);
+        return;
+      }
+      prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
+    };
+
+    const ensureContactHasOtherEmail = async (
+      contactId: string,
+      address: string,
+    ) => {
+      const contact =
+        workspace.contacts.find((entry) => entry.id === contactId) ?? null;
+      if (!contact) return;
+      const existing = normalizeContactEmails(
+        workspace.contactDetails[contactId]?.emails ?? contact.emails,
+      );
+      const needle = address.trim().toLowerCase();
+      const already = existing.some(
+        (entry) => entry.address.trim().toLowerCase() === needle,
+      );
+      if (already) return;
+      await workspace.patchContact(contactId, {
+        emails: [
+          ...existing,
+          { label: "other" as const, address: address.trim() },
+        ],
+        ...(contact.email?.trim() ? {} : { email: address.trim() }),
+      });
+    };
+
+    const patchSelectedEmail = async (
+      patch: {
+        status?: TaskStatus | string;
+        priority?: number;
+        dueDate?: string | null;
+        projectId?: string | null;
+        assigneeId?: string | null;
+        messageParties?: EmailMessagePartyMap;
+        messageParty?: {
+          messageId: string;
+          contactId?: string | null;
+          organizationId?: string | null;
+        };
+      },
+      listExtras?: {
+        projectName?: string | null;
+        projectKey?: string | null;
+        assigneeName?: string | null;
+      },
+    ) => {
+      if (!selectedEmail) return;
+      const task = inboxListItemToTaskItemRowTask(selectedEmail);
+      if (!task) return;
+      if (
+        patch.messageParty !== undefined ||
+        patch.messageParties !== undefined
+      ) {
+        const threadKey = resolveEmailThreadMetadataKey({
+          kind: selectedEmail.draftId ? "draft" : "message",
+          draftId: selectedEmail.draftId,
+          threadId: selectedEmail.threadId,
+          messageId: selectedEmail.messageId,
+        });
+        if (!threadKey) return null;
+        const metadataBody: {
+          messageParties?: EmailMessagePartyMap;
+          messageParty?: {
+            messageId: string;
+            contactId?: string | null;
+            organizationId?: string | null;
+          };
+        } = {};
+        if (patch.messageParties !== undefined) {
+          metadataBody.messageParties = patch.messageParties;
+        }
+        if (patch.messageParty !== undefined) {
+          metadataBody.messageParty = patch.messageParty;
+        }
+        const updated = await client.requestJson<{
+          messageParties?: EmailMessagePartyMap;
+        }>(
+          `/api/v1/email/inboxes/${encodeURIComponent(selectedEmail.inboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(metadataBody),
+          },
+        );
+        return updated?.messageParties ?? null;
+      }
+      await patchEmailTaskListItem(client, task, patch, listExtras);
+    };
 
     return (
       <div
@@ -578,8 +772,10 @@ function CommunicationPageBody() {
         >
           <CommunicationChatView
             conversations={chatInbox.conversations}
-            selectedId={chatInbox.selectedId}
-            detail={chatInbox.detail}
+            emails={chatEmails}
+            selectedId={selectedEmail ? null : chatInbox.selectedId}
+            selectedEmailId={selectedEmailId}
+            detail={selectedEmail ? null : chatInbox.detail}
             loading={chatInbox.loading}
             detailLoading={chatInbox.detailLoading}
             error={chatInbox.error}
@@ -595,32 +791,120 @@ function CommunicationPageBody() {
               }
               return conversation.contactAvatarUrl;
             }}
-            onSelect={chatInbox.selectConversation}
+            resolveEmailAvatarSrc={(item) => {
+              // List card uses the row party address — not thread-level
+              // contactId/organizationId (linking is per message only).
+              const matched = matchChatContact(workspace.contacts, {
+                contactEmail: emailListItemPartyEmail(item),
+              });
+              if (matched) {
+                const contactSrc =
+                  contactAvatarSrc[matched.id] ?? matched.avatarSrc ?? null;
+                if (contactSrc?.trim()) return contactSrc;
+                const orgId = matched.organizationId?.trim();
+                if (orgId) {
+                  const organization = workspace.organizations.find(
+                    (entry) => entry.id === orgId,
+                  );
+                  return resolveOrganizationAvatarSrc({
+                    uploadedSrc: organizationAvatarSrc[orgId] ?? null,
+                    avatarStorageKey: organization?.avatarStorageKey,
+                    website: organization?.website,
+                    brandfetchClientId: getBrandfetchClientId(),
+                  });
+                }
+              }
+              return null;
+            }}
+            onSelect={selectChat}
+            onSelectEmail={selectEmail}
             onSend={chatInbox.sendMessage}
+            emailThreadSlot={
+              selectedEmail ? (
+                <DesktopCommunicationEmailThread
+                  item={selectedEmail}
+                  selectedMessageId={selectedEmailMessageId}
+                  onSelectMessage={setSelectedEmailMessageId}
+                  onActivePartyChange={setEmailActiveParty}
+                  messageParties={emailMessageParties}
+                  onMessagePartiesChange={(parties) => {
+                    // Merge server/auto-link into parent; keep newer manual keys.
+                    setEmailMessageParties((prev) => ({
+                      ...parties,
+                      ...prev,
+                    }));
+                  }}
+                  onAutoLinkParties={async (parties) => {
+                    const updated = await patchSelectedEmail({
+                      messageParties: parties,
+                    });
+                    const next =
+                      (updated as EmailMessagePartyMap | null) ?? parties;
+                    setEmailMessageParties((prev) => ({ ...next, ...prev }));
+                    return next;
+                  }}
+                  onEnsureContactEmail={ensureContactHasOtherEmail}
+                />
+              ) : null
+            }
           />
         </div>
         <DesktopChatContactDetailPanel
           open={chatContactPanelOpen}
           contact={matchedContact}
-          visitor={
-            selectedConversation
+          emailActiveParty={
+            selectedEmail
               ? {
-                  contactName: selectedConversation.contactName,
-                  contactEmail: selectedConversation.contactEmail,
-                  contactPhone: selectedConversation.contactPhone,
-                  contactAvatarUrl: selectedConversation.contactAvatarUrl,
+                  messageId:
+                    selectedEmailMessageId ??
+                    emailActiveParty?.messageId ??
+                    null,
+                  contactId: selectedMessageParty?.contactId ?? null,
+                  organizationId:
+                    selectedMessageParty?.organizationId ?? null,
+                  partyEmail: emailPartyEmail,
+                  partyName:
+                    matchedContact?.name?.trim() ||
+                    emailActiveParty?.address?.trim() ||
+                    emailListItemPartyName(selectedEmail),
                 }
               : null
           }
+          visitor={
+            selectedEmail
+              ? {
+                  contactName:
+                    matchedContact?.name?.trim() ||
+                    emailActiveParty?.address?.trim() ||
+                    emailListItemPartyName(selectedEmail),
+                  contactEmail: emailPartyEmail,
+                  contactPhone: null,
+                  contactAvatarUrl: null,
+                }
+              : selectedConversation
+                ? {
+                    contactName: selectedConversation.contactName,
+                    contactEmail: selectedConversation.contactEmail,
+                    contactPhone: selectedConversation.contactPhone,
+                    contactAvatarUrl: selectedConversation.contactAvatarUrl,
+                  }
+                : null
+          }
           conversation={
-            chatInbox.detail?.id === chatInbox.selectedId
-              ? chatInbox.detail
-              : (selectedConversation ?? null)
+            selectedEmail
+              ? null
+              : chatInbox.detail?.id === chatInbox.selectedId
+                ? chatInbox.detail
+                : (selectedConversation ?? null)
           }
           conversations={chatInbox.conversations}
+          emailItem={selectedEmail}
           statusUpdating={chatInbox.sending}
           propertiesUpdating={chatInbox.sending}
           assigneeOptions={assigneeOptions}
+          projectOptions={projectOptions}
+          contactOptions={contactPickerOptions}
+          organizationOptions={organizationPickerOptions}
           onStatusChange={(status) => {
             void chatInbox.setStatus(status);
           }}
@@ -635,7 +919,125 @@ function CommunicationPageBody() {
               dueDate: dueDate ? dueDate.toISOString() : null,
             });
           }}
-          onSelectConversation={chatInbox.selectConversation}
+          onEmailStatusChange={(status) => {
+            void patchSelectedEmail({ status });
+          }}
+          onEmailPriorityChange={(priority) => {
+            void patchSelectedEmail({ priority });
+          }}
+          onEmailDueDateChange={(dueDate) => {
+            void patchSelectedEmail({
+              dueDate: dueDate ? dueDate.toISOString() : null,
+            });
+          }}
+          onEmailAssigneeChange={(assigneeId) => {
+            const contact = assigneeId
+              ? workspace.contacts.find((entry) => entry.id === assigneeId)
+              : null;
+            void patchSelectedEmail(
+              { assigneeId },
+              { assigneeName: contact?.name ?? null },
+            );
+          }}
+          onEmailProjectChange={(projectKey) => {
+            const project = projectKey
+              ? workspace.projects.find(
+                  (entry) =>
+                    entry.key.trim().toLowerCase() ===
+                    projectKey.trim().toLowerCase(),
+                )
+              : null;
+            void patchSelectedEmail(
+              { projectId: project?.id ?? null },
+              {
+                projectKey: project?.key ?? null,
+                projectName: project?.name ?? null,
+              },
+            );
+          }}
+          onLinkOrganization={async (organizationId) => {
+            if (!selectedEmail || !organizationId) return;
+            const messageId =
+              selectedEmailMessageId?.trim() ||
+              emailActiveParty?.messageId?.trim() ||
+              selectedEmail.messageId;
+            const prevContactId =
+              selectedMessageParty?.contactId ??
+              emailActiveParty?.contactId ??
+              null;
+            const nextParty = {
+              contactId: prevContactId,
+              organizationId,
+            };
+            // Per-message only — do not write thread-level organizationId.
+            const updated = await patchSelectedEmail({
+              messageParty: {
+                messageId,
+                ...nextParty,
+              },
+            });
+            const nextMap = {
+              ...emailMessageParties,
+              ...((updated as EmailMessagePartyMap | null) ?? {}),
+              [messageId]: nextParty,
+            };
+            setEmailMessageParties(nextMap);
+            setEmailActiveParty((prev) =>
+              prev
+                ? { ...prev, ...nextParty }
+                : {
+                    messageId,
+                    address: emailPartyEmail,
+                    ...nextParty,
+                  },
+            );
+          }}
+          onLinkContact={async (contactId) => {
+            if (!selectedEmail || !contactId) return;
+            const contact =
+              workspace.contacts.find((entry) => entry.id === contactId) ??
+              null;
+            const partyEmail = emailPartyEmail?.trim();
+            if (partyEmail) {
+              await ensureContactHasOtherEmail(contactId, partyEmail);
+            }
+            const organizationId =
+              contact?.organizationId?.trim() ||
+              selectedMessageParty?.organizationId ||
+              emailActiveParty?.organizationId ||
+              null;
+            const messageId =
+              selectedEmailMessageId?.trim() ||
+              emailActiveParty?.messageId?.trim() ||
+              selectedEmail.messageId;
+            const nextParty = {
+              contactId,
+              organizationId,
+            };
+            // Per-message only — do not write thread-level contactId/organizationId.
+            const updated = await patchSelectedEmail({
+              messageParty: {
+                messageId,
+                ...nextParty,
+              },
+            });
+            const nextMap = {
+              ...emailMessageParties,
+              ...((updated as EmailMessagePartyMap | null) ?? {}),
+              [messageId]: nextParty,
+            };
+            setEmailMessageParties(nextMap);
+            setEmailActiveParty((prev) =>
+              prev
+                ? { ...prev, ...nextParty }
+                : {
+                    messageId,
+                    address: emailPartyEmail,
+                    ...nextParty,
+                  },
+            );
+          }}
+          onSelectConversation={selectChat}
           collapsed={chatContactCollapsed}
           onHide={() => setChatContactCollapsed(true)}
           onShow={() => setChatContactCollapsed(false)}

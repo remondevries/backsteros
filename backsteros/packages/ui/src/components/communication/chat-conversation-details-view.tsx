@@ -14,6 +14,7 @@ import { PropertyFieldGroup } from "../content/property-field-group.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
+import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import {
   getTaskPriorityLabel,
   TASK_PRIORITY_ORDER,
@@ -25,14 +26,15 @@ export type ChatConversationStatus =
   | "pending"
   | "snoozed";
 
+/** Chatwoot values with BacksterOS labels (same groups as the mixed list). */
 const STATUS_OPTIONS: {
   value: ChatConversationStatus;
   label: string;
 }[] = [
-  { value: "open", label: "Open" },
-  { value: "pending", label: "Pending" },
-  { value: "snoozed", label: "Snoozed" },
-  { value: "resolved", label: "Resolved" },
+  { value: "open", label: "Triage" },
+  { value: "pending", label: "Waiting" },
+  { value: "snoozed", label: "On Hold" },
+  { value: "resolved", label: "Completed" },
 ];
 
 function formatWhen(iso: string | null | undefined): string {
@@ -70,8 +72,8 @@ export type ChatConversationDetailsViewProps = {
 };
 
 /**
- * Chat rail “Details” tab — status, assignee / priority / due, ids, and prior
- * threads with the same visitor.
+ * Chat rail “Details” tab — flat label + dropdown rows (same chrome as email
+ * Details), plus conversation ids and prior visitor threads.
  */
 export function ChatConversationDetailsView({
   conversation,
@@ -95,6 +97,21 @@ export function ChatConversationDetailsView({
   const priority = conversation.priority ?? 0;
   const dueDate = conversation.dueDate ? new Date(conversation.dueDate) : null;
   const propertiesDisabled = propertiesUpdating;
+
+  const statusOptions = useMemo(
+    () =>
+      STATUS_OPTIONS.map((entry) => ({
+        value: entry.value,
+        label: entry.label,
+        icon: (
+          <TaskStatusIcon
+            status={chatStatusToTaskStatus(entry.value)}
+            size={14}
+          />
+        ),
+      })),
+    [],
+  );
 
   const priorityOptions = useMemo(
     () =>
@@ -127,23 +144,44 @@ export function ChatConversationDetailsView({
   }
 
   return (
-    <div className="chat-conversation-details">
-      <section className="chat-conversation-details__section">
-        <h3 className="chat-conversation-details__heading">Properties</h3>
-        <div className="entity-properties-stack">
+    <div className="communication-chat-details">
+      <div className="entity-properties-stack entity-properties-stack--flat">
+        <PropertyFieldGroup label="Assignee">
+          <PropertyDropdown
+            value={conversation.assigneeId ?? DROPDOWN_NONE_VALUE}
+            options={assigneeOptions}
+            onChange={(next) => {
+              void onAssigneeChange?.(resolveDropdownNone(next));
+            }}
+            disabled={propertiesDisabled || !onAssigneeChange}
+            searchPlaceholder="Change assignee…"
+            ariaLabel="Assignee"
+            fallbackIcon={<ContactPersonIcon size={14} />}
+            fallbackLabel="Unassigned"
+            mutedFallback
+            panelAlign="start"
+            panelWidth={260}
+          />
+        </PropertyFieldGroup>
+        <PropertyFieldGroup label="Status">
           <PropertyDropdown
             value={conversation.status}
-            options={STATUS_OPTIONS}
+            options={statusOptions}
             onChange={(next) => {
               void onStatusChange?.(next as ChatConversationStatus);
             }}
             disabled={statusUpdating || !onStatusChange}
             searchPlaceholder="Change status…"
             ariaLabel="Conversation status"
+            fallbackIcon={
+              <TaskStatusIcon status={taskStatus} size={14} />
+            }
             fallbackLabel={statusLabel}
             panelAlign="start"
             panelWidth={220}
           />
+        </PropertyFieldGroup>
+        <PropertyFieldGroup label="Priority">
           <PropertyDropdown
             value={String(priority)}
             options={priorityOptions}
@@ -158,6 +196,8 @@ export function ChatConversationDetailsView({
             panelAlign="start"
             panelWidth={220}
           />
+        </PropertyFieldGroup>
+        <PropertyFieldGroup label="Due date">
           <TaskDueDateDropdown
             dueDate={dueDate}
             status={taskStatus}
@@ -165,53 +205,36 @@ export function ChatConversationDetailsView({
             disabled={propertiesDisabled || !onDueDateChange}
             onDueDateChange={onDueDateChange}
           />
-          <PropertyFieldGroup label="Assignee">
-            <PropertyDropdown
-              value={conversation.assigneeId ?? DROPDOWN_NONE_VALUE}
-              options={assigneeOptions}
-              onChange={(next) => {
-                void onAssigneeChange?.(resolveDropdownNone(next));
-              }}
-              disabled={propertiesDisabled || !onAssigneeChange}
-              searchPlaceholder="Change assignee…"
-              ariaLabel="Assignee"
-              fallbackIcon={<ContactPersonIcon size={14} />}
-              fallbackLabel="Unassigned"
-              mutedFallback
-              panelAlign="start"
-              panelWidth={260}
-            />
-          </PropertyFieldGroup>
-        </div>
-      </section>
+        </PropertyFieldGroup>
+      </div>
 
-      <section className="chat-conversation-details__section">
-        <h3 className="chat-conversation-details__heading">Conversation</h3>
-        <dl className="chat-conversation-details__meta">
-          <div className="chat-conversation-details__meta-row">
+      <section className="communication-chat-details__section">
+        <h3 className="communication-chat-details__heading">Conversation</h3>
+        <dl className="communication-chat-details__meta">
+          <div className="communication-chat-details__meta-row">
             <dt>ID</dt>
             <dd>
-              <code className="chat-conversation-details__code">
+              <code className="communication-chat-details__code">
                 {conversation.id}
               </code>
               <button
                 type="button"
-                className="chat-conversation-details__copy"
+                className="communication-chat-details__copy"
                 onClick={() => void copyValue("id", conversation.id)}
               >
                 {copiedField === "id" ? "Copied" : "Copy"}
               </button>
             </dd>
           </div>
-          <div className="chat-conversation-details__meta-row">
+          <div className="communication-chat-details__meta-row">
             <dt>Chatwoot</dt>
             <dd>
-              <code className="chat-conversation-details__code">
+              <code className="communication-chat-details__code">
                 {conversation.externalId}
               </code>
               <button
                 type="button"
-                className="chat-conversation-details__copy"
+                className="communication-chat-details__copy"
                 onClick={() =>
                   void copyValue("external", conversation.externalId)
                 }
@@ -221,13 +244,13 @@ export function ChatConversationDetailsView({
             </dd>
           </div>
           {conversation.inboxName ? (
-            <div className="chat-conversation-details__meta-row">
+            <div className="communication-chat-details__meta-row">
               <dt>Inbox</dt>
               <dd>{conversation.inboxName}</dd>
             </div>
           ) : null}
           {conversation.channelType ? (
-            <div className="chat-conversation-details__meta-row">
+            <div className="communication-chat-details__meta-row">
               <dt>Channel</dt>
               <dd>{conversation.channelType}</dd>
             </div>
@@ -235,32 +258,32 @@ export function ChatConversationDetailsView({
         </dl>
       </section>
 
-      <section className="chat-conversation-details__section">
-        <h3 className="chat-conversation-details__heading">
+      <section className="communication-chat-details__section">
+        <h3 className="communication-chat-details__heading">
           Previous conversations
         </h3>
         {previous.length === 0 ? (
-          <p className="chat-conversation-details__empty">
+          <p className="communication-chat-details__empty">
             No earlier chats with this visitor.
           </p>
         ) : (
-          <ul className="chat-conversation-details__previous">
+          <ul className="communication-chat-details__previous">
             {previous.map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
-                  className="chat-conversation-details__previous-row"
+                  className="communication-chat-details__previous-row"
                   onClick={() => onSelectConversation?.(row.id)}
                 >
-                  <span className="chat-conversation-details__previous-top">
-                    <span className="chat-conversation-details__previous-name">
+                  <span className="communication-chat-details__previous-top">
+                    <span className="communication-chat-details__previous-name">
                       {conversationLabel(row)}
                     </span>
-                    <span className="chat-conversation-details__previous-when">
+                    <span className="communication-chat-details__previous-when">
                       {formatWhen(row.lastActivityAt)}
                     </span>
                   </span>
-                  <span className="chat-conversation-details__previous-preview">
+                  <span className="communication-chat-details__previous-preview">
                     {row.lastMessagePreview?.trim() || row.status}
                   </span>
                 </button>

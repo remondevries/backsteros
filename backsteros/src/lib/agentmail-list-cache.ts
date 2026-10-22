@@ -43,7 +43,23 @@ export function agentMailMessagesSignature(
   return messages
     .map(
       (message) =>
-        `${message.inboxId}\0${message.id}\0${message.receivedAt}\0${message.status ?? ""}\0${message.priority ?? ""}\0${message.dueDate ?? ""}\0${message.unread === true ? "1" : "0"}`,
+        [
+          message.inboxId,
+          message.id,
+          message.receivedAt,
+          message.status ?? "",
+          message.priority ?? "",
+          message.dueDate ?? "",
+          message.unread === true ? "1" : "0",
+          // Party links — communication list must rebuild when these patch.
+          message.organizationId ?? "",
+          message.organizationName ?? "",
+          message.contactId ?? "",
+          message.contactName ?? "",
+          message.assigneeId ?? "",
+          message.projectId ?? "",
+          message.projectKey ?? "",
+        ].join("\0"),
     )
     .join("\n");
 }

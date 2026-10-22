@@ -274,6 +274,32 @@ body.app-is-dragging * {
   gap: 6px;
 }
 
+.task-kanban-card-title-stack {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.task-kanban-card-title-stack--with-party {
+  gap: 2px;
+}
+
+.task-kanban-card-title-stack--with-party .task-item-row__email-party--above {
+  flex: 0 0 auto;
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.task-kanban-card-title-stack .task-kanban-card-title {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
 .task-kanban-card-status {
   display: inline-flex;
   width: 14px;

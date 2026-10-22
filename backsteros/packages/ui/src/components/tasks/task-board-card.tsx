@@ -16,7 +16,6 @@ import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dropdown.js";
 import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
-import { EmailDirectionMark } from "../../email/email-direction.js";
 import { ShimmerText } from "../shared/shimmer-text.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
@@ -73,6 +72,11 @@ export type TaskBoardCardProps = {
   showDisplayId?: boolean;
   /** Show the status icon beside the title (default true). */
   showStatus?: boolean;
+  /**
+   * Show the email type mark left of the title (default true). Set false when
+   * the mark lives elsewhere (e.g. communication chat avatar kind badge).
+   */
+  showEmailMark?: boolean;
   /** Show a hover pin control (workspace file editor). */
   showPin?: boolean;
   pinned?: boolean;
@@ -117,6 +121,7 @@ export function TaskBoardCardComponent({
   showDueDate = true,
   showDisplayId = true,
   showStatus = true,
+  showEmailMark = true,
   showPin = false,
   pinned = false,
   onTogglePin,
@@ -319,7 +324,7 @@ export function TaskBoardCardComponent({
           </span>
         ) : null}
         <span className="task-kanban-card-title-wrap">
-          {isEmail ? (
+          {isEmail && showEmailMark ? (
             <span
               className="task-item-row__email-mark"
               title="E-mail"
@@ -332,27 +337,34 @@ export function TaskBoardCardComponent({
               />
             </span>
           ) : null}
-          <span className="task-kanban-card-title" title={task.title}>
-            {agentWorking ? (
-              <ShimmerText>{task.title}</ShimmerText>
-            ) : (
-              task.title
-            )}
-          </span>
-          {isEmail && task.emailPartyLabel ? (
-            <span className="task-item-row__email-party">
-              {task.emailDirection ? (
-                <EmailDirectionMark
-                  direction={task.emailDirection}
-                  size={13}
-                  className="task-item-row__email-direction"
-                />
-              ) : null}
-              <span className="task-item-row__email-party-text">
-                {task.emailPartyLabel}
+          <span
+            className={[
+              "task-kanban-card-title-stack",
+              isEmail && task.emailPartyLabel
+                ? "task-kanban-card-title-stack--with-party"
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {isEmail && task.emailPartyLabel ? (
+              <span
+                className="task-item-row__email-party task-item-row__email-party--above"
+                title={task.emailPartyLabel}
+              >
+                <span className="task-item-row__email-party-text">
+                  {task.emailPartyLabel}
+                </span>
               </span>
+            ) : null}
+            <span className="task-kanban-card-title" title={task.title}>
+              {agentWorking ? (
+                <ShimmerText>{task.title}</ShimmerText>
+              ) : (
+                task.title
+              )}
             </span>
-          ) : null}
+          </span>
           {titleTrailing ? (
             <span className="task-kanban-card-title-trailing">
               {titleTrailing}

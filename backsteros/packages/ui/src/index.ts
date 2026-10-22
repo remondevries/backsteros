@@ -607,6 +607,15 @@ export {
   type EmailMessageInlineAttachment,
 } from "./email/email-message-html.js";
 export {
+  buildEmailMessagePartyAutoLinks,
+  contactHasEmailAddress,
+  getEmailMessageParty,
+  matchEmailMessageParty,
+  resolveEmailMessagePartyAddress,
+  type EmailMessagePartyLink,
+  type EmailMessagePartyMap,
+} from "./email/email-message-party.js";
+export {
   formatEmailSourceSize,
   parseEmailAuthenticationResults,
   type EmailAuthenticationCheck,
@@ -3820,6 +3829,22 @@ export {
 } from "./communication/chat-conversation-list-item.js";
 
 export {
+  communicationChatListRowActivityMs,
+  communicationChatListRowIds,
+  emailListItemPartyEmail,
+  emailListItemPartyName,
+  emailStatusToChatListStatus,
+  groupCommunicationChatListRows,
+  type CommunicationChatListRow,
+  type CommunicationChatListStatusGroup,
+} from "./communication/communication-chat-list-row.js";
+
+export {
+  EmailConversationDetailsView,
+  type EmailConversationDetailsViewProps,
+} from "./components/communication/email-conversation-details-view.js";
+
+export {
   ContactEmailsEditor,
   type ContactEmailsEditorProps,
   type ContactEmailEntry,
@@ -4068,6 +4093,7 @@ export {
   parseContactSectionId,
   readContactCardSectionIdsFromDom,
   resolveChatContactCardSections,
+  resolveCommunicationEmailCardSections,
   resolveContactCardSections,
   shouldShowContactNav,
   CHAT_CONTACT_CONVERSATION_SECTION,

@@ -1100,6 +1100,13 @@
       "when": 1795910000000,
       "tag": "0155_chat_conversation_properties",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1795920000000,
+      "tag": "0156_email_thread_message_parties",
+      "breakpoints": true
     }
   ]
 }

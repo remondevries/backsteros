@@ -70,6 +70,16 @@ export type EmailPropertiesDisplayProps = {
   linkedTaskIds?: readonly string[];
   linkedTaskOptions?: SearchableDropdownOption<string>[];
   onLinkedTasksChange?: (taskIds: string[]) => void;
+  /**
+   * When false, hide Organization / Contact in Linked (managed by the
+   * Communication email party chrome instead).
+   */
+  showPartyLinks?: boolean;
+  /**
+   * `cards` (default) — collapsible bordered sections for the email rail.
+   * `flat` — label + control rows only (Communication Chat Details tab).
+   */
+  chrome?: "cards" | "flat";
 };
 
 function toDate(value: number | Date | string | null | undefined): Date | null {
@@ -103,6 +113,8 @@ export function EmailPropertiesDisplay({
   linkedTaskIds = [],
   linkedTaskOptions = [],
   onLinkedTasksChange,
+  showPartyLinks = true,
+  chrome = "cards",
 }: EmailPropertiesDisplayProps) {
   const status = migrateLegacyTaskStatus(thread.status?.trim() || "triage");
   const priority = thread.priority ?? 0;
@@ -345,65 +357,90 @@ export function EmailPropertiesDisplay({
     </button>
   );
 
-  return (
-    <div className="task-detail-properties-scroll">
-      <div className="entity-properties-stack">
-        <EntityPropertiesSection title="Linked">
+  const linkedFields = (
+    <>
+      {showPartyLinks ? (
+        <>
           <PropertyFieldGroup label="Organization">
             {organizationField}
           </PropertyFieldGroup>
           <PropertyFieldGroup label="Contact">{contactField}</PropertyFieldGroup>
-          <PropertyFieldGroup label="Related">
-            <TaskRelatedChips
-              values={[...linkedTaskIds]}
-              options={linkedTaskOptions}
-              onChange={
-                canEditLinkedTasks
-                  ? (next) => onLinkedTasksChange?.(next)
-                  : undefined
-              }
-              emptyLabel="No related"
-              searchPlaceholder="Add related…"
-              searchShortcutLabel="R"
-              ariaLabel="Related"
-              taskPropertyDropdownId="related"
-              variant="rail"
-              emptyIcon={<TaskStatusIcon status="triage" size={14} />}
-              onActivate={() => onFieldActivate?.("related")}
-            />
-          </PropertyFieldGroup>
-          <PropertyFieldGroup label="Received">
-            <button
-              type="button"
-              className="property-dropdown-trigger"
-              data-task-property-dropdown="receivedDate"
-              onClick={() => onFieldActivate?.("received")}
-            >
-              <span className="property-dropdown-trigger__label">
-                {received ? formatTaskDueMetaLabel(received) : "—"}
-              </span>
-            </button>
-          </PropertyFieldGroup>
-        </EntityPropertiesSection>
+        </>
+      ) : null}
+      <PropertyFieldGroup label="Related">
+        <TaskRelatedChips
+          values={[...linkedTaskIds]}
+          options={linkedTaskOptions}
+          onChange={
+            canEditLinkedTasks
+              ? (next) => onLinkedTasksChange?.(next)
+              : undefined
+          }
+          emptyLabel="No related"
+          searchPlaceholder="Add related…"
+          searchShortcutLabel="R"
+          ariaLabel="Related"
+          taskPropertyDropdownId="related"
+          variant="rail"
+          emptyIcon={<TaskStatusIcon status="triage" size={14} />}
+          onActivate={() => onFieldActivate?.("related")}
+        />
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Received">
+        <button
+          type="button"
+          className="property-dropdown-trigger"
+          data-task-property-dropdown="receivedDate"
+          onClick={() => onFieldActivate?.("received")}
+        >
+          <span className="property-dropdown-trigger__label">
+            {received ? formatTaskDueMetaLabel(received) : "—"}
+          </span>
+        </button>
+      </PropertyFieldGroup>
+    </>
+  );
 
+  const propertyFields = (
+    <>
+      <PropertyFieldGroup label="Assignee">{assigneeField}</PropertyFieldGroup>
+      <PropertyFieldGroup label="Status">{statusField}</PropertyFieldGroup>
+      <PropertyFieldGroup label="Priority">{priorityField}</PropertyFieldGroup>
+      <PropertyFieldGroup label="Due date">
+        <TaskDueDateDropdown
+          dueDate={due}
+          status={status}
+          variant="property"
+          onDueDateChange={onDueDateChange}
+        />
+      </PropertyFieldGroup>
+    </>
+  );
+
+  const projectFieldGroup = (
+    <PropertyFieldGroup label="Project">{projectField}</PropertyFieldGroup>
+  );
+
+  const stack =
+    chrome === "flat" ? (
+      <div className="entity-properties-stack entity-properties-stack--flat">
+        {linkedFields}
+        {propertyFields}
+        {projectFieldGroup}
+      </div>
+    ) : (
+      <div className="entity-properties-stack">
+        <EntityPropertiesSection title="Linked">
+          {linkedFields}
+        </EntityPropertiesSection>
         <EntityPropertiesSection title="Properties">
-          <PropertyFieldGroup label="Assignee">{assigneeField}</PropertyFieldGroup>
-          <PropertyFieldGroup label="Status">{statusField}</PropertyFieldGroup>
-          <PropertyFieldGroup label="Priority">{priorityField}</PropertyFieldGroup>
-          <PropertyFieldGroup label="Due date">
-            <TaskDueDateDropdown
-              dueDate={due}
-              status={status}
-              variant="property"
-              onDueDateChange={onDueDateChange}
-            />
-          </PropertyFieldGroup>
+          {propertyFields}
         </EntityPropertiesSection>
-
         <EntityPropertiesSection title="Project">
           {projectField}
         </EntityPropertiesSection>
       </div>
-    </div>
-  );
+    );
+
+  return <div className="task-detail-properties-scroll">{stack}</div>;
 }

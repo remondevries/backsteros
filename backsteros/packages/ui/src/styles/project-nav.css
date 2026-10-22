@@ -783,6 +783,51 @@
   min-width: 0;
 }
 
+.contact-overview__name-row--switcher {
+  gap: 4px;
+}
+
+.contact-overview__name-switcher {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.contact-overview__name-switcher-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.contact-overview__name-row--switcher:hover .contact-overview__name-switcher-trigger,
+.contact-overview__name-row--switcher:focus-within .contact-overview__name-switcher-trigger,
+.contact-overview__name-switcher-trigger.is-open,
+.contact-overview__name-switcher-trigger:focus-visible {
+  opacity: 1;
+}
+
+.contact-overview__name-switcher-trigger:hover:not(:disabled),
+.contact-overview__name-switcher-trigger.is-open {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.contact-overview__name-switcher-trigger:disabled {
+  cursor: default;
+}
+
 .contact-overview__groups-dropdown {
   display: inline-flex;
   justify-content: center;

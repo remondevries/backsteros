@@ -148,6 +148,7 @@ export function useEmailMessageDetail({
         detail.threadMetadata?.assigneeId ?? "",
         detail.threadMetadata?.contactId ?? "",
         detail.threadMetadata?.organizationId ?? "",
+        JSON.stringify(detail.threadMetadata?.messageParties ?? {}),
       ].join("|");
     let lastFingerprint = "";
     const refreshOpenThread = () => {

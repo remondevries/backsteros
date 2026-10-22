@@ -488,10 +488,28 @@
   background: #212121;
 }
 
-/* Sent mail — transparent fill; same grey border as received. */
+/* Sent mail — same light-grey fill as received (no darker/transparent treatment). */
 .email-thread-message.is-sent {
   border-color: #343434;
-  background: transparent;
+  background: #212121;
+}
+
+.email-thread-message.is-selectable {
+  cursor: pointer;
+}
+
+.email-thread-message.is-selectable:hover {
+  border-color: color-mix(in srgb, var(--foreground) 28%, #343434);
+}
+
+.email-thread-message.is-selected {
+  border-color: color-mix(in srgb, #3b82f6 55%, #343434);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #3b82f6 35%, transparent);
+}
+
+.email-thread-message.is-selectable:focus-visible {
+  outline: 2px solid color-mix(in srgb, #3b82f6 55%, transparent);
+  outline-offset: 2px;
 }
 
 /* Draft / concept — transparent fill; grey dashes (CSS dashed is too dotted). */

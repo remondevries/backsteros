@@ -17,7 +17,10 @@ import {
 } from "../../shared/adopt-remote-field.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
-import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import {
+  SearchableDropdown,
+  type SearchableDropdownOption,
+} from "../dropdowns/searchable-dropdown.js";
 import {
   DROPDOWN_NONE_VALUE,
   buildOrganizationDropdownOptions,
@@ -25,6 +28,7 @@ import {
   type OrganizationDropdownItem,
 } from "../dropdowns/dropdown-options.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
+import { ChevronDownIcon } from "../icons/chevron-down-icon.js";
 import {
   formatCountryLabel,
   formatRegionLabel,
@@ -162,6 +166,16 @@ export type ContactOverviewViewProps = {
    * `section` — header, tabs, `sectionBody`.
    */
   mode?: "overview" | "details" | "section";
+  /**
+   * Optional contact switcher beside first/last name — chevron appears on
+   * name-row hover and opens the contact dropdown (Communication Chat).
+   */
+  contactSwitcher?: {
+    options: SearchableDropdownOption<string>[];
+    disabled?: boolean;
+    onSelect: (contactId: string) => void;
+    onCreateFromQuery?: (query: string) => void;
+  } | null;
 };
 
 function DetailsField({
@@ -262,6 +276,7 @@ export function ContactOverviewView({
   sectionNavSlot,
   sectionBody,
   mode = "overview",
+  contactSwitcher = null,
 }: ContactOverviewViewProps) {
   const remoteEmail = contact.email ?? "";
   const remotePhone = contact.phone ?? "";
@@ -1051,7 +1066,14 @@ export function ContactOverviewView({
               />
             </span>
           </div>
-          <div className="contact-overview__name-row">
+          <div
+            className={[
+              "contact-overview__name-row",
+              contactSwitcher ? "contact-overview__name-row--switcher" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             <OverviewNameEditor
               value={firstName}
               entityLabel="First name"
@@ -1117,6 +1139,53 @@ export function ContactOverviewView({
                 return result;
               }}
             />
+            {contactSwitcher ? (
+              <SearchableDropdown
+                className="contact-overview__name-switcher"
+                value={contact.id}
+                options={contactSwitcher.options.filter(
+                  (option) => option.value !== DROPDOWN_NONE_VALUE,
+                )}
+                onChange={(next) => {
+                  const nextId = resolveDropdownNone(next);
+                  if (nextId) contactSwitcher.onSelect(nextId);
+                }}
+                disabled={contactSwitcher.disabled}
+                searchPlaceholder="Search contacts…"
+                ariaLabel="Change contact"
+                panelAlign="start"
+                panelWidth={280}
+                createFromQueryLabel={
+                  contactSwitcher.onCreateFromQuery
+                    ? (query) => getCreateEntityFromQueryLabel("contact", query)
+                    : undefined
+                }
+                onCreateFromQuery={contactSwitcher.onCreateFromQuery}
+                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label="Change contact"
+                    title="Change contact"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggle();
+                    }}
+                    className={[
+                      "contact-overview__name-switcher-trigger",
+                      open ? "is-open" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <ChevronDownIcon size={14} />
+                  </button>
+                )}
+              />
+            ) : null}
           </div>
           {addressLine ? (
             <p className="contact-overview__subtitle contact-overview__subtitle--muted">

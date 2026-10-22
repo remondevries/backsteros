@@ -14,22 +14,26 @@ export type ChatListStatus = (typeof CHAT_STATUS_ORDER)[number];
 
 export const CHAT_LIST_STATUS_ORDER: readonly ChatListStatus[] = CHAT_STATUS_ORDER;
 
+/**
+ * BacksterOS labels for the mixed chat+email list. Chatwoot still stores
+ * open / pending / snoozed / resolved; we only relabel the groups.
+ */
 export function getChatListStatusLabel(status: ChatListStatus): string {
   switch (status) {
     case "open":
-      return "Open";
+      return "Triage";
     case "pending":
-      return "Pending";
+      return "Waiting";
     case "snoozed":
-      return "Snoozed";
+      return "On Hold";
     case "resolved":
-      return "Resolved";
+      return "Completed";
     default:
       return status;
   }
 }
 
-/** Map Chatwoot conversation status → task status icon / row chrome. */
+/** Map Chatwoot conversation status → BacksterOS task status (icons / chrome). */
 export function chatStatusToTaskStatus(
   status: ChatConversation["status"],
 ): TaskStatus {
@@ -39,14 +43,18 @@ export function chatStatusToTaskStatus(
     case "pending":
       return "waiting";
     case "snoozed":
-      return "backlog";
+      return "on_hold";
     case "open":
     default:
       return "triage";
   }
 }
 
-/** Map a task-status dropdown change back to a chat conversation status. */
+/**
+ * Map a BacksterOS task status onto Chatwoot’s four conversation statuses.
+ * Shared with email rows so triage/waiting/on_hold/completed land in the same
+ * mixed-list groups as open/pending/snoozed/resolved chats.
+ */
 export function taskStatusToChatStatus(
   status: TaskStatus,
 ): ChatConversation["status"] {
@@ -56,11 +64,12 @@ export function taskStatusToChatStatus(
     case "duplicated":
       return "resolved";
     case "waiting":
-    case "on_hold":
       return "pending";
+    case "on_hold":
     case "backlog":
       return "snoozed";
     default:
+      // triage, in_progress, ready_to_start, in_review → Triage group
       return "open";
   }
 }

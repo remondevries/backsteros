@@ -4028,6 +4028,14 @@ export const agentMailMessageSchema = z.object({
 export const agentMailMessagesResponseSchema = z.object({
   messages: z.array(agentMailMessageSchema),
 });
+export const emailThreadMessagePartySchema = z.object({
+  contactId: z.string().nullable(),
+  organizationId: z.string().nullable(),
+});
+export const emailThreadMessagePartiesSchema = z.record(
+  z.string(),
+  emailThreadMessagePartySchema,
+);
 export const emailThreadMetadataSchema = z.object({
   id: z.string(),
   inboxId: z.string(),
@@ -4043,6 +4051,8 @@ export const emailThreadMetadataSchema = z.object({
   projectId: z.string().nullable(),
   projectName: z.string().nullable().optional(),
   projectKey: z.string().nullable().optional(),
+  /** Per AgentMail messageId → contact/org for that message. */
+  messageParties: emailThreadMessagePartiesSchema.optional(),
   status: emailThreadStatusSchema,
   priority: z.number().int().min(0).max(4),
   dueDate: z.string().datetime().nullable(),
@@ -4059,6 +4069,19 @@ export const updateEmailThreadMetadataSchema = z.object({
   status: emailThreadStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
+  /**
+   * Merge map of messageId → party. Existing keys not listed are kept;
+   * listed keys are replaced.
+   */
+  messageParties: emailThreadMessagePartiesSchema.optional(),
+  /** Upsert a single message party (merged into messageParties). */
+  messageParty: z
+    .object({
+      messageId: z.string().min(1),
+      contactId: z.string().nullable().optional(),
+      organizationId: z.string().nullable().optional(),
+    })
+    .optional(),
   /** Clear the Updated inbox flag after the user views the item. */
   acknowledgeInboxUpdate: z.boolean().optional(),
   inboxUpdatedAt: z.string().datetime().nullable().optional(),

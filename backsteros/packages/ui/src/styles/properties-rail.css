@@ -103,6 +103,11 @@
   gap: 8px;
 }
 
+/* Flat rail — label + control rows without bordered section cards. */
+.entity-properties-stack--flat {
+  gap: 10px;
+}
+
 /* Full-width rail CTA under Project — no Agent properties section chrome. */
 .task-agent-inbox-approve-button {
   display: flex;

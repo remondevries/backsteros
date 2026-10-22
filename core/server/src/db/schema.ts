@@ -2285,6 +2285,11 @@ export const financialTransactions = pgTable(
   ],
 );
 
+export type EmailThreadMessageParty = {
+  contactId: string | null;
+  organizationId: string | null;
+};
+
 export const emailThreads = pgTable(
   "email_threads",
   {
@@ -2307,6 +2312,14 @@ export const emailThreads = pgTable(
     projectId: text("project_id").references(() => projects.id, {
       onDelete: "set null",
     }),
+    /**
+     * Per AgentMail messageId → linked contact/org for that message in the
+     * thread (Communication Chat party rail).
+     */
+    messageParties: jsonb("message_parties")
+      .$type<Record<string, EmailThreadMessageParty>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     dueDate: timestamp("due_date", { withTimezone: true }),

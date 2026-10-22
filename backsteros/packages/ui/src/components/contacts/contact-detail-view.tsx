@@ -53,6 +53,8 @@ export type ContactDetailViewProps = {
    * next digit after the last card section — not a toggle option.
    */
   sections?: readonly ContactSectionConfig[];
+  /** Hover chevron beside first/last name that opens a contact picker. */
+  contactSwitcher?: ContactOverviewViewProps["contactSwitcher"];
 };
 
 /**
@@ -82,6 +84,7 @@ export function ContactDetailView({
   renderSection,
   showSectionNav = true,
   sections = CONTACT_SECTIONS,
+  contactSwitcher = null,
 }: ContactDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ContactSectionId>(initialSection);
@@ -145,6 +148,7 @@ export function ContactDetailView({
           mapLoading={mapLoading}
           mapHint={mapHint}
           onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
+          contactSwitcher={contactSwitcher}
           headerAccessory={
             overviewHeaderAccessory ?? (
               <span className="contact-detail__avatar" aria-hidden="true">

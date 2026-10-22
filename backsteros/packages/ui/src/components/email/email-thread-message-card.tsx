@@ -153,6 +153,12 @@ export type EmailThreadMessageCardProps = {
   onMarkUnreadFromHere?: () => void;
   /** Reports this message as spam (blocks sender, removes message). */
   onReportSpam?: () => Promise<EntityDeleteResult>;
+  /**
+   * When set with {@link onSelect}, the card is activatable so Communication
+   * Chat can focus the left party rail on this message.
+   */
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
 function EmailDraftBodyShell({ children }: { children: string }) {
@@ -474,6 +480,8 @@ function EmailThreadMessageCardComponent({
   onForward,
   onMarkUnreadFromHere,
   onReportSpam,
+  selected = false,
+  onSelect,
 }: EmailThreadMessageCardProps) {
   const entityHeaderActions = useEntityHeaderActionsContextOptional();
   const openDeleteModal = entityHeaderActions?.openDeleteModal;
@@ -1187,13 +1195,45 @@ function EmailThreadMessageCardComponent({
       )
     : null;
 
+  const selectable = Boolean(onSelect) && !isConcept && !isEditable;
+
   return (
     <article
       className={`email-thread-message${
         isConcept ? " is-concept" : isSent ? " is-sent" : ""
-      }`}
+      }${selected ? " is-selected" : ""}${selectable ? " is-selectable" : ""}`}
       data-email-message={
         !isConcept && messageId?.trim() ? messageId.trim() : undefined
+      }
+      data-selected={selected ? "true" : undefined}
+      role={selectable ? "button" : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      aria-pressed={selectable ? selected : undefined}
+      onClick={
+        selectable
+          ? (event) => {
+              const target = event.target as HTMLElement | null;
+              if (
+                target?.closest(
+                  "button, a, input, textarea, [role='listbox'], [data-dropdown-root]",
+                )
+              ) {
+                return;
+              }
+              onSelect?.();
+            }
+          : undefined
+      }
+      onKeyDown={
+        selectable
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              const target = event.target as HTMLElement | null;
+              if (target !== event.currentTarget) return;
+              event.preventDefault();
+              onSelect?.();
+            }
+          : undefined
       }
     >
       {isConcept || isEditable ? (

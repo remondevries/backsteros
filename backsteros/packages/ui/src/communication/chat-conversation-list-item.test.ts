@@ -44,10 +44,15 @@ describe("chatConversationToTaskItemRowTask", () => {
   });
 
   it("maps chat statuses to task statuses both ways", () => {
+    assert.equal(chatStatusToTaskStatus("open"), "triage");
+    assert.equal(chatStatusToTaskStatus("pending"), "waiting");
+    assert.equal(chatStatusToTaskStatus("snoozed"), "on_hold");
     assert.equal(chatStatusToTaskStatus("resolved"), "completed");
     assert.equal(taskStatusToChatStatus("completed"), "resolved");
     assert.equal(taskStatusToChatStatus("waiting"), "pending");
+    assert.equal(taskStatusToChatStatus("on_hold"), "snoozed");
     assert.equal(taskStatusToChatStatus("backlog"), "snoozed");
+    assert.equal(taskStatusToChatStatus("triage"), "open");
   });
 
   it("groups conversations by chat status", () => {

@@ -240,6 +240,7 @@ export async function toEmailThreadMetadata(
     projectId: row.projectId ?? null,
     projectName: project?.name ?? null,
     projectKey: project?.key ?? null,
+    messageParties: row.messageParties ?? {},
     status: row.status as EmailThreadMetadata["status"],
     priority: row.priority ?? 0,
     dueDate: row.dueDate ? row.dueDate.toISOString() : null,
@@ -249,6 +250,51 @@ export async function toEmailThreadMetadata(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function mergeMessageParties(
+  existing: Record<
+    string,
+    { contactId: string | null; organizationId: string | null }
+  > | null | undefined,
+  input: UpdateEmailThreadMetadataInput,
+):
+  | Record<string, { contactId: string | null; organizationId: string | null }>
+  | undefined {
+  const base = { ...(existing ?? {}) };
+  let changed = false;
+
+  if (input.messageParties) {
+    for (const [messageId, party] of Object.entries(input.messageParties)) {
+      const key = messageId.trim();
+      if (!key) continue;
+      base[key] = {
+        contactId: party.contactId ?? null,
+        organizationId: party.organizationId ?? null,
+      };
+      changed = true;
+    }
+  }
+
+  if (input.messageParty) {
+    const key = input.messageParty.messageId.trim();
+    if (key) {
+      const prev = base[key] ?? { contactId: null, organizationId: null };
+      base[key] = {
+        contactId:
+          input.messageParty.contactId === undefined
+            ? prev.contactId
+            : input.messageParty.contactId,
+        organizationId:
+          input.messageParty.organizationId === undefined
+            ? prev.organizationId
+            : input.messageParty.organizationId,
+      };
+      changed = true;
+    }
+  }
+
+  return changed ? base : undefined;
 }
 
 export type EnsureEmailThreadOptions = {
@@ -686,12 +732,19 @@ export async function updateEmailThreadMetadata(
       inboxUpdatedAt = parsed;
     }
   }
+  const nextMessageParties = mergeMessageParties(
+    existing?.messageParties,
+    input,
+  );
   const patch = {
     organizationId:
       input.organizationId === undefined ? undefined : input.organizationId,
     contactId: input.contactId === undefined ? undefined : input.contactId,
     assigneeId: input.assigneeId === undefined ? undefined : input.assigneeId,
     projectId: input.projectId === undefined ? undefined : input.projectId,
+    ...(nextMessageParties !== undefined
+      ? { messageParties: nextMessageParties }
+      : {}),
     status: input.status,
     priority: input.priority,
     dueDate,
@@ -727,6 +780,7 @@ export async function updateEmailThreadMetadata(
       contactId: input.contactId ?? null,
       assigneeId: input.assigneeId ?? null,
       projectId: input.projectId ?? null,
+      messageParties: nextMessageParties ?? {},
       createdAt: now,
       updatedAt: now,
     })

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import {
   buildEmailShadowStyles,
+  emailHtmlPrefersLightCanvas,
   normalizeEmailContentId,
   prepareEmailHtmlForDisplay,
   resolveEmailInlineAttachments,
@@ -120,6 +121,10 @@ export function EmailMessageHtmlBody({
   peekInlineAttachmentRef.current = peekInlineAttachment;
 
   const markup = useMemo(() => prepareEmailHtmlForDisplay(html), [html]);
+  const canvas = useMemo(
+    () => (emailHtmlPrefersLightCanvas(markup) ? "light" : "dark"),
+    [markup],
+  );
   const attachmentsToResolve = useMemo(
     () => resolveEmailInlineAttachments(inlineAttachments, markup),
     [inlineAttachments, markup],
@@ -145,7 +150,7 @@ export function EmailMessageHtmlBody({
     }
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    shadow.innerHTML = `${buildEmailShadowStyles()}${markup}`;
+    shadow.innerHTML = `${buildEmailShadowStyles(canvas)}${markup}`;
     collapseHtmlEmailQuotes(shadow);
 
     const cachedUrls = applyCachedInlineAttachments(
@@ -200,7 +205,7 @@ export function EmailMessageHtmlBody({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [attachmentKey, attachmentsToResolve, markup]);
+  }, [attachmentKey, attachmentsToResolve, canvas, markup]);
 
   if (!markup) {
     return fallback ? (
@@ -208,5 +213,16 @@ export function EmailMessageHtmlBody({
     ) : null;
   }
 
-  return <div ref={hostRef} className="email-thread-message__html-host" />;
+  return (
+    <div
+      ref={hostRef}
+      className={[
+        "email-thread-message__html-host",
+        canvas === "light"
+          ? "email-thread-message__html-host--light"
+          : "email-thread-message__html-host--dark",
+      ].join(" ")}
+      data-email-html-canvas={canvas}
+    />
+  );
 }

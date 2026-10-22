@@ -15,18 +15,21 @@ import {
 } from "@backsteros/contracts";
 
 import {
-  AvatarUpload,
   ChatConversationDetailsView,
   CONTACT_DETAIL_EXPAND_FADE_MS,
   ContactDetailOverlay,
   ContactDetailView,
   ContactEmailsListView,
   ContactMeetingsListView,
+  ContactPersonIcon,
   ContactRelationshipsListView,
   ContactTasksListView,
   CrmActivityFeedView,
+  DROPDOWN_NONE_VALUE,
+  EmailConversationDetailsView,
   getCalendarMeetingHref,
   getContactOverlayHref,
+  getCreateEntityFromQueryLabel,
   getEmailComposeHref,
   getEmailDetailHref,
   getUniqueListItemRouteParam,
@@ -35,8 +38,12 @@ import {
   previousChatConversations,
   requestOpenComposeModal,
   resolveChatContactCardSections,
+  resolveCommunicationEmailCardSections,
+  resolveDropdownNone,
   resolveLetterDetailHref,
+  resolveOrganizationAvatarSrc,
   ScopedLettersListView,
+  SearchableDropdown,
   SocialContactDetailView,
   taskReorderPatches,
   type ChatConversationStatus,
@@ -45,17 +52,14 @@ import {
   type ContactOverlayLayout,
   type ContactOverviewDetails,
   type ContactSectionId,
+  type InboxEmailListItem,
   type SearchableDropdownOption,
   type TaskStatus,
 } from "@backsteros/ui";
 
 import { useAgentMail } from "../lib/agentmail-context";
-import { useDesktopApi } from "../lib/api-context";
-import {
-  removeDesktopAvatar,
-  uploadDesktopAvatar,
-} from "../lib/avatar-upload";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import { getBrandfetchClientId } from "../lib/brandfetch";
 import {
   normalizeContactEmails,
   normalizeContactPhones,
@@ -72,6 +76,7 @@ import {
 } from "../lib/use-crm-data";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { DesktopCommunicationEmailPartyCard } from "./desktop-communication-email-party-card";
 
 export type ChatContactPanelVisitor = {
   contactName?: string | null;
@@ -86,13 +91,38 @@ type DesktopChatContactDetailPanelProps = {
   visitor: ChatContactPanelVisitor | null;
   conversation: ChatConversation | null;
   conversations: readonly ChatConversation[];
+  /** When set, Details tab shows email properties instead of chat. */
+  emailItem?: InboxEmailListItem | null;
+  /**
+   * Active message party in the Communication Chat thread (per-message
+   * org/contact). Overrides thread-level ids for the party card.
+   */
+  emailActiveParty?: {
+    messageId: string | null;
+    contactId: string | null;
+    organizationId: string | null;
+    partyEmail: string | null;
+    partyName: string | null;
+  } | null;
   statusUpdating?: boolean;
   propertiesUpdating?: boolean;
   assigneeOptions?: SearchableDropdownOption<string>[];
+  projectOptions?: SearchableDropdownOption<string>[];
+  contactOptions?: SearchableDropdownOption<string>[];
+  organizationOptions?: SearchableDropdownOption<string>[];
   onStatusChange?: (status: ChatConversationStatus) => void | Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => void | Promise<void>;
   onPriorityChange?: (priority: number) => void | Promise<void>;
   onDueDateChange?: (dueDate: Date | null) => void | Promise<void>;
+  onEmailStatusChange?: (status: TaskStatus) => void | Promise<void>;
+  onEmailAssigneeChange?: (assigneeId: string | null) => void | Promise<void>;
+  onEmailPriorityChange?: (priority: number) => void | Promise<void>;
+  onEmailDueDateChange?: (dueDate: Date | null) => void | Promise<void>;
+  onEmailProjectChange?: (projectKey: string | null) => void | Promise<void>;
+  /** Link / select an existing contact for the unmatched chat or email party. */
+  onLinkContact?: (contactId: string) => void | Promise<void>;
+  /** Link an organization on the selected email thread (org-first party card). */
+  onLinkOrganization?: (organizationId: string) => void | Promise<void>;
   onSelectConversation?: (conversationId: string) => void;
   collapsed: boolean;
   onHide: () => void;
@@ -115,13 +145,25 @@ export function DesktopChatContactDetailPanel({
   visitor,
   conversation,
   conversations,
+  emailItem = null,
+  emailActiveParty = null,
   statusUpdating = false,
   propertiesUpdating = false,
   assigneeOptions = [],
+  projectOptions = [],
+  contactOptions = [],
+  organizationOptions = [],
   onStatusChange,
   onAssigneeChange,
   onPriorityChange,
   onDueDateChange,
+  onEmailStatusChange,
+  onEmailAssigneeChange,
+  onEmailPriorityChange,
+  onEmailDueDateChange,
+  onEmailProjectChange,
+  onLinkContact,
+  onLinkOrganization,
   onSelectConversation,
   collapsed,
   onHide,
@@ -136,7 +178,6 @@ export function DesktopChatContactDetailPanel({
     },
     [routerNavigate],
   );
-  const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
   const [section, setSection] = useState<ContactSectionId>("conversation");
@@ -145,6 +186,7 @@ export function DesktopChatContactDetailPanel({
   const [workspaceTab, setWorkspaceTab] =
     useState<ContactExpandedWorkspaceTabId>("meetings");
   const [workspaceFaded, setWorkspaceFaded] = useState(false);
+  const [linkingContact, setLinkingContact] = useState(false);
   const setChatFaded = useCallback(
     (faded: boolean) => {
       onChatMainFadedChange?.(faded);
@@ -155,9 +197,6 @@ export function DesktopChatContactDetailPanel({
   const expandAnimTimerRef = useRef<number | null>(null);
   const pendingWorkspaceFadeInRef = useRef(false);
   const pendingChatFadeInRef = useRef(false);
-  const [avatarOverride, setAvatarOverride] = useState<
-    string | null | undefined
-  >(undefined);
 
   const contactId = contact?.id ?? null;
   const details = contactId
@@ -179,11 +218,8 @@ export function DesktopChatContactDetailPanel({
     setWorkspaceTab("meetings");
     setWorkspaceFaded(false);
     setChatFaded(false);
-    setAvatarOverride((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return undefined;
-    });
-  }, [contactId, conversation?.id, setChatFaded]);
+    setLinkingContact(false);
+  }, [contactId, conversation?.id, emailItem?.id, setChatFaded]);
 
   useEffect(() => {
     onExpandedChange?.(overlayLayout === "page");
@@ -302,7 +338,18 @@ export function DesktopChatContactDetailPanel({
     return previousChatConversations(conversations, conversation);
   }, [conversation, conversations]);
 
-  const conversationDetails = conversation ? (
+  const conversationDetails = emailItem ? (
+    <EmailConversationDetailsView
+      item={emailItem}
+      assigneeOptions={assigneeOptions}
+      projectOptions={projectOptions}
+      onStatusChange={onEmailStatusChange}
+      onAssigneeChange={onEmailAssigneeChange}
+      onPriorityChange={onEmailPriorityChange}
+      onDueDateChange={onEmailDueDateChange}
+      onProjectChange={onEmailProjectChange}
+    />
+  ) : conversation ? (
     <ChatConversationDetailsView
       conversation={conversation}
       previousConversations={previousConversations}
@@ -370,16 +417,40 @@ export function DesktopChatContactDetailPanel({
     [groupOptions, memberGroupIds],
   );
 
-  const sections = useMemo(
-    () =>
-      resolveChatContactCardSections({
-        showPortal: showPortalTab,
-        showPortalLogs: false,
-      }),
-    [showPortalTab],
+  // Org/contact for email is always the focused message party (or the matched
+  // contact’s own org) — never emailItem.contactId/organizationId.
+  const emailOrganizationId =
+    emailActiveParty?.organizationId?.trim() ||
+    contact?.organizationId?.trim() ||
+    details?.organizationId?.trim() ||
+    null;
+  const emailPartyLinked = Boolean(
+    emailItem &&
+      (emailOrganizationId ||
+        emailActiveParty?.contactId?.trim() ||
+        contactId),
   );
 
-  const organizationOptions = useMemo(
+  const sections = useMemo(() => {
+    if (emailItem) {
+      return resolveCommunicationEmailCardSections({
+        linked: emailPartyLinked,
+        showPortal: showPortalTab,
+        showPortalLogs: false,
+      });
+    }
+    return resolveChatContactCardSections({
+      showPortal: showPortalTab,
+      showPortalLogs: false,
+    });
+  }, [emailItem, emailPartyLinked, showPortalTab]);
+
+  useEffect(() => {
+    if (sections.some((entry) => entry.id === section)) return;
+    setSection("conversation");
+  }, [section, sections]);
+
+  const contactOrganizationOptions = useMemo(
     () =>
       workspace.organizations.map((org) => ({
         id: org.id,
@@ -421,23 +492,408 @@ export function DesktopChatContactDetailPanel({
     [crmGroups],
   );
 
-  const title =
-    contact?.name?.trim() ||
+  const visitorName =
     visitor?.contactName?.trim() ||
     visitor?.contactEmail?.trim() ||
-    "Contact";
+    visitor?.contactPhone?.trim() ||
+    (emailItem ? "Email party" : "Visitor");
+  const title = contact?.name?.trim() || visitorName;
 
-  const syncedAvatarSrc = contactId
-    ? (contactAvatarSrc[contactId] ?? null)
-    : null;
-  const avatarSrc =
-    avatarOverride !== undefined ? avatarOverride : syncedAvatarSrc;
+  const avatarSrc = contactId
+    ? (contactAvatarSrc[contactId] ?? contact?.avatarSrc ?? null)
+    : (visitor?.contactAvatarUrl?.trim() || null);
 
   const openFullContact = useCallback(() => {
     if (!contact) return;
     const slug = getUniqueListItemRouteParam(contact, workspace.contacts);
     navigate(getContactOverlayHref(slug));
   }, [contact, navigate, workspace.contacts]);
+
+  const pickerOptions = useMemo(
+    () =>
+      contactOptions.filter((option) => option.value !== DROPDOWN_NONE_VALUE),
+    [contactOptions],
+  );
+
+  const linkExistingContact = useCallback(
+    async (nextContactId: string) => {
+      if (!nextContactId) return;
+      setLinkingContact(true);
+      try {
+        if (emailItem && onLinkContact) {
+          await onLinkContact(nextContactId);
+          return;
+        }
+        if (onLinkContact) {
+          await onLinkContact(nextContactId);
+          return;
+        }
+        // Chat fallback: attach visitor email/phone so matchChatContact resolves.
+        const email = visitor?.contactEmail?.trim() || null;
+        const phone = visitor?.contactPhone?.trim() || null;
+        const target =
+          workspace.contacts.find((entry) => entry.id === nextContactId) ??
+          null;
+        if (!target) return;
+        const existingEmails = normalizeContactEmails(
+          workspace.contactDetails[nextContactId]?.emails ?? target.emails,
+        );
+        const patch: Record<string, unknown> = {};
+        if (email) {
+          const already = existingEmails.some(
+            (entry) =>
+              entry.address.trim().toLowerCase() === email.toLowerCase(),
+          );
+          if (!already) {
+            patch.emails = [
+              ...existingEmails,
+              { label: "other" as const, address: email },
+            ];
+          }
+          if (!target.email?.trim()) patch.email = email;
+        }
+        if (phone && !target.phone?.trim()) {
+          patch.phone = phone;
+        }
+        if (Object.keys(patch).length > 0) {
+          await workspace.patchContact(nextContactId, patch);
+        }
+      } catch (error) {
+        console.warn("[desktop] link communication contact failed", error);
+      } finally {
+        setLinkingContact(false);
+      }
+    },
+    [
+      emailItem,
+      onLinkContact,
+      visitor?.contactEmail,
+      visitor?.contactPhone,
+      workspace,
+    ],
+  );
+
+  const createAndLinkContact = useCallback(
+    async (query?: string) => {
+      setLinkingContact(true);
+      try {
+        const fromQuery = query?.trim() || "";
+        const nameParts = (
+          fromQuery ||
+          visitor?.contactName?.trim() ||
+          ""
+        ).split(/\s+/);
+        const created = await workspace.createContact({
+          firstName:
+            nameParts[0] ||
+            (emailItem ? "Email" : "Chat"),
+          lastName:
+            nameParts.slice(1).join(" ") ||
+            (emailItem ? "party" : "visitor"),
+          email: visitor?.contactEmail?.trim() || null,
+          ...(emailOrganizationId
+            ? { organizationId: emailOrganizationId }
+            : {}),
+        });
+        const phone = visitor?.contactPhone?.trim();
+        if (phone) {
+          await workspace.patchContact(created.id, { phone });
+        }
+        if (onLinkContact) {
+          await onLinkContact(created.id);
+        }
+      } catch (error) {
+        console.warn("[desktop] create communication contact failed", error);
+      } finally {
+        setLinkingContact(false);
+      }
+    },
+    [
+      emailItem,
+      emailOrganizationId,
+      onLinkContact,
+      visitor?.contactEmail,
+      visitor?.contactName,
+      visitor?.contactPhone,
+      workspace,
+    ],
+  );
+
+  const linkExistingOrganization = useCallback(
+    async (nextOrganizationId: string) => {
+      if (!nextOrganizationId || !onLinkOrganization) return;
+      setLinkingContact(true);
+      try {
+        await onLinkOrganization(nextOrganizationId);
+      } catch (error) {
+        console.warn("[desktop] link communication organization failed", error);
+      } finally {
+        setLinkingContact(false);
+      }
+    },
+    [onLinkOrganization],
+  );
+
+  const createAndLinkOrganization = useCallback(
+    async (query?: string) => {
+      if (!onLinkOrganization) return;
+      setLinkingContact(true);
+      try {
+        const name = query?.trim() || visitor?.contactName?.trim() || "Organization";
+        const created = await workspace.createOrganization({ name });
+        await onLinkOrganization(created.id);
+      } catch (error) {
+        console.warn(
+          "[desktop] create communication organization failed",
+          error,
+        );
+      } finally {
+        setLinkingContact(false);
+      }
+    },
+    [onLinkOrganization, visitor?.contactName, workspace],
+  );
+
+  const displayContact = useMemo(() => {
+    if (contact) {
+      return {
+        id: contact.id,
+        name: contact.name,
+        firstName: contact.firstName ?? null,
+        lastName: contact.lastName ?? null,
+        displayId:
+          contact.number != null ? `C-${contact.number}` : contact.key,
+        email: details?.email ?? contact.email ?? null,
+        emails: normalizeContactEmails(details?.emails ?? contact.emails),
+        phone: details?.phone ?? contact.phone ?? null,
+        phones: normalizeContactPhones(
+          details?.phones ?? contact.phones ?? [],
+        ),
+        title: details?.title ?? contact.title ?? null,
+        address: details?.address ?? contact.address ?? null,
+        city: details?.city ?? contact.city ?? null,
+        postalCode: details?.postalCode ?? contact.postalCode ?? null,
+        country: details?.country ?? contact.country ?? null,
+        region: details?.region ?? contact.region ?? null,
+        organizationId:
+          contact.organizationId ?? details?.organizationId ?? null,
+        organizationName: contact.organizationName,
+        summary: details?.summary ?? null,
+        socialAccounts: normalizeContactSocialAccounts(
+          details?.socialAccounts ?? contact.socialAccounts,
+        ),
+        birthday: details?.birthday ?? contact.birthday ?? null,
+        languages: coerceContactLanguages(
+          details?.languages ?? contact.languages ?? [],
+        ),
+      };
+    }
+    const nameParts = (visitor?.contactName?.trim() || "").split(/\s+/);
+    return {
+      id: "communication-unmatched",
+      name: visitorName,
+      firstName: nameParts[0] || null,
+      lastName: nameParts.slice(1).join(" ") || null,
+      displayId: null,
+      email: visitor?.contactEmail?.trim() || null,
+      emails: visitor?.contactEmail?.trim()
+        ? [{ label: "other" as const, address: visitor.contactEmail.trim() }]
+        : [],
+      phone: visitor?.contactPhone?.trim() || null,
+      phones: visitor?.contactPhone?.trim()
+        ? [{ label: "other" as const, number: visitor.contactPhone.trim() }]
+        : [],
+      title: null,
+      address: null,
+      city: null,
+      postalCode: null,
+      country: null,
+      region: null,
+      organizationId: null,
+      organizationName: null,
+      summary: null,
+      socialAccounts: [],
+      birthday: null,
+      languages: [],
+    };
+  }, [contact, details, visitor, visitorName]);
+
+  const coverAccessory = contact ? (
+    <CommunicationContactCoverAvatar
+      displayName={displayContact.name}
+      avatarSrc={avatarSrc}
+    />
+  ) : (
+    <CommunicationContactCoverAvatar
+      displayName={displayContact.name}
+      avatarSrc={avatarSrc}
+      selectContact={{
+        options: pickerOptions,
+        disabled: linkingContact,
+        onSelect: (nextId) => {
+          void linkExistingContact(nextId);
+        },
+        onCreateFromQuery: (query) => {
+          void createAndLinkContact(query);
+        },
+      }}
+    />
+  );
+
+  const emailOrganization =
+    emailOrganizationId != null
+      ? (workspace.organizations.find(
+          (entry) => entry.id === emailOrganizationId,
+        ) ?? null)
+      : null;
+  const emailOrganizationName =
+    emailOrganization?.name?.trim() ||
+    emailItem?.organizationName?.trim() ||
+    contact?.organizationName?.trim() ||
+    null;
+  const emailOrganizationAvatar =
+    emailOrganizationId != null
+      ? resolveOrganizationAvatarSrc({
+          uploadedSrc: organizationAvatarSrc[emailOrganizationId] ?? null,
+          avatarStorageKey: emailOrganization?.avatarStorageKey,
+          website: emailOrganization?.website,
+          brandfetchClientId: getBrandfetchClientId(),
+        })
+      : null;
+  const emailContactId =
+    emailActiveParty?.contactId?.trim() || contactId;
+  const emailContactName =
+    emailActiveParty?.partyName?.trim() || contact?.name?.trim() || null;
+  const emailContactAvatar = emailContactId
+    ? (contactAvatarSrc[emailContactId] ?? contact?.avatarSrc ?? null)
+    : null;
+
+  const emailSectionBody = (() => {
+    if (!emailItem) return null;
+    if (section === "conversation") {
+      const partyEmail = visitor?.contactEmail?.trim() || null;
+      const knownAddresses = contact
+        ? new Set(
+            getContactEmailAddresses({
+              email: details?.email ?? contact.email,
+              emails: normalizeContactEmails(
+                details?.emails ?? contact.emails,
+              ),
+            }).map((address) => address.trim().toLowerCase()),
+          )
+        : new Set<string>();
+      const missingAddress =
+        Boolean(contact) &&
+        Boolean(partyEmail) &&
+        !knownAddresses.has(partyEmail!.toLowerCase());
+      return (
+        <>
+          {missingAddress && contact ? (
+            <div className="communication-chat-contact-empty__create">
+              <p className="communication-chat-contact-empty__hint">
+                This thread uses {partyEmail}, which is not on this contact
+                yet.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void linkExistingContact(contact.id);
+                }}
+              >
+                Link this email
+              </button>
+            </div>
+          ) : null}
+          {conversationDetails}
+        </>
+      );
+    }
+    if (section === "overview") {
+      if (!contact) {
+        return <UnmatchedContactTabHint kind="activity" />;
+      }
+      return (
+        <CrmActivityFeedView
+          items={activityFeed.items}
+          loading={activityFeed.loading}
+          error={activityFeed.error}
+          nextCursor={activityFeed.nextCursor}
+          onLoadMore={activityFeed.loadMore}
+          onSubmitNote={activityFeed.submitNote}
+          onCreateTask={() => {
+            requestOpenComposeModal({ relatedContactIds: [contact.id] });
+          }}
+          onCreateEmail={() => {
+            const to =
+              getContactEmailAddresses({
+                email: details?.email ?? contact.email,
+                emails: normalizeContactEmails(
+                  details?.emails ?? contact.emails,
+                ),
+              })[0] || undefined;
+            resetEmailComposeSession();
+            writeEmailComposeSession({
+              sessionId: crypto.randomUUID(),
+              draftId: null,
+              inboxId: null,
+              prefill: to ? { to } : null,
+            });
+            navigate(getEmailComposeHref());
+          }}
+        />
+      );
+    }
+    if (section === "details") {
+      if (!contact) {
+        return <UnmatchedContactTabHint kind="contact" />;
+      }
+      return (
+        <ContactRelationshipsListView
+          items={relationships.items}
+          loading={relationships.loading}
+          error={relationships.error}
+          relationshipLabels={relationshipLabels.labels}
+          contactOptions={workspace.contacts
+            .filter((entry) => entry.id !== contact.id)
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              avatarSrc: contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
+            }))}
+          onSelectContact={(id) => {
+            const target = workspace.contacts.find((entry) => entry.id === id);
+            if (!target) return;
+            navigate(
+              getContactOverlayHref(
+                getUniqueListItemRouteParam(target, workspace.contacts),
+              ),
+            );
+          }}
+          onAdd={relationships.add}
+          onRemove={relationships.remove}
+          onCreateLabel={relationshipLabels.createLabel}
+          onUpdateLabel={relationshipLabels.updateLabel}
+          onDeleteLabel={relationshipLabels.deleteLabel}
+        />
+      );
+    }
+    if (section === "portal") {
+      if (!contact) {
+        return <UnmatchedContactTabHint kind="portal" />;
+      }
+      return (
+        <div className="contact-detail__placeholder">
+          <p className="overview-empty">
+            Open the contact to manage portal settings.
+          </p>
+          <button type="button" onClick={openFullContact}>
+            Open contact
+          </button>
+        </div>
+      );
+    }
+    return null;
+  })();
 
   return (
     <ContactDetailOverlay
@@ -588,191 +1044,200 @@ export function DesktopChatContactDetailPanel({
         return null;
       }}
     >
-      {contact ? (
-        <ContactDetailView
-          contact={{
-            id: contact.id,
-            name: contact.name,
-            firstName: contact.firstName ?? null,
-            lastName: contact.lastName ?? null,
-            displayId:
-              contact.number != null ? `C-${contact.number}` : contact.key,
-            email: details?.email ?? contact.email ?? null,
-            emails: normalizeContactEmails(details?.emails ?? contact.emails),
-            phone: details?.phone ?? contact.phone ?? null,
-            phones: normalizeContactPhones(
-              details?.phones ?? contact.phones ?? [],
-            ),
-            title: details?.title ?? contact.title ?? null,
-            address: details?.address ?? contact.address ?? null,
-            city: details?.city ?? contact.city ?? null,
-            postalCode: details?.postalCode ?? contact.postalCode ?? null,
-            country: details?.country ?? contact.country ?? null,
-            region: details?.region ?? contact.region ?? null,
-            organizationId:
-              contact.organizationId ?? details?.organizationId ?? null,
-            organizationName: contact.organizationName,
-            summary: details?.summary ?? null,
-            socialAccounts: normalizeContactSocialAccounts(
-              details?.socialAccounts ?? contact.socialAccounts,
-            ),
-            birthday: details?.birthday ?? contact.birthday ?? null,
-            languages: coerceContactLanguages(
-              details?.languages ?? contact.languages ?? [],
-            ),
-          }}
+      {emailItem && !contact ? (
+        <DesktopCommunicationEmailPartyCard
+          partyName={title}
+          organizationId={emailOrganizationId}
+          organizationName={emailOrganizationName}
+          organizationAvatarSrc={emailOrganizationAvatar}
+          contactId={emailContactId}
+          contactName={emailContactName}
+          contactAvatarSrc={emailContactAvatar}
           organizationOptions={organizationOptions}
-          groupOptions={groupOptions}
-          memberGroupIds={memberGroupIds}
-          onMemberGroupIdsChange={handleMemberGroupIdsChange}
+          contactOptions={contactOptions}
           sections={sections}
           section={section}
           onSectionChange={setSection}
-          overviewHeaderAccessory={
-            <AvatarUpload
-              displayName={contact.name}
-              avatarSrc={avatarSrc}
-              shape="cover"
-              showHint={false}
-              onUpload={async (file) => {
-                const result = await uploadDesktopAvatar(
-                  client,
-                  "contact",
-                  contact.id,
-                  file,
-                );
-                if (result.ok) {
-                  const url = URL.createObjectURL(file);
-                  setAvatarOverride((current) => {
-                    if (current) URL.revokeObjectURL(current);
-                    return url;
-                  });
+          onSelectOrganization={(nextId) => {
+            void linkExistingOrganization(nextId);
+          }}
+          onCreateOrganizationFromQuery={(query) => {
+            void createAndLinkOrganization(query);
+          }}
+          onSelectContact={(nextId) => {
+            void linkExistingContact(nextId);
+          }}
+          onCreateContactFromQuery={(query) => {
+            void createAndLinkContact(query);
+          }}
+          linking={linkingContact}
+        >
+          {emailSectionBody}
+        </DesktopCommunicationEmailPartyCard>
+      ) : (
+        <ContactDetailView
+          contact={displayContact}
+          organizationOptions={contact ? contactOrganizationOptions : []}
+          groupOptions={contact ? groupOptions : []}
+          memberGroupIds={contact ? memberGroupIds : []}
+          onMemberGroupIdsChange={
+            contact ? handleMemberGroupIdsChange : undefined
+          }
+          sections={sections}
+          section={section}
+          onSectionChange={setSection}
+          overviewHeaderAccessory={coverAccessory}
+          contactSwitcher={
+            emailItem && contactOptions.length > 0
+              ? {
+                  options: contactOptions,
+                  disabled: linkingContact,
+                  onSelect: (nextId) => {
+                    void linkExistingContact(nextId);
+                  },
+                  onCreateFromQuery: (query) => {
+                    void createAndLinkContact(query);
+                  },
                 }
-                return result;
-              }}
-              onRemove={async () => {
-                const result = await removeDesktopAvatar(
-                  client,
-                  "contact",
-                  contact.id,
-                );
-                if (result.ok) {
-                  setAvatarOverride((current) => {
-                    if (current) URL.revokeObjectURL(current);
-                    return null;
-                  });
-                }
-                return result;
-              }}
-            />
+              : null
           }
           relationshipsSlot={
-            <ContactRelationshipsListView
-              items={relationships.items}
-              loading={relationships.loading}
-              error={relationships.error}
-              relationshipLabels={relationshipLabels.labels}
-              contactOptions={workspace.contacts
-                .filter((entry) => entry.id !== contact.id)
-                .map((entry) => ({
-                  id: entry.id,
-                  name: entry.name,
-                  avatarSrc:
-                    contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
-                }))}
-              onSelectContact={(id) => {
-                const target = workspace.contacts.find(
-                  (entry) => entry.id === id,
-                );
-                if (!target) return;
-                navigate(
-                  getContactOverlayHref(
-                    getUniqueListItemRouteParam(target, workspace.contacts),
-                  ),
-                );
-              }}
-              onAdd={relationships.add}
-              onRemove={relationships.remove}
-              onCreateLabel={relationshipLabels.createLabel}
-              onUpdateLabel={relationshipLabels.updateLabel}
-              onDeleteLabel={relationshipLabels.deleteLabel}
-            />
+            contact ? (
+              <ContactRelationshipsListView
+                items={relationships.items}
+                loading={relationships.loading}
+                error={relationships.error}
+                relationshipLabels={relationshipLabels.labels}
+                contactOptions={workspace.contacts
+                  .filter((entry) => entry.id !== contact.id)
+                  .map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    avatarSrc:
+                      contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
+                  }))}
+                onSelectContact={(id) => {
+                  const target = workspace.contacts.find(
+                    (entry) => entry.id === id,
+                  );
+                  if (!target) return;
+                  navigate(
+                    getContactOverlayHref(
+                      getUniqueListItemRouteParam(target, workspace.contacts),
+                    ),
+                  );
+                }}
+                onAdd={relationships.add}
+                onRemove={relationships.remove}
+                onCreateLabel={relationshipLabels.createLabel}
+                onUpdateLabel={relationshipLabels.updateLabel}
+                onDeleteLabel={relationshipLabels.deleteLabel}
+              />
+            ) : (
+              <UnmatchedContactTabHint kind="contact" />
+            )
           }
           activitySlot={
-            <CrmActivityFeedView
-              items={activityFeed.items}
-              loading={activityFeed.loading}
-              error={activityFeed.error}
-              nextCursor={activityFeed.nextCursor}
-              onLoadMore={activityFeed.loadMore}
-              onSubmitNote={activityFeed.submitNote}
-              onCreateTask={() => {
-                requestOpenComposeModal({ relatedContactIds: [contact.id] });
-              }}
-              onCreateEmail={() => {
-                const to =
-                  getContactEmailAddresses({
-                    email: details?.email ?? contact.email,
-                    emails: normalizeContactEmails(
-                      details?.emails ?? contact.emails,
-                    ),
-                  })[0] || undefined;
-                resetEmailComposeSession();
-                writeEmailComposeSession({
-                  sessionId: crypto.randomUUID(),
-                  draftId: null,
-                  inboxId: null,
-                  prefill: to ? { to } : null,
-                });
-                navigate(getEmailComposeHref());
-              }}
-            />
+            contact ? (
+              <CrmActivityFeedView
+                items={activityFeed.items}
+                loading={activityFeed.loading}
+                error={activityFeed.error}
+                nextCursor={activityFeed.nextCursor}
+                onLoadMore={activityFeed.loadMore}
+                onSubmitNote={activityFeed.submitNote}
+                onCreateTask={() => {
+                  requestOpenComposeModal({ relatedContactIds: [contact.id] });
+                }}
+                onCreateEmail={() => {
+                  const to =
+                    getContactEmailAddresses({
+                      email: details?.email ?? contact.email,
+                      emails: normalizeContactEmails(
+                        details?.emails ?? contact.emails,
+                      ),
+                    })[0] || undefined;
+                  resetEmailComposeSession();
+                  writeEmailComposeSession({
+                    sessionId: crypto.randomUUID(),
+                    draftId: null,
+                    inboxId: null,
+                    prefill: to ? { to } : null,
+                  });
+                  navigate(getEmailComposeHref());
+                }}
+              />
+            ) : (
+              <UnmatchedContactTabHint kind="activity" />
+            )
           }
-          onCreateOrganizationFromQuery={(query) => {
-            void workspace
-              .createOrganization({ name: query })
-              .then((created) => {
-                void workspace.patchContact(contact.id, {
-                  organizationId: created.id,
-                });
-              });
-          }}
-          onSaveFirstName={async (firstName) => {
-            try {
-              await workspace.patchContact(contact.id, { firstName });
-              return { ok: true };
-            } catch (error) {
-              return {
-                ok: false,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Could not save first name.",
-              };
-            }
-          }}
-          onSaveLastName={async (lastName) => {
-            try {
-              await workspace.patchContact(contact.id, { lastName });
-              return { ok: true };
-            } catch (error) {
-              return {
-                ok: false,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Could not save last name.",
-              };
-            }
-          }}
-          onSaveDetails={(patch: ContactOverviewDetails) => {
-            void workspace.patchContact(contact.id, patch);
-          }}
+          onCreateOrganizationFromQuery={
+            contact
+              ? (query) => {
+                  void workspace
+                    .createOrganization({ name: query })
+                    .then((created) => {
+                      void workspace.patchContact(contact.id, {
+                        organizationId: created.id,
+                      });
+                    });
+                }
+              : undefined
+          }
+          onSaveFirstName={
+            contact
+              ? async (firstName) => {
+                  try {
+                    await workspace.patchContact(contact.id, { firstName });
+                    return { ok: true };
+                  } catch (error) {
+                    return {
+                      ok: false,
+                      error:
+                        error instanceof Error
+                          ? error.message
+                          : "Could not save first name.",
+                    };
+                  }
+                }
+              : undefined
+          }
+          onSaveLastName={
+            contact
+              ? async (lastName) => {
+                  try {
+                    await workspace.patchContact(contact.id, { lastName });
+                    return { ok: true };
+                  } catch (error) {
+                    return {
+                      ok: false,
+                      error:
+                        error instanceof Error
+                          ? error.message
+                          : "Could not save last name.",
+                    };
+                  }
+                }
+              : undefined
+          }
+          onSaveDetails={
+            contact
+              ? (patch: ContactOverviewDetails) => {
+                  void workspace.patchContact(contact.id, patch);
+                }
+              : undefined
+          }
           renderSection={(sectionId) => {
             if (sectionId === "conversation") {
+              if (emailItem && contact) {
+                return emailSectionBody;
+              }
               return conversationDetails;
             }
             if (sectionId === "portal") {
+              if (!contact) {
+                return <UnmatchedContactTabHint kind="portal" />;
+              }
               return (
                 <div className="contact-detail__placeholder">
                   <p className="overview-empty">
@@ -787,76 +1252,127 @@ export function DesktopChatContactDetailPanel({
             return null;
           }}
         />
-      ) : (
-        <div className="communication-chat-contact-empty">
-          {conversationDetails}
-          <UnmatchedChatVisitor
-            visitor={visitor}
-            onCreateContact={async () => {
-              const nameParts = (visitor?.contactName?.trim() || "").split(
-                /\s+/,
-              );
-              const created = await workspace.createContact({
-                firstName: nameParts[0] || "Chat",
-                lastName: nameParts.slice(1).join(" ") || "visitor",
-                email: visitor?.contactEmail?.trim() || null,
-              });
-              const phone = visitor?.contactPhone?.trim();
-              if (phone) {
-                await workspace.patchContact(created.id, { phone });
-              }
-              navigate(
-                getContactOverlayHref(
-                  getUniqueListItemRouteParam(created, [
-                    ...workspace.contacts,
-                    {
-                      id: created.id,
-                      key: created.key,
-                      number: created.number,
-                    },
-                  ]),
-                ),
-              );
-            }}
-          />
-        </div>
       )}
     </ContactDetailOverlay>
   );
 }
 
-function UnmatchedChatVisitor({
-  visitor,
-  onCreateContact,
+function UnmatchedContactTabHint({
+  kind,
 }: {
-  visitor: ChatContactPanelVisitor | null;
-  onCreateContact: () => Promise<void>;
+  kind: "activity" | "contact" | "portal";
 }) {
-  const [creating, setCreating] = useState(false);
+  const label =
+    kind === "activity"
+      ? "Activity"
+      : kind === "portal"
+        ? "Portal"
+        : "Contact details";
+  return (
+    <div className="communication-chat-contact-empty">
+      <p className="communication-chat-contact-empty__hint">
+        Select a contact to unlock {label}.
+      </p>
+    </div>
+  );
+}
+
+function CommunicationContactCoverAvatar({
+  displayName,
+  avatarSrc,
+  selectContact,
+}: {
+  displayName: string;
+  avatarSrc: string | null;
+  selectContact?: {
+    options: SearchableDropdownOption<string>[];
+    disabled?: boolean;
+    onSelect: (contactId: string) => void;
+    onCreateFromQuery?: (query: string) => void;
+  } | null;
+}) {
+  const initial = displayName.trim().charAt(0).toUpperCase() || "?";
+  const image = avatarSrc ? (
+    <img src={avatarSrc} alt="" className="avatar-upload__img" />
+  ) : selectContact ? (
+    <span aria-hidden="true" className="avatar-upload__placeholder">
+      <ContactPersonIcon size={48} />
+    </span>
+  ) : (
+    <span aria-hidden="true" className="avatar-upload__placeholder">
+      {initial}
+    </span>
+  );
+
+  if (selectContact) {
+    return (
+      <SearchableDropdown
+        className="communication-chat-contact-cover-dropdown"
+        value={null}
+        options={selectContact.options}
+        onChange={(next) => {
+          const nextId = resolveDropdownNone(next);
+          if (nextId) selectContact.onSelect(nextId);
+        }}
+        disabled={selectContact.disabled}
+        searchPlaceholder="Search contacts…"
+        ariaLabel="Select contact"
+        panelWidth={280}
+        panelAlign="start"
+        createFromQueryLabel={
+          selectContact.onCreateFromQuery
+            ? (query) => getCreateEntityFromQueryLabel("contact", query)
+            : undefined
+        }
+        onCreateFromQuery={selectContact.onCreateFromQuery}
+        renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+          <div className="avatar-upload avatar-upload--cover">
+            <div className="avatar-upload__frame">
+              <button
+                type="button"
+                id={triggerId}
+                className={[
+                  "avatar-upload__button",
+                  "avatar-upload__button--cover",
+                  "communication-chat-contact-cover--select",
+                  avatarSrc ? "avatar-upload__button--image" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={onToggle}
+                disabled={disabled}
+                aria-expanded={open}
+                aria-haspopup="listbox"
+                aria-label="Select contact"
+              >
+                {image}
+                <span className="avatar-upload__overlay">Select contact</span>
+              </button>
+            </div>
+          </div>
+        )}
+      />
+    );
+  }
 
   return (
-    <div className="communication-chat-contact-empty__create">
-      <p className="communication-chat-contact-empty__hint">
-        No matching contact in BacksterOS yet
-        {visitor?.contactEmail || visitor?.contactPhone
-          ? ` for ${visitor.contactEmail?.trim() || visitor.contactPhone?.trim()}`
-          : ""}
-        . Create one to unlock Activity and Contact tabs.
-      </p>
-      <button
-        type="button"
-        disabled={creating}
-        onClick={() => {
-          setCreating(true);
-          void onCreateContact()
-            .catch((error) => {
-              console.warn("[desktop] create chat contact failed", error);
-            })
-            .finally(() => setCreating(false));
-        }}
-      >
-        {creating ? "Creating…" : "Create contact"}
-      </button>
+    <div className="avatar-upload avatar-upload--cover">
+      <div className="avatar-upload__frame">
+        <div
+          className={[
+            "avatar-upload__button",
+            "avatar-upload__button--cover",
+            "communication-chat-contact-cover--static",
+            avatarSrc ? "avatar-upload__button--image" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          role="img"
+          aria-label={displayName}
+        >
+          {image}
+        </div>
+      </div>
     </div>
   );
 }

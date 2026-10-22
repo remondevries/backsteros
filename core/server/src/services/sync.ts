@@ -1576,6 +1576,8 @@ const emailThreadKeys = {
   contact_id: "contactId",
   assignee_id: "assigneeId",
   project_id: "projectId",
+  message_parties: "messageParties",
+  message_party: "messageParty",
   status: "status",
   priority: "priority",
   due_date: "dueDate",
@@ -1739,6 +1741,7 @@ function emailThreadSnapshot(row: typeof emailThreads.$inferSelect) {
     contact_id: row.contactId,
     assignee_id: row.assigneeId,
     project_id: row.projectId,
+    message_parties: row.messageParties ?? {},
     status: row.status,
     priority: row.priority,
     due_date: row.dueDate?.toISOString() ?? null,
@@ -3200,6 +3203,16 @@ export async function applySyncChange(
         return emailThreadSnapshot(existing);
       }
       const payload = camelizePayload(change.payload, emailThreadKeys);
+      for (const key of ["messageParties", "messageParty"] as const) {
+        const raw = payload[key];
+        if (typeof raw === "string") {
+          try {
+            payload[key] = JSON.parse(raw);
+          } catch {
+            throw new Error("INVALID_EMAIL_THREAD");
+          }
+        }
+      }
       const inboxId =
         typeof payload.inboxId === "string" ? payload.inboxId.trim() : "";
       const threadKey =

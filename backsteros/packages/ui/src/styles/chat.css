@@ -129,8 +129,8 @@
   cursor: default;
 }
 
-/* Chat rail → Details tab (conversation meta). */
-.chat-conversation-details {
+/* Chat rail → Details tab (email + chat): flat label + dropdown rows. */
+.communication-chat-details {
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
@@ -138,13 +138,24 @@
   min-height: 0;
 }
 
-.chat-conversation-details__section {
+.communication-chat-details .task-detail-properties-scroll {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.communication-chat-details .entity-properties-stack--flat {
+  gap: 0.75rem;
+}
+
+.communication-chat-details__section {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
 }
 
-.chat-conversation-details__heading {
+.communication-chat-details__heading {
   margin: 0;
   font-size: 0.72rem;
   font-weight: 600;
@@ -153,20 +164,14 @@
   opacity: 0.55;
 }
 
-.chat-conversation-details .entity-properties-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.chat-conversation-details__meta {
+.communication-chat-details__meta {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
   margin: 0;
 }
 
-.chat-conversation-details__meta-row {
+.communication-chat-details__meta-row {
   display: grid;
   grid-template-columns: 4.5rem minmax(0, 1fr);
   gap: 0.5rem 0.75rem;
@@ -174,11 +179,11 @@
   font-size: 0.82rem;
 }
 
-.chat-conversation-details__meta-row dt {
+.communication-chat-details__meta-row dt {
   opacity: 0.55;
 }
 
-.chat-conversation-details__meta-row dd {
+.communication-chat-details__meta-row dd {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -188,13 +193,13 @@
   word-break: break-all;
 }
 
-.chat-conversation-details__code {
+.communication-chat-details__code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.74rem;
   line-height: 1.35;
 }
 
-.chat-conversation-details__copy {
+.communication-chat-details__copy {
   border: 0;
   border-radius: 0.35rem;
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
@@ -205,18 +210,18 @@
   cursor: pointer;
 }
 
-.chat-conversation-details__copy:hover {
+.communication-chat-details__copy:hover {
   background: color-mix(in srgb, var(--foreground) 16%, transparent);
 }
 
-.chat-conversation-details__empty {
+.communication-chat-details__empty {
   margin: 0;
   font-size: 0.82rem;
   opacity: 0.65;
   line-height: 1.4;
 }
 
-.chat-conversation-details__previous {
+.communication-chat-details__previous {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -225,7 +230,7 @@
   gap: 0.35rem;
 }
 
-.chat-conversation-details__previous-row {
+.communication-chat-details__previous-row {
   display: flex;
   width: 100%;
   flex-direction: column;
@@ -240,18 +245,18 @@
   cursor: pointer;
 }
 
-.chat-conversation-details__previous-row:hover {
+.communication-chat-details__previous-row:hover {
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-.chat-conversation-details__previous-top {
+.communication-chat-details__previous-top {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-.chat-conversation-details__previous-name {
+.communication-chat-details__previous-name {
   font-size: 0.85rem;
   font-weight: 600;
   min-width: 0;
@@ -260,13 +265,13 @@
   white-space: nowrap;
 }
 
-.chat-conversation-details__previous-when {
+.communication-chat-details__previous-when {
   flex: 0 0 auto;
   font-size: 0.7rem;
   opacity: 0.55;
 }
 
-.chat-conversation-details__previous-preview {
+.communication-chat-details__previous-preview {
   font-size: 0.75rem;
   opacity: 0.65;
   overflow: hidden;
@@ -354,6 +359,16 @@
   align-items: baseline;
 }
 
+.communication-chat__card-item .task-kanban-card-title-stack--with-party {
+  gap: 1px;
+}
+
+.communication-chat__card-item .task-item-row__email-party--above {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
 .communication-chat__card-item .task-kanban-card-title {
   -webkit-line-clamp: 2;
   color: color-mix(in srgb, var(--foreground) 52%, transparent);
@@ -438,6 +453,25 @@
   animation: communication-chat-kind-pulse 1.1s ease-in-out infinite;
 }
 
+/* Email kind — blue disc so mixed chat/email cards stay distinguishable. */
+.communication-chat__card-kind--email {
+  background: #3b82f6;
+}
+
+.communication-chat__card-kind .inbox-item-type-icon {
+  color: inherit;
+  overflow: visible;
+}
+
+/* Unread orange corner sits just outside the blue disc. */
+.communication-chat__card-kind .inbox-item-type-icon__unread-dot {
+  top: -3px;
+  right: -3px;
+  width: 5px;
+  height: 5px;
+  border-width: 1px;
+}
+
 @keyframes communication-chat-kind-pulse {
   0%,
   100% {
@@ -492,6 +526,130 @@
   min-height: 0;
   flex-direction: column;
   align-self: stretch;
+}
+
+/* Embedded AgentMail thread — reuse chat column scroll, wider cards. */
+.communication-chat__email-thread .communication-chat__thread-container {
+  --chat-thread-max-width: min(52rem, 100%);
+}
+
+.communication-chat__email-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+}
+
+.communication-chat__email-messages .email-thread-message-card {
+  max-width: 100%;
+}
+
+.communication-chat-contact-empty__link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/*
+ * Cover contact picker — SearchableDropdown defaults to inline-flex which
+ * collapses the square cover to a chip; force full-bleed like AvatarUpload.
+ */
+.communication-chat-contact-cover-dropdown.searchable-dropdown-root,
+.contact-overview__cover > .communication-chat-contact-cover-dropdown {
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+
+.communication-chat-contact-cover-dropdown .avatar-upload--cover,
+.communication-chat-contact-cover-dropdown .avatar-upload__frame,
+.communication-chat-contact-cover-dropdown .avatar-upload__button--cover {
+  width: 100%;
+}
+
+/* Cover picker — keep the overlay hidden until hover/focus so the slot stays clean. */
+.communication-chat-contact-cover--select .avatar-upload__overlay {
+  opacity: 0;
+}
+
+.communication-chat-contact-cover--select:hover .avatar-upload__overlay,
+.communication-chat-contact-cover--select:focus-visible .avatar-upload__overlay,
+.avatar-upload__frame:has(.communication-chat-contact-cover--select):hover
+  .avatar-upload__overlay,
+.avatar-upload__frame:has(.communication-chat-contact-cover--select):focus-within
+  .avatar-upload__overlay,
+.communication-chat-contact-cover-dropdown:hover .avatar-upload__overlay,
+.communication-chat-contact-cover-dropdown:focus-within .avatar-upload__overlay {
+  opacity: 1;
+}
+
+.communication-chat-contact-cover--static {
+  pointer-events: none;
+  cursor: default;
+}
+
+.communication-chat-contact-cover--select .avatar-upload__placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Email party card — org name is the org picker; contact chip below. */
+.communication-email-party__org-dropdown {
+  display: block;
+  margin: 0 0 0.35rem;
+  max-width: 100%;
+}
+
+.communication-email-party__name {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: inherit;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.communication-email-party__name:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.communication-email-party__name--linked:hover,
+.communication-email-party__name--linked.is-open,
+.communication-email-party__name--linked:focus-visible {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+/* Unlinked — dashed outline is the org dropdown trigger. */
+.communication-email-party__name--unlinked {
+  margin-inline: auto;
+  padding: 0.2rem 0.55rem;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  font-weight: 500;
+}
+
+.communication-email-party__name--unlinked:hover,
+.communication-email-party__name--unlinked.is-open,
+.communication-email-party__name--unlinked:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.communication-email-party__org-label {
+  margin: 0.35rem 0 0;
 }
 
 /*
@@ -631,6 +789,49 @@
 .communication-chat__message.is-outgoing .communication-chat__timestamp {
   text-align: end;
   padding-inline: 0.15rem;
+}
+
+/* Contact typing — same bouncing dots as client.lemo-design.com. */
+.communication-chat__typing {
+  padding-block: 0.35rem;
+  color: color-mix(in srgb, #fff 55%, transparent);
+}
+
+.communication-chat__typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 0.5rem;
+}
+
+.communication-chat__typing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.35;
+  animation: communication-chat-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.communication-chat__typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.communication-chat__typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes communication-chat-typing-bounce {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 /* Lemo-style composer shell (client.lemo-design.com chatwoot-support). */
