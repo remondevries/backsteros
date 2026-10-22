@@ -54,6 +54,10 @@ export type TaskBoardCardProps = {
   onAssigneeChange?: (assigneeId: string | null) => void;
   assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
   ownerSlot?: ReactNode;
+  /** Replaces the display-id cell in the top row (e.g. chat contact name). */
+  topLeadingSlot?: ReactNode;
+  /** Optional leading media (e.g. large contact avatar) — body content sits to its right. */
+  leadingSlot?: ReactNode;
   /** When true, status icon becomes the agent-working pulse. */
   agentWorking?: boolean;
   /** Optional trailing content beside the title (e.g. agent bound badge). */
@@ -63,6 +67,12 @@ export type TaskBoardCardProps = {
    * card stays a single open-target — used in timetracking sessions panel.
    */
   readOnly?: boolean;
+  /** Hide the due-date chip in the meta row (chat cards show age in ownerSlot). */
+  showDueDate?: boolean;
+  /** Show the CH-/project id in the card top row (default true). */
+  showDisplayId?: boolean;
+  /** Show the status icon beside the title (default true). */
+  showStatus?: boolean;
   /** Show a hover pin control (workspace file editor). */
   showPin?: boolean;
   pinned?: boolean;
@@ -99,9 +109,14 @@ export function TaskBoardCardComponent({
   onAssigneeChange,
   assigneeOptions = [],
   ownerSlot,
+  topLeadingSlot = null,
+  leadingSlot = null,
   agentWorking = false,
   titleTrailing = null,
   readOnly = false,
+  showDueDate = true,
+  showDisplayId = true,
+  showStatus = true,
   showPin = false,
   pinned = false,
   onTogglePin,
@@ -117,6 +132,8 @@ export function TaskBoardCardComponent({
   const status = migrateLegacyTaskStatus(task.status);
   const isEmail = task.listKind === "email";
   const canEditFields = !readOnly;
+  const canEditPriority = canEditFields && Boolean(onPriorityChange);
+  const canEditDueDate = canEditFields && Boolean(onDueDateChange);
 
   const statusOptions = useMemo(
     () =>
@@ -139,59 +156,31 @@ export function TaskBoardCardComponent({
     [],
   );
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={[
-        "task-kanban-card",
-        readOnly ? "task-kanban-card--readonly" : null,
-        showPin ? "task-kanban-card--pinnable" : null,
-        pinned ? "task-kanban-card--pinned" : null,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      onClick={() => onOpen?.(task.id)}
-      onKeyDown={(event) => {
-        if (!isDirectRoleButtonActivationKey(event)) return;
-        event.preventDefault();
-        onOpen?.(task.id);
-      }}
-    >
-      {showPin && onTogglePin ? (
-        <button
-          type="button"
-          className="task-kanban-card-pin"
-          aria-label={pinned ? "Unpin task" : "Pin task"}
-          title={pinned ? "Unpin task" : "Pin task"}
-          aria-pressed={pinned}
-          tabIndex={-1}
-          onMouseDown={stopFieldEvent}
-          onClick={(event) => {
-            stopFieldEvent(event);
-            onTogglePin();
-          }}
-        >
-          <PinGlyph filled={pinned} />
-        </button>
-      ) : null}
+  const body = (
+    <>
       <span className="task-kanban-card-top">
-        <span className="task-kanban-card-id" title={displayId ?? undefined}>
-          {isEmail ? (
-            <span className="task-item-row__mailbox">
-              <AssigneeListMark
-                label={task.emailMailboxLabel?.trim() || "Mailbox"}
-                avatarSrc={task.emailMailboxAvatarSrc}
-                size={14}
-              />
-              <span className="task-item-row__mailbox-name">
-                {task.emailMailboxLabel?.trim() || "E-mail"}
+        {topLeadingSlot ? (
+          <span className="task-kanban-card-top-leading">{topLeadingSlot}</span>
+        ) : showDisplayId ? (
+          <span className="task-kanban-card-id" title={displayId ?? undefined}>
+            {isEmail ? (
+              <span className="task-item-row__mailbox">
+                <AssigneeListMark
+                  label={task.emailMailboxLabel?.trim() || "Mailbox"}
+                  avatarSrc={task.emailMailboxAvatarSrc}
+                  size={14}
+                />
+                <span className="task-item-row__mailbox-name">
+                  {task.emailMailboxLabel?.trim() || "E-mail"}
+                </span>
               </span>
-            </span>
-          ) : (
-            displayId ?? "Task"
-          )}
-        </span>
+            ) : (
+              displayId ?? "Task"
+            )}
+          </span>
+        ) : (
+          <span className="task-kanban-card-id-spacer" aria-hidden="true" />
+        )}
         {ownerSlot ??
           (canEditFields &&
           assigneeOptions.length > 0 &&
@@ -263,66 +252,72 @@ export function TaskBoardCardComponent({
             </span>
           ))}
       </span>
+      {showStatus ||
+      Boolean(task.title?.trim()) ||
+      titleTrailing ||
+      isEmail ? (
       <span className="task-kanban-card-title-row">
-        <span
-          className="task-kanban-card-status"
-          onMouseDown={canEditFields ? stopFieldEvent : undefined}
-          onClick={canEditFields ? stopFieldEvent : undefined}
-        >
-          {canEditFields ? (
-            <DeferredSearchableDropdown
-              value={status}
-              options={statusOptions}
-              onChange={onStatusChange}
-              searchPlaceholder="Change status…"
-              searchShortcutLabel="S"
-              ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
-              taskPropertyDropdownId="status"
-              className="task-item-row__dropdown"
-              panelAlign="start"
-              renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-                <button
-                  type="button"
-                  id={triggerId}
-                  className="task-item-row__icon-trigger"
-                  title={getTaskStatusLabel(status)}
-                  tabIndex={-1}
-                  disabled={disabled}
-                  aria-haspopup="listbox"
-                  aria-expanded={open}
-                  aria-label={`Change status: ${getTaskStatusLabel(status)}`}
-                  onMouseDown={stopFieldEvent}
-                  onClick={(event) => {
-                    stopFieldEvent(event);
-                    onToggle();
-                  }}
-                >
-                  <TaskStatusIcon
-                    status={status}
-                    size={14}
-                    working={agentWorking}
-                    support={Boolean(task.support)}
-                    notification={Boolean(task.notification)}
-                  />
-                </button>
-              )}
-            />
-          ) : (
-            <span
-              className="task-item-row__icon-trigger"
-              title={getTaskStatusLabel(status)}
-              aria-label={getTaskStatusLabel(status)}
-            >
-              <TaskStatusIcon
-                status={status}
-                size={14}
-                working={agentWorking}
-                support={Boolean(task.support)}
-                notification={Boolean(task.notification)}
+        {showStatus ? (
+          <span
+            className="task-kanban-card-status"
+            onMouseDown={canEditFields ? stopFieldEvent : undefined}
+            onClick={canEditFields ? stopFieldEvent : undefined}
+          >
+            {canEditFields && onStatusChange ? (
+              <DeferredSearchableDropdown
+                value={status}
+                options={statusOptions}
+                onChange={onStatusChange}
+                searchPlaceholder="Change status…"
+                searchShortcutLabel="S"
+                ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
+                taskPropertyDropdownId="status"
+                className="task-item-row__dropdown"
+                panelAlign="start"
+                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className="task-item-row__icon-trigger"
+                    title={getTaskStatusLabel(status)}
+                    tabIndex={-1}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label={`Change status: ${getTaskStatusLabel(status)}`}
+                    onMouseDown={stopFieldEvent}
+                    onClick={(event) => {
+                      stopFieldEvent(event);
+                      onToggle();
+                    }}
+                  >
+                    <TaskStatusIcon
+                      status={status}
+                      size={14}
+                      working={agentWorking}
+                      support={Boolean(task.support)}
+                      notification={Boolean(task.notification)}
+                    />
+                  </button>
+                )}
               />
-            </span>
-          )}
-        </span>
+            ) : (
+              <span
+                className="task-item-row__icon-trigger"
+                title={getTaskStatusLabel(status)}
+                aria-label={getTaskStatusLabel(status)}
+              >
+                <TaskStatusIcon
+                  status={status}
+                  size={14}
+                  working={agentWorking}
+                  support={Boolean(task.support)}
+                  notification={Boolean(task.notification)}
+                />
+              </span>
+            )}
+          </span>
+        ) : null}
         <span className="task-kanban-card-title-wrap">
           {isEmail ? (
             <span
@@ -365,13 +360,14 @@ export function TaskBoardCardComponent({
           ) : null}
         </span>
       </span>
+      ) : null}
       <span className="task-kanban-card-meta">
         <span
           className="task-kanban-card-meta-pill"
-          onMouseDown={canEditFields ? stopFieldEvent : undefined}
-          onClick={canEditFields ? stopFieldEvent : undefined}
+          onMouseDown={canEditPriority ? stopFieldEvent : undefined}
+          onClick={canEditPriority ? stopFieldEvent : undefined}
         >
-          {canEditFields ? (
+          {canEditPriority ? (
             <DeferredSearchableDropdown
               value={String(task.priority)}
               options={priorityOptions}
@@ -413,27 +409,77 @@ export function TaskBoardCardComponent({
             </span>
           )}
         </span>
-        <span
-          onMouseDown={canEditFields ? stopFieldEvent : undefined}
-          onClick={canEditFields ? stopFieldEvent : undefined}
-        >
-          {canEditFields ? (
-            <DeferredTaskDueDateDropdown
-              dueDate={task.dueDate}
-              status={task.status}
-              variant="list"
-              onDueDateChange={onDueDateChange}
-            />
-          ) : (
-            <DeferredTaskDueDateDropdown
-              dueDate={task.dueDate}
-              status={task.status}
-              variant="list"
-              disabled
-            />
-          )}
-        </span>
+        {showDueDate ? (
+          <span
+            onMouseDown={canEditDueDate ? stopFieldEvent : undefined}
+            onClick={canEditDueDate ? stopFieldEvent : undefined}
+          >
+            {canEditDueDate ? (
+              <DeferredTaskDueDateDropdown
+                dueDate={task.dueDate}
+                status={task.status}
+                variant="list"
+                onDueDateChange={onDueDateChange}
+              />
+            ) : (
+              <DeferredTaskDueDateDropdown
+                dueDate={task.dueDate}
+                status={task.status}
+                variant="list"
+                disabled
+              />
+            )}
+          </span>
+        ) : null}
       </span>
+    </>
+  );
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={[
+        "task-kanban-card",
+        leadingSlot ? "task-kanban-card--with-leading" : null,
+        readOnly ? "task-kanban-card--readonly" : null,
+        showPin ? "task-kanban-card--pinnable" : null,
+        pinned ? "task-kanban-card--pinned" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => onOpen?.(task.id)}
+      onKeyDown={(event) => {
+        if (!isDirectRoleButtonActivationKey(event)) return;
+        event.preventDefault();
+        onOpen?.(task.id);
+      }}
+    >
+      {showPin && onTogglePin ? (
+        <button
+          type="button"
+          className="task-kanban-card-pin"
+          aria-label={pinned ? "Unpin task" : "Pin task"}
+          title={pinned ? "Unpin task" : "Pin task"}
+          aria-pressed={pinned}
+          tabIndex={-1}
+          onMouseDown={stopFieldEvent}
+          onClick={(event) => {
+            stopFieldEvent(event);
+            onTogglePin();
+          }}
+        >
+          <PinGlyph filled={pinned} />
+        </button>
+      ) : null}
+      {leadingSlot ? (
+        <>
+          <span className="task-kanban-card-leading">{leadingSlot}</span>
+          <span className="task-kanban-card-body">{body}</span>
+        </>
+      ) : (
+        body
+      )}
     </div>
   );
 }

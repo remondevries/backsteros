@@ -10,7 +10,10 @@
  * Contacts / organizations rely on table-twin catch-up (no workspace SSE), so
  * the writer-side push is what makes portal↔desktop feel instant both ways.
  */
-import { publishChatUpdated } from "../../lib/chat-events.js";
+import {
+  publishChatTyping,
+  publishChatUpdated,
+} from "../../lib/chat-events.js";
 import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import {
   pullVaultMarkdownFromPeer,
@@ -49,6 +52,14 @@ export function publishChatLiveFromNudge(input: ReplicationNudgeInput): void {
   const workspaceId = input.workspaceId.trim();
   if (!conversationId || !workspaceId) return;
   const reason = (input.reason ?? "").toLowerCase();
+  if (reason.includes("typing_on") || reason.includes("typing_off")) {
+    publishChatTyping({
+      workspaceId,
+      conversationId,
+      typing: reason.includes("typing_on"),
+    });
+    return;
+  }
   const kind =
     entity === "chat_message" || reason.includes("message")
       ? "message"

@@ -3,11 +3,15 @@ import { streamSSE } from "hono/streaming";
 import {
   createChatMessageInputSchema,
   listChatConversationsQuerySchema,
+  toggleChatTypingInputSchema,
   updateChatConversationInputSchema,
   updateChatwootSettingsSchema,
 } from "@backsteros/contracts";
 
-import { subscribeChatUpdated } from "../lib/chat-events.js";
+import {
+  subscribeChatTyping,
+  subscribeChatUpdated,
+} from "../lib/chat-events.js";
 import { ChatwootApiError } from "../lib/chatwoot-client.js";
 import { chatwootHeadersFromRequest } from "../lib/chatwoot-webhook.js";
 import * as chatService from "../services/chat-service.js";
@@ -83,29 +87,40 @@ export function registerChatRoutes(app: Hono) {
       let closed = false;
       let pendingWrites = 0;
       const MAX_PENDING_WRITES = 16;
-      const unsubscribe = subscribeChatUpdated(workspaceId, (event) => {
+      const writeEvent = (event: string, data: unknown) => {
         if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
         pendingWrites += 1;
         void stream
           .writeSSE({
-            event: "chat.updated",
-            data: JSON.stringify({
-              conversationId: event.conversationId,
-              messageId: event.messageId,
-              kind: event.kind,
-            }),
+            event,
+            data: JSON.stringify(data),
           })
           .catch(() => {
             closed = true;
-            unsubscribe();
+            unsubscribeUpdated();
+            unsubscribeTyping();
           })
           .finally(() => {
             pendingWrites = Math.max(0, pendingWrites - 1);
           });
+      };
+      const unsubscribeUpdated = subscribeChatUpdated(workspaceId, (event) => {
+        writeEvent("chat.updated", {
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          kind: event.kind,
+        });
+      });
+      const unsubscribeTyping = subscribeChatTyping(workspaceId, (event) => {
+        writeEvent("chat.typing", {
+          conversationId: event.conversationId,
+          typing: event.typing,
+        });
       });
       stream.onAbort(() => {
         closed = true;
-        unsubscribe();
+        unsubscribeUpdated();
+        unsubscribeTyping();
       });
       await stream.writeSSE({
         event: "ping",
@@ -121,7 +136,8 @@ export function registerChatRoutes(app: Hono) {
           });
         } catch {
           closed = true;
-          unsubscribe();
+          unsubscribeUpdated();
+          unsubscribeTyping();
           break;
         }
       }
@@ -194,6 +210,44 @@ export function registerChatRoutes(app: Hono) {
         const status = chatErrorStatus(error);
         const message =
           error instanceof Error ? error.message : "Could not send message";
+        return c.json(
+          {
+            error: message,
+            code: status === 404 ? "not_found" : "bad_request",
+          },
+          status,
+        );
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/chat/conversations/:conversationId/typing",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const conversationId = c.req.param("conversationId");
+      const parsed = toggleChatTypingInputSchema.safeParse(await c.req.json());
+      if (!parsed.success) {
+        return c.json(
+          { error: "Invalid chat typing payload", code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await chatService.toggleChatTyping(
+            auth.workspaceId,
+            conversationId,
+            parsed.data.typing,
+          ),
+        );
+      } catch (error) {
+        const status = chatErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not toggle typing status";
         return c.json(
           {
             error: message,

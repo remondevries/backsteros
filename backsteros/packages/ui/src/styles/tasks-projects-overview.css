@@ -3075,3 +3075,20 @@
 .communication-side-panel-nav__channel-ancestor {
   color: color-mix(in srgb, var(--foreground) 70%, transparent);
 }
+
+.communication-side-panel-nav__unread-badge {
+  display: inline-flex;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}

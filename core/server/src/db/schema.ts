@@ -2771,6 +2771,13 @@ export const chatConversations = pgTable(
     lastMessagePreview: text("last_message_preview"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     unread: boolean("unread").notNull().default(false),
+    /** Local BacksterOS assignee (not Chatwoot agent). */
+    assigneeId: text("assignee_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    /** 0 = none … 4 = low (same scale as tasks). */
+    priority: integer("priority").notNull().default(0),
+    dueDate: timestamp("due_date", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2788,6 +2795,11 @@ export const chatConversations = pgTable(
     index("chat_conversations_workspace_activity_idx").on(
       table.workspaceId,
       table.lastActivityAt,
+    ),
+    index("chat_conversations_assignee_id_idx").on(table.assigneeId),
+    index("chat_conversations_workspace_due_date_idx").on(
+      table.workspaceId,
+      table.dueDate,
     ),
   ],
 );

@@ -3799,6 +3799,27 @@ export {
 } from "./components/communication/communication-chat-view.js";
 
 export {
+  ChatConversationDetailsView,
+  type ChatConversationDetailsViewProps,
+  type ChatConversationStatus,
+} from "./components/communication/chat-conversation-details-view.js";
+
+export {
+  chatConversationsShareVisitor,
+  previousChatConversations,
+} from "./communication/previous-chat-conversations.js";
+
+export {
+  CHAT_LIST_STATUS_ORDER,
+  chatConversationToTaskItemRowTask,
+  chatStatusToTaskStatus,
+  getChatListStatusLabel,
+  groupChatConversationsByStatus,
+  taskStatusToChatStatus,
+  type ChatListStatus,
+} from "./communication/chat-conversation-list-item.js";
+
+export {
   ContactEmailsEditor,
   type ContactEmailsEditorProps,
   type ContactEmailEntry,
@@ -4046,8 +4067,10 @@ export {
   isContactSectionId,
   parseContactSectionId,
   readContactCardSectionIdsFromDom,
+  resolveChatContactCardSections,
   resolveContactCardSections,
   shouldShowContactNav,
+  CHAT_CONTACT_CONVERSATION_SECTION,
   type ContactSectionConfig,
   type ContactSectionId,
 } from "./contacts/contact-sections.js";

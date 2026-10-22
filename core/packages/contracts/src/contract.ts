@@ -2468,6 +2468,21 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "Update chat conversation status (resolve / reopen)",
     },
+    toggleChatTyping: {
+      method: "POST",
+      path: "/api/v1/chat/conversations/{conversationId}/typing",
+      pathParams: z.object({ conversationId: z.string() }),
+      body: s.toggleChatTypingInputSchema,
+      responses: {
+        200: s.toggleChatTypingResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Toggle Chatwoot agent typing status (drives the website widget bubble)",
+    },
     getGoogleCalendarSettings: {
       method: "GET",
       path: "/api/v1/settings/google-calendar",

@@ -408,6 +408,25 @@ export class ChatwootClient {
       null
     );
   }
+
+  /**
+   * Tell Chatwoot the agent is typing so the website widget shows the
+   * typing bubble (and vice versa when Chatwoot broadcasts contact typing).
+   */
+  async toggleTypingStatus(
+    conversationId: string,
+    typing: boolean,
+    options?: { isPrivate?: boolean },
+  ): Promise<void> {
+    await this.requestJson<unknown>(
+      "POST",
+      `/conversations/${encodeURIComponent(conversationId)}/toggle_typing_status`,
+      {
+        typing_status: typing ? "on" : "off",
+        is_private: Boolean(options?.isPrivate),
+      },
+    );
+  }
 }
 
 export {

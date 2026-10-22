@@ -137,6 +137,28 @@ body.app-is-dragging * {
     background 120ms ease;
 }
 
+.task-kanban-card--with-leading {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.task-kanban-card-leading {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.task-kanban-card-body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .task-kanban-card-pin {
   position: absolute;
   inset-block-end: 6px;
@@ -207,6 +229,17 @@ body.app-is-dragging * {
   line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-kanban-card-id-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-kanban-card-top-leading {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .task-kanban-card-owner {

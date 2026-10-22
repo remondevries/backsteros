@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChatConversation,
   ChatConversationDetail,
@@ -8,15 +8,53 @@ import type {
 
 import { useDesktopApi } from "../api-context";
 import { showNativeWorkspaceNotification } from "../inbox/native-notifications";
-import { startChatEventsLoop, type ChatUpdatedPayload } from "./chat-events";
+import {
+  startChatEventsLoop,
+  type ChatTypingPayload,
+  type ChatUpdatedPayload,
+} from "./chat-events";
+
+/** Drop stale typing badges if Chatwoot never sends typing_off. */
+const TYPING_EXPIRE_MS = 6_000;
+import {
+  createOptimisticOutgoingMessage,
+  mergeChatMessageLists,
+  removeChatMessageById,
+  replaceOptimisticChatMessage,
+} from "./chat-message-merge";
+import { setChatUnreadCount } from "./chat-unread-store";
 
 /** Coalesce bursty twin/SSE updates into one list reload. */
 const SSE_RELOAD_DEBOUNCE_MS = 250;
-/** Catch-up while Chat is open (SSE is primary). Match email inbox cadence. */
+/** Catch-up while live (SSE is primary). Match email inbox cadence. */
 const LIVE_CATCHUP_POLL_MS = 60_000;
 
-export function useChatInbox(options?: { enabled?: boolean }) {
+export type UseChatInboxOptions = {
+  /**
+   * When true, keep list + SSE + notifications alive (Communication keep-alive
+   * pane). Independent of whether Chat is the focused channel.
+   */
+  enabled?: boolean;
+  /**
+   * True while Communication → Chat is the visible channel. Suppresses native
+   * notifications for the open thread; still receives SSE updates.
+   */
+  channelFocused?: boolean;
+};
+
+function conversationNotifyTitle(row: ChatConversation | undefined): string {
+  if (!row) return "New chat message";
+  return (
+    row.contactName?.trim() ||
+    row.contactEmail?.trim() ||
+    row.contactPhone?.trim() ||
+    "New chat message"
+  );
+}
+
+export function useChatInbox(options?: UseChatInboxOptions) {
   const enabled = options?.enabled !== false;
+  const channelFocused = options?.channelFocused === true;
   const { client } = useDesktopApi();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -25,35 +63,77 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typingIds, setTypingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const selectedIdRef = useRef<string | null>(null);
+  const channelFocusedRef = useRef(channelFocused);
+  const conversationsRef = useRef<ChatConversation[]>([]);
   const hydratedRef = useRef(false);
   const sseReloadTimerRef = useRef<number | null>(null);
+  const listAbortRef = useRef<AbortController | null>(null);
+  const listGenerationRef = useRef(0);
+  const typingExpireTimersRef = useRef<Map<string, number>>(new Map());
   selectedIdRef.current = selectedId;
+  channelFocusedRef.current = channelFocused;
+  conversationsRef.current = conversations;
+
+  const unreadCount = useMemo(
+    () => conversations.reduce((count, row) => count + (row.unread ? 1 : 0), 0),
+    [conversations],
+  );
+
+  useEffect(() => {
+    setChatUnreadCount(enabled ? unreadCount : 0);
+  }, [enabled, unreadCount]);
+
+  useEffect(() => {
+    return () => {
+      listGenerationRef.current += 1;
+      listAbortRef.current?.abort();
+      listAbortRef.current = null;
+      setChatUnreadCount(0);
+    };
+  }, []);
 
   const loadList = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!enabled) return;
+    async (opts?: { silent?: boolean }): Promise<ChatConversation[] | null> => {
+      if (!enabled) return null;
       const silent = opts?.silent === true && hydratedRef.current;
+      // Skip catch-up polls while an explicit refresh is in flight.
+      if (silent && listAbortRef.current) return null;
       if (!silent) {
+        listAbortRef.current?.abort();
         setLoading(true);
         setError(null);
       }
+      const generation = ++listGenerationRef.current;
+      const controller = new AbortController();
+      if (!silent) listAbortRef.current = controller;
+      const isCurrent = () =>
+        generation === listGenerationRef.current && !controller.signal.aborted;
       const attempt = async () => {
         const body = await client.requestJson<ChatConversationsList>(
           "/api/v1/chat/conversations?limit=50",
+          { signal: controller.signal },
         );
+        if (!isCurrent()) return null;
         setConversations(body.conversations);
+        conversationsRef.current = body.conversations;
         hydratedRef.current = true;
+        return body.conversations;
       };
       try {
-        await attempt();
+        return await attempt();
       } catch (err) {
+        if (!isCurrent()) return null;
         // WebKit surfaces transient local-core blips as "Load failed".
         try {
           await new Promise((resolve) => setTimeout(resolve, 600));
-          await attempt();
+          if (!isCurrent()) return null;
+          return await attempt();
         } catch (retryErr) {
-          if (silent) return;
+          if (!isCurrent() || silent) return null;
           const message =
             retryErr instanceof Error
               ? retryErr.message
@@ -63,9 +143,15 @@ export function useChatInbox(options?: { enabled?: boolean }) {
               ? "Could not reach local-core. Try Refresh in a moment."
               : message,
           );
+          return null;
         }
       } finally {
-        if (!silent) setLoading(false);
+        if (!silent && listAbortRef.current === controller) {
+          listAbortRef.current = null;
+        }
+        if (!silent && generation === listGenerationRef.current) {
+          setLoading(false);
+        }
       }
     },
     [client, enabled],
@@ -82,7 +168,20 @@ export function useChatInbox(options?: { enabled?: boolean }) {
         const body = await client.requestJson<ChatConversationDetail>(
           `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}`,
         );
-        setDetail(body);
+        setDetail((prev) => {
+          if (
+            silent &&
+            prev &&
+            prev.id === conversationId &&
+            prev.messages.length > 0
+          ) {
+            return {
+              ...body,
+              messages: mergeChatMessageLists(prev.messages, body.messages),
+            };
+          }
+          return body;
+        });
         setConversations((prev) =>
           prev.map((row) =>
             row.id === conversationId ? { ...row, unread: false } : row,
@@ -111,28 +210,78 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   const sendMessage = useCallback(
     async (content: string) => {
       if (!selectedId) return;
-      setSending(true);
+      const trimmed = content.trim();
+      if (!trimmed) return;
+
+      const optimistic = createOptimisticOutgoingMessage({
+        conversationId: selectedId,
+        content: trimmed,
+      });
+      const conversationId = selectedId;
+      const nowIso = optimistic.createdAt;
+
+      // Optimistic path — don't gate the composer on `sending` (Resolve/Reopen
+      // still use that flag). Failures roll the local bubble back.
       setError(null);
+      setDetail((prev) =>
+        prev && prev.id === conversationId
+          ? { ...prev, messages: [...prev.messages, optimistic] }
+          : prev,
+      );
+      setConversations((prev) => {
+        const next = prev.map((row) =>
+          row.id === conversationId
+            ? {
+                ...row,
+                lastMessagePreview: trimmed.slice(0, 280),
+                lastActivityAt: nowIso,
+                unread: false,
+              }
+            : row,
+        );
+        return [...next].sort((a, b) =>
+          (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""),
+        );
+      });
+
       try {
+        // Stop agent typing before/with the send so the widget clears promptly.
+        void client
+          .requestJson<{ ok: boolean }>(
+            `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}/typing`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ typing: false }),
+            },
+          )
+          .catch(() => {});
         const message = await client.requestJson<ChatMessage>(
-          `/api/v1/chat/conversations/${encodeURIComponent(selectedId)}/messages`,
+          `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}/messages`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ content }),
+            body: JSON.stringify({ content: trimmed }),
           },
         );
         setDetail((prev) =>
-          prev && prev.id === selectedId
-            ? { ...prev, messages: [...prev.messages, message] }
+          prev && prev.id === conversationId
+            ? {
+                ...prev,
+                messages: replaceOptimisticChatMessage(
+                  prev.messages,
+                  optimistic.id,
+                  message,
+                ),
+              }
             : prev,
         );
         setConversations((prev) => {
           const next = prev.map((row) =>
-            row.id === selectedId
+            row.id === conversationId
               ? {
                   ...row,
-                  lastMessagePreview: content.slice(0, 280),
+                  lastMessagePreview: trimmed.slice(0, 280),
                   lastActivityAt: message.createdAt,
                   unread: false,
                 }
@@ -143,33 +292,58 @@ export function useChatInbox(options?: { enabled?: boolean }) {
           );
         });
       } catch (err) {
+        setDetail((prev) =>
+          prev && prev.id === conversationId
+            ? {
+                ...prev,
+                messages: removeChatMessageById(prev.messages, optimistic.id),
+              }
+            : prev,
+        );
         setError(err instanceof Error ? err.message : "Could not send message.");
         throw err;
-      } finally {
-        setSending(false);
       }
     },
     [client, selectedId],
   );
 
-  const setStatus = useCallback(
-    async (status: "resolved" | "open") => {
-      if (!selectedId) return;
+  const applyConversationPatch = useCallback(
+    (conversationId: string, body: ChatConversation) => {
+      setDetail((prev) =>
+        prev && prev.id === conversationId ? { ...prev, ...body } : prev,
+      );
+      setConversations((prev) =>
+        prev.map((row) =>
+          row.id === conversationId ? { ...row, ...body } : row,
+        ),
+      );
+    },
+    [],
+  );
+
+  const patchConversation = useCallback(
+    async (
+      patch: {
+        status?: ChatConversation["status"];
+        assigneeId?: string | null;
+        priority?: number;
+        dueDate?: string | null;
+      },
+      conversationId: string | null = selectedIdRef.current,
+    ) => {
+      if (!conversationId) return;
       setSending(true);
       setError(null);
       try {
         const body = await client.requestJson<ChatConversation>(
-          `/api/v1/chat/conversations/${encodeURIComponent(selectedId)}`,
+          `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}`,
           {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status }),
+            body: JSON.stringify(patch),
           },
         );
-        setDetail((prev) => (prev && prev.id === selectedId ? { ...prev, ...body } : prev));
-        setConversations((prev) =>
-          prev.map((row) => (row.id === selectedId ? { ...row, ...body } : row)),
-        );
+        applyConversationPatch(conversationId, body);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Could not update conversation.",
@@ -179,7 +353,17 @@ export function useChatInbox(options?: { enabled?: boolean }) {
         setSending(false);
       }
     },
-    [client, selectedId],
+    [applyConversationPatch, client],
+  );
+
+  const setStatus = useCallback(
+    async (
+      status: ChatConversation["status"],
+      conversationId: string | null = selectedIdRef.current,
+    ) => {
+      await patchConversation({ status }, conversationId);
+    },
+    [patchConversation],
   );
 
   useEffect(() => {
@@ -190,23 +374,67 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
+    const clearTypingExpire = (conversationId: string) => {
+      const existing = typingExpireTimersRef.current.get(conversationId);
+      if (existing != null) {
+        window.clearTimeout(existing);
+        typingExpireTimersRef.current.delete(conversationId);
+      }
+    };
+    const applyTyping = (payload: ChatTypingPayload) => {
+      const id = payload.conversationId.trim();
+      if (!id) return;
+      clearTypingExpire(id);
+      setTypingIds((prev) => {
+        const next = new Set(prev);
+        if (payload.typing) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      if (!payload.typing) return;
+      // Safety net — Chatwoot sometimes omits typing_off.
+      const timer = window.setTimeout(() => {
+        typingExpireTimersRef.current.delete(id);
+        setTypingIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, TYPING_EXPIRE_MS);
+      typingExpireTimersRef.current.set(id, timer);
+    };
     const scheduleLiveReload = (payload: ChatUpdatedPayload) => {
+      // A new message ends the typing indicator for that thread.
+      if (payload.kind === "message") {
+        applyTyping({ conversationId: payload.conversationId, typing: false });
+      }
       if (sseReloadTimerRef.current != null) {
         window.clearTimeout(sseReloadTimerRef.current);
       }
       sseReloadTimerRef.current = window.setTimeout(() => {
         sseReloadTimerRef.current = null;
         void (async () => {
-          await loadList({ silent: true });
-          if (selectedIdRef.current === payload.conversationId) {
+          const rows = await loadList({ silent: true });
+          const focused = channelFocusedRef.current;
+          const selected = selectedIdRef.current;
+          if (focused && selected === payload.conversationId) {
             await loadDetail(payload.conversationId, { silent: true });
-          } else if (payload.kind === "message") {
-            void showNativeWorkspaceNotification({
-              key: `chat:${payload.conversationId}:${payload.messageId ?? "m"}`,
-              title: "New chat message",
-              body: "A visitor sent a message in Communication → Chat.",
-            });
+            return;
           }
+          if (payload.kind !== "message") return;
+          const row = (rows ?? conversationsRef.current).find(
+            (entry) => entry.id === payload.conversationId,
+          );
+          const preview = row?.lastMessagePreview?.trim();
+          void showNativeWorkspaceNotification({
+            key: `chat:${payload.conversationId}:${payload.messageId ?? "m"}`,
+            title: conversationNotifyTitle(row),
+            body:
+              preview && preview.length > 0
+                ? preview.slice(0, 160)
+                : "New message in Communication → Chat.",
+          });
         })();
       }, SSE_RELOAD_DEBOUNCE_MS);
     };
@@ -214,6 +442,7 @@ export function useChatInbox(options?: { enabled?: boolean }) {
       client,
       signal: controller.signal,
       onUpdated: scheduleLiveReload,
+      onTyping: applyTyping,
     });
     return () => {
       controller.abort();
@@ -221,6 +450,11 @@ export function useChatInbox(options?: { enabled?: boolean }) {
         window.clearTimeout(sseReloadTimerRef.current);
         sseReloadTimerRef.current = null;
       }
+      for (const timer of typingExpireTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      typingExpireTimersRef.current.clear();
+      setTypingIds(new Set());
     };
   }, [client, enabled, loadDetail, loadList]);
 
@@ -241,6 +475,25 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   const resolve = useCallback(() => setStatus("resolved"), [setStatus]);
   const reopen = useCallback(() => setStatus("open"), [setStatus]);
 
+  const setTyping = useCallback(
+    (typing: boolean, conversationId: string | null = selectedIdRef.current) => {
+      if (!conversationId) return;
+      void client
+        .requestJson<{ ok: boolean }>(
+          `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}/typing`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ typing }),
+          },
+        )
+        .catch(() => {
+          // Typing is best-effort — don't surface as a chat error.
+        });
+    },
+    [client],
+  );
+
   return {
     conversations,
     selectedId,
@@ -249,9 +502,14 @@ export function useChatInbox(options?: { enabled?: boolean }) {
     detailLoading,
     sending,
     error,
+    unreadCount,
+    typingIds,
     refresh,
     selectConversation,
     sendMessage,
+    setTyping,
+    setStatus,
+    patchConversation,
     resolve,
     reopen,
   };

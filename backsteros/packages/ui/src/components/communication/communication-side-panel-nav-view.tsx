@@ -148,6 +148,8 @@ export type CommunicationSidePanelNavViewProps = {
   emailAccountsExpanded?: boolean;
   onEmailAccountsExpandedChange?: (expanded: boolean) => void;
   onComposeEmail?: () => void;
+  /** Unread website-chat conversations (Communication → Chat). */
+  chatUnreadCount?: number;
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
@@ -207,6 +209,7 @@ export function CommunicationSidePanelNavView({
   emailAccountsExpanded = true,
   onEmailAccountsExpandedChange,
   onComposeEmail,
+  chatUnreadCount = 0,
   highlightedId = null,
   listRef,
   listContainerProps,
@@ -384,6 +387,9 @@ export function CommunicationSidePanelNavView({
               );
             }
 
+            const showChatUnread =
+              option.value === "chat" && chatUnreadCount > 0;
+
             return (
               <li key={option.value}>
                 <Link
@@ -396,6 +402,14 @@ export function CommunicationSidePanelNavView({
                   <span className="app-side-panel-item-label">
                     {option.label}
                   </span>
+                  {showChatUnread ? (
+                    <span
+                      className="communication-side-panel-nav__unread-badge"
+                      aria-label={`${chatUnreadCount} unread chats`}
+                    >
+                      {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                    </span>
+                  ) : null}
                 </Link>
               </li>
             );

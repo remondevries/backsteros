@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -33,6 +33,7 @@ import {
   getTaskStatusLabel,
 } from "@backsteros/ui";
 
+import { DesktopChatContactDetailPanel } from "../components/desktop-chat-contact-detail-panel";
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
@@ -64,6 +65,7 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
+import { matchChatContact } from "../lib/chat/match-chat-contact";
 import { useChatInbox } from "../lib/chat/use-chat-inbox";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { parseTaskLinks } from "../lib/workspace/row-mappers";
@@ -90,9 +92,24 @@ function CommunicationPageBody() {
     () => parseCommunicationChannelFromSearch(location.searchStr),
     [location.searchStr],
   );
+  // Keep SSE + unread alive for the whole Communication keep-alive pane, not
+  // only while ?channel=chat is focused (Lemo-style background notifications).
   const chatInbox = useChatInbox({
-    enabled: keepAliveActive && channel === "chat",
+    enabled: keepAliveActive,
+    channelFocused: channel === "chat",
   });
+  const [chatContactCollapsed, setChatContactCollapsed] = useState(false);
+  const [chatContactExpanded, setChatContactExpanded] = useState(false);
+  const [chatMainFaded, setChatMainFaded] = useState(false);
+
+  useEffect(() => {
+    if (chatInbox.selectedId) {
+      setChatContactCollapsed(false);
+    } else {
+      setChatContactExpanded(false);
+      setChatMainFaded(false);
+    }
+  }, [chatInbox.selectedId]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -206,10 +223,12 @@ function CommunicationPageBody() {
         "Everything");
 
   const displayId = supportTask ? getInboxItemDisplayId(supportTask) : null;
-  // Refresh belongs on Email / a specific mailbox — not Everything or Support.
-  // Chat has its own in-pane Refresh (chrome actions + loading flips ANR'd Chat).
+  // Refresh in the chrome title row — Chat (Moneybird-style sync icon) or Email
+  // mailbox. Not Everything / Support (those have no remote inbox to pull).
+  const showChatRefresh = channel === "chat";
   const showEmailBoxRefresh = channel === "email" || Boolean(inboxId);
   const messagesBusy = agentMail.messagesLoading || agentMail.loading;
+  const chatBusy = chatInbox.loading;
   const breadcrumbItems = useMemo(
     () =>
       supportTask
@@ -240,9 +259,35 @@ function CommunicationPageBody() {
   // Must be referentially stable — useRegisterChromeHeader setStates on every
   // new header node, and inline JSX here caused an infinite update loop (ANR).
   const reloadMail = agentMail.reload;
-  const breadcrumbActions = useMemo(
-    () =>
-      showEmailBoxRefresh ? (
+  const reloadChat = chatInbox.refresh;
+  const breadcrumbActions = useMemo(() => {
+    if (showChatRefresh) {
+      return (
+        <div className="catalog-chrome-actions">
+          <button
+            type="button"
+            className="catalog-chrome-actions__icon-button"
+            aria-label="Refresh chats"
+            title="Refresh chats"
+            disabled={chatBusy}
+            onClick={() => {
+              reloadChat();
+            }}
+          >
+            <FinanceSyncIcon
+              size={14}
+              className={
+                chatBusy
+                  ? "catalog-chrome-actions__sync-icon is-spinning"
+                  : "catalog-chrome-actions__sync-icon"
+              }
+            />
+          </button>
+        </div>
+      );
+    }
+    if (showEmailBoxRefresh) {
+      return (
         <div className="catalog-chrome-actions">
           <button
             type="button"
@@ -264,9 +309,17 @@ function CommunicationPageBody() {
             />
           </button>
         </div>
-      ) : null,
-    [messagesBusy, reloadMail, showEmailBoxRefresh],
-  );
+      );
+    }
+    return null;
+  }, [
+    chatBusy,
+    messagesBusy,
+    reloadChat,
+    reloadMail,
+    showChatRefresh,
+    showEmailBoxRefresh,
+  ]);
   useDesktopSectionBreadcrumb(breadcrumbItems, {
     enabled: keepAliveActive,
     actions: breadcrumbActions,
@@ -480,23 +533,116 @@ function CommunicationPageBody() {
   }
 
   if (channel === "chat") {
+    const selectedConversation =
+      chatInbox.conversations.find(
+        (row) => row.id === chatInbox.selectedId,
+      ) ?? chatInbox.detail;
+    const matchedContact = selectedConversation
+      ? matchChatContact(workspace.contacts, {
+          contactEmail:
+            chatInbox.detail?.contactEmail ??
+            selectedConversation.contactEmail,
+          contactPhone:
+            chatInbox.detail?.contactPhone ??
+            selectedConversation.contactPhone,
+        })
+      : null;
+    const chatContactPanelOpen = Boolean(chatInbox.selectedId);
+
     return (
-      <CommunicationChatView
-        conversations={chatInbox.conversations}
-        selectedId={chatInbox.selectedId}
-        detail={chatInbox.detail}
-        loading={chatInbox.loading}
-        detailLoading={chatInbox.detailLoading}
-        sending={chatInbox.sending}
-        error={chatInbox.error}
-        onSelect={chatInbox.selectConversation}
-        onRefresh={() => {
-          void chatInbox.refresh();
-        }}
-        onSend={chatInbox.sendMessage}
-        onResolve={chatInbox.resolve}
-        onReopen={chatInbox.reopen}
-      />
+      <div
+        className={[
+          "communication-chat-layout",
+          "journal-day-layout",
+          "desktop-journal-day-layout",
+          chatContactPanelOpen && chatContactCollapsed
+            ? "is-calendar-collapsed"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-content-detail
+        data-detail-split
+        data-calendar-collapsed={
+          chatContactPanelOpen && chatContactCollapsed ? "true" : "false"
+        }
+        data-chat-contact-expanded={chatContactExpanded ? "true" : "false"}
+      >
+        <div
+          className={[
+            "journal-day-layout__main",
+            chatMainFaded || chatContactExpanded ? "is-expand-faded" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <CommunicationChatView
+            conversations={chatInbox.conversations}
+            selectedId={chatInbox.selectedId}
+            detail={chatInbox.detail}
+            loading={chatInbox.loading}
+            detailLoading={chatInbox.detailLoading}
+            error={chatInbox.error}
+            typingIds={chatInbox.typingIds}
+            onTypingChange={chatInbox.setTyping}
+            resolveAvatarSrc={(conversation) => {
+              const matched = matchChatContact(workspace.contacts, {
+                contactEmail: conversation.contactEmail,
+                contactPhone: conversation.contactPhone,
+              });
+              if (matched) {
+                return contactAvatarSrc[matched.id] ?? matched.avatarSrc ?? null;
+              }
+              return conversation.contactAvatarUrl;
+            }}
+            onSelect={chatInbox.selectConversation}
+            onSend={chatInbox.sendMessage}
+          />
+        </div>
+        <DesktopChatContactDetailPanel
+          open={chatContactPanelOpen}
+          contact={matchedContact}
+          visitor={
+            selectedConversation
+              ? {
+                  contactName: selectedConversation.contactName,
+                  contactEmail: selectedConversation.contactEmail,
+                  contactPhone: selectedConversation.contactPhone,
+                  contactAvatarUrl: selectedConversation.contactAvatarUrl,
+                }
+              : null
+          }
+          conversation={
+            chatInbox.detail?.id === chatInbox.selectedId
+              ? chatInbox.detail
+              : (selectedConversation ?? null)
+          }
+          conversations={chatInbox.conversations}
+          statusUpdating={chatInbox.sending}
+          propertiesUpdating={chatInbox.sending}
+          assigneeOptions={assigneeOptions}
+          onStatusChange={(status) => {
+            void chatInbox.setStatus(status);
+          }}
+          onAssigneeChange={(assigneeId) => {
+            void chatInbox.patchConversation({ assigneeId });
+          }}
+          onPriorityChange={(priority) => {
+            void chatInbox.patchConversation({ priority });
+          }}
+          onDueDateChange={(dueDate) => {
+            void chatInbox.patchConversation({
+              dueDate: dueDate ? dueDate.toISOString() : null,
+            });
+          }}
+          onSelectConversation={chatInbox.selectConversation}
+          collapsed={chatContactCollapsed}
+          onHide={() => setChatContactCollapsed(true)}
+          onShow={() => setChatContactCollapsed(false)}
+          onExpandedChange={setChatContactExpanded}
+          onChatMainFadedChange={setChatMainFaded}
+        />
+      </div>
     );
   }
 

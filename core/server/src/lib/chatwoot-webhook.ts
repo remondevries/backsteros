@@ -71,6 +71,8 @@ export type ChatwootWebhookEventType =
   | "conversation_created"
   | "conversation_updated"
   | "conversation_status_changed"
+  | "conversation_typing_on"
+  | "conversation_typing_off"
   | string;
 
 export type ParsedChatwootWebhook = {

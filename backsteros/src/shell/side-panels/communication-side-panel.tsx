@@ -20,6 +20,7 @@ import {
 } from "@backsteros/ui";
 
 import { useAgentMail } from "../../lib/agentmail-context";
+import { useChatUnreadCount } from "../../lib/chat/chat-unread-store";
 import { rememberSectionEntryHrefs } from "../../lib/section-entry-store";
 import {
   useKeepAliveActive,
@@ -34,6 +35,7 @@ export function DesktopCommunicationSidePanel({
   const { pathname, searchStr } = useShellLocation();
   const search = searchStr ?? "";
   const agentMail = useAgentMail();
+  const chatUnreadCount = useChatUnreadCount();
   const keepAliveActive = useKeepAliveActive();
   const listRef = useRef<HTMLElement>(null);
   const [emailAccountsExpanded, setEmailAccountsExpanded] = useState(() =>
@@ -118,6 +120,7 @@ export function DesktopCommunicationSidePanel({
       mailboxes={mailboxes}
       emailAccountsExpanded={emailAccountsExpanded}
       onEmailAccountsExpandedChange={setEmailExpanded}
+      chatUnreadCount={chatUnreadCount}
       highlightedId={highlightedId}
       listRef={listRef}
       listContainerProps={listContainerProps}

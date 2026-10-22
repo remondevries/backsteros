@@ -1,4 +1,5 @@
 export const CONTACT_SECTION_IDS = [
+  "conversation",
   "overview",
   "details",
   "portal",
@@ -52,6 +53,7 @@ export function readContactCardSectionIdsFromDom(): readonly ContactSectionId[] 
   for (const part of raw.split(",")) {
     const id = part.trim();
     if (
+      id === "conversation" ||
       id === "overview" ||
       id === "details" ||
       id === "portal" ||
@@ -104,13 +106,45 @@ export function isContactSectionId(value: string): value is ContactSectionId {
 
 export function isContactCardSectionId(
   value: string,
-): value is "overview" | "details" | "portal" | "logs" {
+): value is "conversation" | "overview" | "details" | "portal" | "logs" {
   return (
+    value === "conversation" ||
     value === "overview" ||
     value === "details" ||
     value === "portal" ||
     value === "logs"
   );
+}
+
+/** Chat right-rail card: conversation Details, then Activity / Contact (+ Portal). */
+export const CHAT_CONTACT_CONVERSATION_SECTION: ContactSectionConfig = {
+  id: "conversation",
+  label: "Details",
+  segment: "conversation",
+  supportsDetail: false,
+};
+
+export function resolveChatContactCardSections(options?: {
+  showPortal?: boolean;
+  showPortalLogs?: boolean;
+}): ContactSectionConfig[] {
+  const contactDetails: ContactSectionConfig = {
+    id: "details",
+    label: "Contact",
+    segment: "details",
+    supportsDetail: false,
+  };
+  const base: ContactSectionConfig[] = [
+    CHAT_CONTACT_CONVERSATION_SECTION,
+    CONTACT_CARD_SECTIONS[0]!, // Activity
+    contactDetails,
+  ];
+  if (!options?.showPortal) return base;
+  const sections = [...base, CONTACT_PORTAL_SECTION];
+  if (options.showPortalLogs) {
+    sections.push(CONTACT_PORTAL_LOGS_SECTION);
+  }
+  return sections;
 }
 
 /** Card sections for a contact — Portal (+ Logs when configured). */

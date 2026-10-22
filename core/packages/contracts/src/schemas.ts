@@ -3462,6 +3462,11 @@ export const chatConversationSchema = z.object({
   lastMessagePreview: z.string().nullable(),
   lastActivityAt: z.string().datetime().nullable(),
   unread: z.boolean(),
+  /** Local BacksterOS assignee contact id. */
+  assigneeId: z.string().nullable(),
+  /** 0 = none, 1 = urgent … 4 = low (same scale as Task.priority). */
+  priority: z.number().int().min(0).max(4),
+  dueDate: z.string().datetime().nullable(),
   updatedAt: z.string().datetime(),
 });
 export const chatMessageDirectionSchema = z.enum([
@@ -3493,6 +3498,15 @@ export const createChatMessageInputSchema = z.object({
 });
 export const updateChatConversationInputSchema = z.object({
   status: chatConversationStatusSchema.optional(),
+  assigneeId: z.string().nullable().optional(),
+  priority: z.number().int().min(0).max(4).optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+});
+export const toggleChatTypingInputSchema = z.object({
+  typing: z.boolean(),
+});
+export const toggleChatTypingResultSchema = z.object({
+  ok: z.boolean(),
 });
 export const chatConversationsListSchema = z.object({
   conversations: z.array(chatConversationSchema),
@@ -5377,6 +5391,10 @@ export type CreateChatMessageInput = z.infer<
 >;
 export type UpdateChatConversationInput = z.infer<
   typeof updateChatConversationInputSchema
+>;
+export type ToggleChatTypingInput = z.infer<typeof toggleChatTypingInputSchema>;
+export type ToggleChatTypingResult = z.infer<
+  typeof toggleChatTypingResultSchema
 >;
 export type ChatConversationsList = z.infer<typeof chatConversationsListSchema>;
 export type ChatSyncResult = z.infer<typeof chatSyncResultSchema>;

@@ -3,6 +3,7 @@ import { beforeEach, describe, it } from "node:test";
 
 import {
   clearChatUpdatedListeners,
+  subscribeChatTyping,
   subscribeChatUpdated,
   type ChatUpdatedEvent,
 } from "../../lib/chat-events.js";
@@ -261,6 +262,35 @@ describe("publishChatLiveFromNudge", () => {
     assert.equal(received.length, 1);
     assert.equal(received[0]?.conversationId, "conv_1");
     assert.equal(received[0]?.kind, "message");
+  });
+
+  it("publishes chat.typing for typing webhook nudges", () => {
+    const received: Array<{ conversationId: string; typing: boolean }> = [];
+    subscribeChatTyping("ws_1", (event) => {
+      received.push({
+        conversationId: event.conversationId,
+        typing: event.typing,
+      });
+    });
+
+    publishChatLiveFromNudge({
+      workspaceId: "ws_1",
+      entity: "chat_conversation",
+      entityId: "conv_1",
+      reason: "chat.webhook.typing_on",
+      operation: "upsert",
+    });
+    publishChatLiveFromNudge({
+      workspaceId: "ws_1",
+      entity: "chat_conversation",
+      entityId: "conv_1",
+      reason: "chat.webhook.typing_off",
+      operation: "upsert",
+    });
+
+    assert.equal(received.length, 2);
+    assert.equal(received[0]?.typing, true);
+    assert.equal(received[1]?.typing, false);
   });
 
   it("ignores non-chat entities", () => {

@@ -19,7 +19,7 @@ import {
   type DbChatConversation,
   type DbChatMessage,
 } from "../db/schema.js";
-import { publishChatUpdated } from "../lib/chat-events.js";
+import { publishChatTyping, publishChatUpdated } from "../lib/chat-events.js";
 import { newId } from "../lib/crypto.js";
 import {
   ChatwootApiError,
@@ -73,6 +73,9 @@ function toIso(value: Date | null | undefined): string | null {
 }
 
 function mapConversation(row: DbChatConversation): ChatConversation {
+  const priority = Number.isFinite(row.priority)
+    ? Math.min(4, Math.max(0, Math.trunc(row.priority)))
+    : 0;
   return {
     id: row.id,
     externalId: row.externalId,
@@ -87,6 +90,9 @@ function mapConversation(row: DbChatConversation): ChatConversation {
     lastMessagePreview: row.lastMessagePreview,
     lastActivityAt: toIso(row.lastActivityAt),
     unread: row.unread,
+    assigneeId: row.assigneeId ?? null,
+    priority,
+    dueDate: toIso(row.dueDate),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -371,14 +377,15 @@ export async function createChatMessage(
     kind: "message",
   });
   nudgeChatTwin(workspaceId, conversation.id, "chat.message.create");
+
   return mapMessage(message);
 }
 
-export async function updateChatConversation(
+export async function toggleChatTyping(
   workspaceId: string,
   conversationId: string,
-  input: UpdateChatConversationInput,
-): Promise<ChatConversation> {
+  typing: boolean,
+): Promise<{ ok: boolean }> {
   const credentials = await getChatwootCredentials(workspaceId);
   if (!credentials) {
     throw new Error("Chatwoot is not configured.");
@@ -398,32 +405,83 @@ export async function updateChatConversation(
     throw Object.assign(new Error("Conversation not found"), { status: 404 });
   }
 
+  const client = createChatwootClient(credentials);
+  await client.toggleTypingStatus(conversation.externalId, typing);
+  return { ok: true };
+}
+
+export async function updateChatConversation(
+  workspaceId: string,
+  conversationId: string,
+  input: UpdateChatConversationInput,
+): Promise<ChatConversation> {
+  const [conversation] = await db
+    .select()
+    .from(chatConversations)
+    .where(
+      and(
+        eq(chatConversations.workspaceId, workspaceId),
+        eq(chatConversations.id, conversationId),
+        isNull(chatConversations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!conversation) {
+    throw Object.assign(new Error("Conversation not found"), { status: 404 });
+  }
+
+  const patch: {
+    status?: string;
+    assigneeId?: string | null;
+    priority?: number;
+    dueDate?: Date | null;
+    updatedAt: Date;
+  } = { updatedAt: new Date() };
+  let touched = false;
+
   if (input.status) {
+    const credentials = await getChatwootCredentials(workspaceId);
+    if (!credentials) {
+      throw new Error("Chatwoot is not configured.");
+    }
     const client = createChatwootClient(credentials);
     const remote = await client.toggleConversationStatus(
       conversation.externalId,
       input.status,
     );
-    const status = normalizeStatus(remote?.status ?? input.status);
-    const [updated] = await db
-      .update(chatConversations)
-      .set({
-        status,
-        updatedAt: new Date(),
-      })
-      .where(eq(chatConversations.id, conversation.id))
-      .returning();
-    publishChatUpdated({
-      workspaceId,
-      conversationId: conversation.id,
-      messageId: null,
-      kind: "conversation",
-    });
-    nudgeChatTwin(workspaceId, conversation.id, "chat.conversation.update");
-    return mapConversation(updated!);
+    patch.status = normalizeStatus(remote?.status ?? input.status);
+    touched = true;
+  }
+  if (input.assigneeId !== undefined) {
+    patch.assigneeId = input.assigneeId;
+    touched = true;
+  }
+  if (input.priority !== undefined) {
+    patch.priority = input.priority;
+    touched = true;
+  }
+  if (input.dueDate !== undefined) {
+    patch.dueDate = input.dueDate ? new Date(input.dueDate) : null;
+    touched = true;
   }
 
-  return mapConversation(conversation);
+  if (!touched) {
+    return mapConversation(conversation);
+  }
+
+  const [updated] = await db
+    .update(chatConversations)
+    .set(patch)
+    .where(eq(chatConversations.id, conversation.id))
+    .returning();
+  publishChatUpdated({
+    workspaceId,
+    conversationId: conversation.id,
+    messageId: null,
+    kind: "conversation",
+  });
+  nudgeChatTwin(workspaceId, conversation.id, "chat.conversation.update");
+  return mapConversation(updated!);
 }
 
 export async function syncChatwootConversations(
@@ -610,6 +668,35 @@ async function ingestWebhookForWorkspace(
       kind: "conversation",
     });
     nudgeChatTwin(workspaceId, conversation.id, "chat.webhook.conversation");
+    return { published: true };
+  }
+
+  if (
+    parsed.event === "conversation_typing_on" ||
+    parsed.event === "conversation_typing_off"
+  ) {
+    // Private-note typing is agent-only chrome — ignore for the inbox badge.
+    const record = chatwootAsRecord(payload);
+    if (record?.is_private === true) return { published: false };
+    const externalId = parsed.conversationId?.trim();
+    if (!externalId) return { published: false };
+    const conversation = await findConversationByExternalId(
+      workspaceId,
+      externalId,
+    );
+    if (!conversation || conversation.deletedAt) return { published: false };
+    const typing = parsed.event === "conversation_typing_on";
+    publishChatTyping({
+      workspaceId,
+      conversationId: conversation.id,
+      typing,
+    });
+    // Ephemeral — no DB row to twin; nudge the peer so local SSE sees it.
+    nudgeChatTwin(
+      workspaceId,
+      conversation.id,
+      typing ? "chat.webhook.typing_on" : "chat.webhook.typing_off",
+    );
     return { published: true };
   }
 

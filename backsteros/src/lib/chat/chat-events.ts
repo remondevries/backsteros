@@ -8,6 +8,11 @@ export type ChatUpdatedPayload = {
   kind: "message" | "conversation";
 };
 
+export type ChatTypingPayload = {
+  conversationId: string;
+  typing: boolean;
+};
+
 export type ChatEventsClient = {
   requestStream: (path: string, init?: RequestInit) => Promise<Response>;
 };
@@ -37,6 +42,7 @@ export async function subscribeChatEvents(input: {
   client: ChatEventsClient;
   signal: AbortSignal;
   onUpdated: (payload: ChatUpdatedPayload) => void;
+  onTyping?: (payload: ChatTypingPayload) => void;
   onConnection?: (status: "live") => void;
 }): Promise<void> {
   const response = await input.client.requestStream("/api/v1/chat/events", {
@@ -79,6 +85,26 @@ export async function subscribeChatEvents(input: {
       buffer = parts.pop() ?? "";
       for (const part of parts) {
         parseSseChunk(part, (event, data) => {
+          if (event === "chat.typing") {
+            try {
+              const parsed = JSON.parse(data) as {
+                conversationId?: unknown;
+                typing?: unknown;
+              };
+              const conversationId =
+                typeof parsed.conversationId === "string"
+                  ? parsed.conversationId.trim()
+                  : "";
+              if (!conversationId) return;
+              input.onTyping?.({
+                conversationId,
+                typing: parsed.typing === true,
+              });
+            } catch {
+              // ignore malformed
+            }
+            return;
+          }
           if (event !== "chat.updated") return;
           try {
             const parsed = JSON.parse(data) as {
@@ -121,6 +147,7 @@ export function startChatEventsLoop(input: {
   client: ChatEventsClient;
   signal: AbortSignal;
   onUpdated: (payload: ChatUpdatedPayload) => void;
+  onTyping?: (payload: ChatTypingPayload) => void;
   enabled?: boolean;
 }): void {
   if (input.enabled === false) return;
@@ -132,6 +159,7 @@ export function startChatEventsLoop(input: {
           client: input.client,
           signal: input.signal,
           onUpdated: input.onUpdated,
+          onTyping: input.onTyping,
         });
         attempt = 0;
       } catch {

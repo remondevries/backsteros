@@ -161,11 +161,13 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`, but keep workspace UI
-      // packages watched so `pnpm --filter @backsteros/ui build` hot-reloads.
+      // Ignore Tauri / generated UI dist. Dev aliases `@backsteros/ui` →
+      // `packages/ui/src`, so watching `dist` only storms HMR (and leaks
+      // memory) whenever `pnpm --filter @backsteros/ui build` rewrites it.
       ignored: [
         "**/src-tauri/**",
         "**/node_modules/**",
+        "**/packages/ui/dist/**",
         "!**/node_modules/@backsteros/**",
       ],
     },

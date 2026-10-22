@@ -1093,6 +1093,13 @@
       "when": 1795900000000,
       "tag": "0154_task_waiting_follow_up_date",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1795910000000,
+      "tag": "0155_chat_conversation_properties",
+      "breakpoints": true
     }
   ]
 }

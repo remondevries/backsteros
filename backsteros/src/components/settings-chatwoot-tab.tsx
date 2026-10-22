@@ -151,7 +151,7 @@ export function SettingsChatwootTab({
         }
         hint={
           settings?.webhookUrl
-            ? `Webhook URL: ${settings.webhookUrl}`
+            ? `Webhook URL: ${settings.webhookUrl} — subscribe to message_*, conversation_*, and conversation_typing_on/off.`
             : "Set BACKSTEROS_PUBLIC_API_URL (HTTPS) so the webhook URL appears here."
         }
         testing={testing}

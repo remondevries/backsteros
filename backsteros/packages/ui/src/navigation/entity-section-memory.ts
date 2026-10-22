@@ -26,6 +26,8 @@ export function getRememberedOrganizationSection(): OrganizationSectionId | null
 
 export function rememberContactSection(section: ContactSectionId): void {
   if (typeof window === "undefined") return;
+  // Chat-only rail tab — do not leak into Contacts entity memory.
+  if (section === "conversation") return;
   sessionStorage.setItem(CONTACT_SECTION_STORAGE_KEY, section);
 }
 
@@ -34,6 +36,7 @@ export function getRememberedContactSection(): ContactSectionId | null {
   const stored = sessionStorage.getItem(CONTACT_SECTION_STORAGE_KEY);
   if (!stored) return null;
   if (stored === "activity" || stored === "relationships") return "details";
+  if (stored === "conversation") return null;
   if (!isContactSectionId(stored)) return null;
   return stored;
 }
