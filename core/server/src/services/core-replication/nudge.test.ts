@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
 import {
+  clearChatUpdatedListeners,
+  subscribeChatUpdated,
+  type ChatUpdatedEvent,
+} from "../../lib/chat-events.js";
+import {
   clearWorkspaceUpdatedListeners,
   subscribeWorkspaceUpdated,
   type WorkspaceUpdatedEvent,
 } from "../../lib/workspace-events.js";
+import { publishChatLiveFromNudge } from "./nudge.js";
 import { publishWorkspaceUpdatedFromSyncEvent } from "./sync-event-live-publish.js";
 import { resolveReplicationIntervalMs } from "./config.js";
 
@@ -230,6 +236,48 @@ describe("publishWorkspaceUpdatedFromSyncEvent", () => {
     assert.equal(received[0]?.kind, "bank_account");
     assert.equal(received[1]?.kind, "habit");
     assert.equal(received[1]?.operation, "delete");
+  });
+});
+
+describe("publishChatLiveFromNudge", () => {
+  beforeEach(() => {
+    clearChatUpdatedListeners();
+  });
+
+  it("publishes chat.updated for webhook message nudges", () => {
+    const received: ChatUpdatedEvent[] = [];
+    subscribeChatUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishChatLiveFromNudge({
+      workspaceId: "ws_1",
+      entity: "chat_conversation",
+      entityId: "conv_1",
+      reason: "chat.webhook.message",
+      operation: "upsert",
+    });
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0]?.conversationId, "conv_1");
+    assert.equal(received[0]?.kind, "message");
+  });
+
+  it("ignores non-chat entities", () => {
+    const received: ChatUpdatedEvent[] = [];
+    subscribeChatUpdated("ws_1", (event) => {
+      received.push(event);
+    });
+
+    publishChatLiveFromNudge({
+      workspaceId: "ws_1",
+      entity: "contact",
+      entityId: "c_1",
+      reason: "contact",
+      operation: "upsert",
+    });
+
+    assert.equal(received.length, 0);
   });
 });
 

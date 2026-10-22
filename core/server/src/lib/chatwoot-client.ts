@@ -148,6 +148,43 @@ function parseConversation(raw: unknown): ChatwootConversationSummary | null {
   };
 }
 
+/**
+ * Resolve the conversation from a Chatwoot webhook body.
+ * `message_*` payloads put the message id at the top level and nest the
+ * conversation — never treat the message id as the conversation external id.
+ */
+function parseConversationFromWebhookPayload(
+  payload: unknown,
+  event?: string | null,
+): ChatwootConversationSummary | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const eventName = (event ?? asString(record.event) ?? "").toLowerCase();
+  const nested = asRecord(record.conversation);
+  if (eventName.startsWith("message_") || nested) {
+    if (nested) {
+      const fromNested = parseConversation(nested);
+      if (fromNested) return fromNested;
+    }
+    // Minimal fallback when only conversation_id is present on a message event.
+    const conversationId = asString(record.conversation_id);
+    if (conversationId) {
+      return {
+        id: conversationId,
+        inboxId: asString(record.inbox_id),
+        status: "open",
+        channelType: null,
+        contact: parseContact(record.sender),
+        lastActivityAt: unixOrIsoToIso(record.created_at),
+        unreadCount: 0,
+        lastMessagePreview: asString(record.content),
+      };
+    }
+    if (eventName.startsWith("message_")) return null;
+  }
+  return parseConversation(payload);
+}
+
 function parseMessage(
   raw: unknown,
   fallbackConversationId?: string | null,
@@ -375,6 +412,7 @@ export class ChatwootClient {
 
 export {
   parseConversation as parseChatwootConversationPayload,
+  parseConversationFromWebhookPayload as parseChatwootConversationFromWebhookPayload,
   parseMessage as parseChatwootMessagePayload,
   mapMessageType as mapChatwootMessageType,
   asRecord as chatwootAsRecord,

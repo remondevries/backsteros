@@ -101,14 +101,16 @@ export function parseChatwootWebhookPayload(
   if (!event) return null;
   const conversation = asRecord(record.conversation);
   const account = asRecord(record.account);
-  const conversationId =
-    asString(conversation?.id) ??
-    asString(record.id) ??
-    asString(record.conversation_id);
-  const messageId =
-    event.startsWith("message_")
-      ? asString(record.id)
-      : asString(record.message_id);
+  // On message_* events top-level `id` is the message id — never use it as
+  // the conversation id (that spawned one conversation per message).
+  const conversationId = event.startsWith("message_")
+    ? (asString(conversation?.id) ?? asString(record.conversation_id))
+    : (asString(conversation?.id) ??
+      asString(record.id) ??
+      asString(record.conversation_id));
+  const messageId = event.startsWith("message_")
+    ? asString(record.id)
+    : asString(record.message_id);
   return {
     event,
     accountId: asString(account?.id) ?? asString(record.account_id),

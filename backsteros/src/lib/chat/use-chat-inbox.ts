@@ -10,6 +10,11 @@ import { useDesktopApi } from "../api-context";
 import { showNativeWorkspaceNotification } from "../inbox/native-notifications";
 import { startChatEventsLoop, type ChatUpdatedPayload } from "./chat-events";
 
+/** Coalesce bursty twin/SSE updates into one list reload. */
+const SSE_RELOAD_DEBOUNCE_MS = 250;
+/** Catch-up while Chat is open (SSE is primary). Match email inbox cadence. */
+const LIVE_CATCHUP_POLL_MS = 60_000;
+
 export function useChatInbox(options?: { enabled?: boolean }) {
   const enabled = options?.enabled !== false;
   const { client } = useDesktopApi();
@@ -21,45 +26,58 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
+  const hydratedRef = useRef(false);
+  const sseReloadTimerRef = useRef<number | null>(null);
   selectedIdRef.current = selectedId;
 
-  const loadList = useCallback(async () => {
-    if (!enabled) return;
-    setLoading(true);
-    setError(null);
-    const attempt = async () => {
-      const body = await client.requestJson<ChatConversationsList>(
-        "/api/v1/chat/conversations?limit=50",
-      );
-      setConversations(body.conversations);
-    };
-    try {
-      await attempt();
-    } catch (err) {
-      // WebKit surfaces transient local-core blips as "Load failed".
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        await attempt();
-      } catch (retryErr) {
-        const message =
-          retryErr instanceof Error
-            ? retryErr.message
-            : "Could not load chat conversations.";
-        setError(
-          message === "Load failed" || message === "Failed to fetch"
-            ? "Could not reach local-core. Try Refresh in a moment."
-            : message,
-        );
+  const loadList = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!enabled) return;
+      const silent = opts?.silent === true && hydratedRef.current;
+      if (!silent) {
+        setLoading(true);
+        setError(null);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [client, enabled]);
+      const attempt = async () => {
+        const body = await client.requestJson<ChatConversationsList>(
+          "/api/v1/chat/conversations?limit=50",
+        );
+        setConversations(body.conversations);
+        hydratedRef.current = true;
+      };
+      try {
+        await attempt();
+      } catch (err) {
+        // WebKit surfaces transient local-core blips as "Load failed".
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          await attempt();
+        } catch (retryErr) {
+          if (silent) return;
+          const message =
+            retryErr instanceof Error
+              ? retryErr.message
+              : "Could not load chat conversations.";
+          setError(
+            message === "Load failed" || message === "Failed to fetch"
+              ? "Could not reach local-core. Try Refresh in a moment."
+              : message,
+          );
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [client, enabled],
+  );
 
   const loadDetail = useCallback(
-    async (conversationId: string) => {
-      setDetailLoading(true);
-      setError(null);
+    async (conversationId: string, opts?: { silent?: boolean }) => {
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setDetailLoading(true);
+        setError(null);
+      }
       try {
         const body = await client.requestJson<ChatConversationDetail>(
           `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}`,
@@ -71,11 +89,12 @@ export function useChatInbox(options?: { enabled?: boolean }) {
           ),
         );
       } catch (err) {
+        if (silent) return;
         setError(
           err instanceof Error ? err.message : "Could not load conversation.",
         );
       } finally {
-        setDetailLoading(false);
+        if (!silent) setDetailLoading(false);
       }
     },
     [client],
@@ -108,8 +127,8 @@ export function useChatInbox(options?: { enabled?: boolean }) {
             ? { ...prev, messages: [...prev.messages, message] }
             : prev,
         );
-        setConversations((prev) =>
-          prev.map((row) =>
+        setConversations((prev) => {
+          const next = prev.map((row) =>
             row.id === selectedId
               ? {
                   ...row,
@@ -118,8 +137,11 @@ export function useChatInbox(options?: { enabled?: boolean }) {
                   unread: false,
                 }
               : row,
-          ),
-        );
+          );
+          return [...next].sort((a, b) =>
+            (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""),
+          );
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not send message.");
         throw err;
@@ -168,28 +190,56 @@ export function useChatInbox(options?: { enabled?: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
-    startChatEventsLoop({
-      client,
-      signal: controller.signal,
-      onUpdated: (payload: ChatUpdatedPayload) => {
+    const scheduleLiveReload = (payload: ChatUpdatedPayload) => {
+      if (sseReloadTimerRef.current != null) {
+        window.clearTimeout(sseReloadTimerRef.current);
+      }
+      sseReloadTimerRef.current = window.setTimeout(() => {
+        sseReloadTimerRef.current = null;
         void (async () => {
-          await loadList();
+          await loadList({ silent: true });
           if (selectedIdRef.current === payload.conversationId) {
-            await loadDetail(payload.conversationId);
+            await loadDetail(payload.conversationId, { silent: true });
           } else if (payload.kind === "message") {
-            const title = "New chat message";
-            const body = "A visitor sent a message in Communication → Chat.";
             void showNativeWorkspaceNotification({
               key: `chat:${payload.conversationId}:${payload.messageId ?? "m"}`,
-              title,
-              body,
+              title: "New chat message",
+              body: "A visitor sent a message in Communication → Chat.",
             });
           }
         })();
-      },
+      }, SSE_RELOAD_DEBOUNCE_MS);
+    };
+    startChatEventsLoop({
+      client,
+      signal: controller.signal,
+      onUpdated: scheduleLiveReload,
     });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (sseReloadTimerRef.current != null) {
+        window.clearTimeout(sseReloadTimerRef.current);
+        sseReloadTimerRef.current = null;
+      }
+    };
   }, [client, enabled, loadDetail, loadList]);
+
+  // Safety net when twin SSE is delayed or the stream recycled.
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setInterval(() => {
+      void loadList({ silent: true });
+    }, LIVE_CATCHUP_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [enabled, loadList]);
+
+  // Stable refs for chrome breadcrumb actions — a fresh () => loadList() each
+  // render retriggers useDesktopSectionBreadcrumb and ANRs the Chat channel.
+  const refresh = useCallback(() => {
+    void loadList();
+  }, [loadList]);
+  const resolve = useCallback(() => setStatus("resolved"), [setStatus]);
+  const reopen = useCallback(() => setStatus("open"), [setStatus]);
 
   return {
     conversations,
@@ -199,10 +249,10 @@ export function useChatInbox(options?: { enabled?: boolean }) {
     detailLoading,
     sending,
     error,
-    refresh: loadList,
+    refresh,
     selectConversation,
     sendMessage,
-    resolve: () => setStatus("resolved"),
-    reopen: () => setStatus("open"),
+    resolve,
+    reopen,
   };
 }

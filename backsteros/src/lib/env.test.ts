@@ -53,7 +53,7 @@ test("cleartext PowerSync stays loopback for local-core API", () => {
   );
 });
 
-test("optional replica API keeps loopback PowerSync and SSE on one host", () => {
+test("optional replica API splits loopback REST vs SSE hosts", () => {
   assert.equal(isLocalDevApiUrl("http://127.0.0.1:8788"), true);
   assert.equal(isLocalDevApiUrl("http://localhost:8788"), true);
   assert.equal(isLocalDevApiUrl("http://localhost:1420"), false);
@@ -66,6 +66,10 @@ test("optional replica API keeps loopback PowerSync and SSE on one host", () => 
   );
   assert.equal(
     sseUrlForApiUrl("http://127.0.0.1:8788"),
+    "http://localhost:8788",
+  );
+  assert.equal(
+    sseUrlForApiUrl("http://localhost:8788"),
     "http://127.0.0.1:8788",
   );
   assert.equal(

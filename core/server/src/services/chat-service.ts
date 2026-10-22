@@ -29,7 +29,7 @@ import {
   chatwootAsString,
   chatwootUnixOrIsoToIso,
   mapChatwootMessageType,
-  parseChatwootConversationPayload,
+  parseChatwootConversationFromWebhookPayload,
   parseChatwootMessagePayload,
 } from "../lib/chatwoot-client.js";
 import {
@@ -539,12 +539,7 @@ async function rememberDelivery(
 function summaryFromWebhookConversation(
   payload: unknown,
 ): ChatwootConversationSummary | null {
-  const parsed = parseChatwootConversationPayload(payload);
-  if (parsed) return parsed;
-  const record = chatwootAsRecord(payload);
-  if (!record) return null;
-  const conversation = chatwootAsRecord(record.conversation) ?? record;
-  return parseChatwootConversationPayload(conversation);
+  return parseChatwootConversationFromWebhookPayload(payload);
 }
 
 function summaryFromWebhookMessage(

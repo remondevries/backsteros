@@ -207,10 +207,9 @@ function CommunicationPageBody() {
 
   const displayId = supportTask ? getInboxItemDisplayId(supportTask) : null;
   // Refresh belongs on Email / a specific mailbox — not Everything or Support.
+  // Chat has its own in-pane Refresh (chrome actions + loading flips ANR'd Chat).
   const showEmailBoxRefresh = channel === "email" || Boolean(inboxId);
-  const showChatRefresh = channel === "chat";
   const messagesBusy = agentMail.messagesLoading || agentMail.loading;
-  const chatBusy = chatInbox.loading;
   const breadcrumbItems = useMemo(
     () =>
       supportTask
@@ -241,7 +240,6 @@ function CommunicationPageBody() {
   // Must be referentially stable — useRegisterChromeHeader setStates on every
   // new header node, and inline JSX here caused an infinite update loop (ANR).
   const reloadMail = agentMail.reload;
-  const reloadChat = chatInbox.refresh;
   const breadcrumbActions = useMemo(
     () =>
       showEmailBoxRefresh ? (
@@ -266,37 +264,8 @@ function CommunicationPageBody() {
             />
           </button>
         </div>
-      ) : showChatRefresh ? (
-        <div className="catalog-chrome-actions">
-          <button
-            type="button"
-            className="catalog-chrome-actions__icon-button"
-            aria-label="Refresh chats"
-            title="Refresh chats"
-            disabled={chatBusy}
-            onClick={() => {
-              void reloadChat();
-            }}
-          >
-            <FinanceSyncIcon
-              size={14}
-              className={
-                chatBusy
-                  ? "catalog-chrome-actions__sync-icon is-spinning"
-                  : "catalog-chrome-actions__sync-icon"
-              }
-            />
-          </button>
-        </div>
       ) : null,
-    [
-      chatBusy,
-      messagesBusy,
-      reloadChat,
-      reloadMail,
-      showChatRefresh,
-      showEmailBoxRefresh,
-    ],
+    [messagesBusy, reloadMail, showEmailBoxRefresh],
   );
   useDesktopSectionBreadcrumb(breadcrumbItems, {
     enabled: keepAliveActive,

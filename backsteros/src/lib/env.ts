@@ -58,7 +58,20 @@ export function isLocalDevApiUrl(apiUrl: string): boolean {
 
 export function sseUrlForApiUrl(apiUrl: string): string {
   if (isLocalDevApiUrl(apiUrl)) {
-    return apiUrl.replace(/\/$/, "");
+    try {
+      const url = new URL(apiUrl);
+      // HTTP/1.1 caps ~6 connections per host. REST stays on the configured
+      // loopback name; SSE uses the other so Chat/email/workspace streams do
+      // not stall the UI (opening Chat used to freeze the desktop).
+      if (url.hostname === "127.0.0.1") {
+        url.hostname = "localhost";
+      } else if (url.hostname === "localhost") {
+        url.hostname = "127.0.0.1";
+      }
+      return url.toString().replace(/\/$/, "");
+    } catch {
+      return apiUrl.replace(/\/$/, "");
+    }
   }
   try {
     const url = new URL(apiUrl);

@@ -10,6 +10,7 @@
  * Contacts / organizations rely on table-twin catch-up (no workspace SSE), so
  * the writer-side push is what makes portal↔desktop feel instant both ways.
  */
+import { publishChatUpdated } from "../../lib/chat-events.js";
 import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import {
   pullVaultMarkdownFromPeer,
@@ -35,6 +36,30 @@ export type ReplicationNudgeInput = {
   operation?: "upsert" | "delete";
   projectId?: string | null;
 };
+
+/**
+ * Chatwoot webhooks write on cloud-core; desktop SSE is on local-core.
+ * After the twin pull, wake open Chat shells the same way in-process
+ * publishChatUpdated does on the writer.
+ */
+export function publishChatLiveFromNudge(input: ReplicationNudgeInput): void {
+  const entity = input.entity?.trim() ?? "";
+  if (entity !== "chat_conversation" && entity !== "chat_message") return;
+  const conversationId = input.entityId?.trim();
+  const workspaceId = input.workspaceId.trim();
+  if (!conversationId || !workspaceId) return;
+  const reason = (input.reason ?? "").toLowerCase();
+  const kind =
+    entity === "chat_message" || reason.includes("message")
+      ? "message"
+      : "conversation";
+  publishChatUpdated({
+    workspaceId,
+    conversationId,
+    messageId: null,
+    kind,
+  });
+}
 
 /**
  * Fire-and-forget wake of the replication peer after an entity write on this
@@ -165,6 +190,8 @@ export async function handleReplicationNudge(
       },
     });
   }
+
+  publishChatLiveFromNudge(input);
 
   appendOpsLog(
     "info",

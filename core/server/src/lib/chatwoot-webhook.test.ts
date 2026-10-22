@@ -71,4 +71,15 @@ describe("chatwoot webhook parse", () => {
     assert.equal(parsed?.conversationId, "7");
     assert.equal(parsed?.accountId, "1");
   });
+
+  test("message_created does not treat message id as conversation id", () => {
+    const parsed = parseChatwootWebhookPayload({
+      event: "message_created",
+      id: 99,
+      conversation_id: 7,
+      account: { id: 1 },
+    });
+    assert.equal(parsed?.messageId, "99");
+    assert.equal(parsed?.conversationId, "7");
+  });
 });
