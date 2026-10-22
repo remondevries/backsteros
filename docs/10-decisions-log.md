@@ -624,3 +624,19 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-039: Brandfetch — workspace integration for org logos
+
+**Status:** Accepted (2026-10-22)  
+**Context:** Org company cards on CardDAV need stored logos. Brandfetch Logo CDN is display-only (hotlink); Brand API downloads need a secret. Wiring that secret only via cloud-core compose env diverged from Moneybird / Mapbox / GitHub.  
+**Decision:**
+
+- Store the Brand API key in `workspace_integration_secrets.brandfetch_api_key` (never PowerSync). Settings → Integrations → **Brandfetch** for save / clear / test.
+- Runtime hydrate (`ensureOrganizationLogoFromBrandfetch`, CardDAV single-card GET, hydrate script) resolves the key via workspace secrets, then optional `BRANDFETCH_API_KEY` env bootstrap (same pattern as `GITHUB_API_TOKEN`).
+- Persist downloaded bytes with `putAvatar` → `organizations.avatar_storage_key`. Clearing the integration key does not delete already-stored avatars.
+- Desktop CDN client id (`VITE_BRANDFETCH_CLIENT_ID`) stays a public display hotlink — not a server secret.
+
+**Consequences:** Prefer saving the key in Settings so twin replication carries it to local-core. Compose env remains a temporary bootstrap only.
+
+---
+
+

@@ -1,21 +1,24 @@
 /**
  * Download Brandfetch icons for organizations missing avatars and store them.
  *
+ * Uses the workspace Brandfetch integration key (Settings → Brandfetch), with
+ * optional `BRANDFETCH_API_KEY` env bootstrap.
+ *
  *   cd core/server && pnpm exec tsx --env-file=.env src/scripts/hydrate-org-brandfetch-avatars.ts
  *   # cloud:
- *   BRANDFETCH_CLIENT_ID=… WORKSPACE_ID=ws_legacy_default pnpm exec tsx src/scripts/hydrate-org-brandfetch-avatars.ts
+ *   WORKSPACE_ID=ws_legacy_default node dist/scripts/hydrate-org-brandfetch-avatars.js
  */
-import {
-  brandfetchApiKeyFromEnv,
-  hydrateOrganizationLogosFromBrandfetch,
-} from "../services/brandfetch-org-avatar.js";
+import { getBrandfetchApiKey } from "../services/brandfetch-settings.js";
+import { hydrateOrganizationLogosFromBrandfetch } from "../services/brandfetch-org-avatar.js";
 
 async function main() {
   const workspaceId =
     process.env.WORKSPACE_ID?.trim() || "ws_legacy_default";
-  const apiKey = brandfetchApiKeyFromEnv();
+  const apiKey = await getBrandfetchApiKey(workspaceId);
   if (!apiKey) {
-    console.error("Set BRANDFETCH_API_KEY before hydrating.");
+    console.error(
+      "No Brandfetch API key — save one in Settings → Integrations → Brandfetch, or set BRANDFETCH_API_KEY.",
+    );
     process.exit(1);
   }
   console.log(

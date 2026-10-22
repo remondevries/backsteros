@@ -6,6 +6,7 @@ export type WorkspaceIntegrationId =
   | "cloudflare"
   | "moneybird"
   | "mapbox"
+  | "brandfetch"
   | "google-calendar"
   | "email"
   | "social"
@@ -56,6 +57,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "Mapbox",
     description: "Geocode addresses and show location maps",
     faviconHost: "mapbox.com",
+  },
+  {
+    id: "brandfetch",
+    title: "Brandfetch",
+    description: "Organization logos for CardDAV and company cards",
+    faviconHost: "brandfetch.com",
   },
   {
     id: "google-calendar",

@@ -3,6 +3,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import type {
   AgentMailSettings,
   AutoReviewWebhookSettings,
+  BrandfetchSettings,
   CloudflareSettings,
   CursorSettings,
   GithubSettings,
@@ -33,6 +34,7 @@ import { SettingsCursorTab } from "./settings-cursor-tab";
 import { SettingsEmailTab } from "./settings-email-tab";
 import { SettingsGithubTab } from "./settings-github-tab";
 import { SettingsGoogleCalendarTab } from "./settings-google-calendar-tab";
+import { SettingsBrandfetchTab } from "./settings-brandfetch-tab";
 import { SettingsMapboxTab } from "./settings-mapbox-tab";
 import { SettingsMoneybirdTab } from "./settings-moneybird-tab";
 import { SettingsSocialTab } from "./settings-social-tab";
@@ -144,6 +146,17 @@ export function SettingsIntegrationsTab({
         () => client.requestJson<MapboxSettings>("/api/v1/settings/mapbox"),
         (body) => ({
           configured: body.accessTokenConfigured,
+          connected: body.connected,
+        }),
+      ),
+      settle(
+        "brandfetch",
+        () =>
+          client.requestJson<BrandfetchSettings>(
+            "/api/v1/settings/brandfetch",
+          ),
+        (body) => ({
+          configured: body.apiKeyConfigured || body.envKeyConfigured,
           connected: body.connected,
         }),
       ),
@@ -320,6 +333,13 @@ export function SettingsIntegrationsTab({
         ) : null}
         {activeId === "mapbox" && activeMeta ? (
           <SettingsMapboxTab
+            title={activeMeta.title}
+            description={activeMeta.description}
+            hideHeader
+          />
+        ) : null}
+        {activeId === "brandfetch" && activeMeta ? (
+          <SettingsBrandfetchTab
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader

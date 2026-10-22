@@ -3,9 +3,17 @@
  *
  * Desktop embeds Logo CDN URLs in <img> (hotlink-only). Programmatic CDN
  * fetches are blocked — we use Brand API + credentialed asset `src` URLs.
- * https://docs.brandfetch.com/logo-api/overview
+ * API key comes from Settings → Integrations → Brandfetch
+ * (`workspace_integration_secrets`), with optional `BRANDFETCH_API_KEY` env
+ * bootstrap (GitHub pattern). https://docs.brandfetch.com/logo-api/overview
  */
 import * as circleService from "./circle-domain.js";
+import {
+  brandfetchApiKeyFromEnv,
+  brandfetchClientIdFromEnv,
+} from "./brandfetch-env.js";
+
+export { brandfetchApiKeyFromEnv, brandfetchClientIdFromEnv };
 
 export function registrableDomainFromWebsite(
   raw: string | null | undefined,
@@ -22,20 +30,6 @@ export function registrableDomainFromWebsite(
   } catch {
     return null;
   }
-}
-
-export function brandfetchApiKeyFromEnv(): string | null {
-  const key = process.env.BRANDFETCH_API_KEY?.trim() || "";
-  return key || null;
-}
-
-/** @deprecated Prefer Brand API — CDN URLs are display-only. */
-export function brandfetchClientIdFromEnv(): string | null {
-  const id =
-    process.env.BRANDFETCH_CLIENT_ID?.trim() ||
-    process.env.VITE_BRANDFETCH_CLIENT_ID?.trim() ||
-    "";
-  return id || null;
 }
 
 /** @deprecated CDN hotlink helper kept for tests / docs parity. */
@@ -123,7 +117,12 @@ export async function ensureOrganizationLogoFromBrandfetch(
     return { status: "skipped", reason: "avatar_row_exists" };
   }
 
-  const apiKey = options?.apiKey ?? brandfetchApiKeyFromEnv();
+  let apiKey = options?.apiKey ?? null;
+  if (!apiKey) {
+    // Lazy import keeps unit tests (domain/CDN helpers) free of DATABASE_URL.
+    const { getBrandfetchApiKey } = await import("./brandfetch-settings.js");
+    apiKey = await getBrandfetchApiKey(workspaceId);
+  }
   if (!apiKey) {
     return { status: "skipped", reason: "no_brandfetch_api_key" };
   }

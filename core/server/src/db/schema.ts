@@ -134,6 +134,8 @@ export const workspaceIntegrationSecrets = pgTable(
       .notNull()
       .default(false),
     mapboxAccessToken: text("mapbox_access_token"),
+    /** Brandfetch Brand API key — persist org logos for CardDAV / API. */
+    brandfetchApiKey: text("brandfetch_api_key"),
     githubApiToken: text("github_api_token"),
     transipAccessToken: text("transip_access_token"),
     /** TransIP control-panel login — used with private key to mint JWTs. */

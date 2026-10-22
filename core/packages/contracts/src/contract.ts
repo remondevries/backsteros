@@ -2341,6 +2341,38 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "Test Mapbox access token with a light geocode call",
     },
+    getBrandfetchSettings: {
+      method: "GET",
+      path: "/api/v1/settings/brandfetch",
+      responses: {
+        200: s.brandfetchSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Get Brandfetch integration settings (API key redacted)",
+    },
+    updateBrandfetchSettings: {
+      method: "PATCH",
+      path: "/api/v1/settings/brandfetch",
+      body: s.updateBrandfetchSettingsSchema,
+      responses: {
+        200: s.brandfetchSettingsSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Update Brandfetch Brand API key",
+    },
+    testBrandfetchConnection: {
+      method: "GET",
+      path: "/api/v1/settings/brandfetch/test",
+      responses: {
+        200: s.brandfetchTestConnectionResultSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Test Brandfetch Brand API key with a light brand lookup",
+    },
     getGoogleCalendarSettings: {
       method: "GET",
       path: "/api/v1/settings/google-calendar",

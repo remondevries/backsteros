@@ -56,6 +56,7 @@ import {
   updateFinancialTransactionSchema,
   updateMoneybirdSettingsSchema,
   updateMapboxSettingsSchema,
+  updateBrandfetchSettingsSchema,
   updateGoogleCalendarSettingsSchema,
   listExternalCalendarEventsQuerySchema,
   mapboxGeocodeQuerySchema,
@@ -227,6 +228,7 @@ import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as mapboxSettingsService from "../services/mapbox-settings.js";
+import * as brandfetchSettingsService from "../services/brandfetch-settings.js";
 import * as googleCalendarSettingsService from "../services/google-calendar-settings.js";
 import { GoogleCalendarApiError } from "../lib/google-calendar-client.js";
 import * as githubSettingsService from "../services/github-settings.js";
@@ -603,6 +605,37 @@ export function registerSettingsRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(
       await mapboxSettingsService.testMapboxConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/settings/brandfetch", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await brandfetchSettingsService.getBrandfetchSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/brandfetch", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateBrandfetchSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid Brandfetch settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await brandfetchSettingsService.updateBrandfetchSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/brandfetch/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await brandfetchSettingsService.testBrandfetchConnection(auth.workspaceId),
     );
   });
   app.get("/api/v1/settings/google-calendar", async (c) => {

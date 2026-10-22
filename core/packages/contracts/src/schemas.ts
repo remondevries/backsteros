@@ -3345,6 +3345,24 @@ export const mapboxTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
 });
 
+/** Brandfetch integration (Brand API key for org logo hydrate / CardDAV). */
+export const brandfetchSettingsSchema = z.object({
+  apiKeyConfigured: z.boolean(),
+  apiKeyPreview: z.string().nullable(),
+  /** True when a workspace key or env fallback is configured. */
+  connected: z.boolean(),
+  /** Env `BRANDFETCH_API_KEY` is set (bootstrap until Settings is filled). */
+  envKeyConfigured: z.boolean(),
+});
+export const updateBrandfetchSettingsSchema = z.object({
+  /** Set to a new API key, or empty string to clear. Omit to leave unchanged. */
+  apiKey: z.string().optional(),
+});
+export const brandfetchTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+});
+
 /** Google Calendar integration (OAuth + read-only event sync — ADR-037). */
 export const googleCalendarSettingsSchema = z.object({
   clientIdConfigured: z.boolean(),
@@ -5193,6 +5211,13 @@ export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
+export type BrandfetchSettings = z.infer<typeof brandfetchSettingsSchema>;
+export type UpdateBrandfetchSettingsInput = z.infer<
+  typeof updateBrandfetchSettingsSchema
+>;
+export type BrandfetchTestConnectionResult = z.infer<
+  typeof brandfetchTestConnectionResultSchema
+>;
 export type GoogleCalendarSettings = z.infer<
   typeof googleCalendarSettingsSchema
 >;
