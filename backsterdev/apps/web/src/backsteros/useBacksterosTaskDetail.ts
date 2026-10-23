@@ -52,10 +52,15 @@ export type BacksterosTaskDetailState =
 function normalizeTask(
   task: Omit<
     BacksterosTaskDetail,
-    "dueDate" | "dueEndDate" | "relatedContactIds" | "relatedOrganizationIds"
+    | "dueDate"
+    | "dueEndDate"
+    | "followUpDate"
+    | "relatedContactIds"
+    | "relatedOrganizationIds"
   > & {
     readonly dueDate?: string | null | undefined;
     readonly dueEndDate?: string | null | undefined;
+    readonly followUpDate?: string | null | undefined;
     readonly relatedContactIds?: readonly string[] | null | undefined;
     readonly relatedOrganizationIds?: readonly string[] | null | undefined;
     readonly sortOrder?: number | undefined;
@@ -85,6 +90,7 @@ function normalizeTask(
     ...(task.sortOrder !== undefined ? { sortOrder: task.sortOrder } : {}),
     ...(task.priority !== undefined ? { priority: task.priority } : {}),
     ...(task.dueEndDate !== undefined ? { dueEndDate: task.dueEndDate } : {}),
+    ...(task.followUpDate !== undefined ? { followUpDate: task.followUpDate } : {}),
     ...(task.trackedDurationSeconds !== undefined
       ? { trackedDurationSeconds: task.trackedDurationSeconds }
       : {}),
@@ -114,6 +120,7 @@ function taskDetailFingerprint(
     priority: task.priority,
     dueDate: task.dueDate,
     dueEndDate: task.dueEndDate,
+    followUpDate: task.followUpDate,
     contactId: task.contactId,
     relatedContactIds: task.relatedContactIds,
     relatedOrganizationIds: task.relatedOrganizationIds,

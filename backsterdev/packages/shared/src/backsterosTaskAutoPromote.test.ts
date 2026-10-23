@@ -4,6 +4,7 @@ import {
   BACKSTEROS_CODING_AGENT_WORKING_LABEL,
   backsterosStatusForControlSession,
   canAutoPromoteBacksterosTaskStatus,
+  canAutoPromoteBacksterosTaskToInReview,
   codingAgentWorkingMarkerPatch,
   pickDefaultCodingAgentContactId,
   resolveCodingAgentWorkingContactId,
@@ -30,6 +31,17 @@ describe("canAutoPromoteBacksterosTaskStatus", () => {
     expect(canAutoPromoteBacksterosTaskStatus("in_progress")).toBe(true);
     expect(canAutoPromoteBacksterosTaskStatus("in_review")).toBe(true);
     expect(canAutoPromoteBacksterosTaskStatus("ready_to_start")).toBe(true);
+  });
+});
+
+describe("canAutoPromoteBacksterosTaskToInReview", () => {
+  it("only allows in_progress (control-API parity)", () => {
+    expect(canAutoPromoteBacksterosTaskToInReview("in_progress")).toBe(true);
+    expect(canAutoPromoteBacksterosTaskToInReview("waiting")).toBe(false);
+    expect(canAutoPromoteBacksterosTaskToInReview("on_hold")).toBe(false);
+    expect(canAutoPromoteBacksterosTaskToInReview("in_review")).toBe(false);
+    expect(canAutoPromoteBacksterosTaskToInReview("backlog")).toBe(false);
+    expect(canAutoPromoteBacksterosTaskToInReview("completed")).toBe(false);
   });
 });
 

@@ -146,6 +146,8 @@ export interface BacksterosTask {
   readonly status: string;
   readonly sortOrder?: number;
   readonly dueDate: string | null;
+  /** Chase date while status is `waiting` (same shape as dueDate). */
+  readonly followUpDate?: string | null;
   readonly priority?: number;
   readonly updatedAt: string;
   /** Agents-API working marker (OS-96). */
@@ -252,6 +254,8 @@ export type BacksterosCreateTaskInput = {
   readonly status?: string;
   readonly priority?: number;
   readonly dueDate?: string | null | undefined;
+  /** Required by core when status is `waiting`. */
+  readonly followUpDate?: string | null | undefined;
   readonly assigneeId?: string | null;
   readonly contactId?: string | null;
   readonly relatedContactIds?: readonly string[];
@@ -274,6 +278,8 @@ export type BacksterosTaskUpdatePatch = {
   readonly dueDate?: string | null | undefined;
   /** End of a timed calendar block; cleared automatically when dueDate is cleared. */
   readonly dueEndDate?: string | null | undefined;
+  /** Chase date while status is `waiting`. */
+  readonly followUpDate?: string | null | undefined;
   readonly assigneeId?: string | null;
   readonly projectId?: string | null;
   readonly inbox?: boolean;

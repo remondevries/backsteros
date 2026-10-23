@@ -31,4 +31,11 @@ describe("applyPendingBacksterosTaskStatuses", () => {
     expect(applyPendingBacksterosTaskStatuses(tasks)).toBe(tasks);
     expect(getPendingBacksterosTaskStatusCount()).toBe(0);
   });
+
+  it("drops a stale agent overlay when the server is already Waiting", () => {
+    setPendingBacksterosTaskStatus("t1", "in_review");
+    const tasks = [{ id: "t1", status: "waiting", updatedAt: "u1" }];
+    expect(applyPendingBacksterosTaskStatuses(tasks)).toEqual(tasks);
+    expect(getPendingBacksterosTaskStatusCount()).toBe(0);
+  });
 });

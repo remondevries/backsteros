@@ -73,6 +73,7 @@ import {
   migrateBacksterosTaskStatus,
   type BacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
+import { buildWaitingStatusPatch } from "~/backsteros/taskWaiting";
 import { useTaskDescriptionImages } from "~/backsteros/useTaskDescriptionImages";
 import { isElectron } from "~/env";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -810,7 +811,13 @@ export function BacksterosTaskDetailPanel() {
                       searchPlaceholder="Change status…"
                       taskPropertyDropdownId="status"
                       onChange={(value) => {
-                        void applyPatch({ status: value }, "Could not update status");
+                        const patch =
+                          value === "waiting"
+                            ? buildWaitingStatusPatch({
+                                currentFollowUpDate: state.task.followUpDate,
+                              })
+                            : { status: value };
+                        void applyPatch(patch, "Could not update status");
                       }}
                     />
 
@@ -833,6 +840,19 @@ export function BacksterosTaskDetailPanel() {
                         void applyPatch({ dueDate }, "Could not update due date");
                       }}
                     />
+
+                    {statusValue === "waiting" ? (
+                      <BacksterosDueDatePropertyMenu
+                        dueDate={state.task.followUpDate ?? null}
+                        status={state.task.status}
+                        emptyLabel="No follow-up"
+                        noDueDateLabel="No follow-up"
+                        ariaLabel="Change follow-up date"
+                        onChange={(followUpDate) => {
+                          void applyPatch({ followUpDate }, "Could not update follow-up date");
+                        }}
+                      />
+                    ) : null}
 
                     <BacksterosSearchablePropertyMenu
                       label={state.assignee?.name ?? "Unassigned"}

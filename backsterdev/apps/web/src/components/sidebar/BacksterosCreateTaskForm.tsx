@@ -55,6 +55,10 @@ import {
   getBacksterosTaskStatusLabel,
   type BacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
+import {
+  buildWaitingStatusPatch,
+  defaultWaitingFollowUpDateIso,
+} from "~/backsteros/taskWaiting";
 import type { BacksterosCodebaseProject, BacksterosContact } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosContactAvatarSrcMap } from "~/backsteros/useBacksterosContactAvatars";
@@ -232,9 +236,11 @@ export function BacksterosCreateTaskForm({
   const [selectedProject, setSelectedProject] = useState(initialProject);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<BacksterosTaskStatus>("triage");
+  // Match OS-132 core default for caller-provided creates (not support/notification).
+  const [status, setStatus] = useState<BacksterosTaskStatus>("backlog");
   const [priority, setPriority] = useState(0);
   const [dueDate, setDueDate] = useState<string | null>(null);
+  const [followUpDate, setFollowUpDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<readonly BacksterosContact[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -529,13 +535,22 @@ export function BacksterosCreateTaskForm({
       stripPendingBlobImageMarkdown(draftDescription, new Set(pendingByBlobUrl.keys())) || null;
 
     try {
+      const waitingPatch =
+        status === "waiting"
+          ? buildWaitingStatusPatch({ currentFollowUpDate: followUpDate })
+          : null;
       let created = await createBacksterosTask({
         title: trimmedTitle,
         projectId: selectedProject.id,
         description: createDescription,
-        status,
+        status: waitingPatch?.status ?? status,
         priority,
         dueDate,
+        ...(waitingPatch?.followUpDate != null
+          ? { followUpDate: waitingPatch.followUpDate }
+          : followUpDate != null
+            ? { followUpDate }
+            : {}),
         assigneeId,
       });
 
@@ -600,6 +615,7 @@ export function BacksterosCreateTaskForm({
     closeCompose,
     description,
     dueDate,
+    followUpDate,
     ensureT3Project,
     openTaskDetail,
     priority,
@@ -769,7 +785,12 @@ export function BacksterosCreateTaskForm({
         searchPlaceholder="Set status…"
         disabled={submitting}
         taskPropertyDropdownId="status"
-        onChange={setStatus}
+        onChange={(next) => {
+          setStatus(next);
+          if (next === "waiting" && followUpDate == null) {
+            setFollowUpDate(defaultWaitingFollowUpDateIso());
+          }
+        }}
         onTabFromSearch={() => handlePropertyTabFromSearch("status")}
         onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("status")}
       />
@@ -782,6 +803,18 @@ export function BacksterosCreateTaskForm({
         onTabFromSearch={() => handlePropertyTabFromSearch("dueDate")}
         onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("dueDate")}
       />
+
+      {status === "waiting" ? (
+        <BacksterosDueDatePropertyMenu
+          dueDate={followUpDate}
+          status={status}
+          disabled={submitting}
+          emptyLabel="No follow-up"
+          noDueDateLabel="No follow-up"
+          ariaLabel="Set follow-up date"
+          onChange={setFollowUpDate}
+        />
+      ) : null}
 
       <BacksterosSearchablePropertyMenu
         label={getBacksterosTaskPriorityLabel(priority)}

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   BACKSTEROS_DEFAULT_CODING_AGENT_NAME,
   canAutoPromoteBacksterosTaskStatus,
+  canAutoPromoteBacksterosTaskToInReview,
   codingAgentWorkingMarkerPatch,
   pickDefaultCodingAgentContactId,
   resolveCodingAgentWorkingContactId,
@@ -155,7 +156,9 @@ export async function markBacksterosTaskInProgressForAgent(taskId: string): Prom
 export async function markBacksterosTaskInReviewForAgent(taskId: string): Promise<boolean> {
   const task = await fetchBacksterosTask(taskId);
   const status = migrateBacksterosTaskStatus(task.status);
-  if (!canAutoPromoteBacksterosTaskStatus(status)) {
+  // Same gate as control-API: only in_progress → in_review. Do not yank
+  // waiting / on_hold / backlog (or already-in_review) when a leave timer fires.
+  if (!canAutoPromoteBacksterosTaskToInReview(status)) {
     return false;
   }
   await updateBacksterosTask(taskId, {

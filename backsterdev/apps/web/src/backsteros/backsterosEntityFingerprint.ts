@@ -32,6 +32,7 @@ export function backsterosTaskDetailRevisionFingerprint(input: {
   readonly priority: number | null | undefined;
   readonly dueDate: string | null;
   readonly dueEndDate: string | null | undefined;
+  readonly followUpDate?: string | null | undefined;
   readonly contactId: string | null;
   readonly relatedContactIds: readonly string[];
   readonly relatedOrganizationIds: readonly string[];
@@ -48,6 +49,7 @@ export function backsterosTaskDetailRevisionFingerprint(input: {
     input.priority ?? "",
     input.dueDate ?? "",
     input.dueEndDate ?? "",
+    input.followUpDate ?? "",
     input.contactId ?? "",
     input.relatedContactIds.join(","),
     input.relatedOrganizationIds.join(","),

@@ -4,11 +4,12 @@ import { BACKSTEROS_INBOX_ATTENTION_STATUSES } from "./client";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 
 describe("Backsteros inbox attention statuses", () => {
-  it("covers triage, in review, in progress, and on hold", () => {
+  it("covers triage, in review, in progress, waiting, and on hold", () => {
     expect([...BACKSTEROS_INBOX_ATTENTION_STATUSES]).toEqual([
       "triage",
       "in_review",
       "in_progress",
+      "waiting",
       "on_hold",
     ]);
   });

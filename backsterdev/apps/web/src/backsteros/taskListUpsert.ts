@@ -9,6 +9,7 @@ export function backsterosTaskListRowFromDetail(detail: BacksterosTaskDetail): B
     title: detail.title,
     status: detail.status,
     dueDate: detail.dueDate,
+    followUpDate: detail.followUpDate ?? null,
     updatedAt: detail.updatedAt,
     agentWorkingContactId: detail.agentWorkingContactId ?? null,
     agentWorkingStartedAt: detail.agentWorkingStartedAt ?? null,

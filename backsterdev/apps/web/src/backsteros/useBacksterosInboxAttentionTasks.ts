@@ -44,7 +44,7 @@ function toTasksState(
 }
 
 type LocalTaskPatch = Partial<
-  Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate" | "sortOrder">
+  Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate" | "followUpDate" | "sortOrder">
 >;
 
 /**

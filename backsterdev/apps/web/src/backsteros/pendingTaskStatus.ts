@@ -33,8 +33,25 @@ export function getPendingBacksterosTaskStatusCount(): number {
 }
 
 /**
+ * Statuses that represent human (or non-agent) intent. If the server already
+ * shows one of these while an agent overlay is still pending, drop the overlay
+ * so Waiting / On Hold / etc. are not masked by a stale In Review promote.
+ */
+const SERVER_WINS_OVER_AGENT_PENDING = new Set<BacksterosTaskStatus>([
+  "waiting",
+  "on_hold",
+  "backlog",
+  "ready_to_start",
+  "triage",
+  "completed",
+  "canceled",
+  "duplicated",
+]);
+
+/**
  * Re-apply optimistic statuses onto a freshly fetched list. Clears overlays
- * that already match the server.
+ * that already match the server, or when the server moved to a human-owned
+ * status (e.g. Waiting) while an agent In Progress / In Review overlay lingered.
  */
 export function applyPendingBacksterosTaskStatuses<
   T extends { readonly id: string; readonly status: string },
@@ -47,6 +64,10 @@ export function applyPendingBacksterosTaskStatuses<
     if (pending == null) return task;
     const serverStatus = migrateBacksterosTaskStatus(task.status);
     if (serverStatus === pending) {
+      pendingByTaskId.delete(task.id);
+      return task;
+    }
+    if (SERVER_WINS_OVER_AGENT_PENDING.has(serverStatus)) {
       pendingByTaskId.delete(task.id);
       return task;
     }

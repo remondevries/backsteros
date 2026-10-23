@@ -34,6 +34,15 @@ export function canAutoPromoteBacksterosTaskStatus(status: string): boolean {
   return !CLOSED_FOR_AUTO_PROMOTE.has(status);
 }
 
+/**
+ * Whether agent lifecycle may auto-move this task to `in_review`.
+ * Matches control-API: only from `in_progress` — never yank waiting / on_hold /
+ * backlog / ready_to_start (or already-in_review) back to review.
+ */
+export function canAutoPromoteBacksterosTaskToInReview(status: string): boolean {
+  return status === "in_progress";
+}
+
 /** OS-96 label written when a Development coding session starts (BDV-53). */
 export const BACKSTEROS_CODING_AGENT_WORKING_LABEL = "Coding agent running";
 

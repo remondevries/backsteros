@@ -9,6 +9,7 @@ export const BACKSTEROS_INBOX_ATTENTION_STATUSES = [
   "triage",
   "in_review",
   "in_progress",
+  "waiting",
   "on_hold",
 ] as const;
 

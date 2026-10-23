@@ -54,6 +54,8 @@ export function BacksterosDueDatePropertyMenu(props: {
   readonly disabled?: boolean | undefined;
   /** Override empty chip label (desktop start date uses “No start date”). */
   readonly emptyLabel?: string | undefined;
+  /** Override the clear option label (waiting chase uses “No follow-up”). */
+  readonly noDueDateLabel?: string | undefined;
   readonly ariaLabel?: string | undefined;
   /** Chip icon size — project overview uses 14 to match desktop. */
   readonly iconSize?: number | undefined;
@@ -80,7 +82,15 @@ export function BacksterosDueDatePropertyMenu(props: {
   const displayLabel = ymdValue
     ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
     : (props.emptyLabel ?? "No due date");
-  const options = useMemo(() => buildTaskDueDateDropdownOptions(ymdValue || null), [ymdValue]);
+  const options = useMemo(() => {
+    const built = buildTaskDueDateDropdownOptions(ymdValue || null);
+    if (!props.noDueDateLabel) return built;
+    return built.map((option) =>
+      option.value === BACKSTEROS_NO_DUE_DATE_VALUE
+        ? { ...option, label: props.noDueDateLabel! }
+        : option,
+    );
+  }, [props.noDueDateLabel, ymdValue]);
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return options;

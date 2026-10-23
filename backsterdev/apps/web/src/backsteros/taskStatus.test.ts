@@ -37,12 +37,14 @@ describe("groupBacksterosTasksByStatus", () => {
       { id: "7", title: "G", status: "in_progress" },
       { id: "8", title: "H", status: "in_review" },
       { id: "9", title: "I", status: "completed" },
+      { id: "10", title: "J", status: "waiting" },
     ]);
 
     expect(groups.map((group) => group.status)).toEqual([
       "triage",
       "in_review",
       "in_progress",
+      "waiting",
       "on_hold",
       "backlog",
       "ready_to_start",
@@ -70,5 +72,6 @@ describe("isBacksterosTaskClosedStatus", () => {
     expect(isBacksterosTaskClosedStatus("in_progress")).toBe(false);
     expect(isBacksterosTaskClosedStatus("in_review")).toBe(false);
     expect(isBacksterosTaskClosedStatus("ready_to_start")).toBe(false);
+    expect(isBacksterosTaskClosedStatus("waiting")).toBe(false);
   });
 });

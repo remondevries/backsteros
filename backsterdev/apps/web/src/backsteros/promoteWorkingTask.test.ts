@@ -128,6 +128,19 @@ describe("markBacksterosTaskInReviewForAgent", () => {
     });
   });
 
+  it("does not yank waiting or on_hold to in_review", async () => {
+    for (const status of ["waiting", "on_hold", "backlog", "in_review"] as const) {
+      fetchMock.mockResolvedValue({
+        id: "task-1",
+        status,
+      } as unknown as Awaited<ReturnType<typeof fetchBacksterosTask>>);
+
+      await expect(markBacksterosTaskInReviewForAgent("task-1")).resolves.toBe(false);
+      expect(updateMock).not.toHaveBeenCalled();
+      vi.clearAllMocks();
+    }
+  });
+
   it("skips canceled and duplicated tasks", async () => {
     for (const status of ["canceled", "duplicated"] as const) {
       fetchMock.mockResolvedValue({
