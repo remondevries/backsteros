@@ -814,7 +814,8 @@ export function BacksterosTaskDetailPanel() {
                         const patch =
                           value === "waiting"
                             ? buildWaitingStatusPatch({
-                                currentFollowUpDate: state.task.followUpDate,
+                                currentFollowUpDate:
+                                  state.task.followUpDate ?? null,
                               })
                             : { status: value };
                         void applyPatch(patch, "Could not update status");
