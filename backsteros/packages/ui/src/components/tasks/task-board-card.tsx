@@ -55,6 +55,8 @@ export type TaskBoardCardProps = {
   ownerSlot?: ReactNode;
   /** Replaces the display-id cell in the top row (e.g. chat contact name). */
   topLeadingSlot?: ReactNode;
+  /** Optional trailing content in the meta row (e.g. multi-party avatar stack). */
+  metaTrailingSlot?: ReactNode;
   /** Optional leading media (e.g. large contact avatar) — body content sits to its right. */
   leadingSlot?: ReactNode;
   /** When true, status icon becomes the agent-working pulse. */
@@ -114,6 +116,7 @@ export function TaskBoardCardComponent({
   assigneeOptions = [],
   ownerSlot,
   topLeadingSlot = null,
+  metaTrailingSlot = null,
   leadingSlot = null,
   agentWorking = false,
   titleTrailing = null,
@@ -442,6 +445,9 @@ export function TaskBoardCardComponent({
               />
             )}
           </span>
+        ) : null}
+        {metaTrailingSlot ? (
+          <span className="task-kanban-card-meta-trailing">{metaTrailingSlot}</span>
         ) : null}
       </span>
     </>

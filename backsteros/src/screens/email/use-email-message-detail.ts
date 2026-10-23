@@ -16,8 +16,11 @@ import {
 } from "../../lib/cloud-client-notices";
 import { prefetchInlineAttachmentBlob } from "../../lib/email-inline-attachment-cache.js";
 import {
+  discardEmailMessageDetailCache,
   fetchEmailDraftDetail,
   fetchEmailMessageDetail,
+  isEmailDraftDetailCacheStale,
+  isEmailMessageDetailCacheStale,
   peekEmailDraftDetailCache,
   peekEmailMessageDetailCache,
   writeEmailDraftDetailCache,
@@ -169,6 +172,16 @@ export function useEmailMessageDetail({
     const onInboxUpdated = (event: Event) => {
       const detail = (event as CustomEvent<EmailInboxUpdatedDetail>).detail;
       if (!detail?.inboxId || detail.inboxId !== inboxId) return;
+      // Scoped invalidation: only force-refetch when the event targets this
+      // message (or the whole inbox when messageId is null).
+      if (
+        detail.messageId &&
+        detail.messageId.trim() &&
+        detail.messageId.trim() !== messageId
+      ) {
+        return;
+      }
+      discardEmailMessageDetailCache(inboxId, messageId);
       refreshOpenThread();
     };
     const onWorkspaceEmailUpdated = () => {
@@ -308,12 +321,32 @@ export function useEmailMessageDetail({
     }
     setError(null);
 
-    // Warm cache → paint immediately and revalidate without deleting the LRU
-    // entry. Force refetch stays on SSE / explicit reloadMessageDetail.
+    // Paint warm cache immediately. Network only on miss or soft-stale TTL.
+    // Force refetch stays on SSE / explicit reloadMessageDetail / catch-up poll.
+    const messageStale =
+      Boolean(messageId) &&
+      !draftId &&
+      isEmailMessageDetailCacheStale(inboxId, messageId!);
+    const draftStale =
+      Boolean(draftId) && isEmailDraftDetailCacheStale(inboxId, draftId!);
+    const hasWarm = Boolean(cachedMessage || cachedDraft);
+    const needsNetwork = !hasWarm || messageStale || draftStale;
+    if (!needsNetwork) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const load = draftId
-      ? fetchEmailDraftDetail(client, inboxId, draftId)
+      ? fetchEmailDraftDetail(client, inboxId, draftId, {
+          force: Boolean(cachedDraft),
+          allowStale: false,
+        })
       : messageId
-        ? fetchEmailMessageDetail(client, inboxId, messageId)
+        ? fetchEmailMessageDetail(client, inboxId, messageId, {
+            force: Boolean(cachedMessage),
+            allowStale: false,
+          })
         : Promise.resolve(null);
 
     void load

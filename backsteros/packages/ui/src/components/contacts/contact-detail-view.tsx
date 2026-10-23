@@ -39,6 +39,12 @@ export type ContactDetailViewProps = {
   onCreateOrganizationFromQuery?: ContactOverviewViewProps["onCreateOrganizationFromQuery"];
   overviewHeaderAccessory?: ReactNode;
   relationshipsSlot?: ReactNode;
+  /** Rendered after contact Details fields (e.g. linked organization). */
+  detailsExtraSlot?: ReactNode;
+  /** Rendered at the top of the Details scroll (e.g. entity toggle). */
+  detailsLeadSlot?: ReactNode;
+  /** Hide contact Details fields while showing organization Details. */
+  hideDetailsFields?: boolean;
   activitySlot?: ReactNode;
   section?: ContactSectionId;
   onSectionChange?: (section: ContactSectionId) => void;
@@ -77,6 +83,9 @@ export function ContactDetailView({
   onCreateOrganizationFromQuery,
   overviewHeaderAccessory,
   relationshipsSlot,
+  detailsExtraSlot,
+  detailsLeadSlot,
+  hideDetailsFields = false,
   activitySlot,
   section: controlledSection,
   onSectionChange,
@@ -157,6 +166,9 @@ export function ContactDetailView({
             )
           }
           relationshipsSlot={relationshipsSlot}
+          detailsExtraSlot={detailsExtraSlot}
+          detailsLeadSlot={detailsLeadSlot}
+          hideDetailsFields={hideDetailsFields}
           activitySlot={activitySlot}
           sectionNavSlot={
             showSectionNav ? (

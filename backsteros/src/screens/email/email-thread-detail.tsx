@@ -167,6 +167,8 @@ export function EmailThreadDetail({
     setReplyCc,
     replySubjectText,
     setReplySubjectText,
+    saveConceptDraftBody,
+    saveConceptReply,
     sendDraft,
     deleteDraft,
   } = drafts;
@@ -773,7 +775,6 @@ export function EmailThreadDetail({
   };
   const replyDraftActions = (
     <EmailDraftActions
-      modeOnly={!conceptDraftId}
       onSend={
         conceptDraftId
           ? () => {
@@ -781,14 +782,29 @@ export function EmailThreadDetail({
             }
           : undefined
       }
+      onSaveDraft={() => {
+        if (conceptDraftId) {
+          void saveConceptDraftBody(
+            draftInboxId,
+            conceptDraftId,
+            conceptBodyDraft,
+          );
+          return;
+        }
+        void saveConceptReply(conceptBodyDraft);
+      }}
       onDelete={
         conceptDraftId
           ? () => {
               void deleteDraft(draftInboxId, conceptDraftId, messageId);
             }
-          : undefined
+          : () => {
+              setReplyComposeOpen(false);
+              setConceptBodyDraft("");
+            }
       }
       sending={sending}
+      savingDraft={conceptSaving}
       deleting={deleting}
       disabled={conceptDraftActionsDisabled}
       bodyMode={conceptBodyMode}

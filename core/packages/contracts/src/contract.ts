@@ -2468,6 +2468,18 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "Update chat conversation status (resolve / reopen)",
     },
+    deleteChatConversation: {
+      method: "DELETE",
+      path: "/api/v1/chat/conversations/{conversationId}",
+      pathParams: z.object({ conversationId: z.string() }),
+      responses: {
+        200: z.object({ ok: z.literal(true) }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Soft-delete a chat conversation from the local mirror",
+    },
     toggleChatTyping: {
       method: "POST",
       path: "/api/v1/chat/conversations/{conversationId}/typing",

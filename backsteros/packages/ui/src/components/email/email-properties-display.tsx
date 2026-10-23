@@ -23,6 +23,7 @@ import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navi
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TaskRelatedChips } from "../tasks/task-related-chips.js";
@@ -423,11 +424,28 @@ export function EmailPropertiesDisplay({
 
   const stack =
     chrome === "flat" ? (
-      <div className="entity-properties-stack entity-properties-stack--flat">
-        {linkedFields}
-        {propertyFields}
-        {projectFieldGroup}
-      </div>
+      <>
+        {showPartyLinks ? (
+          <EntityOverviewSubgroup
+            title="Linked"
+            storageKey="comm-email-details-linked"
+          >
+            {linkedFields}
+          </EntityOverviewSubgroup>
+        ) : null}
+        <EntityOverviewSubgroup
+          title="Properties"
+          storageKey="comm-email-details-properties"
+        >
+          {propertyFields}
+        </EntityOverviewSubgroup>
+        <EntityOverviewSubgroup
+          title="Project"
+          storageKey="comm-email-details-project"
+        >
+          {projectFieldGroup}
+        </EntityOverviewSubgroup>
+      </>
     ) : (
       <div className="entity-properties-stack">
         <EntityPropertiesSection title="Linked">

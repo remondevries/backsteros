@@ -106,6 +106,8 @@ export function useWorkspaceEntityPatching({
   getTaskById,
   setLiveContactsById,
   getContactById,
+  setLiveOrganizationsById,
+  getOrganizationById,
   getLocalTaskStatus,
 }: {
   authenticated: boolean;
@@ -136,6 +138,12 @@ export function useWorkspaceEntityPatching({
     updater: (current: Map<string, ApiContact>) => Map<string, ApiContact>,
   ) => void;
   getContactById?: (id: string) => ApiContact | null | undefined;
+  setLiveOrganizationsById?: (
+    updater: (
+      current: Map<string, ApiOrganization>,
+    ) => Map<string, ApiOrganization>,
+  ) => void;
+  getOrganizationById?: (id: string) => ApiOrganization | null | undefined;
   /**
    * PowerSync-local status for optimistic API cache merges. Due-date (and
    * other non-status) patches must not re-base onto a stale REST row that
@@ -319,6 +327,46 @@ export function useWorkspaceEntityPatching({
     [setApiOrganizations],
   );
 
+  /**
+   * Optimistic org fields that win over lagging PowerSync via live overlay
+   * (emails / phones / address / …). Without this, resolveLocalOrApiRows keeps
+   * the pre-patch SQLite row while apiOrganizations is ignored — Communication
+   * and Organizations detail edits appear to revert.
+   */
+  const applyLiveOrganizationOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      if (!setLiveOrganizationsById) {
+        applyApiOrganizationPatch(id, values);
+        return;
+      }
+      const nextUpdatedAt = new Date().toISOString();
+      const base = getOrganizationById?.(id) ?? null;
+      setLiveOrganizationsById((current) => {
+        const previous = current.get(id) ?? base;
+        if (!previous) return current;
+        const merged = {
+          ...previous,
+          ...values,
+          updatedAt: nextUpdatedAt,
+        } as ApiOrganization;
+        if (
+          !merged.avatarStorageKey &&
+          previous.avatarStorageKey &&
+          values.avatarStorageKey === undefined
+        ) {
+          merged.avatarStorageKey = previous.avatarStorageKey;
+          merged.avatarContentType =
+            previous.avatarContentType ?? merged.avatarContentType ?? null;
+        }
+        const next = new Map(current);
+        next.set(id, merged);
+        return next;
+      });
+      applyApiOrganizationPatch(id, values);
+    },
+    [applyApiOrganizationPatch, getOrganizationById, setLiveOrganizationsById],
+  );
+
   const applyApiContactPatch = useCallback(
     (id: string, values: Record<string, unknown>) => {
       const nextUpdatedAt = new Date().toISOString();
@@ -468,7 +516,7 @@ export function useWorkspaceEntityPatching({
           ? normalizeTaskPatchForLocalState(values)
           : values;
       if (table === "organizations") {
-        applyApiOrganizationPatch(id, values);
+        applyLiveOrganizationOptimisticPatch(id, values);
       }
       if (table === "contacts") {
         applyLiveContactOptimisticPatch(id, values);
@@ -497,7 +545,7 @@ export function useWorkspaceEntityPatching({
       applyApiDocumentPatch,
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
-      applyApiOrganizationPatch,
+      applyLiveOrganizationOptimisticPatch,
       applyLiveProjectOptimisticPatch,
       applyLiveTaskOptimisticPatch,
     ],
@@ -949,7 +997,9 @@ export function useWorkspaceEntityPatching({
           // (resolveLocalOrApiRows ignores newer apiContacts once SQLite has rows).
           applyLiveContactOptimisticPatch(id, optimisticValues);
         } else if (table === "organizations") {
-          applyApiOrganizationPatch(id, optimisticValues);
+          // Same live-overlay pattern as contacts — apiOrganizations alone is
+          // ignored once local SQLite rows exist.
+          applyLiveOrganizationOptimisticPatch(id, optimisticValues);
         }
         const mustAwaitRest =
           authenticated &&
@@ -1040,7 +1090,7 @@ export function useWorkspaceEntityPatching({
         }
       }
       if (table === "organizations") {
-        applyApiOrganizationPatch(id, values);
+        applyLiveOrganizationOptimisticPatch(id, values);
       }
       if (table === "contacts") {
         applyLiveContactOptimisticPatch(id, values);
@@ -1054,7 +1104,7 @@ export function useWorkspaceEntityPatching({
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
       applyOptimisticEntityPatch,
-      applyApiOrganizationPatch,
+      applyLiveOrganizationOptimisticPatch,
       applyLiveProjectOptimisticPatch,
       applyLiveTaskOptimisticPatch,
       authenticated,

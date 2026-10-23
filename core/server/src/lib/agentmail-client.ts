@@ -147,6 +147,7 @@ export type AgentMailDraftDetail = AgentMailDraftSummary & {
   html: string | null;
   to: string[];
   cc: string[];
+  bcc: string[];
   attachments: AgentMailDraftAttachment[];
 };
 
@@ -249,6 +250,7 @@ export function mapAgentMailDraftDetail(
     html: asOptionalString(raw.html),
     to: mapAddressList(raw.to),
     cc: mapAddressList(raw.cc),
+    bcc: mapAddressList(raw.bcc),
     attachments: mapAgentMailAttachments(raw.attachments),
   };
 }

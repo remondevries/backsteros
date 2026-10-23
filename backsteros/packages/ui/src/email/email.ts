@@ -49,6 +49,8 @@ export type EmailListItem = {
   contactName?: string | null;
   /** Desktop-enriched avatar URL for the linked contact. */
   contactAvatarSrc?: string | null;
+  /** Distinct linked contacts across the thread’s message parties. */
+  partyContactIds?: string[] | null;
   organizationId?: string | null;
   organizationName?: string | null;
   assigneeId?: string | null;
@@ -439,6 +441,7 @@ export type EmailDraftHeaderPatch = {
   body?: string;
   to?: string[];
   cc?: string[];
+  bcc?: string[];
   subject?: string;
 };
 
@@ -453,16 +456,19 @@ export function buildEmailDraftHeaderPatch(input: {
   onlyChanged?: boolean;
   to: string;
   cc: string;
+  bcc?: string;
   subject: string;
   baseline?: {
     to?: string[] | null;
     cc?: string[] | null;
+    bcc?: string[] | null;
     subject?: string | null;
   } | null;
   includeBody?: string;
 }): EmailDraftHeaderPatch {
   const nextTo = normalizeEmailRecipients(input.to);
   const nextCc = normalizeEmailRecipients(input.cc);
+  const nextBcc = normalizeEmailRecipients(input.bcc ?? "");
   const nextSubject = input.subject.trim();
   const payload: EmailDraftHeaderPatch = {};
   if (input.includeBody !== undefined) {
@@ -474,17 +480,22 @@ export function buildEmailDraftHeaderPatch(input: {
   if (!input.onlyChanged) {
     payload.to = nextTo;
     payload.cc = nextCc;
+    payload.bcc = nextBcc;
     if (nextSubject) payload.subject = nextSubject;
     return payload;
   }
   const baselineTo = normalizeEmailRecipients(input.baseline?.to ?? []);
   const baselineCc = normalizeEmailRecipients(input.baseline?.cc ?? []);
+  const baselineBcc = normalizeEmailRecipients(input.baseline?.bcc ?? []);
   const baselineSubject = input.baseline?.subject?.trim() ?? "";
   if (JSON.stringify(nextTo) !== JSON.stringify(baselineTo)) {
     payload.to = nextTo;
   }
   if (JSON.stringify(nextCc) !== JSON.stringify(baselineCc)) {
     payload.cc = nextCc;
+  }
+  if (JSON.stringify(nextBcc) !== JSON.stringify(baselineBcc)) {
+    payload.bcc = nextBcc;
   }
   if (nextSubject && nextSubject !== baselineSubject) {
     payload.subject = nextSubject;

@@ -1152,6 +1152,17 @@
   background: rgb(255 255 255 / 0.04);
 }
 
+/* Preview body is focusable for Shift+Tab / Tab field order. */
+.email-thread-message.is-compose .email-thread-message__body:focus {
+  outline: none;
+}
+
+.email-thread-message.is-compose .email-thread-message__body:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .email-compose-field:focus-visible {
   outline: none;
   border-color: rgb(107 138 253 / 55%);
@@ -1337,10 +1348,13 @@
   background: #1a1a1a;
 }
 
-/* Reply has no title row — pull the gray header chrome flush to the card top. */
-.email-thread-message.is-concept.is-compose.is-reply .email-thread-message__identity {
+/*
+ * Compose has no title row (subject lives under Cc) — pull the gray From/To
+ * chrome flush to the card top so it fills the former title gap.
+ */
+.email-thread-message.is-concept.is-compose .email-thread-message__identity {
   margin-top: -1rem;
-  padding-top: 0.7rem;
+  padding-top: 1.1rem;
   border-radius: 8px 8px 0 0;
 }
 
@@ -2197,11 +2211,6 @@
   align-items: center;
   gap: 0.5rem;
   margin-left: auto;
-  transition: opacity 0.18s ease;
-}
-
-.email-draft-actions__send-group.is-edit-mode {
-  opacity: 0.38;
 }
 
 .email-draft-delete-btn {

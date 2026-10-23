@@ -295,4 +295,31 @@ export function registerChatRoutes(app: Hono) {
       );
     }
   });
+
+  app.delete("/api/v1/chat/conversations/:conversationId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const conversationId = c.req.param("conversationId");
+    try {
+      return c.json(
+        await chatService.deleteChatConversation(
+          auth.workspaceId,
+          conversationId,
+        ),
+      );
+    } catch (error) {
+      const status = chatErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not delete conversation";
+      return c.json(
+        {
+          error: message,
+          code: status === 404 ? "not_found" : "bad_request",
+        },
+        status,
+      );
+    }
+  });
 }

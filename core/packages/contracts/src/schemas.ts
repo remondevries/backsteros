@@ -3978,6 +3978,7 @@ export const agentMailConceptDraftSchema = z.object({
   from: z.string().nullable(),
   to: z.array(z.string()),
   cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
   /** Full assembled draft text stored in AgentMail. */
   text: z.string().nullable(),
   /** Editable body without greeting/sign-off. */
@@ -4015,6 +4016,11 @@ export const agentMailMessageSchema = z.object({
   organizationName: z.string().nullable().optional(),
   contactId: z.string().nullable().optional(),
   contactName: z.string().nullable().optional(),
+  /**
+   * Distinct linked contacts across the thread’s per-message parties — used
+   * for multi-party avatar stacks on Communication list cards.
+   */
+  partyContactIds: z.array(z.string()).optional(),
   assigneeId: z.string().nullable().optional(),
   assigneeName: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
@@ -4167,6 +4173,7 @@ export const agentMailDraftDetailSchema = z.object({
   from: z.string().nullable().optional(),
   to: z.array(z.string()),
   cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });
@@ -4363,6 +4370,7 @@ export const emailComposeDraftInputSchema = z.object({
     z.array(z.string().min(1).max(320)).min(1).max(50),
   ]),
   cc: emailRecipientListSchema,
+  bcc: emailRecipientListSchema,
   subject: z.string().max(500),
   body: z.string().min(1).max(100_000),
   composeSessionId: z.string().min(1).max(200).optional(),
@@ -4396,6 +4404,7 @@ export const updateAgentMailDraftSchema = z
     body: z.string().max(100_000).optional(),
     to: emailRecipientListSchema,
     cc: emailRecipientListSchema,
+    bcc: emailRecipientListSchema,
     subject: z.string().max(500).optional(),
   })
   .refine(
@@ -4403,8 +4412,9 @@ export const updateAgentMailDraftSchema = z
       value.body !== undefined ||
       value.to !== undefined ||
       value.cc !== undefined ||
+      value.bcc !== undefined ||
       value.subject !== undefined,
-    { message: "At least one of body, to, cc, or subject is required" },
+    { message: "At least one of body, to, cc, bcc, or subject is required" },
   );
 export const moneybirdSalesInvoiceSchema = z.object({
   id: z.string(),

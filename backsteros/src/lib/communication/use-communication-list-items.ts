@@ -97,7 +97,9 @@ export function useCommunicationListItems(): InboxListItem[] {
           support: true,
           notification: task.notification ?? null,
           organizationName: relatedOrganization?.name ?? null,
+          organizationId: relatedOrganizationId,
           contactName: relatedContact?.name ?? null,
+          contactId: relatedContactId,
           contactAvatarSrc: relatedContactId
             ? (contactAvatarSrc[relatedContactId] ?? null)
             : null,
@@ -127,6 +129,7 @@ export function useCommunicationListItems(): InboxListItem[] {
         organizationName: item.organizationName,
         contactId: item.contactId,
         contactName: item.contactName,
+        partyContactIds: item.partyContactIds ?? null,
         emailThreadId: item.emailThreadId,
         number: item.number,
         displayId: item.displayId,

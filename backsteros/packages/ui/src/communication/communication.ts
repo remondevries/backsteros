@@ -5,10 +5,8 @@ import {
   type InboxListItem,
 } from "../inbox/inbox-items.js";
 import {
-  getEmailDetailHref,
   parseEmailDraftPath,
   parseEmailMessagePath,
-  withEmailListContext,
 } from "../email/email.js";
 import {
   isTaskStatus,
@@ -41,8 +39,9 @@ export type CommunicationListFilter =
 /** @deprecated Prefer CommunicationListFilter — same channel ids. */
 export type CommunicationChannel = CommunicationListFilter;
 
+/** Unified chat list is the only Communication surface. */
 export const DEFAULT_COMMUNICATION_LIST_FILTER: CommunicationListFilter =
-  "all";
+  "chat";
 
 export const COMMUNICATION_LIST_FILTER_OPTIONS: ReadonlyArray<{
   value: CommunicationListFilter;
@@ -364,15 +363,8 @@ export function getCommunicationItemHref(
   const inboxId = listContext?.inboxId;
   const status = listContext?.status;
   if (item.kind === "email") {
-    return withCommunicationListContext(
-      withEmailListContext(
-        getEmailDetailHref(item.inboxId, item.messageId, {
-          draftId: item.draftId,
-        }),
-        "communication",
-      ),
-      { channel, inboxId, status },
-    );
+    // Embedded thread under `/communication/:emailId` (unified list).
+    return getCommunicationHref(item.id, "chat");
   }
   if (item.kind !== "task") {
     return getCommunicationChannelHref(channel, { inboxId, status });

@@ -434,6 +434,7 @@ describe("email-reply-assembler", () => {
     assert.deepEqual(merged, {
       to: ["ada@example.com", "bob@example.com"],
       cc: ["cc@example.com"],
+      bcc: [],
       subject: "Re: Edited subject",
     });
   });
@@ -449,6 +450,7 @@ describe("email-reply-assembler", () => {
       {
         to: ["ada@example.com"],
         cc: ["kept@example.com"],
+        bcc: [],
         subject: "Keep me",
       },
     );

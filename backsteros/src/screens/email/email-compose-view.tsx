@@ -1,4 +1,4 @@
-import type { EmailMailbox } from "@backsteros/ui";
+import type { EmailMailbox, SearchableDropdownOption } from "@backsteros/ui";
 import {
   EmailComposeChrome,
   EmailDraftActions,
@@ -18,6 +18,7 @@ type EmailComposeViewProps = {
   ) => string | null;
   conceptDraftActionsDisabled: boolean;
   drafts: ReturnType<typeof useEmailDraftActions>;
+  recipientOptions?: SearchableDropdownOption<string>[];
 };
 
 export function EmailComposeView({
@@ -26,6 +27,7 @@ export function EmailComposeView({
   mailboxSignOffAvatarSrc,
   conceptDraftActionsDisabled,
   drafts,
+  recipientOptions = [],
 }: EmailComposeViewProps) {
   const {
     conceptError,
@@ -45,10 +47,13 @@ export function EmailComposeView({
     setComposeTo,
     composeCc,
     setComposeCc,
+    composeBcc,
+    setComposeBcc,
     composeSubject,
     setComposeSubject,
     composeDraft,
     composeLoading,
+    saveComposeDraft,
     sendDraft,
     deleteDraft,
   } = drafts;
@@ -86,8 +91,11 @@ export function EmailComposeView({
                 }}
                 to={composeTo}
                 onToChange={setComposeTo}
+                recipientOptions={recipientOptions}
                 cc={composeCc}
                 onCcChange={setComposeCc}
+                bcc={composeBcc}
+                onBccChange={setComposeBcc}
                 subject={composeSubject}
                 onSubjectChange={setComposeSubject}
                 body={conceptBodyDraft}
@@ -97,12 +105,12 @@ export function EmailComposeView({
                 replySignOff={composeDraft?.signOff}
                 replySignOffAvatarSrc={mailboxSignOffAvatarSrc(composeInboxId)}
                 fieldsDisabled={conceptSaving || conceptBodySaving}
+                autoFocusReady={!composeLoading}
                 agentWorking={false}
                 emptyBodyLabel="Write the message body…"
                 composer={null}
                 actions={
                   <EmailDraftActions
-                    modeOnly={!composeDraft}
                     onSend={
                       composeDraft
                         ? () => {
@@ -113,6 +121,9 @@ export function EmailComposeView({
                           }
                         : undefined
                     }
+                    onSaveDraft={() => {
+                      void saveComposeDraft(conceptBodyDraft);
+                    }}
                     onDelete={
                       composeDraft
                         ? () => {
@@ -124,6 +135,7 @@ export function EmailComposeView({
                         : undefined
                     }
                     sending={sending}
+                    savingDraft={conceptSaving}
                     deleting={deleting}
                     disabled={conceptDraftActionsDisabled}
                     bodyMode={conceptBodyMode}

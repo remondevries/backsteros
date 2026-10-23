@@ -19,7 +19,10 @@ import { createPortal } from "react-dom";
 import { isListKeyboardActivateKey } from "../../list-nav/is-list-keyboard-activate-key.js";
 import { SEARCHABLE_DROPDOWN_REQUEST_CLOSE } from "../../dropdowns/searchable-dropdown-events.js";
 import type { SearchableDropdownMenuApi } from "../../dropdowns/searchable-dropdown-menu-api.js";
-import { consumeSearchableDropdownOpenPlacement } from "../../dropdowns/searchable-dropdown-open-placement.js";
+import {
+  consumeSearchableDropdownOpenPlacement,
+  markSearchableDropdownOpenPlacement,
+} from "../../dropdowns/searchable-dropdown-open-placement.js";
 import {
   searchableDropdownShortcut,
   searchableDropdownShortcutIndex,
@@ -165,6 +168,11 @@ export type SearchableDropdownProps<T extends string> = {
    */
   onClear?: () => void;
   /**
+   * Single-select: pin the current value to the top of the panel (with a
+   * divider) and let a second click clear it via `onClear`. Requires `onClear`.
+   */
+  allowDeselect?: boolean;
+  /**
    * Single-select values that count as empty (hide clear). Use for “All”
    * sentinels such as `__all__`. Multi-select treats `[]` as empty.
    */
@@ -219,6 +227,7 @@ export function SearchableDropdown<T extends string>({
   onTabFromSearch,
   onShiftTabFromSearch,
   onClear,
+  allowDeselect = false,
   clearExemptValues,
   renderTrigger,
   defaultOpen = false,
@@ -276,8 +285,12 @@ export function SearchableDropdown<T extends string>({
     [options, query],
   );
 
+  const pinSelectedToTop = multiple || (allowDeselect && Boolean(onClear));
+
   const orderedOptions = useMemo(() => {
-    if (!multiple || selectedValues.length === 0) return filteredOptions;
+    if (!pinSelectedToTop || selectedValues.length === 0) {
+      return filteredOptions;
+    }
     const selectedSet = new Set(selectedValues);
     const selected = [];
     const rest = [];
@@ -287,10 +300,10 @@ export function SearchableDropdown<T extends string>({
     }
     if (selected.length === 0 || rest.length === 0) return filteredOptions;
     return [...selected, ...rest];
-  }, [filteredOptions, multiple, selectedValues]);
+  }, [filteredOptions, pinSelectedToTop, selectedValues]);
 
   const multiSeparatorAt = useMemo(() => {
-    if (!multiple || orderedOptions.length === 0) return -1;
+    if (!pinSelectedToTop || orderedOptions.length === 0) return -1;
     const selectedSet = new Set(selectedValues);
     let count = 0;
     for (const option of orderedOptions) {
@@ -299,7 +312,7 @@ export function SearchableDropdown<T extends string>({
     }
     if (count === 0 || count === orderedOptions.length) return -1;
     return count;
-  }, [multiple, orderedOptions, selectedValues]);
+  }, [orderedOptions, pinSelectedToTop, selectedValues]);
 
   const queryPreview = useMemo(
     () => (query.trim() ? (queryPreviewLabel?.(query) ?? null) : null),
@@ -353,21 +366,50 @@ export function SearchableDropdown<T extends string>({
         onValuesChange?.(next);
         return;
       }
+      if (
+        allowDeselect &&
+        onClear &&
+        selectedValues.includes(option.value)
+      ) {
+        onClear();
+        window.requestAnimationFrame(() => {
+          close();
+        });
+        return;
+      }
       onChange?.(option.value);
       window.requestAnimationFrame(() => {
         close();
       });
     },
-    [close, multiple, onChange, onValuesChange, selectedValues],
+    [
+      allowDeselect,
+      close,
+      multiple,
+      onChange,
+      onClear,
+      onValuesChange,
+      selectedValues,
+    ],
   );
 
-  const openMenu = useCallback(() => {
-    if (disabled) return;
-    setOpen(true);
-    setQuery("");
-    setActiveIndex(0);
-    setListFocusActive(false);
-  }, [disabled]);
+  const openMenu = useCallback(
+    (placement: "anchored" | "center" = "anchored") => {
+      if (disabled) return;
+      if (rootRef.current) {
+        markSearchableDropdownOpenPlacement(rootRef.current, placement);
+      }
+      // Set placement in the same turn as open so the first position pass
+      // anchors to the trigger (programmatic opens must not center).
+      setActivePanelPlacement(placement);
+      defaultOpenPlacementRef.current = placement;
+      setOpen(true);
+      setQuery("");
+      setActiveIndex(0);
+      setListFocusActive(false);
+    },
+    [disabled],
+  );
 
   useLayoutEffect(() => {
     if (!open) {
@@ -390,7 +432,9 @@ export function SearchableDropdown<T extends string>({
       close();
       return;
     }
-    openMenu();
+    // Click opens stay anchored unless a list shortcut marked "center".
+    const marked = rootRef.current?.dataset.searchableDropdownOpenPlacement;
+    openMenu(marked === "center" ? "center" : "anchored");
   }, [close, disabled, open, openMenu]);
 
   const clearExemptSet = useMemo(
@@ -477,6 +521,10 @@ export function SearchableDropdown<T extends string>({
     updatePanelPosition();
     const frame = window.requestAnimationFrame(() => {
       updatePanelPosition();
+      // Compose / flex-centered hosts often settle one frame later.
+      window.requestAnimationFrame(() => {
+        updatePanelPosition();
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, filteredOptions.length, query, updatePanelPosition]);
@@ -490,11 +538,24 @@ export function SearchableDropdown<T extends string>({
 
     window.addEventListener("resize", handleReposition);
     window.addEventListener("scroll", handleReposition, true);
+
+    const trigger =
+      document.getElementById(triggerId) ??
+      rootRef.current?.querySelector("button");
+    const resizeObserver =
+      trigger && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(handleReposition)
+        : null;
+    if (trigger && resizeObserver) {
+      resizeObserver.observe(trigger);
+    }
+
     return () => {
       window.removeEventListener("resize", handleReposition);
       window.removeEventListener("scroll", handleReposition, true);
+      resizeObserver?.disconnect();
     };
-  }, [open, updatePanelPosition]);
+  }, [open, triggerId, updatePanelPosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -505,7 +566,11 @@ export function SearchableDropdown<T extends string>({
   }, [open]);
 
   useEffect(() => {
-    registerOpenMenu?.({ open: openMenu, close });
+    // API open always anchors under the trigger (never viewport-center).
+    registerOpenMenu?.({
+      open: () => openMenu("anchored"),
+      close,
+    });
     return () => registerOpenMenu?.(null);
   }, [close, openMenu, registerOpenMenu]);
 

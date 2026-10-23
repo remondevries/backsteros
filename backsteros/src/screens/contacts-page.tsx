@@ -12,9 +12,10 @@ import {
 
 import {
   AvatarUpload,
+  CommunicationChatView,
   ContactDetailOverlay,
   ContactDetailView,
-  ContactEmailsListView,
+  EntityCommunicationListView,
   ContactMeetingsListView,
   ContactRelationshipsListView,
   ContactTasksListView,
@@ -78,8 +79,10 @@ import {
 } from "@backsteros/ui";
 
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
-import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
+import { useChatInbox } from "../lib/chat/use-chat-inbox";
+import { filterCommunicationForContact } from "../lib/communication/filter-entity-communication";
+import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
 import { useContactPortalEmailActions } from "../lib/use-contact-portal-email-actions";
 import { useContactPortalLogs } from "../lib/use-contact-portal-logs";
 import { useDesktopPowerSync } from "../lib/powersync-context";
@@ -179,9 +182,10 @@ export function ContactsPage({
   );
   const contactsListHref = getScopedContactsListHref(routeScope);
   const workspace = useDesktopWorkspaceData();
-  const agentMail = useAgentMail();
+  const communicationItems = useCommunicationListItems();
   const keepAliveFrozen = useKeepAliveFrozen();
   const { client } = useDesktopApi();
+  const [workspaceChatId, setWorkspaceChatId] = useState<string | null>(null);
   const powerSync = useDesktopPowerSync();
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
@@ -227,9 +231,13 @@ export function ContactsPage({
     [isStandalone, location.pathname],
   );
   const overlayLayout: ContactOverlayLayout =
-    workspaceDetail != null
+    workspaceDetail != null || workspaceChatId != null
       ? "page"
       : parseContactOverlayLayout(location.searchStr ?? "");
+  const chatInbox = useChatInbox({
+    enabled: keepAliveActive && overlayLayout === "page",
+    channelFocused: keepAliveActive && Boolean(workspaceChatId),
+  });
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(isStandalone && keepAliveActive);
   const effectiveGroupId = groupsCatalog.resolveGroupId(selectedGroupId);
@@ -313,7 +321,12 @@ export function ContactsPage({
     if (!workspaceDetail) return;
     setWorkspaceTab(workspaceDetail.kind);
     setDetailCollapsed(false);
+    setWorkspaceChatId(null);
   }, [workspaceDetail]);
+
+  useEffect(() => {
+    setWorkspaceChatId(null);
+  }, [panelContactId, workspaceTab]);
 
   const details = panelContactId
     ? (workspace.contactDetails[panelContactId] ?? null)
@@ -605,6 +618,35 @@ export function ContactsPage({
   const selectedSlugValue = selected
     ? String(contactSlug(selected, contacts))
     : null;
+  const contactCommunication = useMemo(() => {
+    if (!selected) {
+      return {
+        emails: [] as const,
+        supportTasks: [] as const,
+        conversations: [] as const,
+      };
+    }
+    return filterCommunicationForContact({
+      contact: {
+        id: selected.id,
+        email: details?.email ?? selected.email,
+        emails: normalizeContactEmails(details?.emails ?? selected.emails),
+        phone: details?.phone ?? selected.phone,
+        phones: normalizeContactPhones(details?.phones ?? selected.phones ?? []),
+      },
+      items: keepAliveFrozen ? [] : communicationItems,
+      conversations: keepAliveFrozen ? [] : chatInbox.conversations,
+    });
+  }, [
+    chatInbox.conversations,
+    communicationItems,
+    details?.email,
+    details?.emails,
+    details?.phone,
+    details?.phones,
+    keepAliveFrozen,
+    selected,
+  ]);
   const { onSendPortalInvite, onSendPortalPasswordReset } =
     useContactPortalEmailActions(selected?.id);
   const {
@@ -1798,7 +1840,10 @@ export function ContactsPage({
           embedInboxId={detail.inboxId}
           embedMessageId={detail.messageId}
           embedDraftId={detail.draftId}
-          breadcrumbItems={contactWorkspaceBreadcrumbPrefix("Emails", backHref)}
+          breadcrumbItems={contactWorkspaceBreadcrumbPrefix(
+            "Communication",
+            backHref,
+          )}
         />
       );
     }
@@ -2244,10 +2289,11 @@ export function ContactsPage({
         onCollapse={collapseOverlay}
         onHide={hideDetail}
         onShow={showDetail}
-        hideWorkspaceTabs={Boolean(workspaceDetail)}
+        hideWorkspaceTabs={Boolean(workspaceDetail) || Boolean(workspaceChatId)}
         workspaceTab={workspaceTab}
         onWorkspaceTabChange={(tab) => {
           setWorkspaceTab(tab);
+          setWorkspaceChatId(null);
           if (workspaceDetail && selectedSlugValue) {
             navigate(
               getContactOverlayHref(selectedSlugValue, {
@@ -2258,6 +2304,40 @@ export function ContactsPage({
           }
         }}
         renderWorkspaceTab={(tab) => {
+          if (workspaceChatId) {
+            return (
+              <div className="contact-communication-thread">
+                <button
+                  type="button"
+                  className="contact-communication-thread__back"
+                  onClick={() => {
+                    setWorkspaceChatId(null);
+                    chatInbox.selectConversation(null);
+                  }}
+                >
+                  Back to Communication
+                </button>
+                <CommunicationChatView
+                  pane="thread"
+                  conversations={chatInbox.conversations}
+                  selectedId={workspaceChatId}
+                  detail={chatInbox.detail}
+                  loading={chatInbox.loading}
+                  detailLoading={chatInbox.detailLoading}
+                  error={chatInbox.error}
+                  typingIds={chatInbox.typingIds}
+                  onSelect={(id) => {
+                    void chatInbox.selectConversation(id);
+                  }}
+                  onSend={chatInbox.sendMessage}
+                  onTypingChange={chatInbox.setTyping}
+                  resolveAvatarSrc={() =>
+                    selected ? (contactAvatarSrc[selected.id] ?? null) : null
+                  }
+                />
+              </div>
+            );
+          }
           if (workspaceDetail) {
             return renderWorkspaceEntityDetail(workspaceDetail);
           }
@@ -2281,20 +2361,54 @@ export function ContactsPage({
           }
           if (tab === "emails" && selected) {
             return (
-              <ContactEmailsListView
-                contactId={selected.id}
-                contactEmail={details?.email ?? selected.email}
-                contactEmails={normalizeContactEmails(
-                  details?.emails ?? selected.emails,
-                )}
-                emails={keepAliveFrozen ? [] : agentMail.messages}
-                onSelectEmail={(email) => {
+              <EntityCommunicationListView
+                conversations={contactCommunication.conversations}
+                emails={contactCommunication.emails}
+                supportTasks={contactCommunication.supportTasks}
+                resolveAvatarSrc={() =>
+                  contactAvatarSrc[selected.id] ?? null
+                }
+                resolveEmailAvatarSrc={(item) => {
+                  const contactId = item.contactId?.trim();
+                  if (contactId) return contactAvatarSrc[contactId] ?? null;
+                  return contactAvatarSrc[selected.id] ?? null;
+                }}
+                onSelectChat={(conversationId) => {
+                  setWorkspaceChatId(conversationId);
+                  void chatInbox.selectConversation(conversationId);
+                }}
+                onSelectEmail={(emailId) => {
                   if (!selectedSlugValue) return;
+                  const item = contactCommunication.emails.find(
+                    (entry) => entry.id === emailId,
+                  );
+                  if (!item) return;
                   navigate(
                     getScopedContactEmailHref(
                       selectedSlugValue,
-                      email,
+                      {
+                        inboxId: item.inboxId,
+                        id: item.draftId?.trim() || item.messageId,
+                        kind: item.draftId ? "draft" : "message",
+                      },
                       routeScope,
+                    ),
+                  );
+                }}
+                onSelectSupport={(supportId) => {
+                  if (!selectedSlugValue || !selected) return;
+                  const task = tasks.find((entry) => entry.id === supportId);
+                  if (!task) {
+                    navigate(`/tasks/${supportId}`);
+                    return;
+                  }
+                  navigate(
+                    getScopedContactTaskHref(
+                      task,
+                      selected,
+                      workspace.projects,
+                      routeScope,
+                      selectedSlugValue,
                     ),
                   );
                 }}

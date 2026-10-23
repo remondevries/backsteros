@@ -1,4 +1,8 @@
-import type { EmailListItem, EmailMailbox } from "@backsteros/ui";
+import type {
+  EmailComposeReplyTemplates,
+  EmailListItem,
+  EmailMailbox,
+} from "@backsteros/ui";
 
 import { createPersistedSessionLruCache } from "./session-lru-cache";
 
@@ -8,6 +12,7 @@ export type CachedAgentMailList = {
   mailboxes: EmailMailbox[];
   messages: EmailListItem[];
   apiKeyConfigured: boolean;
+  replyTemplates?: EmailComposeReplyTemplates | null;
   cachedAt: number;
 };
 
@@ -25,6 +30,7 @@ export function writeAgentMailListCache(input: {
   mailboxes: EmailMailbox[];
   messages: EmailListItem[];
   apiKeyConfigured: boolean;
+  replyTemplates?: EmailComposeReplyTemplates | null;
 }): void {
   agentMailListCache.set(AGENTMAIL_LIST_CACHE_KEY, {
     ...input,
@@ -56,6 +62,7 @@ export function agentMailMessagesSignature(
           message.organizationName ?? "",
           message.contactId ?? "",
           message.contactName ?? "",
+          (message.partyContactIds ?? []).join(","),
           message.assigneeId ?? "",
           message.projectId ?? "",
           message.projectKey ?? "",

@@ -121,7 +121,9 @@ export function useEmailThreadComments({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body, author }),
       });
-      setThreadComments((current) => [...current, created]);
+      // Newest-first UIs (Communication email) expect fresh activity at the
+      // head; chronological email detail still sorts by createdAt ascending.
+      setThreadComments((current) => [created, ...current]);
       return created;
     },
     [client, commentsApiBase],

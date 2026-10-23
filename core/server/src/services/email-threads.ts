@@ -60,7 +60,28 @@ export type EmailThreadListMeta = {
   projectId: string | null;
   projectName: string | null;
   projectKey: string | null;
+  /** Distinct contact ids from per-message parties (for multi-party list avatars). */
+  partyContactIds: string[];
 };
+
+function uniquePartyContactIdsFromMap(
+  parties: Record<string, { contactId?: string | null }> | null | undefined,
+  fallbackContactId?: string | null,
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const party of Object.values(parties ?? {})) {
+    const id = party.contactId?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (ids.length === 0) {
+    const fallback = fallbackContactId?.trim();
+    if (fallback) ids.push(fallback);
+  }
+  return ids;
+}
 
 export function resolveEmailThreadKey(input: {
   threadId?: string | null;
@@ -535,6 +556,7 @@ export async function listEmailThreadListMetaMap(
       contactId: emailThreads.contactId,
       assigneeId: emailThreads.assigneeId,
       projectId: emailThreads.projectId,
+      messageParties: emailThreads.messageParties,
     })
     .from(emailThreads)
     .where(eq(emailThreads.workspaceId, workspaceId));
@@ -646,6 +668,13 @@ export async function listEmailThreadListMetaMap(
       projectId: row.projectId ?? null,
       projectName: project?.name ?? null,
       projectKey: project?.key ?? null,
+      partyContactIds: uniquePartyContactIdsFromMap(
+        row.messageParties as
+          | Record<string, { contactId?: string | null }>
+          | null
+          | undefined,
+        row.contactId,
+      ),
     });
   }
   return map;

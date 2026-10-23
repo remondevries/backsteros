@@ -605,6 +605,7 @@ export function resolveEditableDraftBody(
 export type AssembledReplyEmail = {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   text: string;
   body: string;
@@ -730,6 +731,7 @@ export function greetingPartyFromRecipients(
 export function assertValidEmailDraftHeaders(input: {
   to?: string | string[] | null;
   cc?: string | string[] | null;
+  bcc?: string | string[] | null;
   subject?: string | null;
   /** When true, empty To is an error (create / explicit set). */
   requireTo?: boolean;
@@ -765,6 +767,9 @@ export function assertValidEmailDraftHeaders(input: {
   }
   if (input.cc !== undefined) {
     checkField("Cc", input.cc, { allowEmpty: true });
+  }
+  if (input.bcc !== undefined) {
+    checkField("Bcc", input.bcc, { allowEmpty: true });
   }
   if (input.to === undefined) return;
   checkField("To", input.to, {
@@ -829,6 +834,7 @@ export function correctSelfOnlyTo(
 export type MergedEmailDraftHeaders = {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
 };
 
@@ -836,16 +842,18 @@ export type MergedEmailDraftHeaders = {
  * Merge a PATCH onto stored draft headers.
  * - Empty subject keeps stored subject.
  * - Empty To keeps stored To (never wipe with []).
- * - Explicit `cc` (including []) replaces stored Cc; omit keeps it.
+ * - Explicit `cc`/`bcc` (including []) replaces stored; omit keeps it.
  */
 export function mergeEmailDraftHeaders(input: {
   patch: {
     to?: string | string[] | null;
     cc?: string | string[] | null;
+    bcc?: string | string[] | null;
     subject?: string | null;
   };
   storedTo: readonly string[];
   storedCc: readonly string[];
+  storedBcc?: readonly string[];
   storedSubject: string;
   /** Used when both patch and stored To are empty. */
   fallbackTo?: string | string[] | null;
@@ -878,8 +886,12 @@ export function mergeEmailDraftHeaders(input: {
     input.patch.cc !== undefined
       ? normalizeComposeRecipients(input.patch.cc)
       : [...input.storedCc];
+  const bcc =
+    input.patch.bcc !== undefined
+      ? normalizeComposeRecipients(input.patch.bcc)
+      : [...(input.storedBcc ?? [])];
 
-  return { to, cc, subject };
+  return { to, cc, bcc, subject };
 }
 
 /** First name for greeting — uses the primary recipient. */
@@ -953,6 +965,7 @@ export function assembleReplyEmail(input: {
   return {
     to,
     cc,
+    bcc: [],
     subject: input.preserveSubject
       ? input.subject.trim() || "(no subject)"
       : replySubject(input.subject),
@@ -970,6 +983,7 @@ export function assembleReplyEmail(input: {
 export function assembleComposeEmail(input: {
   to: string | string[];
   cc?: string | string[] | null;
+  bcc?: string | string[] | null;
   subject: string;
   body: string;
   templates?: Partial<
@@ -994,12 +1008,19 @@ export function assembleComposeEmail(input: {
     (address) =>
       !toAddresses.some((entry) => entry.toLowerCase() === address.toLowerCase()),
   );
+  const toAndCc = new Set(
+    [...toAddresses, ...ccAddresses].map((address) => address.toLowerCase()),
+  );
+  const bccAddresses = normalizeComposeRecipients(input.bcc).filter(
+    (address) => !toAndCc.has(address.toLowerCase()),
+  );
   const primaryTo = greetingPartyFromRecipients(input.to, toAddresses, "");
   const { greeting, signOff } = renderEmailComposeShell(primaryTo, templates);
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
     to: toAddresses,
     cc: ccAddresses,
+    bcc: bccAddresses,
     subject: input.subject.trim() || "(no subject)",
     text,
     body,

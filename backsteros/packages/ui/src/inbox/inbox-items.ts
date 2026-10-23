@@ -96,8 +96,12 @@ export type InboxTaskListItem = {
   notification?: boolean | null;
   /** Related organization label (Communication support rows). */
   organizationName?: string | null;
+  /** Related organization id (Communication support rows / filters). */
+  organizationId?: string | null;
   /** Related contact label (Communication support rows). */
   contactName?: string | null;
+  /** Related contact id (Communication support rows / filters). */
+  contactId?: string | null;
   contactAvatarSrc?: string | null;
 };
 
@@ -141,6 +145,11 @@ export type InboxEmailListItem = {
   organizationName?: string | null;
   contactId?: string | null;
   contactName?: string | null;
+  /**
+   * Distinct linked contacts across the thread (from message parties).
+   * When length > 1, Communication list cards show a small avatar stack.
+   */
+  partyContactIds?: string[] | null;
   /** Workspace email thread row id. */
   emailThreadId?: string | null;
   number?: number | null;
@@ -274,7 +283,9 @@ export function buildInboxTaskListItem(input: {
   support?: boolean | null;
   notification?: boolean | null;
   organizationName?: string | null;
+  organizationId?: string | null;
   contactName?: string | null;
+  contactId?: string | null;
   contactAvatarSrc?: string | null;
 }): InboxTaskListItem {
   const toEpoch = (value: number | Date | string | null | undefined) => {
@@ -309,7 +320,9 @@ export function buildInboxTaskListItem(input: {
     support: input.support ?? null,
     notification: input.notification ?? null,
     organizationName: input.organizationName ?? null,
+    organizationId: input.organizationId ?? null,
     contactName: input.contactName ?? null,
+    contactId: input.contactId ?? null,
     contactAvatarSrc: input.contactAvatarSrc ?? null,
   };
 }
@@ -336,6 +349,7 @@ export function buildInboxEmailListItem(input: {
   organizationName?: string | null;
   contactId?: string | null;
   contactName?: string | null;
+  partyContactIds?: readonly string[] | null;
   mailboxLabel?: string | null;
   mailboxAvatarSrc?: string | null;
   /** Our mailbox address — used with `from` when `direction` is omitted. */
@@ -396,6 +410,22 @@ export function buildInboxEmailListItem(input: {
     organizationName: input.organizationName ?? null,
     contactId: input.contactId ?? null,
     contactName: input.contactName ?? null,
+    partyContactIds: (() => {
+      const raw = input.partyContactIds ?? null;
+      if (!raw || raw.length === 0) {
+        const fallback = input.contactId?.trim();
+        return fallback ? [fallback] : null;
+      }
+      const seen = new Set<string>();
+      const ids: string[] = [];
+      for (const entry of raw) {
+        const id = entry?.trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
+      return ids.length > 0 ? ids : null;
+    })(),
     mailboxLabel: input.mailboxLabel?.trim() || null,
     mailboxAvatarSrc: input.mailboxAvatarSrc ?? null,
     direction,

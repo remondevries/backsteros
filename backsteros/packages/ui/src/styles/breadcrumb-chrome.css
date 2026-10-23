@@ -52,6 +52,11 @@
   align-items: stretch;
   align-self: stretch;
   max-width: min(58vw, 720px);
+  /* Icon toolbars (refresh) must stay visible; clip only real tab strips. */
+  overflow: visible;
+}
+
+.content-chrome-header__section-tabs:has(.project-chrome-section-tabs) {
   overflow: hidden;
 }
 

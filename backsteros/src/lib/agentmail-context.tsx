@@ -11,7 +11,11 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react";
-import type { EmailListItem, EmailMailbox } from "@backsteros/ui";
+import type {
+  EmailComposeReplyTemplates,
+  EmailListItem,
+  EmailMailbox,
+} from "@backsteros/ui";
 
 import { shouldLiveUpdateAgentMail } from "./agentmail-live";
 import {
@@ -24,6 +28,8 @@ type AgentMailContextValue = {
   mailboxes: EmailMailbox[];
   messages: EmailListItem[];
   apiKeyConfigured: boolean;
+  /** Workspace reply greeting/sign-off templates for compose preview. */
+  replyTemplates: EmailComposeReplyTemplates | null;
   loading: boolean;
   messagesLoading: boolean;
   reload: () => Promise<void>;
@@ -39,6 +45,7 @@ const AGENT_MAIL_STUB: AgentMailContextValue = {
   mailboxes: [],
   messages: [],
   apiKeyConfigured: false,
+  replyTemplates: null,
   loading: false,
   messagesLoading: false,
   reload: async () => {},

@@ -1,5 +1,6 @@
 import { Webhook } from "svix";
 
+import { invalidateAgentMailMessageDetailCache } from "./agentmail-message-detail-cache.js";
 import { publishEmailUpdated } from "./email-inbox-events.js";
 
 const DEDUPE_TTL_MS = 10 * 60_000;
@@ -131,6 +132,11 @@ export function handleAgentMailWebhookDelivery(input: {
     return { ok: true, published: false, workspaceId: matched.workspaceId };
   }
 
+  invalidateAgentMailMessageDetailCache(
+    matched.workspaceId,
+    parsed.inboxId,
+    parsed.messageId,
+  );
   publishEmailUpdated({
     workspaceId: matched.workspaceId,
     inboxId: parsed.inboxId,

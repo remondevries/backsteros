@@ -12,6 +12,7 @@ import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
@@ -72,8 +73,8 @@ export type ChatConversationDetailsViewProps = {
 };
 
 /**
- * Chat rail “Details” tab — flat label + dropdown rows (same chrome as email
- * Details), plus conversation ids and prior visitor threads.
+ * Chat rail “Details” tab — contact-style subgroup separators + property rows,
+ * plus conversation ids and prior visitor threads.
  */
 export function ChatConversationDetailsView({
   conversation,
@@ -144,8 +145,11 @@ export function ChatConversationDetailsView({
   }
 
   return (
-    <div className="communication-chat-details">
-      <div className="entity-properties-stack entity-properties-stack--flat">
+    <div className="communication-chat-details entity-overview__details contact-details">
+      <EntityOverviewSubgroup
+        title="Properties"
+        storageKey="comm-chat-details-properties"
+      >
         <PropertyFieldGroup label="Assignee">
           <PropertyDropdown
             value={conversation.assigneeId ?? DROPDOWN_NONE_VALUE}
@@ -206,10 +210,12 @@ export function ChatConversationDetailsView({
             onDueDateChange={onDueDateChange}
           />
         </PropertyFieldGroup>
-      </div>
+      </EntityOverviewSubgroup>
 
-      <section className="communication-chat-details__section">
-        <h3 className="communication-chat-details__heading">Conversation</h3>
+      <EntityOverviewSubgroup
+        title="Conversation"
+        storageKey="comm-chat-details-conversation"
+      >
         <dl className="communication-chat-details__meta">
           <div className="communication-chat-details__meta-row">
             <dt>ID</dt>
@@ -256,12 +262,12 @@ export function ChatConversationDetailsView({
             </div>
           ) : null}
         </dl>
-      </section>
+      </EntityOverviewSubgroup>
 
-      <section className="communication-chat-details__section">
-        <h3 className="communication-chat-details__heading">
-          Previous conversations
-        </h3>
+      <EntityOverviewSubgroup
+        title="Previous conversations"
+        storageKey="comm-chat-details-previous"
+      >
         {previous.length === 0 ? (
           <p className="communication-chat-details__empty">
             No earlier chats with this visitor.
@@ -291,7 +297,7 @@ export function ChatConversationDetailsView({
             ))}
           </ul>
         )}
-      </section>
+      </EntityOverviewSubgroup>
     </div>
   );
 }

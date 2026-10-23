@@ -19,11 +19,11 @@ import type { InboxListItem } from "../inbox/inbox-items.js";
 test("parseCommunicationListFilter accepts known values", () => {
   assert.equal(parseCommunicationListFilter("email"), "email");
   assert.equal(parseCommunicationListFilter("Support"), "support");
-  assert.equal(parseCommunicationListFilter("nope"), "all");
+  assert.equal(parseCommunicationListFilter("nope"), "chat");
 });
 
 test("parseCommunicationChannelFromSearch reads ?channel=", () => {
-  assert.equal(parseCommunicationChannelFromSearch(""), "all");
+  assert.equal(parseCommunicationChannelFromSearch(""), "chat");
   assert.equal(parseCommunicationChannelFromSearch("?channel=email"), "email");
   assert.equal(
     parseCommunicationChannelFromSearch("channel=support"),
@@ -203,31 +203,27 @@ test("resolveActiveCommunicationChannel prefers email/support detail", () => {
   );
 });
 
-test("getCommunicationItemHref keeps channel for breadcrumbs", () => {
+test("getCommunicationItemHref embeds email under /communication", () => {
   const emailItem = {
     kind: "email",
-    id: "e1",
+    id: "email:box-a:m1",
     inboxId: "box-a",
     messageId: "m1",
   } as InboxListItem;
   assert.equal(
     getCommunicationItemHref(emailItem, [], { channel: "all" }),
-    "/email/box-a/m1?list=communication&channel=all",
+    "/communication/email%3Abox-a%3Am1?channel=chat",
   );
   assert.equal(
     getCommunicationItemHref(emailItem, [], {
       channel: "email",
       inboxId: "box-a",
     }),
-    "/email/box-a/m1?list=communication&channel=email&inbox=box-a",
+    "/communication/email%3Abox-a%3Am1?channel=chat",
   );
   assert.equal(
-    getCommunicationItemHref(emailItem, [], {
-      channel: "email",
-      inboxId: "box-a",
-      status: "triage",
-    }),
-    "/email/box-a/m1?list=communication&channel=email&inbox=box-a&status=triage",
+    getCommunicationItemHref(emailItem, [], { channel: "chat" }),
+    "/communication/email%3Abox-a%3Am1?channel=chat",
   );
 });
 

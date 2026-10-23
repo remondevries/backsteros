@@ -147,11 +147,39 @@ export function resolveChatContactCardSections(options?: {
   return sections;
 }
 
+/** Email rail first tab — same id as chat Details, labeled E-mail. */
+const EMAIL_CONTACT_CONVERSATION_SECTION: ContactSectionConfig = {
+  ...CHAT_CONTACT_CONVERSATION_SECTION,
+  label: "E-mail",
+};
+
 /**
- * Communication → Chat email rail: Details only until an organization or
- * contact is linked; then the same Activity / Contact (+ Portal) tabs as chat.
+ * Communication → Chat email rail: E-mail only until an organization or
+ * contact is linked; then Activity / Contact (+ Portal) like chat (Details
+ * stays the chat sidepanel label).
  */
 export function resolveCommunicationEmailCardSections(options?: {
+  linked?: boolean;
+  showPortal?: boolean;
+  showPortalLogs?: boolean;
+}): ContactSectionConfig[] {
+  if (!options?.linked) {
+    return [EMAIL_CONTACT_CONVERSATION_SECTION];
+  }
+  const sections = resolveChatContactCardSections({
+    showPortal: options.showPortal,
+    showPortalLogs: options.showPortalLogs,
+  });
+  return sections.map((entry) =>
+    entry.id === "conversation" ? EMAIL_CONTACT_CONVERSATION_SECTION : entry,
+  );
+}
+
+/**
+ * Communication → Chat support rail: Details (ticket properties) only until
+ * a contact/org is linked; then Activity / Contact (+ Portal) like email.
+ */
+export function resolveCommunicationSupportCardSections(options?: {
   linked?: boolean;
   showPortal?: boolean;
   showPortalLogs?: boolean;

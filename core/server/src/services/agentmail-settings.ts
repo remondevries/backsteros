@@ -29,6 +29,11 @@ import {
   parseEmailSourceHeaders,
 } from "../lib/agentmail-client.js";
 import {
+  invalidateAgentMailMessageDetailCache,
+  peekAgentMailMessageDetailCache,
+  writeAgentMailMessageDetailCache,
+} from "../lib/agentmail-message-detail-cache.js";
+import {
   EMAIL_CONCEPT_STATUS,
   emailStatusLabelPatch,
 } from "../lib/email-status-labels.js";
@@ -589,6 +594,7 @@ function mapConceptDraftForApi(input: {
   const rawText = input.draft.text ?? "";
   const draftTo = normalizeComposeRecipients(input.draft.to);
   const draftCc = normalizeComposeRecipients(input.draft.cc);
+  const draftBcc = normalizeComposeRecipients(input.draft.bcc);
   const greetingParty = resolveDraftGreetingParty(input.replyFrom, draftTo);
   const editableBody = resolveEditableDraftBody(
     rawText,
@@ -601,6 +607,7 @@ function mapConceptDraftForApi(input: {
     ? assembleComposeEmail({
         to: draftTo.length > 0 ? draftTo : input.replyFrom,
         cc: draftCc,
+        bcc: draftBcc,
         subject: input.subject,
         body: editableBody,
         templates: input.templates,
@@ -624,6 +631,7 @@ function mapConceptDraftForApi(input: {
     from: input.fromEmail,
     to: input.draft.to,
     cc: input.draft.cc ?? [],
+    bcc: input.draft.bcc ?? [],
     text: input.draft.text,
     body: editableBody || assembled.body,
     greeting: assembled.greeting,
@@ -663,6 +671,7 @@ function mapDraftDetailForApi(input: {
     from: input.inboxEmail,
     to: input.draft.to,
     cc: input.draft.cc ?? [],
+    bcc: input.draft.bcc ?? [],
     updatedAt: input.draft.updatedAt,
     createdAt: input.draft.createdAt,
   };
@@ -1439,11 +1448,13 @@ async function saveComposeDraft(
   const bodies = buildAssembledDraftBodies(assembled, avatar);
 
   const cc = assembled.cc.filter((address) => address.includes("@"));
+  const bcc = (assembled.bcc ?? []).filter((address) => address.includes("@"));
   if (existing) {
     const current = await client.getDraft(inboxId, existing.draftId);
     return client.updateDraft(inboxId, existing.draftId, {
       to: assembled.to,
       cc,
+      bcc,
       subject: assembled.subject,
       text: bodies.text,
       html: bodies.html,
@@ -1454,6 +1465,7 @@ async function saveComposeDraft(
   return client.createDraft(inboxId, {
     to: assembled.to,
     ...(cc.length > 0 ? { cc } : {}),
+    ...(bcc.length > 0 ? { bcc } : {}),
     subject: assembled.subject,
     text: bodies.text,
     html: bodies.html,
@@ -1578,6 +1590,7 @@ export async function listAgentMailMessages(
       organizationName: stored?.organizationName ?? null,
       contactId: stored?.contactId ?? null,
       contactName: stored?.contactName ?? null,
+      partyContactIds: stored?.partyContactIds ?? undefined,
       assigneeId: stored?.assigneeId ?? null,
       assigneeName: stored?.assigneeName ?? null,
       projectId: stored?.projectId ?? null,
@@ -1588,6 +1601,27 @@ export async function listAgentMailMessages(
 }
 
 export async function getAgentMailMessage(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<AgentMailMessageDetail> {
+  const cached = peekAgentMailMessageDetailCache<AgentMailMessageDetail>(
+    workspaceId,
+    inboxId,
+    messageId,
+  );
+  if (cached) return cached;
+
+  const detail = await loadAgentMailMessageUncached(
+    workspaceId,
+    inboxId,
+    messageId,
+  );
+  writeAgentMailMessageDetailCache(workspaceId, inboxId, messageId, detail);
+  return detail;
+}
+
+async function loadAgentMailMessageUncached(
   workspaceId: string,
   inboxId: string,
   messageId: string,
@@ -2191,6 +2225,7 @@ export async function upsertEmailComposeDraft(
   input: {
     to: string | string[];
     cc?: string | string[] | null;
+    bcc?: string | string[] | null;
     subject: string;
     body: string;
     composeSessionId?: string;
@@ -2205,6 +2240,7 @@ export async function upsertEmailComposeDraft(
     assertValidEmailDraftHeaders({
       to: input.to,
       cc: input.cc,
+      bcc: input.bcc,
       subject: input.subject,
       requireTo: true,
     });
@@ -2223,6 +2259,7 @@ export async function upsertEmailComposeDraft(
   const assembled = assembleComposeEmail({
     to: input.to,
     cc: input.cc,
+    bcc: input.bcc,
     subject: input.subject,
     body: input.body,
     templates,
@@ -2315,6 +2352,19 @@ export async function sendAgentMailDraft(
     { status: "on_hold" },
   );
 
+  invalidateAgentMailMessageDetailCache(
+    workspaceId,
+    sent.inboxId,
+    sent.messageId,
+  );
+  if (draft.inReplyTo?.trim()) {
+    invalidateAgentMailMessageDetailCache(
+      workspaceId,
+      draft.inboxId || inboxId,
+      draft.inReplyTo,
+    );
+  }
+
   return {
     inboxId: sent.inboxId,
     messageId: sent.messageId,
@@ -2404,6 +2454,7 @@ async function ensureDraftHasAssembledShell(
   );
   const storedTo = normalizeComposeRecipients(draft.to);
   const storedCc = normalizeComposeRecipients(draft.cc);
+  const storedBcc = normalizeComposeRecipients(draft.bcc);
   let nextTo =
     storedTo.length > 0
       ? correctSelfOnlyTo(storedTo, inboxEmail, replyFrom)
@@ -2426,6 +2477,7 @@ async function ensureDraftHasAssembledShell(
     ? assembleComposeEmail({
         to: nextTo.length > 0 ? nextTo : replyFrom || "",
         cc: storedCc,
+        bcc: storedBcc,
         subject,
         body: editableBody,
         templates,
@@ -2472,7 +2524,8 @@ async function ensureDraftHasAssembledShell(
   const needsRecipientUpdate =
     JSON.stringify(nextTo) !== JSON.stringify(assembled.to) ||
     JSON.stringify(storedTo) !== JSON.stringify(assembled.to) ||
-    JSON.stringify(storedCc) !== JSON.stringify(assembled.cc);
+    JSON.stringify(storedCc) !== JSON.stringify(assembled.cc) ||
+    JSON.stringify(storedBcc) !== JSON.stringify(assembled.bcc);
 
   if (!needsTextUpdate && !needsHtmlUpdate && !needsRecipientUpdate) {
     return draft;
@@ -2483,6 +2536,7 @@ async function ensureDraftHasAssembledShell(
     html: desiredHtml,
     ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
     cc: assembled.cc,
+    bcc: assembled.bcc,
     ...(subject ? { subject } : {}),
     ...draftUpdateAttachmentFields(draft, avatar),
   });
@@ -2539,6 +2593,7 @@ export async function updateAgentMailDraft(
         body?: string;
         to?: string | string[] | null;
         cc?: string | string[] | null;
+        bcc?: string | string[] | null;
         subject?: string | null;
       },
 ): Promise<ApiAgentMailDraftDetail> {
@@ -2565,6 +2620,7 @@ export async function updateAgentMailDraft(
   const inboxEmail = await resolveInboxEmail(client, draft.inboxId || inboxId);
   const storedTo = normalizeComposeRecipients(draft.to);
   const storedCc = normalizeComposeRecipients(draft.cc);
+  const storedBcc = normalizeComposeRecipients(draft.bcc);
   const storedSubject = draft.subject?.trim() || "";
   const isCompose = !draft.inReplyTo?.trim();
   const bodyOnlyWithReplyParty =
@@ -2581,6 +2637,7 @@ export async function updateAgentMailDraft(
           ? patch.to
           : storedTo,
       cc: patch.cc,
+      bcc: patch.bcc,
       subject: patch.subject,
       requireTo:
         patch.to !== undefined ||
@@ -2599,10 +2656,12 @@ export async function updateAgentMailDraft(
     patch: {
       to: patch.to,
       cc: patch.cc,
+      bcc: patch.bcc,
       subject: patch.subject,
     },
     storedTo,
     storedCc,
+    storedBcc,
     // Compose drafts must not get a synthetic "Reply concept" subject.
     storedSubject: storedSubject || (isCompose ? "" : "Reply concept"),
     fallbackTo: replyFrom,
@@ -2639,6 +2698,7 @@ export async function updateAgentMailDraft(
     );
   }
   const nextCc = merged.cc;
+  const nextBcc = merged.bcc;
 
   const previousGreetingParty = resolveDraftGreetingParty(replyFrom, storedTo);
   const nextGreetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
@@ -2658,11 +2718,12 @@ export async function updateAgentMailDraft(
         templates,
       );
 
-  // Header-only PATCH: update To/Cc/Subject without rewriting text/HTML.
+  // Header-only PATCH: update To/Cc/Bcc/Subject without rewriting text/HTML.
   if (headersOnly) {
     const headerUpdate: {
       to?: string[];
       cc?: string[];
+      bcc?: string[];
       subject?: string;
     } = {};
     if (
@@ -2673,6 +2734,9 @@ export async function updateAgentMailDraft(
     }
     if (patch.cc !== undefined) {
       headerUpdate.cc = nextCc;
+    }
+    if (patch.bcc !== undefined) {
+      headerUpdate.bcc = nextBcc;
     }
     if (
       (patch.subject !== undefined && (patch.subject ?? "").trim()) ||
@@ -2703,6 +2767,7 @@ export async function updateAgentMailDraft(
     ? assembleComposeEmail({
         to: nextTo,
         cc: nextCc,
+        bcc: nextBcc,
         subject,
         body: editableBody,
         templates,
@@ -2741,6 +2806,7 @@ export async function updateAgentMailDraft(
     html: bodies.html,
     to: assembled.to,
     cc: assembled.cc,
+    bcc: assembled.bcc,
     subject: assembled.subject,
     ...draftUpdateAttachmentFields(draft, avatar),
   });

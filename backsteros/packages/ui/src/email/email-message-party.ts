@@ -49,7 +49,8 @@ export function resolveEmailMessagePartyAddress(input: {
   return from.includes("@") ? from : null;
 }
 
-function organizationMatchesEmailAddress(
+/** True when `address` matches the organization’s primary or listed emails. */
+export function organizationMatchesEmailAddress(
   organization: MatchableOrganization,
   address: string,
 ): boolean {
@@ -94,6 +95,10 @@ export function matchEmailMessageParty(input: {
 /**
  * Propose auto-link parties for messages that have no stored party yet.
  * Does not overwrite existing map entries.
+ *
+ * Matches by party address: contact first (including their organizationId),
+ * otherwise organization-only. Both are persisted so the rail files itself
+ * whenever an email address is already known.
  */
 export function buildEmailMessagePartyAutoLinks(input: {
   messages: readonly {
@@ -112,8 +117,9 @@ export function buildEmailMessagePartyAutoLinks(input: {
   for (const entry of input.messages) {
     const messageId = entry.messageId?.trim();
     if (!messageId) continue;
-    const stored = existing[messageId];
-    if (stored?.contactId || stored?.organizationId) continue;
+    // Any stored entry (including explicit unlink with null ids) wins — never
+    // soft-refile a party the user cleared.
+    if (Object.prototype.hasOwnProperty.call(existing, messageId)) continue;
 
     const fromEmail = parseReplyToAddress(entry.from ?? "")
       .trim()
@@ -132,9 +138,11 @@ export function buildEmailMessagePartyAutoLinks(input: {
       contacts: input.contacts,
       organizations: input.organizations,
     });
-    if (!matched) continue;
-    if (!matched.contactId && !matched.organizationId) continue;
-    next[messageId] = matched;
+    if (!matched?.contactId && !matched?.organizationId) continue;
+    next[messageId] = {
+      contactId: matched.contactId,
+      organizationId: matched.organizationId,
+    };
   }
 
   return next;
@@ -147,6 +155,29 @@ export function getEmailMessageParty(
   const key = messageId?.trim();
   if (!key) return null;
   return map?.[key] ?? null;
+}
+
+/**
+ * Unique contact ids across a thread’s per-message parties (insertion order).
+ * Falls back to a single thread-level contact when the map is empty.
+ */
+export function uniqueEmailPartyContactIds(
+  parties: EmailMessagePartyMap | null | undefined,
+  fallbackContactId?: string | null,
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const party of Object.values(parties ?? {})) {
+    const id = party.contactId?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (ids.length === 0) {
+    const fallback = fallbackContactId?.trim();
+    if (fallback) ids.push(fallback);
+  }
+  return ids;
 }
 
 /** True when address is already listed on the contact (any label). */

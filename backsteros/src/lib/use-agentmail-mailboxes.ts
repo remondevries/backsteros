@@ -8,6 +8,7 @@ import {
 } from "react";
 import type {
   AgentMailMessage,
+  AgentMailMessageDetail,
   AgentMailSettings,
 } from "@backsteros/contracts";
 import {
@@ -15,7 +16,9 @@ import {
   isAgentMailMessageUnread,
   resolveEmailMessageDirection,
   type EmailListItem,
+  type EmailComposeReplyTemplates,
   type EmailMailbox,
+  resolveComposeReplyTemplates,
   type TaskStatus,
 } from "@backsteros/ui";
 
@@ -27,6 +30,7 @@ import {
 } from "./agentmail-list-cache";
 import { setEmailStreamStatus } from "./cloud-client-notices";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
+import { writeEmailMessageDetailCache } from "./email-message-detail-cache";
 import { WORKSPACE_EMAIL_UPDATED_EVENT } from "./workspace-events";
 
 export const EMAIL_LIST_PATCH_EVENT = "backsteros-email-list-patch";
@@ -115,6 +119,7 @@ function toListItem(
       organizationName: entry.organizationName ?? null,
       contactId: entry.contactId ?? null,
       contactName: entry.contactName ?? null,
+      partyContactIds: entry.partyContactIds ?? null,
       assigneeId: entry.assigneeId ?? null,
       assigneeName: entry.assigneeName ?? null,
       projectId: entry.projectId ?? null,
@@ -146,6 +151,7 @@ function toListItem(
     organizationName: entry.organizationName ?? null,
     contactId: entry.contactId ?? null,
     contactName: entry.contactName ?? null,
+    partyContactIds: entry.partyContactIds ?? null,
     assigneeId: entry.assigneeId ?? null,
     assigneeName: entry.assigneeName ?? null,
     projectId: entry.projectId ?? null,
@@ -234,6 +240,61 @@ function applyListRemove(
   });
 }
 
+/** Upsert a list row for a new/updated message; collapses same thread. */
+function upsertListItem(
+  items: EmailListItem[],
+  next: EmailListItem,
+): EmailListItem[] {
+  const threadId = next.threadId?.trim() || null;
+  const without = items.filter((item) => {
+    if (item.inboxId !== next.inboxId) return true;
+    if (item.id === next.id) return false;
+    if (threadId && item.threadId === threadId) return false;
+    return true;
+  });
+  return [next, ...without];
+}
+
+function detailToListItem(
+  detail: AgentMailMessageDetail,
+  mailboxEmails: ReadonlySet<string>,
+): EmailListItem {
+  const meta = detail.threadMetadata;
+  return {
+    kind: "message",
+    id: detail.messageId,
+    inboxId: detail.inboxId,
+    subject: detail.subject,
+    from: detail.from,
+    to: detail.to ?? null,
+    preview: detail.preview,
+    receivedAt: Date.parse(detail.timestamp) || Date.now(),
+    threadId: detail.threadId ?? null,
+    conceptDraftId: detail.conceptDraftId ?? null,
+    inReplyToMessageId: detail.inReplyToMessageId ?? null,
+    status: meta?.status ?? detail.status ?? "triage",
+    priority: meta?.priority ?? detail.priority ?? 0,
+    dueDate: meta?.dueDate ?? detail.dueDate ?? null,
+    organizationId: meta?.organizationId ?? detail.organizationId ?? null,
+    organizationName:
+      meta?.organizationName ?? detail.organizationName ?? null,
+    contactId: meta?.contactId ?? detail.contactId ?? null,
+    contactName: meta?.contactName ?? detail.contactName ?? null,
+    partyContactIds: detail.partyContactIds ?? null,
+    assigneeId: meta?.assigneeId ?? detail.assigneeId ?? null,
+    assigneeName: meta?.assigneeName ?? detail.assigneeName ?? null,
+    projectId: meta?.projectId ?? detail.projectId ?? null,
+    projectName: meta?.projectName ?? detail.projectName ?? null,
+    projectKey: meta?.projectKey ?? detail.projectKey ?? null,
+    emailThreadId: meta?.id ?? detail.emailThreadId ?? null,
+    number: meta?.number ?? detail.number ?? null,
+    displayId: meta?.displayId ?? detail.displayId ?? null,
+    inboxUpdatedAt: detail.inboxUpdatedAt ?? null,
+    direction: resolveEmailMessageDirection(detail.from, mailboxEmails),
+    unread: isAgentMailMessageUnread(detail.labels),
+  };
+}
+
 export function useAgentMailMailboxes(
   active: boolean,
   options?: { liveUpdates?: boolean },
@@ -250,6 +311,10 @@ export function useAgentMailMailboxes(
   const [apiKeyConfigured, setApiKeyConfigured] = useState(
     () => cachedSnapshot?.apiKeyConfigured ?? false,
   );
+  const [replyTemplates, setReplyTemplates] =
+    useState<EmailComposeReplyTemplates | null>(
+      () => cachedSnapshot?.replyTemplates ?? null,
+    );
   const [loading, setLoading] = useState(active && !cachedSnapshot);
   const [messagesLoading, setMessagesLoading] = useState(
     active && !cachedSnapshot,
@@ -284,23 +349,35 @@ export function useAgentMailMailboxes(
       );
       if (signal.aborted || generation !== reloadGenerationRef.current) return;
       if (!mountedRef.current) return;
+      const nextTemplates = resolveComposeReplyTemplates({
+        greetingTemplateEn: body.replyGreetingTemplateEn,
+        greetingTemplateNl: body.replyGreetingTemplateNl,
+        signOffTemplateEn: body.replySignOffTemplateEn,
+        signOffTemplateNl: body.replySignOffTemplateNl,
+      });
+      const nextMailboxes = (body.inboxes ?? []).map((inbox) => ({
+        inboxId: inbox.inboxId,
+        email: inbox.email,
+        displayName: inbox.displayName,
+        contactId: inbox.contactId ?? null,
+        contactName: inbox.contactName ?? null,
+      }));
       startTransition(() => {
         setApiKeyConfigured(body.apiKeyConfigured);
-        setMailboxes(
-          (body.inboxes ?? []).map((inbox) => ({
-            inboxId: inbox.inboxId,
-            email: inbox.email,
-            displayName: inbox.displayName,
-            contactId: inbox.contactId ?? null,
-            contactName: inbox.contactName ?? null,
-          })),
-        );
+        setReplyTemplates(nextTemplates);
+        setMailboxes(nextMailboxes);
         if (!silent) setLoading(false);
       });
       if (!body.apiKeyConfigured || (body.inboxes ?? []).length === 0) {
         setMessages([]);
         setMessagesLoading(false);
         hydratedRef.current = true;
+        writeAgentMailListCache({
+          mailboxes: nextMailboxes,
+          messages: [],
+          apiKeyConfigured: body.apiKeyConfigured,
+          replyTemplates: nextTemplates,
+        });
         return;
       }
       try {
@@ -325,15 +402,10 @@ export function useAgentMailMailboxes(
           );
           setMessages(nextMessages);
           writeAgentMailListCache({
-            mailboxes: (body.inboxes ?? []).map((inbox) => ({
-              inboxId: inbox.inboxId,
-              email: inbox.email,
-              displayName: inbox.displayName,
-              contactId: inbox.contactId ?? null,
-              contactName: inbox.contactName ?? null,
-            })),
+            mailboxes: nextMailboxes,
             messages: nextMessages,
             apiKeyConfigured: body.apiKeyConfigured,
+            replyTemplates: nextTemplates,
           });
         });
       } catch {
@@ -349,6 +421,7 @@ export function useAgentMailMailboxes(
       if (!silent) {
         setMailboxes([]);
         setMessages([]);
+        setReplyTemplates(null);
       }
     } finally {
       if (generation === reloadGenerationRef.current && mountedRef.current) {
@@ -371,6 +444,41 @@ export function useAgentMailMailboxes(
       void reload();
     }, SSE_RELOAD_DEBOUNCE_MS);
   }, [reload]);
+
+  const upsertMessageFromServer = useCallback(
+    async (inboxId: string, messageId: string) => {
+      const inbox = inboxId.trim();
+      const message = messageId.trim();
+      if (!inbox || !message) return false;
+      try {
+        const detail = await client.requestJson<AgentMailMessageDetail>(
+          `/api/v1/email/inboxes/${encodeURIComponent(inbox)}/messages/${encodeURIComponent(message)}`,
+        );
+        if (!mountedRef.current) return false;
+        writeEmailMessageDetailCache(inbox, message, detail);
+        const mailboxEmails = new Set(
+          mailboxes
+            .map((mailbox) => mailbox.email.trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const listItem = detailToListItem(detail, mailboxEmails);
+        setMessages((current) => {
+          const next = upsertListItem(current, listItem);
+          writeAgentMailListCache({
+            mailboxes,
+            messages: next,
+            apiKeyConfigured,
+            replyTemplates,
+          });
+          return next;
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [apiKeyConfigured, client, mailboxes, replyTemplates],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -456,6 +564,16 @@ export function useAgentMailMailboxes(
             },
           }),
         );
+        const messageId = payload.messageId?.trim() || null;
+        if (messageId) {
+          // Incremental: one message hydrate instead of full inbox list reload.
+          void upsertMessageFromServer(payload.inboxId, messageId).then(
+            (ok) => {
+              if (!ok) scheduleDebouncedReload();
+            },
+          );
+          return;
+        }
         scheduleDebouncedReload();
       },
       onConnection: setEmailStreamStatus,
@@ -474,6 +592,7 @@ export function useAgentMailMailboxes(
     client,
     liveUpdates,
     scheduleDebouncedReload,
+    upsertMessageFromServer,
   ]);
 
   // Catch-up while live: SSE is primary; poll less often so we don't stack
@@ -491,6 +610,7 @@ export function useAgentMailMailboxes(
       mailboxes,
       messages,
       apiKeyConfigured,
+      replyTemplates,
       loading,
       messagesLoading,
       reload,
@@ -499,6 +619,7 @@ export function useAgentMailMailboxes(
       mailboxes,
       messages,
       apiKeyConfigured,
+      replyTemplates,
       loading,
       messagesLoading,
       reload,

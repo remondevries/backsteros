@@ -53,6 +53,9 @@ export function useEmailDraftActions({
   reloadMessageDetail,
   promoteEmailThreadStatus,
   toEmailDetailHref,
+  listReturnHref = "/inbox",
+  onComposeFinished,
+  composeDraftSeed = null,
 }: {
   inboxId: string | undefined;
   messageId: string | undefined;
@@ -73,6 +76,12 @@ export function useEmailDraftActions({
     targetInboxId: string,
     targetMessageId: string,
   ) => string;
+  /** Where compose navigates after send when not using `onComposeFinished`. */
+  listReturnHref?: string;
+  /** Embedded compose: leave create mode without a full-page route change. */
+  onComposeFinished?: () => void;
+  /** Re-open an existing draft in compose (Communication list card). */
+  composeDraftSeed?: { inboxId: string; draftId: string } | null;
 }) {
   const { client } = useDesktopApi();
   const routerNavigate = useNavigate();
@@ -88,7 +97,24 @@ export function useEmailDraftActions({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [conceptBodyDraft, setConceptBodyDraft] = useState("");
+  const [composeSession] = useState(() => {
+    const seedDraftId = composeDraftSeed?.draftId?.trim();
+    const seedInboxId = composeDraftSeed?.inboxId?.trim();
+    if (isCompose && seedDraftId && seedInboxId) {
+      const seeded: ReturnType<typeof readEmailComposeSession> = {
+        sessionId: crypto.randomUUID(),
+        draftId: seedDraftId,
+        inboxId: seedInboxId,
+        prefill: null,
+      };
+      writeEmailComposeSession(seeded);
+      return seeded;
+    }
+    return readEmailComposeSession();
+  });
+  const [conceptBodyDraft, setConceptBodyDraft] = useState(
+    () => composeSession.prefill?.body?.trim() ?? "",
+  );
   const [conceptBodyMode, setConceptBodyMode] =
     useState<EmailDraftBodyMode>(() => (isCompose ? "edit" : "preview"));
   const [conceptBodySaving, setConceptBodySaving] = useState(false);
@@ -97,13 +123,19 @@ export function useEmailDraftActions({
   const conceptBodySavingRef = useRef(false);
   const sendingRef = useRef(false);
   const deletingRef = useRef(false);
-  const [composeSession] = useState(() => readEmailComposeSession());
   const [composeInboxId, setComposeInboxId] = useState(
     () => composeSession.inboxId ?? "",
   );
-  const [composeTo, setComposeTo] = useState("");
+  // Seed from session prefill synchronously so compose chrome never autofocuses
+  // To for one frame before Forward/new-mail prefill arrives.
+  const [composeTo, setComposeTo] = useState(
+    () => composeSession.prefill?.to?.trim() ?? "",
+  );
   const [composeCc, setComposeCc] = useState("");
-  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBcc, setComposeBcc] = useState("");
+  const [composeSubject, setComposeSubject] = useState(
+    () => composeSession.prefill?.subject?.trim() ?? "",
+  );
   const [composeDraft, setComposeDraft] = useState<AgentMailDraftDetail | null>(
     null,
   );
@@ -262,6 +294,7 @@ export function useEmailDraftActions({
         setComposeDraft(loaded);
         setComposeTo((loaded.to ?? []).join(", "));
         setComposeCc((loaded.cc ?? []).join(", "));
+        setComposeBcc((loaded.bcc ?? []).join(", "));
         setComposeSubject(loaded.subject?.trim() ?? "");
         setConceptBodyDraft(resolveEditableEmailDraftBody(loaded));
       })
@@ -329,12 +362,14 @@ export function useEmailDraftActions({
         onlyChanged: options?.onlyChanged,
         to: usingCompose ? composeTo : replyTo,
         cc: usingCompose ? composeCc : replyCc,
+        bcc: usingCompose ? composeBcc : "",
         subject: usingCompose ? composeSubject : replySubjectText,
         baseline,
         includeBody: options?.includeBody,
       });
     },
     [
+      composeBcc,
       composeCc,
       composeDraft,
       composeSubject,
@@ -376,6 +411,7 @@ export function useEmailDraftActions({
           setComposeDraft(updated);
           setComposeTo((updated.to ?? []).join(", "));
           setComposeCc((updated.cc ?? []).join(", "));
+          setComposeBcc((updated.bcc ?? []).join(", "));
           setComposeSubject(updated.subject?.trim() ?? composeSubject);
         } else if (messageId && inboxId) {
           const reloaded = await reloadMessageDetail(inboxId, messageId);
@@ -547,6 +583,7 @@ export function useEmailDraftActions({
             body: JSON.stringify({
               to: composeTo.trim(),
               cc: normalizeEmailRecipients(composeCc),
+              bcc: normalizeEmailRecipients(composeBcc),
               subject: composeSubject.trim(),
               body: agentBody,
               composeSessionId: composeSession.sessionId,
@@ -564,6 +601,7 @@ export function useEmailDraftActions({
         setComposeDraft(loaded);
         setComposeTo((loaded.to ?? []).join(", "));
         setComposeCc((loaded.cc ?? []).join(", "));
+        setComposeBcc((loaded.bcc ?? []).join(", "));
         setComposeSubject(loaded.subject?.trim() ?? composeSubject);
         const nextEditable =
           resolveEditableEmailDraftBody(loaded) || agentBody;
@@ -585,6 +623,7 @@ export function useEmailDraftActions({
     },
     [
       client,
+      composeBcc,
       composeCc,
       composeInboxId,
       composeSession.sessionId,
@@ -740,7 +779,11 @@ export function useEmailDraftActions({
         setMessage(null);
         setComposeDraft(null);
         resetEmailComposeSession();
-        navigate("/inbox", { replace: true });
+        if (onComposeFinished) {
+          onComposeFinished();
+        } else {
+          navigate(listReturnHref, { replace: true });
+        }
       } catch (caught) {
         setSendError(
           emailRequestErrorMessage(caught, "Could not send draft."),
@@ -759,8 +802,10 @@ export function useEmailDraftActions({
       draftHeaderPayload,
       draftId,
       inboxId,
+      listReturnHref,
       message?.conceptDraft,
       navigate,
+      onComposeFinished,
       ownsDraftHeaders,
       promoteEmailThreadStatus,
       reloadMessageDetail,
@@ -902,6 +947,8 @@ export function useEmailDraftActions({
     setComposeTo,
     composeCc,
     setComposeCc,
+    composeBcc,
+    setComposeBcc,
     composeSubject,
     setComposeSubject,
     composeDraft,

@@ -178,6 +178,11 @@ export type TaskDetailViewProps = {
   supportOrganization?: import("./support-party-card-types.js").SupportOrganizationCardModel | null;
   supportContactHref?: string | null;
   supportOrganizationHref?: string | null;
+  /**
+   * When true, hide property chips/rail and support party cards — host shows
+   * them in an adjacent rail (Communication chat layout).
+   */
+  hideProperties?: boolean;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onTimerSessionChange?: (
     action: "start" | "pause",
@@ -242,6 +247,7 @@ export function TaskDetailView({
   supportOrganization = null,
   supportContactHref = null,
   supportOrganizationHref = null,
+  hideProperties = false,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
@@ -254,6 +260,8 @@ export function TaskDetailView({
   layoutAnimatingRef.current = layoutAnimating;
   const widthLockedRef = useRef(false);
   const agentInboxPending = isAgentInboxPending(task);
+  const showProperties = !hideProperties;
+  const propertiesRail = showProperties && usePropertiesRail;
 
   useCopyEntityIdShortcut(
     () => task.displayId?.trim() || null,
@@ -439,7 +447,7 @@ export function TaskDetailView({
   // Narrow (chips) only: timer shares the task-id row. Wide rail keeps it in
   // the properties panel. Hosts can move the pill into chrome via showNarrowTimer.
   const narrowTimerNode =
-    showNarrowTimer && !usePropertiesRail && !task.support ? (
+    showNarrowTimer && !propertiesRail && !task.support ? (
       <div className="content-detail-display-id-row__timer">
         <TrackedTimeField
           variant="pill"
@@ -509,21 +517,23 @@ export function TaskDetailView({
       ref={rootRef}
       className={[
         "task-detail-view",
-        usePropertiesRail ? "task-detail-split" : "task-detail-stacked",
+        propertiesRail ? "task-detail-split" : "task-detail-stacked",
       ].join(" ")}
       data-content-detail
-      data-detail-split={usePropertiesRail ? "" : undefined}
+      data-detail-split={propertiesRail ? "" : undefined}
       data-content-view-mode={mode}
-      data-properties-presentation={usePropertiesRail ? "rail" : "chips"}
+      data-properties-presentation={
+        showProperties ? (propertiesRail ? "rail" : "chips") : "hidden"
+      }
       data-width-locked={layoutAnimating ? "true" : undefined}
     >
       <div
-        className={usePropertiesRail ? "detail-with-properties" : undefined}
-        style={usePropertiesRail ? undefined : { display: "contents" }}
+        className={propertiesRail ? "detail-with-properties" : undefined}
+        style={propertiesRail ? undefined : { display: "contents" }}
       >
         <div
           className={
-            usePropertiesRail
+            propertiesRail
               ? "detail-with-properties__main"
               : "task-detail-stacked__scroll"
           }
@@ -532,24 +542,24 @@ export function TaskDetailView({
             <div className="inbox-detail-header-meta">{headerMeta}</div>
           ) : null}
           <div
-            className={usePropertiesRail ? "inbox-detail-layout" : undefined}
-            style={usePropertiesRail ? undefined : { display: "contents" }}
+            className={propertiesRail ? "inbox-detail-layout" : undefined}
+            style={propertiesRail ? undefined : { display: "contents" }}
           >
             <div
               className={
-                usePropertiesRail
+                propertiesRail
                   ? "inbox-detail-body inbox-detail-body--document"
                   : undefined
               }
-              style={usePropertiesRail ? undefined : { display: "contents" }}
+              style={propertiesRail ? undefined : { display: "contents" }}
             >
               <ContentDetailTitleHeader>
                 {titleMetaRow}
                 {titleEditor}
               </ContentDetailTitleHeader>
-              {!usePropertiesRail || task.support ? (
+              {showProperties && (!propertiesRail || task.support) ? (
                 <div className="task-detail-stacked__properties">
-                  {!usePropertiesRail && task.support ? (
+                  {!propertiesRail && task.support ? (
                     <div className="task-detail-stacked__support-parties">
                       <SupportContactCard
                         contact={supportContact}
@@ -585,9 +595,9 @@ export function TaskDetailView({
               ) : null}
               <div
                 className={
-                  usePropertiesRail ? undefined : "task-detail-stacked__content"
+                  propertiesRail ? undefined : "task-detail-stacked__content"
                 }
-                style={usePropertiesRail ? { display: "contents" } : undefined}
+                style={propertiesRail ? { display: "contents" } : undefined}
               >
                 <ContentMarkdownDescriptionLayout
                   mode={mode}
@@ -625,7 +635,7 @@ export function TaskDetailView({
                         onOpenFile={onOpenFile}
                       />
                     </div>
-                    {!usePropertiesRail ? (
+                    {!propertiesRail ? (
                       <div className="task-detail-description-tools__view-mode">
                         {viewModeToggle}
                       </div>
@@ -639,7 +649,7 @@ export function TaskDetailView({
             </div>
           </div>
         </div>
-        {usePropertiesRail ? (
+        {propertiesRail ? (
           <ResizableSidePanel
             storageKey={TASK_PROPERTIES_PANEL_WIDTH_KEY}
             legacyStorageKeys={TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS}

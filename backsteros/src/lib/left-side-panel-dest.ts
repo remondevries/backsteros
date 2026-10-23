@@ -15,16 +15,18 @@ export function resolveLeftSidePanelDest(input: {
   pathname: string;
   search?: string;
   inInboxPanel: boolean;
+  /** @deprecated Communication no longer mounts a shell side panel. */
   inCommunicationPanel?: boolean;
   financeSection: boolean;
   showSidePanel: boolean;
 }): LeftSidePanelDest | null {
   if (input.inInboxPanel) return "inbox";
-  if (input.inCommunicationPanel) return "communication";
+  // Communication list lives inside CommunicationChatView — never a left panel.
   if (input.financeSection && input.showSidePanel) return "finance";
   if (!input.showSidePanel) return null;
   const surface = keepAliveSidePanelSurface(input.pathname);
   if (surface == null) return null;
+  if (surface === "communication") return null;
   if (!KEEP_ALIVE_SURFACES.has(surface)) return null;
   return surface;
 }

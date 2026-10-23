@@ -1043,6 +1043,13 @@
   transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
+.bos-product-shell .contact-detail-panel--rail.is-enter-fading .contact-detail-panel__rail-body,
+.page-scroll .contact-detail-panel--rail.is-enter-fading .contact-detail-panel__rail-body,
+.contact-detail-panel--rail.is-enter-fading .contact-detail-panel__rail-body {
+  opacity: 0 !important;
+  transition: none !important;
+}
+
 .bos-product-shell .contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,
 .page-scroll .contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,
 .contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,

@@ -122,6 +122,8 @@ export type OrganizationGroupDropdownItem = {
   color?: string | null;
 };
 
+const EMPTY_MEMBER_GROUP_IDS: string[] = [];
+
 export type OrganizationOverviewViewProps = {
   organization: OrganizationOverviewViewOrganization;
   onSaveName?: (
@@ -164,6 +166,11 @@ export type OrganizationOverviewViewProps = {
    * `section` — header, tabs, `sectionBody`.
    */
   mode?: "overview" | "details" | "section";
+  /**
+   * When true, skip the name/groups header and only render the tab body
+   * (e.g. org fields stacked under Contact on the Communication rail).
+   */
+  hideChrome?: boolean;
 };
 
 function DetailsField({
@@ -314,13 +321,17 @@ export function OrganizationOverviewView({
   moneybirdHref,
   headerAccessory,
   groupOptions,
-  memberGroupIds = [],
+  memberGroupIds: memberGroupIdsProp,
   onMemberGroupIdsChange,
   activitySlot,
   sectionNavSlot,
   sectionBody,
   mode = "overview",
+  hideChrome = false,
 }: OrganizationOverviewViewProps) {
+  // Stable empty default — `= []` would be a new array every render and loop
+  // the memberGroupIds sync effect (Contact tab crash for org-only embeds).
+  const memberGroupIds = memberGroupIdsProp ?? EMPTY_MEMBER_GROUP_IDS;
   const remotePhone = organization.phone ?? "";
   const remoteEmail = organization.email ?? "";
   const remoteEmails = coerceOrganizationEmailEntries(organization.emails);
@@ -333,7 +344,9 @@ export function OrganizationOverviewView({
   const remoteRegion = organization.region ?? "";
   const remoteSummary = organization.summary ?? "";
   const remoteSize = organization.size ?? "";
-  const remoteSocialAccounts = organization.socialAccounts ?? [];
+  const remoteSocialAccounts = Array.isArray(organization.socialAccounts)
+    ? organization.socialAccounts
+    : [];
   const remoteChamberOfCommerce = organization.chamberOfCommerce ?? "";
   const remoteTaxNumber = organization.taxNumber ?? "";
 
@@ -387,6 +400,7 @@ export function OrganizationOverviewView({
     useCallback(() => {
       setRenameFocusRequest((count) => count + 1);
     }, []),
+    { enabled: !hideChrome },
   );
 
   useEffect(() => {
@@ -1039,6 +1053,40 @@ export function OrganizationOverviewView({
     </section>
   );
 
+  const body = (
+    <div
+      className={[
+        "organization-overview__scroll",
+        hideChrome ? "organization-overview__scroll--embedded" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {mode === "overview" && activitySlot ? (
+        <div
+          id="organization-activity-feed"
+          className="organization-overview__activity"
+        >
+          {activitySlot}
+        </div>
+      ) : null}
+
+      {mode === "details" ? detailsFields : null}
+
+      {mode === "section" && sectionBody ? (
+        <div className="organization-overview__section-body">{sectionBody}</div>
+      ) : null}
+    </div>
+  );
+
+  if (hideChrome) {
+    return (
+      <div className="entity-overview organization-overview organization-overview--embedded">
+        {body}
+      </div>
+    );
+  }
+
   return (
     <article className="entity-overview organization-overview">
       <div className="organization-overview__chrome">
@@ -1144,24 +1192,7 @@ export function OrganizationOverviewView({
         {sectionNavSlot}
       </div>
 
-      <div className="organization-overview__scroll">
-        {mode === "overview" && activitySlot ? (
-          <div
-            id="organization-activity-feed"
-            className="organization-overview__activity"
-          >
-            {activitySlot}
-          </div>
-        ) : null}
-
-        {mode === "details" ? detailsFields : null}
-
-        {mode === "section" && sectionBody ? (
-          <div className="organization-overview__section-body">
-            {sectionBody}
-          </div>
-        ) : null}
-      </div>
+      {body}
     </article>
   );
 }

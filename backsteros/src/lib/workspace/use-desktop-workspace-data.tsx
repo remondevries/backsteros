@@ -272,6 +272,7 @@ function useDesktopWorkspaceDataImpl(): {
     setLiveContactsById,
     liveDeletedContactIds,
     liveOrganizationsById,
+    setLiveOrganizationsById,
     liveDeletedOrganizationIds,
     liveAreasById,
     liveDeletedAreaIds,
@@ -976,6 +977,15 @@ function useDesktopWorkspaceDataImpl(): {
     [liveContactsById, rawContacts],
   );
 
+  const getOrganizationById = useCallback(
+    (id: string) => {
+      const fromLive = liveOrganizationsById.get(id);
+      if (fromLive) return fromLive;
+      return rawOrganizations.find((organization) => organization.id === id) ?? null;
+    },
+    [liveOrganizationsById, rawOrganizations],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -1006,6 +1016,8 @@ function useDesktopWorkspaceDataImpl(): {
     getTaskById,
     setLiveContactsById,
     getContactById,
+    setLiveOrganizationsById,
+    getOrganizationById,
     getLocalTaskStatus,
   });
 

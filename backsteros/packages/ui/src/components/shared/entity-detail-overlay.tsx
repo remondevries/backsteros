@@ -13,7 +13,6 @@ import {
 import {
   clampEntityDetailPanelWidth,
   defaultEntityDetailPanelWidthPx,
-  ENTITY_DETAIL_COLLAPSE_DURATION_MS,
   ENTITY_DETAIL_CONTENT_FADE_MS,
   ENTITY_DETAIL_PANEL_MAX_WIDTH_PX,
   ENTITY_DETAIL_PANEL_MIN_WIDTH_PX,
@@ -90,8 +89,10 @@ export type EntityDetailOverlayProps = {
  *
  * Shared by contacts, organizations, and catalog domains.
  *
- * Rail collapse matches the context panel / agent rail: animate **pixel**
+ * Rail collapse (`]`) matches the context panel / agent rail: animate **pixel**
  * width only (no max-width clamp mid-slide; never gated on reduced-motion).
+ * Enter (open false→true) fades content in at full width — no width slide, so
+ * the center pane does not shift under open dropdowns.
  * Entity switches: parent sets `contentFaded` for opacity crossfade.
  */
 export function EntityDetailOverlay({
@@ -127,17 +128,17 @@ export function EntityDetailOverlay({
   const expandedWidthRef = useRef<number | null>(null);
   const prevOpenRef = useRef(open);
   /**
-   * Enter slide when `open` goes false→true (list selection). Starts at the
-   * strip width, then expands — same double-rAF pattern as the `]` toggle.
+   * Enter fade when `open` goes false→true (list selection / create).
+   * Mount at full width immediately and fade content in — a width slide
+   * shifts the center pane and mis-anchors open dropdowns (compose To).
    */
-  const [enterCollapsed, setEnterCollapsed] = useState(false);
-  const [enterAnimating, setEnterAnimating] = useState(false);
+  const [enterFading, setEnterFading] = useState(false);
   const enterAnimTimerRef = useRef<number | null>(null);
   const enterAnimRafRef = useRef<number | null>(null);
   const [isResizingPanel, setIsResizingPanel] = useState(false);
 
-  const effectiveCollapsed = collapsed || enterCollapsed;
-  const effectiveAnimating = collapseAnimating || enterAnimating;
+  const effectiveCollapsed = collapsed;
+  const effectiveAnimating = collapseAnimating;
 
   /**
    * Keep the collapsed strip mounted through the expand slide so it can fade
@@ -265,14 +266,13 @@ export function EntityDetailOverlay({
     ],
   );
 
-  // List selection: mount at strip width, then slide open (before paint).
+  // List selection / create: mount at full width, fade content in (no width slide).
   useLayoutEffect(() => {
     const justOpened = open && !prevOpenRef.current;
     prevOpenRef.current = open;
 
     if (!open) {
-      setEnterCollapsed(false);
-      setEnterAnimating(false);
+      setEnterFading(false);
       if (enterAnimTimerRef.current != null) {
         window.clearTimeout(enterAnimTimerRef.current);
         enterAnimTimerRef.current = null;
@@ -291,8 +291,7 @@ export function EntityDetailOverlay({
       commitExpandedWidthPx(targetWidth, false);
     }
 
-    setEnterCollapsed(true);
-    setEnterAnimating(true);
+    setEnterFading(true);
 
     if (enterAnimTimerRef.current != null) {
       window.clearTimeout(enterAnimTimerRef.current);
@@ -306,11 +305,10 @@ export function EntityDetailOverlay({
     enterAnimRafRef.current = window.requestAnimationFrame(() => {
       enterAnimRafRef.current = window.requestAnimationFrame(() => {
         enterAnimRafRef.current = null;
-        setEnterCollapsed(false);
+        setEnterFading(false);
         enterAnimTimerRef.current = window.setTimeout(() => {
           enterAnimTimerRef.current = null;
-          setEnterAnimating(false);
-        }, ENTITY_DETAIL_COLLAPSE_DURATION_MS);
+        }, ENTITY_DETAIL_CONTENT_FADE_MS);
       });
     });
   }, [open, layout, expandWorkspace, commitExpandedWidthPx]);
@@ -534,6 +532,7 @@ export function EntityDetailOverlay({
           "resizable-side-panel",
           effectiveCollapsed ? "is-collapsed" : null,
           effectiveAnimating ? "is-collapse-animating" : null,
+          enterFading ? "is-enter-fading" : null,
           isResizingPanel ? "is-resizing" : null,
         ]
           .filter(Boolean)

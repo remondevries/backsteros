@@ -141,6 +141,8 @@ export async function upsertConversationFromChatwoot(
     inboxName?: string | null;
     markUnread?: boolean;
     lastMessagePreview?: string | null;
+    /** Clear soft-delete (e.g. new incoming message after local delete). */
+    reviveDeleted?: boolean;
   },
 ): Promise<{ conversation: DbChatConversation; created: boolean }> {
   const existing = await findConversationByExternalId(workspaceId, summary.id);
@@ -174,7 +176,8 @@ export async function upsertConversationFromChatwoot(
         lastActivityAt,
         unread,
         updatedAt: now,
-        deletedAt: null,
+        // Keep local deletes until a new message explicitly revives the row.
+        deletedAt: options?.reviveDeleted ? null : existing.deletedAt,
       })
       .where(eq(chatConversations.id, existing.id))
       .returning();
@@ -410,6 +413,41 @@ export async function toggleChatTyping(
   return { ok: true };
 }
 
+export async function deleteChatConversation(
+  workspaceId: string,
+  conversationId: string,
+): Promise<{ ok: true }> {
+  const [conversation] = await db
+    .select()
+    .from(chatConversations)
+    .where(
+      and(
+        eq(chatConversations.workspaceId, workspaceId),
+        eq(chatConversations.id, conversationId),
+        isNull(chatConversations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!conversation) {
+    throw Object.assign(new Error("Conversation not found"), { status: 404 });
+  }
+
+  const now = new Date();
+  await db
+    .update(chatConversations)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(chatConversations.id, conversation.id));
+
+  publishChatUpdated({
+    workspaceId,
+    conversationId: conversation.id,
+    messageId: null,
+    kind: "conversation",
+  });
+  nudgeChatTwin(workspaceId, conversation.id, "chat.delete");
+  return { ok: true };
+}
+
 export async function updateChatConversation(
   workspaceId: string,
   conversationId: string,
@@ -633,6 +671,8 @@ async function ingestWebhookForWorkspace(
       {
         markUnread: message.messageType === "incoming",
         lastMessagePreview: message.content.slice(0, 280),
+        // Incoming traffic should surface a conversation the user deleted.
+        reviveDeleted: message.messageType === "incoming",
       },
     );
     const { message: stored } = await upsertMessageFromChatwoot(

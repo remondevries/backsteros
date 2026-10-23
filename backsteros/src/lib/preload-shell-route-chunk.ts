@@ -65,8 +65,7 @@ const SIDE_PANEL_LOADERS: Partial<
   contacts: () => import("../shell/side-panels/contacts-side-panel"),
   organizations: () => import("../shell/side-panels/organizations-side-panel"),
   social: () => import("../shell/side-panels/social-side-panel"),
-  communication: () =>
-    import("../shell/side-panels/communication-side-panel"),
+  communication: () => Promise.resolve(),
   finance: () => import("../shell/side-panels/finance-side-panel"),
   knowledge: () => import("../shell/side-panels/knowledge-side-panel"),
   letters: () => import("../shell/side-panels/letters-side-panel"),

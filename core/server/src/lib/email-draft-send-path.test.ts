@@ -64,6 +64,7 @@ function baseDraft(
     clientId: "bsh-compose-test",
     to: ["fandy@fandy.nl"],
     cc: [],
+    bcc: [],
     attachments: [],
     updatedAt: "2026-10-01T08:00:00.000Z",
     createdAt: "2026-10-01T08:00:00.000Z",

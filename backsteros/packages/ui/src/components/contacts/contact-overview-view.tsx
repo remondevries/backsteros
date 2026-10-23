@@ -111,6 +111,8 @@ export type ContactGroupDropdownItem = {
   color?: string | null;
 };
 
+const EMPTY_MEMBER_GROUP_IDS: string[] = [];
+
 export type ContactOverviewViewProps = {
   contact: ContactOverviewViewContact;
   organizationOptions?: OrganizationDropdownItem[];
@@ -154,6 +156,15 @@ export type ContactOverviewViewProps = {
   headerAccessory?: ReactNode;
   /** Relationships list embedded in the Details tab. */
   relationshipsSlot?: ReactNode;
+  /**
+   * Extra content after contact Details fields (e.g. selected organization
+   * details on the Communication Chat Contact tab).
+   */
+  detailsExtraSlot?: ReactNode;
+  /** Rendered at the top of the Details scroll (e.g. Contact / Organization toggle). */
+  detailsLeadSlot?: ReactNode;
+  /** When true, hide the contact Details fields (toggle showing organization instead). */
+  hideDetailsFields?: boolean;
   /** Notes / meetings timeline under the section tabs (overview / Activity). */
   activitySlot?: ReactNode;
   /** Section tabs rendered under the avatar header (fixed; body scrolls). */
@@ -174,6 +185,8 @@ export type ContactOverviewViewProps = {
     options: SearchableDropdownOption<string>[];
     disabled?: boolean;
     onSelect: (contactId: string) => void;
+    /** Clear the linked contact (deselect in the switcher panel). */
+    onClear?: () => void;
     onCreateFromQuery?: (query: string) => void;
   } | null;
 };
@@ -259,7 +272,7 @@ export function ContactOverviewView({
   contact,
   organizationOptions = [],
   groupOptions,
-  memberGroupIds = [],
+  memberGroupIds: memberGroupIdsProp,
   onMemberGroupIdsChange,
   onSaveFirstName,
   onSaveLastName,
@@ -272,12 +285,18 @@ export function ContactOverviewView({
   onCreateOrganizationFromQuery,
   headerAccessory,
   relationshipsSlot,
+  detailsExtraSlot,
+  detailsLeadSlot,
+  hideDetailsFields = false,
   activitySlot,
   sectionNavSlot,
   sectionBody,
   mode = "overview",
   contactSwitcher = null,
 }: ContactOverviewViewProps) {
+  // Stable empty default — `= []` would be a new array every render and loop
+  // the memberGroupIds sync effect.
+  const memberGroupIds = memberGroupIdsProp ?? EMPTY_MEMBER_GROUP_IDS;
   const remoteEmail = contact.email ?? "";
   const remotePhone = contact.phone ?? "";
   const remoteTitle = contact.title ?? "";
@@ -1150,6 +1169,8 @@ export function ContactOverviewView({
                   const nextId = resolveDropdownNone(next);
                   if (nextId) contactSwitcher.onSelect(nextId);
                 }}
+                allowDeselect={Boolean(contactSwitcher.onClear)}
+                onClear={contactSwitcher.onClear}
                 disabled={contactSwitcher.disabled}
                 searchPlaceholder="Search contacts…"
                 ariaLabel="Change contact"
@@ -1208,7 +1229,26 @@ export function ContactOverviewView({
           </div>
         ) : null}
 
-        {mode === "details" ? detailsFields : null}
+        {mode === "details" ? (
+          <>
+            {detailsLeadSlot}
+            {hideDetailsFields ? null : detailsFields}
+            {detailsExtraSlot ? (
+              <div
+                className={[
+                  "contact-overview__details-extra",
+                  hideDetailsFields
+                    ? "contact-overview__details-extra--solo"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {detailsExtraSlot}
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
         {mode === "section" && sectionBody ? (
           <div className="contact-overview__section-body">{sectionBody}</div>

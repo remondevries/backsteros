@@ -4097,6 +4097,33 @@ button.entity-overview-subgroup__header:focus-visible {
   overflow: hidden;
 }
 
+.contact-communication-thread {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.contact-communication-thread__back {
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.contact-communication-thread__back:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
 .contact-tasks-list {
   display: flex;
   flex-direction: column;

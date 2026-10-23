@@ -29,7 +29,9 @@ import {
   AvatarUpload,
   buildMoneybirdContactInvoicesFilter,
   buildMoneybirdInvoicesFilter,
+  CommunicationChatView,
   CrmActivityFeedView,
+  EntityCommunicationListView,
   EntityDetailLayout,
   FinanceInvoicesView,
   formatContactAddressLine,
@@ -37,10 +39,9 @@ import {
   OrganizationContactsListView,
   OrganizationDetailOverlay,
   OrganizationDetailView,
-  OrganizationEmailsListView,
   OrganizationTransactionsSection,
   OrganizationsOverviewView,
-  getEmailListItemHref,
+  getEmailDetailHref,
   ORGANIZATION_CARD_SECTIONS,
   ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
   ORGANIZATION_DETAIL_CONTENT_FADE_MS,
@@ -114,7 +115,9 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { type ProjectLocationState } from "../lib/project-type-cache";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
-import { useAgentMail } from "../lib/agentmail-context";
+import { useChatInbox } from "../lib/chat/use-chat-inbox";
+import { filterCommunicationForOrganization } from "../lib/communication/filter-entity-communication";
+import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
 import { navigateToHref } from "../router/navigate-href";
 
 function asCoord(value: unknown): number | null {
@@ -183,7 +186,12 @@ export function OrganizationsPage() {
     section?: string;
   };
   const workspace = useDesktopWorkspaceData();
-  const agentMail = useAgentMail();
+  const communicationItems = useCommunicationListItems();
+  const [workspaceChatId, setWorkspaceChatId] = useState<string | null>(null);
+  const chatInbox = useChatInbox({
+    enabled: keepAliveActive,
+    channelFocused: keepAliveActive && Boolean(workspaceChatId),
+  });
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
@@ -1306,6 +1314,49 @@ export function OrganizationsPage() {
       );
   }, [contactAvatarSrc, contacts, selected, workspace.contactDetails]);
 
+  const orgContactIds = useMemo(
+    () => new Set(orgContacts.map((contact) => contact.id)),
+    [orgContacts],
+  );
+
+  const orgCommunication = useMemo(() => {
+    if (!selected) {
+      return {
+        emails: [] as const,
+        supportTasks: [] as const,
+        conversations: [] as const,
+      };
+    }
+    return filterCommunicationForOrganization({
+      organizationId: selected.id,
+      contactIds: orgContactIds,
+      items: keepAliveFrozen ? [] : communicationItems,
+      conversations: keepAliveFrozen ? [] : chatInbox.conversations,
+      contacts: orgContacts.map((contact) => {
+        const detail = workspace.contactDetails[contact.id];
+        return {
+          id: contact.id,
+          email: contact.email ?? detail?.email ?? null,
+          emails: detail?.emails ?? contact.emails,
+          phone: contact.phone ?? detail?.phone ?? null,
+          phones: detail?.phones ?? contact.phones ?? [],
+        };
+      }),
+    });
+  }, [
+    chatInbox.conversations,
+    communicationItems,
+    keepAliveFrozen,
+    orgContactIds,
+    orgContacts,
+    selected,
+    workspace.contactDetails,
+  ]);
+
+  useEffect(() => {
+    setWorkspaceChatId(null);
+  }, [selected?.id]);
+
   const overviewOrganizations = useMemo((): OrganizationListItem[] => {
     const clientId = getBrandfetchClientId();
     const mapped = organizations.map((org) => {
@@ -1703,6 +1754,8 @@ export function OrganizationsPage() {
             event.stopPropagation();
             event.stopImmediatePropagation();
             setWorkspaceTab(tab);
+            setWorkspaceChatId(null);
+            chatInbox.selectConversation(null);
           }
           return;
         }
@@ -1883,11 +1936,45 @@ export function OrganizationsPage() {
 
     if (sectionId === "emails") {
       return (
-        <OrganizationEmailsListView
-          organizationId={organization.id}
-          emails={keepAliveFrozen ? [] : agentMail.messages}
-          onSelectEmail={(email) => {
-            navigate(getEmailListItemHref(email));
+        <EntityCommunicationListView
+          conversations={orgCommunication.conversations}
+          emails={orgCommunication.emails}
+          supportTasks={orgCommunication.supportTasks}
+          emptyHint="Chats, emails, and support tickets for this organization will show up here."
+          resolveAvatarSrc={(conversation) => {
+            const matched = orgContacts.find((contact) => {
+              const email = conversation.contactEmail?.trim().toLowerCase();
+              const phone = conversation.contactPhone?.trim();
+              if (email && contact.email?.toLowerCase() === email) return true;
+              if (phone && contact.phone === phone) return true;
+              return false;
+            });
+            return matched
+              ? (contactAvatarSrc[matched.id] ?? null)
+              : null;
+          }}
+          resolveEmailAvatarSrc={(item) => {
+            const contactId = item.contactId?.trim();
+            if (contactId) return contactAvatarSrc[contactId] ?? null;
+            return null;
+          }}
+          onSelectChat={(conversationId) => {
+            setWorkspaceChatId(conversationId);
+            void chatInbox.selectConversation(conversationId);
+          }}
+          onSelectEmail={(emailId) => {
+            const item = orgCommunication.emails.find(
+              (entry) => entry.id === emailId,
+            );
+            if (!item) return;
+            navigate(
+              getEmailDetailHref(item.inboxId, item.messageId, {
+                draftId: item.draftId,
+              }),
+            );
+          }}
+          onSelectSupport={(supportId) => {
+            navigate(`/tasks/${supportId}`);
           }}
         />
       );
@@ -2267,10 +2354,64 @@ export function OrganizationsPage() {
         onCollapse={collapseOverlay}
         onHide={hideDetail}
         onShow={showDetail}
+        hideWorkspaceTabs={Boolean(workspaceChatId)}
         workspaceTabs={visibleWorkspaceTabs}
         workspaceTab={workspaceTab}
-        onWorkspaceTabChange={setWorkspaceTab}
-        renderWorkspaceTab={(tab) => renderSection(tab)}
+        onWorkspaceTabChange={(tab) => {
+          setWorkspaceTab(tab);
+          setWorkspaceChatId(null);
+          chatInbox.selectConversation(null);
+        }}
+        renderWorkspaceTab={(tab) => {
+          if (workspaceChatId) {
+            return (
+              <div className="contact-communication-thread">
+                <button
+                  type="button"
+                  className="contact-communication-thread__back"
+                  onClick={() => {
+                    setWorkspaceChatId(null);
+                    chatInbox.selectConversation(null);
+                  }}
+                >
+                  Back to Communication
+                </button>
+                <CommunicationChatView
+                  pane="thread"
+                  conversations={chatInbox.conversations}
+                  selectedId={workspaceChatId}
+                  detail={chatInbox.detail}
+                  loading={chatInbox.loading}
+                  detailLoading={chatInbox.detailLoading}
+                  error={chatInbox.error}
+                  typingIds={chatInbox.typingIds}
+                  onSelect={(id) => {
+                    void chatInbox.selectConversation(id);
+                  }}
+                  onSend={chatInbox.sendMessage}
+                  onTypingChange={chatInbox.setTyping}
+                  resolveAvatarSrc={(conversation) => {
+                    const matched = orgContacts.find((contact) => {
+                      const email = conversation.contactEmail
+                        ?.trim()
+                        .toLowerCase();
+                      const phone = conversation.contactPhone?.trim();
+                      if (email && contact.email?.toLowerCase() === email) {
+                        return true;
+                      }
+                      if (phone && contact.phone === phone) return true;
+                      return false;
+                    });
+                    return matched
+                      ? (contactAvatarSrc[matched.id] ?? null)
+                      : null;
+                  }}
+                />
+              </div>
+            );
+          }
+          return renderSection(tab);
+        }}
       >
         {renderOrganizationDetail()}
       </OrganizationDetailOverlay>

@@ -107,11 +107,9 @@ import {
   DesktopSocialSidePanel,
 } from "./app-shell-side-panels-lazy";
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
-import { DesktopCommunicationSidePanel } from "./side-panels/communication-side-panel";
 import { RouterLink } from "./app-shell-links";
 import { handleDocumentTreeReorder } from "./document-tree-reorder";
 import type { LeftSidePanelDest } from "../lib/left-side-panel-dest";
-import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 
 const NO_ENTITIES: [] = [];
 
@@ -176,7 +174,8 @@ export function keepAliveSidePanelTree(
     case "social":
       return <SocialKeepAliveSidePanel onNavigate={onNavigate} />;
     case "communication":
-      return <CommunicationKeepAliveSidePanel onNavigate={onNavigate} />;
+      // Unified chat list is embedded in the page — no shell side panel.
+      return null;
     case "letters":
       return <LettersKeepAliveSidePanel onNavigate={onNavigate} />;
     case "tasks-list":
@@ -1063,19 +1062,6 @@ export function SocialKeepAliveSidePanel({
       Link={RouterLink}
     />
   );
-}
-
-export function CommunicationKeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  useEffect(() => {
-    // Section root entry is the list (channel nav), not the first item.
-    rememberSectionEntryHrefs({ communication: "/communication" });
-  }, []);
-
-  return <DesktopCommunicationSidePanel onNavigate={onNavigate} />;
 }
 
 export function LettersKeepAliveSidePanel({

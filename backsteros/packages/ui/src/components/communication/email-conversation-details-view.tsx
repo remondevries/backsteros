@@ -46,7 +46,7 @@ export function EmailConversationDetailsView({
   onProjectChange,
 }: EmailConversationDetailsViewProps) {
   return (
-    <div className="communication-chat-details">
+    <div className="communication-chat-details entity-overview__details contact-details">
       <EmailPropertiesDisplay
         thread={toThread(item)}
         assigneeOptions={assigneeOptions}

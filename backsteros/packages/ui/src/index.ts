@@ -611,10 +611,29 @@ export {
   contactHasEmailAddress,
   getEmailMessageParty,
   matchEmailMessageParty,
+  organizationMatchesEmailAddress,
   resolveEmailMessagePartyAddress,
+  uniqueEmailPartyContactIds,
   type EmailMessagePartyLink,
   type EmailMessagePartyMap,
 } from "./email/email-message-party.js";
+export {
+  COMPOSE_UNKNOWN_FIRST_NAME,
+  composeContactFirstName,
+  languageFromMailboxEmail,
+  pickComposeShellLanguage,
+  renderComposePreviewShell,
+  resolveComposeReplyTemplates,
+  type EmailComposeReplyTemplates,
+  type EmailComposeShellLanguage,
+  type PickComposeShellLanguageInput,
+} from "./email/email-compose-shell.js";
+export {
+  buildEmailRecipientDropdownOptions,
+  isPlausibleEmailAddress,
+  type EmailRecipientContactInput,
+  type EmailRecipientOrganizationInput,
+} from "./email/email-recipient-options.js";
 export {
   formatEmailSourceSize,
   parseEmailAuthenticationResults,
@@ -3771,41 +3790,22 @@ export {
 } from "./communication/communication.js";
 
 export {
-  useCommunicationListFilter,
-} from "./communication/use-communication-list-filter.js";
-
-export {
-  readCommunicationListFilter,
-  writeCommunicationListFilter,
-} from "./communication/communication-list-filter-storage.js";
-
-export {
-  CommunicationSidePanelFilterFooter,
-  type CommunicationSidePanelFilterFooterProps,
-} from "./components/communication/communication-side-panel-filter-footer.js";
-
-export {
-  CommunicationSidePanelNavView,
-  communicationSidePanelInboxKeyboardId,
-  parseCommunicationSidePanelKeyboardId,
-  resolveCommunicationSidePanelHref,
-  uniqueCommunicationSidePanelMailboxes,
-  buildCommunicationSidePanelKeyboardItemIds,
-  readCommunicationEmailAccountsExpanded,
-  writeCommunicationEmailAccountsExpanded,
-  type CommunicationSidePanelNavViewProps,
-  type CommunicationSidePanelLinkComponent,
-} from "./components/communication/communication-side-panel-nav-view.js";
-
-export {
-  CommunicationOverviewView,
-  type CommunicationOverviewViewProps,
-} from "./components/communication/communication-overview-view.js";
-
-export {
   CommunicationChatView,
   type CommunicationChatViewProps,
 } from "./components/communication/communication-chat-view.js";
+
+export {
+  COMMUNICATION_CREATE_OPTIONS,
+  CommunicationCreateLauncher,
+  type CommunicationCreateKind,
+  type CommunicationCreateLauncherProps,
+  type CommunicationCreateOption,
+} from "./components/communication/communication-create-launcher.js";
+
+export {
+  CommunicationChatListFilterMenu,
+  type CommunicationChatListFilterMenuProps,
+} from "./components/communication/communication-chat-list-filter-menu.js";
 
 export {
   ChatConversationDetailsView,
@@ -3829,12 +3829,33 @@ export {
 } from "./communication/chat-conversation-list-item.js";
 
 export {
+  COMMUNICATION_CHAT_LIST_FILTER_ALL,
+  EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+  communicationChatListFiltersAreActive,
+  communicationChatListRowMatchesFilters,
+  countCommunicationChatListFilters,
+  encodeCommunicationChatListPartyValue,
+  filterCommunicationChatListGroupsByFilters,
+  parseCommunicationChatListPartyValue,
+  type CommunicationChatListDueFilter,
+  type CommunicationChatListFilterContext,
+  type CommunicationChatListFilters,
+  type CommunicationChatListKindFilter,
+  type CommunicationChatListPartyFilter,
+} from "./communication/communication-chat-list-filters.js";
+
+export {
   communicationChatListRowActivityMs,
   communicationChatListRowIds,
+  communicationChatListRowMatchesQuery,
   emailListItemPartyEmail,
   emailListItemPartyName,
   emailStatusToChatListStatus,
+  filterCommunicationChatListGroups,
   groupCommunicationChatListRows,
+  isCommunicationEmailDraft,
+  peelCommunicationDraftEmailRows,
+  supportListItemPartyName,
   type CommunicationChatListRow,
   type CommunicationChatListStatusGroup,
 } from "./communication/communication-chat-list-row.js";
@@ -3961,6 +3982,11 @@ export {
   ContactEmailsListView,
   type ContactEmailsListViewProps,
 } from "./components/contacts/contact-emails-list-view.js";
+
+export {
+  EntityCommunicationListView,
+  type EntityCommunicationListViewProps,
+} from "./components/communication/entity-communication-list-view.js";
 
 export {
   ContactRelationshipsListView,
@@ -4094,6 +4120,7 @@ export {
   readContactCardSectionIdsFromDom,
   resolveChatContactCardSections,
   resolveCommunicationEmailCardSections,
+  resolveCommunicationSupportCardSections,
   resolveContactCardSections,
   shouldShowContactNav,
   CHAT_CONTACT_CONVERSATION_SECTION,

@@ -2,24 +2,21 @@ import { useCallback, useMemo } from "react";
 import { Link, useLocation, useParams } from "@tanstack/react-router";
 import {
   EmailDraftActions,
+  EntityAvatarIcon,
+  ContactPersonIcon,
+  OrganizationIcon,
   FinanceSyncIcon,
   RegisterPageTitle,
   RegisterEntityDeleteAction,
   RegisterEntityMenuItems,
   EmailThreadMessageCard,
-  communicationChannelLabel,
-  emailMailboxLabel,
+  buildEmailRecipientDropdownOptions,
   getEmailItemHref,
   getEmailListContext,
-  getCommunicationChannelHref,
   getPrimedTabTitle,
   getScopedProjectSectionHref,
-  parseCommunicationChannelFromSearch,
-  parseCommunicationInboxIdFromSearch,
-  parseCommunicationStatusFromSearch,
   preserveEmailInboxListContext,
   isEmailComposePath,
-  useEmailDraftBodyModeShortcuts,
 } from "@backsteros/ui";
 import { parseEmailDraftPath } from "@backsteros/ui";
 
@@ -84,15 +81,7 @@ export function EmailPage({
   const listReturnHref = useMemo(() => {
     const listContext = getEmailListContext(location.searchStr);
     if (listContext === "communication") {
-      const channel = parseCommunicationChannelFromSearch(location.searchStr);
-      const scopedInboxId = parseCommunicationInboxIdFromSearch(
-        location.searchStr,
-      );
-      const status = parseCommunicationStatusFromSearch(location.searchStr);
-      return getCommunicationChannelHref(channel, {
-        inboxId: scopedInboxId,
-        status,
-      });
+      return "/communication";
     }
     if (listContext === "tasks") return "/tasks?due=today";
     if (listContext === "inbox") return "/inbox";
@@ -101,7 +90,7 @@ export function EmailPage({
   }, [location.searchStr]);
   // Shared Provider owns list fetch + SSE; detail only needs mailboxes.
   const agentMail = useAgentMail();
-  const { contacts, projects } = useDesktopWorkspaceData();
+  const { contacts, organizations, projects } = useDesktopWorkspaceData();
 
   const {
     message,
@@ -220,6 +209,43 @@ export function EmailPage({
   });
 
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    organizations,
+  );
+  const recipientOptions = useMemo(
+    () =>
+      buildEmailRecipientDropdownOptions({
+        contacts: contacts.map((contact) => ({
+          ...contact,
+          avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
+        })),
+        organizations: organizations.map((organization) => ({
+          ...organization,
+          avatarSrc:
+            organizationAvatarSrc[organization.id] ??
+            organization.avatarSrc ??
+            null,
+        })),
+        iconForContact: (contact) =>
+          contact.avatarSrc ? (
+            <EntityAvatarIcon src={contact.avatarSrc} size={14} kind="contact" />
+          ) : (
+            <ContactPersonIcon size={14} />
+          ),
+        iconForOrganization: (organization) =>
+          organization.avatarSrc ? (
+            <EntityAvatarIcon
+              src={organization.avatarSrc}
+              size={14}
+              kind="organization"
+            />
+          ) : (
+            <OrganizationIcon size={14} />
+          ),
+      }),
+    [contactAvatarSrc, contacts, organizationAvatarSrc, organizations],
+  );
 
   const conceptDraftActionsDisabled =
     conceptSaving ||
@@ -228,20 +254,6 @@ export function EmailPage({
     draftStageWorking;
 
   const showDraftWorking = draftAgentWorking || draftStageWorking;
-
-  const emailDraftModeShortcutsEnabled =
-    !showDraftWorking &&
-    (isCompose ||
-      Boolean(draft) ||
-      Boolean(message && (replyComposeOpen || message.conceptDraft)));
-
-  useEmailDraftBodyModeShortcuts({
-    mode: conceptBodyMode,
-    onModeChange: (mode) => {
-      void handleConceptBodyModeChange(mode);
-    },
-    enabled: emailDraftModeShortcutsEnabled,
-  });
 
   // Prefer detail only when it matches the open route — otherwise the previous
   // thread's subject sticks in the breadcrumb while the next message loads.
@@ -300,26 +312,8 @@ export function EmailPage({
     }
 
     if (listContext === "communication") {
-      const channel = parseCommunicationChannelFromSearch(location.searchStr);
-      const scopedInboxId = parseCommunicationInboxIdFromSearch(
-        location.searchStr,
-      );
-      const mailbox =
-        scopedInboxId != null
-          ? agentMail.mailboxes.find(
-              (entry) => entry.inboxId === scopedInboxId,
-            )
-          : null;
-      const channelCrumbLabel = mailbox
-        ? mailbox.email.trim() || emailMailboxLabel(mailbox)
-        : communicationChannelLabel(channel);
       return [
-        {
-          label: channelCrumbLabel,
-          href: getCommunicationChannelHref(channel, {
-            inboxId: scopedInboxId,
-          }),
-        },
+        { label: "Communication", href: "/communication" },
         { label: currentLabel },
       ];
     }
@@ -380,7 +374,6 @@ export function EmailPage({
       { label: currentLabel },
     ];
   }, [
-    agentMail.mailboxes,
     breadcrumbItemsProp,
     composeSubject,
     isCompose,
@@ -394,16 +387,8 @@ export function EmailPage({
   ]);
 
   const listContext = getEmailListContext(location.searchStr);
-  const communicationChannel = parseCommunicationChannelFromSearch(
-    location.searchStr,
-  );
-  const communicationInboxId = parseCommunicationInboxIdFromSearch(
-    location.searchStr,
-  );
-  // Same as Communication Email / mailbox list — not Inbox-sourced threads.
-  const showEmailBoxRefresh =
-    listContext === "communication" &&
-    (communicationChannel === "email" || Boolean(communicationInboxId));
+  // Communication-sourced email detail — refresh mailbox like the unified list.
+  const showEmailBoxRefresh = listContext === "communication";
 
   const messagesBusy = agentMail.messagesLoading;
   const reloadMail = agentMail.reload;
@@ -480,6 +465,7 @@ export function EmailPage({
         mailboxSignOffAvatarSrc={mailboxSignOffAvatarSrc}
         conceptDraftActionsDisabled={conceptDraftActionsDisabled}
         drafts={drafts}
+        recipientOptions={recipientOptions}
       />
     );
   }
@@ -544,6 +530,13 @@ export function EmailPage({
             <EmailDraftActions
               onSend={() => {
                 void sendDraft(draft.inboxId, draft.draftId, draft.inReplyTo);
+              }}
+              onSaveDraft={() => {
+                void saveConceptDraftBody(
+                  draft.inboxId,
+                  draft.draftId,
+                  conceptBodyDraft,
+                );
               }}
               onDelete={() => {
                 void deleteDraft(draft.inboxId, draft.draftId, draft.inReplyTo);

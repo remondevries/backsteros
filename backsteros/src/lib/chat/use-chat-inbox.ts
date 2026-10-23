@@ -498,6 +498,36 @@ export function useChatInbox(options?: UseChatInboxOptions) {
     [client],
   );
 
+  const deleteConversation = useCallback(
+    async (
+      conversationId: string | null = selectedIdRef.current,
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      const id = conversationId?.trim() || null;
+      if (!id) {
+        return { ok: false, error: "Conversation is required." };
+      }
+      setConversations((prev) => prev.filter((row) => row.id !== id));
+      if (selectedIdRef.current === id) {
+        setSelectedId(null);
+        setDetail(null);
+      }
+      try {
+        await client.requestJson<{ ok: true }>(
+          `/api/v1/chat/conversations/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
+        return { ok: true };
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Could not delete conversation.";
+        setError(message);
+        void loadList({ silent: true });
+        return { ok: false, error: message };
+      }
+    },
+    [client, loadList],
+  );
+
   return {
     conversations,
     selectedId,
@@ -514,6 +544,7 @@ export function useChatInbox(options?: UseChatInboxOptions) {
     setTyping,
     setStatus,
     patchConversation,
+    deleteConversation,
     resolve,
     reopen,
   };

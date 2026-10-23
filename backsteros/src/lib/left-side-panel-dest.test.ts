@@ -148,7 +148,7 @@ test("inbox on email keeps the warm inbox dest", () => {
   );
 });
 
-test("communication on email keeps the warm communication dest", () => {
+test("communication has no shell left panel (embedded chat list)", () => {
   assert.equal(
     resolveLeftSidePanelDest({
       pathname: "/email/box/msg",
@@ -158,7 +158,7 @@ test("communication on email keeps the warm communication dest", () => {
       financeSection: false,
       showSidePanel: true,
     }),
-    "communication",
+    null,
   );
   assert.equal(
     resolveLeftSidePanelDest({
@@ -168,6 +168,16 @@ test("communication on email keeps the warm communication dest", () => {
       financeSection: false,
       showSidePanel: true,
     }),
-    "communication",
+    null,
+  );
+  assert.equal(
+    resolveLeftSidePanelDest({
+      pathname: "/communication",
+      inInboxPanel: false,
+      inCommunicationPanel: true,
+      financeSection: false,
+      showSidePanel: false,
+    }),
+    null,
   );
 });

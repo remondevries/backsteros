@@ -345,6 +345,13 @@ body.app-is-dragging * {
   gap: 6px;
 }
 
+.task-kanban-card-meta-trailing {
+  display: inline-flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-items: center;
+}
+
 .task-kanban-card-meta-pill {
   display: inline-flex;
   max-width: 100%;
