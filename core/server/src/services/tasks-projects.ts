@@ -30,6 +30,10 @@ import {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
+import {
+  resolveCreateTaskInbox,
+  resolveCreateTaskStatus,
+} from "../lib/create-task-defaults.js";
 import { nudgeDynamicIslandTasksRefresh } from "../lib/dynamic-island-nudge.js";
 import {
   normalizeTaskLinkUrls,
@@ -2142,9 +2146,11 @@ async function createTaskWithExecutor(
   );
   const support = input.support ?? false;
   const notification = input.notification ?? false;
-  const status =
-    input.status ??
-    (support || notification ? "triage" : "backlog");
+  const status = resolveCreateTaskStatus({
+    status: input.status,
+    support,
+    notification,
+  });
   if (
     !taskPatchKeepsWaitingFollowUp({
       currentStatus: status,
@@ -2211,11 +2217,13 @@ async function createTaskWithExecutor(
       dueEndDate: input.dueEndDate ? new Date(input.dueEndDate) : null,
       followUpDate: input.followUpDate ? new Date(input.followUpDate) : null,
       triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
-      inbox:
-        input.inbox ??
-        (support || notification
-          ? true
-          : !input.projectId && !input.contactId),
+      inbox: resolveCreateTaskInbox({
+        inbox: input.inbox,
+        support,
+        notification,
+        projectId: input.projectId,
+        contactId: input.contactId,
+      }),
       support,
       notification,
       links,

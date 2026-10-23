@@ -185,6 +185,7 @@ describe("OS-101 dispatchEmailAgentCallbackSuccess reply_draft", () => {
         clientId: conceptReplyClientId(messageId),
         to: (payload.to as string[]) ?? [],
         cc: [],
+        bcc: [],
         attachments: [],
         updatedAt: "2026-10-01T08:00:00.000Z",
         createdAt: "2026-10-01T08:00:00.000Z",
@@ -266,5 +267,97 @@ describe("OS-101 dispatchEmailAgentCallbackSuccess reply_draft", () => {
     );
     assert.equal(notes.length, 1);
     assert.match(notes[0]!, /Moneybird import address/);
+  });
+});
+
+describe("OS-132 email intake task starts in triage", () => {
+  it("creates the task with status triage", async () => {
+    const createCalls: Array<{ status?: string }> = [];
+    mock.method(
+      emailAgentCallbackDispatchDeps,
+      "getAgentMailMessage",
+      async () => ({
+        inboxId: "inbox_1",
+        threadId: "thread_1",
+        messageId: "msg_task",
+        subject: "Store locator",
+        from: "Ada <ada@example.com>",
+        to: ["remon@example.com"],
+        preview: null,
+        timestamp: "2026-10-01T08:00:00.000Z",
+        labels: [],
+        text: "Please check.",
+        html: null,
+        extractedText: "Please check.",
+        extractedHtml: null,
+        inReplyTo: null,
+        attachments: [],
+      }),
+    );
+    mock.method(
+      emailAgentCallbackDispatchDeps,
+      "getOrCreateEmailThreadMetadata",
+      async () => ({
+        id: "meta",
+        inboxId: "inbox_1",
+        threadKey: "thread:msg_task",
+        number: 1,
+        displayId: "E-2",
+        status: "triage",
+        priority: 0,
+        dueDate: null,
+        organizationId: null,
+        contactId: null,
+        assigneeId: null,
+        projectId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    mock.method(
+      emailAgentCallbackDispatchDeps,
+      "createEmailThreadComment",
+      async () => ({
+        id: "note_1",
+        body: "Created task",
+        author: "agent" as const,
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    mock.method(
+      emailAgentCallbackDispatchDeps,
+      "createTask",
+      async (
+        _workspaceId: string,
+        input: { title: string; status?: string },
+      ) => {
+        createCalls.push({ status: input.status });
+        return {
+          id: "task_1",
+          number: 42,
+          projectId: null,
+          title: input.title,
+          status: input.status ?? "triage",
+        };
+      },
+    );
+
+    const result = await dispatchEmailAgentCallbackSuccess({
+      row: { workspaceId: "ws_1", inboxId: "inbox_1", messageId: "msg_task" },
+      body: {
+        ok: true,
+        requestId: "req-os132",
+        intent: "task",
+        task: { title: "Check store locator" },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(createCalls.length, 1);
+    assert.equal(createCalls[0]?.status, "triage");
+    if (result.ok) {
+      assert.equal(result.intent, "task");
+      assert.equal(result.task?.taskId, "task_1");
+    }
   });
 });

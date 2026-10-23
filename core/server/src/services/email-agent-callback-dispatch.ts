@@ -83,6 +83,15 @@ export const emailAgentCallbackDispatchDeps = {
       threadKey,
       next,
     ),
+  createTask: (
+    ...args: Parameters<typeof taskProjectService.createTask>
+  ) => taskProjectService.createTask(...args),
+  getProjectByKey: (
+    ...args: Parameters<typeof taskProjectService.getProjectByKey>
+  ) => taskProjectService.getProjectByKey(...args),
+  getProjectById: (
+    ...args: Parameters<typeof taskProjectService.getProjectById>
+  ) => taskProjectService.getProjectById(...args),
 };
 
 function appendEmailContext(description: string | null | undefined, input: {
@@ -255,7 +264,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
     let projectId = ctx.projectId;
     const requestedKey = taskPayload?.projectKey?.trim();
     if (requestedKey) {
-      const project = await taskProjectService.getProjectByKey(
+      const project = await emailAgentCallbackDispatchDeps.getProjectByKey(
         input.row.workspaceId,
         requestedKey.toUpperCase(),
       );
@@ -272,7 +281,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
       inboxId: input.row.inboxId,
     });
 
-    const created = await taskProjectService.createTask(
+    const created = await emailAgentCallbackDispatchDeps.createTask(
       input.row.workspaceId,
       {
         title,
@@ -281,7 +290,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
         contactId: ctx.contactId,
         assigneeId: ctx.assigneeId,
         dueDate: taskPayload?.dueDate ?? null,
-        status: "ready_to_start",
+        status: "triage",
         inbox: !projectId,
         links: [
           {
@@ -303,7 +312,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
     let resolvedProjectKey =
       requestedKey?.toUpperCase() ?? ctx.projectKey ?? null;
     if (!resolvedProjectKey && created.projectId) {
-      const project = await taskProjectService.getProjectById(
+      const project = await emailAgentCallbackDispatchDeps.getProjectById(
         input.row.workspaceId,
         created.projectId,
       );
@@ -371,7 +380,7 @@ export async function dispatchEmailAgentCallbackSuccess(input: {
       status: "ready_to_start",
     };
     if (ctx.projectId) {
-      const project = await taskProjectService.getProjectById(
+      const project = await emailAgentCallbackDispatchDeps.getProjectById(
         input.row.workspaceId,
         ctx.projectId,
       );
