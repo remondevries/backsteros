@@ -38,6 +38,8 @@ type Props = Omit<
   keyboardEnabled: boolean;
   /** Vault document prefetch. Off for repo `docs/` rows, whose ids are paths. */
   prefetchDocuments?: boolean;
+  /** Absolute footer (Repo / Local source toggle). */
+  footer?: ReactNode;
 };
 
 /**
@@ -47,6 +49,7 @@ type Props = Omit<
 export function DesktopCodebaseDocsListPanel({
   keyboardEnabled,
   prefetchDocuments = true,
+  footer = null,
   getDocumentHref,
   pathname,
   items,
@@ -152,6 +155,7 @@ export function DesktopCodebaseDocsListPanel({
       highlightedId={highlightedId}
       onVisibleNavItemIdsChange={setNavItemIds}
       onFolderActivateRef={folderActivateRef}
+      footer={footer}
     />
   );
 }

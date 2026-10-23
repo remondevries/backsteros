@@ -5027,6 +5027,26 @@ export {
 } from "./codebase/codebase-project-readme.js";
 
 export {
+  CODEBASE_DOCS_SOURCE_MODE_OPTIONS,
+  DEFAULT_CODEBASE_DOCS_SOURCE_MODE,
+  codebaseDocsSourceModeLabel,
+  codebaseDocsSourceModes,
+  isCodebaseDocsSourceMode,
+  parseCodebaseDocsSourceMode,
+  type CodebaseDocsSourceMode,
+} from "./codebase/codebase-docs-source-mode.js";
+export {
+  readCodebaseDocsSourceMode,
+  subscribeCodebaseDocsSourceMode,
+  writeCodebaseDocsSourceMode,
+} from "./codebase/codebase-docs-source-mode-storage.js";
+export { useCodebaseDocsSourceMode } from "./codebase/use-codebase-docs-source-mode.js";
+export {
+  CodebaseDocsSourceFooter,
+  type CodebaseDocsSourceFooterProps,
+} from "./components/codebase/codebase-docs-source-footer.js";
+
+export {
   isCodebaseDetailEditorFocused,
   registerCodebaseDetailEnterFocus,
   registerCodebaseDetailLeaveFocus,

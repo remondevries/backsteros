@@ -81,6 +81,8 @@ export type ProjectDocumentsSidePanelViewProps = {
    * `embedded` — in-content Docs list (default + codebase projects).
    */
   variant?: "chrome" | "embedded";
+  /** Absolute footer (e.g. Repo / Local source toggle on codebase Docs). */
+  footer?: ReactNode;
 };
 
 function toTreeSource(item: KnowledgeListItem) {
@@ -115,6 +117,7 @@ export function ProjectDocumentsSidePanelView({
   onFolderActivateRef,
   emptyLabel,
   variant = "chrome",
+  footer = null,
 }: ProjectDocumentsSidePanelViewProps) {
   const embedded = variant === "embedded";
   const selectedSlug = getSelectedProjectDocumentPathFromPathname(pathname);
@@ -314,7 +317,13 @@ export function ProjectDocumentsSidePanelView({
   if (embedded) {
     const showHeader = Boolean(onAdd || onCreateFolder);
     return (
-      <div className="console-docs-tree">
+      <div
+        className={
+          footer
+            ? "console-docs-tree console-docs-tree--with-source-footer"
+            : "console-docs-tree"
+        }
+      >
         {showHeader ? (
           <div className="console-docs-tree__header">
             <span className="console-docs-tree__header-label">Name</span>
@@ -322,6 +331,7 @@ export function ProjectDocumentsSidePanelView({
           </div>
         ) : null}
         <div className="console-docs-tree__main">{body}</div>
+        {footer}
       </div>
     );
   }
