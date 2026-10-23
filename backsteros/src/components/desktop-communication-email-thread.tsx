@@ -40,6 +40,7 @@ import {
   getEmailMessageParty,
   getInboxTaskRouteHref,
   getScopedProjectTaskHref,
+  listInboundPartyAddresses,
   matchEmailMessageParty,
   parseReplyToAddress,
   replySubject as formatReplySubject,
@@ -134,9 +135,24 @@ function buildPartyFromEntry(
     messageId: string;
     from?: string | null;
     to?: readonly string[] | null;
+    cc?: readonly string[] | null;
   },
   parties: EmailMessagePartyMap,
   ourMailboxEmails: ReadonlySet<string>,
+  directory?: {
+    contacts: readonly {
+      id: string;
+      organizationId?: string | null;
+      email?: string | null;
+      emails?: readonly { address?: string | null }[] | null;
+    }[];
+    organizations: readonly {
+      id: string;
+      email?: string | null;
+      emails?: readonly { address?: string | null }[] | null;
+    }[];
+    preferAddresses?: readonly string[] | null;
+  },
 ): CommunicationEmailActiveParty {
   const messageId = entry.messageId.trim();
   const fromEmail = parseReplyToAddress(entry.from ?? "")
@@ -146,8 +162,12 @@ function buildPartyFromEntry(
   const address = resolveEmailMessagePartyAddress({
     from: entry.from,
     to: entry.to,
+    cc: entry.cc,
     isSent,
     ourMailboxEmails,
+    contacts: directory?.contacts,
+    organizations: directory?.organizations,
+    preferAddresses: isSent ? directory?.preferAddresses : null,
   });
   const party = getEmailMessageParty(parties, messageId);
   return {
@@ -179,11 +199,6 @@ type DesktopCommunicationEmailThreadProps = {
   onAutoLinkParties?: (
     parties: EmailMessagePartyMap,
   ) => Promise<EmailMessagePartyMap | null | undefined>;
-  /** Ensure linked contact has the party address labeled `other`. */
-  onEnsureContactEmail?: (
-    contactId: string,
-    address: string,
-  ) => Promise<void>;
   /** True once the AgentMail thread body is available (cache or network). */
   onReadyChange?: (ready: boolean) => void;
 };
@@ -202,7 +217,6 @@ export function DesktopCommunicationEmailThread({
   onMessagePartiesChange,
   messageParties: messagePartiesProp,
   onAutoLinkParties,
-  onEnsureContactEmail,
   onReadyChange,
 }: DesktopCommunicationEmailThreadProps) {
   const { client } = useDesktopApi();
@@ -406,14 +420,25 @@ export function DesktopCommunicationEmailThread({
 
   const ourMailboxEmails = useMemo(() => {
     const emails = new Set<string>();
-    const inboxEmail = message?.inboxEmail?.trim().toLowerCase();
-    if (inboxEmail) emails.add(inboxEmail);
+    const add = (raw: string | null | undefined) => {
+      const address = raw?.trim().toLowerCase();
+      if (address?.includes("@")) emails.add(address);
+    };
+    add(message?.inboxEmail);
     for (const mailbox of agentMail.mailboxes) {
-      const address = mailbox.email?.trim().toLowerCase();
-      if (address) emails.add(address);
+      add(mailbox.email);
+      const contactId = mailbox.contactId?.trim();
+      if (!contactId) continue;
+      const contact =
+        workspace.contacts.find((entry) => entry.id === contactId) ?? null;
+      if (!contact) continue;
+      add(contact.email);
+      for (const entry of contact.emails ?? []) {
+        add(entry.address);
+      }
     }
     return emails;
-  }, [agentMail.mailboxes, message?.inboxEmail]);
+  }, [agentMail.mailboxes, message?.inboxEmail, workspace.contacts]);
 
   const composeMailboxes = useMemo(
     () =>
@@ -506,28 +531,37 @@ export function DesktopCommunicationEmailThread({
       messageId: message.messageId,
       draftId: message.draftId,
     });
+    // Include CRM emails so auto-link retries once contacts/orgs load (or change),
+    // instead of freezing the first empty-directory pass for a multi-party thread.
+    const directoryFingerprint = [
+      ...workspace.contacts.map(
+        (contact) =>
+          `${contact.id}:${contact.email ?? ""}:${(contact.emails ?? [])
+            .map((row) => row.address ?? "")
+            .join(",")}`,
+      ),
+      ...workspace.organizations.map(
+        (organization) =>
+          `${organization.id}:${organization.email ?? ""}:${(
+            organization.emails ?? []
+          )
+            .map((row) => row.address ?? "")
+            .join(",")}`,
+      ),
+    ]
+      .sort()
+      .join("|");
     const key = `${item.inboxId}:${threadKey}:${threadEntries
       .map((entry) => entry.messageId)
-      .join(",")}`;
+      .join(",")}:${directoryFingerprint}`;
     if (autoLinkKeyRef.current === key) return;
     autoLinkKeyRef.current = key;
 
+    // Per-message From/To matching only — do not seed thread-level contact/org
+    // onto the open message (that mis-files other participants in the thread).
     const existing = {
       ...(message.threadMetadata?.messageParties ?? localParties),
     };
-    if (
-      Object.keys(existing).length === 0 &&
-      (message.threadMetadata?.contactId ||
-        message.threadMetadata?.organizationId)
-    ) {
-      const seedId = message.messageId.trim();
-      if (seedId) {
-        existing[seedId] = {
-          contactId: message.threadMetadata?.contactId ?? null,
-          organizationId: message.threadMetadata?.organizationId ?? null,
-        };
-      }
-    }
     const discovered = buildEmailMessagePartyAutoLinks({
       messages: threadEntries,
       ourMailboxEmails,
@@ -535,29 +569,11 @@ export function DesktopCommunicationEmailThread({
       organizations: workspace.organizations,
       existing,
     });
-    const seedOnly: EmailMessagePartyMap = {};
-    if (
-      message.threadMetadata?.contactId ||
-      message.threadMetadata?.organizationId
-    ) {
-      const seedId = message.messageId.trim();
-      const partiesMap = message.threadMetadata?.messageParties ?? {};
-      // Only migrate thread-level → per-message when this message has no party
-      // entry yet. An explicit unlink stores nulls and must not be reseeded.
-      if (
-        seedId &&
-        !Object.prototype.hasOwnProperty.call(partiesMap, seedId) &&
-        existing[seedId]
-      ) {
-        seedOnly[seedId] = existing[seedId]!;
-      }
-    }
-    const toPersist = { ...seedOnly, ...discovered };
-    if (Object.keys(toPersist).length === 0) return;
+    if (Object.keys(discovered).length === 0) return;
 
     void (async () => {
-      const updated = await onAutoLinkParties(toPersist);
-      const next = updated ?? { ...existing, ...toPersist };
+      const updated = await onAutoLinkParties(discovered);
+      const next = updated ?? { ...existing, ...discovered };
       setLocalParties(next);
       onMessagePartiesChange?.(next);
       if (setMessage && message) {
@@ -568,32 +584,14 @@ export function DesktopCommunicationEmailThread({
             : message.threadMetadata,
         });
       }
-      for (const [partyMessageId, party] of Object.entries(discovered)) {
-        if (!party.contactId) continue;
-        const entry = threadEntries.find(
-          (row) => row.messageId === partyMessageId,
-        );
-        if (!entry) continue;
-        const fromEmail = parseReplyToAddress(entry.from ?? "")
-          .trim()
-          .toLowerCase();
-        const isSent = Boolean(fromEmail && ourMailboxEmails.has(fromEmail));
-        const address = resolveEmailMessagePartyAddress({
-          from: entry.from,
-          to: entry.to,
-          isSent,
-          ourMailboxEmails,
-        });
-        if (address) {
-          await onEnsureContactEmail?.(party.contactId, address);
-        }
-      }
+      // Do not write party addresses onto contacts during auto-link — that
+      // polluted “other” emails (wrong contact kept matching the next From).
+      // Manual link handlers call ensureContactHasOtherEmail from the page.
     })();
   }, [
     item.inboxId,
     message,
     onAutoLinkParties,
-    onEnsureContactEmail,
     onMessagePartiesChange,
     ourMailboxEmails,
     setMessage,
@@ -603,6 +601,24 @@ export function DesktopCommunicationEmailThread({
     localParties,
   ]);
 
+  const inboundPartyAddresses = useMemo(
+    () =>
+      listInboundPartyAddresses({
+        messages: threadEntries,
+        ourMailboxEmails,
+      }),
+    [ourMailboxEmails, threadEntries],
+  );
+
+  const partyDirectory = useMemo(
+    () => ({
+      contacts: workspace.contacts,
+      organizations: workspace.organizations,
+      preferAddresses: inboundPartyAddresses,
+    }),
+    [inboundPartyAddresses, workspace.contacts, workspace.organizations],
+  );
+
   useEffect(() => {
     if (!onActivePartyChange) return;
     const entry = threadEntries[0];
@@ -610,8 +626,16 @@ export function DesktopCommunicationEmailThread({
       onActivePartyChange(null);
       return;
     }
-    onActivePartyChange(buildPartyFromEntry(entry, parties, ourMailboxEmails));
-  }, [onActivePartyChange, ourMailboxEmails, parties, threadEntries]);
+    onActivePartyChange(
+      buildPartyFromEntry(entry, parties, ourMailboxEmails, partyDirectory),
+    );
+  }, [
+    onActivePartyChange,
+    ourMailboxEmails,
+    parties,
+    partyDirectory,
+    threadEntries,
+  ]);
 
   useEffect(() => {
     if (!onSelectedPartyChange) return;
@@ -624,12 +648,13 @@ export function DesktopCommunicationEmailThread({
       return;
     }
     onSelectedPartyChange(
-      buildPartyFromEntry(entry, parties, ourMailboxEmails),
+      buildPartyFromEntry(entry, parties, ourMailboxEmails, partyDirectory),
     );
   }, [
     onSelectedPartyChange,
     ourMailboxEmails,
     parties,
+    partyDirectory,
     selectedMessageId,
     threadEntries,
   ]);
@@ -1083,8 +1108,12 @@ export function DesktopCommunicationEmailThread({
     const partyAddress = resolveEmailMessagePartyAddress({
       from: entry.from,
       to: toList,
+      cc: entry.cc,
       isSent,
       ourMailboxEmails,
+      contacts: workspace.contacts,
+      organizations: workspace.organizations,
+      preferAddresses: isSent ? inboundPartyAddresses : null,
     });
     // Match the right rail: honor explicit message-party links. Soft-match only
     // when this message has no stored party yet — never after an unlink (stored

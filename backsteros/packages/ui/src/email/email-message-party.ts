@@ -15,6 +15,7 @@ export type EmailMessagePartyMap = Record<string, EmailMessagePartyLink>;
 
 type MatchableContact = {
   id: string;
+  name?: string | null;
   organizationId?: string | null;
   email?: string | null;
   emails?: readonly { address?: string | null }[] | null;
@@ -27,26 +28,46 @@ type MatchableOrganization = {
 };
 
 /**
- * External party address for linking — received uses From; sent uses the first
- * To that is not our mailbox.
+ * Party address for org/contact linking — always the From address.
+ * Do not switch to To/Cc when From is our mailbox; sent messages still file
+ * against whoever is in From (e.g. Remon’s contact), same as any other From.
  */
 export function resolveEmailMessagePartyAddress(input: {
   from?: string | null;
+  /** @deprecated Unused for linking — kept for call-site compatibility. */
   to?: readonly string[] | null;
-  isSent: boolean;
-  ourMailboxEmails: ReadonlySet<string>;
+  /** @deprecated Unused for linking — kept for call-site compatibility. */
+  cc?: readonly string[] | null;
+  /** @deprecated Unused for linking — kept for call-site compatibility. */
+  isSent?: boolean;
+  /** @deprecated Unused for linking — kept for call-site compatibility. */
+  ourMailboxEmails?: ReadonlySet<string>;
+  contacts?: readonly MatchableContact[];
+  organizations?: readonly MatchableOrganization[];
+  preferAddresses?: readonly string[] | null;
 }): string | null {
-  if (input.isSent) {
-    for (const raw of input.to ?? []) {
-      const address = parseReplyToAddress(raw).trim().toLowerCase();
-      if (!address.includes("@")) continue;
-      if (input.ourMailboxEmails.has(address)) continue;
-      return parseReplyToAddress(raw).trim() || null;
-    }
-    return null;
-  }
   const from = parseReplyToAddress(input.from ?? "").trim();
   return from.includes("@") ? from : null;
+}
+
+/** Inbound From addresses in a thread (excludes our mailboxes). */
+export function listInboundPartyAddresses(input: {
+  messages: readonly { from?: string | null }[];
+  ourMailboxEmails: ReadonlySet<string>;
+}): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of input.messages) {
+    const display = parseReplyToAddress(entry.from ?? "").trim();
+    if (!display.includes("@")) continue;
+    const key = display.toLowerCase();
+    if (input.ourMailboxEmails.has(key)) continue;
+    const bare = parseBareEmailAddress(display);
+    if (!bare || seen.has(bare)) continue;
+    seen.add(bare);
+    out.push(display);
+  }
+  return out;
 }
 
 /** True when `address` matches the organization’s primary or listed emails. */
@@ -92,19 +113,77 @@ export function matchEmailMessageParty(input: {
   return null;
 }
 
+function isExplicitEmailPartyUnlink(party: EmailMessagePartyLink): boolean {
+  return !party.contactId?.trim() && !party.organizationId?.trim();
+}
+
 /**
- * Propose auto-link parties for messages that have no stored party yet.
- * Does not overwrite existing map entries.
+ * Whether a stored party still belongs to this message’s party address.
+ * `unknown` means the linked entity is not in the local directory yet — keep
+ * the stored link rather than clearing it while CRM data is still loading.
  *
- * Matches by party address: contact first (including their organizationId),
- * otherwise organization-only. Both are persisted so the rail files itself
- * whenever an email address is already known.
+ * When another contact owns the address as their primary email and the stored
+ * contact only has it as secondary/other, treat as mismatch so we refile to
+ * the primary owner (guards against polluted “other” emails).
+ */
+export function classifyStoredEmailMessageParty(input: {
+  party: EmailMessagePartyLink;
+  address: string | null | undefined;
+  contacts: readonly MatchableContact[];
+  organizations: readonly MatchableOrganization[];
+}): "match" | "mismatch" | "unknown" {
+  const address = input.address?.trim();
+  if (!address) return "unknown";
+  const needle = parseBareEmailAddress(address);
+  if (!needle) return "unknown";
+
+  const contactId = input.party.contactId?.trim();
+  if (contactId) {
+    const contact = input.contacts.find((entry) => entry.id === contactId);
+    if (!contact) return "unknown";
+    if (!contactMatchesEmailAddress(contact, address)) return "mismatch";
+    const primaryOwner = input.contacts.find(
+      (entry) => parseBareEmailAddress(entry.email ?? "") === needle,
+    );
+    if (
+      primaryOwner &&
+      primaryOwner.id !== contactId &&
+      parseBareEmailAddress(contact.email ?? "") !== needle
+    ) {
+      return "mismatch";
+    }
+    return "match";
+  }
+
+  const organizationId = input.party.organizationId?.trim();
+  if (organizationId) {
+    const organization = input.organizations.find(
+      (entry) => entry.id === organizationId,
+    );
+    if (!organization) return "unknown";
+    return organizationMatchesEmailAddress(organization, address)
+      ? "match"
+      : "mismatch";
+  }
+
+  return "unknown";
+}
+
+/**
+ * Propose auto-link parties from each message’s From address. Contact first,
+ * else organization. Sent vs received does not change the rule — From only.
+ *
+ * Per-message only — never copies a thread-level contact onto every message.
+ * Keeps explicit unlinks and links that still match the address. Replaces
+ * stale mismatches (e.g. a thread-level seed on the wrong From). Unknown
+ * addresses stay unlinked, same as a single-message thread with no match.
  */
 export function buildEmailMessagePartyAutoLinks(input: {
   messages: readonly {
     messageId: string;
     from?: string | null;
     to?: readonly string[] | null;
+    cc?: readonly string[] | null;
   }[];
   ourMailboxEmails: ReadonlySet<string>;
   contacts: readonly MatchableContact[];
@@ -117,32 +196,59 @@ export function buildEmailMessagePartyAutoLinks(input: {
   for (const entry of input.messages) {
     const messageId = entry.messageId?.trim();
     if (!messageId) continue;
-    // Any stored entry (including explicit unlink with null ids) wins — never
-    // soft-refile a party the user cleared.
-    if (Object.prototype.hasOwnProperty.call(existing, messageId)) continue;
 
-    const fromEmail = parseReplyToAddress(entry.from ?? "")
-      .trim()
-      .toLowerCase();
-    const isSent = Boolean(
-      fromEmail && input.ourMailboxEmails.has(fromEmail),
-    );
     const address = resolveEmailMessagePartyAddress({
       from: entry.from,
-      to: entry.to,
-      isSent,
-      ourMailboxEmails: input.ourMailboxEmails,
     });
+
+    const hasStored = Object.prototype.hasOwnProperty.call(existing, messageId);
+    if (hasStored) {
+      const stored = existing[messageId]!;
+      // Explicit unlink — never soft-refile a party the user cleared.
+      if (isExplicitEmailPartyUnlink(stored)) continue;
+      const fit = classifyStoredEmailMessageParty({
+        party: stored,
+        address,
+        contacts: input.contacts,
+        organizations: input.organizations,
+      });
+      // Keep correct links, and keep unresolved ones until CRM is loaded.
+      if (fit === "match" || fit === "unknown") continue;
+    }
+
     const matched = matchEmailMessageParty({
       address,
       contacts: input.contacts,
       organizations: input.organizations,
     });
-    if (!matched?.contactId && !matched?.organizationId) continue;
-    next[messageId] = {
-      contactId: matched.contactId,
-      organizationId: matched.organizationId,
-    };
+    if (matched?.contactId || matched?.organizationId) {
+      next[messageId] = {
+        contactId: matched.contactId,
+        organizationId: matched.organizationId,
+      };
+      continue;
+    }
+
+    // No From match — leave a manual org/contact alone. Only clear when the
+    // stored party is a contact that clearly does not belong to this From
+    // while another contact owns the address as primary (polluted / wrong seed).
+    if (hasStored) {
+      const stored = existing[messageId]!;
+      const storedContactId = stored.contactId?.trim();
+      if (!storedContactId) continue;
+      const needle = address ? parseBareEmailAddress(address) : null;
+      const primaryOwner = needle
+        ? input.contacts.find(
+            (entry) => parseBareEmailAddress(entry.email ?? "") === needle,
+          )
+        : null;
+      if (primaryOwner && primaryOwner.id !== storedContactId) {
+        next[messageId] = {
+          contactId: primaryOwner.id,
+          organizationId: primaryOwner.organizationId?.trim() || null,
+        };
+      }
+    }
   }
 
   return next;

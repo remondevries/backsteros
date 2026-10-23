@@ -1030,11 +1030,9 @@ export function DesktopChatContactDetailPanel({
     emailOrganizationId != null
       ? (workspace.organizationDetails[emailOrganizationId] ?? null)
       : null;
-  const emailOrganizationName =
-    emailOrganization?.name?.trim() ||
-    emailItem?.organizationName?.trim() ||
-    contact?.organizationName?.trim() ||
-    null;
+  // Only the focused message party’s org — never thread-level emailItem.organizationName
+  // (that sticks “Lemo-Design” on the rail while another From is selected).
+  const emailOrganizationName = emailOrganization?.name?.trim() || null;
   const emailOrganizationAvatar =
     emailOrganizationId != null
       ? resolveOrganizationAvatarSrc({
@@ -1582,7 +1580,10 @@ export function DesktopChatContactDetailPanel({
         return null;
       }}
     >
-      {emailItem && !emailPartyContactId ? (
+      {emailItem ? (
+        // Always use the email party card so org + contact pickers stay
+        // available — even when From already matched a contact. Switching to
+        // ContactDetailView hid the organization dropdown.
         <DesktopCommunicationEmailPartyCard
           partyName={
             emailActiveParty?.partyEmail?.trim() ||

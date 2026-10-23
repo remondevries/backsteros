@@ -20,6 +20,7 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildTaskRelatedDropdownOptions,
+  classifyStoredEmailMessageParty,
   emailListItemPartyEmail,
   emailListItemPartyName,
   formatEmailListPartyLabel,
@@ -693,12 +694,8 @@ function CommunicationPageBody() {
         : (chatInbox.conversations.find(
             (row) => row.id === chatInbox.selectedId,
           ) ?? chatInbox.detail);
-    const emailPartyEmail = isComposingEmail
-      ? composePartyEmail
-      : emailActiveParty?.address?.trim() ||
-        (selectedEmail ? emailListItemPartyEmail(selectedEmail) : null);
-    // Card chrome follows the latest thread message (emailActiveParty).
-    // Linking still targets the selected message when the user picks one.
+    // List card stays on the latest thread message; the right rail follows the
+    // selected message’s From address (emailSelectedParty).
     const latestMessageParty = isComposingEmail
       ? composeParty
       : emailActiveParty
@@ -707,20 +704,68 @@ function CommunicationPageBody() {
             organizationId: emailActiveParty.organizationId,
           })
         : null;
+    const focusParty = isComposingEmail
+      ? null
+      : (emailSelectedParty ?? emailActiveParty);
+    const focusMessageId = focusParty?.messageId?.trim() || null;
+    const focusHasStoredParty = Boolean(
+      focusMessageId &&
+        Object.prototype.hasOwnProperty.call(
+          emailMessageParties,
+          focusMessageId,
+        ),
+    );
+    const focusStoredParty = focusHasStoredParty
+      ? emailMessageParties[focusMessageId!]!
+      : null;
+    const focusAddress = focusParty?.address?.trim() || null;
+    const focusStoredIsUnlink = Boolean(
+      focusStoredParty &&
+        !focusStoredParty.contactId?.trim() &&
+        !focusStoredParty.organizationId?.trim(),
+    );
+    const focusStoredFit =
+      focusHasStoredParty && focusStoredParty && !focusStoredIsUnlink
+        ? classifyStoredEmailMessageParty({
+            party: focusStoredParty,
+            address: focusAddress,
+            contacts: workspace.contacts,
+            organizations: workspace.organizations,
+          })
+        : null;
+    // Match From/To when there is no stored party yet, or the stored party
+    // does not belong to this message’s address (stale thread-level seed).
+    const focusNeedsAddressMatch =
+      !isComposingEmail &&
+      Boolean(focusAddress) &&
+      (!focusHasStoredParty || focusStoredFit === "mismatch");
+    const focusSoftMatch = focusNeedsAddressMatch
+      ? matchEmailMessageParty({
+          address: focusAddress,
+          contacts: workspace.contacts,
+          organizations: workspace.organizations,
+        })
+      : null;
     const selectedMessageParty = isComposingEmail
       ? composeParty
-      : selectedEmailMessageId?.trim()
-        ? (emailMessageParties[selectedEmailMessageId.trim()] ??
-          (emailActiveParty?.messageId === selectedEmailMessageId
-            ? {
-                contactId: emailActiveParty.contactId,
-                organizationId: emailActiveParty.organizationId,
-              }
-            : null))
-        : latestMessageParty;
-    // Email: only an explicit message-party contactId counts as filed.
-    // Soft-matching by address must not paint the rail as already linked.
-    // Card identity comes from the latest message party.
+      : focusStoredIsUnlink
+        ? focusStoredParty
+        : focusSoftMatch
+          ? focusSoftMatch
+          : // Mismatch with no From match: keep a manual org/contact (do not
+            // wipe an organization the user just picked for this message).
+            focusHasStoredParty
+            ? focusStoredParty
+            : focusParty
+              ? {
+                  contactId: focusParty.contactId,
+                  organizationId: focusParty.organizationId,
+                }
+              : latestMessageParty;
+    const emailPartyEmail = isComposingEmail
+      ? composePartyEmail
+      : focusParty?.address?.trim() ||
+        (selectedEmail ? emailListItemPartyEmail(selectedEmail) : null);
     const matchedContact = isComposingEmail
       ? composeParty.contactId?.trim()
         ? (workspace.contacts.find(
@@ -728,9 +773,9 @@ function CommunicationPageBody() {
           ) ?? null)
         : null
       : selectedEmail
-        ? latestMessageParty?.contactId?.trim()
+        ? selectedMessageParty?.contactId?.trim()
           ? (workspace.contacts.find(
-              (contact) => contact.id === latestMessageParty.contactId,
+              (contact) => contact.id === selectedMessageParty.contactId,
             ) ?? null)
           : null
         : selectedSupport
@@ -761,10 +806,10 @@ function CommunicationPageBody() {
             ) ?? null)
           : null
       : selectedEmail
-        ? latestMessageParty?.organizationId?.trim()
+        ? selectedMessageParty?.organizationId?.trim()
           ? (workspace.organizations.find(
               (organization) =>
-                organization.id === latestMessageParty.organizationId,
+                organization.id === selectedMessageParty.organizationId,
             ) ?? null)
           : matchedContact?.organizationId?.trim()
             ? (workspace.organizations.find(
@@ -788,7 +833,7 @@ function CommunicationPageBody() {
     const polishedPartyName =
       matchedContact?.name?.trim() ||
       matchedOrganization?.name?.trim() ||
-      (isComposingEmail ? null : emailActiveParty?.displayName?.trim()) ||
+      (isComposingEmail ? null : focusParty?.displayName?.trim()) ||
       null;
     const composeEmailItem: InboxEmailListItem | null =
       createOpen && createKind === "email" && !selectedEmailIsDraft
@@ -1286,10 +1331,11 @@ function CommunicationPageBody() {
                   onReadyChange={setEmailThreadReady}
                   messageParties={emailMessageParties}
                   onMessagePartiesChange={(parties) => {
-                    // Merge server/auto-link into parent; keep newer manual keys.
+                    // Incoming wins per message id so From-based auto-link can
+                    // correct stale thread-level seeds.
                     setEmailMessageParties((prev) => ({
-                      ...parties,
                       ...prev,
+                      ...parties,
                     }));
                   }}
                   onAutoLinkParties={async (parties) => {
@@ -1298,10 +1344,9 @@ function CommunicationPageBody() {
                     });
                     const next =
                       (updated as EmailMessagePartyMap | null) ?? parties;
-                    setEmailMessageParties((prev) => ({ ...next, ...prev }));
+                    setEmailMessageParties((prev) => ({ ...prev, ...next }));
                     return next;
                   }}
-                  onEnsureContactEmail={ensureContactHasOtherEmail}
                 />
               ) : null
             }
@@ -1473,10 +1518,10 @@ function CommunicationPageBody() {
                 }
               : selectedEmail
                 ? {
-                    messageId: emailActiveParty?.messageId ?? null,
-                    contactId: latestMessageParty?.contactId ?? null,
+                    messageId: focusParty?.messageId ?? null,
+                    contactId: selectedMessageParty?.contactId ?? null,
                     organizationId:
-                      latestMessageParty?.organizationId ??
+                      selectedMessageParty?.organizationId ??
                       matchedContact?.organizationId ??
                       null,
                     partyEmail: emailPartyEmail,

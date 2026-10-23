@@ -608,8 +608,10 @@ export {
 } from "./email/email-message-html.js";
 export {
   buildEmailMessagePartyAutoLinks,
+  classifyStoredEmailMessageParty,
   contactHasEmailAddress,
   getEmailMessageParty,
+  listInboundPartyAddresses,
   matchEmailMessageParty,
   organizationMatchesEmailAddress,
   resolveEmailMessagePartyAddress,

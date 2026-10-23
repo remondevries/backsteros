@@ -107,8 +107,12 @@ export function DesktopCommunicationEmailPartyCard({
     ? section
     : "conversation";
 
+  // Unlinked: always “Select organization” so the title reads as an org picker,
+  // not a static From address. The party email stays on the contact chip below.
   const orgTitle =
-    organizationName?.trim() || partyName.trim() || "Select organization";
+    organizationName?.trim() ||
+    (organizationId ? partyName.trim() : "") ||
+    "Select organization";
   const partyLabel =
     partyName.trim() || contactName?.trim() || "Select contact";
 
@@ -264,6 +268,15 @@ export function DesktopCommunicationEmailPartyCard({
         allowAddAsOther: Boolean(onAddPartyEmailAsOther),
       });
     }
+  } else if (contactId) {
+    // Contact linked without an org yet — still show the contact chip under
+    // the org picker so the title stays the organization control.
+    partySecondary = contactChip({ allowAddAsOther: false });
+  } else {
+    // Unfiled party — invite a contact under the org title.
+    partySecondary = contactChip({
+      allowAddAsOther: false,
+    });
   }
 
   return (

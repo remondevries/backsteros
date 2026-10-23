@@ -73,6 +73,27 @@ describe("contact emails", () => {
     );
   });
 
+  it("prefers primary email owner over a secondary/other match", () => {
+    const polluted = {
+      id: "theis-jan",
+      email: "info@goudswaardadvies.nl",
+      emails: [{ label: "other" as const, address: "m.blom@schotpoort.nl" }],
+    };
+    const owner = {
+      id: "marcel",
+      email: "m.blom@schotpoort.nl",
+      emails: [],
+    };
+    assert.equal(
+      findContactByEmailAddress([polluted, owner], "m.blom@schotpoort.nl")?.id,
+      "marcel",
+    );
+    assert.equal(
+      findContactByEmailAddress([owner, polluted], "m.blom@schotpoort.nl")?.id,
+      "marcel",
+    );
+  });
+
   it("matches email messages by From, To, or linked contactId", () => {
     const contact = {
       id: "c1",

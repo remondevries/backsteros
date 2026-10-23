@@ -129,6 +129,8 @@ export function EmailMessageHtmlBody({
     () => resolveEmailInlineAttachments(inlineAttachments, markup),
     [inlineAttachments, markup],
   );
+  const attachmentsToResolveRef = useRef(attachmentsToResolve);
+  attachmentsToResolveRef.current = attachmentsToResolve;
   const attachmentKey = useMemo(
     () =>
       attachmentsToResolve
@@ -153,14 +155,15 @@ export function EmailMessageHtmlBody({
     shadow.innerHTML = `${buildEmailShadowStyles(canvas)}${markup}`;
     collapseHtmlEmailQuotes(shadow);
 
+    const attachments = attachmentsToResolveRef.current;
     const cachedUrls = applyCachedInlineAttachments(
       shadow,
-      attachmentsToResolve,
+      attachments,
       peekInlineAttachmentRef.current,
     );
 
     const loader = loadInlineAttachmentRef.current;
-    if (!loader || attachmentsToResolve.length === 0) {
+    if (!loader || attachments.length === 0) {
       return () => {
         for (const objectUrl of cachedUrls) {
           URL.revokeObjectURL(objectUrl);
@@ -172,7 +175,7 @@ export function EmailMessageHtmlBody({
     const objectUrls = [...cachedUrls];
 
     void Promise.all(
-      attachmentsToResolve.map(async (attachment) => {
+      attachments.map(async (attachment) => {
         const contentId = normalizeEmailContentId(attachment.contentId);
         if (!contentId || isInlineContentResolved(shadow, contentId)) return;
 
@@ -205,7 +208,9 @@ export function EmailMessageHtmlBody({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [attachmentKey, attachmentsToResolve, canvas, markup]);
+    // attachmentKey stands in for attachmentsToResolve identity — a new array
+    // each parent render must not remount the shadow tree (cid avatar flicker).
+  }, [attachmentKey, canvas, markup]);
 
   if (!markup) {
     return fallback ? (

@@ -155,6 +155,13 @@ export function findContactByEmailAddress<
 >(contacts: readonly T[], address: string): T | null {
   const needle = parseBareEmailAddress(address);
   if (!needle) return null;
+  // Prefer the contact that owns this as their primary email. Secondary/other
+  // matches can be polluted (e.g. auto-link wrote another party’s address onto
+  // the wrong contact) and must not win over the real owner.
+  const primary = contacts.find(
+    (contact) => parseBareEmailAddress(contact.email ?? "") === needle,
+  );
+  if (primary) return primary;
   return (
     contacts.find((contact) => contactMatchesEmailAddress(contact, address)) ??
     null
