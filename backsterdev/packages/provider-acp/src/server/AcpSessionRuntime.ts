@@ -131,6 +131,12 @@ export interface AcpSessionRuntimeOptions {
     notification: EffectAcpSchema.SessionNotification,
   ) => EffectAcpSchema.SessionNotification;
   /**
+   * Adopt a pre-warmed ACP child (initialize already done). Skips spawn and
+   * re-initialize; session/new still uses {@link cwd}.
+   */
+  readonly adoptedChild?: ChildProcessSpawner.ChildProcessHandle;
+  readonly adoptedInitializeResult?: EffectAcpSchema.InitializeResponse;
+  /**
    * Redact secrets before logging. A failure closes the runtime.
    */
   readonly onStderr?: (text: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
@@ -1093,6 +1099,23 @@ export function selectAcpAgentAuthMethod(
   return authMethods?.find((method) => method.type === undefined || method.type === "agent");
 }
 
+/**
+ * Whether startOnce should call authenticate before opening a session.
+ * Antigravity (authenticateEagerly) always authenticates. Cursor advertises
+ * cursor_login even with cached credentials — skip and retry only on
+ * auth-required from session/new.
+ */
+export function shouldAuthenticateBeforeSession(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+  options: {
+    readonly authenticateEagerly?: boolean;
+  },
+): boolean {
+  if (options.authenticateEagerly === true) return true;
+  void initializeResult;
+  return false;
+}
+
 function isAcpAuthenticationRequired(error: EffectAcpErrors.AcpError): boolean {
   return error._tag === "AcpRequestError" && error.code === -32000;
 }
@@ -1281,7 +1304,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
   );
   const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({ nextSegmentIndex: 0 });
   const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
-  const initializeStateRef = yield* Ref.make<AcpInitializeState>({ _tag: "NotStarted" });
+  const initializeStateRef = yield* Ref.make<AcpInitializeState>(
+    options.adoptedChild && options.adoptedInitializeResult
+      ? { _tag: "Started", result: options.adoptedInitializeResult }
+      : { _tag: "NotStarted" },
+  );
   const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
   const startupMetadataRef = yield* Ref.make<ReadonlyArray<EffectAcpSchema.SessionNotification>>(
     [],
@@ -1392,99 +1419,117 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       ),
     );
 
-  const spawnCommand =
-    options.spawn.shell === false
-      ? { command: options.spawn.command, args: options.spawn.args, shell: false }
-      : yield* resolveSpawnCommand(options.spawn.command, options.spawn.args, {
-          ...(options.spawn.env ? { env: options.spawn.env } : {}),
-          extendEnv: options.spawn.extendEnv ?? true,
-        });
-  const linuxCgroupLease =
-    options.ownDescendantProcessGroups === true && options.processGroupPlatform === "linux"
-      ? yield* Effect.sync(() => {
-          try {
-            if (options.linuxCgroupController === null) return undefined;
-            return (options.linuxCgroupController ?? makeLinuxCgroupController()).create();
-          } catch {
-            return undefined;
-          }
-        })
-      : undefined;
-  // This is lifecycle containment for inherited provider work. It is not a
-  // security boundary against a provider that can modify its delegated cgroup.
-  if (linuxCgroupLease !== undefined) {
+  const adoptedChild = options.adoptedChild;
+  let linuxCgroupLease: AcpLinuxCgroupLease | undefined;
+  const child: ChildProcessSpawner.ChildProcessHandle = adoptedChild
+    ? adoptedChild
+    : yield* Effect.gen(function* () {
+        const spawnCommand =
+          options.spawn.shell === false
+            ? { command: options.spawn.command, args: options.spawn.args, shell: false }
+            : yield* resolveSpawnCommand(options.spawn.command, options.spawn.args, {
+                ...(options.spawn.env ? { env: options.spawn.env } : {}),
+                extendEnv: options.spawn.extendEnv ?? true,
+              });
+        linuxCgroupLease =
+          options.ownDescendantProcessGroups === true && options.processGroupPlatform === "linux"
+            ? yield* Effect.sync(() => {
+                try {
+                  if (options.linuxCgroupController === null) return undefined;
+                  return (options.linuxCgroupController ?? makeLinuxCgroupController()).create();
+                } catch {
+                  return undefined;
+                }
+              })
+            : undefined;
+        // This is lifecycle containment for inherited provider work. It is not a
+        // security boundary against a provider that can modify its delegated cgroup.
+        if (linuxCgroupLease !== undefined) {
+          yield* Scope.addFinalizer(
+            runtimeScope,
+            Effect.uninterruptible(terminateLinuxCgroupLease(linuxCgroupLease)).pipe(
+              Effect.ignoreCause({ log: true }),
+            ),
+          );
+        }
+        const containedTargetCommand =
+          linuxCgroupLease === undefined || NodePath.isAbsolute(spawnCommand.command)
+            ? spawnCommand.command
+            : yield* Effect.gen(function* () {
+                const resolved = resolveLinuxCgroupTargetCommand(
+                  spawnCommand.command,
+                  options.spawn.cwd ?? options.cwd,
+                  { ...process.env, ...options.spawn.env },
+                );
+                if (resolved !== undefined) return resolved;
+                return yield* new EffectAcpErrors.AcpSpawnError({
+                  command: options.spawn.command,
+                  cause: new Error("Contained ACP command was not found on PATH"),
+                });
+              });
+        const scopedSpawnCommand =
+          linuxCgroupLease !== undefined || spawnCommand.shell
+            ? spawnCommand
+            : {
+                ...(yield* (yield* AgentScope).wrap({
+                  command: spawnCommand.command,
+                  args: spawnCommand.args,
+                  name: "acp",
+                  threadId: yield* AgentScopeThreadId,
+                  env: { ...process.env, ...options.spawn.env },
+                })),
+                shell: false,
+              };
+        const containedSpawnCommand =
+          linuxCgroupLease === undefined
+            ? scopedSpawnCommand
+            : {
+                ...wrapCommandForLinuxCgroup(
+                  linuxCgroupLease,
+                  containedTargetCommand,
+                  spawnCommand.args,
+                ),
+                shell: false,
+              };
+        const spawnEnvironment =
+          linuxCgroupLease === undefined
+            ? options.spawn.env
+            : {
+                ...options.spawn.env,
+                ELECTRON_RUN_AS_NODE: "1",
+                T3_ACP_CGROUP_WRAPPER: "1",
+              };
+        return yield* spawner
+          .spawn(
+            ChildProcess.make(containedSpawnCommand.command, containedSpawnCommand.args, {
+              ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
+              ...(spawnEnvironment ? { env: spawnEnvironment } : {}),
+              extendEnv: options.spawn.extendEnv ?? true,
+              ...(options.ownDetachedProcessGroup === undefined
+                ? {}
+                : { detached: options.ownDetachedProcessGroup }),
+              shell: containedSpawnCommand.shell,
+            }),
+          )
+          .pipe(
+            Effect.provideService(Scope.Scope, runtimeScope),
+            Effect.mapError(
+              (cause) =>
+                new EffectAcpErrors.AcpSpawnError({
+                  command: options.spawn.command,
+                  cause,
+                }),
+            ),
+          );
+      });
+
+  // Adopted warm processes still need cleanup when the runtime scope closes.
+  if (adoptedChild) {
     yield* Scope.addFinalizer(
       runtimeScope,
-      Effect.uninterruptible(terminateLinuxCgroupLease(linuxCgroupLease)).pipe(
-        Effect.ignoreCause({ log: true }),
-      ),
+      adoptedChild.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore),
     );
   }
-  const containedTargetCommand =
-    linuxCgroupLease === undefined || NodePath.isAbsolute(spawnCommand.command)
-      ? spawnCommand.command
-      : yield* Effect.gen(function* () {
-          const resolved = resolveLinuxCgroupTargetCommand(
-            spawnCommand.command,
-            options.spawn.cwd ?? options.cwd,
-            { ...process.env, ...options.spawn.env },
-          );
-          if (resolved !== undefined) return resolved;
-          return yield* new EffectAcpErrors.AcpSpawnError({
-            command: options.spawn.command,
-            cause: new Error("Contained ACP command was not found on PATH"),
-          });
-        });
-  const scopedSpawnCommand =
-    linuxCgroupLease !== undefined || spawnCommand.shell
-      ? spawnCommand
-      : {
-          ...(yield* (yield* AgentScope).wrap({
-            command: spawnCommand.command,
-            args: spawnCommand.args,
-            name: "acp",
-            threadId: yield* AgentScopeThreadId,
-            env: { ...process.env, ...options.spawn.env },
-          })),
-          shell: false,
-        };
-  const containedSpawnCommand =
-    linuxCgroupLease === undefined
-      ? scopedSpawnCommand
-      : {
-          ...wrapCommandForLinuxCgroup(linuxCgroupLease, containedTargetCommand, spawnCommand.args),
-          shell: false,
-        };
-  const spawnEnvironment =
-    linuxCgroupLease === undefined
-      ? options.spawn.env
-      : {
-          ...options.spawn.env,
-          ELECTRON_RUN_AS_NODE: "1",
-          T3_ACP_CGROUP_WRAPPER: "1",
-        };
-  const child = yield* spawner
-    .spawn(
-      ChildProcess.make(containedSpawnCommand.command, containedSpawnCommand.args, {
-        ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
-        ...(spawnEnvironment ? { env: spawnEnvironment } : {}),
-        extendEnv: options.spawn.extendEnv ?? true,
-        ...(options.ownDetachedProcessGroup === undefined
-          ? {}
-          : { detached: options.ownDetachedProcessGroup }),
-        shell: containedSpawnCommand.shell,
-      }),
-    )
-    .pipe(
-      Effect.provideService(Scope.Scope, runtimeScope),
-      Effect.mapError(
-        (cause) =>
-          new EffectAcpErrors.AcpSpawnError({
-            command: options.spawn.command,
-            cause,
-          }),
-      ),
-    );
 
   const posixOwnershipLedger = new Map<string, AcpOwnedPosixProcess>();
   const posixOwnershipFrontier = new Map<number, AcpOwnedPosixProcess>();
@@ -1594,18 +1639,19 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       return yield* terminateWindowsProcessTree(Number(child.pid));
     }
     if (linuxCgroupLease !== undefined) {
+      const activeLinuxCgroupLease = linuxCgroupLease;
       if (posixController !== undefined) {
         yield* Effect.sync(() =>
           signalLinuxCgroupRootTerm({
             controller: posixController,
-            lease: linuxCgroupLease,
+            lease: activeLinuxCgroupLease,
             root: posixOwnershipRoot,
           }),
         );
       }
       const grace = options.processGroupTerminationGrace ?? "1 second";
       if (grace !== 0) yield* Effect.sleep(grace);
-      return yield* terminateLinuxCgroupLease(linuxCgroupLease);
+      return yield* terminateLinuxCgroupLease(activeLinuxCgroupLease);
     }
     if (options.ownDescendantProcessGroups === true) {
       return yield* terminatePosixProcessTree(options.processGroupTerminationGrace ?? "1 second");
@@ -2225,7 +2271,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       return { sessionId, sessionSetupResult };
     });
 
-    if (options.authenticateEagerly === true) {
+    if (shouldAuthenticateBeforeSession(initializeResult, options)) {
       // The configured method is authoritative here: Antigravity accepts
       // methods (API key, Vertex) it does not list in `initialize`.
       const authenticatePayload = {

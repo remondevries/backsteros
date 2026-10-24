@@ -42,6 +42,10 @@
     "./server/stderr": {
       "types": "./src/server/stderr.ts",
       "import": "./src/server/stderr.ts"
+    },
+    "./server/AcpWarmProcessPool": {
+      "types": "./src/server/AcpWarmProcessPool.ts",
+      "import": "./src/server/AcpWarmProcessPool.ts"
     }
   },
   "scripts": {

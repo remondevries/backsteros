@@ -7,8 +7,12 @@
  *   BACKSTEROS_CONTROL_REPORT_WEBHOOK_URL
  *   BACKSTEROS_CONTROL_REPORT_WEBHOOK_SECRET  → Authorization: Bearer <secret>
  *     (or full `Bearer …` / `Basic …` value as-is)
+ *   Also read from `~/.config/backsteros/control-report.env` when unset in the process env.
  */
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 import type { BacksterosControlSessionStatus } from "@t3tools/shared/backsterosTaskAutoPromote";
@@ -60,13 +64,44 @@ export function resolveControlReportWebhookConfig(env: NodeJS.ProcessEnv = proce
   readonly url: string | null;
   readonly secret: string | null;
 } {
+  // Only fall back to the home env file for the live process env — unit tests
+  // pass an isolated object and must not pick up the developer's file.
+  const fileEnv = env === process.env ? readControlReportEnvFile() : {};
   const url =
     asNonEmpty(env.BACKSTEROS_CONTROL_REPORT_WEBHOOK_URL) ??
-    asNonEmpty(env.T3_CONTROL_SESSION_WEBHOOK_URL);
+    asNonEmpty(env.T3_CONTROL_SESSION_WEBHOOK_URL) ??
+    asNonEmpty(fileEnv.BACKSTEROS_CONTROL_REPORT_WEBHOOK_URL);
   const secret =
     asNonEmpty(env.BACKSTEROS_CONTROL_REPORT_WEBHOOK_SECRET) ??
-    asNonEmpty(env.T3_CONTROL_SESSION_WEBHOOK_SECRET);
+    asNonEmpty(env.T3_CONTROL_SESSION_WEBHOOK_SECRET) ??
+    asNonEmpty(fileEnv.BACKSTEROS_CONTROL_REPORT_WEBHOOK_SECRET);
   return { url, secret };
+}
+
+/** Optional `~/.config/backsteros/control-report.env` (KEY=value lines). */
+function readControlReportEnvFile(): Record<string, string> {
+  try {
+    const raw = readFileSync(join(homedir(), ".config", "backsteros", "control-report.env"), "utf8");
+    const out: Record<string, string> = {};
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value = trimmed.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function asNonEmpty(value: string | undefined): string | null {

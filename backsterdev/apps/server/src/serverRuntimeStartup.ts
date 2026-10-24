@@ -48,6 +48,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { getServerOwners } from "./telemetry/Identify.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import { shutdownCursorAcpWarmPool } from "./backsteros/control-cursor-acp-warm.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -477,6 +478,8 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
           cause: "Server runtime is shutting down.",
         }),
       );
+      // BDV-65: do not leak pre-warmed cursor-agent ACP processes across restarts.
+      yield* Effect.sync(() => shutdownCursorAcpWarmPool());
       const workerFiber = yield* Ref.getAndSet(effectWorkerFiber, null);
       if (workerFiber !== null) {
         yield* Fiber.interrupt(workerFiber).pipe(Effect.ignore);

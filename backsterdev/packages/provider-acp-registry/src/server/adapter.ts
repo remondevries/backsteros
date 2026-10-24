@@ -58,6 +58,7 @@ import {
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@t3tools/provider-acp/server/adapter";
+import * as AcpWarmProcessPool from "@t3tools/provider-acp/server/AcpWarmProcessPool";
 
 export const ACP_REGISTRY_PROVIDER = ProviderDriverKind.make("acpRegistry");
 export const ACP_REGISTRY_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(ACP_REGISTRY_PROVIDER);
@@ -133,6 +134,10 @@ function makeAcpRegistryRuntime(
   options: AcpRegistryAdapterV2Options,
   catalog: AcpRegistrySupport.AcpRegistryCatalog["Service"],
 ) {
+  const warmEnabled = AcpWarmProcessPool.isCursorAcpWarmTarget({
+    agentId: options.settings.source === "local" ? "" : options.settings.agentId,
+    commandPath: options.settings.source === "local" ? options.settings.commandPath : undefined,
+  });
   return (
     input: AcpAdapterV2RuntimeInput,
   ): Effect.Effect<
@@ -153,6 +158,10 @@ function makeAcpRegistryRuntime(
               }),
           ),
         );
+      const warm =
+        warmEnabled && !input.resumeSessionId
+          ? AcpWarmProcessPool.takeAcpWarmProcess()
+          : null;
       const context = yield* Layer.build(
         AcpSessionRuntime.layer({
           ...runtimeInput,
@@ -167,6 +176,12 @@ function makeAcpRegistryRuntime(
           customModels: readCustomModelEntries(options.settings.customModels).map(
             (entry) => entry.slug,
           ),
+          ...(warm
+            ? {
+                adoptedChild: warm.handle,
+                adoptedInitializeResult: warm.initializeResult,
+              }
+            : {}),
         }),
       );
       return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
@@ -208,6 +223,16 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
       }
     : options;
   const copilotRouting = isCopilot ? makeCopilotSubagentRouting() : undefined;
+  if (
+    AcpWarmProcessPool.isCursorAcpWarmTarget({
+      agentId: registryAgentId,
+      commandPath:
+        options.settings.source === "local" ? options.settings.commandPath : undefined,
+    })
+  ) {
+    AcpWarmProcessPool.kickAcpWarmProcessPool();
+  }
+
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     capabilities: AcpProviderCapabilitiesV2,
