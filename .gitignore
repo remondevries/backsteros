@@ -24,3 +24,6 @@ deploy/cloud/powersync.generated.yaml
 # Accidental tsc emit into src shadows .ts under Vite (.js wins).
 backsteros/packages/ui/src/**/*.js
 
+
+# BDV-62: copied upstream reference repos (not part of the build)
+.repos/

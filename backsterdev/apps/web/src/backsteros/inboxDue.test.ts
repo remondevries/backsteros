@@ -4,7 +4,6 @@ import {
   isBacksterosInboxDueTask,
   isBacksterosInboxMemberTask,
   mergeBacksterosInboxTasksWithWorking,
-  partitionBacksterosInboxTasks,
 } from "./inboxDue";
 
 describe("isBacksterosInboxDueTask", () => {
@@ -54,6 +53,18 @@ describe("isBacksterosInboxMemberTask", () => {
         { referenceDate: wednesday },
       ),
     ).toBe(false);
+    expect(
+      isBacksterosInboxMemberTask(
+        { id: "hold", status: "on_hold", dueDate: null },
+        { referenceDate: wednesday },
+      ),
+    ).toBe(false);
+    expect(
+      isBacksterosInboxMemberTask(
+        { id: "hold-due", status: "on_hold", dueDate: "2026-09-08" },
+        { referenceDate: wednesday },
+      ),
+    ).toBe(true);
   });
 
   it("always includes live agent-working tasks regardless of due date or status", () => {
@@ -94,76 +105,5 @@ describe("mergeBacksterosInboxTasksWithWorking", () => {
       workingTaskIds: new Set(["live"]),
     });
     expect(merged).toEqual(inbox);
-  });
-});
-
-describe("partitionBacksterosInboxTasks", () => {
-  const wednesday = new Date(2026, 8, 9, 12, 0, 0);
-
-  it("keeps attention statuses in status groups; Due only gets the rest", () => {
-    const tasks = [
-      {
-        id: "a",
-        status: "in_progress",
-        title: "Working",
-        dueDate: null as string | null,
-        sortOrder: 1,
-      },
-      {
-        id: "b",
-        status: "backlog",
-        title: "Late",
-        dueDate: "2026-09-08",
-        sortOrder: 2,
-      },
-      {
-        id: "c",
-        status: "in_progress",
-        title: "Due today",
-        dueDate: "2026-09-09",
-        sortOrder: 0,
-      },
-      {
-        id: "d",
-        status: "triage",
-        title: "Later",
-        dueDate: "2026-09-12",
-        sortOrder: 3,
-      },
-    ];
-
-    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(tasks, wednesday);
-
-    // Status wins: in_progress due-today stays with attention, not Due.
-    expect(attentionTasks.map((task) => task.id)).toEqual(["a", "c", "d"]);
-    expect(dueTasks.map((task) => task.id)).toEqual(["b"]);
-  });
-
-  it("keeps live agent-working tasks in attention even when status/due would exclude them", () => {
-    const tasks = [
-      {
-        id: "live",
-        status: "ready_to_start",
-        title: "Agent live",
-        dueDate: "2026-09-20",
-        sortOrder: 0,
-      },
-      {
-        id: "late",
-        status: "backlog",
-        title: "Late",
-        dueDate: "2026-09-08",
-        sortOrder: 1,
-      },
-    ];
-
-    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(
-      tasks,
-      wednesday,
-      new Set(["live"]),
-    );
-
-    expect(attentionTasks.map((task) => task.id)).toEqual(["live"]);
-    expect(dueTasks.map((task) => task.id)).toEqual(["late"]);
   });
 });

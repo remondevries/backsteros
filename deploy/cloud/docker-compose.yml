@@ -50,7 +50,7 @@ services:
       TRANSIP_ACCESS_TOKEN: ${TRANSIP_ACCESS_TOKEN:-}
       POWERSYNC_JWT_SECRET: ${POWERSYNC_JWT_SECRET:?set POWERSYNC_JWT_SECRET}
       # Token endpoint returns this to non-loopback clients. Loopback rewrite is still in powersync-auth.ts.
-      POWERSYNC_URL: ${POWERSYNC_URL:-http://100.75.45.22:8080}
+      POWERSYNC_URL: ${POWERSYNC_URL:-http://100.83.125.67:8080}
       POWERSYNC_AUDIENCE: ${POWERSYNC_AUDIENCE:-backsteros-powersync}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8788}
@@ -106,7 +106,7 @@ services:
     ports:
       # Loopback for on-box probes. Tailnet IP so backsteros/iOS can sync. Not 0.0.0.0.
       - "127.0.0.1:8080:8080"
-      - "100.75.45.22:8080:8080"
+      - "100.83.125.67:8080:8080"
 
 volumes:
   cloud_core_pg:

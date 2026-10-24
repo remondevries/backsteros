@@ -49,6 +49,7 @@ import {
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import "~/backsteros/keyboardNavHighlight.css";
 import "~/backsteros/backsterosTasksOverview.css";
 
 const DEFAULT_TASK_ID_COLUMN_CH = 5;

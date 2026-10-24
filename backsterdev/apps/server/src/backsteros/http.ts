@@ -1,5 +1,5 @@
 import { Effect, Layer, Option } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { readBacksterosAgentProfile, writeBacksterosAgentProfile } from "./agent-profile.ts";
 import {

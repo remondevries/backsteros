@@ -279,8 +279,9 @@ export async function fetchBacksterosProjectTasks(
 export { BACKSTEROS_INBOX_ATTENTION_STATUSES } from "./inboxDue";
 
 /**
- * Cross-project attention tasks: Triage, In Review, In Progress, On Hold,
+ * Cross-project attention tasks: Triage, In Review, In Progress,
  * plus open tasks due today or earlier (`GET /api/v1/tasks/due`).
+ * Waiting and On Hold are omitted — they only appear when due (or working).
  */
 export async function fetchBacksterosInboxAttentionTasks(
   signal?: AbortSignal,

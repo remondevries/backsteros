@@ -1602,6 +1602,7 @@ describe("cached pull request detail", () => {
     return {
       getItem: (key: string) => held.get(key) ?? null,
       setItem: (key: string, value: string) => void held.set(key, value),
+      removeItem: (key: string) => void held.delete(key),
     };
   };
 

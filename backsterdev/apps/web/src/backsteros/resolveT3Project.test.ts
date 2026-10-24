@@ -45,6 +45,35 @@ describe("resolveBacksterosProjectForWorkspaceRoot", () => {
       ),
     ).toBeNull();
   });
+
+  it("matches when the Dig workspace is nested under the BacksterOS project root", () => {
+    const projects = [
+      bosProject({ id: "parent", localWorkingDirectory: "/Users/me/BacksterOS/Projects/OS/Codebase" }),
+      bosProject({ id: "sibling", localWorkingDirectory: "/Users/me/other" }),
+    ];
+    expect(
+      resolveBacksterosProjectForWorkspaceRoot(
+        projects,
+        "/Users/me/BacksterOS/Projects/OS/Codebase/development",
+      )?.id,
+    ).toBe("parent");
+  });
+
+  it("prefers the most specific nested working directory", () => {
+    const projects = [
+      bosProject({ id: "root", localWorkingDirectory: "/Users/me/BacksterOS" }),
+      bosProject({
+        id: "codebase",
+        localWorkingDirectory: "/Users/me/BacksterOS/Projects/OS/Codebase",
+      }),
+    ];
+    expect(
+      resolveBacksterosProjectForWorkspaceRoot(
+        projects,
+        "/Users/me/BacksterOS/Projects/OS/Codebase/development",
+      )?.id,
+    ).toBe("codebase");
+  });
 });
 
 describe("resolveT3ProjectForBacksterosProject", () => {

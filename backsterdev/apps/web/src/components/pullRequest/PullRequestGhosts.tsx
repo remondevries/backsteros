@@ -14,13 +14,13 @@ import {
   EllipsisIcon,
   ExternalLinkIcon,
   FileDiffIcon,
-  PanelRightIcon,
   TagIcon,
   UserPlusIcon,
   UsersIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { SidePanelToggleIcon } from "~/backsteros/SidePanelToggleIcon";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -195,7 +195,7 @@ export function PullRequestDetailGhost({
               aria-label="Collapse pull request panel"
               onClick={onClose}
             >
-              <PanelRightIcon aria-hidden className="size-3.5" />
+              <SidePanelToggleIcon size={14} rail="end" collapsed={false} />
             </Button>
           ) : null}
         </div>

@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS,
   cancelControlSessionIdlePromote,
+  controlSessionFailedToComplete,
   maybePromoteBacksterosTaskForControlSession,
   resetControlSessionPromoteStateForTests,
   scheduleControlSessionPromoteAfterTurn,
@@ -122,5 +123,25 @@ describe("control-session-promote (OS-73 idle in_review)", () => {
     scheduleControlSessionPromoteAfterTurn(stateDir, "00000000-0000-4000-8000-000000000099");
     vi.advanceTimersByTime(CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS);
     expect(patchCalls).toEqual([]);
+  });
+});
+
+describe("controlSessionFailedToComplete (V2 run statuses)", () => {
+  it("treats a failed run, or an interrupted/cancelled run with lastError, as not completed", () => {
+    expect(controlSessionFailedToComplete({ sessionStatus: "failed" })).toBe(true);
+    expect(
+      controlSessionFailedToComplete({
+        sessionStatus: "interrupted",
+        lastError: "driver mismatch",
+      }),
+    ).toBe(true);
+    expect(
+      controlSessionFailedToComplete({ sessionStatus: "cancelled", lastError: "stopped by user" }),
+    ).toBe(true);
+    expect(controlSessionFailedToComplete({ sessionStatus: "interrupted", lastError: null })).toBe(
+      false,
+    );
+    expect(controlSessionFailedToComplete({ sessionStatus: "completed" })).toBe(false);
+    expect(controlSessionFailedToComplete(null)).toBe(false);
   });
 });

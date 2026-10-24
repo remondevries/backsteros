@@ -457,7 +457,9 @@ export function BacksterosCodebaseProjectOverviewPane(props: {
   return (
     <div className="bos-codebase-workbench__side-scroll bos-codebase-overview">
       <div className="bos-codebase-overview__key-row">
-        {detail.key ? <p className="bos-codebase-overview__key">{detail.key}</p> : <span />}
+        <p className="bos-codebase-overview__key">
+          {detail.key?.trim() || "Project"}
+        </p>
         <span
           className="bos-codebase-overview__progress"
           title={`${taskProgress.completed} of ${taskProgress.total} completed`}

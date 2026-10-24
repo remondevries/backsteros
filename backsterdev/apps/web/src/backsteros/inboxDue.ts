@@ -2,15 +2,12 @@ import { formatDueDateInputValue, formatLocalYmd } from "./taskDueDate";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 
 const INACTIVE_STATUSES = new Set(["completed", "canceled", "duplicated"]);
-const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
-/** Statuses that keep their own inbox groups (Due never steals these). */
+/** Statuses always shown in the inbox (their own status groups). */
 export const BACKSTEROS_INBOX_ATTENTION_STATUSES = [
   "triage",
   "in_review",
   "in_progress",
-  "waiting",
-  "on_hold",
 ] as const;
 
 const ATTENTION_STATUS_SET = new Set<string>(BACKSTEROS_INBOX_ATTENTION_STATUSES);
@@ -25,7 +22,8 @@ export function isBacksterosInboxAttentionStatus(status: string | null | undefin
 
 /**
  * Open tasks due today or earlier (local calendar day).
- * Used for inbox membership of non-attention statuses (Due group).
+ * Used for inbox membership of non-attention statuses (shown under their
+ * own status group — Backlog, Ready to Start, etc.).
  */
 export function isBacksterosInboxDueTask(
   input: {
@@ -63,7 +61,7 @@ export function isBacksterosInboxMemberTask(
 
 /**
  * Soft-poll inbox rows plus any live working tasks not already in that set.
- * Working extras append after API order; callers regroup via partition.
+ * Working extras append after API order; callers regroup by status.
  */
 export function mergeBacksterosInboxTasksWithWorking<T extends { readonly id: string }>(input: {
   readonly inboxTasks: readonly T[];
@@ -79,64 +77,6 @@ export function mergeBacksterosInboxTasksWithWorking<T extends { readonly id: st
     if (task) extras.push(task);
   }
   return extras.length === 0 ? input.inboxTasks : [...input.inboxTasks, ...extras];
-}
-
-export type BacksterosInboxPartition<
-  T extends {
-    readonly id: string;
-    readonly status: string;
-    readonly dueDate?: string | null | undefined;
-  },
-> = {
-  readonly attentionTasks: readonly T[];
-  readonly dueTasks: readonly T[];
-};
-
-/**
- * Status groups first: attention-status tasks stay in status buckets even when
- * due. Live agent-working tasks join attention even when status/due would
- * otherwise exclude them. Due group only gets open due-today/overdue tasks
- * that are not already covered.
- */
-export function partitionBacksterosInboxTasks<
-  T extends {
-    readonly id: string;
-    readonly status: string;
-    readonly dueDate?: string | null | undefined;
-    readonly sortOrder?: number;
-    readonly title?: string;
-  },
->(
-  tasks: readonly T[],
-  referenceDate: Date = new Date(),
-  workingTaskIds: ReadonlySet<string> = EMPTY_WORKING_TASK_IDS,
-): BacksterosInboxPartition<T> {
-  const dueTasks: T[] = [];
-  const attentionTasks: T[] = [];
-
-  for (const task of tasks) {
-    if (isBacksterosInboxAttentionStatus(task.status) || workingTaskIds.has(task.id)) {
-      attentionTasks.push(task);
-      continue;
-    }
-    if (isBacksterosInboxDueTask(task, referenceDate)) {
-      dueTasks.push(task);
-    }
-  }
-
-  dueTasks.sort((left, right) => {
-    const byDue = formatDueDateInputValue(left.dueDate).localeCompare(
-      formatDueDateInputValue(right.dueDate),
-    );
-    if (byDue !== 0) return byDue;
-    const byOrder = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
-    if (byOrder !== 0) return byOrder;
-    return (left.title ?? "").localeCompare(right.title ?? "", undefined, {
-      sensitivity: "base",
-    });
-  });
-
-  return { attentionTasks, dueTasks };
 }
 
 /** End of local today — safe `before` bound for `GET /api/v1/tasks/due`. */

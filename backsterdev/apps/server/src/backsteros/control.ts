@@ -8,10 +8,11 @@ import {
   MessageId,
   type ModelSelection,
   type OrchestrationProjectShell,
+  type OrchestrationV2Command,
+  type OrchestrationV2ThreadShell,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
@@ -20,17 +21,16 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { isLoopbackHostname } from "../http.ts";
-import { normalizeDispatchCommand } from "../orchestration/Normalizer.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import {
   BacksterosTimeoutError,
   buildControlKickoffPrompt,
@@ -66,6 +66,7 @@ import {
   resolveOrCreateRemoteT3Project,
   resolveRemoteModelSelection,
   type ControlRemoteHttpError,
+  type RemoteThreadShell,
 } from "./control-remote.ts";
 import {
   cancelControlSessionIdlePromote,
@@ -130,37 +131,54 @@ export function isControlLoopbackRemote(remoteAddress: Option.Option<string>): b
   return isLoopbackHostname(normalized);
 }
 
-type ControlStatusThreadInput = Pick<
-  OrchestrationThreadShell,
-  | "settledOverride"
-  | "settledAt"
-  | "hasPendingApprovals"
-  | "hasPendingUserInput"
-  | "backgroundLiveness"
-  | "latestTurn"
-  | "latestUserMessageAt"
-> & {
-  readonly session: Pick<
-    NonNullable<OrchestrationThreadShell["session"]>,
-    "status" | "activeTurnId"
-  > | null;
-};
+/** Local shells carry `DateTime` values; remote (HTTP JSON) shells carry ISO strings. */
+type ControlTimestamp = string | DateTime.DateTime | null | undefined;
+
+/** A V2 thread shell as read locally or over the remote HTTP wire. */
+export type ControlThreadShell = OrchestrationV2ThreadShell | RemoteThreadShell;
 
 /**
- * `ready` is the provider's idle-and-waiting state, so it only counts as
- * working while a turn is active or a dispatched message has not started its
- * turn yet (latest user message newer than the latest turn request).
+ * The V2 thread-shell fields the control status mapping reads. V2 has no V1
+ * `session`: `status` is the shell run status (`idle`, `running`, `failed`, …),
+ * `activeRunId` replaces the active turn id, and `latestRun*` replaces `latestTurn`.
+ */
+export type ControlStatusThreadInput = {
+  readonly status: string;
+  readonly activeRunId?: string | null | undefined;
+  readonly latestRunRequestedAt?: ControlTimestamp;
+  readonly latestUserMessageAt?: ControlTimestamp;
+  readonly settledOverride?: "settled" | "active" | null | undefined;
+  readonly settledAt?: ControlTimestamp;
+  readonly pendingRuntimeRequest?: unknown;
+  readonly pendingBackgroundTasks?: ReadonlyArray<unknown> | undefined;
+};
+
+function timestampMs(value: ControlTimestamp): number {
+  if (value == null) return Number.NaN;
+  if (typeof value === "string") return Date.parse(value);
+  return DateTime.toEpochMillis(value);
+}
+
+/** Run statuses that mean the latest run finished (the provider is idle). */
+const CONTROL_IDLE_RUN_STATUSES = new Set([
+  "idle",
+  "completed",
+  "interrupted",
+  "cancelled",
+  "rolled_back",
+]);
+
+/**
+ * An idle provider only counts as working while a run is active or a
+ * dispatched message has not started its run yet (latest user message newer
+ * than the latest run request).
  */
 function hasTurnInFlight(thread: ControlStatusThreadInput): boolean {
-  if (thread.session?.activeTurnId != null) return true;
-  const latestTurn = thread.latestTurn;
-  if (latestTurn?.state === "running") return true;
-  const latestUserMessageAt = thread.latestUserMessageAt
-    ? Date.parse(thread.latestUserMessageAt)
-    : Number.NaN;
+  if (thread.activeRunId != null) return true;
+  if (!CONTROL_IDLE_RUN_STATUSES.has(thread.status)) return thread.status !== "failed";
+  const latestUserMessageAt = timestampMs(thread.latestUserMessageAt);
   if (Number.isNaN(latestUserMessageAt)) return false;
-  if (!latestTurn) return true;
-  const requestedAt = Date.parse(latestTurn.requestedAt);
+  const requestedAt = timestampMs(thread.latestRunRequestedAt);
   return Number.isNaN(requestedAt) || latestUserMessageAt > requestedAt;
 }
 
@@ -185,12 +203,9 @@ export function isControlDispatchPending(
 ): boolean {
   if (pendingDispatchAt == null || !Number.isFinite(pendingDispatchAt)) return false;
   if (now - pendingDispatchAt >= CONTROL_PENDING_DISPATCH_TIMEOUT_MS) return false;
-  if (thread?.session?.status === "error") return false;
-  const latestTurn = thread?.latestTurn ?? null;
-  if (latestTurn) {
-    const requestedAt = Date.parse(latestTurn.requestedAt);
-    if (!Number.isNaN(requestedAt) && requestedAt >= pendingDispatchAt) return false;
-  }
+  if (thread?.status === "failed") return false;
+  const requestedAt = timestampMs(thread?.latestRunRequestedAt);
+  if (!Number.isNaN(requestedAt) && requestedAt >= pendingDispatchAt) return false;
   return true;
 }
 
@@ -205,16 +220,13 @@ export function mapSessionStatus(
   const settled =
     thread.settledOverride === "settled" ||
     (thread.settledAt != null && thread.settledOverride !== "active");
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "blocked";
-  const sessionStatus = thread.session?.status ?? null;
-  if (sessionStatus === "error") return "blocked";
+  if (thread.pendingRuntimeRequest != null) return "blocked";
+  if (thread.status === "failed") return "blocked";
   if (
-    sessionStatus === "starting" ||
-    sessionStatus === "running" ||
-    (sessionStatus === "ready" && hasTurnInFlight(thread)) ||
+    (!CONTROL_IDLE_RUN_STATUSES.has(thread.status) && thread.status !== "failed") ||
+    hasTurnInFlight(thread) ||
     dispatchPending ||
-    thread.backgroundLiveness === "working" ||
-    thread.backgroundLiveness === "monitoring"
+    (thread.pendingBackgroundTasks?.length ?? 0) > 0
   ) {
     return "working";
   }
@@ -238,10 +250,16 @@ export function resolveControlSessionStatus(
   return mapSessionStatus(thread, { pendingDispatchAt, now });
 }
 
+function pendingRequestKind(thread: ControlThreadShell | null): "approval" | "user_input" | null {
+  const pending = thread?.pendingRuntimeRequest;
+  if (!pending) return null;
+  return pending.kind === "user_input" ? "user_input" : "approval";
+}
+
 function toSessionView(input: {
   readonly taskId: string;
   readonly binding: BacksterosTaskThreadBinding;
-  readonly thread: OrchestrationThreadShell | null;
+  readonly thread: ControlThreadShell | null;
   readonly now: number;
 }): ControlSessionView {
   // Read-only (OS-38): never promote or prune from a view built for GET.
@@ -255,10 +273,10 @@ function toSessionView(input: {
     projectId: input.binding.t3ProjectId,
     title: input.binding.title,
     status,
-    sessionStatus: input.thread?.session?.status ?? null,
-    lastError: input.thread?.session?.lastError ?? null,
-    hasPendingApprovals: input.thread?.hasPendingApprovals ?? false,
-    hasPendingUserInput: input.thread?.hasPendingUserInput ?? false,
+    sessionStatus: input.thread?.status ?? null,
+    lastError: input.thread?.lastError ?? null,
+    hasPendingApprovals: pendingRequestKind(input.thread) === "approval",
+    hasPendingUserInput: pendingRequestKind(input.thread) === "user_input",
     settled:
       input.thread?.settledOverride === "settled" ||
       (input.thread?.settledAt != null && input.thread.settledOverride !== "active"),
@@ -331,7 +349,7 @@ const requireControlAuth = Effect.fn("backsteros.control.requireAuth")(function*
 
 const newId = Effect.fn("backsteros.control.newId")(function* () {
   const crypto = yield* Crypto.Crypto;
-  return yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+  return yield* crypto.randomUUIDv4().pipe(Effect.orDie);
 });
 
 /**
@@ -422,9 +440,8 @@ const resolveModelSelection = Effect.fn("backsteros.control.resolveModelSelectio
 const findThreadShell = Effect.fn("backsteros.control.findThreadShell")(function* (
   threadId: string,
 ) {
-  const projection = yield* ProjectionSnapshotQuery;
-  const shell = yield* projection.getShellSnapshot();
-  return shell.threads.find((thread) => thread.id === threadId) ?? null;
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  return yield* threads.getThreadShell(ThreadId.make(threadId));
 });
 
 function mapRemoteHttpError(cause: unknown): ControlHttpError {
@@ -544,9 +561,15 @@ const resolveOrCreateT3Project = Effect.fn("backsteros.control.resolveOrCreatePr
   projectIdOverride: string | null,
   preferredTitle: string | null | undefined,
 ) {
-  const projection = yield* ProjectionSnapshotQuery;
-  const shell = yield* projection.getShellSnapshot();
-  const matched = matchControlT3Project(shell.projects, { workspaceRoot, projectIdOverride });
+  const projects = yield* ProjectService.ProjectService;
+  const shells = yield* projects.listShells().pipe(
+    Effect.mapError((cause): ControlHttpError => ({
+      status: 500,
+      error: cause instanceof Error ? cause.message : "Failed to list T3 projects",
+      code: "project_list_failed",
+    })),
+  );
+  const matched = matchControlT3Project(shells, { workspaceRoot, projectIdOverride });
   if (matched.kind === "found") return matched.project;
   if (matched.kind === "missing_id") {
     return yield* Effect.fail({
@@ -557,39 +580,35 @@ const resolveOrCreateT3Project = Effect.fn("backsteros.control.resolveOrCreatePr
   }
 
   // No linked project yet — create one, matching the BacksterOS rail.
-  const orchestrationEngine = yield* OrchestrationEngineService;
   const projectId = ProjectId.make(yield* newId());
-  const createdAt = DateTime.formatIso(yield* DateTime.now);
   const title = controlProjectTitle(preferredTitle, workspaceRoot);
-  const command = yield* normalizeDispatchCommand({
-    type: "project.create",
-    commandId: CommandId.make(yield* newId()),
-    projectId,
-    title,
-    workspaceRoot,
-    createWorkspaceRootIfMissing: false,
-    createdAt,
-  }).pipe(
-    Effect.mapError((cause): ControlHttpError => ({
-      status: 400,
-      error: cause instanceof Error ? cause.message : "Invalid project.create command",
-      code: "invalid_command",
-    })),
-  );
+  yield* projects
+    .create({
+      commandId: CommandId.make(yield* newId()),
+      projectId,
+      title,
+      workspaceRoot,
+      createWorkspaceRootIfMissing: false,
+    })
+    .pipe(
+      Effect.mapError((cause): ControlHttpError => ({
+        status: 500,
+        error: cause instanceof Error ? cause.message : "Failed to create T3 project for workspace",
+        code: "project_create_failed",
+      })),
+    );
 
-  yield* orchestrationEngine.dispatch(command).pipe(
+  const afterCreate = yield* projects.listShells().pipe(
     Effect.mapError((cause): ControlHttpError => ({
       status: 500,
-      error: cause instanceof Error ? cause.message : "Failed to create T3 project for workspace",
-      code: "project_create_failed",
+      error: cause instanceof Error ? cause.message : "Failed to list T3 projects",
+      code: "project_list_failed",
     })),
   );
-
-  const afterCreate = yield* projection.getShellSnapshot();
-  const created = afterCreate.projects.find((project) => project.id === projectId);
+  const created = afterCreate.find((project) => project.id === projectId);
   if (created) return created;
 
-  const rematch = matchControlT3Project(afterCreate.projects, {
+  const rematch = matchControlT3Project(afterCreate, {
     workspaceRoot,
     projectIdOverride: null,
   });
@@ -601,6 +620,76 @@ const resolveOrCreateT3Project = Effect.fn("backsteros.control.resolveOrCreatePr
     code: "project_create_failed",
   } satisfies ControlHttpError);
 });
+
+/**
+ * Dispatch a V2 orchestration command in-process. Control-API commands carry
+ * `createdBy: "user"` / `creationSource: "server"` (see
+ * {@link controlCreationFields}).
+ */
+const dispatchLocalCommand = Effect.fn("backsteros.control.dispatchLocal")(function* (
+  command: OrchestrationV2Command,
+  failure: { readonly error: string; readonly code: string },
+) {
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  return yield* threads.dispatch(command).pipe(
+    Effect.mapError((cause): ControlHttpError => ({
+      status: 500,
+      error: cause instanceof Error && cause.message ? cause.message : failure.error,
+      code: failure.code,
+    })),
+  );
+});
+
+/** V2 `thread.create` / `message.dispatch` require creation provenance. */
+const controlCreationFields = {
+  createdBy: "user",
+  creationSource: "server",
+} as const;
+
+function buildThreadCreateCommand(input: {
+  readonly commandId: string;
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly modelSelection: ModelSelection;
+}): Extract<OrchestrationV2Command, { readonly type: "thread.create" }> {
+  return {
+    type: "thread.create",
+    ...controlCreationFields,
+    commandId: CommandId.make(input.commandId),
+    threadId: ThreadId.make(input.threadId),
+    projectId: ProjectId.make(input.projectId),
+    title: input.title,
+    modelSelection: input.modelSelection,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+  };
+}
+
+/** V1 `thread.turn.start` → V2 `message.dispatch` with `start_immediately`. */
+function buildMessageDispatchCommand(input: {
+  readonly commandId: string;
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly text: string;
+  readonly modelSelection: ModelSelection | null;
+  readonly titleSeed?: string;
+}): Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }> {
+  return {
+    type: "message.dispatch",
+    ...controlCreationFields,
+    commandId: CommandId.make(input.commandId),
+    threadId: ThreadId.make(input.threadId),
+    messageId: MessageId.make(input.messageId),
+    text: input.text,
+    attachments: [],
+    ...(input.titleSeed ? { titleSeed: input.titleSeed } : {}),
+    ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+    dispatchMode: { type: "start_immediately" },
+  };
+}
 
 function catchControlErrors<A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -640,7 +729,7 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
         ? (existing.binding.threadId ?? null)
         : null;
     let created = false;
-    let existingThread: OrchestrationThreadShell | null = null;
+    let existingThread: ControlThreadShell | null = null;
 
     if (threadId) {
       const existingThreadId = threadId;
@@ -658,7 +747,6 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
 
     const remoteProjectId = yield* newId();
     const remoteProjectCommandId = yield* newId();
-    const remoteNowIso = DateTime.formatIso(yield* DateTime.now);
     const t3Project = yield* Effect.tryPromise({
       try: () =>
         resolveOrCreateRemoteT3Project({
@@ -667,7 +755,6 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
           workspaceRoot,
           projectIdOverride: input.projectIdOverride,
           preferredTitle: project?.name,
-          nowIso: remoteNowIso,
           newIds: () => ({
             projectId: remoteProjectId,
             commandId: remoteProjectCommandId,
@@ -681,6 +768,7 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
       created = true;
       existingThread = null;
     }
+    const boundThreadId: string = threadId;
 
     const displayId =
       project?.key && task.number > 0
@@ -706,7 +794,8 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
       projectDefault: existingThread ? null : t3Project.defaultModelSelection,
     });
     // Prefer the existing remote thread's selection when following up.
-    const turnModelSelection = existingThread?.modelSelection ?? modelSelection;
+    const turnModelSelection: ModelSelection =
+      (existingThread?.modelSelection as ModelSelection | undefined) ?? modelSelection;
 
     const prompt =
       input.promptOverride ??
@@ -724,7 +813,7 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
 
     if (input.start) {
       if (existingThread) {
-        cancelControlSessionIdlePromote(input.stateDir, threadId);
+        cancelControlSessionIdlePromote(input.stateDir, boundThreadId);
       }
       if (created) {
         yield* Effect.tryPromise({
@@ -732,49 +821,35 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
             dispatchRemoteOrchestrationCommand({
               httpBaseUrl: remote.httpBaseUrl,
               accessToken: remote.accessToken,
-              command: {
-                type: "thread.create",
+              command: buildThreadCreateCommand({
                 commandId: createThreadCommandId,
-                threadId,
+                threadId: boundThreadId,
                 projectId: t3Project.id,
                 title,
                 modelSelection: turnModelSelection,
-                runtimeMode: "full-access",
-                interactionMode: "default",
-                branch: null,
-                worktreePath: null,
-                createdAt,
-              },
+              }),
             }),
           catch: mapRemoteHttpError,
         });
       }
 
-      recordControlPendingDispatch(threadId, dispatchedAtMs);
+      recordControlPendingDispatch(boundThreadId, dispatchedAtMs);
       yield* Effect.tryPromise({
         try: () =>
           dispatchRemoteOrchestrationCommand({
             httpBaseUrl: remote.httpBaseUrl,
             accessToken: remote.accessToken,
-            command: {
-              type: "thread.turn.start",
+            command: buildMessageDispatchCommand({
               commandId,
-              threadId,
-              message: {
-                messageId,
-                role: "user",
-                text: prompt,
-                attachments: [],
-              },
+              threadId: boundThreadId,
+              messageId,
+              text: prompt,
               modelSelection: turnModelSelection,
               titleSeed: title,
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              createdAt,
-            },
+            }),
           }),
         catch: (cause): ControlHttpError => {
-          clearControlPendingDispatch(threadId!, dispatchedAtMs);
+          clearControlPendingDispatch(boundThreadId, dispatchedAtMs);
           return mapRemoteHttpError(cause);
         },
       });
@@ -784,26 +859,20 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
           dispatchRemoteOrchestrationCommand({
             httpBaseUrl: remote.httpBaseUrl,
             accessToken: remote.accessToken,
-            command: {
-              type: "thread.create",
+            command: buildThreadCreateCommand({
               commandId,
-              threadId,
+              threadId: boundThreadId,
               projectId: t3Project.id,
               title,
               modelSelection: turnModelSelection,
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              branch: null,
-              worktreePath: null,
-              createdAt,
-            },
+            }),
           }),
         catch: mapRemoteHttpError,
       });
     }
 
     const binding = writeBacksterosTaskThreadBinding(input.stateDir, task.id, {
-      threadId,
+      threadId: boundThreadId,
       environmentId: remote.environmentId,
       t3ProjectId: t3Project.id,
       backsterosProjectId: project?.id ?? task.projectId ?? "",
@@ -817,7 +886,7 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
         fetchRemoteThreadShell({
           httpBaseUrl: remote.httpBaseUrl,
           accessToken: remote.accessToken,
-          threadId,
+          threadId: boundThreadId,
         }),
       catch: mapRemoteHttpError,
     });
@@ -830,8 +899,8 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
     }
     if (view.status === "working" || view.status === "blocked") {
       maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
-        sessionStatus: thread?.session?.status ?? null,
-        lastError: thread?.session?.lastError ?? null,
+        sessionStatus: thread?.status ?? null,
+        lastError: thread?.lastError ?? null,
       });
     }
     return HttpServerResponse.jsonUnsafe({
@@ -955,7 +1024,7 @@ export const controlStartHandler = catchControlErrors(
         ? (existing.binding.threadId ?? null)
         : null;
     let created = false;
-    let existingThread: OrchestrationThreadShell | null = null;
+    let existingThread: ControlThreadShell | null = null;
 
     if (threadId) {
       existingThread = yield* findThreadShell(threadId);
@@ -1006,7 +1075,8 @@ export const controlStartHandler = catchControlErrors(
 
     const turnPreference = resolveControlTurnModelPreference({
       preferred: preferredModel,
-      existingThreadSelection: existingThread?.modelSelection ?? null,
+      existingThreadSelection:
+        (existingThread?.modelSelection as ModelSelection | undefined) ?? null,
       ...(driverByInstanceId ? { driverByInstanceId } : {}),
     });
     if (turnPreference.kind === "driver_mismatch") {
@@ -1034,11 +1104,10 @@ export const controlStartHandler = catchControlErrors(
         workingDirectory: workspaceRoot,
       });
 
-    const orchestrationEngine = yield* OrchestrationEngineService;
     const createdAt = DateTime.formatIso(yield* DateTime.now);
     const dispatchedAtMs = Date.parse(createdAt);
-    const commandId = CommandId.make(yield* newId());
-    const messageId = MessageId.make(yield* newId());
+    const commandId = yield* newId();
+    const messageId = yield* newId();
 
     if (start) {
       // A follow-up on an existing thread must not inherit a pending
@@ -1046,101 +1115,52 @@ export const controlStartHandler = catchControlErrors(
       if (existingThread) {
         cancelControlSessionIdlePromote(config.stateDir, threadId);
       }
-      // Create the thread first when needed. bootstrap.createThread on
-      // thread.turn.start is rejected by the orchestration engine
-      // ("Thread … does not exist for command thread.turn.start").
+      // Create the thread first when needed: message.dispatch is rejected for
+      // a thread that does not exist yet.
       if (created) {
-        const createCommand = yield* normalizeDispatchCommand({
-          type: "thread.create",
-          commandId: CommandId.make(yield* newId()),
-          threadId: ThreadId.make(threadId),
-          projectId: ProjectId.make(t3Project.id),
-          title,
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdAt,
-        }).pipe(
-          Effect.mapError((cause): ControlHttpError => ({
-            status: 400,
-            error: cause instanceof Error ? cause.message : "Invalid create command",
-            code: "invalid_command",
-          })),
-        );
-        yield* orchestrationEngine.dispatch(createCommand).pipe(
-          Effect.mapError((cause): ControlHttpError => ({
-            status: 500,
-            error: cause instanceof Error ? cause.message : "Failed to create thread",
-            code: "dispatch_failed",
-          })),
+        yield* dispatchLocalCommand(
+          buildThreadCreateCommand({
+            commandId: yield* newId(),
+            threadId,
+            projectId: t3Project.id,
+            title,
+            modelSelection,
+          }),
+          { error: "Failed to create thread", code: "dispatch_failed" },
         );
       }
 
-      const command = yield* normalizeDispatchCommand({
-        type: "thread.turn.start",
+      const command = buildMessageDispatchCommand({
         commandId,
-        threadId: ThreadId.make(threadId),
-        message: {
-          messageId,
-          role: "user",
-          text: prompt,
-          attachments: [],
-        },
+        threadId,
+        messageId,
+        text: prompt,
         modelSelection,
         titleSeed: title,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt,
-      }).pipe(
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 400,
-          error: cause instanceof Error ? cause.message : "Invalid start command",
-          code: "invalid_command",
-        })),
-      );
+      });
 
       // Record before dispatch so a status read racing the dispatch already
       // sees `working`; dropped again if the dispatch fails.
       const pendingThreadId = threadId;
       recordControlPendingDispatch(pendingThreadId, dispatchedAtMs);
-      yield* orchestrationEngine.dispatch(command).pipe(
+      yield* dispatchLocalCommand(command, {
+        error: "Failed to start agent turn",
+        code: "dispatch_failed",
+      }).pipe(
         Effect.onError(() =>
           Effect.sync(() => clearControlPendingDispatch(pendingThreadId, dispatchedAtMs)),
         ),
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 500,
-          error: cause instanceof Error ? cause.message : "Failed to start agent turn",
-          code: "dispatch_failed",
-        })),
       );
     } else if (created) {
-      const command = yield* normalizeDispatchCommand({
-        type: "thread.create",
-        commandId,
-        threadId: ThreadId.make(threadId),
-        projectId: ProjectId.make(t3Project.id),
-        title,
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        createdAt,
-      }).pipe(
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 400,
-          error: cause instanceof Error ? cause.message : "Invalid create command",
-          code: "invalid_command",
-        })),
-      );
-      yield* orchestrationEngine.dispatch(command).pipe(
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 500,
-          error: cause instanceof Error ? cause.message : "Failed to create thread",
-          code: "dispatch_failed",
-        })),
+      yield* dispatchLocalCommand(
+        buildThreadCreateCommand({
+          commandId,
+          threadId,
+          projectId: t3Project.id,
+          title,
+          modelSelection,
+        }),
+        { error: "Failed to create thread", code: "dispatch_failed" },
       );
     }
 
@@ -1172,8 +1192,8 @@ export const controlStartHandler = catchControlErrors(
     // blocked inside maybePromote (error / stopped+lastError).
     if (view.status === "working" || view.status === "blocked") {
       maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
-        sessionStatus: thread?.session?.status ?? null,
-        lastError: thread?.session?.lastError ?? null,
+        sessionStatus: thread?.status ?? null,
+        lastError: thread?.lastError ?? null,
       });
     }
     return HttpServerResponse.jsonUnsafe({
@@ -1321,8 +1341,8 @@ export const controlPromoteHandler = catchControlErrors(
         now,
       });
       maybePromoteBacksterosTaskForControlSession(boundTaskId, view.status, {
-        sessionStatus: thread?.session?.status ?? null,
-        lastError: thread?.session?.lastError ?? null,
+        sessionStatus: thread?.status ?? null,
+        lastError: thread?.lastError ?? null,
       });
       sessions.push(view);
     }
@@ -1436,21 +1456,13 @@ export const controlMessageHandler = catchControlErrors(
           dispatchRemoteOrchestrationCommand({
             httpBaseUrl: remote.httpBaseUrl,
             accessToken: remote.accessToken!,
-            command: {
-              type: "thread.turn.start",
+            command: buildMessageDispatchCommand({
               commandId,
               threadId,
-              message: {
-                messageId,
-                role: "user",
-                text,
-                attachments: [],
-              },
-              modelSelection: shell.modelSelection,
-              runtimeMode: shell.runtimeMode,
-              interactionMode: shell.interactionMode,
-              createdAt,
-            },
+              messageId,
+              text,
+              modelSelection: shell.modelSelection as ModelSelection,
+            }),
           }),
         catch: (cause): ControlHttpError => {
           clearControlPendingDispatch(threadId, dispatchedAtMs);
@@ -1458,37 +1470,19 @@ export const controlMessageHandler = catchControlErrors(
         },
       });
     } else {
-      const orchestrationEngine = yield* OrchestrationEngineService;
-      const command = yield* normalizeDispatchCommand({
-        type: "thread.turn.start",
-        commandId: CommandId.make(commandId),
-        threadId: ThreadId.make(threadId),
-        message: {
-          messageId: MessageId.make(messageId),
-          role: "user",
+      yield* dispatchLocalCommand(
+        buildMessageDispatchCommand({
+          commandId,
+          threadId,
+          messageId,
           text,
-          attachments: [],
-        },
-        modelSelection: shell.modelSelection,
-        runtimeMode: shell.runtimeMode,
-        interactionMode: shell.interactionMode,
-        createdAt,
-      }).pipe(
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 400,
-          error: cause instanceof Error ? cause.message : "Invalid message command",
-          code: "invalid_command",
-        })),
-      );
-      yield* orchestrationEngine.dispatch(command).pipe(
+          modelSelection: shell.modelSelection as ModelSelection,
+        }),
+        { error: "Failed to send message", code: "dispatch_failed" },
+      ).pipe(
         Effect.onError(() =>
           Effect.sync(() => clearControlPendingDispatch(threadId, dispatchedAtMs)),
         ),
-        Effect.mapError((cause): ControlHttpError => ({
-          status: 500,
-          error: cause instanceof Error ? cause.message : "Failed to send message",
-          code: "dispatch_failed",
-        })),
       );
     }
 
@@ -1496,8 +1490,8 @@ export const controlMessageHandler = catchControlErrors(
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: found.taskId, binding: found.binding, thread, now });
     maybePromoteBacksterosTaskForControlSession(found.taskId, view.status, {
-      sessionStatus: thread?.session?.status ?? null,
-      lastError: thread?.session?.lastError ?? null,
+      sessionStatus: thread?.status ?? null,
+      lastError: thread?.lastError ?? null,
     });
     return HttpServerResponse.jsonUnsafe({
       ...view,

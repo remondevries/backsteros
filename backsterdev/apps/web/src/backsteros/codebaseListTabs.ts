@@ -24,3 +24,22 @@ export function parseBacksterosCodebaseListTab(
     ? (value as BacksterosCodebaseListTab)
     : undefined;
 }
+
+/** Digit `1`–`9` → 0-based index into {@link BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}. */
+export function parseBacksterosCodebaseListTabIndex(key: string): number | null {
+  if (!/^[1-9]$/.test(key)) return null;
+  return Number(key) - 1;
+}
+
+export function resolveBacksterosCodebaseListTabAtIndex(
+  index: number,
+): BacksterosCodebaseListTab | null {
+  return BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS[index]?.value ?? null;
+}
+
+/** Overview is the route default — omit `tab` from the search string. */
+export function backsterosCodebaseListTabSearch(
+  tab: BacksterosCodebaseListTab,
+): { readonly tab?: BacksterosCodebaseListTab } {
+  return tab === "overview" ? {} : { tab };
+}

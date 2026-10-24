@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${ROOT_DIR}/.." && pwd)"
-DEFAULT_UPSTREAM="${REPO_ROOT}/tmp/t3-code-v0045"
+DEFAULT_UPSTREAM="${REPO_ROOT}/tmp/t3-code-v012"
 UPSTREAM="${T3CODE_UPSTREAM:-${DEFAULT_UPSTREAM}}"
 MODE="dry-run"
 
@@ -16,7 +16,7 @@ Usage: sync-upstream-t3code.sh [--dry-run|--apply] [--upstream <path>]
   --dry-run   Show what rsync would change (default)
   --apply     Copy upstream into backsterdev/ (excludes preserve paths;
               backs up forked hotspots first)
-  --upstream  Path to a pingdotgg/t3code checkout (default: ../tmp/t3-code-v0045
+  --upstream  Path to a pingdotgg/t3code checkout (default: ../tmp/t3-code-v012
               or T3CODE_UPSTREAM)
 
 See docs/internals/upstream-sync.md.
@@ -43,7 +43,7 @@ done
 if [[ ! -d "${UPSTREAM}" ]]; then
   echo "Upstream checkout missing: ${UPSTREAM}" >&2
   echo "Clone with:" >&2
-  echo "  git clone --depth 1 --branch v0.0.45 https://github.com/pingdotgg/t3code.git ${DEFAULT_UPSTREAM}" >&2
+  echo "  git clone --depth 1 --branch v0.1.2 https://github.com/pingdotgg/t3code.git ${DEFAULT_UPSTREAM}" >&2
   exit 1
 fi
 

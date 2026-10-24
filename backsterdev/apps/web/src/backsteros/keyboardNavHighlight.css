@@ -1,0 +1,6 @@
+/* Match BacksterOS desktop keyboard-nav inset ring (not theme primary/blue). */
+:root {
+  --keyboard-nav-highlight-color: #ee7a47;
+  --keyboard-nav-highlight-bg: rgb(255 255 255 / 0.02);
+  --keyboard-nav-highlight-width: 1.5px;
+}

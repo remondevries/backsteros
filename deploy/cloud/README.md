@@ -1,7 +1,7 @@
 # cloud-core — Phase A (meeting booking)
 
-Runs `core/server` + Postgres on **Hetzner `lemodesign`** (`100.75.45.22` Tailscale,
-`46.225.171.3` public) alongside the client portal and agents door (kamal-proxy).
+Runs `core/server` + Postgres on **Hetzner `lemodesign`** (`100.83.125.67` Tailscale,
+`188.34.196.92` public) alongside the client portal and agents door (Caddy).
 Portal containers should reach the API at `http://172.18.0.1:8788` (kamal network
 gateway → host) or via Tailscale.
 
@@ -106,7 +106,7 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
 | `PORT` | `8788` |
 | `POWERSYNC_JWT_SECRET` | Signs `GET /api/v1/powersync/token`. Same value is rendered into the PowerSync JWKS. Already required. |
-| `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.75.45.22:8080` (tailnet only). |
+| `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.83.125.67:8080` (tailnet only). |
 | `POWERSYNC_DB_PASSWORD` | `powersync_role` password. Not the API secret. Min 16 characters. Lives only in the VPS `.env`. |
 
 ## PowerSync (product clients)
@@ -115,11 +115,11 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 
 Health proof from a tailnet Mac:
 
-- `GET http://100.75.45.22:8080/probes/liveness` → `200`, `ready: true`
-- `GET http://100.75.45.22:8080/probes/startup` → `200`, `started: true`
+- `GET http://100.83.125.67:8080/probes/liveness` → `200`, `ready: true`
+- `GET http://100.83.125.67:8080/probes/startup` → `200`, `started: true`
 - Replication lag `0s` after initial sync
-- `GET http://100.75.45.22:8788/health` → `ok: true`
-- `http://46.225.171.3:8080` does not answer (not published on the public interface)
+- `GET http://100.83.125.67:8788/health` → `ok: true`
+- `http://188.34.196.92:8080` does not answer (not published on the public interface)
 
 **Ready for desktop slice 1 wiring.** Do not point the apps yet. Still blocked on the client, not on this service: desktop still calls `ensure_docker`, cloud-core still rejects `Bearer local`, and `preferLocalPowerSyncEndpoint` still rewrites Tauri/localhost token requests to `http://127.0.0.1:8080`. iOS is not cut over.
 
@@ -127,13 +127,13 @@ Health proof from a tailnet Mac:
 
 | Use | URL / env |
 | --- | --- |
-| Cloud API (uploads, `GET /api/v1/powersync/token`) | Ops bind `http://100.75.45.22:8788`. Product desktop uses `https://api.local.backsteros.com` (`VITE_API_URL`). |
+| Cloud API (uploads, `GET /api/v1/powersync/token`) | Ops bind `http://100.83.125.67:8788`. Product desktop uses `https://api.local.backsteros.com` (`VITE_API_URL`). |
 | Same API via the agents door (REST only — not the sync socket) | `https://agent.backsteros.com` |
-| PowerSync sync stream | `http://100.75.45.22:8080` — cloud `POWERSYNC_URL` |
+| PowerSync sync stream | `http://100.83.125.67:8080` — cloud `POWERSYNC_URL` |
 
 Product desktop sets `VITE_API_URL` to `https://api.local.backsteros.com`. The token still returns the ops sync bind; the client rewrites cleartext `100.*` and loopback endpoints to `https://sync.local.backsteros.com`. Tokens are signed with the cloud `POWERSYNC_JWT_SECRET`. Do not reuse the Mac's local PowerSync JWT. Audience is `backsteros-powersync`, kid `backsteros-powersync-1`.
 
-`:8080` is published on `127.0.0.1` and `100.75.45.22` only.
+`:8080` is published on `127.0.0.1` and `100.83.125.67` only.
 
 The running `backsteros-cloud:latest` image's drizzle folder stops at `0122`. Migrations `0123`–`0125` (`task_labels`, including `tasks.label_ids`) were applied on the database and recorded in `drizzle.__drizzle_migrations`. Do not re-run `powersync-setup` from that image; its table list would drop `task_labels` from the publication. The next image deploy already contains those migrations (hashes match) and the current table list. Re-run setup after that deploy.
 
@@ -142,7 +142,7 @@ The running `backsteros-cloud:latest` image's drizzle folder stops at `0122`. Mi
 The VPS checkout is `/root/backsteros` (not a git clone). `deploy` cannot `cd` there; use `sudo` and `--project-directory`.
 
 1. Postgres must run with `wal_level=logical` (set in this compose file). Recreating the postgres container keeps the `cloud_core_pg` volume.
-2. Put `POWERSYNC_DB_PASSWORD` in `deploy/cloud/.env` if it is missing (`openssl rand -hex 24`). Do not print it. `POWERSYNC_URL=http://100.75.45.22:8080` if you do not want the compose default.
+2. Put `POWERSYNC_DB_PASSWORD` in `deploy/cloud/.env` if it is missing (`openssl rand -hex 24`). Do not print it. `POWERSYNC_URL=http://100.83.125.67:8080` if you do not want the compose default.
 3. Apply the role, grants, and `powersync` publication. Pass the password with `-e`. Use `pnpm exec tsx` so you are not depending on `--env-file=.env` inside the image:
 
 ```bash
@@ -169,8 +169,8 @@ sudo docker compose -f /root/backsteros/deploy/cloud/docker-compose.yml \
 
 ```bash
 curl -sf http://127.0.0.1:8080/probes/liveness
-curl -sf http://100.75.45.22:8080/probes/liveness
-curl -sf http://100.75.45.22:8080/probes/startup
+curl -sf http://100.83.125.67:8080/probes/liveness
+curl -sf http://100.83.125.67:8080/probes/startup
 ```
 
 `sync-config.yaml` is mounted from `deploy/powersync/sync-config.yaml` (same rules as local). After sync-table changes, re-run setup from a source that lists those tables, re-render only if the JWT or DB password changed, and restart `cloud-powersync-1`.
@@ -180,14 +180,14 @@ PowerSync on the VPS is the product sync target (profile `powersync`, tailnet `:
 ### Tailscale (instant cloud → local push)
 
 cloud-core runs on **Hetzner `lemodesign`**, already on your tailnet
-(`100.75.45.22`). Set:
+(`100.83.125.67`). Set:
 
 ```env
 # cloud .env
 CORE_REPLICATION_PEER_URL=http://100.94.74.107:8788   # macbook tailnet IP
 
 # local-core .env
-CORE_REPLICATION_PEER_URL=http://100.75.45.22:8788
+CORE_REPLICATION_PEER_URL=http://100.83.125.67:8788
 ```
 
 Local-core stays bound to `127.0.0.1`. **Hub** enables Tailscale Serve on API start:

@@ -230,7 +230,9 @@ function AppsListBody({
   }
 
   if (live.phase === "error") {
-    return <div className="px-4 py-8 text-center text-sm text-destructive">{live.message}</div>;
+    return (
+      <div className="px-4 py-8 text-center text-sm text-muted-foreground">{live.message}</div>
+    );
   }
 
   if (live.sites.length === 0) {
@@ -450,7 +452,7 @@ function DatabasesSection({ live }: { readonly live: LiveSitesState }) {
   if (live.phase === "error") {
     return (
       <SectionShell title="Databases">
-        <div className="px-4 py-8 text-center text-sm text-destructive">{live.message}</div>
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">{live.message}</div>
       </SectionShell>
     );
   }
@@ -513,7 +515,7 @@ function ActivitySection({ live }: { readonly live: LiveSitesState }) {
   if (live.phase === "error") {
     return (
       <SectionShell title="Activity">
-        <div className="px-4 py-8 text-center text-sm text-destructive">{live.message}</div>
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">{live.message}</div>
       </SectionShell>
     );
   }

@@ -4,15 +4,16 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Mime from "effect/http/Mime";
+import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import * as NodeTimersPromises from "node:timers/promises";
-import * as Path from "effect/Path";
-import * as Mime from "effect/unstable/http/Mime";
-import * as Ref from "effect/Ref";
-import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
@@ -56,25 +57,10 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedError<Elec
   }
 }
 
-// The scheme either proxies to a dev server (`targetOrigin`) or serves the
-// built client from disk (`assetDirectory`). Packaged mode still needs a
-// `backendOrigin` so relative `/api/*` fetches (Cursor credits, control API)
-// reach the local T3 server instead of falling through to index.html.
 export type DesktopProtocolRegistrationInput = {
   readonly scheme: string;
   readonly clerkFrontendApiHostname: string | undefined;
-} & (
-  | { readonly targetOrigin: URL }
-  | {
-      readonly assetDirectory: string;
-      readonly backendOrigin?: URL;
-    }
-);
-
-/** Local server HTTP routes that must not be served as SPA assets. */
-export function isDesktopBackendApiPath(pathname: string): boolean {
-  return pathname === "/api" || pathname.startsWith("/api/");
-}
+} & ({ readonly targetOrigin: URL } | { readonly assetDirectory: string });
 
 export class ElectronProtocol extends Context.Service<
   ElectronProtocol,
@@ -85,7 +71,7 @@ export class ElectronProtocol extends Context.Service<
   }
 >()("@t3tools/desktop/electron/ElectronProtocol") {}
 
-export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
+function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
   const clerkOrigin = input.clerkFrontendApiHostname
     ? `https://${input.clerkFrontendApiHostname}`
     : undefined;
@@ -113,9 +99,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    // Document viewers use local Blob URLs and signed assets from runtime environments.
-    // HTML viewers retain their own sandbox; the renderer's script policy stays unchanged.
     "frame-src 'self' blob: http: https:",
+    "object-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }
@@ -309,6 +294,57 @@ function backsterosUnreachableResponse(
   );
 }
 
+class ElectronProtocolFetchError extends Schema.TaggedError<ElectronProtocolFetchError>()(
+  "ElectronProtocolFetchError",
+  { cause: Schema.Defect() },
+) {}
+
+const netFetch = (url: string, init: RequestInit) =>
+  Effect.tryPromise({
+    try: () => Electron.net.fetch(url, init),
+    catch: (cause) => new ElectronProtocolFetchError({ cause }),
+  });
+
+// The dev renderer target can briefly refuse connections while Vite restarts:
+// retry idempotent requests after 50ms, then 150ms, and keep the last failure.
+const fetchWithTransientRetry = (url: string, init: RequestInit) =>
+  netFetch(url, init).pipe(
+    Effect.retry({ schedule: Schedule.exponential("50 millis", 3), times: 2 }),
+  );
+
+/**
+ * Prefer Chromium `net.fetch` (matches browser cookies / session). If that
+ * fails to reach local-core — common after core restarts or under Chromium
+ * loopback quirks — fall back to Node's fetch.
+ */
+async function fetchBacksterosUpstream(
+  targetUrl: string,
+  init: RequestInit,
+  method: string,
+): Promise<Response> {
+  try {
+    return method === "GET" || method === "HEAD"
+      ? await Effect.runPromise(fetchWithTransientRetry(targetUrl, init))
+      : await Electron.net.fetch(targetUrl, init);
+  } catch (electronError) {
+    try {
+      const nodeInit: RequestInit = {};
+      if (init.method !== undefined) nodeInit.method = init.method;
+      if (init.headers !== undefined) nodeInit.headers = init.headers;
+      if (method !== "GET" && method !== "HEAD" && init.body != null) {
+        if (init.body instanceof ReadableStream) {
+          nodeInit.body = await new Response(init.body).arrayBuffer();
+        } else {
+          nodeInit.body = init.body;
+        }
+      }
+      return await fetch(targetUrl, nodeInit);
+    } catch {
+      throw electronError;
+    }
+  }
+}
+
 async function proxyBacksterosRequest(
   request: Request,
   requestUrl: URL,
@@ -371,18 +407,15 @@ async function proxyBacksterosPathIfNeeded(
   return null;
 }
 
-async function proxyRequest(
+const proxyRequest = Effect.fn("desktop.protocol.proxyRequest")(function* (
   request: Request,
   targetOrigin: URL,
   contentSecurityPolicy: string,
-): Promise<Response> {
+) {
   const requestUrl = new URL(request.url);
   if (requestUrl.host !== DESKTOP_HOST) {
     return new Response(null, { status: 404 });
   }
-
-  const backsterResponse = await proxyBacksterosPathIfNeeded(request, contentSecurityPolicy);
-  if (backsterResponse) return backsterResponse;
 
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = stripHopByHopHeaders(request.headers);
@@ -411,16 +444,11 @@ async function proxyRequest(
   }
   const response =
     request.method === "GET" || request.method === "HEAD"
-      ? await fetchWithTransientRetry(targetUrl.toString(), init)
-      : await Electron.net.fetch(targetUrl.toString(), init);
+      ? yield* fetchWithTransientRetry(targetUrl.toString(), init)
+      : yield* netFetch(targetUrl.toString(), init);
   return withContentSecurityPolicy(response, contentSecurityPolicy);
-}
+});
 
-const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
-
-// Serves the packaged web client without a backend: files resolve within the
-// asset directory, and any other path falls back to index.html so the SPA
-// router handles it, except for asset-shaped misses (`/missing.js`) which 404.
 const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   request: Request,
   assetDirectory: string,
@@ -459,57 +487,6 @@ const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   });
 });
 
-async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
-  let lastError: unknown;
-
-  for (const delayMs of TRANSIENT_FETCH_RETRY_DELAYS_MS) {
-    if (delayMs > 0) {
-      await NodeTimersPromises.setTimeout(delayMs);
-    }
-
-    try {
-      return await Electron.net.fetch(url, init);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError;
-}
-
-/**
- * Prefer Chromium `net.fetch` (matches browser cookies / session). If that
- * fails to reach local-core — common after core restarts or under Chromium
- * loopback quirks — fall back to Node's fetch.
- */
-async function fetchBacksterosUpstream(
-  targetUrl: string,
-  init: RequestInit,
-  method: string,
-): Promise<Response> {
-  try {
-    return method === "GET" || method === "HEAD"
-      ? await fetchWithTransientRetry(targetUrl, init)
-      : await Electron.net.fetch(targetUrl, init);
-  } catch (electronError) {
-    try {
-      const nodeInit: RequestInit = {};
-      if (init.method !== undefined) nodeInit.method = init.method;
-      if (init.headers !== undefined) nodeInit.headers = init.headers;
-      if (method !== "GET" && method !== "HEAD" && init.body != null) {
-        if (init.body instanceof ReadableStream) {
-          nodeInit.body = await new Response(init.body).arrayBuffer();
-        } else {
-          nodeInit.body = init.body;
-        }
-      }
-      return await fetch(targetUrl, nodeInit);
-    } catch {
-      throw electronError;
-    }
-  }
-}
-
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
@@ -533,23 +510,19 @@ export const make = Effect.gen(function* () {
               if (backsterResponse) return backsterResponse;
 
               if ("assetDirectory" in input) {
-                const requestUrl = new URL(request.url);
-                // Bundled clients keep relative `/api/*` URLs (Cursor plan usage,
-                // Backster control). Without this hop they resolve to index.html
-                // under t3code:// and the sidebar shows "Cursor credits unavailable".
-                if (
-                  input.backendOrigin &&
-                  requestUrl.host === DESKTOP_HOST &&
-                  isDesktopBackendApiPath(requestUrl.pathname)
-                ) {
-                  return proxyRequest(request, input.backendOrigin, contentSecurityPolicy);
-                }
                 return withContentSecurityPolicy(
                   await runPromise(serveDesktopAsset(request, input.assetDirectory)),
                   contentSecurityPolicy,
                 );
               }
-              return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+              // Reject with net.fetch's own error, as an unproxied fetch would.
+              return runPromise(
+                proxyRequest(request, input.targetOrigin, contentSecurityPolicy).pipe(
+                  Effect.catchTags({
+                    ElectronProtocolFetchError: (error) => Effect.die(error.cause),
+                  }),
+                ),
+              );
             });
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

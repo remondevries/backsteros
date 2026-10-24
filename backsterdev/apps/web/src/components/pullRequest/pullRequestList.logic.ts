@@ -5,6 +5,7 @@ import {
   PullRequestListEntry,
   PullRequestListProjectError,
   PullRequestListResult,
+  pullRequestHostOf,
   resolvePullRequestAuthorFilter,
 } from "@t3tools/contracts";
 import type {
@@ -18,7 +19,10 @@ import type {
   PullRequestListFilters,
   PullRequestListState,
   PullRequestState,
+  RepositoryIdentity,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
+import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import { toSortableTimestamp } from "../../lib/threadSort";
 import type { PullRequestListSort } from "./pullRequestListPreferences";
@@ -1265,4 +1269,91 @@ export function settlePullRequestOverrides<Entry extends PullRequestListEntry>(
     if (!agrees && !outranked) kept.set(key, override);
   }
   return kept.size === overrides.size ? overrides : kept;
+}
+
+export type PullRequestQuickAction = "close" | "merge" | "ready" | "reopen";
+
+export function pullRequestHostActions(
+  providers: ReadonlyArray<PullRequestListResult["providers"][number]>,
+): (
+  entry: Pick<EnvironmentPullRequestEntry, "host" | "provider">,
+) => ReadonlySet<PullRequestAction> {
+  const byHost = new Map(
+    providers.flatMap((provider) =>
+      provider.actions === undefined
+        ? []
+        : [[provider.host.toLowerCase(), new Set(provider.actions)] as const],
+    ),
+  );
+  const legacy = new Set<PullRequestAction>(["close", "merge", "ready", "reopen"]);
+  const none = new Set<PullRequestAction>();
+  return (entry) =>
+    byHost.get(entry.host.toLowerCase()) ?? (entry.provider === "github" ? legacy : none);
+}
+
+export function pullRequestQuickActions(
+  entry: Pick<EnvironmentPullRequestEntry, "state" | "isDraft">,
+  hostActions: ReadonlySet<PullRequestAction>,
+): ReadonlyArray<PullRequestQuickAction> {
+  const forState: ReadonlyArray<PullRequestQuickAction> =
+    entry.state === "merged"
+      ? []
+      : entry.state === "closed"
+        ? ["reopen"]
+        : entry.isDraft
+          ? ["close", "ready"]
+          : ["close", "merge"];
+  return forState.filter((action) => hostActions.has(action));
+}
+
+export function largestPullRequestReadCount(
+  entries: ReadonlyArray<EnvironmentPullRequestEntry>,
+): number {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const read = `${entry.environmentId} ${entry.host.toLowerCase()} ${
+      entry.provider === "github" ? "" : entry.repository.toLowerCase()
+    }`;
+    counts.set(read, (counts.get(read) ?? 0) + 1);
+  }
+  return Math.max(0, ...counts.values());
+}
+
+export function findProjectForRepository<
+  Project extends {
+    readonly id: string;
+    readonly environmentId: string;
+    readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+  },
+>(
+  projects: ReadonlyArray<Project>,
+  input: {
+    readonly repository: string;
+    readonly host?: string | undefined;
+    readonly selectedEnvironmentId?: string | null | undefined;
+    readonly scopedProjectId?: string | undefined;
+    readonly scopedEnvironmentId?: string | null | undefined;
+  },
+): Project | undefined {
+  const repository = input.repository.toLowerCase();
+  const host = input.host?.toLowerCase();
+  const candidates = projects.filter((project) => {
+    if (
+      input.selectedEnvironmentId != null &&
+      project.environmentId !== input.selectedEnvironmentId
+    ) {
+      return false;
+    }
+    const identity = project.repositoryIdentity;
+    if (!identity || sourceControlRepositorySelector(identity)?.toLowerCase() !== repository) {
+      return false;
+    }
+    return (
+      host === undefined ||
+      pullRequestHostOf(identity, identity.provider as SourceControlProviderKind) === host
+    );
+  });
+  // Azure repository names can collide across projects on the same host.
+  const scoped = findScopedProject(candidates, input.scopedEnvironmentId, input.scopedProjectId);
+  return scoped ?? candidates[0];
 }

@@ -1,13 +1,15 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import * as Schema from "effect/Schema";
 
 import {
+  GitCommandError,
   PullRequestDetail,
   pullRequestHostOf,
   type PullRequestAction,
   type PullRequestActor,
   type PullRequestBaseComparison,
   type PullRequestCheck,
-  type PullRequestChecksState,
+  type PullRequestChecksState as ContractPullRequestChecksState,
   type PullRequestComment,
   type PullRequestCommit,
   type PullRequestContextMetadata,
@@ -26,6 +28,8 @@ import {
   type VcsRef,
 } from "@t3tools/contracts";
 import {
+  legacyThreadPullRequestKey,
+  resolveThreadCurrentPullRequestLink,
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
@@ -63,6 +67,118 @@ export function resolvePullRequestMergeMethod(
     if (method && allowed.includes(method)) return method;
   }
   return allowed[0] ?? "merge";
+}
+
+export function threadPullRequestPanelTarget(thread: {
+  readonly projectId: string;
+  readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
+  readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  readonly branchPullRequest?: ThreadLinkedPullRequest | null | undefined;
+}) {
+  const current = resolveThreadCurrentPullRequestLink(thread.pullRequests ?? []);
+  const legacy = thread.linkedPullRequest;
+  if (
+    current !== null &&
+    legacy != null &&
+    threadPullRequestKeysEqual(current, legacyThreadPullRequestKey(legacy))
+  ) {
+    return legacy;
+  }
+  if (current !== null) {
+    return {
+      projectId: thread.projectId,
+      host: current.host,
+      repository: current.repository,
+      number: current.number,
+      url: current.url,
+    };
+  }
+  return legacy ?? thread.branchPullRequest ?? null;
+}
+
+export type PullRequestActionableDetail = Pick<
+  PullRequestDetail,
+  "state" | "isDraft" | "mergeability" | "capabilities" | "viewerPermissions" | "mergeCapabilities"
+>;
+
+export function allowedPullRequestMergeMethods(
+  detail: Pick<PullRequestActionableDetail, "capabilities" | "mergeCapabilities"> | null,
+): ReadonlyArray<PullRequestMergeMethod> {
+  return detail === null
+    ? []
+    : detail.capabilities.mergeMethods.filter((method) => detail.mergeCapabilities[method]);
+}
+
+function canPerformPullRequestAction(
+  detail: Pick<PullRequestActionableDetail, "capabilities" | "viewerPermissions"> | null,
+  action: PullRequestAction,
+): boolean {
+  return (
+    detail !== null &&
+    detail.capabilities.actions.includes(action) &&
+    detail.viewerPermissions.actions.includes(action)
+  );
+}
+
+export function isPullRequestConflicting(
+  detail: Pick<PullRequestActionableDetail, "state" | "mergeability"> | null,
+): boolean {
+  return detail?.state === "open" && detail.mergeability === "conflicting";
+}
+
+/** Local rollup includes `none` for an empty check list — contract status has no empty sentinel. */
+export type PullRequestChecksState = "none" | ContractPullRequestChecksState;
+
+export function classifyPullRequestChecks(
+  checks: ReadonlyArray<PullRequestCheck>,
+): PullRequestChecksState {
+  if (checks.length === 0) return "none";
+  if (checks.some((check) => check.status === "failure" || check.status === "cancelled")) {
+    return "failing";
+  }
+  if (checks.some((check) => check.status === "pending" || check.status === "action-required")) {
+    return "pending";
+  }
+  return "passing";
+}
+
+export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
+  if (checks.length === 0) return "No checks reported";
+  const failed = checks.filter(
+    (check) => check.status === "failure" || check.status === "cancelled",
+  ).length;
+  const pending = checks.filter((check) => check.status === "pending").length;
+  const actionRequired = checks.filter((check) => check.status === "action-required").length;
+  const passed = checks.filter((check) => check.status === "success").length;
+  const parts: string[] = [];
+  if (pending > 0) parts.push(`${pending} of ${checks.length} running`);
+  if (actionRequired > 0) parts.push(`${actionRequired} of ${checks.length} awaiting action`);
+  if (failed > 0) {
+    parts.push(parts.length > 0 ? `${failed} failed` : `${failed} of ${checks.length} failing`);
+  }
+  if (parts.length === 0) {
+    return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
+  }
+  return parts.join(" · ");
+}
+
+export type ThreadPanelPullRequestAction = "resolve" | "ready" | "fix" | "merge";
+
+export function resolveThreadPanelPullRequestAction(
+  detail: (PullRequestActionableDetail & Pick<PullRequestDetail, "checks">) | null,
+): ThreadPanelPullRequestAction | null {
+  if (detail === null || detail.state !== "open") return null;
+  if (isPullRequestConflicting(detail)) return "resolve";
+  if (detail.isDraft) {
+    return canPerformPullRequestAction(detail, "ready") ? "ready" : null;
+  }
+  const checks = classifyPullRequestChecks(detail.checks);
+  if (checks === "failing") return "fix";
+  if (checks === "pending") return null;
+  return canPerformPullRequestAction(detail, "merge") &&
+    allowedPullRequestMergeMethods(detail).length > 0
+    ? "merge"
+    : null;
 }
 
 const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
@@ -137,6 +253,8 @@ export function pullRequestCheckoutCommand(
     }
     case "unknown":
       return null;
+    default:
+      return null;
   }
 }
 
@@ -146,14 +264,21 @@ export function loadingPullRequestCheckoutCommand(
   identity: RepositoryIdentity | null | undefined,
 ): string | null {
   const host = reference.host?.trim().toLowerCase();
-  const provider =
-    identity?.provider ??
-    (host === "github.com" ? "github" : host === "gitlab.com" ? "gitlab" : null);
-  if (provider !== "github" && provider !== "gitlab" && provider !== "azure-devops") return null;
-  if (identity?.provider !== undefined && host && pullRequestHostOf(identity, provider) !== host) {
+  const definition = identity?.provider
+    ? sourceControlClients.find(identity.provider)
+    : host
+      ? sourceControlClients.findByPublicHost(host)
+      : undefined;
+  const command = definition?.checkoutCommand({ number: reference.number, headBranch: "" });
+  if (!definition || !command) return null;
+  if (
+    identity?.provider !== undefined &&
+    host &&
+    pullRequestHostOf(identity, definition.kind) !== host
+  ) {
     return null;
   }
-  return pullRequestCheckoutCommand(provider, reference.number, "");
+  return command;
 }
 
 /** Activity changes only when the same host resource reports a newer revision. */
@@ -418,6 +543,12 @@ export interface PullRequestTimelineEvent {
   readonly reviewState: string | null;
   /** Empty for everything but a comment, which is the only entry a host lets anyone react to. */
   readonly reactions: ReadonlyArray<PullRequestReaction>;
+}
+
+export interface PullRequestReplyAvailability {
+  readonly moreReplies: number;
+  readonly hasMoreReplies: boolean;
+  readonly url: string | null;
 }
 
 export type PullRequestTimelineRow =
@@ -1075,10 +1206,25 @@ export function readableFailure(failure: unknown, hint: string): string {
   return bounded;
 }
 
+const isGitCommandError = Schema.is(GitCommandError);
+
+/** Toast body when preparing a PR checkout fails. */
+export function checkoutFailureDescription(failure: unknown): string {
+  const description = isGitCommandError(failure)
+    ? failure.reason === undefined
+      ? failure.detail
+      : `${failure.detail} (${failure.reason})`
+    : failure;
+  return readableFailure(
+    description,
+    "Check that the branch still exists and is not checked out elsewhere, then try again.",
+  );
+}
+
 /**
  * Where the branch stands against its base, said the way GitHub says it: current, out of date but
- * still cleanly mergeable, or conflicting. Only the middle one is an offer — the conflicts row
- * already speaks for a branch that collides, and a current branch has nothing to report.
+  * still cleanly mergeable, or conflicting. Only the middle one is an offer — the conflicts row
+  * already speaks for a branch that collides, and a current branch has nothing to report.
  *
  * Null where there is nothing to show, which is also every host that cannot compare or has not
  * said yet: silence is not the same claim as "up to date", and a banner nobody can act on is
@@ -1127,6 +1273,7 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "enable-auto-merge": false,
   "disable-auto-merge": false,
   revert: false,
+  "delete-branch": false,
   "approve-workflows": true,
 };
 
@@ -1134,15 +1281,29 @@ export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): bo
   return ACTION_NEEDS_HOST_REFRESH[action];
 }
 
-type SnapshotStorage = Pick<Storage, "getItem" | "setItem">;
+export function canDeletePullRequestBranch(
+  detail: Pick<PullRequestDetail, "state"> & {
+    readonly capabilities: Pick<PullRequestDetail["capabilities"], "actions" | "deleteBranch">;
+    readonly viewerPermissions: Pick<PullRequestDetail["viewerPermissions"], "actions">;
+  },
+): boolean {
+  return (
+    detail.state !== "open" &&
+    detail.capabilities.deleteBranch === true &&
+    detail.capabilities.actions.includes("delete-branch") &&
+    detail.viewerPermissions.actions.includes("delete-branch")
+  );
+}
+
+type SnapshotStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function resolvePullRequestReferenceHost(
   reference: PullRequestRef,
   identity: RepositoryIdentity | null | undefined,
 ): PullRequestRef {
-  // Other providers may resolve an SSH remote to a different web authority on the server.
-  if (reference.host !== undefined || identity?.provider !== "github") return reference;
-  return { ...reference, host: pullRequestHostOf(identity, "github") };
+  if (reference.host !== undefined || !identity?.provider) return reference;
+  const host = sourceControlClients.get(identity.provider).checkoutChangeRequestHost(identity);
+  return host === null ? reference : { ...reference, host };
 }
 
 export interface PullRequestDetailSnapshotRef {
@@ -1191,17 +1352,38 @@ export function readPullRequestDetailSnapshot(
   }
 }
 
+// Snapshot keys in the order they were last written, oldest first.
+const PULL_REQUEST_DETAIL_SNAPSHOT_INDEX_KEY = "t3.pullRequests.recentDetails";
+const PULL_REQUEST_DETAIL_SNAPSHOT_LIMIT = 20;
+
+function readPullRequestDetailSnapshotIndex(storage: SnapshotStorage): string[] {
+  try {
+    const keys: unknown = JSON.parse(
+      storage.getItem(PULL_REQUEST_DETAIL_SNAPSHOT_INDEX_KEY) ?? "[]",
+    );
+    return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps the snapshots of the 20 most recently saved pull requests and removes older ones. */
 export function writePullRequestDetailSnapshot(
   storage: SnapshotStorage | undefined,
   environmentId: string,
   reference: PullRequestDetailSnapshotRef,
   detail: PullRequestDetail,
 ): void {
+  if (!storage) return;
   try {
-    storage?.setItem(
-      pullRequestDetailSnapshotKey(environmentId, reference),
-      JSON.stringify(detail),
-    );
+    const key = pullRequestDetailSnapshotKey(environmentId, reference);
+    const recent = readPullRequestDetailSnapshotIndex(storage).filter((entry) => entry !== key);
+    recent.push(key);
+    for (const evicted of recent.splice(0, recent.length - PULL_REQUEST_DETAIL_SNAPSHOT_LIMIT)) {
+      storage.removeItem(evicted);
+    }
+    storage.setItem(PULL_REQUEST_DETAIL_SNAPSHOT_INDEX_KEY, JSON.stringify(recent));
+    storage.setItem(key, JSON.stringify(detail));
   } catch {
     // Quota or a private-mode store: the next open waits on the live read, which is the
     // cold start this snapshot exists to avoid, not a failure of its own.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
+import "~/backsteros/keyboardNavHighlight.css";
 import {
   BACKSTEROS_INBOX_ATTENTION_STATUSES,
   updateBacksterosProject,
@@ -25,6 +26,11 @@ import { isBacksterosGoEditableTarget } from "~/backsteros/backsterosRailMode";
 import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeModalOpen";
 import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
+import { backsterosCodebaseListTabSearch } from "~/backsteros/codebaseListTabs";
+import {
+  getBacksterosCodebaseProjectTab,
+  rememberBacksterosCodebaseProjectTab,
+} from "~/backsteros/codebaseProjectTabStore";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
 import type { BacksterosProjectSortPatch } from "~/backsteros/project-reorder";
@@ -252,12 +258,14 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       const t3ProjectKey = t3Project
         ? deriveLogicalProjectKeyFromSettings(t3Project, projectGroupingSettings)
         : null;
+      const tab = getBacksterosCodebaseProjectTab();
       void router.navigate({
         to: "/backsteros/project/$projectId",
         params: { projectId: project.id },
         search: {
           ...(project.name.trim() ? { title: project.name } : {}),
           ...(t3ProjectKey ? { project: t3ProjectKey } : {}),
+          ...backsterosCodebaseListTabSearch(tab),
         },
       });
     },
@@ -296,24 +304,37 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     return true;
   }, [clearTaskDetail, router, selectedProjectId, selection?.project.id, taskListProject?.id]);
 
+  /** Close the open task and restore the project page (sticky tab, usually Tasks). */
+  const restoreProjectFromOpenTask = useCallback(
+    (project: BacksterosCodebaseProject) => {
+      lastProjectsRailHighlightRef.current = project.id;
+      setSidepanelHighlightId(project.id);
+      clearTaskDetail();
+      useListKeyboardNavStore.getState().setActiveZone("main");
+      // Returning from a task always lands on Tasks and pins that sticky tab.
+      rememberBacksterosCodebaseProjectTab("tasks");
+      const t3Project = resolveT3ProjectForBacksterosProject(projects, project);
+      const t3ProjectKey = t3Project
+        ? deriveLogicalProjectKeyFromSettings(t3Project, projectGroupingSettings)
+        : null;
+      void router.navigate({
+        to: "/backsteros/project/$projectId",
+        params: { projectId: project.id },
+        search: {
+          ...backsterosCodebaseListTabSearch("tasks"),
+          ...(project.name.trim() ? { title: project.name } : {}),
+          ...(t3ProjectKey ? { project: t3ProjectKey } : {}),
+        },
+      });
+    },
+    [clearTaskDetail, projectGroupingSettings, projects, router],
+  );
+
   const handleBackToProjects = useCallback(() => {
     const project = taskListProject;
-    clearTaskDetail();
     if (!project) return;
-    useListKeyboardNavStore.getState().setActiveZone("main");
-    const t3Project = resolveT3ProjectForBacksterosProject(projects, project);
-    const t3ProjectKey = t3Project
-      ? deriveLogicalProjectKeyFromSettings(t3Project, projectGroupingSettings)
-      : null;
-    void router.navigate({
-      to: "/backsteros/project/$projectId",
-      params: { projectId: project.id },
-      search: {
-        ...(project.name.trim() ? { title: project.name } : {}),
-        ...(t3ProjectKey ? { project: t3ProjectKey } : {}),
-      },
-    });
-  }, [clearTaskDetail, projectGroupingSettings, projects, router, taskListProject]);
+    restoreProjectFromOpenTask(project);
+  }, [restoreProjectFromOpenTask, taskListProject]);
 
   const handleSelectProjectTask = useCallback(
     (task: BacksterosTask) => {
@@ -560,6 +581,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
 
   const leaveOpenProjectRef = useRef(leaveOpenProject);
   leaveOpenProjectRef.current = leaveOpenProject;
+  const restoreProjectFromOpenTaskRef = useRef(restoreProjectFromOpenTask);
+  restoreProjectFromOpenTaskRef.current = restoreProjectFromOpenTask;
   const keybindingsRef = useRef(keybindings);
   keybindingsRef.current = keybindings;
   const routeTerminalOpenRef = useRef(routeTerminalOpen);
@@ -576,7 +599,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       // 0) property dropdown open → close menu only (do not leave task/project)
       // 1) yield to composer / editable (blur first)
       // 2) open task → return focus to the task list (keep task open)
-      // 3) project page → projects rail root
+      // 3) open task + sidepanel focused → restore project Tasks tab
+      // 4) project page → projects rail root (empty picker)
       // Tab switches sidepanel ↔ main without leaving.
       if (
         event.key === "Escape" &&
@@ -627,8 +651,9 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
             useListKeyboardNavStore.getState().setActiveZone("sidepanel");
             return;
           }
-          // Already on the sidepanel list — step up to the projects rail.
-          leaveOpenProjectRef.current();
+          // Already on the sidepanel list — close the task and reopen the
+          // project on Tasks (previous workbench state), not the empty picker.
+          restoreProjectFromOpenTaskRef.current(currentSelection.project);
           return;
         }
 
@@ -636,7 +661,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
           event.preventDefault();
           event.stopPropagation();
           const { activeZone } = useListKeyboardNavStore.getState();
-          // From the project task list → projects rail (keep project open).
+          // From the project main pane → projects rail (keep project open).
           if (activeZone !== "sidepanel") {
             useListKeyboardNavStore.getState().setActiveZone("sidepanel");
             return;
@@ -730,7 +755,6 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
               activeTaskId={sidepanelActiveTaskId}
               keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
               statusFilter={INBOX_STATUS_FILTER}
-              showDueGroup
               projectNameById={projectNameById}
               projectById={projectById}
               emptyLabel="Nothing needs attention"
@@ -755,7 +779,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
                   type="button"
                   onClick={handleBackToProjects}
                   className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  aria-label="Back to BacksterOS projects"
+                  aria-label="Back to project tasks"
                 >
                   <ArrowLeftIcon className="size-4" />
                 </button>

@@ -1,15 +1,39 @@
 /**
- * Dispatch control-API sessions against a paired remote T3 environment via its
- * orchestration HTTP API (stock `t3 serve` has no Backster control routes).
+ * Dispatch control-API sessions against a paired remote T3 environment
+ * (stock `t3 serve`, orchestration protocol V2 — no Backster control routes).
+ *
+ * - Reads: `GET /api/orchestration/shell` (+ `x-t3-orchestration-protocol: 2`).
+ * - Projects: `POST /api/projects/mutate`.
+ * - Commands (`thread.create`, `message.dispatch`): `orchestration.dispatchCommand`
+ *   over the environment WebSocket RPC; V2 has no HTTP dispatch route.
  */
 import {
+  ORCHESTRATION_PROTOCOL_HEADER,
+  ORCHESTRATION_PROTOCOL_QUERY_PARAM,
+  ORCHESTRATION_PROTOCOL_VERSION,
+  ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+  ORCHESTRATION_V2_WS_METHODS,
   ProviderInstanceId,
   type ModelSelection,
   type OrchestrationProjectShell,
-  type OrchestrationThreadShell,
+  type OrchestrationV2Command,
+  OrchestrationV2ThreadShell,
+  WsRpcGroup,
 } from "@t3tools/contracts";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { createModelSelection } from "@t3tools/shared/model";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
+import * as RpcClient from "effect/rpc/RpcClient";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
+import * as Socket from "effect/socket/Socket";
+
+/** JSON wire form of a V2 thread shell (dates and ids are plain strings). */
+export type RemoteThreadShell = typeof OrchestrationV2ThreadShell.Encoded;
 
 function matchRemoteT3Project<T extends { readonly id: string; readonly workspaceRoot: string }>(
   projects: ReadonlyArray<T>,
@@ -52,6 +76,8 @@ async function remoteFetchJson(input: {
   readonly method: "GET" | "POST";
   readonly pathname: string;
   readonly body?: unknown;
+  /** Orchestration reads require the V2 protocol header. */
+  readonly orchestrationProtocol?: boolean;
 }): Promise<{ readonly status: number; readonly json: unknown }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REMOTE_FETCH_TIMEOUT_MS);
@@ -60,6 +86,9 @@ async function remoteFetchJson(input: {
       Authorization: `Bearer ${input.accessToken}`,
       Accept: "application/json",
     };
+    if (input.orchestrationProtocol === true) {
+      headers[ORCHESTRATION_PROTOCOL_HEADER] = ORCHESTRATION_PROTOCOL_VERSION_TEXT;
+    }
     if (input.body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
@@ -100,104 +129,234 @@ function failRemote(status: number, error: string, code: string): ControlRemoteH
   return { status, error, code };
 }
 
+function failRemoteUnauthorized(status: number): ControlRemoteHttpError {
+  return failRemote(
+    status,
+    "Remote environment rejected the stored access token",
+    "remote_unauthorized",
+  );
+}
+
+function remoteErrorDetail(json: unknown): string {
+  if (!json || typeof json !== "object") return "";
+  const record = json as { reason?: unknown; message?: unknown; error?: unknown };
+  for (const value of [record.message, record.reason, record.error]) {
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return "";
+}
+
+/** V2 shell snapshot (`GET /api/orchestration/shell`): projects plus active/archived threads. */
 export async function fetchRemoteShellSnapshot(input: {
   readonly httpBaseUrl: string;
   readonly accessToken: string;
 }): Promise<{
   readonly projects: OrchestrationProjectShell[];
-  readonly threads: OrchestrationThreadShell[];
+  readonly threads: RemoteThreadShell[];
+  readonly archivedThreads: RemoteThreadShell[];
 }> {
-  // Full snapshot includes soft-deleted filtering the shell endpoint may omit.
   const { status, json } = await remoteFetchJson({
     ...input,
     method: "GET",
-    pathname: "/api/orchestration/snapshot",
+    pathname: "/api/orchestration/shell",
+    orchestrationProtocol: true,
   });
   if (status === 401 || status === 403) {
-    throw failRemote(
-      status,
-      "Remote environment rejected the stored access token",
-      "remote_unauthorized",
-    );
+    throw failRemoteUnauthorized(status);
   }
   if (status < 200 || status >= 300 || !json || typeof json !== "object") {
+    const detail = remoteErrorDetail(json);
     throw failRemote(
       status >= 400 ? status : 502,
-      `Failed to read remote orchestration snapshot (HTTP ${status})`,
+      `Failed to read remote orchestration shell (HTTP ${status}${detail ? `: ${detail}` : ""})`,
       "remote_snapshot_failed",
     );
   }
   const body = json as {
     projects?: OrchestrationProjectShell[];
-    threads?: OrchestrationThreadShell[];
+    threads?: RemoteThreadShell[];
+    archivedThreads?: RemoteThreadShell[];
   };
   return {
     projects: Array.isArray(body.projects) ? body.projects : [],
     threads: Array.isArray(body.threads) ? body.threads : [],
+    archivedThreads: Array.isArray(body.archivedThreads) ? body.archivedThreads : [],
   };
 }
 
+/**
+ * V2 `GET /api/orchestration/threads/:id` returns the full thread projection
+ * (an app thread without live status), so the control API reads the thread
+ * shell from the shell snapshot instead.
+ */
 export async function fetchRemoteThreadShell(input: {
   readonly httpBaseUrl: string;
   readonly accessToken: string;
   readonly threadId: string;
-}): Promise<OrchestrationThreadShell | null> {
-  const { status, json } = await remoteFetchJson({
+}): Promise<RemoteThreadShell | null> {
+  const shell = await fetchRemoteShellSnapshot({
     httpBaseUrl: input.httpBaseUrl,
     accessToken: input.accessToken,
-    method: "GET",
-    pathname: `/api/orchestration/threads/${encodeURIComponent(input.threadId)}`,
   });
-  if (status === 404) return null;
-  if (status === 401 || status === 403) {
-    throw failRemote(
-      status,
-      "Remote environment rejected the stored access token",
-      "remote_unauthorized",
-    );
-  }
-  if (status < 200 || status >= 300 || !json || typeof json !== "object") {
-    throw failRemote(
-      status >= 400 ? status : 502,
-      `Failed to read remote thread (HTTP ${status})`,
-      "remote_thread_failed",
-    );
-  }
-  const thread = (json as { thread?: OrchestrationThreadShell }).thread;
-  return thread ?? null;
+  return (
+    shell.threads.find((thread) => thread.id === input.threadId) ??
+    shell.archivedThreads.find((thread) => thread.id === input.threadId) ??
+    null
+  );
 }
 
-export async function dispatchRemoteOrchestrationCommand(input: {
+/** `POST /api/projects/mutate` → `project.create` (V2 projects are not orchestration commands). */
+export async function createRemoteProject(input: {
   readonly httpBaseUrl: string;
   readonly accessToken: string;
-  readonly command: Record<string, unknown>;
+  readonly commandId: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly workspaceRoot: string;
 }): Promise<void> {
   const { status, json } = await remoteFetchJson({
     httpBaseUrl: input.httpBaseUrl,
     accessToken: input.accessToken,
     method: "POST",
-    pathname: "/api/orchestration/dispatch",
-    body: input.command,
+    pathname: "/api/projects/mutate",
+    // Omit createWorkspaceRootIfMissing — a true value fails when another
+    // project already owns the path.
+    body: {
+      type: "project.create",
+      commandId: input.commandId,
+      projectId: input.projectId,
+      title: input.title,
+      workspaceRoot: input.workspaceRoot,
+    },
   });
   if (status === 401 || status === 403) {
-    throw failRemote(
-      status,
-      "Remote environment rejected the stored access token",
-      "remote_unauthorized",
-    );
+    throw failRemoteUnauthorized(status);
   }
   if (status < 200 || status >= 300) {
-    const detail =
-      json && typeof json === "object" && "reason" in json
-        ? String((json as { reason?: unknown }).reason ?? "")
-        : "";
+    const detail = remoteErrorDetail(json);
     throw failRemote(
       status >= 400 && status < 600 ? status : 502,
       detail
-        ? `Remote orchestration dispatch failed: ${detail}`
-        : `Remote orchestration dispatch failed (HTTP ${status})`,
-      "remote_dispatch_failed",
+        ? `Remote project create failed: ${detail}`
+        : `Remote project create failed (HTTP ${status})`,
+      "project_create_failed",
     );
+  }
+}
+
+/** `http(s)://host[/prefix]` → `ws(s)://host[/prefix]/ws?wsTicket=…&orchestrationProtocol=2`. */
+export function buildRemoteWebSocketUrl(httpBaseUrl: string, wsTicket: string): string {
+  const url = new URL(httpBaseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const basePath = url.pathname.replace(/\/+$/, "");
+  url.pathname = `${basePath}/ws`;
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("wsTicket", wsTicket);
+  url.searchParams.set(ORCHESTRATION_PROTOCOL_QUERY_PARAM, String(ORCHESTRATION_PROTOCOL_VERSION));
+  return url.toString();
+}
+
+async function issueRemoteWebSocketTicket(input: {
+  readonly httpBaseUrl: string;
+  readonly accessToken: string;
+}): Promise<string> {
+  const { status, json } = await remoteFetchJson({
+    httpBaseUrl: input.httpBaseUrl,
+    accessToken: input.accessToken,
+    method: "POST",
+    pathname: "/api/auth/websocket-ticket",
+  });
+  if (status === 401 || status === 403) {
+    throw failRemoteUnauthorized(status);
+  }
+  const ticket =
+    json && typeof json === "object" ? (json as { ticket?: unknown }).ticket : undefined;
+  if (status < 200 || status >= 300 || typeof ticket !== "string" || ticket.length === 0) {
+    throw failRemote(
+      status >= 400 && status < 600 ? status : 502,
+      `Failed to mint remote WebSocket ticket (HTTP ${status})`,
+      "remote_ticket_failed",
+    );
+  }
+  return ticket;
+}
+
+function mapRemoteRpcFailure(cause: Cause.Cause<unknown>): ControlRemoteHttpError {
+  const error = Cause.squash(cause) as { readonly _tag?: string; readonly message?: string };
+  const message = typeof error?.message === "string" ? error.message : "";
+  switch (error?._tag) {
+    case "EnvironmentAuthorizationError":
+      return failRemote(
+        403,
+        message || "Remote environment denied the command",
+        "remote_unauthorized",
+      );
+    case "OrchestrationV2DispatchCommandError":
+      return failRemote(
+        500,
+        `Remote orchestration dispatch failed: ${message || "command rejected"}`,
+        "remote_dispatch_failed",
+      );
+    case "TimeoutError":
+      return failRemote(
+        504,
+        `Remote environment timed out after ${REMOTE_FETCH_TIMEOUT_MS}ms`,
+        "remote_timeout",
+      );
+    default:
+      return failRemote(
+        502,
+        message
+          ? `Remote WebSocket dispatch failed: ${message}`
+          : "Remote WebSocket dispatch failed",
+        "remote_dispatch_failed",
+      );
+  }
+}
+
+/**
+ * Send exactly one `orchestration.dispatchCommand` RPC over a short-lived
+ * environment WebSocket (same wire as client-runtime: JSON-serialized Effect
+ * RPC over `/ws?wsTicket=…&orchestrationProtocol=2`), then close it.
+ */
+const dispatchOverRemoteWebSocket = (input: {
+  readonly socketUrl: string;
+  readonly command: OrchestrationV2Command;
+}) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const layerSocket = Socket.layerWebSocket(input.socketUrl, {
+        openTimeout: "15 seconds",
+      }).pipe(Layer.provide(NodeSocket.layerWebSocketConstructor));
+      const layerProtocol = Layer.effect(
+        RpcClient.Protocol,
+        RpcClient.makeProtocolSocket({
+          retryTransientErrors: false,
+          retryPolicy: Schedule.recurs(0),
+        }),
+      ).pipe(Layer.provide(Layer.mergeAll(layerSocket, RpcSerialization.layerJson)));
+      const protocolContext = yield* Layer.build(layerProtocol);
+      const client = yield* RpcClient.make(WsRpcGroup).pipe(Effect.provide(protocolContext));
+      return yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](input.command);
+    }),
+  ).pipe(Effect.timeout(Duration.millis(REMOTE_FETCH_TIMEOUT_MS)));
+
+/** Dispatch one V2 orchestration command (`thread.create`, `message.dispatch`, …) on a remote. */
+export async function dispatchRemoteOrchestrationCommand(input: {
+  readonly httpBaseUrl: string;
+  readonly accessToken: string;
+  readonly command: OrchestrationV2Command;
+}): Promise<void> {
+  const ticket = await issueRemoteWebSocketTicket(input);
+  const exit = await Effect.runPromiseExit(
+    dispatchOverRemoteWebSocket({
+      socketUrl: buildRemoteWebSocketUrl(input.httpBaseUrl, ticket),
+      command: input.command,
+    }),
+  );
+  if (exit._tag === "Failure") {
+    throw mapRemoteRpcFailure(exit.cause);
   }
 }
 
@@ -208,7 +367,6 @@ export async function resolveOrCreateRemoteT3Project(input: {
   readonly projectIdOverride: string | null;
   readonly preferredTitle: string | null | undefined;
   readonly newIds: () => { readonly projectId: string; readonly commandId: string };
-  readonly nowIso: string;
 }): Promise<OrchestrationProjectShell> {
   const shell = await fetchRemoteShellSnapshot(input);
   const matched = matchRemoteT3Project(shell.projects, {
@@ -233,19 +391,13 @@ export async function resolveOrCreateRemoteT3Project(input: {
       ?.trim() || "project";
   const title = input.preferredTitle?.trim() || basename;
 
-  // Omit createWorkspaceRootIfMissing — older remotes reject an explicit false,
-  // and a true value fails when another project already owns the path.
-  await dispatchRemoteOrchestrationCommand({
+  await createRemoteProject({
     httpBaseUrl: input.httpBaseUrl,
     accessToken: input.accessToken,
-    command: {
-      type: "project.create",
-      commandId: ids.commandId,
-      projectId: ids.projectId,
-      title,
-      workspaceRoot: input.workspaceRoot,
-      createdAt: input.nowIso,
-    },
+    commandId: ids.commandId,
+    projectId: ids.projectId,
+    title,
+    workspaceRoot: input.workspaceRoot,
   });
 
   const after = await fetchRemoteShellSnapshot(input);

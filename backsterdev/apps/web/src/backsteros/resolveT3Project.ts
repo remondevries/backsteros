@@ -30,6 +30,10 @@ export function resolveT3ProjectRefForBacksterosProject(
   return scopeProjectRef(project.environmentId, project.id);
 }
 
+function isSameOrNestedPath(parent: string, child: string): boolean {
+  return child === parent || child.startsWith(`${parent}/`);
+}
+
 /** Reverse of {@link resolveT3ProjectForBacksterosProject}: match by working directory. */
 export function resolveBacksterosProjectForWorkspaceRoot(
   projects: ReadonlyArray<BacksterosCodebaseProject>,
@@ -37,12 +41,28 @@ export function resolveBacksterosProjectForWorkspaceRoot(
 ): BacksterosCodebaseProject | null {
   const normalizedCandidate = normalizeProjectPathForComparison(workspaceRoot);
   if (normalizedCandidate.length === 0) return null;
-  return (
-    projects.find((project) => {
-      const cwd = project.localWorkingDirectory?.trim();
-      return cwd ? normalizeProjectPathForComparison(cwd) === normalizedCandidate : false;
-    }) ?? null
-  );
+
+  let best: { readonly project: BacksterosCodebaseProject; readonly cwdLength: number } | null =
+    null;
+  for (const project of projects) {
+    const rawCwd = project.localWorkingDirectory?.trim();
+    if (!rawCwd) continue;
+    const cwd = normalizeProjectPathForComparison(rawCwd);
+    if (cwd.length === 0) continue;
+    // Exact match, or Dig workspace nested under the BacksterOS project root
+    // (e.g. Codebase/development ↔ Codebase), or the reverse.
+    if (
+      cwd !== normalizedCandidate &&
+      !isSameOrNestedPath(cwd, normalizedCandidate) &&
+      !isSameOrNestedPath(normalizedCandidate, cwd)
+    ) {
+      continue;
+    }
+    if (!best || cwd.length > best.cwdLength) {
+      best = { project, cwdLength: cwd.length };
+    }
+  }
+  return best?.project ?? null;
 }
 
 /**

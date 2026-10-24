@@ -2,7 +2,6 @@ import type { ContextMenuItem } from "@t3tools/contracts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Inline Lucide-style icon paths (stroke-based, viewBox 0 0 24 24, strokeWidth 2).
 const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<string, string> }>> = {
   archive: [
     { tag: "rect", attrs: { width: "20", height: "5", x: "2", y: "3", rx: "1" } },
@@ -19,30 +18,6 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
   "circle-check": [
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
     { tag: "path", attrs: { d: "m9 12 2 2 4-4" } },
-  ],
-  palette: [
-    {
-      tag: "circle",
-      attrs: { cx: "13.5", cy: "6.5", r: ".5", fill: "currentColor" },
-    },
-    {
-      tag: "circle",
-      attrs: { cx: "17.5", cy: "10.5", r: ".5", fill: "currentColor" },
-    },
-    {
-      tag: "circle",
-      attrs: { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor" },
-    },
-    {
-      tag: "circle",
-      attrs: { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor" },
-    },
-    {
-      tag: "path",
-      attrs: {
-        d: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z",
-      },
-    },
   ],
   clock: [
     { tag: "path", attrs: { d: "M12 6v6l4 2" } },
@@ -189,27 +164,6 @@ function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSV
   return svg;
 }
 
-function normalizeMenuSwatchColor(value: string | undefined): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return /^#[0-9A-Fa-f]{6}$/u.test(trimmed) ? trimmed : null;
-}
-
-/** Small rounded color chip shown before a Color submenu label. */
-function createSwatchElement(hex: string): HTMLSpanElement {
-  const swatch = document.createElement("span");
-  swatch.setAttribute("aria-hidden", "true");
-  swatch.style.cssText = [
-    "display:inline-block",
-    "width:0.75rem",
-    "height:0.75rem",
-    "flex-shrink:0",
-    "border-radius:3px",
-    `background-color:${hex}`,
-  ].join(";");
-  return swatch;
-}
-
 function clampMenuPosition(menu: HTMLDivElement, preferredLeft: number, preferredTop: number) {
   const rect = menu.getBoundingClientRect();
   const left = Math.min(
@@ -242,29 +196,17 @@ function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly H
   return false;
 }
 
-// Only one fallback menu exists at a time in the renderer; the active one is
-// tracked so a state change (for example a terminal selection clearing) can
-// dismiss it with the same result as an outside click or Escape.
 let activeContextMenuDismiss: (() => void) | null = null;
 
 export function isContextMenuOpen(): boolean {
   return activeContextMenuDismiss !== null;
 }
 
-/**
- * Closes the currently open fallback context menu, resolving its show() with
- * null (the same result as dismissing by outside click or Escape). No-op when
- * no fallback menu is open.
- */
 export function dismissContextMenu(): void {
   activeContextMenuDismiss?.();
   activeContextMenuDismiss = null;
 }
 
-/**
- * Imperative DOM-based context menu for non-Electron environments.
- * Supports nested submenus and resolves with the clicked leaf item id.
- */
 export function showContextMenuFallback<T extends string>(
   items: readonly ContextMenuItem<T>[],
   position?: { x: number; y: number },
@@ -349,9 +291,9 @@ export function showContextMenuFallback<T extends string>(
 
       const inner = document.createElement("div");
       inner.className =
-        "max-h-[min(24rem,70vh)] min-w-0 max-w-sm overflow-y-auto overflow-x-hidden p-1";
+        "max-h-[calc(100vh-0.5rem)] min-w-0 max-w-sm overflow-y-auto overflow-x-hidden p-1";
       inner.style.cssText =
-        "max-height:min(24rem,70vh);min-width:0;max-width:24rem;overflow-x:hidden;overflow-y:auto;padding:0.25rem;";
+        "max-height:calc(100vh - 0.5rem);min-width:0;max-width:24rem;overflow-x:hidden;overflow-y:auto;padding:0.25rem;";
 
       for (const item of entries) {
         if (item.separatorBefore === true && inner.children.length > 0) {
@@ -399,8 +341,6 @@ export function showContextMenuFallback<T extends string>(
         }
 
         if (typeof item.checked === "boolean") {
-          // Option rows use the icon slot for the check so labels line up
-          // with icon rows. The unselected option keeps the slot empty.
           button.setAttribute("role", "menuitemradio");
           button.setAttribute("aria-checked", item.checked ? "true" : "false");
           const check = item.checked ? createIconElement("check", "neutral") : null;
@@ -417,11 +357,6 @@ export function showContextMenuFallback<T extends string>(
           const icon = createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral");
           if (icon) {
             button.appendChild(icon);
-          }
-        } else {
-          const swatchColor = normalizeMenuSwatchColor(item.swatchColor);
-          if (swatchColor) {
-            button.appendChild(createSwatchElement(swatchColor));
           }
         }
 

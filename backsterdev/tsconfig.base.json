@@ -22,13 +22,18 @@
       {
         "name": "@effect/language-service",
         "namespaceImportPackages": ["@effect/platform-node", "effect"],
+        "effectFn": ["span", "inferred-span", "suggested-span"],
         "diagnosticSeverity": {
-          "importFromBarrel": "error",
+          "effectFnOpportunity": "suggestion",
           "anyUnknownInErrorContext": "error",
           "unsafeEffectTypeAssertion": "error",
           "instanceOfSchema": "error",
           "deterministicKeys": "error",
           "strictEffectProvide": "off",
+          // We use Effect's unstable modules (http, sql) on purpose. These rules
+          // also make effect-tsgo 0.47+ report false TS2790 errors on `delete`.
+          "unstableApiUsage": "off",
+          "experimentalApiUsage": "off",
           "missingEffectServiceDependency": "error",
           "leakingRequirements": "error",
           "globalErrorInEffectCatch": "error",
@@ -53,36 +58,26 @@
           "globalFetchInEffect": "error",
           "schemaNumber": "off"
         },
-        "ignoreEffectWarningsInTscExitCode": true,
         "overrides": [
           {
-            "include": [
-              "**/backsteros/**/*.ts",
-              "**/backsteros/**/*.tsx",
-              "**/hetzner/**/*.ts",
-              "**/hetzner/**/*.tsx",
-              "**/cursorUsage.ts",
-              "**/cursorUsage.test.ts",
-              "**/cursorPrepaidUsage.ts"
-            ],
+            "include": ["**/*.test.ts", "**/*.test.tsx"],
             "options": {
               "diagnosticSeverity": {
-                "nodeBuiltinImport": "warning",
-                "globalDate": "warning",
-                "globalDateInEffect": "warning",
-                "globalTimers": "warning",
-                "globalTimersInEffect": "warning",
-                "globalFetch": "warning",
-                "globalFetchInEffect": "warning",
-                "preferSchemaOverJson": "warning",
-                "unknownInEffectCatch": "warning",
-                "anyUnknownInErrorContext": "warning",
-                "globalRandom": "warning",
-                "globalRandomInEffect": "warning",
-                "globalConsole": "warning",
-                "globalConsoleInEffect": "warning"
+                "preferSchemaOverJson": "off",
+                "effectFnOpportunity": "off"
               }
             }
+          },
+          {
+            "include": [
+              "**/*.spec.ts",
+              "**/*.spec.tsx",
+              "**/*.testkit.ts",
+              "**/*.testkit.tsx",
+              "**/{test,tests,testkit,testing,fixtures,integration}/**",
+              "packages/provider-testing/**"
+            ],
+            "options": { "diagnosticSeverity": { "effectFnOpportunity": "off" } }
           }
         ]
       }

@@ -214,6 +214,7 @@ export function BacksterosOverviewNameEditor({
       <h1 className={titleClassName}>
         <button
           type="button"
+          data-cursor="text"
           onClick={() => {
             setEditing(true);
             setError(null);

@@ -22,4 +22,10 @@ describe("sanitizeSshError", () => {
       /1Password SSH agent/i,
     );
   });
+
+  it("distinguishes Tailscale port-refused from a dead agent", () => {
+    expect(
+      sanitizeSshError(new Error("ssh: connect to host 100.1.2.3 port 22: Connection refused")),
+    ).toMatch(/sshd listening on the tailnet/i);
+  });
 });

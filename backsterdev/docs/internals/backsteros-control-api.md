@@ -33,8 +33,8 @@ Send one of:
    AUTH="Authorization: Bearer $BACKSTEROS_API_KEY"
    ```
 
-2. **BDV pairing session** Bearer token with `orchestration:operate` (same as
-   `/api/orchestration/dispatch`).
+2. **BDV pairing session** Bearer token with `orchestration:operate` (the scope
+   orchestration V2 commands require).
 
 ## Endpoints
 
@@ -70,9 +70,9 @@ development Tailscale host), pass its id or label from
 `GET /api/backsteros/control/environments`. The desktop app mirrors paired
 bearer remotes into `control-environments.json` under the state dir (tokens
 included, mode `0600`). You can also `PUT` that registry. Remote starts use the
-remote’s `/api/orchestration/*` HTTP API (stock `t3 serve` has no control
-routes) and store the task↔thread binding locally with that remote’s
-`environmentId` so the rail opens the right chat.
+remote’s orchestration V2 API (stock `t3 serve` has no control routes) and store
+the task↔thread binding locally with that remote’s `environmentId` so the rail
+opens the right chat. See [Orchestration V2 mapping](#orchestration-v2-mapping).
 
 When both `environmentId` and `environment` / `environmentLabel` are set, they
 must refer to the same environment; a mismatch returns JSON `400` with
@@ -97,7 +97,7 @@ If the BacksterOS project has no cwd and `workspaceRoot` was not provided, the
 response is JSON `409` with `code: "no_workspace"` (not a 500).
 
 If the caller passes `modelSelection` whose **driver** differs from the existing
-thread (same check as the orchestration engine), the response is JSON `409`
+thread (driver kinds come from `ProviderRegistry`), the response is JSON `409`
 with `code: "driver_mismatch"` and:
 
 | Field                 | Meaning                                     |
@@ -107,16 +107,16 @@ with `code: "driver_mismatch"` and:
 | `requestedInstanceId` | Instance id from the request                |
 | `requestedDriver`     | Driver kind that would have been dispatched |
 
-Same-driver instance switches are not rejected here; the orchestration engine
+Same-driver instance switches are not rejected here; the orchestrator
 can still refuse an incompatible resume state after dispatch. A driver mismatch
 is rejected before dispatch, and the BacksterOS task status is not written.
 
 Response includes `threadId`, `taskId`, `taskRef`, `status`
-(`idle` \| `working` \| `blocked` \| `done`), `lastError` (provider/session
+(`idle` \| `working` \| `blocked` \| `done`), `lastError` (provider/run
 error text, or `null`), `created`, `started`.
 
 Re-calling with the same task reuses the bound thread and its driver. A
-rejected or errored session (or `stopped` with `lastError`) does **not** move
+failed run (or `interrupted`/`cancelled` with `lastError`) does **not** move
 the task to `in_review`; only a real successful turn completion does. A retry
 that actually dispatches a turn still marks the task `in_progress`.
 
@@ -183,6 +183,47 @@ from the control API stay linked in the UI.
 over a local “Start working” kickoff draft. `healBinding` keeps `kind:"thread"`
 bindings even when the thread shell is not hydrated yet, so the route can load
 the live thread instead of creating a fresh draft.
+
+## Orchestration V2 mapping
+
+Upstream t3code v0.1.0 removed the V1 orchestration engine; the control API
+runs on Orchestrator V2 (`apps/server/src/backsteros/control.ts`,
+`control-remote.ts`).
+
+**Local (same server)** — in-process services, no HTTP hop:
+
+| Need                              | V2 call                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Thread shell (status, bound chat) | `ThreadManagementService.getThreadShell` (reads `OrchestratorV2.getThreadShell`)                 |
+| Project list / match by cwd       | `ProjectService.listShells`                                                                      |
+| Project create                    | `ProjectService.create` (not an orchestrator command; same op as `POST /api/projects/mutate`)    |
+| `thread.create`                   | `dispatch` with `createdBy: "user"`, `creationSource: "server"` (no `createdAt`)                 |
+| Start / follow-up turn            | `message.dispatch` with `dispatchMode: { type: "start_immediately" }` (replaces `thread.turn.start`) |
+| Driver-by-instance lookup         | `ProviderRegistry.getProviders` (`instanceId` → `driver`)                                        |
+
+**Remote (paired `t3 serve`)** — every request sends
+`Authorization: Bearer …` and `x-t3-orchestration-protocol: 2`:
+
+- Reads: `GET /api/orchestration/shell` (projects + `threads` / `archivedThreads` shells).
+  A single thread's shell is looked up in that snapshot: `GET /api/orchestration/threads/:id`
+  returns the full projection (`projection.thread` is an app thread without live status).
+- Project create: `POST /api/projects/mutate` with a `project.create` mutation.
+- Commands (`thread.create`, `message.dispatch`): V2 has no HTTP dispatch route.
+  The server mints `POST /api/auth/websocket-ticket`, opens a short-lived
+  `ws(s)://host/ws?wsTicket=…&orchestrationProtocol=2` socket, calls the
+  `orchestration.dispatchCommand` Effect RPC (`WsRpcGroup`), and closes it.
+
+**Status mapping** (`mapSessionStatus`) reads the V2 thread shell:
+
+| `status` result | V2 shell fields                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `blocked`       | `pendingRuntimeRequest` set (approval / `user_input`), or `status: "failed"`                       |
+| `working`       | non-idle run `status` / `activeRunId`, `pendingBackgroundTasks`, a user message newer than `latestRunRequestedAt`, or a pending control dispatch |
+| `done`          | `settledOverride: "settled"`, or `settledAt` set without `settledOverride: "active"`              |
+| `idle`          | otherwise                                                                                         |
+
+`sessionStatus` in the response is the shell `status`; `hasPendingApprovals` /
+`hasPendingUserInput` derive from `pendingRuntimeRequest.kind`.
 
 ## Smoke checklist
 

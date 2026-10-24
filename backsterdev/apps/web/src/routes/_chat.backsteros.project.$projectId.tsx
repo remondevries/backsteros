@@ -2,9 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo } from "react";
 
 import {
+  backsterosCodebaseListTabSearch,
   parseBacksterosCodebaseListTab,
   type BacksterosCodebaseListTab,
 } from "~/backsteros/codebaseListTabs";
+import { rememberBacksterosCodebaseProjectTab } from "~/backsteros/codebaseProjectTabStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { BacksterosProjectOverviewPage } from "../components/sidebar/BacksterosProjectOverviewPage";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -37,6 +39,7 @@ function BacksterosProjectOverviewRouteView() {
 
   const handleTabChange = useCallback(
     (tab: BacksterosCodebaseListTab) => {
+      rememberBacksterosCodebaseProjectTab(tab);
       void navigate({
         to: "/backsteros/project/$projectId",
         params: { projectId },
@@ -46,7 +49,7 @@ function BacksterosProjectOverviewRouteView() {
           return {
             ...(title ? { title } : {}),
             ...(projectKey ? { project: projectKey } : {}),
-            ...(tab === "overview" ? {} : { tab }),
+            ...backsterosCodebaseListTabSearch(tab),
           };
         },
         replace: true,
@@ -54,6 +57,11 @@ function BacksterosProjectOverviewRouteView() {
     },
     [navigate, projectId],
   );
+
+  // Keep the sticky tab in sync when landing via URL / j/k preview.
+  useEffect(() => {
+    rememberBacksterosCodebaseProjectTab(search.tab ?? "overview");
+  }, [search.tab]);
 
   useEffect(() => {
     if (!projectId.trim()) {
