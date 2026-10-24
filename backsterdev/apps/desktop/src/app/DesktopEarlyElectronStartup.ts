@@ -1,3 +1,7 @@
+import {
+  BACKSTERDEV_LINUX_STARTUP_WM_CLASS,
+  BACKSTERDEV_LINUX_STARTUP_WM_CLASS_DEV,
+} from "@t3tools/shared/backsterdevDesktopBranding";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -151,7 +155,9 @@ export function resolveEarlyLinuxElectronOptions(
   const isDevelopment = isDevelopmentEnvironment(input.env);
   return {
     isDevelopment,
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxWmClass: isDevelopment
+      ? BACKSTERDEV_LINUX_STARTUP_WM_CLASS_DEV
+      : BACKSTERDEV_LINUX_STARTUP_WM_CLASS,
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,

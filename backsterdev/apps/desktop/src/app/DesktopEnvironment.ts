@@ -4,6 +4,13 @@ import type {
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@t3tools/contracts";
+import {
+  BACKSTERDEV_DESKTOP_APP_ID,
+  BACKSTERDEV_DESKTOP_APP_ID_DEV,
+  BACKSTERDEV_DESKTOP_PRODUCT_NAME,
+  BACKSTERDEV_LINUX_STARTUP_WM_CLASS,
+  BACKSTERDEV_LINUX_STARTUP_WM_CLASS_DEV,
+} from "@t3tools/shared/backsterdevDesktopBranding";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -85,7 +92,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "BacksterDEV";
+const APP_BASE_NAME = BACKSTERDEV_DESKTOP_PRODUCT_NAME;
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -230,10 +237,12 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.backsterdev.app.dev" : "com.backsterdev.app",
+      isDevelopment ? BACKSTERDEV_DESKTOP_APP_ID_DEV : BACKSTERDEV_DESKTOP_APP_ID,
     ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxWmClass: isDevelopment
+      ? BACKSTERDEV_LINUX_STARTUP_WM_CLASS_DEV
+      : BACKSTERDEV_LINUX_STARTUP_WM_CLASS,
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),

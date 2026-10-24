@@ -60,13 +60,20 @@ These paths are Backster-owned. The sync script excludes them always.
 - `apps/server/src/cursorUsage.test.ts`
 - `packages/shared/src/backsterosTaskAutoPromote.ts`
 - `packages/shared/src/backsterosTaskAutoPromote.test.ts`
+- `packages/shared/src/backsterdevDesktopBranding.ts` (desktop appId / productName / DMG artifact identity)
 - `docs/internals/backsteros-control-api.md`
 - `docs/user/backsteros-file-task.md`
 - `docs/internals/upstream-sync.md` (this file)
 - `scripts/sync-upstream-t3code.sh`
 - `apps/web/vite.config.ts` (Backster `/backsteros-api` + local-core proxies; mid-merge protect)
 - `apps/web/index.html` (BacksterDEV boot splash + document title; mid-merge protect)
-- After sync, re-add `packages/shared` export `./backsterosTaskAutoPromote` if missing
+- After sync, re-add `packages/shared` exports `./backsterosTaskAutoPromote` and
+  `./backsterdevDesktopBranding` if missing
+- After sync, re-wire `scripts/build-desktop-artifact.ts` to import
+  `@t3tools/shared/backsterdevDesktopBranding` (appId / productName / artifactName) —
+  BDV-62 lost this when upstream reset `DESKTOP_APP_ID` to `com.t3tools.t3code`
+- After sync, set `apps/desktop/package.json` `productName` back to `BacksterDEV` if
+  upstream restored `T3 Code (Beta)`
 
 Local / generated (also excluded): `.env`, `.t3/`, `node_modules/`, `release/`,
 `apps/desktop/.electron-runtime/`, `pnpm-lock.yaml` is synced from upstream on apply (reinstall after).

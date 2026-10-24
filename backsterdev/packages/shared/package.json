@@ -510,6 +510,10 @@
     "./backsterosTaskAutoPromote": {
       "types": "./src/backsterosTaskAutoPromote.ts",
       "import": "./src/backsterosTaskAutoPromote.ts"
+    },
+    "./backsterdevDesktopBranding": {
+      "types": "./src/backsterdevDesktopBranding.ts",
+      "import": "./src/backsterdevDesktopBranding.ts"
     }
   },
   "scripts": {

@@ -82,6 +82,7 @@ PRESERVE_EXCLUDES=(
   --exclude 'apps/server/src/cursorUsage.test.ts'
   --exclude 'packages/shared/src/backsterosTaskAutoPromote.ts'
   --exclude 'packages/shared/src/backsterosTaskAutoPromote.test.ts'
+  --exclude 'packages/shared/src/backsterdevDesktopBranding.ts'
   --exclude 'docs/internals/backsteros-control-api.md'
   --exclude 'docs/user/backsteros-file-task.md'
   # Keep Backster Vite proxy wiring when re-running apply mid-merge.
@@ -134,6 +135,7 @@ RSYNC_FLAGS+=(
   --filter 'P apps/web/src/components/servers/'
   --filter 'P packages/shared/src/backsterosTaskAutoPromote.ts'
   --filter 'P packages/shared/src/backsterosTaskAutoPromote.test.ts'
+  --filter 'P packages/shared/src/backsterdevDesktopBranding.ts'
   --filter 'P apps/web/vite.config.ts'
   --filter 'P apps/web/index.html'
   --filter 'P docs/internals/upstream-sync.md'
