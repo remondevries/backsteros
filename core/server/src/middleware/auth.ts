@@ -44,7 +44,11 @@ export async function resolveApiKeyNameForAudit(
   const prefix = apiKeyLookupPrefix(secret);
   const keyHash = hashApiKey(secret);
   const [row] = await db
-    .select({ name: apiKeys.name, revokedAt: apiKeys.revokedAt })
+    .select({
+      name: apiKeys.name,
+      revokedAt: apiKeys.revokedAt,
+      expiresAt: apiKeys.expiresAt,
+    })
     .from(apiKeys)
     .where(and(eq(apiKeys.prefix, prefix), eq(apiKeys.keyHash, keyHash)))
     .limit(1);
@@ -53,6 +57,9 @@ export async function resolveApiKeyNameForAudit(
   }
   if (row.revokedAt) {
     return `${row.name} (revoked)`;
+  }
+  if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+    return `${row.name} (expired)`;
   }
   return row.name;
 }
@@ -186,6 +193,10 @@ export async function authenticateApiKey(secret: string): Promise<AuthContext | 
     .limit(1);
 
   if (!row) {
+    return null;
+  }
+
+  if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return null;
   }
 

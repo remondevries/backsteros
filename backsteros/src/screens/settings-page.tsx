@@ -1,6 +1,7 @@
 import { ApiClientError } from "@backsteros/api-client";
 import type {
   ApiKey,
+  ApiKeyAuditLog,
   CreateApiKeyResponse,
 } from "@backsteros/contracts";
 import { API_KEY_SCOPES } from "@backsteros/contracts";
@@ -20,6 +21,7 @@ import {
   isLegacyIntegrationSettingsTab,
   isSettingsTabId,
   normalizeAppTimezone,
+  type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
   type SettingsTabId,
 } from "@backsteros/ui";
@@ -129,12 +131,39 @@ function SettingsAccountTab({
   );
 }
 
+function toSettingsApiKey(key: ApiKey): SettingsApiKeyItem {
+  return {
+    id: key.id,
+    name: key.name,
+    prefix: key.prefix,
+    scopes: key.scopes,
+    contactId: key.contactId ?? null,
+    expiresAt: key.expiresAt ?? null,
+    lastUsedAt: key.lastUsedAt ?? null,
+    lastUsedAddress: key.lastUsedAddress ?? null,
+    createdAt: key.createdAt,
+  };
+}
+
+function toSettingsAuditLog(entry: ApiKeyAuditLog): SettingsApiKeyAuditLogItem {
+  return {
+    id: entry.id,
+    apiKeyId: entry.apiKeyId,
+    apiKeyName: entry.apiKeyName,
+    action: entry.action,
+    actorKind: entry.actorKind,
+    address: entry.address,
+    createdAt: entry.createdAt,
+  };
+}
+
 function SettingsApiTab() {
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<SettingsApiKeyAuditLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -142,19 +171,14 @@ function SettingsApiTab() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const body = await client.requestJson<{ apiKeys: ApiKey[] }>(
-        "/api/v1/api-keys",
-      );
-      setApiKeys(
-        body.apiKeys.map((key) => ({
-          id: key.id,
-          name: key.name,
-          prefix: key.prefix,
-          scopes: key.scopes,
-          contactId: key.contactId ?? null,
-          createdAt: key.createdAt,
-        })),
-      );
+      const [keysBody, auditBody] = await Promise.all([
+        client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
+          "/api/v1/api-keys/audit-logs?limit=50",
+        ),
+      ]);
+      setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
+      setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load API keys",
@@ -171,11 +195,12 @@ function SettingsApiTab() {
   return (
     <ApiKeysSettingsSectionView
       apiKeys={apiKeys}
+      auditLogs={auditLogs}
       contacts={withAvatarSrc(contacts, contactAvatarSrc)}
       loading={loading}
       errorMessage={errorMessage}
       onRetry={() => void loadKeys()}
-      onCreate={async (name, contactId) => {
+      onCreate={async (name, contactId, expiresAt) => {
         try {
           const result = await client.requestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
@@ -186,20 +211,15 @@ function SettingsApiTab() {
                 name,
                 scopes: [...API_KEY_SCOPES],
                 contactId,
+                expiresAt,
               }),
             },
           );
           setApiKeys((current) => [
-            {
-              id: result.apiKey.id,
-              name: result.apiKey.name,
-              prefix: result.apiKey.prefix,
-              scopes: result.apiKey.scopes,
-              contactId: result.apiKey.contactId ?? null,
-              createdAt: result.apiKey.createdAt,
-            },
+            toSettingsApiKey(result.apiKey),
             ...current,
           ]);
+          void loadKeys();
           return result.secret;
         } catch (error) {
           setErrorMessage(
@@ -220,16 +240,7 @@ function SettingsApiTab() {
           );
           setApiKeys((current) =>
             current.map((entry) =>
-              entry.id === updated.id
-                ? {
-                    id: updated.id,
-                    name: updated.name,
-                    prefix: updated.prefix,
-                    scopes: updated.scopes,
-                    contactId: updated.contactId ?? null,
-                    createdAt: updated.createdAt,
-                  }
-                : entry,
+              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
             ),
           );
           return true;
@@ -249,21 +260,54 @@ function SettingsApiTab() {
           );
           setApiKeys((current) =>
             current.map((entry) =>
-              entry.id === updated.id
-                ? {
-                    id: updated.id,
-                    name: updated.name,
-                    prefix: updated.prefix,
-                    scopes: updated.scopes,
-                    contactId: updated.contactId ?? null,
-                    createdAt: updated.createdAt,
-                  }
-                : entry,
+              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
             ),
           );
           return true;
         } catch {
           return false;
+        }
+      }}
+      onSetExpiry={async (id, expiresAt) => {
+        try {
+          const updated = await client.requestJson<ApiKey>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ expiresAt }),
+            },
+          );
+          setApiKeys((current) =>
+            current.map((entry) =>
+              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
+            ),
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+      onRotate={async (id) => {
+        try {
+          const result = await client.requestJson<CreateApiKeyResponse>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
+            { method: "POST" },
+          );
+          setApiKeys((current) =>
+            current.map((entry) =>
+              entry.id === result.apiKey.id
+                ? toSettingsApiKey(result.apiKey)
+                : entry,
+            ),
+          );
+          void loadKeys();
+          return result.secret;
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Could not rotate API key",
+          );
+          return null;
         }
       }}
       onRevoke={async (id) => {
@@ -273,6 +317,7 @@ function SettingsApiTab() {
             { method: "DELETE" },
           );
           setApiKeys((current) => current.filter((entry) => entry.id !== id));
+          void loadKeys();
           return true;
         } catch {
           return false;

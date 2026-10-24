@@ -151,6 +151,10 @@ describe("hybrid write bar", () => {
       apiKeyRoutes.includes('entity: "api_key"'),
       "API key create/update/revoke must wake peer (api_keys twin)",
     );
+    assert.ok(
+      apiKeyRoutes.includes("/api/v1/api-keys/:id/rotate"),
+      "API key rotate must exist and wake peer",
+    );
 
     // Writer-side push + peer pull so contact/org updates are bidirectional.
     const nudge = readSrc("core-replication/nudge.ts");

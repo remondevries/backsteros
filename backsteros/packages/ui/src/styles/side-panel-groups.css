@@ -2016,6 +2016,72 @@ button.settings-inbox-account-label:disabled {
   margin-top: 8px;
 }
 
+.api-key-expiry-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.api-key-expiry-field select,
+.api-key-create-form .settings-field select {
+  max-width: 280px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--faint);
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.api-key-expired-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.api-key-row-expired .api-key-name {
+  color: color-mix(in srgb, #ef4444 55%, var(--foreground));
+}
+
+.api-key-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 0.5px solid var(--border);
+}
+
+.api-key-audit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.api-key-audit-row:last-child {
+  border-bottom: 0;
+}
+
+.api-key-audit-row strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .projects-list-view {
   max-width: 52rem;
   margin: 0 auto;

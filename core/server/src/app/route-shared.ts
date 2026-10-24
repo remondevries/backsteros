@@ -708,6 +708,11 @@ export async function withAuth(c: Context, next: Next) {
     return c.json(unauthorized(), 401);
   }
   c.set("auth", auth);
+  if (auth.kind === "api_key" && auth.apiKeyId) {
+    const { requestClientAddress } = await import("../lib/request-address.js");
+    const { touchApiKeyLastUsed } = await import("../services/api-keys.js");
+    void touchApiKeyLastUsed(auth.apiKeyId, requestClientAddress(c));
+  }
   await next();
   if (auth.kind === "api_key") {
     // OS-45: which agent key made which call (name only, never the secret).

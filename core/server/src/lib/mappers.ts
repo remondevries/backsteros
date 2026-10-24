@@ -286,6 +286,9 @@ export function toApiKey(row: DbApiKey): ApiKey {
     prefix: row.prefix,
     scopes: row.scopes as ApiKey["scopes"],
     contactId: row.contactId ?? null,
+    expiresAt: toIso(row.expiresAt),
+    lastUsedAt: toIso(row.lastUsedAt),
+    lastUsedAddress: row.lastUsedAddress ?? null,
     createdAt: row.createdAt.toISOString(),
     revokedAt: toIso(row.revokedAt),
   };

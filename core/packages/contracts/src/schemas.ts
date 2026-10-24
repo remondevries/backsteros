@@ -1310,6 +1310,9 @@ export const apiKeySchema = z.object({
   prefix: z.string(),
   scopes: z.array(apiKeyScopeSchema),
   contactId: z.string().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  lastUsedAt: z.string().datetime().nullable(),
+  lastUsedAddress: z.string().nullable(),
   createdAt: z.string().datetime(),
   revokedAt: z.string().datetime().nullable(),
 });
@@ -1318,18 +1321,51 @@ export const createApiKeySchema = z.object({
   name: z.string().min(1).max(128),
   scopes: z.array(apiKeyScopeSchema).min(1),
   contactId: z.string().nullable().optional(),
+  /** Optional expiry; omit or null for no expiry. */
+  expiresAt: z.string().datetime().nullable().optional(),
 });
 
-export const updateApiKeySchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  contactId: z.string().nullable().optional(),
-}).refine((value) => value.name !== undefined || value.contactId !== undefined, {
-  message: "At least one field is required",
-});
+export const updateApiKeySchema = z
+  .object({
+    name: z.string().min(1).max(128).optional(),
+    contactId: z.string().nullable().optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.contactId !== undefined ||
+      value.expiresAt !== undefined,
+    {
+      message: "At least one field is required",
+    },
+  );
 
 export const createApiKeyResponseSchema = z.object({
   apiKey: apiKeySchema,
   secret: z.string(),
+});
+
+export const apiKeyAuditLogActionSchema = z.enum([
+  "created",
+  "revoked",
+  "rotated",
+]);
+
+export const apiKeyAuditLogSchema = z.object({
+  id: z.string(),
+  apiKeyId: z.string().nullable(),
+  apiKeyName: z.string(),
+  action: apiKeyAuditLogActionSchema,
+  actorUserId: z.string().nullable(),
+  actorKind: z.string().nullable(),
+  actorApiKeyId: z.string().nullable(),
+  address: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const listApiKeyAuditLogsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
 const documentPathSchema = z
@@ -5217,6 +5253,8 @@ export type AgentWorkedActivityData = z.infer<
   typeof agentWorkedActivityDataSchema
 >;
 export type ApiKey = z.infer<typeof apiKeySchema>;
+export type ApiKeyAuditLog = z.infer<typeof apiKeyAuditLogSchema>;
+export type ApiKeyAuditLogAction = z.infer<typeof apiKeyAuditLogActionSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type GithubRepository = z.infer<typeof githubRepositorySchema>;

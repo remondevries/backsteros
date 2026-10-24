@@ -5,10 +5,12 @@ import { cloudflareContract } from "./cloudflare-contract.js";
 import { fileTaskCallbackContract } from "./file-task-callback-contract.js";
 import { transipContract } from "./transip-contract.js";
 import {
+  apiKeyAuditLogSchema,
   apiKeySchema,
   badRequestSchema,
   createApiKeyResponseSchema,
   createApiKeySchema,
+  listApiKeyAuditLogsQuerySchema,
   updateApiKeySchema,
   createDocumentSchema,
   createProjectSchema,
@@ -712,6 +714,16 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "List API keys (Clerk session)",
     },
+    listApiKeyAuditLogs: {
+      method: "GET",
+      path: "/api/v1/api-keys/audit-logs",
+      query: listApiKeyAuditLogsQuerySchema,
+      responses: {
+        200: z.object({ auditLogs: z.array(apiKeyAuditLogSchema) }),
+        401: errorSchema,
+      },
+      summary: "List API key audit events (create / revoke / rotate)",
+    },
     createApiKey: {
       method: "POST",
       path: "/api/v1/api-keys",
@@ -734,7 +746,19 @@ export const apiContract: AppRouter = c.router(
         401: errorSchema,
         404: errorSchema,
       },
-      summary: "Rename API key (Clerk session)",
+      summary: "Update API key name, contact, or expiry",
+    },
+    rotateApiKey: {
+      method: "POST",
+      path: "/api/v1/api-keys/:id/rotate",
+      pathParams: z.object({ id: z.string() }),
+      body: z.object({}).optional(),
+      responses: {
+        200: createApiKeyResponseSchema,
+        401: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Rotate API key secret (shown once); keeps id, name, scopes, contact, expiry",
     },
     revokeApiKey: {
       method: "DELETE",

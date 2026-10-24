@@ -545,6 +545,15 @@ export const apiKeys = pgTable(
     contactId: text("contact_id").references(() => contacts.id, {
       onDelete: "set null",
     }),
+    /** When set, auth rejects the key at/after this instant. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /**
+     * Last successful auth on this core. Updated without bumping `updated_at`
+     * so usage does not thrash peer replication.
+     */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Client address from the last successful auth (forwarded IP or socket). */
+    lastUsedAddress: text("last_used_address"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -559,6 +568,41 @@ export const apiKeys = pgTable(
     index("api_keys_user_id_idx").on(table.userId),
     index("api_keys_contact_id_idx").on(table.contactId),
     index("api_keys_updated_at_id_idx").on(table.updatedAt, table.id),
+  ],
+);
+
+/**
+ * Staff-facing audit trail for API key create / revoke / rotate.
+ * Not in REPLICATED_TABLES — each core keeps the events it performed.
+ */
+export const apiKeyAuditLogs = pgTable(
+  "api_key_audit_logs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    apiKeyId: text("api_key_id").references(() => apiKeys.id, {
+      onDelete: "set null",
+    }),
+    /** Denormalized so the row stays readable after revoke/delete. */
+    apiKeyName: text("api_key_name").notNull(),
+    /** created | revoked | rotated */
+    action: text("action").notNull(),
+    actorUserId: text("actor_user_id"),
+    actorKind: text("actor_kind"),
+    actorApiKeyId: text("actor_api_key_id"),
+    address: text("address"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("api_key_audit_logs_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    index("api_key_audit_logs_api_key_id_idx").on(table.apiKeyId),
   ],
 );
 
@@ -2377,6 +2421,7 @@ export const emailThreadComments = pgTable(
 
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
+export type DbApiKeyAuditLog = typeof apiKeyAuditLogs.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;

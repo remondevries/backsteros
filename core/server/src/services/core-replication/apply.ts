@@ -699,6 +699,10 @@ async function applyApiKeyRow(
     return "skipped";
   }
 
+  const expiresAt = sanitized.expires_at
+    ? new Date(String(sanitized.expires_at))
+    : null;
+
   await db
     .insert(apiKeys)
     .values({
@@ -710,6 +714,8 @@ async function applyApiKeyRow(
       keyHash: String(sanitized.key_hash),
       scopes: sanitized.scopes as string[],
       contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
+      expiresAt,
+      // last_used_* stay core-local — do not twin usage from the peer.
       createdAt: new Date(String(sanitized.created_at)),
       revokedAt: sanitized.revoked_at ? new Date(String(sanitized.revoked_at)) : null,
       updatedAt: remoteUpdatedAt,
@@ -724,6 +730,7 @@ async function applyApiKeyRow(
         keyHash: String(sanitized.key_hash),
         scopes: sanitized.scopes as string[],
         contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
+        expiresAt,
         revokedAt: sanitized.revoked_at ? new Date(String(sanitized.revoked_at)) : null,
         updatedAt: remoteUpdatedAt,
       },

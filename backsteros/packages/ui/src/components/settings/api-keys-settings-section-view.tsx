@@ -18,13 +18,29 @@ export type SettingsApiKeyItem = {
   prefix: string;
   scopes: string[];
   contactId: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  lastUsedAddress: string | null;
+  createdAt: string;
+};
+
+export type SettingsApiKeyAuditLogItem = {
+  id: string;
+  apiKeyId: string | null;
+  apiKeyName: string;
+  action: "created" | "revoked" | "rotated";
+  actorKind: string | null;
+  address: string | null;
   createdAt: string;
 };
 
 export type SettingsApiKeyContactOption = AssigneeDropdownContact;
 
+export type ApiKeyExpiryPreset = "never" | "30d" | "90d" | "1y";
+
 export type ApiKeysSettingsSectionViewProps = {
   apiKeys: SettingsApiKeyItem[];
+  auditLogs?: SettingsApiKeyAuditLogItem[];
   contacts?: SettingsApiKeyContactOption[];
   loading?: boolean;
   errorMessage?: string | null;
@@ -32,13 +48,16 @@ export type ApiKeysSettingsSectionViewProps = {
   onCreate?: (
     name: string,
     contactId: string | null,
+    expiresAt: string | null,
   ) => Promise<string | null>;
   onRename?: (id: string, name: string) => Promise<boolean>;
   onSetContact?: (id: string, contactId: string | null) => Promise<boolean>;
+  onSetExpiry?: (id: string, expiresAt: string | null) => Promise<boolean>;
+  onRotate?: (id: string) => Promise<string | null>;
   onRevoke?: (id: string) => Promise<boolean>;
 };
 
-function formatCreatedAt(value: string): string {
+function formatDateTime(value: string): string {
   try {
     return new Date(value).toLocaleString(undefined, {
       dateStyle: "medium",
@@ -47,6 +66,18 @@ function formatCreatedAt(value: string): string {
   } catch {
     return value;
   }
+}
+
+function isExpired(expiresAt: string | null): boolean {
+  if (!expiresAt) return false;
+  const time = Date.parse(expiresAt);
+  return Number.isFinite(time) && time <= Date.now();
+}
+
+export function expiryPresetToIso(preset: ApiKeyExpiryPreset): string | null {
+  if (preset === "never") return null;
+  const days = preset === "30d" ? 30 : preset === "90d" ? 90 : 365;
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function ApiKeyContactDropdown({
@@ -84,6 +115,8 @@ function ApiKeyRow({
   contactOptions,
   onRename,
   onSetContact,
+  onSetExpiry,
+  onRotate,
   onRevoke,
 }: {
   apiKey: SettingsApiKeyItem;
@@ -91,13 +124,20 @@ function ApiKeyRow({
   contactOptions: SearchableDropdownOption<string>[];
   onRename?: (id: string, name: string) => Promise<boolean>;
   onSetContact?: (id: string, contactId: string | null) => Promise<boolean>;
+  onSetExpiry?: (id: string, expiresAt: string | null) => Promise<boolean>;
+  onRotate?: (id: string) => Promise<string | null>;
   onRevoke?: (id: string) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(apiKey.name);
   const [saving, setSaving] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [confirmRotate, setConfirmRotate] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const expired = isExpired(apiKey.expiresAt);
 
   useEffect(() => {
     if (!editing) setName(apiKey.name);
@@ -127,8 +167,30 @@ function ApiKeyRow({
     if (!ok) setConfirmRevoke(false);
   }
 
+  async function rotateKey() {
+    if (!onRotate) return;
+    setRotating(true);
+    setCopied(false);
+    const secret = await onRotate(apiKey.id);
+    setRotating(false);
+    if (secret) {
+      setRotatedSecret(secret);
+      setConfirmRotate(false);
+    }
+  }
+
+  async function copySecret() {
+    if (!rotatedSecret) return;
+    try {
+      await navigator.clipboard.writeText(rotatedSecret);
+      setCopied(true);
+    } catch {
+      // ignore
+    }
+  }
+
   return (
-    <div className="api-key-row">
+    <div className={`api-key-row${expired ? " api-key-row-expired" : ""}`}>
       <div className="api-key-row-main">
         {editing ? (
           <form
@@ -174,13 +236,34 @@ function ApiKeyRow({
           </form>
         ) : (
           <>
-            <strong className="api-key-name">{apiKey.name}</strong>
+            <strong className="api-key-name">
+              {apiKey.name}
+              {expired ? (
+                <span className="api-key-expired-badge">Expired</span>
+              ) : null}
+            </strong>
             <p className="api-key-meta">
               <code>{apiKey.prefix}…</code>
               <span aria-hidden="true">·</span>
               <span>{apiKey.scopes.join(", ")}</span>
               <span aria-hidden="true">·</span>
-              <span>Created {formatCreatedAt(apiKey.createdAt)}</span>
+              <span>Created {formatDateTime(apiKey.createdAt)}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {apiKey.expiresAt
+                  ? `Expires ${formatDateTime(apiKey.expiresAt)}`
+                  : "No expiry"}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {apiKey.lastUsedAt
+                  ? `Last used ${formatDateTime(apiKey.lastUsedAt)}${
+                      apiKey.lastUsedAddress
+                        ? ` from ${apiKey.lastUsedAddress}`
+                        : ""
+                    }`
+                  : "Never used"}
+              </span>
               <span aria-hidden="true">·</span>
               <span>
                 {contactName
@@ -202,8 +285,64 @@ function ApiKeyRow({
                 />
               </div>
             ) : null}
+            {onSetExpiry ? (
+              <div className="api-key-expiry-field">
+                <span>Expiry</span>
+                <select
+                  aria-label={`Expiry for ${apiKey.name}`}
+                  value={
+                    apiKey.expiresAt
+                      ? "custom"
+                      : "never"
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value as
+                      | ApiKeyExpiryPreset
+                      | "custom";
+                    if (value === "custom") return;
+                    void onSetExpiry(apiKey.id, expiryPresetToIso(value));
+                  }}
+                >
+                  <option value="never">Never</option>
+                  <option value="30d">30 days from now</option>
+                  <option value="90d">90 days from now</option>
+                  <option value="1y">1 year from now</option>
+                  {apiKey.expiresAt ? (
+                    <option value="custom">
+                      Keep current ({formatDateTime(apiKey.expiresAt)})
+                    </option>
+                  ) : null}
+                </select>
+              </div>
+            ) : null}
           </>
         )}
+
+        {rotatedSecret ? (
+          <div className="api-key-secret-banner" role="status">
+            <div className="api-key-secret-banner-header">
+              <strong>New secret — copy now; it will not be shown again.</strong>
+              <button
+                type="button"
+                className="api-key-action-btn"
+                onClick={() => void copySecret()}
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <code className="api-secret">{rotatedSecret}</code>
+            <button
+              type="button"
+              className="api-key-dismiss-secret"
+              onClick={() => {
+                setRotatedSecret(null);
+                setCopied(false);
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="api-key-row-actions">
@@ -227,6 +366,28 @@ function ApiKeyRow({
               Cancel
             </button>
           </>
+        ) : confirmRotate ? (
+          <>
+            <span className="api-key-revoke-prompt">
+              Rotate secret? The old secret stops working immediately.
+            </span>
+            <button
+              type="button"
+              className="api-key-action-btn"
+              disabled={rotating}
+              onClick={() => void rotateKey()}
+            >
+              {rotating ? "Rotating…" : "Rotate"}
+            </button>
+            <button
+              type="button"
+              className="api-key-action-btn"
+              disabled={rotating}
+              onClick={() => setConfirmRotate(false)}
+            >
+              Cancel
+            </button>
+          </>
         ) : (
           <>
             <button
@@ -235,6 +396,7 @@ function ApiKeyRow({
               disabled={editing || saving || !onRename}
               onClick={() => {
                 setConfirmRevoke(false);
+                setConfirmRotate(false);
                 setEditing(true);
               }}
             >
@@ -242,10 +404,23 @@ function ApiKeyRow({
             </button>
             <button
               type="button"
+              className="api-key-action-btn"
+              disabled={editing || saving || rotating || !onRotate}
+              onClick={() => {
+                setEditing(false);
+                setConfirmRevoke(false);
+                setConfirmRotate(true);
+              }}
+            >
+              Rotate
+            </button>
+            <button
+              type="button"
               className="api-key-action-btn api-key-action-btn-danger"
               disabled={editing || saving || !onRevoke}
               onClick={() => {
                 setEditing(false);
+                setConfirmRotate(false);
                 setConfirmRevoke(true);
               }}
             >
@@ -258,8 +433,20 @@ function ApiKeyRow({
   );
 }
 
+function auditActionLabel(action: SettingsApiKeyAuditLogItem["action"]): string {
+  switch (action) {
+    case "created":
+      return "Created";
+    case "revoked":
+      return "Revoked";
+    case "rotated":
+      return "Rotated";
+  }
+}
+
 export function ApiKeysSettingsSectionView({
   apiKeys,
+  auditLogs = [],
   contacts = [],
   loading = false,
   errorMessage,
@@ -267,10 +454,13 @@ export function ApiKeysSettingsSectionView({
   onCreate,
   onRename,
   onSetContact,
+  onSetExpiry,
+  onRotate,
   onRevoke,
 }: ApiKeysSettingsSectionViewProps) {
   const [draft, setDraft] = useState("");
   const [draftContactId, setDraftContactId] = useState<string | null>(null);
+  const [draftExpiry, setDraftExpiry] = useState<ApiKeyExpiryPreset>("never");
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -285,12 +475,17 @@ export function ApiKeysSettingsSectionView({
     if (!name || !onCreate) return;
     setSaving(true);
     setCopied(false);
-    const nextSecret = await onCreate(name, draftContactId);
+    const nextSecret = await onCreate(
+      name,
+      draftContactId,
+      expiryPresetToIso(draftExpiry),
+    );
     setSaving(false);
     if (nextSecret) {
       setSecret(nextSecret);
       setDraft("");
       setDraftContactId(null);
+      setDraftExpiry("never");
     }
   }
 
@@ -341,6 +536,21 @@ export function ApiKeysSettingsSectionView({
               />
             </div>
           ) : null}
+          <label className="settings-field">
+            <span>Expires</span>
+            <select
+              value={draftExpiry}
+              disabled={saving || !onCreate}
+              onChange={(event) =>
+                setDraftExpiry(event.target.value as ApiKeyExpiryPreset)
+              }
+            >
+              <option value="never">Never</option>
+              <option value="30d">In 30 days</option>
+              <option value="90d">In 90 days</option>
+              <option value="1y">In 1 year</option>
+            </select>
+          </label>
           <button type="submit" disabled={!draft.trim() || saving || !onCreate}>
             {saving ? "Creating…" : "Create key"}
           </button>
@@ -376,7 +586,8 @@ export function ApiKeysSettingsSectionView({
       <section className="settings-card">
         <h2>API keys</h2>
         <p>
-          Rename, attach a contact, or revoke keys used by external clients.
+          Rename, attach a contact, set expiry, rotate, or revoke keys used by
+          external clients.
         </p>
 
         {loading && apiKeys.length === 0 ? (
@@ -406,6 +617,8 @@ export function ApiKeysSettingsSectionView({
                 apiKey={apiKey}
                 onRename={onRename}
                 onSetContact={onSetContact}
+                onSetExpiry={onSetExpiry}
+                onRotate={onRotate}
                 onRevoke={onRevoke}
                 contacts={contacts}
                 contactOptions={contactOptions}
@@ -413,6 +626,37 @@ export function ApiKeysSettingsSectionView({
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section className="settings-card">
+        <h2>API key audit log</h2>
+        <p>Create, rotate, and revoke events for this core.</p>
+        {auditLogs.length === 0 ? (
+          <p className="settings-hint">No audit events yet.</p>
+        ) : (
+          <ul className="api-key-audit-list">
+            {auditLogs.map((entry) => (
+              <li key={entry.id} className="api-key-audit-row">
+                <strong>{auditActionLabel(entry.action)}</strong>
+                <span>{entry.apiKeyName}</span>
+                <span aria-hidden="true">·</span>
+                <span>{formatDateTime(entry.createdAt)}</span>
+                {entry.actorKind ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>{entry.actorKind}</span>
+                  </>
+                ) : null}
+                {entry.address ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>{entry.address}</span>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

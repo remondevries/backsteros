@@ -5,19 +5,50 @@ import type { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
   createApiKeySchema,
+  listApiKeyAuditLogsQuerySchema,
   updateApiKeySchema,
+  type ApiKeyAuditLog,
 } from "@backsteros/contracts";
 
 import { toApiKey } from "../lib/mappers.js";
+import { requestClientAddress } from "../lib/request-address.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { canManageApiKeys } from "../lib/powersync-auth.js";
 import * as apiKeyService from "../services/api-keys.js";
+import type { DbApiKeyAuditLog } from "../db/schema.js";
 import {
   forbidden,
   getAuth,
   notFound,
   unauthorized,
 } from "./route-helpers.js";
+
+function badRequest(message: string) {
+  return { error: message, code: "bad_request" as const };
+}
+
+function toApiKeyAuditLog(row: DbApiKeyAuditLog): ApiKeyAuditLog {
+  return {
+    id: row.id,
+    apiKeyId: row.apiKeyId,
+    apiKeyName: row.apiKeyName,
+    action: row.action as ApiKeyAuditLog["action"],
+    actorUserId: row.actorUserId,
+    actorKind: row.actorKind,
+    actorApiKeyId: row.actorApiKeyId,
+    address: row.address,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function actorFromAuth(auth: AuthContext, address: string | null) {
+  return {
+    userId: auth.userId,
+    kind: auth.kind,
+    apiKeyId: auth.apiKeyId,
+    address,
+  };
+}
 
 export function registerApiKeyRoutes(app: Hono) {
   async function authCanManageApiKeys(auth: AuthContext): Promise<boolean> {
@@ -41,6 +72,26 @@ export function registerApiKeyRoutes(app: Hono) {
     return c.json({ apiKeys: rows.map(toApiKey) });
   });
 
+  app.get(
+    "/api/v1/api-keys/audit-logs",
+    zValidator("query", listApiKeyAuditLogsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!(await authCanManageApiKeys(auth))) {
+        return c.json(
+          auth.kind === "api_key" ? forbidden() : unauthorized(),
+          auth.kind === "api_key" ? 403 : 401,
+        );
+      }
+
+      const { limit } = c.req.valid("query");
+      const rows = await apiKeyService.listApiKeyAuditLogs(auth.workspaceId, {
+        limit,
+      });
+      return c.json({ auditLogs: rows.map(toApiKeyAuditLog) });
+    },
+  );
+
   app.post(
     "/api/v1/api-keys",
     zValidator("json", createApiKeySchema),
@@ -58,6 +109,7 @@ export function registerApiKeyRoutes(app: Hono) {
           auth.workspaceId,
           auth.userId!,
           c.req.valid("json"),
+          actorFromAuth(auth, requestClientAddress(c)),
         );
         const { notifyPeerOfEntityWrite } = await import(
           "../services/core-replication/nudge.js"
@@ -73,6 +125,13 @@ export function registerApiKeyRoutes(app: Hono) {
       } catch (error) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
+        }
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_EXPIRES_AT" ||
+            error.message === "EXPIRES_AT_IN_PAST")
+        ) {
+          return c.json(badRequest("Invalid expiresAt"), 400);
         }
         throw error;
       }
@@ -115,10 +174,47 @@ export function registerApiKeyRoutes(app: Hono) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
         }
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_EXPIRES_AT" ||
+            error.message === "EXPIRES_AT_IN_PAST")
+        ) {
+          return c.json(badRequest("Invalid expiresAt"), 400);
+        }
         throw error;
       }
     },
   );
+
+  app.post("/api/v1/api-keys/:id/rotate", async (c) => {
+    const auth = getAuth(c);
+    if (!(await authCanManageApiKeys(auth))) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
+    }
+
+    const rotated = await apiKeyService.rotateApiKey(
+      auth.workspaceId,
+      c.req.param("id"),
+      actorFromAuth(auth, requestClientAddress(c)),
+    );
+    if (!rotated) {
+      return c.json(notFound("API key"), 404);
+    }
+    const { notifyPeerOfEntityWrite } = await import(
+      "../services/core-replication/nudge.js"
+    );
+    notifyPeerOfEntityWrite({
+      workspaceId: auth.workspaceId,
+      reason: "api_key",
+      entity: "api_key",
+      entityId: rotated.row.id,
+      operation: "upsert",
+    });
+    return c.json({ apiKey: toApiKey(rotated.row), secret: rotated.secret });
+  });
 
   app.delete("/api/v1/api-keys/:id", async (c) => {
     const auth = getAuth(c);
@@ -132,6 +228,7 @@ export function registerApiKeyRoutes(app: Hono) {
     const row = await apiKeyService.revokeApiKey(
       auth.workspaceId,
       c.req.param("id"),
+      actorFromAuth(auth, requestClientAddress(c)),
     );
     if (!row) {
       return c.json(notFound("API key"), 404);
