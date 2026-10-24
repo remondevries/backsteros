@@ -6,6 +6,9 @@ import {
   BacksterosTimeoutError,
   fetchBacksterosControlProject,
   patchBacksterosControlTaskStatus,
+  peekBacksterosControlProjectIdByKey,
+  resetBacksterosControlProjectKeyCacheForTests,
+  resolveBacksterosControlProjectByKey,
   resolveBacksterosControlTask,
 } from "./control-backsteros.ts";
 
@@ -309,7 +312,7 @@ describe("backsterosFetch timeout + project detail fallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("falls back to the codebase list when resolving a task by id and detail hangs", async () => {
+  it("falls back to the codebase list when resolving a task by id and project detail hangs", async () => {
     const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith("/api/v1/tasks/task-1")) {
@@ -361,5 +364,132 @@ describe("backsterosFetch timeout + project detail fallback", () => {
       localLocation: null,
     });
     expect(resolved.task.executionLocation).toBeNull();
+  });
+});
+
+describe("resolveBacksterosControlTask by display key (BDV-64)", () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.BACKSTEROS_API_KEY;
+  const originalApiUrl = process.env.BACKSTEROS_API_URL;
+
+  beforeEach(() => {
+    process.env.BACKSTEROS_API_KEY = "test-key";
+    process.env.BACKSTEROS_API_URL = "https://api.test.backsteros.com";
+    resetBacksterosControlProjectKeyCacheForTests();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    resetBacksterosControlProjectKeyCacheForTests();
+    if (originalApiKey === undefined) {
+      delete process.env.BACKSTEROS_API_KEY;
+    } else {
+      process.env.BACKSTEROS_API_KEY = originalApiKey;
+    }
+    if (originalApiUrl === undefined) {
+      delete process.env.BACKSTEROS_API_URL;
+    } else {
+      process.env.BACKSTEROS_API_URL = originalApiUrl;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it("resolves BDV-64 with GET /tasks/<KEY> then project detail — not list-projects + list-tasks", async () => {
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/api/v1/tasks/BDV-64")) {
+        return new Response(
+          JSON.stringify({
+            id: "uuid-bdv-64",
+            number: 64,
+            title: "Control start latency",
+            status: "in_progress",
+            projectId: "proj-bdv",
+            projectKey: "BDV",
+            description: "desc",
+            executionLocation: "local",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/v1/projects/proj-bdv")) {
+        return new Response(
+          JSON.stringify({
+            id: "proj-bdv",
+            key: "BDV",
+            name: "BacksterDEV",
+            localWorkingDirectory: "/tmp/bdv",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const resolved = await resolveBacksterosControlTask("BDV-64");
+    expect(resolved.task).toMatchObject({
+      id: "uuid-bdv-64",
+      number: 64,
+      title: "Control start latency",
+      executionLocation: "local",
+    });
+    expect(resolved.project?.key).toBe("BDV");
+    expect(urls).toEqual([
+      "https://api.test.backsteros.com/api/v1/tasks/BDV-64",
+      "https://api.test.backsteros.com/api/v1/projects/proj-bdv",
+    ]);
+    expect(urls.some((url) => url.includes("/projects?type=codebase"))).toBe(false);
+    expect(urls.some((url) => url.includes("/tasks?"))).toBe(false);
+    expect(peekBacksterosControlProjectIdByKey("BDV")).toBe("proj-bdv");
+  });
+
+  it("uses the in-memory project key→id cache on resolveBacksterosControlProjectByKey", async () => {
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/tasks/BDV-1")) {
+        return new Response(
+          JSON.stringify({
+            id: "t1",
+            number: 1,
+            title: "One",
+            status: "ready_to_start",
+            projectId: "proj-bdv",
+            projectKey: "BDV",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/v1/projects/proj-bdv")) {
+        return new Response(
+          JSON.stringify({
+            id: "proj-bdv",
+            key: "BDV",
+            name: "BacksterDEV",
+            localWorkingDirectory: "/tmp/bdv",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await resolveBacksterosControlTask("BDV-1");
+    expect(peekBacksterosControlProjectIdByKey("bdv")).toBe("proj-bdv");
+
+    const project = await resolveBacksterosControlProjectByKey("BDV");
+    expect(project.id).toBe("proj-bdv");
+    // Cached id → one more project detail GET; never list-projects.
+    expect(
+      fetchMock.mock.calls.map((call) => String(call[0])).filter((url) =>
+        url.includes("/projects"),
+      ),
+    ).toEqual([
+      "https://api.test.backsteros.com/api/v1/projects/proj-bdv",
+      "https://api.test.backsteros.com/api/v1/projects/proj-bdv",
+    ]);
   });
 });

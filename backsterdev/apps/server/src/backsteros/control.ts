@@ -1,6 +1,7 @@
 /**
  * Localhost control plane: bind BacksterOS tasks to T3 threads and start agents.
  */
+import fs from "node:fs";
 import path from "node:path";
 import {
   AuthOrchestrationOperateScope,
@@ -68,6 +69,7 @@ import {
   type ControlRemoteHttpError,
   type RemoteThreadShell,
 } from "./control-remote.ts";
+import * as CursorAcpWarm from "./control-cursor-acp-warm.ts";
 import {
   cancelControlSessionIdlePromote,
   maybePromoteBacksterosTaskForControlSession,
@@ -497,13 +499,32 @@ export function resolveControlWorkspaceRoot(input: {
   readonly localWorkingDirectory: string | null | undefined;
   /** Preferred path from task executionLocation + project locations (OS-106). */
   readonly executionWorkspacePath?: string | null;
+  /**
+   * Local start only: skip saved paths that are missing on this machine
+   * (e.g. a development-server cwd) and fall through to the Mac folder.
+   * Remote starts keep the saved path — it exists on the target host.
+   */
+  readonly skipMissingLocalPaths?: boolean;
+  /** Injected for tests; defaults to `fs.existsSync`. */
+  readonly pathExists?: (candidate: string) => boolean;
 }): { readonly workspaceRoot: string } | { readonly error: ControlHttpError } {
   const fromOverride = input.workspaceRootOverride;
   if (fromOverride) return { workspaceRoot: fromOverride };
+
+  const pathExists = input.pathExists ?? ((candidate: string) => fs.existsSync(candidate));
+  const skipMissing = input.skipMissingLocalPaths === true;
+
+  const candidates: string[] = [];
   const fromExecution = input.executionWorkspacePath?.trim() ?? "";
-  if (fromExecution.length > 0) return { workspaceRoot: fromExecution };
+  if (fromExecution.length > 0) candidates.push(fromExecution);
   const fromProject = input.localWorkingDirectory?.trim() ?? "";
-  if (fromProject.length > 0) return { workspaceRoot: fromProject };
+  if (fromProject.length > 0) candidates.push(fromProject);
+
+  for (const candidate of candidates) {
+    if (skipMissing && !pathExists(candidate)) continue;
+    return { workspaceRoot: candidate };
+  }
+
   return {
     error: {
       status: 409,
@@ -881,15 +902,19 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
       displayId,
     });
 
-    const thread = yield* Effect.tryPromise({
-      try: () =>
-        fetchRemoteThreadShell({
-          httpBaseUrl: remote.httpBaseUrl,
-          accessToken: remote.accessToken,
-          threadId: boundThreadId,
-        }),
-      catch: mapRemoteHttpError,
-    });
+    // After create+dispatch, do not wait for remote provider readiness —
+    // pending-dispatch status covers the gap; callers poll / self-report.
+    const thread: ControlThreadShell | null = input.start
+      ? existingThread
+      : yield* Effect.tryPromise({
+          try: () =>
+            fetchRemoteThreadShell({
+              httpBaseUrl: remote.httpBaseUrl,
+              accessToken: remote.accessToken,
+              threadId: boundThreadId,
+            }),
+          catch: mapRemoteHttpError,
+        });
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
     // Freeze execution location when the thread is bound (OS-106 / envLocked).
@@ -901,6 +926,10 @@ const startRemoteControlSession = Effect.fn("backsteros.control.startRemoteSessi
       maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
         sessionStatus: thread?.status ?? null,
         lastError: thread?.lastError ?? null,
+        threadId: boundThreadId,
+        taskRef: displayId,
+        backsterosProjectId: project?.id ?? task.projectId ?? null,
+        title: task.title,
       });
     }
     return HttpServerResponse.jsonUnsafe({
@@ -945,6 +974,9 @@ export const controlStartHandler = catchControlErrors(
     const requestedEnvironmentLabel =
       asNonEmptyString(body.environmentLabel) ?? asNonEmptyString(body.environment);
 
+    // Warm Cursor ACP in parallel with task/project resolve (BDV-64).
+    CursorAcpWarm.kickCursorAcpWarmPool();
+
     const resolved = yield* Effect.tryPromise({
       try: () => resolveBacksterosControlTask(taskIdOrRef),
       catch: (cause): ControlHttpError => {
@@ -967,18 +999,6 @@ export const controlStartHandler = catchControlErrors(
     const executionLocation = isExecutionLocation(task.executionLocation)
       ? task.executionLocation
       : null;
-    const executionWorkspacePath = project
-      ? resolveExecutionWorkspacePath(project, executionLocation)
-      : null;
-    const workspaceResolved = resolveControlWorkspaceRoot({
-      workspaceRootOverride,
-      localWorkingDirectory: project?.localWorkingDirectory,
-      executionWorkspacePath,
-    });
-    if ("error" in workspaceResolved) {
-      return yield* Effect.fail(workspaceResolved.error);
-    }
-    const { workspaceRoot } = workspaceResolved;
 
     const config = yield* ServerConfig.ServerConfig;
     const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -1002,6 +1022,22 @@ export const controlStartHandler = catchControlErrors(
     }
     const target = targetResolved.environment;
     const environmentId = target.environmentId;
+
+    // Resolve cwd after the target is known: local starts skip server-only
+    // saved paths and fall back to the Mac folder; remote keeps them.
+    const executionWorkspacePath = project
+      ? resolveExecutionWorkspacePath(project, executionLocation)
+      : null;
+    const workspaceResolved = resolveControlWorkspaceRoot({
+      workspaceRootOverride,
+      localWorkingDirectory: project?.localWorkingDirectory,
+      executionWorkspacePath,
+      skipMissingLocalPaths: target.kind === "local",
+    });
+    if ("error" in workspaceResolved) {
+      return yield* Effect.fail(workspaceResolved.error);
+    }
+    const { workspaceRoot } = workspaceResolved;
 
     if (target.kind === "remote") {
       return yield* startRemoteControlSession({
@@ -1174,7 +1210,11 @@ export const controlStartHandler = catchControlErrors(
       displayId,
     });
 
-    const thread = yield* findThreadShell(threadId);
+    // After create+dispatch, do not wait for provider session readiness —
+    // pending-dispatch status covers the gap; callers poll / self-report.
+    const thread: ControlThreadShell | null = start
+      ? existingThread
+      : yield* findThreadShell(threadId);
     const now = yield* Clock.currentTimeMillis;
     const view = toSessionView({ taskId: task.id, binding, thread, now });
     // Freeze execution location when the thread is bound (OS-106 / envLocked).
@@ -1194,6 +1234,10 @@ export const controlStartHandler = catchControlErrors(
       maybePromoteBacksterosTaskForControlSession(task.id, view.status, {
         sessionStatus: thread?.status ?? null,
         lastError: thread?.lastError ?? null,
+        threadId,
+        taskRef: displayId,
+        backsterosProjectId: project?.id ?? task.projectId ?? null,
+        title: task.title,
       });
     }
     return HttpServerResponse.jsonUnsafe({
@@ -1343,6 +1387,10 @@ export const controlPromoteHandler = catchControlErrors(
       maybePromoteBacksterosTaskForControlSession(boundTaskId, view.status, {
         sessionStatus: thread?.status ?? null,
         lastError: thread?.lastError ?? null,
+        threadId: binding.threadId,
+        taskRef: binding.displayId,
+        backsterosProjectId: binding.backsterosProjectId,
+        title: binding.title,
       });
       sessions.push(view);
     }
@@ -1492,6 +1540,10 @@ export const controlMessageHandler = catchControlErrors(
     maybePromoteBacksterosTaskForControlSession(found.taskId, view.status, {
       sessionStatus: thread?.status ?? null,
       lastError: thread?.lastError ?? null,
+      threadId: found.binding.threadId,
+      taskRef: found.binding.displayId,
+      backsterosProjectId: found.binding.backsterosProjectId,
+      title: found.binding.title,
     });
     return HttpServerResponse.jsonUnsafe({
       ...view,

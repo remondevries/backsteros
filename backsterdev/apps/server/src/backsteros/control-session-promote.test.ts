@@ -14,6 +14,12 @@ import {
 import { writeBacksterosTaskThreadBinding } from "./task-thread-bindings.ts";
 
 const patchCalls: Array<{ taskId: string; status: string }> = [];
+const reportCalls: Array<{
+  taskId: string;
+  sessionStatus: string;
+  promotingToInReview?: boolean;
+  failedToComplete?: boolean;
+}> = [];
 
 vi.mock("./control-backsteros.ts", () => ({
   patchBacksterosControlTaskStatus: (taskId: string, status: string) => {
@@ -21,6 +27,26 @@ vi.mock("./control-backsteros.ts", () => ({
     return Promise.resolve(true);
   },
 }));
+
+vi.mock("./control-session-report.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./control-session-report.ts")>();
+  return {
+    ...actual,
+    maybeReportControlSessionOutcome: (
+      taskId: string,
+      sessionStatus: string,
+      _context: unknown,
+      options?: { promotingToInReview?: boolean; failedToComplete?: boolean },
+    ) => {
+      reportCalls.push({
+        taskId,
+        sessionStatus,
+        ...(options?.promotingToInReview === true ? { promotingToInReview: true } : {}),
+        ...(options?.failedToComplete === true ? { failedToComplete: true } : {}),
+      });
+    },
+  };
+});
 
 describe("control-session-promote (OS-73 idle in_review)", () => {
   let stateDir: string;
@@ -30,6 +56,7 @@ describe("control-session-promote (OS-73 idle in_review)", () => {
   beforeEach(() => {
     resetControlSessionPromoteStateForTests();
     patchCalls.length = 0;
+    reportCalls.length = 0;
     vi.useFakeTimers();
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "control-promote-"));
     writeBacksterosTaskThreadBinding(stateDir, TASK_ID, {
@@ -54,6 +81,32 @@ describe("control-session-promote (OS-73 idle in_review)", () => {
     expect(patchCalls).toEqual([]);
     vi.advanceTimersByTime(CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS);
     expect(patchCalls).toEqual([{ taskId: TASK_ID, status: "in_review" }]);
+    expect(reportCalls).toContainEqual({
+      taskId: TASK_ID,
+      sessionStatus: "done",
+      promotingToInReview: true,
+    });
+  });
+
+  it("self-reports blocked and error outcomes without requiring in_review", () => {
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "blocked", {
+      sessionStatus: "waiting",
+      taskRef: "OS-73",
+    });
+    expect(reportCalls).toContainEqual({ taskId: TASK_ID, sessionStatus: "blocked" });
+
+    reportCalls.length = 0;
+    maybePromoteBacksterosTaskForControlSession(TASK_ID, "idle", {
+      sessionStatus: "failed",
+      lastError: "boom",
+      taskRef: "OS-73",
+    });
+    expect(reportCalls).toContainEqual({
+      taskId: TASK_ID,
+      sessionStatus: "idle",
+      failedToComplete: true,
+    });
+    expect(patchCalls.every((call) => call.status !== "in_review")).toBe(true);
   });
 
   it("cancels promotion when a new message / activity arrives within 5s", () => {

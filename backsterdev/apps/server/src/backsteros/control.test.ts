@@ -35,6 +35,7 @@ import {
   resolveControlTurnModelPreference,
   resolveControlWorkspaceRoot,
 } from "./control.ts";
+import * as CursorAcpWarm from "./control-cursor-acp-warm.ts";
 import { resetControlSessionPromoteStateForTests } from "./control-session-promote.ts";
 import {
   CONTROL_PENDING_DISPATCH_TIMEOUT_MS,
@@ -230,6 +231,44 @@ describe("backsteros control workspace resolve", () => {
         workspaceRootOverride: null,
         localWorkingDirectory: "/Users/me/vault",
         executionWorkspacePath: "/home/deploy/code/app",
+      }),
+    ).toEqual({ workspaceRoot: "/home/deploy/code/app" });
+  });
+
+  it("on local start, skips a missing server path and falls back to the Mac folder (BDV-64)", () => {
+    const existing = new Set(["/Users/me/vault"]);
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "/Users/me/vault",
+        executionWorkspacePath: "/home/deploy/code/app",
+        skipMissingLocalPaths: true,
+        pathExists: (candidate) => existing.has(candidate),
+      }),
+    ).toEqual({ workspaceRoot: "/Users/me/vault" });
+  });
+
+  it("on local start, still prefers an execution path that exists on disk", () => {
+    const existing = new Set(["/Users/me/vault", "/home/deploy/code/app"]);
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "/Users/me/vault",
+        executionWorkspacePath: "/home/deploy/code/app",
+        skipMissingLocalPaths: true,
+        pathExists: (candidate) => existing.has(candidate),
+      }),
+    ).toEqual({ workspaceRoot: "/home/deploy/code/app" });
+  });
+
+  it("on remote start, keeps a server-only execution path even when missing locally", () => {
+    expect(
+      resolveControlWorkspaceRoot({
+        workspaceRootOverride: null,
+        localWorkingDirectory: "/Users/me/vault",
+        executionWorkspacePath: "/home/deploy/code/app",
+        skipMissingLocalPaths: false,
+        pathExists: () => false,
       }),
     ).toEqual({ workspaceRoot: "/home/deploy/code/app" });
   });
@@ -486,7 +525,18 @@ describe("control API handlers (OS-38)", () => {
   const TASK_ID = "task-os38";
   const THREAD_ID = "11111111-2222-4333-8444-555555555555";
 
-  type FakeTask = { id: string; status: string; updatedAt: string };
+  type FakeTask = {
+    id: string;
+    status: string;
+    updatedAt: string;
+    executionLocation?: string | null;
+  };
+
+  type FakeProjectLocations = {
+    localWorkingDirectory: string;
+    developmentLocation?: string | null;
+    productionLocation?: string | null;
+  };
 
   type ThreadState = {
     /** V2 shell run status: idle | preparing | queued | starting | running | waiting | completed | interrupted | failed … */
@@ -501,6 +551,7 @@ describe("control API handlers (OS-38)", () => {
   let stateDir: string;
   let idCounter = 0;
   let fakeTask: FakeTask;
+  let fakeProjectLocations: FakeProjectLocations;
   let threadState: ThreadState;
   let fetchCalls: Array<{ method: string; url: string; patchStatus?: string }>;
   type DispatchedCommand = {
@@ -515,6 +566,7 @@ describe("control API handlers (OS-38)", () => {
     projectId?: string;
   };
   let dispatched: DispatchedCommand[];
+  let getThreadShellCalls: string[];
   const savedEnv = {
     key: process.env.BACKSTEROS_API_KEY,
     url: process.env.BACKSTEROS_API_URL,
@@ -544,6 +596,11 @@ describe("control API handlers (OS-38)", () => {
     readonly projects?: ReadonlyArray<unknown>;
     readonly threads?: ReadonlyArray<ReturnType<typeof threadShell>>;
     readonly dispatch?: (command: DispatchedCommand) => Effect.Effect<unknown, unknown>;
+    readonly createProject?: (input: {
+      readonly workspaceRoot: string;
+      readonly projectId: string;
+      readonly title: string;
+    }) => Effect.Effect<unknown, unknown>;
   };
 
   /** Provide every service the local (in-process) control path needs. */
@@ -553,6 +610,15 @@ describe("control API handlers (OS-38)", () => {
     options: ShellOptions = {},
   ): Effect.Effect<A, E> {
     const threads = options.threads ?? [threadShell()];
+    const createdShells: Array<{
+      id: string;
+      title: string;
+      workspaceRoot: string;
+      defaultModelSelection: { instanceId: string; model: string };
+      scripts: readonly [];
+      createdAt: string;
+      updatedAt: string;
+    }> = [];
     return effect.pipe(
       Effect.provideService(
         HttpServerRequest.HttpServerRequest,
@@ -571,7 +637,10 @@ describe("control API handlers (OS-38)", () => {
       } as never),
       Effect.provideService(ThreadManagementService.ThreadManagementService, {
         getThreadShell: (threadId: string) =>
-          Effect.sync(() => threads.find((thread) => thread.id === threadId) ?? null),
+          Effect.sync(() => {
+            getThreadShellCalls.push(String(threadId));
+            return threads.find((thread) => thread.id === threadId) ?? null;
+          }),
         dispatch: (command: DispatchedCommand) => {
           dispatched.push(command);
           return options.dispatch
@@ -580,7 +649,25 @@ describe("control API handlers (OS-38)", () => {
         },
       } as never),
       Effect.provideService(ProjectService.ProjectService, {
-        listShells: () => Effect.sync(() => options.projects ?? []),
+        listShells: () => Effect.sync(() => [...(options.projects ?? []), ...createdShells]),
+        create: (input: {
+          workspaceRoot: string;
+          projectId: string;
+          title: string;
+        }) => {
+          const shell = {
+            id: input.projectId,
+            title: input.title,
+            workspaceRoot: input.workspaceRoot,
+            defaultModelSelection: { instanceId: "claudeAgent", model: "opus" },
+            scripts: [] as const,
+            createdAt: "2026-09-27T22:00:00.000Z",
+            updatedAt: "2026-09-27T22:00:00.000Z",
+          };
+          createdShells.push(shell);
+          if (options.createProject) return options.createProject(input);
+          return Effect.succeed(shell);
+        },
       } as never),
       Effect.provideService(ProviderRegistry, {
         getProviders: Effect.succeed([
@@ -655,6 +742,10 @@ describe("control API handlers (OS-38)", () => {
       displayId: "OS-38",
     });
     fakeTask = { id: TASK_ID, status: "completed", updatedAt: "2026-09-27T22:17:17.065Z" };
+    fakeProjectLocations = { localWorkingDirectory: "/tmp/os-workspace" };
+    // Local start now skips missing cwd candidates (BDV-64); keep the fixture on disk.
+    fs.mkdirSync("/tmp/os-workspace", { recursive: true });
+    getThreadShellCalls = [];
     threadState = {
       status: "completed",
       lastError: null,
@@ -688,7 +779,7 @@ describe("control API handlers (OS-38)", () => {
                   id: "os-project",
                   key: "OS",
                   name: "OS",
-                  localWorkingDirectory: "/tmp/os-workspace",
+                  ...fakeProjectLocations,
                 },
               ],
             }),
@@ -701,7 +792,7 @@ describe("control API handlers (OS-38)", () => {
               id: "os-project",
               key: "OS",
               name: "OS",
-              localWorkingDirectory: "/tmp/os-workspace",
+              ...fakeProjectLocations,
             }),
             { status: 200 },
           );
@@ -719,6 +810,7 @@ describe("control API handlers (OS-38)", () => {
               title: "test",
               projectId: "os-project",
               description: "desc",
+              executionLocation: fakeTask.executionLocation ?? null,
             }),
             { status: 200 },
           );
@@ -951,6 +1043,64 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
     });
 
+    it("skips a missing developmentLocation and kicks off in the Mac folder (BDV-64)", async () => {
+      const macFolder = fs.mkdtempSync(path.join(os.tmpdir(), "bdv64-mac-"));
+      try {
+        removeBacksterosTaskThreadBinding(stateDir, TASK_ID);
+        fakeTask.status = "ready_to_start";
+        fakeTask.executionLocation = "development";
+        fakeProjectLocations = {
+          localWorkingDirectory: macFolder,
+          developmentLocation: "/home/deploy/server-only-bdv64-does-not-exist",
+        };
+        const createdProjects: string[] = [];
+        const response = await Effect.runPromise(
+          provideControlServices(
+            controlStartHandler,
+            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${API_KEY}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                taskId: TASK_ID,
+                start: true,
+                // Force local even though the task is locked to development.
+                environmentId: "env-1",
+                environmentLabel: "local",
+              }),
+            }),
+            {
+              projects: [],
+              createProject: (input) => {
+                createdProjects.push(input.workspaceRoot);
+                return Effect.succeed({
+                  id: input.projectId,
+                  title: input.title,
+                  workspaceRoot: input.workspaceRoot,
+                  defaultModelSelection: { instanceId: "claudeAgent", model: "opus" },
+                  scripts: [],
+                  createdAt: "2026-09-27T22:00:00.000Z",
+                  updatedAt: "2026-09-27T22:00:00.000Z",
+                });
+              },
+            },
+          ),
+        ).then((res) => HttpServerResponse.toWeb(res));
+
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { started: boolean; created: boolean };
+        expect(body).toMatchObject({ started: true, created: true });
+        expect(createdProjects).toEqual([macFolder]);
+        const turn = dispatched.find((command) => command.type === "message.dispatch");
+        expect(turn?.text).toContain(`Working directory: ${macFolder}`);
+        expect(turn?.text).not.toContain("server-only-bdv64-does-not-exist");
+      } finally {
+        fs.rmSync(macFolder, { recursive: true, force: true });
+      }
+    });
+
     it("a new thread uses the project default model", async () => {
       removeBacksterosTaskThreadBinding(stateDir, TASK_ID);
       fakeTask.status = "ready_to_start";
@@ -974,6 +1124,57 @@ describe("control API handlers (OS-38)", () => {
         attachments: [],
       });
       expect(turn?.titleSeed).toContain("OS-38");
+    });
+
+    it("returns after dispatch without re-reading the thread shell (BDV-64)", async () => {
+      removeBacksterosTaskThreadBinding(stateDir, TASK_ID);
+      fakeTask.status = "ready_to_start";
+      getThreadShellCalls = [];
+      const response = await runStart({
+        taskId: TASK_ID,
+        start: true,
+        prompt: "Return before provider readiness.",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        created: boolean;
+        started: boolean;
+        status: string;
+        threadId: string;
+        sessionStatus: string | null;
+      };
+      expect(body).toMatchObject({
+        created: true,
+        started: true,
+        status: "working",
+        sessionStatus: null,
+      });
+      expect(body.threadId).toBeTruthy();
+      // New thread: no pre-dispatch shell lookup, and none after dispatch.
+      expect(getThreadShellCalls).toEqual([]);
+      expect(getControlPendingDispatch(body.threadId)).not.toBeNull();
+      expect(dispatched.map((command) => command.type)).toEqual([
+        "thread.create",
+        "message.dispatch",
+      ]);
+    });
+
+    it("kicks Cursor ACP warm-up at start arrival (BDV-64)", async () => {
+      const kickSpy = vi
+        .spyOn(CursorAcpWarm, "kickCursorAcpWarmPool")
+        .mockImplementation(() => undefined);
+      try {
+        fakeTask.status = "in_progress";
+        const response = await runStart({
+          taskId: TASK_ID,
+          start: true,
+          prompt: "Warm kick.",
+        });
+        expect(response.status).toBe(200);
+        expect(kickSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        kickSpy.mockRestore();
+      }
     });
 
     function runPromote(): Promise<Response> {

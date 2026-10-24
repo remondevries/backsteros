@@ -10,6 +10,11 @@ import {
 } from "@t3tools/shared/backsterosTaskAutoPromote";
 
 import { patchBacksterosControlTaskStatus } from "./control-backsteros.ts";
+import {
+  maybeReportControlSessionOutcome,
+  resetControlSessionReportStateForTests,
+  type ControlSessionReportContext,
+} from "./control-session-report.ts";
 import { findBacksterosTaskThreadBinding } from "./task-thread-bindings.ts";
 
 const lastPromotedStatus = new Map<string, BacksterosControlSessionStatus>();
@@ -27,6 +32,7 @@ export function resetControlSessionPromoteStateForTests(): void {
   }
   idlePromoteTimers.clear();
   idlePromoteGenerations.clear();
+  resetControlSessionReportStateForTests();
 }
 
 /**
@@ -48,10 +54,7 @@ function cancelIdlePromoteForTask(taskId: string): void {
   idlePromoteGenerations.set(taskId, (idlePromoteGenerations.get(taskId) ?? 0) + 1);
 }
 
-export type ControlSessionPromoteThread = {
-  readonly sessionStatus?: string | null;
-  readonly lastError?: string | null;
-};
+export type ControlSessionPromoteThread = ControlSessionReportContext;
 
 /**
  * A rejected turn (run `failed`, or `interrupted`/`cancelled` with `lastError`) must not
@@ -86,6 +89,7 @@ export function maybePromoteBacksterosTaskForControlSession(
   thread?: ControlSessionPromoteThread | null,
 ): void {
   const previous = lastPromotedStatus.get(taskId);
+  const failed = controlSessionFailedToComplete(thread);
 
   let target = backsterosStatusForControlSession(sessionStatus);
   if (
@@ -95,9 +99,24 @@ export function maybePromoteBacksterosTaskForControlSession(
   ) {
     target = "in_review";
   }
+
+  // Self-report before early returns so failed turns still notify once.
+  const promotingToInReview = target === "in_review" && !failed;
+  if (
+    sessionStatus === "working" ||
+    sessionStatus === "blocked" ||
+    promotingToInReview ||
+    failed
+  ) {
+    maybeReportControlSessionOutcome(taskId, sessionStatus, thread, {
+      promotingToInReview,
+      failedToComplete: failed,
+    });
+  }
+
   // Do not record a failed idle/done snapshot. A later healthy `done` from
   // the web UI timer would otherwise hit previous === "done" and skip.
-  if (target === "in_review" && controlSessionFailedToComplete(thread)) {
+  if (target === "in_review" && failed) {
     return;
   }
 
@@ -154,7 +173,12 @@ export function scheduleControlSessionPromoteAfterTurn(
       if (options?.isIdle && !options.isIdle()) {
         return;
       }
-      maybePromoteBacksterosTaskForControlSession(found.taskId, "done");
+      maybePromoteBacksterosTaskForControlSession(found.taskId, "done", {
+        threadId: found.binding.threadId,
+        taskRef: found.binding.displayId,
+        backsterosProjectId: found.binding.backsterosProjectId,
+        title: found.binding.title,
+      });
     }, CONTROL_SESSION_IDLE_PROMOTE_GRACE_MS),
   );
 }

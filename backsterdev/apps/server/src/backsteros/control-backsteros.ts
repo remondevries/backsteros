@@ -217,6 +217,24 @@ export async function fetchBacksterosControlProject(
   }
 }
 
+/** In-memory project key → id cache (control start path). */
+const projectIdByKey = new Map<string, string>();
+
+export function resetBacksterosControlProjectKeyCacheForTests(): void {
+  projectIdByKey.clear();
+}
+
+export function rememberBacksterosControlProjectKey(projectKey: string, projectId: string): void {
+  const key = projectKey.trim().toUpperCase();
+  const id = projectId.trim();
+  if (!key || !id) return;
+  projectIdByKey.set(key, id);
+}
+
+export function peekBacksterosControlProjectIdByKey(projectKey: string): string | null {
+  return projectIdByKey.get(projectKey.trim().toUpperCase()) ?? null;
+}
+
 async function listBacksterosControlProjects(): Promise<ReadonlyArray<BacksterosControlProject>> {
   const payload = await backsterosFetchJson<{
     projects?: ReadonlyArray<{
@@ -229,13 +247,21 @@ async function listBacksterosControlProjects(): Promise<ReadonlyArray<Backsteros
       localLocation?: string | null;
     }>;
   }>("/api/v1/projects?type=codebase");
-  return (payload.projects ?? []).map(mapProjectRow);
+  const projects = (payload.projects ?? []).map(mapProjectRow);
+  for (const project of projects) {
+    if (project.key) rememberBacksterosControlProjectKey(project.key, project.id);
+  }
+  return projects;
 }
 
 export async function resolveBacksterosControlProjectByKey(
   projectKey: string,
 ): Promise<BacksterosControlProject> {
   const key = projectKey.trim().toUpperCase();
+  const cachedId = projectIdByKey.get(key);
+  if (cachedId) {
+    return fetchBacksterosControlProject(cachedId);
+  }
   const projects = await listBacksterosControlProjects();
   const match = projects.find((project) => (project.key ?? "").toUpperCase() === key);
   if (!match) {
@@ -243,6 +269,18 @@ export async function resolveBacksterosControlProjectByKey(
   }
   return match;
 }
+
+type BacksterosTaskDetailRow = {
+  id: string;
+  number: number;
+  title: string;
+  status: string;
+  projectId?: string | null;
+  projectKey?: string | null;
+  description?: string | null;
+  executionLocation?: string | null;
+  executionLocationLockedAt?: string | null;
+};
 
 export async function resolveBacksterosControlTask(taskRefOrId: string): Promise<{
   readonly task: BacksterosControlTask;
@@ -254,52 +292,27 @@ export async function resolveBacksterosControlTask(taskRefOrId: string): Promise
   }
 
   const display = parseBacksterosDisplayId(trimmed);
-  if (display) {
-    const project = await resolveBacksterosControlProjectByKey(display.projectKey);
-    const payload = await backsterosFetchJson<{
-      tasks?: ReadonlyArray<{
-        id: string;
-        number: number;
-        title: string;
-        status: string;
-        projectId?: string | null;
-        description?: string | null;
-      }>;
-    }>(`/api/v1/tasks?projectId=${encodeURIComponent(project.id)}`);
-    const listed = (payload.tasks ?? []).find((entry) => entry.number === display.number);
-    if (!listed) {
-      throw new Error(`BacksterOS task not found: ${display.projectKey}-${display.number}`);
-    }
-    // List rows may omit description — fetch detail when present.
-    const detail = await backsterosFetchJson<{
-      id: string;
-      number: number;
-      title: string;
-      status: string;
-      projectId?: string | null;
-      description?: string | null;
-      executionLocation?: string | null;
-      executionLocationLockedAt?: string | null;
-    }>(`/api/v1/tasks/${encodeURIComponent(listed.id)}`);
-    return {
-      task: mapTaskRow({ ...detail, projectId: detail.projectId ?? project.id }),
-      project,
-    };
+  // Display ids (BDV-64) resolve with a single GET /tasks/<KEY> — not
+  // list-projects + list-tasks + detail.
+  const detail = await backsterosFetchJson<BacksterosTaskDetailRow>(
+    `/api/v1/tasks/${encodeURIComponent(trimmed)}`,
+  );
+  const projectKey =
+    (typeof detail.projectKey === "string" && detail.projectKey.trim()) ||
+    display?.projectKey ||
+    null;
+  if (projectKey && detail.projectId) {
+    rememberBacksterosControlProjectKey(projectKey, detail.projectId);
   }
-
-  const detail = await backsterosFetchJson<{
-    id: string;
-    number: number;
-    title: string;
-    status: string;
-    projectId?: string | null;
-    description?: string | null;
-    executionLocation?: string | null;
-    executionLocationLockedAt?: string | null;
-  }>(`/api/v1/tasks/${encodeURIComponent(trimmed)}`);
+  if (display && detail.number !== display.number) {
+    throw new Error(`BacksterOS task not found: ${display.projectKey}-${display.number}`);
+  }
   const project = detail.projectId ? await fetchBacksterosControlProject(detail.projectId) : null;
+  if (project?.key) {
+    rememberBacksterosControlProjectKey(project.key, project.id);
+  }
   return {
-    task: mapTaskRow(detail),
+    task: mapTaskRow({ ...detail, projectId: detail.projectId ?? project?.id ?? null }),
     project,
   };
 }
