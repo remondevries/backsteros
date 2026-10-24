@@ -51,6 +51,8 @@ export const REPLICATED_TABLES = [
   "device_push_tokens",
   "entity_counters",
   "api_keys",
+  /** Append-only audit trail for API key create / revoke / rotate (OS-139). */
+  "api_key_audit_logs",
   "financial_transactions",
   /** Portal client estimates (Finance Estimates / Financials ACL). */
   "client_estimates",

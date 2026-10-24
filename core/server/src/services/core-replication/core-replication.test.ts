@@ -40,7 +40,13 @@ describe("core-replication constants", () => {
     assert.ok(REPLICATED_TABLES.includes("crm_activities"));
     assert.ok(REPLICATED_TABLES.includes("organizations"));
     assert.ok(REPLICATED_TABLES.includes("api_keys"));
+    assert.ok(REPLICATED_TABLES.includes("api_key_audit_logs"));
     assert.ok(REPLICATED_TABLES.includes("financial_transactions"));
+    assert.ok(
+      REPLICATED_TABLES.indexOf("api_keys") <
+        REPLICATED_TABLES.indexOf("api_key_audit_logs"),
+      "api_key_audit_logs must follow api_keys for FK order",
+    );
     assert.ok(REPLICATED_TABLES.includes("client_estimates"));
     assert.ok(BOOTSTRAP_TABLES.includes("workspaces"));
     assert.ok(BOOTSTRAP_TABLES.includes("users"));

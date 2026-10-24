@@ -41,8 +41,8 @@ const ENTITY_REPLICATION_TABLES: Partial<
   document_property_type: ["document_property_types"],
   /** Avatar blob metadata (contact / org / bank account chrome). */
   avatar: ["avatars"],
-  /** API keys minted/revoked on either core must twin immediately. */
-  api_key: ["api_keys"],
+  /** API keys + audit rows minted/revoked on either core must twin immediately. */
+  api_key: ["api_keys", "api_key_audit_logs"],
   space_publish_setting: ["space_publish_settings"],
   space_site_key: ["space_site_keys"],
   chat_conversation: ["chat_conversations", "chat_messages"],

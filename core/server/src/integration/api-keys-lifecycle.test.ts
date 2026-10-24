@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import test from "node:test";
+import { after, test } from "node:test";
 
 import { eq } from "drizzle-orm";
 
@@ -23,6 +23,10 @@ import { resetApiKeyLastUsedThrottleForTests } from "../services/api-keys.js";
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
 const newSecret = () => `sk_live_${randomUUID().replaceAll("-", "")}`;
 
+after(async () => {
+  await sqlClient.end();
+});
+
 test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   const app = createApp();
   const userId = id("user");
@@ -35,7 +39,6 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
     await db.delete(users).where(eq(users.id, userId));
-    await sqlClient.end();
   });
 
   await db.insert(users).values({
@@ -101,7 +104,8 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     ),
   );
 
-  // Last-used updates on successful auth (throttled — reset for test)
+  // Last-used updates on successful auth (throttled — reset for test).
+  // Spoofed x-forwarded-for must be ignored without a trusted proxy peer.
   resetApiKeyLastUsedThrottleForTests();
   const probe = await app.request("/api/v1/api-keys", {
     headers: {
@@ -127,7 +131,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   const agent = listBody.apiKeys.find((key) => key.id === createdBody.apiKey.id);
   assert.ok(agent);
   assert.ok(agent.lastUsedAt);
-  assert.equal(agent.lastUsedAddress, "203.0.113.50");
+  assert.notEqual(agent.lastUsedAddress, "203.0.113.50");
 
   // Rotate keeps id, changes secret
   const rotated = await app.request(
@@ -190,4 +194,92 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   assert.ok(actions.includes("created"));
   assert.ok(actions.includes("rotated"));
   assert.ok(actions.includes("revoked"));
+});
+
+test("API keys: settings-write key cannot extend expiry beyond its own", async (context) => {
+  const app = createApp();
+  const userId = id("user");
+  const workspaceId = id("workspace");
+  const ownerSecret = newSecret();
+  const ownerKeyId = id("key");
+  const actorExpiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+  context.after(async () => {
+    await db.delete(apiKeyAuditLogs).where(eq(apiKeyAuditLogs.workspaceId, workspaceId));
+    await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
+  });
+
+  await db.insert(users).values({
+    id: userId,
+    clerkId: id("clerk"),
+    email: `owner-${randomUUID()}@example.test`,
+  });
+  await db.insert(workspaces).values({
+    id: workspaceId,
+    name: "API keys expiry rights",
+    slug: id("apikeys-exp"),
+    ownerUserId: userId,
+  });
+  await db.insert(apiKeys).values({
+    id: ownerKeyId,
+    workspaceId,
+    userId,
+    name: "owner-expiring",
+    prefix: apiKeyLookupPrefix(ownerSecret),
+    keyHash: hashApiKey(ownerSecret),
+    scopes: [...API_KEY_SCOPES],
+    expiresAt: actorExpiresAt,
+  });
+
+  const auth = {
+    authorization: `Bearer ${ownerSecret}`,
+    "content-type": "application/json",
+  };
+
+  const tooFar = new Date(actorExpiresAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const created = await app.request("/api/v1/api-keys", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      name: "child-key",
+      scopes: ["tasks:read"],
+      expiresAt: tooFar,
+    }),
+  });
+  assert.equal(created.status, 400);
+
+  const never = await app.request("/api/v1/api-keys", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      name: "never-key",
+      scopes: ["tasks:read"],
+    }),
+  });
+  assert.equal(never.status, 400);
+
+  const okExpiry = new Date(actorExpiresAt.getTime() - 60_000).toISOString();
+  const ok = await app.request("/api/v1/api-keys", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      name: "ok-key",
+      scopes: ["tasks:read"],
+      expiresAt: okExpiry,
+    }),
+  });
+  assert.equal(ok.status, 201);
+  const okBody = (await ok.json()) as { apiKey: { id: string } };
+
+  const patchTooFar = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(okBody.apiKey.id)}`,
+    {
+      method: "PATCH",
+      headers: auth,
+      body: JSON.stringify({ expiresAt: tooFar }),
+    },
+  );
+  assert.equal(patchTooFar.status, 400);
 });

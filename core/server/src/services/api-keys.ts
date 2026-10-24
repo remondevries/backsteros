@@ -26,6 +26,8 @@ import {
 
 /** Min gap between last-used writes for the same key (per process). */
 const LAST_USED_TOUCH_INTERVAL_MS = 60_000;
+/** Cap in-memory throttle entries so long-lived processes cannot grow unboundedly. */
+const LAST_USED_TOUCH_MAX_ENTRIES = 2_048;
 const lastUsedTouchAt = new Map<string, number>();
 
 export type ApiKeyActor = {
@@ -136,14 +138,40 @@ function assertExpiresAtNotPast(expiresAt: Date | null | undefined) {
   }
 }
 
-async function appendAuditLog(input: {
+/**
+ * A settings:write API key may not mint or extend another key beyond its own
+ * expiry (including clearing expiry to never). Local-shell / non-key actors
+ * are unrestricted.
+ */
+async function assertExpiresAtWithinActorRights(
+  actor: ApiKeyActor | null | undefined,
+  expiresAt: Date | null | undefined,
+) {
+  if (!actor?.apiKeyId || expiresAt === undefined) return;
+
+  const [actorKey] = await db
+    .select({ expiresAt: apiKeys.expiresAt })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, actor.apiKeyId), isNull(apiKeys.revokedAt)))
+    .limit(1);
+  const actorExpiresAt = actorKey?.expiresAt ?? null;
+  if (!actorExpiresAt) return;
+
+  if (expiresAt === null || expiresAt.getTime() > actorExpiresAt.getTime()) {
+    throw new Error("EXPIRES_AT_BEYOND_ACTOR");
+  }
+}
+
+type AuditLogInsert = {
   workspaceId: string;
   apiKeyId: string;
   apiKeyName: string;
   action: ApiKeyAuditLogAction;
   actor?: ApiKeyActor | null;
-}) {
-  await db.insert(apiKeyAuditLogs).values({
+};
+
+function auditLogValues(input: AuditLogInsert) {
+  return {
     id: newId(),
     workspaceId: input.workspaceId,
     apiKeyId: input.apiKeyId,
@@ -153,7 +181,16 @@ async function appendAuditLog(input: {
     actorKind: input.actor?.kind ?? null,
     actorApiKeyId: input.actor?.apiKeyId ?? null,
     address: input.actor?.address ?? null,
-  });
+  };
+}
+
+function rememberLastUsedTouch(apiKeyId: string, nowMs: number) {
+  lastUsedTouchAt.set(apiKeyId, nowMs);
+  while (lastUsedTouchAt.size > LAST_USED_TOUCH_MAX_ENTRIES) {
+    const oldest = lastUsedTouchAt.keys().next().value;
+    if (oldest == null) break;
+    lastUsedTouchAt.delete(oldest);
+  }
 }
 
 /**
@@ -169,7 +206,7 @@ export async function touchApiKeyLastUsed(
   if (nowMs - previous < LAST_USED_TOUCH_INTERVAL_MS) {
     return;
   }
-  lastUsedTouchAt.set(apiKeyId, nowMs);
+  rememberLastUsedTouch(apiKeyId, nowMs);
   const now = new Date(nowMs);
   const normalizedAddress = address?.trim() || null;
   try {
@@ -191,6 +228,19 @@ export function resetApiKeyLastUsedThrottleForTests(): void {
   lastUsedTouchAt.clear();
 }
 
+/** Test helper — current throttle map size after remember/evict. */
+export function apiKeyLastUsedThrottleSizeForTests(): number {
+  return lastUsedTouchAt.size;
+}
+
+/** Test helper — fill the throttle map without hitting the database. */
+export function fillApiKeyLastUsedThrottleForTests(count: number): void {
+  const now = Date.now();
+  for (let i = 0; i < count; i += 1) {
+    rememberLastUsedTouch(`throttle-fill-${i}`, now);
+  }
+}
+
 export async function createApiKey(
   workspaceId: string,
   userId: string,
@@ -205,30 +255,40 @@ export async function createApiKey(
   );
   const expiresAt = parseExpiresAt(input.expiresAt);
   assertExpiresAtNotPast(expiresAt);
+  await assertExpiresAtWithinActorRights(actor, expiresAt === undefined ? null : expiresAt);
 
+  const resolvedActor =
+    actor ?? ({ userId, kind: "local_shell", apiKeyId: null } satisfies ApiKeyActor);
   const now = new Date();
-  const [row] = await db
-    .insert(apiKeys)
-    .values({
-      id,
-      workspaceId,
-      userId,
-      name: input.name,
-      prefix: apiKeyLookupPrefix(secret),
-      keyHash: hashApiKey(secret),
-      scopes: input.scopes as ApiKeyScope[],
-      contactId,
-      expiresAt: expiresAt === undefined ? null : expiresAt,
-      updatedAt: now,
-    })
-    .returning();
 
-  await appendAuditLog({
-    workspaceId,
-    apiKeyId: row.id,
-    apiKeyName: row.name,
-    action: "created",
-    actor: actor ?? { userId, kind: "local_shell", apiKeyId: null },
+  const [row] = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(apiKeys)
+      .values({
+        id,
+        workspaceId,
+        userId,
+        name: input.name,
+        prefix: apiKeyLookupPrefix(secret),
+        keyHash: hashApiKey(secret),
+        scopes: input.scopes as ApiKeyScope[],
+        contactId,
+        expiresAt: expiresAt === undefined ? null : expiresAt,
+        updatedAt: now,
+      })
+      .returning();
+
+    await tx.insert(apiKeyAuditLogs).values(
+      auditLogValues({
+        workspaceId,
+        apiKeyId: created.id,
+        apiKeyName: created.name,
+        action: "created",
+        actor: resolvedActor,
+      }),
+    );
+
+    return [created];
   });
 
   return { row, secret };
@@ -239,33 +299,39 @@ export async function revokeApiKey(
   id: string,
   actor?: ApiKeyActor | null,
 ) {
-  const [row] = await db
-    .update(apiKeys)
-    .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(apiKeys.id, id),
-        eq(apiKeys.workspaceId, workspaceId),
-        isNull(apiKeys.revokedAt),
-      ),
-    )
-    .returning();
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(apiKeys)
+      .set({ revokedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(apiKeys.id, id),
+          eq(apiKeys.workspaceId, workspaceId),
+          isNull(apiKeys.revokedAt),
+        ),
+      )
+      .returning();
 
-  if (row) {
-    await appendAuditLog({
-      workspaceId,
-      apiKeyId: row.id,
-      apiKeyName: row.name,
-      action: "revoked",
-      actor,
-    });
-  }
+    if (!row) return null;
 
-  return row ?? null;
+    await tx.insert(apiKeyAuditLogs).values(
+      auditLogValues({
+        workspaceId,
+        apiKeyId: row.id,
+        apiKeyName: row.name,
+        action: "revoked",
+        actor,
+      }),
+    );
+
+    return row;
+  });
 }
 
 /**
  * Replace the secret in place (same id / name / scopes / contact / expiry).
+ * No grace period: the previous hash is overwritten immediately, so the old
+ * secret stops authenticating as soon as this commit lands.
  * New secret is returned once; last-used fields are cleared.
  */
 export async function rotateApiKey(
@@ -275,35 +341,44 @@ export async function rotateApiKey(
 ): Promise<{ row: DbApiKey; secret: string } | null> {
   const secret = generateApiKeySecret();
   const now = new Date();
-  const [row] = await db
-    .update(apiKeys)
-    .set({
-      prefix: apiKeyLookupPrefix(secret),
-      keyHash: hashApiKey(secret),
-      lastUsedAt: null,
-      lastUsedAddress: null,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(apiKeys.id, id),
-        eq(apiKeys.workspaceId, workspaceId),
-        isNull(apiKeys.revokedAt),
-      ),
-    )
-    .returning();
+
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(apiKeys)
+      .set({
+        prefix: apiKeyLookupPrefix(secret),
+        keyHash: hashApiKey(secret),
+        lastUsedAt: null,
+        lastUsedAddress: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(apiKeys.id, id),
+          eq(apiKeys.workspaceId, workspaceId),
+          isNull(apiKeys.revokedAt),
+        ),
+      )
+      .returning();
+
+    if (!updated) return null;
+
+    await tx.insert(apiKeyAuditLogs).values(
+      auditLogValues({
+        workspaceId,
+        apiKeyId: updated.id,
+        apiKeyName: updated.name,
+        action: "rotated",
+        actor,
+      }),
+    );
+
+    return updated;
+  });
 
   if (!row) return null;
 
   lastUsedTouchAt.delete(id);
-  await appendAuditLog({
-    workspaceId,
-    apiKeyId: row.id,
-    apiKeyName: row.name,
-    action: "rotated",
-    actor,
-  });
-
   return { row, secret };
 }
 
@@ -315,6 +390,7 @@ export async function updateApiKey(
     contactId?: string | null;
     expiresAt?: string | null;
   },
+  actor?: ApiKeyActor | null,
 ) {
   const patch: {
     name?: string;
@@ -328,6 +404,7 @@ export async function updateApiKey(
   if (input.expiresAt !== undefined) {
     const expiresAt = parseExpiresAt(input.expiresAt);
     assertExpiresAtNotPast(expiresAt);
+    await assertExpiresAtWithinActorRights(actor, expiresAt ?? null);
     patch.expiresAt = expiresAt ?? null;
   }
   if (

@@ -573,7 +573,8 @@ export const apiKeys = pgTable(
 
 /**
  * Staff-facing audit trail for API key create / revoke / rotate.
- * Not in REPLICATED_TABLES — each core keeps the events it performed.
+ * Twinned between cores (insert-only, idempotent by id) so history is searchable
+ * from either side (OS-139).
  */
 export const apiKeyAuditLogs = pgTable(
   "api_key_audit_logs",

@@ -30,7 +30,10 @@ describe("replicatedTablesForEntity", () => {
       "organizations",
       "avatars",
     ]);
-    assert.deepEqual(replicatedTablesForEntity("api_key"), ["api_keys"]);
+    assert.deepEqual(replicatedTablesForEntity("api_key"), [
+      "api_keys",
+      "api_key_audit_logs",
+    ]);
     assert.deepEqual(replicatedTablesForEntity("project_update"), [
       "project_updates",
     ]);

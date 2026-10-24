@@ -76,6 +76,8 @@ const TABLE_SPECS: TableSpec[] = [
   spec("device_push_tokens", ["id"], "updated_at", { optional: true }),
   spec("entity_counters", ["workspace_id", "entity", "scope_id"]),
   spec("api_keys", ["id"]),
+  /** Insert-only; cursor on created_at. Optional for peer schema lag after 0157. */
+  spec("api_key_audit_logs", ["id"], "created_at", { optional: true }),
   spec("financial_transactions", ["id"]),
   spec("client_estimates", ["id"], "updated_at", { optional: true }),
   spec("document_property_types", ["id"], "updated_at", { optional: true }),

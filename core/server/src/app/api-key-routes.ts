@@ -129,9 +129,17 @@ export function registerApiKeyRoutes(app: Hono) {
         if (
           error instanceof Error &&
           (error.message === "INVALID_EXPIRES_AT" ||
-            error.message === "EXPIRES_AT_IN_PAST")
+            error.message === "EXPIRES_AT_IN_PAST" ||
+            error.message === "EXPIRES_AT_BEYOND_ACTOR")
         ) {
-          return c.json(badRequest("Invalid expiresAt"), 400);
+          return c.json(
+            badRequest(
+              error.message === "EXPIRES_AT_BEYOND_ACTOR"
+                ? "expiresAt cannot outlive the acting API key"
+                : "Invalid expiresAt",
+            ),
+            400,
+          );
         }
         throw error;
       }
@@ -155,6 +163,7 @@ export function registerApiKeyRoutes(app: Hono) {
           auth.workspaceId,
           c.req.param("id"),
           c.req.valid("json"),
+          actorFromAuth(auth, requestClientAddress(c)),
         );
         if (!row) {
           return c.json(notFound("API key"), 404);
@@ -177,9 +186,17 @@ export function registerApiKeyRoutes(app: Hono) {
         if (
           error instanceof Error &&
           (error.message === "INVALID_EXPIRES_AT" ||
-            error.message === "EXPIRES_AT_IN_PAST")
+            error.message === "EXPIRES_AT_IN_PAST" ||
+            error.message === "EXPIRES_AT_BEYOND_ACTOR")
         ) {
-          return c.json(badRequest("Invalid expiresAt"), 400);
+          return c.json(
+            badRequest(
+              error.message === "EXPIRES_AT_BEYOND_ACTOR"
+                ? "expiresAt cannot outlive the acting API key"
+                : "Invalid expiresAt",
+            ),
+            400,
+          );
         }
         throw error;
       }

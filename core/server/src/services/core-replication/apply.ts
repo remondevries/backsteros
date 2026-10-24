@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db, sqlClient } from "../../db/index.js";
 import {
+  apiKeyAuditLogs,
   apiKeys,
   entityCounters,
   users,
@@ -676,6 +677,64 @@ async function applyEntityCounterRow(
   return "applied";
 }
 
+/**
+ * Append-only audit log: insert once by id; never update or delete via twin.
+ * Missing api_key FK → null so a lagging key row does not dead-letter the page.
+ */
+async function applyApiKeyAuditLogRow(
+  row: ReplicationRow,
+): Promise<"applied" | "skipped"> {
+  if (!(await tableExists("api_key_audit_logs"))) {
+    return "skipped";
+  }
+
+  const id = String(row.id ?? "");
+  if (!id) return "skipped";
+
+  const [existing] = await db
+    .select({ id: apiKeyAuditLogs.id })
+    .from(apiKeyAuditLogs)
+    .where(eq(apiKeyAuditLogs.id, id))
+    .limit(1);
+  if (existing) {
+    return "skipped";
+  }
+
+  let apiKeyId =
+    typeof row.api_key_id === "string" && row.api_key_id.length > 0
+      ? row.api_key_id
+      : null;
+  if (apiKeyId) {
+    const [key] = await db
+      .select({ id: apiKeys.id })
+      .from(apiKeys)
+      .where(eq(apiKeys.id, apiKeyId))
+      .limit(1);
+    if (!key) apiKeyId = null;
+  }
+
+  const inserted = await db
+    .insert(apiKeyAuditLogs)
+    .values({
+      id,
+      workspaceId: String(row.workspace_id),
+      apiKeyId,
+      apiKeyName: String(row.api_key_name ?? ""),
+      action: String(row.action ?? ""),
+      actorUserId:
+        typeof row.actor_user_id === "string" ? row.actor_user_id : null,
+      actorKind: typeof row.actor_kind === "string" ? row.actor_kind : null,
+      actorApiKeyId:
+        typeof row.actor_api_key_id === "string" ? row.actor_api_key_id : null,
+      address: typeof row.address === "string" ? row.address : null,
+      createdAt: new Date(String(row.created_at ?? Date.now())),
+    })
+    .onConflictDoNothing()
+    .returning({ id: apiKeyAuditLogs.id });
+
+  return inserted.length > 0 ? "applied" : "skipped";
+}
+
 async function applyApiKeyRow(
   row: ReplicationRow,
   localRole: CoreReplicationRole,
@@ -840,6 +899,8 @@ export async function applyReplicationRow(
       return applyEntityCounterRow(row);
     case "api_keys":
       return applyApiKeyRow(row, localRole);
+    case "api_key_audit_logs":
+      return applyApiKeyAuditLogRow(row);
     default: {
       const result = await applyGenericRow(spec, row, localRole);
       if (result === "applied" && spec.name === "project_updates") {
