@@ -28,7 +28,7 @@ export type SettingsApiKeyAuditLogItem = {
   id: string;
   apiKeyId: string | null;
   apiKeyName: string;
-  action: "created" | "revoked" | "rotated";
+  action: "created" | "revoked" | "rotated" | "expiry_updated";
   actorKind: string | null;
   address: string | null;
   createdAt: string;
@@ -441,6 +441,8 @@ function auditActionLabel(action: SettingsApiKeyAuditLogItem["action"]): string 
       return "Revoked";
     case "rotated":
       return "Rotated";
+    case "expiry_updated":
+      return "Expiry updated";
   }
 }
 

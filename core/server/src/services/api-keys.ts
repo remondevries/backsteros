@@ -23,12 +23,11 @@ import {
   hashApiKey,
   newId,
 } from "../lib/crypto.js";
-
-/** Min gap between last-used writes for the same key (per process). */
-const LAST_USED_TOUCH_INTERVAL_MS = 60_000;
-/** Cap in-memory throttle entries so long-lived processes cannot grow unboundedly. */
-const LAST_USED_TOUCH_MAX_ENTRIES = 2_048;
-const lastUsedTouchAt = new Map<string, number>();
+import {
+  clearApiKeyLastUsedTouch,
+  rememberApiKeyLastUsedTouch,
+  shouldSkipApiKeyLastUsedTouch,
+} from "./api-keys-last-used-throttle.js";
 
 export type ApiKeyActor = {
   userId: string | null;
@@ -184,13 +183,13 @@ function auditLogValues(input: AuditLogInsert) {
   };
 }
 
-function rememberLastUsedTouch(apiKeyId: string, nowMs: number) {
-  lastUsedTouchAt.set(apiKeyId, nowMs);
-  while (lastUsedTouchAt.size > LAST_USED_TOUCH_MAX_ENTRIES) {
-    const oldest = lastUsedTouchAt.keys().next().value;
-    if (oldest == null) break;
-    lastUsedTouchAt.delete(oldest);
-  }
+function expiresAtEqual(
+  left: Date | null | undefined,
+  right: Date | null | undefined,
+): boolean {
+  const leftMs = left?.getTime() ?? null;
+  const rightMs = right?.getTime() ?? null;
+  return leftMs === rightMs;
 }
 
 /**
@@ -202,11 +201,10 @@ export async function touchApiKeyLastUsed(
   address: string | null | undefined,
 ): Promise<void> {
   const nowMs = Date.now();
-  const previous = lastUsedTouchAt.get(apiKeyId) ?? 0;
-  if (nowMs - previous < LAST_USED_TOUCH_INTERVAL_MS) {
+  if (shouldSkipApiKeyLastUsedTouch(apiKeyId, nowMs)) {
     return;
   }
-  rememberLastUsedTouch(apiKeyId, nowMs);
+  rememberApiKeyLastUsedTouch(apiKeyId, nowMs);
   const now = new Date(nowMs);
   const normalizedAddress = address?.trim() || null;
   try {
@@ -220,26 +218,15 @@ export async function touchApiKeyLastUsed(
       })
       .where(and(eq(apiKeys.id, apiKeyId), isNull(apiKeys.revokedAt)));
   } catch {
-    lastUsedTouchAt.delete(apiKeyId);
+    clearApiKeyLastUsedTouch(apiKeyId);
   }
 }
 
-export function resetApiKeyLastUsedThrottleForTests(): void {
-  lastUsedTouchAt.clear();
-}
-
-/** Test helper — current throttle map size after remember/evict. */
-export function apiKeyLastUsedThrottleSizeForTests(): number {
-  return lastUsedTouchAt.size;
-}
-
-/** Test helper — fill the throttle map without hitting the database. */
-export function fillApiKeyLastUsedThrottleForTests(count: number): void {
-  const now = Date.now();
-  for (let i = 0; i < count; i += 1) {
-    rememberLastUsedTouch(`throttle-fill-${i}`, now);
-  }
-}
+export {
+  apiKeyLastUsedThrottleSizeForTests,
+  fillApiKeyLastUsedThrottleForTests,
+  resetApiKeyLastUsedThrottleForTests,
+} from "./api-keys-last-used-throttle.js";
 
 export async function createApiKey(
   workspaceId: string,
@@ -333,12 +320,36 @@ export async function revokeApiKey(
  * No grace period: the previous hash is overwritten immediately, so the old
  * secret stops authenticating as soon as this commit lands.
  * New secret is returned once; last-used fields are cleared.
+ * Expired keys must have expiry extended (or cleared) before rotate — otherwise
+ * a fresh secret would still fail auth with the same past expiresAt.
  */
 export async function rotateApiKey(
   workspaceId: string,
   id: string,
   actor?: ApiKeyActor | null,
 ): Promise<{ row: DbApiKey; secret: string } | null> {
+  const [existing] = await db
+    .select({
+      id: apiKeys.id,
+      expiresAt: apiKeys.expiresAt,
+    })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.workspaceId, workspaceId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!existing) return null;
+  if (existing.expiresAt && existing.expiresAt.getTime() <= Date.now()) {
+    throw new Error("API_KEY_EXPIRED");
+  }
+  // Rotation keeps the target's expiresAt; a short-lived actor must not mint a
+  // fresh secret for a key that outlives them (including never-expiring keys).
+  await assertExpiresAtWithinActorRights(actor, existing.expiresAt);
+
   const secret = generateApiKeySecret();
   const now = new Date();
 
@@ -378,7 +389,7 @@ export async function rotateApiKey(
 
   if (!row) return null;
 
-  lastUsedTouchAt.delete(id);
+  clearApiKeyLastUsedTouch(id);
   return { row, secret };
 }
 
@@ -415,19 +426,55 @@ export async function updateApiKey(
     return null;
   }
 
-  const [row] = await db
-    .update(apiKeys)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(
-      and(
-        eq(apiKeys.id, id),
-        eq(apiKeys.workspaceId, workspaceId),
-        isNull(apiKeys.revokedAt),
-      ),
-    )
-    .returning();
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({
+        id: apiKeys.id,
+        name: apiKeys.name,
+        expiresAt: apiKeys.expiresAt,
+      })
+      .from(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.id, id),
+          eq(apiKeys.workspaceId, workspaceId),
+          isNull(apiKeys.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (!before) return null;
 
-  return row ?? null;
+    const [row] = await tx
+      .update(apiKeys)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(
+        and(
+          eq(apiKeys.id, id),
+          eq(apiKeys.workspaceId, workspaceId),
+          isNull(apiKeys.revokedAt),
+        ),
+      )
+      .returning();
+
+    if (!row) return null;
+
+    if (
+      patch.expiresAt !== undefined &&
+      !expiresAtEqual(before.expiresAt, patch.expiresAt)
+    ) {
+      await tx.insert(apiKeyAuditLogs).values(
+        auditLogValues({
+          workspaceId,
+          apiKeyId: row.id,
+          apiKeyName: row.name,
+          action: "expiry_updated",
+          actor,
+        }),
+      );
+    }
+
+    return row;
+  });
 }
 
 export async function createBootstrapApiKey(

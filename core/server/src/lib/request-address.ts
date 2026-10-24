@@ -2,20 +2,37 @@ import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 
 /**
+ * Normalize for trust comparisons: trim, lower-case, strip IPv4-mapped IPv6
+ * (`::ffff:203.0.113.10` → `203.0.113.10`).
+ */
+export function normalizeIpAddress(
+  address: string | null | undefined,
+): string | null {
+  if (!address) return null;
+  const trimmed = address.trim().toLowerCase();
+  if (!trimmed) return null;
+  const mapped = trimmed.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  return mapped ? mapped[1]! : trimmed;
+}
+
+/**
  * Socket peers that may set client IP via proxy headers (Caddy / Cloudflare /
  * Tailscale serve on loopback). Comma-separated extras via TRUSTED_PROXY_IPS.
+ *
+ * Extras must be the TCP peer as Node sees it (often the Docker bridge gateway
+ * in front of a published port — e.g. `172.20.0.1` — not the proxy's address on
+ * a different compose network).
  */
 function trustedProxyIps(
   env: NodeJS.ProcessEnv = process.env,
 ): ReadonlySet<string> {
   const extras = (env.TRUSTED_PROXY_IPS ?? "")
     .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+    .map((value) => normalizeIpAddress(value))
+    .filter((value): value is string => Boolean(value));
   return new Set([
     "127.0.0.1",
     "::1",
-    "::ffff:127.0.0.1",
     ...extras,
   ]);
 }
@@ -24,11 +41,25 @@ export function isTrustedProxyRemoteAddress(
   address: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (!address) return false;
-  return trustedProxyIps(env).has(address.trim().toLowerCase());
+  const normalized = normalizeIpAddress(address);
+  if (!normalized) return false;
+  return trustedProxyIps(env).has(normalized);
+}
+
+/** Test-only override for the TCP peer seen by {@link requestClientAddress}. */
+let socketRemoteAddressOverrideForTests: string | null | undefined;
+
+/** When set (including `null`), skips {@link getConnInfo} for lifecycle tests. */
+export function setSocketRemoteAddressOverrideForTests(
+  address: string | null | undefined,
+): void {
+  socketRemoteAddressOverrideForTests = address;
 }
 
 function socketRemoteAddress(c: Context): string | null {
+  if (socketRemoteAddressOverrideForTests !== undefined) {
+    return socketRemoteAddressOverrideForTests;
+  }
   try {
     return getConnInfo(c).remote.address ?? null;
   } catch {

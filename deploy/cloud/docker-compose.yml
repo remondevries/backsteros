@@ -31,6 +31,8 @@ services:
       NODE_ENV: production
       PORT: ${PORT:-8788}
       HOST: ${HOST:-0.0.0.0}
+      # TCP peer for published :8788 is usually cloud_default GW (e.g. 172.20.0.1), not Caddy's other-network IP.
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-backsteros}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-backsteros}
       CORE_REPLICATION_ROLE: ${CORE_REPLICATION_ROLE:-cloud}
       CORE_REPLICATION_PEER_URL: ${CORE_REPLICATION_PEER_URL:-}

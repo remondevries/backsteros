@@ -588,7 +588,7 @@ export const apiKeyAuditLogs = pgTable(
     }),
     /** Denormalized so the row stays readable after revoke/delete. */
     apiKeyName: text("api_key_name").notNull(),
-    /** created | revoked | rotated */
+    /** created | revoked | rotated | expiry_updated */
     action: text("action").notNull(),
     actorUserId: text("actor_user_id"),
     actorKind: text("actor_kind"),

@@ -18,6 +18,7 @@ import {
   apiKeyLookupPrefix,
   hashApiKey,
 } from "../lib/crypto.js";
+import { setSocketRemoteAddressOverrideForTests } from "../lib/request-address.js";
 import { resetApiKeyLastUsedThrottleForTests } from "../services/api-keys.js";
 
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
@@ -106,6 +107,10 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
 
   // Last-used updates on successful auth (throttled — reset for test).
   // Spoofed x-forwarded-for must be ignored without a trusted proxy peer.
+  context.after(() => {
+    setSocketRemoteAddressOverrideForTests(undefined);
+  });
+  setSocketRemoteAddressOverrideForTests(null);
   resetApiKeyLastUsedThrottleForTests();
   const probe = await app.request("/api/v1/api-keys", {
     headers: {
@@ -133,6 +138,113 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   assert.ok(agent.lastUsedAt);
   assert.notEqual(agent.lastUsedAddress, "203.0.113.50");
 
+  // Trusted peer: proxy headers are accepted (cf-connecting-ip wins).
+  setSocketRemoteAddressOverrideForTests("127.0.0.1");
+  resetApiKeyLastUsedThrottleForTests();
+  const trustedProbe = await app.request("/api/v1/tasks", {
+    headers: {
+      authorization: `Bearer ${createdBody.secret}`,
+      "cf-connecting-ip": "198.51.100.20",
+      "x-real-ip": "198.51.100.21",
+      "x-forwarded-for": "198.51.100.22, 10.0.0.1",
+    },
+  });
+  assert.notEqual(trustedProbe.status, 401);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const listedTrusted = await app.request("/api/v1/api-keys", { headers: auth });
+  const trustedBody = (await listedTrusted.json()) as {
+    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
+  };
+  const agentTrusted = trustedBody.apiKeys.find(
+    (key) => key.id === createdBody.apiKey.id,
+  );
+  assert.ok(agentTrusted);
+  assert.equal(agentTrusted.lastUsedAddress, "198.51.100.20");
+
+  // Docker-style IPv4-mapped peer against plain TRUSTED_PROXY_IPS must also trust
+  // cf-connecting-ip (regression guard for ::ffff:172.20.0.1).
+  const previousTrustedProxies = process.env.TRUSTED_PROXY_IPS;
+  process.env.TRUSTED_PROXY_IPS = "172.20.0.1";
+  context.after(() => {
+    if (previousTrustedProxies === undefined) {
+      delete process.env.TRUSTED_PROXY_IPS;
+    } else {
+      process.env.TRUSTED_PROXY_IPS = previousTrustedProxies;
+    }
+  });
+  setSocketRemoteAddressOverrideForTests("::ffff:172.20.0.1");
+  resetApiKeyLastUsedThrottleForTests();
+  const mappedProbe = await app.request("/api/v1/tasks", {
+    headers: {
+      authorization: `Bearer ${createdBody.secret}`,
+      "cf-connecting-ip": "198.51.100.50",
+    },
+  });
+  assert.notEqual(mappedProbe.status, 401);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const listedMapped = await app.request("/api/v1/api-keys", { headers: auth });
+  const mappedBody = (await listedMapped.json()) as {
+    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
+  };
+  assert.equal(
+    mappedBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
+      ?.lastUsedAddress,
+    "198.51.100.50",
+  );
+
+  // x-real-ip when cf-connecting-ip absent
+  setSocketRemoteAddressOverrideForTests("127.0.0.1");
+  resetApiKeyLastUsedThrottleForTests();
+  await app.request("/api/v1/tasks", {
+    headers: {
+      authorization: `Bearer ${createdBody.secret}`,
+      "x-real-ip": "198.51.100.30",
+      "x-forwarded-for": "198.51.100.31",
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const listedRealIp = await app.request("/api/v1/api-keys", { headers: auth });
+  const realIpBody = (await listedRealIp.json()) as {
+    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
+  };
+  assert.equal(
+    realIpBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
+      ?.lastUsedAddress,
+    "198.51.100.30",
+  );
+
+  // x-forwarded-for first hop when only that header is present
+  resetApiKeyLastUsedThrottleForTests();
+  await app.request("/api/v1/tasks", {
+    headers: {
+      authorization: `Bearer ${createdBody.secret}`,
+      "x-forwarded-for": "198.51.100.40, 10.0.0.1",
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const listedXff = await app.request("/api/v1/api-keys", { headers: auth });
+  const xffBody = (await listedXff.json()) as {
+    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
+  };
+  assert.equal(
+    xffBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
+      ?.lastUsedAddress,
+    "198.51.100.40",
+  );
+  setSocketRemoteAddressOverrideForTests(undefined);
+
+  // Expiry change writes expiry_updated audit (and can revive later)
+  const newExpiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const patchedExpiry = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(createdBody.apiKey.id)}`,
+    {
+      method: "PATCH",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ expiresAt: newExpiry }),
+    },
+  );
+  assert.equal(patchedExpiry.status, 200);
+
   // Rotate keeps id, changes secret
   const rotated = await app.request(
     `/api/v1/api-keys/${encodeURIComponent(createdBody.apiKey.id)}/rotate`,
@@ -157,7 +269,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   });
   assert.notEqual(newList.status, 401);
 
-  // Expired key is rejected
+  // Expired key is rejected for auth and for rotate
   const expiredSecret = newSecret();
   const expiredId = id("key");
   await db.insert(apiKeys).values({
@@ -175,6 +287,28 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   });
   assert.equal(expiredRes.status, 401);
 
+  const rotateExpired = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(expiredId)}/rotate`,
+    { method: "POST", headers: auth },
+  );
+  assert.equal(rotateExpired.status, 400);
+
+  // Revive via clearing expiry writes audit, then rotate is allowed
+  const revive = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(expiredId)}`,
+    {
+      method: "PATCH",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ expiresAt: null }),
+    },
+  );
+  assert.equal(revive.status, 200);
+  const rotateAfterRevive = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(expiredId)}/rotate`,
+    { method: "POST", headers: auth },
+  );
+  assert.equal(rotateAfterRevive.status, 200);
+
   // Revoke writes audit
   const revoked = await app.request(
     `/api/v1/api-keys/${encodeURIComponent(createdBody.apiKey.id)}`,
@@ -182,7 +316,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   );
   assert.equal(revoked.status, 204);
 
-  const auditFinal = await app.request("/api/v1/api-keys/audit-logs?limit=20", {
+  const auditFinal = await app.request("/api/v1/api-keys/audit-logs?limit=40", {
     headers: auth,
   });
   const auditFinalBody = (await auditFinal.json()) as {
@@ -192,8 +326,15 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     .filter((entry) => entry.apiKeyName === "agent-key")
     .map((entry) => entry.action);
   assert.ok(actions.includes("created"));
+  assert.ok(actions.includes("expiry_updated"));
   assert.ok(actions.includes("rotated"));
   assert.ok(actions.includes("revoked"));
+  assert.ok(
+    auditFinalBody.auditLogs.some(
+      (entry) =>
+        entry.apiKeyName === "expired-key" && entry.action === "expiry_updated",
+    ),
+  );
 });
 
 test("API keys: settings-write key cannot extend expiry beyond its own", async (context) => {
@@ -282,4 +423,30 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
     },
   );
   assert.equal(patchTooFar.status, 400);
+
+  // Rotate of a never-expiring key must also be clamped (kept expiresAt outlives actor).
+  const immortalId = id("key");
+  const immortalSecret = newSecret();
+  await db.insert(apiKeys).values({
+    id: immortalId,
+    workspaceId,
+    userId,
+    name: "immortal-key",
+    prefix: apiKeyLookupPrefix(immortalSecret),
+    keyHash: hashApiKey(immortalSecret),
+    scopes: ["tasks:read"],
+    expiresAt: null,
+  });
+  const rotateImmortal = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(immortalId)}/rotate`,
+    { method: "POST", headers: auth },
+  );
+  assert.equal(rotateImmortal.status, 400);
+
+  // Rotate of a key within the actor's expiry window is allowed.
+  const rotateOk = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(okBody.apiKey.id)}/rotate`,
+    { method: "POST", headers: auth },
+  );
+  assert.equal(rotateOk.status, 200);
 });

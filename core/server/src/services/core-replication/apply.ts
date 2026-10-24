@@ -679,7 +679,9 @@ async function applyEntityCounterRow(
 
 /**
  * Append-only audit log: insert once by id; never update or delete via twin.
- * Missing api_key FK → null so a lagging key row does not dead-letter the page.
+ * If `api_key_id` is set but the key row is not local yet, throw so the page
+ * records a dead letter and retries later — do not insert with a nulled FK
+ * (that permanently loses the link once the cursor advances).
  */
 async function applyApiKeyAuditLogRow(
   row: ReplicationRow,
@@ -700,7 +702,7 @@ async function applyApiKeyAuditLogRow(
     return "skipped";
   }
 
-  let apiKeyId =
+  const apiKeyId =
     typeof row.api_key_id === "string" && row.api_key_id.length > 0
       ? row.api_key_id
       : null;
@@ -710,7 +712,11 @@ async function applyApiKeyAuditLogRow(
       .from(apiKeys)
       .where(eq(apiKeys.id, apiKeyId))
       .limit(1);
-    if (!key) apiKeyId = null;
+    if (!key) {
+      throw new Error(
+        `api_key_audit_logs ${id}: api_key_id ${apiKeyId} not present yet`,
+      );
+    }
   }
 
   const inserted = await db

@@ -212,25 +212,48 @@ export function registerApiKeyRoutes(app: Hono) {
       );
     }
 
-    const rotated = await apiKeyService.rotateApiKey(
-      auth.workspaceId,
-      c.req.param("id"),
-      actorFromAuth(auth, requestClientAddress(c)),
-    );
-    if (!rotated) {
-      return c.json(notFound("API key"), 404);
+    try {
+      const rotated = await apiKeyService.rotateApiKey(
+        auth.workspaceId,
+        c.req.param("id"),
+        actorFromAuth(auth, requestClientAddress(c)),
+      );
+      if (!rotated) {
+        return c.json(notFound("API key"), 404);
+      }
+      const { notifyPeerOfEntityWrite } = await import(
+        "../services/core-replication/nudge.js"
+      );
+      notifyPeerOfEntityWrite({
+        workspaceId: auth.workspaceId,
+        reason: "api_key",
+        entity: "api_key",
+        entityId: rotated.row.id,
+        operation: "upsert",
+      });
+      return c.json({ apiKey: toApiKey(rotated.row), secret: rotated.secret });
+    } catch (error) {
+      if (error instanceof Error && error.message === "API_KEY_EXPIRED") {
+        return c.json(
+          badRequest(
+            "Cannot rotate an expired key; extend or clear expiresAt first",
+          ),
+          400,
+        );
+      }
+      if (
+        error instanceof Error &&
+        error.message === "EXPIRES_AT_BEYOND_ACTOR"
+      ) {
+        return c.json(
+          badRequest(
+            "Cannot rotate a key that outlives the acting API key; shorten its expiry first",
+          ),
+          400,
+        );
+      }
+      throw error;
     }
-    const { notifyPeerOfEntityWrite } = await import(
-      "../services/core-replication/nudge.js"
-    );
-    notifyPeerOfEntityWrite({
-      workspaceId: auth.workspaceId,
-      reason: "api_key",
-      entity: "api_key",
-      entityId: rotated.row.id,
-      operation: "upsert",
-    });
-    return c.json({ apiKey: toApiKey(rotated.row), secret: rotated.secret });
   });
 
   app.delete("/api/v1/api-keys/:id", async (c) => {

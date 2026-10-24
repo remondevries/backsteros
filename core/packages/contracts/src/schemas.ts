@@ -1350,6 +1350,8 @@ export const apiKeyAuditLogActionSchema = z.enum([
   "created",
   "revoked",
   "rotated",
+  /** expiresAt cleared, set, extended, or otherwise changed (includes revive). */
+  "expiry_updated",
 ]);
 
 export const apiKeyAuditLogSchema = z.object({
