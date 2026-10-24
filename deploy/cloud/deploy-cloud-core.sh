@@ -50,7 +50,9 @@ ssh "$CLOUD_SSH_HOST" "${REMOTE_COMPOSE} up -d --no-build backsteros"
 echo "==> Waiting for /health…"
 # Health is on the server itself — use Tailscale peer URL from local .env if set.
 LOCAL_PEER="$(grep '^CORE_REPLICATION_PEER_URL=' core/server/.env 2>/dev/null | cut -d= -f2- || true)"
-HEALTH_URL="${LOCAL_PEER:-http://100.75.45.22:8788}"
+# Fallback: lemodesign over Tailscale (cloud-core moved off production in OS-118).
+CLOUD_CORE_URL="${CLOUD_CORE_URL:-http://100.83.125.67:8788}"
+HEALTH_URL="${LOCAL_PEER:-$CLOUD_CORE_URL}"
 HEALTH_URL="${HEALTH_URL%/}/health"
 for i in $(seq 1 30); do
   if curl -sf --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
@@ -69,7 +71,7 @@ ssh "$CLOUD_SSH_HOST" "${REMOTE_COMPOSE} exec -T backsteros sh -c 'cd /app/core/
 
 echo "==> Verifying cloud replication knows crm_groups…"
 SECRET="$(grep '^CORE_REPLICATION_SECRET=' core/server/.env | cut -d= -f2-)"
-CLOUD_BASE="${LOCAL_PEER:-http://100.75.45.22:8788}"
+CLOUD_BASE="${LOCAL_PEER:-$CLOUD_CORE_URL}"
 CLOUD_BASE="${CLOUD_BASE%/}"
 CHANGES="$(curl -sf --max-time 15 \
   "${CLOUD_BASE}/internal/core-replication/changes?table=crm_groups&since=1970-01-01T00:00:00.000Z&since_id=" \
