@@ -72,7 +72,36 @@ export const API_KEY_SCOPES = [
   "search:query",
   /** CardDAV door only — unlocks contacts.backsteros.com address book sync. */
   "carddav",
+  /**
+   * TV today-counts door only (OS-137) — snapshot + SSE counts payload.
+   * Mint alone on a key so it stays independently revocable.
+   */
+  "tv.today_counts",
 ] as const;
+
+/** Open statuses shown on TV / Dynamic Island today-counts (Island order). */
+export const TV_TODAY_COUNT_STATUSES = [
+  "triage",
+  "backlog",
+  "ready_to_start",
+  "in_progress",
+  "on_hold",
+  "in_review",
+] as const;
+
+export const tvTodayCountStatusSchema = z.enum(TV_TODAY_COUNT_STATUSES);
+
+/** Counts-only payload for TV home (OS-137) — no task ids, titles, or bodies. */
+export const tvTodayCountsSchema = z.object({
+  dueTodayTotal: z.number().int().nonnegative(),
+  statuses: z.array(
+    z.object({
+      status: tvTodayCountStatusSchema,
+      count: z.number().int().positive(),
+    }),
+  ),
+  agentsWorking: z.number().int().nonnegative(),
+});
 
 /** @deprecated Prefer BANK_ACCOUNT_TYPES — kept for older clients during transition. */
 export const BANK_ACCOUNT_INSTITUTIONS = ["ing", "amex", "other"] as const;
@@ -5244,6 +5273,8 @@ export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
 export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponseSchema>;
 export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
+export type TvTodayCountStatus = (typeof TV_TODAY_COUNT_STATUSES)[number];
+export type TvTodayCounts = z.infer<typeof tvTodayCountsSchema>;
 export type Document = z.infer<typeof documentSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;

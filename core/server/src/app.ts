@@ -17,6 +17,7 @@ import { registerSpacesPublishRoutes } from "./app/spaces-publish-routes.js";
 import { registerSpacesRoutes } from "./app/spaces-routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
 import { registerDynamicIslandRoutes } from "./app/dynamic-island-routes.js";
+import { registerTvTodayCountsRoutes } from "./app/tv-today-counts-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
 import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
 import { getPeerVersionState } from "./services/core-replication/peer-version.js";
@@ -155,6 +156,7 @@ export function createApp() {
   registerSyncRoutes(api);
   registerOpsRoutes(api);
   registerDynamicIslandRoutes(api);
+  registerTvTodayCountsRoutes(api);
   registerCoreReplicationRoutes(api);
   // CardDAV lives outside /api/v1 (iOS Contacts / Basic auth).
   registerCardDavRoutes(api);
