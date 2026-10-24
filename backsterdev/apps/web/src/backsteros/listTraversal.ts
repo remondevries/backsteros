@@ -1,4 +1,3 @@
-import { partitionBacksterosInboxTasks } from "./inboxDue";
 import { groupBacksterosProjectsByStatus } from "./projectStatus";
 import { groupBacksterosTasksByStatus } from "./taskStatus";
 
@@ -18,9 +17,9 @@ export function orderedBacksterosTaskIds(
 }
 
 /**
- * Flatten inbox tasks: attention status groups first, then Due-only tasks
- * (due today/overdue that are not already in an attention status).
- * Live agent-working ids stay with attention regardless of status/due.
+ * Flatten inbox tasks in sidebar status-group order (Backlog / Ready to Start /
+ * etc. instead of a single Due bucket). `workingTaskIds` is accepted for call
+ * sites that already filter membership; order is status-based only.
  */
 export function orderedBacksterosInboxTaskIds(
   tasks: readonly {
@@ -30,14 +29,9 @@ export function orderedBacksterosInboxTaskIds(
     readonly sortOrder?: number;
     readonly title?: string;
   }[],
-  workingTaskIds?: ReadonlySet<string>,
+  _workingTaskIds?: ReadonlySet<string>,
 ): string[] {
-  const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(
-    tasks,
-    new Date(),
-    workingTaskIds,
-  );
-  return [...orderedBacksterosTaskIds(attentionTasks), ...dueTasks.map((task) => task.id)];
+  return orderedBacksterosTaskIds(tasks);
 }
 
 /**

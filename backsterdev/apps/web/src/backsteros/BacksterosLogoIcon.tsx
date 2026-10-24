@@ -29,12 +29,15 @@ export function BacksterosLogoIcon({
     let raf = 0;
     let running = false;
     const spinPeriodMs = 11_000;
-    const pulsePeriodMs = 2_000;
-    const pulseAmplitude = 0.12; // 1.00 ↔ 1.12
+    // Full breathe (min → max → min). Keep this well above the spin so scale
+    // reads as a slow inhale/exhale, not a flicker.
+    const pulsePeriodMs = 12_000;
+    const pulseAmplitude = 0.06; // 0.94 ↔ 1.06
 
     const tick = (now: number) => {
       const spin = ((now % spinPeriodMs) / spinPeriodMs) * 360;
-      const pulse = 1 + pulseAmplitude * Math.sin((now / pulsePeriodMs) * Math.PI * 2);
+      const pulse =
+        1 + pulseAmplitude * Math.sin(((now % pulsePeriodMs) / pulsePeriodMs) * Math.PI * 2);
       root.style.transform = `rotate(${spin}deg) scale(${pulse})`;
       if (running) raf = requestAnimationFrame(tick);
     };

@@ -15,7 +15,7 @@ import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -24,7 +24,6 @@ import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
-import { writeControlEnvironmentsMirror } from "../settings/writeControlEnvironments.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 const EncryptedConnectionCatalogDocument = Schema.Struct({
@@ -44,9 +43,6 @@ const RuntimeConnectionCatalogDocumentJson = Schema.fromJsonString(
   RuntimeConnectionCatalogDocument,
 );
 const encodeRuntimeConnectionCatalogDocumentJson = Schema.encodeEffect(
-  RuntimeConnectionCatalogDocumentJson,
-);
-const decodeRuntimeConnectionCatalogDocumentJson = Schema.decodeUnknownEffect(
   RuntimeConnectionCatalogDocumentJson,
 );
 
@@ -175,7 +171,7 @@ function decodeSecretBytes(
   catalogPath: string,
   encoded: string,
 ): Effect.Effect<Uint8Array, DesktopConnectionCatalogStoreDecodeError> {
-  return Effect.fromResult(Encoding.decodeBase64(encoded)).pipe(
+  return Effect.fromResult(Base64.decode(encoded)).pipe(
     Effect.mapError(
       (cause) =>
         new DesktopConnectionCatalogStoreDecodeError({
@@ -380,7 +376,7 @@ const migrateSavedEnvironmentRecords = Effect.fn(
   };
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -403,7 +399,7 @@ export const make = Effect.gen(function* () {
   const writeCatalog = Effect.fn("desktop.connectionCatalogStore.writeCatalog")(function* (
     catalog: string,
   ) {
-    const encryptedCatalog = Encoding.encodeBase64(
+    const encryptedCatalog = Base64.encode(
       yield* safeStorage.encryptString(catalog).pipe(
         Effect.mapError(
           (cause) =>
@@ -415,7 +411,7 @@ export const make = Effect.gen(function* () {
         ),
       ),
     );
-    const suffix = (yield* crypto.randomUUIDv4.pipe(
+    const suffix = (yield* crypto.randomUUIDv4().pipe(
       Effect.mapError(
         (cause) =>
           new DesktopConnectionCatalogStoreWriteError({
@@ -498,19 +494,6 @@ export const make = Effect.gen(function* () {
           ),
         ),
       );
-      yield* decodeRuntimeConnectionCatalogDocumentJson(decrypted).pipe(
-        Effect.map((document) => {
-          writeControlEnvironmentsMirror({
-            stateDir: environment.stateDir,
-            catalog: document,
-          });
-        }),
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not mirror control-environments.json from connection catalog.", {
-            cause,
-          }),
-        ),
-      );
       return Option.some(decrypted);
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
@@ -518,21 +501,6 @@ export const make = Effect.gen(function* () {
         return false;
       }
       yield* writeCatalog(catalog);
-      // Best-effort mirror for the localhost control API (BDV-56). Failures
-      // must not block saving the encrypted catalog.
-      yield* decodeRuntimeConnectionCatalogDocumentJson(catalog).pipe(
-        Effect.map((document) => {
-          writeControlEnvironmentsMirror({
-            stateDir: environment.stateDir,
-            catalog: document,
-          });
-        }),
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not mirror control-environments.json from connection catalog.", {
-            cause,
-          }),
-        ),
-      );
       return true;
     }),
     clear: fileSystem.remove(catalogPath, { force: true }).pipe(

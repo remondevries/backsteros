@@ -26,14 +26,15 @@ export const BACKSTEROS_TASK_STATUS_LABELS: Record<BacksterosTaskStatus, string>
   duplicated: "Duplicated",
 };
 
+/** Sidebar / inbox scan order: review → active → queued → parked. */
 export const BACKSTEROS_TASK_STATUS_ORDER: readonly BacksterosTaskStatus[] = [
   "triage",
   "in_review",
   "in_progress",
-  "waiting",
-  "on_hold",
-  "backlog",
   "ready_to_start",
+  "backlog",
+  "on_hold",
+  "waiting",
   "completed",
   "canceled",
   "duplicated",

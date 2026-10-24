@@ -56,14 +56,6 @@ export async function checkServerConnection(serverId: string): Promise<ServerCon
     publicIp,
   };
 
-  if (!publicIp) {
-    return {
-      ...base,
-      connected: false,
-      error: "No public IPv4 address",
-    };
-  }
-
   if (server.status !== "running") {
     return {
       ...base,
@@ -72,7 +64,9 @@ export async function checkServerConnection(serverId: string): Promise<ServerCon
     };
   }
 
-  const ssh = await checkSshConnection(publicIp);
+  // Prefer Tailscale (MagicDNS name / 100.x) — public SSH is shut; deploy@ over
+  // the tailnet is the supported path (~/.ssh/config Host aliases agree).
+  const ssh = await checkSshConnection(server.name, { alsoTry: publicIp });
   return {
     ...base,
     connected: ssh.connected,

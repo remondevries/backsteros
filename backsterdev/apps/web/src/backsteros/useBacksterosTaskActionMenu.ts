@@ -110,7 +110,7 @@ export function useBacksterosTaskActionMenu() {
             taskId: task.id,
             threadId: thread?.id ?? binding?.threadId ?? null,
             environmentId: thread?.environmentId ?? binding?.environmentId ?? null,
-            instanceId: thread?.session?.providerInstanceId ?? thread?.modelSelection?.instanceId,
+            instanceId: thread?.runtime?.providerInstanceId ?? thread?.modelSelection?.instanceId,
           }),
           snoozePresets,
         });
@@ -189,7 +189,7 @@ export function useBacksterosTaskActionMenu() {
             return;
           case "mark-unread":
             if (!threadRef || !thread) return;
-            markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
+            markThreadUnread(scopedThreadKey(threadRef), thread.latestRun?.completedAt);
             return;
           case "copy-path":
             if (!workspacePath) {

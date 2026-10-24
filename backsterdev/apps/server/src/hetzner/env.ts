@@ -9,7 +9,7 @@ import path from "node:path";
 
 import { findHetznerServer } from "./server-connection.ts";
 import { normalizeServiceScope } from "./service-scope.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export type AppEnvPayload = {
   readonly serverId: string;
@@ -60,7 +60,7 @@ async function resolveServer(serverId: string): Promise<{
 }> {
   const server = await findHetznerServer(serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
   return { serverId: String(server.id), ip };
 }

@@ -24,7 +24,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { isBacksterosInboxMemberTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
+import { isBacksterosInboxMemberTask } from "~/backsteros/inboxDue";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { mergeApiAgentWorkingTaskIds } from "~/backsteros/apiAgentWorking";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
@@ -47,8 +47,6 @@ import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProj
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
-
-const DUE_GROUP_KEY = "due";
 
 type SortableRowBag = {
   readonly setNodeRef: (node: HTMLElement | null) => void;
@@ -140,7 +138,7 @@ function BacksterosTaskRow(props: {
               ? "bg-amber-400/[0.04] text-sidebar-foreground hover:bg-amber-400/[0.08]"
               : "text-sidebar-foreground hover:bg-sidebar-row-hover",
           keyboardFocused &&
-            "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)] text-sidebar-foreground",
+            "bg-[color-mix(in_srgb,var(--keyboard-nav-highlight-color,#ee7a47)_10%,transparent)] shadow-[inset_0_0_0_var(--keyboard-nav-highlight-width,1.5px)_var(--keyboard-nav-highlight-color,#ee7a47)] text-sidebar-foreground",
           sortable?.listeners && "cursor-pointer",
           sortable?.isDragging && "cursor-grabbing opacity-80 shadow-md",
         )}
@@ -330,8 +328,6 @@ export function BacksterosTaskList(props: {
   readonly searchQuery?: string;
   readonly emptyLabel?: string;
   readonly statusFilter?: ReadonlySet<BacksterosTaskStatus>;
-  /** When true, due today/overdue tasks get a separate "Due" group at the bottom. */
-  readonly showDueGroup?: boolean | undefined;
   readonly projectNameById?: ReadonlyMap<string, string> | undefined;
   readonly projectById?: ReadonlyMap<string, BacksterosCodebaseProject> | undefined;
   readonly onSelectTask: (task: BacksterosTask) => void;
@@ -345,7 +341,6 @@ export function BacksterosTaskList(props: {
     searchQuery = "",
     emptyLabel = "No tasks yet",
     statusFilter,
-    showDueGroup = false,
     projectNameById,
     projectById,
     onSelectTask,
@@ -386,28 +381,15 @@ export function BacksterosTaskList(props: {
     });
   }, [isSearching, projectById, projectNameById, searchQuery, state, statusFilter, workingTaskIds]);
 
-  const groups = useMemo(() => {
-    if (!showDueGroup) {
-      return groupBacksterosTasksByStatus(filteredTasks).map((group) => ({
+  const groups = useMemo(
+    () =>
+      groupBacksterosTasksByStatus(filteredTasks).map((group) => ({
         key: group.status,
         label: group.label,
         tasks: group.tasks,
-      }));
-    }
-
-    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(
-      filteredTasks,
-      new Date(),
-      workingTaskIds,
-    );
-    const statusGroups = groupBacksterosTasksByStatus(attentionTasks).map((group) => ({
-      key: group.status,
-      label: group.label,
-      tasks: group.tasks,
-    }));
-    if (dueTasks.length === 0) return statusGroups;
-    return [...statusGroups, { key: DUE_GROUP_KEY, label: "Due", tasks: dueTasks }];
-  }, [filteredTasks, showDueGroup, workingTaskIds]);
+      })),
+    [filteredTasks],
+  );
 
   const handleReorderWithinGroup = useCallback(
     (_groupKey: string, orderedTasks: readonly BacksterosTask[]) => {

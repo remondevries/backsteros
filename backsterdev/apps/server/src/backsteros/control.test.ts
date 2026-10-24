@@ -5,20 +5,21 @@ import path from "node:path";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import {
   controlMessageHandler,
@@ -274,66 +275,91 @@ describe("backsteros control workspace resolve", () => {
 
 describe("mapSessionStatus", () => {
   type StatusInput = NonNullable<Parameters<typeof mapSessionStatus>[0]>;
-  const turn = (state: "running" | "completed" | "interrupted" | "error") =>
-    ({
-      turnId: "turn-1",
-      state,
-      requestedAt: "2026-09-27T22:10:01.709Z",
-      startedAt: "2026-09-27T22:10:01.709Z",
-      completedAt: state === "running" ? null : "2026-09-27T22:10:10.071Z",
-      assistantMessageId: null,
-    }) as StatusInput["latestTurn"];
+  /** Shell fields for a finished (completed) latest run. */
+  const finishedRun = (requestedAt = "2026-09-27T22:10:01.709Z"): Partial<StatusInput> => ({
+    status: "completed",
+    activeRunId: null,
+    latestRunRequestedAt: requestedAt,
+  });
   const thread = (overrides: Partial<StatusInput> = {}): StatusInput => ({
     settledOverride: null,
     settledAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    backgroundLiveness: null,
-    latestTurn: turn("completed"),
+    pendingRuntimeRequest: null,
+    pendingBackgroundTasks: [],
     latestUserMessageAt: "2026-09-27T22:10:01.709Z",
-    session: { status: "ready", activeTurnId: null },
+    status: "completed",
+    activeRunId: null,
+    latestRunRequestedAt: "2026-09-27T22:10:01.709Z",
     ...overrides,
   });
 
-  it("reports idle once a turn has finished and the session is ready", () => {
+  it("reports idle once a run has finished", () => {
     expect(mapSessionStatus(thread())).toBe("idle");
+    expect(
+      mapSessionStatus(
+        thread({ status: "idle", latestRunRequestedAt: null, latestUserMessageAt: null }),
+      ),
+    ).toBe("idle");
   });
 
-  it("reports working while a turn is active", () => {
-    expect(
-      mapSessionStatus(thread({ session: { status: "running", activeTurnId: "turn-1" as never } })),
-    ).toBe("working");
-    expect(
-      mapSessionStatus(thread({ session: { status: "ready", activeTurnId: "turn-1" as never } })),
-    ).toBe("working");
-    expect(mapSessionStatus(thread({ latestTurn: turn("running") }))).toBe("working");
+  it("reports working while a run is active", () => {
+    for (const status of ["preparing", "queued", "starting", "running", "waiting"]) {
+      expect(mapSessionStatus(thread({ status }))).toBe("working");
+    }
+    expect(mapSessionStatus(thread({ activeRunId: "run-1" }))).toBe("working");
   });
 
-  it("reports working when a sent message has not started its turn yet", () => {
+  it("accepts DateTime timestamps from local shells", () => {
+    const sent = DateTime.makeUnsafe("2026-09-27T22:11:00.000Z");
+    expect(mapSessionStatus(thread({ latestUserMessageAt: sent }))).toBe("working");
+    expect(
+      mapSessionStatus(
+        thread({
+          latestUserMessageAt: DateTime.makeUnsafe("2026-09-27T22:10:01.709Z"),
+          latestRunRequestedAt: DateTime.makeUnsafe("2026-09-27T22:10:01.709Z"),
+        }),
+      ),
+    ).toBe("idle");
+  });
+
+  it("reports working when a sent message has not started its run yet", () => {
     expect(mapSessionStatus(thread({ latestUserMessageAt: "2026-09-27T22:11:00.000Z" }))).toBe(
       "working",
     );
-    expect(mapSessionStatus(thread({ latestTurn: null }))).toBe("working");
+    expect(mapSessionStatus(thread({ latestRunRequestedAt: null }))).toBe("working");
   });
 
   it("keeps background work, blocked and settled mappings", () => {
-    expect(mapSessionStatus(thread({ backgroundLiveness: "monitoring" }))).toBe("working");
-    expect(mapSessionStatus(thread({ hasPendingApprovals: true }))).toBe("blocked");
-    expect(mapSessionStatus(thread({ session: { status: "error", activeTurnId: null } }))).toBe(
-      "blocked",
+    expect(mapSessionStatus(thread({ pendingBackgroundTasks: [{ taskId: "bg-1" }] }))).toBe(
+      "working",
     );
+    expect(
+      mapSessionStatus(thread({ pendingRuntimeRequest: { id: "req-1", kind: "command" } })),
+    ).toBe("blocked");
+    expect(
+      mapSessionStatus(thread({ pendingRuntimeRequest: { id: "req-2", kind: "user_input" } })),
+    ).toBe("blocked");
+    expect(mapSessionStatus(thread({ status: "failed" }))).toBe("blocked");
     expect(mapSessionStatus(thread({ settledAt: "2026-09-27T22:12:00.000Z" }))).toBe("done");
     expect(
-      mapSessionStatus(thread({ session: null, latestTurn: null, latestUserMessageAt: null })),
+      mapSessionStatus(
+        thread({ settledOverride: "active", settledAt: "2026-09-27T22:12:00.000Z" }),
+      ),
+    ).toBe("idle");
+    expect(
+      mapSessionStatus(
+        thread({ status: "idle", latestRunRequestedAt: null, latestUserMessageAt: null }),
+      ),
     ).toBe("idle");
     expect(mapSessionStatus(null)).toBe("idle");
   });
 
   describe("pending control dispatch (send to a stopped session)", () => {
-    // Previous turn finished and the thread auto-settled; session stopped.
+    // Previous run finished and the thread auto-settled.
     const stoppedSettled = (overrides: Partial<StatusInput> = {}) =>
       thread({
-        session: { status: "stopped", activeTurnId: null },
+        ...finishedRun(),
+        status: "interrupted",
         settledAt: "2026-09-27T22:10:10.500Z",
         ...overrides,
       });
@@ -344,7 +370,7 @@ describe("mapSessionStatus", () => {
       expect(mapSessionStatus(stoppedSettled())).toBe("done");
     });
 
-    it("reads working right after a send until the turn starts", () => {
+    it("reads working right after a send until the run starts", () => {
       for (const now of [dispatchedAt, dispatchedAt + 1_500, dispatchedAt + 60_000]) {
         expect(mapSessionStatus(stoppedSettled(), { pendingDispatchAt: dispatchedAt, now })).toBe(
           "working",
@@ -356,7 +382,7 @@ describe("mapSessionStatus", () => {
           }),
         ).toBe("working");
       }
-      // Projection has the user message but the session has not started yet.
+      // Projection has the user message but the run has not started yet.
       expect(
         mapSessionStatus(
           stoppedSettled({ latestUserMessageAt: "2026-09-27T22:29:12.050Z", settledAt: null }),
@@ -369,42 +395,35 @@ describe("mapSessionStatus", () => {
       );
     });
 
-    it("stops counting once a turn requested at/after the dispatch exists", () => {
-      const newTurn = (state: "running" | "completed") =>
-        ({
-          ...turn(state),
-          turnId: "turn-2",
-          requestedAt: "2026-09-27T22:29:12.004Z",
-        }) as StatusInput["latestTurn"];
+    it("stops counting once a run requested at/after the dispatch exists", () => {
+      const newRun = (status: "running" | "completed"): Partial<StatusInput> => ({
+        status,
+        activeRunId: status === "running" ? "run-2" : null,
+        latestRunRequestedAt: "2026-09-27T22:29:12.004Z",
+      });
       const now = dispatchedAt + 5_000;
+      expect(isControlDispatchPending(stoppedSettled(newRun("running")), dispatchedAt, now)).toBe(
+        false,
+      );
+      // Run active → working via the run itself.
       expect(
-        isControlDispatchPending(
-          stoppedSettled({ latestTurn: newTurn("running") }),
-          dispatchedAt,
-          now,
-        ),
-      ).toBe(false);
-      // Turn running → working via the session/turn itself.
+        mapSessionStatus(thread(newRun("running")), { pendingDispatchAt: dispatchedAt, now }),
+      ).toBe("working");
+      // Finished run → idle or done once settled, even with a stale pending record.
       expect(
         mapSessionStatus(
-          thread({
-            latestTurn: newTurn("running"),
-            session: { status: "running", activeTurnId: "turn-2" as never },
-          }),
-          { pendingDispatchAt: dispatchedAt, now },
+          thread({ ...newRun("completed"), latestUserMessageAt: "2026-09-27T22:29:12.004Z" }),
+          {
+            pendingDispatchAt: dispatchedAt,
+            now,
+          },
         ),
-      ).toBe("working");
-      // Finished turn → idle (ready) or done once settled, even with a stale pending record.
-      expect(
-        mapSessionStatus(thread({ latestTurn: newTurn("completed") }), {
-          pendingDispatchAt: dispatchedAt,
-          now,
-        }),
       ).toBe("idle");
       expect(
         mapSessionStatus(
           stoppedSettled({
-            latestTurn: newTurn("completed"),
+            ...newRun("completed"),
+            latestUserMessageAt: "2026-09-27T22:29:12.004Z",
             settledAt: "2026-09-27T22:29:20.000Z",
           }),
           { pendingDispatchAt: dispatchedAt, now },
@@ -412,18 +431,18 @@ describe("mapSessionStatus", () => {
       ).toBe("done");
     });
 
-    it("gives way to blocked on session error and expires after the timeout", () => {
+    it("gives way to blocked on run failure and expires after the timeout", () => {
       expect(
-        mapSessionStatus(stoppedSettled({ session: { status: "error", activeTurnId: null } }), {
+        mapSessionStatus(stoppedSettled({ status: "failed" }), {
           pendingDispatchAt: dispatchedAt,
           now: dispatchedAt + 1_000,
         }),
       ).toBe("blocked");
       expect(
-        mapSessionStatus(stoppedSettled({ hasPendingApprovals: true }), {
-          pendingDispatchAt: dispatchedAt,
-          now: dispatchedAt + 1_000,
-        }),
+        mapSessionStatus(
+          stoppedSettled({ pendingRuntimeRequest: { id: "req-1", kind: "command" } }),
+          { pendingDispatchAt: dispatchedAt, now: dispatchedAt + 1_000 },
+        ),
       ).toBe("blocked");
       expect(
         mapSessionStatus(stoppedSettled({ settledAt: null }), {
@@ -442,12 +461,10 @@ describe("mapSessionStatus", () => {
         );
         expect(getControlPendingDispatch("thread-p")).toBe(dispatchedAt);
         const started = stoppedSettled({
-          latestTurn: {
-            ...turn("completed"),
-            requestedAt: "2026-09-27T22:29:12.010Z",
-          } as StatusInput["latestTurn"],
+          status: "completed",
+          latestRunRequestedAt: "2026-09-27T22:29:12.010Z",
+          latestUserMessageAt: "2026-09-27T22:29:12.010Z",
           settledAt: null,
-          session: { status: "ready", activeTurnId: null },
         });
         expect(resolveControlSessionStatus("thread-p", started, dispatchedAt + 9_000)).toBe("idle");
         expect(getControlPendingDispatch("thread-p")).toBeNull();
@@ -472,17 +489,11 @@ describe("control API handlers (OS-38)", () => {
   type FakeTask = { id: string; status: string; updatedAt: string };
 
   type ThreadState = {
-    sessionStatus: string | null;
+    /** V2 shell run status: idle | preparing | queued | starting | running | waiting | completed | interrupted | failed … */
+    status: string;
     lastError: string | null;
-    activeTurnId: string | null;
-    latestTurn: {
-      turnId: string;
-      state: "running" | "completed" | "interrupted" | "error";
-      requestedAt: string;
-      startedAt: string | null;
-      completedAt: string | null;
-      assistantMessageId: null;
-    } | null;
+    activeRunId: string | null;
+    latestRunRequestedAt: string | null;
     latestUserMessageAt: string | null;
     settledAt: string | null;
   };
@@ -492,11 +503,18 @@ describe("control API handlers (OS-38)", () => {
   let fakeTask: FakeTask;
   let threadState: ThreadState;
   let fetchCalls: Array<{ method: string; url: string; patchStatus?: string }>;
-  let dispatched: Array<{
+  type DispatchedCommand = {
     type: string;
-    createdAt?: string;
+    createdBy?: string;
+    creationSource?: string;
     modelSelection?: { instanceId: string; model: string };
-  }>;
+    dispatchMode?: { type: string };
+    titleSeed?: string;
+    text?: string;
+    attachments?: unknown[];
+    projectId?: string;
+  };
+  let dispatched: DispatchedCommand[];
   const savedEnv = {
     key: process.env.BACKSTEROS_API_KEY,
     url: process.env.BACKSTEROS_API_URL,
@@ -512,27 +530,30 @@ describe("control API handlers (OS-38)", () => {
       interactionMode: "default",
       settledOverride: null,
       settledAt: threadState.settledAt,
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      backgroundLiveness: null,
-      latestTurn: threadState.latestTurn,
+      pendingRuntimeRequest: null,
+      pendingBackgroundTasks: [],
+      status: threadState.status,
+      activeRunId: threadState.activeRunId,
+      latestRunRequestedAt: threadState.latestRunRequestedAt,
       latestUserMessageAt: threadState.latestUserMessageAt,
-      session:
-        threadState.sessionStatus === null
-          ? null
-          : {
-              status: threadState.sessionStatus,
-              activeTurnId: threadState.activeTurnId,
-              lastError: threadState.lastError,
-            },
+      lastError: threadState.lastError,
     };
   }
 
-  function runHandler(
-    handler: typeof controlStatusHandler | typeof controlMessageHandler,
+  type ShellOptions = {
+    readonly projects?: ReadonlyArray<unknown>;
+    readonly threads?: ReadonlyArray<ReturnType<typeof threadShell>>;
+    readonly dispatch?: (command: DispatchedCommand) => Effect.Effect<unknown, unknown>;
+  };
+
+  /** Provide every service the local (in-process) control path needs. */
+  function provideControlServices<A, E, R>(
+    effect: Effect.Effect<A, E, R>,
     request: Request,
-  ): Promise<Response> {
-    const provided = (handler as typeof controlMessageHandler).pipe(
+    options: ShellOptions = {},
+  ): Effect.Effect<A, E> {
+    const threads = options.threads ?? [threadShell()];
+    return effect.pipe(
       Effect.provideService(
         HttpServerRequest.HttpServerRequest,
         HttpServerRequest.fromWeb(request),
@@ -548,25 +569,42 @@ describe("control API handlers (OS-38)", () => {
         getEnvironmentId: Effect.succeed("env-1"),
         getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
       } as never),
-      Effect.provideService(ProjectionSnapshotQuery, {
-        getShellSnapshot: () => Effect.sync(() => ({ projects: [], threads: [threadShell()] })),
+      Effect.provideService(ThreadManagementService.ThreadManagementService, {
+        getThreadShell: (threadId: string) =>
+          Effect.sync(() => threads.find((thread) => thread.id === threadId) ?? null),
+        dispatch: (command: DispatchedCommand) => {
+          dispatched.push(command);
+          return options.dispatch
+            ? options.dispatch(command)
+            : Effect.succeed({ sequence: dispatched.length });
+        },
       } as never),
-      Effect.provideService(OrchestrationEngineService, {
-        dispatch: (command: { type: string; createdAt?: string }) =>
-          Effect.sync(() => {
-            dispatched.push(command);
-            return { sequence: dispatched.length };
-          }),
+      Effect.provideService(ProjectService.ProjectService, {
+        listShells: () => Effect.sync(() => options.projects ?? []),
+      } as never),
+      Effect.provideService(ProviderRegistry, {
+        getProviders: Effect.succeed([
+          { instanceId: "cursor", driver: "cursor" },
+          { instanceId: "claudeAgent", driver: "claudeAgent" },
+        ]),
       } as never),
       Effect.provideService(Crypto.Crypto, {
-        randomUUIDv4: Effect.sync(
-          () => `00000000-0000-4000-8000-${String((idCounter += 1)).padStart(12, "0")}`,
-        ),
+        randomUUIDv4: () =>
+          Effect.sync(
+            () => `00000000-0000-4000-8000-${String((idCounter += 1)).padStart(12, "0")}`,
+          ),
       } as never),
       Effect.provideService(FileSystem.FileSystem, {} as never),
       Effect.provideService(Path.Path, {} as never),
       Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
-    );
+    ) as unknown as Effect.Effect<A, E>;
+  }
+
+  function runHandler(
+    handler: typeof controlStatusHandler | typeof controlMessageHandler,
+    request: Request,
+  ): Promise<Response> {
+    const provided = provideControlServices(handler as typeof controlMessageHandler, request);
     return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
   }
 
@@ -618,17 +656,10 @@ describe("control API handlers (OS-38)", () => {
     });
     fakeTask = { id: TASK_ID, status: "completed", updatedAt: "2026-09-27T22:17:17.065Z" };
     threadState = {
-      sessionStatus: "ready",
+      status: "completed",
       lastError: null,
-      activeTurnId: null,
-      latestTurn: {
-        turnId: "turn-1",
-        state: "completed",
-        requestedAt: "2026-09-27T22:10:01.709Z",
-        startedAt: "2026-09-27T22:10:01.709Z",
-        completedAt: "2026-09-27T22:10:10.071Z",
-        assistantMessageId: null,
-      },
+      activeRunId: null,
+      latestRunRequestedAt: "2026-09-27T22:10:01.709Z",
       latestUserMessageAt: "2026-09-27T22:10:01.709Z",
       settledAt: null,
     };
@@ -712,10 +743,10 @@ describe("control API handlers (OS-38)", () => {
     it("never changes task status or updatedAt, for any session state", async () => {
       const before = { ...fakeTask };
       const states: Array<Partial<ThreadState>> = [
-        {}, // finished turn, ready → idle
-        { settledAt: "2026-09-27T22:10:11.000Z", sessionStatus: "stopped" }, // done
-        { sessionStatus: "running", activeTurnId: "turn-1" }, // working
-        { sessionStatus: "error" }, // blocked
+        {}, // finished run → idle
+        { settledAt: "2026-09-27T22:10:11.000Z", status: "interrupted" }, // done
+        { status: "running", activeRunId: "run-1" }, // working
+        { status: "failed" }, // blocked
       ];
       for (const taskStatus of ["completed", "in_progress", "ready_to_start"]) {
         fakeTask = { ...before, status: taskStatus };
@@ -736,69 +767,63 @@ describe("control API handlers (OS-38)", () => {
   });
 
   describe("control status mapping over a turn", () => {
-    it("GET after a finished turn returns idle", async () => {
+    it("GET after a finished run returns idle", async () => {
       const view = await getStatus();
-      expect(view).toMatchObject({ status: "idle", sessionStatus: "ready", lastError: null });
+      expect(view).toMatchObject({ status: "idle", sessionStatus: "completed", lastError: null });
     });
 
-    it("surfaces lastError when the session is in error", async () => {
-      threadState.sessionStatus = "error";
+    it("surfaces lastError when the run failed", async () => {
+      threadState.status = "failed";
       threadState.lastError =
         "Thread '11111111-2222-4333-8444-555555555555' is bound to driver 'cursor' and cannot switch to 'claudeAgent'.";
       const view = await getStatus();
       expect(view).toMatchObject({
         status: "blocked",
-        sessionStatus: "error",
+        sessionStatus: "failed",
         lastError: threadState.lastError,
       });
     });
 
-    it("send to a stopped session reads working until the turn ends", async () => {
-      // Previous turn finished and the thread auto-settled; session stopped.
-      threadState.sessionStatus = "stopped";
+    it("send to a stopped session reads working until the run ends", async () => {
+      // Previous run finished and the thread auto-settled.
+      threadState.status = "interrupted";
       threadState.settledAt = "2026-09-27T22:10:11.000Z";
       expect((await getStatus()).status).toBe("done");
 
       const sent = await sendMessage("Reply with the single word ok.");
-      expect(sent).toMatchObject({ sent: true, status: "working", sessionStatus: "stopped" });
+      expect(sent).toMatchObject({ sent: true, status: "working", sessionStatus: "interrupted" });
       expect(dispatched).toHaveLength(1);
+      expect(dispatched[0]).toMatchObject({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "server",
+        text: "Reply with the single word ok.",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+      });
 
-      // Right after the send: projection has the message (stamped with the
-      // command time), provider session not started yet.
-      const sentAt = dispatched[0]!.createdAt!;
+      // Right after the send: projection has the message, run not requested yet.
+      const sentAt = new Date().toISOString();
       threadState.latestUserMessageAt = sentAt;
       threadState.settledAt = null;
       expect((await getStatus()).status).toBe("working");
-      threadState.sessionStatus = "starting";
+      threadState.status = "starting";
       expect((await getStatus()).status).toBe("working");
 
-      // Turn starts (requestedAt = dispatched command time), then finishes.
-      const requestedAt = sentAt;
-      threadState.sessionStatus = "running";
-      threadState.activeTurnId = "turn-2";
-      threadState.latestTurn = {
-        turnId: "turn-2",
-        state: "running",
-        requestedAt,
-        startedAt: requestedAt,
-        completedAt: null,
-        assistantMessageId: null,
-      };
+      // Run starts (requestedAt >= dispatch time), then finishes.
+      threadState.status = "running";
+      threadState.activeRunId = "run-2";
+      threadState.latestRunRequestedAt = sentAt;
       expect((await getStatus()).status).toBe("working");
 
-      threadState.sessionStatus = "ready";
-      threadState.activeTurnId = null;
-      threadState.latestTurn = {
-        ...threadState.latestTurn,
-        state: "completed",
-        completedAt: sentAt,
-      };
+      threadState.status = "completed";
+      threadState.activeRunId = null;
       expect((await getStatus()).status).toBe("idle");
 
-      // Auto-settle at turn end → done; GETs still never write BacksterOS status.
+      // Auto-settle at run end → done; GETs still never write BacksterOS status.
       // POST /message may GET the live task for an explicit promote attempt, but
       // completed tasks stay closed (no PATCH).
-      threadState.sessionStatus = "stopped";
+      threadState.status = "interrupted";
       threadState.settledAt = sentAt;
       expect((await getStatus()).status).toBe("done");
       await flush();
@@ -827,65 +852,23 @@ describe("control API handlers (OS-38)", () => {
       body: Record<string, unknown>,
       options?: { readonly failDispatch?: boolean },
     ): Promise<Response> {
-      const provided = controlStartHandler.pipe(
-        Effect.provideService(
-          HttpServerRequest.HttpServerRequest,
-          HttpServerRequest.fromWeb(
-            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions", {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${API_KEY}`,
-                "content-type": "application/json",
-              },
-              body: JSON.stringify(body),
-            }),
-          ),
-        ),
-        Effect.provideService(SessionStore.SessionStore, {} as never),
-        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
-        Effect.provideService(ServerConfig.ServerConfig, {
-          stateDir,
-          attachmentsDir: path.join(stateDir, "attachments"),
-          port: 3773,
-        } as never),
-        Effect.provideService(ServerEnvironment.ServerEnvironment, {
-          getEnvironmentId: Effect.succeed("env-1"),
-          getDescriptor: Effect.succeed({
-            environmentId: "env-1",
-            label: "local",
-          }),
-        } as never),
-        Effect.provideService(ProjectionSnapshotQuery, {
-          getShellSnapshot: () =>
-            Effect.sync(() => ({ projects: [t3Project()], threads: [threadShell()] })),
-        } as never),
-        Effect.provideService(OrchestrationEngineService, {
-          dispatch: (command: {
-            type: string;
-            createdAt?: string;
-            modelSelection?: { instanceId: string; model: string };
-          }) => {
-            dispatched.push(command);
-            if (options?.failDispatch === true && command.type === "thread.turn.start") {
-              return Effect.fail("dispatch failed");
-            }
-            return Effect.succeed({ sequence: dispatched.length });
+      const provided = provideControlServices(
+        controlStartHandler,
+        new Request("http://127.0.0.1:3773/api/backsteros/control/sessions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${API_KEY}`,
+            "content-type": "application/json",
           },
-        } as never),
-        Effect.provideService(ProviderRegistry, {
-          getProviders: Effect.succeed([
-            { instanceId: "cursor", driver: "cursor" },
-            { instanceId: "claudeAgent", driver: "claudeAgent" },
-          ]),
-        } as never),
-        Effect.provideService(Crypto.Crypto, {
-          randomUUIDv4: Effect.sync(
-            () => `00000000-0000-4000-8000-${String((idCounter += 1)).padStart(12, "0")}`,
-          ),
-        } as never),
-        Effect.provideService(FileSystem.FileSystem, {} as never),
-        Effect.provideService(Path.Path, {} as never),
-        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+          body: JSON.stringify(body),
+        }),
+        {
+          projects: [t3Project()],
+          dispatch: (command) =>
+            options?.failDispatch === true && command.type === "message.dispatch"
+              ? Effect.fail(new Error("dispatch failed"))
+              : Effect.succeed({ sequence: dispatched.length }),
+        },
       );
       return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
     }
@@ -900,8 +883,9 @@ describe("control API handlers (OS-38)", () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as { started: boolean; created: boolean };
       expect(body).toMatchObject({ started: true, created: false });
-      const turn = dispatched.find((command) => command.type === "thread.turn.start");
+      const turn = dispatched.find((command) => command.type === "message.dispatch");
       expect(turn?.modelSelection).toEqual({ instanceId: "cursor", model: "default" });
+      expect(turn?.dispatchMode).toEqual({ type: "start_immediately" });
     });
 
     it("returns 409 driver_mismatch when the caller asks for another driver", async () => {
@@ -940,7 +924,7 @@ describe("control API handlers (OS-38)", () => {
 
     it("retry of an errored thread still marks the task in_progress", async () => {
       fakeTask.status = "in_review";
-      threadState.sessionStatus = "error";
+      threadState.status = "failed";
       threadState.lastError =
         "Thread '11111111-2222-4333-8444-555555555555' is bound to driver 'cursor' and cannot switch to 'claudeAgent'.";
       const response = await runStart({
@@ -956,9 +940,9 @@ describe("control API handlers (OS-38)", () => {
         started: boolean;
       };
       expect(body.started).toBe(true);
-      expect(body.sessionStatus).toBe("error");
+      expect(body.sessionStatus).toBe("failed");
       expect(body.lastError).toBe(threadState.lastError);
-      expect(dispatched.some((command) => command.type === "thread.turn.start")).toBe(true);
+      expect(dispatched.some((command) => command.type === "message.dispatch")).toBe(true);
       await flush();
       expect(fakeTask.status).toBe("in_progress");
       expect(
@@ -979,50 +963,31 @@ describe("control API handlers (OS-38)", () => {
       const body = (await response.json()) as { created: boolean; started: boolean };
       expect(body).toMatchObject({ created: true, started: true });
       const create = dispatched.find((command) => command.type === "thread.create");
-      const turn = dispatched.find((command) => command.type === "thread.turn.start");
+      const turn = dispatched.find((command) => command.type === "message.dispatch");
+      expect(create).toMatchObject({ createdBy: "user", creationSource: "server" });
       expect(create?.modelSelection).toEqual({ instanceId: "claudeAgent", model: "opus" });
       expect(turn?.modelSelection).toEqual({ instanceId: "claudeAgent", model: "opus" });
+      expect(turn).toMatchObject({
+        createdBy: "user",
+        creationSource: "server",
+        dispatchMode: { type: "start_immediately" },
+        attachments: [],
+      });
+      expect(turn?.titleSeed).toContain("OS-38");
     });
 
     function runPromote(): Promise<Response> {
-      const provided = controlPromoteHandler.pipe(
-        Effect.provideService(
-          HttpServerRequest.HttpServerRequest,
-          HttpServerRequest.fromWeb(
-            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/promote", {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${API_KEY}`,
-                "content-type": "application/json",
-              },
-              body: JSON.stringify({ taskId: TASK_ID }),
-            }),
-          ),
-        ),
-        Effect.provideService(SessionStore.SessionStore, {} as never),
-        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
-        Effect.provideService(ServerConfig.ServerConfig, {
-          stateDir,
-          attachmentsDir: path.join(stateDir, "attachments"),
-          port: 3773,
-        } as never),
-        Effect.provideService(ServerEnvironment.ServerEnvironment, {
-          getEnvironmentId: Effect.succeed("env-1"),
-          getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
-        } as never),
-        Effect.provideService(ProjectionSnapshotQuery, {
-          getShellSnapshot: () =>
-            Effect.sync(() => ({ projects: [t3Project()], threads: [threadShell()] })),
-        } as never),
-        Effect.provideService(OrchestrationEngineService, {
-          dispatch: () => Effect.succeed({ sequence: 1 }),
-        } as never),
-        Effect.provideService(Crypto.Crypto, {
-          randomUUIDv4: Effect.succeed("00000000-0000-4000-8000-000000000099"),
-        } as never),
-        Effect.provideService(FileSystem.FileSystem, {} as never),
-        Effect.provideService(Path.Path, {} as never),
-        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+      const provided = provideControlServices(
+        controlPromoteHandler,
+        new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/promote", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${API_KEY}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ taskId: TASK_ID }),
+        }),
+        { projects: [t3Project()] },
       );
       return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
     }
@@ -1045,15 +1010,15 @@ describe("control API handlers (OS-38)", () => {
 
     it("POST /sessions/promote does not flip in_review for stopped+lastError", async () => {
       fakeTask.status = "in_progress";
-      threadState.sessionStatus = "running";
-      threadState.activeTurnId = "turn-1";
+      threadState.status = "running";
+      threadState.activeRunId = "run-1";
       expect((await runPromote()).status).toBe(200);
       await flush();
       expect(fakeTask.status).toBe("in_progress");
 
-      // error maps to blocked → in_progress, not the in_review guard.
-      threadState.sessionStatus = "error";
-      threadState.activeTurnId = null;
+      // failed maps to blocked → in_progress, not the in_review guard.
+      threadState.status = "failed";
+      threadState.activeRunId = null;
       threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
       fetchCalls.length = 0;
       expect((await runPromote()).status).toBe(200);
@@ -1062,7 +1027,7 @@ describe("control API handlers (OS-38)", () => {
       expect(fetchCalls.some((call) => call.patchStatus === "in_review")).toBe(false);
 
       // settled stopped+lastError maps to done; that is the in_review guard.
-      threadState.sessionStatus = "stopped";
+      threadState.status = "interrupted";
       threadState.settledAt = "2026-09-27T22:10:11.000Z";
       fetchCalls.length = 0;
       expect((await runPromote()).status).toBe(200);
@@ -1073,7 +1038,7 @@ describe("control API handlers (OS-38)", () => {
 
     it("POST /message then promote does not flip in_review for stopped+lastError", async () => {
       fakeTask.status = "in_progress";
-      threadState.sessionStatus = "stopped";
+      threadState.status = "interrupted";
       threadState.lastError = "bound to driver 'cursor' and cannot switch to 'claudeAgent'";
       threadState.settledAt = "2026-09-27T22:10:11.000Z";
       const sent = await sendMessage("Retry on the bound driver.");
@@ -1098,43 +1063,17 @@ describe("control API handlers (OS-38)", () => {
     const ORPHAN_THREAD = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
 
     function runPrune(threads: ReturnType<typeof threadShell>[]) {
-      const provided = controlPruneHandler.pipe(
-        Effect.provideService(
-          HttpServerRequest.HttpServerRequest,
-          HttpServerRequest.fromWeb(
-            new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/prune", {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${API_KEY}`,
-                "content-type": "application/json",
-              },
-              body: "{}",
-            }),
-          ),
-        ),
-        Effect.provideService(SessionStore.SessionStore, {} as never),
-        Effect.provideService(EnvironmentAuth.EnvironmentAuth, {} as never),
-        Effect.provideService(ServerConfig.ServerConfig, {
-          stateDir,
-          attachmentsDir: path.join(stateDir, "attachments"),
-          port: 3773,
-        } as never),
-        Effect.provideService(ServerEnvironment.ServerEnvironment, {
-          getEnvironmentId: Effect.succeed("env-1"),
-          getDescriptor: Effect.succeed({ environmentId: "env-1", label: "local" }),
-        } as never),
-        Effect.provideService(ProjectionSnapshotQuery, {
-          getShellSnapshot: () => Effect.sync(() => ({ projects: [], threads })),
-        } as never),
-        Effect.provideService(OrchestrationEngineService, {
-          dispatch: () => Effect.succeed({ sequence: 1 }),
-        } as never),
-        Effect.provideService(Crypto.Crypto, {
-          randomUUIDv4: Effect.succeed("00000000-0000-4000-8000-000000000099"),
-        } as never),
-        Effect.provideService(FileSystem.FileSystem, {} as never),
-        Effect.provideService(Path.Path, {} as never),
-        Effect.provideService(WorkspacePaths.WorkspacePaths, {} as never),
+      const provided = provideControlServices(
+        controlPruneHandler,
+        new Request("http://127.0.0.1:3773/api/backsteros/control/sessions/prune", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${API_KEY}`,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+        { threads },
       );
       return Effect.runPromise(provided).then((response) => HttpServerResponse.toWeb(response));
     }

@@ -5,6 +5,13 @@
   "engines": {
     "node": ">=22"
   },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
+  },
   "scripts": {
     "dev": "pnpm --filter @backsteros/server dev",
     "dev:all": "pnpm --parallel --filter @backsteros/contracts --filter @backsteros/server run dev",

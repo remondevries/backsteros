@@ -1,6 +1,7 @@
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
+import { SidePanelToggleIcon } from "~/backsteros/SidePanelToggleIcon";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -34,7 +35,6 @@ import {
   MessageSquareIcon,
   LinkIcon,
   MoreHorizontalIcon,
-  PanelRightIcon,
   PlayIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
@@ -198,6 +198,7 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
     "Auto-merge turned on — merges as soon as this is ready, sooner if it already is",
   "disable-auto-merge": "Auto-merge turned off",
   revert: "Revert pull request opened",
+  "delete-branch": "Branch deleted",
   "approve-workflows": "Workflows approved",
 };
 
@@ -212,6 +213,7 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   "enable-auto-merge": "Could not turn on auto-merge",
   "disable-auto-merge": "Could not turn off auto-merge",
   revert: "Could not open a revert pull request",
+  "delete-branch": "Could not delete this branch",
   "approve-workflows": "Could not approve workflows",
 };
 
@@ -236,6 +238,8 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have write access, and that the merge has not already happened.",
   revert:
     "The host refused it. Check that you have write access and that this pull request was merged on the host.",
+  "delete-branch":
+    "The host refused it. Check that you have write access to the source repository and that the branch has not moved since this page loaded.",
   "approve-workflows":
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
@@ -2226,7 +2230,7 @@ export function PullRequestDetailPanel({
               aria-label="Collapse pull request panel"
               onClick={onClose}
             >
-              <PanelRightIcon className="size-3.5" />
+              <SidePanelToggleIcon size={14} rail="end" collapsed={false} />
             </Button>
           ) : null}
         </div>

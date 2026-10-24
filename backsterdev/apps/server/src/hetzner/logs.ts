@@ -4,7 +4,7 @@
  */
 import { findHetznerServer } from "./server-connection.ts";
 import { containerMatchesService, normalizeServiceScope } from "./service-scope.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export type ServerLogSource = {
   readonly id: string;
@@ -145,7 +145,7 @@ export async function listServerLogSources(
 }> {
   const server = await findHetznerServer(serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
 
   const stdout = await sshExec(ip, `python3 - <<'PY'\n${REMOTE_SOURCES_SCRIPT}\nPY`);
@@ -183,7 +183,7 @@ export async function fetchServerLogs(input: {
 }): Promise<ServerLogFetchResult> {
   const server = await findHetznerServer(input.serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
 
   const sourceId = input.sourceId.trim();
@@ -223,7 +223,7 @@ export async function wipeServerLogs(input: {
 }): Promise<{ readonly serverId: string; readonly sourceId: string; readonly wiped: true }> {
   const server = await findHetznerServer(input.serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
 
   const sourceId = input.sourceId.trim();

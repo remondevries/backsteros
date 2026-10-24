@@ -12,7 +12,7 @@ import { getServer, fetchServerCloudMetrics } from "./cloud.ts";
 import { findHetznerServer } from "./server-connection.ts";
 import { evaluateServerMonitors } from "./monitors.ts";
 import { normalizeServiceScope } from "./service-scope.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export const METRIC_RANGES = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type MetricRange = (typeof METRIC_RANGES)[number];
@@ -217,7 +217,7 @@ export async function loadServerMetrics(
     end: endIso,
   });
 
-  const ip = server.public_net.ipv4?.ip ?? null;
+  const ip = await resolveServerSshHost(server);
   const guestPromise = ip ? sampleGuestMetrics(ip) : Promise.resolve(null);
 
   const [metrics, guestSample] = await Promise.all([metricsPromise, guestPromise]);
@@ -447,8 +447,8 @@ export async function loadAppMetrics(
   const startMs = endMs - RANGE_MS[range];
   const startIso = new Date(startMs).toISOString();
   const endIso = new Date(endMs).toISOString();
-  const ip = server.public_net.ipv4?.ip ?? null;
-  if (!ip) throw new Error("Server has no public IPv4 address");
+  const ip = await resolveServerSshHost(server);
+  if (!ip) throw new Error("No Tailscale or public SSH host");
 
   const sample = await sampleAppContainerMetrics(ip, service);
   let samples = readAppSamplesFile().apps[appSampleKey(String(server.id), service)]?.samples ?? [];

@@ -4,7 +4,7 @@
  * Hosts are updated by redeploying the service with the same target and new --host flags.
  */
 import { findHetznerServer } from "./server-connection.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export type AppDomainEntry = {
   readonly host: string;
@@ -248,7 +248,7 @@ async function resolveServer(serverId: string): Promise<{
 }> {
   const server = await findHetznerServer(serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
   return { serverId: String(server.id), serverName: server.name, ip };
 }

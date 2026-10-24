@@ -2,22 +2,20 @@ import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 import {
-  PROVIDER_ACCENT_SWATCHES,
   PROVIDER_ACCENT_SWATCH_LABELS,
+  PROVIDER_ACCENT_SWATCHES,
   type ProviderAccentSwatch,
 } from "../providerAccentColors";
 
-/**
- * Ids for the per-thread action menu. Snooze presets are dispatched as
- * `snooze:<presetId>` so the union stays closed while the preset list
- * remains data-driven. Color picks are `color:<hex>` / `color:clear`.
- */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
   | "pin"
   | "unpin"
+  | "color"
+  | `color:${string}`
+  | "color:clear"
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -26,9 +24,6 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
-  | "color"
-  | `color:${string}`
-  | "color:clear"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -38,39 +33,6 @@ export type ThreadActionMenuId =
   | "copy-thread-id"
   | "archive"
   | "delete";
-
-export interface ThreadActionMenuState {
-  readonly branch: string | null;
-  /**
-   * Project scoping for the thread list. Null on surfaces with no scoped
-   * list behind the menu (the chat header), where the item must not show.
-   */
-  readonly projectFilter: {
-    readonly label: string;
-    /** True when the list is already scoped to this thread's project. */
-    readonly isActive: boolean;
-  } | null;
-  readonly isPinned: boolean;
-  readonly isSettled: boolean;
-  /** False while the user has turned automatic settlement off for this thread. */
-  readonly autoSettleEnabled: boolean;
-  readonly isSnoozed: boolean;
-  readonly canSnoozeNow: boolean;
-  readonly isRegeneratingTitle: boolean;
-  /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
-  readonly isRunning: boolean;
-  /** Current composer accent for this chat (override or resolved). */
-  readonly currentAccentColor?: string | null | undefined;
-  readonly supports: {
-    readonly settlement: boolean;
-    /** Server understands thread.auto-settle.set. */
-    readonly autoSettleOptOut: boolean;
-    readonly snooze: boolean;
-    readonly pinning: boolean;
-    readonly titleRegeneration: boolean;
-  };
-  readonly snoozePresets: ReadonlyArray<SnoozePreset>;
-}
 
 export function buildComposerColorMenuItems(input: {
   readonly currentAccentColor?: string | null | undefined;
@@ -110,15 +72,86 @@ export function parseComposerColorMenuAction(
   return match ? { kind: "set", hex: match } : null;
 }
 
-/**
- * Single source for the per-thread action menu: the sidebar row's right-click
- * menu and the chat header menu share labels, ordering, and capability gating.
- * Each surface supplies state for the actions it supports.
- */
+export type DraftActionMenuId =
+  | "copy"
+  | "copy-path"
+  | "copy-branch"
+  | "project-settings"
+  | "discard";
+
+export function buildDraftActionMenuItems(options: {
+  readonly hasPath: boolean;
+  readonly hasBranch: boolean;
+  readonly hasProject: boolean;
+}): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
+  return [
+    {
+      id: "copy",
+      label: "Copy",
+      icon: "copy",
+      disabled: !options.hasPath && !options.hasBranch,
+      children: [
+        ...(options.hasPath ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }] : []),
+        ...(options.hasBranch
+          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+          : []),
+      ],
+    },
+    ...(options.hasProject
+      ? [{ id: "project-settings" as const, label: "Project settings", icon: "settings" }]
+      : []),
+    {
+      id: "discard",
+      label: "Discard draft",
+      icon: "trash",
+      destructive: true,
+      separatorBefore: true,
+    },
+  ];
+}
+
+export interface ThreadActionMenuState {
+  readonly canOperate: boolean;
+  readonly branch: string | null;
+  readonly projectFilter: {
+    readonly label: string;
+    readonly isActive: boolean;
+  } | null;
+  readonly isPinned: boolean;
+  readonly isSettled: boolean;
+  readonly autoSettleEnabled: boolean;
+  readonly isSnoozed: boolean;
+  readonly canSnoozeNow: boolean;
+  readonly isRegeneratingTitle: boolean;
+  /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
+  readonly isRunning: boolean;
+  readonly supports: {
+    readonly settlement: boolean;
+    readonly autoSettleOptOut: boolean;
+    readonly snooze: boolean;
+    readonly pinning: boolean;
+    readonly titleRegeneration: boolean;
+  };
+  readonly snoozePresets: ReadonlyArray<SnoozePreset>;
+}
+
+/** Local navigation, read markers, and copying remain available to read-only clients. */
+export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
+  return ![
+    "new-thread-on-branch",
+    "project-settings",
+    "mark-unread",
+    "copy",
+    "copy-path",
+    "copy-branch",
+    "copy-thread-id",
+  ].includes(action);
+}
+
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
-  return [
+  const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
     ...(state.branch
       ? [
           {
@@ -135,18 +168,6 @@ export function buildThreadActionMenuItems(
             : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
-    {
-      id: "color",
-      label: "Color",
-      icon: "palette",
-      children: buildComposerColorMenuItems({
-        currentAccentColor: state.currentAccentColor,
-        includeClear: true,
-      }),
-    },
-    // Both lifecycle actions stay available on pinned threads: settling
-    // clears the pin ("done" beats "keep on top"), and snoozing hides the
-    // card until wake with the pin intact.
     ...(state.supports.settlement
       ? [
           state.isSettled
@@ -196,10 +217,6 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    // A submenu with the current option checked, not a one-shot action:
-    // this is a setting, and it sits with the other per-thread settings
-    // rather than the lifecycle verbs above. Disabled keeps long-running
-    // threads out of the settled shelf no matter how quiet they get.
     ...(state.supports.autoSettleOptOut
       ? [
           {
@@ -235,11 +252,6 @@ export function buildThreadActionMenuItems(
       ],
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
-    // Archive removes the thread from the sidebar while keeping its
-    // conversation under Settings > Archived threads — distinct from Settle
-    // (stays visible in the Settled shelf) and Delete (clears history for
-    // good), so it sits beside Delete without borrowing its destructive
-    // styling.
     {
       id: "archive",
       label: "Archive thread",
@@ -254,4 +266,17 @@ export function buildThreadActionMenuItems(
       icon: "trash",
     },
   ];
+  return state.canOperate
+    ? items
+    : items.map((item) =>
+        threadActionRequiresOperate(item.id)
+          ? {
+              ...item,
+              disabled: true,
+              ...(item.children
+                ? { children: item.children.map((child) => ({ ...child, disabled: true })) }
+                : {}),
+            }
+          : item,
+      );
 }

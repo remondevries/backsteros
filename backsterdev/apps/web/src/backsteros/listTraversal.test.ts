@@ -29,7 +29,7 @@ describe("orderedBacksterosTaskIds", () => {
 });
 
 describe("orderedBacksterosInboxTaskIds", () => {
-  it("lists attention status groups first, then Due-only tasks", () => {
+  it("flattens by status groups (Backlog / Ready to Start, not a Due bucket)", () => {
     const yesterday = addDaysYmd(-1);
     const today = addDaysYmd(0);
     const later = addDaysYmd(3);
@@ -48,6 +48,13 @@ describe("orderedBacksterosInboxTaskIds", () => {
         sortOrder: 1,
       },
       {
+        id: "ready",
+        status: "ready_to_start",
+        title: "Ready due",
+        dueDate: today,
+        sortOrder: 0,
+      },
+      {
         id: "due-today",
         status: "in_progress",
         title: "Due today",
@@ -61,11 +68,10 @@ describe("orderedBacksterosInboxTaskIds", () => {
         dueDate: later,
       },
     ]);
-    // due-today stays under In Progress; only backlog late is in Due.
-    expect(ids).toEqual(["triage", "due-today", "progress", "late"]);
+    expect(ids).toEqual(["triage", "due-today", "progress", "ready", "late"]);
   });
 
-  it("keeps live agent-working tasks with attention regardless of due date", () => {
+  it("places working extras in their status group order", () => {
     const later = addDaysYmd(5);
     const ids = orderedBacksterosInboxTaskIds(
       [

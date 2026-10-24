@@ -10,6 +10,12 @@
   height: 100%;
   flex: 1;
   overflow: hidden;
+  /* Side panel runs full-height; chrome/header lives only in __main. */
+  transition: grid-template-columns 180ms ease;
+}
+
+.bos-codebase-workbench--side-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .bos-codebase-workbench__side,
@@ -27,6 +33,12 @@
   background: color-mix(in srgb, var(--background) 92%, var(--foreground) 4%);
 }
 
+.bos-codebase-workbench--side-collapsed .bos-codebase-workbench__side {
+  border-right-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .bos-codebase-workbench__side-scroll {
   flex: 1;
   min-height: 0;
@@ -38,12 +50,24 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  min-height: 44px;
-  padding: 8px 14px;
+  gap: 12px;
+  box-sizing: border-box;
+  height: var(--workspace-topbar-height);
+  min-height: var(--workspace-topbar-height);
+  max-height: var(--workspace-topbar-height);
+  padding: 0 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-/* Header-hosted pill nav: single row, scroll horizontally if the strip is tight. */
+.bos-codebase-workbench__tabs-timer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Main-column pill nav: single row, scroll horizontally if the strip is tight. */
+.bos-codebase-workbench__tabs .bos-pill-nav,
 header .bos-pill-nav {
   flex-wrap: nowrap;
   max-width: 100%;
@@ -51,6 +75,7 @@ header .bos-pill-nav {
   scrollbar-width: none;
 }
 
+.bos-codebase-workbench__tabs .bos-pill-nav::-webkit-scrollbar,
 header .bos-pill-nav::-webkit-scrollbar {
   display: none;
 }

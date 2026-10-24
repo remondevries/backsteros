@@ -19,10 +19,6 @@
   border: 1px solid color-mix(in oklab, var(--color-sidebar-border, #3f3f46) 80%, transparent);
 }
 
-.bos-content-tabs-timer.is-running .bos-content-tabs-timer__control {
-  border-color: color-mix(in oklab, #f97316 45%, transparent);
-}
-
 .bos-content-tabs-timer.is-idle .bos-content-tabs-timer__control {
   opacity: 0.85;
 }
@@ -65,10 +61,6 @@
   background: color-mix(in oklab, currentColor 12%, transparent);
 }
 
-.bos-content-tabs-timer.is-running .bos-content-tabs-timer__toggle {
-  color: #f97316;
-}
-
 .bos-content-tabs-timer__running-count {
   min-width: 16px;
   height: 16px;
@@ -78,8 +70,8 @@
   font-weight: 600;
   line-height: 16px;
   text-align: center;
-  color: #fff;
-  background: #f97316;
+  color: color-mix(in oklab, currentColor 90%, transparent);
+  background: color-mix(in oklab, currentColor 14%, transparent);
 }
 
 .bos-content-tabs-timer__pill-id {
@@ -108,10 +100,6 @@
   display: inline-flex;
   align-items: baseline;
   gap: 0;
-}
-
-.bos-content-tabs-timer__seconds.is-live {
-  color: #f97316;
 }
 
 .bos-content-tabs-timer__menu {
@@ -176,10 +164,6 @@
 .bos-content-tabs-timer__option-nav:hover,
 .bos-content-tabs-timer__option-main:hover {
   background: color-mix(in oklab, currentColor 12%, transparent);
-}
-
-.bos-content-tabs-timer__option--running .bos-content-tabs-timer__option-toggle {
-  color: #f97316;
 }
 
 .bos-content-tabs-timer__option-main {

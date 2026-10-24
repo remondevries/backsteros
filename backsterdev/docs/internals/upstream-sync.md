@@ -10,26 +10,26 @@ in while keeping exclusive Backster paths and re-wiring forked hotspots.
 
 | Item             | Value                                                                      |
 | ---------------- | -------------------------------------------------------------------------- |
-| Nested tree base | `v0.0.45` content (package versions **0.0.44** inside that tag)            |
-| Prior base       | `0.0.40` (commit `4a7a7fb`)                                                |
-| Reference clone  | `tmp/t3-code-v0045` (repo-root, gitignored)                                |
+| Nested tree base | `v0.1.2` (Orchestrator V2 / protocol **2**; package versions **0.1.1**)   |
+| Prior base       | `v0.1.0` (package versions **0.0.45**), then bumped to latest stable     |
+| Reference clone  | `tmp/t3-code-v012` (repo-root, gitignored)                                 |
 | Helper script    | [`scripts/sync-upstream-t3code.sh`](../../scripts/sync-upstream-t3code.sh) |
-| Hotspot backup   | `tmp/t3-sync-hotspot-backup-20261007-172124`                               |
+| Hotspot backup   | `tmp/t3-sync-hotspot-backup-20261023-181000` (see `.t3-sync-last-hotspot-backup`) |
 
 Refresh the clone when needed:
 
 ```bash
 # from BacksterOS repo root
-git -C tmp/t3-code-v0045 fetch --tags origin
-git -C tmp/t3-code-v0045 checkout v0.0.45
+git -C tmp/t3-code-v012 fetch --tags origin
+git -C tmp/t3-code-v012 checkout v0.1.2
 ```
 
 Or shallow-clone if missing:
 
 ```bash
-git clone --depth 1 --branch v0.0.45 \
+git clone --depth 1 --branch v0.1.2 \
   https://github.com/pingdotgg/t3code.git \
-  tmp/t3-code-v0045
+  tmp/t3-code-v012
 ```
 
 ## Phases

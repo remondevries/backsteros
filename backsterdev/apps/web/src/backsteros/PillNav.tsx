@@ -23,9 +23,10 @@ export function BacksterosPillNav<T extends string>(props: {
 
   return (
     <nav className={cn("bos-pill-nav", className)} aria-label={ariaLabel}>
-      {items.map((item) => {
+      {items.map((item, index) => {
         const active = item.value === value;
         const count = item.count === null || item.count === undefined ? null : String(item.count);
+        const shortcut = index < 9 ? String(index + 1) : null;
         return (
           <button
             key={item.value}
@@ -33,6 +34,7 @@ export function BacksterosPillNav<T extends string>(props: {
             data-pill-nav-value={item.value}
             className={cn("bos-pill-nav-item", active && "is-active")}
             aria-current={active ? "page" : undefined}
+            title={shortcut ? `${item.label} (${shortcut})` : item.label}
             onClick={() => onChange(item.value)}
           >
             <span className="bos-pill-nav-item-label">{item.label}</span>

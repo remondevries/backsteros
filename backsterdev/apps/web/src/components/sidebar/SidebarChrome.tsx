@@ -5,6 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { BacksterosLogoIcon } from "~/backsteros/BacksterosLogoIcon";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -98,6 +99,32 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     </>
   );
 });
+
+/** Measures brand width for thread-sidebar min-width (V2 AppSidebarLayout). */
+export function SidebarBrandWidthProbe({
+  onWidthChange,
+}: {
+  onWidthChange: (width: number) => void;
+}) {
+  const observeWidth = (probe: HTMLDivElement) => {
+    return observeResize(probe, ([entry]) => {
+      if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
+    });
+  };
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none invisible fixed top-0 left-0 flex w-max border-r border-transparent pr-3"
+      ref={observeWidth}
+    >
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex items-center gap-2 py-2 pe-2.5 ps-2">
+        <BacksterosLogoIcon className="size-5 shrink-0" />
+        <span className="text-sm font-medium tracking-tight">BacksterDEV</span>
+      </div>
+    </div>
+  );
+}
 
 export function SidebarBrand({
   className,

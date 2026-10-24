@@ -17,11 +17,6 @@ import * as VcsProcess from "./VcsProcess.ts";
 export interface VcsCaptureCheckpointInput {
   readonly cwd: string;
   readonly checkpointRef: CheckpointRef;
-  /**
-   * When set, skip the expensive `git add -A` if the worktree matches this
-   * existing checkpoint commit and just point `checkpointRef` at it (OS-73).
-   */
-  readonly reuseIfUnchangedFromRef?: CheckpointRef;
 }
 
 export interface VcsRestoreCheckpointInput {
@@ -30,6 +25,8 @@ export interface VcsRestoreCheckpointInput {
   readonly fallbackToHead?: boolean;
 }
 
+export const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
+
 export interface VcsDiffCheckpointsInput {
   readonly cwd: string;
   readonly fromCheckpointRef: CheckpointRef;
@@ -37,6 +34,16 @@ export interface VcsDiffCheckpointsInput {
   readonly fallbackFromToHead?: boolean;
   readonly ignoreWhitespace: boolean;
   readonly format?: "patch" | "numstat";
+  /** Maximum bytes collected from the diff command. */
+  readonly maxOutputBytes?: number;
+  /** An empty list yields an empty diff. */
+  readonly filePaths?: ReadonlyArray<string>;
+}
+
+export interface VcsListAuthoredPathsInput {
+  readonly cwd: string;
+  readonly fromCheckpointRef: CheckpointRef;
+  readonly toCheckpointRef: CheckpointRef;
 }
 
 export interface VcsDeleteCheckpointRefsInput {
@@ -53,6 +60,9 @@ export interface VcsCheckpointOps {
     input: VcsRestoreCheckpointInput,
   ) => Effect.Effect<boolean, VcsError>;
   readonly diffCheckpoints: (input: VcsDiffCheckpointsInput) => Effect.Effect<string, VcsError>;
+  readonly listAuthoredPaths: (
+    input: VcsListAuthoredPathsInput,
+  ) => Effect.Effect<ReadonlySet<string> | null, VcsError>;
   readonly deleteCheckpointRefs: (
     input: VcsDeleteCheckpointRefsInput,
   ) => Effect.Effect<void, VcsError>;

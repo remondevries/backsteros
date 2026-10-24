@@ -1,6 +1,8 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { BacksterosCodebaseDocsPanel } from "~/backsteros/CodebaseDocsPanel";
+import { isBacksterosContentEditModeActive } from "~/backsteros/markdown-editor/contentViewMode";
 import { CodebaseFileCodeViewer } from "~/backsteros/CodebaseFileCodeViewer";
 import {
   CodebaseFsTreeChevron,
@@ -31,13 +33,17 @@ import {
 import { resolveCodebaseListSelection } from "~/backsteros/codebaseListSelection";
 import {
   BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS,
+  parseBacksterosCodebaseListTabIndex,
+  resolveBacksterosCodebaseListTabAtIndex,
   type BacksterosCodebaseListTab,
 } from "~/backsteros/codebaseListTabs";
 import {
   BacksterosCommitDetailPane,
   BacksterosGithubCommitListItem,
 } from "~/backsteros/CommitDetailPane";
+import { BacksterosContentTabsTimer } from "~/backsteros/BacksterosContentTabsTimer";
 import { BacksterosPillNav } from "~/backsteros/PillNav";
+import { shouldYieldPlainKeyHotkey } from "~/backsteros/plainKeyShortcutGuard";
 import {
   BacksterosProjectUpdatesView,
   tasksToUpdateRelatedOptions,
@@ -63,7 +69,10 @@ import type {
   BacksterosProjectUpdate,
   BacksterosTask,
 } from "~/backsteros/types";
+import { isElectron } from "~/env";
+import { resolveShortcutCommand } from "~/keybindings";
 import { cn } from "~/lib/utils";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import "~/backsteros/codebaseWorkbench.css";
@@ -1062,21 +1071,68 @@ export function BacksterosCodebaseProjectWorkbench(props: {
   readonly tab?: BacksterosCodebaseListTab;
   readonly onTabChange?: (tab: BacksterosCodebaseListTab) => void;
   readonly t3ProjectKey?: string | null;
-  /** When tabs live in the page header, hide the in-workbench tab strip. */
-  readonly hideTabBar?: boolean;
   readonly onProjectUpdated: (project: BacksterosCodebaseProject) => void;
 }) {
-  const { project, tasks, tasksPanel, onProjectUpdated, hideTabBar = false } = props;
+  const { project, tasks, tasksPanel, onProjectUpdated } = props;
   const [uncontrolledTab, setUncontrolledTab] =
     useState<BacksterosCodebaseListTab>("overview");
+  const [sideCollapsed, setSideCollapsed] = useState(false);
   const tab = props.tab ?? uncontrolledTab;
   const setTab = props.onTabChange ?? setUncontrolledTab;
   const workingDirectory = project.localWorkingDirectory?.trim() || null;
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
   useEffect(() => {
     if (props.tab !== undefined) return;
     setUncontrolledTab("overview");
   }, [project.id, props.tab]);
+
+  useEffect(() => {
+    setSideCollapsed(false);
+  }, [project.id]);
+
+  // ⇧[ collapses the project properties rail (desktop workbench parity).
+  // Runs only when task detail has no selection — AppSidebarLayout owns the
+  // chord while a task detail panel is available.
+  // Digits 1–N switch workbench tabs (desktop section-tab parity).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (isBacksterosContentEditModeActive()) return;
+
+      if (useBacksterosTaskDetailUiStore.getState().selection == null) {
+        const command = resolveShortcutCommand(event, keybindings, {
+          platform: navigator.platform,
+        });
+        if (command === "taskDetail.toggle") {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          setSideCollapsed((current) => !current);
+          return;
+        }
+      }
+
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (shouldYieldPlainKeyHotkey(event)) return;
+
+      const tabIndex = parseBacksterosCodebaseListTabIndex(event.key);
+      if (tabIndex == null) return;
+      const nextTab = resolveBacksterosCodebaseListTabAtIndex(tabIndex);
+      if (!nextTab) return;
+      if (nextTab === tab) {
+        event.preventDefault();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      setTab(nextTab);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [keybindings, setTab, tab]);
 
   const handleProjectUpdated = useCallback(
     (updated: BacksterosCodebaseProject) => {
@@ -1138,11 +1194,20 @@ export function BacksterosCodebaseProjectWorkbench(props: {
 
   return (
     <div
-      className="bos-codebase-workbench min-h-0 flex-1"
+      className={cn(
+        "bos-codebase-workbench min-h-0 flex-1",
+        sideCollapsed && "bos-codebase-workbench--side-collapsed",
+      )}
       data-codebase-workbench
       data-content-detail
+      data-side-collapsed={sideCollapsed ? "true" : "false"}
     >
-      <aside className="bos-codebase-workbench__side" aria-label="Project overview">
+      <aside
+        className="bos-codebase-workbench__side"
+        aria-label="Project overview"
+        aria-hidden={sideCollapsed}
+        {...(sideCollapsed ? { inert: true } : {})}
+      >
         <BacksterosCodebaseProjectOverviewPane
           project={project}
           tasks={tasks}
@@ -1150,8 +1215,13 @@ export function BacksterosCodebaseProjectWorkbench(props: {
         />
       </aside>
       <div className="bos-codebase-workbench__main">
-        {hideTabBar ? null : (
-          <div className="bos-codebase-workbench__tabs">
+        <header
+          className={cn(
+            "bos-codebase-workbench__tabs",
+            isElectron && "drag-region",
+          )}
+        >
+          <div className="min-w-0 shrink [-webkit-app-region:no-drag]">
             <BacksterosPillNav
               ariaLabel="Project contents"
               items={BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}
@@ -1159,7 +1229,10 @@ export function BacksterosCodebaseProjectWorkbench(props: {
               onChange={setTab}
             />
           </div>
-        )}
+          <div className="bos-codebase-workbench__tabs-timer [-webkit-app-region:no-drag]">
+            <BacksterosContentTabsTimer />
+          </div>
+        </header>
         <div className="bos-codebase-workbench__tab-body">{tabBody}</div>
       </div>
     </div>

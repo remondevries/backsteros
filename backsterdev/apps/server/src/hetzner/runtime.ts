@@ -3,7 +3,7 @@
  * Discover Docker / Kamal Proxy / Node / Nginx runtimes on a Hetzner host via SSH.
  */
 import { findHetznerServer } from "./server-connection.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export type DiscoveredRuntimeContainer = {
   readonly name: string;
@@ -239,7 +239,7 @@ export async function discoverServerRuntime(serverId: string): Promise<ServerRun
   if (!server) {
     throw new Error("Server not found in Hetzner Cloud");
   }
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) {
     throw new Error("Server has no public IPv4 address");
   }

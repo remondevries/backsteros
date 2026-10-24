@@ -9,11 +9,11 @@ import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
-import { parsePullRequestReference } from "~/pullRequestReference";
+import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { Button } from "../ui/button";
 import {
   Dialog,

@@ -54,7 +54,7 @@ export type ControlSessionPromoteThread = {
 };
 
 /**
- * A rejected turn (session `error`, or `stopped` with `lastError`) must not
+ * A rejected turn (run `failed`, or `interrupted`/`cancelled` with `lastError`) must not
  * look like a successful completion. Those snapshots often read as idle/done
  * and would otherwise auto-flip to `in_review` (OS-91).
  */
@@ -62,8 +62,13 @@ export function controlSessionFailedToComplete(
   thread?: ControlSessionPromoteThread | null,
 ): boolean {
   if (!thread) return false;
-  if (thread.sessionStatus === "error") return true;
-  return thread.sessionStatus === "stopped" && Boolean(thread.lastError?.trim());
+  // V2 shell run statuses first; V1 `session.status` values stay accepted.
+  if (thread.sessionStatus === "failed" || thread.sessionStatus === "error") return true;
+  const stoppedLike =
+    thread.sessionStatus === "interrupted" ||
+    thread.sessionStatus === "cancelled" ||
+    thread.sessionStatus === "stopped";
+  return stoppedLike && Boolean(thread.lastError?.trim());
 }
 
 /**

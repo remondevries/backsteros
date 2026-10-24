@@ -15,8 +15,24 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
+function bridgeFieldsEqual(
+  previous: PullRequestListBridgeValue | null,
+  next: PullRequestListBridgeValue | null,
+): boolean {
+  if (previous === next) return true;
+  if (previous === null || next === null) return false;
+  return (
+    previous.searchInput === next.searchInput &&
+    previous.sortMenu === next.sortMenu &&
+    previous.filtersMenu === next.filtersMenu &&
+    previous.listBody === next.listBody &&
+    previous.scrollRef === next.scrollRef
+  );
+}
+
 /** Page publishes list chrome + rows; the Git sidebar renders them. */
 export function publishPullRequestListBridge(next: PullRequestListBridgeValue | null): void {
+  if (bridgeFieldsEqual(bridge, next)) return;
   bridge = next;
   emit();
 }

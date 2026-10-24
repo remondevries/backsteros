@@ -3,14 +3,10 @@ import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { updateBacksterosTask } from "~/backsteros/client";
-import {
-  BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS,
-  type BacksterosCodebaseListTab,
-} from "~/backsteros/codebaseListTabs";
+import { type BacksterosCodebaseListTab } from "~/backsteros/codebaseListTabs";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { orderedBacksterosTaskIds } from "~/backsteros/listTraversal";
 import { useListKeyboardNavStore } from "~/backsteros/listKeyboardNavStore";
-import { BacksterosPillNav } from "~/backsteros/PillNav";
 import { subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
@@ -28,8 +24,6 @@ import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { BacksterosCodebaseProjectWorkbench } from "./BacksterosCodebaseProjectWorkbench";
 import { BacksterosProjectTasksOverview } from "./BacksterosProjectTasksOverview";
-
-import "~/backsteros/pillNav.css";
 
 /**
  * BacksterOS project home.
@@ -239,26 +233,22 @@ export function BacksterosProjectOverviewPage({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground">
-      <WorkspacePageHeader
-        electron={isElectron}
-        className={cn("border-b border-border/50", isElectron && "drag-region")}
-      >
-        <WorkspaceBreadcrumb ariaLabel="Project breadcrumb" className="min-w-0 shrink">
-          <WorkspaceBreadcrumbItem current className="min-w-0">
-            <h2 className="min-w-0 truncate text-sm font-medium text-foreground">{projectName}</h2>
-          </WorkspaceBreadcrumbItem>
-        </WorkspaceBreadcrumb>
-        {isCodebaseProject && onTabChange ? (
-          <div className="ml-auto min-w-0 shrink [-webkit-app-region:no-drag]">
-            <BacksterosPillNav
-              ariaLabel="Project contents"
-              items={BACKSTEROS_CODEBASE_LIST_TAB_OPTIONS}
-              value={tab}
-              onChange={onTabChange}
-            />
-          </div>
-        ) : null}
-      </WorkspacePageHeader>
+      {/* Codebase: header lives in the workbench main column so the properties
+          side panel can run full-height to the top (task-detail parity). */}
+      {!isCodebaseProject ? (
+        <WorkspacePageHeader
+          electron={isElectron}
+          className={cn("border-b border-border/50", isElectron && "drag-region")}
+        >
+          <WorkspaceBreadcrumb ariaLabel="Project breadcrumb" className="min-w-0 shrink">
+            <WorkspaceBreadcrumbItem current className="min-w-0">
+              <h2 className="min-w-0 truncate text-sm font-medium text-foreground">
+                {projectName}
+              </h2>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+        </WorkspacePageHeader>
+      ) : null}
       {isCodebaseProject && project ? (
         <BacksterosCodebaseProjectWorkbench
           project={project}
@@ -268,7 +258,6 @@ export function BacksterosProjectOverviewPage({
           {...(onTabChange ? { onTabChange } : {})}
           {...(t3ProjectKey ? { t3ProjectKey } : {})}
           onProjectUpdated={handleProjectUpdated}
-          hideTabBar
         />
       ) : (
         tasksPanel

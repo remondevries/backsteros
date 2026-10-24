@@ -5,7 +5,7 @@
 import { listServers, type HetznerServer } from "./cloud.ts";
 import { findHetznerServer } from "./server-connection.ts";
 import { applySavedAppearanceToSites } from "./settings.ts";
-import { sshExec } from "./ssh.ts";
+import { sshExec, resolveServerSshHost } from "./ssh.ts";
 
 export type DiscoveredSite = {
   readonly id: string;
@@ -736,7 +736,7 @@ export async function discoverKamalApps(
 
   await Promise.all(
     hostList.map(async (server) => {
-      const ip = server.public_net.ipv4?.ip;
+      const ip = await resolveServerSshHost(server);
       if (!ip) {
         errors.push({ serverName: server.name, message: "No public IPv4" });
         return;
@@ -822,7 +822,7 @@ export async function deleteKamalSite(input: {
 
   const server = await findHetznerServer(input.serverId);
   if (!server) throw new Error("Server not found in Hetzner Cloud");
-  const ip = server.public_net.ipv4?.ip;
+  const ip = await resolveServerSshHost(server);
   if (!ip) throw new Error("Server has no public IPv4 address");
 
   const appKey = appKeyFromService(service);

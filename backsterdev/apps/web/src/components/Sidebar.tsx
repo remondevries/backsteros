@@ -23,7 +23,10 @@ import {
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  threadRuntimeCanArchive,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/models";
 import {
   scopeProjectRef,
   scopeThreadRef,
@@ -162,6 +165,8 @@ import { useBacksterosComposeShortcut } from "~/backsteros/useBacksterosComposeS
 import { useBacksterosFileTaskShortcut } from "~/backsteros/useBacksterosFileTaskShortcut";
 import { resolveBacksterosComposeProject } from "~/backsteros/resolveBacksterosComposeProject";
 import { resolveBacksterosProjectForWorkspaceRoot } from "~/backsteros/resolveT3Project";
+import { backsterosCodebaseListTabSearch } from "~/backsteros/codebaseListTabs";
+import { getBacksterosCodebaseProjectTab } from "~/backsteros/codebaseProjectTabStore";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { BacksterosWorkingLifecycle } from "~/backsteros/BacksterosWorkingLifecycle";
@@ -169,7 +174,6 @@ import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import {
   applyComposerColorMenuAction,
   isComposerColorMenuAction,
-  resolveComposerAccentForMenu,
 } from "../composerAccentMenu";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -412,7 +416,7 @@ function SidebarThreadTooltip({
               <ProviderInstanceIcon
                 driverKind={driverKind}
                 displayName={
-                  providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+                  providerEntry?.displayName ?? thread.runtime?.providerName ?? modelInstanceId
                 }
                 accentColor={providerEntry?.accentColor}
                 // Initials would swallow a size-3 glyph: accent dot, name in label.
@@ -439,10 +443,19 @@ function SidebarThreadTooltip({
               </div>
             </div>
           ) : null}
-          {thread.session?.lastError ? (
-            <div className="flex min-w-0 items-center gap-2 text-red-600 dark:text-red-400">
+          {thread.runtime?.lastError ? (
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-2",
+                thread.runtime.lastErrorClass === "usage_limit"
+                  ? "text-warning"
+                  : "text-red-600 dark:text-red-400",
+              )}
+            >
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
-              <div className="min-w-0 truncate">Error occurred</div>
+              <div className="min-w-0 truncate">
+                {thread.runtime.lastErrorClass === "usage_limit" ? "Usage limited" : "Error occurred"}
+              </div>
             </div>
           ) : null}
         </div>
@@ -951,7 +964,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // working threads aren't your problem yet) — only the colored status label
   // stands out.
   const isInFlight =
-    status === "working" || status === "monitoring" || status === "approval" || status === "input";
+    status === "working" || status === "waiting" || status === "approval" || status === "input";
   const shouldRecede =
     (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
   // Status hues follow the system-wide convention set by sidebar v1 and the
@@ -969,11 +982,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           // the label at full strength.
           className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
         }
-      : status === "monitoring"
+      : status === "waiting"
         ? {
-            // Monitoring is calm background presence, not active progress
-            // (monitoring-pill D6), so it keeps the label at full strength.
-            label: "Monitoring",
+            label: "Waiting",
             icon: null,
             className: "text-sky-600 dark:text-sky-400",
           }
@@ -1048,7 +1059,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     threadKey,
   ]);
 
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
@@ -1759,7 +1770,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       driverKind={driverKind}
                       displayName={
                         providerEntry?.displayName ??
-                        thread.session?.providerName ??
+                        thread.runtime?.providerName ??
                         modelInstanceId
                       }
                       accentColor={providerEntry?.accentColor}
@@ -1831,7 +1842,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: visibleGitStatus?.refName ?? null,
   });
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
@@ -1915,7 +1926,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
-export default function Sidebar() {
+export default function Sidebar({
+  // V2 AppSidebarLayout passes routeReveal; Backster rail keeps its own scroll-into-view.
+  routeReveal: _routeReveal,
+}: {
+  routeReveal?: import("./sidebar/routeReveal").SidebarRouteReveal;
+} = {}) {
+  void _routeReveal;
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -2298,7 +2315,10 @@ export default function Sidebar() {
           void router.navigate({
             to: "/backsteros/project/$projectId",
             params: { projectId: location.projectId },
-            search: location.title?.trim() ? { title: location.title } : {},
+            search: {
+              ...(location.title?.trim() ? { title: location.title } : {}),
+              ...backsterosCodebaseListTabSearch(getBacksterosCodebaseProjectTab()),
+            },
           });
           return;
       }
@@ -3691,7 +3711,7 @@ export default function Sidebar() {
       if (clicked.value === "mark-unread") {
         for (const threadKey of threadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
-          markThreadUnread(threadKey, thread?.latestTurn?.completedAt);
+          markThreadUnread(threadKey, thread?.latestRun?.completedAt);
         }
         clearSelection();
         return;
@@ -3790,7 +3810,7 @@ export default function Sidebar() {
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
         const modelInstanceId =
-          thread.session?.providerInstanceId ?? thread.modelSelection?.instanceId;
+          thread.runtime?.providerInstanceId ?? thread.modelSelection?.instanceId;
         const providerEntry =
           (modelInstanceId
             ? providerEntriesByEnvironment.get(thread.environmentId)?.get(modelInstanceId)
@@ -3798,6 +3818,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              canOperate: true,
               branch: thread.branch ?? null,
               projectFilter: null,
               isPinned,
@@ -3806,14 +3827,7 @@ export default function Sidebar() {
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
-              isRunning:
-                thread.session?.status === "running" && thread.session.activeTurnId != null,
-              currentAccentColor: resolveComposerAccentForMenu({
-                threadId: thread.id,
-                environmentId: thread.environmentId,
-                instanceId: modelInstanceId,
-                accentColor: providerEntry?.accentColor,
-              }),
+              isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
                 settlement: supportsSettlement,
                 autoSettleOptOut: false,
@@ -3914,7 +3928,7 @@ export default function Sidebar() {
             return;
           }
           case "mark-unread":
-            markThreadUnread(threadKey, thread.latestTurn?.completedAt);
+            markThreadUnread(threadKey, thread.latestRun?.completedAt);
             return;
           case "copy-path":
             if (!threadWorkspacePath) {

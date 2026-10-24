@@ -59,10 +59,40 @@ export type StaticServerProfile = {
   readonly activity: readonly StaticServerActivity[];
 };
 
-/** Static Forge-style profiles until each section is wired live. */
+/** Static Forge-style profiles until each section is wired live.
+ * IDs/IPs must match the live Hetzner Cloud account (see /api/hetzner/servers).
+ */
 export const STATIC_SERVER_PROFILES: readonly StaticServerProfile[] = [
   {
     id: "165290762",
+    slug: "production",
+    name: "production",
+    role: "App server",
+    status: "connected",
+    accent: "#c45c5c",
+    initial: "P",
+    details: {
+      hetznerId: "165290762",
+      type: "App server",
+      databaseType: "None",
+      region: "Falkenstein, DE",
+      runtime: "Docker / Kamal",
+      os: "Ubuntu 24.04",
+      created: "—",
+    },
+    networking: {
+      publicIp: "46.225.171.3",
+      privateIp: null,
+    },
+    apps: [],
+    databases: [],
+    backgroundProcesses: [],
+    scheduledJobs: [],
+    backups: [],
+    activity: [],
+  },
+  {
+    id: "166081464",
     slug: "lemodesign",
     name: "lemodesign",
     role: "App server",
@@ -70,7 +100,7 @@ export const STATIC_SERVER_PROFILES: readonly StaticServerProfile[] = [
     accent: "#5b8def",
     initial: "L",
     details: {
-      hetznerId: "165290762",
+      hetznerId: "166081464",
       type: "App server",
       databaseType: "None",
       region: "Nuremberg, DE",
@@ -79,7 +109,7 @@ export const STATIC_SERVER_PROFILES: readonly StaticServerProfile[] = [
       created: "Sep 9, 2026",
     },
     networking: {
-      publicIp: "46.225.171.3",
+      publicIp: "188.34.196.92",
       privateIp: null,
     },
     apps: [
@@ -167,6 +197,34 @@ export const STATIC_SERVER_PROFILES: readonly StaticServerProfile[] = [
         initial: "K",
       },
     ],
+  },
+  {
+    id: "169612691",
+    slug: "development",
+    name: "development",
+    role: "App server",
+    status: "connected",
+    accent: "#3d9a6a",
+    initial: "D",
+    details: {
+      hetznerId: "169612691",
+      type: "App server",
+      databaseType: "None",
+      region: "Falkenstein, DE",
+      runtime: "Docker / Kamal",
+      os: "Ubuntu 24.04",
+      created: "—",
+    },
+    networking: {
+      publicIp: "2.31.59.251",
+      privateIp: null,
+    },
+    apps: [],
+    databases: [],
+    backgroundProcesses: [],
+    scheduledJobs: [],
+    backups: [],
+    activity: [],
   },
 ];
 
