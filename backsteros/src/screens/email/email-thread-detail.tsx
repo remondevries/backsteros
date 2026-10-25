@@ -79,7 +79,13 @@ import {
   peekInlineAttachmentBlob,
 } from "../../lib/email-inline-attachment-cache.js";
 import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
-import { useDesktopWorkspaceData } from "../../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../../lib/workspace-data";
 
 import { resolveAgentTaskMentionChip } from "./email-page-helpers";
 import { scheduleEmailThreadScrollRestore } from "./email-thread-scroll-pin";
@@ -124,8 +130,11 @@ export function EmailThreadDetail({
 }: EmailThreadDetailProps) {
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
-  const workspace = useDesktopWorkspaceData();
-  const { organizations, contacts, projects, meetings, allTasks } = workspace;
+  const { meetings } = useDesktopWorkspaceMeta();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const { organizations, contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
+  const workspaceActions = useDesktopWorkspaceActions();
   const mentionCatalog = useMentionCatalogOptional()?.catalog;
   const {
     statusOverride,
@@ -372,7 +381,7 @@ export function EmailThreadDetail({
         const task = allTasks.find((entry) => entry.id === id);
         const existing = task?.linkedEmailIds ?? [];
         if (existing.includes(emailThreadId)) continue;
-        void workspace.patchTask(id, {
+        void workspaceActions.patchTask(id, {
           linkedEmailIds: [...existing, emailThreadId],
         });
       }
@@ -380,12 +389,12 @@ export function EmailThreadDetail({
         if (next.has(id)) continue;
         const task = allTasks.find((entry) => entry.id === id);
         const existing = task?.linkedEmailIds ?? [];
-        void workspace.patchTask(id, {
+        void workspaceActions.patchTask(id, {
           linkedEmailIds: existing.filter((entry) => entry !== emailThreadId),
         });
       }
     },
-    [allTasks, emailThreadId, linkedTaskIds, workspace],
+    [allTasks, emailThreadId, linkedTaskIds, workspaceActions],
   );
 
   const taskProjectIdOptions = useMemo((): SearchableDropdownOption<string>[] => {
@@ -451,7 +460,7 @@ export function EmailThreadDetail({
         // auto-link so the new task appears without a manual Related pick.
         const linkedEmailIds = emailThreadId ? [emailThreadId] : undefined;
         const created = input.projectId
-          ? await workspace.createProjectTask({
+          ? await workspaceActions.createProjectTask({
               projectId: input.projectId,
               title: input.title,
               description: input.description || undefined,
@@ -463,7 +472,7 @@ export function EmailThreadDetail({
               linkedEmailIds,
               links: [emailLink],
             })
-          : await workspace.createInboxTask({
+          : await workspaceActions.createInboxTask({
               title: input.title,
               description: input.description || undefined,
               status: input.status,
@@ -525,7 +534,7 @@ export function EmailThreadDetail({
       postThreadComment,
       projects,
       setConceptError,
-      workspace,
+      workspaceActions,
     ],
   );
 
@@ -537,7 +546,7 @@ export function EmailThreadDetail({
         const project = input.projectKey
           ? projects.find((entry) => entry.key === input.projectKey) ?? null
           : null;
-        const created = await workspace.createMeeting({
+        const created = await workspaceActions.createMeeting({
           title: input.title,
           notes: input.notes || null,
           status: input.status,
@@ -580,7 +589,7 @@ export function EmailThreadDetail({
         setEntityCreateSending(false);
       }
     },
-    [organizations, postThreadComment, projects, setConceptError, workspace],
+    [organizations, postThreadComment, projects, setConceptError, workspaceActions],
   );
 
   const threadMessages =
@@ -740,7 +749,7 @@ export function EmailThreadDetail({
     options: contactOptions,
     onContactChange: handleContactChange,
     onCreateContactFromQuery: (query: string) => {
-      void workspace
+      void workspaceActions
         .createContact({
           name: query,
           organizationId: organizationId ?? undefined,
@@ -1457,7 +1466,7 @@ export function EmailThreadDetail({
                     });
                   }}
                   onCreateOrganizationFromQuery={(query) => {
-                    void workspace
+                    void workspaceActions
                       .createOrganization({ name: query })
                       .then((created) => {
                         setOrganizationId(created.id);
@@ -1476,7 +1485,7 @@ export function EmailThreadDetail({
                       });
                   }}
                   onCreateContactFromQuery={(query) => {
-                    void workspace
+                    void workspaceActions
                       .createContact({
                         name: query,
                         organizationId: organizationId ?? undefined,
@@ -1486,7 +1495,7 @@ export function EmailThreadDetail({
                       });
                   }}
                   onCreateAssigneeFromQuery={(query) => {
-                    void workspace
+                    void workspaceActions
                       .createContact({
                         name: query,
                         organizationId: organizationId ?? undefined,

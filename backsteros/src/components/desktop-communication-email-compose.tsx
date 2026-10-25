@@ -21,7 +21,7 @@ import {
 import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { writeEmailComposeSession } from "../lib/email-compose-session";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { useEmailDraftActions } from "../screens/email/use-email-draft-actions";
 
 type DesktopCommunicationEmailComposeProps = {
@@ -52,7 +52,7 @@ export function DesktopCommunicationEmailCompose({
   resolveRemovalHref,
 }: DesktopCommunicationEmailComposeProps) {
   const agentMail = useAgentMail();
-  const workspace = useDesktopWorkspaceData();
+  const people = useDesktopWorkspacePeople();
   const [message, setMessage] = useState<AgentMailMessageDetail | null>(null);
   const [draft, setDraft] = useState<AgentMailDraftDetail | null>(null);
 
@@ -120,20 +120,20 @@ export function DesktopCommunicationEmailCompose({
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    workspace.contacts,
+    people.contacts,
   );
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
-    workspace.organizations,
+    people.organizations,
   );
   const recipientOptions = useMemo(
     () =>
       buildEmailRecipientDropdownOptions({
-        contacts: workspace.contacts.map((contact) => ({
+        contacts: people.contacts.map((contact) => ({
           ...contact,
           avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
         })),
-        organizations: workspace.organizations.map((organization) => ({
+        organizations: people.organizations.map((organization) => ({
           ...organization,
           avatarSrc:
             organizationAvatarSrc[organization.id] ??
@@ -160,8 +160,8 @@ export function DesktopCommunicationEmailCompose({
     [
       contactAvatarSrc,
       organizationAvatarSrc,
-      workspace.contacts,
-      workspace.organizations,
+      people.contacts,
+      people.organizations,
     ],
   );
   const composeMailboxes = useMemo(
@@ -197,33 +197,33 @@ export function DesktopCommunicationEmailCompose({
   const fromContact = useMemo(() => {
     const id = selectedMailbox?.contactId?.trim();
     if (!id) return null;
-    return workspace.contacts.find((contact) => contact.id === id) ?? null;
-  }, [selectedMailbox?.contactId, workspace.contacts]);
+    return people.contacts.find((contact) => contact.id === id) ?? null;
+  }, [selectedMailbox?.contactId, people.contacts]);
 
   const toContact = useMemo(() => {
     const linkedId = toContactId?.trim();
     if (linkedId) {
       return (
-        workspace.contacts.find((contact) => contact.id === linkedId) ?? null
+        people.contacts.find((contact) => contact.id === linkedId) ?? null
       );
     }
     const address = normalizeEmailRecipients(composeTo)[0] ?? null;
     if (!address) return null;
-    return findContactByEmailAddress(workspace.contacts, address) ?? null;
-  }, [composeTo, toContactId, workspace.contacts]);
+    return findContactByEmailAddress(people.contacts, address) ?? null;
+  }, [composeTo, toContactId, people.contacts]);
 
   const toOrganization = useMemo(() => {
     const linkedId =
       toOrganizationId?.trim() || toContact?.organizationId?.trim() || null;
     if (!linkedId) return null;
     return (
-      workspace.organizations.find((organization) => organization.id === linkedId) ??
+      people.organizations.find((organization) => organization.id === linkedId) ??
       null
     );
   }, [
     toContact?.organizationId,
     toOrganizationId,
-    workspace.organizations,
+    people.organizations,
   ]);
 
   const letterShell = useMemo(() => {

@@ -10,12 +10,16 @@ import {
   useDesktopAvatarSrcMap,
   withOrganizationAvatarSrc,
 } from "../../lib/avatar-src";
-import { useDesktopWorkspaceData } from "../../lib/workspace-data";
+import {
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../../lib/workspace-data";
 
 export function useEmailDetailPropertyOptions(
   contactAvatarSrc: Record<string, string>,
 ) {
-  const { organizations, contacts, projects } = useDesktopWorkspaceData();
+  const { organizations, contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     organizations,

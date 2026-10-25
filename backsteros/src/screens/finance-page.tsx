@@ -46,7 +46,11 @@ import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
 } from "../lib/avatar-upload";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../lib/workspace-data";
 import { notifyBankAccountsChanged } from "./finance/finance-page-helpers";
 import { FinancePageModals } from "./finance/finance-page-modals";
 import { useFinanceCashflow } from "./finance/use-finance-cashflow";
@@ -82,8 +86,10 @@ function FinancePageBody() {
     section?: string;
   };
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const { organizations, projects, contacts } = workspace;
+  const { organizations, contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
+  const { createOrganization, patchOrganization } =
+    useDesktopWorkspaceActions();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
@@ -482,7 +488,7 @@ function FinancePageBody() {
         }}
         onBulkDeleteTransactions={deleteTransactionsByIds}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
       />
     );
@@ -506,7 +512,7 @@ function FinancePageBody() {
         onBulkPatchTransactions={handleGoalBulkPatch}
         onBulkDeleteTransactions={deleteTransactionsByIds}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         onCreate={createGoal}
         onUpdate={updateGoal}
@@ -574,18 +580,18 @@ function FinancePageBody() {
             (org) => org.moneybirdContactId === moneybirdContactId);
           for (const org of linked) {
             if (org.id === organizationId) continue;
-            await workspace.patchOrganization(org.id, {
+            await patchOrganization(org.id, {
               moneybirdContactId: null,
             });
           }
           if (organizationId) {
-            await workspace.patchOrganization(organizationId, {
+            await patchOrganization(organizationId, {
               moneybirdContactId,
             });
           }
         }}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         onOpenSettings={() =>
           navigate(getIntegrationsSettingsHref("moneybird"))
@@ -639,7 +645,7 @@ function FinancePageBody() {
         onBulkPatchTransactions={handleRecurringBulkPatch}
         onBulkDeleteTransactions={deleteTransactionsByIds}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         onCreate={createRecurring}
         onUpdate={updateRecurring}
@@ -668,7 +674,7 @@ function FinancePageBody() {
         onBulkPatchTransactions={handleAccountBulkPatch}
         onBulkDeleteTransactions={deleteTransactionsByIds}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         onCreateAccount={(type) => {
           setPageAccountModalError(null);
@@ -725,7 +731,7 @@ function FinancePageBody() {
         onBulkPatchTransactions={handleCategoryBulkPatch}
         onBulkDeleteTransactions={deleteTransactionsByIds}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         onChromeStateChange={setCategoriesChrome}
         onCreate={createCategory}
@@ -814,7 +820,7 @@ function FinancePageBody() {
         onBulkDelete={handleBulkDelete}
         onDeleteTransaction={handleDeleteTransaction}
         onCreateOrganizationFromQuery={(query) =>
-          workspace.createOrganization({ name: query })
+          createOrganization({ name: query })
         }
         hasMore={Boolean(nextCursor)}
         onLoadMore={() => {

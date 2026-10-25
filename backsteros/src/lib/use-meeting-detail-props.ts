@@ -16,7 +16,14 @@ import type { DesktopWorkspaceData } from "./workspace/workspace-data-types";
 
 export { parseMeetingAttendeeContactIdsFromRow } from "./workspace/row-mappers";
 
-type Workspace = DesktopWorkspaceData;
+type Workspace = Pick<
+  DesktopWorkspaceData,
+  | "contacts"
+  | "organizations"
+  | "projects"
+  | "createContact"
+  | "createOrganization"
+>;
 
 export function useMeetingDetailViewProps(
   meeting: MeetingListItem | null | undefined,

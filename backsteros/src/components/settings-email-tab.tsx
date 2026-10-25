@@ -22,7 +22,10 @@ import {
   settingsSecretInputClassName,
   settingsSecretPlaceholder,
 } from "../lib/settings-secret-field";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+} from "../lib/workspace-data";
 
 export function SettingsEmailTab({
   title,
@@ -34,15 +37,16 @@ export function SettingsEmailTab({
   hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
+  const people = useDesktopWorkspacePeople();
+  const { ready: workspaceReady } = useDesktopWorkspaceMeta();
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    workspace.contacts,
+    people.contacts,
   );
   const contacts = useMemo(
     () =>
-      withAvatarSrc(workspace.contacts, contactAvatarSrc) as AssigneeDropdownContact[],
-    [contactAvatarSrc, workspace.contacts],
+      withAvatarSrc(people.contacts, contactAvatarSrc) as AssigneeDropdownContact[],
+    [contactAvatarSrc, people.contacts],
   );
   const [settings, setSettings] = useState<AgentMailSettings | null>(null);
   const [inboxes, setInboxes] = useState<AgentMailInboxSummary[]>([]);
@@ -524,7 +528,7 @@ export function SettingsEmailTab({
           ) : null}
           {allInboxes.length > 0 ? (
             <div className="settings-inbox-contact-links">
-              {!workspace.ready && contacts.length === 0 ? (
+              {!workspaceReady && contacts.length === 0 ? (
                 <p className="settings-hint">Loading contacts…</p>
               ) : contacts.length === 0 ? (
                 <p className="settings-hint">
@@ -553,7 +557,7 @@ export function SettingsEmailTab({
                           options={contactOptions}
                           disabled={
                             linkingInboxId === inbox.inboxId ||
-                            (!workspace.ready && contacts.length === 0) ||
+                            (!workspaceReady && contacts.length === 0) ||
                             contacts.length === 0
                           }
                           emptySelectionLabel="No contact"

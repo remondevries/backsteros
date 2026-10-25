@@ -13,7 +13,10 @@ import { migrateLegacyTaskStatus, type TaskStatus } from "@backsteros/ui";
 
 import { useDesktopApi } from "../../lib/api-context";
 import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
-import { useDesktopWorkspaceData } from "../../lib/workspace-data";
+import {
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../../lib/workspace-data";
 
 import { resolveEmailThreadKey } from "./email-page-helpers";
 
@@ -27,8 +30,8 @@ export function useEmailThreadMetadata({
   setMessage: Dispatch<SetStateAction<AgentMailMessageDetail | null>>;
 }) {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const { contacts, projects } = workspace;
+  const { contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
   const [statusOverride, setStatusOverride] = useState<TaskStatus | null>(null);
   const [priorityOverride, setPriorityOverride] = useState<number | null>(null);
   const [dueDateOverride, setDueDateOverride] = useState<Date | null | undefined>(

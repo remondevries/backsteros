@@ -18,7 +18,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useDesktopApi } from "../lib/api-context";
 import { useShellLocation } from "../lib/shell-route-keep-alive";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 
 type DesktopProjectUpdatesPanelProps = {
@@ -29,7 +32,8 @@ export function DesktopProjectUpdatesPanel({
   projectId,
 }: DesktopProjectUpdatesPanelProps) {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const { projects } = useDesktopWorkspaceProjects();
   const routerNavigate = useNavigate();
   const { pathname } = useShellLocation();
   const [updates, setUpdates] = useState<ProjectUpdate[]>([]);
@@ -39,7 +43,7 @@ export function DesktopProjectUpdatesPanel({
 
   const relatedTaskOptions = useMemo(
     () =>
-      workspace.allTasks
+      allTasks
         .filter(
           (task) =>
             task.projectId === projectId &&
@@ -52,13 +56,13 @@ export function DesktopProjectUpdatesPanel({
           status: task.status,
           projectKey: task.projectKey ?? null,
         })),
-    [projectId, workspace.allTasks],
+    [projectId, allTasks],
   );
 
   const projectKey = useMemo(() => {
-    const project = workspace.projects.find((entry) => entry.id === projectId);
+    const project = projects.find((entry) => entry.id === projectId);
     return project?.key ?? null;
-  }, [projectId, workspace.projects]);
+  }, [projectId, projects]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -171,7 +175,7 @@ export function DesktopProjectUpdatesPanel({
     (taskId: string) => {
       const task =
         relatedTaskOptions.find((entry) => entry.id === taskId) ??
-        workspace.allTasks.find((entry) => entry.id === taskId) ??
+        allTasks.find((entry) => entry.id === taskId) ??
         null;
       const key = projectKey ?? task?.projectKey ?? null;
       const scope = getProjectRouteScopeFromPathname(pathname);
@@ -186,7 +190,7 @@ export function DesktopProjectUpdatesPanel({
       }
       navigateToHref(routerNavigate, href);
     },
-    [pathname, projectKey, relatedTaskOptions, routerNavigate, workspace.allTasks],
+    [pathname, projectKey, relatedTaskOptions, routerNavigate, allTasks],
   );
 
   return (

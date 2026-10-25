@@ -58,6 +58,24 @@ Expected: tens to low hundreds MB RAM at idle — normal for React Native.
 Legacy Circle desktop (Tauri + Next sidecar) is significantly heavier than target
 architecture. See ADR-019.
 
+### Desktop workspace slice hooks
+
+`useDesktopWorkspaceData()` subscribes to every workspace context, so any row
+change anywhere re-renders the caller. New desktop code should read only the
+slices it needs from `backsteros/src/lib/workspace-data.tsx`:
+
+| Hook | Contents |
+| --- | --- |
+| `useDesktopWorkspaceMeta` | `ready`, `readyBySurface`, `habits`, `meetings`, `areas` |
+| `useDesktopWorkspaceTasks` | `tasks`, `inboxTasks`, `allTasks`, task bodies/details |
+| `useDesktopWorkspaceProjects` | `projects`, `letters`, project/letter bodies and details |
+| `useDesktopWorkspacePeople` | `contacts`, `organizations` and their details |
+| `useDesktopWorkspaceDocuments` | documents, knowledge, journal |
+| `useDesktopWorkspaceActions` | create / patch / delete actions (memoized; no row data) |
+
+Keep the merged hook only for screens that genuinely read most slices
+(communication, contacts, organizations, projects, navigation trail, catalog).
+
 ## Snappiness = architecture not framework
 
 Linear feels fast because:

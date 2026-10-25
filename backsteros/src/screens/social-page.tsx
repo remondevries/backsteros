@@ -23,7 +23,7 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 
 export function SocialPage() {
@@ -44,20 +44,20 @@ function SocialPageBody() {
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
   const { slug: routedSlug } = useShellParams() as { slug?: string };
-  const workspace = useDesktopWorkspaceData();
+  const people = useDesktopWorkspacePeople();
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    keepAliveFrozen ? [] : workspace.contacts,
+    keepAliveFrozen ? [] : people.contacts,
   );
 
   const socialContacts = useMemo((): SocialContactListItem[] => {
     const withAvatars = keepAliveFrozen
-      ? workspace.contacts
-      : withAvatarSrc(workspace.contacts, contactAvatarSrc);
+      ? people.contacts
+      : withAvatarSrc(people.contacts, contactAvatarSrc);
     const rows: SocialContactListItem[] = [];
     for (const contact of withAvatars) {
-      const details = workspace.contactDetails[contact.id];
+      const details = people.contactDetails[contact.id];
       const socialAccounts = normalizeContactSocialAccounts(
         details?.socialAccounts ??
           (details as { social_accounts?: unknown } | undefined)
@@ -80,8 +80,8 @@ function SocialPageBody() {
   }, [
     contactAvatarSrc,
     keepAliveFrozen,
-    workspace.contactDetails,
-    workspace.contacts,
+    people.contactDetails,
+    people.contacts,
   ]);
 
   const selected =

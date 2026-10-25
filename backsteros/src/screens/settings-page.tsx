@@ -32,7 +32,7 @@ import {
 } from "../lib/avatar-src";
 import { syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
 import { rememberDesktopVaultRoot, peekPersistedDesktopVaultRoot } from "../lib/desktop-vault";
 import { localOnlyRestFailClosed } from "../lib/workspace/powersync-write-path";
@@ -89,8 +89,7 @@ function SettingsApiTab({
   description: string;
 }) {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const contacts = workspace.contacts;
+  const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const contactsWithAvatars = useMemo(
     () => withAvatarSrc(contacts, contactAvatarSrc),

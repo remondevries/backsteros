@@ -8,7 +8,7 @@ import type {
 import { collectTransipDomainTagsFromProjects } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
-import { useDesktopWorkspaceData } from "./workspace-data";
+import { useDesktopWorkspaceProjects } from "./workspace-data";
 
 /**
  * TransIP / Cloudflare helpers shared by Catalog Domains and the domain
@@ -16,14 +16,14 @@ import { useDesktopWorkspaceData } from "./workspace-data";
  */
 export function useDomainProjectApi() {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
+  const { projects } = useDesktopWorkspaceProjects();
 
   const knownDomainTags = useMemo(
     () =>
       collectTransipDomainTagsFromProjects(
-        workspace.projects.filter((project) => project.type === "domeinname"),
+        projects.filter((project) => project.type === "domeinname"),
       ),
-    [workspace.projects],
+    [projects],
   );
 
   const loadDomainRegistrarDetail = useCallback(

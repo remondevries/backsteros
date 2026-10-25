@@ -1731,8 +1731,10 @@ export function useDesktopWorkspaceActions(): DesktopWorkspaceActions {
 }
 
 /**
- * Reads the full shared workspace snapshot. Prefer domain hooks
- * ({@link useDesktopWorkspaceTasks}, etc.) when a consumer only needs one slice.
+ * Reads the full shared workspace snapshot and re-renders on every slice
+ * change. Prefer the slice hooks ({@link useDesktopWorkspacePeople},
+ * {@link useDesktopWorkspaceActions}, etc.) unless most slices are read —
+ * see docs/07-performance.md "Desktop workspace slice hooks".
  */
 export function useDesktopWorkspaceData(): DesktopWorkspaceData {
   const meta = useDesktopWorkspaceMeta();

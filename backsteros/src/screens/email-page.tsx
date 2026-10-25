@@ -23,7 +23,10 @@ import { parseEmailDraftPath } from "@backsteros/ui";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { emailDeleteEntityLabel } from "../lib/delete-email-message";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../lib/workspace-data";
 import { useAgentMail } from "../lib/agentmail-context";
 import {
   projectListLabelForNavFrom,
@@ -90,7 +93,8 @@ export function EmailPage({
   }, [location.searchStr]);
   // Shared Provider owns list fetch + SSE; detail only needs mailboxes.
   const agentMail = useAgentMail();
-  const { contacts, organizations, projects } = useDesktopWorkspaceData();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
 
   const {
     message,

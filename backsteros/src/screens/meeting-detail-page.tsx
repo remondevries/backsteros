@@ -12,7 +12,12 @@ import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
 import { useMeetingContactNavigation } from "../lib/use-meeting-contact-navigation";
 import { useMeetingPortalEmailActions } from "../lib/use-meeting-portal-email-actions";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 
 export type MeetingDetailPageProps = {
@@ -35,17 +40,30 @@ export function MeetingDetailPage({
   };
   const meetingRouteParam =
     meetingRouteParamProp ?? meetingRouteParamFromRoute;
-  const workspace = useDesktopWorkspaceData();
+  const { meetings, ready } = useDesktopWorkspaceMeta();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
+  const {
+    patchMeeting: patchWorkspaceMeeting,
+    mergeMeetingLocalFields: mergeWorkspaceMeetingLocalFields,
+    softDeleteMeeting,
+    createContact,
+    createOrganization,
+  } = useDesktopWorkspaceActions();
+  const detailWorkspace = useMemo(
+    () => ({ contacts, organizations, projects, createContact, createOrganization }),
+    [contacts, createContact, createOrganization, organizations, projects],
+  );
 
   const meeting = useMemo(() => {
     if (!meetingRouteParam) return null;
     const normalized = decodeURIComponent(meetingRouteParam).toLowerCase();
-    return workspace.meetings.find((entry) => {
+    return meetings.find((entry) => {
       if (entry.id === meetingRouteParam) return true;
       const displayId = formatMeetingDisplayId(entry.number).toLowerCase();
       return displayId === normalized;
     });
-  }, [meetingRouteParam, workspace.meetings]);
+  }, [meetingRouteParam, meetings]);
 
   const apiMeeting = useMemo(() => {
     if (!meeting) return null;
@@ -71,37 +89,35 @@ export function MeetingDetailPage({
   const patchMeeting = useCallback(
     (values: Record<string, unknown>) => {
       if (!meeting) return;
-      void workspace.patchMeeting(meeting.id, values);
+      void patchWorkspaceMeeting(meeting.id, values);
     },
-    [meeting, workspace],
+    [meeting, patchWorkspaceMeeting],
   );
 
   const detailProps = useMeetingDetailViewProps(
     apiMeeting,
-    workspace,
+    detailWorkspace,
     patchMeeting,
   );
   const mergeMeetingLocalFields = useCallback(
     (fields: Record<string, unknown>) => {
       if (!meeting) return;
-      workspace.mergeMeetingLocalFields(meeting.id, fields);
+      mergeWorkspaceMeetingLocalFields(meeting.id, fields);
     },
-    [meeting, workspace],
+    [meeting, mergeWorkspaceMeetingLocalFields],
   );
   const meetingEmailActions = useMeetingPortalEmailActions(
     meeting?.id,
     mergeMeetingLocalFields,
   );
-  const meetingContactNavigation = useMeetingContactNavigation(
-    workspace.contacts,
-  );
+  const meetingContactNavigation = useMeetingContactNavigation(contacts);
 
   const handleDeleteMeeting = useCallback(async () => {
     if (!meeting) {
       return { ok: false as const, error: "Meeting is required." };
     }
     try {
-      await workspace.softDeleteMeeting(meeting.id);
+      await softDeleteMeeting(meeting.id);
       navigateToHref(navigate, backHref, { replace: true });
       return { ok: true as const };
     } catch (error) {
@@ -111,9 +127,9 @@ export function MeetingDetailPage({
           error instanceof Error ? error.message : "Failed to delete meeting.",
       };
     }
-  }, [backHref, meeting, navigate, workspace]);
+  }, [backHref, meeting, navigate, softDeleteMeeting]);
 
-  if (!workspace.ready) {
+  if (!ready) {
     return <div className="flex min-h-0 flex-1" />;
   }
 
