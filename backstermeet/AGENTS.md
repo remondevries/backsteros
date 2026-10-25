@@ -13,8 +13,14 @@ Folded into this monorepo on 13 Oct 2026 from `~/code/backstermeet` (see [docs/2
 ```bash
 pnpm --filter @backsteros/meet tauri dev    # Director app
 pnpm --filter @backsteros/meet dev          # Vite only, http://127.0.0.1:1430
-pnpm --filter @backsteros/meet typecheck    # also runs in root `pnpm typecheck`
+pnpm --filter @backsteros/meet typecheck    # also runs in root `pnpm typecheck` (app + tsconfig.test.json)
+pnpm --filter @backsteros/meet test         # tsx --test; also runs in root `pnpm test`
 ```
+
+Tests cover pure logic only (meeting filter/labels, room open/close stamps, URL
+normalization and storage, the LiveKit task queue, dev token plugin helpers).
+Keep `*.test.ts` out of the app `tsconfig.json`; they typecheck with Node types
+via `tsconfig.test.json`.
 
 ## How it connects
 

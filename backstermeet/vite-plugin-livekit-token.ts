@@ -12,7 +12,7 @@ type LiveKitConfig = {
   room: string;
 };
 
-function parseDotenv(contents: string): Record<string, string> {
+export function parseDotenv(contents: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const raw of contents.split("\n")) {
     const line = raw.trim();
@@ -36,7 +36,7 @@ function parseDotenv(contents: string): Record<string, string> {
  * Prefer LIVEKIT_CLIENT_URL (portal WSS) so host + guests share one SFU.
  * Fall back to LIVEKIT_URL. Loopback rewrite only for a purely local SFU spike.
  */
-function resolveClientUrl(file: Record<string, string>): string {
+export function resolveClientUrl(file: Record<string, string>): string {
   const configured = (
     process.env.LIVEKIT_CLIENT_URL ??
     file.LIVEKIT_CLIENT_URL ??
@@ -97,7 +97,7 @@ function loadLiveKitConfig(): LiveKitConfig {
   return { url, apiKey, apiSecret, room };
 }
 
-function resolveHostRoom(configuredRoom: string, meetingId: string | null): string {
+export function resolveHostRoom(configuredRoom: string, meetingId: string | null): string {
   const meeting = meetingId?.trim();
   return meeting || configuredRoom;
 }
