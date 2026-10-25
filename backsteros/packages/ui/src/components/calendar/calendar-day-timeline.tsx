@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   CalendarApi,
@@ -77,7 +77,10 @@ export function CalendarDayTimeline({
   const calendarApiRef = useRef<CalendarApi | null>(null);
   const meetingDragCopyCleanupRef = useRef<(() => void) | null>(null);
   const [openPopover, setOpenPopover] = useState<OpenPopoverState | null>(null);
-  const initialDate = parseYmdLocal(dateSlug) ?? new Date();
+  const initialDate = useMemo(
+    () => parseYmdLocal(dateSlug) ?? new Date(),
+    [dateSlug],
+  );
   const fixedMirrorParent =
     typeof document !== "undefined" ? document.body : undefined;
 

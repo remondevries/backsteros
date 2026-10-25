@@ -55,6 +55,10 @@ import {
   type TaskLinkPickerOption,
 } from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
+import type { TaskRelatedSelection } from "../../tasks/task-related-entities.js";
+import type { TaskStatus } from "../../tasks/task-status.js";
+import type { SupportContactCardModel, SupportOrganizationCardModel } from "./support-party-card-types.js";
+import type { TaskRelatedUpdateLink } from "./task-related-update-links.js";
 
 /** Below this width, properties render as inline chips; at/above as the card rail. */
 export const TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT = 720;
@@ -152,7 +156,7 @@ export type TaskDetailViewProps = {
     | { ok: false; error: string };
   onFieldActivate?: (field: string) => void;
   onStatusChange?: (
-    status: import("../../tasks/task-status.js").TaskStatus,
+    status: TaskStatus,
   ) => void;
   /** When true, status dropdown is read-only (inbox triage without a project). */
   statusDisabled?: boolean;
@@ -160,7 +164,7 @@ export type TaskDetailViewProps = {
   onDueDateChange?: (dueDate: Date | null) => void;
   onFollowUpDateChange?: (followUpDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
-  onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
+  onRelatedChange?: (related: TaskRelatedSelection) => void;
   onLabelChange?: (labelIds: string[]) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
@@ -169,13 +173,13 @@ export type TaskDetailViewProps = {
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
-  relatedUpdates?: readonly import("./task-related-update-links.js").TaskRelatedUpdateLink[];
+  relatedUpdates?: readonly TaskRelatedUpdateLink[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
   onAgentInboxApprove?: () => void;
-  supportContact?: import("./support-party-card-types.js").SupportContactCardModel | null;
-  supportOrganization?: import("./support-party-card-types.js").SupportOrganizationCardModel | null;
+  supportContact?: SupportContactCardModel | null;
+  supportOrganization?: SupportOrganizationCardModel | null;
   supportContactHref?: string | null;
   supportOrganizationHref?: string | null;
   /**
@@ -351,8 +355,8 @@ export function TaskDetailView({
     spellcheckHasChanges(descriptionSegments);
 
   const descriptionMarkRanges = useMemo(
-    () => spellcheckMarkRanges(descriptionSegments),
-    [descriptionSegments],
+    () => spellcheckMarkRanges(spellcheckHighlight?.descriptionSegments ?? []),
+    [spellcheckHighlight?.descriptionSegments],
   );
 
   const clearHighlights = () => {

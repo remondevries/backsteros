@@ -330,7 +330,6 @@ export function useWorkspaceHabitActions({
       reloadHabits,
       setApiHabits,
       softRefreshApiTasks,
-      toSnakeFields,
     ],
   );
 

@@ -237,9 +237,13 @@ function PlannerRow({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
+  // Re-sync drafts only when the saved values change, not on every new `entry`
+  // object identity from the parent list.
+  const entryRef = useRef(entry);
+  entryRef.current = entry;
   useEffect(() => {
-    setName(entry.name);
-    setAmount(formatPlannerAmountInput(entry));
+    setName(entryRef.current.name);
+    setAmount(formatPlannerAmountInput(entryRef.current));
   }, [entry.amountCents, entry.entryType, entry.name, entry.updatedAt]);
 
   const focusName = () => {

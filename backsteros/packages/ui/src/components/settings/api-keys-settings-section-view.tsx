@@ -575,13 +575,16 @@ function ApiKeyRow({
     }
   }
 
+  const saveNameRef = useRef(saveName);
+  saveNameRef.current = saveName;
+
   // Auto-save name while typing — no Save button in the row.
   useEffect(() => {
     if (!showNameEdit || !onRename) return;
     const trimmed = name.trim();
     if (!trimmed || trimmed === apiKey.name) return;
     const timer = window.setTimeout(() => {
-      void saveName(trimmed);
+      void saveNameRef.current(trimmed);
     }, 400);
     return () => window.clearTimeout(timer);
   }, [name, showNameEdit, apiKey.name, apiKey.id, onRename]);
@@ -591,7 +594,7 @@ function ApiKeyRow({
     const wasExpanded = wasExpandedRef.current;
     wasExpandedRef.current = expanded;
     if (wasExpanded && !expanded && keyType !== "agent") {
-      void saveName();
+      void saveNameRef.current();
     }
   }, [expanded, keyType]);
 

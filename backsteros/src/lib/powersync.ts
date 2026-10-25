@@ -1,6 +1,6 @@
 import {
-  AbstractPowerSyncDatabase,
-  PowerSyncBackendConnector,
+  type AbstractPowerSyncDatabase,
+  type PowerSyncBackendConnector,
   PowerSyncDatabase,
   WASQLiteOpenFactory,
   WASQLiteVFS,

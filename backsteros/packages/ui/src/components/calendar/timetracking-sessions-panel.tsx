@@ -23,6 +23,7 @@ import {
 import { DueDateCalendarPopover } from "../tasks/due-date-calendar-popover.js";
 import { TimetrackingSessionDeleteConfirmModal } from "./timetracking-session-delete-confirm-modal.js";
 import { TimetrackingSessionDurationField } from "./timetracking-session-duration-field.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 export type TimetrackingSessionsPanelProps = {
   displayId?: string | null;
@@ -35,7 +36,7 @@ export type TimetrackingSessionsPanelProps = {
   /** When set, replaces the plain header with a read-only board card. */
   boardTask?: TaskBoardCardTask | null;
   /** Assignee dropdown options — used for the board-card owner avatar. */
-  assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   /** Contact id → avatar image URL for session actors. */
   avatarSrcByContactId?:
     | ReadonlyMap<string, string | null>

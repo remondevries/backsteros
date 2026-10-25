@@ -855,11 +855,12 @@ export function FinanceDashboardView({
   }, [exitingIds, exitingRows, reviewTransactions]);
 
   useEffect(() => {
+    const exitTimers = exitTimersRef.current;
     return () => {
-      for (const timer of exitTimersRef.current.values()) {
+      for (const timer of exitTimers.values()) {
         window.clearTimeout(timer);
       }
-      exitTimersRef.current.clear();
+      exitTimers.clear();
     };
   }, []);
 

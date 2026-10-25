@@ -52,14 +52,17 @@ export function DesktopProjectLettersListPanel({
 }: Props) {
   const { client } = useDesktopApi();
   const routerNavigate = useNavigate();
-  const resolveHref =
-    getLetterHref ??
-    ((letter: LetterListItem) =>
-      resolveLetterDetailHref({
-        id: letter.id,
-        number: letter.number,
-        listBaseHref: "/letters",
-      }));
+  const resolveHref = useMemo(
+    () =>
+      getLetterHref ??
+      ((letter: LetterListItem) =>
+        resolveLetterDetailHref({
+          id: letter.id,
+          number: letter.number,
+          listBaseHref: "/letters",
+        })),
+    [getLetterHref],
+  );
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const selectedId = selectedSlug
     ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)

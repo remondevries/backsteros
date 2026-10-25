@@ -169,11 +169,14 @@ export function CalendarTimetrackingView({
     ? activeTab
     : (visibleTabs[0] ?? "timeline");
 
-  const resolvedPeriod: TimetrackingPeriod | null =
-    period ??
-    (selectedDateYmd?.trim()
-      ? { kind: "day", ymd: selectedDateYmd.trim() }
-      : null);
+  const resolvedPeriod = useMemo(
+    (): TimetrackingPeriod | null =>
+      period ??
+      (selectedDateYmd?.trim()
+        ? { kind: "day", ymd: selectedDateYmd.trim() }
+        : null),
+    [period, selectedDateYmd],
+  );
 
   const groupListByDay =
     groupListByDayProp ?? resolvedPeriod?.kind === "week";

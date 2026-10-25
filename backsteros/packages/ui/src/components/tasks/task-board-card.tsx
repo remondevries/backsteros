@@ -19,6 +19,7 @@ import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 import { ShimmerText } from "../shared/shimmer-text.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 export type TaskBoardCardTask = {
   id: string;
@@ -51,7 +52,7 @@ export type TaskBoardCardProps = {
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
-  assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   ownerSlot?: ReactNode;
   /** Replaces the display-id cell in the top row (e.g. chat contact name). */
   topLeadingSlot?: ReactNode;

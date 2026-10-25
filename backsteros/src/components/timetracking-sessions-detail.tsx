@@ -2,6 +2,7 @@ import { formatTrackedDuration } from "@backsteros/contracts";
 import { TimetrackingSessionsPanel } from "../../packages/ui/src/components/calendar/timetracking-sessions-panel";
 import type { TaskBoardCardTask } from "../../packages/ui/src/components/tasks/task-board-card";
 import { useTaskTimerSessions } from "../lib/use-task-timer-sessions";
+import type { SearchableDropdownOption } from "@backsteros/ui";
 
 type TimetrackingSessionsDetailProps = {
   kind: "task" | "meeting";
@@ -11,7 +12,7 @@ type TimetrackingSessionsDetailProps = {
   /** Fallback total when session history isn’t available. */
   trackedDurationSeconds?: number | null;
   boardTask?: TaskBoardCardTask | null;
-  assigneeOptions?: import("../../packages/ui/src/components/dropdowns/searchable-dropdown").SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   avatarSrcByContactId?:
     | ReadonlyMap<string, string | null>
     | Record<string, string | null | undefined>;

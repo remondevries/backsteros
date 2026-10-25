@@ -334,7 +334,7 @@ export function FinanceInvoicesView({
     ) {
       setSelectedInvoiceId(null);
     }
-  }, [invoices, selectedInvoiceId]);
+  }, [invoices, selectedInvoiceId, setSelectedInvoiceId]);
 
   useEffect(() => {
     if (!selectedInvoiceId) return;
@@ -352,7 +352,7 @@ export function FinanceInvoicesView({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedInvoiceId]);
+  }, [selectedInvoiceId, setSelectedInvoiceId]);
 
   const createOrganizationFromQueryLabel = onCreateOrganizationFromQuery
     ? (query: string) => `Create “${query.trim()}”`

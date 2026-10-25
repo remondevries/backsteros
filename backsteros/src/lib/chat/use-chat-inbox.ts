@@ -455,6 +455,7 @@ export function useChatInbox(options?: UseChatInboxOptions) {
         })();
       }, SSE_RELOAD_DEBOUNCE_MS);
     };
+    const typingExpireTimers = typingExpireTimersRef.current;
     startChatEventsLoop({
       client,
       signal: controller.signal,
@@ -467,10 +468,10 @@ export function useChatInbox(options?: UseChatInboxOptions) {
         window.clearTimeout(sseReloadTimerRef.current);
         sseReloadTimerRef.current = null;
       }
-      for (const timer of typingExpireTimersRef.current.values()) {
+      for (const timer of typingExpireTimers.values()) {
         window.clearTimeout(timer);
       }
-      typingExpireTimersRef.current.clear();
+      typingExpireTimers.clear();
       setTypingIds(new Set());
     };
   }, [client, enabled, loadDetail, loadList]);

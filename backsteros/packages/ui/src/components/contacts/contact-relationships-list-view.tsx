@@ -219,6 +219,10 @@ export function ContactRelationshipsListView({
     }
   }
 
+  // The pointer listener outlives renders; always call this render's handlers.
+  const draftHandlersRef = useRef({ tryAdd, closeDraft });
+  draftHandlersRef.current = { tryAdd, closeDraft };
+
   useEffect(() => {
     if (!adding) return;
     function handlePointerDown(event: PointerEvent) {
@@ -243,13 +247,13 @@ export function ContactRelationshipsListView({
         draftType &&
         draftType !== OTHER_RELATIONSHIP_TYPE_VALUE
       ) {
-        void tryAdd({
+        void draftHandlersRef.current.tryAdd({
           type: draftType,
           toContactId: draftContactId,
         });
         return;
       }
-      closeDraft();
+      draftHandlersRef.current.closeDraft();
     }
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () =>

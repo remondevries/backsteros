@@ -155,5 +155,5 @@ export function useCopyEntityIdShortcut(
       resolveId: () => resolveIdRef.current(),
       isEnabled: () => Boolean(enabledRef.current),
     });
-  }, []);
+  }, [enabledRef, resolveIdRef]);
 }

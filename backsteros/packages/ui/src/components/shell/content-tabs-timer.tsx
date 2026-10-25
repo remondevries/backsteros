@@ -319,7 +319,7 @@ export function ContentTabsTimer() {
   const controlRef = useRef<HTMLDivElement>(null);
 
   const runningCount = timer?.runningKeys.length ?? 0;
-  const recentTimers = timer?.recentTimers ?? [];
+  const recentTimers = useMemo(() => timer?.recentTimers ?? [], [timer]);
   const activeTimer = useMemo(() => {
     if (!timer || recentTimers.length === 0) return null;
     const active = timer.activeKey

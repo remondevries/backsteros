@@ -226,11 +226,12 @@ export function useFinanceTransactions({
     filterRecurringId,
   ]);
 
+  const hasAccountScope = allAccountsSelected || selected != null;
   useEffect(() => {
     if (!showTransactions) return;
-    if (!allAccountsSelected && !selected) return;
+    if (!hasAccountScope) return;
     void loadTransactions();
-  }, [loadTransactions, selectionKey, showTransactions]);
+  }, [hasAccountScope, loadTransactions, selectionKey, showTransactions]);
 
   useEffect(() => {
     if (!showTransactions) return;
@@ -692,7 +693,14 @@ export function useFinanceTransactions({
           : current,
       );
     },
-    [client],
+    [
+      client,
+      setAccountMetrics,
+      setCategoryMetrics,
+      setGoalTransactions,
+      setRecurringMetrics,
+      setReviewTransactions,
+    ],
   );
 
   const handleBulkDelete = useCallback(async () => {

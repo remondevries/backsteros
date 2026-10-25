@@ -488,6 +488,8 @@ function AuthenticatedPowerSyncProvider({
     }
     stableValueRef.current = next;
     return next;
+    // The sync-progress values refresh `lastSyncedAtFrozenRef`, read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     connected,
     connecting,

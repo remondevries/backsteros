@@ -210,16 +210,19 @@ export function EntityDetailOverlay({
     [panelWidthStorageKey, parentContentWidthPx],
   );
 
-  function resolveOpenWidthPx(el: HTMLElement | null): number | null {
-    if (
-      expandedWidthRef.current != null &&
-      expandedWidthRef.current > ENTITY_DETAIL_STRIP_WIDTH_PX
-    ) {
-      return expandedWidthRef.current;
-    }
-    const resolved = resolveStoredOrDefaultWidthPx(el);
-    return resolved > ENTITY_DETAIL_STRIP_WIDTH_PX ? resolved : null;
-  }
+  const resolveOpenWidthPx = useCallback(
+    (el: HTMLElement | null): number | null => {
+      if (
+        expandedWidthRef.current != null &&
+        expandedWidthRef.current > ENTITY_DETAIL_STRIP_WIDTH_PX
+      ) {
+        return expandedWidthRef.current;
+      }
+      const resolved = resolveStoredOrDefaultWidthPx(el);
+      return resolved > ENTITY_DETAIL_STRIP_WIDTH_PX ? resolved : null;
+    },
+    [resolveStoredOrDefaultWidthPx],
+  );
 
   const handlePanelResizePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -261,7 +264,6 @@ export function EntityDetailOverlay({
       effectiveAnimating,
       effectiveCollapsed,
       layout,
-      parentContentWidthPx,
       resolveStoredOrDefaultWidthPx,
     ],
   );
@@ -311,7 +313,13 @@ export function EntityDetailOverlay({
         }, ENTITY_DETAIL_CONTENT_FADE_MS);
       });
     });
-  }, [open, layout, expandWorkspace, commitExpandedWidthPx]);
+  }, [
+    open,
+    layout,
+    expandWorkspace,
+    commitExpandedWidthPx,
+    resolveOpenWidthPx,
+  ]);
 
   useEffect(() => {
     return () => {

@@ -247,6 +247,8 @@ export function useDesktopSpaceCoverSrcMap(
 
   return useMemo(
     () => mergeCoverPreviewUrls(urls),
+    // `previewTick` re-reads the module-level preview map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [urls, previewTick],
   );
 }

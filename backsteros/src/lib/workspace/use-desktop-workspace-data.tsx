@@ -323,6 +323,7 @@ function useDesktopWorkspaceDataImpl(): {
     if (localTaskCountForFlagHeal === 0) return;
 
     taskFlagsBackfillDoneRef.current = true;
+    const patchMetadata = powerSync.patchMetadata;
     let cancelled = false;
     void (async () => {
       try {
@@ -335,7 +336,7 @@ function useDesktopWorkspaceDataImpl(): {
         // so list icons (Tasks + Communication) update. Only skip SQLite heal
         // when unmounted / logged out.
         setTaskFlagSource(all);
-        if (cancelled || !powerSync.patchMetadata) return;
+        if (cancelled || !patchMetadata) return;
 
         const localById = new Map(
           localTasksForFlagHealRef.current.map((row) => [row.id, row]),
@@ -348,7 +349,7 @@ function useDesktopWorkspaceDataImpl(): {
           if (api.support && !local.support) patch.support = 1;
           if (Object.keys(patch).length === 0) continue;
           try {
-            await powerSync.patchMetadata("tasks", api.id, patch);
+            await patchMetadata("tasks", api.id, patch);
           } catch (error) {
             console.warn(
               "[desktop] task flag SQLite heal failed",

@@ -5,7 +5,7 @@ import {
   type CalendarPageMode,
   type CalendarSidePanelHabitItem,
   type MeetingListItem,
-  unscheduledCalendarTasks,
+  type unscheduledCalendarTasks,
   buildCalendarSidePanelKeyboardItemIds,
   getSelectedCalendarSidePanelItemId,
   parseCalendarSidePanelKeyboardItemId,

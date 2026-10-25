@@ -164,6 +164,11 @@ export function useFinancePageChrome({
     navId,
     selected?.id,
     selected?.moneybirdFinancialAccountId,
+    setCsvFile,
+    setImportAccountId,
+    setImportError,
+    setImportOpen,
+    setLastImportResult,
     showTransactions,
     syncMoneybirdAccount,
   ]);
@@ -495,12 +500,12 @@ export function useFinancePageChrome({
   useEffect(() => {
     if (navId === "categories") return;
     setCategoriesChrome(null);
-  }, [navId]);
+  }, [navId, setCategoriesChrome]);
 
   useEffect(() => {
     if (showTransactions) return;
     setTransactionsChrome(null);
-  }, [showTransactions]);
+  }, [setTransactionsChrome, showTransactions]);
 
   return { breadcrumbLabel };
 }

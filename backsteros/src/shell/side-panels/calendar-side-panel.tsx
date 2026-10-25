@@ -6,7 +6,7 @@ import {
   type CalendarPageMode,
   type CalendarSidePanelHabitItem,
   type MeetingListItem,
-  unscheduledCalendarTasks,
+  type unscheduledCalendarTasks,
 } from "@backsteros/ui";
 
 import { useCalendarPageModeControls } from "../../lib/use-calendar-page-mode";

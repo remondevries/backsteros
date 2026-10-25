@@ -44,14 +44,17 @@ export function DesktopLettersSidePanel({
   SidePanelNavProps) {
   const { client } = useDesktopApi();
   const { pathname, items } = viewProps;
-  const resolveHref =
-    getLetterHref ??
-    ((letter: { id: string; number?: number | null }) =>
-      resolveLetterDetailHref({
-        id: letter.id,
-        number: letter.number,
-        listBaseHref: "/letters",
-      }));
+  const resolveHref = useMemo(
+    () =>
+      getLetterHref ??
+      ((letter: { id: string; number?: number | null }) =>
+        resolveLetterDetailHref({
+          id: letter.id,
+          number: letter.number,
+          listBaseHref: "/letters",
+        })),
+    [getLetterHref],
+  );
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const selectedId = selectedSlug
     ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)

@@ -428,6 +428,8 @@ export function useEmailMessageActions({
       messageId,
       navigate,
       reloadMessageDetail,
+      setConceptError,
+      setMessage,
       toEmailDetailHref,
     ],
   );

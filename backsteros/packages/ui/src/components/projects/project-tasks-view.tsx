@@ -64,6 +64,7 @@ import {
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 export type ProjectTasksViewProps = {
   tasks: TaskItemRowTask[];
@@ -84,7 +85,7 @@ export type ProjectTasksViewProps = {
   onCreatedTask?: (taskId: string) => void;
   /** @deprecated Prefer onCreateTask for inline compose. */
   onAddTask?: (status: TaskStatus) => void;
-  assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   initialView?: ListBoardView;
   view?: ListBoardView;
   onViewChange?: (view: ListBoardView) => void;

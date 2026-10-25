@@ -165,6 +165,7 @@ function CalendarPageBody() {
     [navigate, searchStr],
   );
   const workspace = useDesktopWorkspaceData();
+  const { patchTask, softRefreshApiMeetings } = workspace;
   const { client } = useDesktopApi();
   const { settings, loading: settingsLoading, setWeekdayHours } =
     useMeetingSchedulingSettings();
@@ -246,8 +247,8 @@ function CalendarPageBody() {
   // are the live path (same as documents; avoid a full list GET on every visit).
   useEffect(() => {
     if (!keepAliveActive) return;
-    void workspace.softRefreshApiMeetings().catch(() => {});
-  }, [keepAliveActive, workspace.softRefreshApiMeetings]);
+    void softRefreshApiMeetings().catch(() => {});
+  }, [keepAliveActive, softRefreshApiMeetings]);
 
   const refreshExternalCalendarEvents = useCallback(
     async (options?: { forceSync?: boolean }) => {
@@ -332,7 +333,7 @@ function CalendarPageBody() {
     void (async () => {
       try {
         await Promise.all([
-          workspace.softRefreshApiMeetings().catch(() => {}),
+          softRefreshApiMeetings().catch(() => {}),
           refreshExternalCalendarEvents({ forceSync: true }),
         ]);
       } finally {
@@ -342,7 +343,7 @@ function CalendarPageBody() {
   }, [
     calendarRefreshing,
     refreshExternalCalendarEvents,
-    workspace.softRefreshApiMeetings,
+    softRefreshApiMeetings,
   ]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
@@ -970,11 +971,11 @@ function CalendarPageBody() {
 
   const handleToggleDayHabit = useCallback(
     (item: CalendarHabitIconItem, completed: boolean) => {
-      void workspace.patchTask(item.taskId, {
+      void patchTask(item.taskId, {
         status: completed ? "completed" : "canceled",
       });
     },
-    [workspace],
+    [patchTask],
   );
 
   const handleCreateMeetingFromSelect = useCallback(
@@ -1470,32 +1471,32 @@ function CalendarPageBody() {
 
   const handleTimetrackingTaskStatusChange = useCallback(
     (taskId: string, status: TaskStatus) => {
-      void workspace.patchTask(taskId, { status });
+      void patchTask(taskId, { status });
     },
-    [workspace],
+    [patchTask],
   );
 
   const handleTimetrackingTaskPriorityChange = useCallback(
     (taskId: string, priority: number) => {
-      void workspace.patchTask(taskId, { priority });
+      void patchTask(taskId, { priority });
     },
-    [workspace],
+    [patchTask],
   );
 
   const handleTimetrackingTaskDueDateChange = useCallback(
     (taskId: string, dueDate: Date | null) => {
-      void workspace.patchTask(taskId, {
+      void patchTask(taskId, {
         dueDate: dueDate ? dueDate.toISOString() : null,
       });
     },
-    [workspace],
+    [patchTask],
   );
 
   const handleTimetrackingTaskAssigneeChange = useCallback(
     (taskId: string, assigneeId: string | null) => {
-      void workspace.patchTask(taskId, { assigneeId });
+      void patchTask(taskId, { assigneeId });
     },
-    [workspace],
+    [patchTask],
   );
 
   const handleTimetrackingTaskProjectChange = useCallback(
@@ -1503,11 +1504,11 @@ function CalendarPageBody() {
       const project = projectKey
         ? workspace.projects.find((entry) => entry.key === projectKey) ?? null
         : null;
-      void workspace.patchTask(taskId, {
+      void patchTask(taskId, {
         projectId: project?.id ?? null,
       });
     },
-    [workspace],
+    [patchTask, workspace.projects],
   );
 
   const search = searchParams.toString();

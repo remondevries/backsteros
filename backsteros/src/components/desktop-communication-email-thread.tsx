@@ -532,7 +532,7 @@ function DesktopCommunicationEmailThreadView({
       return;
     }
     onSelectMessage(newestId);
-  }, [message?.messageId, onSelectMessage, selectedMessageId, threadEntries]);
+  }, [message, onSelectMessage, selectedMessageId, threadEntries]);
 
   useEffect(() => {
     if (!message || !onAutoLinkParties) return;

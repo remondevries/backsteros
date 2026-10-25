@@ -91,6 +91,8 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
     ({ item }: LegendListRenderItemProps<T>) => (
       <div className="overview-virtual-row">{renderRow(item)}</div>
     ),
+    // `extraData` is a cache-buster: a new renderItem makes the list re-render rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [extraData, renderRow],
   );
 

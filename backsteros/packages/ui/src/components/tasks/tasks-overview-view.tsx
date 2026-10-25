@@ -82,6 +82,7 @@ import {
 } from "./tasks-today-habits-chips.js";
 import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
 import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 type TaskVirtualRow =
   | (VirtualizedOverviewRow & {
@@ -134,8 +135,8 @@ export type TasksOverviewViewProps = {
     title: string;
   }) => Promise<{ id: string } | void> | { id: string } | void;
   onCreatedTask?: (taskId: string) => void;
-  projectOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
-  assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
+  projectOptions?: SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   /** Hide project chip on rows (project-scoped lists). Default true. */
   showProject?: boolean;
   initialFilter?: TasksDueFilter;

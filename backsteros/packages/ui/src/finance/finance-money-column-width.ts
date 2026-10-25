@@ -27,6 +27,11 @@ export function measureFinanceMoneyLabelWidthPx(labels: string[]): number {
   return Math.ceil(max);
 }
 
+/** Labels are keyed by their joined text so callers can pass fresh arrays each render. */
+function splitLabelKey(key: string): string[] {
+  return key === "" ? [] : key.split("\0");
+}
+
 export function useFinanceMoneyColumnWidthPx(
   labels: ReadonlyArray<string>,
   minPx = 48,
@@ -36,7 +41,7 @@ export function useFinanceMoneyColumnWidthPx(
 
   useLayoutEffect(() => {
     setWidthPx(
-      Math.max(minPx, measureFinanceMoneyLabelWidthPx([...labels])),
+      Math.max(minPx, measureFinanceMoneyLabelWidthPx(splitLabelKey(signature))),
     );
   }, [minPx, signature]);
 
@@ -51,7 +56,11 @@ export function useFinanceMoneyColumnWidthFromValues(
   const valuesKey = values.join("\0");
   const headersKey = headerLabels.join("\0");
   const labels = useMemo(() => {
-    const set = new Set<string>(["—", ...headerLabels, ...values]);
+    const set = new Set<string>([
+      "—",
+      ...splitLabelKey(headersKey),
+      ...splitLabelKey(valuesKey),
+    ]);
     return [...set];
   }, [headersKey, valuesKey]);
 

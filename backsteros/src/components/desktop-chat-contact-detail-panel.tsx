@@ -225,12 +225,13 @@ function DesktopChatContactDetailPanelView({
   const [contactTabEntity, setContactTabEntity] = useState<
     "contact" | "organization"
   >("contact");
-  const setChatFaded = useCallback(
-    (faded: boolean) => {
-      onChatMainFadedChange?.(faded);
-    },
-    [onChatMainFadedChange],
-  );
+  // Stable so the fade layout effects below never re-run (and cancel their
+  // second animation frame) just because the parent passed a new callback.
+  const onChatMainFadedChangeRef = useRef(onChatMainFadedChange);
+  onChatMainFadedChangeRef.current = onChatMainFadedChange;
+  const setChatFaded = useCallback((faded: boolean) => {
+    onChatMainFadedChangeRef.current?.(faded);
+  }, []);
   const expandAnimTokenRef = useRef(0);
   const expandAnimTimerRef = useRef<number | null>(null);
   const pendingWorkspaceFadeInRef = useRef(false);
@@ -348,7 +349,7 @@ function DesktopChatContactDetailPanelView({
       setWorkspaceFaded(true);
       setOverlayLayout("page");
     }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [contact, onShow, overlayLayout]);
+  }, [contact, onShow, overlayLayout, setChatFaded]);
 
   const collapseOverlay = useCallback(() => {
     onShow();
@@ -366,7 +367,7 @@ function DesktopChatContactDetailPanelView({
       setChatFaded(true);
       setOverlayLayout("panel");
     }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [onShow, overlayLayout]);
+  }, [onShow, overlayLayout, setChatFaded]);
 
   useLayoutEffect(() => {
     if (overlayLayout !== "page") return;
@@ -389,7 +390,7 @@ function DesktopChatContactDetailPanelView({
       window.cancelAnimationFrame(raf1);
       window.cancelAnimationFrame(raf2);
     };
-  }, [overlayLayout]);
+  }, [overlayLayout, setChatFaded]);
 
   useLayoutEffect(() => {
     if (overlayLayout !== "panel") return;
@@ -413,7 +414,7 @@ function DesktopChatContactDetailPanelView({
       window.cancelAnimationFrame(raf1);
       window.cancelAnimationFrame(raf2);
     };
-  }, [overlayLayout]);
+  }, [overlayLayout, setChatFaded]);
 
   const previousConversations = useMemo(() => {
     if (!conversation) return [];

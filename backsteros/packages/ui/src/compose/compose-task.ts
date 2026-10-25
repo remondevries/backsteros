@@ -1,5 +1,5 @@
 import {
-  DEFAULT_TASKS_DUE_FILTER,
+  type DEFAULT_TASKS_DUE_FILTER,
   getDefaultDueDateYmdForTasksDueFilter,
   isTasksDueFilter,
   parseTasksDueFilter,

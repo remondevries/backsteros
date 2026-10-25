@@ -36,7 +36,7 @@ export default tseslint.config(
     rules: {
       // Hooks correctness — the main reason this config exists.
       "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/exhaustive-deps": "error",
 
       // TypeScript hygiene. `tsc --noEmit` already enforces noUnusedLocals in
       // the app tsconfig; keep ESLint aligned and allow the `_` convention.

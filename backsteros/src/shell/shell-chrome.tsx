@@ -19,6 +19,7 @@ import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import type { useShellTabs } from "./use-shell-tabs";
+import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
 
 type ShellChromeProps = {
   children?: ReactNode;
@@ -27,7 +28,7 @@ type ShellChromeProps = {
   pathname: string;
   sidebarActivePathname: string;
   inboxSidebarIndicator: ReturnType<
-    typeof import("@backsteros/ui/inbox").resolveInboxSidebarIndicatorTone
+    typeof resolveInboxSidebarIndicatorTone
   >;
   sidePanel: ReactNode;
   showSidePanel: boolean;

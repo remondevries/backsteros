@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentMailInboxSummary,
   AgentMailSettings,
@@ -162,14 +162,19 @@ export function SettingsEmailTab({
     }
   };
 
+  // Re-seed drafts only when a saved template changes; a new settings object
+  // with the same values must not clobber in-progress edits.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   useEffect(() => {
-    if (!settings) return;
+    const current = settingsRef.current;
+    if (!current) return;
     setGreetingDraftEn(
-      settings.replyGreetingTemplateEn ?? settings.replyGreetingTemplate,
+      current.replyGreetingTemplateEn ?? current.replyGreetingTemplate,
     );
-    setGreetingDraftNl(settings.replyGreetingTemplateNl);
-    setSignOffDraftEn(settings.replySignOffTemplateEn);
-    setSignOffDraftNl(settings.replySignOffTemplateNl);
+    setGreetingDraftNl(current.replyGreetingTemplateNl);
+    setSignOffDraftEn(current.replySignOffTemplateEn);
+    setSignOffDraftNl(current.replySignOffTemplateNl);
   }, [
     settings?.replyGreetingTemplate,
     settings?.replyGreetingTemplateEn,

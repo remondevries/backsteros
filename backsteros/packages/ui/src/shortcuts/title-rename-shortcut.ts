@@ -166,5 +166,5 @@ export function useTitleRenameShortcut(
       },
       isEnabled: () => Boolean(enabledRef.current),
     });
-  }, []);
+  }, [enabledRef, onRenameRef]);
 }

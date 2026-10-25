@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -115,24 +116,31 @@ function MeetingContentTabEditor({
     toggleViewMode();
   };
 
-  const viewModeToggle = (
-    <SegmentedPillToggle
-      value={mode}
-      options={[
-        { value: "preview", label: "Preview" },
-        { value: "edit", label: "Edit" },
-      ]}
-      onChange={(next) => {
-        setViewMode(next);
-      }}
-      ariaLabel="Content view mode"
-    />
+  // Keyed on `mode` only: a new element per render would make the dock effect
+  // below hand the parent a fresh node (and re-render it) on every render.
+  const setViewModeRef = useRef(setViewMode);
+  setViewModeRef.current = setViewMode;
+  const viewModeToggle = useMemo(
+    () => (
+      <SegmentedPillToggle
+        value={mode}
+        options={[
+          { value: "preview", label: "Preview" },
+          { value: "edit", label: "Edit" },
+        ]}
+        onChange={(next) => {
+          setViewModeRef.current(next);
+        }}
+        ariaLabel="Content view mode"
+      />
+    ),
+    [mode],
   );
 
   useLayoutEffect(() => {
     if (!dockToggle || !onToggleDock) return;
     onToggleDock(viewModeToggle);
-  }, [dockToggle, mode, onToggleDock]);
+  }, [dockToggle, onToggleDock, viewModeToggle]);
 
   const emptyLabel =
     tab === "summary"
@@ -307,12 +315,12 @@ export function MeetingDetailView({
     if (!visibleTabOrder.includes(activeTab)) {
       setActiveTab("summary");
     }
-  }, [activeTab, visibleTabOrder]);
+  }, [activeTab, setActiveTab, visibleTabOrder]);
 
   const handleLeaveTitleForSummary = useCallback(() => {
     setActiveTab("summary");
     setPendingSummaryEdit(true);
-  }, []);
+  }, [setActiveTab]);
 
   const handleSummaryEnterEditHandled = useCallback(() => {
     setPendingSummaryEdit(false);

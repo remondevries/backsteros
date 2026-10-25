@@ -66,6 +66,17 @@ export function agentMailMessagesSignature(
           message.assigneeId ?? "",
           message.projectId ?? "",
           message.projectKey ?? "",
+          // Row copy shown by inbox / communication lists.
+          message.subject ?? "",
+          message.projectName ?? "",
+          message.threadId ?? "",
+          message.draftId ?? "",
+          message.kind ?? "",
+          message.emailThreadId ?? "",
+          message.number ?? "",
+          message.displayId ?? "",
+          message.direction ?? "",
+          message.inboxUpdatedAt ?? "",
         ].join("\0"),
     )
     .join("\n");

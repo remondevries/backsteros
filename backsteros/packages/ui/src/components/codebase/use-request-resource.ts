@@ -68,7 +68,6 @@ export function useRequestResource<T>(
 
     return () => controller.abort();
     // Intentionally keyed by identity + requestJson identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps via identityKey
   }, [identityKey, requestJson]);
 
   return { data, error, loading };

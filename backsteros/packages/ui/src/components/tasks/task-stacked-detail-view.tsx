@@ -27,6 +27,9 @@ import {
   type TaskFileAttachmentItem,
 } from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
+import type { TaskRelatedSelection } from "../../tasks/task-related-entities.js";
+import type { TaskStatus } from "../../tasks/task-status.js";
+import type { SupportContactCardModel, SupportOrganizationCardModel } from "./support-party-card-types.js";
 
 function toDate(value: number | Date | null | undefined): Date | null {
   if (value == null) return null;
@@ -61,21 +64,21 @@ export type TaskStackedDetailViewProps = {
     | { ok: false; error: string };
   onFieldActivate?: (field: string) => void;
   onStatusChange?: (
-    status: import("../../tasks/task-status.js").TaskStatus,
+    status: TaskStatus,
   ) => void;
   statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
-  onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
+  onRelatedChange?: (related: TaskRelatedSelection) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
   relatedOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
   onCreateRelatedContactFromQuery?: (query: string) => void;
-  supportContact?: import("./support-party-card-types.js").SupportContactCardModel | null;
-  supportOrganization?: import("./support-party-card-types.js").SupportOrganizationCardModel | null;
+  supportContact?: SupportContactCardModel | null;
+  supportOrganization?: SupportOrganizationCardModel | null;
   supportContactHref?: string | null;
   supportOrganizationHref?: string | null;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;

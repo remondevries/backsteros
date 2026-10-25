@@ -573,14 +573,14 @@ export function useFinanceSectionData({
     setGoalsChrome(null);
     setSelectedGoalId(null);
     setGoalTransactions([]);
-  }, [navId]);
+  }, [navId, setGoalsChrome]);
 
   useEffect(() => {
     if (navId === "recurrings") return;
     setRecurringsChrome(null);
     setSelectedRecurringId(null);
     setRecurringMetrics(null);
-  }, [navId]);
+  }, [navId, setRecurringsChrome]);
 
   useEffect(() => {
     if (navId !== "goals" || !selectedGoalId) {
@@ -691,7 +691,7 @@ export function useFinanceSectionData({
     if (navId === "accounts") return;
     setAccountsChrome(null);
     setSelectedAccountId(null);
-  }, [navId]);
+  }, [navId, setAccountsChrome]);
 
   return {
     categorySpendById,

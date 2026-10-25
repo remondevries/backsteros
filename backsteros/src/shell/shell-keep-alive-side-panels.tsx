@@ -309,10 +309,13 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     [agentMail.messages],
   );
 
+  // Rebuild on content changes (signature), not on every refetched array.
+  const agentMailMessagesRef = useRef(agentMail.messages);
+  agentMailMessagesRef.current = agentMail.messages;
   const emailInboxItems = useMemo((): InboxListItem[] => {
     if (frozen) return [];
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    return agentMail.messages
+    return agentMailMessagesRef.current
       .filter((item) =>
         emailBelongsInInbox({
           status: item.status,
@@ -365,6 +368,8 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           unread: item.unread === true,
         });
       });
+    // `agentMailListSignature` stands in for the messages ref read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     agentMail.mailboxes,
     agentMailListSignature,

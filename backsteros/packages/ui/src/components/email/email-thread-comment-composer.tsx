@@ -229,6 +229,11 @@ export function EmailThreadCommentComposer({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyEditorRef = useRef<TaskCommentEditorHandle | null>(null);
   const skipInitialFocusRef = useRef(true);
+  // Reset when mode or seed identity changes — not on every parent re-render
+  // that passes a new (but equal) default attendee array.
+  const defaultAttendeeKey = defaultAttendeeContactIds.join(",");
+  const defaultAttendeeContactIdsRef = useRef(defaultAttendeeContactIds);
+  defaultAttendeeContactIdsRef.current = defaultAttendeeContactIds;
 
   useEffect(() => {
     setDraft("");
@@ -241,20 +246,17 @@ export function EmailThreadCommentComposer({
     setAssigneeId(defaultAssigneeId);
     setMeetingProjectKey(defaultProjectKey);
     setMeetingOrganizationId(defaultOrganizationId);
-    setAttendeeContactIds(defaultAttendeeContactIds);
+    setAttendeeContactIds(defaultAttendeeContactIdsRef.current);
     const schedule = defaultMeetingSchedule();
     setStartAt(schedule.startAt);
     setEndAt(schedule.endAt);
-    // Intentionally reset when mode or seed identity changes — not on every
-    // parent re-render of default arrays.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed via joined ids
   }, [
     mode,
     defaultProjectId,
     defaultProjectKey,
     defaultAssigneeId,
     defaultOrganizationId,
-    defaultAttendeeContactIds.join(","),
+    defaultAttendeeKey,
   ]);
 
   useEffect(() => {

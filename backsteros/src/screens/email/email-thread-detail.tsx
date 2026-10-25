@@ -580,7 +580,7 @@ export function EmailThreadDetail({
         setEntityCreateSending(false);
       }
     },
-    [postThreadComment, projects, setConceptError, workspace],
+    [organizations, postThreadComment, projects, setConceptError, workspace],
   );
 
   const threadMessages =

@@ -192,12 +192,16 @@ export function TrackedTimeField({
     }
   }, [pendingSeconds, trackedDurationSeconds]);
 
+  // Re-register only when a session field changes, not on a new object identity.
+  const timerSessionRef = useRef(timerSession);
+  timerSessionRef.current = timerSession;
   useLayoutEffect(() => {
-    if (!usesGlobalTimer || !timerKey || !timerSession) {
+    const session = timerSessionRef.current;
+    if (!usesGlobalTimer || !timerKey || !session) {
       return;
     }
     return registerTimerRef.current?.({
-      ...timerSession,
+      ...session,
       trackedDurationSeconds: registrationTrackedSecondsRef.current,
       trackedMinutes,
       scheduleMinutes,

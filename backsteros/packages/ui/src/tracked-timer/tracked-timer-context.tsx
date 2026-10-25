@@ -796,6 +796,8 @@ export function TrackedTimerProvider({
   const resolvedRunningKey = useMemo(() => {
     if (runningKey) return runningKey;
     return findPrimaryRunningKey(entriesRef.current, activeKey);
+    // `entriesRevision` / `tick` re-read the mutable entries ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, entriesRevision, runningKey, tick]);
 
   const recentTimers = useMemo(() => {
@@ -831,6 +833,8 @@ export function TrackedTimerProvider({
       );
     void tick;
     return items;
+    // `entriesRevision` re-reads the mutable entries ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, entriesRevision, resolvedRunningKey, tick]);
 
   const value = useMemo(

@@ -56,6 +56,7 @@ import {
   type TaskItemRowTask,
 } from "../tasks/task-item-row.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 
 export type ProjectTasksWorkbenchViewProps = {
   tasks: TaskItemRowTask[];
@@ -85,7 +86,7 @@ export type ProjectTasksWorkbenchViewProps = {
   onCreatedTask?: (taskId: string) => void;
   /** @deprecated Prefer onCreateTask for inline compose. */
   onAddTask?: (status: TaskStatus) => void;
-  assigneeOptions?: import("../dropdowns/searchable-dropdown.js").SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   initialView?: ListBoardView;
   view?: ListBoardView;
   onViewChange?: (view: ListBoardView) => void;

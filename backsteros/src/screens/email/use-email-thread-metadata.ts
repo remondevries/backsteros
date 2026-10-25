@@ -94,7 +94,7 @@ export function useEmailThreadMetadata({
         current ? { ...current, threadMetadata: updated } : current,
       );
     },
-    [client, inboxId, message],
+    [client, inboxId, message, setMessage],
   );
 
   /** Auto-promote thread status while working with the agent / finishing a draft. */

@@ -354,7 +354,7 @@ export function useWorkspaceTaskActions({
       });
       return { id: task.id, number: task.number ?? null };
     },
-    [authenticated, client, powerSync, setApiInboxTasks, setApiTasks, toSnakeFields],
+    [authenticated, client, powerSync, setApiTasks, toSnakeFields],
   );
 
   const createTaskFromBody = useCallback(

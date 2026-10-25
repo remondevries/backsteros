@@ -765,6 +765,7 @@ export function ContactsPage({
       );
     }
   }, [
+    effectiveGroupId,
     isStandalone,
     keepAliveActive,
     location.pathname,
@@ -892,10 +893,10 @@ export function ContactsPage({
     }
   }, [
     contactsListHref,
+    effectiveGroupId,
     isStandalone,
     navigate,
     selected,
-    selectedGroupId,
     workspace,
   ]);
 
@@ -993,7 +994,7 @@ export function ContactsPage({
       }
       navigate(getScopedContactSectionHref(routeParam, "overview", routeScope));
     },
-    [contacts, isStandalone, navigate, routeScope, selectedGroupId],
+    [contacts, effectiveGroupId, isStandalone, navigate, routeScope],
   );
 
   const createAndOpenContact = useCallback(() => {
@@ -1030,7 +1031,7 @@ export function ContactsPage({
       .catch((error) => {
         console.warn("[desktop] create contact failed", error);
       });
-  }, [client, contacts, navigate, powerSync, selectedGroupId, workspace]);
+  }, [client, contacts, effectiveGroupId, navigate, powerSync, workspace]);
 
   const expandOverlay = useCallback(() => {
     if (!selectedSlugValue) return;
@@ -1058,9 +1059,9 @@ export function ContactsPage({
     }, CONTACT_DETAIL_EXPAND_FADE_MS);
   }, [
     cardSection,
+    effectiveGroupId,
     navigate,
     overlayLayout,
-    selectedGroupId,
     selectedSlugValue,
   ]);
 
@@ -1104,9 +1105,9 @@ export function ContactsPage({
     }, CONTACT_DETAIL_EXPAND_FADE_MS);
   }, [
     cardSection,
+    effectiveGroupId,
     navigate,
     overlayLayout,
-    selectedGroupId,
     selectedSlugValue,
     workspaceDetail,
   ]);
@@ -1255,7 +1256,7 @@ export function ContactsPage({
       detailCloseNavTimerRef.current = null;
       leave();
     }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
-  }, [beginDetailCollapseAnimation, navigate, selectedGroupId]);
+  }, [beginDetailCollapseAnimation, effectiveGroupId, navigate]);
 
   // Selecting a contact while the reopen strip is showing should NOT slide
   // the panel open — stay collapsed. First open (no prior selection) uses the

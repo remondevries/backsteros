@@ -192,6 +192,7 @@ export function OrganizationsPage() {
     enabled: keepAliveActive,
     channelFocused: keepAliveActive && Boolean(workspaceChatId),
   });
+  const selectChatConversation = chatInbox.selectConversation;
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
@@ -847,7 +848,11 @@ export function OrganizationsPage() {
 
   // If address exists but coords were never written (e.g. Mapbox wasn't ready
   // during Moneybird sync), geocode once Mapbox is available.
+  // Geocode when an address field changes, not on every new `details` object.
+  const detailsRef = useRef(details);
+  detailsRef.current = details;
   useEffect(() => {
+    const details = detailsRef.current;
     if (
       !keepAliveActive ||
       !panelOrganizationId ||
@@ -953,6 +958,7 @@ export function OrganizationsPage() {
       });
     }
   }, [
+    effectiveGroupId,
     keepAliveActive,
     navigate,
     sectionParam,
@@ -1001,7 +1007,7 @@ export function OrganizationsPage() {
             : "Failed to delete organization.",
       };
     }
-  }, [navigate, selected, selectedGroupId, workspace]);
+  }, [effectiveGroupId, navigate, selected, workspace]);
 
   useEffect(() => {
     if (!panelOrganizationId) {
@@ -1378,10 +1384,10 @@ export function OrganizationsPage() {
       groupMembers.organizationIds.has(org.id),
     );
   }, [
+    effectiveGroupId,
     groupMembers.organizationIds,
     organizationAvatarSrc,
     organizations,
-    selectedGroupId,
     workspace.organizationDetails,
   ]);
 
@@ -1395,7 +1401,7 @@ export function OrganizationsPage() {
         getOrganizationOverlayHref(routeParam, { groupId: effectiveGroupId }),
       );
     },
-    [navigate, organizations, selectedGroupId],
+    [effectiveGroupId, navigate, organizations],
   );
 
   const createAndOpenOrganization = useCallback(() => {
@@ -1435,14 +1441,7 @@ export function OrganizationsPage() {
       .catch((error) => {
         console.warn("[desktop] create organization failed", error);
       });
-  }, [
-    client,
-    navigate,
-    organizations,
-    powerSync,
-    selectedGroupId,
-    workspace,
-  ]);
+  }, [client, effectiveGroupId, navigate, organizations, powerSync, workspace]);
 
   const expandOverlay = useCallback(() => {
     if (!selectedSlugValue) return;
@@ -1468,7 +1467,13 @@ export function OrganizationsPage() {
         { replace: true },
       );
     }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
-  }, [cardSection, navigate, overlayLayout, selectedGroupId, selectedSlugValue]);
+  }, [
+    cardSection,
+    effectiveGroupId,
+    navigate,
+    overlayLayout,
+    selectedSlugValue,
+  ]);
 
   const collapseOverlay = useCallback(() => {
     if (!selectedSlugValue) return;
@@ -1504,7 +1509,13 @@ export function OrganizationsPage() {
         { replace: true },
       );
     }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
-  }, [cardSection, navigate, overlayLayout, selectedGroupId, selectedSlugValue]);
+  }, [
+    cardSection,
+    effectiveGroupId,
+    navigate,
+    overlayLayout,
+    selectedSlugValue,
+  ]);
 
   // After expand navigates to page: fade workspace in.
   useLayoutEffect(() => {
@@ -1650,7 +1661,7 @@ export function OrganizationsPage() {
       detailCloseNavTimerRef.current = null;
       leave();
     }, ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS);
-  }, [beginDetailCollapseAnimation, navigate, selectedGroupId]);
+  }, [beginDetailCollapseAnimation, effectiveGroupId, navigate]);
 
   // Selecting an organization while the reopen strip is showing should NOT
   // slide the panel open — stay collapsed. First open (no prior selection)
@@ -1755,7 +1766,7 @@ export function OrganizationsPage() {
             event.stopImmediatePropagation();
             setWorkspaceTab(tab);
             setWorkspaceChatId(null);
-            chatInbox.selectConversation(null);
+            selectChatConversation(null);
           }
           return;
         }
@@ -1778,6 +1789,7 @@ export function OrganizationsPage() {
     collapseOverlay,
     keepAliveActive,
     overlayLayout,
+    selectChatConversation,
     selected,
     visibleWorkspaceTabIds,
   ]);

@@ -167,12 +167,21 @@ export function useEmailDraftActions({
     updatedAt: string;
   } | null>(null);
 
+  // Re-seed on draft field changes only; poll reloads hand us new objects with
+  // the same content and must not re-run this.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const conceptDraftRef = useRef(message?.conceptDraft);
+  conceptDraftRef.current = message?.conceptDraft;
+
   useEffect(() => {
+    const draft = draftRef.current;
+    const conceptDraft = conceptDraftRef.current;
     const editableBody =
       resolveEditableEmailDraftBody(draft) ||
-      resolveEditableEmailDraftBody(message?.conceptDraft);
+      resolveEditableEmailDraftBody(conceptDraft);
     const serverUpdatedAt =
-      draft?.updatedAt ?? message?.conceptDraft?.updatedAt ?? "";
+      draft?.updatedAt ?? conceptDraft?.updatedAt ?? "";
     const editing = conceptBodyModeRef.current === "edit";
     setConceptBodyDraft((current) => {
       // Keep a locally painted agent body while message detail catches up —
@@ -323,9 +332,12 @@ export function useEmailDraftActions({
     };
   }, [client, composeSession.draftId, composeSession.inboxId, isCompose]);
 
+  const composeDraftRef = useRef(composeDraft);
+  composeDraftRef.current = composeDraft;
+
   useEffect(() => {
     if (!isCompose) return;
-    const editableBody = resolveEditableEmailDraftBody(composeDraft);
+    const editableBody = resolveEditableEmailDraftBody(composeDraftRef.current);
     const editing = conceptBodyModeRef.current === "edit";
     setConceptBodyDraft((current) => {
       if (!editableBody.trim() && current.trim()) return current;
@@ -476,6 +488,8 @@ export function useEmailDraftActions({
       inboxId,
       messageId,
       reloadMessageDetail,
+      setDraft,
+      setMessage,
     ],
   );
 
@@ -566,7 +580,14 @@ export function useEmailDraftActions({
         setConceptSaving(false);
       }
     },
-    [client, draftHeaderPayload, inboxId, message?.subject, messageId],
+    [
+      client,
+      draftHeaderPayload,
+      inboxId,
+      message?.subject,
+      messageId,
+      setMessage,
+    ],
   );
 
   const saveComposeDraft = useCallback(
@@ -827,6 +848,8 @@ export function useEmailDraftActions({
       promoteEmailThreadStatus,
       reloadMessageDetail,
       listReturnHref,
+      setDraft,
+      setMessage,
       toEmailDetailHref,
     ],
   );
@@ -951,18 +974,20 @@ export function useEmailDraftActions({
         });
     },
     [
-      client,
-      composeInboxId,
-      composeSession.sessionId,
-      draftId,
-      inboxId,
       message?.messageId,
       messageId,
+      listReturnHref,
+      setMessage,
+      inboxId,
+      client,
+      setDraft,
+      draftId,
       navigate,
+      toEmailDetailHref,
+      composeSession.sessionId,
+      composeInboxId,
       onComposeFinished,
       reloadMessageDetail,
-      listReturnHref,
-      toEmailDetailHref,
     ],
   );
 

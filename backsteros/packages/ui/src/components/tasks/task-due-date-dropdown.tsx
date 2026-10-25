@@ -40,6 +40,7 @@ import {
   resolveTaskDueDateUrgencyColor,
   TaskDueDateIcon,
 } from "./task-due-date-icon.js";
+import type { PropertyDropdownTriggerVariant } from "../dropdowns/property-dropdown.js";
 
 export type TaskDueDateDropdownProps = {
   dueDate: Date | number | string | null | undefined;
@@ -72,7 +73,7 @@ export type TaskDueDateDropdownProps = {
    */
   labelFormat?: "relative" | "ymd" | "ymd-time" | "long" | "calendar";
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
-  triggerVariant?: import("../dropdowns/property-dropdown.js").PropertyDropdownTriggerVariant;
+  triggerVariant?: PropertyDropdownTriggerVariant;
   /** Open the panel on mount (used by deferred list-row mounts). */
   defaultOpen?: boolean;
   /** Placement for the initial `defaultOpen` (deferred shortcut opens). */

@@ -102,6 +102,8 @@ export function useFinanceSectionPatchHandlers({
       handlePatchTransaction,
       refreshCategorySpend,
       reviewTransactions,
+      setReviewTotalCount,
+      setReviewTransactions,
     ],
   );
 
@@ -161,6 +163,8 @@ export function useFinanceSectionPatchHandlers({
       postTransactionBatch,
       refreshCategorySpend,
       reviewTransactions,
+      setReviewTotalCount,
+      setReviewTransactions,
     ],
   );
 
@@ -204,6 +208,7 @@ export function useFinanceSectionPatchHandlers({
       handlePatchTransaction,
       refreshCategorySpend,
       selectedCategoryId,
+      setCategoryMetrics,
     ],
   );
 
@@ -253,6 +258,7 @@ export function useFinanceSectionPatchHandlers({
       postTransactionBatch,
       refreshCategorySpend,
       selectedCategoryId,
+      setCategoryMetrics,
     ],
   );
 
@@ -298,7 +304,12 @@ export function useFinanceSectionPatchHandlers({
         }
       })();
     },
-    [fetchAccountMetrics, handlePatchTransaction, selectedAccountId],
+    [
+      fetchAccountMetrics,
+      handlePatchTransaction,
+      selectedAccountId,
+      setAccountMetrics,
+    ],
   );
 
   const handleAccountBulkPatch = useCallback(
@@ -352,7 +363,13 @@ export function useFinanceSectionPatchHandlers({
         }
       })();
     },
-    [applyLocalPatch, fetchAccountMetrics, postTransactionBatch, selectedAccountId],
+    [
+      applyLocalPatch,
+      fetchAccountMetrics,
+      postTransactionBatch,
+      selectedAccountId,
+      setAccountMetrics,
+    ],
   );
 
   const handleGoalTransactionPatch = useCallback(
@@ -370,7 +387,7 @@ export function useFinanceSectionPatchHandlers({
       );
       void handlePatchTransaction(id, patch);
     },
-    [handlePatchTransaction],
+    [handlePatchTransaction, setGoalTransactions],
   );
 
   const handleGoalBulkPatch = useCallback(
@@ -392,7 +409,7 @@ export function useFinanceSectionPatchHandlers({
       applyLocalPatch(ids, patch);
       void postTransactionBatch(ids, patch);
     },
-    [applyLocalPatch, postTransactionBatch],
+    [applyLocalPatch, postTransactionBatch, setGoalTransactions],
   );
 
   const handleRecurringTransactionPatch = useCallback(
@@ -416,7 +433,7 @@ export function useFinanceSectionPatchHandlers({
       );
       void handlePatchTransaction(id, patch);
     },
-    [handlePatchTransaction],
+    [handlePatchTransaction, setRecurringMetrics],
   );
 
   const handleRecurringBulkPatch = useCallback(
@@ -445,7 +462,7 @@ export function useFinanceSectionPatchHandlers({
       applyLocalPatch(ids, patch);
       void postTransactionBatch(ids, patch);
     },
-    [applyLocalPatch, postTransactionBatch],
+    [applyLocalPatch, postTransactionBatch, setRecurringMetrics],
   );
 
   return {
