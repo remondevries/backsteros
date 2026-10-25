@@ -26,6 +26,7 @@
     "db:powersync-setup": "pnpm --filter @backsteros/server db:powersync-setup",
     "db:powersync-verify": "pnpm --filter @backsteros/server db:powersync-verify",
     "powersync:up": "BACKSTEROS_COMPOSE_PROJECT=backsteros COMPOSE_PROJECT_NAME=backsteros docker compose up -d mongo powersync",
-    "cli": "pnpm --filter @backsteros/cli exec backsteros"
+    "cli": "pnpm --filter @backsteros/cli exec backsteros",
+    "deploy:check": "node scripts/deploy-check.mjs"
   }
 }

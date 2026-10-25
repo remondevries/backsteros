@@ -44,10 +44,27 @@ bash scripts/local-core/update-build.sh
 # 2. Reload the LaunchAgent so it restarts from runtime/current
 bash scripts/local-core/install-launch-agent.sh
 
-# 3. Confirm commits match
-curl -fsS http://127.0.0.1:8788/health | jq .version
-curl -fsS https://api.local.backsteros.com/health | jq .version   # or your cloud /health
+# 3. Confirm commits match origin/production
+pnpm deploy:check --only=local,cloud
 ```
+
+## Release checklist
+
+After pushing to `production`:
+
+1. **Cloud-core:** `./deploy/cloud/deploy-cloud-core.sh` (add `--powersync` when
+   `deploy/powersync/sync-config.yaml` or the PowerSync publication tables changed).
+   It ends with `deploy:check --only=cloud`.
+2. **Agents door** (when `agents/` changed): `./deploy/agents/deploy-agents.sh`.
+3. **Local-core build:** `bash scripts/local-core/update-build.sh` — rebuilds the
+   `origin/production` worktree and swaps it into `local-core-runtime/current`.
+4. **LaunchAgent reload:** `bash scripts/local-core/install-launch-agent.sh`.
+5. **Verify:** `pnpm deploy:check --fetch` — every target must report the
+   `origin/production` commit (`--json` for scripts). A dirty build fails unless
+   `--allow-dirty`.
+
+Rollback: `./deploy/cloud/deploy-cloud-core.sh --rollback=<12-char sha tag>` or
+`./deploy/agents/deploy-agents.sh --rollback`. Migrations are never reverted.
 
 Overrides:
 - `BACKSTEROS_LOCAL_CORE_BUILD` — build worktree (scratch dirs for tests)

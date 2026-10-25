@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 # Compare local Postgres + cloud Postgres for schema/data/replication readiness.
 # Usage (from repo): ./core/server/scripts/verify-local-cloud-parity.sh
+#
+# Optional env (defaults target live cloud-core on lemodesign):
+#   CLOUD_SSH_HOST=lemodesign
+#   CLOUD_PG_CONTAINER=cloud-postgres-1
+#   CLOUD_CORE_URL=http://100.83.125.67:8788   (lemodesign over Tailscale)
+#   LOCAL_CORE_URL=http://127.0.0.1:8788
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DRIZZLE="$ROOT/drizzle"
 FAIL=0
+
+CLOUD_SSH_HOST="${CLOUD_SSH_HOST:-lemodesign}"
+CLOUD_PG_CONTAINER="${CLOUD_PG_CONTAINER:-cloud-postgres-1}"
+CLOUD_CORE_URL="${CLOUD_CORE_URL:-http://100.83.125.67:8788}"
+LOCAL_CORE_URL="${LOCAL_CORE_URL:-http://127.0.0.1:8788}"
+if [[ "$CLOUD_SSH_HOST" == "hetzner" || "$CLOUD_SSH_HOST" == "production" ]]; then
+  echo "error: ${CLOUD_SSH_HOST} has no cloud-core compose — cloud-core lives on lemodesign." >&2
+  exit 1
+fi
 
 note() { printf '==> %s\n' "$*"; }
 ok() { printf '  OK  %s\n' "$*"; }
@@ -16,19 +31,19 @@ q_local() {
 }
 q_cloud() {
   # Quote SQL for the remote shell so parentheses/spaces survive ssh.
-  ssh hetzner "docker exec cloud-postgres-1 psql -U backsteros -d backsteros -Atc $(printf '%q' "$1")"
+  ssh "$CLOUD_SSH_HOST" "docker exec ${CLOUD_PG_CONTAINER} psql -U backsteros -d backsteros -Atc $(printf '%q' "$1")"
 }
 
 note "Process health"
-if curl -fsS --max-time 3 http://127.0.0.1:8788/health >/dev/null; then
-  ok "local core :8788"
+if curl -fsS --max-time 3 "${LOCAL_CORE_URL}/health" >/dev/null; then
+  ok "local core ${LOCAL_CORE_URL}"
 else
-  bad "local core :8788 not healthy"
+  bad "local core ${LOCAL_CORE_URL} not healthy"
 fi
-if curl -fsS --max-time 3 http://100.75.45.22:8788/health >/dev/null; then
-  ok "cloud core :8788"
+if curl -fsS --max-time 3 "${CLOUD_CORE_URL}/health" >/dev/null; then
+  ok "cloud core ${CLOUD_CORE_URL}"
 else
-  bad "cloud core not healthy"
+  bad "cloud core ${CLOUD_CORE_URL} not healthy"
 fi
 if curl -fsS --max-time 3 http://localhost:1420/ >/dev/null; then
   ok "desktop vite :1420"
@@ -49,9 +64,10 @@ C_HAS="$(q_cloud "SELECT COUNT(*) FROM drizzle.__drizzle_migrations WHERE hash =
 [[ "$C_HAS" == "1" ]] && ok "cloud has 0103" || bad "cloud missing 0103"
 
 note "Journal file hashes present on both DBs"
-python3 - "$DRIZZLE" <<'PY' || FAIL=1
+python3 - "$DRIZZLE" "$CLOUD_SSH_HOST" "$CLOUD_PG_CONTAINER" <<'PY' || FAIL=1
 import hashlib, json, pathlib, subprocess, sys
 drizzle = pathlib.Path(sys.argv[1])
+cloud_host, cloud_container = sys.argv[2], sys.argv[3]
 journal = json.loads((drizzle / "meta/_journal.json").read_text())["entries"]
 local = set(
     subprocess.check_output(
@@ -75,8 +91,8 @@ cloud = set(
     subprocess.check_output(
         [
             "ssh",
-            "hetzner",
-            "docker exec cloud-postgres-1 psql -U backsteros -d backsteros -Atc \"SELECT hash FROM drizzle.__drizzle_migrations\"",
+            cloud_host,
+            f"docker exec {cloud_container} psql -U backsteros -d backsteros -Atc \"SELECT hash FROM drizzle.__drizzle_migrations\"",
         ]
     )
     .decode()

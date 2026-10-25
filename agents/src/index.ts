@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app.js";
+import { resolveAgentsBuild } from "./build-info.js";
 
 const upstreamUrl = process.env.CORE_UPSTREAM_URL?.trim();
 if (!upstreamUrl) {
@@ -16,7 +17,7 @@ const requestTimeoutMs = process.env.REQUEST_TIMEOUT_MS
   ? Number(process.env.REQUEST_TIMEOUT_MS)
   : undefined;
 
-const app = createApp({ upstreamUrl, requestTimeoutMs });
+const app = createApp({ upstreamUrl, requestTimeoutMs, build: resolveAgentsBuild() });
 
 serve(
   {

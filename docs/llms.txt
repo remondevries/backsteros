@@ -1,5 +1,5 @@
 # BacksterOS documentation index
-# Workspace: ~/code/backsteros/
+# Workspace: ~/BacksterOS/Projects/OS/Codebase/
 # For AI agents: load AGENTS.md first, then fetch only the docs relevant to your task.
 
 > Code: core/, mobile/, backsteros/, agents/, backsterdev/, backstermeet/, backsterdesign/

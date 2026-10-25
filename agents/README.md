@@ -144,6 +144,14 @@ Health: `GET http://127.0.0.1:3080/health`
 
 ## Deploy on the VPS
 
+Routine deploys: `./deploy/agents/deploy-agents.sh` from the repo root (builds,
+rsyncs to `lemodesign:/srv/backsteros/agents`, restarts the unit, then
+`pnpm deploy:check --only=agents`; `--rollback` restores the previous build).
+`/health` reports `build: { commit, builtAt, dirty }` from the `build-info.json`
+that script writes.
+
+First-time setup:
+
 1. Cloud-core container listening on `127.0.0.1:8788` (see `deploy/cloud/`).
 2. Build and run the proxy (systemd unit `backsteros-agents.service`):
 
@@ -167,10 +175,12 @@ WantedBy=multi-user.target
 ```bash
 CORE_UPSTREAM_URL=http://127.0.0.1:8788
 PORT=3080
-LISTEN_HOST=127.0.0.1
+LISTEN_HOST=172.18.0.1
 ```
 
-nginx terminates TLS for `agent.backsteros.com` → `127.0.0.1:3080`.
+On lemodesign, Caddy (`lemodesign-caddy-1`) terminates TLS for
+`agent.backsteros.com` and reaches the door on the Docker bridge at
+`172.18.0.1:3080`.
 
 ## Verify
 

@@ -3,6 +3,7 @@
 .env
 .env.*
 core/server/build-info.json
+agents/build-info.json
 .migration-reports/
 .turbo/
 # Drizzle Kit writes snapshots under meta/; the migration journal must always be committed.

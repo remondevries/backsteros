@@ -17,7 +17,7 @@ WORKFLOW RULE: Commit and push directly to the production branch. No pull reques
    ```
    `pnpm test:integration` creates `backsteros_test` if needed, migrates it, and refuses to run against the live local-core DB named `backsteros`. It reads `INTEGRATION_DATABASE_URL` first, then `core/server/integration.env`, then a shell `DATABASE_URL` (ignored when it names the live DB). CI points `INTEGRATION_DATABASE_URL` at `backsteros_test` with `INTEGRATION_USE_EXISTING_DB=1`.
    If you changed anything under `backsterdev/`, also run `vp run -r typecheck` and `vp run -r test` inside `backsterdev/` (mobile typecheck is noisy upstream — use `vp run --filter @t3tools/mobile typecheck` when you touch mobile).
-   When `backsterdev/` is installed locally, root `pnpm typecheck` delegates a filtered package set (excludes `@t3tools/mobile`); root `pnpm test` does not run the nested T3 suite — run that inside `backsterdev/` when you change it.
+   `backsterdev/` is not a root workspace member, so root `pnpm typecheck` and `pnpm test` do not cover it — run the `vp` commands above inside `backsterdev/` when you change it.
 4. **If anything fails, fix it locally and rerun the suite before pushing.** Never push red, never push "to see what CI says", and never skip or disable a failing test to get green.
 5. **Local runs are the gate.** `.github/workflows/ci.yml` also runs on pushes to `production` (mobile excluded), but only after the push has landed, so it catches mistakes — it does not prevent them.
 6. Before pushing, `git pull --rebase origin production` so history stays linear, then rerun the suite if the rebase brought in new commits.
@@ -94,7 +94,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `mobile/` | Expo — Clerk + PowerSync |
 | `backsteros/` | Tauri 2 + Vite/React; desktop-owned UI under `backsteros/packages/ui/` (package `@backsteros/desktop`) |
 | `agents/` | Public HTTPS door for always-on API agents |
-| `backsterdev/` | Nested T3 Code agent console; filter shim at `backsterdev/shim/` (`@backsteros/development`) |
+| `backsterdev/` | Nested T3 Code agent console with its own lockfile; not a root workspace member (the `@backsteros/development` shim was removed in BDV-62) |
 | `backstermeet/` | BacksterMeet — Tauri 2 + Vite/React Director (host) app for live meetings; guests join via the client portal on the same LiveKit SFU. Package `@backsteros/meet`; see `backstermeet/AGENTS.md` |
 | `backsterdesign/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `tooling/design/` | Filter shim — `pnpm --filter @backsteros/design …` |

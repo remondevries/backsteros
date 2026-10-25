@@ -3,6 +3,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 
 import { isRouteAllowed } from "./allowlist.js";
+import type { AgentsBuild } from "./build-info.js";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -19,6 +20,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 export type AgentsAppOptions = {
   upstreamUrl: string;
   requestTimeoutMs?: number;
+  build?: AgentsBuild | null;
 };
 
 function buildProxyHeaders(incoming: Headers): Headers {
@@ -58,6 +60,7 @@ export function createApp(options: AgentsAppOptions) {
       ok: true as const,
       service: "backsteros-agents",
       version: "0.1.0",
+      build: options.build ?? null,
     }),
   );
 

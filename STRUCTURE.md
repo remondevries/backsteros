@@ -24,7 +24,7 @@ Single workspace: **`~/BacksterOS/Projects/OS/Codebase/`** (branch `production`)
 │   └── packages/ui/            ← desktop-owned UI (not shared with mobile)
 ├── agents/                     ← public HTTPS door (agent.backsteros.com)
 ├── backsterdev/                ← nested T3 Code monorepo (@t3tools/monorepo; own lockfile) — was development/
-│   └── shim/                   ← @backsteros/development workspace shim
+│   └── shim/                   ← README only (shim package removed in BDV-62)
 ├── backstermeet/               ← BacksterMeet — Tauri 2 Director (host) app for live meetings (@backsteros/meet)
 ├── backsterdesign/             ← BacksterDESIGN — nested Penpot fork (+ branding/, local devenv)
 │   └── desktop/                ← Tauri 2 shell (@backsteros/design-desktop)
@@ -43,8 +43,8 @@ v1 Next apps (app/admin/development/sync-demo) were moved out to
 | `mobile/` | Expo product shell |
 | `backsteros/` | Tauri product shell (package name `@backsteros/desktop`) |
 | `agents/` | VPS agents door → cloud-core |
-| `backsterdev/` | Nested T3 Code agent console (not a root workspace member; shim is) |
-| `backsterdev/shim/` | Filter shim — `pnpm --filter @backsteros/development …` |
+| `backsterdev/` | Nested T3 Code agent console with its own lockfile. Not a root workspace member, so root `pnpm typecheck` / `pnpm test` skip it: run `vp run -r typecheck` and `vp run -r test` inside `backsterdev/`. |
+| `backsterdev/shim/` | README only. The `@backsteros/development` shim `package.json` was removed in BDV-62 (`72fdba7`); do not re-add it to `pnpm-workspace.yaml`. |
 | `backstermeet/` | BacksterMeet — Tauri 2 + Vite/React **Director** host app for live meetings (package `@backsteros/meet`, dev port 1430). Guest side is the client portal; both join one LiveKit SFU. See `backstermeet/AGENTS.md` |
 | `backsterdesign/` | BacksterDESIGN — vendored Penpot fork; `pnpm --filter @backsteros/design dev` → https://localhost:3449 |
 | `backsterdesign/desktop/` | Tauri 2 shell — `pnpm --filter @backsteros/design-desktop tauri:dev` (needs `PENPOT_PUBLIC_URI`) |
