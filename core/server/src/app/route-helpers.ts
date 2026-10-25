@@ -8,6 +8,7 @@ import { requireScope } from "../middleware/auth.js";
 import {
   ListQueryError,
 } from "../lib/list-query.js";
+import { logger } from "../lib/logger.js";
 import { TaskFilterError } from "../lib/task-filters.js";
 import {
   isWorkspaceUpdatedKind,
@@ -69,3 +70,14 @@ export function nudgePeerEntityLive(
   });
 }
 
+/** OS-45 access line for agent API-key calls (gated by LOG_LEVEL). */
+export function logApiKeyRequest(
+  auth: Pick<AuthContext, "apiKeyName" | "apiKeyId">,
+  method: string,
+  pathWithSearch: string,
+  status: number,
+): void {
+  logger.info(
+    `[api-key] ${JSON.stringify(auth.apiKeyName ?? auth.apiKeyId ?? "?")} ${method} ${pathWithSearch} ${status}`,
+  );
+}

@@ -10,7 +10,7 @@ import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import { subscribeWorkspaceUpdated } from "../lib/workspace-events.js";
 import { isTvTodayCountsAuth } from "../lib/tv-today-counts-auth.js";
 import { getTvTodayCounts } from "../services/tv-today-counts.js";
-import { forbidden, unauthorized } from "./route-helpers.js";
+import { forbidden, logApiKeyRequest, unauthorized } from "./route-helpers.js";
 
 async function requireTvTodayCountsAuth(c: Context, next: Next) {
   const auth = await resolveAuth(c.req.header("Authorization"));
@@ -30,9 +30,7 @@ async function requireTvTodayCountsAuth(c: Context, next: Next) {
   c.set("auth", auth);
   await next();
   const url = new URL(c.req.url);
-  console.log(
-    `[api-key] ${JSON.stringify(auth.apiKeyName ?? auth.apiKeyId ?? "?")} ${c.req.method} ${url.pathname}${url.search} ${c.res.status}`,
-  );
+  logApiKeyRequest(auth, c.req.method, `${url.pathname}${url.search}`, c.res.status);
 }
 
 export function registerTvTodayCountsRoutes(app: Hono) {

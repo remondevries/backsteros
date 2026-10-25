@@ -138,6 +138,7 @@ import {
   notFound,
   listQueryErrorBody,
   nudgePeerEntityLive,
+  logApiKeyRequest,
 } from "./route-helpers.js";
 import {
   normalizeAvatarMimeType,
@@ -157,6 +158,7 @@ import {
   MAX_TASK_IMAGE_BYTES,
   MAX_UPLOAD_BYTES,
 } from "../lib/upload-limits.js";
+import { requestClientAddress } from "../lib/request-address.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import {
@@ -710,20 +712,17 @@ export async function withAuth(c: Context, next: Next) {
   }
   c.set("auth", auth);
   if (auth.kind === "api_key" && auth.apiKeyId) {
-    const { requestClientAddress } = await import("../lib/request-address.js");
-    const { touchApiKeyLastUsed } = await import("../services/api-keys.js");
-    void touchApiKeyLastUsed(auth.apiKeyId, requestClientAddress(c));
+    void apiKeyService.touchApiKeyLastUsed(
+      auth.apiKeyId,
+      requestClientAddress(c),
+    );
   }
   await next();
   if (auth.kind === "api_key" && auth.apiKeyId) {
     // OS-45: which agent key made which call (name only, never the secret).
     const url = new URL(c.req.url);
-    console.log(
-      `[api-key] ${JSON.stringify(auth.apiKeyName ?? auth.apiKeyId ?? "?")} ${c.req.method} ${url.pathname}${url.search} ${c.res.status}`,
-    );
-    const { requestClientAddress } = await import("../lib/request-address.js");
-    const { recordApiKeyRequest } = await import("../services/api-keys.js");
-    void recordApiKeyRequest({
+    logApiKeyRequest(auth, c.req.method, `${url.pathname}${url.search}`, c.res.status);
+    void apiKeyService.recordApiKeyRequest({
       workspaceId: auth.workspaceId,
       apiKeyId: auth.apiKeyId,
       apiKeyName: auth.apiKeyName ?? auth.apiKeyId,

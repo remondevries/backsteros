@@ -7,6 +7,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import {
   apiKeyAuditLogs,
   apiKeyRequestLogs,
@@ -120,7 +121,11 @@ export async function recordApiKeyRequest(input: {
       status,
       address: input.address?.trim() || null,
     });
-  } catch {
+  } catch (error) {
+    logger.warn(
+      `[api-key] request log insert failed for key ${input.apiKeyId}:`,
+      error instanceof Error ? error.message : error,
+    );
     return;
   }
 
