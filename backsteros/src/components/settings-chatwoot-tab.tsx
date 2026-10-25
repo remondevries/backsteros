@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   ChatSyncResult,
   ChatwootSettings,
-  ChatwootTestConnectionResult,
 } from "@backsteros/contracts";
 import {
   SegmentedPillToggle,
@@ -11,7 +10,8 @@ import {
   useIntegrationSettingsHeaderTrailing,
 } from "@backsteros/ui";
 
-import { useDesktopApi } from "../lib/api-context";
+import { useWorkspaceIntegrationSettings } from "../lib/settings/use-workspace-integration-settings";
+import type { IntegrationSettingsTabProps } from "./settings/integration-secret-settings-panel";
 
 type ChatwootSubTab = "connection" | "sync";
 
@@ -21,80 +21,39 @@ const CHATWOOT_SUB_TABS: { value: ChatwootSubTab; label: string }[] = [
 ];
 
 export function SettingsChatwootTab({
-  title: _title,
-  description: _description,
-  hideHeader: _hideHeader = false,
-}: {
-  title: string;
-  description: string;
-  hideHeader?: boolean;
-}) {
-  const { client } = useDesktopApi();
+  initialSettings,
+}: IntegrationSettingsTabProps<ChatwootSettings>) {
   const [subTab, setSubTab] = useState<ChatwootSubTab>("connection");
-  const [settings, setSettings] = useState<ChatwootSettings | null>(null);
   const [baseUrlDraft, setBaseUrlDraft] = useState("");
   const [accountIdDraft, setAccountIdDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
-  const loadSettings = useCallback(async () => {
-    try {
-      const body = await client.requestJson<ChatwootSettings>(
-        "/api/v1/settings/chatwoot",
-      );
-      setSettings(body);
-      setBaseUrlDraft(body.baseUrl ?? "");
-      setAccountIdDraft(body.accountId ?? "");
-      setSettingsError(null);
-      return body;
-    } catch (error) {
-      setSettingsError(
-        error instanceof Error
-          ? error.message
-          : "Could not load Chatwoot settings.",
-      );
-      return null;
+  const seedDrafts = useCallback((body: ChatwootSettings) => {
+    setBaseUrlDraft(body.baseUrl ?? "");
+    setAccountIdDraft(body.accountId ?? "");
+  }, []);
+  const {
+    client,
+    settings,
+    settingsError,
+    saving,
+    patchSettings,
+    testConnection,
+  } = useWorkspaceIntegrationSettings<
+    ChatwootSettings,
+    {
+      baseUrl?: string;
+      accountId?: string;
+      apiAccessToken?: string;
+      webhookSecret?: string;
     }
-  }, [client]);
-
-  useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
-
-  const patchSettings = async (patch: {
-    baseUrl?: string;
-    accountId?: string;
-    apiAccessToken?: string;
-    webhookSecret?: string;
-  }): Promise<ChatwootSettings> => {
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      const body = await client.requestJson<ChatwootSettings>(
-        "/api/v1/settings/chatwoot",
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(patch),
-        },
-      );
-      setSettings(body);
-      setBaseUrlDraft(body.baseUrl ?? "");
-      setAccountIdDraft(body.accountId ?? "");
-      return body;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not save Chatwoot settings.";
-      setSettingsError(message);
-      throw new Error(message, { cause: error });
-    } finally {
-      setSaving(false);
-    }
-  };
+  >({
+    basePath: "/api/v1/settings/chatwoot",
+    label: "Chatwoot",
+    initialSettings,
+    onLoaded: seedDrafts,
+  });
 
   const connectionDirty =
     baseUrlDraft.trim() !== (settings?.baseUrl ?? "").trim() ||
@@ -180,16 +139,7 @@ export function SettingsChatwootTab({
                 <SettingsTestConnectionSwap
                   disabled={!canTest}
                   onTest={async () => {
-                    const result =
-                      await client.requestJson<ChatwootTestConnectionResult>(
-                        "/api/v1/settings/chatwoot/test",
-                      );
-                    await loadSettings();
-                    if (!result.ok) {
-                      throw new Error(
-                        result.error ?? "Chatwoot connection test failed.",
-                      );
-                    }
+                    await testConnection("Chatwoot connection test failed.");
                   }}
                 />
               }

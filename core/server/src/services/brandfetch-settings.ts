@@ -1,97 +1,47 @@
-import { eq } from "drizzle-orm";
-
 import type {
   BrandfetchSettings,
   BrandfetchTestConnectionResult,
-  UpdateBrandfetchSettingsInput,
 } from "@backsteros/contracts";
 
-import { db } from "../db/index.js";
-import { workspaceIntegrationSecrets } from "../db/schema.js";
 import {
   brandfetchApiKeyFromEnv,
   previewBrandfetchApiKey,
 } from "./brandfetch-env.js";
+import { createIntegrationSecretSettingsService } from "./integration-secret-settings.js";
+import { workspaceIntegrationSecretStore } from "./integration-secret-store.js";
 
 export { brandfetchApiKeyFromEnv, previewBrandfetchApiKey };
 
-async function getSecretRow(
-  workspaceId: string,
-): Promise<{ brandfetchApiKey: string | null } | null> {
-  const [row] = await db
-    .select({
-      brandfetchApiKey: workspaceIntegrationSecrets.brandfetchApiKey,
-    })
-    .from(workspaceIntegrationSecrets)
-    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
-    .limit(1);
-  return row ?? null;
-}
+const brandfetchSettings = createIntegrationSecretSettingsService({
+  store: workspaceIntegrationSecretStore("brandfetchApiKey"),
+  patchKey: "apiKey",
+  preview: previewBrandfetchApiKey,
+  envFallback: brandfetchApiKeyFromEnv,
+  toSettings: (state): BrandfetchSettings => ({
+    apiKeyConfigured: state.configured,
+    apiKeyPreview: state.preview,
+    connected: state.connected,
+    envKeyConfigured: state.envConfigured,
+  }),
+  test: testBrandfetchApiKey,
+});
 
 /** Workspace-stored Brand API key (Settings → Brandfetch). */
-export async function getWorkspaceBrandfetchApiKey(
-  workspaceId: string,
-): Promise<string | null> {
-  const row = await getSecretRow(workspaceId);
-  const key = row?.brandfetchApiKey?.trim();
-  return key || null;
-}
+export const getWorkspaceBrandfetchApiKey =
+  brandfetchSettings.getWorkspaceSecret;
 
 /** Workspace key, then `BRANDFETCH_API_KEY` env fallback (GitHub pattern). */
-export async function getBrandfetchApiKey(
-  workspaceId: string,
-): Promise<string | null> {
-  const fromWorkspace = await getWorkspaceBrandfetchApiKey(workspaceId);
-  if (fromWorkspace) return fromWorkspace;
-  return brandfetchApiKeyFromEnv();
-}
+export const getBrandfetchApiKey = brandfetchSettings.getSecret;
 
-export async function getBrandfetchSettings(
-  workspaceId: string,
-): Promise<BrandfetchSettings> {
-  const apiKey = await getWorkspaceBrandfetchApiKey(workspaceId);
-  const envKeyConfigured = brandfetchApiKeyFromEnv() != null;
-  return {
-    apiKeyConfigured: Boolean(apiKey),
-    apiKeyPreview: apiKey ? previewBrandfetchApiKey(apiKey) : null,
-    connected: Boolean(apiKey) || envKeyConfigured,
-    envKeyConfigured,
-  };
-}
+export const getBrandfetchSettings = brandfetchSettings.getSettings;
 
-export async function updateBrandfetchSettings(
-  workspaceId: string,
-  patch: UpdateBrandfetchSettingsInput,
-): Promise<BrandfetchSettings> {
-  const current = await getWorkspaceBrandfetchApiKey(workspaceId);
-  let nextKey = current;
+export const updateBrandfetchSettings = brandfetchSettings.updateSettings;
 
-  if (patch.apiKey !== undefined) {
-    const trimmed = patch.apiKey.trim();
-    nextKey = trimmed.length > 0 ? trimmed : null;
-  }
+export const testBrandfetchConnection = brandfetchSettings.testConnection;
 
-  await db
-    .insert(workspaceIntegrationSecrets)
-    .values({
-      workspaceId,
-      brandfetchApiKey: nextKey,
-    })
-    .onConflictDoUpdate({
-      target: workspaceIntegrationSecrets.workspaceId,
-      set: {
-        brandfetchApiKey: nextKey,
-        updatedAt: new Date(),
-      },
-    });
-
-  return getBrandfetchSettings(workspaceId);
-}
-
-export async function testBrandfetchConnection(
-  workspaceId: string,
+async function testBrandfetchApiKey(
+  apiKey: string | null,
 ): Promise<BrandfetchTestConnectionResult> {
-  const apiKey = await getBrandfetchApiKey(workspaceId);
   if (!apiKey) {
     return {
       ok: false,

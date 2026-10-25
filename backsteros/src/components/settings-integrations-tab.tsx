@@ -64,6 +64,17 @@ type IntegrationStatus = {
 
 type ProbeResult = { ok: boolean };
 
+/** GET bodies from the overview load, handed to tabs as `initialSettings`. */
+type LoadedIntegrationSettings = {
+  github?: GithubSettings | null;
+  cloudflare?: CloudflareSettings | null;
+  moneybird?: MoneybirdSettings | null;
+  mapbox?: MapboxSettings | null;
+  brandfetch?: BrandfetchSettings | null;
+  chatwoot?: ChatwootSettings | null;
+  social?: SocialSettings | null;
+};
+
 const EMPTY_STATUS: IntegrationStatus = {
   configured: false,
   connected: false,
@@ -84,6 +95,8 @@ export function SettingsIntegrationsTab({
     Partial<Record<WorkspaceIntegrationId, IntegrationStatus>>
   >({});
   const [statusesLoading, setStatusesLoading] = useState(true);
+  const [loadedSettings, setLoadedSettings] =
+    useState<LoadedIntegrationSettings>({});
   const [enabledMap, setEnabledMap] = useState<IntegrationEnabledMap>({});
   const [togglingId, setTogglingId] =
     useState<WorkspaceIntegrationId | null>(null);
@@ -113,7 +126,7 @@ export function SettingsIntegrationsTab({
       pickConfigured: (body: T) => boolean,
       /** When false, skip the live probe (e.g. missing credentials). */
       canProbe?: (body: T) => boolean,
-    ): Promise<{ configured: boolean; probe: boolean }> => {
+    ): Promise<{ configured: boolean; probe: boolean; body: T | null }> => {
       try {
         const body = await loader();
         const configured = pickConfigured(body);
@@ -123,10 +136,10 @@ export function SettingsIntegrationsTab({
           connected: false,
           checking: probe,
         };
-        return { configured, probe };
+        return { configured, probe, body };
       } catch {
         next[id] = EMPTY_STATUS;
-        return { configured: false, probe: false };
+        return { configured: false, probe: false, body: null };
       }
     };
 
@@ -271,6 +284,15 @@ export function SettingsIntegrationsTab({
 
     publish();
     setStatusesLoading(false);
+    setLoadedSettings({
+      github: github.body,
+      cloudflare: cloudflare.body,
+      moneybird: moneybird.body,
+      mapbox: mapbox.body,
+      brandfetch: brandfetch.body,
+      chatwoot: chatwoot.body,
+      social: social.body,
+    });
 
     // 2) Live probes in parallel — same endpoints as each Settings "Test" button.
     await Promise.all([
@@ -425,9 +447,15 @@ export function SettingsIntegrationsTab({
   const activeMeta = activeId ? getWorkspaceIntegrationMeta(activeId) : null;
 
   const closeModal = useCallback(() => {
+    if (activeId) {
+      // Edits in the modal make the overview body stale; refetch on reopen.
+      setLoadedSettings((current) =>
+        activeId in current ? { ...current, [activeId]: undefined } : current,
+      );
+    }
     setActiveId(null);
     clearOpenSearch();
-  }, [clearOpenSearch]);
+  }, [activeId, clearOpenSearch]);
 
   return (
     <>
@@ -456,6 +484,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.github}
           />
         ) : null}
         {activeId === "transip" && activeMeta ? (
@@ -470,6 +499,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.cloudflare}
           />
         ) : null}
         {activeId === "moneybird" && activeMeta ? (
@@ -477,6 +507,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.moneybird}
           />
         ) : null}
         {activeId === "mapbox" && activeMeta ? (
@@ -484,6 +515,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.mapbox}
           />
         ) : null}
         {activeId === "brandfetch" && activeMeta ? (
@@ -491,6 +523,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.brandfetch}
           />
         ) : null}
         {activeId === "chatwoot" && activeMeta ? (
@@ -498,6 +531,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.chatwoot}
           />
         ) : null}
         {activeId === "google-calendar" && activeMeta ? (
@@ -519,6 +553,7 @@ export function SettingsIntegrationsTab({
             title={activeMeta.title}
             description={activeMeta.description}
             hideHeader
+            initialSettings={loadedSettings.social}
           />
         ) : null}
         {activeId === "whoop" && activeMeta ? (

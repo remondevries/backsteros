@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   MoneybirdAdministrationSummary,
   MoneybirdSettings,
-  MoneybirdTestConnectionResult,
 } from "@backsteros/contracts";
 import {
   SegmentedPillToggle,
@@ -12,6 +11,8 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import { useWorkspaceIntegrationSettings } from "../lib/settings/use-workspace-integration-settings";
+import type { IntegrationSettingsTabProps } from "./settings/integration-secret-settings-panel";
 
 type MoneybirdSubTab = "api-token" | "administration";
 
@@ -21,92 +22,40 @@ const MONEYBIRD_SUB_TABS: { value: MoneybirdSubTab; label: string }[] = [
 ];
 
 export function SettingsMoneybirdTab({
-  title: _title,
-  description: _description,
-  hideHeader: _hideHeader = false,
-}: {
-  title: string;
-  description: string;
-  hideHeader?: boolean;
-}) {
+  initialSettings,
+}: IntegrationSettingsTabProps<MoneybirdSettings>) {
   const { client } = useDesktopApi();
   const [subTab, setSubTab] = useState<MoneybirdSubTab>("api-token");
-  const [settings, setSettings] = useState<MoneybirdSettings | null>(null);
   const [administrations, setAdministrations] = useState<
     MoneybirdAdministrationSummary[]
   >([]);
-  const [saving, setSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
   const loadAdministrations = useCallback(
-    async (configured: boolean) => {
-      if (!configured) {
+    async (body: MoneybirdSettings) => {
+      if (!body.apiTokenConfigured) {
         setAdministrations([]);
         return;
       }
       try {
-        const body = await client.requestJson<{
+        const result = await client.requestJson<{
           administrations: MoneybirdAdministrationSummary[];
         }>("/api/v1/settings/moneybird/administrations");
-        setAdministrations(body.administrations);
+        setAdministrations(result.administrations);
       } catch {
         setAdministrations([]);
       }
     },
     [client],
   );
-
-  const loadSettings = useCallback(async () => {
-    try {
-      const body = await client.requestJson<MoneybirdSettings>(
-        "/api/v1/settings/moneybird",
-      );
-      setSettings(body);
-      setSettingsError(null);
-      await loadAdministrations(body.apiTokenConfigured);
-      return body;
-    } catch (error) {
-      setSettingsError(
-        error instanceof Error
-          ? error.message
-          : "Could not load Moneybird settings.",
-      );
-      return null;
-    }
-  }, [client, loadAdministrations]);
-
-  useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
-
-  const patchSettings = async (patch: {
-    apiToken?: string;
-    administrationId?: string | null;
-  }): Promise<MoneybirdSettings> => {
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      const body = await client.requestJson<MoneybirdSettings>(
-        "/api/v1/settings/moneybird",
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(patch),
-        },
-      );
-      setSettings(body);
-      await loadAdministrations(body.apiTokenConfigured);
-      return body;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not save Moneybird settings.";
-      setSettingsError(message);
-      throw new Error(message, { cause: error });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { settings, settingsError, saving, patchSettings, testConnection } =
+    useWorkspaceIntegrationSettings<
+      MoneybirdSettings,
+      { apiToken?: string; administrationId?: string | null }
+    >({
+      basePath: "/api/v1/settings/moneybird",
+      label: "Moneybird",
+      initialSettings,
+      onLoaded: (body) => void loadAdministrations(body),
+    });
 
   const headerTrailing = useMemo(
     () => (
@@ -154,16 +103,7 @@ export function SettingsMoneybirdTab({
                     settings === null || !settings.apiTokenConfigured
                   }
                   onTest={async () => {
-                    const result =
-                      await client.requestJson<MoneybirdTestConnectionResult>(
-                        "/api/v1/settings/moneybird/test",
-                      );
-                    await loadSettings();
-                    if (!result.ok) {
-                      throw new Error(
-                        result.error ?? "Moneybird connection test failed.",
-                      );
-                    }
+                    await testConnection("Moneybird connection test failed.");
                   }}
                 />
               }

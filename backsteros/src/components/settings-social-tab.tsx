@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  SocialSettings,
-  SocialTestConnectionResult,
-} from "@backsteros/contracts";
+import { useMemo, useState } from "react";
+import type { SocialSettings } from "@backsteros/contracts";
 import {
   SegmentedPillToggle,
   SettingsSecretField,
@@ -10,7 +7,8 @@ import {
   useIntegrationSettingsHeaderTrailing,
 } from "@backsteros/ui";
 
-import { useDesktopApi } from "../lib/api-context";
+import { useWorkspaceIntegrationSettings } from "../lib/settings/use-workspace-integration-settings";
+import type { IntegrationSettingsTabProps } from "./settings/integration-secret-settings-panel";
 
 const CONNECT_PLATFORMS: Array<{ id: string; label: string }> = [
   { id: "x", label: "X" },
@@ -31,70 +29,24 @@ const SOCIAL_SUB_TABS: { value: SocialSubTab; label: string }[] = [
 ];
 
 export function SettingsSocialTab({
-  title: _title,
-  description: _description,
-  hideHeader: _hideHeader = false,
-}: {
-  title: string;
-  description: string;
-  hideHeader?: boolean;
-}) {
-  const { client } = useDesktopApi();
+  initialSettings,
+}: IntegrationSettingsTabProps<SocialSettings>) {
   const [subTab, setSubTab] = useState<SocialSubTab>("api-key");
-  const [settings, setSettings] = useState<SocialSettings | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
-
-  const loadSettings = useCallback(async () => {
-    try {
-      const body = await client.requestJson<SocialSettings>(
-        "/api/v1/settings/social",
-      );
-      setSettings(body);
-      setSettingsError(null);
-      return body;
-    } catch (error) {
-      setSettingsError(
-        error instanceof Error
-          ? error.message
-          : "Could not load social settings.",
-      );
-      return null;
-    }
-  }, [client]);
-
-  useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
-
-  const patchSettings = async (patch: {
-    apiKey?: string;
-  }): Promise<SocialSettings> => {
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      const body = await client.requestJson<SocialSettings>(
-        "/api/v1/settings/social",
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(patch),
-        },
-      );
-      setSettings(body);
-      return body;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not save social settings.";
-      setSettingsError(message);
-      throw new Error(message, { cause: error });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const {
+    client,
+    settings,
+    settingsError,
+    setSettingsError,
+    saving,
+    patchSettings,
+    runSettingsRequest,
+    testConnection,
+  } = useWorkspaceIntegrationSettings<SocialSettings, { apiKey?: string }>({
+    basePath: "/api/v1/settings/social",
+    label: "social",
+    initialSettings,
+  });
 
   const onConnect = async (platform: string) => {
     setConnecting(platform);
@@ -120,45 +72,25 @@ export function SettingsSocialTab({
     }
   };
 
-  const onSyncAccounts = async () => {
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      const body = await client.requestJson<SocialSettings>(
-        "/api/v1/settings/social/sync-accounts",
-        { method: "POST" },
-      );
-      setSettings(body);
-    } catch (error) {
-      setSettingsError(
-        error instanceof Error
-          ? error.message
-          : "Could not sync social accounts.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
+  const onSyncAccounts = () =>
+    runSettingsRequest(
+      () =>
+        client.requestJson<SocialSettings>(
+          "/api/v1/settings/social/sync-accounts",
+          { method: "POST" },
+        ),
+      "Could not sync social accounts.",
+    ).catch(() => undefined);
 
-  const onDisconnect = async (accountId: string) => {
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      const body = await client.requestJson<SocialSettings>(
-        `/api/v1/settings/social/accounts/${encodeURIComponent(accountId)}/disconnect`,
-        { method: "POST" },
-      );
-      setSettings(body);
-    } catch (error) {
-      setSettingsError(
-        error instanceof Error
-          ? error.message
-          : "Could not disconnect account.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
+  const onDisconnect = (accountId: string) =>
+    runSettingsRequest(
+      () =>
+        client.requestJson<SocialSettings>(
+          `/api/v1/settings/social/accounts/${encodeURIComponent(accountId)}/disconnect`,
+          { method: "POST" },
+        ),
+      "Could not disconnect account.",
+    ).catch(() => undefined);
 
   const keyConfigured = settings?.apiKeyConfigured ?? false;
 
@@ -202,16 +134,7 @@ export function SettingsSocialTab({
                 <SettingsTestConnectionSwap
                   disabled={settings === null || !keyConfigured}
                   onTest={async () => {
-                    const result =
-                      await client.requestJson<SocialTestConnectionResult>(
-                        "/api/v1/settings/social/test",
-                      );
-                    await loadSettings();
-                    if (!result.ok) {
-                      throw new Error(
-                        result.error ?? "Connection test failed.",
-                      );
-                    }
+                    await testConnection("Connection test failed.");
                   }}
                 />
               }

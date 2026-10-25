@@ -1,88 +1,41 @@
-import { eq } from "drizzle-orm";
-
 import type {
   MapboxGeocodeResult,
   MapboxSettings,
   MapboxTestConnectionResult,
-  UpdateMapboxSettingsInput,
 } from "@backsteros/contracts";
 
-import { db } from "../db/index.js";
-import { workspaceIntegrationSecrets } from "../db/schema.js";
 import { MapboxApiError, MapboxClient } from "../lib/mapbox-client.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
+import { createIntegrationSecretSettingsService } from "./integration-secret-settings.js";
+import { workspaceIntegrationSecretStore } from "./integration-secret-store.js";
 
 export function previewMapboxAccessToken(token: string): string {
   return previewCursorApiKey(token);
 }
 
-async function getSecretRow(
-  workspaceId: string,
-): Promise<{ mapboxAccessToken: string | null } | null> {
-  const [row] = await db
-    .select({
-      mapboxAccessToken: workspaceIntegrationSecrets.mapboxAccessToken,
-    })
-    .from(workspaceIntegrationSecrets)
-    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
-    .limit(1);
-  return row ?? null;
-}
+const mapboxSettings = createIntegrationSecretSettingsService({
+  store: workspaceIntegrationSecretStore("mapboxAccessToken"),
+  patchKey: "accessToken",
+  preview: previewMapboxAccessToken,
+  toSettings: (state): MapboxSettings => ({
+    accessTokenConfigured: state.configured,
+    accessTokenPreview: state.preview,
+    connected: state.connected,
+  }),
+  test: testMapboxAccessToken,
+});
 
-export async function getMapboxAccessToken(
-  workspaceId: string,
-): Promise<string | null> {
-  const row = await getSecretRow(workspaceId);
-  const token = row?.mapboxAccessToken?.trim();
-  return token || null;
-}
+export const getMapboxAccessToken = mapboxSettings.getWorkspaceSecret;
 
-export async function getMapboxSettings(
-  workspaceId: string,
-): Promise<MapboxSettings> {
-  const accessToken = await getMapboxAccessToken(workspaceId);
-  return {
-    accessTokenConfigured: Boolean(accessToken),
-    accessTokenPreview: accessToken
-      ? previewMapboxAccessToken(accessToken)
-      : null,
-    connected: Boolean(accessToken),
-  };
-}
+export const getMapboxSettings = mapboxSettings.getSettings;
 
-export async function updateMapboxSettings(
-  workspaceId: string,
-  patch: UpdateMapboxSettingsInput,
-): Promise<MapboxSettings> {
-  const current = await getMapboxAccessToken(workspaceId);
-  let nextToken = current;
+export const updateMapboxSettings = mapboxSettings.updateSettings;
 
-  if (patch.accessToken !== undefined) {
-    const trimmed = patch.accessToken.trim();
-    nextToken = trimmed.length > 0 ? trimmed : null;
-  }
+export const testMapboxConnection = mapboxSettings.testConnection;
 
-  await db
-    .insert(workspaceIntegrationSecrets)
-    .values({
-      workspaceId,
-      mapboxAccessToken: nextToken,
-    })
-    .onConflictDoUpdate({
-      target: workspaceIntegrationSecrets.workspaceId,
-      set: {
-        mapboxAccessToken: nextToken,
-        updatedAt: new Date(),
-      },
-    });
-
-  return getMapboxSettings(workspaceId);
-}
-
-export async function testMapboxConnection(
-  workspaceId: string,
+async function testMapboxAccessToken(
+  accessToken: string | null,
 ): Promise<MapboxTestConnectionResult> {
-  const accessToken = await getMapboxAccessToken(workspaceId);
   if (!accessToken) {
     return {
       ok: false,

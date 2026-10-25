@@ -377,6 +377,67 @@ import {
   TaskRow, areaSchema, avatarEntityToSyncEntity, contactSchema, contactSocialAccountSchema, emitBackfilledHabitSync, emitLetterMetadataSync, idListSchema, letterSchema, meetingWeekdayHoursEntrySchema, meetingWeekdayHoursSlotSchema, nudgeContactLive, nudgeContactRelationshipLive, nudgeCrmActivityLive, nudgeCrmGroupLive, nudgeCrmGroupMemberLive, nudgeCrmRelationshipLabelLive, nudgeOrganizationLive, organizationSchema, prepareContactWriteBody, publishDocumentLiveFromAgent, publishMeetingLive, publishProjectLive, publishTaskLive, reorderSchema, requireResolvedRef, routeContactId, routeOrganizationId, routeProjectId, routeTaskId, sanitizeWorkspaceSettings, taskWithKey, tasksWithKeys, updateMeetingSchedulingSettingsSchema, withAuth
 } from "./route-shared.js";
 
+type IntegrationSettingsRoute = {
+  slug: string;
+  label: string;
+  get(workspaceId: string): Promise<unknown>;
+  /** Resolves `null` when the body fails the update schema. */
+  update(workspaceId: string, body: unknown): Promise<unknown>;
+  test(workspaceId: string): Promise<unknown>;
+};
+
+/** GET / PATCH / GET test for one `/api/v1/settings/{slug}` integration. */
+function integrationSettingsRoute<TPatch>(route: {
+  slug: string;
+  label: string;
+  schema: z.ZodType<TPatch>;
+  get(workspaceId: string): Promise<unknown>;
+  update(workspaceId: string, patch: TPatch): Promise<unknown>;
+  test(workspaceId: string): Promise<unknown>;
+}): IntegrationSettingsRoute {
+  return {
+    slug: route.slug,
+    label: route.label,
+    get: route.get,
+    async update(workspaceId, body) {
+      const parsed = route.schema.safeParse(body);
+      return parsed.success ? route.update(workspaceId, parsed.data) : null;
+    },
+    test: route.test,
+  };
+}
+
+function registerIntegrationSecretSettingsRoutes(
+  app: Hono,
+  routes: IntegrationSettingsRoute[],
+) {
+  for (const route of routes) {
+    const path = `/api/v1/settings/${route.slug}`;
+    app.get(path, async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      return c.json(await route.get(auth.workspaceId));
+    });
+    app.patch(path, async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const updated = await route.update(auth.workspaceId, await c.req.json());
+      if (updated === null) {
+        return c.json(
+          { error: `Invalid ${route.label} settings`, code: "bad_request" },
+          400,
+        );
+      }
+      return c.json(updated);
+    });
+    app.get(`${path}/test`, async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      return c.json(await route.test(auth.workspaceId));
+    });
+  }
+}
+
 export function registerSettingsRoutes(app: Hono) {
   app.get("/api/v1/settings", async (c) => {
     const auth = getAuth(c);
@@ -532,30 +593,48 @@ export function registerSettingsRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(await testCursorConnection(auth.workspaceId));
   });
-  app.get("/api/v1/settings/moneybird", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await moneybirdSettingsService.getMoneybirdSettings(auth.workspaceId),
-    );
-  });
-  app.patch("/api/v1/settings/moneybird", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
-    const parsed = updateMoneybirdSettingsSchema.safeParse(await c.req.json());
-    if (!parsed.success) {
-      return c.json(
-        { error: "Invalid Moneybird settings", code: "bad_request" },
-        400,
-      );
-    }
-    return c.json(
-      await moneybirdSettingsService.updateMoneybirdSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
-  });
+  registerIntegrationSecretSettingsRoutes(app, [
+    integrationSettingsRoute({
+      slug: "moneybird",
+      label: "Moneybird",
+      schema: updateMoneybirdSettingsSchema,
+      get: moneybirdSettingsService.getMoneybirdSettings,
+      update: moneybirdSettingsService.updateMoneybirdSettings,
+      test: moneybirdSettingsService.testMoneybirdConnection,
+    }),
+    integrationSettingsRoute({
+      slug: "mapbox",
+      label: "Mapbox",
+      schema: updateMapboxSettingsSchema,
+      get: mapboxSettingsService.getMapboxSettings,
+      update: mapboxSettingsService.updateMapboxSettings,
+      test: mapboxSettingsService.testMapboxConnection,
+    }),
+    integrationSettingsRoute({
+      slug: "brandfetch",
+      label: "Brandfetch",
+      schema: updateBrandfetchSettingsSchema,
+      get: brandfetchSettingsService.getBrandfetchSettings,
+      update: brandfetchSettingsService.updateBrandfetchSettings,
+      test: brandfetchSettingsService.testBrandfetchConnection,
+    }),
+    integrationSettingsRoute({
+      slug: "github",
+      label: "GitHub",
+      schema: updateGithubSettingsSchema,
+      get: githubSettingsService.getGithubSettings,
+      update: githubSettingsService.updateGithubSettings,
+      test: githubSettingsService.testGithubConnection,
+    }),
+    integrationSettingsRoute({
+      slug: "cloudflare",
+      label: "Cloudflare",
+      schema: updateCloudflareSettingsSchema,
+      get: cloudflareSettingsService.getCloudflareSettings,
+      update: cloudflareSettingsService.updateCloudflareSettings,
+      test: cloudflareSettingsService.testCloudflareConnection,
+    }),
+  ]);
   app.get("/api/v1/settings/moneybird/administrations", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
@@ -574,75 +653,6 @@ export function registerSettingsRoutes(app: Hono) {
         error instanceof MoneybirdApiError && error.status === 401 ? 400 : 400;
       return c.json({ error: message, code: "bad_request" }, status);
     }
-  });
-  app.get("/api/v1/settings/moneybird/test", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await moneybirdSettingsService.testMoneybirdConnection(auth.workspaceId),
-    );
-  });
-  app.get("/api/v1/settings/mapbox", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await mapboxSettingsService.getMapboxSettings(auth.workspaceId),
-    );
-  });
-  app.patch("/api/v1/settings/mapbox", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
-    const parsed = updateMapboxSettingsSchema.safeParse(await c.req.json());
-    if (!parsed.success) {
-      return c.json(
-        { error: "Invalid Mapbox settings", code: "bad_request" },
-        400,
-      );
-    }
-    return c.json(
-      await mapboxSettingsService.updateMapboxSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
-  });
-  app.get("/api/v1/settings/mapbox/test", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await mapboxSettingsService.testMapboxConnection(auth.workspaceId),
-    );
-  });
-  app.get("/api/v1/settings/brandfetch", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await brandfetchSettingsService.getBrandfetchSettings(auth.workspaceId),
-    );
-  });
-  app.patch("/api/v1/settings/brandfetch", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
-    const parsed = updateBrandfetchSettingsSchema.safeParse(await c.req.json());
-    if (!parsed.success) {
-      return c.json(
-        { error: "Invalid Brandfetch settings", code: "bad_request" },
-        400,
-      );
-    }
-    return c.json(
-      await brandfetchSettingsService.updateBrandfetchSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
-  });
-  app.get("/api/v1/settings/brandfetch/test", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await brandfetchSettingsService.testBrandfetchConnection(auth.workspaceId),
-    );
   });
   app.get("/api/v1/settings/google-calendar", async (c) => {
     const auth = getAuth(c);
@@ -779,37 +789,6 @@ export function registerSettingsRoutes(app: Hono) {
       ),
     });
   });
-  app.get("/api/v1/settings/github", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await githubSettingsService.getGithubSettings(auth.workspaceId),
-    );
-  });
-  app.patch("/api/v1/settings/github", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
-    const parsed = updateGithubSettingsSchema.safeParse(await c.req.json());
-    if (!parsed.success) {
-      return c.json(
-        { error: "Invalid GitHub settings", code: "bad_request" },
-        400,
-      );
-    }
-    return c.json(
-      await githubSettingsService.updateGithubSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
-  });
-  app.get("/api/v1/settings/github/test", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await githubSettingsService.testGithubConnection(auth.workspaceId),
-    );
-  });
   app.get("/api/v1/settings/transip", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
@@ -839,37 +818,6 @@ export function registerSettingsRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(
       await transipSettingsService.testTransipConnection(auth.workspaceId),
-    );
-  });
-  app.get("/api/v1/settings/cloudflare", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await cloudflareSettingsService.getCloudflareSettings(auth.workspaceId),
-    );
-  });
-  app.patch("/api/v1/settings/cloudflare", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
-    const parsed = updateCloudflareSettingsSchema.safeParse(await c.req.json());
-    if (!parsed.success) {
-      return c.json(
-        { error: "Invalid Cloudflare settings", code: "bad_request" },
-        400,
-      );
-    }
-    return c.json(
-      await cloudflareSettingsService.updateCloudflareSettings(
-        auth.workspaceId,
-        parsed.data,
-      ),
-    );
-  });
-  app.get("/api/v1/settings/cloudflare/test", async (c) => {
-    const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
-    return c.json(
-      await cloudflareSettingsService.testCloudflareConnection(auth.workspaceId),
     );
   });
   app.get(

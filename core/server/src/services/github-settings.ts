@@ -1,97 +1,46 @@
-import { eq } from "drizzle-orm";
-
 import type {
   GithubSettings,
   GithubTestConnectionResult,
-  UpdateGithubSettingsInput,
 } from "@backsteros/contracts";
 
-import { db } from "../db/index.js";
-import { workspaceIntegrationSecrets } from "../db/schema.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 import { getConfiguredGithubApiToken } from "./github-auth.js";
+import { createIntegrationSecretSettingsService } from "./integration-secret-settings.js";
+import { workspaceIntegrationSecretStore } from "./integration-secret-store.js";
 
 export function previewGithubApiToken(token: string): string {
   return previewCursorApiKey(token);
 }
 
-async function getSecretRow(
-  workspaceId: string,
-): Promise<{ githubApiToken: string | null } | null> {
-  const [row] = await db
-    .select({
-      githubApiToken: workspaceIntegrationSecrets.githubApiToken,
-    })
-    .from(workspaceIntegrationSecrets)
-    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
-    .limit(1);
-  return row ?? null;
-}
+const githubSettings = createIntegrationSecretSettingsService({
+  store: workspaceIntegrationSecretStore("githubApiToken"),
+  patchKey: "apiToken",
+  preview: previewGithubApiToken,
+  envFallback: getConfiguredGithubApiToken,
+  toSettings: (state): GithubSettings => ({
+    apiTokenConfigured: state.configured,
+    apiTokenPreview: state.preview,
+    connected: state.connected,
+    envTokenConfigured: state.envConfigured,
+  }),
+  test: testGithubApiToken,
+});
 
 /** Workspace-stored PAT (Settings → GitHub). */
-export async function getWorkspaceGithubApiToken(
-  workspaceId: string,
-): Promise<string | null> {
-  const row = await getSecretRow(workspaceId);
-  const token = row?.githubApiToken?.trim();
-  return token || null;
-}
+export const getWorkspaceGithubApiToken = githubSettings.getWorkspaceSecret;
 
 /** Workspace PAT, then `GITHUB_API_TOKEN` env fallback. */
-export async function getWorkspaceOrEnvGithubToken(
-  workspaceId: string,
-): Promise<string | null> {
-  const fromWorkspace = await getWorkspaceGithubApiToken(workspaceId);
-  if (fromWorkspace) return fromWorkspace;
-  return getConfiguredGithubApiToken();
-}
+export const getWorkspaceOrEnvGithubToken = githubSettings.getSecret;
 
-export async function getGithubSettings(
-  workspaceId: string,
-): Promise<GithubSettings> {
-  const apiToken = await getWorkspaceGithubApiToken(workspaceId);
-  const envTokenConfigured = getConfiguredGithubApiToken() != null;
-  return {
-    apiTokenConfigured: Boolean(apiToken),
-    apiTokenPreview: apiToken ? previewGithubApiToken(apiToken) : null,
-    connected: Boolean(apiToken) || envTokenConfigured,
-    envTokenConfigured,
-  };
-}
+export const getGithubSettings = githubSettings.getSettings;
 
-export async function updateGithubSettings(
-  workspaceId: string,
-  patch: UpdateGithubSettingsInput,
-): Promise<GithubSettings> {
-  const current = await getWorkspaceGithubApiToken(workspaceId);
-  let nextToken = current;
+export const updateGithubSettings = githubSettings.updateSettings;
 
-  if (patch.apiToken !== undefined) {
-    const trimmed = patch.apiToken.trim();
-    nextToken = trimmed.length > 0 ? trimmed : null;
-  }
+export const testGithubConnection = githubSettings.testConnection;
 
-  await db
-    .insert(workspaceIntegrationSecrets)
-    .values({
-      workspaceId,
-      githubApiToken: nextToken,
-    })
-    .onConflictDoUpdate({
-      target: workspaceIntegrationSecrets.workspaceId,
-      set: {
-        githubApiToken: nextToken,
-        updatedAt: new Date(),
-      },
-    });
-
-  return getGithubSettings(workspaceId);
-}
-
-export async function testGithubConnection(
-  workspaceId: string,
+async function testGithubApiToken(
+  token: string | null,
 ): Promise<GithubTestConnectionResult> {
-  const token = await getWorkspaceOrEnvGithubToken(workspaceId);
   if (!token) {
     return {
       ok: false,
