@@ -59,7 +59,10 @@ After pushing to `production`:
 3. **Local-core build:** `bash scripts/local-core/update-build.sh` — rebuilds the
    `origin/production` worktree and swaps it into `local-core-runtime/current`.
 4. **LaunchAgent reload:** `bash scripts/local-core/install-launch-agent.sh`.
-5. **Verify:** `pnpm deploy:check --fetch` — every target must report the
+5. **Local-core migrations** (when `core/server/drizzle/` changed): `pnpm db:migrate`
+   from the repo root. Neither script above migrates; deploy cloud-core first so
+   the peer has new tables before local-core replicates into them.
+6. **Verify:** `pnpm deploy:check --fetch` — every target must report the
    `origin/production` commit (`--json` for scripts). A dirty build fails unless
    `--allow-dirty`.
 
