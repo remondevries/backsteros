@@ -13,14 +13,17 @@ kickstarts the LaunchAgent — it never nohup's an unsupervised API. Do not dupl
 resolution in Rust beyond calling `ensure-once.sh`. Compose defaults to project
 `backsteros-worktree`; live scripts export `BACKSTEROS_COMPOSE_PROJECT=backsteros`.
 
-## Build source (OS-61)
+## Build vs runtime
 
-The LaunchAgent runs the API from a **dedicated** git worktree pinned to
-`origin/production`, not from the dirty developer checkout:
+| Path | Role |
+| --- | --- |
+| `~/.backsteros/local-core-build` | **Build only** — git worktree of `origin/production` |
+| `~/.backsteros/local-core-runtime` | **LaunchAgent root** — non-git; contains `DO_NOT_DELETE`, `staging/`, `current/`, `previous/` |
+| `~/.backsteros/local-core-runtime/current` | Live tree the plist runs (`WorkingDirectory` / `BACKSTEROS_REPO_ROOT`) |
 
-```text
-~/.backsteros/local-core-build
-```
+`update-build.sh` builds in the worktree, rsyncs (excluding `.git`) into `runtime/staging`,
+verifies required files, then atomically swaps `staging` → `current` (previous kept briefly).
+Never point the LaunchAgent at the worktree.
 
 Runtime secrets come from `~/.config/backsteros/local-core.env` (copy
 `deploy/local-core.env.example`) or `LOCAL_CORE_ENV_FILE` / checkout
@@ -28,13 +31,17 @@ Runtime secrets come from `~/.config/backsteros/local-core.env` (copy
 `~/BacksterOS/Projects/OS/Codebase` does **not** change local-core behaviour
 until that commit is on `origin/production` and you refresh the build.
 
+Do **not** `rm -rf` `~/.backsteros/local-core-runtime` (sentinel `DO_NOT_DELETE`).
+Scripts refuse that delete unless `--force-replace-runtime` is passed and staging
+is complete. The build worktree may be removed and recreated; the runtime must stay.
+
 ### After a cloud-core deploy
 
 ```bash
-# 1. Refresh the dedicated worktree + contracts build
+# 1. Refresh the dedicated worktree, publish to runtime
 bash scripts/local-core/update-build.sh
 
-# 2. Reload the LaunchAgent so it restarts from the new tree
+# 2. Reload the LaunchAgent so it restarts from runtime/current
 bash scripts/local-core/install-launch-agent.sh
 
 # 3. Confirm commits match
@@ -42,8 +49,11 @@ curl -fsS http://127.0.0.1:8788/health | jq .version
 curl -fsS https://api.local.backsteros.com/health | jq .version   # or your cloud /health
 ```
 
-Override the build path with `BACKSTEROS_LOCAL_CORE_BUILD` (scratch dirs for
-tests). Do not point a half-built scratch tree at the live `:8788` agent.
+Overrides:
+- `BACKSTEROS_LOCAL_CORE_BUILD` — build worktree (scratch dirs for tests)
+- `BACKSTEROS_LOCAL_CORE_RUNTIME` — runtime parent (scratch dirs for tests)
+
+Do not point a half-built scratch tree at the live `:8788` agent.
 
 ## Install (once per Mac)
 
@@ -54,7 +64,8 @@ bash scripts/local-core/install-launch-agent.sh
 
 Creates `~/Library/LaunchAgents/com.backsteros.local-core.plist` with `RunAtLoad`,
 `KeepAlive`, and `ExitTimeOut=30`, pointing at `scripts/local-core/run.sh` inside
-the dedicated build worktree.
+`local-core-runtime/current`. Refuses to install if that runtime is missing (no
+fallback to the developer checkout).
 
 The supervisor runs `tsx` **without** `watch`, polls `/health` every ~10s, and
 exits non-zero after 3 consecutive failures so KeepAlive restarts a dead API

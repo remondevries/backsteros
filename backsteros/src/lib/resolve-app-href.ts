@@ -1,7 +1,7 @@
 import { peekSectionEntryHref } from "./section-entry-store";
 
 /** Mirrors `@backsteros/ui` getDefaultSettingsHref — keep in sync. */
-const DEFAULT_SETTINGS_HREF = "/settings/general";
+const DEFAULT_SETTINGS_HREF = "/settings/account";
 
 /** Sidebar Tasks always opens Today — not the last due filter or open task. */
 const TASKS_LIST_SIDEBAR_HREF = "/tasks?due=today";

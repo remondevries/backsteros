@@ -117,7 +117,7 @@ test("finance remounts live; settings/tasks have no left list dest", () => {
   );
   assert.equal(
     resolveLeftSidePanelDest({
-      pathname: "/settings/general",
+      pathname: "/settings/account",
       inInboxPanel: false,
       financeSection: false,
       showSidePanel: false,

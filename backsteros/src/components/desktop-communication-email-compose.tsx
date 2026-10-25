@@ -35,6 +35,8 @@ type DesktopCommunicationEmailComposeProps = {
   toOrganizationId?: string | null;
   /** Re-open a saved draft from the Communication list. */
   openDraft?: { inboxId: string; draftId: string } | null;
+  /** Href of the list neighbor after this draft is sent or deleted. */
+  resolveRemovalHref?: (removedDraftId: string) => string;
 };
 
 /**
@@ -47,6 +49,7 @@ export function DesktopCommunicationEmailCompose({
   toContactId = null,
   toOrganizationId = null,
   openDraft = null,
+  resolveRemovalHref,
 }: DesktopCommunicationEmailComposeProps) {
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
@@ -81,7 +84,7 @@ export function DesktopCommunicationEmailCompose({
     reloadMessageDetail,
     promoteEmailThreadStatus,
     toEmailDetailHref,
-    listReturnHref: "/communication",
+    listReturnHref: resolveRemovalHref ?? "/communication",
     onComposeFinished: onFinished,
     composeDraftSeed: openDraft,
   });
@@ -353,11 +356,12 @@ export function DesktopCommunicationEmailCompose({
                 onDelete={
                   composeDraft
                     ? () => {
+                        // deleteDraft removes the list row, navigates to the
+                        // neighbor, and calls onComposeFinished.
                         void deleteDraft(
                           composeDraft.inboxId,
                           composeDraft.draftId,
                         );
-                        onFinished?.();
                       }
                     : () => onFinished?.()
                 }

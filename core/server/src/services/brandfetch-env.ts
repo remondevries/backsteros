@@ -1,3 +1,5 @@
+import { previewSecret } from "../lib/secret-preview.js";
+
 /** Env bootstrap for Brandfetch (workspace secrets are the source of truth). */
 export function brandfetchApiKeyFromEnv(): string | null {
   const key = process.env.BRANDFETCH_API_KEY?.trim() || "";
@@ -14,7 +16,5 @@ export function brandfetchClientIdFromEnv(): string | null {
 }
 
 export function previewBrandfetchApiKey(key: string): string {
-  const trimmed = key.trim();
-  if (trimmed.length <= 12) return "••••";
-  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
+  return previewSecret(key);
 }

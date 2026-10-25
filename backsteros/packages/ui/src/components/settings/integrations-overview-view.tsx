@@ -2,6 +2,11 @@
 
 import type { WorkspaceIntegrationId } from "../../integrations/integration-catalog.js";
 import { SwitchToggle } from "../shared/switch-toggle.js";
+import { IntegrationMark } from "./integration-mark.js";
+import {
+  SettingsConnectionStatusSwap,
+  type SettingsConnectionStatus,
+} from "./settings-connection-status-swap.js";
 
 export type IntegrationsOverviewItem = {
   id: WorkspaceIntegrationId;
@@ -10,10 +15,14 @@ export type IntegrationsOverviewItem = {
   faviconHost: string;
   /** True when credentials / config are saved in settings. */
   configured: boolean;
-  /** True when the integration can currently talk to the provider. */
+  /**
+   * True after a live provider probe succeeded (same check as Test connection).
+   */
   connected: boolean;
   enabled: boolean;
   statusLoading?: boolean;
+  /** Settings loaded; live probe still in flight. */
+  statusChecking?: boolean;
 };
 
 export type IntegrationsOverviewViewProps = {
@@ -23,10 +32,10 @@ export type IntegrationsOverviewViewProps = {
   togglingId?: WorkspaceIntegrationId | null;
 };
 
-function faviconUrl(host: string): string {
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-}
-
+/**
+ * Settings → Integrations grid (shadcnui-blocks integrations-03 layout,
+ * three cards per row).
+ */
 export function IntegrationsOverviewView({
   items,
   onToggleEnabled,
@@ -35,15 +44,17 @@ export function IntegrationsOverviewView({
 }: IntegrationsOverviewViewProps) {
   return (
     <div className="integrations-overview">
-      <p className="integrations-overview__intro">
-        Connect your favorite tools and services to your workspace.
-      </p>
       <ul className="integrations-overview__list">
         {items.map((item) => {
           const busy = togglingId === item.id;
-          const actionLabel = item.configured ? "Settings" : "Connect";
+          const status: SettingsConnectionStatus =
+            item.statusLoading || item.statusChecking
+              ? "working"
+              : item.connected
+                ? "success"
+                : "failed";
           return (
-            <li key={item.id}>
+            <li key={item.id} className="integrations-overview__item">
               <div
                 className={[
                   "integrations-overview__card",
@@ -52,37 +63,31 @@ export function IntegrationsOverviewView({
                   .filter(Boolean)
                   .join(" ")}
               >
-                <div className="integrations-overview__icon-rail">
-                  <img
-                    alt=""
-                    className="integrations-overview__favicon"
-                    src={faviconUrl(item.faviconHost)}
-                    width={32}
-                    height={32}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
-                <div className="integrations-overview__body">
-                  <div className="integrations-overview__title-row">
-                    <span className="integrations-overview__title">
-                      {item.title}
-                    </span>
-                    {item.statusLoading ? (
-                      <span className="integrations-overview__badge integrations-overview__badge--muted">
-                        Loading…
+                <SettingsConnectionStatusSwap
+                  className="integrations-overview__status"
+                  status={status}
+                />
+                <div className="integrations-overview__card-top">
+                  <IntegrationMark id={item.id} faviconHost={item.faviconHost} />
+                  <div className="integrations-overview__body">
+                    <div className="integrations-overview__title-row">
+                      <span className="integrations-overview__title">
+                        {item.title}
                       </span>
-                    ) : item.connected ? (
-                      <span className="integrations-overview__badge integrations-overview__badge--connected">
-                        Connected
-                      </span>
-                    ) : null}
+                    </div>
+                    <p className="integrations-overview__description">
+                      {item.description}
+                    </p>
                   </div>
-                  <p className="integrations-overview__description">
-                    {item.description}
-                  </p>
                 </div>
                 <div className="integrations-overview__actions">
+                  <button
+                    type="button"
+                    className="integrations-overview__action-btn"
+                    onClick={() => onOpenSettings(item.id)}
+                  >
+                    Settings
+                  </button>
                   <SwitchToggle
                     checked={item.enabled}
                     disabled={busy}
@@ -91,13 +96,6 @@ export function IntegrationsOverviewView({
                       onToggleEnabled(item.id, checked)
                     }
                   />
-                  <button
-                    type="button"
-                    className="integrations-overview__action-btn"
-                    onClick={() => onOpenSettings(item.id)}
-                  >
-                    {actionLabel}
-                  </button>
                 </div>
               </div>
             </li>

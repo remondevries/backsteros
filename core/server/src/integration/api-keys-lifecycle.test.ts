@@ -10,6 +10,7 @@ import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
 import {
   apiKeyAuditLogs,
+  apiKeyRequestLogs,
   apiKeys,
   users,
   workspaces,
@@ -36,6 +37,9 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   const ownerKeyId = id("key");
 
   context.after(async () => {
+    await db
+      .delete(apiKeyRequestLogs)
+      .where(eq(apiKeyRequestLogs.workspaceId, workspaceId));
     await db.delete(apiKeyAuditLogs).where(eq(apiKeyAuditLogs.workspaceId, workspaceId));
     await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
@@ -83,12 +87,23 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       expiresAt: string | null;
       lastUsedAt: string | null;
       prefix: string;
+      hasRecoverableSecret: boolean;
     };
     secret: string;
   };
   assert.ok(createdBody.secret.startsWith("sk_live_"));
   assert.equal(createdBody.apiKey.expiresAt, expiresAt);
   assert.equal(createdBody.apiKey.lastUsedAt, null);
+  assert.equal(createdBody.apiKey.hasRecoverableSecret, true);
+
+  // Reveal returns the same secret for new keys with ciphertext
+  const revealed = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(createdBody.apiKey.id)}/secret`,
+    { headers: auth },
+  );
+  assert.equal(revealed.status, 200);
+  const revealedBody = (await revealed.json()) as { secret: string };
+  assert.equal(revealedBody.secret, createdBody.secret);
 
   // Audit log has created
   const auditAfterCreate = await app.request(
@@ -137,6 +152,29 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   assert.ok(agent);
   assert.ok(agent.lastUsedAt);
   assert.notEqual(agent.lastUsedAddress, "203.0.113.50");
+
+  const requestLogsRes = await app.request(
+    "/api/v1/api-keys/request-logs?limit=20",
+    { headers: auth },
+  );
+  assert.equal(requestLogsRes.status, 200);
+  const requestLogsBody = (await requestLogsRes.json()) as {
+    requestLogs: Array<{
+      apiKeyId: string | null;
+      method: string;
+      path: string;
+      status: number;
+    }>;
+  };
+  assert.ok(
+    requestLogsBody.requestLogs.some(
+      (entry) =>
+        entry.apiKeyId === createdBody.apiKey.id &&
+        entry.method === "GET" &&
+        entry.path === "/api/v1/api-keys",
+    ),
+    "authenticated agent call should appear in request history",
+  );
 
   // Trusted peer: proxy headers are accepted (cf-connecting-ip wins).
   setSocketRemoteAddressOverrideForTests("127.0.0.1");
@@ -252,12 +290,29 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   );
   assert.equal(rotated.status, 200);
   const rotatedBody = (await rotated.json()) as {
-    apiKey: { id: string; prefix: string; lastUsedAt: string | null };
+    apiKey: {
+      id: string;
+      prefix: string;
+      lastUsedAt: string | null;
+      hasRecoverableSecret: boolean;
+    };
     secret: string;
   };
   assert.equal(rotatedBody.apiKey.id, createdBody.apiKey.id);
   assert.notEqual(rotatedBody.secret, createdBody.secret);
   assert.equal(rotatedBody.apiKey.lastUsedAt, null);
+  assert.equal(rotatedBody.apiKey.hasRecoverableSecret, true);
+
+  const revealedRotated = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(rotatedBody.apiKey.id)}/secret`,
+    { headers: auth },
+  );
+  assert.equal(revealedRotated.status, 200);
+  const revealedRotatedBody = (await revealedRotated.json()) as {
+    secret: string;
+  };
+  assert.equal(revealedRotatedBody.secret, rotatedBody.secret);
+  assert.notEqual(revealedRotatedBody.secret, createdBody.secret);
 
   const oldList = await app.request("/api/v1/api-keys", {
     headers: { authorization: `Bearer ${createdBody.secret}` },
@@ -268,6 +323,35 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     headers: { authorization: `Bearer ${rotatedBody.secret}` },
   });
   assert.notEqual(newList.status, 401);
+
+  // Legacy key without ciphertext cannot be revealed
+  const legacySecret = newSecret();
+  const legacyId = id("key");
+  await db.insert(apiKeys).values({
+    id: legacyId,
+    workspaceId,
+    userId,
+    name: "legacy-no-cipher",
+    prefix: apiKeyLookupPrefix(legacySecret),
+    keyHash: hashApiKey(legacySecret),
+    scopes: ["tasks:read"],
+    secretCiphertext: null,
+  });
+  const listedLegacy = await app.request("/api/v1/api-keys", { headers: auth });
+  assert.equal(listedLegacy.status, 200);
+  const listedLegacyBody = (await listedLegacy.json()) as {
+    apiKeys: Array<{ id: string; hasRecoverableSecret: boolean }>;
+  };
+  assert.equal(
+    listedLegacyBody.apiKeys.find((key) => key.id === legacyId)
+      ?.hasRecoverableSecret,
+    false,
+  );
+  const revealLegacy = await app.request(
+    `/api/v1/api-keys/${encodeURIComponent(legacyId)}/secret`,
+    { headers: auth },
+  );
+  assert.equal(revealLegacy.status, 404);
 
   // Expired key is rejected for auth and for rotate
   const expiredSecret = newSecret();
@@ -346,6 +430,9 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
   const actorExpiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
 
   context.after(async () => {
+    await db
+      .delete(apiKeyRequestLogs)
+      .where(eq(apiKeyRequestLogs.workspaceId, workspaceId));
     await db.delete(apiKeyAuditLogs).where(eq(apiKeyAuditLogs.workspaceId, workspaceId));
     await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));

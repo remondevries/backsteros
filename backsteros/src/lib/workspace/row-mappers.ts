@@ -575,6 +575,7 @@ export function mapContact(
     city: contact.city ?? null,
     postalCode: contact.postalCode ?? null,
     region: (contact as { region?: string | null }).region ?? null,
+    timezone: (contact as { timezone?: string | null }).timezone ?? null,
     country: contact.country ?? null,
     avatarStorageKey: contact.avatarStorageKey ?? null,
     portalAvatarStorageKey:

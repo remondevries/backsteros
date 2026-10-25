@@ -305,6 +305,8 @@ export const contacts = pgTable(
     country: text("country"),
     /** State / province / region (Mapbox `region`); optional. */
     region: text("region"),
+    /** IANA timezone for this contact (e.g. Europe/Amsterdam). */
+    timezone: text("timezone"),
     /** Geocoded from address fields (Mapbox); null until resolved. */
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
@@ -541,6 +543,12 @@ export const apiKeys = pgTable(
     name: text("name").notNull(),
     prefix: text("prefix").notNull(),
     keyHash: text("key_hash").notNull(),
+    /**
+     * AES-GCM ciphertext of the raw secret (BACKSTEROS_SECRET_ENCRYPTION_KEY).
+     * Null for legacy keys created before recoverable secrets. Auth still uses
+     * keyHash only; this column is for owner reveal/copy.
+     */
+    secretCiphertext: text("secret_ciphertext"),
     scopes: text("scopes").array().notNull(),
     contactId: text("contact_id").references(() => contacts.id, {
       onDelete: "set null",
@@ -604,6 +612,38 @@ export const apiKeyAuditLogs = pgTable(
       table.createdAt,
     ),
     index("api_key_audit_logs_api_key_id_idx").on(table.apiKeyId),
+  ],
+);
+
+/**
+ * Per-request usage for API keys on this core only (not replicated).
+ * High volume — application code caps rows per workspace.
+ */
+export const apiKeyRequestLogs = pgTable(
+  "api_key_request_logs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    apiKeyId: text("api_key_id").references(() => apiKeys.id, {
+      onDelete: "set null",
+    }),
+    apiKeyName: text("api_key_name").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    status: integer("status").notNull(),
+    address: text("address"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("api_key_request_logs_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    index("api_key_request_logs_api_key_id_idx").on(table.apiKeyId),
   ],
 );
 
@@ -2423,6 +2463,7 @@ export const emailThreadComments = pgTable(
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbApiKeyAuditLog = typeof apiKeyAuditLogs.$inferSelect;
+export type DbApiKeyRequestLog = typeof apiKeyRequestLogs.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;

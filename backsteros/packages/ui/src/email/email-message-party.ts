@@ -161,9 +161,17 @@ export function classifyStoredEmailMessageParty(input: {
       (entry) => entry.id === organizationId,
     );
     if (!organization) return "unknown";
-    return organizationMatchesEmailAddress(organization, address)
-      ? "match"
-      : "mismatch";
+    if (organizationMatchesEmailAddress(organization, address)) return "match";
+    // Brand-new / empty org (create-from-query) has no emails yet — keep the
+    // manual link instead of treating it as a stale mismatch that soft-match
+    // would wipe.
+    const hasAnyEmail =
+      Boolean(organization.email?.trim()) ||
+      (organization.emails ?? []).some((entry) =>
+        Boolean(entry.address?.trim()),
+      );
+    if (!hasAnyEmail) return "unknown";
+    return "mismatch";
   }
 
   return "unknown";

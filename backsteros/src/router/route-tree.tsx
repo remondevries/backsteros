@@ -834,6 +834,16 @@ const settingsTabRoute = createRoute({
   ),
 });
 
+const settingsApiKeyRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "settings/api/$apiKeyId",
+  component: () => (
+    <LazyRoute>
+      <SettingsPage />
+    </LazyRoute>
+  ),
+});
+
 
 export const routeTree = rootRoute.addChildren([
   overlayPaletteRoute,
@@ -926,6 +936,7 @@ export const routeTree = rootRoute.addChildren([
     contactDetailRoute,
     contactSectionRoute,
     settingsRoute,
+    settingsApiKeyRoute,
     settingsTabRoute,
   ]),
 ]);

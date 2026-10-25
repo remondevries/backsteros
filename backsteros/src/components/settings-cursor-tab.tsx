@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
-import type { CursorSettings } from "@backsteros/contracts";
-import { SegmentedPillToggle } from "@backsteros/ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type {
+  CursorSettings,
+  CursorTestConnectionResult,
+} from "@backsteros/contracts";
+import {
+  SegmentedPillToggle,
+  SettingsSecretField,
+  SettingsTestConnectionSwap,
+  useIntegrationSettingsHeaderTrailing,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
 import {
@@ -70,16 +78,13 @@ export function SettingsCursorTab() {
   const [models, setModels] = useState<CursorModelOption[]>(() =>
     withPinnedCursorModels([]),
   );
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [researchInstructionsDraft, setResearchInstructionsDraft] = useState("");
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [savingResearchInstructions, setSavingResearchInstructions] =
     useState(false);
-
   const [sessions, setSessions] = useState<PtySessionInfo[]>([]);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,26 +169,12 @@ export function SettingsCursorTab() {
     }
   };
 
-  const onSaveApiKey = async () => {
-    const value = apiKeyDraft.trim();
-    if (!value) return;
-    setSavingKey(true);
+  const saveApiKey = async (value: string) => {
     const body = await patchCursorSettings({ apiKey: value });
-    setSavingKey(false);
-    if (body) {
-      setApiKeyDraft("");
-      await loadModels(body.apiKeyConfigured);
+    if (!body) {
+      throw new Error(settingsError ?? "Could not save Cursor API key.");
     }
-  };
-
-  const onClearApiKey = async () => {
-    setSavingKey(true);
-    const body = await patchCursorSettings({ apiKey: "" });
-    setSavingKey(false);
-    if (body) {
-      setApiKeyDraft("");
-      await loadModels(false);
-    }
+    await loadModels(body.apiKeyConfigured);
   };
 
   const instructionsDirty =
@@ -286,19 +277,23 @@ export function SettingsCursorTab() {
   );
   const researchModelOptions = withSelectedModel(cursorSettings?.researchModel);
 
+  const headerTrailing = useMemo(
+    () => (
+      <SegmentedPillToggle
+        ariaLabel="Cursor settings sections"
+        value={subTab}
+        onChange={setSubTab}
+        options={CURSOR_SUB_TABS}
+      />
+    ),
+    [subTab],
+  );
+  useIntegrationSettingsHeaderTrailing(headerTrailing);
+
   return (
     <>
-      <div className="settings-cursor-subtabs">
-        <SegmentedPillToggle
-          ariaLabel="Cursor settings sections"
-          value={subTab}
-          onChange={setSubTab}
-          options={CURSOR_SUB_TABS}
-        />
-      </div>
-
       {subTab === "api-key" ? (
-        <section className="settings-card">
+        <section className="settings-card settings-card--bare">
           <h2>API key</h2>
           <p>
             Create an API key in the Cursor dashboard and store it here (kept in
@@ -308,39 +303,33 @@ export function SettingsCursorTab() {
 
           <label className="settings-field">
             Cursor API key
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={
-                cursorSettings?.apiKeyConfigured
-                  ? `Configured (${cursorSettings.apiKeyPreview ?? "••••"})`
-                  : "cursor_…"
+            <SettingsSecretField
+              configured={Boolean(cursorSettings?.apiKeyConfigured)}
+              preview={cursorSettings?.apiKeyPreview}
+              emptyPlaceholder="cursor_…"
+              onSave={saveApiKey}
+              trailing={
+                <SettingsTestConnectionSwap
+                  disabled={!cursorSettings?.apiKeyConfigured}
+                  onTest={async () => {
+                    const result =
+                      await client.requestJson<CursorTestConnectionResult>(
+                        "/api/v1/settings/cursor/test",
+                      );
+                    await loadCursorSettings();
+                    if (result.ok) {
+                      await loadModels(true);
+                      return;
+                    }
+                    throw new Error(
+                      result.error ?? "Cursor connection test failed.",
+                    );
+                  }}
+                />
               }
-              value={apiKeyDraft}
-              onChange={(event) => setApiKeyDraft(event.target.value)}
             />
           </label>
-          <div className="settings-cursor-key-actions">
-            <button
-              type="button"
-              disabled={savingKey || !apiKeyDraft.trim()}
-              onClick={() => void onSaveApiKey()}
-            >
-              {savingKey ? "Saving…" : "Save key"}
-            </button>
-            <button
-              type="button"
-              disabled={savingKey || !cursorSettings?.apiKeyConfigured}
-              onClick={() => void onClearApiKey()}
-            >
-              Clear key
-            </button>
-          </div>
-          {cursorSettings?.apiKeyConfigured ? (
-            <p className="settings-hint">
-              Key on file: {cursorSettings.apiKeyPreview}
-            </p>
-          ) : (
+          {cursorSettings?.apiKeyConfigured ? null : (
             <p className="settings-hint">
               No API key stored. Spellcheck stays unavailable until you save
               one.
@@ -353,7 +342,7 @@ export function SettingsCursorTab() {
       ) : null}
 
       {subTab === "spellcheck" ? (
-        <section className="settings-card">
+        <section className="settings-card settings-card--bare">
           <h2>Spellcheck</h2>
           <p>
             Use the Cursor SDK to fix spelling and light formatting on task
@@ -432,7 +421,7 @@ export function SettingsCursorTab() {
       ) : null}
 
       {subTab === "research" ? (
-        <section className="settings-card">
+        <section className="settings-card settings-card--bare">
           <h2>Research</h2>
           <p>
             Use the Cursor SDK to research the task topic and enrich the title
@@ -515,7 +504,7 @@ export function SettingsCursorTab() {
       ) : null}
 
       {subTab === "agents" ? (
-        <section className="settings-card">
+        <section className="settings-card settings-card--bare">
           <h2>Active agents</h2>
           <p>
             Local Cursor ACP sessions owned by the PTY sidecar (used by **mobile**

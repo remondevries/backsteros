@@ -30,6 +30,11 @@ import {
 } from "./agentmail-list-cache";
 import { setEmailStreamStatus } from "./cloud-client-notices";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
+import {
+  filterOutPendingEmailListRemovals,
+  isEmailListItemPendingRemoval,
+  rememberEmailListRemoval,
+} from "./email-list-pending-removals";
 import { writeEmailMessageDetailCache } from "./email-message-detail-cache";
 import { WORKSPACE_EMAIL_UPDATED_EVENT } from "./workspace-events";
 
@@ -89,6 +94,7 @@ export function dispatchEmailListPatch(detail: EmailListPatchDetail): void {
 }
 
 export function dispatchEmailListRemove(detail: EmailListRemoveDetail): void {
+  rememberEmailListRemoval(detail);
   window.dispatchEvent(
     new CustomEvent(EMAIL_LIST_REMOVE_EVENT, { detail }),
   );
@@ -324,6 +330,16 @@ export function useAgentMailMailboxes(
   const mountedRef = useRef(true);
   const hydratedRef = useRef(Boolean(cachedSnapshot));
   const sseReloadTimerRef = useRef<number | null>(null);
+  const listCacheMetaRef = useRef({
+    mailboxes,
+    apiKeyConfigured,
+    replyTemplates,
+  });
+  listCacheMetaRef.current = {
+    mailboxes,
+    apiKeyConfigured,
+    replyTemplates,
+  };
 
   const reload = useCallback(async () => {
     const generation = ++reloadGenerationRef.current;
@@ -395,10 +411,12 @@ export function useAgentMailMailboxes(
               .map((inbox) => inbox.email?.trim().toLowerCase())
               .filter((email): email is string => Boolean(email)),
           );
-          const nextMessages = collapseEmailListItemsByThread(
-            (listed.messages ?? [])
-              .map((entry) => toListItem(entry, mailboxEmails))
-              .filter((item): item is EmailListItem => item != null),
+          const nextMessages = filterOutPendingEmailListRemovals(
+            collapseEmailListItemsByThread(
+              (listed.messages ?? [])
+                .map((entry) => toListItem(entry, mailboxEmails))
+                .filter((item): item is EmailListItem => item != null),
+            ),
           );
           setMessages(nextMessages);
           writeAgentMailListCache({
@@ -462,6 +480,10 @@ export function useAgentMailMailboxes(
             .filter(Boolean),
         );
         const listItem = detailToListItem(detail, mailboxEmails);
+        if (isEmailListItemPendingRemoval(listItem)) {
+          // Delete/spam already removed this thread — do not resurrect from SSE.
+          return true;
+        }
         setMessages((current) => {
           const next = upsertListItem(current, listItem);
           writeAgentMailListCache({
@@ -518,15 +540,33 @@ export function useAgentMailMailboxes(
     function handleWorkspaceEmailUpdated() {
       scheduleDebouncedReload();
     }
+    function persistMessages(next: EmailListItem[]) {
+      const meta = listCacheMetaRef.current;
+      const cached = peekAgentMailListCache();
+      writeAgentMailListCache({
+        mailboxes: cached?.mailboxes ?? meta.mailboxes,
+        messages: next,
+        apiKeyConfigured: cached?.apiKeyConfigured ?? meta.apiKeyConfigured,
+        replyTemplates: cached?.replyTemplates ?? meta.replyTemplates,
+      });
+    }
     function handlePatch(event: Event) {
       const detail = (event as CustomEvent<EmailListPatchDetail>).detail;
       if (!detail?.inboxId || !detail.messageId) return;
-      setMessages((current) => applyListPatch(current, detail));
+      setMessages((current) => {
+        const next = applyListPatch(current, detail);
+        persistMessages(next);
+        return next;
+      });
     }
     function handleRemove(event: Event) {
       const detail = (event as CustomEvent<EmailListRemoveDetail>).detail;
       if (!detail?.inboxId) return;
-      setMessages((current) => applyListRemove(current, detail));
+      setMessages((current) => {
+        const next = applyListRemove(current, detail);
+        persistMessages(next);
+        return next;
+      });
     }
     window.addEventListener("backsteros-email-mailboxes-reload", handleReload);
     window.addEventListener(

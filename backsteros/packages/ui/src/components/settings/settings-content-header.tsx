@@ -1,18 +1,32 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 export type SettingsContentHeaderProps = {
   title: string;
   description: string;
   connected?: boolean;
+  /** Hide the rule under the description. */
+  hideRule?: boolean;
+  /** Far-right control on the description row (e.g. view toggle). */
+  trailing?: ReactNode;
 };
 
 export function SettingsContentHeader({
   title,
   description,
   connected,
+  hideRule = false,
+  trailing,
 }: SettingsContentHeaderProps) {
   return (
-    <header className="settings-content-header">
+    <header
+      className={
+        hideRule
+          ? "settings-content-header settings-content-header--no-rule"
+          : "settings-content-header"
+      }
+    >
       <div className="settings-content-title-row">
         <div className="settings-content-title-group">
           <h2 className="settings-content-title">{title}</h2>
@@ -34,7 +48,12 @@ export function SettingsContentHeader({
           ) : null}
         </div>
       </div>
-      <p className="settings-content-description">{description}</p>
+      <div className="settings-content-description-row">
+        <p className="settings-content-description">{description}</p>
+        {trailing ? (
+          <div className="settings-content-header-trailing">{trailing}</div>
+        ) : null}
+      </div>
     </header>
   );
 }

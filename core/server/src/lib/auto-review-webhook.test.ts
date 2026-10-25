@@ -175,7 +175,7 @@ describe("auto-review webhook helpers", () => {
     assert.equal(cipher.startsWith("v1:"), true);
     assert.equal(cipher.includes("super-secret-token"), false);
     assert.equal(decryptWebhookSecret(cipher, env), "super-secret-token");
-    assert.equal(maskWebhookSecret("super-secret-token"), "••••oken");
+    assert.equal(maskWebhookSecret("super-secret-token"), "super-secret-•••••");
   });
 
   it("decrypt failure returns null instead of throwing", () => {

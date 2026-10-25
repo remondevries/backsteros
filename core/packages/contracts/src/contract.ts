@@ -11,6 +11,9 @@ import {
   createApiKeyResponseSchema,
   createApiKeySchema,
   listApiKeyAuditLogsQuerySchema,
+  listApiKeyRequestLogsQuerySchema,
+  apiKeyRequestLogSchema,
+  revealApiKeySecretResponseSchema,
   updateApiKeySchema,
   createDocumentSchema,
   createProjectSchema,
@@ -724,6 +727,17 @@ export const apiContract: AppRouter = c.router(
       },
       summary: "List API key audit events (create / revoke / rotate)",
     },
+    listApiKeyRequestLogs: {
+      method: "GET",
+      path: "/api/v1/api-keys/request-logs",
+      query: listApiKeyRequestLogsQuerySchema,
+      responses: {
+        200: z.object({ requestLogs: z.array(apiKeyRequestLogSchema) }),
+        401: errorSchema,
+      },
+      summary:
+        "List recent API key request history on this core (bounded retention)",
+    },
     createApiKey: {
       method: "POST",
       path: "/api/v1/api-keys",
@@ -759,6 +773,19 @@ export const apiContract: AppRouter = c.router(
         404: errorSchema,
       },
       summary: "Rotate API key secret (shown once); keeps id, name, scopes, contact, expiry",
+    },
+    revealApiKeySecret: {
+      method: "GET",
+      path: "/api/v1/api-keys/:id/secret",
+      pathParams: z.object({ id: z.string() }),
+      responses: {
+        200: revealApiKeySecretResponseSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Reveal the full API key secret when stored encrypted (new keys only)",
     },
     revokeApiKey: {
       method: "DELETE",
@@ -2289,6 +2316,16 @@ export const apiContract: AppRouter = c.router(
         403: errorSchema,
       },
       summary: "Update Cursor API key and spellcheck preferences",
+    },
+    testCursorConnection: {
+      method: "GET",
+      path: "/api/v1/settings/cursor/test",
+      responses: {
+        200: s.cursorTestConnectionResultSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Test Cursor API key by listing models",
     },
     getMoneybirdSettings: {
       method: "GET",

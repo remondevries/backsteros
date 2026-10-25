@@ -1,5 +1,6 @@
 import type { EntityDeleteResult } from "@backsteros/ui";
 
+import { forgetEmailListRemoval } from "./email-list-pending-removals";
 import {
   dispatchEmailListRemove,
   type EmailListRemoveDetail,
@@ -45,6 +46,8 @@ export async function deleteEmailMessage(
     return { ok: true };
   } catch (error) {
     console.warn("[email] delete message failed:", error);
+    // Allow the row to come back on reload after a failed delete.
+    forgetEmailListRemoval(removeDetail);
     requestMailboxReload();
     return {
       ok: false,

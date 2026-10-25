@@ -749,7 +749,10 @@ async function applyApiKeyRow(
   const remoteUpdatedAt = new Date(String(sanitized.updated_at));
 
   const [existing] = await db
-    .select({ updatedAt: apiKeys.updatedAt })
+    .select({
+      updatedAt: apiKeys.updatedAt,
+      secretCiphertext: apiKeys.secretCiphertext,
+    })
     .from(apiKeys)
     .where(eq(apiKeys.id, String(sanitized.id)))
     .limit(1);
@@ -768,6 +771,18 @@ async function applyApiKeyRow(
     ? new Date(String(sanitized.expires_at))
     : null;
 
+  // Peer rows may omit ciphertext (legacy cloud / older schema). Keep any
+  // locally stored recoverable secret instead of wiping it on every apply.
+  const incomingCipher =
+    typeof sanitized.secret_ciphertext === "string" &&
+    sanitized.secret_ciphertext.trim()
+      ? sanitized.secret_ciphertext
+      : null;
+  const existingCipher = existing?.secretCiphertext?.trim()
+    ? existing.secretCiphertext
+    : null;
+  const secretCiphertext = incomingCipher ?? existingCipher;
+
   await db
     .insert(apiKeys)
     .values({
@@ -777,6 +792,7 @@ async function applyApiKeyRow(
       name: String(sanitized.name),
       prefix: String(sanitized.prefix),
       keyHash: String(sanitized.key_hash),
+      secretCiphertext,
       scopes: sanitized.scopes as string[],
       contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
       expiresAt,
@@ -793,6 +809,7 @@ async function applyApiKeyRow(
         name: String(sanitized.name),
         prefix: String(sanitized.prefix),
         keyHash: String(sanitized.key_hash),
+        secretCiphertext,
         scopes: sanitized.scopes as string[],
         contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
         expiresAt,

@@ -275,7 +275,18 @@ on_signal() {
 trap on_signal TERM INT HUP
 
 build_contracts() {
-  log "building @backsteros/contracts (launchd start uses tsx without watch)"
+  # Runtime is a writable non-git publish of the monorepo (pnpm workspace +
+  # node_modules). Contracts rebuild on each LaunchAgent start so tsx can
+  # resolve @backsteros/contracts without a separate watch process.
+  if [[ ! -w "${REPO_ROOT}" ]]; then
+    log "ERROR: runtime root not writable: ${REPO_ROOT}"
+    return 1
+  fi
+  if [[ ! -f "${REPO_ROOT}/pnpm-workspace.yaml" ]]; then
+    log "ERROR: missing pnpm-workspace.yaml in ${REPO_ROOT}"
+    return 1
+  fi
+  log "building @backsteros/contracts (launchd start uses tsx without watch; cwd=${REPO_ROOT})"
   (
     cd "${REPO_ROOT}"
     pnpm --filter @backsteros/contracts build
@@ -346,10 +357,14 @@ if ! resolve_repo_root; then
   exit 1
 fi
 export BACKSTEROS_REPO_ROOT="${REPO_ROOT}"
-if [[ "${REPO_ROOT}" == "${LOCAL_CORE_BUILD}" ]]; then
-  log "using dedicated local-core build at ${REPO_ROOT}"
+export BACKSTEROS_LOCAL_CORE_RUNTIME="${LOCAL_CORE_RUNTIME}"
+export BACKSTEROS_LOCAL_CORE_BUILD="${LOCAL_CORE_BUILD}"
+if [[ "${REPO_ROOT}" == "${LOCAL_CORE_RUNTIME_CURRENT}" ]]; then
+  log "using published local-core runtime at ${REPO_ROOT}"
+elif [[ "${REPO_ROOT}" == "${LOCAL_CORE_BUILD}" ]]; then
+  log "WARNING: runtime missing at ${LOCAL_CORE_RUNTIME_CURRENT}; using build worktree ${REPO_ROOT} (run scripts/local-core/update-build.sh)"
 else
-  log "WARNING: dedicated build missing at ${LOCAL_CORE_BUILD}; using ${REPO_ROOT} (run scripts/local-core/update-build.sh)"
+  log "WARNING: runtime/build missing; using ${REPO_ROOT} (run scripts/local-core/update-build.sh)"
 fi
 
 if ! resolve_env_file; then

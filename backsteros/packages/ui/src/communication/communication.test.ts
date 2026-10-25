@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   filterCommunicationListItems,
   getCommunicationChannelHref,
+  getCommunicationHref,
+  getCommunicationHrefAfterRemovingRow,
   getCommunicationItemHref,
   parseCommunicationChannelFromSearch,
   parseCommunicationInboxIdFromSearch,
@@ -200,6 +202,90 @@ test("resolveActiveCommunicationChannel prefers email/support detail", () => {
       search: "?channel=email",
     }),
     "email",
+  );
+});
+
+test("getCommunicationHrefAfterRemovingRow prefers the row above", () => {
+  const items = [
+    {
+      kind: "email",
+      id: "email:box:a",
+      inboxId: "box",
+      messageId: "a",
+    },
+    {
+      kind: "email",
+      id: "email:box:b",
+      inboxId: "box",
+      messageId: "b",
+    },
+    {
+      kind: "email",
+      id: "email:box:c",
+      inboxId: "box",
+      messageId: "c",
+    },
+  ] as InboxListItem[];
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({ items, removedId: "email:box:b" }),
+    getCommunicationHref("email:box:a", "chat"),
+  );
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({ items, removedId: "email:box:a" }),
+    getCommunicationHref("email:box:b", "chat"),
+  );
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({
+      items: [items[0]!],
+      removedId: "email:box:a",
+    }),
+    null,
+  );
+});
+
+test("getCommunicationHrefAfterRemovingRow follows on-screen order", () => {
+  const items = [
+    { kind: "email", id: "email:box:a", inboxId: "box", messageId: "a" },
+    {
+      kind: "email",
+      id: "email:box:draft",
+      inboxId: "box",
+      messageId: "draft-msg",
+      draftId: "d1",
+    },
+    { kind: "email", id: "email:box:c", inboxId: "box", messageId: "c" },
+  ] as InboxListItem[];
+  const visibleRowIds = [
+    "email:box:draft",
+    "chat-uuid",
+    "email:box:c",
+    "email:box:a",
+  ];
+  // Resolved by draft id; first row so it falls through to the next one.
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({
+      items,
+      removedId: "d1",
+      visibleRowIds,
+    }),
+    getCommunicationHref("chat-uuid", "chat"),
+  );
+  // Resolved by message id; row above is a chat conversation.
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({
+      items,
+      removedId: "c",
+      visibleRowIds,
+    }),
+    getCommunicationHref("chat-uuid", "chat"),
+  );
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({
+      items,
+      removedId: "email:box:a",
+      visibleRowIds,
+    }),
+    getCommunicationHref("email:box:c", "chat"),
   );
 });
 

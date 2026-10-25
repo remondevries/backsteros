@@ -6,8 +6,10 @@ import { zValidator } from "@hono/zod-validator";
 import {
   createApiKeySchema,
   listApiKeyAuditLogsQuerySchema,
+  listApiKeyRequestLogsQuerySchema,
   updateApiKeySchema,
   type ApiKeyAuditLog,
+  type ApiKeyRequestLog,
 } from "@backsteros/contracts";
 
 import { toApiKey } from "../lib/mappers.js";
@@ -15,7 +17,7 @@ import { requestClientAddress } from "../lib/request-address.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { canManageApiKeys } from "../lib/powersync-auth.js";
 import * as apiKeyService from "../services/api-keys.js";
-import type { DbApiKeyAuditLog } from "../db/schema.js";
+import type { DbApiKeyAuditLog, DbApiKeyRequestLog } from "../db/schema.js";
 import {
   forbidden,
   getAuth,
@@ -36,6 +38,19 @@ function toApiKeyAuditLog(row: DbApiKeyAuditLog): ApiKeyAuditLog {
     actorUserId: row.actorUserId,
     actorKind: row.actorKind,
     actorApiKeyId: row.actorApiKeyId,
+    address: row.address,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toApiKeyRequestLog(row: DbApiKeyRequestLog): ApiKeyRequestLog {
+  return {
+    id: row.id,
+    apiKeyId: row.apiKeyId,
+    apiKeyName: row.apiKeyName,
+    method: row.method,
+    path: row.path,
+    status: row.status,
     address: row.address,
     createdAt: row.createdAt.toISOString(),
   };
@@ -89,6 +104,26 @@ export function registerApiKeyRoutes(app: Hono) {
         limit,
       });
       return c.json({ auditLogs: rows.map(toApiKeyAuditLog) });
+    },
+  );
+
+  app.get(
+    "/api/v1/api-keys/request-logs",
+    zValidator("query", listApiKeyRequestLogsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!(await authCanManageApiKeys(auth))) {
+        return c.json(
+          auth.kind === "api_key" ? forbidden() : unauthorized(),
+          auth.kind === "api_key" ? 403 : 401,
+        );
+      }
+
+      const { limit } = c.req.valid("query");
+      const rows = await apiKeyService.listApiKeyRequestLogs(auth.workspaceId, {
+        limit,
+      });
+      return c.json({ requestLogs: rows.map(toApiKeyRequestLog) });
     },
   );
 
@@ -202,6 +237,25 @@ export function registerApiKeyRoutes(app: Hono) {
       }
     },
   );
+
+  app.get("/api/v1/api-keys/:id/secret", async (c) => {
+    const auth = getAuth(c);
+    if (!(await authCanManageApiKeys(auth))) {
+      return c.json(
+        auth.kind === "api_key" ? forbidden() : unauthorized(),
+        auth.kind === "api_key" ? 403 : 401,
+      );
+    }
+
+    const secret = await apiKeyService.revealApiKeySecret(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!secret) {
+      return c.json(notFound("API key secret"), 404);
+    }
+    return c.json({ secret });
+  });
 
   app.post("/api/v1/api-keys/:id/rotate", async (c) => {
     const auth = getAuth(c);

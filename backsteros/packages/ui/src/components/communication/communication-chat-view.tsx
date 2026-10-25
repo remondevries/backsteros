@@ -29,6 +29,7 @@ import {
   type CommunicationChatListFilters,
 } from "../../communication/communication-chat-list-filters.js";
 import {
+  communicationChatListVisibleRowIds,
   emailListItemPartyName,
   filterCommunicationChatListGroups,
   groupCommunicationChatListRows,
@@ -446,6 +447,8 @@ export type CommunicationChatViewProps = {
   onCreateKind?: (kind: CommunicationCreateKind) => void;
   /** Embedded new-email compose (Communication create → Email). */
   emailComposeSlot?: ReactNode;
+  /** Row ids in on-screen order (after search/filters) — drives delete → neighbor. */
+  onVisibleRowIdsChange?: (rowIds: readonly string[]) => void;
   /**
    * `full` — list + thread (default). `thread` — conversation pane only
    * (contact/org Communication workspace embed).
@@ -754,6 +757,7 @@ export function CommunicationChatView({
   onCreateOpenChange,
   onCreateKind,
   emailComposeSlot = null,
+  onVisibleRowIdsChange,
   pane = "full",
 }: CommunicationChatViewProps) {
   const [draft, setDraft] = useState("");
@@ -796,6 +800,14 @@ export function CommunicationChatView({
     listQuery,
     supportTasks,
   ]);
+  useEffect(() => {
+    onVisibleRowIdsChange?.(
+      communicationChatListVisibleRowIds({
+        drafts: draftEmailRows,
+        groups: statusGroups,
+      }),
+    );
+  }, [draftEmailRows, onVisibleRowIdsChange, statusGroups]);
   const listEmpty =
     conversations.length === 0 &&
     emails.length === 0 &&

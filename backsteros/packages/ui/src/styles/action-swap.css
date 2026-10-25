@@ -1,0 +1,507 @@
+/* Action swap (ported from Arc UI) — morphing async action pill. */
+.action-swap {
+  --action-swap-height: 30px;
+  --action-swap-pad: 10px;
+  /* Content box used when folded into a circle (icons / orb). */
+  --action-swap-content: 18px;
+  --action-swap-success: var(--success, #3fb950);
+  --action-swap-danger: var(--danger, #f87171);
+  --action-swap-warning: var(--warning, #d29922);
+  --action-swap-accent: var(--accent, var(--accent-color, #6b8afd));
+  --action-swap-accent-fg: var(--accent-foreground, #fff);
+  --action-swap-text-secondary: color-mix(
+    in srgb,
+    var(--foreground) 72%,
+    transparent
+  );
+  --action-swap-border-strong: color-mix(
+    in srgb,
+    var(--foreground) 22%,
+    transparent
+  );
+  --action-swap-surface-muted: color-mix(
+    in srgb,
+    var(--foreground) 6%,
+    var(--surface, #111112)
+  );
+
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  min-width: var(--action-swap-height);
+  min-height: var(--action-swap-height);
+  align-items: center;
+  justify-content: center;
+  padding: 0
+    calc(
+      var(--action-swap-pad) +
+        (
+            (var(--action-swap-height) - var(--action-swap-content)) / 2 -
+              var(--action-swap-pad)
+          ) * var(--fold, 0)
+    );
+  border: 1px solid var(--foreground);
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: clip;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-swap--sm {
+  --action-swap-height: 28px;
+  --action-swap-pad: 8px;
+}
+
+.action-swap--md {
+  --action-swap-height: 30px;
+  --action-swap-pad: 10px;
+}
+
+.action-swap--lg {
+  --action-swap-height: 36px;
+  --action-swap-pad: 12px;
+}
+
+.action-swap:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.action-swap[aria-busy="true"] {
+  cursor: progress;
+}
+
+.action-swap--neutral {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.action-swap--accent {
+  border-color: var(--action-swap-accent);
+  background: var(--action-swap-accent);
+  color: var(--action-swap-accent-fg);
+}
+
+.action-swap--quiet {
+  border-color: var(--border);
+  background: var(--surface, #111112);
+  color: var(--foreground);
+}
+
+.action-swap--success {
+  border-color: var(--action-swap-success);
+  background: var(--action-swap-success);
+  color: var(--background);
+}
+
+.action-swap--success.action-swap--icon-only {
+  /* Solid green circle; check matches the page background. */
+  color: var(--background);
+}
+
+.action-swap--danger.action-swap--icon-only {
+  /* Solid danger circle; bolt matches the page background. */
+  border-color: var(--action-swap-danger);
+  background: var(--action-swap-danger);
+  color: var(--background);
+}
+
+/* Read-only status circle (overview probes) — same chrome, no interaction. */
+.action-swap--status {
+  pointer-events: none;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.action-swap--status.action-swap--icon-only {
+  width: var(--action-swap-height);
+  height: var(--action-swap-height);
+  min-width: var(--action-swap-height);
+  min-height: var(--action-swap-height);
+  max-width: var(--action-swap-height);
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.action-swap--status[data-phase="working"] .action-swap__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.action-swap--status .action-swap__icon {
+  width: 16px;
+  height: 16px;
+}
+
+.action-swap__icon-swap {
+  position: relative;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+}
+
+.action-swap__icon-swap__rest,
+.action-swap__icon-swap__hover {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.action-swap__icon-swap__hover {
+  opacity: 0;
+}
+
+/*
+ * Hover chrome is class-gated (not :hover): if the result settles under a still
+ * pointer, green/red must show until the mouse leaves and re-enters.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .action-swap--success.action-swap--hover:not(:disabled, [aria-busy="true"]),
+  .action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ) {
+    border-color: var(--action-swap-accent);
+    background: var(--action-swap-accent);
+    color: var(--action-swap-accent-fg);
+    cursor: pointer;
+  }
+
+  .action-swap--success.action-swap--hover:not(:disabled, [aria-busy="true"])
+    .action-swap__icon-phase[data-tone="success"],
+  .action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    )
+    .action-swap__icon-phase[data-tone="danger"] {
+    color: var(--action-swap-accent-fg);
+  }
+
+  .action-swap--success.action-swap--hover:not(:disabled, [aria-busy="true"])
+    .action-swap__icon-swap__rest,
+  .action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    )
+    .action-swap__icon-swap__rest {
+    opacity: 0;
+  }
+
+  .action-swap--success.action-swap--hover:not(:disabled, [aria-busy="true"])
+    .action-swap__icon-swap__hover,
+  .action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    )
+    .action-swap__icon-swap__hover {
+    opacity: 1;
+  }
+}
+
+.action-swap--warning {
+  border-color: color-mix(
+    in srgb,
+    var(--action-swap-warning) 40%,
+    var(--border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--action-swap-warning) 14%,
+    var(--surface, #111112)
+  );
+  color: var(--foreground);
+}
+
+.action-swap--danger {
+  border-color: color-mix(
+    in srgb,
+    var(--action-swap-danger) 35%,
+    var(--border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--action-swap-danger) 12%,
+    var(--surface, #111112)
+  );
+  color: var(--foreground);
+}
+
+/* No hover recolor — tones stay fixed (green only when --success). */
+
+.action-swap__icon {
+  position: relative;
+  display: grid;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  place-content: center;
+  overflow: visible;
+}
+
+.action-swap[data-phase="working"] .action-swap__icon {
+  height: 20px;
+}
+
+.action-swap__icon-phase {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.action-swap__icon-phase svg {
+  flex: none;
+}
+
+.action-swap__icon-phase[data-tone="success"] {
+  color: var(--background);
+}
+
+.action-swap__icon-phase[data-tone="warning"] {
+  color: var(--action-swap-warning);
+}
+
+.action-swap__icon-phase[data-tone="danger"] {
+  color: var(--action-swap-danger);
+}
+
+.action-swap--danger.action-swap--icon-only
+  .action-swap__icon-phase[data-tone="danger"] {
+  color: var(--background);
+}
+
+.action-swap__spinner {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  place-content: center;
+  line-height: 0;
+  transform-origin: center center;
+  /* Always spin — ThinkingOrb freezes under prefers-reduced-motion. */
+  animation: action-swap-orb-spin 1.6s linear infinite !important;
+}
+
+.action-swap__spinner canvas {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
+  margin: 0;
+  vertical-align: top;
+}
+
+@keyframes action-swap-orb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * Folded icon circles (working orb / success check): force a true square.
+ * The fold-padding formula alone drifts oval once borders + 20px orb are in play.
+ */
+.action-swap[data-phase="working"],
+.action-swap.action-swap--icon-only {
+  width: var(--action-swap-height);
+  height: var(--action-swap-height);
+  min-width: var(--action-swap-height);
+  min-height: var(--action-swap-height);
+  max-width: var(--action-swap-height);
+  padding: 0;
+  aspect-ratio: 1;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+}
+
+.action-swap[data-phase="working"] .action-swap__morph,
+.action-swap.action-swap--icon-only .action-swap__morph {
+  width: 0 !important;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.action-swap__morph {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.action-swap__glyphs {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  white-space: pre;
+}
+
+.action-swap__glyphs[data-gap] {
+  padding-left: 4px;
+}
+
+.action-swap__glyph {
+  display: inline-block;
+}
+
+.action-swap__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-swap {
+    transition: none;
+  }
+
+  /* Keep the progress orb spinning even when the OS asks to reduce motion. */
+  .action-swap__spinner {
+    animation: action-swap-orb-spin 1.6s linear infinite !important;
+  }
+}
+
+/* Beat `.settings-card button` chrome so tone fills win over `var(--faint)`. */
+.settings-card button.action-swap,
+.settings-secret-field-row__actions button.action-swap,
+.settings-secret-field-row__control button.action-swap,
+.settings-integration-actions button.action-swap {
+  box-sizing: border-box;
+  min-height: var(--action-swap-height);
+  padding: 0
+    calc(
+      var(--action-swap-pad) +
+        (
+            (var(--action-swap-height) - var(--action-swap-content)) / 2 -
+              var(--action-swap-pad)
+          ) * var(--fold, 0)
+    );
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.settings-card button.action-swap[data-phase="working"],
+.settings-card button.action-swap.action-swap--icon-only,
+.settings-secret-field-row__control button.action-swap[data-phase="working"],
+.settings-secret-field-row__control button.action-swap.action-swap--icon-only,
+.settings-integration-actions button.action-swap[data-phase="working"],
+.settings-integration-actions button.action-swap.action-swap--icon-only {
+  width: var(--action-swap-height);
+  height: var(--action-swap-height);
+  min-width: var(--action-swap-height);
+  min-height: var(--action-swap-height);
+  max-width: var(--action-swap-height);
+  padding: 0;
+}
+
+.settings-card button.action-swap.action-swap--quiet,
+.settings-integration-actions button.action-swap.action-swap--quiet {
+  border-color: var(--border);
+  background: var(--surface, #111112);
+  color: var(--foreground);
+}
+
+.settings-secret-field-row__control button.action-swap.action-swap--quiet {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.settings-card button.action-swap.action-swap--success,
+.settings-secret-field-row__control button.action-swap.action-swap--success,
+.settings-integration-actions button.action-swap.action-swap--success {
+  border-color: var(--action-swap-success);
+  background: var(--action-swap-success);
+  color: var(--background);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-card
+    button.action-swap.action-swap--success.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ),
+  .settings-secret-field-row__control
+    button.action-swap.action-swap--success.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ),
+  .settings-integration-actions
+    button.action-swap.action-swap--success.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ) {
+    border-color: var(--action-swap-accent);
+    background: var(--action-swap-accent);
+    color: var(--action-swap-accent-fg);
+  }
+}
+
+.settings-card button.action-swap.action-swap--danger,
+.settings-secret-field-row__control button.action-swap.action-swap--danger,
+.settings-integration-actions button.action-swap.action-swap--danger {
+  border-color: color-mix(
+    in srgb,
+    var(--action-swap-danger) 35%,
+    var(--border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--action-swap-danger) 12%,
+    var(--surface, #111112)
+  );
+  color: var(--foreground);
+}
+
+.settings-card button.action-swap.action-swap--danger.action-swap--icon-only,
+.settings-secret-field-row__control
+  button.action-swap.action-swap--danger.action-swap--icon-only,
+.settings-integration-actions
+  button.action-swap.action-swap--danger.action-swap--icon-only {
+  border-color: var(--action-swap-danger);
+  background: var(--action-swap-danger);
+  color: var(--background);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-card
+    button.action-swap.action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ),
+  .settings-secret-field-row__control
+    button.action-swap.action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ),
+  .settings-integration-actions
+    button.action-swap.action-swap--danger.action-swap--icon-only.action-swap--hover:not(
+      :disabled,
+      [aria-busy="true"]
+    ) {
+    border-color: var(--action-swap-accent);
+    background: var(--action-swap-accent);
+    color: var(--action-swap-accent-fg);
+  }
+}

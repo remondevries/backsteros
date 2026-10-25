@@ -139,12 +139,12 @@ test("emailHtmlPrefersLightCanvas needs light fill plus table layout", () => {
   );
 });
 
-test("buildEmailShadowStyles light canvas avoids forced text color", () => {
+test("buildEmailShadowStyles light canvas uses a white sheet", () => {
   const styles = buildEmailShadowStyles("light");
-  assert.match(styles, /background:\s*transparent/);
+  assert.match(styles, /background:\s*#ffffff/);
   assert.match(styles, /color:\s*#222222/);
   assert.match(styles, /color-scheme:\s*light/);
-  assert.doesNotMatch(styles, /color:\s*#[0-9a-fA-F]+\s*!important/);
+  assert.doesNotMatch(styles, /color:\s*#d4d4d4\s*!important/);
 });
 
 test("buildEmailShadowStyles dark canvas only clears outer wrappers", () => {

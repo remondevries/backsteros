@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   GoogleCalendarCalendarSummary,
   GoogleCalendarOAuthStartResult,
@@ -6,9 +6,27 @@ import type {
   GoogleCalendarSyncResult,
   GoogleCalendarTestConnectionResult,
 } from "@backsteros/contracts";
-import { IntegrationConnectionSettingsView } from "@backsteros/ui";
+import {
+  IntegrationConnectionSettingsView,
+  SegmentedPillToggle,
+  useIntegrationSettingsHeaderTrailing,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  settingsSecretInputClassName,
+  settingsSecretPlaceholder,
+} from "../lib/settings-secret-field";
+
+type GoogleCalendarSubTab = "oauth-client" | "calendars";
+
+const GOOGLE_CALENDAR_SUB_TABS: {
+  value: GoogleCalendarSubTab;
+  label: string;
+}[] = [
+  { value: "oauth-client", label: "OAuth client" },
+  { value: "calendars", label: "Calendars" },
+];
 
 export function SettingsGoogleCalendarTab({
   title,
@@ -20,6 +38,8 @@ export function SettingsGoogleCalendarTab({
   hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
+  const [subTab, setSubTab] =
+    useState<GoogleCalendarSubTab>("oauth-client");
   const [settings, setSettings] = useState<GoogleCalendarSettings | null>(null);
   const [calendars, setCalendars] = useState<GoogleCalendarCalendarSummary[]>(
     [],
@@ -29,9 +49,6 @@ export function SettingsGoogleCalendarTab({
   const [refreshTokenDraft, setRefreshTokenDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -219,6 +236,19 @@ export function SettingsGoogleCalendarTab({
 
   const connected = settings?.connected ?? false;
 
+  const headerTrailing = useMemo(
+    () => (
+      <SegmentedPillToggle
+        ariaLabel="Google Calendar settings sections"
+        value={subTab}
+        onChange={setSubTab}
+        options={GOOGLE_CALENDAR_SUB_TABS}
+      />
+    ),
+    [subTab],
+  );
+  useIntegrationSettingsHeaderTrailing(headerTrailing);
+
   return (
     <>
       <IntegrationConnectionSettingsView
@@ -269,39 +299,18 @@ export function SettingsGoogleCalendarTab({
                 : "Use Sync now — push channels register after a successful sync when HTTPS webhook is configured. Reconnect Google if you connected before write scopes were added."
             : null
         }
-        testing={testing}
-        testMessage={testMessage}
-        testOk={testOk}
         testDisabled={settings === null || !connected}
-        onTestConnection={() => {
-          void (async () => {
-            setTesting(true);
-            setTestMessage(null);
-            setTestOk(null);
-            try {
-              const result =
-                await client.requestJson<GoogleCalendarTestConnectionResult>(
-                  "/api/v1/settings/google-calendar/test",
-                );
-              await loadSettings();
-              if (result.ok) await loadCalendars();
-              setTestOk(result.ok);
-              setTestMessage(
-                result.ok
-                  ? `Connected${result.accountEmail ? ` as ${result.accountEmail}` : ""} (${result.calendarCount ?? 0} calendars).`
-                  : (result.error ?? "Connection test failed."),
-              );
-            } catch (error) {
-              setTestOk(false);
-              setTestMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Connection test failed.",
-              );
-            } finally {
-              setTesting(false);
-            }
-          })();
+        onTestConnection={async () => {
+          const result =
+            await client.requestJson<GoogleCalendarTestConnectionResult>(
+              "/api/v1/settings/google-calendar/test",
+            );
+          await loadSettings();
+          if (result.ok) {
+            await loadCalendars();
+            return;
+          }
+          throw new Error(result.error ?? "Connection test failed.");
         }}
       />
 
@@ -311,6 +320,7 @@ export function SettingsGoogleCalendarTab({
         </p>
       ) : null}
 
+      {subTab === "oauth-client" ? (
       <section className="settings-card">
         <h2>OAuth client</h2>
         <p>
@@ -322,8 +332,13 @@ export function SettingsGoogleCalendarTab({
           <input
             type="text"
             autoComplete="off"
+            className={settingsSecretInputClassName(
+              Boolean(settings?.clientIdConfigured),
+            )}
             placeholder={
-              settings?.clientIdConfigured ? "Configured (••••)" : "….apps.googleusercontent.com"
+              settings?.clientIdConfigured
+                ? settingsSecretPlaceholder(null)
+                : "….apps.googleusercontent.com"
             }
             value={clientIdDraft}
             onChange={(event) => setClientIdDraft(event.target.value)}
@@ -334,8 +349,13 @@ export function SettingsGoogleCalendarTab({
           <input
             type="password"
             autoComplete="off"
+            className={settingsSecretInputClassName(
+              Boolean(settings?.clientSecretConfigured),
+            )}
             placeholder={
-              settings?.clientSecretConfigured ? "Configured (••••)" : "GOCSPX-…"
+              settings?.clientSecretConfigured
+                ? settingsSecretPlaceholder(null)
+                : "GOCSPX-…"
             }
             value={clientSecretDraft}
             onChange={(event) => setClientSecretDraft(event.target.value)}
@@ -346,9 +366,12 @@ export function SettingsGoogleCalendarTab({
           <input
             type="password"
             autoComplete="off"
+            className={settingsSecretInputClassName(
+              Boolean(settings?.refreshTokenConfigured),
+            )}
             placeholder={
               settings?.refreshTokenConfigured
-                ? "Configured (••••)"
+                ? settingsSecretPlaceholder(null)
                 : "Paste only if skipping browser Connect"
             }
             value={refreshTokenDraft}
@@ -387,49 +410,59 @@ export function SettingsGoogleCalendarTab({
           </button>
         </div>
       </section>
+      ) : null}
 
-      {connected ? (
+      {subTab === "calendars" ? (
         <section className="settings-card">
           <h2>Calendars</h2>
-          <p>
-            Check the calendars to sync. Primary stays selected by default; add
-            others as needed, then Sync now.
-          </p>
-          {calendars.length === 0 ? (
-            <p>No calendars loaded yet — use Test connection.</p>
+          {!connected ? (
+            <p className="settings-hint">
+              Connect with Google under OAuth client first, then choose calendars
+              here.
+            </p>
           ) : (
-            <ul className="settings-checklist">
-              {calendars.map((calendar) => (
-                <li key={calendar.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={calendar.selected}
-                      disabled={saving}
-                      onChange={(event) => {
-                        void onToggleCalendar(
-                          calendar.id,
-                          event.target.checked,
-                        );
-                      }}
-                    />{" "}
-                    {calendar.summary}
-                    {calendar.primary ? " (primary)" : null}
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <>
+              <p>
+                Check the calendars to sync. Primary stays selected by default;
+                add others as needed, then Sync now.
+              </p>
+              {calendars.length === 0 ? (
+                <p>No calendars loaded yet — use Test connection.</p>
+              ) : (
+                <ul className="settings-checklist">
+                  {calendars.map((calendar) => (
+                    <li key={calendar.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={calendar.selected}
+                          disabled={saving}
+                          onChange={(event) => {
+                            void onToggleCalendar(
+                              calendar.id,
+                              event.target.checked,
+                            );
+                          }}
+                        />{" "}
+                        {calendar.summary}
+                        {calendar.primary ? " (primary)" : null}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  disabled={syncing || !connected}
+                  onClick={() => void onSync()}
+                >
+                  {syncing ? "Syncing…" : "Sync now"}
+                </button>
+              </div>
+              {syncMessage ? <p>{syncMessage}</p> : null}
+            </>
           )}
-          <div className="settings-actions">
-            <button
-              type="button"
-              disabled={syncing || !connected}
-              onClick={() => void onSync()}
-            >
-              {syncing ? "Syncing…" : "Sync now"}
-            </button>
-          </div>
-          {syncMessage ? <p>{syncMessage}</p> : null}
         </section>
       ) : null}
     </>

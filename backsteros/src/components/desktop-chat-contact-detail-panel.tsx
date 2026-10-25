@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -161,7 +162,7 @@ type DesktopChatContactDetailPanelProps = {
  * a BacksterOS contact (email/phone). First tab is Details (chat) or E-mail.
  * Expand opens Meetings/Emails/Tasks/Letters over the chat; collapse restores it.
  */
-export function DesktopChatContactDetailPanel({
+function DesktopChatContactDetailPanelView({
   open,
   contact,
   visitor,
@@ -919,8 +920,30 @@ export function DesktopChatContactDetailPanel({
       if (!onLinkOrganization) return;
       setLinkingContact(true);
       try {
-        const name = query?.trim() || visitor?.contactName?.trim() || "Organization";
+        const name =
+          query?.trim() || visitor?.contactName?.trim() || "Organization";
+        const partyEmail = visitor?.contactEmail?.trim() || null;
         const created = await workspace.createOrganization({ name });
+        // Seed the party From address so classify/auto-link keep this org
+        // instead of treating an empty org as a soft-match wipe candidate.
+        if (partyEmail?.includes("@")) {
+          try {
+            await workspace.patchOrganization(created.id, {
+              email: partyEmail,
+              emails: [{ label: "general" as const, address: partyEmail }],
+            });
+            setOptimisticKnownPartyEmails((prev) => {
+              const next = new Set(prev);
+              next.add(partyEmail.toLowerCase());
+              return next;
+            });
+          } catch (error) {
+            console.warn(
+              "[desktop] seed party email on new organization failed",
+              error,
+            );
+          }
+        }
         await onLinkOrganization(created.id);
       } catch (error) {
         console.warn(
@@ -931,7 +954,7 @@ export function DesktopChatContactDetailPanel({
         setLinkingContact(false);
       }
     },
-    [onLinkOrganization, visitor?.contactName, workspace],
+    [onLinkOrganization, visitor?.contactEmail, visitor?.contactName, workspace],
   );
 
   const displayContact = useMemo(() => {
@@ -955,6 +978,7 @@ export function DesktopChatContactDetailPanel({
         postalCode: details?.postalCode ?? contact.postalCode ?? null,
         country: details?.country ?? contact.country ?? null,
         region: details?.region ?? contact.region ?? null,
+        timezone: details?.timezone ?? contact.timezone ?? null,
         organizationId:
           contact.organizationId ?? details?.organizationId ?? null,
         organizationName: contact.organizationName,
@@ -1957,3 +1981,5 @@ function CommunicationContactCoverAvatar({
     </div>
   );
 }
+
+export const DesktopChatContactDetailPanel = memo(DesktopChatContactDetailPanelView);

@@ -251,17 +251,34 @@ export function buildEmailShadowStyles(
       background: transparent !important;
       background-color: transparent !important;
     }
-    :host, :host :where(div, p, span, td, th, li, font, strong, em, b, i, u) {
+    /*
+     * Beat author !important dark text (e.g. color:#000) that was written for
+     * a light sheet we made transparent — otherwise text matches the dark UI.
+     */
+    :host,
+    :host :where(
+      div, p, span, td, th, li, font, strong, em, b, i, u, h1, h2, h3, h4, h5, h6,
+      label, pre, code, small, center
+    ) {
       color: #d4d4d4 !important;
     }
     a, a :where(span, font, strong, em, b, i, u) { color: #6eb6ff !important; }
     blockquote, blockquote :where(div, p, span, font) { color: #9a9aa0 !important; }
     `;
+  const lightCanvasForce = isLight
+    ? `
+    /* Keep light templates on a white sheet even when the app is dark. */
+    :host {
+      background: #ffffff !important;
+      color: #222222 !important;
+    }
+    `
+    : "";
   return `<style>
     :host {
       display: block;
       color: ${isLight ? "#222222" : "#d4d4d4"};
-      background: transparent;
+      background: ${isLight ? "#ffffff" : "transparent"};
       color-scheme: ${isLight ? "light" : "dark"};
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 14.4px;
@@ -281,6 +298,7 @@ export function buildEmailShadowStyles(
       border-left: 2px solid ${isLight ? "#c8c8cc" : "#3a3a3e"};
       color: ${isLight ? "#555555" : "#9a9aa0"};
     }
+    ${lightCanvasForce}
     ${darkCanvasForce}
     ${buildEmailQuoteToggleStyles(canvas)}
   </style>`;

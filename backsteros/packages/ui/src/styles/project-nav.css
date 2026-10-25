@@ -2511,6 +2511,36 @@ button.entity-overview-subgroup__header:focus-visible {
   font-weight: 400;
 }
 
+.contact-location-map__timezone-line {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.contact-location-map__timezone-name,
+.contact-location-map__timezone-sep {
+  color: rgb(255 255 255 / 0.58);
+  font-weight: 400;
+}
+
+.contact-location-map__timezone-time {
+  color: rgb(255 255 255 / 0.96);
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}
+
+.contact-location-map__timezone-colon {
+  display: inline-block;
+  width: 0.35em;
+  text-align: center;
+}
+
+.contact-location-map__timezone-colon.is-off {
+  opacity: 0;
+}
+
 .contact-location-map__editor {
   display: grid;
   grid-template-rows: 0fr;

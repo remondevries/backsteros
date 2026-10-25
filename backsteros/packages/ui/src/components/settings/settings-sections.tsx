@@ -7,6 +7,7 @@ import {
   normalizeAppTimezone,
 } from "../../shared/app-timezone.js";
 import { SettingsContentHeader } from "./settings-content-header.js";
+import { SettingsTestConnectionSwap } from "./settings-test-connection-swap.js";
 
 export type GeneralSettingsSectionViewProps = {
   timezone: string;
@@ -54,12 +55,14 @@ export function GeneralSettingsSectionView({
   );
 }
 
+/** @deprecated Account now uses ContactDetailView for the default-assignee profile. */
 export type AccountSettingsSectionViewProps = {
   email?: string | null;
   showEmail?: boolean;
   assigneeField?: ReactNode;
 };
 
+/** @deprecated Prefer Settings Account contact profile. Kept for export stability. */
 export function AccountSettingsSectionView({
   email,
   showEmail = true,
@@ -76,18 +79,16 @@ export function AccountSettingsSectionView({
           </div>
         </section>
       ) : null}
-      <section className="settings-card">
-        <h2>Default assignee</h2>
-        <p>
-          This contact is the default assignee for newly created tasks. You can
-          still change the assignee on individual tasks.
-        </p>
-        {assigneeField ?? (
-          <p className="settings-hint">
-            Add a contact to set a default assignee.
+      {assigneeField ? (
+        <section className="settings-card">
+          <h2>Default assignee</h2>
+          <p>
+            This contact is the default assignee for newly created tasks. You
+            can still change the assignee on individual tasks.
           </p>
-        )}
-      </section>
+          {assigneeField}
+        </section>
+      ) : null}
     </>
   );
 }
@@ -122,11 +123,13 @@ export type IntegrationConnectionSettingsViewProps = {
   secondaryValue: string;
   hint?: string | null;
   reason?: string | null;
+  /** @deprecated Unused — Action swap owns the working phase. Kept for call-site compat. */
   testing?: boolean;
-  testMessage?: string | null;
-  testOk?: boolean | null;
-  onTestConnection?: () => void;
+  /** Resolve on success; reject/throw on failure so the Action swap can animate. */
+  onTestConnection?: () => void | PromiseLike<unknown>;
   testDisabled?: boolean;
+  /** When true, omit the Connection-card Test button (e.g. actions live on the secret field row). */
+  hideTestButton?: boolean;
 };
 
 export function IntegrationConnectionSettingsView({
@@ -140,11 +143,9 @@ export function IntegrationConnectionSettingsView({
   secondaryValue,
   hint,
   reason,
-  testing = false,
-  testMessage,
-  testOk,
   onTestConnection,
   testDisabled = false,
+  hideTestButton = false,
 }: IntegrationConnectionSettingsViewProps) {
   return (
     <>
@@ -173,33 +174,14 @@ export function IntegrationConnectionSettingsView({
         {reason ? <p className="settings-hint">{reason}</p> : null}
         {hint ? <p className="settings-hint">{hint}</p> : null}
 
-        <div className="settings-integration-actions">
-          <button
-            type="button"
-            disabled={testDisabled || testing || !onTestConnection}
-            onClick={onTestConnection}
-          >
-            {testing ? "Testing…" : "Test connection"}
-          </button>
-        </div>
-
-        {testMessage ? (
-          <p
-            className={[
-              "settings-integration-test-result",
-              testOk === true
-                ? "settings-integration-test-result--ok"
-                : testOk === false
-                  ? "settings-integration-test-result--error"
-                  : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            role="status"
-          >
-            {testMessage}
-          </p>
-        ) : null}
+        {hideTestButton || !onTestConnection ? null : (
+          <div className="settings-integration-actions">
+            <SettingsTestConnectionSwap
+              disabled={testDisabled}
+              onTest={onTestConnection}
+            />
+          </div>
+        )}
       </section>
     </>
   );
@@ -221,12 +203,9 @@ export type GithubSettingsSectionViewProps = {
   repositoryCount: number | null;
   reason?: string | null;
   connecting?: boolean;
-  testing?: boolean;
-  testMessage?: string | null;
-  testOk?: boolean | null;
   connectLabel: string;
   onConnect: () => void;
-  onTestConnection: () => void;
+  onTestConnection: () => void | PromiseLike<unknown>;
   connectDisabled?: boolean;
 };
 
@@ -242,9 +221,6 @@ export function GithubSettingsSectionView({
   repositoryCount,
   reason,
   connecting = false,
-  testing = false,
-  testMessage,
-  testOk,
   connectLabel,
   onConnect,
   onTestConnection,
@@ -314,32 +290,11 @@ export function GithubSettingsSectionView({
           >
             {connecting ? "Opening GitHub…" : connectLabel}
           </button>
-          <button
-            type="button"
-            disabled={testing || loading}
-            onClick={onTestConnection}
-          >
-            {testing ? "Testing…" : "Test connection"}
-          </button>
+          <SettingsTestConnectionSwap
+            disabled={loading}
+            onTest={onTestConnection}
+          />
         </div>
-
-        {testMessage ? (
-          <p
-            className={[
-              "settings-integration-test-result",
-              testOk === true
-                ? "settings-integration-test-result--ok"
-                : testOk === false
-                  ? "settings-integration-test-result--error"
-                  : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            role="status"
-          >
-            {testMessage}
-          </p>
-        ) : null}
       </section>
     </>
   );

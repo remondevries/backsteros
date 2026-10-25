@@ -7,8 +7,12 @@
 : "${LOG_DIR:=${HOME}/.config/backsteros/desktop}"
 : "${LOG_FILE:=${LOG_DIR}/local-core.log}"
 : "${LOCAL_CORE_BUILD:=${BACKSTEROS_LOCAL_CORE_BUILD:-${HOME}/.backsteros/local-core-build}}"
+: "${LOCAL_CORE_RUNTIME:=${BACKSTEROS_LOCAL_CORE_RUNTIME:-${HOME}/.backsteros/local-core-runtime}}"
+: "${LOCAL_CORE_RUNTIME_CURRENT:=${LOCAL_CORE_RUNTIME}/current}"
 : "${REPO_ROOT:=${BACKSTEROS_REPO_ROOT:-}}"
 : "${ENV_FILE:=${LOCAL_CORE_ENV_FILE:-}}"
+
+LOCAL_CORE_DO_NOT_DELETE_TEXT='LaunchAgent root; deleting breaks :8788; only replace via update-build publish.'
 
 # Live stack project name. Plain `docker compose` without this env uses the
 # worktree-safe default in docker-compose.yml and cannot touch live containers.
@@ -36,26 +40,66 @@ local_core_port_listening() {
   lsof -nP -iTCP:"${API_PORT}" -sTCP:LISTEN >/dev/null 2>&1
 }
 
-local_core_resolve_repo_root() {
-  # Prefer the dedicated local-core build (origin/production worktree).
-  if [[ -n "${LOCAL_CORE_BUILD}" \
-    && -f "${LOCAL_CORE_BUILD}/pnpm-workspace.yaml" \
-    && -f "${LOCAL_CORE_BUILD}/docker-compose.yml" \
-    && -d "${LOCAL_CORE_BUILD}/core/server" ]]; then
-    REPO_ROOT="${LOCAL_CORE_BUILD}"
+# True when DIR itself contains the DO_NOT_DELETE sentinel file.
+local_core_has_do_not_delete() {
+  local dir="${1:-}"
+  [[ -n "${dir}" && -f "${dir}/DO_NOT_DELETE" ]]
+}
+
+# rm -rf that refuses directories containing DO_NOT_DELETE unless
+# --force-replace-runtime is in LOCAL_CORE_FORCE_REPLACE_RUNTIME=1 and
+# staging is complete (LOCAL_CORE_STAGING_COMPLETE=1).
+local_core_safe_rm_rf() {
+  local target="${1:-}"
+  if [[ -z "${target}" ]]; then
     return 0
   fi
-  if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+  if [[ ! -e "${target}" ]]; then
+    return 0
+  fi
+  if local_core_has_do_not_delete "${target}"; then
+    if [[ "${LOCAL_CORE_FORCE_REPLACE_RUNTIME:-0}" == "1" \
+      && "${LOCAL_CORE_STAGING_COMPLETE:-0}" == "1" ]]; then
+      local_core_log "force-replace-runtime: removing sentinel dir ${target}"
+      rm -rf "${target}"
+      return 0
+    fi
+    local_core_log "refusing to rm -rf ${target} (contains DO_NOT_DELETE; need --force-replace-runtime and complete staging)"
+    return 1
+  fi
+  rm -rf "${target}"
+}
+
+local_core_looks_like_repo() {
+  local root="${1:-}"
+  [[ -n "${root}" \
+    && -f "${root}/pnpm-workspace.yaml" \
+    && -f "${root}/docker-compose.yml" \
+    && -d "${root}/core/server" \
+    && -f "${root}/scripts/local-core/run.sh" ]]
+}
+
+local_core_resolve_repo_root() {
+  # Prefer the published runtime (non-git) over the build worktree.
+  if local_core_looks_like_repo "${LOCAL_CORE_RUNTIME_CURRENT}"; then
+    REPO_ROOT="${LOCAL_CORE_RUNTIME_CURRENT}"
+    return 0
+  fi
+  if [[ -n "${REPO_ROOT}" ]] && local_core_looks_like_repo "${REPO_ROOT}"; then
+    return 0
+  fi
+  if local_core_looks_like_repo "${LOCAL_CORE_BUILD}"; then
+    REPO_ROOT="${LOCAL_CORE_BUILD}"
     return 0
   fi
   if [[ -f "${HOME}/.config/backsteros/hub.json" ]]; then
     REPO_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME}/.config/backsteros/hub.json" 2>/dev/null || true)"
-    if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+    if local_core_looks_like_repo "${REPO_ROOT}"; then
       return 0
     fi
   fi
   REPO_ROOT="${HOME}/BacksterOS/Projects/OS/Codebase"
-  if [[ -f "${REPO_ROOT}/pnpm-workspace.yaml" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+  if local_core_looks_like_repo "${REPO_ROOT}"; then
     return 0
   fi
   return 1
@@ -100,7 +144,12 @@ local_core_wait_for_docker() {
 }
 
 local_core_compose_root() {
-  if [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
+  # Prefer the live runtime (LaunchAgent root); fall back to build worktree.
+  if [[ -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+    printf '%s\n' "${REPO_ROOT}"
+  elif [[ -f "${LOCAL_CORE_RUNTIME_CURRENT}/docker-compose.yml" ]]; then
+    printf '%s\n' "${LOCAL_CORE_RUNTIME_CURRENT}"
+  elif [[ -f "${LOCAL_CORE_BUILD}/docker-compose.yml" ]]; then
     printf '%s\n' "${LOCAL_CORE_BUILD}"
   else
     printf '%s\n' "${REPO_ROOT}"

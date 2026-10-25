@@ -942,6 +942,14 @@ button.side-panel-plain-group-label[aria-current="true"] {
   padding: 28px 32px 24px;
 }
 
+.settings-panel--fill .settings-panel-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .settings-content-container {
   width: 100%;
   max-width: 680px;
@@ -950,6 +958,145 @@ button.side-panel-plain-group-label[aria-current="true"] {
 
 .settings-content-container--wide {
   max-width: 1080px;
+}
+
+/*
+ * Account tab: Contacts-style profile for the default-assignee contact.
+ * Outer settings-panel-body scrolls; do not nest a second scroller in the
+ * profile (same idea as communication chat contact rail).
+ */
+.settings-account {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-account-profile {
+  width: 100%;
+  max-width: 680px;
+  margin-inline: auto;
+  padding: 22px 16px 16px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+
+.settings-account-profile .contact-overview__cover {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  padding: 0 0 20px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.settings-account-profile .contact-detail__overview .contact-overview__chrome {
+  margin-top: 0;
+}
+
+.settings-account-profile .contact-overview__cover .avatar-upload {
+  gap: 0;
+}
+
+.settings-account-profile .contact-overview__cover .avatar-upload__button {
+  width: 72px;
+  height: 72px;
+}
+
+.settings-account-profile .contact-overview__header {
+  padding-inline: 0;
+}
+
+.settings-account-profile .contact-overview__scroll {
+  padding-inline: 0;
+}
+
+.settings-account-profile .contact-detail {
+  overflow: visible;
+}
+
+.settings-account-profile .contact-detail__overview {
+  overflow: visible;
+}
+
+.settings-account-profile .contact-detail__overview .contact-overview {
+  overflow: visible;
+}
+
+.settings-account-profile .contact-overview__scroll,
+.settings-account-profile
+  .contact-overview__scroll:has(.contact-overview__section-body) {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+  padding-block: 12px 8px;
+}
+
+.settings-account-profile .contact-overview__section-body {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.settings-account__prefs {
+  display: flex;
+  width: 100%;
+  max-width: 680px;
+  margin-inline: auto;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-account-empty {
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+.settings-content-container--fill {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+}
+
+/*
+ * Logs panel only: lock the shell scroll parent so the audit list fills the
+ * viewport and scrolls inside the card. API Keys keeps normal page scroll.
+ */
+.page-scroll:has(.settings-api-keys--logs-fill),
+.bos-product-shell .page-scroll:has(.settings-api-keys--logs-fill) {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.page-scroll:has(.settings-api-keys--logs-fill) .settings-panel,
+.page-scroll:has(.settings-api-keys--logs-fill) .settings-panel-body,
+.page-scroll:has(.settings-api-keys--logs-fill) .settings-content-container,
+.bos-product-shell
+  .page-scroll:has(.settings-api-keys--logs-fill)
+  .settings-panel,
+.bos-product-shell
+  .page-scroll:has(.settings-api-keys--logs-fill)
+  .settings-panel-body,
+.bos-product-shell
+  .page-scroll:has(.settings-api-keys--logs-fill)
+  .settings-content-container {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .task-label-settings__toolbar {
@@ -1027,6 +1174,59 @@ button.side-panel-plain-group-label[aria-current="true"] {
   flex: 1;
 }
 
+.task-label-settings__composer-form {
+  display: none;
+}
+
+.task-label-settings__composer-options {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.task-label-table__composer-row td {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  vertical-align: top;
+}
+
+.task-label-table__composer-row .task-label-table__edit {
+  width: 100%;
+}
+
+.task-label-table__composer-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-label-table__composer-actions-cell {
+  text-align: right;
+  vertical-align: middle;
+}
+
+.task-label-table__composer-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.task-label-table__composer-actions .task-label-settings__button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .task-label-settings__button {
   border: 0.5px solid var(--border);
   border-radius: 8px;
@@ -1069,7 +1269,7 @@ button.side-panel-plain-group-label[aria-current="true"] {
 }
 
 .task-label-table th {
-  padding: 8px 8px 10px 0;
+  padding: 8px 20px 10px 0;
   border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font-size: 12px;
@@ -1079,9 +1279,19 @@ button.side-panel-plain-group-label[aria-current="true"] {
 }
 
 .task-label-table td {
-  padding: 9px 8px 9px 0;
+  padding: 9px 20px 9px 0;
   vertical-align: middle;
   border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.task-label-table th:first-child,
+.task-label-table td:first-child {
+  padding-left: 8px;
+}
+
+.task-label-table th:last-child,
+.task-label-table td:last-child {
+  padding-right: 8px;
 }
 
 .task-label-table tbody tr:hover td {
@@ -1261,6 +1471,74 @@ button.side-panel-plain-group-label[aria-current="true"] {
   text-transform: uppercase;
 }
 
+.task-label-table__key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+}
+
+.task-label-table__kind {
+  width: 148px;
+  min-width: 132px;
+}
+
+.task-label-table__kind .searchable-dropdown-root {
+  width: 100%;
+  min-width: 0;
+}
+
+.task-label-table__kind-trigger,
+.task-label-table__kind .searchable-dropdown-trigger {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 13px;
+  justify-content: space-between;
+}
+
+.task-label-table__kind-trigger:hover:not(:disabled),
+.task-label-table__kind .searchable-dropdown-trigger:hover:not(:disabled),
+.task-label-table__kind .searchable-dropdown-trigger.is-open {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+}
+
+.task-label-table__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.25rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.task-label-table__status--active {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.task-label-table__status--core {
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.task-label-table__status--proposed {
+  color: #d29922;
+  background: color-mix(in srgb, #d29922 14%, transparent);
+}
+
+.task-label-table tr.is-proposed .task-label-table__name-text {
+  font-weight: 600;
+}
+
 .task-label-color-popover {
   display: flex;
   align-items: center;
@@ -1324,6 +1602,12 @@ button.side-panel-plain-group-label[aria-current="true"] {
   border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
+.settings-content-header--no-rule {
+  margin-bottom: 16px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .settings-content-title-row {
   display: flex;
   align-items: center;
@@ -1346,10 +1630,25 @@ button.side-panel-plain-group-label[aria-current="true"] {
   letter-spacing: -0.02em;
 }
 
+.settings-content-description-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
 .settings-content-description {
-  margin: 6px 0 0;
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.settings-content-header-trailing {
+  flex-shrink: 0;
 }
 
 .settings-connection-badge {
@@ -1406,6 +1705,16 @@ button.side-panel-plain-group-label[aria-current="true"] {
   background: var(--surface);
 }
 
+/* Flat section — keep settings-card typography/buttons without the bordered panel. */
+.settings-card.settings-card--bare {
+  margin-bottom: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .settings-card h2 {
   margin: 0 0 8px;
   font-size: 15px;
@@ -1445,6 +1754,22 @@ button.side-panel-plain-group-label[aria-current="true"] {
   border-radius: 999px;
   background: transparent;
   box-shadow: none;
+}
+
+/* Polished checkboxes are <button>s — don't apply the settings-card chrome. */
+.settings-card button.md-task-checkbox {
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+
+.settings-card button.md-task-checkbox:disabled {
+  opacity: 0.55;
 }
 
 .settings-card code {
@@ -1527,6 +1852,103 @@ button.side-panel-plain-group-label[aria-current="true"] {
   background: var(--faint);
   color: var(--foreground);
   font-size: 13px;
+}
+
+/* Stored secret placeholders: read as a real value, not muted hint text. */
+.settings-field input.settings-field__input--has-secret::placeholder {
+  color: #fff;
+  opacity: 1;
+}
+
+.settings-secret-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-secret-field-row > input,
+.settings-secret-field-row__input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* Input + embedded Test control share one field chrome. */
+.settings-secret-field-row__control {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 2px 4px 2px 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--faint);
+  color: var(--foreground);
+}
+
+.settings-secret-field-row__control:focus-within {
+  border-color: color-mix(in srgb, var(--foreground) 28%, var(--border));
+}
+
+.settings-secret-field-row__control--locked {
+  opacity: 0.92;
+}
+
+.settings-secret-field-row__control--locked > input:disabled {
+  cursor: default;
+  opacity: 1;
+  -webkit-text-fill-color: inherit;
+}
+
+.settings-field .settings-secret-field-row__control > input,
+.settings-secret-field-row__control > input,
+.settings-secret-field-row__control .settings-secret-field-row__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 13px;
+}
+
+.settings-secret-field-row__control > input:focus,
+.settings-secret-field-row__control > input:focus-visible {
+  outline: none;
+}
+
+.settings-secret-field-row__control .action-swap {
+  flex-shrink: 0;
+  --action-swap-height: 26px;
+  --action-swap-pad: 8px;
+  font-size: 11px;
+}
+
+.settings-secret-field-row__control .action-swap--quiet {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.settings-secret-field-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-cursor-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .settings-field textarea {
@@ -1670,31 +2092,6 @@ button.settings-inbox-account-label:disabled {
   font-size: 12px;
 }
 
-.settings-document-properties__section {
-  margin-top: 20px;
-}
-
-.settings-document-properties__section h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.settings-document-properties__section ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.settings-document-properties__section li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .settings-sync-header {
   display: flex;
   align-items: flex-start;
@@ -1818,96 +2215,445 @@ button.settings-inbox-account-label:disabled {
   gap: 16px;
 }
 
-.api-key-create-form {
+.settings-api-keys--logs-fill {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.settings-api-keys--logs-fill > .settings-content-header {
+  flex-shrink: 0;
+}
+
+.settings-api-keys--logs-fill > .settings-card {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
-  margin-top: 4px;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
 }
 
-.api-key-create-form .settings-field {
-  flex: 1 1 220px;
-  margin-top: 0;
-}
-
-.api-key-create-form button[type="submit"] {
-  min-height: 34px;
-}
-
-.api-key-secret-banner {
+/* members-02 layout: muted header card + type tabs + table */
+.api-keys-members-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-  padding: 14px;
-  border: 0.5px solid color-mix(in srgb, #62b98c 35%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in srgb, #62b98c 8%, transparent);
+  gap: 14px;
 }
 
-.api-key-secret-banner-header {
+.api-key-logs-block .api-keys-search-field {
+  flex-shrink: 0;
+}
+
+.api-keys-header-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.api-keys-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.api-keys-header-copy h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.api-keys-header-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 0.8125rem;
 }
 
-.api-key-secret-banner-header strong {
+.api-keys-header-dot {
+  opacity: 0.7;
+}
+
+/* Beat `.settings-card button` (var(--faint)) so Create key stays solid white. */
+.settings-card button.api-key-create-btn,
+button.api-key-create-btn {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0.5px solid color-mix(in srgb, #fff 22%, transparent);
+  border-radius: 8px;
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.settings-card button.api-key-create-btn:hover:not(:disabled),
+button.api-key-create-btn:hover:not(:disabled) {
+  background: #f2f2f2;
+  opacity: 1;
+}
+
+.settings-card button.api-key-create-btn:disabled,
+button.api-key-create-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.api-keys-type-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-keys-type-hint {
+  margin: 0;
+}
+
+.api-keys-search-field {
+  margin-top: 0;
+}
+
+.api-key-scope-fieldset {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+}
+
+.api-key-scope-fieldset legend {
+  padding: 0 4px;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 600;
 }
 
-.api-secret {
-  display: block;
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--background);
-  color: #62b98c;
-  font-size: 11px;
-  word-break: break-all;
+.api-key-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 12px;
 }
 
-.api-key-dismiss-secret {
-  align-self: flex-start;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 0.5px solid var(--border);
-  border-radius: 7px;
-  background: var(--faint);
+.api-key-scope-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.api-key-scope-option .md-task-checkbox {
+  flex-shrink: 0;
+}
+
+.api-key-fixed-scope-hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.api-key-table-wrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+
+.api-key-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.api-key-table th,
+.api-key-table td {
+  padding: 12px 10px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.api-key-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  white-space: nowrap;
+}
+
+.api-key-table th:last-child,
+.api-key-table td:last-child {
+  width: 1%;
+  padding-right: 4px;
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.api-key-table-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.api-key-table-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.api-key-table-avatar--applications,
+.api-key-table-avatar--tv,
+.api-key-table-avatar--carddav {
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: #fff;
+  color: #111;
+}
+
+.api-key-table-identity-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.api-key-prefix-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.settings-card button.api-key-prefix,
+button.api-key-prefix {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-wrap: anywhere;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.settings-card button.api-key-prefix:hover:not(:disabled),
+button.api-key-prefix:hover:not(:disabled) {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.settings-card button.api-key-prefix-copy,
+button.api-key-prefix-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.api-key-prefix-row:hover .api-key-prefix-copy,
+.api-key-prefix-row:focus-within .api-key-prefix-copy,
+.api-key-prefix-row--copied .api-key-prefix-copy,
+.settings-card button.api-key-prefix-copy:focus-visible {
+  opacity: 1;
+}
+
+.settings-card button.api-key-prefix-copy:hover:not(:disabled),
+button.api-key-prefix-copy:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.settings-card button.api-key-prefix-copy:disabled,
+button.api-key-prefix-copy:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.settings-card
+  .api-key-prefix-row--copied
+  button.api-key-prefix-copy,
+.api-key-prefix-row--copied button.api-key-prefix-copy,
+.settings-card
+  .api-key-prefix-row--copied
+  button.api-key-prefix-copy:hover:not(:disabled),
+.api-key-prefix-row--copied button.api-key-prefix-copy:hover:not(:disabled) {
+  color: #4ade80;
+}
+
+.api-key-table-field {
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.api-key-table-field .searchable-dropdown-root,
+.api-key-table-field select {
+  width: 100%;
+  max-width: 220px;
+}
+
+.api-key-table-muted {
+  color: var(--muted);
+}
+
+.api-key-table-row--expanded td {
+  border-bottom-color: transparent;
+}
+
+.api-key-table-expand-row > td {
+  padding: 0 0 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  vertical-align: top;
+}
+
+.api-key-expand-panel {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0.25rem;
+  padding: 0.85rem 1rem 1rem;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--border));
+}
+
+.api-key-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.settings-card .api-key-create-actions .api-key-create-btn,
+.api-key-create-actions .api-key-create-btn,
+.settings-card .api-key-create-actions .api-key-create-cancel,
+.api-key-create-actions .api-key-create-cancel {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.settings-card button.api-key-create-cancel,
+button.api-key-create-cancel {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-card button.api-key-create-cancel:hover:not(:disabled),
+button.api-key-create-cancel:hover:not(:disabled) {
+  border: 0;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.settings-card button.api-key-create-cancel:disabled,
+button.api-key-create-cancel:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.api-key-table-row-expired .api-key-name {
+  color: color-mix(in srgb, #ef4444 55%, var(--foreground));
+}
+
+.api-key-row-error {
+  margin: 8px 0 0;
+  color: color-mix(in srgb, #ef4444 85%, var(--foreground));
+  font-size: 12px;
+}
+
+.api-key-table-row--fresh-secret td {
+  background: color-mix(in srgb, #62b98c 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.api-key-table-row--fresh-secret td:first-child {
+  box-shadow: inset 3px 0 0 #62b98c;
+}
+
+.settings-card button.api-key-prefix--fresh-secret,
+button.api-key-prefix--fresh-secret {
+  color: #62b98c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+  white-space: normal;
+  text-align: left;
+}
+
+.api-key-prefix-row .api-key-dismiss-secret {
+  flex-shrink: 0;
+  min-height: 24px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, #62b98c 80%, var(--foreground));
   font-size: 12px;
   cursor: pointer;
 }
 
-.api-key-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-  border-top: 0.5px solid var(--border);
-}
-
-.api-key-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 0;
-  border-bottom: 0.5px solid var(--border);
-}
-
-.api-key-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 2px;
-}
-
-.api-key-row-main {
-  min-width: 0;
-  flex: 1 1 220px;
+.api-key-prefix-row .api-key-dismiss-secret:hover {
+  background: color-mix(in srgb, #62b98c 14%, transparent);
 }
 
 .api-key-name {
@@ -1917,6 +2663,70 @@ button.settings-inbox-account-label:disabled {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.api-key-name-edit-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.api-key-name-edit-row .api-key-name-input {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 8rem;
+  max-width: 16rem;
+}
+
+.api-key-name-edit-row .searchable-dropdown-root {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 14rem;
+}
+
+.api-key-name-edit-row .searchable-dropdown-trigger {
+  min-height: 30px;
+  font-size: 12px;
+}
+
+.api-key-name-input {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 8rem;
+  max-width: 16rem;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--faint);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.api-key-name-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 35%, var(--border));
+}
+
+.api-key-name-input:disabled {
+  opacity: 0.6;
+}
+
+.api-key-expiry-dropdown {
+  max-width: 14rem;
+}
+
+.api-key-expiry-dropdown .searchable-dropdown-trigger {
+  min-height: 30px;
+  font-size: 12px;
 }
 
 .api-key-meta {
@@ -1929,31 +2739,137 @@ button.settings-inbox-account-label:disabled {
   font-size: 12px;
 }
 
-.api-key-contact-field {
+.settings-api-key-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.api-key-detail-back {
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.api-key-detail-back:hover {
+  color: var(--foreground);
+}
+
+.api-key-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.api-key-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.api-key-detail-avatar {
+  width: 40px;
+  height: 40px;
+}
+
+.api-key-detail-header-copy {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--muted);
+  min-width: 0;
 }
 
-.api-key-contact-field .searchable-dropdown-root,
-.api-key-create-form .settings-field .searchable-dropdown-root {
-  max-width: 280px;
-}
-
-.api-key-row-actions {
+.api-key-detail-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.api-key-detail-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 0;
+  text-align: left;
+}
+
+.api-key-detail-field > span {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.api-key-detail-field > input,
+.api-key-detail-field > select,
+.api-key-detail-field > .searchable-dropdown-root {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.api-key-detail-scopes-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  align-self: stretch;
+  text-align: left;
+}
+
+.api-key-detail-scopes-label .settings-hint {
+  margin: 0;
+  max-width: 36rem;
+  line-height: 1.4;
+}
+
+/* Stretch so auto-fill can lay out multiple columns (align-items: flex-start
+   on .api-key-detail-field would otherwise shrink the grid to one column). */
+.api-key-detail-scopes .api-key-scope-grid {
+  width: 100%;
+  align-self: stretch;
+}
+
+.api-key-detail-scopes .api-key-scope-option {
+  cursor: default;
+}
+
+.api-key-detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.api-key-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.api-key-row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
 }
 
 .api-key-action-btn {
   display: inline-flex;
   min-height: 30px;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 0 10px;
   border: 0.5px solid var(--border);
@@ -1962,6 +2878,32 @@ button.settings-inbox-account-label:disabled {
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
+}
+
+.settings-card button.api-key-action-btn--icon,
+button.api-key-action-btn--icon {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-card button.api-key-action-btn--icon:hover:not(:disabled),
+button.api-key-action-btn--icon:hover:not(:disabled) {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.settings-card
+  button.api-key-action-btn--icon.api-key-action-btn-danger:hover:not(:disabled),
+button.api-key-action-btn--icon.api-key-action-btn-danger:hover:not(:disabled) {
+  color: #ef4444;
+  border-color: transparent;
+  background: color-mix(in srgb, #ef4444 14%, transparent);
 }
 
 .api-key-action-btn:hover:not(:disabled) {
@@ -2016,17 +2958,7 @@ button.settings-inbox-account-label:disabled {
   margin-top: 8px;
 }
 
-.api-key-expiry-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.api-key-expiry-field select,
-.api-key-create-form .settings-field select {
+.api-key-table-field select {
   max-width: 280px;
   min-height: 34px;
   padding: 0 10px;
@@ -2048,15 +2980,20 @@ button.settings-inbox-account-label:disabled {
   vertical-align: middle;
 }
 
-.api-key-row-expired .api-key-name {
-  color: color-mix(in srgb, #ef4444 55%, var(--foreground));
+.api-key-audit-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  /* Bleed to card edges so the scrollbar sits on the rim; pad content instead. */
+  margin: 0 -22px -22px;
+  padding: 0 22px 22px;
 }
 
 .api-key-audit-list {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   border-top: 0.5px solid var(--border);
@@ -2079,6 +3016,25 @@ button.settings-inbox-account-label:disabled {
 
 .api-key-audit-row strong {
   color: var(--foreground);
+  font-weight: 600;
+}
+
+.api-key-audit-time {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.api-key-request-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -2167,35 +3123,46 @@ button.settings-inbox-account-label:disabled {
   flex-shrink: 0;
 }
 
-/* Settings → Integrations (shadcn integrations-03 + enable toggle) */
+/* Settings → Integrations (shadcnui-blocks integrations-03, three per row) */
 .integrations-overview {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 44rem;
-}
-
-.integrations-overview__intro {
-  margin: 0;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
-  font-size: 0.875rem;
-  line-height: 1.45;
+  width: 100%;
 }
 
 .integrations-overview__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+@media (max-width: 960px) {
+  .integrations-overview__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .integrations-overview__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.integrations-overview__item {
+  min-width: 0;
+}
+
 .integrations-overview__card {
+  position: relative;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.85rem;
-  padding: 0.7rem 0.85rem 0.7rem 0;
+  height: 100%;
+  padding: 0.85rem 0.9rem;
   border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--foreground) 2.5%, transparent);
@@ -2207,21 +3174,96 @@ button.settings-inbox-account-label:disabled {
   opacity: 0.55;
 }
 
+.integrations-overview__card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.integrations-overview__card:has(.integrations-overview__status)
+  .integrations-overview__card-top {
+  padding-right: 2.5rem;
+}
+
+/* Beat `.action-swap { position: relative }` so the probe stays in the card corner. */
+.integrations-overview__card > .integrations-overview__status.action-swap {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 1;
+  margin: 0;
+  --action-swap-height: 26px;
+}
+
 .integrations-overview__icon-rail {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  align-self: stretch;
-  width: 3.25rem;
-  border-right: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  width: 2rem;
+  height: 2rem;
+}
+
+.integrations-overview__icon-rail--github {
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+}
+
+.integrations-overview__icon-rail--moneybird {
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 6px;
+  padding: 0.25rem;
+  background: #3071de;
+  color: #fff;
+}
+
+.integrations-overview__icon-rail--mapbox {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #000;
+}
+
+.integrations-overview__icon-rail--brandfetch {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+}
+
+.integrations-overview__icon-rail--chatwoot {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #2781f6;
+}
+
+.integrations-overview__icon-rail--whoop {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #000;
+}
+
+.integrations-overview__icon-rail--auto-review {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #000;
+  color: #fff;
 }
 
 .integrations-overview__favicon {
   width: 2rem;
   height: 2rem;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.integrations-overview__mark-icon {
+  display: block;
 }
 
 .integrations-overview__body {
@@ -2229,14 +3271,14 @@ button.settings-inbox-account-label:disabled {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.25rem;
 }
 
 .integrations-overview__title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
 .integrations-overview__title {
@@ -2250,6 +3292,10 @@ button.settings-inbox-account-label:disabled {
   color: color-mix(in srgb, var(--foreground) 50%, transparent);
   font-size: 0.75rem;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .integrations-overview__badge {
@@ -2273,15 +3319,28 @@ button.settings-inbox-account-label:disabled {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
+.integrations-overview__badge--corner {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 1;
+}
+
 .integrations-overview__actions {
-  display: inline-flex;
+  display: flex;
   flex-shrink: 0;
   align-items: center;
+  justify-content: space-between;
   gap: 0.65rem;
-  padding-right: 0.15rem;
+  width: 100%;
+  /* Match card bottom padding so space under the divider equals the card edge. */
+  padding-top: 0.85rem;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
 .integrations-overview__action-btn {
+  flex: 0 0 auto;
+  width: fit-content;
   min-height: 1.85rem;
   padding: 0 0.75rem;
   border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
@@ -2307,28 +3366,62 @@ button.settings-inbox-account-label:disabled {
   max-height: min(85vh, 52rem);
   display: flex;
   flex-direction: column;
-  padding: 16px 16px 12px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .integration-settings-modal__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
   flex-shrink: 0;
-  padding-bottom: 10px;
+  margin: 0;
+  padding: 16px 16px 14px;
   border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 .integration-settings-modal__header-copy {
   min-width: 0;
+  flex: 1;
+}
+
+.integration-settings-modal__title {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.integration-settings-modal__subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.integration-settings-modal__description {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.integration-settings-modal__header-trailing {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .integration-settings-modal__body {
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding-top: 12px;
+  padding: 22px 16px 24px;
 }
 
 .integration-settings-modal__body .settings-content-header {
@@ -2337,6 +3430,60 @@ button.settings-inbox-account-label:disabled {
 
 .integration-settings-modal__body .settings-card {
   margin-top: 0;
+}
+
+.integration-settings-modal__footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.integration-settings-modal__save {
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.integration-settings-modal__save:hover:not(:disabled) {
+  background: color-mix(in srgb, #fff 88%, #000);
+}
+
+.integration-settings-modal__save:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.integrations-overview__icon-rail--size-md {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.integrations-overview__icon-rail--size-md .integrations-overview__favicon {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.integrations-overview__icon-rail--size-lg {
+  width: 3rem;
+  height: 3rem;
+}
+
+.integrations-overview__icon-rail--size-lg .integrations-overview__favicon {
+  width: 3rem;
+  height: 3rem;
 }
 
 .status-group-show-more {

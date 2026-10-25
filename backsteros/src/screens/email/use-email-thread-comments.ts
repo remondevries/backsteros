@@ -20,6 +20,10 @@ import {
 import { useDesktopApi } from "../../lib/api-context";
 import { resolveEditableEmailDraftBody } from "../../lib/email-draft-body";
 import { dispatchEmailListRemove } from "../../lib/use-agentmail-mailboxes";
+import {
+  resolveEmailListReturnHref,
+  type EmailListReturnHref,
+} from "../../lib/email-list-return-href";
 import { navigateToHref } from "../../router/navigate-href";
 
 import {
@@ -79,7 +83,7 @@ export function useEmailThreadComments({
     reloadMessageId?: string,
   ) => void | Promise<unknown>;
   /** Where to go after core spam/trash (same as message actions). */
-  listReturnHref?: string;
+  listReturnHref?: EmailListReturnHref;
   organizationId: string | null;
   contactId: string | null;
   assigneeId: string | null;
@@ -314,13 +318,14 @@ export function useEmailThreadComments({
             durationMs: 3200,
           });
           if (intent === "spam" || intent === "trash") {
+            const nextHref = resolveEmailListReturnHref(listReturnHref, messageId);
             dispatchEmailListRemove({
               inboxId,
               messageId,
               threadId: message.threadId ?? null,
             });
             setMessage(null);
-            navigate(listReturnHref, { replace: true });
+            navigate(nextHref, { replace: true });
             return;
           }
           await reloadMessageDetail?.(inboxId, messageId);

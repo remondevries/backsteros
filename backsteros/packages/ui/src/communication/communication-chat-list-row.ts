@@ -215,15 +215,25 @@ export function groupCommunicationChatListRows(
 }
 
 /** Flat ordered ids for keyboard nav across the unified list. */
+function communicationChatListRowId(row: CommunicationChatListRow): string {
+  return row.kind === "chat" ? row.conversation.id : row.item.id;
+}
+
 export function communicationChatListRowIds(
   groups: readonly CommunicationChatListStatusGroup[],
 ): string[] {
-  return groups.flatMap((group) =>
-    group.rows.map((row) => {
-      if (row.kind === "chat") return row.conversation.id;
-      return row.item.id;
-    }),
-  );
+  return groups.flatMap((group) => group.rows.map(communicationChatListRowId));
+}
+
+/** Row ids in on-screen order: peeled drafts first, then the status groups. */
+export function communicationChatListVisibleRowIds(peeled: {
+  drafts: readonly CommunicationChatListRow[];
+  groups: readonly CommunicationChatListStatusGroup[];
+}): string[] {
+  return [
+    ...peeled.drafts.map(communicationChatListRowId),
+    ...communicationChatListRowIds(peeled.groups),
+  ];
 }
 
 function haystackIncludes(needle: string, ...values: Array<string | null | undefined>): boolean {

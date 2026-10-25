@@ -6,6 +6,7 @@ import type { InboxEmailListItem } from "../inbox/inbox-items.js";
 import type { InboxTaskListItem } from "../inbox/inbox-items.js";
 import {
   communicationChatListRowMatchesQuery,
+  communicationChatListVisibleRowIds,
   emailListItemPartyEmail,
   emailListItemPartyName,
   emailStatusToChatListStatus,
@@ -106,6 +107,25 @@ describe("peelCommunicationDraftEmailRows", () => {
     );
     assert.equal(isCommunicationEmailDraft(draft), true);
     assert.equal(isCommunicationEmailDraft(sent), false);
+  });
+});
+
+describe("communicationChatListVisibleRowIds", () => {
+  it("lists drafts first, then status groups in on-screen order", () => {
+    const groups = groupCommunicationChatListRows(
+      [chat({ id: "c-done", status: "resolved" })],
+      [
+        email({ id: "d1", draftId: "draft-1", status: "concept" }),
+        email({ id: "e-wait", status: "waiting" }),
+        email({ id: "e-triage", status: "triage" }),
+      ],
+    );
+    assert.deepEqual(
+      communicationChatListVisibleRowIds(
+        peelCommunicationDraftEmailRows(groups),
+      ),
+      ["d1", "e-triage", "e-wait", "c-done"],
+    );
   });
 });
 

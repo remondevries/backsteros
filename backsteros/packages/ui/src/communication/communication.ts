@@ -2,6 +2,7 @@ import {
   findInboxItemBySlugOrId,
   getInboxItemRouteSlug,
   getInboxTaskRouteSlugForTask,
+  pickIdAfterRemoving,
   type InboxListItem,
 } from "../inbox/inbox-items.js";
 import {
@@ -408,6 +409,42 @@ export function getFirstCommunicationItemHref(
   const first = items[0];
   if (!first) return null;
   return getCommunicationItemHref(first, items, listContext);
+}
+
+/**
+ * After deleting/spam-removing a Communication row, open the neighbor (prefer
+ * the item above). `null` means the list is empty — go to the channel root.
+ */
+/**
+ * Href for the row to open after removing one from the unified Communication
+ * list (prefers the row above). `removedId` may be the row id, draft id or
+ * message id. Rows not in `items` (chat conversations) open by id.
+ */
+export function getCommunicationHrefAfterRemovingRow(input: {
+  items: readonly InboxListItem[];
+  removedId: string;
+  /** On-screen row order; falls back to `items` order when empty. */
+  visibleRowIds?: readonly string[] | null;
+}): string | null {
+  const needle = input.removedId.trim();
+  if (!needle) return null;
+  const orderedIds = input.visibleRowIds?.length
+    ? input.visibleRowIds
+    : input.items.map((item) => item.id);
+  const removedRowId = orderedIds.includes(needle)
+    ? needle
+    : (input.items.find(
+        (item) =>
+          item.kind === "email" &&
+          (item.draftId?.trim() === needle || item.messageId === needle),
+      )?.id ?? needle);
+  const nextId = pickIdAfterRemoving(orderedIds, removedRowId);
+  if (!nextId) return null;
+  const remaining = input.items.filter((item) => item.id !== removedRowId);
+  const nextItem = remaining.find((item) => item.id === nextId);
+  return nextItem
+    ? getCommunicationItemHref(nextItem, remaining, { channel: "chat" })
+    : getCommunicationHref(nextId, "chat");
 }
 
 export function findCommunicationItemBySlugOrId(

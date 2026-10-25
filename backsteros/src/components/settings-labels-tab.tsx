@@ -393,112 +393,35 @@ export function SettingsLabelsTab() {
         </div>
       </div>
 
-      {composer ? (
-        <form
-          className="task-label-settings__composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const name = draftName;
-            const description = draftDescription;
-            const color = draftColor;
-            const parentId = draftParent;
-            const kind = composer;
-            void createLabel({
-              name,
-              description: description.trim() ? description : null,
-              ...(kind === "group"
-                ? { isGroup: true }
-                : { color, parentId: parentId || null }),
-            })
-              .then(() => {
-                setComposer(null);
-                setDraftName("");
-                setDraftDescription("");
-              })
-              .catch(() => undefined);
-          }}
-        >
-          <div className="task-label-settings__composer-name">
-            {composer === "label" ? (
-              <span className="task-label-table__color" data-label-popover="">
-                <button
-                  type="button"
-                  className="task-label-table__dot"
-                  style={{ backgroundColor: resolveCrmGroupColor(draftColor) }}
-                  aria-label="New label color"
-                  onClick={(event) => {
-                    const box = boxOf(event.currentTarget);
-                    setOpen((current) =>
-                      current?.kind === "draft-color" ? null : { kind: "draft-color", box },
-                    );
-                  }}
-                />
-              </span>
-            ) : (
-              <span className="task-label-table__group-icon" aria-hidden="true">
-                <GroupIcon />
-              </span>
-            )}
-            <input
-              autoFocus
-              value={draftName}
-              disabled={busy}
-              placeholder={composer === "group" ? "Group name" : "Label name"}
-              aria-label={composer === "group" ? "Group name" : "Label name"}
-              onChange={(event) => setDraftName(event.target.value)}
-            />
-          </div>
-          <input
-            value={draftDescription}
-            disabled={busy}
-            placeholder="Description"
-            aria-label="Description"
-            onChange={(event) => setDraftDescription(event.target.value)}
-          />
-          {composer === "label" && groups.length > 0 ? (
-            <select
-              value={draftParent}
-              disabled={busy}
-              aria-label="Group"
-              onChange={(event) => setDraftParent(event.target.value)}
-            >
-              <option value="">No group</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <button
-            type="submit"
-            className="task-label-settings__button task-label-settings__button--primary"
-            disabled={busy || !draftName.trim()}
-          >
-            {composer === "group" ? "Add group" : "Add label"}
-          </button>
-          <button
-            type="button"
-            className="task-label-settings__button"
-            disabled={busy}
-            onClick={() => setComposer(null)}
-          >
-            Cancel
-          </button>
-        </form>
-      ) : null}
-
-      {open?.kind === "draft-color" ? (
-        <LabelColorPopover
-          box={open.box}
-          value={draftColor}
-          disabled={busy}
-          onChange={setDraftColor}
-        />
-      ) : null}
-
       {error ? <p className="task-label-settings__error">{error}</p> : null}
       {loading ? <p className="task-label-settings__hint">Loading labels…</p> : null}
+
+      <form
+        id="task-label-composer"
+        className="task-label-settings__composer-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!composer || !draftName.trim()) return;
+          const name = draftName;
+          const description = draftDescription;
+          const color = draftColor;
+          const parentId = draftParent;
+          const kind = composer;
+          void createLabel({
+            name,
+            description: description.trim() ? description : null,
+            ...(kind === "group"
+              ? { isGroup: true }
+              : { color, parentId: parentId || null }),
+          })
+            .then(() => {
+              setComposer(null);
+              setDraftName("");
+              setDraftDescription("");
+            })
+            .catch(() => undefined);
+        }}
+      />
 
       <table className="task-label-table">
         <thead>
@@ -518,7 +441,107 @@ export function SettingsLabelsTab() {
           </tr>
         </thead>
         <tbody>
-          {!loading && rows.length === 0 ? (
+          {composer ? (
+            <tr className="task-label-table__composer-row">
+              <td>
+                <div className="task-label-table__name">
+                  <span className="task-label-table__chevron-spacer" />
+                  {composer === "label" ? (
+                    <span className="task-label-table__color" data-label-popover="">
+                      <button
+                        type="button"
+                        className="task-label-table__dot"
+                        style={{
+                          backgroundColor: resolveCrmGroupColor(draftColor),
+                        }}
+                        aria-label="New label color"
+                        onClick={(event) => {
+                          const box = boxOf(event.currentTarget);
+                          setOpen((current) =>
+                            current?.kind === "draft-color"
+                              ? null
+                              : { kind: "draft-color", box },
+                          );
+                        }}
+                      />
+                    </span>
+                  ) : (
+                    <span className="task-label-table__group-icon" aria-hidden="true">
+                      <GroupIcon />
+                    </span>
+                  )}
+                  <input
+                    form="task-label-composer"
+                    className="task-label-table__edit"
+                    autoFocus
+                    value={draftName}
+                    disabled={busy}
+                    placeholder={
+                      composer === "group" ? "Group name" : "Label name"
+                    }
+                    aria-label={
+                      composer === "group" ? "Group name" : "Label name"
+                    }
+                    onChange={(event) => setDraftName(event.target.value)}
+                  />
+                </div>
+              </td>
+              <td>
+                <div className="task-label-table__composer-fields">
+                  <input
+                    form="task-label-composer"
+                    className="task-label-table__edit"
+                    value={draftDescription}
+                    disabled={busy}
+                    placeholder="Description"
+                    aria-label="Description"
+                    onChange={(event) => setDraftDescription(event.target.value)}
+                  />
+                  {composer === "label" && groups.length > 0 ? (
+                    <select
+                      form="task-label-composer"
+                      className="task-label-table__edit"
+                      value={draftParent}
+                      disabled={busy}
+                      aria-label="Group"
+                      onChange={(event) => setDraftParent(event.target.value)}
+                    >
+                      <option value="">No group</option>
+                      {groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
+              </td>
+              <td
+                colSpan={4}
+                className="task-label-table__composer-actions-cell"
+              >
+                <div className="task-label-table__composer-actions">
+                  <button
+                    form="task-label-composer"
+                    type="submit"
+                    className="task-label-settings__button task-label-settings__button--primary"
+                    disabled={busy || !draftName.trim()}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className="task-label-settings__button"
+                    disabled={busy}
+                    onClick={() => setComposer(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ) : null}
+          {!loading && !composer && rows.length === 0 ? (
             <tr>
               <td className="task-label-table__empty" colSpan={6}>
                 {labels.length === 0
@@ -696,6 +719,15 @@ export function SettingsLabelsTab() {
           })}
         </tbody>
       </table>
+
+      {open?.kind === "draft-color" ? (
+        <LabelColorPopover
+          box={open.box}
+          value={draftColor}
+          disabled={busy}
+          onChange={setDraftColor}
+        />
+      ) : null}
 
       {open?.kind === "color" ? (
         <LabelColorPopover

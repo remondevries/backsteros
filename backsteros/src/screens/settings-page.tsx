@@ -2,43 +2,35 @@ import { ApiClientError } from "@backsteros/api-client";
 import type {
   ApiKey,
   ApiKeyAuditLog,
+  ApiKeyRequestLog,
   CreateApiKeyResponse,
 } from "@backsteros/contracts";
-import { API_KEY_SCOPES } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useParams } from "@tanstack/react-router";
 
 import {
-  AccountSettingsSectionView,
   ApiKeysSettingsSectionView,
-  GeneralSettingsSectionView,
   IntegrationConnectionSettingsView,
-  SearchableDropdown,
   SettingsContentHeader,
   SettingsDetailLayout,
-  buildAssigneeDropdownOptions,
   getSettingsTabMeta,
   isLegacyIntegrationSettingsTab,
   isSettingsTabId,
   normalizeAppTimezone,
   type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
+  type SettingsApiKeyRequestLogItem,
   type SettingsTabId,
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
+import { SettingsAccountTab } from "../components/settings-account-tab";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
-import {
-  DEFAULT_ASSIGNEE_SETTINGS_KEY,
-  getDefaultAssigneeId,
-  parseDefaultAssigneeIdFromSettings,
-  setDefaultAssigneeId,
-  syncDefaultAssigneeIdFromSettings,
-} from "../lib/default-assignee";
+import { syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
@@ -46,90 +38,6 @@ import { rememberDesktopVaultRoot, peekPersistedDesktopVaultRoot } from "../lib/
 import { localOnlyRestFailClosed } from "../lib/workspace/powersync-write-path";
 import { SettingsIntegrationsTab } from "../components/settings-integrations-tab";
 import { SettingsReplicationDeadLettersSection } from "../components/settings-replication-dead-letters";
-
-function SettingsAccountTab({
-  settings,
-  onSettingsSaved,
-}: {
-  settings: Record<string, unknown> | undefined;
-  onSettingsSaved?: () => void;
-}) {
-  const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const contacts = workspace.contacts;
-  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
-  const [assigneeId, setAssigneeId] = useState<string | null>(() =>
-    getDefaultAssigneeId(),
-  );
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!settings) return;
-    const synced = syncDefaultAssigneeIdFromSettings(settings);
-    setAssigneeId(synced);
-
-    const fromServer = parseDefaultAssigneeIdFromSettings(settings);
-    if (fromServer !== undefined || !synced) return;
-    void client
-      .requestJson("/api/v1/settings", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ [DEFAULT_ASSIGNEE_SETTINGS_KEY]: synced }),
-      })
-      .then(() => onSettingsSaved?.())
-      .catch(() => {
-        // keep local value if migrate fails
-      });
-  }, [client, onSettingsSaved, settings]);
-
-  const options = useMemo(
-    () =>
-      buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
-    [contactAvatarSrc, contacts],
-  );
-
-  const assigneeField =
-    contacts.length === 0 ? (
-      <p className="settings-hint">Add a contact to set a default assignee.</p>
-    ) : (
-      <div className="settings-field">
-        <span>Assignee</span>
-        <SearchableDropdown
-          value={assigneeId ?? "__none__"}
-          options={options}
-          onChange={(next) => {
-            const value = next === "__none__" ? null : next;
-            setAssigneeId(value);
-            setDefaultAssigneeId(value);
-            setSaving(true);
-            void client
-              .requestJson("/api/v1/settings", {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  [DEFAULT_ASSIGNEE_SETTINGS_KEY]: value,
-                }),
-              })
-              .then(() => onSettingsSaved?.())
-              .catch(() => {
-                // keep optimistic local value offline
-              })
-              .finally(() => setSaving(false));
-          }}
-          disabled={saving}
-          searchPlaceholder="Set default assignee…"
-          ariaLabel="Default assignee"
-        />
-      </div>
-    );
-
-  return (
-    <AccountSettingsSectionView
-      showEmail={false}
-      assigneeField={assigneeField}
-    />
-  );
-}
 
 function toSettingsApiKey(key: ApiKey): SettingsApiKeyItem {
   return {
@@ -142,6 +50,7 @@ function toSettingsApiKey(key: ApiKey): SettingsApiKeyItem {
     lastUsedAt: key.lastUsedAt ?? null,
     lastUsedAddress: key.lastUsedAddress ?? null,
     createdAt: key.createdAt,
+    hasRecoverableSecret: key.hasRecoverableSecret,
   };
 }
 
@@ -157,13 +66,41 @@ function toSettingsAuditLog(entry: ApiKeyAuditLog): SettingsApiKeyAuditLogItem {
   };
 }
 
-function SettingsApiTab() {
+function toSettingsRequestLog(
+  entry: ApiKeyRequestLog,
+): SettingsApiKeyRequestLogItem {
+  return {
+    id: entry.id,
+    apiKeyId: entry.apiKeyId,
+    apiKeyName: entry.apiKeyName,
+    method: entry.method,
+    path: entry.path,
+    status: entry.status,
+    address: entry.address,
+    createdAt: entry.createdAt,
+  };
+}
+
+function SettingsApiTab({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const contactsWithAvatars = useMemo(
+    () => withAvatarSrc(contacts, contactAvatarSrc),
+    [contactAvatarSrc, contacts],
+  );
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<SettingsApiKeyAuditLogItem[]>([]);
+  const [requestLogs, setRequestLogs] = useState<
+    SettingsApiKeyRequestLogItem[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -171,14 +108,18 @@ function SettingsApiTab() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const [keysBody, auditBody] = await Promise.all([
+      const [keysBody, auditBody, requestBody] = await Promise.all([
         client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
         client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
-          "/api/v1/api-keys/audit-logs?limit=50",
+          "/api/v1/api-keys/audit-logs?limit=100",
+        ),
+        client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
+          "/api/v1/api-keys/request-logs?limit=200",
         ),
       ]);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
+      setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load API keys",
@@ -192,15 +133,55 @@ function SettingsApiTab() {
     void loadKeys();
   }, [loadKeys]);
 
+  async function patchApiKey(
+    id: string,
+    body: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      const updated = await client.requestJson<ApiKey>(
+        `/api/v1/api-keys/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      setApiKeys((current) =>
+        current.map((entry) =>
+          entry.id === updated.id ? toSettingsApiKey(updated) : entry,
+        ),
+      );
+      return true;
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not update API key",
+      );
+      return false;
+    }
+  }
+
   return (
     <ApiKeysSettingsSectionView
+      title={title}
+      description={description}
       apiKeys={apiKeys}
       auditLogs={auditLogs}
-      contacts={withAvatarSrc(contacts, contactAvatarSrc)}
+      requestLogs={requestLogs}
+      contacts={contactsWithAvatars}
       loading={loading}
       errorMessage={errorMessage}
       onRetry={() => void loadKeys()}
-      onCreate={async (name, contactId, expiresAt) => {
+      onRevealSecret={async (id) => {
+        try {
+          const body = await client.requestJson<{ secret: string }>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
+          );
+          return body.secret;
+        } catch {
+          return null;
+        }
+      }}
+      onCreate={async (name, contactId, expiresAt, scopes) => {
         try {
           const result = await client.requestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
@@ -209,7 +190,7 @@ function SettingsApiTab() {
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 name,
-                scopes: [...API_KEY_SCOPES],
+                scopes,
                 contactId,
                 expiresAt,
               }),
@@ -220,7 +201,7 @@ function SettingsApiTab() {
             ...current,
           ]);
           void loadKeys();
-          return result.secret;
+          return { id: result.apiKey.id, secret: result.secret };
         } catch (error) {
           setErrorMessage(
             error instanceof Error ? error.message : "Could not create API key",
@@ -228,66 +209,9 @@ function SettingsApiTab() {
           return null;
         }
       }}
-      onRename={async (id, name) => {
-        try {
-          const updated = await client.requestJson<ApiKey>(
-            `/api/v1/api-keys/${encodeURIComponent(id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ name }),
-            },
-          );
-          setApiKeys((current) =>
-            current.map((entry) =>
-              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
-            ),
-          );
-          return true;
-        } catch {
-          return false;
-        }
-      }}
-      onSetContact={async (id, contactId) => {
-        try {
-          const updated = await client.requestJson<ApiKey>(
-            `/api/v1/api-keys/${encodeURIComponent(id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ contactId }),
-            },
-          );
-          setApiKeys((current) =>
-            current.map((entry) =>
-              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
-            ),
-          );
-          return true;
-        } catch {
-          return false;
-        }
-      }}
-      onSetExpiry={async (id, expiresAt) => {
-        try {
-          const updated = await client.requestJson<ApiKey>(
-            `/api/v1/api-keys/${encodeURIComponent(id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ expiresAt }),
-            },
-          );
-          setApiKeys((current) =>
-            current.map((entry) =>
-              entry.id === updated.id ? toSettingsApiKey(updated) : entry,
-            ),
-          );
-          return true;
-        } catch {
-          return false;
-        }
-      }}
+      onRename={(id, name) => patchApiKey(id, { name })}
+      onSetContact={(id, contactId) => patchApiKey(id, { contactId })}
+      onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
       onRotate={async (id) => {
         try {
           const result = await client.requestJson<CreateApiKeyResponse>(
@@ -351,9 +275,8 @@ function SettingsStorageTab({
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusOk, setStatusOk] = useState<boolean | null>(null);
   const [reason, setReason] = useState<string | null>(null);
 
   const applyStatus = useCallback((body: StorageStatus) => {
@@ -424,8 +347,8 @@ function SettingsStorageTab({
 
   const chooseVaultFolder = useCallback(async () => {
     setSaving(true);
-    setTestMessage(null);
-    setTestOk(null);
+    setStatusMessage(null);
+    setStatusOk(null);
     try {
       const next = await projectFs.pickDirectory(vaultPath ?? undefined);
       if (!next) {
@@ -439,8 +362,8 @@ function SettingsStorageTab({
           provider: "local-vault",
           vaultPath: next,
         });
-        setTestOk(true);
-        setTestMessage(
+        setStatusOk(true);
+        setStatusMessage(
           "Saved on this Mac. Cloud-core does not store this path, and Docker was not started.",
         );
         return;
@@ -454,11 +377,13 @@ function SettingsStorageTab({
         },
       );
       applyStatus(body);
-      setTestOk(true);
-      setTestMessage("Vault folder saved. Journal, Projects, Letters, and Spaces were created.");
+      setStatusOk(true);
+      setStatusMessage(
+        "Vault folder saved. Journal, Projects, Letters, and Spaces were created.",
+      );
     } catch (error) {
-      setTestOk(false);
-      setTestMessage(
+      setStatusOk(false);
+      setStatusMessage(
         error instanceof Error ? error.message : "Could not save vault path.",
       );
     } finally {
@@ -493,6 +418,14 @@ function SettingsStorageTab({
                   : "Choose vault folder…"}
             </button>
           </div>
+          {statusMessage ? (
+            <p
+              className={statusOk === false ? "settings-error" : "settings-hint"}
+              role="status"
+            >
+              {statusMessage}
+            </p>
+          ) : null}
         </>
       }
       statusLabel={
@@ -510,53 +443,42 @@ function SettingsStorageTab({
           ? "Every project gets Documents, Updates, and .cursor skills; Codebase is added only for codebase projects."
           : null
       }
-      testing={testing || saving}
-      testMessage={testMessage}
-      testOk={testOk}
-      onTestConnection={() => {
-        void (async () => {
-          setTesting(true);
-          setTestMessage(null);
-          setTestOk(null);
-          const result = await refresh();
-          if ("error" in result) {
-            setTestOk(false);
-            setTestMessage(result.error);
-          } else if (result.configured) {
-            setTestOk(true);
-            setTestMessage(
-              result.vaultPath
-                ? `Vault ready at ${result.vaultPath}`
-                : "Local vault is configured.",
-            );
-          } else {
-            setTestOk(false);
-            setTestMessage(STORAGE_NOT_CONFIGURED_REASON);
-          }
-          setTesting(false);
-        })();
+      testing={saving}
+      onTestConnection={async () => {
+        const result = await refresh();
+        if ("error" in result) {
+          throw new Error(result.error);
+        }
+        if (!result.configured) {
+          throw new Error(STORAGE_NOT_CONFIGURED_REASON);
+        }
       }}
     />
   );
 }
 
 export function SettingsPage() {
-  const { tab } = useParams({ strict: false }) as { tab?: string };
+  const { tab, apiKeyId } = useParams({ strict: false }) as {
+    tab?: string;
+    apiKeyId?: string;
+  };
   const { client } = useDesktopApi();
-  const activeTab: SettingsTabId =
-    tab && isSettingsTabId(tab) ? tab : "general";
+  const activeTab: SettingsTabId = apiKeyId
+    ? "api"
+    : tab && isSettingsTabId(tab)
+      ? tab
+      : "account";
   const meta = getSettingsTabMeta(activeTab);
 
-  const [timezone, setTimezone] = useState(() =>
+  const [workspaceTimezone, setWorkspaceTimezone] = useState(() =>
     normalizeAppTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
-  const [savingTimezone, setSavingTimezone] = useState(false);
   const [workspaceSettings, setWorkspaceSettings] = useState<
     Record<string, unknown> | undefined
   >(undefined);
 
   useDesktopSectionBreadcrumb([
-    { label: "Settings", href: "/settings/general" },
+    { label: "Settings", href: "/settings/account" },
     { label: meta.label },
   ]);
 
@@ -566,7 +488,7 @@ export function SettingsPage() {
         settings: Record<string, unknown>;
       }>("/api/v1/settings");
       setWorkspaceSettings(body.settings);
-      setTimezone(
+      setWorkspaceTimezone(
         normalizeAppTimezone(
           String(
             body.settings.timezone ??
@@ -584,8 +506,18 @@ export function SettingsPage() {
     void reloadSettings();
   }, [reloadSettings]);
 
+  // Legacy per-key URL — details now expand inline on the API keys list.
+  if (apiKeyId) {
+    return <Navigate to="/settings/$tab" params={{ tab: "api" }} replace />;
+  }
+
   if (!tab) {
-    return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
+    return <Navigate to="/settings/$tab" params={{ tab: "account" }} replace />;
+  }
+
+  // Former General tab — timezone + prefs now live on Account.
+  if (tab === "general") {
+    return <Navigate to="/settings/$tab" params={{ tab: "account" }} replace />;
   }
 
   if (isLegacyIntegrationSettingsTab(tab)) {
@@ -600,55 +532,47 @@ export function SettingsPage() {
   }
 
   if (!isSettingsTabId(tab)) {
-    return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
+    return <Navigate to="/settings/$tab" params={{ tab: "account" }} replace />;
   }
 
   return (
-    <SettingsDetailLayout wide={activeTab === "labels" || activeTab === "document-properties"}>
+    <SettingsDetailLayout
+      wide={
+        activeTab === "account" ||
+        activeTab === "labels" ||
+        activeTab === "document-properties" ||
+        activeTab === "api" ||
+        activeTab === "integrations"
+      }
+    >
       {activeTab === "storage" ? (
         <SettingsStorageTab title={meta.label} description={meta.description} />
+      ) : activeTab === "api" ? (
+        <SettingsApiTab title={meta.label} description={meta.description} />
       ) : (
         <>
-          <SettingsContentHeader
-            title={meta.label}
-            description={meta.description}
-          />
-          {activeTab === "general" ? (
-            <>
-              <GeneralSettingsSectionView
-                timezone={timezone}
-                saving={savingTimezone}
-                onTimezoneChange={async (next) => {
-                  setTimezone(next);
-                  setSavingTimezone(true);
-                  try {
-                    await client.requestJson("/api/v1/settings", {
-                      method: "PATCH",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ timezone: next }),
-                    });
-                    await reloadSettings();
-                  } catch {
-                    // keep optimistic value offline
-                  } finally {
-                    setSavingTimezone(false);
-                  }
-                }}
-              />
-              <SettingsReplicationDeadLettersSection />
-            </>
-          ) : null}
-          {activeTab === "account" ? (
-            <SettingsAccountTab
-              settings={workspaceSettings}
-              onSettingsSaved={() => void reloadSettings()}
+          {activeTab === "account" ? null : (
+            <SettingsContentHeader
+              title={meta.label}
+              description={meta.description}
             />
+          )}
+          {activeTab === "account" ? (
+            <div className="settings-account">
+              <SettingsAccountTab
+                settings={workspaceSettings}
+                workspaceTimezone={workspaceTimezone}
+                onSettingsSaved={() => void reloadSettings()}
+              />
+              <div className="settings-account__prefs">
+                <SettingsReplicationDeadLettersSection />
+              </div>
+            </div>
           ) : null}
           {activeTab === "labels" ? <SettingsLabelsTab /> : null}
           {activeTab === "document-properties" ? (
             <SettingsDocumentPropertiesTab />
           ) : null}
-          {activeTab === "api" ? <SettingsApiTab /> : null}
           {activeTab === "integrations" ? (
             <SettingsIntegrationsTab
               workspaceSettings={workspaceSettings}

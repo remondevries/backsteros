@@ -19,7 +19,7 @@ shells (UI only)
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
 
-**Today:** Opening desktop does **not** start Docker. The optional replica starts from the `com.backsteros.local-core` LaunchAgent (boot + KeepAlive), or from the desktop process when `BACKSTEROS_START_LOCAL_REPLICA=1`. The LaunchAgent runs the API from a dedicated `origin/production` worktree (`~/.backsteros/local-core-build`), not the dirty developer checkout — see [scripts/local-core/README.md](../scripts/local-core/README.md). iOS is not on cloud-core yet.
+**Today:** Opening desktop does **not** start Docker. The optional replica starts from the `com.backsteros.local-core` LaunchAgent (boot + KeepAlive), or from the desktop process when `BACKSTEROS_START_LOCAL_REPLICA=1`. The LaunchAgent runs the API from a fixed non-git runtime (`~/.backsteros/local-core-runtime/current`), published from a dedicated `origin/production` worktree (`~/.backsteros/local-core-build`) — see [scripts/local-core/README.md](../scripts/local-core/README.md). iOS is not on cloud-core yet.
 
 **Target (ADR-035 addendum, 2026-09-19):** Product desktop syncs its PowerSync client SQLite to cloud PowerSync and does not start Docker. The compose stack is an optional replica (LaunchAgent or an explicit flag). iOS talks only to cloud-core. Shared files live in private R2; this computer keeps a local working copy. See [17-desktop-without-docker.md](17-desktop-without-docker.md).
 

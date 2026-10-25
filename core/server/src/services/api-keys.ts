@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type {
   ApiKeyAuditLogAction,
@@ -9,6 +9,7 @@ import type {
 import { db } from "../db/index.js";
 import {
   apiKeyAuditLogs,
+  apiKeyRequestLogs,
   apiKeys,
   contacts,
   users,
@@ -16,6 +17,7 @@ import {
   workspaces,
   type DbApiKey,
   type DbApiKeyAuditLog,
+  type DbApiKeyRequestLog,
 } from "../db/schema.js";
 import {
   apiKeyLookupPrefix,
@@ -24,10 +26,18 @@ import {
   newId,
 } from "../lib/crypto.js";
 import {
+  decryptWebhookSecret,
+  encryptWebhookSecret,
+} from "../lib/auto-review-webhook.js";
+import {
   clearApiKeyLastUsedTouch,
   rememberApiKeyLastUsedTouch,
   shouldSkipApiKeyLastUsedTouch,
 } from "./api-keys-last-used-throttle.js";
+
+function encryptApiKeySecret(secret: string): string {
+  return encryptWebhookSecret(secret);
+}
 
 export type ApiKeyActor = {
   userId: string | null;
@@ -55,6 +65,82 @@ export async function listApiKeyAuditLogs(
     .where(eq(apiKeyAuditLogs.workspaceId, workspaceId))
     .orderBy(desc(apiKeyAuditLogs.createdAt))
     .limit(limit);
+}
+
+/** Hard cap of request-history rows kept per workspace (newest win). */
+export const API_KEY_REQUEST_LOG_RETENTION = 2_000;
+
+export async function listApiKeyRequestLogs(
+  workspaceId: string,
+  options?: { limit?: number },
+): Promise<DbApiKeyRequestLog[]> {
+  const limit = Math.min(Math.max(options?.limit ?? 100, 1), 200);
+  return db
+    .select()
+    .from(apiKeyRequestLogs)
+    .where(eq(apiKeyRequestLogs.workspaceId, workspaceId))
+    .orderBy(desc(apiKeyRequestLogs.createdAt))
+    .limit(limit);
+}
+
+function normalizeRequestPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "/";
+  // Drop query string — may contain secrets or high-cardinality noise.
+  const noQuery = trimmed.split("?", 1)[0] ?? trimmed;
+  return noQuery.slice(0, 512) || "/";
+}
+
+/**
+ * Append one successful/failed authenticated request. Fire-and-forget safe:
+ * failures are swallowed. Periodically prunes older rows past the retention cap.
+ */
+export async function recordApiKeyRequest(input: {
+  workspaceId: string;
+  apiKeyId: string;
+  apiKeyName: string;
+  method: string;
+  path: string;
+  status: number;
+  address?: string | null;
+}): Promise<void> {
+  const method = input.method.trim().toUpperCase().slice(0, 16) || "GET";
+  const path = normalizeRequestPath(input.path);
+  const status = Number.isFinite(input.status)
+    ? Math.max(0, Math.min(999, Math.trunc(input.status)))
+    : 0;
+  try {
+    await db.insert(apiKeyRequestLogs).values({
+      id: newId(),
+      workspaceId: input.workspaceId,
+      apiKeyId: input.apiKeyId,
+      apiKeyName: input.apiKeyName,
+      method,
+      path,
+      status,
+      address: input.address?.trim() || null,
+    });
+  } catch {
+    return;
+  }
+
+  // ~5% of writes: delete anything past the newest N for this workspace.
+  if (Math.random() > 0.05) return;
+  try {
+    await db.execute(sql`
+      DELETE FROM api_key_request_logs
+      WHERE workspace_id = ${input.workspaceId}
+        AND id NOT IN (
+          SELECT id
+          FROM api_key_request_logs
+          WHERE workspace_id = ${input.workspaceId}
+          ORDER BY created_at DESC
+          LIMIT ${API_KEY_REQUEST_LOG_RETENTION}
+        )
+    `);
+  } catch {
+    // prune is best-effort
+  }
 }
 
 function normalizeEmail(value: string | null | undefined): string | null {
@@ -258,6 +344,7 @@ export async function createApiKey(
         name: input.name,
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
+        secretCiphertext: encryptApiKeySecret(secret),
         scopes: input.scopes as ApiKeyScope[],
         contactId,
         expiresAt: expiresAt === undefined ? null : expiresAt,
@@ -359,6 +446,7 @@ export async function rotateApiKey(
       .set({
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
+        secretCiphertext: encryptApiKeySecret(secret),
         lastUsedAt: null,
         lastUsedAddress: null,
         updatedAt: now,
@@ -477,6 +565,31 @@ export async function updateApiKey(
   });
 }
 
+/**
+ * Decrypt the stored secret for owner reveal/copy.
+ * Returns null for legacy keys (no ciphertext) or decrypt failure.
+ */
+export async function revealApiKeySecret(
+  workspaceId: string,
+  id: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({
+      secretCiphertext: apiKeys.secretCiphertext,
+    })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.workspaceId, workspaceId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!row?.secretCiphertext) return null;
+  return decryptWebhookSecret(row.secretCiphertext);
+}
+
 export async function createBootstrapApiKey(
   name: string,
   scopes: ApiKeyScope[],
@@ -508,6 +621,7 @@ export async function createBootstrapApiKey(
         name,
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
+        secretCiphertext: encryptApiKeySecret(secret),
         scopes,
         contactId: null,
         updatedAt: now,

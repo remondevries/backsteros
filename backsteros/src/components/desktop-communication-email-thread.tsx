@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -12,7 +13,10 @@ import {
   filterProjectsForDefaultPicker,
   resolveContactEmailForAddress,
 } from "@backsteros/contracts";
-import type { InboxEmailListItem } from "@backsteros/ui";
+import type {
+  CommunicationEmailActiveParty,
+  InboxEmailListItem,
+} from "@backsteros/ui";
 import {
   COMPOSE_NO_PROJECT_VALUE,
   DefaultProjectIcon,
@@ -81,15 +85,6 @@ import { useEmailDraftActions } from "../screens/email/use-email-draft-actions";
 import { useEmailMessageDetail } from "../screens/email/use-email-message-detail";
 import { useEmailThreadComments } from "../screens/email/use-email-thread-comments";
 import { useEmailThreadMetadata } from "../screens/email/use-email-thread-metadata";
-
-export type CommunicationEmailActiveParty = {
-  messageId: string;
-  address: string | null;
-  /** Display name from the From/To header when present (not a linked contact). */
-  displayName: string | null;
-  contactId: string | null;
-  organizationId: string | null;
-};
 
 type TimelineEntry = {
   key: string;
@@ -201,6 +196,8 @@ type DesktopCommunicationEmailThreadProps = {
   ) => Promise<EmailMessagePartyMap | null | undefined>;
   /** True once the AgentMail thread body is available (cache or network). */
   onReadyChange?: (ready: boolean) => void;
+  /** Href of the list neighbor after this thread is deleted or marked spam. */
+  resolveRemovalHref?: (removedId: string) => string;
 };
 
 /**
@@ -208,7 +205,7 @@ type DesktopCommunicationEmailThreadProps = {
  * sticky email composer dock (reply / note / task / agenda), newest-first
  * timeline so new activity lands at the top.
  */
-export function DesktopCommunicationEmailThread({
+function DesktopCommunicationEmailThreadView({
   item,
   selectedMessageId,
   onSelectMessage,
@@ -218,6 +215,7 @@ export function DesktopCommunicationEmailThread({
   messageParties: messagePartiesProp,
   onAutoLinkParties,
   onReadyChange,
+  resolveRemovalHref,
 }: DesktopCommunicationEmailThreadProps) {
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
@@ -227,6 +225,11 @@ export function DesktopCommunicationEmailThread({
   const draftId = item.draftId?.trim() || undefined;
   const inboxId = item.inboxId;
   const messageId = draftId ? undefined : item.messageId;
+
+  const resolveListReturnHref = useCallback(
+    () => resolveRemovalHref?.(item.id) ?? "/communication",
+    [item.id, resolveRemovalHref],
+  );
 
   const {
     message,
@@ -323,7 +326,7 @@ export function DesktopCommunicationEmailThread({
     saveConceptReply,
     promoteEmailThreadStatus,
     reloadMessageDetail,
-    listReturnHref: "/communication",
+    listReturnHref: resolveListReturnHref,
     organizationId,
     contactId,
     assigneeId,
@@ -355,7 +358,7 @@ export function DesktopCommunicationEmailThread({
     setConceptError,
     reloadMessageDetail,
     toEmailDetailHref,
-    listReturnHref: "/communication",
+    listReturnHref: resolveListReturnHref,
   });
 
   const [agentActionMode, setAgentActionMode] =
@@ -493,16 +496,23 @@ export function DesktopCommunicationEmailThread({
 
   const [localParties, setLocalParties] = useState<EmailMessagePartyMap>({});
   const autoLinkKeyRef = useRef<string | null>(null);
+  const hydratedMetaKeyRef = useRef<string | null>(null);
   const parties = useMemo(
     () => ({ ...localParties, ...(messagePartiesProp ?? {}) }),
     [localParties, messagePartiesProp],
   );
 
-  // Hydrate from thread metadata without wiping newer parent/optimistic links.
+  // Hydrate from thread metadata once per metadata revision. Do not depend on
+  // `onMessagePartiesChange` — it is often an inline callback and re-running
+  // this effect on every parent render pushed stale fromMeta over newer
+  // optimistic links (create-organization-then-link).
   useEffect(() => {
     const fromMeta = message?.threadMetadata?.messageParties;
     if (!fromMeta || Object.keys(fromMeta).length === 0) return;
+    const metaKey = `${message?.threadMetadata?.id ?? ""}:${message?.threadMetadata?.updatedAt ?? ""}`;
     setLocalParties((prev) => ({ ...fromMeta, ...prev }));
+    if (hydratedMetaKeyRef.current === metaKey) return;
+    hydratedMetaKeyRef.current = metaKey;
     onMessagePartiesChange?.(fromMeta);
   }, [
     message?.threadMetadata?.id,
@@ -1444,3 +1454,5 @@ export function DesktopCommunicationEmailThread({
     </>
   );
 }
+
+export const DesktopCommunicationEmailThread = memo(DesktopCommunicationEmailThreadView);

@@ -1952,6 +1952,7 @@ export {
   SETTINGS_SHORTCUT_HINT,
   LEGACY_INTEGRATION_SETTINGS_TABS,
   getSettingsTabFromPath,
+  getSettingsApiKeyIdFromPath,
   getSettingsTabMeta,
   getSettingsSectionLabel,
   getDefaultSettingsHref,
@@ -1986,6 +1987,15 @@ export {
   IntegrationSettingsModal,
   type IntegrationSettingsModalProps,
 } from "./components/settings/integration-settings-modal.js";
+
+export {
+  IntegrationMark,
+  type IntegrationMarkProps,
+} from "./components/settings/integration-mark.js";
+
+export {
+  useIntegrationSettingsHeaderTrailing,
+} from "./components/settings/integration-settings-modal-chrome.js";
 
 export {
   StatusGroupSection,
@@ -2068,6 +2078,35 @@ export {
 } from "./components/settings/settings-content-header.js";
 
 export {
+  ActionSwap,
+  type ActionSwapProps,
+  type ActionSwapState,
+  type ActionSwapTone,
+} from "./components/action-swap/action-swap.js";
+
+export {
+  SettingsTestConnectionSwap,
+  type SettingsTestConnectionSwapProps,
+} from "./components/settings/settings-test-connection-swap.js";
+
+export {
+  SettingsConnectionStatusSwap,
+  type SettingsConnectionStatus,
+  type SettingsConnectionStatusSwapProps,
+} from "./components/settings/settings-connection-status-swap.js";
+
+export {
+  SettingsSecretEditSaveSwap,
+  type SettingsSecretEditSaveMode,
+  type SettingsSecretEditSaveSwapProps,
+} from "./components/settings/settings-secret-edit-save-swap.js";
+
+export {
+  SettingsSecretField,
+  type SettingsSecretFieldProps,
+} from "./components/settings/settings-secret-field.js";
+
+export {
   AccountSettingsSectionView,
   ComingSoonSettingsSectionView,
   GeneralSettingsSectionView,
@@ -2082,20 +2121,39 @@ export {
 } from "./components/settings/settings-sections.js";
 
 export {
+  AGENT_API_KEY_SCOPES,
+  API_KEY_SECRET_DISPLAY_LENGTH,
+  APPLICATION_API_KEY_SCOPE,
   ApiKeysSettingsSectionView,
+  CARDDAV_API_KEY_SCOPE,
+  TV_API_KEY_SCOPE,
+  classifyApiKeyType,
   expiryPresetToIso,
+  formatMaskedApiKey,
   type ApiKeyExpiryPreset,
+  type ApiKeyTypeTab,
+  type ApiKeysSettingsPanel,
   type ApiKeysSettingsSectionViewProps,
   type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
   type SettingsApiKeyContactOption,
+  type SettingsApiKeyRequestLogItem,
 } from "./components/settings/api-keys-settings-section-view.js";
+
+export {
+  ApiKeyDetailView,
+  type ApiKeyDetailViewProps,
+} from "./components/settings/api-key-detail-view.js";
 
 export {
   APP_TIMEZONE_OPTIONS,
   DEFAULT_APP_TIMEZONE,
   isValidAppTimezone,
+  formatAppTimezoneLabel,
+  formatCurrentTimeInTimezone,
+  formatCurrentTimePartsInTimezone,
   normalizeAppTimezone,
+  timezoneForCountryCode,
 } from "./shared/app-timezone.js";
 
 export {
@@ -3774,6 +3832,7 @@ export {
   findCommunicationItemBySlugOrId,
   getCommunicationChannelHref,
   getCommunicationHref,
+  getCommunicationHrefAfterRemovingRow,
   getCommunicationItemHref,
   getCommunicationTaskRouteHref,
   getFirstCommunicationItemHref,
@@ -3853,6 +3912,7 @@ export {
   communicationChatListRowActivityMs,
   communicationChatListRowIds,
   communicationChatListRowMatchesQuery,
+  communicationChatListVisibleRowIds,
   emailListItemPartyEmail,
   emailListItemPartyName,
   emailStatusToChatListStatus,
@@ -3864,6 +3924,14 @@ export {
   type CommunicationChatListRow,
   type CommunicationChatListStatusGroup,
 } from "./communication/communication-chat-list-row.js";
+
+export {
+  applyCommunicationEmailPartyLink,
+  resolveCommunicationEmailParty,
+  type CommunicationEmailActiveParty,
+  type ResolveCommunicationEmailPartyInput,
+  type ResolvedCommunicationEmailParty,
+} from "./communication/communication-email-party.js";
 
 export {
   EmailConversationDetailsView,

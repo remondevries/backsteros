@@ -291,6 +291,7 @@ export function toApiKey(row: DbApiKey): ApiKey {
     lastUsedAddress: row.lastUsedAddress ?? null,
     createdAt: row.createdAt.toISOString(),
     revokedAt: toIso(row.revokedAt),
+    hasRecoverableSecret: Boolean(row.secretCiphertext?.trim()),
   };
 }
 

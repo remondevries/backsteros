@@ -1,24 +1,12 @@
-# @backsteros/development (workspace shim)
+# BacksterDEV (not a root workspace package)
 
-Thin proxy so root filter commands reach the nested T3 Code monorepo without hoisting `backsterdev/` into the BacksterOS workspace.
-
-## Run the desktop app (Electron)
-
-```bash
-# from repo root
-pnpm --filter @backsteros/development dev:desktop
-```
-
-## Browser / web stack only
-
-`dev` starts the nested monorepo’s web dev stack (no Electron window):
-
-```bash
-pnpm --filter @backsteros/development dev
-```
-
-Implementation lives in `backsterdev/` (`@t3tools/monorepo` with its own lockfile). Run installs there directly when working on T3 Code:
+`backsterdev/` is a nested T3 Code monorepo with its own lockfile. It is **not** a
+member of the root BacksterOS `pnpm-workspace.yaml` (the old `@backsteros/development`
+shim `package.json` was removed in BDV-62 / `72fdba7`). Do not re-add
+`backsterdev/shim` to the root workspace or lockfile.
 
 ```bash
 cd backsterdev && pnpm install
+cd backsterdev && pnpm run dev          # web stack
+cd backsterdev && pnpm run dev:desktop  # Electron
 ```

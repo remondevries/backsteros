@@ -216,9 +216,10 @@ Internal routes: `POST/GET /api/v1/internal/replication/push|pull`.
 ### Keeping local-core on the same commit as cloud (OS-61)
 
 Local-core must not silently run a dirty or lagging developer checkout. The
-LaunchAgent / desktop supervisor start the API from
-`~/.backsteros/local-core-build` (a git worktree of `origin/production`).
-`GET /health` and `GET /api/v1/health` report
+LaunchAgent runs the API from `~/.backsteros/local-core-runtime/current` (a
+non-git publish). `update-build.sh` builds in the
+`~/.backsteros/local-core-build` worktree of `origin/production`, then rsyncs
+into the runtime. `GET /health` and `GET /api/v1/health` report
 `version: { commit, builtAt, dirty }`. Each replication tick compares that
 commit with the peer’s `/health` and ops-alerts **once** per distinct mismatch;
 the desktop supervisor logs the same warning once.

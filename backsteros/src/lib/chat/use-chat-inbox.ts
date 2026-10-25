@@ -168,6 +168,8 @@ export function useChatInbox(options?: UseChatInboxOptions) {
         const body = await client.requestJson<ChatConversationDetail>(
           `/api/v1/chat/conversations/${encodeURIComponent(conversationId)}`,
         );
+        // Selection may have moved while this request was in flight.
+        if (selectedIdRef.current !== conversationId) return;
         setDetail((prev) => {
           if (
             silent &&
@@ -189,9 +191,18 @@ export function useChatInbox(options?: UseChatInboxOptions) {
         );
       } catch (err) {
         if (silent) return;
-        setError(
-          err instanceof Error ? err.message : "Could not load conversation.",
-        );
+        if (selectedIdRef.current !== conversationId) return;
+        const message =
+          err instanceof Error ? err.message : "Could not load conversation.";
+        // Stale / misclassified deep links (support slug before list hydrate)
+        // used to leave this banner stuck after the real item loaded.
+        if (/conversation not found/i.test(message)) {
+          setError(null);
+          setDetail(null);
+          setSelectedId(null);
+          return;
+        }
+        setError(message);
       } finally {
         if (!silent) setDetailLoading(false);
       }
@@ -204,6 +215,8 @@ export function useChatInbox(options?: UseChatInboxOptions) {
       setSelectedId(conversationId);
       if (!conversationId) {
         setDetail(null);
+        setError(null);
+        setDetailLoading(false);
         return;
       }
       void loadDetail(conversationId);

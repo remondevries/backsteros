@@ -1957,6 +1957,15 @@
   overflow: hidden;
 }
 
+.email-thread-message__html-host--light {
+  background: #ffffff;
+  color: #222222;
+}
+
+.email-thread-message__html-host--dark {
+  background: transparent;
+}
+
 .email-thread-message__html-body {
   overflow-wrap: anywhere;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);

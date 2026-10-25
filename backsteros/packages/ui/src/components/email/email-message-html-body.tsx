@@ -152,7 +152,9 @@ export function EmailMessageHtmlBody({
     }
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    shadow.innerHTML = `${buildEmailShadowStyles(canvas)}${markup}`;
+    // Isolation styles come *after* the message markup so our contrast
+    // overrides beat author `color` / `background` `!important` rules.
+    shadow.innerHTML = `${markup}${buildEmailShadowStyles(canvas)}`;
     collapseHtmlEmailQuotes(shadow);
 
     const attachments = attachmentsToResolveRef.current;

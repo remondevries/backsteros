@@ -5,8 +5,9 @@
 //! Set `BACKSTEROS_START_LOCAL_REPLICA=1` to invoke `ensure-once.sh` from the
 //! app — do not duplicate compose/API start logic here.
 //!
-//! Prefer the dedicated `origin/production` worktree at
-//! `~/.backsteros/local-core-build` (OS-61) over a dirty developer checkout.
+//! Prefer the published runtime at `~/.backsteros/local-core-runtime/current`
+//! (built from the `origin/production` worktree at
+//! `~/.backsteros/local-core-build`) over a dirty developer checkout.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -78,7 +79,7 @@ pub fn ensure_local_core() -> Result<EnsureOutcome, String> {
     let script = repo.join("scripts/local-core/ensure-once.sh");
     if !script.is_file() {
         return Err(format!(
-            "missing {} — refresh ~/.backsteros/local-core-build",
+            "missing {} — run scripts/local-core/update-build.sh",
             script.display()
         ));
     }
@@ -599,6 +600,28 @@ fn warn_if_version_mismatch() {
 }
 
 fn resolve_repo_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("BACKSTEROS_LOCAL_CORE_RUNTIME") {
+        let current = PathBuf::from(&root).join("current");
+        if looks_like_repo(&current) {
+            return Ok(current);
+        }
+        let path = PathBuf::from(root);
+        if looks_like_repo(&path) {
+            return Ok(path);
+        }
+    }
+    if let Some(home) = home_dir() {
+        let runtime = home.join(".backsteros/local-core-runtime/current");
+        if looks_like_repo(&runtime) {
+            return Ok(runtime);
+        }
+    }
+    if let Some(root) = std::env::var_os("BACKSTEROS_REPO_ROOT") {
+        let path = PathBuf::from(root);
+        if looks_like_repo(&path) {
+            return Ok(path);
+        }
+    }
     if let Some(root) = std::env::var_os("BACKSTEROS_LOCAL_CORE_BUILD") {
         let path = PathBuf::from(root);
         if looks_like_repo(&path) {
@@ -610,14 +633,6 @@ fn resolve_repo_root() -> Result<PathBuf, String> {
         if looks_like_repo(&dedicated) {
             return Ok(dedicated);
         }
-    }
-    if let Some(root) = std::env::var_os("BACKSTEROS_REPO_ROOT") {
-        let path = PathBuf::from(root);
-        if looks_like_repo(&path) {
-            return Ok(path);
-        }
-    }
-    if let Some(home) = home_dir() {
         let config = home.join(".config/backsteros/hub.json");
         if let Ok(text) = fs::read_to_string(config) {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -980,24 +995,31 @@ mod tests {
     }
 
     #[test]
-    fn prefers_dedicated_local_core_build_env() {
+    fn prefers_local_core_runtime_env() {
         let dir = std::env::temp_dir().join(format!(
-            "backsteros-local-core-build-{}",
+            "backsteros-local-core-runtime-{}",
             std::process::id()
         ));
+        let current = dir.join("current");
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("core/server")).unwrap();
-        fs::write(dir.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
-        fs::write(dir.join("docker-compose.yml"), "services: {}\n").unwrap();
+        fs::create_dir_all(current.join("core/server")).unwrap();
+        fs::write(current.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+        fs::write(current.join("docker-compose.yml"), "services: {}\n").unwrap();
 
+        let previous_runtime = std::env::var("BACKSTEROS_LOCAL_CORE_RUNTIME").ok();
         let previous_build = std::env::var("BACKSTEROS_LOCAL_CORE_BUILD").ok();
         let previous_repo = std::env::var("BACKSTEROS_REPO_ROOT").ok();
-        std::env::set_var("BACKSTEROS_LOCAL_CORE_BUILD", &dir);
+        std::env::set_var("BACKSTEROS_LOCAL_CORE_RUNTIME", &dir);
+        std::env::remove_var("BACKSTEROS_LOCAL_CORE_BUILD");
         std::env::remove_var("BACKSTEROS_REPO_ROOT");
 
         let root = resolve_repo_root().expect("repo");
-        assert_eq!(root, dir);
+        assert_eq!(root, current);
 
+        match previous_runtime {
+            Some(value) => std::env::set_var("BACKSTEROS_LOCAL_CORE_RUNTIME", value),
+            None => std::env::remove_var("BACKSTEROS_LOCAL_CORE_RUNTIME"),
+        }
         match previous_build {
             Some(value) => std::env::set_var("BACKSTEROS_LOCAL_CORE_BUILD", value),
             None => std::env::remove_var("BACKSTEROS_LOCAL_CORE_BUILD"),

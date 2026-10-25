@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Install / reload LaunchAgent: start local-core at login and restart if it dies.
 #
-# Points at the dedicated origin/production worktree
-# (~/.backsteros/local-core-build by default). Run update-build.sh before the
-# first install (or after a cloud deploy) so that tree exists.
+# Points at the published non-git runtime
+# (~/.backsteros/local-core-runtime/current by default). Run update-build.sh
+# before the first install (or after a cloud deploy) so that tree exists.
+# Refuses to install if the runtime is missing — no silent fallback to the
+# developer checkout.
 set -euo pipefail
 
 LABEL="com.backsteros.local-core"
@@ -12,35 +14,21 @@ UID_NUM="$(id -u)"
 AGENT_DIR="${HOME_DIR}/Library/LaunchAgents"
 PLIST="${AGENT_DIR}/${LABEL}.plist"
 LOCAL_CORE_BUILD="${BACKSTEROS_LOCAL_CORE_BUILD:-${HOME_DIR}/.backsteros/local-core-build}"
-REPO_ROOT="${BACKSTEROS_REPO_ROOT:-}"
+LOCAL_CORE_RUNTIME="${BACKSTEROS_LOCAL_CORE_RUNTIME:-${HOME_DIR}/.backsteros/local-core-runtime}"
+RUNTIME_CURRENT="${LOCAL_CORE_RUNTIME}/current"
+REPO_ROOT=""
 SCRIPT=""
 LOG_DIR="${HOME_DIR}/.config/backsteros/desktop"
 LOG_OUT="${LOG_DIR}/local-core.launchd.log"
 DOMAIN="gui/${UID_NUM}/${LABEL}"
 ENV_FILE="${LOCAL_CORE_ENV_FILE:-}"
 
-resolve_build_or_repo() {
-  if [[ -f "${LOCAL_CORE_BUILD}/scripts/local-core/run.sh" ]]; then
-    REPO_ROOT="${LOCAL_CORE_BUILD}"
-    return 0
-  fi
-  if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/scripts/local-core/run.sh" ]]; then
-    return 0
-  fi
-  if [[ -f "${HOME_DIR}/.config/backsteros/hub.json" ]]; then
-    REPO_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_root") or "")' "${HOME_DIR}/.config/backsteros/hub.json" 2>/dev/null || true)"
-    if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/scripts/local-core/run.sh" ]]; then
-      return 0
-    fi
-  fi
-  local here
-  here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  if [[ -f "${here}/scripts/local-core/run.sh" ]]; then
-    REPO_ROOT="${here}"
-    return 0
-  fi
-  REPO_ROOT="${HOME_DIR}/BacksterOS/Projects/OS/Codebase"
-  if [[ -f "${REPO_ROOT}/scripts/local-core/run.sh" ]]; then
+resolve_runtime() {
+  if [[ -f "${RUNTIME_CURRENT}/scripts/local-core/run.sh" \
+    && -f "${RUNTIME_CURRENT}/pnpm-workspace.yaml" \
+    && -f "${RUNTIME_CURRENT}/docker-compose.yml" \
+    && -d "${RUNTIME_CURRENT}/core/server" ]]; then
+    REPO_ROOT="${RUNTIME_CURRENT}"
     return 0
   fi
   return 1
@@ -75,17 +63,11 @@ resolve_env_file() {
   return 1
 }
 
-if ! resolve_build_or_repo; then
-  echo "Could not find scripts/local-core/run.sh" >&2
-  exit 1
-fi
-
-if [[ ! -f "${LOCAL_CORE_BUILD}/scripts/local-core/run.sh" ]]; then
-  echo "WARNING: dedicated build missing at ${LOCAL_CORE_BUILD}" >&2
+if ! resolve_runtime; then
+  echo "ERROR: local-core runtime missing or incomplete at ${RUNTIME_CURRENT}" >&2
   echo "  Run: bash scripts/local-core/update-build.sh" >&2
-  echo "  Falling back to ${REPO_ROOT} for this install." >&2
-else
-  REPO_ROOT="${LOCAL_CORE_BUILD}"
+  echo "  Refusing to install LaunchAgent against the developer checkout." >&2
+  exit 1
 fi
 
 SCRIPT="${REPO_ROOT}/scripts/local-core/run.sh"
@@ -138,6 +120,8 @@ cat >"${PLIST}" <<PLIST
     <string>${REPO_ROOT}</string>
     <key>BACKSTEROS_LOCAL_CORE_BUILD</key>
     <string>${LOCAL_CORE_BUILD}</string>
+    <key>BACKSTEROS_LOCAL_CORE_RUNTIME</key>
+    <string>${LOCAL_CORE_RUNTIME}</string>
     <key>LOCAL_CORE_ENV_FILE</key>
     <string>${ENV_FILE}</string>
     <key>FORCE_COLOR</key>
@@ -154,6 +138,7 @@ launchctl kickstart -k "${DOMAIN}" 2>/dev/null || true
 echo "Installed LaunchAgent ${LABEL}"
 echo "  plist:     ${PLIST}"
 echo "  script:    ${SCRIPT}"
+echo "  runtime:   ${REPO_ROOT}"
 echo "  build:     ${LOCAL_CORE_BUILD}"
 echo "  env file:  ${ENV_FILE}"
 echo "  api log:   ${LOG_DIR}/local-core.log (copy-truncate rotate @ 32MiB)"

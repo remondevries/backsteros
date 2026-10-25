@@ -8,6 +8,8 @@ import {
   IntegrationConnectionSettingsView,
   SearchableDropdown,
   SegmentedPillToggle,
+  SettingsSecretField,
+  SettingsTestConnectionSwap,
   buildContactDropdownOptions,
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,
@@ -16,6 +18,10 @@ import {
 
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap, withAvatarSrc } from "../lib/avatar-src";
+import {
+  settingsSecretInputClassName,
+  settingsSecretPlaceholder,
+} from "../lib/settings-secret-field";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 export function SettingsEmailTab({
@@ -40,15 +46,11 @@ export function SettingsEmailTab({
   );
   const [settings, setSettings] = useState<AgentMailSettings | null>(null);
   const [inboxes, setInboxes] = useState<AgentMailInboxSummary[]>([]);
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [grokWebhookUrlDraft, setGrokWebhookUrlDraft] = useState("");
   const [grokWebhookKeyDraft, setGrokWebhookKeyDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [linkingInboxId, setLinkingInboxId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
   const [greetingDraftEn, setGreetingDraftEn] = useState("Hi {firstName},");
   const [greetingDraftNl, setGreetingDraftNl] = useState("Beste {firstName},");
   const [signOffDraftEn, setSignOffDraftEn] = useState("Best,\n{name}");
@@ -193,16 +195,11 @@ export function SettingsEmailTab({
     });
   };
 
-  const onSaveKey = async () => {
-    const value = apiKeyDraft.trim();
-    if (!value) return;
+  const saveApiKey = async (value: string) => {
     const body = await patchSettings({ apiKey: value });
-    if (body) setApiKeyDraft("");
-  };
-
-  const onClearKey = async () => {
-    await patchSettings({ apiKey: "" });
-    setApiKeyDraft("");
+    if (!body) {
+      throw new Error(settingsError ?? "Could not save AgentMail API key.");
+    }
   };
 
   const onSaveGrokWebhook = async () => {
@@ -303,48 +300,7 @@ export function SettingsEmailTab({
               : "All AgentMail inboxes are included. Set AGENTS_PUBLIC_URL on core for live inbound webhooks."
             : null
         }
-        testing={testing}
-        testMessage={testMessage}
-        testOk={testOk}
-        testDisabled={settings === null || !settings.apiKeyConfigured}
-        onTestConnection={() => {
-          void (async () => {
-            setTesting(true);
-            setTestMessage(null);
-            setTestOk(null);
-            try {
-              const result =
-                await client.requestJson<AgentMailTestConnectionResult>(
-                  "/api/v1/settings/agentmail/test",
-                );
-              await loadSettings();
-              setTestOk(result.ok);
-              if (result.ok) {
-                const inbox = result.inboxEmail
-                  ? ` (${result.inboxEmail})`
-                  : "";
-                const count =
-                  result.inboxCount != null
-                    ? ` Inboxes visible: ${result.inboxCount}.`
-                    : "";
-                setTestMessage(`Connected to AgentMail${inbox}.${count}`);
-              } else {
-                setTestMessage(
-                  result.error ?? "AgentMail connection test failed.",
-                );
-              }
-            } catch (error) {
-              setTestOk(false);
-              setTestMessage(
-                error instanceof Error
-                  ? error.message
-                  : "AgentMail connection test failed.",
-              );
-            } finally {
-              setTesting(false);
-            }
-          })();
-        }}
+        hideTestButton
       />
 
       <section className="settings-card">
@@ -431,9 +387,12 @@ export function SettingsEmailTab({
             inputMode="url"
             autoComplete="off"
             spellCheck={false}
+            className={settingsSecretInputClassName(
+              Boolean(settings?.grokWebhookConfigured),
+            )}
             placeholder={
               settings?.grokWebhookConfigured
-                ? `Configured (${settings.grokWebhookUrlPreview ?? "••••"})`
+                ? settingsSecretPlaceholder(settings.grokWebhookUrlPreview)
                 : "https://…"
             }
             value={grokWebhookUrlDraft}
@@ -445,9 +404,12 @@ export function SettingsEmailTab({
           <input
             type="password"
             autoComplete="off"
+            className={settingsSecretInputClassName(
+              Boolean(settings?.grokWebhookConfigured),
+            )}
             placeholder={
               settings?.grokWebhookConfigured
-                ? "Configured (leave blank to keep)"
+                ? settingsSecretPlaceholder(null)
                 : "Paste Grok Bot webhook key…"
             }
             value={grokWebhookKeyDraft}
@@ -501,38 +463,32 @@ export function SettingsEmailTab({
         </p>
         <label className="settings-field">
           AgentMail API key
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder={
-              settings?.apiKeyConfigured
-                ? `Configured (${settings.apiKeyPreview ?? "••••"})`
-                : "Paste API key…"
+          <SettingsSecretField
+            configured={Boolean(settings?.apiKeyConfigured)}
+            preview={settings?.apiKeyPreview}
+            emptyPlaceholder="Paste API key…"
+            onSave={saveApiKey}
+            trailing={
+              <SettingsTestConnectionSwap
+                disabled={settings === null || !settings.apiKeyConfigured}
+                onTest={async () => {
+                  const result =
+                    await client.requestJson<AgentMailTestConnectionResult>(
+                      "/api/v1/settings/agentmail/test",
+                    );
+                  await loadSettings();
+                  if (!result.ok) {
+                    throw new Error(
+                      result.error ?? "AgentMail connection test failed.",
+                    );
+                  }
+                }}
+              />
             }
-            value={apiKeyDraft}
-            onChange={(event) => setApiKeyDraft(event.target.value)}
           />
         </label>
-        <div className="settings-cursor-key-actions">
-          <button
-            type="button"
-            disabled={saving || !apiKeyDraft.trim()}
-            onClick={() => void onSaveKey()}
-          >
-            {saving ? "Saving…" : "Save key"}
-          </button>
-          <button
-            type="button"
-            disabled={saving || !settings?.apiKeyConfigured}
-            onClick={() => void onClearKey()}
-          >
-            Clear key
-          </button>
-        </div>
         {settings?.apiKeyConfigured ? (
           <p className="settings-hint">
-            Key on file: {settings.apiKeyPreview}
-            {" · "}
             Inbound webhook:{" "}
             {settings.webhookConfigured
               ? "connected"

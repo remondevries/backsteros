@@ -77,6 +77,11 @@ export const API_KEY_SCOPES = [
    * Mint alone on a key so it stays independently revocable.
    */
   "tv.today_counts",
+  /**
+   * Applications door only — mint alone on a key for app integrations
+   * (Settings → API keys → Applications).
+   */
+  "applications",
 ] as const;
 
 /** Open statuses shown on TV / Dynamic Island today-counts (Island order). */
@@ -1315,6 +1320,12 @@ export const apiKeySchema = z.object({
   lastUsedAddress: z.string().nullable(),
   createdAt: z.string().datetime(),
   revokedAt: z.string().datetime().nullable(),
+  /** True when the full secret is stored encrypted and can be revealed for copy. */
+  hasRecoverableSecret: z.boolean(),
+});
+
+export const revealApiKeySecretResponseSchema = z.object({
+  secret: z.string(),
 });
 
 export const createApiKeySchema = z.object({
@@ -1367,6 +1378,21 @@ export const apiKeyAuditLogSchema = z.object({
 });
 
 export const listApiKeyAuditLogsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export const apiKeyRequestLogSchema = z.object({
+  id: z.string(),
+  apiKeyId: z.string().nullable(),
+  apiKeyName: z.string(),
+  method: z.string(),
+  path: z.string(),
+  status: z.number().int(),
+  address: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const listApiKeyRequestLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
@@ -2427,6 +2453,8 @@ const contactWritableFieldsSchema = z.object({
   country: z.string().max(128).nullable().optional(),
   /** State / province / region name or code. */
   region: z.string().max(128).nullable().optional(),
+  /** IANA timezone for this contact (e.g. Europe/Amsterdam). */
+  timezone: z.string().min(1).max(128).nullable().optional(),
   /** Geocoded coordinates from Mapbox (null until resolved). */
   latitude: z.number().finite().min(-90).max(90).nullable().optional(),
   longitude: z.number().finite().min(-180).max(180).nullable().optional(),
@@ -2509,6 +2537,7 @@ export const contactSchema = z.object({
   postalCode: z.string().nullable(),
   country: z.string().nullable(),
   region: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
   latitude: z.number().finite().nullable().optional(),
   longitude: z.number().finite().nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema),
@@ -3419,6 +3448,12 @@ export const updateCursorSettingsSchema = z.object({
   researchModel: z.string().min(1).max(128).optional(),
   /** Full instruction text. Empty string resets to the built-in default. */
   researchInstructions: z.string().max(20_000).optional(),
+});
+
+export const cursorTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  modelCount: z.number().int().nonnegative().nullable(),
 });
 
 /** Moneybird integration (personal API token + administration). */
@@ -5257,6 +5292,7 @@ export type AgentWorkedActivityData = z.infer<
 export type ApiKey = z.infer<typeof apiKeySchema>;
 export type ApiKeyAuditLog = z.infer<typeof apiKeyAuditLogSchema>;
 export type ApiKeyAuditLogAction = z.infer<typeof apiKeyAuditLogActionSchema>;
+export type ApiKeyRequestLog = z.infer<typeof apiKeyRequestLogSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type GithubRepository = z.infer<typeof githubRepositorySchema>;
@@ -5312,6 +5348,9 @@ export type UpdateTaskCommentInput = z.infer<typeof updateTaskCommentSchema>;
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
 export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponseSchema>;
+export type RevealApiKeySecretResponse = z.infer<
+  typeof revealApiKeySecretResponseSchema
+>;
 export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
 export type TvTodayCountStatus = (typeof TV_TODAY_COUNT_STATUSES)[number];
 export type TvTodayCounts = z.infer<typeof tvTodayCountsSchema>;
@@ -5457,6 +5496,9 @@ export type Mention = z.infer<typeof mentionSchema>;
 export type CursorSettings = z.infer<typeof cursorSettingsSchema>;
 export type AgentPtyConnection = z.infer<typeof agentPtyConnectionSchema>;
 export type UpdateCursorSettingsInput = z.infer<typeof updateCursorSettingsSchema>;
+export type CursorTestConnectionResult = z.infer<
+  typeof cursorTestConnectionResultSchema
+>;
 export type MoneybirdSettings = z.infer<typeof moneybirdSettingsSchema>;
 export type UpdateMoneybirdSettingsInput = z.infer<
   typeof updateMoneybirdSettingsSchema

@@ -1,5 +1,4 @@
 export type SettingsTabId =
-  | "general"
   | "account"
   | "labels"
   | "document-properties"
@@ -23,9 +22,12 @@ export const LEGACY_INTEGRATION_SETTINGS_TABS = [
 export type LegacyIntegrationSettingsTab =
   (typeof LEGACY_INTEGRATION_SETTINGS_TABS)[number];
 
+/** Former General tab; preferences now live under Account. */
+export const LEGACY_GENERAL_SETTINGS_TAB = "general";
+
 export type SettingsTabGroup = "general" | "integration";
 
-export const DEFAULT_SETTINGS_TAB: SettingsTabId = "general";
+export const DEFAULT_SETTINGS_TAB: SettingsTabId = "account";
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroup[] = [
   "general",
@@ -41,16 +43,9 @@ export const SETTINGS_NAV_TABS: {
   comingSoon?: boolean;
 }[] = [
   {
-    id: "general",
-    label: "General",
-    description: "App-wide preferences",
-    group: "general",
-    href: "/settings/general",
-  },
-  {
     id: "account",
     label: "Account",
-    description: "Sign-in details and your default assignee",
+    description: "Your contact profile and account preferences",
     group: "general",
     href: "/settings/account",
   },
@@ -64,7 +59,8 @@ export const SETTINGS_NAV_TABS: {
   {
     id: "document-properties",
     label: "Document properties",
-    description: "Types you can attach to knowledge and project documents",
+    description:
+      "Types you can attach to knowledge and project documents. Property types appear on document rails — agents can only propose new types; you approve them here.",
     group: "general",
     href: "/settings/document-properties",
   },
@@ -78,7 +74,8 @@ export const SETTINGS_NAV_TABS: {
   {
     id: "api",
     label: "API",
-    description: "Revocable bearer tokens for the external REST API",
+    description:
+      "Revocable bearer tokens for the external REST API. Logs show lifecycle events plus recent requests on this core (newest ~2,000).",
     group: "integration",
     href: "/settings/api",
   },
@@ -93,13 +90,22 @@ export const SETTINGS_NAV_TABS: {
 
 const SETTINGS_NAV_SECTION_LABEL: Record<SettingsTabGroup, string> = {
   general: "General",
-  integration: "Integrations",
+  integration: "Services",
 };
 
 export function getSettingsTabFromPath(pathname: string): SettingsTabId {
   const normalized = pathname.replace(/\/+$/, "") || "/";
+  // Legacy `/settings/api/:id` redirects to the list; treat as API tab.
+  if (normalized === "/settings/api" || normalized.startsWith("/settings/api/")) {
+    return "api";
+  }
   const match = SETTINGS_NAV_TABS.find((tab) => normalized === tab.href);
   return match?.id ?? DEFAULT_SETTINGS_TAB;
+}
+
+/** @deprecated Per-key detail URLs redirect to the API keys list. */
+export function getSettingsApiKeyIdFromPath(_pathname: string): string | null {
+  return null;
 }
 
 export function getSettingsTabMeta(tabId: SettingsTabId) {
@@ -113,7 +119,7 @@ export function getSettingsSectionLabel(group: SettingsTabGroup): string {
 export function getDefaultSettingsHref(): string {
   return (
     SETTINGS_NAV_TABS.find((tab) => tab.id === DEFAULT_SETTINGS_TAB)?.href ??
-    "/settings/general"
+    "/settings/account"
   );
 }
 

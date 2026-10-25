@@ -32,7 +32,14 @@ import { ChevronDownIcon } from "../icons/chevron-down-icon.js";
 import {
   formatCountryLabel,
   formatRegionLabel,
+  resolveCountryOption,
 } from "../../geo/country-region.js";
+import {
+  formatAppTimezoneLabel,
+  formatCurrentTimePartsInTimezone,
+  normalizeAppTimezone,
+  timezoneForCountryCode,
+} from "../../shared/app-timezone.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import {
   CrmGroupColorDot,
@@ -77,6 +84,8 @@ export type ContactOverviewDetails = {
   country?: string | null;
   /** State / province / region (ISO country–scoped). */
   region?: string | null;
+  /** IANA timezone (e.g. Europe/Amsterdam). */
+  timezone?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   organizationId?: string | null;
@@ -305,6 +314,9 @@ export function ContactOverviewView({
   const remotePostalCode = contact.postalCode ?? "";
   const remoteCountry = contact.country ?? "";
   const remoteRegion = contact.region ?? "";
+  const remoteTimezone = contact.timezone?.trim()
+    ? normalizeAppTimezone(contact.timezone)
+    : "";
   const remoteOrganizationId = contact.organizationId ?? "";
   const remoteSummary = contact.summary ?? "";
   const remoteSocialAccounts = contact.socialAccounts ?? [];
@@ -353,6 +365,17 @@ export function ContactOverviewView({
   const [countrySource, setCountrySource] = useState(remoteCountry);
   const [region, setRegion] = useState(remoteRegion);
   const [regionSource, setRegionSource] = useState(remoteRegion);
+  const [timezone, setTimezone] = useState(remoteTimezone);
+  const [timezoneSource, setTimezoneSource] = useState(remoteTimezone);
+  const [timezoneClock, setTimezoneClock] = useState<{
+    hour: string;
+    minute: string;
+    colonOn: boolean;
+  } | null>(() => {
+    const parts = formatCurrentTimePartsInTimezone(remoteTimezone);
+    if (!parts) return null;
+    return { ...parts, colonOn: new Date().getSeconds() % 2 === 0 };
+  });
   const [locationEditing, setLocationEditing] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [organizationId, setOrganizationId] = useState(remoteOrganizationId);
@@ -393,6 +416,28 @@ export function ContactOverviewView({
     setSelectedGroupIds(memberGroupIds);
   }, [contact.id, memberGroupIds]);
 
+  useEffect(() => {
+    if (!timezone) {
+      setTimezoneClock(null);
+      return;
+    }
+    const tick = () => {
+      const now = new Date();
+      const parts = formatCurrentTimePartsInTimezone(timezone, now);
+      if (!parts) {
+        setTimezoneClock(null);
+        return;
+      }
+      setTimezoneClock({
+        ...parts,
+        colonOn: now.getSeconds() % 2 === 0,
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [timezone]);
+
   if (contact.id !== prevId) {
     setPrevId(contact.id);
     setFirstName(remoteFirstName);
@@ -419,6 +464,8 @@ export function ContactOverviewView({
     setCountrySource(remoteCountry);
     setRegion(remoteRegion);
     setRegionSource(remoteRegion);
+    setTimezone(remoteTimezone);
+    setTimezoneSource(remoteTimezone);
     setLocationEditing(false);
     setMapExpanded(false);
     setOrganizationId(remoteOrganizationId);
@@ -482,6 +529,13 @@ export function ContactOverviewView({
       regionSource,
       setRegion,
       setRegionSource,
+    );
+    adoptRemoteField(
+      remoteTimezone,
+      timezone,
+      timezoneSource,
+      setTimezone,
+      setTimezoneSource,
     );
     adoptRemoteField(
       remoteOrganizationId,
@@ -873,7 +927,38 @@ export function ContactOverviewView({
                   {[regionLabel, countryLabel].filter(Boolean).join(", ")}
                 </span>
               ) : null}
-              {!addressLine ? (
+              {formatAppTimezoneLabel(timezone) && timezoneClock ? (
+                <span
+                  className="contact-location-map__address-line contact-location-map__timezone-line"
+                  aria-label={`${formatAppTimezoneLabel(timezone)}, ${timezoneClock.hour}:${timezoneClock.minute}`}
+                >
+                  <span className="contact-location-map__timezone-name">
+                    {formatAppTimezoneLabel(timezone)}
+                  </span>
+                  <span className="contact-location-map__timezone-sep" aria-hidden="true">
+                    {" · "}
+                  </span>
+                  <span className="contact-location-map__timezone-time" aria-hidden="true">
+                    {timezoneClock.hour}
+                    <span
+                      className={[
+                        "contact-location-map__timezone-colon",
+                        timezoneClock.colonOn ? "is-on" : "is-off",
+                      ].join(" ")}
+                    >
+                      :
+                    </span>
+                    {timezoneClock.minute}
+                  </span>
+                </span>
+              ) : formatAppTimezoneLabel(timezone) ? (
+                <span className="contact-location-map__address-line contact-location-map__timezone-line">
+                  <span className="contact-location-map__timezone-name">
+                    {formatAppTimezoneLabel(timezone)}
+                  </span>
+                </span>
+              ) : null}
+              {!addressLine && !timezone ? (
                 <span className="contact-location-map__address-line is-muted">
                   Add an address
                 </span>
@@ -907,13 +992,26 @@ export function ContactOverviewView({
                   setPostalCode(next.postalCode);
                   setCountry(next.country);
                   setRegion(next.region);
+                  const nextCountry = next.country.trim() || null;
+                  const nextTimezone =
+                    timezoneForCountryCode(
+                      resolveCountryOption(nextCountry)?.code,
+                    ) ?? null;
+                  const timezoneValue = nextTimezone ?? "";
+                  setTimezone(timezoneValue);
+                  if (timezoneValue === remoteTimezone) {
+                    setTimezoneSource(timezoneValue);
+                  }
                   persistLocation({
                     address: next.address.trim() || null,
                     city: next.city.trim() || null,
                     postalCode: next.postalCode.trim() || null,
-                    country: next.country.trim() || null,
+                    country: nextCountry,
                     region: next.region.trim() || null,
                   });
+                  if (timezoneValue !== remoteTimezone) {
+                    persist({ timezone: nextTimezone });
+                  }
                 }}
               />
               <div className="contact-location-map__editor-actions">

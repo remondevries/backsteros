@@ -7,6 +7,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
+import { previewSecret } from "./secret-preview.js";
+
 export const AUTO_REVIEW_EVENT = "task.ready_for_review" as const;
 export const AUTO_REVIEW_TIMEOUT_MS = 10_000;
 export const AUTO_REVIEW_MAX_ATTEMPTS = 6;
@@ -142,8 +144,7 @@ export function nextAttemptAt(input: {
 export function maskWebhookSecret(secret: string | null | undefined): string | null {
   const trimmed = secret?.trim() ?? "";
   if (!trimmed) return null;
-  if (trimmed.length <= 4) return "••••";
-  return `••••${trimmed.slice(-4)}`;
+  return previewSecret(trimmed);
 }
 
 export function previewWebhookUrl(url: string | null | undefined): string | null {

@@ -21,6 +21,11 @@ import {
 import { useDesktopApi } from "../../lib/api-context";
 import { writeEmailComposeSession } from "../../lib/email-compose-session";
 import { deleteEmailMessage } from "../../lib/delete-email-message";
+import { forgetEmailListRemoval } from "../../lib/email-list-pending-removals";
+import {
+  resolveEmailListReturnHref,
+  type EmailListReturnHref,
+} from "../../lib/email-list-return-href";
 import { discardEmailMessageDetailCache } from "../../lib/email-message-detail-cache";
 import {
   dispatchEmailListPatch,
@@ -40,7 +45,11 @@ export function useEmailMessageActions({
   setConceptError,
   reloadMessageDetail,
   toEmailDetailHref,
-  /** Where to go after delete / report-spam (Inbox vs Communication list). */
+  /**
+   * Where to go after delete / report-spam (Inbox vs Communication list).
+   * Pass a function to resolve the neighbor href from the live list before
+   * the optimistic remove lands.
+   */
   listReturnHref = "/inbox",
   suppressAutoMarkRead,
 }: {
@@ -59,7 +68,7 @@ export function useEmailMessageActions({
     targetInboxId: string,
     targetMessageId: string,
   ) => string;
-  listReturnHref?: string;
+  listReturnHref?: EmailListReturnHref;
   /** Keep auto mark-read from undoing an explicit mark-unread. */
   suppressAutoMarkRead?: () => void;
 }) {
@@ -76,29 +85,47 @@ export function useEmailMessageActions({
     setMessage(null);
     setDraft(null);
     setThreadComments([]);
-    // Replace the removed thread with the list we came from (Inbox /
-    // Communication / Tasks) so report-spam and delete leave the detail page.
-    navigate(listReturnHref, { replace: true });
-  }, [listReturnHref, navigate, setDraft, setMessage, setThreadComments]);
+    // Neighbor (or list root) so delete/spam does not dump on an empty pane
+    // while the removed row is still settling out of the list.
+    navigate(resolveEmailListReturnHref(listReturnHref, messageId), {
+      replace: true,
+    });
+  }, [
+    listReturnHref,
+    messageId,
+    navigate,
+    setDraft,
+    setMessage,
+    setThreadComments,
+  ]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!inboxId || !messageId) {
       return { ok: false as const, error: "Message is required." };
     }
-    // Optimistic leave; API runs in background (same as pre-helper behavior).
-    leaveMessageAfterRemoval();
+    // Resolve neighbor while the row is still in the list, remove first, then
+    // navigate — avoids a flash of the deleted row and unstable reordering.
+    const nextHref = resolveEmailListReturnHref(listReturnHref, messageId);
     void deleteEmailMessage(client, {
       inboxId,
       messageId,
       threadId: message?.threadId ?? null,
     });
+    setMessage(null);
+    setDraft(null);
+    setThreadComments([]);
+    navigate(nextHref, { replace: true });
     return { ok: true as const };
   }, [
     client,
     inboxId,
-    leaveMessageAfterRemoval,
+    listReturnHref,
     message?.threadId,
     messageId,
+    navigate,
+    setDraft,
+    setMessage,
+    setThreadComments,
   ]);
 
   const handleReportSpamMessage = useCallback(
@@ -107,13 +134,17 @@ export function useEmailMessageActions({
         return { ok: false as const, error: "Message is required." };
       }
       const threadId = message?.threadId?.trim() || null;
+      const nextHref = resolveEmailListReturnHref(listReturnHref, targetMessageId);
 
       dispatchEmailListRemove({
         inboxId,
         messageId: targetMessageId,
         threadId,
       });
-      leaveMessageAfterRemoval();
+      setMessage(null);
+      setDraft(null);
+      setThreadComments([]);
+      navigate(nextHref, { replace: true });
 
       void client
         .requestJson(
@@ -122,12 +153,26 @@ export function useEmailMessageActions({
         )
         .catch((error) => {
           console.warn("[email] report spam failed:", error);
+          forgetEmailListRemoval({
+            inboxId,
+            messageId: targetMessageId,
+            threadId,
+          });
           requestMailboxReload();
         });
 
       return { ok: true as const };
     },
-    [client, inboxId, leaveMessageAfterRemoval, message?.threadId],
+    [
+      client,
+      inboxId,
+      listReturnHref,
+      message?.threadId,
+      navigate,
+      setDraft,
+      setMessage,
+      setThreadComments,
+    ],
   );
 
   const handleReportSpam = useCallback(async () => {

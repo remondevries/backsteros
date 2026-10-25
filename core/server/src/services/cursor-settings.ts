@@ -5,6 +5,7 @@ import type {
   UpdateCursorSettingsInput,
 } from "@backsteros/contracts";
 
+import { previewSecret } from "../lib/secret-preview.js";
 import {
   normalizeResearchInstructions,
   normalizeSpellcheckInstructions,
@@ -102,9 +103,7 @@ function applyInstructionPatch(
 }
 
 export function previewCursorApiKey(key: string): string {
-  const trimmed = key.trim();
-  if (trimmed.length <= 12) return "••••";
-  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
+  return previewSecret(key);
 }
 
 export async function getCursorApiKey(

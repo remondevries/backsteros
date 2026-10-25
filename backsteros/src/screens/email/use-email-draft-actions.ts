@@ -32,12 +32,20 @@ import {
   writeEmailComposeSession,
 } from "../../lib/email-compose-session";
 import { createRequestAbortSignal } from "../../lib/request-timeout";
-import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
+import { forgetEmailListRemoval } from "../../lib/email-list-pending-removals";
+import {
+  dispatchEmailListPatch,
+  dispatchEmailListRemove,
+} from "../../lib/use-agentmail-mailboxes";
 
 import {
   emailRequestErrorMessage,
   requestMailboxReload,
 } from "./email-page-helpers";
+import {
+  resolveEmailListReturnHref,
+  type EmailListReturnHref,
+} from "../../lib/email-list-return-href";
 import { navigateToHref } from "../../router/navigate-href";
 import { pinEmailThreadScrollDuringUpdate } from "./email-thread-scroll-pin";
 
@@ -76,8 +84,12 @@ export function useEmailDraftActions({
     targetInboxId: string,
     targetMessageId: string,
   ) => string;
-  /** Where compose navigates after send when not using `onComposeFinished`. */
-  listReturnHref?: string;
+  /**
+   * Where compose navigates after send/delete of a standalone draft.
+   * Pass a function `(removedDraftId) => href` to resolve the neighbor from
+   * the live list before the optimistic remove lands.
+   */
+  listReturnHref?: EmailListReturnHref;
   /** Embedded compose: leave create mode without a full-page route change. */
   onComposeFinished?: () => void;
   /** Re-open an existing draft in compose (Communication list card). */
@@ -779,11 +791,17 @@ export function useEmailDraftActions({
         setMessage(null);
         setComposeDraft(null);
         resetEmailComposeSession();
+        // Remove the draft row so send does not leave a ghost in Communication.
+        dispatchEmailListRemove({
+          inboxId: draftInboxId,
+          messageId: targetDraftId,
+        });
         if (onComposeFinished) {
           onComposeFinished();
-        } else {
-          navigate(listReturnHref, { replace: true });
         }
+        navigate(resolveEmailListReturnHref(listReturnHref, targetDraftId), {
+          replace: true,
+        });
       } catch (caught) {
         setSendError(
           emailRequestErrorMessage(caught, "Could not send draft."),
@@ -802,13 +820,13 @@ export function useEmailDraftActions({
       draftHeaderPayload,
       draftId,
       inboxId,
-      listReturnHref,
       message?.conceptDraft,
       navigate,
       onComposeFinished,
       ownsDraftHeaders,
       promoteEmailThreadStatus,
       reloadMessageDetail,
+      listReturnHref,
       toEmailDetailHref,
     ],
   );
@@ -827,6 +845,7 @@ export function useEmailDraftActions({
       }
       if (deletingRef.current) return;
       deletingRef.current = true;
+      setDeleting(true);
       setSendError(null);
 
       const returnToMessageId = reloadMessageId?.trim() || null;
@@ -835,6 +854,17 @@ export function useEmailDraftActions({
         message?.messageId?.trim() ||
         messageId?.trim() ||
         null;
+      // Resolve neighbor while the draft row is still in the list.
+      const nextHref = returnToMessageId
+        ? null
+        : resolveEmailListReturnHref(listReturnHref, resolvedDraftId);
+
+      // Drop the draft list row (and tombstone) by draft id only — never pass
+      // the parent threadId or a reply-concept delete would wipe the thread.
+      dispatchEmailListRemove({
+        inboxId: resolvedInboxId,
+        messageId: resolvedDraftId,
+      });
 
       // Optimistic UI — leave / clear immediately; DELETE runs in the background.
       setConceptBodyDraft("");
@@ -859,6 +889,7 @@ export function useEmailDraftActions({
 
       if (returnToMessageId && inboxId) {
         setDraft(null);
+        setComposeDraft(null);
         if (draftId) {
           navigate(toEmailDetailHref(inboxId, returnToMessageId), {
             replace: true,
@@ -873,8 +904,11 @@ export function useEmailDraftActions({
           draftId: null,
           inboxId: composeInboxId || null,
         });
-        if (!isCompose) {
-          navigate("/inbox", { replace: true });
+        if (onComposeFinished) {
+          onComposeFinished();
+        }
+        if (nextHref) {
+          navigate(nextHref, { replace: true });
         }
       }
 
@@ -902,6 +936,10 @@ export function useEmailDraftActions({
             emailRequestErrorMessage(caught, "Could not delete draft."),
           );
           console.warn("[email] delete draft failed:", caught);
+          forgetEmailListRemoval({
+            inboxId: resolvedInboxId,
+            messageId: resolvedDraftId,
+          });
           requestMailboxReload();
           if (returnToMessageId && inboxId) {
             void reloadMessageDetail(inboxId, returnToMessageId)
@@ -918,11 +956,12 @@ export function useEmailDraftActions({
       composeSession.sessionId,
       draftId,
       inboxId,
-      isCompose,
       message?.messageId,
       messageId,
       navigate,
+      onComposeFinished,
       reloadMessageDetail,
+      listReturnHref,
       toEmailDetailHref,
     ],
   );

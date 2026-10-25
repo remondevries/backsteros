@@ -85,7 +85,7 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
   },
   {
     id: "social",
-    title: "Social",
+    title: "Zernio Social",
     description: "Owned social accounts (publish, comments, DMs) via adapter",
     faviconHost: "zernio.com",
   },

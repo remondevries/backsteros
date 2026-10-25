@@ -206,6 +206,7 @@ const contacts = new Table(
     postal_code: column.text,
     country: column.text,
     region: column.text,
+    timezone: column.text,
     latitude: column.real,
     longitude: column.real,
     social_accounts: column.text,

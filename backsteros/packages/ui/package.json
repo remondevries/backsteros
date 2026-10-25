@@ -95,9 +95,12 @@
     "chrono-node": "^2.10.0",
     "cmdk": "^1.1.1",
     "country-region-data": "4.1.0",
+    "lucide-react": "^1.61.0",
     "mermaid": "^11.17.2",
+    "motion": "^14.6.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "thinking-orbs": "^0.3.2"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

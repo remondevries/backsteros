@@ -72,7 +72,7 @@ test("resolveAppHref leaves concrete item hrefs alone and applies defaults", () 
   );
   assert.equal(
     formatResolvedAppHref(resolveAppHref("/settings")),
-    "/settings/general",
+    "/settings/account",
   );
   assert.equal(
     formatResolvedAppHref(resolveAppHref("/tasks")),

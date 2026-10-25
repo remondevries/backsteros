@@ -121,6 +121,8 @@ export type ContactListItem = {
   city?: string | null;
   postalCode?: string | null;
   region?: string | null;
+  /** IANA timezone (e.g. Europe/Amsterdam). */
+  timezone?: string | null;
   country?: string | null;
   avatarStorageKey?: string | null;
   /** Client portal avatar (separate from personal `avatarStorageKey`). */

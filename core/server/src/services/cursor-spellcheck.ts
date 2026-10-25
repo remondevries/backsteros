@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { Agent, Cursor } from "@cursor/sdk";
 
 import type {
+  CursorTestConnectionResult,
   ResearchResponse,
   SpellcheckResponse,
 } from "@backsteros/contracts";
@@ -33,6 +34,32 @@ export async function listCursorModels(workspaceId: string): Promise<
   }
   const models = await Cursor.models.list({ apiKey });
   return cursorModelOptionsFromCatalog(models);
+}
+
+export async function testCursorConnection(
+  workspaceId: string,
+): Promise<CursorTestConnectionResult> {
+  try {
+    const models = await listCursorModels(workspaceId);
+    return { ok: true, error: null, modelCount: models.length };
+  } catch (error) {
+    if (error instanceof SpellcheckError && error.code === "missing_key") {
+      return {
+        ok: false,
+        error:
+          "Cursor API key is not configured. Paste a key in Settings → Cursor.",
+        modelCount: null,
+      };
+    }
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Cursor connection test failed.",
+      modelCount: null,
+    };
+  }
 }
 
 async function runCursorTaskRewrite(input: {

@@ -273,6 +273,29 @@ describe("email-message-party", () => {
     });
   });
 
+  it("treats an empty newly created org as unknown (keep manual link)", () => {
+    assert.equal(
+      classifyStoredEmailMessageParty({
+        party: { contactId: null, organizationId: "o-new" },
+        address: "stranger@example.com",
+        contacts: [],
+        organizations: [{ id: "o-new", email: null, emails: [] }],
+      }),
+      "unknown",
+    );
+    assert.equal(
+      classifyStoredEmailMessageParty({
+        party: { contactId: null, organizationId: "o-billing" },
+        address: "stranger@example.com",
+        contacts: [],
+        organizations: [
+          { id: "o-billing", email: "billing@acme.com", emails: [] },
+        ],
+      }),
+      "mismatch",
+    );
+  });
+
   it("keeps a matching stored party and leaves directory-unknown alone", () => {
     const ours = new Set(["me@backsteros.com"]);
     const contacts = [

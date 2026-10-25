@@ -456,6 +456,7 @@ export function ContactsPage({
         await workspace.patchContact(contactId, {
           latitude: null,
           longitude: null,
+          timezone: null,
         });
         return;
       }
@@ -1880,6 +1881,7 @@ export function ContactsPage({
           postalCode: details?.postalCode ?? null,
           country: details?.country ?? null,
           region: details?.region ?? null,
+          timezone: details?.timezone ?? null,
           latitude: contactLatitude,
           longitude: contactLongitude,
           organizationId: contact.organizationId ?? details?.organizationId,

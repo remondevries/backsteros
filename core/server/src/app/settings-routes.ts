@@ -270,6 +270,7 @@ import {
   researchText,
   SpellcheckError,
   spellcheckText,
+  testCursorConnection,
 } from "../services/cursor-spellcheck.js";
 import * as habitService from "../services/habits.js";
 import * as meetingService from "../services/meetings.js";
@@ -525,6 +526,11 @@ export function registerSettingsRoutes(app: Hono) {
         400,
       );
     }
+  });
+  app.get("/api/v1/settings/cursor/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(await testCursorConnection(auth.workspaceId));
   });
   app.get("/api/v1/settings/moneybird", async (c) => {
     const auth = getAuth(c);

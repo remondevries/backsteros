@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { apiKeys } from "../db/schema.js";
+import { encryptWebhookSecret } from "./auto-review-webhook.js";
 import { apiKeyLookupPrefix, generateApiKeySecret, hashApiKey, newId } from "./crypto.js";
 import {
   DYNAMIC_ISLAND_API_KEY_NAME,
@@ -75,6 +76,7 @@ export async function rotateDynamicIslandApiKey(input: {
         name: DYNAMIC_ISLAND_API_KEY_NAME,
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
+        secretCiphertext: encryptWebhookSecret(secret),
         scopes: [...DYNAMIC_ISLAND_SCOPES],
         contactId: null,
         updatedAt: now,

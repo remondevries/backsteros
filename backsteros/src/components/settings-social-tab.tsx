@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   SocialSettings,
   SocialTestConnectionResult,
 } from "@backsteros/contracts";
-import { IntegrationConnectionSettingsView } from "@backsteros/ui";
+import {
+  SegmentedPillToggle,
+  SettingsSecretField,
+  SettingsTestConnectionSwap,
+  useIntegrationSettingsHeaderTrailing,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
 
@@ -18,23 +23,27 @@ const CONNECT_PLATFORMS: Array<{ id: string; label: string }> = [
   { id: "whatsapp", label: "WhatsApp" },
 ];
 
+type SocialSubTab = "api-key" | "connected-account";
+
+const SOCIAL_SUB_TABS: { value: SocialSubTab; label: string }[] = [
+  { value: "api-key", label: "API key" },
+  { value: "connected-account", label: "Connected account" },
+];
+
 export function SettingsSocialTab({
-  title,
-  description,
-  hideHeader = false,
+  title: _title,
+  description: _description,
+  hideHeader: _hideHeader = false,
 }: {
   title: string;
   description: string;
   hideHeader?: boolean;
 }) {
   const { client } = useDesktopApi();
+  const [subTab, setSubTab] = useState<SocialSubTab>("api-key");
   const [settings, setSettings] = useState<SocialSettings | null>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
@@ -61,7 +70,7 @@ export function SettingsSocialTab({
 
   const patchSettings = async (patch: {
     apiKey?: string;
-  }): Promise<SocialSettings | null> => {
+  }): Promise<SocialSettings> => {
     setSaving(true);
     setSettingsError(null);
     try {
@@ -76,27 +85,15 @@ export function SettingsSocialTab({
       setSettings(body);
       return body;
     } catch (error) {
-      setSettingsError(
+      const message =
         error instanceof Error
           ? error.message
-          : "Could not save social settings.",
-      );
-      return null;
+          : "Could not save social settings.";
+      setSettingsError(message);
+      throw new Error(message);
     } finally {
       setSaving(false);
     }
-  };
-
-  const onSaveKey = async () => {
-    const value = apiKeyDraft.trim();
-    if (!value) return;
-    const body = await patchSettings({ apiKey: value });
-    if (body) setApiKeyDraft("");
-  };
-
-  const onClearKey = async () => {
-    await patchSettings({ apiKey: "" });
-    setApiKeyDraft("");
   };
 
   const onConnect = async (platform: string) => {
@@ -163,179 +160,136 @@ export function SettingsSocialTab({
     }
   };
 
-  const connected = settings?.connected ?? false;
+  const keyConfigured = settings?.apiKeyConfigured ?? false;
+
+  const headerTrailing = useMemo(
+    () => (
+      <SegmentedPillToggle
+        ariaLabel="Zernio Social settings sections"
+        value={subTab}
+        onChange={setSubTab}
+        options={SOCIAL_SUB_TABS}
+      />
+    ),
+    [subTab],
+  );
+  useIntegrationSettingsHeaderTrailing(headerTrailing);
 
   return (
     <>
-      <IntegrationConnectionSettingsView
-        title={title}
-        headerDescription={description}
-        hideHeader={hideHeader}
-        connected={settings === null ? undefined : connected}
-        body={
+      {subTab === "api-key" ? (
+        <section className="settings-card settings-card--bare">
+          <h2>API key</h2>
           <p>
             Paste a{" "}
-            <a
-              href="https://zernio.com"
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href="https://zernio.com" target="_blank" rel="noreferrer">
               Zernio
             </a>{" "}
             API key. BacksterOS talks only to its own social adapter; the key
-            stays in core Postgres (<code>workspace_integration_secrets</code>
-            ) and is never synced to clients.
+            stays in core Postgres (<code>workspace_integration_secrets</code>)
+            and is never synced to clients. After connect, set{" "}
+            <code>BACKSTEROS_PUBLIC_API_URL</code> so webhooks can register,
+            then link accounts under Connected account.
           </p>
-        }
-        statusLabel={
-          settings === null
-            ? "Loading…"
-            : connected
-              ? "Connected"
-              : "Not connected"
-        }
-        secondaryLabel="API key"
-        secondaryValue={
-          settings?.apiKeyConfigured
-            ? (settings.apiKeyPreview ?? "Configured")
-            : "—"
-        }
-        hint={
-          connected
-            ? settings?.webhookConfigured
-              ? "Webhook registered. Connect accounts below."
-              : "Connected. Set BACKSTEROS_PUBLIC_API_URL so webhooks can register."
-            : null
-        }
-        testing={testing}
-        testMessage={testMessage}
-        testOk={testOk}
-        testDisabled={settings === null || !settings.apiKeyConfigured}
-        onTestConnection={() => {
-          void (async () => {
-            setTesting(true);
-            setTestMessage(null);
-            setTestOk(null);
-            try {
-              const result =
-                await client.requestJson<SocialTestConnectionResult>(
-                  "/api/v1/settings/social/test",
-                );
-              await loadSettings();
-              setTestOk(result.ok);
-              setTestMessage(
-                result.ok
-                  ? `Connected (${result.accountCount ?? 0} accounts).`
-                  : (result.error ?? "Connection test failed."),
-              );
-            } catch (error) {
-              setTestOk(false);
-              setTestMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Connection test failed.",
-              );
-            } finally {
-              setTesting(false);
-            }
-          })();
-        }}
-      />
+          <label className="settings-field">
+            Zernio API key
+            <SettingsSecretField
+              configured={keyConfigured}
+              preview={settings?.apiKeyPreview}
+              emptyPlaceholder="Paste Zernio API key…"
+              onSave={(value) => patchSettings({ apiKey: value })}
+              trailing={
+                <SettingsTestConnectionSwap
+                  disabled={settings === null || !keyConfigured}
+                  onTest={async () => {
+                    const result =
+                      await client.requestJson<SocialTestConnectionResult>(
+                        "/api/v1/settings/social/test",
+                      );
+                    await loadSettings();
+                    if (!result.ok) {
+                      throw new Error(
+                        result.error ?? "Connection test failed.",
+                      );
+                    }
+                  }}
+                />
+              }
+            />
+          </label>
+          {settings?.profileId ? (
+            <p className="settings-hint">Profile: {settings.profileId}</p>
+          ) : null}
+          {settings?.connected && settings.webhookConfigured ? (
+            <p className="settings-hint">Webhook registered.</p>
+          ) : null}
+          {settingsError ? (
+            <p className="settings-cursor-error">{settingsError}</p>
+          ) : null}
+        </section>
+      ) : null}
 
-      <section className="settings-card">
-        <h2>API key</h2>
-        <label className="settings-field">
-          Zernio API key
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder={
-              settings?.apiKeyConfigured
-                ? `Configured (${settings.apiKeyPreview ?? "••••"})`
-                : "Paste Zernio API key…"
-            }
-            value={apiKeyDraft}
-            onChange={(event) => setApiKeyDraft(event.target.value)}
-          />
-        </label>
-        <div className="settings-cursor-key-actions">
-          <button
-            type="button"
-            disabled={saving || !apiKeyDraft.trim()}
-            onClick={() => void onSaveKey()}
-          >
-            {saving ? "Saving…" : "Save key"}
-          </button>
-          <button
-            type="button"
-            disabled={saving || !settings?.apiKeyConfigured}
-            onClick={() => void onClearKey()}
-          >
-            Clear key
-          </button>
-          <button
-            type="button"
-            disabled={saving || !settings?.connected}
-            onClick={() => void onSyncAccounts()}
-          >
-            Sync accounts
-          </button>
-        </div>
-        {settings?.profileId ? (
-          <p className="settings-hint">Profile: {settings.profileId}</p>
-        ) : null}
-        {settingsError ? (
-          <p className="settings-cursor-error">{settingsError}</p>
-        ) : null}
-      </section>
-
-      <section className="settings-card">
-        <h2>Connect account</h2>
-        <p>
-          Headless OAuth via the provider. After approving, use Sync accounts
-          to refresh the list.
-        </p>
-        <div className="settings-cursor-key-actions">
-          {CONNECT_PLATFORMS.map((platform) => (
-            <button
-              key={platform.id}
-              type="button"
-              disabled={!settings?.connected || connecting === platform.id}
-              onClick={() => void onConnect(platform.id)}
-            >
-              {connecting === platform.id
-                ? "Opening…"
-                : `Connect ${platform.label}`}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="settings-card">
-        <h2>Connected accounts</h2>
-        {settings?.accounts?.length ? (
-          <ul className="settings-list">
-            {settings.accounts.map((account) => (
-              <li key={account.id}>
-                <strong>{account.platform}</strong>
-                {account.handle ? ` @${account.handle}` : null}
-                {account.displayName ? ` — ${account.displayName}` : null}
-                {account.disconnected ? " (disconnected)" : null}
-                {account.needsReconnect ? " (reconnect needed)" : null}
+      {subTab === "connected-account" ? (
+        <>
+          <section className="settings-card settings-card--bare">
+            <h2>Connect account</h2>
+            <p>
+              Headless OAuth via the provider. After approving, Sync accounts to
+              refresh the list.
+            </p>
+            <div className="settings-cursor-key-actions">
+              {CONNECT_PLATFORMS.map((platform) => (
                 <button
+                  key={platform.id}
                   type="button"
-                  disabled={saving}
-                  onClick={() => void onDisconnect(account.id)}
+                  disabled={!settings?.connected || connecting === platform.id}
+                  onClick={() => void onConnect(platform.id)}
                 >
-                  Disconnect
+                  {connecting === platform.id
+                    ? "Opening…"
+                    : `Connect ${platform.label}`}
                 </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="settings-hint">No accounts synced yet.</p>
-        )}
-      </section>
+              ))}
+              <button
+                type="button"
+                disabled={saving || !settings?.connected}
+                onClick={() => void onSyncAccounts()}
+              >
+                Sync accounts
+              </button>
+            </div>
+            {settingsError ? (
+              <p className="settings-cursor-error">{settingsError}</p>
+            ) : null}
+          </section>
+
+          <section className="settings-card settings-card--bare">
+            <h2>Connected accounts</h2>
+            {settings?.accounts?.length ? (
+              <ul className="settings-list">
+                {settings.accounts.map((account) => (
+                  <li key={account.id}>
+                    <strong>{account.platform}</strong>
+                    {account.handle ? ` @${account.handle}` : null}
+                    {account.displayName ? ` — ${account.displayName}` : null}
+                    {account.disconnected ? " (disconnected)" : null}
+                    {account.needsReconnect ? " (reconnect needed)" : null}
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void onDisconnect(account.id)}
+                    >
+                      Disconnect
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="settings-hint">No accounts synced yet.</p>
+            )}
+          </section>
+        </>
+      ) : null}
     </>
   );
 }

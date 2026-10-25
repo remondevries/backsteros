@@ -460,6 +460,7 @@ export const contactSchema = z.object({
   postalCode: z.string().max(32).nullable().optional(),
   country: z.string().max(128).nullable().optional(),
   region: z.string().max(128).nullable().optional(),
+  timezone: z.string().min(1).max(128).nullable().optional(),
   latitude: z.number().finite().min(-90).max(90).nullable().optional(),
   longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
@@ -714,12 +715,23 @@ export async function withAuth(c: Context, next: Next) {
     void touchApiKeyLastUsed(auth.apiKeyId, requestClientAddress(c));
   }
   await next();
-  if (auth.kind === "api_key") {
+  if (auth.kind === "api_key" && auth.apiKeyId) {
     // OS-45: which agent key made which call (name only, never the secret).
     const url = new URL(c.req.url);
     console.log(
       `[api-key] ${JSON.stringify(auth.apiKeyName ?? auth.apiKeyId ?? "?")} ${c.req.method} ${url.pathname}${url.search} ${c.res.status}`,
     );
+    const { requestClientAddress } = await import("../lib/request-address.js");
+    const { recordApiKeyRequest } = await import("../services/api-keys.js");
+    void recordApiKeyRequest({
+      workspaceId: auth.workspaceId,
+      apiKeyId: auth.apiKeyId,
+      apiKeyName: auth.apiKeyName ?? auth.apiKeyId,
+      method: c.req.method,
+      path: url.pathname,
+      status: c.res.status,
+      address: requestClientAddress(c),
+    });
   }
 }
 

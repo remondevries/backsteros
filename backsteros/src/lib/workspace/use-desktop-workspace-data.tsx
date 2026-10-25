@@ -747,6 +747,7 @@ function useDesktopWorkspaceDataImpl(): {
             "postalCode",
             "country",
             "region",
+            "timezone",
             "portalUsername",
             "portalSettings",
           ],
