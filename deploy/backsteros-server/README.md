@@ -1,41 +1,37 @@
 # backsteros server — consolidated hosting
 
-Single always-on Linux host on **Hetzner** (`lemodesign`, Tailscale `100.75.45.22`,
-public `46.225.171.3`). Runs **cloud-core**, the **agents door**, the **client portal**,
-**n8n**, and other Kamal sites.
+All always-on BacksterOS services run on **`lemodesign`** (Hetzner, public
+`188.34.196.92`, Tailscale `100.83.125.67`): **cloud-core**, cloud **PowerSync**,
+the **agents door**, the **client portal**, LiveKit, and Penpot. Edge is **Caddy**
+(`lemodesign-caddy-1`).
 
-> **Migrated 2026-09-09** from DigitalOcean droplet `161.35.86.25` / Tailscale
-> `100.117.142.79`. That host was **powered off 2026-09-10** after cutover.
-> Destroy droplet id **548906624** in the DigitalOcean console to stop billing
-> (no DO API token was available to agents).
+The other Hetzner host (`hetzner` / `production`, `46.225.171.3`) is **not** a
+BacksterOS target — it runs kamal-proxy, n8n, WordPress, and the Kamal builder.
+`verify-local-cloud-parity.sh` refuses to run against it.
 
-## Services
+Host map and release flow: [`docs/21-deployment.md`](../../docs/21-deployment.md).
+
+## Services (lemodesign)
 
 | Service | Host / port | Notes |
 | --- | --- | --- |
-| cloud-core API | `:8788` | `deploy/cloud` — Docker; Tailscale peer for replication |
-| cloud Postgres | `127.0.0.1:5434` | internal only |
-| agents door | `0.0.0.0:3080` | `backsteros-agents.service` → `https://agent.backsteros.com` via **kamal-proxy** |
-| client portal | kamal-proxy | `client.lemo-design.com` |
-| n8n | kamal-proxy | `automation.backsteros.com` (+ lemo/remon aliases) |
+| cloud-core API | `:8788` | `deploy/cloud` (`/root/backsteros/deploy/cloud`) — container `cloud-backsteros-1`; Tailscale peer for replication |
+| cloud Postgres | `cloud-postgres-1` | internal only |
+| cloud PowerSync | `cloud-powersync-1` (+ `cloud-mongo-1`) | compose profile `powersync`; `deploy-cloud-core.sh --powersync` |
+| agents door | `172.18.0.1:3080` | `backsteros-agents.service` at `/srv/backsteros/agents` → `https://agent.backsteros.com` via Caddy |
+| client portal | Caddy | `client.lemo-design.com` (container `client-lemo-design-portal`) |
 
-**Portal → cloud-core:** Kamal env should use `BACKSTEROS_API_URL=http://172.18.0.1:8788`
-(kamal network gateway → host). Redeploy the portal after changing env so the
-container picks it up.
-
-| Edge | Hosts |
-| --- | --- |
-| kamal-proxy (live) | `agent.backsteros.com`, `automation.*`, `client.lemo-design.com`, marketing sites |
-| Retired 410 | historically on DO nginx for `backsteros.com`, `app.`, `service.`, `sync.` |
+**Portal → cloud-core:** use `BACKSTEROS_API_URL=http://172.18.0.1:8788` (Docker
+bridge gateway → host). Recreate the portal container after changing env.
 
 ## Replication (instant cloud ↔ Mac)
 
 ```env
-# cloud .env (on Hetzner)
+# cloud .env (lemodesign)
 CORE_REPLICATION_PEER_URL=http://100.94.74.107:8788
 
 # local-core .env (Mac)
-CORE_REPLICATION_PEER_URL=http://100.75.45.22:8788
+CORE_REPLICATION_PEER_URL=http://100.83.125.67:8788
 ```
 
 Restart local-core after changing `.env`. No public-internet replication hop.
@@ -44,32 +40,23 @@ On the Mac, Hub enables `tailscale serve --tcp=8788` when Core API starts so
 cloud can reach `127.0.0.1:8788` via the Mac’s Tailscale IP without binding the
 API to `0.0.0.0`.
 
-## DNS (Cloudflare)
+## Deploying
 
-| Host | Origin A |
-| --- | --- |
-| `agent.backsteros.com` | `46.225.171.3` (proxied) |
-| Most lemo/remon/automation hosts | `46.225.171.3` |
-
-## cloud-core image updates
-
-From your Mac:
+From the repo root on your Mac:
 
 ```bash
-./deploy/cloud/deploy-cloud-core.sh
+./deploy/cloud/deploy-cloud-core.sh              # image + migrate + restart
+./deploy/cloud/deploy-cloud-core.sh --powersync  # also sync-config + PowerSync restart
+./deploy/cloud/deploy-cloud-core.sh --rollback=<sha-tag>
+./deploy/agents/deploy-agents.sh                 # agents door (supports --rollback)
+pnpm deploy:check --fetch                        # local, cloud, agents on origin/production?
 ```
 
-Or manually:
-
-```bash
-./deploy/cloud/build-image.sh
-docker save backsteros-cloud:latest | ssh root@46.225.171.3 'docker load'
-# or: ssh backsteros.com '…' after ~/.ssh/config HostName points at Hetzner
-ssh root@46.225.171.3 'cd /root/backsteros/deploy/cloud && docker compose up -d --no-build backsteros'
-ssh root@46.225.171.3 'cd /root/backsteros/deploy/cloud && docker compose exec -T backsteros pnpm db:migrate'
-```
+Do not hand-run `docker save | ssh …` — the scripts tag images by commit, migrate,
+and finish with `deploy:check`.
 
 ## Retired
 
-- DigitalOcean `161.35.86.25` / `100.117.142.79` — cloud-core + agents stopped after cutover
+- Hetzner `46.225.171.3` / Tailscale `100.75.45.22` as BacksterOS host — services moved to lemodesign
+- DigitalOcean `161.35.86.25` / `100.117.142.79` — powered off 2026-09-10
 - Older Kamal VPS `209.38.44.246` — already retired

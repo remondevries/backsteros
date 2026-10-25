@@ -126,6 +126,36 @@ ensure_test_database() {
   fi
 }
 
+ensure_test_database_via_url() {
+  local url="$1"
+  echo "[integration] ensuring database '$(database_name_from_url "$url")' exists…"
+  (
+    cd "$SERVER_DIR"
+    pnpm exec tsx -e '
+      import postgres from "postgres";
+      const target = new URL(process.argv[1]);
+      const name = decodeURIComponent(target.pathname.replace(/^\/+/, ""));
+      const admin = new URL(target);
+      admin.pathname = "/postgres";
+      const sql = postgres(admin.toString(), { max: 1, onnotice: () => {} });
+      void (async () => {
+        try {
+          const rows = await sql`SELECT 1 FROM pg_database WHERE datname = ${name}`;
+          if (rows.length === 0) {
+            await sql.unsafe(`CREATE DATABASE "${name.replaceAll("\"", "\"\"")}"`);
+            console.log(`[integration] created database ${name}`);
+          }
+        } finally {
+          await sql.end();
+        }
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    ' "$url"
+  )
+}
+
 assert_compose_allowed() {
   if [[ "${INTEGRATION_ALLOW_COMPOSE:-0}" == "1" ]]; then
     return 0
@@ -222,6 +252,7 @@ fi
 assert_not_live_db "$RESOLVED_DATABASE_URL" "${RESOLVED_SOURCE} (INTEGRATION_USE_EXISTING_DB=1)"
 
 echo "[integration] using existing database from ${RESOLVED_SOURCE} (skip docker compose)"
+ensure_test_database_via_url "$RESOLVED_DATABASE_URL"
 echo "[integration] migrating…"
 (
   cd "$SERVER_DIR"

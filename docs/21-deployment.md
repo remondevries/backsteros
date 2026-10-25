@@ -94,12 +94,12 @@ After the folder rename / server naming:
 
 | Where | Problem |
 | --- | --- |
-| `deploy/backsteros-server/README.md` | Labels 46.225.171.3 / `100.75.45.22` as `lemodesign` and says cloud-core + agents door run there; its `docker save \| ssh root@46.225.171.3` steps target the wrong box. |
-| `deploy/cloud/README.md` | First-time setup examples use the retired `209.38.44.246` IP; "Hub" mentions. || `deploy/cloud/sync-vault.sh` | Uses the retired DigitalOcean IP. |
+| `deploy/cloud/README.md` | First-time setup examples use the retired `209.38.44.246` IP; "Hub" mentions. |
+| `deploy/cloud/sync-vault.sh` | Uses the retired DigitalOcean IP. |
 | `deploy/cloud/finish-tailscale-replication.sh` | Outdated. |
 | `backsterdesign/deploy/README.md` | Says `design/branding`; should be `backsterdesign/branding`. |
 
-Fixed: `deploy-cloud-core.sh` defaults to `lemodesign` and refuses `hetzner`/`production`; `core/server/scripts/verify-local-cloud-parity.sh` targets `lemodesign` (`CLOUD_SSH_HOST`, `CLOUD_PG_CONTAINER`, `CLOUD_CORE_URL`); `docs/20-repo-structure.md` §5 placing the agents door on lemodesign is correct.
+Fixed: `deploy/backsteros-server/README.md` now describes lemodesign (`188.34.196.92` / `100.83.125.67`) and points at the deploy scripts; `deploy-cloud-core.sh` defaults to `lemodesign` and refuses `hetzner`/`production`; `core/server/scripts/verify-local-cloud-parity.sh` targets `lemodesign` (`CLOUD_SSH_HOST`, `CLOUD_PG_CONTAINER`, `CLOUD_CORE_URL`); `docs/20-repo-structure.md` §5 placing the agents door on lemodesign is correct.
 
 ## 8. Non-goals
 

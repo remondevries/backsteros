@@ -63,11 +63,10 @@ export function filterHostMeetings(
       if (EXCLUDED.has(status)) return false;
       const start = parseInstant(meeting.startAt);
       const end = parseInstant(meeting.endAt);
-      // Unscheduled (all-day) instant meetings stay visible.
-      if (!start && !end) return true;
-      // Open-ended (started, not closed).
-      if (start && !end) return true;
-      if (!end) return status === "backlog";
+      // Unscheduled (all-day) or open-ended (started, not closed) meetings stay visible.
+      if (!end) return true;
+      // Backlog meetings that never started stay visible whatever their end time.
+      if (!start && status === "backlog") return true;
       return end.getTime() + POST_END_MS > nowMs;
     })
     .sort((a, b) => {

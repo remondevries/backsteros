@@ -64,7 +64,7 @@ test("mapHostMeeting requires id, title and a finite number", () => {
   assert.equal(mapHostMeeting({ id: "m1", title: "x", number: "1" }), null);
 });
 
-test("filterHostMeetings drops closed statuses and ended meetings, sorts by start then number", () => {
+test("filterHostMeetings drops closed statuses and ended meetings (except unstarted backlog), sorts by start then number", () => {
   const rows = [
     meeting({ id: "canceled", status: "Canceled", startAt: "2026-10-25T13:00:00Z" }),
     meeting({ id: "ended-long-ago", startAt: "2026-10-25T09:00:00Z", endAt: "2026-10-25T10:30:00Z" }),
@@ -74,10 +74,11 @@ test("filterHostMeetings drops closed statuses and ended meetings, sorts by star
     meeting({ id: "unscheduled-a", number: 4 }),
     meeting({ id: "end-only-past", number: 5, status: "backlog", endAt: "2026-10-20T10:00:00Z" }),
     meeting({ id: "end-only-future", number: 6, endAt: "2026-10-25T14:00:00Z" }),
+    meeting({ id: "end-only-past-ready", number: 7, endAt: "2026-10-20T10:00:00Z" }),
   ];
   assert.deepEqual(
     filterHostMeetings(rows, NOW).map((row) => row.id),
-    ["open-ended", "ended-recently", "unscheduled-a", "end-only-future", "unscheduled-b"],
+    ["open-ended", "ended-recently", "unscheduled-a", "end-only-past", "end-only-future", "unscheduled-b"],
   );
 });
 
