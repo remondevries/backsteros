@@ -27,7 +27,7 @@ import {
   ymdStartOfDayIso,
 } from "../lib/habit-calendar.js";
 import { toIso } from "../lib/mappers.js";
-import * as circleService from "./circle-domain.js";
+import * as circleService from "./crm-domain.js";
 import * as taskProjectService from "./tasks-projects.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;

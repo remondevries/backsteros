@@ -104,7 +104,7 @@ import { tasks } from "../../db/schema.js";
 import * as habitService from "../habits.js";
 import { isUniqueViolation } from "../core-replication/soft-unique-conflicts.js";
 import * as documentService from "../documents.js";
-import * as circleService from "../circle-domain.js";
+import * as circleService from "../crm-domain.js";
 import * as crmGroupsService from "../crm-groups.js";
 import * as financeService from "../finance/finance.js";
 import * as emailThreadsService from "../email-threads.js";

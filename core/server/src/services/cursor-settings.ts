@@ -12,7 +12,7 @@ import {
 } from "../lib/spellcheck-parse.js";
 import { db } from "../db/index.js";
 import { workspaceIntegrationSecrets } from "../db/schema.js";
-import * as circleService from "./circle-domain.js";
+import * as circleService from "./crm-domain.js";
 
 const DEFAULT_MODEL = "auto";
 

@@ -17,7 +17,7 @@ import {
   SpellcheckError,
   spellcheckText,
 } from "../services/cursor-spellcheck.js";
-import * as circleService from "../services/circle-domain.js";
+import * as circleService from "../services/crm-domain.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import { newId } from "../lib/crypto.js";
 import {

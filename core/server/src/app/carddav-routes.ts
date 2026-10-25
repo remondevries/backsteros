@@ -19,7 +19,7 @@ import {
   logUnauthorizedRequest,
   resolveAuthFlexible,
 } from "../middleware/auth.js";
-import * as circleService from "../services/circle-domain.js";
+import * as circleService from "../services/crm-domain.js";
 import { hasCardDavScope } from "../services/carddav/auth.js";
 import {
   formatOrganizationVCard,

@@ -7,7 +7,7 @@
  * (`workspace_integration_secrets`), with optional `BRANDFETCH_API_KEY` env
  * bootstrap (GitHub pattern). https://docs.brandfetch.com/logo-api/overview
  */
-import * as circleService from "./circle-domain.js";
+import * as circleService from "./crm-domain.js";
 import {
   brandfetchApiKeyFromEnv,
   brandfetchClientIdFromEnv,

@@ -5,7 +5,7 @@ import {
   isStorageConfigured,
   setVaultPathCache,
 } from "../lib/storage.js";
-import * as circleService from "./circle-domain.js";
+import * as circleService from "./crm-domain.js";
 
 export type VaultStorageSettings = {
   configured: boolean;

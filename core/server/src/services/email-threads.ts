@@ -27,7 +27,7 @@ import {
 import {
   getContactById,
   getOrganizationById,
-} from "./circle-domain.js";
+} from "./crm-domain.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 

@@ -14,7 +14,7 @@ import {
   inboxContactsFromRow,
   resolveInboxEmail,
 } from "./settings.js";
-import { getAvatar } from "../circle-domain.js";
+import { getAvatar } from "../crm-domain.js";
 import {
   assembleComposeEmail,
   type AssembledComposeEmail,

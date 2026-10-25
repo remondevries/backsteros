@@ -5,7 +5,7 @@ import { db } from "../../db/index.js";
 import { getWorkspaceLastSyncId } from "../sync-log.js";
 import * as taskProjectService from "../tasks-projects.js";
 import * as documentService from "../documents.js";
-import * as circleService from "../circle-domain.js";
+import * as circleService from "../crm-domain.js";
 import { SYNC_SCHEMA_VERSION } from "../../lib/sync-constants.js";
 import { isSpacesConfigured } from "../../lib/storage.js";
 import {

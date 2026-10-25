@@ -311,7 +311,7 @@ export * as agentmailSettingsService from "../services/agentmail-settings.js";
 export * as apiKeyService from "../services/api-keys.js";
 export * as autoReviewWebhookService from "../services/auto-review-webhook.js";
 export * as brandfetchSettingsService from "../services/brandfetch-settings.js";
-export * as circleService from "../services/circle-domain.js";
+export * as circleService from "../services/crm-domain.js";
 export * as cloudflareSettingsService from "../services/cloudflare-settings.js";
 export * as cloudflareZoneOpsService from "../services/cloudflare-zone-ops.js";
 export * as cloudflareZonesSyncService from "../services/cloudflare-zones-sync.js";

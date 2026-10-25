@@ -220,7 +220,7 @@ import {
   readDocumentSection,
   replaceDocumentSectionBody,
 } from "../lib/document-sections.js";
-import * as circleService from "../services/circle-domain.js";
+import * as circleService from "../services/crm-domain.js";
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";

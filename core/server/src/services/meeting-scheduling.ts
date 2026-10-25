@@ -22,7 +22,7 @@ import {
   getContactById,
   getContactByPortalUsername,
   listContacts,
-} from "./circle-domain.js";
+} from "./crm-domain.js";
 import {
   createMeetingRow,
   formatMeetingDisplayId,
