@@ -2240,6 +2240,7 @@ export {
   describeProjectProgressPieWedge,
   PROJECT_PROGRESS_HEX_STROKE_WIDTH,
   PROJECT_BACKLOG_HEX_STROKE_DASHARRAY,
+  computeProjectTaskProgress,
   computeProjectTaskProgressRatio,
   formatProjectTaskProgressPercent,
   formatProjectTaskProgressLabel,

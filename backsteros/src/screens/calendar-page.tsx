@@ -4,9 +4,6 @@ import {
   coerceContactEmailEntries,
   coerceContactPhoneEntries,
   getContactEmailAddresses,
-  type ExternalCalendarEvent,
-  type GoogleCalendarSettings,
-  type GoogleCalendarSyncResult,
 } from "@backsteros/contracts";
 import { X } from "lucide-react";
 
@@ -17,7 +14,6 @@ import {
   CalendarMeetingsSidePanelView,
   CalendarTaskDetailOverlay,
   CalendarTimetrackingView,
-  CalendarView,
   CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
   CALENDAR_MEETING_OVERLAY_PARAM,
   CALENDAR_MEETINGS_SIDE_PANEL_WIDTH_KEY,
@@ -29,7 +25,6 @@ import {
   DEFAULT_CALENDAR_VIEW_MODE,
   buildAssigneeDropdownOptions,
   buildCalendarBreadcrumbItems,
-  buildCalendarDayHabitsByDate,
   buildProjectDropdownOptions,
   calendarSidePanelMeetingItemId,
   collectTimetrackingEntries,
@@ -45,8 +40,6 @@ import {
   getProjectTaskHref,
   isDefinedProjectArea,
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
-  meetingCalendarEventClassNames,
-  mergeCalendarGridEvents,
   normalizeContactSocialAccounts,
   parseCalendarMeetingOverlayId,
   parseCalendarMeetingOverlayLayout,
@@ -76,7 +69,6 @@ import {
   type MeetingCalendarPatch,
   type MeetingContentTab,
   type TaskCalendarPatch,
-  type TaskStatus,
   type TimetrackingEntry,
 } from "@backsteros/ui";
 
@@ -107,6 +99,13 @@ import {
 } from "../lib/email-compose-session";
 import { navigateToHref } from "../router/navigate-href";
 import { TaskDetailPage } from "./task-detail-page";
+import { CalendarGridPane } from "./calendar/calendar-grid-pane";
+import { useCalendarExternalGoogleSync } from "./calendar/use-calendar-external-google-sync";
+import {
+  useCalendarGridModel,
+  type CalendarMeetingDraft,
+} from "./calendar/use-calendar-grid-model";
+import { useCalendarTimetrackingDetailHandlers } from "./calendar/use-calendar-timetracking-detail-handlers";
 
 /** Subset of FullCalendar API used for date-nav (matches UI CalendarDateNavApi). */
 type CalendarDateNavApi = {
@@ -115,11 +114,6 @@ type CalendarDateNavApi = {
   today?: () => void;
 };
 
-type CalendarMeetingDraft = {
-  key: number;
-  startAt: string;
-  endAt: string;
-};
 
 function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
   return new URLSearchParams(
@@ -169,10 +163,18 @@ function CalendarPageBody() {
   const { client } = useDesktopApi();
   const { settings, loading: settingsLoading, setWeekdayHours } =
     useMeetingSchedulingSettings();
-  const [externalCalendarEvents, setExternalCalendarEvents] = useState<
-    ExternalCalendarEvent[]
-  >([]);
-  const [calendarRefreshing, setCalendarRefreshing] = useState(false);
+  const {
+    externalCalendarEvents,
+    setExternalCalendarEvents,
+    calendarRefreshing,
+    refreshExternalCalendarEvents,
+    handleCalendarRefresh,
+  } = useCalendarExternalGoogleSync({
+    client,
+    active: keepAliveActive,
+    frozen: keepAliveFrozen,
+    softRefreshApiMeetings,
+  });
   const [attachingExternalNotes, setAttachingExternalNotes] = useState(false);
 
   const openMeetingId = parseCalendarMeetingOverlayId(searchParams.toString());
@@ -203,17 +205,9 @@ function CalendarPageBody() {
       })
     : null;
   const calendarApiRef = useRef<CalendarDateNavApi | null>(null);
-  const frozenEventsRef = useRef<ReturnType<
-    typeof mergeCalendarGridEvents
-  > | null>(null);
-  const frozenDayHabitsRef = useRef<ReturnType<
-    typeof buildCalendarDayHabitsByDate
-  > | null>(null);
   const viewedDateRef = useRef<Date | null>(null);
   const wasFrozenRef = useRef(keepAliveFrozen);
   const meetingDraftSequenceRef = useRef(0);
-  /** Drops stale Google Calendar list responses when a newer refresh is in flight. */
-  const externalCalendarRefreshGenerationRef = useRef(0);
   const [calendarNavReady, setCalendarNavReady] = useState(false);
   const [rangeTitle, setRangeTitle] = useState("");
   const [meetingDraft, setMeetingDraft] =
@@ -241,110 +235,6 @@ function CalendarPageBody() {
       setMeetingDraft(null);
     }
   }, [keepAliveActive]);
-
-  // When PowerSync is disconnected, soft-pull REST so agent/CLI creates still
-  // appear. While connected, skip — SSE liveMeetingsById + PowerSync download
-  // are the live path (same as documents; avoid a full list GET on every visit).
-  useEffect(() => {
-    if (!keepAliveActive) return;
-    void softRefreshApiMeetings().catch(() => {});
-  }, [keepAliveActive, softRefreshApiMeetings]);
-
-  const refreshExternalCalendarEvents = useCallback(
-    async (options?: { forceSync?: boolean }) => {
-      const generation = ++externalCalendarRefreshGenerationRef.current;
-      const isCurrent = () =>
-        generation === externalCalendarRefreshGenerationRef.current;
-      try {
-        const settingsBody =
-          await client.requestJson<GoogleCalendarSettings>(
-            "/api/v1/settings/google-calendar",
-          );
-        if (!isCurrent()) return;
-        if (!settingsBody.connected) {
-          setExternalCalendarEvents([]);
-          return;
-        }
-        const lastSynced = settingsBody.lastSyncedAt
-          ? Date.parse(settingsBody.lastSyncedAt)
-          : 0;
-        const stale =
-          !Number.isFinite(lastSynced) ||
-          Date.now() - lastSynced > 15 * 60_000;
-        if (options?.forceSync || stale) {
-          // Sync failures must not skip the subsequent list — push/webhook may
-          // already have fresher rows, and an older in-flight list must not win.
-          try {
-            await client.requestJson<GoogleCalendarSyncResult>(
-              "/api/v1/settings/google-calendar/sync",
-              {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: "{}",
-              },
-            );
-          } catch (error) {
-            if (options?.forceSync) {
-              console.warn(
-                "[calendar] Google Calendar sync failed:",
-                error,
-              );
-            }
-          }
-          if (!isCurrent()) return;
-        }
-        const from = new Date();
-        from.setDate(from.getDate() - 30);
-        const to = new Date();
-        to.setDate(to.getDate() + 90);
-        const body = await client.requestJson<{
-          events: ExternalCalendarEvent[];
-        }>(
-          `/api/v1/external-calendar-events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
-        );
-        if (!isCurrent()) return;
-        setExternalCalendarEvents(body.events ?? []);
-      } catch (error) {
-        if (options?.forceSync) {
-          console.warn(
-            "[calendar] Google Calendar refresh failed:",
-            error,
-          );
-        }
-        // Integration may be disabled or core offline — agenda still works.
-      }
-    },
-    [client],
-  );
-
-  // Google Calendar (and later CalDAV) read-only blocks — REST cache, not PowerSync.
-  useEffect(() => {
-    if (!keepAliveActive || keepAliveFrozen) return;
-    void refreshExternalCalendarEvents();
-  }, [
-    keepAliveActive,
-    keepAliveFrozen,
-    refreshExternalCalendarEvents,
-  ]);
-
-  const handleCalendarRefresh = useCallback(() => {
-    if (calendarRefreshing) return;
-    setCalendarRefreshing(true);
-    void (async () => {
-      try {
-        await Promise.all([
-          softRefreshApiMeetings().catch(() => {}),
-          refreshExternalCalendarEvents({ forceSync: true }),
-        ]);
-      } finally {
-        setCalendarRefreshing(false);
-      }
-    })();
-  }, [
-    calendarRefreshing,
-    refreshExternalCalendarEvents,
-    softRefreshApiMeetings,
-  ]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -662,6 +552,7 @@ function CalendarPageBody() {
       attachingExternalNotes,
       openMeetingFromGrid,
       refreshExternalCalendarEvents,
+      setExternalCalendarEvents,
       workspace,
     ],
   );
@@ -887,87 +778,16 @@ function CalendarPageBody() {
     viewMode,
   ]);
 
-  const events = useMemo(() => {
-    if (keepAliveFrozen && frozenEventsRef.current) {
-      return frozenEventsRef.current;
-    }
-    const habitIconById = new Map(
-      workspace.habits.map((habit) => [habit.id, habit.icon ?? null] as const),
-    );
-    const tasksWithHabitIcons = workspace.allTasks.map((task) => {
-      const habitId = task.habitId?.trim() || null;
-      if (!habitId) return task;
-      return {
-        ...task,
-        habitIcon: habitIconById.get(habitId) ?? null,
-      };
-    });
-    const next = mergeCalendarGridEvents(
-      tasksWithHabitIcons,
-      workspace.meetings,
-      new Date(calendarNowMs),
-      workspace.contacts.map((contact) => ({
-        id: contact.id,
-        name: contact.name,
-        birthday: contact.birthday ?? null,
-      })),
-      undefined,
-      externalCalendarEvents,
-    );
-    frozenEventsRef.current = next;
-    return next;
-  }, [
-    calendarNowMs,
+  const { calendarEvents, dayHabitsByDate } = useCalendarGridModel({
+    frozen: keepAliveFrozen,
+    allTasks: workspace.allTasks,
+    habits: workspace.habits,
+    meetings: workspace.meetings,
+    contacts: workspace.contacts,
+    nowMs: calendarNowMs,
     externalCalendarEvents,
-    keepAliveFrozen,
-    workspace.allTasks,
-    workspace.habits,
-    workspace.meetings,
-    workspace.contacts,
-  ]);
-
-  const calendarEvents = useMemo(() => {
-    if (!meetingDraft) return events;
-    return [
-      ...events,
-      {
-        id: `meeting-draft:${meetingDraft.key}`,
-        title: "Name of meeting",
-        start: meetingDraft.startAt,
-        end: meetingDraft.endAt,
-        allDay: false,
-        editable: false,
-        startEditable: false,
-        durationEditable: false,
-        classNames: [
-          ...meetingCalendarEventClassNames(),
-          "meeting-calendar-event--draft",
-        ],
-        extendedProps: {
-          entityType: "meeting" as const,
-          meetingId: `draft:${meetingDraft.key}`,
-          status: "triage",
-          endAt: meetingDraft.endAt,
-          finished: false,
-          draft: true,
-          externalCalendarEventId: null,
-          providerEventId: null,
-        },
-      },
-    ];
-  }, [events, meetingDraft]);
-
-  const dayHabitsByDate = useMemo(() => {
-    if (keepAliveFrozen && frozenDayHabitsRef.current) {
-      return frozenDayHabitsRef.current;
-    }
-    const next = buildCalendarDayHabitsByDate(
-      workspace.habits,
-      workspace.allTasks,
-    );
-    frozenDayHabitsRef.current = next;
-    return next;
-  }, [keepAliveFrozen, workspace.allTasks, workspace.habits]);
+    meetingDraft,
+  });
 
   const handleToggleDayHabit = useCallback(
     (item: CalendarHabitIconItem, completed: boolean) => {
@@ -1082,7 +902,7 @@ function CalendarPageBody() {
       }
       void workspace.patchMeeting(meeting.id, values);
     },
-    [meeting, workspace],
+    [meeting, setExternalCalendarEvents, workspace],
   );
 
   const meetingDetailProps = useMeetingDetailViewProps(
@@ -1469,47 +1289,16 @@ function CalendarPageBody() {
     onDismiss: dismissTimetrackingDetail,
   });
 
-  const handleTimetrackingTaskStatusChange = useCallback(
-    (taskId: string, status: TaskStatus) => {
-      void patchTask(taskId, { status });
-    },
-    [patchTask],
-  );
-
-  const handleTimetrackingTaskPriorityChange = useCallback(
-    (taskId: string, priority: number) => {
-      void patchTask(taskId, { priority });
-    },
-    [patchTask],
-  );
-
-  const handleTimetrackingTaskDueDateChange = useCallback(
-    (taskId: string, dueDate: Date | null) => {
-      void patchTask(taskId, {
-        dueDate: dueDate ? dueDate.toISOString() : null,
-      });
-    },
-    [patchTask],
-  );
-
-  const handleTimetrackingTaskAssigneeChange = useCallback(
-    (taskId: string, assigneeId: string | null) => {
-      void patchTask(taskId, { assigneeId });
-    },
-    [patchTask],
-  );
-
-  const handleTimetrackingTaskProjectChange = useCallback(
-    (taskId: string, projectKey: string | null) => {
-      const project = projectKey
-        ? workspace.projects.find((entry) => entry.key === projectKey) ?? null
-        : null;
-      void patchTask(taskId, {
-        projectId: project?.id ?? null,
-      });
-    },
-    [patchTask, workspace.projects],
-  );
+  const {
+    onTaskStatusChange: handleTimetrackingTaskStatusChange,
+    onTaskPriorityChange: handleTimetrackingTaskPriorityChange,
+    onTaskDueDateChange: handleTimetrackingTaskDueDateChange,
+    onTaskAssigneeChange: handleTimetrackingTaskAssigneeChange,
+    onTaskProjectChange: handleTimetrackingTaskProjectChange,
+  } = useCalendarTimetrackingDetailHandlers({
+    patchTask,
+    projects: workspace.projects,
+  });
 
   const search = searchParams.toString();
 
@@ -1520,8 +1309,19 @@ function CalendarPageBody() {
 
   const isListView = viewMode === "list";
 
+  const bookingAvailability = useMemo(
+    () =>
+      settings
+        ? {
+            weekdayHours: settings.weekdayHours,
+            timezone: settings.timezone,
+          }
+        : undefined,
+    [settings],
+  );
+
   const calendarGrid = (
-    <CalendarView
+    <CalendarGridPane
       events={calendarEvents}
       viewMode={viewMode}
       onViewModeChange={handleViewModeChange}
@@ -1531,14 +1331,7 @@ function CalendarPageBody() {
       keyboardNavigationEnabled={
         keepAliveActive && !openMeetingId && !openTaskId
       }
-      bookingAvailability={
-        settings
-          ? {
-              weekdayHours: settings.weekdayHours,
-              timezone: settings.timezone,
-            }
-          : undefined
-      }
+      bookingAvailability={bookingAvailability}
       onTaskReschedule={handleTaskReschedule}
       onMeetingReschedule={handleMeetingReschedule}
       onMeetingDuplicate={handleMeetingDuplicate}

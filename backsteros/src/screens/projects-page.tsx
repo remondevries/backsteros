@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   useLocation,
   useNavigate,
@@ -15,14 +23,11 @@ import {
   LetterDetailView,
   DocumentDetailWithProperties,
   useCodebaseDocsSourceMode,
-  PROJECTS_LIST_BOARD_STORAGE_KEY,
   PROJECT_SECTIONS,
   ProjectDetailView,
+  computeProjectTaskProgress,
   ProjectDocumentsView,
   ProjectLettersView,
-  ProjectTasksView,
-  ProjectTimetrackingView,
-  ProjectsOverviewView,
   DomainDetailView,
   PillNav,
   RegisterEntityDeleteAction,
@@ -40,7 +45,6 @@ import {
   buildContactDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
-  buildProjectKeyRenameRedirectPath,
   buildTransipDomainProjectIcon,
   collectTimetrackingEntries,
   formatLetterDisplayId,
@@ -51,7 +55,6 @@ import {
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
   getOrganizationSectionHref,
-  getProjectsListAreaHref,
   getScopedProjectBasePath,
   getScopedProjectDocumentHref,
   getScopedProjectLetterHref,
@@ -59,7 +62,6 @@ import {
   getScopedProjectTaskHref,
   getActiveProjectSection,
   getDocumentEditorBody,
-  getSelectedProjectDocumentPathFromPathname,
   getTaskDisplayId,
   isCodebaseWorkbenchPath,
   isDefinedProjectArea,
@@ -68,10 +70,8 @@ import {
   letterPdfSubjectFromFilename,
   localMonthKey,
   localWeekKey,
-  organizationMatchesSlug,
   parseCodebaseWorkbenchPath,
   parseListBoardViewFromLocation,
-  parseProjectAreaFilterFromLocation,
   persistListBoardView,
   PROJECT_AREA_LABELS,
   resolveLetterDetailHref,
@@ -81,29 +81,18 @@ import {
   type DomainRegistrarContact,
   type KnowledgeListItem,
   type ListBoardView,
-  type ProjectArea,
-  type ProjectOverviewRowProject,
-  type ProjectRouteScope,
   type ProjectSectionId,
   type ProjectStatus,
   type ProjectType,
   type TaskStatus,
   type TimetrackingEntry,
   type TimetrackingPeriod,
-  getProjectProviderDefaultIcon,
-  getProjectEmailCategoryDefaultIcon,
-  projectReorderPatches,
   taskReorderPatches,
   mapWorkspaceNestedAreas,
 } from "@backsteros/ui";
 
 import { DesktopProjectUpdatesPanel } from "../components/desktop-project-updates-panel";
 import { LetterPdfPreview } from "../components/letter-pdf-viewer";
-import {
-  buildWorkingProjectIdSet,
-  isTaskAgentWorkingForUi,
-  renderTaskAgentTitleTrailing,
-} from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
@@ -134,8 +123,6 @@ import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
 import { useDesktopLetterContext } from "../lib/use-letter-context";
 import {
   useKeepAliveActive,
-  useShellLocation,
-  useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useDomainProjectApi } from "../lib/use-domain-project-api";
@@ -155,37 +142,29 @@ import {
   rememberProjectListHref,
   projectListHrefFromLocationState,
   resolveProjectListHref,
-  type ProjectLocationState,
   type ProjectNavFrom,
 } from "../lib/project-type-cache";
 import { navigateToHref } from "../router/navigate-href";
+import {
+  useProjectsWithOverlay,
+  type ProjectOverlay,
+  type WorkspaceProject,
+} from "./projects/project-overlay";
+import { ProjectsListScreen } from "./projects/projects-list-screen";
+import {
+  ProjectTasksSection,
+  ProjectTimetrackingSection,
+} from "./projects/project-section-panels";
+import { useProjectPropertyHandlers } from "./projects/use-project-property-handlers";
 
-type WorkspaceProject = ProjectOverviewRowProject & {
-  organizationId?: string | null;
-  type?: string;
-  localWorkingDirectory?: string | null;
-  developmentLocation?: string | null;
-  productionLocation?: string | null;
-  localLocation?: string | null;
-  developmentSetupStatus?: "pending" | "ready" | "failed" | null;
-  developmentSetupError?: string | null;
-  githubRepository?: string | null;
-  provider?: string | null;
-  category?: string | null;
-  healthCheckMode?: "simple" | "advanced" | null;
-  healthCheckDomain?: string | null;
-};
+const NO_PROJECT_BUDGETS: NonNullable<WorkspaceProject["budgets"]> = [];
+import { useProjectsRouteScope } from "./projects/use-projects-route-scope";
+
 
 export type ProjectsPageProps = {
   organizationRouteParam?: string;
   organizationName?: string;
 };
-
-function computeTaskProgress(tasks: { status: string }[]) {
-  const total = tasks.length;
-  const completed = tasks.filter((task) => task.status === "completed").length;
-  return { total, completed };
-}
 
 
 export function ProjectsPage({
@@ -231,6 +210,36 @@ function ProjectsPageBody({
   organizationRouteParam,
   organizationName,
 }: ProjectsPageProps = {}) {
+  const { routeSlug } = useProjectsRouteScope(organizationRouteParam);
+  const [projectOverlay, setProjectOverlay] = useState<ProjectOverlay>({});
+  if (!routeSlug) {
+    return (
+      <ProjectsListScreen
+        organizationRouteParam={organizationRouteParam}
+        projectOverlay={projectOverlay}
+      />
+    );
+  }
+  return (
+    <ProjectDetailScreen
+      organizationRouteParam={organizationRouteParam}
+      organizationName={organizationName}
+      projectOverlay={projectOverlay}
+      setProjectOverlay={setProjectOverlay}
+    />
+  );
+}
+
+/** `/projects/:slug/...` — only mounted when a project is routed. */
+function ProjectDetailScreen({
+  organizationRouteParam,
+  organizationName,
+  projectOverlay,
+  setProjectOverlay,
+}: ProjectsPageProps & {
+  projectOverlay: ProjectOverlay;
+  setProjectOverlay: Dispatch<SetStateAction<ProjectOverlay>>;
+}) {
   const routerNavigate = useNavigate();
   const navigate = useCallback(
     (
@@ -240,31 +249,16 @@ function ProjectsPageBody({
       navigateToHref(routerNavigate, to, options);
     },
     [routerNavigate]);
-  const location = useShellLocation();
   const keepAliveActive = useKeepAliveActive();
   const {
-    slug,
-    projectSlug,
-    section: sectionParam,
+    location,
+    routeSlug,
+    sectionParam,
     letterSlug,
-  } = useShellParams() as {
-    slug?: string;
-    projectSlug?: string;
-    section?: string;
-    letterSlug?: string;
-  };
-  const routeSlug = projectSlug ?? slug;
-  const documentPath =
-    getSelectedProjectDocumentPathFromPathname(location.pathname) ?? null;
-  const routeScope = useMemo<ProjectRouteScope>(
-    () =>
-      organizationRouteParam
-        ? { kind: "organization", organizationRouteParam }
-        : { kind: "standalone" },
-    [organizationRouteParam]);
-  const projectsListHref = organizationRouteParam
-    ? getOrganizationSectionHref(organizationRouteParam, "projects")
-    : "/projects";
+    documentPath,
+    routeScope,
+    projectsListHref,
+  } = useProjectsRouteScope(organizationRouteParam);
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
@@ -277,9 +271,6 @@ function ProjectsPageBody({
     purgeCloudflareCache,
   } = useDomainProjectApi();
   const agentMail = useAgentMail();
-  const [projectOverlay, setProjectOverlay] = useState<
-    Record<string, Partial<WorkspaceProject>>
-  >({});
   const [localDocuments, setLocalDocuments] = useState<KnowledgeListItem[]>([]);
   const [omittedDocumentIds, setOmittedDocumentIds] = useState<string[]>([]);
   const [omittedLetterIds, setOmittedLetterIds] = useState<string[]>([]);
@@ -299,23 +290,13 @@ function ProjectsPageBody({
     title: string;
     number: number | null;
   } | null>(null);
-  const pendingCreatedProjectNameRef = useRef<string | null>(null);
 
   const { allTasks: tasks, letters, organizations, contacts } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     organizations);
-  const projects = workspace.projects.map((project) => ({
-    ...project,
-    ...projectOverlay[project.id],
-  }));
-  const workingProjectIds = useMemo(
-    () =>
-      buildWorkingProjectIdSet(
-        tasks,
-        agentStatus?.workingTaskIds ?? new Set()),
-    [agentStatus?.workingTaskIds, tasks]);
+  const projects = useProjectsWithOverlay(workspace.projects, projectOverlay);
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
     const byId = new Map<string, KnowledgeListItem>();
@@ -512,14 +493,6 @@ function ProjectsPageBody({
     },
     [client, selectedDocument, workspace],
   );
-
-  const projectsListView = useMemo(
-    () =>
-      parseListBoardViewFromLocation(
-        location.pathname,
-        location.searchStr,
-        PROJECTS_LIST_BOARD_STORAGE_KEY),
-    [location.pathname, location.searchStr]);
 
   const projectTasksView = useMemo(
     () =>
@@ -941,7 +914,7 @@ function ProjectsPageBody({
       }));
       void workspace.patchProject(selected.id, patch);
     },
-    [selected, workspace],
+    [selected, setProjectOverlay, workspace],
   );
 
   const projectTypeMenuItems = useMemo(
@@ -1271,6 +1244,15 @@ function ProjectsPageBody({
   );
 
   const projectList = workspace.projects;
+  const projectPropertyHandlers = useProjectPropertyHandlers({
+    project: selected ?? null,
+    projects: projectList,
+    pathname: location.pathname,
+    navigate,
+    patchProject: workspace.patchProject,
+    createOrganization: workspace.createOrganization,
+    setProjectOverlay,
+  });
 
   const assigneeOptions = useMemo(
     () => buildAssigneeDropdownOptions(contacts, { avatarSrcById: contactAvatarSrc }),
@@ -1340,134 +1322,6 @@ function ProjectsPageBody({
     [projectList],
   );
 
-  if (!routeSlug) {
-    const areaFilter =
-      parseProjectAreaFilterFromLocation(location.pathname, location.searchStr) ??
-      undefined;
-
-    return (
-      <ProjectsOverviewView
-        projects={projects}
-        nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
-        organizations={organizations.map((org) => ({
-          id: org.id,
-          name: org.name,
-        }))}
-        workingProjectIds={workingProjectIds}
-        typeToFilterEnabled={keepAliveActive}
-        area={areaFilter}
-        onAreaChange={(area) => {
-          navigate(getProjectsListAreaHref(area, projectsListView));
-        }}
-        view={projectsListView}
-        onViewChange={(nextView) => {
-          persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
-          navigate(
-            getProjectsListAreaHref(areaFilter ?? "personal", nextView));
-        }}
-        onSelectProject={(key) => {
-          const match = projects.find(
-            (entry) => entry.key.toLowerCase() === key.toLowerCase());
-          const href = `/projects/${key}`;
-          if (match?.name) {
-            primeTabTitle(href, match.name);
-          }
-          const state: ProjectLocationState = {
-            from: "projects",
-            listHref: `${location.pathname}${location.searchStr ?? ""}`,
-            ...(match?.type ? { projectType: match.type } : {}),
-          };
-          navigate(href, { state });
-        }}
-        onStatusChange={(projectId, status) => {
-          void workspace.patchProject(projectId, { status });
-        }}
-        onPriorityChange={(projectId, priority) => {
-          void workspace.patchProject(projectId, { priority });
-        }}
-        onStartDateChange={(projectId, startDate) => {
-          void workspace.patchProject(projectId, {
-            startDate: startDate ? startDate.toISOString() : null,
-          });
-        }}
-        onDueDateChange={(projectId, dueDate) => {
-          void workspace.patchProject(projectId, {
-            dueDate: dueDate ? dueDate.toISOString() : null,
-          });
-        }}
-        onOrganizationChange={(projectId, organizationId) => {
-          void workspace.patchProject(projectId, { organizationId });
-        }}
-        onProjectAreaChange={(projectId, area) => {
-          void workspace.patchProject(projectId, { area, areaId: null });
-        }}
-        onCreateProject={async ({ status, name }) => {
-          const organizationId = organizationRouteParam
-            ? (organizations.find((org) =>
-                organizationMatchesSlug(org, organizationRouteParam))?.id ?? null)
-            : null;
-          pendingCreatedProjectNameRef.current = name;
-          return workspace.createProject({
-            name,
-            status,
-            organizationId,
-          });
-        }}
-        onCreatedProject={(id, key) => {
-          if (!key) return;
-          const pendingName = pendingCreatedProjectNameRef.current;
-          pendingCreatedProjectNameRef.current = null;
-          const createdName =
-            pendingName ??
-            projects.find((entry) => entry.id === id)?.name ??
-            projects.find(
-              (entry) => entry.key.toLowerCase() === key.toLowerCase())?.name;
-          if (organizationRouteParam) {
-            const href = getOrganizationProjectHref(
-              organizationRouteParam,
-              key);
-            if (createdName) primeTabTitle(href, createdName);
-            navigate(href);
-            return;
-          }
-          const href = `/projects/${key}`;
-          if (createdName) primeTabTitle(href, createdName);
-          const state: ProjectLocationState = {
-            from: "projects",
-            listHref: `${location.pathname}${location.searchStr ?? ""}`,
-          };
-          navigate(href, { state });
-        }}
-        onCreateArea={async ({ parent, name }) =>
-          workspace.createArea({ parent, name })
-        }
-        onReorder={(request) => {
-          const patches = projectReorderPatches(projects, request);
-          for (const patch of patches) {
-            void workspace.patchProject(patch.id, {
-              status: patch.status,
-              sortOrder: patch.sortOrder,
-            });
-          }
-        }}
-        onDeleteProject={async (project) => {
-          try {
-            await workspace.softDeleteProject(project.id);
-            return { ok: true as const };
-          } catch (error) {
-            return {
-              ok: false as const,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to delete project.",
-            };
-          }
-        }}
-      />
-    );
-  }
-
   if (!selected) {
     return (
       <div className="inbox-detail-layout">
@@ -1516,7 +1370,7 @@ function ProjectsPageBody({
     }));
   };
 
-  const taskProgress = computeTaskProgress(projectTasks);
+  const taskProgress = computeProjectTaskProgress(projectTasks);
 
   function handleSectionChange(next: ProjectSectionId) {
     navigate(getScopedProjectSectionHref(projectKey, next, routeScope), {
@@ -1544,7 +1398,7 @@ function ProjectsPageBody({
   function renderSection(sectionId: ProjectSectionId) {
     if (sectionId === "timetracking") {
       return (
-        <ProjectTimetrackingView
+        <ProjectTimetrackingSection
           entries={projectTimetrackingEntries}
           tasks={projectTasks}
           meetings={projectMeetings}
@@ -1553,7 +1407,7 @@ function ProjectsPageBody({
           latestMonth={localMonthKey()}
           latestWeek={localWeekKey()}
           hourlyRateCents={project.hourlyRateCents ?? null}
-          budgets={project.budgets ?? []}
+          budgets={project.budgets ?? NO_PROJECT_BUDGETS}
           onEntryOpen={(entry: TimetrackingEntry) => {
             if (entry.href) {
               if (entry.title) primeTabTitle(entry.href, entry.title);
@@ -1618,31 +1472,13 @@ function ProjectsPageBody({
 
     if (sectionId === "tasks") {
       return (
-        <ProjectTasksView
+        <ProjectTasksSection
           tasks={projectTasks}
           listItemVariant="row"
           assigneeOptions={assigneeOptions}
           view={projectTasksView}
           onViewChange={navigateProjectTasksView}
-          renderTaskTitleTrailing={(task) =>
-            isEmailTaskListItem(task)
-              ? null
-              : renderTaskAgentTitleTrailing({
-                  taskId: task.id,
-                  agentChatId: task.agentChatId,
-                  agentWorkingContactId: task.agentWorkingContactId,
-                  agentWorkingContactName: task.agentWorkingContactName,
-                  agentWorkingKind: task.agentWorkingKind,
-                  taskStatus: task.status,
-                  agentStatus,
-                  workingShownOnStatusIcon: true,
-                })
-          }
-          isTaskAgentWorking={(task) =>
-            isEmailTaskListItem(task)
-              ? false
-              : isTaskAgentWorkingForUi(task, agentStatus)
-          }
+          agentStatus={agentStatus}
           onSelectTask={(id) => {
             const task = projectTasks.find((entry) => entry.id === id);
             const emailHref = task
@@ -2774,50 +2610,6 @@ function ProjectsPageBody({
       taskProgress,
     };
 
-    const saveDomainName = async (name: string) => {
-      patchSelected({ name });
-      try {
-        await workspace.patchProject(project.id, { name });
-        return { ok: true as const };
-      } catch {
-        return { ok: false as const, error: "Could not rename project" };
-      }
-    };
-
-    const saveDomainKey = async (key: string) => {
-      const conflict = projectList.some(
-        (entry) =>
-          entry.id !== project.id &&
-          entry.key.toLowerCase() === key.toLowerCase(),
-      );
-      if (conflict) {
-        return { ok: false as const, error: "Project key already exists." };
-      }
-      const previousKey = project.key;
-      patchSelected({ key });
-      try {
-        await workspace.patchProject(project.id, { key });
-      } catch (error) {
-        patchSelected({ key: previousKey });
-        return {
-          ok: false as const,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Could not update project ID.",
-        };
-      }
-      const nextPath = buildProjectKeyRenameRedirectPath(
-        location.pathname,
-        previousKey,
-        key,
-      );
-      if (nextPath !== location.pathname) {
-        navigate(nextPath, { replace: true });
-      }
-      return { ok: true as const, key };
-    };
-
     const domainDetailProps = {
       project: domainProject,
       organizationOptions: domainOrganizationOptions,
@@ -2827,40 +2619,16 @@ function ProjectsPageBody({
       loadCloudflareDnsRecords,
       purgeCloudflareCache,
       copyIdShortcutEnabled: keepAliveActive,
-      onSaveName: saveDomainName,
-      onSaveKey: saveDomainKey,
-      onStatusChange: (status: ProjectStatus) => {
-        patchSelected({ status });
-        void workspace.patchProject(project.id, { status });
-      },
-      onPriorityChange: (priority: number) => {
-        patchSelected({ priority });
-        void workspace.patchProject(project.id, { priority });
-      },
-      onAreaChange: (area: ProjectArea | null) => {
-        patchSelected({ area, areaId: null });
-        void workspace.patchProject(project.id, { area, areaId: null });
-      },
-      onAreaIdChange: (areaId: string | null) => {
-        patchSelected({ areaId });
-        void workspace.patchProject(project.id, { areaId });
-      },
-      onOrganizationChange: (organizationId: string | null) => {
-        patchSelected({ organizationId });
-        void workspace.patchProject(project.id, { organizationId });
-      },
-      onCreateOrganizationFromQuery: (query: string) => {
-        void workspace.createOrganization({ name: query }).then((created) => {
-          patchSelected({ organizationId: created.id });
-          void workspace.patchProject(project.id, {
-            organizationId: created.id,
-          });
-        });
-      },
-      onIconChange: (icon: string | null) => {
-        patchSelected({ icon });
-        void workspace.patchProject(project.id, { icon });
-      },
+      onSaveName: projectPropertyHandlers.onSaveName,
+      onSaveKey: projectPropertyHandlers.onSaveKey,
+      onStatusChange: projectPropertyHandlers.onStatusChange,
+      onPriorityChange: projectPropertyHandlers.onPriorityChange,
+      onAreaChange: projectPropertyHandlers.onAreaChange,
+      onAreaIdChange: projectPropertyHandlers.onAreaIdChange,
+      onOrganizationChange: projectPropertyHandlers.onOrganizationChange,
+      onCreateOrganizationFromQuery:
+        projectPropertyHandlers.onCreateOrganizationFromQuery,
+      onIconChange: projectPropertyHandlers.onIconChange,
       onTagsChange: async (tags: string[]) => {
         try {
           const result = await updateDomainTags(project.name, tags);
@@ -2983,136 +2751,7 @@ function ProjectsPageBody({
               }`
             : null
         }
-        onSaveName={async (name) => {
-          patchSelected({ name });
-          try {
-            await workspace.patchProject(project.id, { name });
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not save project name.",
-            };
-          }
-        }}
-        onSaveKey={async (key) => {
-          const conflict = projectList.some(
-            (entry) =>
-              entry.id !== project.id &&
-              entry.key.toLowerCase() === key.toLowerCase());
-          if (conflict) {
-            return { ok: false, error: "Project key already exists." };
-          }
-          const previousKey = project.key;
-          patchSelected({ key });
-          try {
-            await workspace.patchProject(project.id, { key });
-          } catch (error) {
-            patchSelected({ key: previousKey });
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not update project ID.",
-            };
-          }
-          const nextPath = buildProjectKeyRenameRedirectPath(
-            location.pathname,
-            previousKey,
-            key);
-          if (nextPath !== location.pathname) {
-            navigate(nextPath, { replace: true });
-          }
-          return { ok: true, key };
-        }}
-        onSaveSummary={(summary) => {
-          void workspace.patchProject(project.id, { summary });
-        }}
-        onSaveDescription={(description) => {
-          void workspace.patchProject(project.id, { description });
-        }}
-        onIconChange={(icon) => {
-          patchSelected({ icon });
-          void workspace.patchProject(project.id, { icon });
-        }}
-        onStatusChange={(status: ProjectStatus) => {
-          patchSelected({ status });
-          void workspace.patchProject(project.id, { status });
-        }}
-        onPriorityChange={(priority) => {
-          patchSelected({ priority });
-          void workspace.patchProject(project.id, { priority });
-        }}
-        onProviderChange={(provider) => {
-          const patch: {
-            provider: string | null;
-            icon?: string;
-          } = { provider };
-          if (provider === "transip") {
-            patch.icon = getProjectProviderDefaultIcon("transip");
-          }
-          patchSelected(patch);
-          void workspace.patchProject(project.id, patch);
-        }}
-        onCategoryChange={(category) => {
-          const patch: {
-            category: string | null;
-            icon?: string;
-          } = { category };
-          if (category) {
-            patch.icon = getProjectEmailCategoryDefaultIcon(category);
-          }
-          patchSelected(patch);
-          void workspace.patchProject(project.id, patch);
-        }}
-        onHealthCheckChange={(next) => {
-          patchSelected(next);
-          void workspace.patchProject(project.id, next);
-        }}
-        onHourlyRateChange={(hourlyRateCents) => {
-          patchSelected({ hourlyRateCents });
-          void workspace.patchProject(project.id, { hourlyRateCents });
-        }}
-        onBudgetsChange={(budgets) => {
-          patchSelected({ budgets });
-          void workspace.patchProject(project.id, { budgets });
-        }}
-        onAreaChange={(area: ProjectArea | null) => {
-          patchSelected({ area, areaId: null });
-          void workspace.patchProject(project.id, { area, areaId: null });
-        }}
-        onAreaIdChange={(areaId) => {
-          patchSelected({ areaId });
-          void workspace.patchProject(project.id, { areaId });
-        }}
-        onOrganizationChange={(organizationId) => {
-          patchSelected({ organizationId });
-          void workspace.patchProject(project.id, { organizationId });
-        }}
-        onCreateOrganizationFromQuery={(query) => {
-          void workspace.createOrganization({ name: query }).then((created) => {
-            patchSelected({ organizationId: created.id });
-            void workspace.patchProject(project.id, {
-              organizationId: created.id,
-            });
-          });
-        }}
-        onStartDateChange={(startDate) => {
-          patchSelected({ startDate: startDate ? startDate.getTime() : null });
-          void workspace.patchProject(project.id, {
-            startDate: startDate ? startDate.toISOString() : null,
-          });
-        }}
-        onDueDateChange={(dueDate) => {
-          patchSelected({ dueDate: dueDate ? dueDate.getTime() : null });
-          void workspace.patchProject(project.id, {
-            dueDate: dueDate ? dueDate.toISOString() : null,
-          });
-        }}
+        {...projectPropertyHandlers}
       />
     </>
   );

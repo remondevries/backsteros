@@ -59,6 +59,16 @@ export type ProjectTaskProgress = {
   completed: number;
 };
 
+export function computeProjectTaskProgress(
+  tasks: readonly { status: string }[],
+): ProjectTaskProgress {
+  let completed = 0;
+  for (const task of tasks) {
+    if (task.status === "completed") completed += 1;
+  }
+  return { total: tasks.length, completed };
+}
+
 export function computeProjectTaskProgressRatio(
   completed: number,
   total: number,
