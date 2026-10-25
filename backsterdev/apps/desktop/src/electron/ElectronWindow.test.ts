@@ -91,7 +91,7 @@ describe("ElectronWindow", () => {
     browserWindowMock.mockReset();
     foregroundWindowMock.mockReset().mockReturnValue(0n);
     getAllWindowsMock.mockReset();
-    getFocusedWindowMock.mockReset();
+    getFocusedWindowMock.mockReset().mockReturnValue(null);
     loadWindowsForegroundApiMock
       .mockReset()
       .mockImplementation(() => Promise.resolve({ getForegroundWindow: foregroundWindowMock }));
@@ -166,7 +166,7 @@ describe("ElectronWindow", () => {
   it.effect("focuses an already-visible macOS window only while Dig itself is active", () =>
     Effect.gen(function* () {
       const window = makeWindowsRevealWindow();
-      appIsFocusedMock.mockReturnValue(true);
+      getFocusedWindowMock.mockReturnValue(window);
       const electronWindow = yield* ElectronWindow.ElectronWindow;
 
       yield* electronWindow.reveal(window as unknown as Electron.BrowserWindow);

@@ -125,7 +125,7 @@ export function useChatInbox(options?: UseChatInboxOptions) {
       };
       try {
         return await attempt();
-      } catch (err) {
+      } catch (_err) {
         if (!isCurrent()) return null;
         // WebKit surfaces transient local-core blips as "Load failed".
         try {

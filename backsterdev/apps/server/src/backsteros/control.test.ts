@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalErrorInEffectFailure:off nodeBuiltinImport:off anyUnknownInErrorContext:off - BacksterOS bridge code runs outside the Effect runtime.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -11,7 +12,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";

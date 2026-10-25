@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Paired environments the localhost control API can target.
  *

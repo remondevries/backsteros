@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetchInEffect:off preferSchemaOverJson:off - BacksterOS bridge code runs outside the Effect runtime.
 import { Effect, Layer, Option } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 

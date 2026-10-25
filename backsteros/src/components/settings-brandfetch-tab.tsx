@@ -65,7 +65,7 @@ export function SettingsBrandfetchTab({
           ? error.message
           : "Could not save Brandfetch settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   };
 

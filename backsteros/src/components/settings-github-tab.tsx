@@ -65,7 +65,7 @@ export function SettingsGithubTab({
           ? error.message
           : "Could not save GitHub settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   };
 

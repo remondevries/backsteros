@@ -255,7 +255,7 @@ export function DesktopCommunicationEmailPartyCard({
     </div>
   );
 
-  let partySecondary: ReactNode = null;
+  let partySecondary: ReactNode;
   if (organizationId) {
     if (contactId) {
       partySecondary = contactChip({ allowAddAsOther: false });

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Server-side BacksterOS task ↔ T3 thread bindings.
  * Lets the control API and the web rail share the same task chat link.

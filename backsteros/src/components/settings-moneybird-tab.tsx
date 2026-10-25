@@ -102,7 +102,7 @@ export function SettingsMoneybirdTab({
           ? error.message
           : "Could not save Moneybird settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     } finally {
       setSaving(false);
     }

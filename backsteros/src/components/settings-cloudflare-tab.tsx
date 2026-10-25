@@ -65,7 +65,7 @@ export function SettingsCloudflareTab({
           ? error.message
           : "Could not save Cloudflare settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   };
 

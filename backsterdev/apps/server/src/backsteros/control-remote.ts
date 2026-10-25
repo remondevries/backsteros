@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetch:off globalTimers:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Dispatch control-API sessions against a paired remote T3 environment
  * (stock `t3 serve`, orchestration protocol V2 — no Backster control routes).

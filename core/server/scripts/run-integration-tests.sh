@@ -4,12 +4,12 @@
 # Usage (from repo root or core/server):
 #   pnpm --filter @backsteros/server test:integration
 #
-# Default: reuse an existing Postgres (integration.env DATABASE_URL) so worktrees
+# Default: reuse an existing Postgres (see resolve_database_url) so worktrees
 # do not run `docker compose up` against the shared `backsteros` project.
 # Set INTEGRATION_USE_EXISTING_DB=0 to start compose (canonical build only).
 #
 # In GitHub Actions, set INTEGRATION_USE_EXISTING_DB=1 so the workflow
-# service Postgres (DATABASE_URL) is reused instead of docker compose.
+# service Postgres (INTEGRATION_DATABASE_URL) is reused instead of docker compose.
 #
 # Hard rule: never run against the live local-core database named `backsteros`.
 set -euo pipefail
@@ -81,18 +81,32 @@ read_database_url_from_env_file() {
   " "$ENV_FILE"
 }
 
+# Precedence: INTEGRATION_DATABASE_URL, then integration.env, then a shell
+# DATABASE_URL — the last one only when it does not name the live database,
+# so a shell that exports the live local-core URL does not block local runs.
 resolve_database_url() {
-  if [[ -n "${DATABASE_URL:-}" ]]; then
-    RESOLVED_DATABASE_URL="$DATABASE_URL"
-    RESOLVED_SOURCE="DATABASE_URL override"
+  if [[ -n "${INTEGRATION_DATABASE_URL:-}" ]]; then
+    RESOLVED_DATABASE_URL="$INTEGRATION_DATABASE_URL"
+    RESOLVED_SOURCE="INTEGRATION_DATABASE_URL"
     return 0
   fi
-  if [[ ! -f "$ENV_FILE" ]]; then
-    return 1
+  if [[ -f "$ENV_FILE" ]]; then
+    RESOLVED_DATABASE_URL="$(read_database_url_from_env_file)"
+    RESOLVED_SOURCE="$ENV_FILE"
+    if [[ -n "${RESOLVED_DATABASE_URL:-}" ]]; then
+      return 0
+    fi
   fi
-  RESOLVED_DATABASE_URL="$(read_database_url_from_env_file)"
-  RESOLVED_SOURCE="$ENV_FILE"
-  [[ -n "${RESOLVED_DATABASE_URL:-}" ]]
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    if [[ "$(database_name_from_url "$DATABASE_URL")" == "$LIVE_DB_NAME" ]]; then
+      echo "[integration] ignoring shell DATABASE_URL (points at live '${LIVE_DB_NAME}')" >&2
+      return 1
+    fi
+    RESOLVED_DATABASE_URL="$DATABASE_URL"
+    RESOLVED_SOURCE="DATABASE_URL"
+    return 0
+  fi
+  return 1
 }
 
 ensure_test_database() {
@@ -131,7 +145,7 @@ use_existing="${INTEGRATION_USE_EXISTING_DB:-1}"
 
 if ! resolve_database_url; then
   if [[ "$use_existing" == "1" ]]; then
-    echo "[integration] missing DATABASE_URL (set it or add it to $ENV_FILE)" >&2
+    echo "[integration] missing database URL (set INTEGRATION_DATABASE_URL or add DATABASE_URL to $ENV_FILE)" >&2
     exit 1
   fi
 fi
@@ -142,7 +156,7 @@ if [[ "$use_existing" != "1" ]]; then
     exit 1
   fi
   if ! resolve_database_url; then
-    echo "[integration] missing DATABASE_URL (set it or add it to $ENV_FILE)" >&2
+    echo "[integration] missing database URL (set INTEGRATION_DATABASE_URL or add DATABASE_URL to $ENV_FILE)" >&2
     exit 1
   fi
 
@@ -201,13 +215,13 @@ if [[ "$use_existing" != "1" ]]; then
 fi
 
 if ! resolve_database_url; then
-  echo "[integration] INTEGRATION_USE_EXISTING_DB=1 requires DATABASE_URL" >&2
+  echo "[integration] INTEGRATION_USE_EXISTING_DB=1 requires INTEGRATION_DATABASE_URL, $ENV_FILE, or a non-live DATABASE_URL" >&2
   exit 1
 fi
 
-assert_not_live_db "$RESOLVED_DATABASE_URL" "DATABASE_URL (INTEGRATION_USE_EXISTING_DB=1)"
+assert_not_live_db "$RESOLVED_DATABASE_URL" "${RESOLVED_SOURCE} (INTEGRATION_USE_EXISTING_DB=1)"
 
-echo "[integration] using existing DATABASE_URL (skip docker compose)"
+echo "[integration] using existing database from ${RESOLVED_SOURCE} (skip docker compose)"
 echo "[integration] migrating…"
 (
   cd "$SERVER_DIR"

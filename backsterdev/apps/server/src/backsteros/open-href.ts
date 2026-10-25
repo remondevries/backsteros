@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Write a desktop deep-link path for BacksterOS to pick up.
  * Matches the format Dynamic Island / other tools write to

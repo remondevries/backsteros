@@ -99,8 +99,8 @@ export function resolveAcpWarmProcessPoolConfig(
 
 /** True when the ACP registry agent should use the Cursor warm pool. */
 export function isCursorAcpWarmTarget(input: {
-  readonly agentId?: string;
-  readonly commandPath?: string;
+  readonly agentId?: string | undefined;
+  readonly commandPath?: string | undefined;
 }): boolean {
   const agentId = input.agentId?.trim() ?? "";
   if (/cursor/i.test(agentId)) return true;

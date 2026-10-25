@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalFetch:off globalTimers:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Self-reporting for control-API sessions: when a turn completes, blocks, or
  * errors, BacksterDEV posts a short BacksterOS task comment and (optionally)
@@ -222,7 +223,7 @@ async function runControlSessionReport(
   const commits = await collectRecentCommitShas(context?.backsterosProjectId ?? null);
   const summary = buildControlSessionReportSummary({
     state,
-    title: context?.title,
+    title: context?.title ?? null,
     lastError,
   });
   const payload: ControlSessionReportPayload = {

@@ -297,7 +297,7 @@ export const make = Effect.gen(function* () {
             Electron.app.focus({ steal: true });
           }
 
-          if (needsForeground || Electron.app.isFocused()) {
+          if (needsForeground || Electron.BrowserWindow.getFocusedWindow() !== null) {
             window.focus();
           }
 

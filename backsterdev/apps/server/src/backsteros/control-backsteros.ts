@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetch:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Resolve BacksterOS tasks/projects for the localhost control API.
  */

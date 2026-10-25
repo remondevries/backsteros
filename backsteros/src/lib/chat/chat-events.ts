@@ -137,9 +137,10 @@ export async function subscribeChatEvents(input: {
     } catch {
       // ignore
     }
-    if (idleRecycle && !input.signal.aborted) {
-      throw new Error("Chat events idle recycle");
-    }
+  }
+  // Outside `finally` so a real stream error is never replaced by this one.
+  if (idleRecycle && !input.signal.aborted) {
+    throw new Error("Chat events idle recycle");
   }
 }
 

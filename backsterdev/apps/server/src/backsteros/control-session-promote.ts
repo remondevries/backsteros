@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Best-effort BacksterOS task status sync for control-API-only sessions (no web UI).
  * Call from non-GET handlers (POST start / message / promote) and when a bound

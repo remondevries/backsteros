@@ -4,21 +4,22 @@ Read this file first when working in **`~/BacksterOS/Projects/OS/Codebase/`**. S
 
 ## Git workflow (non-negotiable)
 
-WORKFLOW RULE: Commit and push directly to the production branch. No pull requests. No feature branches or sub-branches. Before every push, run the full local test suite (typecheck, unit tests, integration tests) and only push if all pass. If tests fail, fix locally first. Never open a PR unless explicitly asked.
+WORKFLOW RULE: Commit and push directly to the production branch. No pull requests. No feature branches or sub-branches. Before every push, run the full local test suite (typecheck, lint, unit tests, integration tests) and only push if all pass. If tests fail, fix locally first. Never open a PR unless explicitly asked.
 
 1. **Commit and push directly to `production`.** It is the canonical branch of `remondevries/backsteros`. No pull requests, no feature branches, no sub-branches, no worktree branches.
 2. **Never open a PR or create a branch** unless the person who gave you the task explicitly asks for one in that session.
 3. **Run the full local test suite before every push**, from the repo root, and push only if all of it passes:
    ```bash
    pnpm typecheck
+   pnpm lint
    pnpm test
    pnpm test:integration   # Docker Postgres :5433 → database backsteros_test (never live backsteros)
    ```
-   `pnpm test:integration` creates `backsteros_test` if needed, migrates it, and refuses to run when `DATABASE_URL` points at the live local-core DB named `backsteros`. CI already uses `backsteros_test` via `INTEGRATION_USE_EXISTING_DB=1`.
+   `pnpm test:integration` creates `backsteros_test` if needed, migrates it, and refuses to run against the live local-core DB named `backsteros`. It reads `INTEGRATION_DATABASE_URL` first, then `core/server/integration.env`, then a shell `DATABASE_URL` (ignored when it names the live DB). CI points `INTEGRATION_DATABASE_URL` at `backsteros_test` with `INTEGRATION_USE_EXISTING_DB=1`.
    If you changed anything under `backsterdev/`, also run `vp run -r typecheck` and `vp run -r test` inside `backsterdev/` (mobile typecheck is noisy upstream — use `vp run --filter @t3tools/mobile typecheck` when you touch mobile).
    When `backsterdev/` is installed locally, root `pnpm typecheck` delegates a filtered package set (excludes `@t3tools/mobile`); root `pnpm test` does not run the nested T3 suite — run that inside `backsterdev/` when you change it.
 4. **If anything fails, fix it locally and rerun the suite before pushing.** Never push red, never push "to see what CI says", and never skip or disable a failing test to get green.
-5. **Local runs are the only gate.** `.github/workflows/ci.yml` runs only on pushes to `main`/`v2` and on pull requests, so nothing checks a push to `production` after it lands.
+5. **Local runs are the gate.** `.github/workflows/ci.yml` also runs on pushes to `production` (mobile excluded), but only after the push has landed, so it catches mistakes — it does not prevent them.
 6. Before pushing, `git pull --rebase origin production` so history stays linear, then rerun the suite if the rebase brought in new commits.
 
 ## Workspace root (v2)

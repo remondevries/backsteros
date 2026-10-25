@@ -346,7 +346,7 @@ export function useContactRelationships(
           message = "A contact cannot be related to itself.";
         }
         setError(message);
-        throw new Error(message);
+        throw new Error(message, { cause: err });
       }
     },
     [client, contactId, localEnabled, powerSync, reloadRest],

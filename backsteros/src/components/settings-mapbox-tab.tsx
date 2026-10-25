@@ -65,7 +65,7 @@ export function SettingsMapboxTab({
           ? error.message
           : "Could not save Mapbox settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   };
 

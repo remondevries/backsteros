@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { NodeWS } from "@effect/platform-node/NodeSocket";
@@ -10,7 +11,7 @@ import {
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   buildRemoteWebSocketUrl,

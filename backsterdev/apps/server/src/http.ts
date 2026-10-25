@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalFetchInEffect:off nodeBuiltinImport:off unknownInEffectCatch:off anyUnknownInErrorContext:off - BacksterOS bridge code runs outside the Effect runtime.
 import * as Mime from "effect/http/Mime";
 import {
   AuthOrchestrationOperateScope,

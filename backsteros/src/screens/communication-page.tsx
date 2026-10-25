@@ -1014,13 +1014,7 @@ function CommunicationPageBody() {
         setChatMainFaded(false);
         return;
       }
-      // Support / chat create forms land next — keep the launcher open for now
-      // so the interaction model is clear while those flows are wired.
-      if (kind === "support" || kind === "chat") {
-        console.info(
-          `[communication] create ${kind} selected — compose UI next`,
-        );
-      }
+      // Support / chat create forms are not wired yet — the launcher stays open.
     },
     [resetComposeState],
   );

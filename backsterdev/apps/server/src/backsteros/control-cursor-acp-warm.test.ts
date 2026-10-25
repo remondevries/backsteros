@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   ensureCursorAcpWarmPool,

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Agent comment authorship profile for BacksterOS CLI / agent writes.
  * Persisted at ~/.config/backsteros/agent-profile.json so the CLI can attribute

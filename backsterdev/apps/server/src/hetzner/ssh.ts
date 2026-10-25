@@ -235,7 +235,7 @@ export async function sshExec(
 ): Promise<string> {
   try {
     const host = await resolveSshHost(hostOrName, {
-      alsoTry: options?.alsoTry,
+      alsoTry: options?.alsoTry ?? null,
     });
     const { stdout } = await execFileAsync(
       "ssh",

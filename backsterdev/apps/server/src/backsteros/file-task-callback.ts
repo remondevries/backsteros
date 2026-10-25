@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * In-memory inbox for Grok Bot → BDV file-task callbacks.
  * Results are keyed by requestId and expire after TTL.

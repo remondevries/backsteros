@@ -90,7 +90,7 @@ export function SettingsChatwootTab({
           ? error.message
           : "Could not save Chatwoot settings.";
       setSettingsError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     } finally {
       setSaving(false);
     }

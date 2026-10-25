@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - BacksterOS bridge code runs outside the Effect runtime.
 /**
  * Localhost control plane: bind BacksterOS tasks to T3 threads and start agents.
  */
