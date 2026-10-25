@@ -7,6 +7,13 @@ import {
 } from "./entity-tables.js";
 
 describe("replicatedTablesForEntity", () => {
+  it("replicates import batches ahead of financial transactions", () => {
+    assert.deepEqual(replicatedTablesForEntity("financial_transaction"), [
+      "financial_import_batches",
+      "financial_transactions",
+    ]);
+  });
+
   it("maps CRM entities to twin tables", () => {
     assert.deepEqual(replicatedTablesForEntity("crm_group"), ["crm_groups"]);
     assert.deepEqual(replicatedTablesForEntity("crm_group_member"), [

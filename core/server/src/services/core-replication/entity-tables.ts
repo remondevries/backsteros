@@ -23,7 +23,7 @@ const ENTITY_REPLICATION_TABLES: Partial<
   financial_goal: ["financial_goals"],
   financial_recurring: ["financial_recurrings"],
   cashflow_planner_entry: ["cashflow_planner_entries"],
-  financial_transaction: ["financial_transactions"],
+  financial_transaction: ["financial_import_batches", "financial_transactions"],
   client_estimate: ["client_estimates"],
   habit: ["habits", "tasks"],
   meeting: ["meetings", "crm_activities"],

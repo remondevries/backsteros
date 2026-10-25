@@ -408,7 +408,7 @@ export function financialTransactionSnapshot(
     source_type: row.sourceType,
     settlement_state: row.settlementState,
     raw: row.raw,
-    // Never round-trip import_batch_id: batches are local-only (not replicated).
+    // Never round-trip import_batch_id: batches are core-to-core only, not synced to clients.
     import_batch_id: null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),

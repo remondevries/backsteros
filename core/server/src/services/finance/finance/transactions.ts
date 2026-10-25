@@ -818,19 +818,6 @@ export async function importBankCsv(
   let errors = parsed.errors.length;
   let skippedAccountMismatch = 0;
 
-  await db.insert(financialImportBatches).values({
-    id: batchId,
-    workspaceId,
-    bankAccountId,
-    originalFilename: fileName || "import.csv",
-    storageKey,
-    dialect: parsed.dialect,
-    rowCount: parsed.rows.length,
-    insertedCount: 0,
-    duplicateCount: 0,
-    errorCount: errors,
-  });
-
   const pending: Array<
     { id: string } & FinancialTransactionSyncCreateInput
   > = [];
@@ -897,7 +884,22 @@ export async function importBankCsv(
     inserted = 0;
   }
 
-  // Local-only: attach import batch after leader/apply created the rows.
+  // Insert-only: core replication cursors this table on created_at, so the
+  // row must carry its final counts and never be updated afterwards.
+  await db.insert(financialImportBatches).values({
+    id: batchId,
+    workspaceId,
+    bankAccountId,
+    originalFilename: fileName || "import.csv",
+    storageKey,
+    dialect: parsed.dialect,
+    rowCount: parsed.rows.length,
+    insertedCount: inserted,
+    duplicateCount: duplicates,
+    errorCount: errors + skippedAccountMismatch,
+  });
+
+  // Attach the batch after leader/apply created the rows.
   if (inserted > 0) {
     const ids = pending.map((row) => row.id);
     await db
@@ -911,16 +913,6 @@ export async function importBankCsv(
         ),
       );
   }
-
-  await db
-    .update(financialImportBatches)
-    .set({
-      insertedCount: inserted,
-      duplicateCount: duplicates,
-      errorCount: errors + skippedAccountMismatch,
-      rowCount: parsed.rows.length,
-    })
-    .where(eq(financialImportBatches.id, batchId));
 
   return {
     batchId,

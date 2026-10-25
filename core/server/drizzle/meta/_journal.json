@@ -1135,6 +1135,13 @@
       "when": 1795960000000,
       "tag": "0160_contact_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1795970000000,
+      "tag": "0161_financial_import_batches_replication",
+      "breakpoints": true
     }
   ]
 }

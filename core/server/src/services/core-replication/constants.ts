@@ -53,6 +53,8 @@ export const REPLICATED_TABLES = [
   "api_keys",
   /** Append-only audit trail for API key create / revoke / rotate (OS-139). */
   "api_key_audit_logs",
+  /** CSV import metadata; FK parent of financial_transactions.import_batch_id. Bytes via R2. */
+  "financial_import_batches",
   "financial_transactions",
   /** Portal client estimates (Finance Estimates / Financials ACL). */
   "client_estimates",

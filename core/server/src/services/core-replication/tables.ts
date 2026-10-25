@@ -78,6 +78,8 @@ const TABLE_SPECS: TableSpec[] = [
   spec("api_keys", ["id"]),
   /** Insert-only; cursor on created_at. Optional for peer schema lag after 0157. */
   spec("api_key_audit_logs", ["id"], "created_at", { optional: true }),
+  /** Insert-only; cursor on created_at. */
+  spec("financial_import_batches", ["id"], "created_at"),
   spec("financial_transactions", ["id"]),
   spec("client_estimates", ["id"], "updated_at", { optional: true }),
   spec("document_property_types", ["id"], "updated_at", { optional: true }),

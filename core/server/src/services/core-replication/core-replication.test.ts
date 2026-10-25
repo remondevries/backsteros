@@ -47,6 +47,11 @@ describe("core-replication constants", () => {
         REPLICATED_TABLES.indexOf("api_key_audit_logs"),
       "api_key_audit_logs must follow api_keys for FK order",
     );
+    assert.ok(
+      REPLICATED_TABLES.indexOf("financial_import_batches") <
+        REPLICATED_TABLES.indexOf("financial_transactions"),
+      "financial_import_batches must precede financial_transactions for FK order",
+    );
     assert.ok(REPLICATED_TABLES.includes("client_estimates"));
     assert.ok(BOOTSTRAP_TABLES.includes("workspaces"));
     assert.ok(BOOTSTRAP_TABLES.includes("users"));
