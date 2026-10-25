@@ -23,6 +23,18 @@ export function withCrmGroupSearch(
   return next ? `?${next}` : "";
 }
 
+/**
+ * When the URL names a group by a stale or alias id that the catalog resolved
+ * to a different canonical id, return the id to redirect to; otherwise null.
+ */
+export function resolveCrmGroupRedirect(
+  selectedGroupId: string | null,
+  effectiveGroupId: string | null,
+): string | null {
+  if (!selectedGroupId || !effectiveGroupId) return null;
+  return selectedGroupId === effectiveGroupId ? null : effectiveGroupId;
+}
+
 /** Catalog root with optional group filter (`/contacts` or `/contacts?crmGroup=`). */
 export function getContactsGroupHref(groupId: string | null): string {
   return `/contacts${withCrmGroupSearch("", groupId)}`;

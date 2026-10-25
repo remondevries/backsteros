@@ -2614,8 +2614,10 @@ export {
   parseProjectAreaFilter,
   getProjectsListAreaHref,
   parseProjectAreaFilterFromLocation,
+  mapWorkspaceNestedAreas,
   type ProjectArea,
   type ProjectAreaFilter,
+  type WorkspaceAreaRow,
 } from "./projects/project-areas.js";
 
 export { PillNav, type PillNavProps, type PillNavItem } from "./components/shared/pill-nav.js";
@@ -3777,6 +3779,11 @@ export {
   type CountryOption,
   type RegionOption,
 } from "./geo/country-region.js";
+export {
+  asCoord,
+  coordinatesKey,
+  sameCoordinates,
+} from "./geo/coordinates.js";
 
 export {
   ContactSocialAccountsEditor,
@@ -4038,6 +4045,7 @@ export {
   getOrganizationsGroupHref,
   mergeHrefSearch,
   parseCrmGroupId,
+  resolveCrmGroupRedirect,
   withCrmGroupSearch,
 } from "./contacts/contact-group-filter.js";
 

@@ -5,6 +5,7 @@ import {
   filterProjectsByArea,
   getProjectAreaFilterLabel,
   getProjectsListAreaHref,
+  mapWorkspaceNestedAreas,
   parseProjectAreaFilter,
   PROJECT_AREA_FILTER_DEFAULT,
   PROJECT_AREA_FILTER_OTHER,
@@ -72,5 +73,22 @@ describe("project area filters", () => {
     assert.equal(parseProjectAreaFilter(null), "personal");
     assert.equal(getProjectsListAreaHref("personal"), "/projects");
     assert.equal(getProjectsListAreaHref("other"), "/projects?area=other");
+  });
+});
+
+describe("mapWorkspaceNestedAreas", () => {
+  it("keeps defined parents and drops unknown ones", () => {
+    assert.deepEqual(
+      mapWorkspaceNestedAreas([
+        { id: "a", name: "Studio", parent: "business", sortOrder: 2 },
+        { id: "b", name: "Loose", parent: "legacy" },
+        { id: "c", name: "Root", parent: null },
+      ]),
+      [
+        { id: "a", name: "Studio", parent: "business", sortOrder: 2 },
+        { id: "b", name: "Loose", parent: null, sortOrder: undefined },
+        { id: "c", name: "Root", parent: null, sortOrder: undefined },
+      ],
+    );
   });
 });

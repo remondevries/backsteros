@@ -141,3 +141,25 @@ export function parseProjectAreaFilterFromLocation(
     new URLSearchParams(query).get(PROJECT_AREA_SEARCH_PARAM),
   );
 }
+
+export type WorkspaceAreaRow = {
+  id: string;
+  name: string;
+  parent: string | null;
+  sortOrder?: number;
+};
+
+/** Workspace area rows → nested-area options (unknown parents become top-level). */
+export function mapWorkspaceNestedAreas(areas: readonly WorkspaceAreaRow[]): {
+  id: string;
+  name: string;
+  parent: ProjectArea | null;
+  sortOrder?: number;
+}[] {
+  return areas.map((area) => ({
+    id: area.id,
+    name: area.name,
+    parent: isDefinedProjectArea(area.parent) ? area.parent : null,
+    sortOrder: area.sortOrder,
+  }));
+}

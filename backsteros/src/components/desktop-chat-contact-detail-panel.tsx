@@ -2,7 +2,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -57,7 +56,6 @@ import {
   type ContactExpandedWorkspaceTabId,
   type ContactListItem,
   type ContactOverlayLayout,
-  type ContactOverviewDetails,
   type ContactSectionId,
   type InboxEmailListItem,
   type OrganizationOverviewDetails,
@@ -68,6 +66,8 @@ import {
 import { useDesktopApi } from "../lib/api-context";
 import { filterCommunicationForContact } from "../lib/communication/filter-entity-communication";
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
+import { useChatContactPropertyHandlers } from "../lib/crm/use-crm-property-handlers";
+import { useOverlayLayoutCrossFade } from "../lib/crm/use-overlay-layout-cross-fade";
 import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
@@ -232,10 +232,14 @@ function DesktopChatContactDetailPanelView({
   const setChatFaded = useCallback((faded: boolean) => {
     onChatMainFadedChangeRef.current?.(faded);
   }, []);
-  const expandAnimTokenRef = useRef(0);
-  const expandAnimTimerRef = useRef<number | null>(null);
-  const pendingWorkspaceFadeInRef = useRef(false);
-  const pendingChatFadeInRef = useRef(false);
+  const { expand: expandCrossFade, collapse: collapseCrossFade } =
+    useOverlayLayoutCrossFade({
+      overlayLayout,
+      fadeMs: CONTACT_DETAIL_EXPAND_FADE_MS,
+      setListFaded: setChatFaded,
+      setWorkspaceFaded,
+      restoreOnDirectPanel: true,
+    });
 
   const contactId = contact?.id ?? null;
   const details = contactId
@@ -243,6 +247,11 @@ function DesktopChatContactDetailPanelView({
     : null;
   const { onSendPortalInvite, onSendPortalPasswordReset } =
     useContactPortalEmailActions(contactId);
+  const chatContactPropertyHandlers = useChatContactPropertyHandlers({
+    contactId,
+    patchContact: workspace.patchContact,
+    createOrganization: workspace.createOrganization,
+  });
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -308,14 +317,6 @@ function DesktopChatContactDetailPanelView({
     onExpandedChange?.(overlayLayout === "page");
   }, [onExpandedChange, overlayLayout]);
 
-  useEffect(() => {
-    return () => {
-      if (expandAnimTimerRef.current != null) {
-        window.clearTimeout(expandAnimTimerRef.current);
-      }
-    };
-  }, []);
-
   const contactTasks = useMemo(() => {
     if (!contactId) return [];
     return workspace.allTasks.filter(
@@ -336,85 +337,14 @@ function DesktopChatContactDetailPanelView({
   const expandOverlay = useCallback(() => {
     if (!contact || overlayLayout === "page") return;
     onShow();
-    const token = ++expandAnimTokenRef.current;
-    pendingChatFadeInRef.current = false;
-    pendingWorkspaceFadeInRef.current = true;
-    setChatFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setWorkspaceFaded(true);
-      setOverlayLayout("page");
-    }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [contact, onShow, overlayLayout, setChatFaded]);
+    expandCrossFade(() => setOverlayLayout("page"));
+  }, [contact, expandCrossFade, onShow, overlayLayout]);
 
   const collapseOverlay = useCallback(() => {
     onShow();
     if (overlayLayout !== "page") return;
-    const token = ++expandAnimTokenRef.current;
-    pendingWorkspaceFadeInRef.current = false;
-    pendingChatFadeInRef.current = true;
-    setWorkspaceFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setChatFaded(true);
-      setOverlayLayout("panel");
-    }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [onShow, overlayLayout, setChatFaded]);
-
-  useLayoutEffect(() => {
-    if (overlayLayout !== "page") return;
-    if (!pendingWorkspaceFadeInRef.current) {
-      setChatFaded(true);
-      return;
-    }
-    pendingWorkspaceFadeInRef.current = false;
-    setWorkspaceFaded(true);
-    setChatFaded(true);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setWorkspaceFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout, setChatFaded]);
-
-  useLayoutEffect(() => {
-    if (overlayLayout !== "panel") return;
-    if (!pendingChatFadeInRef.current) {
-      setChatFaded(false);
-      setWorkspaceFaded(false);
-      return;
-    }
-    pendingChatFadeInRef.current = false;
-    setChatFaded(true);
-    setWorkspaceFaded(false);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setChatFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout, setChatFaded]);
+    collapseCrossFade(() => setOverlayLayout("panel"));
+  }, [collapseCrossFade, onShow, overlayLayout]);
 
   const previousConversations = useMemo(() => {
     if (!conversation) return [];
@@ -1791,59 +1721,17 @@ function DesktopChatContactDetailPanelView({
           }
           onCreateOrganizationFromQuery={
             contact
-              ? (query) => {
-                  void workspace
-                    .createOrganization({ name: query })
-                    .then((created) => {
-                      void workspace.patchContact(contact.id, {
-                        organizationId: created.id,
-                      });
-                    });
-                }
+              ? chatContactPropertyHandlers.onCreateOrganizationFromQuery
               : undefined
           }
           onSaveFirstName={
-            contact
-              ? async (firstName) => {
-                  try {
-                    await workspace.patchContact(contact.id, { firstName });
-                    return { ok: true };
-                  } catch (error) {
-                    return {
-                      ok: false,
-                      error:
-                        error instanceof Error
-                          ? error.message
-                          : "Could not save first name.",
-                    };
-                  }
-                }
-              : undefined
+            contact ? chatContactPropertyHandlers.onSaveFirstName : undefined
           }
           onSaveLastName={
-            contact
-              ? async (lastName) => {
-                  try {
-                    await workspace.patchContact(contact.id, { lastName });
-                    return { ok: true };
-                  } catch (error) {
-                    return {
-                      ok: false,
-                      error:
-                        error instanceof Error
-                          ? error.message
-                          : "Could not save last name.",
-                    };
-                  }
-                }
-              : undefined
+            contact ? chatContactPropertyHandlers.onSaveLastName : undefined
           }
           onSaveDetails={
-            contact
-              ? (patch: ContactOverviewDetails) => {
-                  void workspace.patchContact(contact.id, patch);
-                }
-              : undefined
+            contact ? chatContactPropertyHandlers.onSaveDetails : undefined
           }
           renderSection={(sectionId) => {
             if (sectionId === "conversation") {

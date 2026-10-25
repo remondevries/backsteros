@@ -49,6 +49,7 @@ import {
   type ProjectTypeFilter,
   type DomainRegistrarContact,
   type DomainOverlayLayout,
+  mapWorkspaceNestedAreas,
 } from "@backsteros/ui";
 
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
@@ -92,26 +93,6 @@ function buildCatalogListHref(
   return getCatalogListTypeHref(type, view);
 }
 
-function mapWorkspaceNestedAreas(
-  areas: {
-    id: string;
-    name: string;
-    parent: string | null;
-    sortOrder?: number;
-  }[],
-) {
-  return areas.map((area) => ({
-    id: area.id,
-    name: area.name,
-    parent:
-      area.parent === "personal" ||
-      area.parent === "business" ||
-      area.parent === "clients"
-        ? (area.parent as ProjectArea)
-        : null,
-    sortOrder: area.sortOrder,
-  }));
-}
 
 export function CatalogPage() {
   const active = useRoutePathActive("/catalog");

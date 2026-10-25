@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   coerceContactLanguages,
@@ -6,8 +6,6 @@ import {
   getContactEmailAddresses,
   taskInvolvesContact,
   type ContactPortalSettings,
-  type MapboxGeocodeResult,
-  type MapboxSettings,
 } from "@backsteros/contracts";
 
 import {
@@ -15,8 +13,6 @@ import {
   CommunicationChatView,
   ContactDetailOverlay,
   ContactDetailView,
-  EntityCommunicationListView,
-  ContactMeetingsListView,
   ContactRelationshipsListView,
   ContactTasksListView,
   ContactsOverviewView,
@@ -34,7 +30,6 @@ import {
   RegisterPageIcon,
   RegisterPageTitle,
   ScopedLettersListView,
-  formatContactAddressLine,
   getContactOverlayHref,
   getContactsGroupHref,
   getEmailComposeHref,
@@ -57,19 +52,18 @@ import {
   isHabitLinkedTask,
   migrateLegacyTaskStatus,
   normalizeContactSocialAccounts,
+  asCoord,
   parseContactOverlayLayout,
+  resolveCrmGroupRedirect,
   parseContactScopedEntityDetail,
   parseContactSectionId,
   parseCrmGroupId,
   parseSectionTabIndex,
   requestOpenComposeModal,
   resolveListItemFromSlug,
-  resolveCountryOption,
   shouldHandleGlobalShortcut,
   type ContactExpandedWorkspaceTabId,
   type ContactListItem,
-  type ContactLocationParts,
-  type ContactOverviewDetails,
   type ContactOverlayLayout,
   type ContactRouteScope,
   type ContactScopedEntityDetail,
@@ -107,7 +101,6 @@ import {
   useCrmContactGroupsByContactId,
   useCrmGroupContactIds,
   useCrmGroupsCatalog,
-  useCrmGroupsForSubject,
   useCrmRelationshipLabels,
 } from "../lib/use-crm-data";
 import {
@@ -116,9 +109,17 @@ import {
   useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
+import { useContactPropertyHandlers } from "../lib/crm/use-crm-property-handlers";
+import { useCrmSubjectGroupMembership } from "../lib/crm/use-crm-subject-group-membership";
+import { useEntityDetailOverlayTransition } from "../lib/crm/use-entity-detail-overlay-transition";
+import { useMapboxEntityLocation } from "../lib/crm/use-mapbox-entity-location";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
+import {
+  ContactWorkspaceTabPanel,
+  type ContactWorkspaceTabPanelHandlers,
+} from "./contacts/contact-workspace-tab-panel";
 import { EmailPage } from "./email-page";
 import { LettersPage } from "./letters-page";
 import { MeetingDetailPage } from "./meeting-detail-page";
@@ -139,14 +140,11 @@ function contactSlug(
   return getUniqueListItemRouteParam(contact, siblings);
 }
 
-function asCoord(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
+const CONTACT_DETAIL_OVERLAY_DURATIONS = {
+  expandFadeMs: CONTACT_DETAIL_EXPAND_FADE_MS,
+  collapseMs: CONTACT_DETAIL_COLLAPSE_DURATION_MS,
+  contentFadeMs: CONTACT_DETAIL_CONTENT_FADE_MS,
+};
 
 export type ContactsPageProps = {
   organizationRouteParam?: string;
@@ -193,11 +191,7 @@ export function ContactsPage({
   const [portalAvatarOverride, setPortalAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
-  const [mapboxConfigured, setMapboxConfigured] = useState(false);
-  const [mapImageSrc, setMapImageSrc] = useState<string | null>(null);
-  const [mapLoading, setMapLoading] = useState(false);
-  const [mapHint, setMapHint] = useState<string | null>(null);
-  const [geocodeFailed, setGeocodeFailed] = useState(false);
+
   const contacts = workspace.contacts;
   const { organizations, allTasks: tasks, letters, meetings } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap(
@@ -252,48 +246,40 @@ export function ContactsPage({
     : null;
 
   useEffect(() => {
-    if (
-      !isStandalone ||
-      !selectedGroupId ||
-      !effectiveGroupId ||
-      selectedGroupId === effectiveGroupId
-    ) {
-      return;
+    if (!isStandalone) return;
+    const redirectId = resolveCrmGroupRedirect(
+      selectedGroupId,
+      effectiveGroupId,
+    );
+    if (redirectId) {
+      navigate(getContactsGroupHref(redirectId), { replace: true });
     }
-    navigate(getContactsGroupHref(effectiveGroupId), { replace: true });
-  }, [
-    effectiveGroupId,
-    isStandalone,
-    navigate,
-    selectedGroupId,
-  ]);
+  }, [effectiveGroupId, isStandalone, navigate, selectedGroupId]);
 
   const selected = routedSlug
     ? resolveListItemFromSlug(contacts, routedSlug)
     : null;
-  const [detailCollapsed, setDetailCollapsed] = useState(false);
-  const [detailCollapseAnimating, setDetailCollapseAnimating] = useState(false);
-  const detailCollapseAnimTimerRef = useRef<number | null>(null);
-  const detailCollapseRafRef = useRef<number | null>(null);
-  const detailCloseNavTimerRef = useRef<number | null>(null);
-  const detailCollapsedRef = useRef(detailCollapsed);
-  detailCollapsedRef.current = detailCollapsed;
-  /** Contact id shown in the panel — lags `selected` during switch fade. */
-  const [panelContactId, setPanelContactId] = useState<string | null>(
-    selected?.id ?? null,
-  );
-  const [contentFaded, setContentFaded] = useState(false);
-  const contentFadeTokenRef = useRef(0);
-  /** Contacts list opacity during expand/collapse to page workspace. */
-  const [listFaded, setListFaded] = useState(
-    () => overlayLayout === "page",
-  );
-  /** Expanded workspace opacity during expand/collapse. */
-  const [workspaceFaded, setWorkspaceFaded] = useState(false);
-  const expandAnimTokenRef = useRef(0);
-  const expandAnimTimerRef = useRef<number | null>(null);
-  const pendingWorkspaceFadeInRef = useRef(false);
-  const pendingListFadeInRef = useRef(false);
+  const {
+    detailCollapsed,
+    setDetailCollapsed,
+    detailCollapseAnimating,
+    panelEntityId: panelContactId,
+    contentFaded,
+    listFaded,
+    workspaceFaded,
+    expandOverlay: expandEntityOverlay,
+    collapseOverlay: collapseEntityOverlay,
+    hideDetail,
+    showDetail,
+    toggleDetail,
+    closeOverlay: closeEntityOverlay,
+  } = useEntityDetailOverlayTransition({
+    overlayLayout,
+    selectedId: selected?.id ?? null,
+    routeHasSelection: Boolean(routedSlug),
+    navigate,
+    durations: CONTACT_DETAIL_OVERLAY_DURATIONS,
+  });
   /** Keep a just-created contact at the top of the list until navigation leaves it. */
   const [pinnedContactId, setPinnedContactId] = useState<string | null>(null);
   const pinnedWasSelectedRef = useRef(false);
@@ -322,7 +308,7 @@ export function ContactsPage({
     setWorkspaceTab(workspaceDetail.kind);
     setDetailCollapsed(false);
     setWorkspaceChatId(null);
-  }, [workspaceDetail]);
+  }, [setDetailCollapsed, workspaceDetail]);
 
   useEffect(() => {
     setWorkspaceChatId(null);
@@ -334,164 +320,32 @@ export function ContactsPage({
 
   const contactLatitude = asCoord(details?.latitude);
   const contactLongitude = asCoord(details?.longitude);
-
-  useEffect(() => {
-    if (!keepAliveActive) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const body = await client.requestJson<MapboxSettings>(
-          "/api/v1/settings/mapbox",
-        );
-        if (!cancelled) setMapboxConfigured(body.accessTokenConfigured);
-      } catch {
-        if (!cancelled) setMapboxConfigured(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, keepAliveActive]);
-
-  useEffect(() => {
-    setGeocodeFailed(false);
-  }, [selected?.id]);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-
-    if (
-      contactLatitude == null ||
-      contactLongitude == null ||
-      !mapboxConfigured
-    ) {
-      setMapImageSrc((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
-      setMapLoading(false);
-      return;
-    }
-
-    setMapLoading(true);
-    void (async () => {
-      try {
-        const params = new URLSearchParams({
-          lat: String(contactLatitude),
-          lng: String(contactLongitude),
-          width: "640",
-          height: "320",
-        });
-        const blob = await client.requestBinary(
-          `/api/v1/mapbox/static-map?${params}`,
-        );
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setMapImageSrc((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return objectUrl;
-        });
-        setMapHint(null);
-      } catch {
-        if (cancelled) return;
-        setMapImageSrc((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return null;
-        });
-        setMapHint("Couldn’t load the map image.");
-      } finally {
-        if (!cancelled) setMapLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [client, contactLatitude, contactLongitude, mapboxConfigured]);
-
-  useEffect(() => {
-    const addressLine = formatContactAddressLine({
-      address: details?.address ?? null,
-      city: details?.city ?? null,
-      postalCode: details?.postalCode ?? null,
-      region: details?.region ?? null,
-      country: details?.country ?? null,
-    });
-    if (contactLatitude != null && contactLongitude != null) {
-      setMapHint(null);
-      return;
-    }
-    if (!addressLine) {
-      setMapHint(null);
-      return;
-    }
-    if (!mapboxConfigured) {
-      setMapHint("Add a Mapbox token in Settings → Mapbox to show this on a map.");
-      return;
-    }
-    if (geocodeFailed) {
-      setMapHint("Couldn’t locate this address.");
-      return;
-    }
-    setMapHint(null);
-  }, [
-    contactLatitude,
-    contactLongitude,
-    details?.address,
-    details?.city,
-    details?.country,
-    details?.region,
-    details?.postalCode,
-    geocodeFailed,
-    mapboxConfigured,
-  ]);
-
-  const resolveContactLocation = useCallback(
-    async (contactId: string, parts: ContactLocationParts) => {
-      const addressLine = formatContactAddressLine(parts);
-      if (!addressLine) {
-        setGeocodeFailed(false);
-        await workspace.patchContact(contactId, {
-          latitude: null,
-          longitude: null,
-          timezone: null,
-        });
-        return;
-      }
-      if (!mapboxConfigured) {
-        setGeocodeFailed(false);
-        return;
-      }
-      try {
-        const params = new URLSearchParams({ q: addressLine });
-        const countryCode = resolveCountryOption(parts.country)?.code;
-        if (countryCode) {
-          params.set("country", countryCode);
+  const {
+    mapImageSrc,
+    mapLoading,
+    mapHint,
+    resolveLocation: resolveContactLocation,
+  } = useMapboxEntityLocation({
+    active: keepAliveActive,
+    entityId: panelContactId,
+    address: details
+      ? {
+          address: details.address ?? null,
+          city: details.city ?? null,
+          postalCode: details.postalCode ?? null,
+          region: details.region ?? null,
+          country: details.country ?? null,
         }
-        const body = await client.requestJson<{
-          result: MapboxGeocodeResult | null;
-        }>(`/api/v1/mapbox/geocode?${params}`);
-        if (!body.result) {
-          setGeocodeFailed(true);
-          await workspace.patchContact(contactId, {
-            latitude: null,
-            longitude: null,
-          });
-          return;
-        }
-        setGeocodeFailed(false);
-        await workspace.patchContact(contactId, {
-          latitude: body.result.latitude,
-          longitude: body.result.longitude,
-        });
-      } catch {
-        setGeocodeFailed(true);
-      }
-    },
-    [client, mapboxConfigured, workspace],
-  );
+      : null,
+    latitude: contactLatitude,
+    longitude: contactLongitude,
+    readCoordinates: (contactId) => workspace.contactDetails[contactId],
+    patchCoordinates: (contactId, coordinates, { addressCleared }) =>
+      workspace.patchContact(
+        contactId,
+        addressCleared ? { ...coordinates, timezone: null } : coordinates,
+      ),
+  });
 
   const activeSection = parseContactSectionId(sectionParam);
   // Standalone card tabs (Activity / Details) are local; URL section is for
@@ -511,29 +365,17 @@ export function ContactsPage({
   const relationshipLabels = useCrmRelationshipLabels(
     keepAliveActive && Boolean(panelContactId) && profileSection === "details",
   );
-  const crmGroups = useCrmGroupsForSubject(
-    "contact",
-    panelContactId,
-    keepAliveActive && Boolean(panelContactId),
-  );
-  const groupOptions = useMemo(
-    () =>
-      crmGroups.allGroups.map((group) => ({
-        id: group.id,
-        name: group.name,
-        color: group.color,
-      })),
-    [crmGroups.allGroups],
-  );
-  const memberGroupIds = useMemo(
-    () => crmGroups.memberGroups.map((group) => group.id),
-    [crmGroups.memberGroups],
-  );
-  const appliedMemberGroupIdsRef = useRef(memberGroupIds);
-  useEffect(() => {
-    appliedMemberGroupIdsRef.current = memberGroupIds;
-  }, [memberGroupIds]);
-  const membershipSyncChainRef = useRef(Promise.resolve());
+  const {
+    groupOptions,
+    memberGroupIds,
+    onMemberGroupIdsChange: handleMemberGroupIdsChange,
+  } = useCrmSubjectGroupMembership({
+    subjectType: "contact",
+    subjectId: panelContactId,
+    enabled: keepAliveActive && Boolean(panelContactId),
+    notOnServerMessage:
+      "This contact isn’t on the server yet, so it can’t join a group. Wait for sync or re-save the contact, then try again.",
+  });
   const showPortalTab = useMemo(
     () =>
       groupOptions.some(
@@ -577,39 +419,7 @@ export function ContactsPage({
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [details?.organizationId, selected?.organizationId, workspace.projects]);
-  const handleMemberGroupIdsChange = useCallback(
-    (nextIds: string[]) => {
-      const previous = new Set(appliedMemberGroupIdsRef.current);
-      const next = new Set(nextIds);
-      appliedMemberGroupIdsRef.current = nextIds;
-      membershipSyncChainRef.current = membershipSyncChainRef.current
-        .catch(() => {})
-        .then(async () => {
-          try {
-            for (const groupId of next) {
-              if (!previous.has(groupId)) {
-                await crmGroups.toggleMembership(groupId, true);
-              }
-            }
-            for (const groupId of previous) {
-              if (!next.has(groupId)) {
-                await crmGroups.toggleMembership(groupId, false);
-              }
-            }
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Failed to update groups";
-            const friendly =
-              /subject not found|member subject|404/i.test(message)
-                ? "This contact isn’t on the server yet, so it can’t join a group. Wait for sync or re-save the contact, then try again."
-                : message;
-            window.alert(friendly);
-            await crmGroups.reload();
-          }
-        });
-    },
-    [crmGroups],
-  );
+
   const sectionLabel =
     profileSection === "overview"
       ? null
@@ -775,6 +585,7 @@ export function ContactsPage({
     selected,
     selectedGroupId,
     selectedSlugValue,
+    setDetailCollapsed,
     workspaceDetail,
   ]);
 
@@ -1033,313 +844,43 @@ export function ContactsPage({
       });
   }, [client, contacts, effectiveGroupId, navigate, powerSync, workspace]);
 
+  const overlayHref = useCallback(
+    (layout: ContactOverlayLayout) =>
+      selectedSlugValue
+        ? getContactOverlayHref(selectedSlugValue, {
+            section: cardSection === "overview" ? undefined : cardSection,
+            layout,
+            groupId: effectiveGroupId,
+          })
+        : null,
+    [cardSection, effectiveGroupId, selectedSlugValue],
+  );
+
   const expandOverlay = useCallback(() => {
-    if (!selectedSlugValue) return;
-    if (overlayLayout === "page") return;
-    setDetailCollapsed(false);
-    const token = ++expandAnimTokenRef.current;
-    pendingListFadeInRef.current = false;
-    pendingWorkspaceFadeInRef.current = true;
-    setListFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setWorkspaceFaded(true);
-      navigate(
-        getContactOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "page",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-    }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [
-    cardSection,
-    effectiveGroupId,
-    navigate,
-    overlayLayout,
-    selectedSlugValue,
-  ]);
+    const href = overlayHref("page");
+    if (href) expandEntityOverlay(href);
+  }, [expandEntityOverlay, overlayHref]);
 
   const collapseOverlay = useCallback(() => {
-    if (!selectedSlugValue) return;
-    setDetailCollapsed(false);
+    const href = overlayHref("panel");
+    if (!href) return;
     // Keep nested entity URL when collapsing chrome; only shrink layout.
     if (workspaceDetail) {
-      return;
-    }
-    if (overlayLayout !== "page") {
-      navigate(
-        getContactOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "panel",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-      return;
-    }
-    const token = ++expandAnimTokenRef.current;
-    pendingWorkspaceFadeInRef.current = false;
-    pendingListFadeInRef.current = true;
-    setWorkspaceFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setListFaded(true);
-      navigate(
-        getContactOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "panel",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-    }, CONTACT_DETAIL_EXPAND_FADE_MS);
-  }, [
-    cardSection,
-    effectiveGroupId,
-    navigate,
-    overlayLayout,
-    selectedSlugValue,
-    workspaceDetail,
-  ]);
-
-  // After expand navigates to page: fade workspace in.
-  useLayoutEffect(() => {
-    if (overlayLayout !== "page") return;
-    if (!pendingWorkspaceFadeInRef.current) {
-      setListFaded(true);
-      return;
-    }
-    pendingWorkspaceFadeInRef.current = false;
-    setWorkspaceFaded(true);
-    setListFaded(true);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setWorkspaceFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout]);
-
-  // After collapse navigates to panel: fade list back in.
-  // Direct leave from page (breadcrumb / Escape) skips the pending flag — still
-  // restore the catalog so it is not left at opacity 0.
-  useLayoutEffect(() => {
-    if (overlayLayout !== "panel") return;
-    if (!pendingListFadeInRef.current) {
-      if (!selected) {
-        setListFaded(false);
-        setWorkspaceFaded(false);
-      }
-      return;
-    }
-    pendingListFadeInRef.current = false;
-    setListFaded(true);
-    setWorkspaceFaded(false);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setListFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout, selected]);
-
-  useEffect(() => {
-    return () => {
-      if (expandAnimTimerRef.current != null) {
-        window.clearTimeout(expandAnimTimerRef.current);
-      }
-    };
-  }, []);
-
-  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
-    setDetailCollapseAnimating(true);
-    if (detailCollapseAnimTimerRef.current != null) {
-      window.clearTimeout(detailCollapseAnimTimerRef.current);
-      detailCollapseAnimTimerRef.current = null;
-    }
-    if (detailCollapseRafRef.current != null) {
-      window.cancelAnimationFrame(detailCollapseRafRef.current);
-      detailCollapseRafRef.current = null;
-    }
-    // Enable transition for one paint, then flip collapsed so width interpolates.
-    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-        detailCollapseRafRef.current = null;
-        apply();
-        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
-          detailCollapseAnimTimerRef.current = null;
-          setDetailCollapseAnimating(false);
-        }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (detailCollapseAnimTimerRef.current != null) {
-        window.clearTimeout(detailCollapseAnimTimerRef.current);
-      }
-      if (detailCollapseRafRef.current != null) {
-        window.cancelAnimationFrame(detailCollapseRafRef.current);
-      }
-      if (detailCloseNavTimerRef.current != null) {
-        window.clearTimeout(detailCloseNavTimerRef.current);
-      }
-    };
-  }, []);
-
-  const hideDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(true);
-    });
-  }, [beginDetailCollapseAnimation]);
-
-  const showDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
       setDetailCollapsed(false);
-    });
-  }, [beginDetailCollapseAnimation]);
+      return;
+    }
+    collapseEntityOverlay(href);
+  }, [collapseEntityOverlay, overlayHref, setDetailCollapsed, workspaceDetail]);
 
   const closeOverlay = useCallback(() => {
-    if (detailCloseNavTimerRef.current != null) {
-      window.clearTimeout(detailCloseNavTimerRef.current);
-      detailCloseNavTimerRef.current = null;
-    }
-
-    const leave = () => {
-      expandAnimTokenRef.current += 1;
-      pendingListFadeInRef.current = false;
-      pendingWorkspaceFadeInRef.current = false;
-      if (expandAnimTimerRef.current != null) {
-        window.clearTimeout(expandAnimTimerRef.current);
-        expandAnimTimerRef.current = null;
-      }
-      setListFaded(false);
-      setWorkspaceFaded(false);
-      setDetailCollapsed(false);
-      navigate(getContactsGroupHref(effectiveGroupId), { replace: true });
-    };
-
-    // Already on the reopen strip — leave immediately.
-    if (detailCollapsedRef.current) {
-      leave();
-      return;
-    }
-
-    // Slide closed, then navigate so Escape matches `]` hide animation.
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(true);
-    });
-    detailCloseNavTimerRef.current = window.setTimeout(() => {
-      detailCloseNavTimerRef.current = null;
-      leave();
-    }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
-  }, [beginDetailCollapseAnimation, effectiveGroupId, navigate]);
-
-  // Selecting a contact while the reopen strip is showing should NOT slide
-  // the panel open — stay collapsed. First open (no prior selection) uses the
-  // overlay enter slide; switching while expanded fades card content.
-  const prevSelectedIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prevId = prevSelectedIdRef.current;
-    prevSelectedIdRef.current = selected?.id ?? null;
-
-    if (!selected?.id) {
-      setDetailCollapsed(false);
-      return;
-    }
-    // Switching contacts while the strip is showing: keep the strip.
-    if (detailCollapsed && prevId != null) return;
-  }, [selected?.id, detailCollapsed]);
-
-  // Opacity crossfade when switching contacts while the panel is open.
-  // useLayoutEffect so fade-out starts before paint (no flash of new chrome).
-  useLayoutEffect(() => {
-    const nextId = selected?.id ?? null;
-    if (nextId === panelContactId) return;
-
-    // Route can briefly miss a match while keep-alive href flips — keep the
-    // current card mounted so we don't abort mid-fade / remount the rail.
-    if (nextId == null) return;
-
-    const canFade =
-      panelContactId != null &&
-      !detailCollapsed &&
-      !detailCollapseAnimating;
-
-    if (!canFade) {
-      contentFadeTokenRef.current += 1;
-      setPanelContactId(nextId);
-      setContentFaded(false);
-      return;
-    }
-
-    const token = ++contentFadeTokenRef.current;
-    setContentFaded(true);
-    const timer = window.setTimeout(() => {
-      if (contentFadeTokenRef.current !== token) return;
-      setPanelContactId(nextId);
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          if (contentFadeTokenRef.current !== token) return;
-          setContentFaded(false);
-        });
-      });
-    }, CONTACT_DETAIL_CONTENT_FADE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    detailCollapseAnimating,
-    detailCollapsed,
-    panelContactId,
-    selected?.id,
-  ]);
+    closeEntityOverlay(getContactsGroupHref(effectiveGroupId));
+  }, [closeEntityOverlay, effectiveGroupId]);
 
   const panelContact =
     panelContactId == null
       ? null
       : (contacts.find((entry) => entry.id === panelContactId) ??
         (selected?.id === panelContactId ? selected : null));
-
-  // Close the panel only when the route truly leaves contacts (no slug).
-  useLayoutEffect(() => {
-    if (routedSlug) return;
-    contentFadeTokenRef.current += 1;
-    expandAnimTokenRef.current += 1;
-    pendingListFadeInRef.current = false;
-    pendingWorkspaceFadeInRef.current = false;
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-      expandAnimTimerRef.current = null;
-    }
-    setPanelContactId(null);
-    setContentFaded(false);
-    setListFaded(false);
-    setWorkspaceFaded(false);
-    setDetailCollapsed(false);
-  }, [routedSlug]);
 
   useEffect(() => {
     if (!keepAliveActive || !isStandalone || !selected) return;
@@ -1426,18 +967,16 @@ export function ContactsPage({
       if (!shouldHandleGlobalShortcut(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      beginDetailCollapseAnimation(() => {
-        setDetailCollapsed((current) => !current);
-      });
+      toggleDetail();
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
-    beginDetailCollapseAnimation,
     closeOverlay,
     collapseOverlay,
     contactProfileSections,
+    toggleDetail,
     effectiveGroupId,
     isStandalone,
     keepAliveActive,
@@ -1853,6 +1392,94 @@ export function ContactsPage({
     return null;
   }
 
+  const workspaceTabContext = {
+    selected,
+    selectedSlugValue,
+    contactCommunication,
+    tasks,
+    projects: workspace.projects,
+    routeScope,
+    navigate,
+    selectConversation: chatInbox.selectConversation,
+  };
+  const workspaceTabContextRef = useRef(workspaceTabContext);
+  workspaceTabContextRef.current = workspaceTabContext;
+  const workspaceTabHandlers = useMemo<ContactWorkspaceTabPanelHandlers>(
+    () => ({
+      onSelectMeeting: (meetingId) => {
+        const { selectedSlugValue, routeScope, navigate } =
+          workspaceTabContextRef.current;
+        if (!selectedSlugValue) return;
+        navigate(
+          getScopedContactMeetingHref(selectedSlugValue, meetingId, routeScope),
+        );
+      },
+      onSelectChat: (conversationId) => {
+        setWorkspaceChatId(conversationId);
+        void workspaceTabContextRef.current.selectConversation(conversationId);
+      },
+      onSelectEmail: (emailId) => {
+        const {
+          selectedSlugValue,
+          contactCommunication,
+          routeScope,
+          navigate,
+        } = workspaceTabContextRef.current;
+        if (!selectedSlugValue) return;
+        const item = contactCommunication.emails.find(
+          (entry) => entry.id === emailId,
+        );
+        if (!item) return;
+        navigate(
+          getScopedContactEmailHref(
+            selectedSlugValue,
+            {
+              inboxId: item.inboxId,
+              id: item.draftId?.trim() || item.messageId,
+              kind: item.draftId ? "draft" : "message",
+            },
+            routeScope,
+          ),
+        );
+      },
+      onSelectSupport: (supportId) => {
+        const {
+          selected,
+          selectedSlugValue,
+          tasks,
+          projects,
+          routeScope,
+          navigate,
+        } = workspaceTabContextRef.current;
+        if (!selectedSlugValue || !selected) return;
+        const task = tasks.find((entry) => entry.id === supportId);
+        if (!task) {
+          navigate(`/tasks/${supportId}`);
+          return;
+        }
+        navigate(
+          getScopedContactTaskHref(
+            task,
+            selected,
+            projects,
+            routeScope,
+            selectedSlugValue,
+          ),
+        );
+      },
+    }),
+    [],
+  );
+
+  const contactPropertyHandlers = useContactPropertyHandlers({
+    client,
+    contactId: (panelContact ?? selected)?.id ?? null,
+    patchContact: workspace.patchContact,
+    createOrganization: workspace.createOrganization,
+    resolveLocation: resolveContactLocation,
+    setAvatarOverride,
+  });
+
   function renderContactDetail() {
     const contact = panelContact ?? selected;
     if (!contact) return null;
@@ -2019,85 +1646,23 @@ export function ContactsPage({
             }}
           />
         }
-        onCreateOrganizationFromQuery={(query) => {
-          void workspace.createOrganization({ name: query }).then((created) => {
-            void workspace.patchContact(contact.id, {
-              organizationId: created.id,
-            });
-          });
-        }}
+        onCreateOrganizationFromQuery={
+          contactPropertyHandlers.onCreateOrganizationFromQuery
+        }
         overviewHeaderAccessory={
           <AvatarUpload
             displayName={contact.name}
             avatarSrc={avatarSrc}
             shape="cover"
             showHint={false}
-            onUpload={async (file) => {
-              const result = await uploadDesktopAvatar(
-                client,
-                "contact",
-                contact.id,
-                file,
-              );
-              if (result.ok) {
-                const url = URL.createObjectURL(file);
-                setAvatarOverride((current) => {
-                  if (current) URL.revokeObjectURL(current);
-                  return url;
-                });
-              }
-              return result;
-            }}
-            onRemove={async () => {
-              const result = await removeDesktopAvatar(
-                client,
-                "contact",
-                contact.id,
-              );
-              if (result.ok) {
-                setAvatarOverride((current) => {
-                  if (current) URL.revokeObjectURL(current);
-                  return null;
-                });
-              }
-              return result;
-            }}
+            onUpload={contactPropertyHandlers.onUploadAvatar}
+            onRemove={contactPropertyHandlers.onRemoveAvatar}
           />
         }
-        onSaveFirstName={async (firstName) => {
-          try {
-            await workspace.patchContact(contact.id, { firstName });
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not save first name.",
-            };
-          }
-        }}
-        onSaveLastName={async (lastName) => {
-          try {
-            await workspace.patchContact(contact.id, { lastName });
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not save last name.",
-            };
-          }
-        }}
-        onSaveDetails={(patch: ContactOverviewDetails) => {
-          void workspace.patchContact(contact.id, patch);
-        }}
-        onAfterLocationSave={(parts) => {
-          void resolveContactLocation(contact.id, parts);
-        }}
+        onSaveFirstName={contactPropertyHandlers.onSaveFirstName}
+        onSaveLastName={contactPropertyHandlers.onSaveLastName}
+        onSaveDetails={contactPropertyHandlers.onSaveDetails}
+        onAfterLocationSave={contactPropertyHandlers.onAfterLocationSave}
         mapImageSrc={mapImageSrc}
         mapLoading={mapLoading}
         mapHint={mapHint}
@@ -2344,77 +1909,15 @@ export function ContactsPage({
           if (workspaceDetail) {
             return renderWorkspaceEntityDetail(workspaceDetail);
           }
-          if (tab === "meetings" && selected) {
+          if ((tab === "meetings" || tab === "emails") && selected) {
             return (
-              <ContactMeetingsListView
+              <ContactWorkspaceTabPanel
+                tab={tab}
                 contactId={selected.id}
                 meetings={meetings}
-                onSelectMeeting={(meetingId) => {
-                  if (!selectedSlugValue) return;
-                  navigate(
-                    getScopedContactMeetingHref(
-                      selectedSlugValue,
-                      meetingId,
-                      routeScope,
-                    ),
-                  );
-                }}
-              />
-            );
-          }
-          if (tab === "emails" && selected) {
-            return (
-              <EntityCommunicationListView
-                conversations={contactCommunication.conversations}
-                emails={contactCommunication.emails}
-                supportTasks={contactCommunication.supportTasks}
-                resolveAvatarSrc={() =>
-                  contactAvatarSrc[selected.id] ?? null
-                }
-                resolveEmailAvatarSrc={(item) => {
-                  const contactId = item.contactId?.trim();
-                  if (contactId) return contactAvatarSrc[contactId] ?? null;
-                  return contactAvatarSrc[selected.id] ?? null;
-                }}
-                onSelectChat={(conversationId) => {
-                  setWorkspaceChatId(conversationId);
-                  void chatInbox.selectConversation(conversationId);
-                }}
-                onSelectEmail={(emailId) => {
-                  if (!selectedSlugValue) return;
-                  const item = contactCommunication.emails.find(
-                    (entry) => entry.id === emailId,
-                  );
-                  if (!item) return;
-                  navigate(
-                    getScopedContactEmailHref(
-                      selectedSlugValue,
-                      {
-                        inboxId: item.inboxId,
-                        id: item.draftId?.trim() || item.messageId,
-                        kind: item.draftId ? "draft" : "message",
-                      },
-                      routeScope,
-                    ),
-                  );
-                }}
-                onSelectSupport={(supportId) => {
-                  if (!selectedSlugValue || !selected) return;
-                  const task = tasks.find((entry) => entry.id === supportId);
-                  if (!task) {
-                    navigate(`/tasks/${supportId}`);
-                    return;
-                  }
-                  navigate(
-                    getScopedContactTaskHref(
-                      task,
-                      selected,
-                      workspace.projects,
-                      routeScope,
-                      selectedSlugValue,
-                    ),
-                  );
-                }}
+                communication={contactCommunication}
+                contactAvatarSrc={contactAvatarSrc}
+                handlers={workspaceTabHandlers}
               />
             );
           }

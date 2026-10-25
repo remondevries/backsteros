@@ -94,6 +94,7 @@ import {
   getProjectEmailCategoryDefaultIcon,
   projectReorderPatches,
   taskReorderPatches,
+  mapWorkspaceNestedAreas,
 } from "@backsteros/ui";
 
 import { DesktopProjectUpdatesPanel } from "../components/desktop-project-updates-panel";
@@ -186,20 +187,6 @@ function computeTaskProgress(tasks: { status: string }[]) {
   return { total, completed };
 }
 
-function mapWorkspaceNestedAreas(
-  areas: { id: string; name: string; parent: string | null; sortOrder?: number }[]) {
-  return areas.map((area) => ({
-    id: area.id,
-    name: area.name,
-    parent:
-      area.parent === "personal" ||
-      area.parent === "business" ||
-      area.parent === "clients"
-        ? (area.parent as ProjectArea)
-        : null,
-    sortOrder: area.sortOrder,
-  }));
-}
 
 export function ProjectsPage({
   organizationRouteParam,

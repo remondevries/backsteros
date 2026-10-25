@@ -4,8 +4,6 @@ import type {
   FinancialGoal,
   FinancialRecurring,
   FinancialTransaction,
-  MapboxGeocodeResult,
-  MapboxSettings,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
   MoneybirdSettings,
@@ -18,7 +16,6 @@ import {
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,7 +31,6 @@ import {
   EntityCommunicationListView,
   EntityDetailLayout,
   FinanceInvoicesView,
-  formatContactAddressLine,
   normalizeContactSocialAccounts,
   OrganizationContactsListView,
   OrganizationDetailOverlay,
@@ -46,7 +42,6 @@ import {
   ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
   ORGANIZATION_DETAIL_CONTENT_FADE_MS,
   ORGANIZATION_DETAIL_EXPAND_FADE_MS,
-  ProjectsOverviewView,
   RegisterEntityDeleteAction,
   RegisterPageIcon,
   RegisterPageTitle,
@@ -63,7 +58,9 @@ import {
   isOrganizationCardSectionId,
   isOrganizationSectionId,
   localCalendarYear,
+  asCoord,
   parseCrmGroupId,
+  resolveCrmGroupRedirect,
   parseListBoardViewFromLocation,
   parseOrganizationOverlayLayout,
   parseOrganizationSectionId,
@@ -80,26 +77,21 @@ import {
   type OrganizationExpandedWorkspaceTabId,
   type OrganizationListItem,
   type OrganizationOverlayLayout,
-  type OrganizationOverviewDetails,
   type OrganizationSectionId,
   type ProjectStatus,
   type TaskStatus,
   projectReorderPatches,
+  mapWorkspaceNestedAreas,
 } from "@backsteros/ui";
 
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
-import {
-  removeDesktopAvatar,
-  uploadDesktopAvatar,
-} from "../lib/avatar-upload";
 import { getBrandfetchClientId } from "../lib/brandfetch";
 import {
   useCrmActivityFeed,
   useCrmGroupOrganizationIds,
   useCrmGroupsCatalog,
-  useCrmGroupsForSubject,
   addCrmGroupMemberWithRetry,
   notifyCrmGroupsChanged,
 } from "../lib/use-crm-data";
@@ -110,6 +102,10 @@ import {
   useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
+import { useOrganizationPropertyHandlers } from "../lib/crm/use-crm-property-handlers";
+import { useCrmSubjectGroupMembership } from "../lib/crm/use-crm-subject-group-membership";
+import { useEntityDetailOverlayTransition } from "../lib/crm/use-entity-detail-overlay-transition";
+import { useMapboxEntityLocation } from "../lib/crm/use-mapbox-entity-location";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { type ProjectLocationState } from "../lib/project-type-cache";
@@ -119,15 +115,16 @@ import { useChatInbox } from "../lib/chat/use-chat-inbox";
 import { filterCommunicationForOrganization } from "../lib/communication/filter-entity-communication";
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
 import { navigateToHref } from "../router/navigate-href";
+import {
+  OrganizationWorkspaceTabPanel,
+  type OrganizationProjectsTabHandlers,
+} from "./organizations/organization-workspace-tab-panel";
 
-function asCoord(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
+const ORGANIZATION_DETAIL_OVERLAY_DURATIONS = {
+  expandFadeMs: ORGANIZATION_DETAIL_EXPAND_FADE_MS,
+  collapseMs: ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
+  contentFadeMs: ORGANIZATION_DETAIL_CONTENT_FADE_MS,
+};
 
 type MoneybirdInvoicesListResponse = {
   invoices: MoneybirdSalesInvoiceSummary[];
@@ -229,38 +226,36 @@ export function OrganizationsPage() {
     : null;
 
   useEffect(() => {
-    if (
-      !selectedGroupId ||
-      !effectiveGroupId ||
-      selectedGroupId === effectiveGroupId
-    ) {
-      return;
+    const redirectId = resolveCrmGroupRedirect(
+      selectedGroupId,
+      effectiveGroupId,
+    );
+    if (redirectId) {
+      navigate(getOrganizationsGroupHref(redirectId), { replace: true });
     }
-    navigate(getOrganizationsGroupHref(effectiveGroupId), { replace: true });
   }, [effectiveGroupId, navigate, selectedGroupId]);
 
-  const [detailCollapsed, setDetailCollapsed] = useState(false);
-  const [detailCollapseAnimating, setDetailCollapseAnimating] =
-    useState(false);
-  const detailCollapseAnimTimerRef = useRef<number | null>(null);
-  const detailCollapseRafRef = useRef<number | null>(null);
-  const detailCloseNavTimerRef = useRef<number | null>(null);
-  const detailCollapsedRef = useRef(detailCollapsed);
-  detailCollapsedRef.current = detailCollapsed;
-  /** Organization id shown in the panel — lags `selected` during switch fade. */
-  const [panelOrganizationId, setPanelOrganizationId] = useState<
-    string | null
-  >(selected?.id ?? null);
-  const [contentFaded, setContentFaded] = useState(false);
-  const contentFadeTokenRef = useRef(0);
-  /** Organizations list opacity during expand/collapse to page workspace. */
-  const [listFaded, setListFaded] = useState(() => overlayLayout === "page");
-  /** Expanded workspace opacity during expand/collapse. */
-  const [workspaceFaded, setWorkspaceFaded] = useState(false);
-  const expandAnimTokenRef = useRef(0);
-  const expandAnimTimerRef = useRef<number | null>(null);
-  const pendingWorkspaceFadeInRef = useRef(false);
-  const pendingListFadeInRef = useRef(false);
+  const {
+    detailCollapsed,
+    setDetailCollapsed,
+    detailCollapseAnimating,
+    panelEntityId: panelOrganizationId,
+    contentFaded,
+    listFaded,
+    workspaceFaded,
+    expandOverlay: expandEntityOverlay,
+    collapseOverlay: collapseEntityOverlay,
+    hideDetail,
+    showDetail,
+    toggleDetail,
+    closeOverlay: closeEntityOverlay,
+  } = useEntityDetailOverlayTransition({
+    overlayLayout,
+    selectedId: selected?.id ?? null,
+    routeHasSelection: Boolean(routedSlug),
+    navigate,
+    durations: ORGANIZATION_DETAIL_OVERLAY_DURATIONS,
+  });
   /** Keep a just-created organization at the top of the list until navigation leaves it. */
   const [pinnedOrganizationId, setPinnedOrganizationId] = useState<
     string | null
@@ -301,13 +296,6 @@ export function OrganizationsPage() {
     panelOrganization?.moneybirdContactId?.trim() ||
     null;
 
-  const [mapboxConfigured, setMapboxConfigured] = useState<boolean | null>(
-    null,
-  );
-  const [mapImageSrc, setMapImageSrc] = useState<string | null>(null);
-  const [mapLoading, setMapLoading] = useState(false);
-  const [mapHint, setMapHint] = useState<string | null>(null);
-  const [geocodeFailed, setGeocodeFailed] = useState(false);
   const [moneybirdAdministrationId, setMoneybirdAdministrationId] = useState<
     string | null
   >(null);
@@ -316,13 +304,38 @@ export function OrganizationsPage() {
     taxNumber: string | null;
   } | null>(null);
   const moneybirdSyncKeyRef = useRef<string | null>(null);
-  const geocodeAttemptKeyRef = useRef<string | null>(null);
-  const mapCoordsKeyRef = useRef<string | null>(null);
-  const mapImageSrcRef = useRef<string | null>(null);
   const patchOrganization = workspace.patchOrganization;
 
   const organizationLatitude = asCoord(details?.latitude);
   const organizationLongitude = asCoord(details?.longitude);
+  const organizationDetails = workspace.organizationDetails;
+  const organizationDetailsRef = useRef(organizationDetails);
+  organizationDetailsRef.current = organizationDetails;
+  const {
+    mapImageSrc,
+    mapLoading,
+    mapHint,
+    resolveLocation: resolveOrganizationLocation,
+  } = useMapboxEntityLocation({
+    active: keepAliveActive,
+    entityId: panelOrganizationId,
+    address: details
+      ? {
+          address: details.address ?? null,
+          city: details.city ?? null,
+          postalCode: details.postalCode ?? null,
+          region: details.region ?? null,
+          country: details.country ?? null,
+        }
+      : null,
+    latitude: organizationLatitude,
+    longitude: organizationLongitude,
+    readCoordinates: (organizationId) =>
+      organizationDetailsRef.current[organizationId],
+    patchCoordinates: (organizationId, coordinates) =>
+      patchOrganization(organizationId, coordinates),
+    autoGeocodeMissingCoordinates: true,
+  });
   const moneybirdHref =
     moneybirdContactId && moneybirdAdministrationId
       ? `https://moneybird.com/${encodeURIComponent(moneybirdAdministrationId)}/contacts/${encodeURIComponent(moneybirdContactId)}`
@@ -430,78 +443,21 @@ export function OrganizationsPage() {
       Boolean(panelOrganizationId) &&
       profileSection === "overview",
   );
-  const crmGroups = useCrmGroupsForSubject(
-    "organization",
-    panelOrganizationId,
-    keepAliveActive && Boolean(panelOrganizationId),
-  );
-  const groupOptions = useMemo(
-    () =>
-      crmGroups.allGroups.map((group) => ({
-        id: group.id,
-        name: group.name,
-        color: group.color,
-      })),
-    [crmGroups.allGroups],
-  );
-  const memberGroupIds = useMemo(
-    () => crmGroups.memberGroups.map((group) => group.id),
-    [crmGroups.memberGroups],
-  );
-  const appliedMemberGroupIdsRef = useRef(memberGroupIds);
-  useEffect(() => {
-    appliedMemberGroupIdsRef.current = memberGroupIds;
-  }, [memberGroupIds]);
-  const membershipSyncChainRef = useRef(Promise.resolve());
-  const handleMemberGroupIdsChange = useCallback(
-    (nextIds: string[]) => {
-      const previous = new Set(appliedMemberGroupIdsRef.current);
-      const next = new Set(nextIds);
-      appliedMemberGroupIdsRef.current = nextIds;
-      membershipSyncChainRef.current = membershipSyncChainRef.current
-        .catch(() => {})
-        .then(async () => {
-          try {
-            for (const groupId of next) {
-              if (!previous.has(groupId)) {
-                await crmGroups.toggleMembership(groupId, true);
-              }
-            }
-            for (const groupId of previous) {
-              if (!next.has(groupId)) {
-                await crmGroups.toggleMembership(groupId, false);
-              }
-            }
-          } catch (error) {
-            const message =
-              error instanceof Error
-                ? error.message
-                : "Failed to update groups";
-            const friendly =
-              /subject not found|member subject|404/i.test(message)
-                ? "This organization isn’t on the server yet, so it can’t join a group. Wait for sync or re-save it, then try again."
-                : message;
-            window.alert(friendly);
-            await crmGroups.reload();
-          }
-        });
-    },
-    [crmGroups],
-  );
+  const {
+    groupOptions,
+    memberGroupIds,
+    onMemberGroupIdsChange: handleMemberGroupIdsChange,
+  } = useCrmSubjectGroupMembership({
+    subjectType: "organization",
+    subjectId: panelOrganizationId,
+    enabled: keepAliveActive && Boolean(panelOrganizationId),
+    notOnServerMessage:
+      "This organization isn’t on the server yet, so it can’t join a group. Wait for sync or re-save it, then try again.",
+  });
 
   useEffect(() => {
     if (!keepAliveActive) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const mapbox = await client.requestJson<MapboxSettings>(
-          "/api/v1/settings/mapbox",
-        );
-        if (!cancelled) setMapboxConfigured(mapbox.accessTokenConfigured);
-      } catch {
-        if (!cancelled) setMapboxConfigured(false);
-      }
-    })();
     void (async () => {
       try {
         const moneybird = await client.requestJson<MoneybirdSettings>(
@@ -520,219 +476,8 @@ export function OrganizationsPage() {
   }, [client, keepAliveActive]);
 
   useEffect(() => {
-    setGeocodeFailed(false);
     moneybirdSyncKeyRef.current = null;
-    geocodeAttemptKeyRef.current = null;
-    mapCoordsKeyRef.current = null;
-    mapImageSrcRef.current = null;
   }, [panelOrganizationId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let fetchedUrl: string | null = null;
-
-    if (organizationLatitude == null || organizationLongitude == null) {
-      mapCoordsKeyRef.current = null;
-      setMapImageSrc((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
-      mapImageSrcRef.current = null;
-      setMapLoading(false);
-      return;
-    }
-
-    // Settings still loading — keep any existing tile; don't flash empty.
-    if (mapboxConfigured == null) {
-      return;
-    }
-
-    if (!mapboxConfigured) {
-      mapCoordsKeyRef.current = null;
-      setMapImageSrc((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
-      mapImageSrcRef.current = null;
-      setMapLoading(false);
-      return;
-    }
-
-    const coordsKey = `${organizationLatitude.toFixed(5)},${organizationLongitude.toFixed(5)}`;
-    if (mapCoordsKeyRef.current === coordsKey && mapImageSrcRef.current) {
-      return;
-    }
-
-    setMapLoading(true);
-    void (async () => {
-      try {
-        const params = new URLSearchParams({
-          lat: String(organizationLatitude),
-          lng: String(organizationLongitude),
-          width: "640",
-          height: "320",
-        });
-        const blob = await client.requestBinary(
-          `/api/v1/mapbox/static-map?${params}`,
-        );
-        if (cancelled) return;
-        fetchedUrl = URL.createObjectURL(blob);
-        mapCoordsKeyRef.current = coordsKey;
-        mapImageSrcRef.current = fetchedUrl;
-        setMapImageSrc((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return fetchedUrl;
-        });
-        setMapHint(null);
-      } catch {
-        if (cancelled) return;
-        mapCoordsKeyRef.current = null;
-        mapImageSrcRef.current = null;
-        setMapImageSrc((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return null;
-        });
-        setMapHint("Couldn’t load the map image.");
-      } finally {
-        if (!cancelled) setMapLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [client, mapboxConfigured, organizationLatitude, organizationLongitude]);
-
-  useEffect(() => {
-    const addressLine = formatContactAddressLine({
-      address: details?.address,
-      city: details?.city,
-      postalCode: details?.postalCode,
-      country: details?.country,
-      region: details?.region,
-    });
-    if (mapImageSrc) {
-      setMapHint(null);
-      return;
-    }
-    if (organizationLatitude != null && organizationLongitude != null) {
-      if (mapboxConfigured === false) {
-        setMapHint(
-          "Add a Mapbox token in Settings → Mapbox to show this on a map.",
-        );
-        return;
-      }
-      // Coords present — fetch effect owns load/error hints.
-      return;
-    }
-    if (!addressLine) {
-      setMapHint(null);
-      return;
-    }
-    if (mapboxConfigured === false) {
-      setMapHint(
-        "Add a Mapbox token in Settings → Mapbox to show this on a map.",
-      );
-      return;
-    }
-    if (mapboxConfigured == null) {
-      setMapHint(null);
-      return;
-    }
-    if (geocodeFailed) {
-      setMapHint("Couldn’t locate this address.");
-      return;
-    }
-    setMapHint("Locating address…");
-  }, [
-    details?.address,
-    details?.city,
-    details?.country,
-    details?.postalCode,
-    details?.region,
-    geocodeFailed,
-    mapImageSrc,
-    mapboxConfigured,
-    organizationLatitude,
-    organizationLongitude,
-  ]);
-
-  const organizationDetails = workspace.organizationDetails;
-  const organizationDetailsRef = useRef(organizationDetails);
-  organizationDetailsRef.current = organizationDetails;
-
-  const resolveOrganizationLocation = useCallback(
-    async (
-      organizationId: string,
-      parts: {
-        address?: string | null;
-        city?: string | null;
-        postalCode?: string | null;
-        country?: string | null;
-        region?: string | null;
-      },
-    ) => {
-      const addressLine = formatContactAddressLine(parts);
-      if (!addressLine) {
-        setGeocodeFailed(false);
-        geocodeAttemptKeyRef.current = null;
-        await patchOrganization(organizationId, {
-          latitude: null,
-          longitude: null,
-        });
-        return;
-      }
-      if (!mapboxConfigured) {
-        setGeocodeFailed(false);
-        return;
-      }
-      const attemptKey = `${organizationId}:${addressLine}:${parts.country ?? ""}`;
-      if (geocodeAttemptKeyRef.current === attemptKey) {
-        return;
-      }
-      geocodeAttemptKeyRef.current = attemptKey;
-      try {
-        const params = new URLSearchParams({ q: addressLine });
-        const countryCode = resolveCountryOption(parts.country)?.code;
-        if (countryCode) {
-          params.set("country", countryCode);
-        }
-        const body = await client.requestJson<{
-          result: MapboxGeocodeResult | null;
-        }>(`/api/v1/mapbox/geocode?${params}`);
-        if (!body.result) {
-          setGeocodeFailed(true);
-          await patchOrganization(organizationId, {
-            latitude: null,
-            longitude: null,
-          });
-          return;
-        }
-        setGeocodeFailed(false);
-        const nextLat = body.result.latitude;
-        const nextLng = body.result.longitude;
-        const current = organizationDetailsRef.current[organizationId];
-        const currentLat = asCoord(current?.latitude);
-        const currentLng = asCoord(current?.longitude);
-        if (
-          currentLat != null &&
-          currentLng != null &&
-          Math.abs(currentLat - nextLat) < 1e-5 &&
-          Math.abs(currentLng - nextLng) < 1e-5
-        ) {
-          return;
-        }
-        await patchOrganization(organizationId, {
-          latitude: nextLat,
-          longitude: nextLng,
-        });
-      } catch {
-        setGeocodeFailed(true);
-        geocodeAttemptKeyRef.current = null;
-      }
-    },
-    [client, mapboxConfigured, patchOrganization],
-  );
 
   useEffect(() => {
     if (!keepAliveActive || !moneybirdContactId || !panelOrganizationId) {
@@ -846,47 +591,6 @@ export function OrganizationsPage() {
     resolveOrganizationLocation,
   ]);
 
-  // If address exists but coords were never written (e.g. Mapbox wasn't ready
-  // during Moneybird sync), geocode once Mapbox is available.
-  // Geocode when an address field changes, not on every new `details` object.
-  const detailsRef = useRef(details);
-  detailsRef.current = details;
-  useEffect(() => {
-    const details = detailsRef.current;
-    if (
-      !keepAliveActive ||
-      !panelOrganizationId ||
-      !mapboxConfigured ||
-      !details
-    ) {
-      return;
-    }
-    if (organizationLatitude != null && organizationLongitude != null) {
-      return;
-    }
-    const parts = {
-      address: details.address ?? null,
-      city: details.city ?? null,
-      postalCode: details.postalCode ?? null,
-      country: details.country ?? null,
-      region: details.region ?? null,
-    };
-    if (!formatContactAddressLine(parts)) return;
-    void resolveOrganizationLocation(panelOrganizationId, parts);
-  }, [
-    details?.address,
-    details?.city,
-    details?.country,
-    details?.postalCode,
-    details?.region,
-    keepAliveActive,
-    mapboxConfigured,
-    organizationLatitude,
-    organizationLongitude,
-    panelOrganizationId,
-    resolveOrganizationLocation,
-  ]);
-
   const sectionLabel =
     profileSection === "overview"
       ? null
@@ -965,6 +669,7 @@ export function OrganizationsPage() {
     selected,
     selectedGroupId,
     selectedSlugValue,
+    setDetailCollapsed,
   ]);
 
   useDesktopSectionBreadcrumb(
@@ -1443,295 +1148,31 @@ export function OrganizationsPage() {
       });
   }, [client, effectiveGroupId, navigate, organizations, powerSync, workspace]);
 
+  const overlayHref = useCallback(
+    (layout: OrganizationOverlayLayout) =>
+      selectedSlugValue
+        ? getOrganizationOverlayHref(selectedSlugValue, {
+            section: cardSection === "overview" ? undefined : cardSection,
+            layout,
+            groupId: effectiveGroupId,
+          })
+        : null,
+    [cardSection, effectiveGroupId, selectedSlugValue],
+  );
+
   const expandOverlay = useCallback(() => {
-    if (!selectedSlugValue) return;
-    if (overlayLayout === "page") return;
-    setDetailCollapsed(false);
-    const token = ++expandAnimTokenRef.current;
-    pendingListFadeInRef.current = false;
-    pendingWorkspaceFadeInRef.current = true;
-    setListFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setWorkspaceFaded(true);
-      navigate(
-        getOrganizationOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "page",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-    }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
-  }, [
-    cardSection,
-    effectiveGroupId,
-    navigate,
-    overlayLayout,
-    selectedSlugValue,
-  ]);
+    const href = overlayHref("page");
+    if (href) expandEntityOverlay(href);
+  }, [expandEntityOverlay, overlayHref]);
 
   const collapseOverlay = useCallback(() => {
-    if (!selectedSlugValue) return;
-    setDetailCollapsed(false);
-    if (overlayLayout !== "page") {
-      navigate(
-        getOrganizationOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "panel",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-      return;
-    }
-    const token = ++expandAnimTokenRef.current;
-    pendingWorkspaceFadeInRef.current = false;
-    pendingListFadeInRef.current = true;
-    setWorkspaceFaded(true);
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-    }
-    expandAnimTimerRef.current = window.setTimeout(() => {
-      expandAnimTimerRef.current = null;
-      if (expandAnimTokenRef.current !== token) return;
-      setListFaded(true);
-      navigate(
-        getOrganizationOverlayHref(selectedSlugValue, {
-          section: cardSection === "overview" ? undefined : cardSection,
-          layout: "panel",
-          groupId: effectiveGroupId,
-        }),
-        { replace: true },
-      );
-    }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
-  }, [
-    cardSection,
-    effectiveGroupId,
-    navigate,
-    overlayLayout,
-    selectedSlugValue,
-  ]);
-
-  // After expand navigates to page: fade workspace in.
-  useLayoutEffect(() => {
-    if (overlayLayout !== "page") return;
-    if (!pendingWorkspaceFadeInRef.current) {
-      setListFaded(true);
-      return;
-    }
-    pendingWorkspaceFadeInRef.current = false;
-    setWorkspaceFaded(true);
-    setListFaded(true);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setWorkspaceFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout]);
-
-  // After collapse navigates to panel: fade list back in.
-  // Direct leave from page (breadcrumb / Escape) skips the pending flag — still
-  // restore the catalog so it is not left at opacity 0.
-  useLayoutEffect(() => {
-    if (overlayLayout !== "panel") return;
-    if (!pendingListFadeInRef.current) {
-      if (!selected) {
-        setListFaded(false);
-        setWorkspaceFaded(false);
-      }
-      return;
-    }
-    pendingListFadeInRef.current = false;
-    setListFaded(true);
-    setWorkspaceFaded(false);
-    const token = expandAnimTokenRef.current;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        if (expandAnimTokenRef.current !== token) return;
-        setListFaded(false);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [overlayLayout, selected]);
-
-  useEffect(() => {
-    return () => {
-      if (expandAnimTimerRef.current != null) {
-        window.clearTimeout(expandAnimTimerRef.current);
-      }
-    };
-  }, []);
-
-  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
-    setDetailCollapseAnimating(true);
-    if (detailCollapseAnimTimerRef.current != null) {
-      window.clearTimeout(detailCollapseAnimTimerRef.current);
-      detailCollapseAnimTimerRef.current = null;
-    }
-    if (detailCollapseRafRef.current != null) {
-      window.cancelAnimationFrame(detailCollapseRafRef.current);
-      detailCollapseRafRef.current = null;
-    }
-    // Enable transition for one paint, then flip collapsed so width interpolates.
-    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
-        detailCollapseRafRef.current = null;
-        apply();
-        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
-          detailCollapseAnimTimerRef.current = null;
-          setDetailCollapseAnimating(false);
-        }, ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS);
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (detailCollapseAnimTimerRef.current != null) {
-        window.clearTimeout(detailCollapseAnimTimerRef.current);
-      }
-      if (detailCollapseRafRef.current != null) {
-        window.cancelAnimationFrame(detailCollapseRafRef.current);
-      }
-      if (detailCloseNavTimerRef.current != null) {
-        window.clearTimeout(detailCloseNavTimerRef.current);
-      }
-    };
-  }, []);
-
-  const hideDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(true);
-    });
-  }, [beginDetailCollapseAnimation]);
-
-  const showDetail = useCallback(() => {
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(false);
-    });
-  }, [beginDetailCollapseAnimation]);
+    const href = overlayHref("panel");
+    if (href) collapseEntityOverlay(href);
+  }, [collapseEntityOverlay, overlayHref]);
 
   const closeOverlay = useCallback(() => {
-    if (detailCloseNavTimerRef.current != null) {
-      window.clearTimeout(detailCloseNavTimerRef.current);
-      detailCloseNavTimerRef.current = null;
-    }
-
-    const leave = () => {
-      expandAnimTokenRef.current += 1;
-      pendingListFadeInRef.current = false;
-      pendingWorkspaceFadeInRef.current = false;
-      if (expandAnimTimerRef.current != null) {
-        window.clearTimeout(expandAnimTimerRef.current);
-        expandAnimTimerRef.current = null;
-      }
-      setListFaded(false);
-      setWorkspaceFaded(false);
-      setDetailCollapsed(false);
-      navigate(getOrganizationsGroupHref(effectiveGroupId), { replace: true });
-    };
-
-    // Already on the reopen strip — leave immediately.
-    if (detailCollapsedRef.current) {
-      leave();
-      return;
-    }
-
-    // Slide closed, then navigate so Escape matches `]` hide animation.
-    beginDetailCollapseAnimation(() => {
-      setDetailCollapsed(true);
-    });
-    detailCloseNavTimerRef.current = window.setTimeout(() => {
-      detailCloseNavTimerRef.current = null;
-      leave();
-    }, ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS);
-  }, [beginDetailCollapseAnimation, effectiveGroupId, navigate]);
-
-  // Selecting an organization while the reopen strip is showing should NOT
-  // slide the panel open — stay collapsed. First open (no prior selection)
-  // uses the overlay enter slide; switching while expanded fades content.
-  const prevSelectedIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prevId = prevSelectedIdRef.current;
-    prevSelectedIdRef.current = selected?.id ?? null;
-
-    if (!selected?.id) {
-      setDetailCollapsed(false);
-      return;
-    }
-    // Switching organizations while the strip is showing: keep the strip.
-    if (detailCollapsed && prevId != null) return;
-  }, [selected?.id, detailCollapsed]);
-
-  // Opacity crossfade when switching organizations while the panel is open.
-  // useLayoutEffect so fade-out starts before paint (no flash of new chrome).
-  useLayoutEffect(() => {
-    const nextId = selected?.id ?? null;
-    if (nextId === panelOrganizationId) return;
-
-    // Route can briefly miss a match while keep-alive href flips — keep the
-    // current card mounted so we don't abort mid-fade / remount the rail.
-    if (nextId == null) return;
-
-    const canFade =
-      panelOrganizationId != null && !detailCollapsed && !detailCollapseAnimating;
-
-    if (!canFade) {
-      contentFadeTokenRef.current += 1;
-      setPanelOrganizationId(nextId);
-      setContentFaded(false);
-      return;
-    }
-
-    const token = ++contentFadeTokenRef.current;
-    setContentFaded(true);
-    const timer = window.setTimeout(() => {
-      if (contentFadeTokenRef.current !== token) return;
-      setPanelOrganizationId(nextId);
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          if (contentFadeTokenRef.current !== token) return;
-          setContentFaded(false);
-        });
-      });
-    }, ORGANIZATION_DETAIL_CONTENT_FADE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [detailCollapseAnimating, detailCollapsed, panelOrganizationId, selected?.id]);
-
-  // Close the panel only when the route truly leaves organizations (no slug).
-  useLayoutEffect(() => {
-    if (routedSlug) return;
-    contentFadeTokenRef.current += 1;
-    expandAnimTokenRef.current += 1;
-    pendingListFadeInRef.current = false;
-    pendingWorkspaceFadeInRef.current = false;
-    if (expandAnimTimerRef.current != null) {
-      window.clearTimeout(expandAnimTimerRef.current);
-      expandAnimTimerRef.current = null;
-    }
-    setPanelOrganizationId(null);
-    setContentFaded(false);
-    setListFaded(false);
-    setWorkspaceFaded(false);
-    setDetailCollapsed(false);
-  }, [routedSlug]);
+    closeEntityOverlay(getOrganizationsGroupHref(effectiveGroupId));
+  }, [closeEntityOverlay, effectiveGroupId]);
 
   useEffect(() => {
     if (!keepAliveActive || !selected) return;
@@ -1776,15 +1217,13 @@ export function OrganizationsPage() {
       if (!shouldHandleGlobalShortcut(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      beginDetailCollapseAnimation(() => {
-        setDetailCollapsed((current) => !current);
-      });
+      toggleDetail();
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
-    beginDetailCollapseAnimation,
+    toggleDetail,
     closeOverlay,
     collapseOverlay,
     keepAliveActive,
@@ -1807,6 +1246,109 @@ export function OrganizationsPage() {
     );
   }
 
+  const nestedAreas = useMemo(
+    () => mapWorkspaceNestedAreas(workspace.areas),
+    [workspace.areas],
+  );
+  const projectsTabContext = {
+    organizationId: selected?.id ?? null,
+    organizationSlug: selectedSlugValue,
+    orgProjects,
+    projects,
+    navigate,
+    patchProject: workspace.patchProject,
+    createProject: workspace.createProject,
+    softDeleteProject: workspace.softDeleteProject,
+  };
+  const projectsTabContextRef = useRef(projectsTabContext);
+  projectsTabContextRef.current = projectsTabContext;
+  const projectsTabHandlers = useMemo<OrganizationProjectsTabHandlers>(() => {
+    const read = () => projectsTabContextRef.current;
+    const patchProject = (projectId: string, patch: Record<string, unknown>) => {
+      void read().patchProject(projectId, patch);
+    };
+    return {
+      onViewChange: (nextView: ListBoardView) => {
+        const { organizationSlug, navigate } = read();
+        persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
+        if (!organizationSlug) return;
+        navigate(
+          buildOrganizationProjectsHref(organizationSlug, { view: nextView }),
+        );
+      },
+      onSelectProject: (key) => {
+        const { organizationSlug, projects, navigate } = read();
+        if (!organizationSlug) return;
+        const match = projects.find(
+          (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+        );
+        const href = getOrganizationProjectHref(organizationSlug, key);
+        if (match?.name) primeTabTitle(href, match.name);
+        const state: ProjectLocationState | undefined = match?.type
+          ? { projectType: match.type }
+          : undefined;
+        navigate(href, state ? { state } : undefined);
+      },
+      onStatusChange: (projectId, status: ProjectStatus) => {
+        patchProject(projectId, { status });
+      },
+      onPriorityChange: (projectId, priority) => {
+        patchProject(projectId, { priority });
+      },
+      onStartDateChange: (projectId, startDate) => {
+        patchProject(projectId, {
+          startDate: startDate ? startDate.toISOString() : null,
+        });
+      },
+      onDueDateChange: (projectId, dueDate) => {
+        patchProject(projectId, {
+          dueDate: dueDate ? dueDate.toISOString() : null,
+        });
+      },
+      onProjectAreaChange: (projectId, area) => {
+        patchProject(projectId, { area, areaId: null });
+      },
+      onCreateProject: async ({ status, name }) =>
+        read().createProject({
+          name,
+          status,
+          organizationId: read().organizationId,
+        }),
+      onCreatedProject: (id, key) => {
+        const { organizationSlug, projects, navigate } = read();
+        if (!key || !organizationSlug) return;
+        const href = getOrganizationProjectHref(organizationSlug, key);
+        const match =
+          projects.find((entry) => entry.id === id) ??
+          projects.find(
+            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+          );
+        if (match?.name) primeTabTitle(href, match.name);
+        navigate(href);
+      },
+      onReorder: (request) => {
+        for (const patch of projectReorderPatches(read().orgProjects, request)) {
+          patchProject(patch.id, {
+            status: patch.status,
+            sortOrder: patch.sortOrder,
+          });
+        }
+      },
+      onDeleteProject: async (project) => {
+        try {
+          await read().softDeleteProject(project.id);
+          return { ok: true as const };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error ? error.message : "Failed to delete project.",
+          };
+        }
+      },
+    };
+  }, []);
+
   function renderSection(sectionId: OrganizationSectionId) {
     if (!selected || !selectedSlugValue) return null;
     const organization = selected;
@@ -1814,103 +1356,13 @@ export function OrganizationsPage() {
 
     if (sectionId === "projects") {
       return (
-        <ProjectsOverviewView
+        <OrganizationWorkspaceTabPanel
           projects={orgProjects}
           workingProjectIds={workingProjectIds}
           typeToFilterEnabled={keepAliveActive}
-          nestedAreas={workspace.areas.map((area) => ({
-            id: area.id,
-            name: area.name,
-            parent:
-              area.parent === "personal" ||
-              area.parent === "business" ||
-              area.parent === "clients"
-                ? area.parent
-                : null,
-            sortOrder: area.sortOrder,
-          }))}
-          showAreaFilters={false}
-          emptyMessage="No projects linked to this organization."
+          nestedAreas={nestedAreas}
           view={orgProjectsListView}
-          onViewChange={(nextView: ListBoardView) => {
-            persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
-            navigate(
-              buildOrganizationProjectsHref(organizationSlug, {
-                view: nextView,
-              }),
-            );
-          }}
-          onSelectProject={(key) => {
-            const match = projects.find(
-              (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-            );
-            const href = getOrganizationProjectHref(organizationSlug, key);
-            if (match?.name) primeTabTitle(href, match.name);
-            const state: ProjectLocationState | undefined = match?.type
-              ? { projectType: match.type }
-              : undefined;
-            navigate(href, state ? { state } : undefined);
-          }}
-          onStatusChange={(projectId, status: ProjectStatus) => {
-            void workspace.patchProject(projectId, { status });
-          }}
-          onPriorityChange={(projectId, priority) => {
-            void workspace.patchProject(projectId, { priority });
-          }}
-          onStartDateChange={(projectId, startDate) => {
-            void workspace.patchProject(projectId, {
-              startDate: startDate ? startDate.toISOString() : null,
-            });
-          }}
-          onDueDateChange={(projectId, dueDate) => {
-            void workspace.patchProject(projectId, {
-              dueDate: dueDate ? dueDate.toISOString() : null,
-            });
-          }}
-          onProjectAreaChange={(projectId, area) => {
-            void workspace.patchProject(projectId, { area, areaId: null });
-          }}
-          onCreateProject={async ({ status, name }) => {
-            return workspace.createProject({
-              name,
-              status,
-              organizationId: organization.id,
-            });
-          }}
-          onCreatedProject={(id, key) => {
-            if (!key) return;
-            const href = getOrganizationProjectHref(organizationSlug, key);
-            const match =
-              projects.find((entry) => entry.id === id) ??
-              projects.find(
-                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-              );
-            if (match?.name) primeTabTitle(href, match.name);
-            navigate(href);
-          }}
-          onReorder={(request) => {
-            const patches = projectReorderPatches(orgProjects, request);
-            for (const patch of patches) {
-              void workspace.patchProject(patch.id, {
-                status: patch.status,
-                sortOrder: patch.sortOrder,
-              });
-            }
-          }}
-          onDeleteProject={async (project) => {
-            try {
-              await workspace.softDeleteProject(project.id);
-              return { ok: true as const };
-            } catch (error) {
-              return {
-                ok: false as const,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to delete project.",
-              };
-            }
-          }}
+          handlers={projectsTabHandlers}
         />
       );
     }
@@ -2070,6 +1522,14 @@ export function OrganizationsPage() {
     return null;
   }
 
+  const organizationPropertyHandlers = useOrganizationPropertyHandlers({
+    client,
+    organizationId: (panelOrganization ?? selected)?.id ?? null,
+    patchOrganization,
+    resolveLocation: resolveOrganizationLocation,
+    setAvatarOverride,
+  });
+
   function renderOrganizationDetail() {
     const organization = panelOrganization ?? selected;
     if (!organization) return null;
@@ -2135,10 +1595,7 @@ export function OrganizationsPage() {
         mapImageSrc={mapImageSrc}
         mapLoading={mapLoading}
         mapHint={mapHint}
-        onAfterLocationSave={(parts) => {
-          geocodeAttemptKeyRef.current = null;
-          void resolveOrganizationLocation(organization.id, parts);
-        }}
+        onAfterLocationSave={organizationPropertyHandlers.onAfterLocationSave}
         activitySlot={
           <CrmActivityFeedView
             items={activityFeed.items}
@@ -2163,59 +1620,16 @@ export function OrganizationsPage() {
             linkDot={Boolean(
               (details?.moneybirdContactId ?? moneybirdContactId)?.trim(),
             )}
-            onUpload={async (file) => {
-              const result = await uploadDesktopAvatar(
-                client,
-                "organization",
-                organization.id,
-                file,
-              );
-              if (result.ok) {
-                const url = URL.createObjectURL(file);
-                setAvatarOverride((current) => {
-                  if (current) URL.revokeObjectURL(current);
-                  return url;
-                });
-              }
-              return result;
-            }}
+            onUpload={organizationPropertyHandlers.onUploadAvatar}
             onRemove={
               canRemoveManualAvatar
-                ? async () => {
-                    const result = await removeDesktopAvatar(
-                      client,
-                      "organization",
-                      organization.id,
-                    );
-                    if (result.ok) {
-                      setAvatarOverride((current) => {
-                        if (current) URL.revokeObjectURL(current);
-                        return null;
-                      });
-                    }
-                    return result;
-                  }
+                ? organizationPropertyHandlers.onRemoveAvatar
                 : undefined
             }
           />
         }
-        onSaveName={async (name) => {
-          try {
-            await workspace.patchOrganization(organization.id, { name });
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not save organization name.",
-            };
-          }
-        }}
-        onSaveDetails={(patch: OrganizationOverviewDetails) => {
-          void workspace.patchOrganization(organization.id, patch);
-        }}
+        onSaveName={organizationPropertyHandlers.onSaveName}
+        onSaveDetails={organizationPropertyHandlers.onSaveDetails}
       />
     );
   }
