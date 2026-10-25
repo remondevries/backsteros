@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 describe("recurring task runner hybrid", () => {
-  const src = readFileSync(
+  const src = readModuleSource(
     join(dirname(fileURLToPath(import.meta.url)), "recurring-tasks.ts"),
     "utf8",
   );

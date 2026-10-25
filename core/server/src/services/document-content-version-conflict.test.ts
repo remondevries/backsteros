@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 /**
  * Contract for atomic ifMatchVersion on updateDocumentContent:
@@ -15,7 +15,7 @@ export function documentContentUpdateLostRace(rowCount: number): boolean {
 /** Slice of updateDocumentContent used to assert production wiring. */
 function updateDocumentContentSource(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(here, "documents.ts"), "utf8");
+  const src = readModuleSource(join(here, "documents.ts"), "utf8");
   const start = src.indexOf("export async function updateDocumentContent");
   assert.ok(start >= 0, "updateDocumentContent export missing");
   const next = src.indexOf("\nexport async function ", start + 1);
@@ -47,7 +47,7 @@ describe("document content version conflict (atomic update)", () => {
 describe("document content CAS helper source order", () => {
   it("checks ifMatch under the lock before putObject and applies timeout", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, "document-content-cas-write.ts"), "utf8");
+    const src = readModuleSource(join(here, "document-content-cas-write.ts"), "utf8");
     const start = src.indexOf("export async function compareAndSwapDocumentContent");
     assert.ok(start >= 0);
     const fn = src.slice(start);

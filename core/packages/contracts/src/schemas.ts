@@ -1,5766 +1,864 @@
-import { z } from "zod";
-
-import {
-  DOCUMENT_PROPERTY_TYPE_KEY_PATTERN,
-  DOCUMENT_PROPERTY_TYPE_KINDS,
-  DOCUMENT_PROPERTY_TYPE_STATUSES,
-} from "./document-property-types.js";
-
-export const TASK_STATUSES = [
-  "triage",
-  "backlog",
-  "ready_to_start",
-  "in_progress",
-  "on_hold",
-  "waiting",
-  "in_review",
-  "completed",
-  "canceled",
-  "duplicated",
-] as const;
-
-export const PROJECT_STATUSES = [
-  "backlog",
-  "active",
-  "on_hold",
-  "completed",
-  "canceled",
-] as const;
-
-/** Extensible project kinds — development console filters on `codebase`. */
-export const PROJECT_TYPES = [
-  "general",
-  "codebase",
-  "it_service",
-  "webhosting",
-  "domeinname",
-  "email",
-] as const;
-
-/** Registrar / hosting providers (Catalog Domains; extensible). */
-export const PROJECT_PROVIDERS = ["transip"] as const;
-
-/** Email providers for `type = email` projects (Catalog; extensible). */
-export const PROJECT_EMAIL_CATEGORIES = [
-  "lemo_hosting",
-  "google_workspaces",
-  "office365",
-  "proton",
-] as const;
-
-export const DOCUMENT_TYPES = ["project", "knowledge", "journal"] as const;
-
-export const API_KEY_SCOPES = [
-  "projects:read",
-  "projects:write",
-  "tasks:read",
-  "tasks:write",
-  "documents:read",
-  "documents:write",
-  "letters:read",
-  "letters:write",
-  "organizations:read",
-  "organizations:write",
-  "contacts:read",
-  "contacts:write",
-  "finance:read",
-  "finance:write",
-  "settings:read",
-  "settings:write",
-  "avatars:read",
-  "avatars:write",
-  "search:query",
-  /** CardDAV door only — unlocks contacts.backsteros.com address book sync. */
-  "carddav",
-  /**
-   * TV today-counts door only (OS-137) — snapshot + SSE counts payload.
-   * Mint alone on a key so it stays independently revocable.
-   */
-  "tv.today_counts",
-  /**
-   * Applications door only — mint alone on a key for app integrations
-   * (Settings → API keys → Applications).
-   */
-  "applications",
-] as const;
-
-/** Open statuses shown on TV / Dynamic Island today-counts (Island order). */
-export const TV_TODAY_COUNT_STATUSES = [
-  "triage",
-  "backlog",
-  "ready_to_start",
-  "in_progress",
-  "on_hold",
-  "in_review",
-] as const;
-
-export const tvTodayCountStatusSchema = z.enum(TV_TODAY_COUNT_STATUSES);
-
-/** Counts-only payload for TV home (OS-137) — no task ids, titles, or bodies. */
-export const tvTodayCountsSchema = z.object({
-  dueTodayTotal: z.number().int().nonnegative(),
-  statuses: z.array(
-    z.object({
-      status: tvTodayCountStatusSchema,
-      count: z.number().int().positive(),
-    }),
-  ),
-  agentsWorking: z.number().int().nonnegative(),
-});
-
-/** @deprecated Prefer BANK_ACCOUNT_TYPES — kept for older clients during transition. */
-export const BANK_ACCOUNT_INSTITUTIONS = ["ing", "amex", "other"] as const;
-export const BANK_ACCOUNT_TYPES = [
-  "bank_account",
-  "credit_card",
-  "savings",
-  "investment",
-] as const;
-export const FINANCIAL_CATEGORY_KINDS = [
-  "income",
-  "expense",
-  "transfer",
-] as const;
-export const FINANCIAL_CATEGORY_LISTINGS = ["regular", "excluded"] as const;
-export const FINANCIAL_GOAL_LISTINGS = [
-  "active",
-  "ready_to_spend",
-  "archive",
-] as const;
-export const FINANCIAL_GOAL_SAVING_MODES = [
-  "daily",
-  "weekly",
-  "monthly",
-  "yearly",
-] as const;
-export const FINANCIAL_IMPORT_DIALECTS = [
-  "ing_nl",
-  "amex_nl",
-  "unknown",
-] as const;
-export const FINANCIAL_AMOUNT_SIGNS = ["all", "debit", "credit"] as const;
-
-export const taskStatusSchema = z.enum(TASK_STATUSES);
-export const projectStatusSchema = z.enum(PROJECT_STATUSES);
-export const projectTypeSchema = z.enum(PROJECT_TYPES);
-export const projectProviderSchema = z.enum(PROJECT_PROVIDERS);
-export const projectEmailCategorySchema = z.enum(PROJECT_EMAIL_CATEGORIES);
-export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
-export const apiKeyScopeSchema = z.enum(API_KEY_SCOPES);
-export const bankAccountInstitutionSchema = z.enum(BANK_ACCOUNT_INSTITUTIONS);
-export const bankAccountTypeSchema = z.enum(BANK_ACCOUNT_TYPES);
-export const financialCategoryKindSchema = z.enum(FINANCIAL_CATEGORY_KINDS);
-export const financialCategoryListingSchema = z.enum(
+/**
+ * Contract schemas barrel — implementation lives in `./schemas/`.
+ * Keep importing from `@backsteros/contracts`.
+ */
+export {
+  TASK_STATUSES,
+  PROJECT_STATUSES,
+  PROJECT_TYPES,
+  PROJECT_PROVIDERS,
+  PROJECT_EMAIL_CATEGORIES,
+  DOCUMENT_TYPES,
+  API_KEY_SCOPES,
+  TV_TODAY_COUNT_STATUSES,
+  tvTodayCountStatusSchema,
+  tvTodayCountsSchema,
+  BANK_ACCOUNT_INSTITUTIONS,
+  BANK_ACCOUNT_TYPES,
+  FINANCIAL_CATEGORY_KINDS,
   FINANCIAL_CATEGORY_LISTINGS,
-);
-export const financialGoalListingSchema = z.enum(FINANCIAL_GOAL_LISTINGS);
-export const financialGoalSavingModeSchema = z.enum(
+  FINANCIAL_GOAL_LISTINGS,
   FINANCIAL_GOAL_SAVING_MODES,
-);
-export const financialImportDialectSchema = z.enum(FINANCIAL_IMPORT_DIALECTS);
-export const financialAmountSignSchema = z.enum(FINANCIAL_AMOUNT_SIGNS);
-
-/** GitHub `owner/repo` full name bound to a codebase project. */
-export const githubRepositoryNameSchema = z
-  .string()
-  .regex(/^[^/\s]+\/[^/\s]+$/, "Use owner/repo");
-
-export const errorSchema = z.object({
-  error: z.string(),
-  code: z.string().optional(),
-  details: z.unknown().optional(),
-});
-
-export const validationIssueSchema = z.object({
-  code: z.string(),
-  path: z.array(z.union([z.string(), z.number()])),
-  message: z.string(),
-}).passthrough();
-
-export const validationErrorSchema = z.object({
-  success: z.literal(false),
-  error: z.object({
-    issues: z.array(validationIssueSchema),
-    name: z.literal("ZodError"),
-  }),
-});
-
-/** The API uses both explicit errors and Hono's serialized Zod validation result. */
-export const badRequestSchema = z.union([errorSchema, validationErrorSchema]);
-
-/** Git/build identity exposed on `/health` and `/api/v1/health` (OS-61). */
-export const buildVersionSchema = z.object({
-  commit: z.string(),
-  builtAt: z.string(),
-  dirty: z.boolean(),
-});
-
-export const healthSchema = z.object({
-  ok: z.literal(true),
-  service: z.string(),
-  version: buildVersionSchema,
-  spacesConfigured: z.boolean(),
-  /** True when this core's commit differs from the replication peer's `/health`. */
-  versionMismatch: z.boolean().optional(),
-  peerVersion: buildVersionSchema.nullable().optional(),
-});
-
-/** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
-export const projectKeySchema = z
-  .string()
-  .regex(/^[A-Za-z0-9]{2,3}$/, "Use 2–3 letters or numbers");
-
-export const projectSchema = z.object({
-  id: z.string(),
-  key: z.string(),
-  name: z.string(),
-  summary: z.string().nullable(),
-  description: z.string().nullable(),
-  organizationId: z.string().nullable(),
-  areaId: z.string().nullable(),
-  area: z.enum(["personal", "business", "clients"]).nullable(),
-  startDate: z.string().datetime().nullable(),
-  dueDate: z.string().datetime().nullable(),
-  icon: z.string().nullable(),
-  color: z.string().nullable(),
-  type: projectTypeSchema,
-  /** Registrar/hosting provider for Domains (e.g. TransIP). */
-  provider: projectProviderSchema.nullable(),
-  /** Email provider category when `type = email`. */
-  category: projectEmailCategorySchema.nullable(),
-  githubRepository: githubRepositoryNameSchema.nullable(),
-  /** Cloudflare zone id for Domains DNS management. */
-  cloudflareZoneId: z.string().max(64).nullable(),
-  /**
-   * Linked Penpot (BacksterDESIGN) project UUID.
-   * Null until staff create-or-open from the design dashboard.
-   */
-  penpotProjectId: z.string().uuid().nullable(),
-  /**
-   * Absolute local folder for agent/PTY and `executionLocation = local`
-   * (machine-specific). For codebase projects, defaults to `{vault}/Codebase`.
-   */
-  localWorkingDirectory: z.string().max(4096).nullable(),
-  /**
-   * Path on the development server for agent execution (codebase projects, OS-106).
-   * Distinct from {@link localWorkingDirectory}.
-   */
-  developmentLocation: z.string().max(4096).nullable(),
-  /** Path on the production server for agent execution (codebase projects, OS-106). */
-  productionLocation: z.string().max(4096).nullable(),
-  /**
-   * @deprecated Folded into {@link localWorkingDirectory}. Still accepted on
-   * write (mapped then cleared); always null on read after ensure/update.
-   */
-  localLocation: z.string().max(4096).nullable(),
-  /**
-   * Legacy development checkout status. Core no longer clones on location set;
-   * fields remain for sync/API compat and may still be cleared by clients.
-   */
-  developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable(),
-  /** Legacy sanitized setup error (no secrets). */
-  developmentSetupError: z.string().max(2000).nullable(),
-  developmentSetupUpdatedAt: z.string().datetime().nullable(),
-  /**
-   * Status probe mode for codebase projects.
-   * `simple` = HTTPS ping of `healthCheckDomain`; `advanced` = `/healthz` later.
-   */
-  healthCheckMode: z.enum(["simple", "advanced"]).nullable(),
-  /** Hostname for simple health checks (no scheme/path), e.g. `quarrymill.com`. */
-  healthCheckDomain: z.string().max(253).nullable(),
-  /** Billable hourly rate in euro cents. Null means unset. */
-  hourlyRateCents: z.number().int().nonnegative().nullable(),
-  /**
-   * Budget rows (`{ period, amountCents }[]`) — period is monthly / weekly /
-   * quarterly. Empty when unset.
-   */
-  budgets: z
-    .array(
-      z.object({
-        period: z.enum(["monthly", "weekly", "quarterly"]),
-        amountCents: z.number().int().positive(),
-      }),
-    )
-    .max(20),
-  status: projectStatusSchema,
-  priority: z.number().int().min(0).max(4),
-  sortOrder: z.number().int(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
-});
-
-/** Where a codebase task should run agents (OS-106). */
-export const EXECUTION_LOCATIONS = [
-  "development",
-  "production",
-  "local",
-] as const;
-export const executionLocationSchema = z.enum(EXECUTION_LOCATIONS);
-
-export const createProjectSchema = z.object({
-  key: projectKeySchema,
-  name: z.string().min(1).max(255),
-  summary: z.string().max(2000).nullable().optional(),
-  description: z.string().max(10000).nullable().optional(),
-  organizationId: z.string().nullable().optional(),
-  areaId: z.string().nullable().optional(),
-  area: z.enum(["personal", "business", "clients"]).nullable().optional(),
-  startDate: z.string().datetime().nullable().optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-  icon: z.string().max(128).nullable().optional(),
-  color: z.string().max(64).nullable().optional(),
-  type: projectTypeSchema.optional(),
-  provider: projectProviderSchema.nullable().optional(),
-  category: projectEmailCategorySchema.nullable().optional(),
-  githubRepository: githubRepositoryNameSchema.nullable().optional(),
-  cloudflareZoneId: z.string().max(64).nullable().optional(),
-  penpotProjectId: z.string().uuid().nullable().optional(),
-  localWorkingDirectory: z.string().max(4096).nullable().optional(),
-  developmentLocation: z.string().max(4096).nullable().optional(),
-  productionLocation: z.string().max(4096).nullable().optional(),
-  /** @deprecated Folded into localWorkingDirectory on write. */
-  localLocation: z.string().max(4096).nullable().optional(),
-  /** Legacy; core no longer writes these on location set. */
-  developmentSetupStatus: z.enum(["pending", "ready", "failed"]).nullable().optional(),
-  developmentSetupError: z.string().max(2000).nullable().optional(),
-  developmentSetupUpdatedAt: z.string().datetime().nullable().optional(),
-  healthCheckMode: z.enum(["simple", "advanced"]).nullable().optional(),
-  healthCheckDomain: z.string().max(253).nullable().optional(),
-  hourlyRateCents: z.number().int().nonnegative().nullable().optional(),
-  budgets: z
-    .array(
-      z.object({
-        period: z.enum(["monthly", "weekly", "quarterly"]),
-        amountCents: z.number().int().positive(),
-      }),
-    )
-    .max(20)
-    .optional(),
-  status: projectStatusSchema.optional(),
-  priority: z.number().int().min(0).max(4).optional(),
-  sortOrder: z.number().int().optional(),
-});
-
-export const githubRepositorySchema = z.object({
-  id: z.number().int(),
-  fullName: z.string(),
-  name: z.string(),
-  ownerLogin: z.string(),
-  private: z.boolean(),
-  defaultBranch: z.string(),
-  htmlUrl: z.string(),
-  description: z.string().nullable(),
-});
-
-export const githubBranchSchema = z.object({
-  name: z.string(),
-  protected: z.boolean(),
-  commitSha: z.string().nullable(),
-});
-
-export const githubCommitSchema = z.object({
-  sha: z.string(),
-  shortSha: z.string(),
-  message: z.string(),
-  authorName: z.string().nullable(),
-  authorLogin: z.string().nullable(),
-  authoredAt: z.string().datetime().nullable(),
-  htmlUrl: z.string(),
-});
-
-/** Derived from GitHub `state` + `merged_at` (merged PRs arrive as `closed`). */
-export const githubPullRequestStateSchema = z.enum([
-  "open",
-  "closed",
-  "merged",
-]);
-
-export const githubPullRequestSchema = z.object({
-  number: z.number().int().positive(),
-  title: z.string(),
-  state: githubPullRequestStateSchema,
-  draft: z.boolean(),
-  body: z.string().nullable(),
-  authorLogin: z.string().nullable(),
-  createdAt: z.string().datetime().nullable(),
-  updatedAt: z.string().datetime().nullable(),
-  closedAt: z.string().datetime().nullable(),
-  mergedAt: z.string().datetime().nullable(),
-  htmlUrl: z.string(),
-  headRef: z.string().nullable(),
-  baseRef: z.string().nullable(),
-  commitsCount: z.number().int().nonnegative().nullable(),
-  commentsCount: z.number().int().nonnegative().nullable(),
-  changedFilesCount: z.number().int().nonnegative().nullable(),
-  additions: z.number().int().nonnegative().nullable(),
-  deletions: z.number().int().nonnegative().nullable(),
-});
-
-export const githubPullRequestFileStatusSchema = z.enum([
-  "added",
-  "removed",
-  "modified",
-  "renamed",
-  "copied",
-  "changed",
-  "unchanged",
-]);
-
-export const githubPullRequestFileSchema = z.object({
-  filename: z.string(),
-  previousFilename: z.string().nullable(),
-  status: githubPullRequestFileStatusSchema,
-  additions: z.number().int().nonnegative(),
-  deletions: z.number().int().nonnegative(),
-  changes: z.number().int().nonnegative(),
-  patch: z.string().nullable(),
-  blobUrl: z.string().nullable(),
-  rawUrl: z.string().nullable(),
-});
-
-/** OAuth scopes required for personal + organization repository access. */
-export const GITHUB_INTEGRATION_SCOPES = ["repo", "read:org"] as const;
-
-export const githubOrganizationSchema = z.object({
-  id: z.number().int(),
-  login: z.string(),
-  avatarUrl: z.string().nullable(),
-});
-
-export const githubConnectionStatusSchema = z.object({
-  connected: z.boolean(),
-  login: z.string().nullable(),
-  scopes: z.array(z.string()),
-  requiredScopes: z.array(z.string()),
-  missingScopes: z.array(z.string()),
-  organizations: z.array(githubOrganizationSchema),
-  repositoryCount: z.number().int().nonnegative().nullable(),
-  reason: z.string().nullable(),
-});
-
-/** Relative path under a project's localWorkingDirectory (POSIX-style). */
-export const projectFsRelativePathSchema = z
-  .string()
-  .max(4096)
-  .regex(/^[^\\]*$/, "Use forward slashes only");
-
-export const projectFsEntryKindSchema = z.enum(["file", "directory"]);
-
-export const projectFsEntrySchema = z.object({
-  name: z.string(),
-  /** Relative path from working directory root ("" for root itself in list path). */
-  path: z.string(),
-  kind: projectFsEntryKindSchema,
-});
-
-export const projectFsListEntriesResponseSchema = z.object({
-  path: z.string(),
-  entries: z.array(projectFsEntrySchema),
-});
-
-/** Target filesystem for project Dev/Local/Prod location picker (OS-111). */
-export const locationFsTargetSchema = z.enum([
-  "local",
-  "development",
-  "production",
-]);
-
-export const locationFsEntrySchema = z.object({
-  name: z.string(),
-  /** Absolute POSIX path. */
-  path: z.string(),
-  kind: z.literal("directory"),
-});
-
-export const locationFsListQuerySchema = z
-  .object({
-    target: locationFsTargetSchema,
-    /** Absolute path under the target base; omit for the default (Local → …/Codebase). */
-    path: z.string().max(4096).optional(),
-    /**
-     * Required when `target=local`: jail is `Projects/{project key}` under the
-     * vault (not the whole Projects tree).
-     */
-    projectId: z.string().min(1).max(128).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.target === "local" && !value.projectId?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "projectId is required for local location browsing",
-        path: ["projectId"],
-      });
-    }
-  });
-
-export const locationFsListResponseSchema = z.object({
-  target: locationFsTargetSchema,
-  base: z.string(),
-  path: z.string(),
-  exists: z.boolean(),
-  writable: z.boolean(),
-  entries: z.array(locationFsEntrySchema),
-});
-
-export const locationFsCreateFolderSchema = z
-  .object({
-    target: locationFsTargetSchema,
-    parent: z.string().min(1).max(4096),
-    name: z
-      .string()
-      .min(1)
-      .max(255)
-      .refine(
-        (value) =>
-          value !== "." &&
-          value !== ".." &&
-          !value.includes("/") &&
-          !value.includes("\\") &&
-          !value.includes("\0"),
-        "Invalid folder name",
-      ),
-    /** Required when `target=local` (same jail as list). */
-    projectId: z.string().min(1).max(128).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.target === "local" && !value.projectId?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "projectId is required for local location folders",
-        path: ["projectId"],
-      });
-    }
-  });
-
-export const locationFsCreateFolderResponseSchema = z.object({
-  target: locationFsTargetSchema,
-  path: z.string(),
-});
-
-export const projectRepoDocEntrySchema = z.object({
-  name: z.string(),
-  /** Relative path from the working directory (`docs/…` or root `AGENTS.md`). */
-  path: z.string(),
-  kind: projectFsEntryKindSchema,
-  /** Root `AGENTS.md` is pinned even though it sits outside `docs/`. */
-  pinned: z.boolean(),
-});
-
-export const projectRepoDocsResponseSchema = z.object({
-  /** True when `{localWorkingDirectory}/docs` exists as a directory. */
-  docsPresent: z.boolean(),
-  entries: z.array(projectRepoDocEntrySchema),
-});
-
-export const projectFsFileSchema = z.object({
-  path: z.string(),
-  name: z.string(),
-  size: z.number().int().nonnegative(),
-  binary: z.boolean(),
-  content: z.string().nullable(),
-});
-
-export const projectFsWriteFileSchema = z.object({
-  path: projectFsRelativePathSchema,
-  content: z.string().max(1_500_000),
-});
-
-export const projectFsCreateEntrySchema = z.object({
-  parent: projectFsRelativePathSchema,
-  name: z
-    .string()
-    .min(1)
-    .max(255)
-    .refine(
-      (value) =>
-        value !== "." &&
-        value !== ".." &&
-        !value.includes("/") &&
-        !value.includes("\\") &&
-        !value.includes("\0"),
-      "Invalid entry name",
-    ),
-  kind: projectFsEntryKindSchema,
-});
-
-export const projectFsCreateEntryResponseSchema = z.object({
-  path: z.string(),
-  name: z.string(),
-  kind: projectFsEntryKindSchema,
-  parent: z.string(),
-});
-
-export const projectFsDeleteEntryResponseSchema = z.object({
-  path: z.string(),
-  name: z.string(),
-  kind: projectFsEntryKindSchema,
-  deleted: z.literal(true),
-});
-
-export const updateProjectSchema = createProjectSchema
-  .partial()
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-/** Link attachment on a task (URL metadata; not blob storage). */
-export const taskLinkSchema = z.object({
-  id: z.string().min(1).max(64),
-  url: z.string().min(1).max(2000),
-  createdAt: z.string().datetime(),
-});
-
-export const linkedCommitShaSchema = z
-  .string()
-  .regex(/^[0-9a-fA-F]{7,64}$/);
-
-/** Optional comment created in the same write as POST/PATCH /tasks (OS-64). */
-export const taskInlineCommentSchema = z.object({
-  body: z.string().min(1).max(20_000),
-});
-
-/** Max images accepted in one JSON create/update/comment request (OS-90). */
-export const MAX_TASK_IMAGES_PER_REQUEST = 5;
-
-/**
- * Base64 image payload for agent/API uploads (OS-90).
- * `data` may be raw base64 or a `data:<mime>;base64,…` URL.
- */
-export const taskImageUploadInputSchema = z.object({
-  data: z.string().min(1),
-  contentType: z.string().max(128).optional(),
-  filename: z.string().max(255).optional(),
-  alt: z.string().max(200).optional(),
-});
-export const taskImagesUploadFieldSchema = z
-  .array(taskImageUploadInputSchema)
-  .max(MAX_TASK_IMAGES_PER_REQUEST);
-
-/** Inline image pasted into a task description or comment (blob fetched on demand). */
-export const taskImageSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  taskId: z.string(),
-  /** Set when the image was uploaded for a comment (OS-90). */
-  commentId: z.string().nullable().optional(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  originalFilename: z.string(),
-  checksum: z.string().nullable(),
-  /** Relative API path for markdown embeds: `/api/v1/tasks/:id/images/:imageId`. */
-  url: z.string(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-export const taskImageParamsSchema = z.object({
-  id: z.string(),
-  imageId: z.string(),
-});
-export const taskImagesResponseSchema = z.object({
-  images: z.array(taskImageSchema),
-});
-
-/** Build the markdown-safe content path for a task image. */
-export function taskImageContentPath(taskId: string, imageId: string): string {
-  return `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`;
-}
-
-/** Parse a relative or absolute task-image content URL. */
-export function parseTaskImageContentPath(
-  src: string,
-): { taskId: string; imageId: string } | null {
-  let path = src.trim();
-  if (!path) return null;
-  try {
-    if (/^https?:\/\//i.test(path)) {
-      path = new URL(path).pathname;
-    }
-  } catch {
-    return null;
-  }
-  const match = path.match(
-    /^\/api\/v1\/tasks\/([^/]+)\/images\/([^/]+)\/?$/,
-  );
-  if (!match?.[1] || !match[2]) return null;
-  return {
-    taskId: decodeURIComponent(match[1]),
-    imageId: decodeURIComponent(match[2]),
-  };
-}
-
-export const taskSchema = z.object({
-  id: z.string(),
-  projectId: z.string().nullable(),
-  contactId: z.string().nullable(),
-  assigneeId: z.string().nullable(),
-  /** Contacts this task is about / for (not the assignee). */
-  relatedContactIds: z.array(z.string()).default([]),
-  /** Organizations this task is about / for (same Related UI field as contacts). */
-  relatedOrganizationIds: z.array(z.string()).default([]),
-  /**
-   * Related email thread ids (`email_threads.id`). Writes also accept display
-   * ids (`E-17`). Unknown/removed threads are kept and do not 500.
-   */
-  linkedEmailIds: z.array(z.string()).default([]),
-  /** Workspace label ids. Managed in Settings; not created from the task dropdown. */
-  labelIds: z.array(z.string()).default([]),
-  number: z.number().int().positive(),
-  /**
-   * Human display key, e.g. PF-41 (INBOX-3 without a project). Set by the
-   * REST API on single-task, create/update and legacy list responses (OS-45).
-   */
-  key: z.string().optional(),
-  /** Project key (e.g. `OS`); null for inbox tasks. Set on REST task rows (OS-64). */
-  projectKey: z.string().nullable().optional(),
-  /** Assignee display name when assigneeId is set (OS-64). */
-  assigneeName: z.string().nullable().optional(),
-  title: z.string(),
-  description: z.string().nullable(),
-  status: taskStatusSchema,
-  priority: z.number().int().min(0).max(4),
-  sortOrder: z.number().int(),
-  dueDate: z.string().datetime().nullable(),
-  /** End of a timed calendar block; null = all-day due date. */
-  dueEndDate: z.string().datetime().nullable().optional(),
-  /**
-   * When to chase an external blocker (`waiting` status). Same shape as
-   * {@link dueDate}. Required when status is `waiting`.
-   */
-  followUpDate: z.string().datetime().nullable().optional(),
-  triagedAt: z.string().datetime().nullable(),
-  inbox: z.boolean(),
-  /**
-   * Client support ticket (portal Support / Communication).
-   * Email threads use `email_threads`, not this flag.
-   */
-  support: z.boolean(),
-  /**
-   * Notification-style task. Same workflow as normal work; UI can present
-   * and filter these differently from project/support tasks.
-   */
-  notification: z.boolean(),
-  links: z.array(taskLinkSchema),
-  /**
-   * Linked BacksterDESIGN (Penpot) file / page / board (docs/19 §7).
-   * Optional; derived from design URLs in `links` when pasted.
-   */
-  penpotFileId: z.string().uuid().nullable().optional(),
-  penpotPageId: z.string().uuid().nullable().optional(),
-  penpotObjectId: z.string().uuid().nullable().optional(),
-  /** Cursor Agent chat id bound to this task, if any. */
-  agentChatId: z.string().nullable(),
-  /**
-   * Override of the project's default execution location (OS-106).
-   * Frozen once the coding thread starts ({@link executionLocationLockedAt}).
-   */
-  executionLocation: executionLocationSchema.nullable().optional(),
-  /** When the execution location was frozen (ISO). Null while still editable. */
-  executionLocationLockedAt: z.string().datetime().nullable().optional(),
-  /**
-   * Agents-API working marker (OS-96). Contact id of the agent persona currently
-   * working this task. Orthogonal to {@link agentChatId} (coding session).
-   */
-  agentWorkingContactId: z.string().nullable().optional(),
-  /** When the agent working marker was set (ISO). Null when cleared. */
-  agentWorkingStartedAt: z.string().datetime().nullable().optional(),
-  /** Optional chat link / label for the working marker. */
-  agentWorkingLabel: z.string().nullable().optional(),
-  /** `working` (default) or `reviewing` while the task is in review (OS-96). */
-  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
-  /** Display name for {@link agentWorkingContactId} when set (OS-96). */
-  agentWorkingContactName: z.string().nullable().optional(),
-  /**
-   * GitHub commit SHAs for this task’s change records (desktop Diff view).
-   * Empty when none are linked.
-   */
-  linkedCommitShas: z.array(z.string()).default([]),
-  /**
-   * When true, an `in_review` transition enqueues Sander's auto-review webhook
-   * (OS-92). Default false.
-   */
-  automateCompletion: z.boolean().default(false),
-  /** Latest auto-review delivery for this task (`pending` | `delivered` | `failed`). */
-  autoReviewDeliveryStatus: z
-    .enum(["pending", "delivered", "failed"])
-    .nullable()
-    .optional(),
-  /** Habit definition this daily instance belongs to, if any. */
-  habitId: z.string().nullable().optional(),
-  completedAt: z.string().datetime().nullable(),
-  /** Set when created via API key or agent actor. */
-  agentCreatedAt: z.string().datetime().nullable().optional(),
-  /** User sign-off timestamp; clears Agents inbox subgroup. */
-  agentInboxApprovedAt: z.string().datetime().nullable().optional(),
-  /** Manual / timer tracked duration (whole minutes; legacy). */
-  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-  /** Manual / timer tracked duration (whole seconds). */
-  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /** External update flag — surfaces in the Updated inbox group. */
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
-});
-
-/**
- * Compact task row for paginated GET /tasks (OS-28).
- * Enough for an agent to decide relevance without a second fetch.
- */
-export const taskListItemSchema = z.object({
-  id: z.string(),
-  /** Human key, e.g. OS-28 or INBOX-3. */
-  key: z.string(),
-  title: z.string(),
-  status: taskStatusSchema,
-  /** 0 = none, 1 = urgent … 4 = low (same scale as Task.priority). */
-  priority: z.number().int().min(0).max(4),
-  assigneeId: z.string().nullable(),
-  /** Assignee display name when assigneeId is set (OS-64). */
-  assigneeName: z.string().nullable().optional(),
-  projectId: z.string().nullable(),
-  /** Project key (e.g. `OS`); null for inbox tasks (OS-64). */
-  projectKey: z.string().nullable().optional(),
-  dueDate: z.string().datetime().nullable(),
-  /** Chase date while status is `waiting` (same shape as dueDate). */
-  followUpDate: z.string().datetime().nullable().optional(),
-  linkedDocumentIds: z.array(z.string()),
-  linkedContactIds: z.array(z.string()),
-  linkedTaskIds: z.array(z.string()),
-  linkedEmailIds: z.array(z.string()),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  /** Only with `updatedSince`: set when the task was deleted. */
-  deletedAt: z.string().datetime().nullable().optional(),
-  /** When true, in_review enqueues Sander's auto-review webhook (OS-92). */
-  automateCompletion: z.boolean().optional(),
-  /** Agents-API working marker contact id (OS-96). */
-  agentWorkingContactId: z.string().nullable().optional(),
-  agentWorkingStartedAt: z.string().datetime().nullable().optional(),
-  agentWorkingLabel: z.string().nullable().optional(),
-  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
-  agentWorkingContactName: z.string().nullable().optional(),
-});
-
-/**
- * Query for GET /tasks. Without `paginated=true` (or a `cursor`) the response
- * is the legacy `{ tasks }` shape and paginated-only params (limit, sort,
- * dueDate, linked*, updatedSince, includeTotalCount) are ignored (OS-45).
- * With `paginated=true` the response is `{ items, nextCursor }`.
- */
-export const listTasksQuerySchema = z.object({
-  /** Project id or key (e.g. `OS`). Unknown values → 400 in paginated mode. */
-  projectId: z.string().optional(),
-  /** Explicit project key alias (same resolution as projectId). */
-  projectKey: z.string().optional(),
-  /** Contact id or key. Unknown → 400 when paginated. */
-  contactId: z.string().optional(),
-  /** Assignee contact id or key. Unknown → 400 when paginated. */
-  assigneeId: z.string().optional(),
-  /** Related contact id or key. Unknown → 400 when paginated. */
-  relatedContactId: z.string().optional(),
-  /** Related organization id or key. Unknown → 400 when paginated. */
-  relatedOrganizationId: z.string().optional(),
-  /**
-   * Comma-separated statuses, or `all` for every known status (OS-57).
-   * Paginated mode without `status` (and without `updatedSince`) excludes
-   * completed/canceled/duplicated by default — see `appliedDefaults`.
-   */
-  status: z.string().optional(),
-  inbox: z.coerce.boolean().optional(),
-  support: z.coerce.boolean().optional(),
-  notification: z.coerce.boolean().optional(),
-  /**
-   * Range: `before:<date>`, `after:<date>`, or `between:<start>,<end>`
-   * (ISO datetime or YYYY-MM-DD). Opt-in to paginated response.
-   */
-  dueDate: z.string().optional(),
-  /**
-   * Same range syntax as {@link dueDate}, applied to `followUpDate`.
-   * Useful with `status=waiting` to find chase-due tasks
-   * (e.g. `followUpDate=before:2026-10-23`).
-   */
-  followUpDate: z.string().optional(),
-  /** Document id or comma-separated list (bidirectional via front-matter linkedTasks). */
-  linkedDocuments: z.string().optional(),
-  /** Task id or key (OS-28) or a comma list — co-linked tasks via shared documents. */
-  linkedTasks: z.string().optional(),
-  /** Email thread id or display id (`E-17`), or a comma list. */
-  linkedEmails: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-  /** Only `dueDate` is supported today (default). */
-  sort: z.literal("dueDate").optional(),
-  /** When true, response includes `totalCount` (and `excludedCount` when defaults apply). */
-  includeTotalCount: z.coerce.boolean().optional(),
-  /** Opt in to paginated `{ items, nextCursor }` (the only switch besides cursor). */
-  paginated: z.coerce.boolean().optional(),
-  /**
-   * Change feed (paginated only): tasks with updatedAt >= this ISO instant,
-   * including soft-deleted ones (`deletedAt` set) and, unless `status` is
-   * given, all statuses.
-   */
-  updatedSince: z.string().optional(),
-});
-
-export const listTasksLegacyResponseSchema = z.object({
-  tasks: z.array(taskSchema),
-});
-
-export const listTasksPaginatedResponseSchema = z.object({
-  items: z.array(taskListItemSchema),
-  nextCursor: z.string().nullable(),
-  totalCount: z.number().int().nonnegative().optional(),
-  /**
-   * With `includeTotalCount` when the default status exclusion applied:
-   * how many matching tasks were hidden (completed/canceled/duplicated).
-   */
-  excludedCount: z.number().int().nonnegative().optional(),
-  /**
-   * Present when paginated list hid terminal statuses by default (OS-57).
-   * Absent when `status` or `updatedSince` was given.
-   */
-  appliedDefaults: z
-    .object({
-      excludedStatuses: z.array(z.string()).min(1),
-    })
-    .optional(),
-});
-
-export const listTasksResponseSchema = z.union([
+  FINANCIAL_IMPORT_DIALECTS,
+  FINANCIAL_AMOUNT_SIGNS,
+  taskStatusSchema,
+  projectStatusSchema,
+  projectTypeSchema,
+  projectProviderSchema,
+  projectEmailCategorySchema,
+  documentTypeSchema,
+  apiKeyScopeSchema,
+  bankAccountInstitutionSchema,
+  bankAccountTypeSchema,
+  financialCategoryKindSchema,
+  financialCategoryListingSchema,
+  financialGoalListingSchema,
+  financialGoalSavingModeSchema,
+  financialImportDialectSchema,
+  financialAmountSignSchema,
+  githubRepositoryNameSchema,
+  errorSchema,
+  validationIssueSchema,
+  validationErrorSchema,
+  badRequestSchema,
+  buildVersionSchema,
+  healthSchema,
+  apiKeySchema,
+  revealApiKeySecretResponseSchema,
+  createApiKeySchema,
+  updateApiKeySchema,
+  createApiKeyResponseSchema,
+  apiKeyAuditLogActionSchema,
+  apiKeyAuditLogSchema,
+  listApiKeyAuditLogsQuerySchema,
+  apiKeyRequestLogSchema,
+  listApiKeyRequestLogsQuerySchema,
+  DOCUMENT_LIST_MAX_LIMIT,
+  LIST_DEFAULT_LIMIT,
+  LIST_MAX_LIMIT,
+  DOCUMENTS_DEFAULT_LIMIT,
+  listPaginationQuerySchema,
+  listProjectsQuerySchema,
+  listMeetingsQuerySchema,
+  listOrganizationsQuerySchema,
+  listContactsQuerySchema,
+  listLettersQuerySchema,
+  listEmailMessagesQuerySchema,
+  listDueTasksQuerySchema,
+  globalSearchQuerySchema,
+  listPaginatedResponseSchema,
+  listDocumentsQuerySchema,
+  idParamsSchema,
+  syncEntitySchema,
+  syncOperationSchema,
+  syncChangeSchema,
+  syncPushSchema,
+  syncBootstrapSchema,
+  syncPullSchema,
+  syncPushResponseSchema,
+  powerSyncCredentialsSchema,
+  powerSyncWriteSchema,
+  okSchema,
+} from "./schemas/common.js";
+export type {
+  ApiKey,
+  ApiKeyAuditLog,
+  ApiKeyAuditLogAction,
+  ApiKeyRequestLog,
+  CreateApiKeyInput,
+  UpdateApiKeyInput,
+  CreateApiKeyResponse,
+  RevealApiKeySecretResponse,
+  ApiKeyScope,
+  TvTodayCountStatus,
+  TvTodayCounts,
+  DocumentType,
+  BankAccountInstitution,
+  BankAccountType,
+  FinancialCategoryKind,
+  FinancialCategoryListing,
+  FinancialGoalListing,
+  FinancialGoalSavingMode,
+  FinancialImportDialect,
+  FinancialAmountSign,
+  PowerSyncCredentials,
+  PowerSyncWriteInput,
+} from "./schemas/common.js";
+export {
+  projectKeySchema,
+  projectSchema,
+  EXECUTION_LOCATIONS,
+  executionLocationSchema,
+  createProjectSchema,
+  githubRepositorySchema,
+  githubBranchSchema,
+  githubCommitSchema,
+  githubPullRequestStateSchema,
+  githubPullRequestSchema,
+  githubPullRequestFileStatusSchema,
+  githubPullRequestFileSchema,
+  GITHUB_INTEGRATION_SCOPES,
+  githubOrganizationSchema,
+  githubConnectionStatusSchema,
+  projectFsRelativePathSchema,
+  projectFsEntryKindSchema,
+  projectFsEntrySchema,
+  projectFsListEntriesResponseSchema,
+  locationFsTargetSchema,
+  locationFsEntrySchema,
+  locationFsListQuerySchema,
+  locationFsListResponseSchema,
+  locationFsCreateFolderSchema,
+  locationFsCreateFolderResponseSchema,
+  projectRepoDocEntrySchema,
+  projectRepoDocsResponseSchema,
+  projectFsFileSchema,
+  projectFsWriteFileSchema,
+  projectFsCreateEntrySchema,
+  projectFsCreateEntryResponseSchema,
+  projectFsDeleteEntryResponseSchema,
+  updateProjectSchema,
+  taskLinkSchema,
+  linkedCommitShaSchema,
+  taskInlineCommentSchema,
+  MAX_TASK_IMAGES_PER_REQUEST,
+  taskImageUploadInputSchema,
+  taskImagesUploadFieldSchema,
+  taskImageSchema,
+  taskImageParamsSchema,
+  taskImagesResponseSchema,
+  taskImageContentPath,
+  parseTaskImageContentPath,
+  taskSchema,
+  taskListItemSchema,
+  listTasksQuerySchema,
   listTasksLegacyResponseSchema,
   listTasksPaginatedResponseSchema,
-]);
-
-const createTaskFieldsSchema = z.object({
-  /** Client-generated id for offline-first / PowerSync dual-write creates. */
-  id: z.string().min(1).max(64).optional(),
-  /** Project id or key. Prefer {@link projectKey} when you only know the key. */
-  projectId: z.string().nullable().optional(),
-  /** Project key alias (e.g. `OS`); resolved server-side (OS-64). */
-  projectKey: z.string().min(1).max(64).optional(),
-  /** Contact id or key. */
-  contactId: z.string().nullable().optional(),
-  /** Assignee contact id or key. */
-  assigneeId: z.string().nullable().optional(),
-  /** Related contact ids or keys. */
-  relatedContactIds: z.array(z.string()).optional(),
-  /** Related organization ids or keys. */
-  relatedOrganizationIds: z.array(z.string()).optional(),
-  /** Related email thread ids or display ids (`E-17`). Unknown ids are kept. */
-  linkedEmailIds: z.array(z.string()).optional(),
-  labelIds: z.array(z.string().min(1).max(64)).max(32).optional(),
-  title: z.string().min(1).max(500),
-  description: z.string().max(10000).nullable().optional(),
-  status: taskStatusSchema.optional(),
-  priority: z.number().int().min(0).max(4).optional(),
-  sortOrder: z.number().int().optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-  /** End of a timed calendar block; null = all-day due date. */
-  dueEndDate: z.string().datetime().nullable().optional(),
-  /**
-   * Chase date for external blockers. Required when status is `waiting`
-   * (create, or update that moves into / stays in waiting without an
-   * existing follow-up). Prefer a comment naming who/what you wait on.
-   */
-  followUpDate: z.string().datetime().nullable().optional(),
-  triagedAt: z.string().datetime().nullable().optional(),
-  inbox: z.boolean().optional(),
-  /** Mark as a client support ticket (defaults false). */
-  support: z.boolean().optional(),
-  /** Mark as a notification-style task (defaults false). */
-  notification: z.boolean().optional(),
-  links: z.array(taskLinkSchema).max(20).optional(),
-  penpotFileId: z.string().uuid().nullable().optional(),
-  penpotPageId: z.string().uuid().nullable().optional(),
-  penpotObjectId: z.string().uuid().nullable().optional(),
-  agentChatId: z.string().max(128).nullable().optional(),
-  /**
-   * Override the project's default execution location at create time (OS-106).
-   * Once the coding thread starts it is frozen and further changes are rejected.
-   */
-  executionLocation: executionLocationSchema.nullable().optional(),
-  /**
-   * Freeze the execution location (set by BacksterDEV / control API when the
-   * thread starts). Cannot unlock once set.
-   */
-  lockExecutionLocation: z.boolean().optional(),
-  /**
-   * Mark / clear agents-API working (OS-96). Pass a contact id to claim, or
-   * `null` to clear. Server sets `agentWorkingStartedAt`. Agent API keys may
-   * only set their own contact (unless owner).
-   */
-  agentWorkingContactId: z.string().min(1).max(64).nullable().optional(),
-  /** Optional chat link / label with the working marker (cleared when marker clears). */
-  agentWorkingLabel: z.string().max(256).nullable().optional(),
-  /**
-   * Marker kind (OS-96): `working` (default) or `reviewing`. Reviewing markers
-   * may be set while status is `in_review` and persist until the task leaves
-   * that status (or the agent clears the marker).
-   */
-  agentWorkingKind: z.enum(["working", "reviewing"]).nullable().optional(),
-  /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
-  linkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
-  /** Enqueue auto-review when this task later moves to in_review (OS-92). */
-  automateCompletion: z.boolean().optional(),
-  habitId: z.string().nullable().optional(),
-  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /** Replicated from sync; when set, do not invent from actor/api_key. */
-  agentCreatedAt: z.string().datetime().nullable().optional(),
-  /** Replicated from sync on create. */
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  /**
-   * Who should be attributed on activity rows for this write.
-   * `agent` also flags the task for the Agents inbox subgroup.
-   */
-  activityActor: z.enum(["user", "agent"]).optional(),
-  /**
-   * Create a comment in the same transaction (OS-64). Returned on the task as
-   * `comment`.
-   */
-  comment: taskInlineCommentSchema.optional(),
-  /**
-   * Upload images and append `![alt](url)` to the description (OS-90).
-   * Same storage as `POST /tasks/:id/images`.
-   */
-  images: taskImagesUploadFieldSchema.optional(),
-});
-
-export const createTaskSchema = createTaskFieldsSchema.refine(
-  (value) =>
-    value.status !== "waiting" ||
-    (typeof value.followUpDate === "string" && value.followUpDate.length > 0),
-  {
-    message: "followUpDate is required when status is waiting",
-    path: ["followUpDate"],
-  },
-);
-
-export const updateTaskSchema = createTaskFieldsSchema
-  .partial()
-  .extend({
-    /** Clerk-only sign-off — removes task from Agents inbox subgroup. */
-    agentInboxApproved: z.boolean().optional(),
-    /** Replicated from client sync; prefer {@link agentInboxApproved} on REST. */
-    agentInboxApprovedAt: z.string().datetime().nullable().optional(),
-    /** Clear the Updated inbox flag after the user views the item. */
-    acknowledgeInboxUpdate: z.boolean().optional(),
-    inboxUpdatedAt: z.string().datetime().nullable().optional(),
-    /**
-     * Append commit SHAs (deduped, case-insensitive). Prefer this over replacing
-     * `linkedCommitShas` so concurrent agents do not overwrite each other (OS-64).
-     */
-    addLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
-    /** Remove commit SHAs (case-insensitive match) (OS-64). */
-    removeLinkedCommitShas: z.array(linkedCommitShaSchema).max(20).optional(),
-    /** Replicated auto-review delivery state (OS-92). */
-    autoReviewDeliveryStatus: z
-      .enum(["pending", "delivered", "failed"])
-      .nullable()
-      .optional(),
-    /** Replicated freeze timestamp for execution location (OS-106). */
-    executionLocationLockedAt: z.string().datetime().nullable().optional(),
-  })
-  .refine(
-    (value) =>
-      Object.keys(value).filter(
-        (key) =>
-          key !== "activityActor" &&
-          key !== "agentInboxApproved" &&
-          key !== "acknowledgeInboxUpdate",
-      ).length > 0 ||
-      value.agentInboxApproved === true ||
-      value.acknowledgeInboxUpdate === true,
-    {
-      message: "At least one field is required",
-    },
-  );
-
-/**
- * Whether a waiting task still has a chase date after applying a patch.
- * Used by the API when status stays `waiting` and followUpDate is cleared.
- */
-export function taskPatchKeepsWaitingFollowUp(input: {
-  currentStatus: string;
-  currentFollowUpDate: string | null | undefined;
-  nextStatus?: string | null;
-  nextFollowUpDate?: string | null;
-}): boolean {
-  const nextStatus = input.nextStatus ?? input.currentStatus;
-  if (nextStatus !== "waiting") return true;
-  if (input.nextFollowUpDate !== undefined) {
-    return (
-      typeof input.nextFollowUpDate === "string" &&
-      input.nextFollowUpDate.length > 0
-    );
-  }
-  return (
-    typeof input.currentFollowUpDate === "string" &&
-    input.currentFollowUpDate.length > 0
-  );
-}
-
-export const taskCommentSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  parentCommentId: z.string().nullable(),
-  authorUserId: z.string().nullable(),
-  authorContactId: z.string().nullable(),
-  authorEmail: z.string().nullable(),
-  /** Display name: user profile name when available, else email local-part. */
-  authorName: z.string(),
-  body: z.string(),
-  /** Set when a root comment thread is resolved. */
-  resolvedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
-  /** Images linked to this comment (OS-90). */
-  images: z.array(taskImageSchema).optional(),
-});
-
-/**
- * REST task shape including optional inline comment fields (OS-64).
- * `comment` = created in the same POST/PATCH; `comments` = GET ?include=comments.
- * `images` = task description images (OS-90).
- */
-export const taskApiSchema = taskSchema.extend({
-  comment: taskCommentSchema.optional(),
-  comments: z.array(taskCommentSchema).optional(),
-  images: z.array(taskImageSchema).optional(),
-});
-
-export const createTaskCommentSchema = z.object({
-  body: z.string().min(1).max(20_000),
-  parentCommentId: z.string().nullable().optional(),
-  /**
-   * Who should be attributed as the comment author.
-   * `agent` stores a null author user so the UI shows "Agent".
-   */
-  activityActor: z.enum(["user", "agent"]).optional(),
-  /**
-   * Optional contact to attribute as author (API-key callers only, e.g. client portal
-   * or BacksterDEV agent contact profile). Takes precedence over `activityActor: "agent"`.
-   * Ignored for session/user auth.
-   */
-  authorContactId: z.string().nullable().optional(),
-  /**
-   * Upload images and append `![alt](url)` to the comment body (OS-90).
-   */
-  images: taskImagesUploadFieldSchema.optional(),
-});
-
-export const updateTaskCommentSchema = z
-  .object({
-    body: z.string().min(1).max(20_000).optional(),
-    /** Pass an ISO timestamp to resolve, or null to unresolve. Only for root comments. */
-    resolvedAt: z.string().datetime().nullable().optional(),
-    /**
-     * Upload images and append `![alt](url)` to the comment body (OS-90).
-     */
-    images: taskImagesUploadFieldSchema.optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-export const taskActivityTypeSchema = z.enum([
-  "created",
-  "status_changed",
-  "assignee_changed",
-  "related_contacts_changed",
-  "related_organizations_changed",
-  "priority_changed",
-  "due_date_changed",
-  "project_changed",
-  "agent_worked",
-  "timer_started",
-  "timer_stopped",
-  "automate_completion_changed",
-  "auto_review_requested",
-  /** Discussion body — first-class in the unified activities stream. */
-  "comment",
-]);
-
-export const agentWorkedActivityDataSchema = z.object({
-  durationMs: z.number().int().nonnegative(),
-  inputTokens: z.number().int().nonnegative().nullable().optional(),
-  outputTokens: z.number().int().nonnegative().nullable().optional(),
-  cacheReadTokens: z.number().int().nonnegative().nullable().optional(),
-  cacheWriteTokens: z.number().int().nonnegative().nullable().optional(),
-  totalTokens: z.number().int().nonnegative().nullable().optional(),
-  chatId: z.string().nullable().optional(),
-  status: z.string().nullable().optional(),
-});
-
-export const timerStartedActivityDataSchema = z.object({}).passthrough();
-
-export const timerStoppedActivityDataSchema = z.object({
-  durationSeconds: z.number().int().nonnegative(),
-});
-
-export const createTaskActivitySchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("agent_worked"),
-    data: agentWorkedActivityDataSchema,
-  }),
-  z.object({
-    type: z.literal("timer_started"),
-    data: timerStartedActivityDataSchema.optional().default({}),
-  }),
-  z.object({
-    type: z.literal("timer_stopped"),
-    data: timerStoppedActivityDataSchema,
-  }),
-]);
-
-/** Reassign the contact on a timer session (start + stop pair). */
-export const updateTaskTimerSessionActorSchema = z.object({
-  actorContactId: z.string().min(1),
-});
-
-export const taskActivitySchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  type: taskActivityTypeSchema,
-  actorUserId: z.string().nullable(),
-  actorContactId: z.string().nullable(),
-  actorEmail: z.string().nullable(),
-  actorName: z.string(),
-  data: z.record(z.unknown()),
-  /** Set when type = comment. */
-  body: z.string().nullable().optional(),
-  /** Comment reply parent when type = comment. */
-  parentId: z.string().nullable().optional(),
-  /** Root comment resolve timestamp when type = comment. */
-  resolvedAt: z.string().datetime().nullable().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime().optional(),
-  deletedAt: z.string().datetime().nullable().optional(),
-  /** Present when listing by project (joined from tasks). */
-  projectId: z.string().nullable().optional(),
-  /** Present on project-scoped lists (joined from tasks). */
-  taskNumber: z.number().int().nullable().optional(),
-  taskTitle: z.string().nullable().optional(),
-});
-
-/**
- * Unified workspace activity feed — one collectable stream, dialed by filters.
- * Prefer this over per-task /activities and /comments for new clients.
- */
-export const listActivitiesQuerySchema = z
-  .object({
-    /** Activities for a single task (comments + system events). */
-    taskId: z.string().min(1).optional(),
-    /** All task activities under a project (joined via tasks.project_id). */
-    projectId: z.string().min(1).optional(),
-    /**
-     * Comma-separated activity types to include.
-     * Omit for all types. Example: `comment,status_changed`.
-     */
-    types: z.string().optional(),
-    /**
-     * When true, include soft-deleted comment rows (default false).
-     * System event rows are never soft-deleted today.
-     */
-    includeDeleted: z
-      .union([z.literal("true"), z.literal("false"), z.boolean()])
-      .optional()
-      .transform((value) => value === true || value === "true"),
-    limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-    /** Opaque cursor from a previous page (`createdAt|id`). */
-    cursor: z.string().optional(),
-  })
-  .refine((value) => Boolean(value.taskId) || Boolean(value.projectId), {
-    message: "taskId or projectId is required",
-  });
-
-export const listActivitiesResponseSchema = z.object({
-  activities: z.array(taskActivitySchema),
-  nextCursor: z.string().nullable(),
-});
-
-/**
- * Live “agent is working on this task” presence — orthogonal to workflow
- * `status`. Clients heartbeat while a turn is running; rows expire by TTL.
- */
-export const taskAgentPresenceSourceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(64)
-  .default("unknown");
-
-export const upsertTaskAgentPresenceSchema = z.object({
-  source: taskAgentPresenceSourceSchema.optional(),
-  sessionId: z.string().trim().min(1).max(128).nullable().optional(),
-});
-
-export const taskAgentPresenceSchema = z.object({
-  taskId: z.string(),
-  source: z.string(),
-  sessionId: z.string().nullable(),
-  startedAt: z.string().datetime(),
-  lastHeartbeatAt: z.string().datetime(),
-});
-
-export const listTaskAgentPresenceQuerySchema = z.object({
-  projectId: z.string().min(1).optional(),
-});
-
-export const apiKeySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  prefix: z.string(),
-  scopes: z.array(apiKeyScopeSchema),
-  contactId: z.string().nullable(),
-  expiresAt: z.string().datetime().nullable(),
-  lastUsedAt: z.string().datetime().nullable(),
-  lastUsedAddress: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  revokedAt: z.string().datetime().nullable(),
-  /** True when the full secret is stored encrypted and can be revealed for copy. */
-  hasRecoverableSecret: z.boolean(),
-});
-
-export const revealApiKeySecretResponseSchema = z.object({
-  secret: z.string(),
-});
-
-export const createApiKeySchema = z.object({
-  name: z.string().min(1).max(128),
-  scopes: z.array(apiKeyScopeSchema).min(1),
-  contactId: z.string().nullable().optional(),
-  /** Optional expiry; omit or null for no expiry. */
-  expiresAt: z.string().datetime().nullable().optional(),
-});
-
-export const updateApiKeySchema = z
-  .object({
-    name: z.string().min(1).max(128).optional(),
-    contactId: z.string().nullable().optional(),
-    expiresAt: z.string().datetime().nullable().optional(),
-  })
-  .refine(
-    (value) =>
-      value.name !== undefined ||
-      value.contactId !== undefined ||
-      value.expiresAt !== undefined,
-    {
-      message: "At least one field is required",
-    },
-  );
-
-export const createApiKeyResponseSchema = z.object({
-  apiKey: apiKeySchema,
-  secret: z.string(),
-});
-
-export const apiKeyAuditLogActionSchema = z.enum([
-  "created",
-  "revoked",
-  "rotated",
-  /** expiresAt cleared, set, extended, or otherwise changed (includes revive). */
-  "expiry_updated",
-]);
-
-export const apiKeyAuditLogSchema = z.object({
-  id: z.string(),
-  apiKeyId: z.string().nullable(),
-  apiKeyName: z.string(),
-  action: apiKeyAuditLogActionSchema,
-  actorUserId: z.string().nullable(),
-  actorKind: z.string().nullable(),
-  actorApiKeyId: z.string().nullable(),
-  address: z.string().nullable(),
-  createdAt: z.string().datetime(),
-});
-
-export const listApiKeyAuditLogsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-});
-
-export const apiKeyRequestLogSchema = z.object({
-  id: z.string(),
-  apiKeyId: z.string().nullable(),
-  apiKeyName: z.string(),
-  method: z.string(),
-  path: z.string(),
-  status: z.number().int(),
-  address: z.string().nullable(),
-  createdAt: z.string().datetime(),
-});
-
-export const listApiKeyRequestLogsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-});
-
-const documentPathSchema = z
-  .string()
-  .min(1)
-  .max(512)
-  .regex(
-    /^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/,
-    "Use letters, numbers, slashes, dots, hyphens, underscores",
-  );
-
-export const documentSchema = z.object({
-  id: z.string(),
-  type: documentTypeSchema,
-  projectId: z.string().nullable(),
-  parentId: z.string().nullable(),
-  kind: z.enum(["document", "folder"]),
-  icon: z.string().nullable(),
-  sortOrder: z.number().int(),
-  journalDate: z.string().nullable(),
-  path: z.string(),
-  title: z.string(),
-  storageKey: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string().nullable(),
-  snippet: z.string().nullable(),
-  contentVersion: z.number().int().positive(),
-  contentEtag: z.string().nullable(),
-  publishStatus: z.enum(["concept", "published", "offline"]).default("concept"),
-  publishSlug: z.string().nullable().optional(),
-  seoTitle: z.string().nullable().optional(),
-  seoDescription: z.string().nullable().optional(),
-  audience: z.enum(["group", "individual"]).default("group"),
-  contactIds: z.array(z.string()).nullable().optional(),
-  placementFolderId: z.string().nullable().optional(),
-  coverStorageKey: z.string().nullable().optional(),
-  coverContentType: z.string().nullable().optional(),
-  /** Manual / timer tracked duration (whole minutes; legacy). */
-  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-  /** Manual / timer tracked duration (whole seconds). */
-  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /** Last time tracked duration was set (time-report grouping stamp). */
-  lastTrackedAt: z.string().datetime().nullable().optional(),
-  docKey: z.string().nullable().optional(),
-  properties: z.record(z.unknown()).optional(),
-  frontMatterValid: z.boolean().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
-});
-
-export const createDocumentSchema = z
-  .object({
-    type: documentTypeSchema,
-    projectId: z.string().optional(),
-    parentId: z.string().optional(),
-    kind: z.enum(["document", "folder"]).optional(),
-    icon: z.string().max(128).optional(),
-    sortOrder: z.number().int().optional(),
-    journalDate: z.string().date().optional(),
-    path: documentPathSchema,
-    title: z.string().min(1).max(500),
-    content: z.string().max(5_000_000).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.type === "project" && !value.projectId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "projectId is required for project documents",
-        path: ["projectId"],
-      });
-    }
-    if (value.type !== "project" && value.projectId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "projectId is only allowed for project documents",
-        path: ["projectId"],
-      });
-    }
-  });
-
-export const updateDocumentSchema = z
-  .object({
-    title: z.string().min(1).max(500).optional(),
-    path: documentPathSchema.optional(),
-    parentId: z.string().nullable().optional(),
-    icon: z.string().nullable().optional(),
-    sortOrder: z.number().int().optional(),
-    journalDate: z.string().date().nullable().optional(),
-    publishStatus: z.enum(["concept", "published", "offline"]).optional(),
-    publishSlug: z.string().max(500).nullable().optional(),
-    seoTitle: z.string().max(500).nullable().optional(),
-    seoDescription: z.string().max(5000).nullable().optional(),
-    audience: z.enum(["group", "individual"]).optional(),
-    contactIds: z.array(z.string()).nullable().optional(),
-    placementFolderId: z.string().nullable().optional(),
-    trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-    trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-    lastTrackedAt: z.string().datetime().nullable().optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-export const documentContentSchema = z.object({
-  content: z.string(),
-  contentType: z.string(),
-  contentVersion: z.number().int().positive(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string().nullable(),
-  updatedAt: z.string().datetime(),
-});
-
-export const updateDocumentContentSchema = z.object({
-  content: z.string().max(5_000_000),
-  ifMatchVersion: z.number().int().positive().optional(),
-});
-
-export const documentPropertiesResponseSchema = z.object({
-  docKey: z.string().nullable(),
-  properties: z.record(z.unknown()),
-  frontMatterValid: z.boolean(),
-  contentVersion: z.number().int().positive(),
-});
-
-export const putDocumentPropertiesSchema = z
-  .object({
-    properties: z.record(z.unknown()),
-    ifMatchVersion: z.number().int().positive().optional(),
-  })
-  .refine((value) => Object.keys(value.properties).length > 0, {
-    message: "At least one property is required",
-  });
-
-export const putDocumentPropertiesResponseSchema =
-  documentPropertiesResponseSchema.extend({
-    contentVersion: z.number().int().positive(),
-  });
-
-export const documentPropertyTypeKindSchema = z.enum(
-  DOCUMENT_PROPERTY_TYPE_KINDS,
-);
-
-export const documentPropertyTypeStatusSchema = z.enum(
-  DOCUMENT_PROPERTY_TYPE_STATUSES,
-);
-
-export const documentPropertyTypeOptionSchema = z.object({
-  value: z.string().trim().min(1).max(80),
-  label: z.string().trim().min(1).max(80),
-});
-
-export const documentPropertyTypeSchema = z.object({
-  id: z.string(),
-  key: z.string(),
-  label: z.string(),
-  kind: documentPropertyTypeKindSchema,
-  options: z.array(documentPropertyTypeOptionSchema),
-  multiple: z.boolean(),
-  projectId: z.string().nullable(),
-  status: documentPropertyTypeStatusSchema,
-  seeded: z.boolean(),
-  proposedByContactId: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-const documentPropertyTypeKeySchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(64)
-  .regex(DOCUMENT_PROPERTY_TYPE_KEY_PATTERN, "key must be English camelCase");
-
-export const createDocumentPropertyTypeSchema = z.object({
-  key: documentPropertyTypeKeySchema,
-  label: z.string().trim().min(1).max(80),
-  kind: documentPropertyTypeKindSchema,
-  options: z.array(documentPropertyTypeOptionSchema).max(100).optional(),
-  multiple: z.boolean().optional(),
-  projectId: z.string().min(1).nullable().optional(),
-});
-
-export const updateDocumentPropertyTypeSchema = z
-  .object({
-    key: documentPropertyTypeKeySchema.optional(),
-    label: z.string().trim().min(1).max(80).optional(),
-    kind: documentPropertyTypeKindSchema.optional(),
-    options: z.array(documentPropertyTypeOptionSchema).max(100).optional(),
-    multiple: z.boolean().optional(),
-    projectId: z.string().min(1).nullable().optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-export const listDocumentPropertyTypesQuerySchema = z.object({
-  status: documentPropertyTypeStatusSchema.optional(),
-  projectId: z.string().optional(),
-});
-
-export const listDocumentPropertyTypesResponseSchema = z.object({
-  types: z.array(documentPropertyTypeSchema),
-});
-
-/** Comma-separated or repeated multi-value query string. */
-export const multiValueQuerySchema = z.string().min(1).optional();
-
-export const documentSectionResponseSchema = z.object({
-  heading: z.string(),
-  headingPath: z.array(z.string()),
-  slug: z.string(),
-  text: z.string(),
-  contentVersion: z.number().int().positive(),
-});
-
-export const updateDocumentSectionSchema = z.object({
-  heading: z.string().min(1).max(500),
-  body: z.string().max(5_000_000),
-  ifMatchVersion: z.number().int().positive().optional(),
-});
-
-export const documentRetrievalHitSchema = z.object({
-  documentId: z.string(),
-  docKey: z.string().nullable(),
-  title: z.string(),
-  heading: z.string(),
-  headingPath: z.array(z.string()),
-  slug: z.string(),
-  text: z.string(),
-  score: z.number(),
-});
-
-export const documentRetrievalResponseSchema = z.object({
-  results: z.array(documentRetrievalHitSchema),
-  budget: z.number().int().positive(),
-  truncated: z.boolean(),
-});
-
-export const documentRetrievalQuerySchema = z.object({
-  q: z.string().min(1).max(2000),
-  /** Semantic property type (comma-separated or repeated). */
-  type: multiValueQuerySchema,
-  audience: multiValueQuerySchema,
-  status: multiValueQuerySchema,
-  /** Project key from the properties index. */
-  project: multiValueQuerySchema,
-  budget: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().positive().max(100).optional(),
-});
-
-/** Max page size for GET /api/v1/documents (same band as activities / ops logs). */
-export const DOCUMENT_LIST_MAX_LIMIT = 200;
-
-/** Shared list pagination (OS-59) — opt in with `paginated=true` or `cursor`. */
-export const LIST_DEFAULT_LIMIT = 50;
-export const LIST_MAX_LIMIT = 200;
-export const DOCUMENTS_DEFAULT_LIMIT = 100;
-
-export const listPaginationQuerySchema = z.object({
-  paginated: z.coerce.boolean().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(LIST_MAX_LIMIT).optional(),
-  updatedSince: z.string().optional(),
-});
-
-export const listProjectsQuerySchema = listPaginationQuerySchema.extend({
-  organizationId: z.string().optional(),
-  area: z.string().optional(),
-  status: z.string().optional(),
-  type: z.string().optional(),
-});
-
-export const listMeetingsQuerySchema = listPaginationQuerySchema.extend({
-  projectId: z.string().optional(),
-  organizationId: z.string().optional(),
-  contactId: z.string().optional(),
-  status: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  q: z.string().optional(),
-});
-
-export const listOrganizationsQuerySchema = listPaginationQuerySchema.extend({
-  q: z.string().optional(),
-  search: z.string().optional(),
-});
-
-export const listContactsQuerySchema = listPaginationQuerySchema.extend({
-  organizationId: z.string().optional(),
-  q: z.string().optional(),
-  search: z.string().optional(),
-});
-
-export const listLettersQuerySchema = listPaginationQuerySchema.extend({
-  projectId: z.string().optional(),
-  organizationId: z.string().optional(),
-  contactId: z.string().optional(),
-  status: z.string().optional(),
-  triage: z.coerce.boolean().optional(),
-});
-
-export const listEmailMessagesQuerySchema = listPaginationQuerySchema.extend({
-  status: z.string().optional(),
-});
-
-export const listDueTasksQuerySchema = z.object({
-  before: z.string().datetime().optional(),
-  paginated: z.coerce.boolean().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(LIST_MAX_LIMIT).optional(),
-});
-
-export const globalSearchQuerySchema = z.object({
-  q: z.string().min(1),
-  limit: z.coerce.number().int().min(1).optional(),
-  mode: z
-    .enum([
-      "all",
-      "projects",
-      "tasks",
-      "documents",
-      "letters",
-      "knowledge",
-      "contacts",
-      "organizations",
-    ])
-    .optional(),
-  contextKind: z.string().optional(),
-  projectId: z.string().optional(),
-  projectSection: z.string().optional(),
-  contactId: z.string().optional(),
-  contactSection: z.string().optional(),
-  organizationId: z.string().optional(),
-  organizationSection: z.string().optional(),
-});
-
-export const listPaginatedResponseSchema = <T extends z.ZodTypeAny>(item: T) =>
-  z.object({
-    items: z.array(item),
-    nextCursor: z.string().nullable(),
-  });
-
-/** Accept a single query string or repeated keys (`?type=a&type=b`). */
-const optionalQueryString = z
-  .union([z.string(), z.array(z.string())])
-  .optional()
-  .transform((value) => {
-    if (value == null) return undefined;
-    return Array.isArray(value) ? value.join(",") : value;
-  });
-
-/**
- * Query for GET /api/v1/documents.
- * When `limit` is omitted, the route applies DOCUMENTS_DEFAULT_LIMIT (100)
- * and sets `X-BacksterOS-Hint` (OS-59). When set, clamped to 1..DOCUMENT_LIST_MAX_LIMIT.
- * `type` must be a structural document type (knowledge|project|journal) or a
- * known semantic property type (house-rule, runbook, …).
- */
-export const listDocumentsQuerySchema = z.object({
-  /**
-   * Structural document type (knowledge|project|journal) or semantic property
-   * type from the index (e.g. house-rule). Comma-separated / repeated for multi-value.
-   */
-  type: optionalQueryString,
-  projectId: z.string().optional(),
-  /** Property audience filter (comma-separated or repeated). */
-  audience: optionalQueryString,
-  /** Property status filter (comma-separated or repeated). */
-  status: optionalQueryString,
-  limit: z.coerce.number().int().min(1).max(DOCUMENT_LIST_MAX_LIMIT).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-});
-
-export const spaceSeoAddressSchema = z.object({
-  streetAddress: z.string().max(500).optional(),
-  addressLocality: z.string().max(200).optional(),
-  addressRegion: z.string().max(200).optional(),
-  postalCode: z.string().max(40).optional(),
-  addressCountry: z.string().max(120).optional(),
-});
-
-export const spaceSeoSocialSchema = z.object({
-  facebook: z.string().max(2000).optional(),
-  twitter: z.string().max(2000).optional(),
-  linkedin: z.string().max(2000).optional(),
-  instagram: z.string().max(2000).optional(),
-  youtube: z.string().max(2000).optional(),
-  github: z.string().max(2000).optional(),
-});
-
-/** Space-level SEO / Schema.org / Open Graph entity metadata. */
-export const spaceSeoMetaSchema = z.object({
-  siteName: z.string().max(200).optional(),
-  organizationName: z.string().max(200).optional(),
-  phone: z.string().max(80).optional(),
-  email: z.string().max(320).optional(),
-  address: spaceSeoAddressSchema.optional(),
-  social: spaceSeoSocialSchema.optional(),
-});
-
-export const spaceSiteKeySchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  siteKeyPrefix: z.string(),
-  createdAt: z.string().datetime(),
-});
-
-export const spacePublishSettingsSchema = z.object({
-  spaceDocumentId: z.string(),
-  publicBaseUrl: z.string().nullable(),
-  allowedDomains: z.array(z.string()),
-  seoMeta: spaceSeoMetaSchema,
-  siteKeys: z.array(spaceSiteKeySchema),
-  /** Derived: siteKeys.length > 0 */
-  siteKeyPresent: z.boolean(),
-  updatedAt: z.string().datetime(),
-});
-
-export const updateSpacePublishSettingsSchema = z
-  .object({
-    publicBaseUrl: z.string().max(2000).nullable().optional(),
-    allowedDomains: z.array(z.string().max(255)).max(100).optional(),
-    seoMeta: spaceSeoMetaSchema.optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-export const createSpaceSiteKeySchema = z.object({
-  label: z.string().trim().min(1).max(80),
-});
-
-export const spaceSiteKeyCreatedSchema = z.object({
-  siteKey: z.string(),
-  key: spaceSiteKeySchema,
-  settings: spacePublishSettingsSchema,
-});
-
-export const publicSpaceArticleSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  slug: z.string(),
-  seoTitle: z.string().nullable(),
-  seoDescription: z.string().nullable(),
-  path: z.string(),
-  updatedAt: z.string().datetime(),
-  content: z.string(),
-});
-
-export const publicSpaceArticleListItemSchema = publicSpaceArticleSchema.omit({
-  content: true,
-});
-
-/** Document hit from `GET /search` (type = project | knowledge | journal). */
-export const documentSearchResultSchema = z.object({
-  id: z.string(),
-  type: documentTypeSchema,
-  projectId: z.string().nullable(),
-  path: z.string(),
-  title: z.string(),
-  snippet: z.string().nullable(),
-  updatedAt: z.string().datetime(),
-});
-
-/** Task hit from `GET /search?type=task` (alias `tasks`). */
-export const taskSearchResultSchema = z.object({
-  id: z.string(),
-  type: z.literal("task"),
-  key: z.string(),
-  projectId: z.string().nullable(),
-  status: taskStatusSchema,
-  title: z.string(),
-  snippet: z.string().nullable(),
-  updatedAt: z.string().datetime(),
-});
-
-export const searchResultSchema = z.union([
+  listTasksResponseSchema,
+  createTaskSchema,
+  updateTaskSchema,
+  taskPatchKeepsWaitingFollowUp,
+  taskCommentSchema,
+  taskApiSchema,
+  createTaskCommentSchema,
+  updateTaskCommentSchema,
+  taskActivityTypeSchema,
+  agentWorkedActivityDataSchema,
+  timerStartedActivityDataSchema,
+  timerStoppedActivityDataSchema,
+  createTaskActivitySchema,
+  updateTaskTimerSessionActorSchema,
+  taskActivitySchema,
+  listActivitiesQuerySchema,
+  listActivitiesResponseSchema,
+  taskAgentPresenceSourceSchema,
+  upsertTaskAgentPresenceSchema,
+  taskAgentPresenceSchema,
+  listTaskAgentPresenceQuerySchema,
+  reorderSchema,
+  moveTaskSchema,
+  triageTaskSchema,
+  batchUpdateTasksSchema,
+  batchUpdateTasksResultItemSchema,
+  batchUpdateTasksResponseSchema,
+  PROJECT_UPDATE_KINDS,
+  projectUpdateKindSchema,
+  PROJECT_UPDATE_VISIBILITY_STATUSES,
+  PROJECT_UPDATE_INCIDENT_STATUSES,
+  PROJECT_UPDATE_STATUSES,
+  projectUpdateStatusSchema,
+  PROJECT_UPDATE_DEFAULT_STATUS,
+  PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS,
+  projectUpdateStatusesForKind,
+  defaultProjectUpdateStatusForKind,
+  coerceProjectUpdateStatusForKind,
+  PROJECT_UPDATE_SEVERITIES,
+  projectUpdateSeveritySchema,
+  PROJECT_UPDATE_DEFAULT_SEVERITY,
+  createProjectUpdateSchema,
+  updateProjectUpdateSchema,
+  projectUpdateSchema,
+  projectUpdateListSchema,
+  taskAttachmentSchema,
+  taskAttachmentParamsSchema,
+  taskAttachmentsResponseSchema,
+  updateTaskAttachmentSchema,
+  reorderTaskAttachmentsSchema,
+  recurringTaskSchema,
+  createRecurringTaskSchema,
+  updateRecurringTaskSchema,
+} from "./schemas/projects-tasks.js";
+export type {
+  ProjectUpdateKind,
+  ProjectUpdateStatus,
+  ProjectUpdateVisibilityStatus,
+  ProjectUpdateIncidentStatus,
+  ProjectUpdateSeverity,
+  CreateProjectUpdateInput,
+  UpdateProjectUpdateInput,
+  ProjectUpdate,
+  Project,
+  Task,
+  TaskApi,
+  TaskListItem,
+  ListTasksQuery,
+  ListTasksResponse,
+  TaskLink,
+  TaskComment,
+  TaskActivity,
+  TaskAgentPresence,
+  UpsertTaskAgentPresenceInput,
+  TaskActivityType,
+  CreateTaskActivityInput,
+  ListActivitiesQuery,
+  ListActivitiesResponse,
+  UpdateTaskTimerSessionActorInput,
+  AgentWorkedActivityData,
+  CreateProjectInput,
+  UpdateProjectInput,
+  GithubRepository,
+  GithubBranch,
+  GithubCommit,
+  GithubPullRequest,
+  GithubPullRequestFile,
+  GithubPullRequestFileStatus,
+  GithubPullRequestState,
+  GithubOrganization,
+  GithubConnectionStatus,
+  ProjectFsEntry,
+  ProjectFsEntryKind,
+  ProjectFsFile,
+  ProjectFsWriteFileInput,
+  ProjectFsCreateEntryInput,
+  ProjectFsListEntriesResponse,
+  ProjectRepoDocEntry,
+  ProjectRepoDocsResponse,
+  ProjectFsCreateEntryResponse,
+  ProjectFsDeleteEntryResponse,
+  LocationFsTarget,
+  LocationFsEntry,
+  LocationFsListResponse,
+  LocationFsCreateFolderInput,
+  LocationFsCreateFolderResponse,
+  CreateTaskInput,
+  UpdateTaskInput,
+  CreateTaskCommentInput,
+  UpdateTaskCommentInput,
+  ProjectUpdateInput,
+  TaskAttachment,
+  TaskImage,
+  TaskImageUploadInput,
+  RecurringTask,
+  CreateRecurringTaskInput,
+  UpdateRecurringTaskInput,
+} from "./schemas/projects-tasks.js";
+export {
+  documentSchema,
+  createDocumentSchema,
+  updateDocumentSchema,
+  documentContentSchema,
+  updateDocumentContentSchema,
+  documentPropertiesResponseSchema,
+  putDocumentPropertiesSchema,
+  putDocumentPropertiesResponseSchema,
+  documentPropertyTypeKindSchema,
+  documentPropertyTypeStatusSchema,
+  documentPropertyTypeOptionSchema,
+  documentPropertyTypeSchema,
+  createDocumentPropertyTypeSchema,
+  updateDocumentPropertyTypeSchema,
+  listDocumentPropertyTypesQuerySchema,
+  listDocumentPropertyTypesResponseSchema,
+  multiValueQuerySchema,
+  documentSectionResponseSchema,
+  updateDocumentSectionSchema,
+  documentRetrievalHitSchema,
+  documentRetrievalResponseSchema,
+  documentRetrievalQuerySchema,
   documentSearchResultSchema,
   taskSearchResultSchema,
-]);
-
-/** Query `type` for `/search`: document types + `task` (alias `tasks`). */
-export const SEARCH_TYPE_QUERY_VALUES = [
-  ...DOCUMENT_TYPES,
-  "task",
-  "tasks",
-] as const;
-export const searchTypeQuerySchema = z.enum(SEARCH_TYPE_QUERY_VALUES);
-
-export const searchQuerySchema = z.object({
-  q: z.string().min(1).max(500),
-  type: searchTypeQuerySchema.optional(),
-  projectId: z.string().optional(),
-  /**
-   * Comma-separated task statuses, or `all` (only applied when type=task|tasks
-   * or include=task). Omit to exclude completed/canceled/duplicated (OS-81) —
-   * see `appliedDefaults`.
-   */
-  status: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-  cursor: z.string().optional(),
-  /**
-   * When searching documents (type omitted or a document type), also run task
-   * search for the same `q` and merge hits (OS-76 multi-resource).
-   * Values: `task` | `tasks`.
-   */
-  include: z.enum(["task", "tasks"]).optional(),
-});
-
-export const searchResponseSchema = z.object({
-  results: z.array(searchResultSchema),
-  /** Present for `type=task` (opaque keyset on updatedAt desc, id). */
-  nextCursor: z.string().nullable().optional(),
-  /**
-   * Present when task search hid terminal statuses by default (OS-81).
-   * Absent when `status` is given. Exact key/id hits still return regardless.
-   */
-  appliedDefaults: z
-    .object({
-      excludedStatuses: z.array(z.string()).min(1),
-    })
-    .optional(),
-});
-
-/** Max queries per `POST /api/v1/search/batch` (OS-76). */
-export const SEARCH_BATCH_MAX_QUERIES = 10;
-
-const searchBatchSearchItemSchema = z.object({
-  id: z.string().min(1).max(64),
-  kind: z.literal("search"),
-  q: z.string().min(1).max(500),
-  type: searchTypeQuerySchema.optional(),
-  projectId: z.string().optional(),
-  status: z.string().optional(),
-  limit: z.number().int().min(1).max(50).optional(),
-  cursor: z.string().optional(),
-  include: z.enum(["task", "tasks"]).optional(),
-});
-
-const searchBatchRetrieveItemSchema = z.object({
-  id: z.string().min(1).max(64),
-  kind: z.literal("retrieve"),
-  q: z.string().min(1).max(2000),
-  type: multiValueQuerySchema.optional(),
-  audience: multiValueQuerySchema.optional(),
-  status: multiValueQuerySchema.optional(),
-  project: multiValueQuerySchema.optional(),
-  budget: z.number().int().positive().optional(),
-  limit: z.number().int().positive().max(100).optional(),
-});
-
-export const searchBatchQueryItemSchema = z.discriminatedUnion("kind", [
-  searchBatchSearchItemSchema,
-  searchBatchRetrieveItemSchema,
-]);
-
-export const searchBatchRequestSchema = z.object({
-  queries: z
-    .array(searchBatchQueryItemSchema)
-    .min(1)
-    .max(SEARCH_BATCH_MAX_QUERIES),
-});
-
-export const searchBatchSearchResponseItemSchema = z.object({
-  id: z.string(),
-  kind: z.literal("search"),
-  results: z.array(searchResultSchema),
-  nextCursor: z.string().nullable().optional(),
-  appliedDefaults: z
-    .object({
-      excludedStatuses: z.array(z.string()).min(1),
-    })
-    .optional(),
-});
-
-export const searchBatchRetrieveResponseItemSchema = z.object({
-  id: z.string(),
-  kind: z.literal("retrieve"),
-  results: z.array(documentRetrievalHitSchema),
-  budget: z.number().int().positive(),
-  truncated: z.boolean(),
-  skipped: z.number().int().nonnegative(),
-});
-
-export const searchBatchErrorResponseItemSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["search", "retrieve"]),
-  error: z.string(),
-  field: z.string().optional(),
-});
-
-export const searchBatchResponseItemSchema = z.union([
+  searchResultSchema,
+  SEARCH_TYPE_QUERY_VALUES,
+  searchTypeQuerySchema,
+  searchQuerySchema,
+  searchResponseSchema,
+  SEARCH_BATCH_MAX_QUERIES,
+  searchBatchQueryItemSchema,
+  searchBatchRequestSchema,
   searchBatchSearchResponseItemSchema,
   searchBatchRetrieveResponseItemSchema,
   searchBatchErrorResponseItemSchema,
-]);
-
-export const searchBatchResponseSchema = z.object({
-  results: z.array(searchBatchResponseItemSchema),
-});
-
-const isoDateSchema = z.string().datetime();
-const nullableIsoDateSchema = isoDateSchema.nullable();
-
-export const idParamsSchema = z.object({
-  /** Internal id or human key (task `OS-51`, project `OS`, org/contact key). */
-  id: z.string(),
-});
-export const reorderSchema = z.object({
-  orderedIds: z.array(z.string()).min(1).max(500),
-});
-export const moveTaskSchema = z.object({ projectId: z.string().nullable() });
-export const triageTaskSchema = z.object({
-  projectId: z.string().nullable().optional(),
-  status: taskStatusSchema.optional(),
-});
-export const batchUpdateTasksSchema = z.object({
-  /** Task ids or display keys (e.g. `OS-51`). */
-  ids: z.array(z.string()).min(1).max(500),
-  patch: updateTaskSchema,
-});
-
-export const batchUpdateTasksResultItemSchema = z.union([
-  z.object({
-    ok: z.literal(true),
-    /** Resolved task id. */
-    id: z.string(),
-    /** Original ref from the request (id or key). */
-    ref: z.string(),
-    task: taskSchema,
-  }),
-  z.object({
-    ok: z.literal(false),
-    id: z.string().nullable(),
-    ref: z.string(),
-    error: z.string(),
-    code: z.literal("not_found"),
-  }),
-]);
-
-export const batchUpdateTasksResponseSchema = z.object({
-  /** Successfully updated tasks (backward compatible). */
-  tasks: z.array(taskSchema),
-  /** Per-ref results including 404 entries for unknown ids/keys (OS-64). */
-  results: z.array(batchUpdateTasksResultItemSchema),
-});
-
-export const organizationInputSchema = z.object({
-  number: z.number().int().positive().nullable().optional(),
-  key: z.string().min(1).max(64),
-  name: z.string().min(1).max(255),
-  summary: z.string().max(2000).nullable().optional(),
-  phone: z.string().max(64).nullable().optional(),
-  email: z.string().email().nullable().optional(),
-  emails: z
-    .array(
-      z.object({
-        label: z.enum(["general", "support", "other"]),
-        address: z.string().email().max(320),
-      }),
-    )
-    .max(20)
-    .optional(),
-  phones: z
-    .array(
-      z.object({
-        label: z.enum(["general", "support", "other"]),
-        number: z.string().min(1).max(64),
-      }),
-    )
-    .max(20)
-    .optional(),
-  website: z
-    .union([z.string().url(), z.literal(""), z.null()])
-    .nullable()
-    .optional()
-    .transform((value) => (value === "" ? null : value)),
-  address: z.string().max(500).nullable().optional(),
-  city: z.string().max(255).nullable().optional(),
-  postalCode: z.string().max(32).nullable().optional(),
-  country: z.string().max(128).nullable().optional(),
-  region: z.string().max(128).nullable().optional(),
-  latitude: z.number().finite().nullable().optional(),
-  longitude: z.number().finite().nullable().optional(),
-  size: z.string().max(64).nullable().optional(),
-  socialAccounts: z
-    .array(
-      z.object({
-        platform: z.string().min(1).max(64),
-        url: z.string().min(1).max(2048),
-      }),
-    )
-    .max(20)
-    .optional(),
-  chamberOfCommerce: z.string().max(64).nullable().optional(),
-  taxNumber: z.string().max(64).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-  notes: z.string().max(20_000).nullable().optional(),
-  /** Moneybird contact id (string — large integer). */
-  moneybirdContactId: z.string().max(64).nullable().optional(),
-  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
-  avatarStorageKey: z.string().nullable().optional(),
-  avatarContentType: z.string().nullable().optional(),
-});
-export const updateOrganizationSchema = organizationInputSchema.partial();
-export const organizationSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  number: z.number().int().nullable(),
-  key: z.string(),
-  name: z.string(),
-  summary: z.string().nullable(),
-  phone: z.string().nullable(),
-  email: z.string().nullable(),
-  emails: z.array(
-    z.object({
-      label: z.enum(["general", "support", "other"]),
-      address: z.string(),
-    }),
-  ),
-  phones: z.array(
-    z.object({
-      label: z.enum(["general", "support", "other"]),
-      number: z.string(),
-    }),
-  ),
-  website: z.string().nullable(),
-  address: z.string().nullable(),
-  city: z.string().nullable(),
-  postalCode: z.string().nullable(),
-  country: z.string().nullable(),
-  region: z.string().nullable(),
-  latitude: z.number().nullable(),
-  longitude: z.number().nullable(),
-  size: z.string().nullable(),
-  socialAccounts: z.array(
-    z.object({
-      platform: z.string(),
-      url: z.string(),
-    }),
-  ),
-  chamberOfCommerce: z.string().nullable(),
-  taxNumber: z.string().nullable(),
-  avatarStorageKey: z.string().nullable(),
-  avatarContentType: z.string().nullable(),
-  sortOrder: z.number().int(),
-  notes: z.string().nullable(),
-  moneybirdContactId: z.string().nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const contactSocialAccountSchema = z.object({
-  platform: z.string().min(1).max(64),
-  url: z.string().min(1).max(500),
-});
-
-/** Calendar day YYYY-MM-DD (finance ledger booked_on, contact birthday). */
-export const calendarDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
-
-/** Per-contact client portal preferences / ACL. */
-export const contactPortalSettingsSchema = z.preprocess(
-  (value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return value;
-    }
-    const raw = value as Record<string, unknown>;
-    if (Array.isArray(raw.languages)) return raw;
-    // Migrate legacy single `language` into `languages`.
-    if (typeof raw.language === "string" && raw.language.trim()) {
-      const { language: _legacy, ...rest } = raw;
-      return { ...rest, languages: [raw.language] };
-    }
-    return raw;
-  },
-  z.object({
-    /** Preferred portal languages (flag chips; first is primary when relevant). */
-    languages: z
-      .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
-      .default([]),
-    /**
-     * Project ids visible in the portal.
-     * `null` = all organization projects (default); `[]` = none; otherwise allowlist.
-     */
-    enabledProjectIds: z.array(z.string().min(1)).nullable().default(null),
-    financials: z.boolean().default(true),
-    support: z.boolean().default(true),
-    /** Allow creating support tickets from the portal. */
-    canAddTickets: z.boolean().default(true),
-    /** Allow creating tasks on project boards from the portal. */
-    canAddTasks: z.boolean().default(true),
-  }),
-);
-export type ContactPortalSettings = z.infer<typeof contactPortalSettingsSchema>;
-
-export const DEFAULT_CONTACT_PORTAL_SETTINGS: ContactPortalSettings = {
-  languages: [],
-  enabledProjectIds: null,
-  financials: true,
-  support: true,
-  canAddTickets: true,
-  canAddTasks: true,
-};
-
-export const portalAuthLoginSchema = z.object({
-  username: z.string().trim().min(1).max(128),
-  password: z.string().min(8).max(256),
-});
-
-export const portalContactLogKindSchema = z.enum(["login", "project_view"]);
-export type PortalContactLogKind = z.infer<typeof portalContactLogKindSchema>;
-
-export const createPortalContactLogSchema = z.object({
-  kind: portalContactLogKindSchema,
-  projectId: z.string().trim().min(1).optional(),
-  occurredAt: isoDateSchema.optional(),
-});
-
-export type CreatePortalContactLogInput = z.infer<
-  typeof createPortalContactLogSchema
->;
-
-export const portalContactLogSchema = z.object({
-  id: z.string(),
-  contactId: z.string(),
-  kind: portalContactLogKindSchema,
-  projectId: z.string().nullable(),
-  projectName: z.string().nullable().optional(),
-  projectKey: z.string().nullable().optional(),
-  occurredAt: z.string(),
-  createdAt: z.string(),
-});
-
-export type PortalContactLog = z.infer<typeof portalContactLogSchema>;
-
-export const portalContactLogListSchema = z.object({
-  logs: z.array(portalContactLogSchema),
-});
-
-/** Project Updates tab — changelog / incident / maintenance posts. */
-export const PROJECT_UPDATE_KINDS = [
-  "update",
-  "incident",
-  "maintenance",
-] as const;
-export const projectUpdateKindSchema = z.enum(PROJECT_UPDATE_KINDS);
-export type ProjectUpdateKind = z.infer<typeof projectUpdateKindSchema>;
-
-/** Visibility for update / maintenance posts. */
-export const PROJECT_UPDATE_VISIBILITY_STATUSES = [
-  "internal",
-  "published",
-] as const;
-/** Lifecycle for incident posts. */
-export const PROJECT_UPDATE_INCIDENT_STATUSES = ["open", "resolved"] as const;
-export const PROJECT_UPDATE_STATUSES = [
-  ...PROJECT_UPDATE_VISIBILITY_STATUSES,
-  ...PROJECT_UPDATE_INCIDENT_STATUSES,
-] as const;
-export const projectUpdateStatusSchema = z.enum(PROJECT_UPDATE_STATUSES);
-export type ProjectUpdateStatus = z.infer<typeof projectUpdateStatusSchema>;
-export type ProjectUpdateVisibilityStatus =
-  (typeof PROJECT_UPDATE_VISIBILITY_STATUSES)[number];
-export type ProjectUpdateIncidentStatus =
-  (typeof PROJECT_UPDATE_INCIDENT_STATUSES)[number];
-
-export const PROJECT_UPDATE_DEFAULT_STATUS: ProjectUpdateStatus = "internal";
-export const PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS: ProjectUpdateIncidentStatus =
-  "open";
-
-export function projectUpdateStatusesForKind(
-  kind: ProjectUpdateKind,
-): readonly ProjectUpdateStatus[] {
-  return kind === "incident"
-    ? PROJECT_UPDATE_INCIDENT_STATUSES
-    : PROJECT_UPDATE_VISIBILITY_STATUSES;
-}
-
-export function defaultProjectUpdateStatusForKind(
-  kind: ProjectUpdateKind,
-): ProjectUpdateStatus {
-  return kind === "incident"
-    ? PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS
-    : PROJECT_UPDATE_DEFAULT_STATUS;
-}
-
-/** Map / clamp a status to one valid for the given kind. */
-export function coerceProjectUpdateStatusForKind(
-  kind: ProjectUpdateKind,
-  status: string | null | undefined,
-): ProjectUpdateStatus {
-  const allowed = projectUpdateStatusesForKind(kind);
-  if (status != null && (allowed as readonly string[]).includes(status)) {
-    return status as ProjectUpdateStatus;
-  }
-  if (kind === "incident") {
-    if (status === "published") return "resolved";
-    if (status === "internal") return "open";
-    return PROJECT_UPDATE_DEFAULT_INCIDENT_STATUS;
-  }
-  if (status === "resolved") return "published";
-  if (status === "open") return "internal";
-  return PROJECT_UPDATE_DEFAULT_STATUS;
-}
-
-/** Incident severity — only meaningful when kind is `incident`. */
-export const PROJECT_UPDATE_SEVERITIES = [
-  "high_risk",
-  "degraded",
-  "low_risk",
-] as const;
-export const projectUpdateSeveritySchema = z.enum(PROJECT_UPDATE_SEVERITIES);
-export type ProjectUpdateSeverity = z.infer<typeof projectUpdateSeveritySchema>;
-
-export const PROJECT_UPDATE_DEFAULT_SEVERITY: ProjectUpdateSeverity = "degraded";
-
-function refineProjectUpdateKindStatus(
-  value: { kind?: ProjectUpdateKind; status?: ProjectUpdateStatus },
-  ctx: z.RefinementCtx,
-) {
-  if (value.status == null || value.kind == null) return;
-  const allowed = projectUpdateStatusesForKind(value.kind);
-  if (!(allowed as readonly string[]).includes(value.status)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["status"],
-      message:
-        value.kind === "incident"
-          ? "Incidents use Open / Resolved"
-          : "Updates and maintenance use Internal / Published",
-    });
-  }
-}
-
-export const createProjectUpdateSchema = z
-  .object({
-    title: z.string().trim().min(1).max(500),
-    body: z.string().trim().min(1).max(50_000),
-    kind: projectUpdateKindSchema,
-    status: projectUpdateStatusSchema.optional(),
-    severity: projectUpdateSeveritySchema.nullable().optional(),
-    relatedTaskIds: z.array(z.string().min(1)).max(100).optional(),
-  })
-  .superRefine((value, ctx) => {
-    refineProjectUpdateKindStatus(value, ctx);
-    if (value.kind === "incident") {
-      if (value.severity == null) {
-        // Default applied server-side; allow omit.
-        return;
-      }
-      return;
-    }
-    if (value.severity != null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["severity"],
-        message: "Severity is only allowed for incidents",
-      });
-    }
-  });
-
-export type CreateProjectUpdateInput = z.infer<typeof createProjectUpdateSchema>;
-
-export const updateProjectUpdateSchema = z
-  .object({
-    title: z.string().trim().min(1).max(500).optional(),
-    body: z.string().trim().min(1).max(50_000).optional(),
-    kind: projectUpdateKindSchema.optional(),
-    status: projectUpdateStatusSchema.optional(),
-    severity: projectUpdateSeveritySchema.nullable().optional(),
-    relatedTaskIds: z.array(z.string().min(1)).max(100).optional(),
-  })
-  .superRefine((value, ctx) => {
-    refineProjectUpdateKindStatus(value, ctx);
-    if (value.kind != null && value.kind !== "incident" && value.severity != null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["severity"],
-        message: "Severity is only allowed for incidents",
-      });
-    }
-  });
-
-export type UpdateProjectUpdateInput = z.infer<typeof updateProjectUpdateSchema>;
-
-export const projectUpdateSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  projectId: z.string(),
-  title: z.string(),
-  body: z.string(),
-  kind: projectUpdateKindSchema,
-  status: projectUpdateStatusSchema,
-  severity: projectUpdateSeveritySchema.nullable(),
-  relatedTaskIds: z.array(z.string()),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export type ProjectUpdate = z.infer<typeof projectUpdateSchema>;
-
-export const projectUpdateListSchema = z.object({
-  updates: z.array(projectUpdateSchema),
-});
-
-const contactWritableFieldsSchema = z.object({
-  number: z.number().int().positive().nullable().optional(),
-  key: z.string().min(1).max(64),
-  organizationId: z.string().nullable().optional(),
-  /**
-   * Preferred given name. When omitted on create, `name` is treated as firstName
-   * (legacy clients).
-   */
-  firstName: z.string().min(1).max(255).optional(),
-  lastName: z.string().max(255).nullable().optional(),
-  /**
-   * Full display name. Preferred to derive from firstName + lastName; accepted
-   * alone for legacy create/patch as firstName when firstName is omitted.
-   */
-  name: z.string().min(1).max(255).optional(),
-  email: z.string().email().nullable().optional(),
-  /** Labeled addresses including primary (`{ label, address }[]`, max 20). */
-  emails: z
-    .array(
-      z.object({
-        label: z.enum(["personal", "work", "other"]),
-        address: z.string().email(),
-      }),
-    )
-    .max(20)
-    .optional(),
-  title: z.string().max(255).nullable().optional(),
-  summary: z.string().max(2000).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-  phone: z.string().max(64).nullable().optional(),
-  /** Labeled numbers including primary (`{ label, number }[]`, max 20). */
-  phones: z
-    .array(
-      z.object({
-        label: z.enum(["personal", "work", "other"]),
-        number: z.string().min(1).max(64),
-      }),
-    )
-    .max(20)
-    .optional(),
-  role: z.string().max(255).nullable().optional(),
-  notes: z.string().max(20_000).nullable().optional(),
-  address: z.string().max(500).nullable().optional(),
-  city: z.string().max(255).nullable().optional(),
-  postalCode: z.string().max(32).nullable().optional(),
-  country: z.string().max(128).nullable().optional(),
-  /** State / province / region name or code. */
-  region: z.string().max(128).nullable().optional(),
-  /** IANA timezone for this contact (e.g. Europe/Amsterdam). */
-  timezone: z.string().min(1).max(128).nullable().optional(),
-  /** Geocoded coordinates from Mapbox (null until resolved). */
-  latitude: z.number().finite().min(-90).max(90).nullable().optional(),
-  longitude: z.number().finite().min(-180).max(180).nullable().optional(),
-  socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
-  /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
-  birthday: calendarDateSchema.nullable().optional(),
-  /** Spoken / preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
-  languages: z
-    .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
-    .max(5)
-    .optional(),
-  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
-  avatarStorageKey: z.string().nullable().optional(),
-  avatarContentType: z.string().nullable().optional(),
-  /** Portal avatar blob key — set via `avatar_portal` PUT / sync. */
-  portalAvatarStorageKey: z.string().nullable().optional(),
-  portalAvatarContentType: z.string().nullable().optional(),
-  /** Client portal login username (unique per workspace when set). */
-  portalUsername: z.string().trim().min(1).max(128).nullable().optional(),
-  /**
-   * Write-only portal password. Null/empty clears the stored hash.
-   * Never returned from the API — see `portalPasswordSet`.
-   */
-  portalPassword: z
-    .union([z.string().min(8).max(256), z.literal(""), z.null()])
-    .optional(),
-  /** Set by sync replication after hashing — not for public clients. */
-  portalPasswordHash: z.string().nullable().optional(),
-  /** Portal module ACL / language for this contact. */
-  portalSettings: contactPortalSettingsSchema.nullable().optional(),
-});
-
-export const contactInputSchema = contactWritableFieldsSchema.superRefine(
-  (value, ctx) => {
-    if (!(value.firstName?.trim() || value.name?.trim())) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "firstName or name is required",
-        path: ["firstName"],
-      });
-    }
-  },
-);
-export const updateContactSchema = contactWritableFieldsSchema.partial();
-export const contactSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  organizationId: z.string().nullable(),
-  number: z.number().int().nullable(),
-  key: z.string(),
-  name: z.string(),
-  firstName: z.string(),
-  lastName: z.string(),
-  email: z.string().nullable(),
-  emails: z.array(
-    z.object({
-      label: z.enum(["personal", "work", "other"]),
-      address: z.string(),
-    }),
-  ),
-  title: z.string().nullable(),
-  summary: z.string().nullable(),
-  avatarStorageKey: z.string().nullable(),
-  avatarContentType: z.string().nullable(),
-  /** Client portal avatar — not the personal contact photo. */
-  portalAvatarStorageKey: z.string().nullable().optional(),
-  portalAvatarContentType: z.string().nullable().optional(),
-  sortOrder: z.number().int(),
-  phone: z.string().nullable(),
-  phones: z.array(
-    z.object({
-      label: z.enum(["personal", "work", "other"]),
-      number: z.string(),
-    }),
-  ),
-  role: z.string().nullable(),
-  notes: z.string().nullable(),
-  address: z.string().nullable(),
-  city: z.string().nullable(),
-  postalCode: z.string().nullable(),
-  country: z.string().nullable(),
-  region: z.string().nullable().optional(),
-  timezone: z.string().nullable().optional(),
-  latitude: z.number().finite().nullable().optional(),
-  longitude: z.number().finite().nullable().optional(),
-  socialAccounts: z.array(contactSocialAccountSchema),
-  birthday: calendarDateSchema.nullable().optional(),
-  languages: z.array(z.enum(["nl", "en", "de", "es", "fr", "pl"])),
-  portalUsername: z.string().nullable().optional(),
-  /** True when a portal password hash is stored (hash itself is never returned). */
-  portalPasswordSet: z.boolean().optional(),
-  portalSettings: contactPortalSettingsSchema.nullable().optional(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-/** Compose full contact display name from given + family name. */
-export function formatContactDisplayName(
-  firstName: string,
-  lastName?: string | null,
-): string {
-  return [firstName.trim(), (lastName ?? "").trim()]
-    .filter((part) => part.length > 0)
-    .join(" ");
-}
-
-/** Directed contact↔contact relationship types (presets + custom slugs). */
-export const CONTACT_RELATIONSHIP_PRESET_TYPES = [
-  "spouse",
-  "partner",
-  "child",
-  "parent",
-  "sibling",
-  "friend",
-  "colleague",
-  "reports_to",
-  "other",
-] as const;
-
-export const contactRelationshipPresetTypeSchema = z.enum(
+  searchBatchResponseItemSchema,
+  searchBatchResponseSchema,
+  createMentionSchema,
+  mentionSchema,
+  globalSearchResultSchema,
+  projectRelationsSchema,
+  taskRelationsSchema,
+  organizationRelationsSchema,
+  contactRelationsSchema,
+  letterRelationsSchema,
+} from "./schemas/documents-search.js";
+export type {
+  Document,
+  CreateDocumentInput,
+  UpdateDocumentInput,
+  DocumentPropertyType,
+  CreateDocumentPropertyTypeInput,
+  UpdateDocumentPropertyTypeInput,
+  DocumentContent,
+  UpdateDocumentContentInput,
+  DocumentSearchResult,
+  TaskSearchResult,
+  SearchResult,
+  SearchTypeQuery,
+  SearchBatchRequest,
+  SearchBatchResponse,
+  SearchBatchQueryItem,
+  Mention,
+  GlobalSearchResult,
+} from "./schemas/documents-search.js";
+export {
+  spaceSeoAddressSchema,
+  spaceSeoSocialSchema,
+  spaceSeoMetaSchema,
+  spaceSiteKeySchema,
+  spacePublishSettingsSchema,
+  updateSpacePublishSettingsSchema,
+  createSpaceSiteKeySchema,
+  spaceSiteKeyCreatedSchema,
+  publicSpaceArticleSchema,
+  publicSpaceArticleListItemSchema,
+} from "./schemas/spaces.js";
+export type {
+  SpacePublishSettings,
+  UpdateSpacePublishSettingsInput,
+  SpaceSeoMeta,
+  SpaceSeoAddress,
+  SpaceSeoSocial,
+  SpaceSiteKey,
+  CreateSpaceSiteKeyInput,
+  SpaceSiteKeyCreated,
+  PublicSpaceArticle,
+  PublicSpaceArticleListItem,
+} from "./schemas/spaces.js";
+export {
+  organizationInputSchema,
+  updateOrganizationSchema,
+  organizationSchema,
+  contactSocialAccountSchema,
+  calendarDateSchema,
+  contactPortalSettingsSchema,
+  DEFAULT_CONTACT_PORTAL_SETTINGS,
+  portalAuthLoginSchema,
+  portalContactLogKindSchema,
+  createPortalContactLogSchema,
+  portalContactLogSchema,
+  portalContactLogListSchema,
+  contactInputSchema,
+  updateContactSchema,
+  contactSchema,
+  formatContactDisplayName,
   CONTACT_RELATIONSHIP_PRESET_TYPES,
-);
-
-/**
- * Preset snake_case values, or a custom slug (`son`, `best_friend`, …).
- * Display labels are derived / stored separately in the UI.
- */
-export const contactRelationshipTypeSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(64)
-  .regex(
-    /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/,
-    "Use a lowercase slug (letters, numbers, underscores)",
-  );
-
-export const contactRelationshipInputSchema = z.object({
-  toContactId: z.string().min(1),
-  type: contactRelationshipTypeSchema,
-  note: z.string().max(2000).nullable().optional(),
-});
-export const updateContactRelationshipSchema = z.object({
-  type: contactRelationshipTypeSchema.optional(),
-  note: z.string().max(2000).nullable().optional(),
-});
-export const contactRelationshipSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  fromContactId: z.string(),
-  toContactId: z.string(),
-  type: contactRelationshipTypeSchema,
-  note: z.string().nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-/** List item for a contact's relationships (both edge directions). */
-export const contactRelationshipListItemSchema = contactRelationshipSchema.extend({
-  direction: z.enum(["outgoing", "incoming"]),
-  typeLabel: z.string(),
-  relatedContactId: z.string(),
-  relatedContactName: z.string(),
-});
-
-/** Workspace catalog of bidirectional relationship labels (Parent ↔ Child). */
-export const crmRelationshipLabelInputSchema = z.object({
-  sideALabel: z.string().trim().min(1).max(64),
-  sideBLabel: z.string().trim().min(1).max(64),
-  sideASlug: contactRelationshipTypeSchema.optional(),
-  sideBSlug: contactRelationshipTypeSchema.optional(),
-  color: z.string().max(32).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateCrmRelationshipLabelSchema =
-  crmRelationshipLabelInputSchema.partial();
-export const crmRelationshipLabelSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  sideALabel: z.string(),
-  sideASlug: contactRelationshipTypeSchema,
-  sideBLabel: z.string(),
-  sideBSlug: contactRelationshipTypeSchema,
-  color: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const crmGroupSubjectTypeSchema = z.enum(["contact", "organization"]);
-
-export const crmGroupInputSchema = z.object({
-  name: z.string().min(1).max(255),
-  description: z.string().max(2000).nullable().optional(),
-  color: z.string().max(32).nullable().optional(),
-  icon: z.string().max(64).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateCrmGroupSchema = crmGroupInputSchema.partial();
-export const crmGroupSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  color: z.string().nullable(),
-  icon: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const crmGroupMemberInputSchema = z.object({
-  subjectType: crmGroupSubjectTypeSchema,
-  subjectId: z.string().min(1),
-});
-export const crmGroupMemberSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  groupId: z.string(),
-  subjectType: crmGroupSubjectTypeSchema,
-  subjectId: z.string(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-/** Cap note bodies so they stay Tier A (no object-storage Tier C/D). */
-export const CRM_ACTIVITY_NOTE_MAX_CHARS = 8192;
-export const CRM_ACTIVITY_PREVIEW_MAX_CHARS = 240;
-
-export const crmActivityKindSchema = z.enum(["note", "meeting"]);
-export const crmActivitySubjectTypeSchema = z.enum(["contact", "organization"]);
-
-export const createCrmActivityNoteSchema = z.object({
-  kind: z.literal("note"),
-  body: z.string().min(1).max(CRM_ACTIVITY_NOTE_MAX_CHARS),
-  occurredAt: isoDateSchema.optional(),
-});
-
-export const crmActivitySchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  subjectType: crmActivitySubjectTypeSchema,
-  subjectId: z.string(),
-  kind: crmActivityKindSchema,
-  body: z.string().nullable(),
-  bodyPreview: z.string().nullable(),
-  meetingId: z.string().nullable(),
-  /** Meeting title when kind=meeting (joined; not stored as SoT). */
-  meetingTitle: z.string().nullable().optional(),
-  /** Meeting start when kind=meeting (joined). */
-  meetingStartAt: isoDateSchema.nullable().optional(),
-  occurredAt: isoDateSchema,
-  createdBy: z.string().nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const crmActivityFeedQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-export const crmActivityFeedResponseSchema = z.object({
-  activities: z.array(crmActivitySchema),
-  nextCursor: z.string().nullable(),
-});
-
-export const bankAccountInputSchema = z.object({
-  key: z.string().min(1).max(64),
-  name: z.string().min(1).max(255),
-  ibanOrMask: z.string().max(64).nullable().optional(),
-  currency: z.string().min(3).max(8).optional(),
-  type: bankAccountTypeSchema.optional(),
-  /** Optional accent / chart color (#RGB or #RRGGBB). */
-  color: z
-    .string()
-    .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
-    .nullable()
-    .optional(),
-  /** Link to a Moneybird financial account for mutation sync. */
-  moneybirdFinancialAccountId: z.string().min(1).max(64).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
-  avatarStorageKey: z.string().nullable().optional(),
-  avatarContentType: z.string().nullable().optional(),
-});
-export const updateBankAccountSchema = bankAccountInputSchema.partial();
-export const bankAccountSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  key: z.string(),
-  name: z.string(),
-  ibanOrMask: z.string().nullable(),
-  currency: z.string(),
-  type: bankAccountTypeSchema,
-  avatarStorageKey: z.string().nullable(),
-  avatarContentType: z.string().nullable(),
-  color: z.string().nullable(),
-  moneybirdFinancialAccountId: z.string().nullable(),
-  moneybirdLastSyncedAt: nullableIsoDateSchema,
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-/** Aggregated running balance without loading Tier C transaction rows. */
-export const bankAccountBalanceSchema = z.object({
-  bankAccountId: z.string(),
-  balanceCents: z.number().int(),
-});
-
-export const listBankAccountBalancesResponseSchema = z.object({
-  balances: z.array(bankAccountBalanceSchema),
-});
-
-/** Dashboard assets vs debt sparkline ranges. */
-export const financeAssetsDebtRangeSchema = z.enum([
-  "1W",
-  "1M",
-  "3M",
-  "YTD",
-  "1Y",
-  "ALL",
-]);
-
-export const financeAssetsDebtQuerySchema = z.object({
-  range: financeAssetsDebtRangeSchema.optional(),
-});
-
-export const financeAssetsDebtPointSchema = z.object({
-  date: calendarDateSchema,
-  assetsCents: z.number().int().nonnegative(),
-  debtCents: z.number().int().nonnegative(),
-});
-
-export const financeAssetsDebtResponseSchema = z.object({
-  range: financeAssetsDebtRangeSchema,
-  asOf: calendarDateSchema,
-  assetsCents: z.number().int().nonnegative(),
-  debtCents: z.number().int().nonnegative(),
-  /** Snapshot at the start of the selected range (for % change). */
-  startAssetsCents: z.number().int().nonnegative(),
-  startDebtCents: z.number().int().nonnegative(),
-  points: z.array(financeAssetsDebtPointSchema),
-});
-
-/** Workspace-wide income (credits) for a calendar month. */
-export const bankAccountsMonthIncomeQuerySchema = z.object({
-  /** `YYYY-MM` — defaults to the current calendar month. */
-  month: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/)
-    .optional(),
-});
-
-export const bankAccountsMonthIncomeResponseSchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/),
-  incomeCents: z.number().int().nonnegative(),
-});
-
-/** One calendar month of income (credits) and expense (debits as positive). */
-export const bankAccountCashflowMonthSchema = z.object({
-  /** `YYYY-MM` */
-  month: z.string().regex(/^\d{4}-\d{2}$/),
-  incomeCents: z.number().int().nonnegative(),
-  expenseCents: z.number().int().nonnegative(),
-});
-
-export const bankAccountCashflowQuerySchema = z.object({
-  year: z.coerce.number().int().min(1970).max(2100).optional(),
-});
-
-export const bankAccountCashflowResponseSchema = z.object({
-  bankAccountId: z.string(),
-  year: z.number().int(),
-  months: z.array(bankAccountCashflowMonthSchema),
-});
-
-/** Workspace-wide monthly cashflow + YTD net income for the Cash Flow page. */
-export const workspaceCashflowQuerySchema = z.object({
-  year: z.coerce.number().int().min(1970).max(2100).optional(),
-  /** Calendar date `YYYY-MM-DD` used as YTD end (defaults to today). */
-  asOf: calendarDateSchema.optional(),
-});
-
-export const workspaceCashflowResponseSchema = z.object({
-  year: z.number().int(),
-  /** Inclusive YTD end date (`YYYY-MM-DD`). */
-  asOf: calendarDateSchema,
-  months: z.array(bankAccountCashflowMonthSchema),
-  /** Net income (income − expense) from Jan 1 of `year` through `asOf`. */
-  ytdNetCents: z.number().int(),
-  /**
-   * Net income for the same calendar span in the previous year
-   * (Jan 1 … same month/day of `year - 1`).
-   */
-  priorYtdNetCents: z.number().int(),
-  ytdIncomeCents: z.number().int().nonnegative(),
-  priorYtdIncomeCents: z.number().int().nonnegative(),
-  ytdExpenseCents: z.number().int().nonnegative(),
-  priorYtdExpenseCents: z.number().int().nonnegative(),
-  /**
-   * Net spend per calendar month × category (`categoryId` null = uncategorized).
-   * Positive = net outflow; negative = net inflow (credits reduce spend).
-   * Client rolls children into roots and caps to top categories + Other.
-   */
-  categoryMonths: z.array(
-    z.object({
-      month: z.string().regex(/^\d{4}-\d{2}$/),
-      categoryId: z.string().nullable(),
-      expenseCents: z.number().int(),
-    }),
-  ),
-});
-
-/** Spend detail side panel (multi-year history + month categories). */
-export const financeSpendPanelQuerySchema = z.object({
-  /** `YYYY-MM` — defaults to the current calendar month. */
-  month: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/)
-    .optional(),
-  /** How many trailing months of history to include (default 36). */
-  historyMonths: z.coerce.number().int().min(6).max(60).optional(),
-});
-
-export const financeSpendPanelResponseSchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/),
-  monthExpenseCents: z.number().int().nonnegative(),
-  history: z.array(
-    z.object({
-      month: z.string().regex(/^\d{4}-\d{2}$/),
-      expenseCents: z.number().int().nonnegative(),
-    }),
-  ),
-  yearMetrics: z.array(
-    z.object({
-      year: z.number().int(),
-      spendCents: z.number().int().nonnegative(),
-      avgMonthlyCents: z.number().int().nonnegative(),
-    }),
-  ),
-  categories: z.array(
-    z.object({
-      categoryId: z.string().nullable(),
-      /** Net spend polarity: positive = outflow, negative = inflow. */
-      expenseCents: z.number().int(),
-    }),
-  ),
-});
-
-export const financialCategoryInputSchema = z.object({
-  name: z.string().min(1).max(255),
-  parentId: z.string().nullable().optional(),
-  kind: financialCategoryKindSchema.optional(),
-  listing: financialCategoryListingSchema.optional(),
-  icon: z.string().nullable().optional(),
-  /** Monthly budget in cents. Null or 0 means no budget. */
-  budgetCents: z.number().int().nonnegative().nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateFinancialCategorySchema = financialCategoryInputSchema.partial();
-export const financialCategorySchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  name: z.string(),
-  parentId: z.string().nullable(),
-  kind: financialCategoryKindSchema,
-  listing: financialCategoryListingSchema,
-  icon: z.string().nullable(),
-  budgetCents: z.number().int().nonnegative().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const financialGoalInputSchema = z.object({
-  name: z.string().min(1).max(255),
-  listing: financialGoalListingSchema.optional(),
-  icon: z.string().nullable().optional(),
-  /** Target savings amount in cents. Null or 0 means no goal amount. */
-  goalAmountCents: z.number().int().nonnegative().nullable().optional(),
-  /** When saving for this goal should start (YYYY-MM-DD). */
-  startDate: calendarDateSchema.nullable().optional(),
-  /** Optional target end of the goal period (YYYY-MM-DD). */
-  endDate: calendarDateSchema.nullable().optional(),
-  /** Contribution per saving-mode period in cents. */
-  contributionCents: z.number().int().nonnegative().nullable().optional(),
-  savingMode: financialGoalSavingModeSchema.optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateFinancialGoalSchema = financialGoalInputSchema.partial();
-export const financialGoalSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  name: z.string(),
-  listing: financialGoalListingSchema,
-  icon: z.string().nullable(),
-  goalAmountCents: z.number().int().nonnegative().nullable(),
-  startDate: calendarDateSchema.nullable(),
-  endDate: calendarDateSchema.nullable(),
-  contributionCents: z.number().int().nonnegative().nullable(),
-  savingMode: financialGoalSavingModeSchema,
-  /**
-   * Sum of linked transaction amounts in cents (actual deposits/spend tagged
-   * to this goal). Not stored — computed on read.
-   */
-  savedCents: z.number().int(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-/** Client proposal + estimate package (portal Financials → Estimates). */
-export const CLIENT_ESTIMATE_STATUSES = [
-  "concept",
-  "in_review",
-  "approved",
-  "declined",
-] as const;
-export const clientEstimateStatusSchema = z.enum(CLIENT_ESTIMATE_STATUSES);
-
-export const clientEstimateSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  /** Workspace-scoped display number for ES-{n}. */
-  number: z.number().int().positive().nullable(),
-  organizationId: z.string().nullable(),
-  projectId: z.string().nullable(),
-  title: z.string(),
-  subtitle: z.string().nullable(),
-  clientLabel: z.string().nullable(),
-  authorContactId: z.string().nullable(),
-  authorName: z.string().nullable(),
-  /**
-   * Portal recipients ("To") — contact ids who may see this estimate.
-   * Empty = legacy org-wide portal visibility for that organization.
-   */
-  toContactIds: z.array(z.string()).default([]),
-  versionLabel: z.string().nullable(),
-  /** Display / due date label (e.g. "oktober 2026"), not necessarily ISO. */
-  documentDate: z.string().nullable(),
-  status: clientEstimateStatusSchema,
-  /** Quoted total in cents (EUR). */
-  totalAmountCents: z.number().int().nonnegative().nullable(),
-  proposalMarkdown: z.string(),
-  estimateMarkdown: z.string(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const createClientEstimateSchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  projectId: z.string().min(1).optional(),
-  title: z.string().min(1).max(500),
-  subtitle: z.string().max(2000).nullable().optional(),
-  clientLabel: z.string().max(500).nullable().optional(),
-  authorContactId: z.string().min(1).nullable().optional(),
-  authorName: z.string().max(500).nullable().optional(),
-  toContactIds: z.array(z.string().min(1)).max(200).optional(),
-  versionLabel: z.string().max(200).nullable().optional(),
-  documentDate: z.string().max(200).nullable().optional(),
-  status: clientEstimateStatusSchema.optional(),
-  totalAmountCents: z.number().int().nonnegative().nullable().optional(),
-  proposalMarkdown: z.string().max(5_000_000).optional(),
-  estimateMarkdown: z.string().max(5_000_000).optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateClientEstimateSchema = createClientEstimateSchema
-  .partial()
-  .extend({
-    organizationId: z.string().min(1).nullable().optional(),
-    projectId: z.string().min(1).nullable().optional(),
-  });
-
-export const listClientEstimatesQuerySchema = z.object({
-  organizationId: z.string().optional(),
-  status: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-});
-
-export const financialRecurringInputSchema = z.object({
-  name: z.string().min(1).max(255),
-  icon: z.string().nullable().optional(),
-  categoryId: z.string().nullable().optional(),
-  /** Expected next payment amount in cents. */
-  amountCents: z.number().int().nonnegative().nullable().optional(),
-  /** Next expected payment date (YYYY-MM-DD). */
-  nextDate: calendarDateSchema.nullable().optional(),
-  /** When true, nextDate is not auto-rolled into the current month. */
-  archived: z.boolean().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateFinancialRecurringSchema =
-  financialRecurringInputSchema.partial();
-export const financialRecurringSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  name: z.string(),
-  icon: z.string().nullable(),
-  categoryId: z.string().nullable(),
-  amountCents: z.number().int().nonnegative().nullable(),
-  nextDate: calendarDateSchema.nullable(),
-  archived: z.boolean(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-/** Cash Flow planning scratchpad row type. */
-export const cashflowPlannerEntryTypeSchema = z.enum(["expense", "income"]);
-
-export const cashflowPlannerEntryInputSchema = z.object({
-  entryType: cashflowPlannerEntryTypeSchema,
-  name: z.string().min(1).max(255),
-  /** Absolute amount in cents; sign comes from entryType. */
-  amountCents: z.number().int().nonnegative(),
-  /** Due / pay date (YYYY-MM-DD). */
-  dueDate: calendarDateSchema,
-  /** Optional free-text group label (e.g. Housing, Week 1). */
-  groupLabel: z.string().max(255).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateCashflowPlannerEntrySchema =
-  cashflowPlannerEntryInputSchema.partial();
-export const cashflowPlannerEntrySchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  entryType: cashflowPlannerEntryTypeSchema,
-  name: z.string(),
-  amountCents: z.number().int().nonnegative(),
-  dueDate: calendarDateSchema,
-  groupLabel: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const financialImportBatchSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  bankAccountId: z.string(),
-  originalFilename: z.string(),
-  storageKey: z.string(),
-  dialect: financialImportDialectSchema,
-  rowCount: z.number().int().nonnegative(),
-  insertedCount: z.number().int().nonnegative(),
-  duplicateCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  createdAt: isoDateSchema,
-});
-
-export const financialImportResultSchema = z.object({
-  batchId: z.string(),
-  dialect: financialImportDialectSchema,
-  rowCount: z.number().int().nonnegative(),
-  inserted: z.number().int().nonnegative(),
-  duplicates: z.number().int().nonnegative(),
-  errors: z.number().int().nonnegative(),
-  skippedAccountMismatch: z.number().int().nonnegative(),
-});
-
-export const financialTransactionSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  bankAccountId: z.string(),
-  importBatchId: z.string().nullable(),
-  bookedOn: calendarDateSchema,
-  amountCents: z.number().int(),
-  currency: z.string(),
-  payee: z.string(),
-  counterparty: z.string().nullable(),
-  memo: z.string().nullable(),
-  /**
-   * Optional adjusted title for UI. Original payee/memo/raw are never rewritten.
-   * Null/empty → clients fall back to payee → memo → counterparty.
-   */
-  displayName: z.string().nullable(),
-  balanceAfterCents: z.number().int().nullable(),
-  externalId: z.string().nullable(),
-  fingerprint: z.string(),
-  sourceCode: z.string().nullable(),
-  sourceType: z.string().nullable(),
-  /**
-   * Moneybird `settlement_state` (or equivalent). Null for CSV imports /
-   * unknown → treat as settled. Void states (refused, cancelled, …) stay in
-   * the ledger for classification but must not affect balances or cashflow.
-   */
-  settlementState: z.string().nullable(),
-  /** Original CSV row columns preserved at import time. */
-  raw: z.record(z.string(), z.string()).default({}),
-  organizationId: z.string().nullable(),
-  projectId: z.string().nullable(),
-  categoryId: z.string().nullable(),
-  goalId: z.string().nullable(),
-  recurringId: z.string().nullable(),
-  notes: z.string().nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-});
-
-
-export const updateFinancialTransactionSchema = z.object({
-  /** Move the transaction to another bank account in the same workspace. */
-  bankAccountId: z.string().optional(),
-  organizationId: z.string().nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  categoryId: z.string().nullable().optional(),
-  goalId: z.string().nullable().optional(),
-  recurringId: z.string().nullable().optional(),
-  notes: z.string().max(20_000).nullable().optional(),
-  /** User-adjusted display title; null clears the override. */
-  displayName: z.string().max(500).nullable().optional(),
-});
-
-export const batchUpdateFinancialTransactionsSchema = z.object({
-  ids: z.array(z.string()).min(1).max(500),
-  patch: updateFinancialTransactionSchema,
-});
-
-export const batchDeleteFinancialTransactionsSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1).max(500),
-});
-
-export const batchDeleteFinancialTransactionsResponseSchema = z.object({
-  deleted: z.number().int().nonnegative(),
-});
-
-export const listFinancialTransactionsQuerySchema = z.object({
-  q: z.string().optional(),
-  from: calendarDateSchema.optional(),
-  to: calendarDateSchema.optional(),
-  month: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, "Use YYYY-MM")
-    .optional(),
-  organizationId: z.string().optional(),
-  projectId: z.string().optional(),
-  categoryId: z.string().optional(),
-  goalId: z.string().optional(),
-  recurringId: z.string().optional(),
-  /**
-   * Comma-separated category ids for multi-select filter.
-   * Combined with `uncategorized` using OR when both are present.
-   */
-  categoryIds: z.string().optional(),
-  /** Pass `"true"` to filter rows with no category. */
-  uncategorized: z.enum(["true", "false"]).optional(),
-  /** Pass `"true"` to filter rows with no organization. */
-  unassignedOrg: z.enum(["true", "false"]).optional(),
-  /** Pass `"true"` to filter rows with no goal. */
-  unassignedGoal: z.enum(["true", "false"]).optional(),
-  /** Pass `"true"` to filter rows with no recurring. */
-  unassignedRecurring: z.enum(["true", "false"]).optional(),
-  amountSign: financialAmountSignSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(500).optional(),
-  cursor: z.string().optional(),
-  /**
-   * When `"true"`, response includes `total` — full matching row count
-   * (ignores cursor / pagination). Used by dashboard review badge.
-   */
-  includeTotal: z.enum(["true", "false"]).optional(),
-});
-
-export const listFinancialTransactionsResponseSchema = z.object({
-  transactions: z.array(financialTransactionSchema),
-  nextCursor: z.string().nullable(),
-  /** Present when the request set `includeTotal=true`. */
-  total: z.number().int().nonnegative().optional(),
-});
-
-export const areaParentSchema = z.enum(["personal", "business", "clients"]);
-export const areaInputSchema = z.object({
-  name: z.string().min(1).max(255),
-  parent: areaParentSchema,
-  icon: z.string().max(128).nullable().optional(),
-  color: z.string().max(64).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateAreaSchema = areaInputSchema.partial();
-export const areaSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  name: z.string(),
-  parent: areaParentSchema.nullable(),
-  icon: z.string().nullable(),
-  color: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const letterInputSchema = z.object({
-  number: z.number().int().positive().nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  organizationId: z.string().nullable().optional(),
-  contactId: z.string().nullable().optional(),
-  title: z.string().min(1).max(500),
-  icon: z.string().max(128).nullable().optional(),
-  context: z.string().max(20_000).nullable().optional(),
-  status: taskStatusSchema.optional(),
-  dueDate: isoDateSchema.nullable().optional(),
-  receivedDate: isoDateSchema.nullable().optional(),
-  direction: z.enum(["incoming", "outgoing"]).optional(),
-  originalFilename: z.string().max(255).optional(),
-  storageKey: z.string().max(1024).optional(),
-  contentType: z.string().max(255).optional(),
-  byteSize: z.number().int().nonnegative().optional(),
-  checksum: z.string().max(128).nullable().optional(),
-  contentEtag: z.string().max(128).nullable().optional(),
-  extractedText: z.string().max(2_000_000).nullable().optional(),
-  sortOrder: z.number().int().optional(),
-});
-export const updateLetterSchema = letterInputSchema.partial();
-export const triageLetterSchema = letterInputSchema
-  .pick({
-    projectId: true,
-    organizationId: true,
-    contactId: true,
-    status: true,
-    dueDate: true,
-  })
-  .partial();
-export const letterSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  number: z.number().int().nullable(),
-  projectId: z.string().nullable(),
-  organizationId: z.string().nullable(),
-  contactId: z.string().nullable(),
-  title: z.string(),
-  icon: z.string().nullable(),
-  context: z.string().nullable(),
-  status: z.string(),
-  dueDate: nullableIsoDateSchema,
-  receivedDate: nullableIsoDateSchema,
-  direction: z.string(),
-  storageKey: z.string(),
-  originalFilename: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string().nullable(),
-  contentEtag: z.string().nullable(),
-  extractedText: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const letterAttachmentSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  letterId: z.string(),
-  storageKey: z.string(),
-  originalFilename: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string().nullable(),
-  contentEtag: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-export const letterAttachmentParamsSchema = z.object({
-  id: z.string(),
-  attachmentId: z.string(),
-});
-export const letterAttachmentsResponseSchema = z.object({
-  attachments: z.array(letterAttachmentSchema),
-});
-export const updateLetterAttachmentSchema = z.object({
-  originalFilename: z.string().trim().min(1).max(255),
-});
-export const reorderLetterAttachmentsSchema = z.object({
-  orderedIds: z.array(z.string()).min(1).max(100),
-});
-
-export const taskAttachmentSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  taskId: z.string(),
-  storageKey: z.string(),
-  originalFilename: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string().nullable(),
-  contentEtag: z.string().nullable(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-export const taskAttachmentParamsSchema = z.object({
-  id: z.string(),
-  attachmentId: z.string(),
-});
-export const taskAttachmentsResponseSchema = z.object({
-  attachments: z.array(taskAttachmentSchema),
-});
-export const updateTaskAttachmentSchema = z.object({
-  originalFilename: z.string().trim().min(1).max(255),
-});
-export const reorderTaskAttachmentsSchema = z.object({
-  orderedIds: z.array(z.string()).min(1).max(100),
-});
-
-export const avatarParamsSchema = z.object({
-  entityType: z.string(),
-  entityId: z.string(),
-});
-export const avatarSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  entityType: z.string(),
-  entityId: z.string(),
-  storageKey: z.string(),
-  contentType: z.string(),
-  byteSize: z.number().int().nonnegative(),
-  checksum: z.string(),
-  contentEtag: z.string().nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-});
-export const avatarSignedUrlQuerySchema = z.object({
-  /** Desired TTL in seconds (clamped server-side; default 7 days, max 30 days). */
-  ttlSeconds: z.coerce.number().int().positive().optional(),
-});
-export const avatarSignedUrlSchema = z.object({
-  url: z.string().url(),
-  expiresAt: isoDateSchema,
-});
-export const publicAvatarQuerySchema = z.object({
-  exp: z.coerce.number().int().positive(),
-  sig: z.string().min(32).max(128),
-  ws: z.string().min(1),
-});
-
-export const upsertDevicePushTokenSchema = z.object({
-  platform: z.enum(["ios", "android", "web"]),
-  token: z.string().min(1),
-  deviceName: z.string().max(255).optional(),
-});
-export const deleteDevicePushTokenSchema = z.object({
-  token: z.string().min(1),
-});
-
-export const settingsSchema = z.record(z.unknown());
-export const settingsResponseSchema = z.object({ settings: settingsSchema });
-
-export const cursorSettingsSchema = z.object({
-  apiKeyConfigured: z.boolean(),
-  apiKeyPreview: z.string().nullable(),
-  spellcheckEnabled: z.boolean(),
-  spellcheckModel: z.string(),
-  /** Editable agent preamble; empty/null means use the built-in default. */
-  spellcheckInstructions: z.string(),
-  researchEnabled: z.boolean(),
-  researchModel: z.string(),
-  /** Editable research preamble; empty/null means use the built-in default. */
-  researchInstructions: z.string(),
-});
-
-/** Tailscale-reachable PTY sidecar connection for trusted shells (iPad). */
-export const agentPtyConnectionSchema = z.object({
-  httpOrigin: z.string().url(),
-  wsUrl: z.string().url(),
-  token: z.string().min(1),
-});
-export const updateCursorSettingsSchema = z.object({
-  /** Set to a new key, or empty string to clear. Omit to leave unchanged. */
-  apiKey: z.string().optional(),
-  spellcheckEnabled: z.boolean().optional(),
-  spellcheckModel: z.string().min(1).max(128).optional(),
-  /** Full instruction text. Empty string resets to the built-in default. */
-  spellcheckInstructions: z.string().max(20_000).optional(),
-  researchEnabled: z.boolean().optional(),
-  researchModel: z.string().min(1).max(128).optional(),
-  /** Full instruction text. Empty string resets to the built-in default. */
-  researchInstructions: z.string().max(20_000).optional(),
-});
-
-export const cursorTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  modelCount: z.number().int().nonnegative().nullable(),
-});
-
-/** Moneybird integration (personal API token + administration). */
-export const moneybirdSettingsSchema = z.object({
-  apiTokenConfigured: z.boolean(),
-  apiTokenPreview: z.string().nullable(),
-  administrationId: z.string().nullable(),
-  administrationName: z.string().nullable(),
-  connected: z.boolean(),
-});
-export const updateMoneybirdSettingsSchema = z.object({
-  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
-  apiToken: z.string().optional(),
-  /** Set to an administration id, or null/empty to clear. Omit to leave unchanged. */
-  administrationId: z.string().nullable().optional(),
-});
-export const moneybirdAdministrationSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  language: z.string().nullable(),
-  currency: z.string().nullable(),
-});
-export const moneybirdAdministrationsResponseSchema = z.object({
-  administrations: z.array(moneybirdAdministrationSchema),
-});
-export const moneybirdTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  administrationName: z.string().nullable(),
-  invoiceSampleCount: z.number().int().nullable(),
-});
-
-/** Mapbox integration (access token for geocode + static maps). */
-export const mapboxSettingsSchema = z.object({
-  accessTokenConfigured: z.boolean(),
-  accessTokenPreview: z.string().nullable(),
-  connected: z.boolean(),
-});
-export const updateMapboxSettingsSchema = z.object({
-  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
-  accessToken: z.string().optional(),
-});
-export const mapboxTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-});
-
-/** Brandfetch integration (Brand API key for org logo hydrate / CardDAV). */
-export const brandfetchSettingsSchema = z.object({
-  apiKeyConfigured: z.boolean(),
-  apiKeyPreview: z.string().nullable(),
-  /** True when a workspace key or env fallback is configured. */
-  connected: z.boolean(),
-  /** Env `BRANDFETCH_API_KEY` is set (bootstrap until Settings is filled). */
-  envKeyConfigured: z.boolean(),
-});
-export const updateBrandfetchSettingsSchema = z.object({
-  /** Set to a new API key, or empty string to clear. Omit to leave unchanged. */
-  apiKey: z.string().optional(),
-});
-export const brandfetchTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-});
-
-/** Chatwoot integration (website chat → Communication Chat). */
-export const chatwootSettingsSchema = z.object({
-  baseUrl: z.string().nullable(),
-  accountId: z.string().nullable(),
-  apiTokenConfigured: z.boolean(),
-  apiTokenPreview: z.string().nullable(),
-  webhookSecretConfigured: z.boolean(),
-  connected: z.boolean(),
-  /** Suggested public webhook URL to paste into Chatwoot. */
-  webhookUrl: z.string().nullable(),
-});
-export const updateChatwootSettingsSchema = z.object({
-  baseUrl: z.string().optional(),
-  accountId: z.string().optional(),
-  /** User access token; empty string clears. Omit to leave unchanged. */
-  apiAccessToken: z.string().optional(),
-  /** Webhook HMAC secret; empty string clears. Omit to leave unchanged. */
-  webhookSecret: z.string().optional(),
-});
-export const chatwootTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  inboxCount: z.number().int().nullable(),
-});
-
-export const chatConversationStatusSchema = z.enum([
-  "open",
-  "resolved",
-  "pending",
-  "snoozed",
-]);
-export const chatConversationSchema = z.object({
-  id: z.string(),
-  externalId: z.string(),
-  inboxId: z.string().nullable(),
-  inboxName: z.string().nullable(),
-  channelType: z.string().nullable(),
-  status: chatConversationStatusSchema,
-  contactName: z.string().nullable(),
-  contactEmail: z.string().nullable(),
-  contactPhone: z.string().nullable(),
-  contactAvatarUrl: z.string().nullable(),
-  lastMessagePreview: z.string().nullable(),
-  lastActivityAt: z.string().datetime().nullable(),
-  unread: z.boolean(),
-  /** Local BacksterOS assignee contact id. */
-  assigneeId: z.string().nullable(),
-  /** 0 = none, 1 = urgent … 4 = low (same scale as Task.priority). */
-  priority: z.number().int().min(0).max(4),
-  dueDate: z.string().datetime().nullable(),
-  updatedAt: z.string().datetime(),
-});
-export const chatMessageDirectionSchema = z.enum([
-  "incoming",
-  "outgoing",
-  "activity",
-]);
-export const chatMessageSchema = z.object({
-  id: z.string(),
-  conversationId: z.string(),
-  externalId: z.string(),
-  direction: chatMessageDirectionSchema,
-  content: z.string(),
-  contentType: z.string().nullable(),
-  senderName: z.string().nullable(),
-  private: z.boolean(),
-  createdAt: z.string().datetime(),
-});
-export const chatConversationDetailSchema = chatConversationSchema.extend({
-  messages: z.array(chatMessageSchema),
-});
-export const listChatConversationsQuerySchema = z.object({
-  status: chatConversationStatusSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-export const createChatMessageInputSchema = z.object({
-  content: z.string().min(1).max(10_000),
-  private: z.boolean().optional(),
-});
-export const updateChatConversationInputSchema = z.object({
-  status: chatConversationStatusSchema.optional(),
-  assigneeId: z.string().nullable().optional(),
-  priority: z.number().int().min(0).max(4).optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-});
-export const toggleChatTypingInputSchema = z.object({
-  typing: z.boolean(),
-});
-export const toggleChatTypingResultSchema = z.object({
-  ok: z.boolean(),
-});
-export const chatConversationsListSchema = z.object({
-  conversations: z.array(chatConversationSchema),
-});
-export const chatSyncResultSchema = z.object({
-  imported: z.number().int().nonnegative(),
-  updated: z.number().int().nonnegative(),
-});
-
-/** Google Calendar integration (OAuth + read-only event sync — ADR-037). */
-export const googleCalendarSettingsSchema = z.object({
-  clientIdConfigured: z.boolean(),
-  clientSecretConfigured: z.boolean(),
-  refreshTokenConfigured: z.boolean(),
-  connected: z.boolean(),
-  accountEmail: z.string().nullable(),
-  selectedCalendarIds: z.array(z.string()),
-  lastSyncedAt: z.string().datetime().nullable(),
-  /** Redirect URI to register on the Google Cloud OAuth client. */
-  oauthRedirectUri: z.string(),
-  /** True when an HTTPS webhook base is configured and at least one watch channel is active. */
-  pushEnabled: z.boolean(),
-  pushWebhookUrl: z.string().nullable(),
-  pushChannelCount: z.number().int().nonnegative(),
-  pushError: z.string().nullable(),
-});
-export const updateGoogleCalendarSettingsSchema = z.object({
-  /** OAuth client id; empty string clears. Omit to leave unchanged. */
-  clientId: z.string().optional(),
-  /** OAuth client secret; empty string clears. Omit to leave unchanged. */
-  clientSecret: z.string().optional(),
-  /** Refresh token (power-user paste); empty string clears. Omit to leave unchanged. */
-  refreshToken: z.string().optional(),
-  /** Calendar ids to sync; empty = primary only on next sync. */
-  selectedCalendarIds: z.array(z.string().min(1).max(200)).max(50).optional(),
-});
-export const googleCalendarTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  accountEmail: z.string().nullable(),
-  calendarCount: z.number().int().nullable(),
-});
-export const googleCalendarOAuthStartResultSchema = z.object({
-  authorizeUrl: z.string().url(),
-  redirectUri: z.string(),
-});
-export const googleCalendarCalendarSummarySchema = z.object({
-  id: z.string(),
-  summary: z.string(),
-  primary: z.boolean(),
-  selected: z.boolean(),
-});
-export const googleCalendarCalendarsResponseSchema = z.object({
-  calendars: z.array(googleCalendarCalendarSummarySchema),
-});
-export const googleCalendarSyncResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  upserted: z.number().int(),
-  removed: z.number().int(),
-  calendarCount: z.number().int(),
-  lastSyncedAt: z.string().datetime().nullable(),
-});
-export const externalCalendarEventSchema = z.object({
-  id: z.string(),
-  provider: z.string(),
-  calendarId: z.string(),
-  externalId: z.string(),
-  title: z.string(),
-  description: z.string().nullable(),
-  location: z.string().nullable(),
-  status: z.string().nullable(),
-  htmlLink: z.string().nullable(),
-  startAt: isoDateSchema.nullable(),
-  endAt: isoDateSchema.nullable(),
-  allDay: z.boolean(),
-  startDate: z.string().nullable(),
-  endDate: z.string().nullable(),
-  updatedAt: isoDateSchema,
-  /** Backster meeting notes shell linked to this Google (etc.) block, if any. */
-  linkedMeetingId: z.string().nullable().optional(),
-});
-export const listExternalCalendarEventsQuerySchema = z.object({
-  from: isoDateSchema.optional(),
-  to: isoDateSchema.optional(),
-  provider: z.string().min(1).max(64).optional(),
-});
-export const listExternalCalendarEventsResponseSchema = z.object({
-  events: z.array(externalCalendarEventSchema),
-});
-
-/** GitHub integration (workspace PAT; optional Clerk OAuth still supported). */
-export const githubSettingsSchema = z.object({
-  apiTokenConfigured: z.boolean(),
-  apiTokenPreview: z.string().nullable(),
-  /** True when a workspace PAT or env fallback is configured. */
-  connected: z.boolean(),
-  /** Env `GITHUB_API_TOKEN` is set (shown so Settings can explain fallback). */
-  envTokenConfigured: z.boolean(),
-});
-export const updateGithubSettingsSchema = z.object({
-  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
-  apiToken: z.string().optional(),
-});
-export const githubTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  login: z.string().nullable(),
-});
-
-/** TransIP domain inventory (Catalog Domains sync). */
-export const transipStatusSchema = z.object({
-  configured: z.boolean(),
-});
-export const transipSettingsSchema = z.object({
-  /** Control-panel login used with the private key. */
-  login: z.string().nullable(),
-  loginConfigured: z.boolean(),
-  privateKeyConfigured: z.boolean(),
-  /** Both login and private key are present. */
-  keyConfigured: z.boolean(),
-  apiTokenConfigured: z.boolean(),
-  apiTokenPreview: z.string().nullable(),
-  /** ISO timestamp when the cached JWT expires (if known). */
-  tokenExpiresAt: z.string().nullable(),
-  /** True when workspace key/token or env fallback is configured. */
-  connected: z.boolean(),
-  /** Env / ~/.config/secrets/transip.env access token fallback. */
-  envTokenConfigured: z.boolean(),
-  /** Env login + private key fallback. */
-  envKeyConfigured: z.boolean(),
-});
-export const updateTransipSettingsSchema = z.object({
-  /** TransIP account login. Empty string clears. Omit to leave unchanged. */
-  login: z.string().optional(),
-  /** PEM private key from the TransIP API key pair. Empty clears. */
-  privateKey: z.string().optional(),
-  /**
-   * Legacy: paste a control-panel access token.
-   * Prefer login + privateKey (auto-refreshed JWTs). Empty string clears.
-   */
-  apiToken: z.string().optional(),
-});
-export const transipTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  domainCount: z.number().int().nonnegative().nullable(),
-});
-export const transipDomainSyncCreatedSchema = z.object({
-  id: z.string(),
-  key: z.string(),
-  name: z.string(),
-});
-export const transipDomainSyncEntrySchema = z.object({
-  name: z.string(),
-  status: z.string().nullable(),
-  registrationDate: z.string().nullable().optional(),
-  renewalDate: z.string().nullable(),
-  action: z.enum(["created", "skipped", "healed"]),
-});
-export const transipDomainSyncResultSchema = z.object({
-  fetched: z.number().int().nonnegative(),
-  created: z.number().int().nonnegative(),
-  skipped: z.number().int().nonnegative(),
-  healed: z.number().int().nonnegative().default(0),
-  createdProjects: z.array(transipDomainSyncCreatedSchema),
-  healedProjectIds: z.array(z.string()).default([]),
-  domains: z.array(transipDomainSyncEntrySchema),
-});
-
-export const transipDomainNameserverSchema = z.object({
-  hostname: z.string(),
-  ipv4: z.string().nullable(),
-  ipv6: z.string().nullable(),
-});
-
-export const transipDomainWhoisContactSchema = z.object({
-  type: z.string().nullable(),
-  firstName: z.string().nullable(),
-  lastName: z.string().nullable(),
-  companyName: z.string().nullable(),
-  companyKvk: z.string().nullable(),
-  companyType: z.string().nullable(),
-  street: z.string().nullable(),
-  number: z.string().nullable(),
-  postalCode: z.string().nullable(),
-  city: z.string().nullable(),
-  phoneNumber: z.string().nullable(),
-  faxNumber: z.string().nullable(),
-  email: z.string().nullable(),
-  country: z.string().nullable(),
-});
-
-export const transipDomainDetailSchema = z.object({
-  name: z.string(),
-  status: z.string().nullable(),
-  /** Null when active; typically `"cancelled"` when scheduled/cancelled. */
-  cancellationStatus: z.string().nullable(),
-  cancellationDate: z.string().nullable(),
-  registrationDate: z.string().nullable(),
-  renewalDate: z.string().nullable(),
-  isDnsOnly: z.boolean(),
-  tags: z.array(z.string()),
-  authCode: z.string().nullable(),
-  authCodeError: z.string().nullable(),
-  nameservers: z.array(transipDomainNameserverSchema),
-  contacts: z.array(transipDomainWhoisContactSchema),
-});
-
-export const updateTransipDomainTagsInputSchema = z.object({
-  tags: z.array(z.string()),
-});
-
-export const updateTransipDomainTagsResultSchema = z.object({
-  tags: z.array(z.string()),
-  projectId: z.string().nullable(),
-});
-
-export const updateTransipDomainContactsInputSchema = z.object({
-  contacts: z.array(transipDomainWhoisContactSchema).min(1),
-});
-
-export const updateTransipDomainContactsResultSchema = z.object({
-  contacts: z.array(transipDomainWhoisContactSchema),
-});
-
-/** TransIP control panel allows up to 13 nameservers (TLD may be lower; min 2). */
-export const updateTransipDomainNameserversInputSchema = z.object({
-  nameservers: z.array(transipDomainNameserverSchema).min(2).max(13),
-});
-
-export const updateTransipDomainNameserversResultSchema = z.object({
-  nameservers: z.array(transipDomainNameserverSchema),
-});
-
-/** Cloudflare DNS (API token; zone matching for Catalog Domains). */
-export const cloudflareStatusSchema = z.object({
-  configured: z.boolean(),
-});
-export const cloudflareSettingsSchema = z.object({
-  apiTokenConfigured: z.boolean(),
-  apiTokenPreview: z.string().nullable(),
-  /** True when a workspace token or env fallback is configured. */
-  connected: z.boolean(),
-  /** Env / ~/.config/secrets/cloudflare.env fallback is set. */
-  envTokenConfigured: z.boolean(),
-});
-export const updateCloudflareSettingsSchema = z.object({
-  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
-  apiToken: z.string().optional(),
-});
-export const cloudflareTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  zoneCount: z.number().int().nonnegative().nullable(),
-});
-export const cloudflareZoneMatchEntrySchema = z.object({
-  name: z.string(),
-  projectId: z.string().nullable(),
-  zoneId: z.string().nullable(),
-  action: z.enum([
-    "matched",
-    "updated",
-    "unchanged",
-    "unmatched_project",
-    "unmatched_zone",
-  ]),
-});
-export const cloudflareZoneMatchResultSchema = z.object({
-  fetched: z.number().int().nonnegative(),
-  matched: z.number().int().nonnegative(),
-  updated: z.number().int().nonnegative(),
-  unchanged: z.number().int().nonnegative(),
-  unmatchedProjects: z.number().int().nonnegative(),
-  unmatchedZones: z.number().int().nonnegative(),
-  domains: z.array(cloudflareZoneMatchEntrySchema),
-});
-
-export const cloudflareProjectZoneResultSchema = z.object({
-  projectId: z.string(),
-  name: z.string(),
-  zoneId: z.string().nullable(),
-  action: z.enum(["unchanged", "updated", "unmatched"]),
-});
-
-export const cloudflareDnsRecordSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  name: z.string(),
-  content: z.string(),
-  ttl: z.number().nullable(),
-  proxied: z.boolean().nullable(),
-  priority: z.number().nullable(),
-});
-
-export const cloudflareDnsRecordsResultSchema = z.object({
-  zoneId: z.string(),
-  records: z.array(cloudflareDnsRecordSchema),
-});
-
-export const updateCloudflareDnsRecordSchema = z.object({
-  type: z.string().min(1),
-  name: z.string().min(1),
-  content: z.string().min(1),
-  ttl: z.number().int().positive().nullable(),
-  proxied: z.boolean().nullable(),
-  priority: z.number().int().nonnegative().nullable(),
-});
-
-export const cloudflareDnsRecordUpdateResultSchema = z.object({
-  zoneId: z.string(),
-  record: cloudflareDnsRecordSchema,
-});
-
-export const cloudflarePurgeCacheResultSchema = z.object({
-  zoneId: z.string(),
-  id: z.string().nullable(),
-  purged: z.literal(true),
-});
-
-/** Shared place/geocode result for contacts (and later meetings). */
-export const mapboxGeocodeResultSchema = z.object({
-  latitude: z.number().finite(),
-  longitude: z.number().finite(),
-  formatted: z.string(),
-  relevance: z.number().finite().nullable(),
-  placeName: z.string().nullable(),
-});
-export const mapboxGeocodeQuerySchema = z.object({
-  q: z.string().min(1).max(500),
-  /** Optional ISO 3166-1 alpha-2 to bias Mapbox results. */
-  country: z.string().min(2).max(2).optional(),
-});
-export const mapboxStaticMapQuerySchema = z.object({
-  lat: z.coerce.number().finite().min(-90).max(90),
-  lng: z.coerce.number().finite().min(-180).max(180),
-  z: z.coerce.number().finite().min(0).max(22).optional(),
-  width: z.coerce.number().int().min(1).max(1280).optional(),
-  height: z.coerce.number().int().min(1).max(1280).optional(),
-});
-
-/** AgentMail integration (API key + inbox). */
-export const agentMailInboxSchema = z.object({
-  inboxId: z.string(),
-  email: z.string(),
-  displayName: z.string().nullable(),
-  podId: z.string().nullable(),
-  contactId: z.string().nullable().optional(),
-  contactName: z.string().nullable().optional(),
-});
-export const agentMailSettingsSchema = z.object({
-  apiKeyConfigured: z.boolean(),
-  apiKeyPreview: z.string().nullable(),
-  /** First selected inbox — kept for older clients. */
-  inboxId: z.string().nullable(),
-  inboxEmail: z.string().nullable(),
-  inboxDisplayName: z.string().nullable(),
-  inboxIds: z.array(z.string()),
-  inboxes: z.array(agentMailInboxSchema),
-  organizationId: z.string().nullable(),
-  connected: z.boolean(),
-  replyGreetingTemplate: z.string(),
-  replyGreetingTemplateEn: z.string(),
-  replyGreetingTemplateNl: z.string(),
-  replySignOffTemplateEn: z.string(),
-  replySignOffTemplateNl: z.string(),
-  webhookConfigured: z.boolean(),
-  /** Grok Bot webhook URL for email concept drafts. */
-  grokWebhookConfigured: z.boolean(),
-  grokWebhookUrlPreview: z.string().nullable(),
-});
-export const updateAgentMailSettingsSchema = z.object({
-  /** Set to a new key, or empty string to clear. Omit to leave unchanged. */
-  apiKey: z.string().optional(),
-  /** Set to an inbox id, or null/empty to clear. Omit to leave unchanged. */
-  inboxId: z.string().nullable().optional(),
-  /** Replace the selected inbox list. Empty array clears selection. */
-  inboxIds: z.array(z.string()).optional(),
-  /** @deprecated Prefer replyGreetingTemplateEn. */
-  replyGreetingTemplate: z.string().max(500).optional(),
-  replyGreetingTemplateEn: z.string().max(500).optional(),
-  replyGreetingTemplateNl: z.string().max(500).optional(),
-  replySignOffTemplateEn: z.string().max(500).optional(),
-  replySignOffTemplateNl: z.string().max(500).optional(),
-  /** Merge inbox id → contact id (null clears). Only selected inboxes are kept. */
-  inboxContacts: z
-    .record(z.string().min(1), z.string().min(1).nullable())
-    .optional(),
-  /** Grok Bot routine URL. Empty string clears. Omit to leave unchanged. */
-  grokWebhookUrl: z.string().max(2000).optional(),
-  /** Grok Bot webhook key/token. Empty string clears. Omit to leave unchanged. */
-  grokWebhookKey: z.string().max(2000).optional(),
-});
-export const agentMailInboxesResponseSchema = z.object({
-  inboxes: z.array(agentMailInboxSchema),
-});
-export const agentMailTestConnectionResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  organizationId: z.string().nullable(),
-  inboxEmail: z.string().nullable(),
-  inboxCount: z.number().int().nullable(),
-});
-
-export const autoReviewWebhookRecentFailureSchema = z.object({
-  deliveryId: z.string(),
-  taskId: z.string().nullable(),
-  taskKey: z.string().nullable(),
-  at: z.string().datetime(),
-  error: z.string().nullable(),
-  httpStatus: z.number().int().nullable(),
-  attempt: z.number().int(),
-});
-
-export const autoReviewWebhookSettingsSchema = z.object({
-  enabled: z.boolean(),
-  url: z.string().nullable(),
-  secretConfigured: z.boolean(),
-  /** Masked HMAC signing secret (never the raw value). */
-  secretPreview: z.string().nullable(),
-  /** Optional Grok Bot / receiver Authorization header is configured. */
-  authorizationHeaderConfigured: z.boolean(),
-  /** Masked Authorization header value (last four; never the raw value). */
-  authorizationHeaderPreview: z.string().nullable(),
-  lastDeliveryAt: z.string().datetime().nullable(),
-  lastDeliveryResult: z.enum(["delivered", "failed", "pending"]).nullable(),
-  lastDeliveryHttpStatus: z.number().int().nullable(),
-  lastDeliveryError: z.string().nullable(),
-  recentFailures: z.array(autoReviewWebhookRecentFailureSchema),
-});
-
-export const updateAutoReviewWebhookSettingsSchema = z.object({
-  url: z.string().max(2000).optional(),
-  /** New HMAC signing secret, or empty string to clear. Omit to leave unchanged. */
-  secret: z.string().max(2000).optional(),
-  /**
-   * Full Authorization header value for the receiver (e.g. "Bearer …"), or empty
-   * string to clear. Distinct from the HMAC signing secret. Omit to leave unchanged.
-   */
-  authorizationHeader: z.string().max(2000).optional(),
-  enabled: z.boolean().optional(),
-});
-
-export const autoReviewWebhookTestResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().nullable(),
-  httpStatus: z.number().int().nullable(),
-  deliveryId: z.string().nullable(),
-});
-export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
-/**
- * Email thread statuses include task statuses plus draft-only `concept`.
- * Kept separate from TASK_STATUSES so task pickers/filters never accept concept.
- */
-export const EMAIL_THREAD_STATUSES = [...TASK_STATUSES, "concept"] as const;
-export const emailThreadStatusSchema = z.enum(EMAIL_THREAD_STATUSES);
-/** One or more email addresses (string or list) for draft headers. */
-const emailRecipientListSchema = z
-  .union([
-    z.string().max(2_000),
-    z.array(z.string().min(1).max(320)).max(50),
-  ])
-  .optional();
-
-export const agentMailConceptDraftSchema = z.object({
-  draftId: z.string(),
-  inboxId: z.string(),
-  subject: z.string().nullable(),
-  from: z.string().nullable(),
-  to: z.array(z.string()),
-  cc: z.array(z.string()).optional(),
-  bcc: z.array(z.string()).optional(),
-  /** Full assembled draft text stored in AgentMail. */
-  text: z.string().nullable(),
-  /** Editable body without greeting/sign-off. */
-  body: z.string().nullable(),
-  greeting: z.string().nullable(),
-  signOff: z.string().nullable(),
-  preview: z.string().nullable(),
-  updatedAt: z.string(),
-});
-export const agentMailMessageSchema = z.object({
-  kind: agentMailListItemKindSchema.default("message"),
-  inboxId: z.string(),
-  threadId: z.string().optional(),
-  messageId: z.string(),
-  draftId: z.string().nullable().optional(),
-  inReplyToMessageId: z.string().nullable().optional(),
-  conceptDraftId: z.string().nullable().optional(),
-  conceptPreview: z.string().nullable().optional(),
-  subject: z.string(),
-  from: z.string(),
-  /** Recipients when the list/detail payload includes them (AgentMail). */
-  to: z.array(z.string()).optional(),
-  preview: z.string().nullable(),
-  timestamp: z.string(),
-  /** Workspace email thread row id (when registered). */
-  emailThreadId: z.string().optional(),
-  /** Workspace-wide display number (E-1, E-2, …). */
-  number: z.number().int().positive().optional(),
-  displayId: z.string().optional(),
-  /** Workspace thread property; defaults to backlog when unset. */
-  status: emailThreadStatusSchema.optional(),
-  priority: z.number().int().min(0).max(4).optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-  organizationId: z.string().nullable().optional(),
-  organizationName: z.string().nullable().optional(),
-  contactId: z.string().nullable().optional(),
-  contactName: z.string().nullable().optional(),
-  /**
-   * Distinct linked contacts across the thread’s per-message parties — used
-   * for multi-party avatar stacks on Communication list cards.
-   */
-  partyContactIds: z.array(z.string()).optional(),
-  assigneeId: z.string().nullable().optional(),
-  assigneeName: z.string().nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  projectName: z.string().nullable().optional(),
-  projectKey: z.string().nullable().optional(),
-  /** External update flag — surfaces in the Updated inbox group. */
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  /** AgentMail labels (e.g. unread / read). */
-  labels: z.array(z.string()).optional(),
-});
-export const agentMailMessagesResponseSchema = z.object({
-  messages: z.array(agentMailMessageSchema),
-});
-export const emailThreadMessagePartySchema = z.object({
-  contactId: z.string().nullable(),
-  organizationId: z.string().nullable(),
-});
-export const emailThreadMessagePartiesSchema = z.record(
-  z.string(),
-  emailThreadMessagePartySchema,
-);
-export const emailThreadMetadataSchema = z.object({
-  id: z.string(),
-  inboxId: z.string(),
-  threadKey: z.string(),
-  number: z.number().int().positive(),
-  displayId: z.string(),
-  organizationId: z.string().nullable(),
-  organizationName: z.string().nullable().optional(),
-  contactId: z.string().nullable(),
-  contactName: z.string().nullable().optional(),
-  assigneeId: z.string().nullable(),
-  assigneeName: z.string().nullable().optional(),
-  projectId: z.string().nullable(),
-  projectName: z.string().nullable().optional(),
-  projectKey: z.string().nullable().optional(),
-  /** Per AgentMail messageId → contact/org for that message. */
-  messageParties: emailThreadMessagePartiesSchema.optional(),
-  status: emailThreadStatusSchema,
-  priority: z.number().int().min(0).max(4),
-  dueDate: z.string().datetime().nullable(),
-  /** External update flag — surfaces in the Updated inbox group. */
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-export const updateEmailThreadMetadataSchema = z.object({
-  organizationId: z.string().nullable().optional(),
-  contactId: z.string().nullable().optional(),
-  assigneeId: z.string().nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  status: emailThreadStatusSchema.optional(),
-  priority: z.number().int().min(0).max(4).optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-  /**
-   * Merge map of messageId → party. Existing keys not listed are kept;
-   * listed keys are replaced.
-   */
-  messageParties: emailThreadMessagePartiesSchema.optional(),
-  /** Upsert a single message party (merged into messageParties). */
-  messageParty: z
-    .object({
-      messageId: z.string().min(1),
-      contactId: z.string().nullable().optional(),
-      organizationId: z.string().nullable().optional(),
-    })
-    .optional(),
-  /** Clear the Updated inbox flag after the user views the item. */
-  acknowledgeInboxUpdate: z.boolean().optional(),
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-});
-export const emailThreadCommentAuthorSchema = z.enum(["user", "agent"]);
-export const emailThreadCommentSchema = z.object({
-  id: z.string(),
-  emailThreadId: z.string(),
-  body: z.string(),
-  author: emailThreadCommentAuthorSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-export const createEmailThreadCommentSchema = z.object({
-  body: z.string().min(1).max(100_000),
-  author: emailThreadCommentAuthorSchema.optional(),
-});
-export const updateEmailThreadCommentSchema = z.object({
-  body: z.string().min(1).max(100_000),
-});
-export const emailThreadCommentsResponseSchema = z.object({
-  comments: z.array(emailThreadCommentSchema),
-});
-export const agentMailMessageAttachmentSchema = z.object({
-  attachmentId: z.string(),
-  size: z.number().int().nonnegative().optional(),
-  filename: z.string().nullable().optional(),
-  contentType: z.string().nullable().optional(),
-  contentDisposition: z.string().nullable().optional(),
-  contentId: z.string().nullable().optional(),
-});
-export const agentMailMessageDetailSchema = agentMailMessageSchema
-  .omit({ kind: true, draftId: true, inReplyToMessageId: true })
-  .extend({
-    kind: agentMailListItemKindSchema.default("message"),
-    draftId: z.string().nullable().optional(),
-    inReplyToMessageId: z.string().nullable().optional(),
-    text: z.string().nullable(),
-    html: z.string().nullable(),
-    extractedText: z.string().nullable(),
-    extractedHtml: z.string().nullable(),
-    to: z.array(z.string()).optional(),
-    cc: z.array(z.string()).optional(),
-    labels: z.array(z.string()).optional(),
-    attachments: z.array(agentMailMessageAttachmentSchema).optional(),
-    inboxEmail: z.string().nullable().optional(),
-    conceptDraft: agentMailConceptDraftSchema.nullable().optional(),
-    threadMetadata: emailThreadMetadataSchema.optional(),
-    threadComments: z.array(emailThreadCommentSchema).optional(),
-    /** All messages in the AgentMail thread (oldest → newest when present). */
-    threadMessages: z
-      .array(
-        z.object({
-          messageId: z.string(),
-          threadId: z.string().optional(),
-          subject: z.string(),
-          from: z.string(),
-          to: z.array(z.string()),
-          cc: z.array(z.string()).optional(),
-          timestamp: z.string(),
-          text: z.string().nullable(),
-          html: z.string().nullable(),
-          extractedText: z.string().nullable(),
-          extractedHtml: z.string().nullable(),
-          labels: z.array(z.string()).optional(),
-          inReplyTo: z.string().nullable().optional(),
-          attachments: z.array(agentMailMessageAttachmentSchema).optional(),
-        }),
-      )
-      .optional(),
-  });
-export const agentMailDraftDetailSchema = z.object({
-  inboxId: z.string(),
-  draftId: z.string(),
-  subject: z.string().nullable(),
-  preview: z.string().nullable(),
-  text: z.string().nullable(),
-  body: z.string().nullable().optional(),
-  greeting: z.string().nullable().optional(),
-  signOff: z.string().nullable().optional(),
-  html: z.string().nullable(),
-  inReplyTo: z.string().nullable(),
-  from: z.string().nullable().optional(),
-  to: z.array(z.string()),
-  cc: z.array(z.string()).optional(),
-  bcc: z.array(z.string()).optional(),
-  updatedAt: z.string(),
-  createdAt: z.string(),
-});
-export const emailConceptReplyInputSchema = z.object({
-  body: z.string().min(1).max(100_000),
-  /** Override reply To (defaults from the inbound From / reply party). */
-  to: emailRecipientListSchema,
-  /** CC recipients for this reply draft. */
-  cc: emailRecipientListSchema,
-  subject: z.string().max(500).optional(),
-});
-export const emailConceptReplyResponseSchema = z.object({
-  draftId: z.string(),
-  inboxId: z.string(),
-  inReplyToMessageId: z.string(),
-  /** Editable body without greeting/sign-off. */
-  body: z.string().nullable().optional(),
-  greeting: z.string().nullable().optional(),
-  signOff: z.string().nullable().optional(),
-  subject: z.string().nullable().optional(),
-  to: z.array(z.string()).optional(),
-  cc: z.array(z.string()).optional(),
-});
-
-/** Intents the email-thread agent may return via callback. */
-export const emailAgentIntentSchema = z.enum([
-  "reply_draft",
-  "task",
-  "calendar",
-  "note",
-]);
-export type EmailAgentIntent = z.infer<typeof emailAgentIntentSchema>;
-
-export const emailAgentDraftInputSchema = z.object({
-  /** User instruction for Grok (not the finished email). */
-  prompt: z.string().min(1).max(20_000),
-  /**
-   * When set, Grok must use this intent (no classification).
-   * Reply UI always sends `reply_draft`.
-   */
-  intent: emailAgentIntentSchema.optional(),
-  /**
-   * Editable concept-draft body already known on the client.
-   * When present (including null), the server skips the AgentMail draft scan.
-   */
-  currentDraftBody: z.string().max(100_000).nullable().optional(),
-});
-
-export const emailAgentCallbackTaskPayloadSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(10_000).nullable().optional(),
-  projectKey: z.string().min(1).max(64).nullable().optional(),
-  dueDate: z.string().datetime().nullable().optional(),
-  /** Filled by core after create (poll response). */
-  taskId: z.string().min(1).max(64).optional(),
-});
-export const emailAgentCallbackEventPayloadSchema = z.object({
-  title: z.string().min(1).max(500),
-  start: z.string().datetime(),
-  end: z.string().datetime(),
-  notes: z.string().max(100_000).nullable().optional(),
-  /** Filled by core after create (poll response). */
-  meetingId: z.string().min(1).max(64).optional(),
-});
-
-/**
- * Success callback from Judith / Grok Bot.
- * Legacy `{ ok, requestId, body }` (no intent) is treated as `reply_draft`.
- */
-export const emailAgentCallbackSuccessSchema = z
-  .object({
-    ok: z.literal(true),
-    requestId: z.string().min(1).max(128),
-    intent: emailAgentIntentSchema.optional(),
-    /** Body-only email text (no greeting/sign-off) for reply_draft. */
-    body: z.string().min(1).max(100_000).optional(),
-    draftId: z.string().min(1).max(200).optional(),
-    inboxId: z.string().min(1).max(200).optional(),
-    /** Filled by core after upserting the concept reply. */
-    greeting: z.string().max(2_000).nullable().optional(),
-    signOff: z.string().max(2_000).nullable().optional(),
-    subject: z.string().max(1_000).nullable().optional(),
-    to: z.array(z.string().min(1).max(320)).max(50).optional(),
-    cc: z.array(z.string().min(1).max(320)).max(50).optional(),
-    task: emailAgentCallbackTaskPayloadSchema.optional(),
-    event: emailAgentCallbackEventPayloadSchema.optional(),
-    /** Agent-visible note for intent=note (posted as thread comment). */
-    message: z.string().min(1).max(20_000).optional(),
-  })
-  .superRefine((value, ctx) => {
-    const intent =
-      value.intent ?? (value.body?.trim() ? "reply_draft" : undefined);
-    if (!intent) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "intent is required (or provide body for reply_draft)",
-      });
-      return;
-    }
-    if (intent === "reply_draft" && !value.body?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["body"],
-        message: "body is required for reply_draft",
-      });
-    }
-    if (intent === "task" && !value.task?.title?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["task", "title"],
-        message: "task.title is required for task intent",
-      });
-    }
-    if (intent === "calendar") {
-      if (!value.event?.title?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["event", "title"],
-          message: "event.title is required for calendar intent",
-        });
-      }
-      if (!value.event?.start) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["event", "start"],
-          message: "event.start is required for calendar intent",
-        });
-      }
-      if (!value.event?.end) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["event", "end"],
-          message: "event.end is required for calendar intent",
-        });
-      }
-    }
-    if (intent === "note" && !value.message?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["message"],
-        message: "message is required for note intent",
-      });
-    }
-  });
-export const emailAgentCallbackFailureSchema = z.object({
-  ok: z.literal(false),
-  requestId: z.string().min(1).max(128),
-  error: z.string().min(1).max(2000),
-});
-export const emailAgentCallbackResultSchema = z.union([
-  emailAgentCallbackSuccessSchema,
-  emailAgentCallbackFailureSchema,
-]);
-export const emailAgentCallbackPollSchema = z.object({
-  pending: z.boolean(),
-  result: emailAgentCallbackResultSchema.optional(),
-});
-
-/** Fixed intents core can apply without waking Judith (OS-94). */
-export const emailAgentCoreActionSchema = z.enum([
-  "spam",
-  "trash",
-  "archive",
-  "mark_read",
-  "mark_unread",
-  "task",
-  "calendar",
-  "note",
-]);
-export type EmailAgentCoreAction = z.infer<typeof emailAgentCoreActionSchema>;
-
-/**
- * agent-draft start response. When `applied` is set, core already executed the
- * command — clients must not poll for a Judith callback.
- */
-export const emailAgentDraftStartedSchema = z.object({
-  requestId: z.string(),
-  language: z.enum(["en", "nl"]),
-  applied: z
-    .object({
-      intent: emailAgentCoreActionSchema,
-      /** Wall time for classify+execute (desktop before/after timing). */
-      durationMs: z.number().nonnegative(),
-      /** Present for task / calendar / note creates. */
-      result: emailAgentCallbackResultSchema.optional(),
-      blockedSender: z.string().nullable().optional(),
-    })
-    .optional(),
-});
-export const emailComposeDraftInputSchema = z.object({
-  /** String or list — mobile/desktop may send either. */
-  to: z.union([
-    z.string().min(1).max(2_000),
-    z.array(z.string().min(1).max(320)).min(1).max(50),
-  ]),
-  cc: emailRecipientListSchema,
-  bcc: emailRecipientListSchema,
-  subject: z.string().max(500),
-  body: z.string().min(1).max(100_000),
-  composeSessionId: z.string().min(1).max(200).optional(),
-});
-export const emailComposeDraftResponseSchema = z.object({
-  draftId: z.string(),
-  inboxId: z.string(),
-  composeSessionId: z.string(),
-});
-export const emailSendDraftResponseSchema = z.object({
-  inboxId: z.string(),
-  messageId: z.string(),
-  threadId: z.string().optional(),
-  subject: z.string(),
-  inReplyToMessageId: z.string().nullable().optional(),
-});
-export const emailDeleteDraftResponseSchema = z.object({
-  inboxId: z.string(),
-  draftId: z.string(),
-});
-export const emailDeleteMessageResponseSchema = z.object({
-  ok: z.literal(true),
-});
-export const emailReportSpamResponseSchema = z.object({
-  ok: z.literal(true),
-  blockedSender: z.string().nullable(),
-});
-export const updateAgentMailDraftSchema = z
-  .object({
-    /** Editable body without greeting/sign-off. */
-    body: z.string().max(100_000).optional(),
-    to: emailRecipientListSchema,
-    cc: emailRecipientListSchema,
-    bcc: emailRecipientListSchema,
-    subject: z.string().max(500).optional(),
-  })
-  .refine(
-    (value) =>
-      value.body !== undefined ||
-      value.to !== undefined ||
-      value.cc !== undefined ||
-      value.bcc !== undefined ||
-      value.subject !== undefined,
-    { message: "At least one of body, to, cc, bcc, or subject is required" },
-  );
-export const moneybirdSalesInvoiceSchema = z.object({
-  id: z.string(),
-  invoiceId: z.string().nullable(),
-  state: z.string(),
-  invoiceDate: z.string().nullable(),
-  dueDate: z.string().nullable(),
-  reference: z.string().nullable(),
-  currency: z.string().nullable(),
-  totalPriceInclTax: z.string().nullable(),
-  totalPriceExclTax: z.string().nullable(),
-  contactId: z.string().nullable(),
-  contactName: z.string().nullable(),
-});
-export const moneybirdSalesInvoicesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).max(10_000).optional(),
-  perPage: z.coerce.number().int().min(1).max(100).optional(),
-  /** Moneybird filter string, e.g. `state:open|late` or `period:this_year`. */
-  filter: z.string().max(500).optional(),
-});
-export const moneybirdSalesInvoicesResponseSchema = z.object({
-  invoices: z.array(moneybirdSalesInvoiceSchema),
-  page: z.number().int(),
-  perPage: z.number().int(),
-  /** True when Moneybird may have another page after this one. */
-  hasMore: z.boolean(),
-  /**
-   * Last Moneybird list page for this filter (discovered via probes;
-   * Moneybird does not return totals).
-   */
-  totalPages: z.number().int().positive(),
-});
-/** Postal / company address block for invoice recipient or sender identity. */
-export const moneybirdInvoicePartySchema = z.object({
-  companyName: z.string().nullable(),
-  firstName: z.string().nullable(),
-  lastName: z.string().nullable(),
-  address1: z.string().nullable(),
-  address2: z.string().nullable(),
-  zipcode: z.string().nullable(),
-  city: z.string().nullable(),
-  country: z.string().nullable(),
-  customerId: z.string().nullable(),
-  phone: z.string().nullable(),
-  email: z.string().nullable(),
-  chamberOfCommerce: z.string().nullable(),
-  taxNumber: z.string().nullable(),
-  bankAccountNumber: z.string().nullable(),
-});
-export const moneybirdInvoiceLineSchema = z.object({
-  id: z.string(),
-  description: z.string(),
-  amount: z.string().nullable(),
-  price: z.string().nullable(),
-  totalPriceExclTax: z.string().nullable(),
-  taxRateId: z.string().nullable(),
-  /** Percentage string from Moneybird tax rates, e.g. `"21.0"`. */
-  taxPercentage: z.string().nullable(),
-});
-export const moneybirdInvoiceTaxTotalSchema = z.object({
-  taxRateId: z.string().nullable(),
-  taxableAmount: z.string().nullable(),
-  taxAmount: z.string().nullable(),
-  taxPercentage: z.string().nullable(),
-});
-/** Full Moneybird sales invoice for the finance detail panel. */
-export const moneybirdSalesInvoiceDetailSchema = z.object({
-  id: z.string(),
-  invoiceId: z.string().nullable(),
-  state: z.string(),
-  language: z.string().nullable(),
-  invoiceDate: z.string().nullable(),
-  dueDate: z.string().nullable(),
-  reference: z.string().nullable(),
-  currency: z.string().nullable(),
-  pricesAreInclTax: z.boolean(),
-  totalPriceInclTax: z.string().nullable(),
-  totalPriceExclTax: z.string().nullable(),
-  contactId: z.string().nullable(),
-  recipient: moneybirdInvoicePartySchema,
-  sender: moneybirdInvoicePartySchema.nullable(),
-  lines: z.array(moneybirdInvoiceLineSchema),
-  taxTotals: z.array(moneybirdInvoiceTaxTotalSchema),
-});
-export const moneybirdInvoiceRevenueQuerySchema = z.object({
-  year: z.coerce.number().int().min(1970).max(2100).optional(),
-});
-/** Monthly billed sales-invoice totals from Moneybird (expense always 0 for now). */
-export const moneybirdInvoiceRevenueResponseSchema = z.object({
-  year: z.number().int(),
-  months: z.array(bankAccountCashflowMonthSchema),
-});
-
-/** Active Moneybird financial accounts (bank / card / payment rails). */
-export const moneybirdFinancialAccountSchema = z.object({
-  id: z.string(),
-  type: z.string().nullable(),
-  name: z.string(),
-  identifier: z.string().nullable(),
-  currency: z.string().nullable(),
-  provider: z.string().nullable(),
-  moneybirdAccount: z.boolean(),
-  active: z.boolean(),
-});
-export const moneybirdFinancialAccountsResponseSchema = z.object({
-  financialAccounts: z.array(moneybirdFinancialAccountSchema),
-});
-
-/** Result of ingesting Moneybird financial mutations into a bank account. */
-export const moneybirdBankAccountSyncResultSchema = z.object({
-  bankAccountId: z.string(),
-  moneybirdFinancialAccountId: z.string(),
-  fetched: z.number().int().nonnegative(),
-  inserted: z.number().int().nonnegative(),
-  /** Mutations refreshed because Moneybird `version` advanced. */
-  updated: z.number().int().nonnegative(),
-  /** Local Moneybird rows removed after they disappeared from the sync set. */
-  removed: z.number().int().nonnegative(),
-  duplicates: z.number().int().nonnegative(),
-  lastSyncedAt: isoDateSchema,
-});
-
-export const moneybirdBankAccountSyncQuerySchema = z.object({
-  /** Moneybird period filter; defaults to this_year. */
-  period: z.string().min(1).max(64).optional(),
-});
-
-export const vaultStorageSettingsSchema = z.object({
-  configured: z.boolean(),
-  provider: z.literal("local-vault"),
-  vaultPath: z.string().nullable(),
-});
-export const updateVaultStorageSettingsSchema = z.object({
-  vaultPath: z.string().min(1).max(4096),
-});
-/** Response from ensuring a project's on-disk vault folder + `.cursor` skills. */
-export const projectVaultEnsureSchema = z.object({
-  projectId: z.string(),
-  projectKey: z.string(),
-  projectVaultPath: z.string(),
-  localWorkingDirectory: z.string().nullable(),
-  assignedWorkingDirectory: z.boolean(),
-  createdSkill: z.boolean(),
-  /** False when the vault path is not configured yet. */
-  configured: z.boolean(),
-});
-export const cursorModelSchema = z.object({
-  id: z.string(),
-  displayName: z.string().optional(),
-});
-export const cursorModelsResponseSchema = z.object({
-  models: z.array(cursorModelSchema),
-});
-export const spellcheckRequestSchema = z.object({
-  title: z.string(),
-  description: z.string().nullable().optional(),
-});
-export const spellcheckResponseSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-});
-/** Same request/response shape as spellcheck — title/description rewrite. */
-export const researchRequestSchema = spellcheckRequestSchema;
-export const researchResponseSchema = spellcheckResponseSchema;
-
-export const createMentionSchema = z.object({
-  userId: z.string().nullable().optional(),
-  sourceType: z.string().min(1).max(64),
-  sourceId: z.string().min(1),
-  excerpt: z.string().max(1000).optional(),
-});
-export const mentionSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  userId: z.string().nullable(),
-  sourceType: z.string(),
-  sourceId: z.string(),
-  excerpt: z.string().nullable(),
-  readAt: nullableIsoDateSchema,
-  createdAt: isoDateSchema,
-});
-export const globalSearchResultSchema = z.object({
-  type: z.enum(["project", "task", "document", "organization", "contact", "letter"]),
-  id: z.string(),
-  title: z.string(),
-  snippet: z.string().nullable(),
-  updatedAt: isoDateSchema,
-  /** Present for document results: project | knowledge | journal. */
-  documentType: z.enum(["project", "knowledge", "journal"]).nullable().optional(),
-  /** Document relative path for href building. */
-  path: z.string().nullable().optional(),
-  /** Project UUID (tasks + project-documents). */
-  projectId: z.string().nullable().optional(),
-  /** Task display key (`OS-73`) — same field as `GET /search?type=task`. */
-  key: z.string().optional(),
-  /** Task status — same field as `GET /search?type=task`. */
-  status: taskStatusSchema.optional(),
-  /** Project status on project hits (OS-7 palette / global-search). */
-  projectStatus: projectStatusSchema.optional(),
-});
-
-export const projectRelationsSchema = z.object({
-  project: projectSchema.extend({ workspaceId: z.string() }),
-  organization: organizationSchema.nullable(),
-  tasks: z.array(taskSchema.extend({ workspaceId: z.string() })),
-  documents: z.array(documentSchema.extend({ workspaceId: z.string() })),
-  letters: z.array(letterSchema),
-});
-export const taskRelationsSchema = z.object({
-  task: taskSchema.extend({ workspaceId: z.string() }),
-  project: projectSchema.extend({ workspaceId: z.string() }).nullable(),
-  contact: contactSchema.nullable(),
-  assignee: contactSchema.nullable(),
-});
-export const organizationRelationsSchema = z.object({
-  organization: organizationSchema,
-  contacts: z.array(contactSchema),
-  projects: z.array(projectSchema.extend({ workspaceId: z.string() })),
-  letters: z.array(letterSchema),
-});
-export const contactRelationsSchema = z.object({
-  contact: contactSchema,
-  organization: organizationSchema.nullable(),
-  tasks: z.array(taskSchema.extend({ workspaceId: z.string() })),
-  letters: z.array(letterSchema),
-});
-export const letterRelationsSchema = z.object({
-  letter: letterSchema,
-  project: projectSchema.extend({ workspaceId: z.string() }).nullable(),
-  organization: organizationSchema.nullable(),
-  contact: contactSchema.nullable(),
-});
-
-export const opsSyncDeviceSchema = z.object({
-  deviceId: z.string(),
-  lastSeenAt: z.string(),
-  eventCount: z.number().int(),
-});
-export const opsSyncHealthSchema = z.object({
-  workspaceId: z.string(),
-  cursor: z.number().int(),
-  eventsLastHour: z.number().int(),
-  devices: z.array(opsSyncDeviceSchema),
-  failedPushes: z.array(
-    z.object({
-      id: z.string(),
-      at: z.string(),
-      message: z.string(),
-    }),
-  ),
-  spacesConfigured: z.boolean(),
-});
-export const opsLogEntrySchema = z.object({
-  id: z.string(),
-  at: z.string(),
-  level: z.enum(["info", "warn", "error"]),
-  message: z.string(),
-  detail: z.string().optional(),
-});
-export const opsLogsSchema = z.object({
-  logs: z.array(opsLogEntrySchema),
-});
-
-export const recurringTaskSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  description: z.string().nullable(),
-  projectId: z.string().nullable(),
-  inbox: z.boolean(),
-  /** 5-field UTC cron: minute hour day-of-month month day-of-week */
-  cronExpression: z.string(),
-  enabled: z.boolean(),
-  nextRunAt: z.string().datetime(),
-  lastRunAt: z.string().datetime().nullable(),
-  lastTaskId: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-export const createRecurringTaskSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(10_000).nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  inbox: z.boolean().optional(),
-  cronExpression: z.string().min(1).max(100),
-  enabled: z.boolean().optional(),
-});
-
-export const updateRecurringTaskSchema = createRecurringTaskSchema
-  .partial()
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-export const syncEntitySchema = z.enum(["project", "task", "document"]);
-export const syncOperationSchema = z.enum(["upsert", "delete"]);
-export const syncChangeSchema = z.object({
-  entity: syncEntitySchema,
-  entity_id: z.string(),
-  operation: syncOperationSchema,
-  payload: z.record(z.unknown()),
-  updated_at: z.number().int(),
-});
-export const syncPushSchema = z.object({
-  schema_version: z.number().int(),
-  device_id: z.string().min(1),
-  mutations: z
-    .array(z.object({ id: z.string().min(1), changes: z.array(syncChangeSchema).min(1) }))
-    .min(1)
-    .max(100),
-});
-const syncProjectSchema = z.record(z.unknown());
-const syncTaskSchema = z.record(z.unknown());
-const syncDocumentSchema = z.record(z.unknown());
-export const syncBootstrapSchema = z.object({
-  schema_version: z.number().int(),
-  cursor: z.number().int(),
-  /** Alias of `cursor` — Linear-style lastSyncId on this core. */
-  last_sync_id: z.number().int().optional(),
-  spaces_configured: z.boolean(),
-  snapshot: z.object({
-    projects: z.array(syncProjectSchema),
-    tasks: z.array(syncTaskSchema),
-    documents: z.array(syncDocumentSchema),
-  }),
-});
-export const syncPullSchema = z.object({
-  schema_version: z.number().int(),
-  cursor: z.number().int(),
-  /** Alias of `cursor` — Linear-style lastSyncId on this core. */
-  last_sync_id: z.number().int().optional(),
-  has_more: z.boolean(),
-  events: z.array(
-    z.object({
-      cursor: z.number().int(),
-      mutation_id: z.string(),
-      device_id: z.string().nullable(),
-      entity: syncEntitySchema,
-      entity_id: z.string(),
-      operation: syncOperationSchema,
-      payload: z.record(z.unknown()),
-      created_at: z.number().int(),
-    }),
-  ),
-});
-export const syncPushResponseSchema = z.object({
-  schema_version: z.number().int(),
-  cursor: z.number().int(),
-  last_sync_id: z.number().int().optional(),
-  accepted_mutation_ids: z.array(z.string()),
-});
-export const powerSyncCredentialsSchema = z.object({
-  endpoint: z.string().url(),
-  token: z.string(),
-  audience: z.string(),
-});
-export const powerSyncWriteSchema = z.object({
-  device_id: z.string().optional(),
-  batch: z
-    .array(
-      z.object({
-        table: z.string(),
-        op: z.enum(["PUT", "PATCH", "DELETE"]),
-        id: z.string(),
-        data: z.record(z.unknown()).optional(),
-      }),
-    )
-    .min(1)
-    .max(500),
-});
-export const okSchema = z.object({ ok: z.literal(true) });
-
-export const whoopRecoveryStateSchema = z.enum(["GREEN", "YELLOW", "RED"]);
-
-export const whoopSleepStagesSchema = z.object({
-  remMs: z.number().nullable().optional(),
-  lightMs: z.number().nullable().optional(),
-  swsMs: z.number().nullable().optional(),
-  wakeMs: z.number().nullable().optional(),
-});
-
-export const whoopStrainTargetSchema = z.object({
-  value: z.number().nullable().optional(),
-  optimalLower: z.number().nullable().optional(),
-  optimalUpper: z.number().nullable().optional(),
-});
-
-export const whoopSnapshotSchema = z.object({
-  id: z.string(),
-  date: z.string().date(),
-  recoveryScore: z.number().nullable().optional(),
-  recoveryState: whoopRecoveryStateSchema.nullable().optional(),
-  hrvMs: z.number().nullable().optional(),
-  rhrBpm: z.number().nullable().optional(),
-  sleepPerformance: z.number().nullable().optional(),
-  sleepDuration: z.string().optional(),
-  strainScore: z.number().nullable().optional(),
-  workoutsCount: z.number().int().optional(),
-  strainTarget: whoopStrainTargetSchema.nullable().optional(),
-  sleepStartedAt: z.string().nullable().optional(),
-  sleepEndedAt: z.string().nullable().optional(),
-  timeInBed: z.string().optional(),
-  sleepEfficiencyPct: z.number().nullable().optional(),
-  sleepStages: whoopSleepStagesSchema.optional(),
-});
-
-export const habitCadenceSchema = z.enum([
-  "daily",
-  "every_2_days",
-  "weekly",
-  "monthly",
-]);
-
-export const createHabitSchema = z.object({
-  title: z.string().min(1).max(500),
-  icon: z.string().max(128).nullable().optional(),
-  cadence: habitCadenceSchema.optional(),
-  /** Defaults to the Health project when omitted. */
-  projectId: z.string().min(1).optional(),
-});
-
-export const updateHabitSchema = z
-  .object({
-    title: z.string().min(1).max(500).optional(),
-    icon: z.string().max(128).nullable().optional(),
-    description: z.string().max(10000).nullable().optional(),
-    cadence: habitCadenceSchema.optional(),
-    projectId: z.string().min(1).optional(),
-    /**
-     * Reschedule the habit's current open day task to this workspace-local YMD
-     * (today or future). Also re-anchors the cadence schedule to that day.
-     */
-    nextDueYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
-
-/** Record (or update) a habit day as completed or skipped. */
-export const recordHabitDaySchema = z.object({
-  dueYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  status: z.enum(["completed", "canceled"]),
-});
-
-export const habitSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  icon: z.string().nullable(),
-  /** Optional plain-text notes (same pattern as task.description). */
-  description: z.string().nullable(),
-  /** Project habit day tasks are filed under. */
-  projectId: z.string(),
-  cadence: habitCadenceSchema,
-  /** Workspace-local YMD the cadence schedule is anchored to. */
-  cadenceAnchorYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  sortOrder: z.number().int(),
-  todayTaskId: z.string().nullable(),
-  todayTaskStatus: taskStatusSchema.nullable(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export const whoopDayResultSchema = z.object({
-  authenticated: z.boolean(),
-  snapshot: whoopSnapshotSchema.nullable(),
-  error: z.string().nullable().optional(),
-});
-
-export const whoopSettingsStatusSchema = z.object({
-  connected: z.boolean(),
-  configured: z.boolean(),
-  email: z.string().nullable(),
-  reason: z.string().nullable(),
-  envPath: z.string(),
-});
-
-export type Project = z.infer<typeof projectSchema>;
-export type Task = z.infer<typeof taskSchema>;
-export type TaskApi = z.infer<typeof taskApiSchema>;
-export type TaskListItem = z.infer<typeof taskListItemSchema>;
-export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
-export type ListTasksResponse = z.infer<typeof listTasksResponseSchema>;
-export type Habit = z.infer<typeof habitSchema>;
-export type HabitCadence = z.infer<typeof habitCadenceSchema>;
-export type CreateHabitInput = z.infer<typeof createHabitSchema>;
-export type UpdateHabitInput = z.infer<typeof updateHabitSchema>;
-export type RecordHabitDayInput = z.infer<typeof recordHabitDaySchema>;
-
-export const createMeetingSchema = z.object({
-  /** Client-generated id for optimistic creates (same pattern as tasks). */
-  id: z.string().min(1).max(64).optional(),
-  title: z.string().min(1).max(500).optional(),
-  summary: z.string().max(100000).nullable().optional(),
-  notes: z.string().max(100000).nullable().optional(),
-  transcription: z.string().max(100000).nullable().optional(),
-  status: taskStatusSchema.optional(),
-  projectId: z.string().nullable().optional(),
-  organizationId: z.string().nullable().optional(),
-  attendeeContactIds: z.array(z.string()).optional(),
-  /** Omit or null = unscheduled / all-day until the host opens the room. */
-  startAt: isoDateSchema.nullable().optional(),
-  endAt: isoDateSchema.nullable().optional(),
-  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
-  location: z.string().max(2000).nullable().optional(),
-  locationOrganizationId: z.string().nullable().optional(),
-  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /**
-   * Attach this meeting as notes for a Google Calendar (etc.) agenda block.
-   * Accepts the stored hashed id or a raw provider event id (resolved server-side).
-   * Whitespace-only is rejected; omit the field when not linking.
-   */
-  externalCalendarEventId: z
-    .union([z.string().trim().min(1).max(512), z.null()])
-    .optional(),
-  /** Disambiguate raw Google event ids when the workspace has multiple calendars. */
-  calendarId: z.string().trim().min(1).max(1024).optional(),
-});
-
-export const updateMeetingSchema = z
-  .object({
-    title: z.string().min(1).max(500).optional(),
-    summary: z.string().max(100000).nullable().optional(),
-    notes: z.string().max(100000).nullable().optional(),
-    transcription: z.string().max(100000).nullable().optional(),
-    status: taskStatusSchema.optional(),
-    projectId: z.string().nullable().optional(),
-    organizationId: z.string().nullable().optional(),
-    attendeeContactIds: z.array(z.string()).optional(),
-    startAt: isoDateSchema.nullable().optional(),
-    endAt: isoDateSchema.nullable().optional(),
-    format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
-    location: z.string().max(2000).nullable().optional(),
-    locationOrganizationId: z.string().nullable().optional(),
-    trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-    trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-    /**
-     * Link / unlink Google (etc.) agenda block — null clears the link.
-     * Accepts hashed id or raw provider event id; whitespace-only is rejected.
-     */
-    externalCalendarEventId: z
-      .union([z.string().trim().min(1).max(512), z.null()])
-      .optional(),
-    /** Disambiguate raw Google event ids when the workspace has multiple calendars. */
-    calendarId: z.string().trim().min(1).max(1024).optional(),
-    /** Clear the Updated inbox flag after the user views the item. */
-    acknowledgeInboxUpdate: z.boolean().optional(),
-    inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  })
-  .refine(
-    (value) =>
-      Object.keys(value).filter((key) => key !== "acknowledgeInboxUpdate")
-        .length > 0 || value.acknowledgeInboxUpdate === true,
-    {
-      message: "At least one field is required",
-    },
-  );
-
-export const meetingAttendeePortalEmailStatusSchema = z.object({
-  inviteSentAt: isoDateSchema.optional(),
-  reminderSentAt: isoDateSchema.optional(),
-});
-
-export const meetingAttendeePortalEmailsSchema = z.record(
-  z.string(),
-  meetingAttendeePortalEmailStatusSchema,
-);
-
-export type MeetingAttendeePortalEmailStatus = z.infer<
-  typeof meetingAttendeePortalEmailStatusSchema
->;
-export type MeetingAttendeePortalEmails = z.infer<
-  typeof meetingAttendeePortalEmailsSchema
->;
-
-export function normalizeMeetingAttendeePortalEmails(
-  raw: unknown,
-): MeetingAttendeePortalEmails {
-  if (typeof raw === "string") {
-    try {
-      return normalizeMeetingAttendeePortalEmails(JSON.parse(raw));
-    } catch {
-      return {};
-    }
-  }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return {};
-  }
-  const result: MeetingAttendeePortalEmails = {};
-  for (const [contactId, entry] of Object.entries(raw)) {
-    if (!contactId.trim() || !entry || typeof entry !== "object") continue;
-    const record = entry as Record<string, unknown>;
-    const status: MeetingAttendeePortalEmailStatus = {};
-    if (typeof record.inviteSentAt === "string" && record.inviteSentAt.trim()) {
-      status.inviteSentAt = record.inviteSentAt;
-    }
-    if (
-      typeof record.reminderSentAt === "string" &&
-      record.reminderSentAt.trim()
-    ) {
-      status.reminderSentAt = record.reminderSentAt;
-    }
-    if (status.inviteSentAt || status.reminderSentAt) {
-      result[contactId] = status;
-    }
-  }
-  return result;
-}
-
-export const meetingSchema = z.object({
-  id: z.string(),
-  number: z.number().int(),
-  title: z.string(),
-  summary: z.string().nullable(),
-  notes: z.string().nullable(),
-  transcription: z.string().nullable(),
-  status: taskStatusSchema,
-  projectId: z.string().nullable(),
-  organizationId: z.string().nullable(),
-  attendeeContactIds: z.array(z.string()),
-  /** Server-recorded portal invite/reminder sends per attendee contact id. */
-  attendeePortalEmails: meetingAttendeePortalEmailsSchema.default({}),
-  startAt: isoDateSchema.nullable(),
-  endAt: isoDateSchema.nullable(),
-  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
-  location: z.string().nullable().optional(),
-  locationOrganizationId: z.string().nullable().optional(),
-  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
-  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
-  /** Linked Google (etc.) agenda block — schedule owned there (ADR-037). */
-  externalCalendarEventId: z.string().nullable().optional(),
-  /** External update flag — surfaces in the Updated inbox group. */
-  inboxUpdatedAt: z.string().datetime().nullable().optional(),
-  sortOrder: z.number().int(),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-  deletedAt: nullableIsoDateSchema,
-});
-
-export type Meeting = z.infer<typeof meetingSchema>;
-export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
-export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
-
-export const meetingWeekdayHoursSlotSchema = z.object({
-  start: z.string().min(1).max(8),
-  end: z.string().min(1).max(8),
-});
-export type MeetingWeekdayHoursSlot = z.infer<typeof meetingWeekdayHoursSlotSchema>;
-
-export const meetingWeekdayHoursEntrySchema = z.object({
-  weekday: z.number().int().min(1).max(7),
-  enabled: z.boolean(),
-  slots: z.array(meetingWeekdayHoursSlotSchema).min(1).max(12),
-});
-export type MeetingWeekdayHoursEntry = z.infer<
-  typeof meetingWeekdayHoursEntrySchema
->;
-
-export const meetingSchedulingSettingsSchema = z.object({
-  label: z.string(),
-  timezone: z.string(),
-  weekdayHours: z.array(meetingWeekdayHoursEntrySchema),
-  durationsMinutes: z.array(z.union([z.literal(30), z.literal(60)])),
-  minNoticeMinutes: z.number().int().nonnegative(),
-  bufferMinutes: z.number().int().nonnegative(),
-  horizonDays: z.number().int().positive(),
-  enabled: z.boolean(),
-});
-export type MeetingSchedulingSettings = z.infer<
-  typeof meetingSchedulingSettingsSchema
->;
-
-export const updateMeetingSchedulingSettingsSchema = z.object({
-  label: z.string().max(200).optional(),
-  timezone: z.string().min(1).max(128).optional(),
-  weekdayHours: z.array(meetingWeekdayHoursEntrySchema).min(1).max(7).optional(),
-  durationsMinutes: z.array(z.union([z.literal(30), z.literal(60)])).optional(),
-  minNoticeMinutes: z.number().int().nonnegative().optional(),
-  bufferMinutes: z.number().int().nonnegative().optional(),
-  horizonDays: z.number().int().positive().max(365).optional(),
-  enabled: z.boolean().optional(),
-});
-export type UpdateMeetingSchedulingSettingsInput = z.infer<
-  typeof updateMeetingSchedulingSettingsSchema
->;
-
-export const meetingSlotSchema = z.object({
-  startAt: isoDateSchema,
-  endAt: isoDateSchema,
-  durationMinutes: z.union([z.literal(30), z.literal(60)]),
-});
-export type MeetingSlot = z.infer<typeof meetingSlotSchema>;
-
-export const listMeetingSlotsQuerySchema = z.object({
-  from: isoDateSchema,
-  to: isoDateSchema,
-  durationMinutes: z.coerce
-    .number()
-    .pipe(z.union([z.literal(30), z.literal(60)])),
-});
-
-export const createMeetingBookingSchema = z.object({
-  startAt: isoDateSchema,
-  endAt: isoDateSchema,
-  durationMinutes: z.union([z.literal(30), z.literal(60)]),
-  bookerEmail: z.string().email().max(320),
-  bookerFirstName: z.string().max(120).optional(),
-  bookerLastName: z.string().max(120).optional(),
-  note: z.string().max(5000).optional(),
-  portalUserId: z.string().max(128).optional(),
-  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
-});
-export type CreateMeetingBookingInput = z.infer<
-  typeof createMeetingBookingSchema
->;
-
-export const fileTaskCallbackSuccessSchema = z.object({
-  ok: z.literal(true),
-  requestId: z.string().min(1).max(128),
-  taskId: z.string().min(1).max(128).optional(),
-  taskRef: z.string().min(1).max(64).optional(),
-  title: z.string().max(500).optional(),
-  projectId: z.string().min(1).max(128).optional(),
-  summary: z.string().max(2000).optional(),
-});
-
-export const fileTaskCallbackFailureSchema = z.object({
-  ok: z.literal(false),
-  requestId: z.string().min(1).max(128),
-  error: z.string().min(1).max(2000),
-});
-
-export const fileTaskCallbackResultSchema = z.discriminatedUnion("ok", [
+  contactRelationshipPresetTypeSchema,
+  contactRelationshipTypeSchema,
+  contactRelationshipInputSchema,
+  updateContactRelationshipSchema,
+  contactRelationshipSchema,
+  contactRelationshipListItemSchema,
+  crmRelationshipLabelInputSchema,
+  updateCrmRelationshipLabelSchema,
+  crmRelationshipLabelSchema,
+  crmGroupSubjectTypeSchema,
+  crmGroupInputSchema,
+  updateCrmGroupSchema,
+  crmGroupSchema,
+  crmGroupMemberInputSchema,
+  crmGroupMemberSchema,
+  CRM_ACTIVITY_NOTE_MAX_CHARS,
+  CRM_ACTIVITY_PREVIEW_MAX_CHARS,
+  crmActivityKindSchema,
+  crmActivitySubjectTypeSchema,
+  createCrmActivityNoteSchema,
+  crmActivitySchema,
+  crmActivityFeedQuerySchema,
+  crmActivityFeedResponseSchema,
+  areaParentSchema,
+  areaInputSchema,
+  updateAreaSchema,
+  areaSchema,
+  letterInputSchema,
+  updateLetterSchema,
+  triageLetterSchema,
+  letterSchema,
+  letterAttachmentSchema,
+  letterAttachmentParamsSchema,
+  letterAttachmentsResponseSchema,
+  updateLetterAttachmentSchema,
+  reorderLetterAttachmentsSchema,
+  avatarParamsSchema,
+  avatarSchema,
+  avatarSignedUrlQuerySchema,
+  avatarSignedUrlSchema,
+  publicAvatarQuerySchema,
+} from "./schemas/crm-portal.js";
+export type {
+  ContactPortalSettings,
+  PortalContactLogKind,
+  CreatePortalContactLogInput,
+  PortalContactLog,
+  Organization,
+  Contact,
+  ContactSocialAccount,
+  ContactRelationshipType,
+  ContactRelationship,
+  ContactRelationshipListItem,
+  ContactRelationshipInput,
+  UpdateContactRelationshipInput,
+  CrmRelationshipLabel,
+  CrmRelationshipLabelInput,
+  UpdateCrmRelationshipLabelInput,
+  CrmGroup,
+  CrmGroupInput,
+  CrmGroupMember,
+  CrmGroupMemberInput,
+  CrmGroupSubjectType,
+  CrmActivity,
+  CrmActivityKind,
+  CreateCrmActivityNoteInput,
+  Area,
+  AreaParent,
+  AreaInput,
+  Letter,
+  LetterAttachment,
+  Avatar,
+  AvatarSignedUrl,
+} from "./schemas/crm-portal.js";
+export {
+  bankAccountInputSchema,
+  updateBankAccountSchema,
+  bankAccountSchema,
+  bankAccountBalanceSchema,
+  listBankAccountBalancesResponseSchema,
+  financeAssetsDebtRangeSchema,
+  financeAssetsDebtQuerySchema,
+  financeAssetsDebtPointSchema,
+  financeAssetsDebtResponseSchema,
+  bankAccountsMonthIncomeQuerySchema,
+  bankAccountsMonthIncomeResponseSchema,
+  bankAccountCashflowMonthSchema,
+  bankAccountCashflowQuerySchema,
+  bankAccountCashflowResponseSchema,
+  workspaceCashflowQuerySchema,
+  workspaceCashflowResponseSchema,
+  financeSpendPanelQuerySchema,
+  financeSpendPanelResponseSchema,
+  financialCategoryInputSchema,
+  updateFinancialCategorySchema,
+  financialCategorySchema,
+  financialGoalInputSchema,
+  updateFinancialGoalSchema,
+  financialGoalSchema,
+  CLIENT_ESTIMATE_STATUSES,
+  clientEstimateStatusSchema,
+  clientEstimateSchema,
+  createClientEstimateSchema,
+  updateClientEstimateSchema,
+  listClientEstimatesQuerySchema,
+  financialRecurringInputSchema,
+  updateFinancialRecurringSchema,
+  financialRecurringSchema,
+  cashflowPlannerEntryTypeSchema,
+  cashflowPlannerEntryInputSchema,
+  updateCashflowPlannerEntrySchema,
+  cashflowPlannerEntrySchema,
+  financialImportBatchSchema,
+  financialImportResultSchema,
+  financialTransactionSchema,
+  updateFinancialTransactionSchema,
+  batchUpdateFinancialTransactionsSchema,
+  batchDeleteFinancialTransactionsSchema,
+  batchDeleteFinancialTransactionsResponseSchema,
+  listFinancialTransactionsQuerySchema,
+  listFinancialTransactionsResponseSchema,
+  moneybirdSalesInvoiceSchema,
+  moneybirdSalesInvoicesQuerySchema,
+  moneybirdSalesInvoicesResponseSchema,
+  moneybirdInvoicePartySchema,
+  moneybirdInvoiceLineSchema,
+  moneybirdInvoiceTaxTotalSchema,
+  moneybirdSalesInvoiceDetailSchema,
+  moneybirdInvoiceRevenueQuerySchema,
+  moneybirdInvoiceRevenueResponseSchema,
+  moneybirdFinancialAccountSchema,
+  moneybirdFinancialAccountsResponseSchema,
+  moneybirdBankAccountSyncResultSchema,
+  moneybirdBankAccountSyncQuerySchema,
+} from "./schemas/finance.js";
+export type {
+  BankAccount,
+  BankAccountInput,
+  BankAccountBalance,
+  FinanceAssetsDebtRange,
+  FinanceAssetsDebt,
+  BankAccountCashflowMonth,
+  BankAccountCashflow,
+  WorkspaceCashflow,
+  FinanceSpendPanel,
+  BankAccountsMonthIncome,
+  FinancialCategory,
+  FinancialCategoryInput,
+  FinancialGoal,
+  FinancialGoalInput,
+  ClientEstimate,
+  ClientEstimateStatus,
+  CreateClientEstimateInput,
+  UpdateClientEstimateInput,
+  ListClientEstimatesQuery,
+  FinancialRecurring,
+  FinancialRecurringInput,
+  CashflowPlannerEntryType,
+  CashflowPlannerEntry,
+  CashflowPlannerEntryInput,
+  FinancialImportBatch,
+  FinancialImportResult,
+  FinancialTransaction,
+  UpdateFinancialTransactionInput,
+  BatchDeleteFinancialTransactionsInput,
+  BatchDeleteFinancialTransactionsResponse,
+  MoneybirdSalesInvoiceSummary,
+  MoneybirdInvoiceParty,
+  MoneybirdInvoiceLine,
+  MoneybirdInvoiceTaxTotal,
+  MoneybirdSalesInvoiceDetail,
+  MoneybirdInvoiceRevenue,
+  MoneybirdFinancialAccount,
+  MoneybirdBankAccountSyncResult,
+} from "./schemas/finance.js";
+export {
+  upsertDevicePushTokenSchema,
+  deleteDevicePushTokenSchema,
+  settingsSchema,
+  settingsResponseSchema,
+  cursorSettingsSchema,
+  agentPtyConnectionSchema,
+  updateCursorSettingsSchema,
+  cursorTestConnectionResultSchema,
+  moneybirdSettingsSchema,
+  updateMoneybirdSettingsSchema,
+  moneybirdAdministrationSchema,
+  moneybirdAdministrationsResponseSchema,
+  moneybirdTestConnectionResultSchema,
+  mapboxSettingsSchema,
+  updateMapboxSettingsSchema,
+  mapboxTestConnectionResultSchema,
+  brandfetchSettingsSchema,
+  updateBrandfetchSettingsSchema,
+  brandfetchTestConnectionResultSchema,
+  chatwootSettingsSchema,
+  updateChatwootSettingsSchema,
+  chatwootTestConnectionResultSchema,
+  chatConversationStatusSchema,
+  chatConversationSchema,
+  chatMessageDirectionSchema,
+  chatMessageSchema,
+  chatConversationDetailSchema,
+  listChatConversationsQuerySchema,
+  createChatMessageInputSchema,
+  updateChatConversationInputSchema,
+  toggleChatTypingInputSchema,
+  toggleChatTypingResultSchema,
+  chatConversationsListSchema,
+  chatSyncResultSchema,
+  googleCalendarSettingsSchema,
+  updateGoogleCalendarSettingsSchema,
+  googleCalendarTestConnectionResultSchema,
+  googleCalendarOAuthStartResultSchema,
+  googleCalendarCalendarSummarySchema,
+  googleCalendarCalendarsResponseSchema,
+  googleCalendarSyncResultSchema,
+  externalCalendarEventSchema,
+  listExternalCalendarEventsQuerySchema,
+  listExternalCalendarEventsResponseSchema,
+  githubSettingsSchema,
+  updateGithubSettingsSchema,
+  githubTestConnectionResultSchema,
+  transipStatusSchema,
+  transipSettingsSchema,
+  updateTransipSettingsSchema,
+  transipTestConnectionResultSchema,
+  transipDomainSyncCreatedSchema,
+  transipDomainSyncEntrySchema,
+  transipDomainSyncResultSchema,
+  transipDomainNameserverSchema,
+  transipDomainWhoisContactSchema,
+  transipDomainDetailSchema,
+  updateTransipDomainTagsInputSchema,
+  updateTransipDomainTagsResultSchema,
+  updateTransipDomainContactsInputSchema,
+  updateTransipDomainContactsResultSchema,
+  updateTransipDomainNameserversInputSchema,
+  updateTransipDomainNameserversResultSchema,
+  cloudflareStatusSchema,
+  cloudflareSettingsSchema,
+  updateCloudflareSettingsSchema,
+  cloudflareTestConnectionResultSchema,
+  cloudflareZoneMatchEntrySchema,
+  cloudflareZoneMatchResultSchema,
+  cloudflareProjectZoneResultSchema,
+  cloudflareDnsRecordSchema,
+  cloudflareDnsRecordsResultSchema,
+  updateCloudflareDnsRecordSchema,
+  cloudflareDnsRecordUpdateResultSchema,
+  cloudflarePurgeCacheResultSchema,
+  mapboxGeocodeResultSchema,
+  mapboxGeocodeQuerySchema,
+  mapboxStaticMapQuerySchema,
+  vaultStorageSettingsSchema,
+  updateVaultStorageSettingsSchema,
+  projectVaultEnsureSchema,
+  cursorModelSchema,
+  cursorModelsResponseSchema,
+  spellcheckRequestSchema,
+  spellcheckResponseSchema,
+  researchRequestSchema,
+  researchResponseSchema,
+  opsSyncDeviceSchema,
+  opsSyncHealthSchema,
+  opsLogEntrySchema,
+  opsLogsSchema,
   fileTaskCallbackSuccessSchema,
   fileTaskCallbackFailureSchema,
-]);
-
-export const createFileTaskCallbackSchema = z.object({
-  requestId: z.string().min(1).max(128),
-});
-
-export const fileTaskCallbackCreatedSchema = z.object({
-  requestId: z.string(),
-  callbackUrl: z.string().url(),
-  expiresAt: z.string(),
-});
-
-export const fileTaskCallbackPollSchema = z.object({
-  pending: z.boolean(),
-  result: fileTaskCallbackResultSchema.optional(),
-});
-
-export type TaskLink = z.infer<typeof taskLinkSchema>;
-export type TaskComment = z.infer<typeof taskCommentSchema>;
-export type TaskActivity = z.infer<typeof taskActivitySchema>;
-export type TaskAgentPresence = z.infer<typeof taskAgentPresenceSchema>;
-export type UpsertTaskAgentPresenceInput = z.infer<
-  typeof upsertTaskAgentPresenceSchema
->;
-export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
-export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;
-export type ListActivitiesQuery = z.infer<typeof listActivitiesQuerySchema>;
-export type ListActivitiesResponse = z.infer<
-  typeof listActivitiesResponseSchema
->;
-export type UpdateTaskTimerSessionActorInput = z.infer<
-  typeof updateTaskTimerSessionActorSchema
->;
-export type AgentWorkedActivityData = z.infer<
-  typeof agentWorkedActivityDataSchema
->;
-export type ApiKey = z.infer<typeof apiKeySchema>;
-export type ApiKeyAuditLog = z.infer<typeof apiKeyAuditLogSchema>;
-export type ApiKeyAuditLogAction = z.infer<typeof apiKeyAuditLogActionSchema>;
-export type ApiKeyRequestLog = z.infer<typeof apiKeyRequestLogSchema>;
-export type CreateProjectInput = z.infer<typeof createProjectSchema>;
-export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
-export type GithubRepository = z.infer<typeof githubRepositorySchema>;
-export type GithubBranch = z.infer<typeof githubBranchSchema>;
-export type GithubCommit = z.infer<typeof githubCommitSchema>;
-export type GithubPullRequest = z.infer<typeof githubPullRequestSchema>;
-export type GithubPullRequestFile = z.infer<typeof githubPullRequestFileSchema>;
-export type GithubPullRequestFileStatus = z.infer<
-  typeof githubPullRequestFileStatusSchema
->;
-export type GithubPullRequestState = z.infer<
-  typeof githubPullRequestStateSchema
->;
-export type GithubOrganization = z.infer<typeof githubOrganizationSchema>;
-export type GithubConnectionStatus = z.infer<
-  typeof githubConnectionStatusSchema
->;
-export type ProjectFsEntry = z.infer<typeof projectFsEntrySchema>;
-export type ProjectFsEntryKind = z.infer<typeof projectFsEntryKindSchema>;
-export type ProjectFsFile = z.infer<typeof projectFsFileSchema>;
-export type ProjectFsWriteFileInput = z.infer<typeof projectFsWriteFileSchema>;
-export type ProjectFsCreateEntryInput = z.infer<
-  typeof projectFsCreateEntrySchema
->;
-export type ProjectFsListEntriesResponse = z.infer<
-  typeof projectFsListEntriesResponseSchema
->;
-export type ProjectRepoDocEntry = z.infer<typeof projectRepoDocEntrySchema>;
-export type ProjectRepoDocsResponse = z.infer<
-  typeof projectRepoDocsResponseSchema
->;
-export type ProjectFsCreateEntryResponse = z.infer<
-  typeof projectFsCreateEntryResponseSchema
->;
-export type ProjectFsDeleteEntryResponse = z.infer<
-  typeof projectFsDeleteEntryResponseSchema
->;
-export type LocationFsTarget = z.infer<typeof locationFsTargetSchema>;
-export type LocationFsEntry = z.infer<typeof locationFsEntrySchema>;
-export type LocationFsListResponse = z.infer<
-  typeof locationFsListResponseSchema
->;
-export type LocationFsCreateFolderInput = z.infer<
-  typeof locationFsCreateFolderSchema
->;
-export type LocationFsCreateFolderResponse = z.infer<
-  typeof locationFsCreateFolderResponseSchema
->;
-export type CreateTaskInput = z.infer<typeof createTaskSchema>;
-export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
-export type CreateTaskCommentInput = z.infer<typeof createTaskCommentSchema>;
-export type UpdateTaskCommentInput = z.infer<typeof updateTaskCommentSchema>;
-export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
-export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
-export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponseSchema>;
-export type RevealApiKeySecretResponse = z.infer<
-  typeof revealApiKeySecretResponseSchema
->;
-export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
-export type TvTodayCountStatus = (typeof TV_TODAY_COUNT_STATUSES)[number];
-export type TvTodayCounts = z.infer<typeof tvTodayCountsSchema>;
-export type Document = z.infer<typeof documentSchema>;
-export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
-export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
-export type DocumentPropertyType = z.infer<typeof documentPropertyTypeSchema>;
-export type CreateDocumentPropertyTypeInput = z.infer<
-  typeof createDocumentPropertyTypeSchema
->;
-export type UpdateDocumentPropertyTypeInput = z.infer<
-  typeof updateDocumentPropertyTypeSchema
->;
-export type DocumentContent = z.infer<typeof documentContentSchema>;
-export type SpacePublishSettings = z.infer<typeof spacePublishSettingsSchema>;
-export type UpdateSpacePublishSettingsInput = z.infer<
-  typeof updateSpacePublishSettingsSchema
->;
-export type SpaceSeoMeta = z.infer<typeof spaceSeoMetaSchema>;
-export type SpaceSeoAddress = z.infer<typeof spaceSeoAddressSchema>;
-export type SpaceSeoSocial = z.infer<typeof spaceSeoSocialSchema>;
-export type SpaceSiteKey = z.infer<typeof spaceSiteKeySchema>;
-export type CreateSpaceSiteKeyInput = z.infer<typeof createSpaceSiteKeySchema>;
-export type SpaceSiteKeyCreated = z.infer<typeof spaceSiteKeyCreatedSchema>;
-export type PublicSpaceArticle = z.infer<typeof publicSpaceArticleSchema>;
-export type PublicSpaceArticleListItem = z.infer<
-  typeof publicSpaceArticleListItemSchema
->;
-export type UpdateDocumentContentInput = z.infer<typeof updateDocumentContentSchema>;
-export type DocumentSearchResult = z.infer<typeof documentSearchResultSchema>;
-export type TaskSearchResult = z.infer<typeof taskSearchResultSchema>;
-export type SearchResult = z.infer<typeof searchResultSchema>;
-export type SearchTypeQuery = z.infer<typeof searchTypeQuerySchema>;
-export type SearchBatchRequest = z.infer<typeof searchBatchRequestSchema>;
-export type SearchBatchResponse = z.infer<typeof searchBatchResponseSchema>;
-export type SearchBatchQueryItem = z.infer<typeof searchBatchQueryItemSchema>;
-export type DocumentType = z.infer<typeof documentTypeSchema>;
-export type Organization = z.infer<typeof organizationSchema>;
-export type Contact = z.infer<typeof contactSchema>;
-export type ContactSocialAccount = z.infer<typeof contactSocialAccountSchema>;
-export type ContactRelationshipType = z.infer<typeof contactRelationshipTypeSchema>;
-export type ContactRelationship = z.infer<typeof contactRelationshipSchema>;
-export type ContactRelationshipListItem = z.infer<
-  typeof contactRelationshipListItemSchema
->;
-export type ContactRelationshipInput = z.infer<typeof contactRelationshipInputSchema>;
-export type UpdateContactRelationshipInput = z.infer<
-  typeof updateContactRelationshipSchema
->;
-export type CrmRelationshipLabel = z.infer<typeof crmRelationshipLabelSchema>;
-export type CrmRelationshipLabelInput = z.infer<
-  typeof crmRelationshipLabelInputSchema
->;
-export type UpdateCrmRelationshipLabelInput = z.infer<
-  typeof updateCrmRelationshipLabelSchema
->;
-export type CrmGroup = z.infer<typeof crmGroupSchema>;
-export type CrmGroupInput = z.infer<typeof crmGroupInputSchema>;
-export type CrmGroupMember = z.infer<typeof crmGroupMemberSchema>;
-export type CrmGroupMemberInput = z.infer<typeof crmGroupMemberInputSchema>;
-export type CrmGroupSubjectType = z.infer<typeof crmGroupSubjectTypeSchema>;
-export type CrmActivity = z.infer<typeof crmActivitySchema>;
-export type CrmActivityKind = z.infer<typeof crmActivityKindSchema>;
-export type CreateCrmActivityNoteInput = z.infer<typeof createCrmActivityNoteSchema>;
-export type BankAccount = z.infer<typeof bankAccountSchema>;
-export type BankAccountInput = z.infer<typeof bankAccountInputSchema>;
-export type BankAccountInstitution = z.infer<typeof bankAccountInstitutionSchema>;
-export type BankAccountType = z.infer<typeof bankAccountTypeSchema>;
-export type BankAccountBalance = z.infer<typeof bankAccountBalanceSchema>;
-export type FinanceAssetsDebtRange = z.infer<typeof financeAssetsDebtRangeSchema>;
-export type FinanceAssetsDebt = z.infer<typeof financeAssetsDebtResponseSchema>;
-export type BankAccountCashflowMonth = z.infer<
-  typeof bankAccountCashflowMonthSchema
->;
-export type BankAccountCashflow = z.infer<
-  typeof bankAccountCashflowResponseSchema
->;
-export type WorkspaceCashflow = z.infer<typeof workspaceCashflowResponseSchema>;
-export type FinanceSpendPanel = z.infer<typeof financeSpendPanelResponseSchema>;
-export type BankAccountsMonthIncome = z.infer<
-  typeof bankAccountsMonthIncomeResponseSchema
->;
-export type FinancialCategory = z.infer<typeof financialCategorySchema>;
-export type FinancialCategoryInput = z.infer<typeof financialCategoryInputSchema>;
-export type FinancialCategoryKind = z.infer<typeof financialCategoryKindSchema>;
-export type FinancialCategoryListing = z.infer<
-  typeof financialCategoryListingSchema
->;
-export type FinancialGoal = z.infer<typeof financialGoalSchema>;
-export type FinancialGoalInput = z.infer<typeof financialGoalInputSchema>;
-export type FinancialGoalListing = z.infer<typeof financialGoalListingSchema>;
-export type ClientEstimate = z.infer<typeof clientEstimateSchema>;
-export type ClientEstimateStatus = z.infer<typeof clientEstimateStatusSchema>;
-export type CreateClientEstimateInput = z.infer<
-  typeof createClientEstimateSchema
->;
-export type UpdateClientEstimateInput = z.infer<
-  typeof updateClientEstimateSchema
->;
-export type ListClientEstimatesQuery = z.infer<
-  typeof listClientEstimatesQuerySchema
->;
-export type FinancialGoalSavingMode = z.infer<
-  typeof financialGoalSavingModeSchema
->;
-export type FinancialRecurring = z.infer<typeof financialRecurringSchema>;
-export type FinancialRecurringInput = z.infer<
-  typeof financialRecurringInputSchema
->;
-export type CashflowPlannerEntryType = z.infer<
-  typeof cashflowPlannerEntryTypeSchema
->;
-export type CashflowPlannerEntry = z.infer<typeof cashflowPlannerEntrySchema>;
-export type CashflowPlannerEntryInput = z.infer<
-  typeof cashflowPlannerEntryInputSchema
->;
-export type FinancialImportDialect = z.infer<typeof financialImportDialectSchema>;
-export type FinancialImportBatch = z.infer<typeof financialImportBatchSchema>;
-export type FinancialImportResult = z.infer<typeof financialImportResultSchema>;
-export type FinancialTransaction = z.infer<typeof financialTransactionSchema>;
-export type UpdateFinancialTransactionInput = z.infer<
-  typeof updateFinancialTransactionSchema
->;
-export type BatchDeleteFinancialTransactionsInput = z.infer<
-  typeof batchDeleteFinancialTransactionsSchema
->;
-export type BatchDeleteFinancialTransactionsResponse = z.infer<
-  typeof batchDeleteFinancialTransactionsResponseSchema
->;
-export type FinancialAmountSign = z.infer<typeof financialAmountSignSchema>;
-export type Area = z.infer<typeof areaSchema>;
-export type AreaParent = z.infer<typeof areaParentSchema>;
-export type AreaInput = z.infer<typeof areaInputSchema>;
-export type Letter = z.infer<typeof letterSchema>;
-export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
-export type ProjectUpdateInput = CreateProjectUpdateInput;
-export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
-export type Avatar = z.infer<typeof avatarSchema>;
-export type AvatarSignedUrl = z.infer<typeof avatarSignedUrlSchema>;
-export type TaskImage = z.infer<typeof taskImageSchema>;
-export type TaskImageUploadInput = z.infer<typeof taskImageUploadInputSchema>;
-export type Mention = z.infer<typeof mentionSchema>;
-export type CursorSettings = z.infer<typeof cursorSettingsSchema>;
-export type AgentPtyConnection = z.infer<typeof agentPtyConnectionSchema>;
-export type UpdateCursorSettingsInput = z.infer<typeof updateCursorSettingsSchema>;
-export type CursorTestConnectionResult = z.infer<
-  typeof cursorTestConnectionResultSchema
->;
-export type MoneybirdSettings = z.infer<typeof moneybirdSettingsSchema>;
-export type UpdateMoneybirdSettingsInput = z.infer<
-  typeof updateMoneybirdSettingsSchema
->;
-export type MoneybirdAdministrationSummary = z.infer<
-  typeof moneybirdAdministrationSchema
->;
-export type MoneybirdTestConnectionResult = z.infer<
-  typeof moneybirdTestConnectionResultSchema
->;
-export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
-export type BrandfetchSettings = z.infer<typeof brandfetchSettingsSchema>;
-export type UpdateBrandfetchSettingsInput = z.infer<
-  typeof updateBrandfetchSettingsSchema
->;
-export type BrandfetchTestConnectionResult = z.infer<
-  typeof brandfetchTestConnectionResultSchema
->;
-export type ChatwootSettings = z.infer<typeof chatwootSettingsSchema>;
-export type UpdateChatwootSettingsInput = z.infer<
-  typeof updateChatwootSettingsSchema
->;
-export type ChatwootTestConnectionResult = z.infer<
-  typeof chatwootTestConnectionResultSchema
->;
-export type ChatConversation = z.infer<typeof chatConversationSchema>;
-export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatConversationDetail = z.infer<
-  typeof chatConversationDetailSchema
->;
-export type ListChatConversationsQuery = z.infer<
-  typeof listChatConversationsQuerySchema
->;
-export type CreateChatMessageInput = z.infer<
-  typeof createChatMessageInputSchema
->;
-export type UpdateChatConversationInput = z.infer<
-  typeof updateChatConversationInputSchema
->;
-export type ToggleChatTypingInput = z.infer<typeof toggleChatTypingInputSchema>;
-export type ToggleChatTypingResult = z.infer<
-  typeof toggleChatTypingResultSchema
->;
-export type ChatConversationsList = z.infer<typeof chatConversationsListSchema>;
-export type ChatSyncResult = z.infer<typeof chatSyncResultSchema>;
-export type GoogleCalendarSettings = z.infer<
-  typeof googleCalendarSettingsSchema
->;
-export type UpdateGoogleCalendarSettingsInput = z.infer<
-  typeof updateGoogleCalendarSettingsSchema
->;
-export type GoogleCalendarTestConnectionResult = z.infer<
-  typeof googleCalendarTestConnectionResultSchema
->;
-export type GoogleCalendarOAuthStartResult = z.infer<
-  typeof googleCalendarOAuthStartResultSchema
->;
-export type GoogleCalendarCalendarSummary = z.infer<
-  typeof googleCalendarCalendarSummarySchema
->;
-export type GoogleCalendarSyncResult = z.infer<
-  typeof googleCalendarSyncResultSchema
->;
-export type ExternalCalendarEvent = z.infer<typeof externalCalendarEventSchema>;
-export type ListExternalCalendarEventsQuery = z.infer<
-  typeof listExternalCalendarEventsQuerySchema
->;
-export type UpdateMapboxSettingsInput = z.infer<
-  typeof updateMapboxSettingsSchema
->;
-export type GithubSettings = z.infer<typeof githubSettingsSchema>;
-export type UpdateGithubSettingsInput = z.infer<
-  typeof updateGithubSettingsSchema
->;
-export type GithubTestConnectionResult = z.infer<
-  typeof githubTestConnectionResultSchema
->;
-export type TransipStatus = z.infer<typeof transipStatusSchema>;
-export type TransipSettings = z.infer<typeof transipSettingsSchema>;
-export type UpdateTransipSettingsInput = z.infer<
-  typeof updateTransipSettingsSchema
->;
-export type TransipTestConnectionResult = z.infer<
-  typeof transipTestConnectionResultSchema
->;
-export type TransipDomainSyncResult = z.infer<
-  typeof transipDomainSyncResultSchema
->;
-export type TransipDomainDetail = z.infer<typeof transipDomainDetailSchema>;
-export type UpdateTransipDomainTagsInput = z.infer<
-  typeof updateTransipDomainTagsInputSchema
->;
-export type UpdateTransipDomainTagsResult = z.infer<
-  typeof updateTransipDomainTagsResultSchema
->;
-export type UpdateTransipDomainContactsInput = z.infer<
-  typeof updateTransipDomainContactsInputSchema
->;
-export type UpdateTransipDomainContactsResult = z.infer<
-  typeof updateTransipDomainContactsResultSchema
->;
-export type UpdateTransipDomainNameserversInput = z.infer<
-  typeof updateTransipDomainNameserversInputSchema
->;
-export type UpdateTransipDomainNameserversResult = z.infer<
-  typeof updateTransipDomainNameserversResultSchema
->;
-export type TransipDomainWhoisContact = z.infer<
-  typeof transipDomainWhoisContactSchema
->;
-export type CloudflareStatus = z.infer<typeof cloudflareStatusSchema>;
-export type CloudflareSettings = z.infer<typeof cloudflareSettingsSchema>;
-export type UpdateCloudflareSettingsInput = z.infer<
-  typeof updateCloudflareSettingsSchema
->;
-export type CloudflareTestConnectionResult = z.infer<
-  typeof cloudflareTestConnectionResultSchema
->;
-export type CloudflareZoneMatchResult = z.infer<
-  typeof cloudflareZoneMatchResultSchema
->;
-export type CloudflareProjectZoneResult = z.infer<
-  typeof cloudflareProjectZoneResultSchema
->;
-export type CloudflareDnsRecord = z.infer<typeof cloudflareDnsRecordSchema>;
-export type CloudflareDnsRecordsResult = z.infer<
-  typeof cloudflareDnsRecordsResultSchema
->;
-export type UpdateCloudflareDnsRecordInput = z.infer<
-  typeof updateCloudflareDnsRecordSchema
->;
-export type CloudflareDnsRecordUpdateResult = z.infer<
-  typeof cloudflareDnsRecordUpdateResultSchema
->;
-export type CloudflarePurgeCacheResult = z.infer<
-  typeof cloudflarePurgeCacheResultSchema
->;
-export type MapboxTestConnectionResult = z.infer<
-  typeof mapboxTestConnectionResultSchema
->;export type MapboxGeocodeResult = z.infer<typeof mapboxGeocodeResultSchema>;
-export type AgentMailSettings = z.infer<typeof agentMailSettingsSchema>;
-export type UpdateAgentMailSettingsInput = z.infer<
-  typeof updateAgentMailSettingsSchema
->;
-export type AgentMailInboxSummary = z.infer<typeof agentMailInboxSchema>;
-export type AgentMailTestConnectionResult = z.infer<
-  typeof agentMailTestConnectionResultSchema
->;
-export type AutoReviewWebhookSettings = z.infer<
-  typeof autoReviewWebhookSettingsSchema
->;
-export type UpdateAutoReviewWebhookSettingsInput = z.infer<
-  typeof updateAutoReviewWebhookSettingsSchema
->;
-export type AutoReviewWebhookTestResult = z.infer<
-  typeof autoReviewWebhookTestResultSchema
->;
-export type AgentMailConceptDraft = z.infer<typeof agentMailConceptDraftSchema>;
-export type AgentMailMessage = z.infer<typeof agentMailMessageSchema>;
-export type AgentMailMessageDetail = z.infer<
-  typeof agentMailMessageDetailSchema
->;
-export type AgentMailMessageAttachment = z.infer<
-  typeof agentMailMessageAttachmentSchema
->;
-export type AgentMailDraftDetail = z.infer<typeof agentMailDraftDetailSchema>;
-export type EmailConceptReplyInput = z.infer<
-  typeof emailConceptReplyInputSchema
->;
-export type EmailConceptReplyResponse = z.infer<
-  typeof emailConceptReplyResponseSchema
->;
-export type EmailAgentDraftInput = z.infer<typeof emailAgentDraftInputSchema>;
-export type EmailAgentDraftStarted = z.infer<typeof emailAgentDraftStartedSchema>;
-export type EmailAgentCallbackResult = z.infer<
-  typeof emailAgentCallbackResultSchema
->;
-export type EmailAgentCallbackPoll = z.infer<typeof emailAgentCallbackPollSchema>;
-export type EmailAgentCallbackTaskPayload = z.infer<
-  typeof emailAgentCallbackTaskPayloadSchema
->;
-export type EmailAgentCallbackEventPayload = z.infer<
-  typeof emailAgentCallbackEventPayloadSchema
->;
-export type EmailComposeDraftInput = z.infer<
-  typeof emailComposeDraftInputSchema
->;
-export type EmailComposeDraftResponse = z.infer<
-  typeof emailComposeDraftResponseSchema
->;
-export type EmailSendDraftResponse = z.infer<
-  typeof emailSendDraftResponseSchema
->;
-export type EmailDeleteDraftResponse = z.infer<
-  typeof emailDeleteDraftResponseSchema
->;
-export type EmailDeleteMessageResponse = z.infer<
-  typeof emailDeleteMessageResponseSchema
->;
-export type EmailReportSpamResponse = z.infer<
-  typeof emailReportSpamResponseSchema
->;
-export type UpdateAgentMailDraftInput = z.infer<
-  typeof updateAgentMailDraftSchema
->;
-export type EmailThreadMetadata = z.infer<typeof emailThreadMetadataSchema>;
-export type UpdateEmailThreadMetadataInput = z.infer<
-  typeof updateEmailThreadMetadataSchema
->;
-export type EmailThreadComment = z.infer<typeof emailThreadCommentSchema>;
-export type CreateEmailThreadCommentInput = z.infer<
-  typeof createEmailThreadCommentSchema
->;
-export type UpdateEmailThreadCommentInput = z.infer<
-  typeof updateEmailThreadCommentSchema
->;
-export type MoneybirdSalesInvoiceSummary = z.infer<
-  typeof moneybirdSalesInvoiceSchema
->;
-export type MoneybirdInvoiceParty = z.infer<typeof moneybirdInvoicePartySchema>;
-export type MoneybirdInvoiceLine = z.infer<typeof moneybirdInvoiceLineSchema>;
-export type MoneybirdInvoiceTaxTotal = z.infer<
-  typeof moneybirdInvoiceTaxTotalSchema
->;
-export type MoneybirdSalesInvoiceDetail = z.infer<
-  typeof moneybirdSalesInvoiceDetailSchema
->;
-export type MoneybirdInvoiceRevenue = z.infer<
-  typeof moneybirdInvoiceRevenueResponseSchema
->;
-export type MoneybirdFinancialAccount = z.infer<
-  typeof moneybirdFinancialAccountSchema
->;
-export type MoneybirdBankAccountSyncResult = z.infer<
-  typeof moneybirdBankAccountSyncResultSchema
->;
-export type VaultStorageSettings = z.infer<typeof vaultStorageSettingsSchema>;
-export type ProjectVaultEnsure = z.infer<typeof projectVaultEnsureSchema>;
-export type UpdateVaultStorageSettingsInput = z.infer<
-  typeof updateVaultStorageSettingsSchema
->;
-export type CursorModel = z.infer<typeof cursorModelSchema>;
-export type SpellcheckRequest = z.infer<typeof spellcheckRequestSchema>;
-export type SpellcheckResponse = z.infer<typeof spellcheckResponseSchema>;
-export type ResearchRequest = z.infer<typeof researchRequestSchema>;
-export type ResearchResponse = z.infer<typeof researchResponseSchema>;
-export type GlobalSearchResult = z.infer<typeof globalSearchResultSchema>;
-export type PowerSyncCredentials = z.infer<typeof powerSyncCredentialsSchema>;
-export type PowerSyncWriteInput = z.infer<typeof powerSyncWriteSchema>;
-export type RecurringTask = z.infer<typeof recurringTaskSchema>;
-export type CreateRecurringTaskInput = z.infer<typeof createRecurringTaskSchema>;
-export type UpdateRecurringTaskInput = z.infer<typeof updateRecurringTaskSchema>;
-export type WhoopSnapshot = z.infer<typeof whoopSnapshotSchema>;
-export type WhoopDayResult = z.infer<typeof whoopDayResultSchema>;
-export type WhoopSettingsStatus = z.infer<typeof whoopSettingsStatusSchema>;
-export type FileTaskCallbackResult = z.infer<
-  typeof fileTaskCallbackResultSchema
->;
-export type CreateFileTaskCallbackInput = z.infer<
-  typeof createFileTaskCallbackSchema
->;
-export type FileTaskCallbackCreated = z.infer<
-  typeof fileTaskCallbackCreatedSchema
->;
-export type FileTaskCallbackPoll = z.infer<typeof fileTaskCallbackPollSchema>;
+  fileTaskCallbackResultSchema,
+  createFileTaskCallbackSchema,
+  fileTaskCallbackCreatedSchema,
+  fileTaskCallbackPollSchema,
+} from "./schemas/integrations.js";
+export type {
+  CursorSettings,
+  AgentPtyConnection,
+  UpdateCursorSettingsInput,
+  CursorTestConnectionResult,
+  MoneybirdSettings,
+  UpdateMoneybirdSettingsInput,
+  MoneybirdAdministrationSummary,
+  MoneybirdTestConnectionResult,
+  MapboxSettings,
+  BrandfetchSettings,
+  UpdateBrandfetchSettingsInput,
+  BrandfetchTestConnectionResult,
+  ChatwootSettings,
+  UpdateChatwootSettingsInput,
+  ChatwootTestConnectionResult,
+  ChatConversation,
+  ChatMessage,
+  ChatConversationDetail,
+  ListChatConversationsQuery,
+  CreateChatMessageInput,
+  UpdateChatConversationInput,
+  ToggleChatTypingInput,
+  ToggleChatTypingResult,
+  ChatConversationsList,
+  ChatSyncResult,
+  GoogleCalendarSettings,
+  UpdateGoogleCalendarSettingsInput,
+  GoogleCalendarTestConnectionResult,
+  GoogleCalendarOAuthStartResult,
+  GoogleCalendarCalendarSummary,
+  GoogleCalendarSyncResult,
+  ExternalCalendarEvent,
+  ListExternalCalendarEventsQuery,
+  UpdateMapboxSettingsInput,
+  GithubSettings,
+  UpdateGithubSettingsInput,
+  GithubTestConnectionResult,
+  TransipStatus,
+  TransipSettings,
+  UpdateTransipSettingsInput,
+  TransipTestConnectionResult,
+  TransipDomainSyncResult,
+  TransipDomainDetail,
+  UpdateTransipDomainTagsInput,
+  UpdateTransipDomainTagsResult,
+  UpdateTransipDomainContactsInput,
+  UpdateTransipDomainContactsResult,
+  UpdateTransipDomainNameserversInput,
+  UpdateTransipDomainNameserversResult,
+  TransipDomainWhoisContact,
+  CloudflareStatus,
+  CloudflareSettings,
+  UpdateCloudflareSettingsInput,
+  CloudflareTestConnectionResult,
+  CloudflareZoneMatchResult,
+  CloudflareProjectZoneResult,
+  CloudflareDnsRecord,
+  CloudflareDnsRecordsResult,
+  UpdateCloudflareDnsRecordInput,
+  CloudflareDnsRecordUpdateResult,
+  CloudflarePurgeCacheResult,
+  MapboxTestConnectionResult,
+  MapboxGeocodeResult,
+  VaultStorageSettings,
+  ProjectVaultEnsure,
+  UpdateVaultStorageSettingsInput,
+  CursorModel,
+  SpellcheckRequest,
+  SpellcheckResponse,
+  ResearchRequest,
+  ResearchResponse,
+  FileTaskCallbackResult,
+  CreateFileTaskCallbackInput,
+  FileTaskCallbackCreated,
+  FileTaskCallbackPoll,
+} from "./schemas/integrations.js";
+export {
+  agentMailInboxSchema,
+  agentMailSettingsSchema,
+  updateAgentMailSettingsSchema,
+  agentMailInboxesResponseSchema,
+  agentMailTestConnectionResultSchema,
+  autoReviewWebhookRecentFailureSchema,
+  autoReviewWebhookSettingsSchema,
+  updateAutoReviewWebhookSettingsSchema,
+  autoReviewWebhookTestResultSchema,
+  agentMailListItemKindSchema,
+  EMAIL_THREAD_STATUSES,
+  emailThreadStatusSchema,
+  agentMailConceptDraftSchema,
+  agentMailMessageSchema,
+  agentMailMessagesResponseSchema,
+  emailThreadMessagePartySchema,
+  emailThreadMessagePartiesSchema,
+  emailThreadMetadataSchema,
+  updateEmailThreadMetadataSchema,
+  emailThreadCommentAuthorSchema,
+  emailThreadCommentSchema,
+  createEmailThreadCommentSchema,
+  updateEmailThreadCommentSchema,
+  emailThreadCommentsResponseSchema,
+  agentMailMessageAttachmentSchema,
+  agentMailMessageDetailSchema,
+  agentMailDraftDetailSchema,
+  emailConceptReplyInputSchema,
+  emailConceptReplyResponseSchema,
+  emailAgentIntentSchema,
+  emailAgentDraftInputSchema,
+  emailAgentCallbackTaskPayloadSchema,
+  emailAgentCallbackEventPayloadSchema,
+  emailAgentCallbackSuccessSchema,
+  emailAgentCallbackFailureSchema,
+  emailAgentCallbackResultSchema,
+  emailAgentCallbackPollSchema,
+  emailAgentCoreActionSchema,
+  emailAgentDraftStartedSchema,
+  emailComposeDraftInputSchema,
+  emailComposeDraftResponseSchema,
+  emailSendDraftResponseSchema,
+  emailDeleteDraftResponseSchema,
+  emailDeleteMessageResponseSchema,
+  emailReportSpamResponseSchema,
+  updateAgentMailDraftSchema,
+} from "./schemas/email-agentmail.js";
+export type {
+  EmailAgentIntent,
+  EmailAgentCoreAction,
+  AgentMailSettings,
+  UpdateAgentMailSettingsInput,
+  AgentMailInboxSummary,
+  AgentMailTestConnectionResult,
+  AutoReviewWebhookSettings,
+  UpdateAutoReviewWebhookSettingsInput,
+  AutoReviewWebhookTestResult,
+  AgentMailConceptDraft,
+  AgentMailMessage,
+  AgentMailMessageDetail,
+  AgentMailMessageAttachment,
+  AgentMailDraftDetail,
+  EmailConceptReplyInput,
+  EmailConceptReplyResponse,
+  EmailAgentDraftInput,
+  EmailAgentDraftStarted,
+  EmailAgentCallbackResult,
+  EmailAgentCallbackPoll,
+  EmailAgentCallbackTaskPayload,
+  EmailAgentCallbackEventPayload,
+  EmailComposeDraftInput,
+  EmailComposeDraftResponse,
+  EmailSendDraftResponse,
+  EmailDeleteDraftResponse,
+  EmailDeleteMessageResponse,
+  EmailReportSpamResponse,
+  UpdateAgentMailDraftInput,
+  EmailThreadMetadata,
+  UpdateEmailThreadMetadataInput,
+  EmailThreadComment,
+  CreateEmailThreadCommentInput,
+  UpdateEmailThreadCommentInput,
+} from "./schemas/email-agentmail.js";
+export {
+  whoopRecoveryStateSchema,
+  whoopSleepStagesSchema,
+  whoopStrainTargetSchema,
+  whoopSnapshotSchema,
+  habitCadenceSchema,
+  createHabitSchema,
+  updateHabitSchema,
+  recordHabitDaySchema,
+  habitSchema,
+  whoopDayResultSchema,
+  whoopSettingsStatusSchema,
+  createMeetingSchema,
+  updateMeetingSchema,
+  meetingAttendeePortalEmailStatusSchema,
+  meetingAttendeePortalEmailsSchema,
+  normalizeMeetingAttendeePortalEmails,
+  meetingSchema,
+  meetingWeekdayHoursSlotSchema,
+  meetingWeekdayHoursEntrySchema,
+  meetingSchedulingSettingsSchema,
+  updateMeetingSchedulingSettingsSchema,
+  meetingSlotSchema,
+  listMeetingSlotsQuerySchema,
+  createMeetingBookingSchema,
+} from "./schemas/meetings-habits.js";
+export type {
+  Habit,
+  HabitCadence,
+  CreateHabitInput,
+  UpdateHabitInput,
+  RecordHabitDayInput,
+  MeetingAttendeePortalEmailStatus,
+  MeetingAttendeePortalEmails,
+  Meeting,
+  CreateMeetingInput,
+  UpdateMeetingInput,
+  MeetingWeekdayHoursSlot,
+  MeetingWeekdayHoursEntry,
+  MeetingSchedulingSettings,
+  UpdateMeetingSchedulingSettingsInput,
+  MeetingSlot,
+  CreateMeetingBookingInput,
+  WhoopSnapshot,
+  WhoopDayResult,
+  WhoopSettingsStatus,
+} from "./schemas/meetings-habits.js";

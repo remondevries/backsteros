@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "./read-module-source.js";
 
 describe("local core Postgres publish", () => {
   it("binds host port 5433 to loopback and does not hardcode the default password", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const compose = readFileSync(
+    const compose = readModuleSource(
       join(here, "../../../../docker-compose.yml"),
       "utf8",
     );
@@ -21,7 +21,7 @@ describe("local core Postgres publish", () => {
 
   it("starts PowerSync when live containers already exist", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const lib = readFileSync(
+    const lib = readModuleSource(
       join(here, "../../../../scripts/local-core/lib.sh"),
       "utf8",
     );

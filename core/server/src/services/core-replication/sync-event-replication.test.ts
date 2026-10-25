@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../../lib/read-module-source.js";
 
 import {
   SYNC_ENTITIES,
@@ -34,7 +34,7 @@ describe("sync-event replication contracts", () => {
   });
 
   it("applies recurring runner state (next_run_at / last_task_id) from leader snapshots", () => {
-    const syncSrc = readFileSync(
+    const syncSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "../sync.ts"),
       "utf8",
     );
@@ -50,7 +50,7 @@ describe("sync-event replication contracts", () => {
   });
 
   it("OS-49: peer apply preserves event updated_at and skips stale rows", () => {
-    const src = readFileSync(
+    const src = readModuleSource(
       join(
         dirname(fileURLToPath(import.meta.url)),
         "sync-event-replication.ts",
@@ -64,11 +64,11 @@ describe("sync-event replication contracts", () => {
   });
 
   it("OS-42: peer task apply skips activity side effects and preserves updated_at", () => {
-    const syncSrc = readFileSync(
+    const syncSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "../sync.ts"),
       "utf8",
     );
-    const tasksSrc = readFileSync(
+    const tasksSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "../tasks-projects.ts"),
       "utf8",
     );
@@ -78,7 +78,7 @@ describe("sync-event replication contracts", () => {
   });
 
   it("OS-49: leader-first apply does not jump the sync-event pull cursor", () => {
-    const src = readFileSync(
+    const src = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "leader-mutations.ts"),
       "utf8",
     );

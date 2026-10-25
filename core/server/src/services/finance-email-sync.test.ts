@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 import { SYNC_ENTITIES, POWERSYNC_TABLES } from "../lib/sync-constants.js";
 import { REPLICATED_TABLES } from "./core-replication/constants.js";
@@ -42,7 +42,7 @@ describe("finance + email REST-leader sync entities", () => {
   });
 
   it("lists permanent validation errors as PowerSync-skippable", () => {
-    const syncSrc = readFileSync(
+    const syncSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "sync.ts"),
       "utf8",
     );
@@ -60,8 +60,8 @@ describe("finance + email REST-leader sync entities", () => {
 
   it("routes call isRestLeaderFirstWrite for transactions and email comments", () => {
     const appDir = join(dirname(fileURLToPath(import.meta.url)), "../app");
-    const financeRoutes = readFileSync(join(appDir, "finance-routes.ts"), "utf8");
-    const emailRoutes = readFileSync(join(appDir, "email-routes.ts"), "utf8");
+    const financeRoutes = readModuleSource(join(appDir, "finance-routes.ts"), "utf8");
+    const emailRoutes = readModuleSource(join(appDir, "email-routes.ts"), "utf8");
     assert.ok(financeRoutes.includes('entity: "financial_transaction"'));
     assert.ok(emailRoutes.includes('entity: "email_thread"'));
     assert.ok(emailRoutes.includes('entity: "email_thread_comment"'));
@@ -91,7 +91,7 @@ describe("finance + email REST-leader sync entities", () => {
   });
 
   it("registers missing email threads via leader-first batch, not list-path INSERT", () => {
-    const emailThreadsSrc = readFileSync(
+    const emailThreadsSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "email-threads.ts"),
       "utf8",
     );

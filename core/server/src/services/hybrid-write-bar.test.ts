@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 import { SYNC_ENTITIES } from "../lib/sync-constants.js";
 import { REPLICATED_TABLES } from "./core-replication/constants.js";
@@ -10,7 +10,7 @@ import { REPLICATED_TABLES } from "./core-replication/constants.js";
 const here = dirname(fileURLToPath(import.meta.url));
 
 function readSrc(relative: string): string {
-  return readFileSync(join(here, relative), "utf8");
+  return readModuleSource(join(here, relative), "utf8");
 }
 
 /**

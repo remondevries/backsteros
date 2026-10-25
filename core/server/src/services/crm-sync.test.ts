@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 import { createCrmActivityNoteSchema } from "@backsteros/contracts";
 import { POWERSYNC_PUBLICATION_TABLES } from "../db/powersync-tables.js";
@@ -92,7 +92,7 @@ describe("CRM unified sync pipeline", () => {
   });
 
   it("publishes PowerSync tombstones (no deleted_at IS NULL filter)", () => {
-    const yaml = readFileSync(
+    const yaml = readModuleSource(
       join(
         dirname(fileURLToPath(import.meta.url)),
         "../../../../deploy/powersync/sync-config.yaml",
@@ -107,7 +107,7 @@ describe("CRM unified sync pipeline", () => {
   });
 
   it("lists permanent CRM validation errors as PowerSync-skippable", () => {
-    const syncSrc = readFileSync(
+    const syncSrc = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "sync.ts"),
       "utf8",
     );
@@ -137,7 +137,7 @@ describe("CRM unified sync pipeline", () => {
   });
 
   it("seeds default relationship labels leader-first instead of local INSERT on list", () => {
-    const labelsSrc = readFileSync(
+    const labelsSrc = readModuleSource(
       join(
         dirname(fileURLToPath(import.meta.url)),
         "crm-relationship-labels.ts",

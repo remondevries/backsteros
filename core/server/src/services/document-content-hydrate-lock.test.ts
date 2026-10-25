@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 describe("hydrateLocalDocumentVaultContent row lock", () => {
   it("uses withDocumentContentRowLock before putObject (local sync path)", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, "documents.ts"), "utf8");
+    const src = readModuleSource(join(here, "documents.ts"), "utf8");
     const start = src.indexOf(
       "export async function hydrateLocalDocumentVaultContent",
     );

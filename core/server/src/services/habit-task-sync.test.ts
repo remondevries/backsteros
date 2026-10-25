@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readModuleSource } from "../lib/read-module-source.js";
 
 describe("habit task sync emission", () => {
   it("tracks changedTasks from ensureHabitTasksForDate", () => {
-    const src = readFileSync(
+    const src = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "habits.ts"),
       "utf8",
     );
@@ -16,14 +16,14 @@ describe("habit task sync emission", () => {
   });
 
   it("emits habit-derived tasks after habit sync apply", () => {
-    const leader = readFileSync(
+    const leader = readModuleSource(
       join(
         dirname(fileURLToPath(import.meta.url)),
         "core-replication/leader-mutations.ts",
       ),
       "utf8",
     );
-    const sync = readFileSync(
+    const sync = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "sync.ts"),
       "utf8",
     );
@@ -36,7 +36,7 @@ describe("habit task sync emission", () => {
   });
 
   it("routes habit day through leader-first when hybrid is on", () => {
-    const routes = readFileSync(
+    const routes = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "../app/task-document-routes.ts"),
       "utf8",
     );
@@ -47,7 +47,7 @@ describe("habit task sync emission", () => {
   });
 
   it("routes emit habit task sync changes", () => {
-    const routes = readFileSync(
+    const routes = readModuleSource(
       join(dirname(fileURLToPath(import.meta.url)), "../app/task-document-routes.ts"),
       "utf8",
     );
