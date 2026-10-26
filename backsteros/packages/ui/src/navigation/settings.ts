@@ -1,10 +1,14 @@
 export type SettingsTabId =
   | "account"
+  | "syncing"
   | "labels"
   | "document-properties"
   | "api"
   | "integrations"
   | "storage";
+
+/** Settings → Syncing (conflict / replication UI; page is a stub for now). */
+export const SETTINGS_SYNCING_HREF = "/settings/syncing";
 
 /** Former per-vendor settings routes; redirect to Integrations. */
 export const LEGACY_INTEGRATION_SETTINGS_TABS = [
@@ -48,6 +52,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Your contact profile and account preferences",
     group: "general",
     href: "/settings/account",
+  },
+  {
+    id: "syncing",
+    label: "Syncing",
+    description: "Cloud and local sync status, conflicts, and replication",
+    group: "general",
+    href: SETTINGS_SYNCING_HREF,
   },
   {
     id: "labels",

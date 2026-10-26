@@ -39,7 +39,10 @@ export {
   isCommunicationPanelPath,
   isInboxPanelPath,
 } from "../content/content-side-panel.js";
-export { isSettingsPath } from "../navigation/settings.js";
+export {
+  isSettingsPath,
+  SETTINGS_SYNCING_HREF,
+} from "../navigation/settings.js";
 
 export {
   appendNavigationTrailNode,

@@ -11,6 +11,7 @@ import {
   planUsageTone,
   type CursorUsage,
 } from "../lib/cursor-usage";
+import { SyncConflictPrototypeAlert } from "./sync-conflict-prototype-alert";
 
 const POLL_MS = 5 * 60 * 1000;
 
@@ -109,12 +110,20 @@ function CursorCreditsBody({
   );
 }
 
+type CursorCreditsUsageBarProps = {
+  /** Opens Settings → Syncing in a new product tab (sync-conflict prototype). */
+  onOpenSyncingSettings?: () => void;
+};
+
 /**
  * Sidebar footer: Cursor monthly included Auto / Premium usage toward the plan
  * allowance, plus weekly Grok quota when the account includes it.
- * Shows a red AgentMail alert above the credits when mail sync has degraded.
+ * Shows a static sync-conflict prototype and a red AgentMail alert above the
+ * credits when mail sync has degraded.
  */
-export function CursorCreditsUsageBar() {
+export function CursorCreditsUsageBar({
+  onOpenSyncingSettings,
+}: CursorCreditsUsageBarProps = {}) {
   const { degraded: agentMailDegraded } = useAgentMail();
   const [usage, setUsage] = useState<CursorUsage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +171,9 @@ export function CursorCreditsUsageBar() {
 
   return (
     <div className="sidebar-footer-status-stack">
+      <SyncConflictPrototypeAlert
+        onOpenSyncingSettings={onOpenSyncingSettings}
+      />
       {agentMailDegraded ? <AgentMailDegradedAlert /> : null}
       <CursorCreditsBody usage={usage} loading={loading} />
     </div>

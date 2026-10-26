@@ -105,6 +105,11 @@ type SyncState = {
   ) => Promise<void>;
   /** Push pending CRUD to local-core. Returns true if at least one batch uploaded. */
   flushCrudUpload: () => Promise<boolean>;
+  /**
+   * Force a sync pass: flush pending uploads, then soft-reconnect the
+   * PowerSync channel so downloads resume on a fresh stream.
+   */
+  forceSync: () => Promise<{ uploaded: boolean }>;
 };
 
 const idleState: SyncState = {
@@ -125,6 +130,9 @@ const idleState: SyncState = {
     throw new Error("Offline database is not ready");
   },
   flushCrudUpload: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  forceSync: async () => {
     throw new Error("Offline database is not ready");
   },
 };
@@ -386,6 +394,55 @@ function AuthenticatedPowerSyncProvider({
     return uploaded;
   }, []);
 
+  const forceSync = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Offline — reconnect to the network first.");
+    }
+    const db = databaseRef.current;
+    const connector = connectorRef.current;
+    if (!db || !connector) {
+      // No live handle — full re-init is the only way to open the channel.
+      setInitError(null);
+      setDatabaseState(null);
+      setReconnectNonce((nonce) => nonce + 1);
+      return { uploaded: false };
+    }
+
+    let uploaded = false;
+    try {
+      for (let i = 0; i < 50; i++) {
+        const pending = await db.getCrudBatch();
+        if (!pending) break;
+        await connector.uploadData(db);
+        uploaded = true;
+      }
+    } catch (reason) {
+      console.warn("[desktop] PowerSync force-sync upload failed", reason);
+      throw reason instanceof Error
+        ? reason
+        : new Error("Could not upload pending changes");
+    }
+
+    try {
+      await db.disconnect();
+      await connectWithTimeout(db, connector);
+      // Drain anything queued while reconnecting.
+      for (let i = 0; i < 50; i++) {
+        const pending = await db.getCrudBatch();
+        if (!pending) break;
+        await connector.uploadData(db);
+        uploaded = true;
+      }
+    } catch (reason) {
+      console.warn("[desktop] PowerSync force-sync reconnect failed", reason);
+      throw reason instanceof Error
+        ? reason
+        : new Error("Could not reconnect PowerSync");
+    }
+
+    return { uploaded };
+  }, []);
+
   const createMetadata = useCallback(
     async (
       table: SyncedMetadataTable,
@@ -466,6 +523,7 @@ function AuthenticatedPowerSyncProvider({
       createMetadata,
       patchMetadata,
       flushCrudUpload,
+      forceSync,
     };
     const prev = stableValueRef.current;
     if (
@@ -482,7 +540,8 @@ function AuthenticatedPowerSyncProvider({
       prev.retry === next.retry &&
       prev.createMetadata === next.createMetadata &&
       prev.patchMetadata === next.patchMetadata &&
-      prev.flushCrudUpload === next.flushCrudUpload
+      prev.flushCrudUpload === next.flushCrudUpload &&
+      prev.forceSync === next.forceSync
     ) {
       return prev;
     }
@@ -497,6 +556,7 @@ function AuthenticatedPowerSyncProvider({
     database,
     downloadErrorMessage,
     flushCrudUpload,
+    forceSync,
     initError,
     offline,
     patchMetadata,

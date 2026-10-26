@@ -10,7 +10,10 @@ import {
   useChromeHeader,
   type ProductSidebarRecentPage,
 } from "@backsteros/ui/shell";
-import { resolveHistoryEntryDisplay } from "@backsteros/ui/navigation";
+import {
+  resolveHistoryEntryDisplay,
+  SETTINGS_SYNCING_HREF,
+} from "@backsteros/ui/navigation";
 
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DevTrafficLights } from "../components/dev-traffic-lights";
@@ -60,7 +63,14 @@ function ShellChromeInner({
 }: ShellChromeProps) {
   const navigate = useNavigate();
   const chromeHeader = useChromeHeader();
-  const { tabsState, history, activateTab, closeTab, openNewTab } = tabs;
+  const {
+    tabsState,
+    history,
+    activateTab,
+    closeTab,
+    openNewTab,
+    openHrefInNewTab,
+  } = tabs;
   const showSidePanelSlot = showSidePanel && Boolean(sidePanel);
   useWindowChromeDrag();
 
@@ -79,7 +89,13 @@ function ShellChromeInner({
       onForward={history.goForward}
       canGoBack={history.canGoBack}
       canGoForward={history.canGoForward}
-      footer={<CursorCreditsUsageBar />}
+      footer={
+        <CursorCreditsUsageBar
+          onOpenSyncingSettings={() =>
+            openHrefInNewTab(SETTINGS_SYNCING_HREF)
+          }
+        />
+      }
       inboxIndicatorTone={inboxSidebarIndicator}
       recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
         const display = resolveHistoryEntryDisplay(page.href, page.title);

@@ -38,6 +38,7 @@ import { rememberDesktopVaultRoot, peekPersistedDesktopVaultRoot } from "../lib/
 import { localOnlyRestFailClosed } from "../lib/workspace/powersync-write-path";
 import { SettingsIntegrationsTab } from "../components/settings-integrations-tab";
 import { SettingsReplicationDeadLettersSection } from "../components/settings-replication-dead-letters";
+import { SettingsSyncingWorkbench } from "../components/settings-syncing-workbench";
 
 function toSettingsApiKey(key: ApiKey): SettingsApiKeyItem {
   return {
@@ -539,6 +540,7 @@ export function SettingsPage() {
     <SettingsDetailLayout
       wide={
         activeTab === "account" ||
+        activeTab === "syncing" ||
         activeTab === "labels" ||
         activeTab === "document-properties" ||
         activeTab === "api" ||
@@ -551,7 +553,7 @@ export function SettingsPage() {
         <SettingsApiTab title={meta.label} description={meta.description} />
       ) : (
         <>
-          {activeTab === "account" ? null : (
+          {activeTab === "account" || activeTab === "syncing" ? null : (
             <SettingsContentHeader
               title={meta.label}
               description={meta.description}
@@ -568,6 +570,12 @@ export function SettingsPage() {
                 <SettingsReplicationDeadLettersSection />
               </div>
             </div>
+          ) : null}
+          {activeTab === "syncing" ? (
+            <SettingsSyncingWorkbench
+              title={meta.label}
+              description={meta.description}
+            />
           ) : null}
           {activeTab === "labels" ? <SettingsLabelsTab /> : null}
           {activeTab === "document-properties" ? (

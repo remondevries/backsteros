@@ -6,6 +6,8 @@ export type SettingsContentHeaderProps = {
   title: string;
   description: string;
   connected?: boolean;
+  /** Optional badge rendered next to the title (e.g. Syncing conflict). */
+  titleBadge?: ReactNode;
   /** Hide the rule under the description. */
   hideRule?: boolean;
   /** Far-right control on the description row (e.g. view toggle). */
@@ -16,6 +18,7 @@ export function SettingsContentHeader({
   title,
   description,
   connected,
+  titleBadge,
   hideRule = false,
   trailing,
 }: SettingsContentHeaderProps) {
@@ -30,6 +33,7 @@ export function SettingsContentHeader({
       <div className="settings-content-title-row">
         <div className="settings-content-title-group">
           <h2 className="settings-content-title">{title}</h2>
+          {titleBadge}
           {connected !== undefined ? (
             <span
               className={[

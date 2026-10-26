@@ -20,9 +20,19 @@ export type ReplicationDeadLetter = {
   nextRetryAt: string;
 };
 
+export type OpsSyncHealthMismatch = {
+  tableName: string;
+  localCount: number;
+  peerCount: number;
+  missingLocally: number;
+  missingOnPeer: number;
+  checkedAt: string;
+};
+
 export type OpsSyncHealthDeadLetters = {
   count: number;
   letters: ReplicationDeadLetter[];
+  mismatches: OpsSyncHealthMismatch[];
 };
 
 export function replicationDeadLetterRetryPath(id: string): string {
@@ -62,11 +72,27 @@ function parseLetter(value: unknown): ReplicationDeadLetter | null {
   };
 }
 
+function parseMismatch(value: unknown): OpsSyncHealthMismatch | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.tableName !== "string") return null;
+  return {
+    tableName: row.tableName,
+    localCount: typeof row.localCount === "number" ? row.localCount : 0,
+    peerCount: typeof row.peerCount === "number" ? row.peerCount : 0,
+    missingLocally:
+      typeof row.missingLocally === "number" ? row.missingLocally : 0,
+    missingOnPeer:
+      typeof row.missingOnPeer === "number" ? row.missingOnPeer : 0,
+    checkedAt: asIsoString(row.checkedAt),
+  };
+}
+
 export function parseOpsSyncHealthDeadLetters(
   body: unknown,
 ): OpsSyncHealthDeadLetters {
   if (!body || typeof body !== "object") {
-    return { count: 0, letters: [] };
+    return { count: 0, letters: [], mismatches: [] };
   }
   const record = body as Record<string, unknown>;
   const letters = Array.isArray(record.replicationDeadLetters)
@@ -75,12 +101,18 @@ export function parseOpsSyncHealthDeadLetters(
         return letter ? [letter] : [];
       })
     : [];
+  const mismatches = Array.isArray(record.replicationMismatches)
+    ? record.replicationMismatches.flatMap((item) => {
+        const mismatch = parseMismatch(item);
+        return mismatch ? [mismatch] : [];
+      })
+    : [];
   const count =
     typeof record.replicationDeadLetterCount === "number" &&
     Number.isFinite(record.replicationDeadLetterCount)
       ? record.replicationDeadLetterCount
       : letters.length;
-  return { count, letters };
+  return { count, letters, mismatches };
 }
 
 export function formatDeadLetterNextRetry(
