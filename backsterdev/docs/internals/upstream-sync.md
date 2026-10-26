@@ -63,6 +63,10 @@ These paths are Backster-owned. The sync script excludes them always.
 - `packages/shared/src/backsterdevDesktopBranding.ts` (desktop appId / productName / DMG artifact identity)
 - `assets/prod/black-*.png`, `assets/prod/t3-black-*` (BacksterDEV dock / store / favicon set —
   BDV-62 upstream refresh reintroduced the T3 mark; keep the Backster orbit icons)
+- `apps/web/public/favicon*`, `apps/web/public/apple-touch-icon.png` (must match
+  `assets/prod/t3-black-web-*` orbit set — copy after restoring prod assets)
+- Do **not** run `vp run icons:export` until `assets/prod/app-icon.icon` is redesigned:
+  Icon Composer still uses T3 `Assets/text.svg` and would overwrite the orbit PNGs
 - `docs/internals/backsteros-control-api.md`
 - `docs/user/backsteros-file-task.md`
 - `docs/internals/upstream-sync.md` (this file)
