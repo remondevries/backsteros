@@ -7,6 +7,28 @@ export function isBootSplashPresent(): boolean {
   return Boolean(document.getElementById("boot-splash"));
 }
 
+/**
+ * Keep the branded splash mounted and show Access denied under the logo/title.
+ * Idempotent. Does not remove the splash.
+ */
+export function presentBootSplashAccessDenied() {
+  const splash = document.getElementById("boot-splash");
+  if (!splash) return;
+
+  splash.classList.add("boot-splash--access-denied");
+  splash.setAttribute("role", "alert");
+  splash.setAttribute("aria-live", "assertive");
+  splash.setAttribute("aria-label", "Access denied");
+
+  let status = splash.querySelector<HTMLElement>(".boot-splash__status");
+  if (!status) {
+    status = document.createElement("p");
+    status.className = "boot-splash__status";
+    splash.querySelector(".boot-splash__panel")?.appendChild(status);
+  }
+  status.textContent = "Access denied";
+}
+
 /** How long the HTML splash may linger before we force recovery UI. */
 export const BOOT_SPLASH_WATCHDOG_MS = 10_000;
 

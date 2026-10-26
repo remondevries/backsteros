@@ -4,7 +4,7 @@ import { after, test } from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES, API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -75,7 +75,8 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     method: "POST",
     headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({
-      name: "agent-key",
+      name: "access-key",
+      kind: "access",
       scopes: ["tasks:read"],
       expiresAt,
     }),
@@ -88,13 +89,23 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       lastUsedAt: string | null;
       prefix: string;
       hasRecoverableSecret: boolean;
+      scopes: string[];
+      contactId: string | null;
     };
     secret: string;
   };
-  assert.ok(createdBody.secret.startsWith("sk_live_"));
+  assert.ok(createdBody.secret.startsWith("sk_access_"));
   assert.equal(createdBody.apiKey.expiresAt, expiresAt);
   assert.equal(createdBody.apiKey.lastUsedAt, null);
   assert.equal(createdBody.apiKey.hasRecoverableSecret, true);
+  // kind: access → full owner scopes forced (even if request sent a subset).
+  assert.equal(createdBody.apiKey.contactId, null);
+  for (const scope of AGENT_API_KEY_SCOPES) {
+    assert.ok(
+      createdBody.apiKey.scopes.includes(scope),
+      `Access key missing scope ${scope}`,
+    );
+  }
 
   // Reveal returns the same secret for new keys with ciphertext
   const revealed = await app.request(
@@ -116,7 +127,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   };
   assert.ok(
     auditCreateBody.auditLogs.some(
-      (entry) => entry.action === "created" && entry.apiKeyName === "agent-key",
+      (entry) => entry.action === "created" && entry.apiKeyName === "access-key",
     ),
   );
 
@@ -133,8 +144,8 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       "x-forwarded-for": "203.0.113.50",
     },
   });
-  // Agent key without settings:write may be 403, but auth still ran.
-  assert.ok(probe.status === 200 || probe.status === 403);
+  // Access key has settings:write — list succeeds and last-used is touched.
+  assert.equal(probe.status, 200);
 
   // Give the fire-and-forget touch a moment
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -148,10 +159,10 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       lastUsedAddress: string | null;
     }>;
   };
-  const agent = listBody.apiKeys.find((key) => key.id === createdBody.apiKey.id);
-  assert.ok(agent);
-  assert.ok(agent.lastUsedAt);
-  assert.notEqual(agent.lastUsedAddress, "203.0.113.50");
+  const accessKey = listBody.apiKeys.find((key) => key.id === createdBody.apiKey.id);
+  assert.ok(accessKey);
+  assert.ok(accessKey.lastUsedAt);
+  assert.notEqual(accessKey.lastUsedAddress, "203.0.113.50");
 
   const requestLogsRes = await app.request(
     "/api/v1/api-keys/request-logs?limit=20",
@@ -193,11 +204,11 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   const trustedBody = (await listedTrusted.json()) as {
     apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
   };
-  const agentTrusted = trustedBody.apiKeys.find(
+  const accessTrusted = trustedBody.apiKeys.find(
     (key) => key.id === createdBody.apiKey.id,
   );
-  assert.ok(agentTrusted);
-  assert.equal(agentTrusted.lastUsedAddress, "198.51.100.20");
+  assert.ok(accessTrusted);
+  assert.equal(accessTrusted.lastUsedAddress, "198.51.100.20");
 
   // Docker-style IPv4-mapped peer against plain TRUSTED_PROXY_IPS must also trust
   // cf-connecting-ip (regression guard for ::ffff:172.20.0.1).
@@ -407,7 +418,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     auditLogs: Array<{ action: string; apiKeyName: string }>;
   };
   const actions = auditFinalBody.auditLogs
-    .filter((entry) => entry.apiKeyName === "agent-key")
+    .filter((entry) => entry.apiKeyName === "access-key")
     .map((entry) => entry.action);
   assert.ok(actions.includes("created"));
   assert.ok(actions.includes("expiry_updated"));
@@ -472,6 +483,7 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
     headers: auth,
     body: JSON.stringify({
       name: "child-key",
+      kind: "access",
       scopes: ["tasks:read"],
       expiresAt: tooFar,
     }),
@@ -483,6 +495,7 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
     headers: auth,
     body: JSON.stringify({
       name: "never-key",
+      kind: "access",
       scopes: ["tasks:read"],
     }),
   });
@@ -494,6 +507,7 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
     headers: auth,
     body: JSON.stringify({
       name: "ok-key",
+      kind: "access",
       scopes: ["tasks:read"],
       expiresAt: okExpiry,
     }),

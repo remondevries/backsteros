@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { formatMaskedApiKey } from "./api-keys-settings-section-view.js";
 import {
   AGENT_API_KEY_SCOPES,
   APPLICATION_API_KEY_SCOPE,
   CARDDAV_API_KEY_SCOPE,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
-  formatMaskedApiKey,
-} from "./api-keys-settings-section-view.js";
+} from "./api-key-type.js";
 
 test("classifyApiKeyType maps exclusive Applications, TV, and CardDAV scopes", () => {
   assert.equal(
@@ -34,7 +34,7 @@ test("classifyApiKeyType maps exclusive Applications, TV, and CardDAV scopes", (
   );
 });
 
-test("classifyApiKeyType maps generic scopes to agent", () => {
+test("classifyApiKeyType maps contact-bound generic scopes to agent", () => {
   assert.equal(
     classifyApiKeyType({
       scopes: ["tasks:read", "tasks:write"],
@@ -45,9 +45,26 @@ test("classifyApiKeyType maps generic scopes to agent", () => {
   assert.equal(
     classifyApiKeyType({
       scopes: [...AGENT_API_KEY_SCOPES, CARDDAV_API_KEY_SCOPE],
-      contactId: null,
+      contactId: "c1",
     }),
     "agent",
+  );
+});
+
+test("classifyApiKeyType maps no-contact generic scopes to access", () => {
+  assert.equal(
+    classifyApiKeyType({
+      scopes: ["tasks:read", "settings:write"],
+      contactId: null,
+    }),
+    "access",
+  );
+  assert.equal(
+    classifyApiKeyType({
+      scopes: [...AGENT_API_KEY_SCOPES],
+      contactId: null,
+    }),
+    "access",
   );
 });
 

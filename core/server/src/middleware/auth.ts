@@ -6,11 +6,11 @@ import type { ApiKeyScope } from "@backsteros/contracts";
 import { db } from "../db/index.js";
 import { apiKeys } from "../db/schema.js";
 import {
-  API_KEY_PREFIX,
   apiKeyLookupPrefix,
   hashApiKey,
   hasAnyScope,
   hasScope,
+  isApiKeySecretFormat,
 } from "../lib/crypto.js";
 import {
   isLocalShellAuthEnabled,
@@ -68,7 +68,7 @@ function bearerKindLabel(token: string | null): string {
   if (!token) {
     return "missing";
   }
-  if (token.startsWith(API_KEY_PREFIX)) {
+  if (isApiKeySecretFormat(token)) {
     return "api_key";
   }
   if (isLocalShellBearerToken(token)) {
@@ -240,7 +240,7 @@ export async function resolveAuth(authorization: string | undefined): Promise<Au
   }
 
   let auth: AuthContext | null = null;
-  if (token.startsWith("sk_live_")) {
+  if (isApiKeySecretFormat(token)) {
     auth = await authenticateApiKey(token);
   } else if (isLocalShellBearerToken(token)) {
     auth = await authenticateLocalShell(token);

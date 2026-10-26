@@ -2,13 +2,34 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { nanoid } from "nanoid";
 
-import type { ApiKeyScope } from "@backsteros/contracts";
+import {
+  API_KEY_LOOKUP_RANDOM_CHARS,
+  API_KEY_SECRET_PREFIX_LEGACY,
+  apiKeySecretPrefixForKind,
+  isApiKeySecretFormat,
+  matchApiKeySecretPrefix,
+  type ApiKeyCreateKind,
+  type ApiKeyScope,
+} from "@backsteros/contracts";
 
-export const API_KEY_PREFIX = "sk_live_";
+/** @deprecated Prefer typed prefixes / {@link isApiKeySecretFormat}. Legacy only. */
+export const API_KEY_PREFIX = API_KEY_SECRET_PREFIX_LEGACY;
 export const SPACE_SITE_KEY_PREFIX = "sk_space_";
 
-export function generateApiKeySecret(): string {
-  return `${API_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
+export { isApiKeySecretFormat, matchApiKeySecretPrefix };
+
+/**
+ * Mint a secret for a create-kind. Pass `"legacy"` only for non-typed mints
+ * (e.g. Dynamic Island) that still use `sk_live_`.
+ */
+export function generateApiKeySecret(
+  kind: ApiKeyCreateKind | "legacy" = "legacy",
+): string {
+  const prefix =
+    kind === "legacy"
+      ? API_KEY_SECRET_PREFIX_LEGACY
+      : apiKeySecretPrefixForKind(kind);
+  return `${prefix}${randomBytes(24).toString("base64url")}`;
 }
 
 export function generateSpaceSiteKeySecret(): string {
@@ -19,8 +40,16 @@ export function hashApiKey(secret: string): string {
   return createHash("sha256").update(secret).digest("hex");
 }
 
+/**
+ * DB lookup key: recognized secret prefix + {@link API_KEY_LOOKUP_RANDOM_CHARS}
+ * of entropy so long prefixes (e.g. `sk_applications_`) do not collide.
+ */
 export function apiKeyLookupPrefix(secret: string): string {
-  return secret.slice(0, 16);
+  const matched = matchApiKeySecretPrefix(secret);
+  if (!matched) {
+    return secret.slice(0, 16);
+  }
+  return secret.slice(0, matched.length + API_KEY_LOOKUP_RANDOM_CHARS);
 }
 
 export function newId(): string {

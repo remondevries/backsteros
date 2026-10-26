@@ -161,6 +161,17 @@ export function registerApiKeyRoutes(app: Hono) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
         }
+        if (error instanceof Error && error.message === "AGENT_CONTACT_REQUIRED") {
+          return c.json(badRequest("Agent keys require a contact"), 400);
+        }
+        if (error instanceof Error && error.message === "AGENT_SCOPES_REQUIRED") {
+          return c.json(
+            badRequest(
+              "Agent keys need at least one non-door scope (settings:write is not allowed)",
+            ),
+            400,
+          );
+        }
         if (
           error instanceof Error &&
           (error.message === "INVALID_EXPIRES_AT" ||
@@ -217,6 +228,14 @@ export function registerApiKeyRoutes(app: Hono) {
       } catch (error) {
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
+        }
+        if (error instanceof Error && error.message === "CONTACT_CLEAR_FORBIDDEN") {
+          return c.json(
+            badRequest(
+              "Cannot clear contact on an API key; create an Access key instead",
+            ),
+            400,
+          );
         }
         if (
           error instanceof Error &&

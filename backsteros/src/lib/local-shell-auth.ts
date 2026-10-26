@@ -1,4 +1,5 @@
 import type { TokenProvider } from "@backsteros/api-client";
+import { isOwnerApiKeySecretFormat } from "@backsteros/contracts";
 
 import { isTauriRuntime } from "./tauri-runtime";
 
@@ -17,14 +18,14 @@ export const LOCAL_SHELL_USER_ID = "local_shell";
 function envOwnerKey(): string | null {
   try {
     const fromEnv = import.meta.env?.VITE_OWNER_API_KEY?.trim();
-    if (fromEnv?.startsWith("sk_live_")) return fromEnv;
+    if (fromEnv && isOwnerApiKeySecretFormat(fromEnv)) return fromEnv;
   } catch {
     // import.meta.env is absent in some test runners
   }
   return null;
 }
 
-/** Owner `sk_live_…` from Vite env or the Tauri cli.env reader. Never `Bearer local`. */
+/** Owner Access key (`sk_access_…` or legacy `sk_live_…`) from env / cli.env. Never `Bearer local`. */
 export async function loadDesktopOwnerToken(): Promise<string | null> {
   const fromEnv = envOwnerKey();
   if (fromEnv) return fromEnv;
@@ -32,7 +33,7 @@ export async function loadDesktopOwnerToken(): Promise<string | null> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const key = (await invoke<string>("owner_api_key")).trim();
-    return key.startsWith("sk_live_") ? key : null;
+    return isOwnerApiKeySecretFormat(key) ? key : null;
   } catch (error) {
     console.warn("[desktop] owner API key unavailable", error);
     return null;

@@ -77,6 +77,190 @@ export const API_KEY_SCOPES = [
   "applications",
 ] as const;
 
+/** Exclusive single-scope doors — never mixed into Access/Agent owner scopes. */
+export const EXCLUSIVE_API_KEY_DOOR_SCOPES = [
+  "carddav",
+  "tv.today_counts",
+  "applications",
+] as const satisfies ReadonlyArray<(typeof API_KEY_SCOPES)[number]>;
+
+const EXCLUSIVE_API_KEY_DOOR_SCOPE_SET = new Set<string>(
+  EXCLUSIVE_API_KEY_DOOR_SCOPES,
+);
+
+/**
+ * Non-door scopes. Access keys must always grant every scope in this list
+ * (full owner access, including settings:write).
+ */
+export const AGENT_API_KEY_SCOPES = API_KEY_SCOPES.filter(
+  (scope) => !EXCLUSIVE_API_KEY_DOOR_SCOPE_SET.has(scope),
+);
+
+/**
+ * Scopes an agent (persona) key may hold. Never includes settings:write —
+ * that scope is what allows minting new keys.
+ */
+export const AGENT_KEY_SCOPES = AGENT_API_KEY_SCOPES.filter(
+  (scope) => scope !== "settings:write",
+);
+
+const AGENT_KEY_SCOPE_SET = new Set<string>(AGENT_KEY_SCOPES);
+
+/** Explicit purpose on create — never inferred from missing contact. */
+export const API_KEY_CREATE_KINDS = [
+  "access",
+  "agent",
+  "applications",
+  "tv",
+  "carddav",
+] as const;
+
+export const apiKeyCreateKindSchema = z.enum(API_KEY_CREATE_KINDS);
+export type ApiKeyCreateKind = z.infer<typeof apiKeyCreateKindSchema>;
+
+/**
+ * Secret string prefixes by create kind. Legacy `sk_live_` remains valid for
+ * existing keys until they are rotated onto a typed prefix.
+ */
+export const API_KEY_SECRET_PREFIX_BY_KIND = {
+  access: "sk_access_",
+  agent: "sk_agent_",
+  applications: "sk_applications_",
+  tv: "sk_tv_",
+  carddav: "sk_contacts_",
+} as const satisfies Record<ApiKeyCreateKind, string>;
+
+/** Pre-typed-prefix secrets (still authenticate until rotated). */
+export const API_KEY_SECRET_PREFIX_LEGACY = "sk_live_";
+
+/** Random characters stored after the typed prefix for DB lookup uniqueness. */
+export const API_KEY_LOOKUP_RANDOM_CHARS = 8;
+
+/**
+ * All recognized secret prefixes, longest first so `sk_applications_` wins
+ * over shorter `sk_` matches.
+ */
+export const API_KEY_SECRET_PREFIXES: readonly string[] = [
+  API_KEY_SECRET_PREFIX_BY_KIND.applications,
+  API_KEY_SECRET_PREFIX_BY_KIND.carddav,
+  API_KEY_SECRET_PREFIX_BY_KIND.access,
+  API_KEY_SECRET_PREFIX_BY_KIND.agent,
+  API_KEY_SECRET_PREFIX_LEGACY,
+  API_KEY_SECRET_PREFIX_BY_KIND.tv,
+].sort((a, b) => b.length - a.length);
+
+/** Prefixes accepted as desktop/owner Access credentials. */
+export const OWNER_API_KEY_SECRET_PREFIXES = [
+  API_KEY_SECRET_PREFIX_BY_KIND.access,
+  API_KEY_SECRET_PREFIX_LEGACY,
+] as const;
+
+export function matchApiKeySecretPrefix(secret: string): string | null {
+  const trimmed = secret.trim();
+  for (const prefix of API_KEY_SECRET_PREFIXES) {
+    if (trimmed.startsWith(prefix)) return prefix;
+  }
+  return null;
+}
+
+export function isApiKeySecretFormat(secret: string): boolean {
+  return matchApiKeySecretPrefix(secret) != null;
+}
+
+export function isOwnerApiKeySecretFormat(secret: string): boolean {
+  const trimmed = secret.trim();
+  return OWNER_API_KEY_SECRET_PREFIXES.some((prefix) =>
+    trimmed.startsWith(prefix),
+  );
+}
+
+export function apiKeySecretPrefixForKind(kind: ApiKeyCreateKind): string {
+  return API_KEY_SECRET_PREFIX_BY_KIND[kind];
+}
+
+/** Infer create-kind for rotate (typed secret) from stored contact/scopes. */
+export function apiKeyCreateKindFromIdentity(input: {
+  contactId: string | null | undefined;
+  scopes: readonly string[];
+}): ApiKeyCreateKind {
+  if (isExclusiveDoorApiKeyScopes(input.scopes)) {
+    const only = input.scopes[0];
+    if (only === "applications") return "applications";
+    if (only === "tv.today_counts") return "tv";
+    if (only === "carddav") return "carddav";
+  }
+  if (input.contactId) return "agent";
+  return "access";
+}
+
+export function isExclusiveDoorApiKeyScopes(
+  scopes: readonly string[],
+): boolean {
+  return (
+    scopes.length === 1 && EXCLUSIVE_API_KEY_DOOR_SCOPE_SET.has(scopes[0]!)
+  );
+}
+
+/**
+ * Existing-row heuristic for Access keys (UI classify / update heal).
+ * Creation must use `kind: "access"`, not this helper.
+ */
+export function isAccessApiKey(input: {
+  contactId: string | null | undefined;
+  scopes: readonly string[];
+}): boolean {
+  return (
+    input.contactId == null && !isExclusiveDoorApiKeyScopes(input.scopes)
+  );
+}
+
+export function hasFullAccessApiKeyScopes(scopes: readonly string[]): boolean {
+  return AGENT_API_KEY_SCOPES.every((scope) => scopes.includes(scope));
+}
+
+/** Drop settings:write and any door scopes from an agent create payload. */
+export function sanitizeAgentKeyScopes(
+  scopes: readonly string[],
+): Array<(typeof AGENT_KEY_SCOPES)[number]> {
+  return scopes.filter((scope): scope is (typeof AGENT_KEY_SCOPES)[number] =>
+    AGENT_KEY_SCOPE_SET.has(scope),
+  );
+}
+
+/**
+ * Resolve contact + scopes from an explicit create `kind`.
+ * Never treats "missing contact" as Access — that requires kind === "access".
+ */
+export function resolveCreateApiKeyFields(input: {
+  kind: ApiKeyCreateKind;
+  contactId: string | null;
+  scopes: readonly string[];
+}): { contactId: string | null; scopes: Array<(typeof API_KEY_SCOPES)[number]> } {
+  switch (input.kind) {
+    case "access":
+      return {
+        contactId: null,
+        scopes: [...AGENT_API_KEY_SCOPES],
+      };
+    case "agent": {
+      if (!input.contactId) {
+        throw new Error("AGENT_CONTACT_REQUIRED");
+      }
+      const scopes = sanitizeAgentKeyScopes(input.scopes);
+      if (scopes.length === 0) {
+        throw new Error("AGENT_SCOPES_REQUIRED");
+      }
+      return { contactId: input.contactId, scopes: [...scopes] };
+    }
+    case "applications":
+      return { contactId: null, scopes: ["applications"] };
+    case "tv":
+      return { contactId: null, scopes: ["tv.today_counts"] };
+    case "carddav":
+      return { contactId: null, scopes: ["carddav"] };
+  }
+}
+
 /** Open statuses shown on TV / Dynamic Island today-counts (Island order). */
 export const TV_TODAY_COUNT_STATUSES = [
   "triage",
@@ -238,13 +422,31 @@ export const revealApiKeySecretResponseSchema = z.object({
   secret: z.string(),
 });
 
-export const createApiKeySchema = z.object({
-  name: z.string().min(1).max(128),
-  scopes: z.array(apiKeyScopeSchema).min(1),
-  contactId: z.string().nullable().optional(),
-  /** Optional expiry; omit or null for no expiry. */
-  expiresAt: z.string().datetime().nullable().optional(),
-});
+export const createApiKeySchema = z
+  .object({
+    name: z.string().min(1).max(128),
+    /**
+     * Required purpose. Creation never infers Access from a missing contact —
+     * omit `kind` → validation failure; `agent` without contact → failure.
+     */
+    kind: apiKeyCreateKindSchema,
+    scopes: z.array(apiKeyScopeSchema).min(1),
+    contactId: z.string().nullable().optional(),
+    /** Optional expiry; omit or null for no expiry. */
+    expiresAt: z.string().datetime().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === "agent") {
+      const contactId = value.contactId?.trim() ?? "";
+      if (!contactId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Agent keys require a contact",
+          path: ["contactId"],
+        });
+      }
+    }
+  });
 
 export const updateApiKeySchema = z
   .object({

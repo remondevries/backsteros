@@ -14,6 +14,7 @@ async function resolveApiKey(): Promise<string> {
   if (fromEnv) return fromEnv;
 
   const { secret } = await createApiKey(ws, "SiChwMAnh6tXSbe-dVIIP", {
+    kind: "access",
     name: `letter-pdf-503-proof-${Date.now()}`,
     scopes: ["letters:read", "letters:write"],
   });

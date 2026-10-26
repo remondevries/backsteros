@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import type { ApiKeyScope } from "@backsteros/contracts";
 
-import { API_KEY_PREFIX, hasScope } from "../../lib/crypto.js";
+import { hasScope, isApiKeySecretFormat } from "../../lib/crypto.js";
 import type { AuthContext } from "../../middleware/auth.js";
 
 /** Decode HTTP Basic credentials (CardDAV / iOS Contacts). */
@@ -28,7 +28,7 @@ export function parseBasicAuthCredentials(
 }
 
 export function isApiKeySecret(secret: string): boolean {
-  return secret.startsWith(API_KEY_PREFIX);
+  return isApiKeySecretFormat(secret);
 }
 
 function secretsEqual(provided: string, expected: string): boolean {

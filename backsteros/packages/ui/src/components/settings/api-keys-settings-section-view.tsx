@@ -1,6 +1,5 @@
 "use client";
 
-import { API_KEY_SCOPES, type ApiKeyScope } from "@backsteros/contracts";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -16,6 +15,7 @@ import {
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { ApplicationsIcon } from "../icons/applications-icon.js";
 import { ContactsSyncIcon } from "../icons/contacts-sync-icon.js";
+import { LaptopIcon } from "../icons/laptop-icon.js";
 import { TvIcon } from "../icons/tv-icon.js";
 import {
   SegmentedPillToggle,
@@ -24,7 +24,24 @@ import {
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import { ApiKeyDetailView } from "./api-key-detail-view.js";
+import {
+  AGENT_API_KEY_SCOPES,
+  AGENT_KEY_SCOPES,
+  classifyApiKeyType,
+  scopesForApiKeyTab,
+  type ApiKeyTypeTab,
+} from "./api-key-type.js";
 import { SettingsContentHeader } from "./settings-content-header.js";
+
+export {
+  AGENT_API_KEY_SCOPES,
+  AGENT_KEY_SCOPES,
+  APPLICATION_API_KEY_SCOPE,
+  CARDDAV_API_KEY_SCOPE,
+  TV_API_KEY_SCOPE,
+  classifyApiKeyType,
+  type ApiKeyTypeTab,
+} from "./api-key-type.js";
 
 export type SettingsApiKeyItem = {
   id: string;
@@ -69,31 +86,6 @@ export type SettingsApiKeyContactOption = AssigneeDropdownContact;
 
 export type ApiKeyExpiryPreset = "never" | "30d" | "90d" | "1y";
 
-/** Key type tabs — maps to scoped create + table filter. */
-export type ApiKeyTypeTab = "agent" | "applications" | "tv" | "carddav";
-
-export const TV_API_KEY_SCOPE = "tv.today_counts" as const satisfies ApiKeyScope;
-export const CARDDAV_API_KEY_SCOPE = "carddav" as const satisfies ApiKeyScope;
-export const APPLICATION_API_KEY_SCOPE =
-  "applications" as const satisfies ApiKeyScope;
-
-type ExclusiveApiKeyScope =
-  | typeof TV_API_KEY_SCOPE
-  | typeof CARDDAV_API_KEY_SCOPE
-  | typeof APPLICATION_API_KEY_SCOPE;
-
-const EXCLUSIVE_API_KEY_SCOPES = new Set<string>([
-  TV_API_KEY_SCOPE,
-  CARDDAV_API_KEY_SCOPE,
-  APPLICATION_API_KEY_SCOPE,
-]);
-
-/** Agent-capable scopes: everything except exclusive door scopes. */
-export const AGENT_API_KEY_SCOPES = API_KEY_SCOPES.filter(
-  (scope): scope is Exclude<ApiKeyScope, ExclusiveApiKeyScope> =>
-    !EXCLUSIVE_API_KEY_SCOPES.has(scope),
-);
-
 export type ApiKeysSettingsPanel = "keys" | "logs";
 
 export type ApiKeysSettingsSectionViewProps = {
@@ -113,6 +105,7 @@ export type ApiKeysSettingsSectionViewProps = {
     contactId: string | null,
     expiresAt: string | null,
     scopes: readonly string[],
+    kind: ApiKeyTypeTab,
   ) => Promise<{ id: string; secret: string } | null>;
   onRename?: (id: string, name: string) => Promise<boolean>;
   onSetContact?: (id: string, contactId: string | null) => Promise<boolean>;
@@ -234,52 +227,12 @@ export function formatMaskedApiKey(prefix: string): string {
   return `${visible}…`;
 }
 
-function isExclusiveScope(
-  scopes: readonly string[],
-  scope: string,
-): boolean {
-  return scopes.length === 1 && scopes[0] === scope;
-}
-
-const AGENT_SCOPE_SET = new Set<string>(AGENT_API_KEY_SCOPES);
-
-/**
- * Classify a key for the Agent / Applications / TV / Contacts sync tabs.
- * Applications, TV, and CardDAV are exclusive single-scope doors. Agent keys
- * have at least one generic read/write scope (contact is required on create;
- * existing keys without a contact still appear here so they can be linked).
- */
-export function classifyApiKeyType(
-  apiKey: Pick<SettingsApiKeyItem, "scopes" | "contactId">,
-): ApiKeyTypeTab | null {
-  if (isExclusiveScope(apiKey.scopes, APPLICATION_API_KEY_SCOPE)) {
-    return "applications";
-  }
-  if (isExclusiveScope(apiKey.scopes, TV_API_KEY_SCOPE)) return "tv";
-  if (isExclusiveScope(apiKey.scopes, CARDDAV_API_KEY_SCOPE)) return "carddav";
-  if (apiKey.scopes.some((scope) => AGENT_SCOPE_SET.has(scope))) {
-    return "agent";
-  }
-  return null;
-}
-
-function scopesForTab(tab: ApiKeyTypeTab): readonly string[] {
-  switch (tab) {
-    case "applications":
-      return [APPLICATION_API_KEY_SCOPE];
-    case "tv":
-      return [TV_API_KEY_SCOPE];
-    case "carddav":
-      return [CARDDAV_API_KEY_SCOPE];
-    case "agent":
-      return AGENT_API_KEY_SCOPES;
-  }
-}
-
 function tabLabel(tab: ApiKeyTypeTab): string {
   switch (tab) {
     case "agent":
       return "Agent";
+    case "access":
+      return "Access";
     case "applications":
       return "Applications";
     case "tv":
@@ -293,6 +246,8 @@ function identityColumnLabel(tab: ApiKeyTypeTab): string {
   switch (tab) {
     case "agent":
       return "Contact";
+    case "access":
+      return "Name";
     case "applications":
       return "Application";
     case "tv":
@@ -716,11 +671,13 @@ function ApiKeyRow({
                 className={
                   keyType === "applications"
                     ? "api-key-table-avatar api-key-table-avatar--applications"
-                    : keyType === "tv"
-                      ? "api-key-table-avatar api-key-table-avatar--tv"
-                      : keyType === "carddav"
-                        ? "api-key-table-avatar api-key-table-avatar--carddav"
-                        : "api-key-table-avatar"
+                    : keyType === "access"
+                      ? "api-key-table-avatar api-key-table-avatar--access"
+                      : keyType === "tv"
+                        ? "api-key-table-avatar api-key-table-avatar--tv"
+                        : keyType === "carddav"
+                          ? "api-key-table-avatar api-key-table-avatar--carddav"
+                          : "api-key-table-avatar"
                 }
                 aria-hidden="true"
               >
@@ -730,6 +687,8 @@ function ApiKeyRow({
                   <ContactsSyncIcon size={20} />
                 ) : keyType === "applications" ? (
                   <ApplicationsIcon size={20} />
+                ) : keyType === "access" ? (
+                  <LaptopIcon size={20} />
                 ) : (
                   <EntityAvatarIcon
                     src={contact?.avatarSrc}
@@ -987,6 +946,7 @@ function mergeApiKeyActivity(
 }
 
 const TAB_OPTIONS: readonly SegmentedPillToggleOption<ApiKeyTypeTab>[] = [
+  { value: "access", label: "Access" },
   { value: "agent", label: "Agent" },
   { value: "applications", label: "Applications" },
   { value: "tv", label: "TV" },
@@ -1018,14 +978,14 @@ export function ApiKeysSettingsSectionView({
   onRevoke,
 }: ApiKeysSettingsSectionViewProps) {
   const [panel, setPanel] = useState<ApiKeysSettingsPanel>("keys");
-  const [tab, setTab] = useState<ApiKeyTypeTab>("agent");
+  const [tab, setTab] = useState<ApiKeyTypeTab>("access");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftContactId, setDraftContactId] = useState<string | null>(null);
   const [draftExpiry, setDraftExpiry] = useState<ApiKeyExpiryPreset>("never");
   const [draftScopes, setDraftScopes] = useState<string[]>(() => [
-    ...AGENT_API_KEY_SCOPES,
+    ...scopesForApiKeyTab("access"),
   ]);
   const [freshSecret, setFreshSecret] = useState<{
     id: string;
@@ -1043,6 +1003,7 @@ export function ApiKeysSettingsSectionView({
   const keysByTab = useMemo(() => {
     const grouped: Record<ApiKeyTypeTab, SettingsApiKeyItem[]> = {
       agent: [],
+      access: [],
       applications: [],
       tv: [],
       carddav: [],
@@ -1083,7 +1044,7 @@ export function ApiKeysSettingsSectionView({
   }, [activityItems, auditQuery]);
 
   useEffect(() => {
-    setDraftScopes([...scopesForTab(tab)]);
+    setDraftScopes([...scopesForApiKeyTab(tab)]);
     setDraftContactId(null);
     setCreateError(null);
     setExpandedId(null);
@@ -1106,10 +1067,16 @@ export function ApiKeysSettingsSectionView({
   async function createKey() {
     if (!onCreate) return;
 
+    // Access keys always mint the full owner set — never a scoped-down subset.
+    // Agent scopes never include settings:write (server also strips it).
     const scopes =
       tab === "agent"
-        ? draftScopes
-        : [...scopesForTab(tab)];
+        ? draftScopes.filter((scope) =>
+            AGENT_KEY_SCOPES.includes(scope as (typeof AGENT_KEY_SCOPES)[number]),
+          )
+        : tab === "access"
+          ? [...AGENT_API_KEY_SCOPES]
+          : [...scopesForApiKeyTab(tab)];
 
     let name = draft.trim();
     if (tab === "agent") {
@@ -1140,6 +1107,7 @@ export function ApiKeysSettingsSectionView({
       tab === "agent" ? draftContactId : null,
       expiryPresetToIso(draftExpiry),
       scopes,
+      tab,
     );
     setSaving(false);
     if (created) {
@@ -1147,7 +1115,7 @@ export function ApiKeysSettingsSectionView({
       setDraft("");
       setDraftContactId(null);
       setDraftExpiry("never");
-      setDraftScopes([...scopesForTab(tab)]);
+      setDraftScopes([...scopesForApiKeyTab(tab)]);
       setCreateOpen(false);
       setExpandedId(null);
     } else {
@@ -1287,11 +1255,13 @@ export function ApiKeysSettingsSectionView({
                                     setDraft(event.target.value)
                                   }
                                   placeholder={
-                                    tab === "applications"
-                                      ? "Backster Meet"
-                                      : tab === "tv"
-                                        ? "Office TV"
-                                        : "Contacts sync"
+                                    tab === "access"
+                                      ? "Desktop"
+                                      : tab === "applications"
+                                        ? "Backster Meet"
+                                        : tab === "tv"
+                                          ? "Office TV"
+                                          : "Contacts sync"
                                   }
                                   autoComplete="off"
                                   disabled={saving || !onCreate}
@@ -1326,19 +1296,36 @@ export function ApiKeysSettingsSectionView({
                     <tr className="api-key-table-expand-row">
                       <td colSpan={5}>
                         <div className="api-key-expand-panel">
-                          {tab === "agent" ? (
+                          {tab === "agent" || tab === "access" ? (
                             <div className="settings-field api-key-detail-field api-key-detail-scopes">
                               <div className="api-key-detail-scopes-label">
-                                <span>Scopes</span>
+                                <span>
+                                  {tab === "access"
+                                    ? "Full owner access"
+                                    : "Scopes"}
+                                </span>
                               </div>
                               <div
                                 className="api-key-scope-grid"
                                 role="group"
-                                aria-label="Scopes"
+                                aria-label={
+                                  tab === "access"
+                                    ? "Full owner access scopes"
+                                    : "Scopes"
+                                }
                               >
-                                {AGENT_API_KEY_SCOPES.map((scope) => {
-                                  const checked = draftScopes.includes(scope);
-                                  const disabled = saving || !onCreate;
+                                {(tab === "access"
+                                  ? AGENT_API_KEY_SCOPES
+                                  : AGENT_KEY_SCOPES
+                                ).map((scope) => {
+                                  const checked =
+                                    tab === "access"
+                                      ? true
+                                      : draftScopes.includes(scope);
+                                  const disabled =
+                                    tab === "access" ||
+                                    saving ||
+                                    !onCreate;
                                   return (
                                     <label
                                       key={scope}
@@ -1348,9 +1335,11 @@ export function ApiKeysSettingsSectionView({
                                         checked={checked}
                                         disabled={disabled}
                                         ariaLabel={`Scope ${scope}`}
-                                        onCheckedChange={() =>
-                                          toggleAgentScope(scope)
-                                        }
+                                        onCheckedChange={() => {
+                                          if (tab === "agent") {
+                                            toggleAgentScope(scope);
+                                          }
+                                        }}
                                       />
                                       <span>{scope}</span>
                                     </label>

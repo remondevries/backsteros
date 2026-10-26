@@ -1,9 +1,13 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
-import type {
-  ApiKeyAuditLogAction,
-  ApiKeyScope,
-  CreateApiKeyInput,
+import {
+  AGENT_API_KEY_SCOPES,
+  apiKeyCreateKindFromIdentity,
+  isAccessApiKey,
+  resolveCreateApiKeyFields,
+  type ApiKeyAuditLogAction,
+  type ApiKeyScope,
+  type CreateApiKeyInput,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -325,12 +329,17 @@ export async function createApiKey(
   input: CreateApiKeyInput,
   actor?: ApiKeyActor | null,
 ) {
-  const secret = generateApiKeySecret();
   const id = newId();
-  const contactId = await resolveKeyContactId(
+  const resolvedContactId = await resolveKeyContactId(
     workspaceId,
-    input.contactId,
+    input.kind === "agent" ? input.contactId : null,
   );
+  const { contactId, scopes } = resolveCreateApiKeyFields({
+    kind: input.kind,
+    contactId: resolvedContactId,
+    scopes: input.scopes,
+  });
+  const secret = generateApiKeySecret(input.kind);
   const expiresAt = parseExpiresAt(input.expiresAt);
   assertExpiresAtNotPast(expiresAt);
   await assertExpiresAtWithinActorRights(actor, expiresAt === undefined ? null : expiresAt);
@@ -350,7 +359,7 @@ export async function createApiKey(
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
         secretCiphertext: encryptApiKeySecret(secret),
-        scopes: input.scopes as ApiKeyScope[],
+        scopes,
         contactId,
         expiresAt: expiresAt === undefined ? null : expiresAt,
         updatedAt: now,
@@ -424,6 +433,8 @@ export async function rotateApiKey(
     .select({
       id: apiKeys.id,
       expiresAt: apiKeys.expiresAt,
+      contactId: apiKeys.contactId,
+      scopes: apiKeys.scopes,
     })
     .from(apiKeys)
     .where(
@@ -442,7 +453,12 @@ export async function rotateApiKey(
   // fresh secret for a key that outlives them (including never-expiring keys).
   await assertExpiresAtWithinActorRights(actor, existing.expiresAt);
 
-  const secret = generateApiKeySecret();
+  const secret = generateApiKeySecret(
+    apiKeyCreateKindFromIdentity({
+      contactId: existing.contactId,
+      scopes: existing.scopes,
+    }),
+  );
   const now = new Date();
 
   const row = await db.transaction(async (tx) => {
@@ -500,9 +516,15 @@ export async function updateApiKey(
     name?: string;
     contactId?: string | null;
     expiresAt?: Date | null;
+    scopes?: ApiKeyScope[];
   } = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.contactId !== undefined) {
+    // Clearing contact would silently turn an agent key into Access-shaped
+    // identity. Access must be created with kind: "access", not via PATCH.
+    if (input.contactId === null) {
+      throw new Error("CONTACT_CLEAR_FORBIDDEN");
+    }
     patch.contactId = await resolveKeyContactId(workspaceId, input.contactId);
   }
   if (input.expiresAt !== undefined) {
@@ -525,6 +547,8 @@ export async function updateApiKey(
         id: apiKeys.id,
         name: apiKeys.name,
         expiresAt: apiKeys.expiresAt,
+        contactId: apiKeys.contactId,
+        scopes: apiKeys.scopes,
       })
       .from(apiKeys)
       .where(
@@ -536,6 +560,18 @@ export async function updateApiKey(
       )
       .limit(1);
     if (!before) return null;
+
+    // Heal incomplete Access keys only (already no contact). Never promote
+    // an agent key by clearing contact.
+    if (
+      before.contactId == null &&
+      isAccessApiKey({
+        contactId: null,
+        scopes: before.scopes,
+      })
+    ) {
+      patch.scopes = [...AGENT_API_KEY_SCOPES];
+    }
 
     const [row] = await tx
       .update(apiKeys)
@@ -600,8 +636,14 @@ export async function createBootstrapApiKey(
   scopes: ApiKeyScope[],
   workspaceId = "ws_legacy_default",
 ) {
-  const secret = generateApiKeySecret();
   const id = newId();
+  // Bootstrap is an Access key (machine/owner), never an agent persona.
+  const { scopes: resolvedScopes } = resolveCreateApiKeyFields({
+    kind: "access",
+    contactId: null,
+    scopes,
+  });
+  const secret = generateApiKeySecret("access");
 
   const [row] = await db.transaction(async (tx) => {
     await tx
@@ -627,7 +669,7 @@ export async function createBootstrapApiKey(
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
         secretCiphertext: encryptApiKeySecret(secret),
-        scopes,
+        scopes: resolvedScopes,
         contactId: null,
         updatedAt: now,
       })

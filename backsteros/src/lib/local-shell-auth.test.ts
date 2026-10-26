@@ -12,7 +12,11 @@ describe("desktop owner auth", () => {
     const provider = createDesktopTokenProvider();
     const token = await provider();
     assert.notEqual(token, "local");
-    assert.ok(token == null || token.startsWith("sk_live_"));
+    assert.ok(
+      token == null ||
+        token.startsWith("sk_access_") ||
+        token.startsWith("sk_live_"),
+    );
   });
 
   it("uses a cloud SQLite key distinct from the replica shell", () => {

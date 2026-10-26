@@ -2427,6 +2427,7 @@ button.api-key-create-btn:disabled {
   line-height: 1;
 }
 
+.api-key-table-avatar--access,
 .api-key-table-avatar--applications,
 .api-key-table-avatar--tv,
 .api-key-table-avatar--carddav {

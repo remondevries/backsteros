@@ -769,8 +769,12 @@ pub fn owner_api_key() -> Result<String, String> {
             continue;
         }
         let value = value.trim().trim_matches('"').trim_matches('\'');
-        if !value.starts_with("sk_live_") {
-            return Err("BACKSTEROS_API_KEY must be an sk_live_ owner key".into());
+        // Accept typed Access secrets and legacy sk_live_ until rotated.
+        if !(value.starts_with("sk_access_") || value.starts_with("sk_live_")) {
+            return Err(
+                "BACKSTEROS_API_KEY must be an sk_access_ or legacy sk_live_ owner key"
+                    .into(),
+            );
         }
         return Ok(value.to_string());
     }

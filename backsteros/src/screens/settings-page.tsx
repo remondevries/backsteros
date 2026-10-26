@@ -180,7 +180,7 @@ function SettingsApiTab({
           return null;
         }
       }}
-      onCreate={async (name, contactId, expiresAt, scopes) => {
+      onCreate={async (name, contactId, expiresAt, scopes, kind) => {
         try {
           const result = await client.requestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
@@ -189,6 +189,7 @@ function SettingsApiTab({
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 name,
+                kind,
                 scopes,
                 contactId,
                 expiresAt,
