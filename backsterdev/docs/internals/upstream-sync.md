@@ -61,6 +61,8 @@ These paths are Backster-owned. The sync script excludes them always.
 - `packages/shared/src/backsterosTaskAutoPromote.ts`
 - `packages/shared/src/backsterosTaskAutoPromote.test.ts`
 - `packages/shared/src/backsterdevDesktopBranding.ts` (desktop appId / productName / DMG artifact identity)
+- `assets/prod/black-*.png`, `assets/prod/t3-black-*` (BacksterDEV dock / store / favicon set —
+  BDV-62 upstream refresh reintroduced the T3 mark; keep the Backster orbit icons)
 - `docs/internals/backsteros-control-api.md`
 - `docs/user/backsteros-file-task.md`
 - `docs/internals/upstream-sync.md` (this file)
