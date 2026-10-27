@@ -69,6 +69,105 @@ describe("isPreviewEditingShortcut", () => {
   });
 });
 
+describe("isPreviewFocusUrlShortcut", () => {
+  it("matches Cmd/Ctrl+L without extra modifiers", () => {
+    expect(
+      PreviewManager.isPreviewFocusUrlShortcut({
+        type: "keyDown",
+        key: "l",
+        code: "KeyL",
+        meta: true,
+        control: false,
+        shift: false,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewFocusUrlShortcut({
+        type: "keyDown",
+        key: "L",
+        code: "KeyL",
+        meta: false,
+        control: true,
+        shift: false,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewFocusUrlShortcut({
+        type: "keyDown",
+        // Some Electron builds only populate `code` under modifiers.
+        key: "Dead",
+        code: "KeyL",
+        meta: true,
+        control: false,
+        shift: false,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewFocusUrlShortcut({
+        type: "keyDown",
+        key: "l",
+        code: "KeyL",
+        meta: true,
+        control: false,
+        shift: true,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(false);
+  });
+});
+
+describe("preview layout chrome shortcuts", () => {
+  it("matches bare [, ], and ⇧[", () => {
+    expect(
+      PreviewManager.isPreviewSidebarToggleShortcut({
+        type: "keyDown",
+        key: "[",
+        code: "BracketLeft",
+        meta: false,
+        control: false,
+        shift: false,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewRightPanelToggleShortcut({
+        type: "keyDown",
+        key: "]",
+        code: "BracketRight",
+        meta: false,
+        control: false,
+        shift: false,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewTaskDetailToggleShortcut({
+        type: "keyDown",
+        key: "{",
+        code: "BracketLeft",
+        meta: false,
+        control: false,
+        shift: true,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(true);
+    expect(
+      PreviewManager.isPreviewSidebarToggleShortcut({
+        type: "keyDown",
+        key: "[",
+        code: "BracketLeft",
+        meta: false,
+        control: false,
+        shift: true,
+        alt: false,
+      } as Electron.Input),
+    ).toBe(false);
+  });
+});
+
 describe("previewWindowOpenAction", () => {
   const details = (overrides: {
     readonly url?: string;

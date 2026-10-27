@@ -272,12 +272,20 @@ import {
   resolveScrollToEndClearance,
 } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
-import { resolveActiveBacksterosTaskChatBinding } from "~/backsteros/openTaskChat";
+import { loadTaskDescriptionComposerImages } from "~/backsteros/taskDescriptionImages";
+import {
+  resolveActiveBacksterosTaskChatBinding,
+  resolveActiveBacksterosTaskId,
+} from "~/backsteros/openTaskChat";
 import { resolveBacksterosProjectForWorkspaceRoot } from "~/backsteros/resolveT3Project";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
+import { useBacksterosTaskKickoffGateStore } from "~/backsteros/taskKickoffGateStore";
+import { isBacksterosManagedKickoffPrompt } from "~/backsteros/taskKickoffPrompt";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
+import { useBacksterosComposerFocusRequest } from "~/backsteros/useBacksterosComposerFocusRequest";
 import type { BacksterosCodebaseProject } from "~/backsteros/types";
+import { BacksterosTaskKickoffStart } from "./chat/BacksterosTaskKickoffStart";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -634,6 +642,7 @@ export default function ChatView(props: ChatViewProps) {
     return draft ? composerDraftHasUserContent({ ...draft, prompt: "" }) : false;
   });
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
@@ -1914,6 +1923,103 @@ export default function ChatView(props: ChatViewProps) {
     composerRef.current?.focusAtEnd();
   };
   const focusComposerStable = useStableCallback(focusComposer);
+  const activeBacksterosTaskRoute =
+    draftId !== null
+      ? ({ kind: "draft" as const, draftId })
+      : activeThreadKey
+        ? ({ kind: "server" as const, threadKey: activeThreadKey })
+        : null;
+  const activeBacksterosTaskId = resolveActiveBacksterosTaskId({
+    byTaskId: backsterosTaskChatByTaskId,
+    route: activeBacksterosTaskRoute,
+  });
+  const activeBacksterosTaskChat = resolveActiveBacksterosTaskChatBinding({
+    byTaskId: backsterosTaskChatByTaskId,
+    route: activeBacksterosTaskRoute,
+  });
+  const backsterosKickoffGate = useBacksterosTaskKickoffGateStore((state) =>
+    activeBacksterosTaskId ? (state.byTaskId[activeBacksterosTaskId] ?? null) : null,
+  );
+  const setBacksterosKickoffMode = useBacksterosTaskKickoffGateStore((state) => state.setMode);
+  const clearBacksterosKickoffGate = useBacksterosTaskKickoffGateStore((state) => state.clear);
+  useBacksterosComposerFocusRequest({
+    composerRef,
+    focusComposer: focusComposerStable,
+    activeBacksterosTaskId,
+  });
+  const showBacksterosKickoffGate = Boolean(
+    activeBacksterosTaskId && backsterosKickoffGate?.mode === "gate" && isDraftHeroState,
+  );
+  const hideComposerForBacksterosKickoff = Boolean(
+    activeBacksterosTaskId &&
+      backsterosKickoffGate &&
+      (backsterosKickoffGate.mode === "gate" || backsterosKickoffGate.mode === "pending-send") &&
+      isDraftHeroState,
+  );
+
+  useEffect(() => {
+    if (!hideComposerForBacksterosKickoff) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  }, [hideComposerForBacksterosKickoff]);
+
+  const attachKickoffDescriptionImages = useStableCallback(async (kickoffPrompt: string) => {
+    if (!draftId) return;
+    const images = await loadTaskDescriptionComposerImages(kickoffPrompt);
+    if (images.length === 0) return;
+    addComposerDraftImages(draftId, images);
+  });
+  const handleBacksterosStartWorking = useStableCallback(() => {
+    if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
+    const text = backsterosKickoffGate.kickoffPrompt;
+    const taskId = activeBacksterosTaskId;
+    void (async () => {
+      await attachKickoffDescriptionImages(text);
+      setComposerDraftPrompt(draftId, text);
+      promptRef.current = text;
+      setBacksterosKickoffMode(taskId, "pending-send");
+    })();
+  });
+  const handleBacksterosKickoffAdvanced = useStableCallback(() => {
+    if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
+    const text = backsterosKickoffGate.kickoffPrompt;
+    const taskId = activeBacksterosTaskId;
+    void (async () => {
+      await attachKickoffDescriptionImages(text);
+      setComposerDraftPrompt(draftId, text);
+      promptRef.current = text;
+      setBacksterosKickoffMode(taskId, "advanced");
+      queueMicrotask(() => {
+        composerRef.current?.resetCursorState({ prompt: text, cursor: text.length });
+        composerRef.current?.focusAtEnd();
+      });
+    })();
+  });
+  useEffect(() => {
+    if (!activeBacksterosTaskId) return;
+    if (timelineEntries.length === 0 && !isWorking) return;
+    clearBacksterosKickoffGate(activeBacksterosTaskId);
+  }, [activeBacksterosTaskId, clearBacksterosKickoffGate, isWorking, timelineEntries.length]);
+  useEffect(() => {
+    if (!activeBacksterosTaskId || !draftId || !isDraftHeroState) return;
+    // Already gated (gate / advanced / pending-send) — do not rewrite mode.
+    // Advanced intentionally prefills the stock kickoff for editing.
+    if (backsterosKickoffGate) return;
+    const prompt = useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt ?? "";
+    if (prompt.trim().length === 0) return;
+    if (!isBacksterosManagedKickoffPrompt(prompt)) return;
+    useBacksterosTaskKickoffGateStore.getState().setGate(activeBacksterosTaskId, {
+      mode: "gate",
+      kickoffPrompt: prompt,
+    });
+    setComposerDraftPrompt(draftId, "");
+  }, [
+    activeBacksterosTaskId,
+    backsterosKickoffGate,
+    draftId,
+    isDraftHeroState,
+    setComposerDraftPrompt,
+  ]);
   const canInterruptRunningThread =
     canOperateThread && deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
   const onInterrupt = async () => {
@@ -2552,6 +2658,9 @@ export default function ChatView(props: ChatViewProps) {
     onOpenTurnDiffStable,
     openChangesFromThreadPanelStable,
     openFileSurfaceStable,
+    cycleRightPanelPreviousStable,
+    cycleRightPanelNextStable,
+    openRightPanelNewMenuStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,
     toggleThreadPanelStable,
@@ -2834,6 +2943,7 @@ export default function ChatView(props: ChatViewProps) {
     terminalOpen: Boolean(terminalUiState.terminalOpen),
     previewFocus: isPreviewFocused(),
     previewOpen: previewPanelOpen,
+    rightPanelOpen,
     editableFocus: isEditableFocused(eventTarget),
     modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
     composerFocus: document.activeElement?.getAttribute("data-testid") === "composer-editor",
@@ -2909,8 +3019,17 @@ export default function ChatView(props: ChatViewProps) {
     return window.desktopBridge?.onMenuAction((action) => {
       if (action === "rightPanel.toggle") toggleRightPanelStable();
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
+      else if (action === "rightPanel.new") openRightPanelNewMenuStable();
+      else if (action === "rightPanel.previous") cycleRightPanelPreviousStable();
+      else if (action === "rightPanel.next") cycleRightPanelNextStable();
     });
-  }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
+  }, [
+    cycleRightPanelNextStable,
+    cycleRightPanelPreviousStable,
+    openRightPanelNewMenuStable,
+    toggleRightPanelStable,
+    toggleRightPanelMaximizedStable,
+  ]);
 
   usePasteToFocusComposer(activeThreadId, composerRef);
   noteChatViewCheckpoint("timeline-rewind");
@@ -3098,6 +3217,18 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
   const onComposerSendStable = useStableCallback(onSend);
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  useEffect(() => {
+    if (!activeBacksterosTaskId || backsterosKickoffGate?.mode !== "pending-send") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      void onSendRef.current(undefined, "auto", "foreground");
+      clearBacksterosKickoffGate(activeBacksterosTaskId);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeBacksterosTaskId, backsterosKickoffGate?.mode, clearBacksterosKickoffGate]);
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3577,7 +3708,7 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
-                  {isDraftHeroState ? (
+                  {isDraftHeroState && !showBacksterosKickoffGate ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
                         className="pb-4 group-has-data-[composer-shoulder-tab]/composer-stack:pb-0"
@@ -3604,6 +3735,27 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {showBacksterosKickoffGate && activeBacksterosTaskChat ? (
+                      <div className="pointer-events-auto pb-2">
+                        <BacksterosTaskKickoffStart
+                          displayId={activeBacksterosTaskChat.displayId}
+                          title={activeBacksterosTaskChat.title}
+                          taskId={activeBacksterosTaskId}
+                          busy={isSendBusy || isConnecting}
+                          onStartWorking={handleBacksterosStartWorking}
+                          onAdvanced={handleBacksterosKickoffAdvanced}
+                        />
+                      </div>
+                    ) : null}
+                    <div
+                      className={
+                        hideComposerForBacksterosKickoff
+                          ? "pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+                          : "relative z-10"
+                      }
+                      aria-hidden={hideComposerForBacksterosKickoff || undefined}
+                      inert={hideComposerForBacksterosKickoff || undefined}
+                    >
                     <ComposerSurface.Shell
                       contextStrip={showComposerContextStrip || showComposerModelStrip}
                     >
@@ -3876,6 +4028,7 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    </div>
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

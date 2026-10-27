@@ -21,6 +21,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/in
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
+import { subscribePreviewAction } from "./previewActionBus";
+
 interface Props {
   url: string;
   loading: boolean;
@@ -80,12 +82,46 @@ export function PreviewChromeRow({
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
 
+  const focusAddressBar = () => {
+    const node =
+      inputRef.current ??
+      document.querySelector<HTMLInputElement>("[data-preview-url-input]");
+    if (!node || node.disabled) return false;
+    // Guest <webview> keeps keyboard focus until blurred; host.focus() alone
+    // is not enough for the address bar to accept typing on Electron/macOS.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.tagName.toLowerCase() === "webview") {
+      active.blur();
+    }
+    for (const guest of document.querySelectorAll("webview")) {
+      if (guest instanceof HTMLElement) guest.blur();
+    }
+    node.focus({ preventScroll: true });
+    node.select();
+    return document.activeElement === node;
+  };
+
   useEffect(() => {
     if (focusUrlNonce == null) return;
-    const node = inputRef.current;
-    if (!node) return;
-    node.focus();
+    focusAddressBar();
+    // Retries cover the guest→host focus handoff lag on Electron/macOS.
+    const retries = [0, 16, 50, 100, 200].map((ms) => window.setTimeout(focusAddressBar, ms));
+    return () => {
+      for (const id of retries) window.clearTimeout(id);
+    };
   }, [focusUrlNonce]);
+
+  // Also listen on the bus directly so Cmd+L still works if PreviewView's
+  // visible-gated subscription missed the menu action.
+  useEffect(() => {
+    return subscribePreviewAction((action) => {
+      if (action !== "focus-url") return;
+      focusAddressBar();
+      for (const ms of [0, 16, 50, 100, 200]) {
+        window.setTimeout(focusAddressBar, ms);
+      }
+    });
+  }, []);
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
     event?.preventDefault();
@@ -159,38 +195,36 @@ export function PreviewChromeRow({
         {leadingActions}
 
         <InputGroup variant="ghost" className="group/address h-7 flex-1">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <InputGroupInput
-                  ref={inputRef}
-                  value={inputFocused ? draft : url}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onFocus={() => {
-                    setDraft(url);
-                    setInputFocused(true);
-                    queueMicrotask(() => inputRef.current?.select());
-                  }}
-                  onBlur={() => {
-                    setInputFocused(false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") submit(event);
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setDraft(url);
-                      inputRef.current?.blur();
-                    }
-                  }}
-                  placeholder="Search or enter URL"
-                  spellCheck={false}
-                  disabled={inputDisabled}
-                  data-preview-url-input
-                  size="sm"
-                />
+          <InputGroupInput
+            ref={inputRef}
+            // Native <input> so programmatic focus from Cmd+L is reliable
+            // (Base UI Input + TooltipTrigger was swallowing the ref/focus).
+            nativeInput
+            value={inputFocused ? draft : url}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={() => {
+              setDraft(url);
+              setInputFocused(true);
+              queueMicrotask(() => inputRef.current?.select());
+            }}
+            onBlur={() => {
+              setInputFocused(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit(event);
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDraft(url);
+                inputRef.current?.blur();
               }
-            />
-          </Tooltip>
+            }}
+            placeholder="Search or enter URL"
+            spellCheck={false}
+            disabled={inputDisabled}
+            data-preview-url-input
+            size="sm"
+            aria-label="Address bar"
+          />
           {onOpenInBrowser && !inputFocused ? (
             <InputGroupAddon align="inline-end">
               {}

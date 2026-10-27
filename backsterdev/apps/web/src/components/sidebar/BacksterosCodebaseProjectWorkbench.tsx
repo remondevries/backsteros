@@ -70,7 +70,7 @@ import type {
   BacksterosTask,
 } from "~/backsteros/types";
 import { isElectron } from "~/env";
-import { resolveShortcutCommand } from "~/keybindings";
+import { isBareKeyShortcutBlockedByEditable, resolveShortcutCommand } from "~/keybindings";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { Button } from "../ui/button";
@@ -1098,13 +1098,13 @@ export function BacksterosCodebaseProjectWorkbench(props: {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      if (isBacksterosContentEditModeActive()) return;
 
       if (useBacksterosTaskDetailUiStore.getState().selection == null) {
         const command = resolveShortcutCommand(event, keybindings, {
           platform: navigator.platform,
         });
         if (command === "taskDetail.toggle") {
+          if (isBareKeyShortcutBlockedByEditable(event)) return;
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
@@ -1112,6 +1112,8 @@ export function BacksterosCodebaseProjectWorkbench(props: {
           return;
         }
       }
+
+      if (isBacksterosContentEditModeActive()) return;
 
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       if (shouldYieldPlainKeyHotkey(event)) return;

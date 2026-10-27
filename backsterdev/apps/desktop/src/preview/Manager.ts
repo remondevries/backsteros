@@ -502,6 +502,47 @@ const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
   !input.shift &&
   !input.alt;
 
+/** Cmd/Ctrl+L — focus the host address bar (mirrors browser chrome). */
+export const isPreviewFocusUrlShortcut = (input: Electron.Input): boolean =>
+  input.type === "keyDown" &&
+  (input.code === "KeyL" || input.key.toLowerCase() === "l") &&
+  (input.meta || input.control) &&
+  !input.shift &&
+  !input.alt;
+
+const isBracketLeftInput = (input: Electron.Input): boolean =>
+  input.code === "BracketLeft" || input.key === "[" || input.key === "{";
+
+const isBracketRightInput = (input: Electron.Input): boolean =>
+  input.code === "BracketRight" || input.key === "]" || input.key === "}";
+
+/** Bare `[` — left sidebar (BacksterOS parity). */
+export const isPreviewSidebarToggleShortcut = (input: Electron.Input): boolean =>
+  input.type === "keyDown" &&
+  !input.meta &&
+  !input.control &&
+  !input.alt &&
+  !input.shift &&
+  isBracketLeftInput(input);
+
+/** ⇧[ — task detail / side panel (BacksterOS parity). */
+export const isPreviewTaskDetailToggleShortcut = (input: Electron.Input): boolean =>
+  input.type === "keyDown" &&
+  !input.meta &&
+  !input.control &&
+  !input.alt &&
+  input.shift &&
+  isBracketLeftInput(input);
+
+/** Bare `]` — right panel (BacksterOS agent panel parity). */
+export const isPreviewRightPanelToggleShortcut = (input: Electron.Input): boolean =>
+  input.type === "keyDown" &&
+  !input.meta &&
+  !input.control &&
+  !input.alt &&
+  !input.shift &&
+  isBracketRightInput(input);
+
 export const isPreviewEditingShortcut = (
   input: Electron.Input,
   platform: NodeJS.Platform,
@@ -1537,9 +1578,88 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         syncMenuShortcuts(window.webContents, input);
       });
     };
+    function focusHostForAddressBar(target: Electron.WebContents): void {
+      try {
+        target.focus();
+      } catch {
+        // Guest may already be tearing down.
+      }
+      if (currentMainWindow && !currentMainWindow.isDestroyed()) {
+        try {
+          currentMainWindow.focus();
+        } catch {
+          // Ignore — menu action still focuses the URL input in the renderer.
+        }
+      }
+    }
+
+    /** Force the address bar focused even when the guest still owns keyboard focus. */
+    function focusAddressBarInRenderer(target: Electron.WebContents): void {
+      void target
+        .executeJavaScript(
+          `(() => {
+            const input = document.querySelector("[data-preview-url-input]");
+            if (!(input instanceof HTMLInputElement) || input.disabled) return false;
+            const active = document.activeElement;
+            if (active instanceof HTMLElement && active.tagName.toLowerCase() === "webview") {
+              active.blur();
+            }
+            for (const guest of document.querySelectorAll("webview")) {
+              if (guest instanceof HTMLElement) guest.blur();
+            }
+            input.focus({ preventScroll: true });
+            input.select();
+            return document.activeElement === input;
+          })()`,
+        )
+        .catch(() => undefined);
+    }
+
+    const sendHostMenuAction = (command: string): void => {
+      const host = wc.hostWebContents;
+      const target =
+        host && !host.isDestroyed()
+          ? host
+          : currentMainWindow && !currentMainWindow.isDestroyed()
+            ? currentMainWindow.webContents
+            : null;
+      if (!target) return;
+      if (command === "preview.focusUrl") {
+        focusHostForAddressBar(target);
+        // Guest→host focus is async on Electron/macOS; delay the renderer cue
+        // and also poke the input via executeJavaScript as a hard fallback.
+        setTimeout(() => {
+          if (target.isDestroyed()) return;
+          target.send(MENU_ACTION_CHANNEL, command);
+          focusAddressBarInRenderer(target);
+        }, 0);
+        return;
+      }
+      target.send(MENU_ACTION_CHANNEL, command);
+    };
+
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
       syncMenuShortcuts(wc, input);
       const host = wc.hostWebContents;
+      // Hard-claim layout chords without focusedFrame — some Electron builds
+      // leave focusedFrame null while the guest still receives human keys,
+      // which would otherwise kill [, ], ⇧[, and Cmd+L.
+      if (input.type === "keyDown" && !input.isComposing) {
+        const hardClaimed = isPreviewFocusUrlShortcut(input)
+          ? ("preview.focusUrl" as const)
+          : isPreviewSidebarToggleShortcut(input)
+            ? ("sidebar.toggle" as const)
+            : isPreviewTaskDetailToggleShortcut(input)
+              ? ("taskDetail.toggle" as const)
+              : isPreviewRightPanelToggleShortcut(input)
+                ? ("rightPanel.toggle" as const)
+                : null;
+        if (hardClaimed) {
+          event.preventDefault();
+          if (!input.isAutoRepeat) sendHostMenuAction(hardClaimed);
+          return;
+        }
+      }
       const forwarded =
         input.type === "keyDown" &&
         !input.isComposing &&
@@ -1568,7 +1688,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         );
       if (forwarded && host) {
         event.preventDefault();
-        if (!input.isAutoRepeat) host.send(MENU_ACTION_CHANNEL, forwarded.command);
+        if (!input.isAutoRepeat) {
+          sendHostMenuAction(forwarded.command);
+        }
         return;
       }
       if (isPreviewRefreshShortcut(input)) {

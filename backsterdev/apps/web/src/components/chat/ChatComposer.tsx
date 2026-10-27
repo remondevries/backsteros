@@ -224,6 +224,16 @@ import {
 } from "./ExpandedImagePreview";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import {
+  findBacksterosTaskIdForThread,
+  useBacksterosTaskChatStore,
+} from "../../backsteros/taskChatStore";
+import { composerAccentOverrideKey, useComposerAccentStore } from "../../composerAccentStore";
+import {
+  composerAgentAccentButtonStyle,
+  composerAgentAccentStyle,
+  resolveComposerAccentColor,
+} from "../../providerAccentColors";
+import {
   getComposerPromptLengthValidationMessage,
   getComposerSubmissionValidationMessage,
   submitComposerDraft,
@@ -963,6 +973,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry === undefined && multipleModelSelections === null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
+  const backsterosTaskBindings = useBacksterosTaskChatStore((state) => state.byTaskId);
+  const composerAccentOverrides = useComposerAccentStore((state) => state.overrides);
+  const composerAccentTaskId = activeThreadId
+    ? findBacksterosTaskIdForThread({
+        threadId: activeThreadId,
+        environmentId,
+        byTaskId: backsterosTaskBindings,
+      })
+    : null;
+  const composerAccentOverrideKeyValue = composerAccentOverrideKey({
+    taskId: composerAccentTaskId,
+    threadId: activeThreadId,
+  });
+  const composerAccentOverride = composerAccentOverrideKeyValue
+    ? composerAccentOverrides[composerAccentOverrideKeyValue]
+    : undefined;
+  // Per-task / per-thread accent for composer outline + send chrome. Order:
+  // color-menu override → provider accent (non-task) → stable hash of scope.
+  const composerAgentAccent = resolveComposerAccentColor({
+    taskId: composerAccentTaskId,
+    threadId: activeThreadId,
+    draftKey: composerTargetKey(composerDraftTarget),
+    instanceId: selectedProviderEntry?.instanceId,
+    accentColor: selectedProviderEntry?.accentColor,
+    overrideColor: composerAccentOverride,
+  });
+  const composerAgentAccentCss = composerAgentAccent
+    ? composerAgentAccentStyle(composerAgentAccent)
+    : undefined;
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null
@@ -3607,11 +3646,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <div className="relative">
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
+          data-composer-focused={isComposerFocused ? "" : undefined}
+          data-composer-agent-accent={composerAgentAccent ?? undefined}
           data-inline-resting-controls={restingControlsHost === null ? "true" : undefined}
           data-model-only-strip={
             restingControlsHost?.closest("[data-composer-model-strip]") ? "true" : undefined
           }
           className={composerProviderState.composerFrameClassName}
+          style={composerAgentAccentCss}
         >
           <div
             ref={composerSurfaceRef}
@@ -3645,7 +3687,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-64"
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full disabled:opacity-64",
+                    composerAgentAccent
+                      ? "hover:brightness-110"
+                      : "bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+                  )}
+                  style={
+                    composerAgentAccent
+                      ? composerAgentAccentButtonStyle(composerAgentAccent)
+                      : undefined
+                  }
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
                   onPointerDown={(event) => event.preventDefault()}

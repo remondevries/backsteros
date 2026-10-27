@@ -5,6 +5,7 @@ import { createBacksterosSharedQuery, type BacksterosSharedQuery } from "./backs
 import { fetchBacksterosProjectTasks } from "./client";
 import { applyPendingBacksterosTaskStatuses, pendingStatusPatch } from "./pendingTaskStatus";
 import { settleBoundChatsForCompletedTasks } from "./settleTaskChatOnComplete";
+import { useHasBacksterosApiKey } from "./settingsStore";
 import { syncRunningTrackedTimersWithTasks } from "./syncTrackedTimerWithTaskStatus";
 import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
 import { upsertBacksterosTaskInList } from "./taskListUpsert";
@@ -57,10 +58,19 @@ export function useBacksterosProjectTasks(projectId: string | null): {
   readonly patchLocalTask: (taskId: string, patch: LocalTaskPatch) => void;
   readonly applySortOrderPatches: (patches: readonly BacksterosTaskSortPatch[]) => void;
 } {
+  const connected = useHasBacksterosApiKey();
   const [state, setState] = useState<BacksterosProjectTasksState>({ status: "idle" });
 
   useEffect(() => {
-    if (!projectId) {
+    if (!connected) {
+      for (const query of projectTasksQueries.values()) {
+        query.reset();
+      }
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    if (!projectId || !connected) {
       setState({ status: "idle" });
       return;
     }
@@ -72,7 +82,7 @@ export function useBacksterosProjectTasks(projectId: string | null): {
     });
     setState(toTasksState(query.getSnapshot()));
     return unsubscribe;
-  }, [projectId]);
+  }, [projectId, connected]);
 
   const reload = useCallback(() => {
     if (!projectId) return;

@@ -3,9 +3,12 @@ import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect } from "react";
 
+import { useHasBacksterosApiKey } from "~/backsteros/settingsStore";
+import { useSidebarModeStore } from "~/backsteros/sidebarModeStore";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
+import { BacksterosConnectionRequired } from "../components/sidebar/BacksterosConnectionRequired";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -15,6 +18,7 @@ import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
+import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -35,8 +39,17 @@ function ChatRouteGlobalShortcuts() {
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
+  // Draft routes (e.g. a BacksterOS task kickoff) have no server thread ref, but
+  // ChatView keys their right panel by the draft's thread id.
+  const panelThreadRef = useActiveThreadRef(
+    routeThreadRef
+      ? { environmentId: routeThreadRef.environmentId, id: routeThreadRef.threadId }
+      : activeDraftThread
+        ? { environmentId: activeDraftThread.environmentId, id: activeDraftThread.threadId }
+        : null,
+  );
   const canOperatePreview = useEnvironmentScope(
-    routeThreadRef?.environmentId ?? null,
+    panelThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -60,8 +73,8 @@ function ChatRouteGlobalShortcuts() {
   // the URL-aware arbitration lives inside ChatView's `onTogglePreview`,
   // which we invoke via the action bus to avoid duplicating the rule.
   const previewOpen = useRightPanelStore((state) =>
-    routeThreadRef
-      ? selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview"
+    panelThreadRef
+      ? selectActiveRightPanel(state.byThreadKey, panelThreadRef) === "preview"
       : false,
   );
   useEffect(() => {
@@ -170,8 +183,17 @@ function ChatRouteGlobalShortcuts() {
     };
 
     window.addEventListener("keydown", onWindowKeyDown);
+    // Guest browser pages forward Cmd/Ctrl+L as a menu action (they never reach
+    // the window keydown listener above).
+    const unsubscribeMenu = window.desktopBridge?.onMenuAction((action) => {
+      if (action !== "preview.focusUrl") return;
+      // Guest pages forward Cmd+L even when preview operate scope is briefly
+      // unavailable; PreviewView no-ops if it is not mounted/visible.
+      dispatchPreviewAction("focus-url");
+    });
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
+      unsubscribeMenu?.();
     };
   }, [
     activeDraftThread,
@@ -199,6 +221,14 @@ function ChatRouteLayout() {
   // Both thread routes render here, not in their own leaf components, so the
   // draft-to-thread promotion keeps one ChatView mounted across the swap.
   const threadTarget = useThreadRouteTarget();
+  const logModeEnabled = useSidebarModeStore((state) => state.logModeEnabled);
+  const hasBacksterosConnection = useHasBacksterosApiKey();
+  const requiresBacksterosConnection = logModeEnabled && !hasBacksterosConnection;
+
+  if (requiresBacksterosConnection) {
+    return <BacksterosConnectionRequired layout="main" />;
+  }
+
   return (
     <>
       <ChatRouteGlobalShortcuts />

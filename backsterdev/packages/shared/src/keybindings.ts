@@ -145,8 +145,11 @@ type WhenToken =
   | { type: "rparen" };
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  // Match BacksterOS desktop: bare `[` / shift+`[` for left chrome / task detail panel.
+  // Match BacksterOS desktop: bare `[` / `]` / shift+`[` for left chrome /
+  // right agent panel / task detail (side) panel.
   { key: "[", command: "sidebar.toggle" },
+  // Yield while typing so `]` still inserts in the composer / editors.
+  { key: "]", command: "rightPanel.toggle", when: "!editableFocus" },
   { key: "shift+[", command: "taskDetail.toggle" },
   { key: "mod+b", command: "sidebar.toggle" },
   { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
@@ -154,7 +157,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+j", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
   { key: "mod+shift+b", command: "threadPanel.toggle", when: "!terminalFocus" },
-  { key: "mod+t", command: "rightPanel.new", when: "rightPanelOpen && !terminalFocus" },
+  { key: "shift+]", command: "threadPanel.toggle", when: "!editableFocus && !terminalFocus" },
+  // Opens the right panel when closed, then the add-tab menu.
+  { key: "mod+t", command: "rightPanel.new", when: "!terminalFocus" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
@@ -164,7 +169,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
-  { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
+  // previewOpen covers the common case where the browser panel is showing but
+  // focus is on chrome (not the guest); previewFocus covers the guest webview.
+  { key: "mod+l", command: "preview.focusUrl", when: "previewOpen || previewFocus" },
   { key: "mod+=", command: "preview.zoomIn", when: "previewFocus" },
   { key: "mod++", command: "preview.zoomIn", when: "previewFocus" },
   { key: "mod+-", command: "preview.zoomOut", when: "previewFocus" },
@@ -211,8 +218,12 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
   { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
   { key: "mod+o", command: "editor.openFavorite" },
-  { key: "mod+shift+[", command: "thread.previous" },
-  { key: "mod+shift+]", command: "thread.next" },
+  // Cmd/Ctrl+Shift+[ / ] cycle right-panel tabs while the panel is open;
+  // otherwise they traverse threads (or BacksterOS list rows).
+  { key: "mod+shift+[", command: "rightPanel.previous", when: "rightPanelOpen" },
+  { key: "mod+shift+]", command: "rightPanel.next", when: "rightPanelOpen" },
+  { key: "mod+shift+[", command: "thread.previous", when: "!rightPanelOpen" },
+  { key: "mod+shift+]", command: "thread.next", when: "!rightPanelOpen" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
   { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },

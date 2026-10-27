@@ -6,6 +6,7 @@ import { fetchBacksterosInboxAttentionTasks, fetchBacksterosTask } from "./clien
 import { isBacksterosInboxMemberTask, mergeBacksterosInboxTasksWithWorking } from "./inboxDue";
 import { applyPendingBacksterosTaskStatuses, pendingStatusPatch } from "./pendingTaskStatus";
 import { settleBoundChatsForCompletedTasks } from "./settleTaskChatOnComplete";
+import { useHasBacksterosApiKey } from "./settingsStore";
 import { syncRunningTrackedTimersWithTasks } from "./syncTrackedTimerWithTaskStatus";
 import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
 import { upsertBacksterosTaskInList } from "./taskListUpsert";
@@ -122,7 +123,12 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
   readonly applySortOrderPatches: (patches: readonly BacksterosTaskSortPatch[]) => void;
   readonly workingTaskIds: ReadonlySet<string>;
 } {
-  const snapshot = useBacksterosSharedQuery(inboxQuery, enabled);
+  const connected = useHasBacksterosApiKey();
+  const active = enabled && connected;
+  useEffect(() => {
+    if (!connected) inboxQuery.reset();
+  }, [connected]);
+  const snapshot = useBacksterosSharedQuery(inboxQuery, active);
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
   const reload = useCallback(() => inboxQuery.reload(), []);
 
@@ -132,7 +138,7 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
   }, [snapshot]);
 
   const workingExtrasById = useBacksterosInboxWorkingTaskExtras(
-    enabled,
+    active,
     workingTaskIds,
     inboxTaskIds,
   );
@@ -236,4 +242,8 @@ export function removeBacksterosInboxTaskLocal(taskId: string): void {
 /** Test helper. */
 export function getBacksterosInboxAttentionQueryDebugStats() {
   return inboxQuery.getDebugStats();
+}
+
+export function resetBacksterosInboxAttentionQuery(): void {
+  inboxQuery.reset();
 }

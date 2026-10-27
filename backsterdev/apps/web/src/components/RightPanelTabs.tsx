@@ -52,7 +52,7 @@ import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
-import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
+import { type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { Button } from "~/components/ui/button";
@@ -92,6 +92,10 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
+import {
+  consumePendingRightPanelNewMenu,
+  subscribeRightPanelAction,
+} from "./rightPanelActionBus";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -974,26 +978,25 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
 
-  const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.isComposing) return;
-    if (
-      resolveShortcutCommand(event, props.keybindings, {
-        context: { ...props.getShortcutContext(), rightPanelOpen: true },
-      }) !== "rightPanel.new"
-    )
-      return;
-    if (!addSurfaceMenuOpen && document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!event.repeat) {
+  const openAddSurfaceMenu = useEffectEvent(() => {
+    if (props.open === false) return;
+    if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
+    // Focus after paint so the trigger exists once the panel has opened.
+    requestAnimationFrame(() => {
       addSurfaceTriggerRef.current?.focus();
       setAddSurfaceMenuOpen(true);
-    }
+    });
   });
+  // Cmd/Ctrl+T is handled in ChatView (opens the panel when closed); we only
+  // show the add-tab menu once this tab strip is mounted and open.
   useEffect(() => {
     if (props.open === false) return;
-    document.addEventListener("keydown", onNewSurfaceKeyDown, true);
-    return () => document.removeEventListener("keydown", onNewSurfaceKeyDown, true);
+    if (consumePendingRightPanelNewMenu()) openAddSurfaceMenu();
+    return subscribeRightPanelAction((action) => {
+      if (action !== "open-new-menu") return;
+      consumePendingRightPanelNewMenu();
+      openAddSurfaceMenu();
+    });
   }, [props.open]);
 
   const updateTabScrollState = () => {
@@ -1333,6 +1336,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   align="start"
                   side="bottom"
                   sideOffset={6}
+                  // Escape must not restore focus to the + button (blue ring).
+                  finalFocus={false}
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
                   {addSurfaceActions.map((action) => {

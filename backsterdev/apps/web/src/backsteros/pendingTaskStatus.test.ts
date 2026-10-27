@@ -38,4 +38,15 @@ describe("applyPendingBacksterosTaskStatuses", () => {
     expect(applyPendingBacksterosTaskStatuses(tasks)).toEqual(tasks);
     expect(getPendingBacksterosTaskStatusCount()).toBe(0);
   });
+
+  it("keeps In Progress over a lagging ready_to_start / triage / in_review server row", () => {
+    for (const serverStatus of ["ready_to_start", "triage", "backlog", "in_review"] as const) {
+      clearAllPendingBacksterosTaskStatuses();
+      setPendingBacksterosTaskStatus("t1", "in_progress");
+      expect(applyPendingBacksterosTaskStatuses([{ id: "t1", status: serverStatus }])).toEqual([
+        { id: "t1", status: "in_progress" },
+      ]);
+      expect(getPendingBacksterosTaskStatusCount()).toBe(1);
+    }
+  });
 });

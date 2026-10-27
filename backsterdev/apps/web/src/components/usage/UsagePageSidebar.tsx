@@ -22,7 +22,7 @@ export function UsagePageSidebar() {
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <UsageSidebarNav activeId={section} />
-      <SidebarChromeFooter />
+      <SidebarChromeFooter showWorkspaceModeToggle={false} />
     </>
   );
 }

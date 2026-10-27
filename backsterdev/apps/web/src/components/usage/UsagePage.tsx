@@ -521,7 +521,7 @@ export function UsagePage() {
                     {[...presentations].some(
                       ([id, presentation]) =>
                         (selectedEnvironmentIds === null || selectedEnvironmentIds.has(id)) &&
-                        presentation.serverConfig?.providers.some(usesChatGptSharing),
+                        Boolean(presentation.serverConfig?.providers?.some(usesChatGptSharing)),
                     ) ? (
                       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span>ChatGPT shared usage</span>

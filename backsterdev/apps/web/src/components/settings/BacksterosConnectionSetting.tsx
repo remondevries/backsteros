@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchBacksterosContacts } from "~/backsteros/client";
+import { fetchBacksterosContacts, testBacksterosConnection } from "~/backsteros/client";
 import {
   DEFAULT_BACKSTEROS_API_URL,
   DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
@@ -9,8 +9,9 @@ import {
 import type { BacksterosContact } from "~/backsteros/types";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Switch } from "../ui/switch";
+import { toastManager } from "../ui/toast";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
@@ -42,12 +43,14 @@ export function BacksterosConnectionSetting() {
   const apiUrl = useBacksterosSettingsStore((state) => state.apiUrl);
   const localCoreUrl = useBacksterosSettingsStore((state) => state.localCoreUrl);
   const apiKey = useBacksterosSettingsStore((state) => state.apiKey);
+  const enabled = useBacksterosSettingsStore((state) => state.enabled);
   const agentContactId = useBacksterosSettingsStore((state) => state.agentContactId);
   const setConnection = useBacksterosSettingsStore((state) => state.setConnection);
+  const setEnabled = useBacksterosSettingsStore((state) => state.setEnabled);
   const setAgentContactId = useBacksterosSettingsStore((state) => state.setAgentContactId);
-  const [draftUrl, setDraftUrl] = useState(apiUrl);
-  const [draftLocalCoreUrl, setDraftLocalCoreUrl] = useState(localCoreUrl);
   const [draftKey, setDraftKey] = useState(apiKey);
+  const [testing, setTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error">("idle");
   const [contacts, setContacts] = useState<readonly BacksterosContact[]>([]);
   const [contactsError, setContactsError] = useState<string | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
@@ -55,10 +58,9 @@ export function BacksterosConnectionSetting() {
   const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
-    setDraftUrl(apiUrl);
-    setDraftLocalCoreUrl(localCoreUrl);
     setDraftKey(apiKey);
-  }, [apiKey, apiUrl, localCoreUrl]);
+    setTestStatus("idle");
+  }, [apiKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +92,12 @@ export function BacksterosConnectionSetting() {
   }, []);
 
   useEffect(() => {
+    if (!enabled || !apiKey.trim()) {
+      setContacts([]);
+      setContactsError(null);
+      setContactsLoading(false);
+      return;
+    }
     let cancelled = false;
     setContactsLoading(true);
     setContactsError(null);
@@ -109,7 +117,7 @@ export function BacksterosConnectionSetting() {
     return () => {
       cancelled = true;
     };
-  }, [apiUrl, apiKey]);
+  }, [apiUrl, apiKey, enabled]);
 
   const sortedContacts = useMemo(
     () =>
@@ -124,33 +132,50 @@ export function BacksterosConnectionSetting() {
     [agentContactId, sortedContacts],
   );
 
-  const isDirty =
-    draftUrl.trim() !== apiUrl.trim() ||
-    draftLocalCoreUrl.trim() !== localCoreUrl.trim() ||
-    draftKey !== apiKey;
+  const trimmedDraftKey = draftKey.trim();
+  const isDirty = draftKey !== apiKey;
   const canReset =
     apiUrl.trim() !== DEFAULT_BACKSTEROS_API_URL ||
     localCoreUrl.trim() !== DEFAULT_BACKSTEROS_LOCAL_CORE_URL ||
     apiKey.trim().length > 0 ||
+    enabled ||
     agentContactId != null ||
     isDirty;
 
-  const save = () => {
+  const persistKey = (nextKey: string, nextEnabled = enabled) => {
     setConnection({
-      apiUrl: draftUrl.trim() || DEFAULT_BACKSTEROS_API_URL,
-      localCoreUrl: draftLocalCoreUrl.trim() || DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
-      apiKey: draftKey.trim(),
+      apiUrl: apiUrl.trim() || DEFAULT_BACKSTEROS_API_URL,
+      localCoreUrl: localCoreUrl.trim() || DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
+      apiKey: nextKey,
+      enabled: nextEnabled,
     });
   };
 
+  const save = () => {
+    persistKey(trimmedDraftKey, enabled || trimmedDraftKey.length > 0);
+    setTestStatus("idle");
+  };
+
+  const onEnabledChange = (checked: boolean) => {
+    setEnabled(checked);
+    setTestStatus("idle");
+    if (checked && !trimmedDraftKey && !apiKey.trim()) {
+      toastManager.add({
+        type: "error",
+        title: "API key required",
+        description: "Paste a BacksterOS Access key to turn the connection on.",
+      });
+    }
+  };
+
   const reset = () => {
-    setDraftUrl(DEFAULT_BACKSTEROS_API_URL);
-    setDraftLocalCoreUrl(DEFAULT_BACKSTEROS_LOCAL_CORE_URL);
     setDraftKey("");
+    setTestStatus("idle");
     setConnection({
       apiUrl: DEFAULT_BACKSTEROS_API_URL,
       localCoreUrl: DEFAULT_BACKSTEROS_LOCAL_CORE_URL,
       apiKey: "",
+      enabled: false,
     });
     setAgentContactId(null);
     setProfileError(null);
@@ -160,6 +185,35 @@ export function BacksterosConnectionSetting() {
         setProfileError(cause instanceof Error ? cause.message : "Could not clear agent profile");
       })
       .finally(() => setProfileSaving(false));
+  };
+
+  const runTest = async () => {
+    if (!trimmedDraftKey) {
+      setTestStatus("error");
+      toastManager.add({
+        type: "error",
+        title: "API key required",
+        description: "Paste a BacksterOS Access key, then try again.",
+      });
+      return;
+    }
+    setTesting(true);
+    setTestStatus("idle");
+    try {
+      await testBacksterosConnection({ apiUrl, apiKey: trimmedDraftKey });
+      persistKey(trimmedDraftKey, true);
+      setTestStatus("ok");
+      toastManager.add({ type: "success", title: "Connected to BacksterOS" });
+    } catch (cause) {
+      setTestStatus("error");
+      toastManager.add({
+        type: "error",
+        title: "Connection failed",
+        description: cause instanceof Error ? cause.message : "Could not reach BacksterOS.",
+      });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const onAgentContactChange = (value: string | null) => {
@@ -178,55 +232,53 @@ export function BacksterosConnectionSetting() {
     <>
       <SettingsRow
         {...searchableSetting("backsteros-connection")}
-        description="Product API for tasks, projects, and GitHub. Files and Documents use local-core separately so the cloud gateway never has to read this Mac's disk."
+        description="Bearer Access key from BacksterOS → Settings → Access. Used for projects, tasks, and the rest of the product API."
         resetAction={
           canReset ? <SettingResetButton label="BacksterOS connection" onClick={reset} /> : null
         }
       >
-        <div className="grid max-w-lg gap-3 pb-3">
-          <div className="grid gap-1.5">
-            <Label htmlFor="backsteros-api-url">Product API URL</Label>
-            <Input
-              id="backsteros-api-url"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={DEFAULT_BACKSTEROS_API_URL}
-              value={draftUrl}
-              onChange={(event) => setDraftUrl(event.target.value)}
+        <div className="mt-3 grid w-full min-w-0 gap-2 pb-3">
+          <div className="flex w-full min-w-0 items-center gap-2">
+            <Switch
+              checked={enabled}
+              aria-label="Enable BacksterOS connection"
+              onCheckedChange={(checked) => onEnabledChange(Boolean(checked))}
             />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="backsteros-local-core-url">Local-core URL (Files & Documents)</Label>
-            <Input
-              id="backsteros-local-core-url"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={DEFAULT_BACKSTEROS_LOCAL_CORE_URL}
-              value={draftLocalCoreUrl}
-              onChange={(event) => setDraftLocalCoreUrl(event.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Default {DEFAULT_BACKSTEROS_LOCAL_CORE_URL}. Loopback uses the same-origin
-              /backsteros-local-core proxy (separate from the product API gateway).
-            </p>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="backsteros-api-key">API key</Label>
             <Input
               id="backsteros-api-key"
               type="password"
               autoComplete="off"
               spellCheck={false}
-              placeholder="sk_live_…"
+              aria-label="API key"
+              className="min-w-0 flex-1"
+              placeholder="sk_access_… or sk_live_…"
+              disabled={!enabled}
               value={draftKey}
-              onChange={(event) => setDraftKey(event.target.value)}
+              onChange={(event) => {
+                setDraftKey(event.target.value);
+                setTestStatus("idle");
+              }}
             />
+            {enabled && isDirty && trimmedDraftKey ? (
+              <Button type="button" size="xs" onClick={save}>
+                Save
+              </Button>
+            ) : enabled && !isDirty && trimmedDraftKey ? (
+              <Button
+                type="button"
+                size="xs"
+                disabled={testing}
+                onClick={() => void runTest()}
+              >
+                {testing ? "Testing…" : "Test"}
+              </Button>
+            ) : null}
           </div>
-          <div className="flex justify-end">
-            <Button type="button" size="xs" disabled={!isDirty} onClick={save}>
-              Save
-            </Button>
-          </div>
+          {testStatus === "ok" ? (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400">Connected</p>
+          ) : testStatus === "error" ? (
+            <p className="text-xs text-destructive">Connection failed</p>
+          ) : null}
         </div>
       </SettingsRow>
 
@@ -237,7 +289,7 @@ export function BacksterosConnectionSetting() {
           <Select
             value={agentContactId ?? NONE_VALUE}
             onValueChange={onAgentContactChange}
-            disabled={contactsLoading || profileSaving}
+            disabled={!enabled || !apiKey.trim() || contactsLoading || profileSaving}
           >
             <SelectTrigger
               size="sm"
@@ -245,11 +297,13 @@ export function BacksterosConnectionSetting() {
               aria-label="Agent contact profile"
             >
               <SelectValue>
-                {contactsLoading
-                  ? "Loading contacts…"
-                  : selectedContact
-                    ? contactLabel(selectedContact)
-                    : "No contact (Agent)"}
+                {!enabled || !apiKey.trim()
+                  ? "Connect first"
+                  : contactsLoading
+                    ? "Loading contacts…"
+                    : selectedContact
+                      ? contactLabel(selectedContact)
+                      : "No contact (Agent)"}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false} className="min-w-64">

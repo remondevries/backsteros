@@ -251,8 +251,6 @@ export async function openBacksterosTaskChat(input: {
     projectRef,
     navigate: input.navigate,
   });
-  // Fresh drafts show the Start / Advanced kickoff gate — do not focus the
-  // composer (that would skip the polished first-chat page).
 }
 
 /**
@@ -355,6 +353,7 @@ async function createBacksterosTaskDraft(input: {
     to: "/draft/$draftId",
     params: { draftId },
   });
+  // Fresh drafts show Start working / Advanced — do not focus the composer.
 }
 
 /**

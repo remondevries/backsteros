@@ -1,4 +1,5 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
+import { createElement, type SVGProps } from "react";
 
 import {
   AntigravityIcon,
@@ -15,6 +16,26 @@ type UsageProviderPresentation = {
   readonly color: string;
   readonly mark: Icon;
 };
+
+/** Simple letter mark — Pi has no dedicated brand SVG in Icons yet. */
+const PiIcon: Icon = (props: SVGProps<SVGSVGElement>) =>
+  createElement(
+    "svg",
+    { ...props, viewBox: "0 0 16 16", fill: "none", "aria-hidden": true },
+    createElement(
+      "text",
+      {
+        x: "8",
+        y: "12",
+        textAnchor: "middle",
+        fontSize: "11",
+        fontWeight: "600",
+        fill: "currentColor",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      },
+      "π",
+    ),
+  );
 
 /**
  * Exhaustive presentation for providers supported by the usage contract.
@@ -41,6 +62,7 @@ export const PROVIDER_PRESENTATION = {
   cursor: { label: "Cursor", color: "#8b8b8b", mark: CursorIcon },
   opencode: { label: "OpenCode", color: "#5b9bbd", mark: OpenCodeIcon },
   antigravity: { label: "Antigravity", color: "#8c7bd1", mark: AntigravityIcon },
+  pi: { label: "Pi", color: "#6b8f71", mark: PiIcon },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
 /** Stable provider reading order across charts, summaries, tables, and hover rows. */

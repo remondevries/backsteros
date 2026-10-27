@@ -149,13 +149,25 @@ function BacksterosTaskDescriptionSection(props: {
       save: saveDescription,
     });
 
+  const setDescriptionViewMode = useCallback(
+    (next: "preview" | "edit") => {
+      setViewMode(next);
+      // Eagerly sync so kickoff Start/Advanced disable in the same turn as Edit.
+      setDescriptionEditing(taskId, next === "edit");
+    },
+    [setDescriptionEditing, setViewMode, taskId],
+  );
+  const toggleDescriptionViewMode = useCallback(() => {
+    setDescriptionViewMode(mode === "edit" ? "preview" : "edit");
+  }, [mode, setDescriptionViewMode]);
+
   const { onUploadImages } = useTaskDescriptionImages(taskId);
 
   const descriptionHostRef = useRef<HTMLDivElement | null>(null);
   useContentViewModeShortcut({
     enabled: true,
-    onToggle: toggleViewMode,
-    onForcePreview: () => setViewMode("preview"),
+    onToggle: toggleDescriptionViewMode,
+    onForcePreview: () => setDescriptionViewMode("preview"),
     hostRef: descriptionHostRef,
   });
 
@@ -167,7 +179,7 @@ function BacksterosTaskDescriptionSection(props: {
   }, [mode, setDescriptionEditing, taskId]);
 
   // Leaving the description editor (Escape / ⌘R title rename) always returns
-  // to Preview so property hotkeys and kickoff send stay unblocked.
+  // to Preview so property hotkeys stay available and kickoff actions re-enable.
   useEffect(() => {
     if (mode !== "edit") return;
 
@@ -177,18 +189,18 @@ function BacksterosTaskDescriptionSection(props: {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        setViewMode("preview");
+        setDescriptionViewMode("preview");
         return;
       }
 
       if (isTitleRenameShortcut(event)) {
-        setViewMode("preview");
+        setDescriptionViewMode("preview");
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [mode, setViewMode]);
+  }, [mode, setDescriptionViewMode]);
 
   return (
     <div className="bos-task-description-section" ref={descriptionHostRef}>
@@ -201,7 +213,7 @@ function BacksterosTaskDescriptionSection(props: {
         placeholder="Add a description…"
         emptyMessage="Add a description…"
         onUploadImages={onUploadImages}
-        onToggleMode={() => setViewMode(mode === "preview" ? "edit" : "preview")}
+        onToggleMode={toggleDescriptionViewMode}
         toggle={
           <>
             <FloatingPillToggleDock className="content-view-mode-toggle--start">
@@ -225,7 +237,7 @@ function BacksterosTaskDescriptionSection(props: {
                   { value: "preview", label: "Preview" },
                   { value: "edit", label: "Edit" },
                 ]}
-                onChange={setViewMode}
+                onChange={setDescriptionViewMode}
                 ariaLabel="Content view mode"
               />
             </FloatingPillToggleDock>

@@ -145,8 +145,26 @@ const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("o", { shiftKey: true }), command: "chat.new" },
   { shortcut: modShortcut("n", { shiftKey: true }), command: "chat.newLocal" },
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
-  { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
-  { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
+  {
+    shortcut: modShortcut("[", { shiftKey: true }),
+    command: "rightPanel.previous",
+    whenAst: whenIdentifier("rightPanelOpen"),
+  },
+  {
+    shortcut: modShortcut("]", { shiftKey: true }),
+    command: "rightPanel.next",
+    whenAst: whenIdentifier("rightPanelOpen"),
+  },
+  {
+    shortcut: modShortcut("[", { shiftKey: true }),
+    command: "thread.previous",
+    whenAst: whenNot(whenIdentifier("rightPanelOpen")),
+  },
+  {
+    shortcut: modShortcut("]", { shiftKey: true }),
+    command: "thread.next",
+    whenAst: whenNot(whenIdentifier("rightPanelOpen")),
+  },
   {
     shortcut: modShortcut("c", { shiftKey: true }),
     command: "thread.copyReference",
@@ -400,6 +418,51 @@ describe("model picker navigation helpers", () => {
 });
 
 describe("chat/editor shortcuts", () => {
+  it("cycles right-panel tabs with Cmd/Ctrl+Shift+[ / ] while the panel is open", () => {
+    for (const platform of ["MacIntel", "Win32", "Linux"]) {
+      const previous = event({
+        key: "[",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+        shiftKey: true,
+      });
+      const next = event({
+        key: "]",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+        shiftKey: true,
+      });
+      assert.strictEqual(
+        resolveShortcutCommand(previous, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { rightPanelOpen: true },
+        }),
+        "rightPanel.previous",
+      );
+      assert.strictEqual(
+        resolveShortcutCommand(next, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { rightPanelOpen: true },
+        }),
+        "rightPanel.next",
+      );
+      assert.strictEqual(
+        resolveShortcutCommand(previous, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { rightPanelOpen: false },
+        }),
+        "thread.previous",
+      );
+      assert.strictEqual(
+        resolveShortcutCommand(next, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { rightPanelOpen: false },
+        }),
+        "thread.next",
+      );
+    }
+  });
+
   it("toggles the thread panel by default without taking terminal keystrokes", () => {
     for (const platform of ["MacIntel", "Win32", "Linux"]) {
       const input = event({

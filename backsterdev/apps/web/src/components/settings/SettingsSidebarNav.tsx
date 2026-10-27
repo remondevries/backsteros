@@ -39,7 +39,6 @@ import {
 } from "../ui/sidebar";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { SidebarCursorCreditsUsageBar } from "../sidebar/SidebarCursorCreditsUsageBar";
-import { SidebarWorkspaceModeToggle } from "../sidebar/SidebarWorkspaceModeToggle";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -357,7 +356,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="gap-1 p-[var(--sidebar-content-inset)]">
-        <SidebarWorkspaceModeToggle />
         <SidebarCursorCreditsUsageBar />
         <Suspense fallback={null}>
           <T3ConnectSidebarSignIn />

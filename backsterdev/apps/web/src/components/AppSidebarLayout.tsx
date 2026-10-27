@@ -19,6 +19,7 @@ import {
 } from "../hooks/showThreadUndoNotice";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import {
+  isBareKeyShortcutBlockedByEditable,
   isRichTextBoldShortcut,
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -47,8 +48,9 @@ import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { ServersPageSidebar } from "./servers/ServersPageSidebar";
 import { PullRequestsPageSidebar } from "./pullRequest/PullRequestsPageSidebar";
 import { UsagePageSidebar } from "./usage/UsagePageSidebar";
+import { useHasBacksterosApiKey } from "../backsteros/settingsStore";
+import { useSidebarModeStore } from "../backsteros/sidebarModeStore";
 import { SyncRemoteRunningTimers } from "../backsteros/SyncRemoteRunningTimers";
-import { isBacksterosContentEditModeActive } from "../backsteros/markdown-editor/contentViewMode";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
 import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
 import { BacksterosFileTaskModal } from "./sidebar/BacksterosFileTaskModal";
@@ -164,8 +166,10 @@ function SidebarControl() {
       }
       const command = resolveShortcutCommand(event, keybindings, { context: { usagePageOpen } });
       if (command === "sidebar.toggle") {
-        // Bare `[` — yield while a description editor owns typing.
-        if (isBacksterosContentEditModeActive()) return;
+        // Bare `[` — yield only while focus is in a typing surface (matches
+        // BacksterOS shouldHandleGlobalShortcut). Edit-mode markers alone must
+        // not kill the chord when focus is elsewhere.
+        if (isBareKeyShortcutBlockedByEditable(event)) return;
         event.preventDefault();
         event.stopPropagation();
         toggleSidebar();
@@ -173,11 +177,10 @@ function SidebarControl() {
       }
       if (command === "taskDetail.toggle") {
         // ⇧[ toggles task detail (or the project properties rail when that
-        // workbench owns the chord). Match `[`: allow with composer focus so
-        // both left chrome toggles stay reachable while chatting. Yield only
-        // for description Edit mode. Skip when there is no task selection so
-        // the project workbench listener can collapse its side panel.
-        if (isBacksterosContentEditModeActive()) return;
+        // workbench owns the chord). Yield only for editable focus. Skip when
+        // there is no task selection so the project workbench listener can
+        // collapse its side panel.
+        if (isBareKeyShortcutBlockedByEditable(event)) return;
         if (useBacksterosTaskDetailUiStore.getState().selection == null) return;
         event.preventDefault();
         event.stopPropagation();
@@ -188,6 +191,10 @@ function SidebarControl() {
     window.addEventListener("keydown", onKeyDown, true);
     const unsubscribe = window.desktopBridge?.onMenuAction((action) => {
       if (action === "sidebar.toggle") toggleSidebar();
+      if (action === "taskDetail.toggle") {
+        if (useBacksterosTaskDetailUiStore.getState().selection == null) return;
+        toggleTaskDetail();
+      }
     });
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
@@ -368,6 +375,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     pathname === "/backsteros/project" || pathname.startsWith("/backsteros/project/");
   const replacesThreadSidebar =
     isOnSettings || isOnUsagePage || isOnServersPage || isOnPullRequestsPage;
+  const logModeEnabled = useSidebarModeStore((state) => state.logModeEnabled);
+  const hasBacksterosConnection = useHasBacksterosApiKey();
+  const backsterosUiBlocked = logModeEnabled && !hasBacksterosConnection;
   const taskDetailSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const taskDetailVisible = useBacksterosTaskDetailUiStore((state) => state.visible);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
@@ -485,14 +495,19 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
-        {!replacesThreadSidebar &&
+        {!backsterosUiBlocked &&
+        !replacesThreadSidebar &&
         !isOnBacksterosProjectPage &&
         taskDetailSelection &&
         taskDetailVisible ? (
           <BacksterosTaskDetailPanel />
         ) : null}
-        {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
-        {!replacesThreadSidebar || isOnServersPage ? <BacksterosFileTaskModal /> : null}
+        {!backsterosUiBlocked && (!replacesThreadSidebar || isOnServersPage) ? (
+          <BacksterosComposeModal />
+        ) : null}
+        {!backsterosUiBlocked && (!replacesThreadSidebar || isOnServersPage) ? (
+          <BacksterosFileTaskModal />
+        ) : null}
         {children}
         <SyncRemoteRunningTimers />
         <SidebarControl />

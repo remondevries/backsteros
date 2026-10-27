@@ -94,6 +94,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -137,6 +138,7 @@ import {
   isBacksterosTaskLogicalProjectKey,
   useBacksterosTaskChatStore,
 } from "~/backsteros/taskChatStore";
+import { useHasBacksterosApiKey } from "~/backsteros/settingsStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import {
   backsterosRailModeShortcutLabel,
@@ -2204,6 +2206,9 @@ export default function Sidebar({
   const savedProjectsRailTaskDetail = useSidebarModeStore((state) => state.projectsRailTaskDetail);
   const savedInboxRailTaskDetail = useSidebarModeStore((state) => state.inboxRailTaskDetail);
   const isBacksterosScope = logModeEnabled;
+  const hasBacksterosConnection = useHasBacksterosApiKey();
+  /** Inbox/search/create chrome only when log mode has a live API connection. */
+  const backsterosControlsActive = isBacksterosScope && hasBacksterosConnection;
   const backsterosTaskChatByTaskId = useBacksterosTaskChatStore((state) => state.byTaskId) ?? {};
   const backsterosRetiredThreadKeys =
     useBacksterosTaskChatStore((state) => state.retiredThreadKeys) ?? [];
@@ -2969,7 +2974,7 @@ export default function Sidebar({
   // G I / G P switch Inbox ↔ Projects while log mode is active (BacksterOS desktop chords).
   // Tab / Shift+Tab also flips the rail when both lists are available (not drilled into a project).
   useEffect(() => {
-    if (!isBacksterosScope) return;
+    if (!backsterosControlsActive) return;
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const goResult = resolveBacksterosRailModeGoShortcut(event);
@@ -3004,9 +3009,9 @@ export default function Sidebar({
       clearBacksterosGoLeader();
     };
   }, [
+    backsterosControlsActive,
     backsterosRailMode,
     handleBacksterosRailModeChange,
-    isBacksterosScope,
     routeBacksterosProjectId,
   ]);
 
@@ -4046,6 +4051,11 @@ export default function Sidebar({
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
       : false,
   );
+  const routeRightPanelOpen = useRightPanelStore((state) =>
+    routeThreadRef
+      ? selectThreadRightPanelState(state.byThreadKey, routeThreadRef).isOpen
+      : false,
+  );
   const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
   const setListKeyboardActiveZone = useListKeyboardNavStore((state) => state.setActiveZone);
 
@@ -4089,6 +4099,7 @@ export default function Sidebar({
         context: {
           terminalFocus: isTerminalFocused(),
           terminalOpen: routeTerminalOpen,
+          rightPanelOpen: routeRightPanelOpen,
           modelPickerOpen: isModelPickerOpen(),
         },
       });
@@ -4123,6 +4134,7 @@ export default function Sidebar({
     keybindings,
     navigateToThread,
     orderedThreadKeys,
+    routeRightPanelOpen,
     routeTerminalOpen,
     routeThreadKey,
     threadByKey,
@@ -4230,12 +4242,12 @@ export default function Sidebar({
   ]);
 
   useBacksterosComposeShortcut({
-    enabled: isBacksterosScope,
+    enabled: backsterosControlsActive,
     onCompose: handleNewBacksterosTaskClick,
   });
 
   useBacksterosFileTaskShortcut({
-    enabled: isBacksterosScope,
+    enabled: backsterosControlsActive,
     onOpen: handleFileBacksterosTaskClick,
   });
 
@@ -4275,65 +4287,71 @@ export default function Sidebar({
         logModeEnabled={logModeEnabled}
         onLogModeChange={handleLogModeChange}
         brandAction={
-          <div className="flex shrink-0 items-center gap-0.5">
-            {isBacksterosScope ? (
-              <SidebarFileTaskOrbEntry onClick={handleFileBacksterosTaskClick} />
-            ) : null}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <SidebarMenuButton
-                    size="icon"
-                    type="button"
-                    className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                    onClick={
-                      isBacksterosScope ? handleNewBacksterosTaskClick : handleNewThreadClick
-                    }
-                    disabled={isBacksterosScope ? false : projects.length === 0}
-                    aria-label={isBacksterosScope ? "New task" : "New thread"}
+          isBacksterosScope && !hasBacksterosConnection ? undefined : (
+            <div className="flex shrink-0 items-center gap-0.5">
+              {backsterosControlsActive ? (
+                <SidebarFileTaskOrbEntry onClick={handleFileBacksterosTaskClick} />
+              ) : null}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      size="icon"
+                      type="button"
+                      className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                      onClick={
+                        backsterosControlsActive
+                          ? handleNewBacksterosTaskClick
+                          : handleNewThreadClick
+                      }
+                      disabled={backsterosControlsActive ? false : projects.length === 0}
+                      aria-label={backsterosControlsActive ? "New task" : "New thread"}
+                    />
+                  }
+                >
+                  <BacksterosComposeIcon />
+                  <span
+                    className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                    aria-hidden="true"
                   />
-                }
-              >
-                <BacksterosComposeIcon />
-                <span
-                  className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                  aria-hidden="true"
-                />
-              </TooltipTrigger>
-              <TooltipPopup side="right">
-                {isBacksterosScope ? (
-                  "New task (C)"
-                ) : projectGroups.length > 1 ? (
-                  <span className="flex flex-col gap-0.5">
-                    <span>
-                      {newThreadShortcutLabel
-                        ? `New thread (${newThreadShortcutLabel})`
-                        : "New thread"}
+                </TooltipTrigger>
+                <TooltipPopup side="right">
+                  {backsterosControlsActive ? (
+                    "New task (C)"
+                  ) : projectGroups.length > 1 ? (
+                    <span className="flex flex-col gap-0.5">
+                      <span>
+                        {newThreadShortcutLabel
+                          ? `New thread (${newThreadShortcutLabel})`
+                          : "New thread"}
+                      </span>
+                      <span className="text-muted-foreground">
+                        New thread in current project: Shift+click
+                        {newThreadInProjectShortcutLabel
+                          ? ` (${newThreadInProjectShortcutLabel})`
+                          : ""}
+                      </span>
                     </span>
-                    <span className="text-muted-foreground">
-                      New thread in current project: Shift+click
-                      {newThreadInProjectShortcutLabel
-                        ? ` (${newThreadInProjectShortcutLabel})`
-                        : ""}
-                    </span>
-                  </span>
-                ) : newThreadShortcutLabel ? (
-                  `New thread (${newThreadShortcutLabel})`
-                ) : (
-                  "New thread"
-                )}
-              </TooltipPopup>
-            </Tooltip>
-          </div>
+                  ) : newThreadShortcutLabel ? (
+                    `New thread (${newThreadShortcutLabel})`
+                  ) : (
+                    "New thread"
+                  )}
+                </TooltipPopup>
+              </Tooltip>
+            </div>
+          )
         }
       />
       <SidebarContent
         className="gap-0"
         fixedHeader={
+          // Empty rail when log mode has no API — no inbox toggle, search, or create chrome.
+          isBacksterosScope && !hasBacksterosConnection ? undefined : (
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
-            {isBacksterosScope ? (
+            {backsterosControlsActive ? (
               <SegmentedPillToggle
                 value={backsterosRailMode}
                 options={backsterosRailModeOptions}
@@ -4540,6 +4558,7 @@ export default function Sidebar({
               </div>
             ) : null}
           </SidebarGroup>
+          )
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">

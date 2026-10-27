@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { ArrowLeftIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 
 import "~/backsteros/keyboardNavHighlight.css";
 import {
@@ -25,7 +25,10 @@ import {
 import { isBacksterosGoEditableTarget } from "~/backsteros/backsterosRailMode";
 import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeModalOpen";
 import { isBacksterosFileTaskModalOpen } from "~/backsteros/fileTaskUiStore";
-import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
+import {
+  isAnyPopupLayerOpen,
+  isBacksterosPropertyMenuOpen,
+} from "~/backsteros/isBacksterosPropertyMenuOpen";
 import { backsterosCodebaseListTabSearch } from "~/backsteros/codebaseListTabs";
 import {
   getBacksterosCodebaseProjectTab,
@@ -40,6 +43,7 @@ import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import { useSidebarModeStore, type BacksterosRailMode } from "~/backsteros/sidebarModeStore";
 import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
+import { useHasBacksterosApiKey } from "~/backsteros/settingsStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosInboxAttentionTasks } from "~/backsteros/useBacksterosInboxAttentionTasks";
 import { useBacksterosProjectTasks } from "~/backsteros/useBacksterosProjectTasks";
@@ -59,6 +63,8 @@ import {
 import { isModelPickerOpen } from "~/modelPickerVisibility";
 import { useProjects } from "~/state/entities";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -87,11 +93,12 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
   const railMode = useSidebarModeStore((state) => state.backsterosRailMode);
+  const hasBacksterosApiKey = useHasBacksterosApiKey();
   const {
     state: projectsState,
     reload: reloadProjects,
     applySortOrderPatches,
-  } = useBacksterosCodebaseProjects(true);
+  } = useBacksterosCodebaseProjects(hasBacksterosApiKey);
 
   const handleReorderProjects = useCallback(
     (patches: readonly BacksterosProjectSortPatch[]) => {
@@ -144,7 +151,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     patchLocalTask: patchInboxTask,
     applySortOrderPatches: applyInboxSortOrderPatches,
     workingTaskIds: inboxWorkingTaskIds,
-  } = useBacksterosInboxAttentionTasks(railMode === "inbox");
+  } = useBacksterosInboxAttentionTasks(railMode === "inbox" && hasBacksterosApiKey);
 
   const persistTaskSortOrderPatches = useCallback(
     (
@@ -456,9 +463,28 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
 
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
+  // Select primitives only — a new object from the selector re-renders forever.
+  const draftPanelEnvironmentId = useComposerDraftStore((state) => {
+    if (routeTarget?.kind !== "draft") return null;
+    return state.getDraftSession(routeTarget.draftId)?.environmentId ?? null;
+  });
+  const draftPanelThreadId = useComposerDraftStore((state) => {
+    if (routeTarget?.kind !== "draft") return null;
+    return state.getDraftSession(routeTarget.draftId)?.threadId ?? null;
+  });
+  const panelThreadRef = routeThreadRef
+    ? routeThreadRef
+    : draftPanelEnvironmentId && draftPanelThreadId
+      ? scopeThreadRef(draftPanelEnvironmentId, draftPanelThreadId)
+      : null;
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+    panelThreadRef
+      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, panelThreadRef).terminalOpen
+      : false,
+  );
+  const routeRightPanelOpen = useRightPanelStore((state) =>
+    panelThreadRef
+      ? selectThreadRightPanelState(state.byThreadKey, panelThreadRef).isOpen
       : false,
   );
 
@@ -587,6 +613,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   keybindingsRef.current = keybindings;
   const routeTerminalOpenRef = useRef(routeTerminalOpen);
   routeTerminalOpenRef.current = routeTerminalOpen;
+  const routeRightPanelOpenRef = useRef(routeRightPanelOpen);
+  routeRightPanelOpenRef.current = routeRightPanelOpen;
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
@@ -612,7 +640,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         !isModelPickerOpen()
       ) {
         // Let Base UI dismiss the open property menu; skip back-navigation.
-        if (isBacksterosPropertyMenuOpen()) {
+        if (isBacksterosPropertyMenuOpen() || isAnyPopupLayerOpen()) {
           return;
         }
 
@@ -694,6 +722,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         context: {
           terminalFocus: isTerminalFocused(),
           terminalOpen: routeTerminalOpenRef.current,
+          rightPanelOpen: routeRightPanelOpenRef.current,
           modelPickerOpen: isModelPickerOpen(),
         },
       });
@@ -729,6 +758,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   });
 
   const projectsReady = projectsState.status === "ready";
+  // Wait for projects only while connected — otherwise inbox stayed on
+  // "loading" forever after the connection toggle turned off.
   const inboxListState = !projectsReady
     ? ({ status: "loading" } as const)
     : inboxState.status === "ready"
@@ -746,6 +777,12 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       className="flex min-h-0 flex-1 flex-col"
     >
       {(displayedKey) => {
+        // Keep the rail blank when disconnected — chrome (inbox/search/create) is
+        // also hidden in Sidebar; the main column shows the connection prompt.
+        if (!hasBacksterosApiKey) {
+          return null;
+        }
+
         if (displayedKey === "inbox") {
           return (
             <BacksterosTaskList

@@ -14,8 +14,8 @@ import {
 export type UsageSectionId = "premium" | "prepaid";
 
 export const USAGE_SECTION_ITEMS = [
-  { id: "prepaid", label: "Prepaid", icon: CreditCardIcon },
   { id: "premium", label: "Premium", icon: SparklesIcon },
+  { id: "prepaid", label: "Prepaid", icon: CreditCardIcon },
 ] as const satisfies ReadonlyArray<{
   readonly id: UsageSectionId;
   readonly label: string;
@@ -27,7 +27,7 @@ export function isUsageSectionId(value: unknown): value is UsageSectionId {
 }
 
 /**
- * Vertical Usage section nav — Prepaid (Cursor tokens) vs Premium (provider usage).
+ * Vertical Usage section nav — Premium (provider usage) then Prepaid (Cursor tokens).
  */
 export function UsageSidebarNav({ activeId }: { readonly activeId: UsageSectionId }) {
   const navigate = useNavigate();

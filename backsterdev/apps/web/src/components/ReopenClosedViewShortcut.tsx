@@ -17,6 +17,7 @@ import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
+import { dispatchPreviewAction } from "./preview/previewActionBus";
 import {
   planNextReopen,
   pullRequestsSearchForRestore,
@@ -45,8 +46,14 @@ import { toastManager } from "./ui/toast";
 
 const PREVIEW_FORWARDED_LAYOUT_COMMANDS = [
   "sidebar.toggle",
+  "taskDetail.toggle",
   "rightPanel.toggle",
   "rightPanel.toggleMaximized",
+  "rightPanel.new",
+  "rightPanel.previous",
+  "rightPanel.next",
+  // Guest pages swallow Cmd/Ctrl+L; claim it and focus the address bar in the host.
+  "preview.focusUrl",
 ] as const;
 
 const isGlobalPullRequests = (ref: ScopedThreadRef) =>
@@ -171,6 +178,9 @@ export function ReopenClosedViewShortcut() {
     window.addEventListener("keydown", onKeyDown, true);
     const unsubscribe = window.desktopBridge?.onMenuAction((action) => {
       if (action === "view.reopenClosed" && !isCommandPaletteOpen()) enqueueReopen();
+      if (action === "preview.focusUrl" && !isCommandPaletteOpen()) {
+        dispatchPreviewAction("focus-url");
+      }
     });
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
@@ -185,6 +195,8 @@ export function ReopenClosedViewShortcut() {
       context: {
         previewFocus: true,
         previewOpen: true,
+        // Guest focus implies the right panel is open (browser tab lives there).
+        rightPanelOpen: true,
         terminalFocus: false,
         terminalOpen,
         editableFocus: false,

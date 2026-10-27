@@ -24,6 +24,7 @@ export function isBacksterosInboxAttentionStatus(status: string | null | undefin
  * Open tasks due today or earlier (local calendar day).
  * Used for inbox membership of non-attention statuses (shown under their
  * own status group — Backlog, Ready to Start, etc.).
+ * Waiting stays project-only: follow-ups live under project Tasks, not Inbox.
  */
 export function isBacksterosInboxDueTask(
   input: {
@@ -33,6 +34,7 @@ export function isBacksterosInboxDueTask(
   referenceDate: Date = new Date(),
 ): boolean {
   if (isBacksterosInactiveTaskStatus(input.status)) return false;
+  if (migrateBacksterosTaskStatus(input.status ?? "backlog") === "waiting") return false;
   const dueYmd = formatDueDateInputValue(input.dueDate);
   if (!dueYmd) return false;
   return dueYmd <= formatLocalYmd(referenceDate);

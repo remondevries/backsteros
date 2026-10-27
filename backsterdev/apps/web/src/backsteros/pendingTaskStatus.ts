@@ -33,16 +33,19 @@ export function getPendingBacksterosTaskStatusCount(): number {
 }
 
 /**
- * Statuses that represent human (or non-agent) intent. If the server already
- * shows one of these while an agent overlay is still pending, drop the overlay
- * so Waiting / On Hold / etc. are not masked by a stale In Review promote.
+ * Human-owned or terminal statuses. If the server already shows one of these
+ * while an agent overlay is still pending, drop the overlay so Waiting / On
+ * Hold / closed outcomes are not masked by a stale In Progress / In Review.
+ *
+ * Do **not** include ready_to_start / triage / backlog / in_review here —
+ * those are the usual statuses when work starts, and soft-poll often returns
+ * them for several seconds while the In Progress PATCH is still in flight.
+ * Treating them as "server wins" caused the row/detail to flicker between
+ * In Progress and the previous status for the whole lag window.
  */
 const SERVER_WINS_OVER_AGENT_PENDING = new Set<BacksterosTaskStatus>([
   "waiting",
   "on_hold",
-  "backlog",
-  "ready_to_start",
-  "triage",
   "completed",
   "canceled",
   "duplicated",
@@ -76,6 +79,17 @@ export function applyPendingBacksterosTaskStatuses<
   });
 
   return changed ? next : tasks;
+}
+
+/**
+ * Soft-poll / single-task fetch: keep an in-flight agent status overlay so the
+ * detail chip does not snap back to the previous server value every few seconds.
+ */
+export function applyPendingBacksterosTaskStatus<T extends { readonly id: string; readonly status: string }>(
+  task: T,
+): T {
+  const [next] = applyPendingBacksterosTaskStatuses([task]);
+  return next ?? task;
 }
 
 /** Convenience for hooks that patch a single row. */

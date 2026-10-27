@@ -1,9 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { backsterosEntityListFingerprint } from "./backsterosEntityFingerprint";
 import { createBacksterosSharedQuery, useBacksterosSharedQuery } from "./backsterosQueryStore";
 import { fetchBacksterosCodebaseProjects } from "./client";
 import { applyProjectSortOrderPatches, type BacksterosProjectSortPatch } from "./project-reorder";
+import { useHasBacksterosApiKey } from "./settingsStore";
 import type { BacksterosCodebaseProject } from "./types";
 
 export type BacksterosCodebaseProjectsState =
@@ -36,7 +37,12 @@ export function useBacksterosCodebaseProjects(enabled: boolean): {
     patch: Partial<BacksterosCodebaseProject>,
   ) => void;
 } {
-  const snapshot = useBacksterosSharedQuery(projectsQuery, enabled);
+  const connected = useHasBacksterosApiKey();
+  const active = enabled && connected;
+  useEffect(() => {
+    if (!connected) projectsQuery.reset();
+  }, [connected]);
+  const snapshot = useBacksterosSharedQuery(projectsQuery, active);
   const reload = useCallback(() => projectsQuery.reload(), []);
   const applySortOrderPatches = useCallback((patches: readonly BacksterosProjectSortPatch[]) => {
     if (patches.length === 0) return;
@@ -62,4 +68,8 @@ export function useBacksterosCodebaseProjects(enabled: boolean): {
 /** Test helper — shared projects query internals. */
 export function getBacksterosCodebaseProjectsQueryDebugStats() {
   return projectsQuery.getDebugStats();
+}
+
+export function resetBacksterosCodebaseProjectsQuery(): void {
+  projectsQuery.reset();
 }

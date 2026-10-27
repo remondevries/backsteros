@@ -1,7 +1,12 @@
-import { ChartNoAxesColumnIcon, ChevronDownIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
+  ChevronDownIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { BacksterosLogoIcon } from "~/backsteros/BacksterosLogoIcon";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -30,6 +35,7 @@ import {
 import { SidebarCursorCreditsUsageBar } from "./SidebarCursorCreditsUsageBar";
 import { SidebarFileTaskCreatingBanner } from "./SidebarFileTaskCreatingBanner";
 import { SidebarFileTaskSuccessBanner } from "./SidebarFileTaskSuccessBanner";
+import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SidebarWorkspaceModeToggle } from "./SidebarWorkspaceModeToggle";
@@ -136,9 +142,12 @@ export function SidebarBrand({
   readonly onLogModeChange?: ((enabled: boolean) => void) | undefined;
 } = {}) {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
   const showCodingModeToggle = logModeEnabled != null && onLogModeChange != null;
+  const showBackToCode = isSidebarUtilityPage(pathname);
 
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
@@ -158,6 +167,12 @@ export function SidebarBrand({
     },
     [closeMobileSidebar, navigate],
   );
+
+  const goBackToCode = useCallback(() => {
+    closeMobileSidebar();
+    setMenuOpen(false);
+    navigateToMainApp();
+  }, [closeMobileSidebar, navigateToMainApp]);
 
   return (
     <Menu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -193,6 +208,15 @@ export function SidebarBrand({
         className="min-w-48 rounded-xl"
         aria-label="BacksterDEV menu"
       >
+        {showBackToCode ? (
+          <>
+            <MenuItem onClick={goBackToCode}>
+              <ArrowLeftIcon />
+              Back
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        ) : null}
         <MenuItem onClick={() => goTo("/settings")}>
           <SettingsIcon />
           Settings
@@ -227,14 +251,18 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  showWorkspaceModeToggle = true,
+}: {
+  readonly showWorkspaceModeToggle?: boolean;
+}) {
   return (
     <SidebarFooter className="gap-1 p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
       <SidebarFileTaskCreatingBanner />
       <SidebarFileTaskSuccessBanner />
-      <SidebarWorkspaceModeToggle />
+      {showWorkspaceModeToggle ? <SidebarWorkspaceModeToggle /> : null}
       <SidebarCursorCreditsUsageBar />
       <SidebarUtilityMenu />
     </SidebarFooter>

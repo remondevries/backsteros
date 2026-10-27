@@ -13,6 +13,7 @@ export type BacksterosSharedQuery<T> = {
   readonly subscribe: (listener: () => void) => () => void;
   readonly getSnapshot: () => BacksterosSharedQueryState<T>;
   readonly reload: () => void;
+  readonly reset: () => void;
   readonly setReadyData: (data: T) => void;
   readonly patchReadyData: (updater: (data: T) => T) => void;
   /** Test helper: active soft-poll + subscriber count. */
@@ -118,9 +119,9 @@ export function createBacksterosSharedQuery<T>(options: {
           loadGeneration += 1;
           inFlightLoad?.abort();
           inFlightLoad = null;
-          // Abort leaves the last in-flight "loading" flag set; clear it so the
-          // next mount starts from idle instead of looking permanently stuck.
-          if (state.status === "loading") {
+          // Drop cached ready/loading so disconnect / remount cannot keep
+          // showing stale projects or a stuck spinner.
+          if (state.status !== "idle") {
             state = { status: "idle" };
             fingerprint = null;
           }
@@ -132,6 +133,16 @@ export function createBacksterosSharedQuery<T>(options: {
     },
     reload() {
       void load("reload");
+    },
+    reset() {
+      loadGeneration += 1;
+      inFlightLoad?.abort();
+      inFlightLoad = null;
+      stopSoftPoll();
+      if (state.status === "idle" && fingerprint == null) return;
+      state = { status: "idle" };
+      fingerprint = null;
+      emit();
     },
     setReadyData(data) {
       setState({ status: "ready", data });

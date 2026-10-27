@@ -29,6 +29,15 @@ describe("isBacksterosInboxDueTask", () => {
       false,
     );
   });
+
+  it("excludes Waiting even when due today or overdue", () => {
+    expect(
+      isBacksterosInboxDueTask({ dueDate: "2026-09-08", status: "waiting" }, wednesday),
+    ).toBe(false);
+    expect(
+      isBacksterosInboxDueTask({ dueDate: "2026-09-09", status: "waiting" }, wednesday),
+    ).toBe(false);
+  });
 });
 
 describe("isBacksterosInboxMemberTask", () => {
@@ -65,6 +74,12 @@ describe("isBacksterosInboxMemberTask", () => {
         { referenceDate: wednesday },
       ),
     ).toBe(true);
+    expect(
+      isBacksterosInboxMemberTask(
+        { id: "wait-due", status: "waiting", dueDate: "2026-09-08" },
+        { referenceDate: wednesday },
+      ),
+    ).toBe(false);
   });
 
   it("always includes live agent-working tasks regardless of due date or status", () => {

@@ -26,6 +26,7 @@ import {
   notifyBacksterosTaskStatusChanged,
 } from "./promoteWorkingTask";
 import { backsterosTaskDetailRevisionFingerprint } from "./backsterosEntityFingerprint";
+import { applyPendingBacksterosTaskStatus } from "./pendingTaskStatus";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
 import { syncTrackedTimerWithTaskStatus } from "./syncTrackedTimerWithTaskStatus";
@@ -187,7 +188,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         }
         if (controller.signal.aborted) return;
 
-        const normalized = normalizeTask(task);
+        const normalized = applyPendingBacksterosTaskStatus(normalizeTask(task));
         setState({
           status: "ready",
           task: normalized,
@@ -220,7 +221,12 @@ export function useBacksterosTaskDetail(taskId: string | null): {
 
     const controller = new AbortController();
     try {
-      const task = normalizeTask(await fetchBacksterosTask(taskId, controller.signal));
+      // Honor in-flight agent status overlays — raw soft-poll otherwise snaps
+      // the chip back to the previous status every few seconds until the PATCH
+      // (and any core replication) catches up.
+      const task = applyPendingBacksterosTaskStatus(
+        normalizeTask(await fetchBacksterosTask(taskId, controller.signal)),
+      );
       const [commentsResult, activitiesResult] = await Promise.allSettled([
         fetchBacksterosTaskComments(taskId, controller.signal),
         fetchBacksterosTaskActivities(taskId, controller.signal),

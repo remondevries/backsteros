@@ -70,10 +70,22 @@ export function shouldRedirectInputToComposer(event: Event): boolean {
   return true;
 }
 
+/**
+ * BacksterOS-parity layout chords (`[` / `]` / ⇧[). Type-to-focus must not
+ * swallow them into the composer when focus is outside an editable — otherwise
+ * the sidebar / right panel / task-detail toggles never fire.
+ */
+function isLayoutChromeBracketKey(event: KeyboardEvent): boolean {
+  if (event.code === "BracketLeft" || event.code === "BracketRight") return true;
+  const key = event.key;
+  return key === "[" || key === "]" || key === "{" || key === "}";
+}
+
 export function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
   if (event.isComposing) return false;
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
   if (event.key.length !== 1) return false;
+  if (isLayoutChromeBracketKey(event)) return false;
   if (!shouldRedirectInputToComposer(event)) return false;
   if (isSurfaceLauncherKey(event.key)) return false;
 

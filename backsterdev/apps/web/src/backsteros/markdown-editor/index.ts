@@ -14,7 +14,12 @@ export {
 } from "./markdown-image-paste";
 export { useBacksterosMarkdownDetailEditor } from "./use-backsteros-markdown-detail-editor";
 export type { UseBacksterosMarkdownDetailEditorOptions } from "./use-backsteros-markdown-detail-editor";
+export { useBacksterosContentEditModeActive } from "./useBacksterosContentEditModeActive";
 export { useContentViewModeShortcut } from "./useContentViewModeShortcut";
+export {
+  isBacksterosContentEditModeActive,
+  subscribeBacksterosContentEditMode,
+} from "./contentViewMode";
 export {
   isForceContentPreviewShortcut,
   isToggleContentViewModeShortcut,

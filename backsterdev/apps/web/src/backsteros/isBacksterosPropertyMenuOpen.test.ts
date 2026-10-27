@@ -1,41 +1,31 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vitest";
 
-import { isBacksterosPropertyMenuOpen } from "./isBacksterosPropertyMenuOpen";
+import { isAnyPopupLayerOpen } from "./isBacksterosPropertyMenuOpen";
 
-type Queryable = {
-  querySelector: (selector: string) => Element | null;
-};
-
-function docWith(matches: Record<string, boolean>): ParentNode {
+function fakeDocument(matches: (selector: string) => boolean): ParentNode {
   return {
-    querySelector(selector: string) {
-      return matches[selector] ? ({} as Element) : null;
-    },
+    querySelector: (selector: string) => (matches(selector) ? ({} as Element) : null),
   } as unknown as ParentNode;
 }
 
-describe("isBacksterosPropertyMenuOpen", () => {
-  it("is false when nothing is open", () => {
-    expect(isBacksterosPropertyMenuOpen(docWith({}) as Queryable as ParentNode)).toBe(false);
+describe("isAnyPopupLayerOpen", () => {
+  it("is false without a document", () => {
+    expect(isAnyPopupLayerOpen(null)).toBe(false);
   });
 
-  it("detects an expanded property trigger", () => {
-    expect(
-      isBacksterosPropertyMenuOpen(
-        docWith({
-          '[data-task-property-dropdown][aria-expanded="true"]': true,
-        }),
-      ),
-    ).toBe(true);
+  it("queries open and closing menu popups", () => {
+    let queried = "";
+    const doc = fakeDocument((selector) => {
+      queried = selector;
+      return true;
+    });
+    expect(isAnyPopupLayerOpen(doc)).toBe(true);
+    expect(queried).toContain('[data-slot="menu-popup"]:is([data-open],[data-ending-style])');
+    expect(queried).toContain('[data-slot="popover-popup"]');
+    expect(queried).toContain('[data-slot="dialog-popup"]');
   });
 
-  it("detects an open property menu popup", () => {
-    expect(
-      isBacksterosPropertyMenuOpen(
-        docWith({
-          ".bos-task-property-menu[data-open]": true,
-        }),
-      ),
-    ).toBe(true);
+  it("is false when no popup layer matches", () => {
+    expect(isAnyPopupLayerOpen(fakeDocument(() => false))).toBe(false);
   });
 });

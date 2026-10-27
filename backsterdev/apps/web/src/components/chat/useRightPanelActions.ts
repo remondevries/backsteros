@@ -16,13 +16,16 @@ import { useDiffPanelStore } from "../../diffPanelStore";
 import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectActiveRightPanel,
+  selectThreadRightPanelState,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
+import { resolveAdjacentRightPanelSurfaceId } from "../../rightPanelTabNav";
 import { setActivePreviewTab } from "../../previewStateStore";
 import { BrowserSettingsReadError } from "../../browser/openFileInPreview";
 import { addBrowserSurface } from "../preview/addBrowserSurface";
 import { subscribePreviewAction } from "../preview/previewActionBus";
+import { requestRightPanelNewMenu } from "../rightPanelActionBus";
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";
 import type { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
 import type { useDeviceState } from "../../state/device";
@@ -209,6 +212,26 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
+  const cycleRightPanelSurface = (direction: "previous" | "next") => {
+    if (!activeThreadRef || !rightPanelOpen) return false;
+    const state = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    );
+    const nextId = resolveAdjacentRightPanelSurfaceId({
+      surfaceIds: state.surfaces.map((surface) => surface.id),
+      activeSurfaceId: state.activeSurfaceId,
+      direction,
+    });
+    if (!nextId) return false;
+    const nextSurface = state.surfaces.find((surface) => surface.id === nextId);
+    if (!nextSurface) return false;
+    activateRightPanelSurface(nextSurface);
+  };
+  const cycleRightPanelPreviousStable = useStableCallback(() =>
+    cycleRightPanelSurface("previous"),
+  );
+  const cycleRightPanelNextStable = useStableCallback(() => cycleRightPanelSurface("next"));
   const toggleRightPanel = () => {
     if (!activeThreadRef) return;
     if (rightPanelOpen) {
@@ -285,6 +308,14 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     onDiffPanelOpen?.();
   };
   const onOpenTurnDiffStable = useStableCallback(onOpenTurnDiff);
+  const openRightPanelNewMenu = () => {
+    if (!activeThreadRef) return false;
+    if (!rightPanelOpen) {
+      useRightPanelStore.getState().toggleVisibility(activeThreadRef);
+    }
+    requestRightPanelNewMenu();
+  };
+  const openRightPanelNewMenuStable = useStableCallback(openRightPanelNewMenu);
   useEffect(
     () =>
       subscribePreviewAction((action) => {
@@ -297,6 +328,18 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     "rightPanel.toggle": () => toggleRightPanel(),
     "rightPanel.toggleMaximized": ({ event }) => {
       if (!event.repeat) toggleRightPanelMaximized();
+    },
+    "rightPanel.new": ({ event }) => {
+      if (event.repeat) return;
+      return openRightPanelNewMenu();
+    },
+    "rightPanel.previous": ({ event }) => {
+      if (event.repeat) return;
+      return cycleRightPanelSurface("previous");
+    },
+    "rightPanel.next": ({ event }) => {
+      if (event.repeat) return;
+      return cycleRightPanelSurface("next");
     },
     "threadPanel.toggle": () => toggleThreadPanel(),
     "rightPanel.close": ({ event }) => {
@@ -323,6 +366,9 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     onToggleDiffStable,
     openChangesFromThreadPanelStable,
     openFileSurfaceStable,
+    cycleRightPanelPreviousStable,
+    cycleRightPanelNextStable,
+    openRightPanelNewMenuStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,
     toggleThreadPanelStable,

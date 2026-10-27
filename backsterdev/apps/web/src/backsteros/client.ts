@@ -248,6 +248,48 @@ function optionalSignalInit(signal?: AbortSignal): { readonly signal?: AbortSign
   return signal ? { signal } : {};
 }
 
+/**
+ * Live probe against the product API (`GET /api/v1/settings`).
+ * Pass draft URL/key to test before persisting Settings.
+ */
+export async function testBacksterosConnection(input?: {
+  readonly apiUrl?: string;
+  readonly apiKey?: string;
+  readonly signal?: AbortSignal;
+}): Promise<void> {
+  const settings = readBacksterosConnectionSettings();
+  const apiUrl = normalizeApiUrl(input?.apiUrl ?? settings.apiUrl, DEFAULT_BACKSTEROS_API_URL);
+  const apiKey = (input?.apiKey ?? settings.apiKey).trim();
+  if (!apiKey) {
+    throw new Error("Enter a BacksterOS API key.");
+  }
+
+  const headers = buildAuthHeaders(apiKey);
+  const path = "/api/v1/settings";
+  const url = isBacksterosApiProxyUrl(apiUrl)
+    ? `${BACKSTEROS_API_PROXY_PATH}${path}`
+    : `${apiUrl}${path}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      ...(input?.signal ? { signal: input.signal } : {}),
+    });
+  } catch {
+    throw new Error("Could not reach BacksterOS. Check the API URL and that the core is running.");
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("BacksterOS rejected the API key.");
+  }
+  if (!response.ok) {
+    throw new Error(`BacksterOS connection failed (${response.status}).`);
+  }
+}
+
 export async function fetchBacksterosCodebaseProjects(
   signal?: AbortSignal,
 ): Promise<readonly BacksterosCodebaseProject[]> {
@@ -281,7 +323,8 @@ export { BACKSTEROS_INBOX_ATTENTION_STATUSES } from "./inboxDue";
 /**
  * Cross-project attention tasks: Triage, In Review, In Progress,
  * plus open tasks due today or earlier (`GET /api/v1/tasks/due`).
- * Waiting and On Hold are omitted — they only appear when due (or working).
+ * Waiting is project-only (never Inbox). On Hold only appears when due
+ * (or while a live agent is working).
  */
 export async function fetchBacksterosInboxAttentionTasks(
   signal?: AbortSignal,
@@ -309,6 +352,9 @@ export async function fetchBacksterosInboxAttentionTasks(
     }
   }
   for (const task of duePayload.tasks ?? []) {
+    // Due endpoint returns every open due row; drop Waiting so Inbox never
+    // grows a Waiting group (those stay under project Tasks).
+    if (task.status === "waiting") continue;
     byId.set(task.id, task);
   }
   return [...byId.values()];

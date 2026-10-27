@@ -50,6 +50,8 @@ function Host({ className, ...props }: ComponentProps<"div">) {
         outlineClasses,
         contextSeamClasses,
         "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none group-has-data-[composer-banner-surface=attached]/composer-surface:after:hidden",
+        // Accented Main owns the outline so Host's neutral ring does not double up.
+        "has-data-composer-agent-accent:after:hidden has-data-composer-agent-accent:shadow-none",
         className,
       )}
       {...props}
@@ -63,7 +65,9 @@ function Main({ className, ...props }: ComponentProps<"div">) {
     <div
       data-chat-composer-main-surface="true"
       className={cn(
-        "group relative z-10 rounded-3xl p-px",
+        "group relative z-10 rounded-3xl p-px transition-colors duration-200",
+        // Agent accent for focused outline; ChatComposer overrides when a chat/task is active.
+        "[--composer-agent-accent:var(--primary)]",
         "group-data-model-strip-transition/composer-surface:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-data-model-strip-transition/composer-surface:backdrop-blur-(--glass-blur) group-data-model-strip-transition/composer-surface:backdrop-saturate-(--glass-saturation)",
         outlineClasses,
         contextSeamClasses,
@@ -72,6 +76,17 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-composer dark:group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none",
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
         "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
+        // Accent outline for the active task/chat (always on when accent is set);
+        // focus keeps the same tint and adds the soft shadow.
+        "transition-[box-shadow] duration-200 ease-out",
+        "data-composer-agent-accent:after:block",
+        "data-composer-agent-accent:after:[clip-path:none]",
+        "data-composer-agent-accent:[--chat-composer-outline:color-mix(in_srgb,var(--composer-agent-accent)_58%,transparent)]",
+        "data-composer-focused:after:block",
+        "data-composer-focused:after:[clip-path:none]",
+        "data-composer-focused:[--chat-composer-outline:color-mix(in_srgb,var(--composer-agent-accent)_58%,transparent)]",
+        "data-composer-focused:shadow-composer",
+        "dark:data-composer-focused:shadow-none",
         className,
       )}
       {...props}
