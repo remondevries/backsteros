@@ -14,7 +14,10 @@ export type CommunicationCreateKind =
   | "email"
   | "support"
   | "chat"
-  | "whatsapp";
+  | "whatsapp"
+  | "instagram"
+  | "messenger"
+  | "x";
 
 export type CommunicationCreateOption = {
   kind: CommunicationCreateKind;
@@ -40,7 +43,7 @@ export const COMMUNICATION_CREATE_OPTIONS: readonly CommunicationCreateOption[] 
     },
     {
       kind: "chat",
-      label: "Chat",
+      label: "Telegram",
       shortcut: "C",
       available: true,
     },
@@ -48,10 +51,35 @@ export const COMMUNICATION_CREATE_OPTIONS: readonly CommunicationCreateOption[] 
       kind: "whatsapp",
       label: "WhatsApp",
       shortcut: "W",
+      available: true,
+    },
+    {
+      kind: "instagram",
+      label: "Instagram",
+      shortcut: "I",
+      available: true,
+    },
+    {
+      kind: "messenger",
+      label: "Messenger",
+      shortcut: "M",
+      available: true,
+    },
+    {
+      kind: "x",
+      label: "X",
+      shortcut: "X",
       available: false,
-      disabledReason: "WhatsApp create is coming soon.",
+      disabledReason: "X create is out of scope.",
     },
   ];
+
+function createKindMark(
+  kind: CommunicationCreateKind,
+): "email" | "support" | "telegram" | "whatsapp" | "instagram" | "messenger" | "x" | "chat" {
+  if (kind === "chat") return "telegram";
+  return kind;
+}
 
 export type CommunicationCreateLauncherProps = {
   options?: readonly CommunicationCreateOption[];
@@ -186,7 +214,7 @@ export function CommunicationCreateLauncher({
                 onClick={() => onSelect(option.kind)}
               >
                 <CommunicationKindMark
-                  kind={option.kind}
+                  kind={createKindMark(option.kind)}
                   className="communication-create-launcher__kind"
                 />
                 <span className="communication-create-launcher__label">
@@ -206,7 +234,7 @@ export function CommunicationCreateLauncher({
                 className="communication-create-launcher__item communication-create-launcher__item--disabled"
               >
                 <CommunicationKindMark
-                  kind={option.kind}
+                  kind={createKindMark(option.kind)}
                   className="communication-create-launcher__kind"
                 />
                 <span className="communication-create-launcher__label">

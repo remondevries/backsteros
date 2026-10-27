@@ -1,8 +1,12 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
+  createChatConversationInputSchema,
   createChatMessageInputSchema,
+  chatMessagingWindowQuerySchema,
   listChatConversationsQuerySchema,
+  listChatInboxesQuerySchema,
+  listChatWhatsAppTemplatesQuerySchema,
   toggleChatTypingInputSchema,
   updateChatConversationInputSchema,
   updateChatwootSettingsSchema,
@@ -14,6 +18,7 @@ import {
 } from "../lib/chat-events.js";
 import { ChatwootApiError } from "../lib/chatwoot-client.js";
 import { chatwootHeadersFromRequest } from "../lib/chatwoot-webhook.js";
+import * as chatCreateService from "../services/chat-create-conversation.js";
 import * as chatService from "../services/chat-service.js";
 import * as chatwootSettingsService from "../services/chatwoot-settings.js";
 import { can, forbidden, getAuth, notFound } from "./route-helpers.js";
@@ -29,6 +34,18 @@ function chatErrorStatus(error: unknown): 400 | 404 {
   }
   if (error instanceof ChatwootApiError && error.status === 404) return 404;
   return 400;
+}
+
+function chatErrorCode(error: unknown, status: 400 | 404): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    return (error as { code: string }).code;
+  }
+  return status === 404 ? "not_found" : "bad_request";
 }
 
 export function registerChatRoutes(app: Hono) {
@@ -171,6 +188,128 @@ export function registerChatRoutes(app: Hono) {
     return c.json(
       await chatService.listChatConversations(auth.workspaceId, parsed.data),
     );
+  });
+
+  app.post("/api/v1/chat/conversations", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = createChatConversationInputSchema.safeParse(
+      await c.req.json(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid create chat conversation payload", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await chatCreateService.createChatConversation(
+          auth.workspaceId,
+          parsed.data,
+        ),
+      );
+    } catch (error) {
+      const status = chatErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not create conversation";
+      return c.json(
+        { error: message, code: chatErrorCode(error, status) },
+        status,
+      );
+    }
+  });
+
+  app.get("/api/v1/chat/inboxes", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const parsed = listChatInboxesQuerySchema.safeParse(c.req.query());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid chat inboxes query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await chatCreateService.listChatInboxes(
+          auth.workspaceId,
+          parsed.data.channel,
+        ),
+      );
+    } catch (error) {
+      const status = chatErrorStatus(error);
+      const message =
+        error instanceof Error ? error.message : "Could not list inboxes";
+      return c.json(
+        { error: message, code: chatErrorCode(error, status) },
+        status,
+      );
+    }
+  });
+
+  app.get("/api/v1/chat/messaging-window", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const parsed = chatMessagingWindowQuerySchema.safeParse(c.req.query());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid messaging window query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await chatCreateService.getChatMessagingWindow(
+          auth.workspaceId,
+          parsed.data,
+        ),
+      );
+    } catch (error) {
+      const status = chatErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not resolve messaging window";
+      return c.json(
+        { error: message, code: chatErrorCode(error, status) },
+        status,
+      );
+    }
+  });
+
+  app.get("/api/v1/chat/whatsapp-templates", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const parsed = listChatWhatsAppTemplatesQuerySchema.safeParse(
+      c.req.query(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid WhatsApp templates query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await chatCreateService.listChatWhatsAppTemplates(
+          auth.workspaceId,
+          parsed.data.inboxId,
+        ),
+      );
+    } catch (error) {
+      const status = chatErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list WhatsApp templates";
+      return c.json(
+        { error: message, code: chatErrorCode(error, status) },
+        status,
+      );
+    }
   });
 
   app.get("/api/v1/chat/conversations/:conversationId", async (c) => {

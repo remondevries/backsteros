@@ -16,296 +16,28 @@ import type {
   ChatConversationDetail,
   ChatMessage,
 } from "@backsteros/contracts";
-import { SearchIcon, XCircleFillIcon } from "@primer/octicons-react";
-
 import {
-  chatConversationToTaskItemRowTask,
-  chatStatusToTaskStatus,
-} from "../../communication/chat-conversation-list-item.js";
-import {
-  EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
-  communicationChatListFiltersAreActive,
-  filterCommunicationChatListGroupsByFilters,
-  type CommunicationChatListFilters,
-} from "../../communication/communication-chat-list-filters.js";
-import {
-  communicationChatListVisibleRowIds,
-  emailListItemPartyName,
-  filterCommunicationChatListGroups,
-  groupCommunicationChatListRows,
-  peelCommunicationDraftEmailRows,
-  supportListItemPartyName,
-} from "../../communication/communication-chat-list-row.js";
-import {
-  inboxListItemToTaskItemRowTask,
-  type InboxEmailListItem,
-  type InboxTaskListItem,
-} from "../../inbox/inbox-items.js";
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
+} from "../../list-nav/list-keyboard-nav-zone.js";
 import {
   keyboardNavItemClass,
   keyboardNavItemProps,
 } from "../../list-nav/keyboard-nav-item.js";
-import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
-import { CommunicationChatListFilterMenu } from "./communication-chat-list-filter-menu.js";
 import {
-  CommunicationChatKindIcon,
-  CommunicationSupportKindIcon,
-  CommunicationWhatsAppKindIcon,
-} from "./communication-kind-icons.js";
+  type InboxEmailListItem,
+  type InboxTaskListItem,
+} from "../../inbox/inbox-items.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "../list-nav/list-keyboard-navigation-provider.js";
 import {
   CommunicationCreateLauncher,
   type CommunicationCreateKind,
 } from "./communication-create-launcher.js";
-import { StatusGroupSection } from "../list-nav/status-group-section.js";
-import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
+import { CommunicationMessagesList } from "./communication-messages-list.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
-import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
-import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
-import { TaskBoardCard } from "../tasks/task-board-card.js";
-import { TaskStatusIcon } from "../tasks/task-status-icon.js";
-
-const CHAT_CARD_AVATAR_SIZE = 40;
-/** Small overlapping faces on multi-contact email cards. */
-const CHAT_CARD_PARTY_AVATAR_SIZE = 16;
-const CHAT_CARD_PARTY_AVATAR_MAX = 3;
-
-function EmailPartyAvatarStack({
-  contactIds,
-  resolveContactAvatarSrc,
-}: {
-  contactIds: readonly string[];
-  resolveContactAvatarSrc?: (contactId: string) => string | null | undefined;
-}) {
-  if (contactIds.length < 2) return null;
-  const visible = contactIds.slice(0, CHAT_CARD_PARTY_AVATAR_MAX);
-  const overflow = contactIds.length - visible.length;
-  return (
-    <span
-      className="communication-chat__card-party-stack"
-      title={`${contactIds.length} contacts in this thread`}
-      aria-label={`${contactIds.length} contacts in this thread`}
-    >
-      {visible.map((contactId, index) => {
-        const src = resolveContactAvatarSrc?.(contactId)?.trim() || null;
-        return (
-          <span
-            key={contactId}
-            className="communication-chat__card-party-avatar"
-            style={{ zIndex: visible.length - index }}
-          >
-            {src ? (
-              <EntityAvatarIcon
-                src={src}
-                size={CHAT_CARD_PARTY_AVATAR_SIZE}
-                kind="contact"
-              />
-            ) : (
-              <ContactPersonIcon
-                size={Math.round(CHAT_CARD_PARTY_AVATAR_SIZE * 0.7)}
-              />
-            )}
-          </span>
-        );
-      })}
-      {overflow > 0 ? (
-        <span className="communication-chat__card-party-overflow">
-          +{overflow}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-const WHATSAPP_PLACEHOLDER_ID = "__whatsapp-placeholder__";
-
-const WHATSAPP_PLACEHOLDER_TASK = {
-  id: WHATSAPP_PLACEHOLDER_ID,
-  number: 0,
-  title: "WhatsApp cards will show here once connected",
-  status: "triage",
-  priority: 0,
-  dueDate: null,
-  projectId: null,
-  projectKey: null,
-  projectName: null,
-  assigneeId: null,
-  listKind: "task" as const,
-};
-
-/** Typing — previous bubble with three dots so the list shows live typing. */
-function ChatListTypingIcon({ size = 11 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      fill="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-    >
-      <path d="M6.433 2.4c1.402-.15 3.203-.15 5.52-.15h.094c2.317 0 4.118 0 5.52.15 1.418.153 2.541.47 3.437 1.186.92.736 1.35 1.693 1.553 2.9.193 1.152.193 2.618.193 4.446v.183c0 1.782 0 3.015-.2 3.934a3.7 3.7 0 0 1-.545 1.323c-.264.392-.6.722-1 1.042-.897.717-2.02 1.033-3.438 1.185-1.402.151-3.203.151-5.52.151H12c-1.056 0-1.863.357-2.707.906-.342.221-.675.464-1.036.729l-.304.22c-.475.345-.994.71-1.58 1.046A.75.75 0 0 1 5.25 21v-2.585c-.879-.19-1.623-.496-2.254-1-.4-.321-.737-.65-1-1.043a3.7 3.7 0 0 1-.546-1.323c-.2-.919-.2-2.152-.2-3.934v-.183c0-1.828 0-3.294.193-4.445.203-1.208.633-2.165 1.553-2.901.896-.717 2.019-1.033 3.437-1.185m2.317 8.1a.75.75 0 0 0-1.5 0v.5a.75.75 0 0 0 1.5 0zm4 0a.75.75 0 0 0-1.5 0v.5a.75.75 0 0 0 1.5 0zm4 0a.75.75 0 0 0-1.5 0v.5a.75.75 0 0 0 1.5 0z" />
-    </svg>
-  );
-}
-
-function chatConversationAgeLabel(row: ChatConversation): {
-  label: string;
-  title: string | undefined;
-} {
-  const raw = row.lastActivityAt ?? row.updatedAt;
-  const label = formatRelativeAgeLabel(raw);
-  if (!label || !raw) return { label: "", title: undefined };
-  const ms = new Date(raw).getTime();
-  return {
-    label,
-    title: Number.isFinite(ms) ? new Date(ms).toLocaleString() : undefined,
-  };
-}
-
-function emailAgeLabel(item: InboxEmailListItem): {
-  label: string;
-  title: string | undefined;
-} {
-  const raw = item.updatedAt;
-  const label = formatRelativeAgeLabel(raw);
-  if (!label || raw == null) return { label: "", title: undefined };
-  return {
-    label,
-    title: Number.isFinite(raw) ? new Date(raw).toLocaleString() : undefined,
-  };
-}
-
-function CommunicationEmailListCard({
-  item,
-  selectedEmailId,
-  resolveEmailAvatarSrc,
-  resolveContactAvatarSrc,
-  onOpen,
-}: {
-  item: InboxEmailListItem;
-  selectedEmailId: string | null | undefined;
-  resolveEmailAvatarSrc?: (item: InboxEmailListItem) => string | null | undefined;
-  resolveContactAvatarSrc?: (contactId: string) => string | null | undefined;
-  onOpen: (emailId: string) => void;
-}) {
-  const task = inboxListItemToTaskItemRowTask(item);
-  if (!task) return null;
-  const personLabel = emailListItemPartyName(item);
-  const avatarSrc = resolveEmailAvatarSrc?.(item)?.trim() || null;
-  const avatarKind = item.contactId?.trim()
-    ? "contact"
-    : item.organizationId?.trim()
-      ? "organization"
-      : "contact";
-  const age = emailAgeLabel(item);
-  const active = item.id === selectedEmailId;
-  const partyContactIds = item.partyContactIds ?? [];
-  const isDraft =
-    Boolean(item.draftId?.trim()) || item.status === "concept";
-  return (
-    <li
-      className={[
-        "project-tasks-list__card-item",
-        "task-kanban-card-item",
-        "communication-chat__card-item",
-        keyboardNavItemClass(active),
-        active ? "communication-chat__card-item--active" : null,
-        item.unread ? "communication-chat__card-item--unread" : null,
-        isDraft ? "communication-chat__card-item--draft" : null,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      {...keyboardNavItemProps(item.id)}
-    >
-      <TaskBoardCard
-        task={{
-          ...task,
-          title: item.title?.trim() || "(no subject)",
-          emailPartyLabel: null,
-          emailDirection: null,
-        }}
-        onOpen={() => onOpen(item.id)}
-        showDueDate
-        showDisplayId={false}
-        showStatus={false}
-        showEmailMark={false}
-        leadingSlot={
-          <span
-            className="communication-chat__card-avatar-wrap"
-            title={personLabel}
-          >
-            <span
-              className="communication-chat__card-avatar"
-              aria-hidden="true"
-            >
-              {avatarSrc ? (
-                <EntityAvatarIcon
-                  src={avatarSrc}
-                  size={CHAT_CARD_AVATAR_SIZE}
-                  kind={avatarKind}
-                />
-              ) : avatarKind === "organization" ? (
-                <OrganizationIcon
-                  size={Math.round(CHAT_CARD_AVATAR_SIZE * 0.55)}
-                />
-              ) : (
-                <ContactPersonIcon
-                  size={Math.round(CHAT_CARD_AVATAR_SIZE * 0.55)}
-                />
-              )}
-            </span>
-            <span
-              className="communication-chat__card-kind communication-chat__card-kind--email"
-              title={item.unread ? "Unread email" : "Email"}
-              aria-label={item.unread ? "Unread email" : "Email"}
-            >
-              <InboxItemTypeIcon
-                kind="email"
-                size={9}
-                unread={item.unread === true}
-              />
-            </span>
-          </span>
-        }
-        topLeadingSlot={
-          <span className="communication-chat__card-name" title={personLabel}>
-            {personLabel}
-          </span>
-        }
-        ownerSlot={
-          age.label ? (
-            <span className="communication-chat__card-age" title={age.title}>
-              {age.label}
-            </span>
-          ) : null
-        }
-        metaTrailingSlot={
-          partyContactIds.length > 1 ? (
-            <EmailPartyAvatarStack
-              contactIds={partyContactIds}
-              resolveContactAvatarSrc={resolveContactAvatarSrc}
-            />
-          ) : null
-        }
-      />
-    </li>
-  );
-}
-
-function supportAgeLabel(item: InboxTaskListItem): {
-  label: string;
-  title: string | undefined;
-} {
-  const raw = item.updatedAt;
-  const label = formatRelativeAgeLabel(raw);
-  if (!label || raw == null) return { label: "", title: undefined };
-  return {
-    label,
-    title: Number.isFinite(raw) ? new Date(raw).toLocaleString() : undefined,
-  };
-}
 
 const NEAR_BOTTOM_PX = 96;
 
@@ -395,10 +127,10 @@ function insertAtCaret(
 }
 
 export type CommunicationChatViewProps = {
-  conversations: ChatConversation[];
-  emails?: InboxEmailListItem[];
+  conversations: readonly ChatConversation[];
+  emails?: readonly InboxEmailListItem[];
   /** Support tickets interleaved in the same left list. */
-  supportTasks?: InboxTaskListItem[];
+  supportTasks?: readonly InboxTaskListItem[];
   selectedId: string | null;
   selectedEmailId?: string | null;
   selectedSupportId?: string | null;
@@ -447,6 +179,16 @@ export type CommunicationChatViewProps = {
   onCreateKind?: (kind: CommunicationCreateKind) => void;
   /** Embedded new-email compose (Communication create → Email). */
   emailComposeSlot?: ReactNode;
+  /**
+   * Embedded WhatsApp / Instagram / Messenger create form (Communication → +).
+   * Shown when `createKind` is one of those channel kinds.
+   */
+  channelCreateSlot?: ReactNode;
+  /**
+   * Optional notice pinned above the message list (e.g. missing channel social).
+   * Only shown for the selected live chat thread — not email/support/create.
+   */
+  threadNotice?: ReactNode;
   /** Row ids in on-screen order (after search/filters) — drives delete → neighbor. */
   onVisibleRowIdsChange?: (rowIds: readonly string[]) => void;
   /**
@@ -468,13 +210,29 @@ function isOptimisticMessage(message: ChatMessage): boolean {
   return message.id.startsWith("local-");
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  keyboardHighlighted = false,
+}: {
+  message: ChatMessage;
+  keyboardHighlighted?: boolean;
+}) {
   const pending = isOptimisticMessage(message);
   const body = message.content || (message.private ? "(private note)" : "");
 
   if (message.direction === "activity") {
     return (
-      <div className="communication-chat__message is-activity">
+      <div
+        className={[
+          "communication-chat__message",
+          "is-activity",
+          keyboardNavItemClass(keyboardHighlighted),
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        tabIndex={-1}
+        {...keyboardNavItemProps(message.id)}
+      >
         <div className="communication-chat__bubble">{body}</div>
       </div>
     );
@@ -486,12 +244,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     "communication-chat__message",
     outgoing ? "is-outgoing" : "is-incoming",
     pending ? "is-pending" : "",
+    keyboardNavItemClass(keyboardHighlighted),
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <div className={className}>
+    <div
+      className={className}
+      tabIndex={-1}
+      {...keyboardNavItemProps(message.id)}
+    >
       <div className="communication-chat__bubble">{body}</div>
       {clock ? (
         <time
@@ -757,76 +520,20 @@ export function CommunicationChatView({
   onCreateOpenChange,
   onCreateKind,
   emailComposeSlot = null,
+  channelCreateSlot = null,
+  threadNotice = null,
   onVisibleRowIdsChange,
   pane = "full",
 }: CommunicationChatViewProps) {
   const [draft, setDraft] = useState("");
-  const [listQuery, setListQuery] = useState("");
-  const [listFilters, setListFilters] = useState<CommunicationChatListFilters>(
-    () => EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
-  );
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    () => new Set(),
-  );
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const listSearchRef = useRef<HTMLInputElement | null>(null);
   const stickToBottomRef = useRef(true);
   const prevSelectedIdRef = useRef<string | null>(null);
-  const filterContext = useMemo(
-    () => ({
-      resolveConversationContactId,
-      resolveConversationOrganizationId,
-    }),
-    [resolveConversationContactId, resolveConversationOrganizationId],
+  const threadMessagesContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_CONTENT,
   );
-  const { statusGroups, draftEmailRows } = useMemo(() => {
-    const filtered = filterCommunicationChatListGroupsByFilters(
-      filterCommunicationChatListGroups(
-        groupCommunicationChatListRows(conversations, emails, supportTasks),
-        listQuery,
-      ),
-      listFilters,
-      filterContext,
-    );
-    const peeled = peelCommunicationDraftEmailRows(filtered);
-    return { statusGroups: peeled.groups, draftEmailRows: peeled.drafts };
-  }, [
-    conversations,
-    emails,
-    filterContext,
-    listFilters,
-    listQuery,
-    supportTasks,
-  ]);
-  useEffect(() => {
-    onVisibleRowIdsChange?.(
-      communicationChatListVisibleRowIds({
-        drafts: draftEmailRows,
-        groups: statusGroups,
-      }),
-    );
-  }, [draftEmailRows, onVisibleRowIdsChange, statusGroups]);
-  const listEmpty =
-    conversations.length === 0 &&
-    emails.length === 0 &&
-    supportTasks.length === 0;
-  const listQueryActive = listQuery.trim().length > 0;
-  const listFiltersActive = communicationChatListFiltersAreActive(listFilters);
-  const listQueryNeedle = listQuery.trim().toLowerCase();
-  const showWhatsAppPlaceholder =
-    !(listEmpty && loading) &&
-    (listFilters.kind == null || listFilters.kind === "whatsapp") &&
-    (!listQueryActive ||
-      "whatsapp".includes(listQueryNeedle) ||
-      WHATSAPP_PLACEHOLDER_TASK.title.toLowerCase().includes(listQueryNeedle));
-  const listFilteredEmpty =
-    !listEmpty &&
-    (listQueryActive || listFiltersActive) &&
-    statusGroups.length === 0 &&
-    draftEmailRows.length === 0 &&
-    !showWhatsAppPlaceholder;
   const emailSelected = Boolean(selectedEmailId);
   const supportSelected = Boolean(selectedSupportId);
   const selectedIsTyping =
@@ -834,15 +541,6 @@ export function CommunicationChatView({
     !supportSelected &&
     selectedId != null &&
     typingIds?.has(selectedId) === true;
-
-  function toggleGroup(status: string) {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
-  }
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
@@ -926,6 +624,28 @@ export function CommunicationChatView({
   };
 
   const threadOnly = pane === "thread";
+  const threadMessages = detail?.messages;
+  const threadMessageIds = useMemo(
+    () =>
+      emailSelected || supportSelected || createOpen || !threadMessages
+        ? []
+        : threadMessages.map((message) => message.id),
+    [createOpen, emailSelected, supportSelected, threadMessages],
+  );
+  const latestThreadMessageId =
+    threadMessageIds.length > 0
+      ? threadMessageIds[threadMessageIds.length - 1]!
+      : null;
+  const { highlightedId: threadHighlightedId } = useListKeyboardNavigation({
+    containerRef: messagesRef,
+    itemIds: threadMessageIds,
+    selectedId: latestThreadMessageId,
+    onNavigate: () => {
+      // Highlight-only — chat bubbles have no open action.
+    },
+    zone: LIST_KEYBOARD_NAV_ZONE_CONTENT,
+    enabled: threadMessageIds.length > 0,
+  });
 
   return (
     <div
@@ -940,388 +660,29 @@ export function CommunicationChatView({
     >
       {threadOnly ? null : (
       <aside className="communication-chat__list">
-        {error ? <p className="communication-chat__error">{error}</p> : null}
-        <div className="communication-chat__list-toolbar">
-          <div className="communication-chat__list-search">
-            <span className="communication-chat__list-search-icon" aria-hidden="true">
-              <SearchIcon size={14} />
-            </span>
-            <input
-              ref={listSearchRef}
-              type="search"
-              className="communication-chat__list-search-input"
-              value={listQuery}
-              placeholder="Search chats and emails…"
-              aria-label="Search chats and emails"
-              onChange={(event) => setListQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                event.preventDefault();
-                if (listQuery.length > 0) {
-                  setListQuery("");
-                  return;
-                }
-                listSearchRef.current?.blur();
-              }}
-            />
-            {listQueryActive ? (
-              <button
-                type="button"
-                className="communication-chat__list-search-clear"
-                title="Clear search"
-                aria-label="Clear search"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  setListQuery("");
-                  listSearchRef.current?.focus();
-                }}
-              >
-                <XCircleFillIcon size={14} />
-              </button>
-            ) : null}
-          </div>
-          <CommunicationChatListFilterMenu
-            filters={listFilters}
-            onFiltersChange={setListFilters}
-            contactOptions={contactFilterOptions}
-            organizationOptions={organizationFilterOptions}
-            projectOptions={projectFilterOptions}
-          />
-        </div>
-        <div className="communication-chat__list-scroll">
-          {listEmpty && loading ? (
-            <div className="communication-chat__empty">Loading…</div>
-          ) : listEmpty && !showWhatsAppPlaceholder ? (
-            <div className="communication-chat__empty">
-              No chats, emails, or support tickets yet. Website widget chats,
-              AgentMail messages, and support tickets show up here.
-            </div>
-          ) : listFilteredEmpty ? (
-            <div className="communication-chat__empty">
-              {listQueryActive
-                ? `No items match “${listQuery.trim()}”.`
-                : "No items match these filters."}
-            </div>
-          ) : (
-            <ul
-              className="overview-grouped-list communication-chat__task-list"
-              aria-label="Chats, emails, WhatsApp, and support"
-            >
-              {showWhatsAppPlaceholder ? (
-                <li
-                  key={WHATSAPP_PLACEHOLDER_ID}
-                  className={[
-                    "project-tasks-list__card-item",
-                    "task-kanban-card-item",
-                    "communication-chat__card-item",
-                    "communication-chat__card-item--placeholder",
-                  ].join(" ")}
-                >
-                  <TaskBoardCard
-                    task={WHATSAPP_PLACEHOLDER_TASK}
-                    onOpen={() => undefined}
-                    showDueDate={false}
-                    showDisplayId={false}
-                    showStatus={false}
-                    leadingSlot={
-                      <span
-                        className="communication-chat__card-avatar-wrap"
-                        title="WhatsApp"
-                      >
-                        <span
-                          className="communication-chat__card-avatar"
-                          aria-hidden="true"
-                        >
-                          <ContactPersonIcon
-                            size={Math.round(CHAT_CARD_AVATAR_SIZE * 0.55)}
-                          />
-                        </span>
-                        <span
-                          className="communication-chat__card-kind communication-chat__card-kind--whatsapp"
-                          title="WhatsApp"
-                          aria-label="WhatsApp"
-                        >
-                          <CommunicationWhatsAppKindIcon />
-                        </span>
-                      </span>
-                    }
-                    topLeadingSlot={
-                      <span
-                        className="communication-chat__card-name"
-                        title="WhatsApp"
-                      >
-                        WhatsApp
-                      </span>
-                    }
-                  />
-                </li>
-              ) : null}
-              {draftEmailRows.map((row) => (
-                <CommunicationEmailListCard
-                  key={row.item.id}
-                  item={row.item}
-                  selectedEmailId={selectedEmailId}
-                  resolveEmailAvatarSrc={resolveEmailAvatarSrc}
-                  resolveContactAvatarSrc={resolveContactAvatarSrc}
-                  onOpen={selectEmailAndCloseCreate}
-                />
-              ))}
-              {statusGroups.map((group) => {
-                const collapsed = collapsedGroups.has(group.status);
-                return (
-                  <StatusGroupSection
-                    key={group.status}
-                    groupKey={chatStatusToTaskStatus(group.status)}
-                    title={group.label}
-                    collapsed={collapsed}
-                    onToggle={() => toggleGroup(group.status)}
-                    icon={
-                      <TaskStatusIcon
-                        status={chatStatusToTaskStatus(group.status)}
-                        size={14}
-                        support
-                      />
-                    }
-                  >
-                    {group.rows.map((row) => {
-                      if (row.kind === "email") {
-                        return (
-                          <CommunicationEmailListCard
-                            key={row.item.id}
-                            item={row.item}
-                            selectedEmailId={selectedEmailId}
-                            resolveEmailAvatarSrc={resolveEmailAvatarSrc}
-                            resolveContactAvatarSrc={resolveContactAvatarSrc}
-                            onOpen={selectEmailAndCloseCreate}
-                          />
-                        );
-                      }
-
-                      if (row.kind === "support") {
-                        const item = row.item;
-                        const task = inboxListItemToTaskItemRowTask(item);
-                        if (!task) return null;
-                        const personLabel = supportListItemPartyName(item);
-                        const avatarSrc = item.contactAvatarSrc?.trim() || null;
-                        const avatarKind =
-                          item.contactId?.trim()
-                            ? "contact"
-                            : item.organizationId?.trim()
-                              ? "organization"
-                              : "contact";
-                        const age = supportAgeLabel(item);
-                        const active = item.id === selectedSupportId;
-                        return (
-                          <li
-                            key={item.id}
-                            className={[
-                              "project-tasks-list__card-item",
-                              "task-kanban-card-item",
-                              "communication-chat__card-item",
-                              keyboardNavItemClass(active),
-                              active
-                                ? "communication-chat__card-item--active"
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            {...keyboardNavItemProps(item.id)}
-                          >
-                            <TaskBoardCard
-                              task={{
-                                ...task,
-                                title: item.title?.trim() || "Support ticket",
-                              }}
-                              onOpen={() => selectSupportAndCloseCreate(item.id)}
-                              showDueDate
-                              showDisplayId={false}
-                              showStatus={false}
-                              leadingSlot={
-                                <span
-                                  className="communication-chat__card-avatar-wrap"
-                                  title={personLabel}
-                                >
-                                  <span
-                                    className="communication-chat__card-avatar"
-                                    aria-hidden="true"
-                                  >
-                                    {avatarSrc ? (
-                                      <EntityAvatarIcon
-                                        src={avatarSrc}
-                                        size={CHAT_CARD_AVATAR_SIZE}
-                                        kind={avatarKind}
-                                      />
-                                    ) : avatarKind === "organization" ? (
-                                      <OrganizationIcon
-                                        size={Math.round(
-                                          CHAT_CARD_AVATAR_SIZE * 0.55,
-                                        )}
-                                      />
-                                    ) : (
-                                      <ContactPersonIcon
-                                        size={Math.round(
-                                          CHAT_CARD_AVATAR_SIZE * 0.55,
-                                        )}
-                                      />
-                                    )}
-                                  </span>
-                                  <span
-                                    className="communication-chat__card-kind communication-chat__card-kind--support"
-                                    title="Support"
-                                    aria-label="Support"
-                                  >
-                                    <CommunicationSupportKindIcon />
-                                  </span>
-                                </span>
-                              }
-                              topLeadingSlot={
-                                <span
-                                  className="communication-chat__card-name"
-                                  title={personLabel}
-                                >
-                                  {personLabel}
-                                </span>
-                              }
-                              ownerSlot={
-                                age.label ? (
-                                  <span
-                                    className="communication-chat__card-age"
-                                    title={age.title}
-                                  >
-                                    {age.label}
-                                  </span>
-                                ) : null
-                              }
-                            />
-                          </li>
-                        );
-                      }
-
-                      const conversation = row.conversation;
-                      const task =
-                        chatConversationToTaskItemRowTask(conversation);
-                      const preview =
-                        conversation.lastMessagePreview?.trim() || "";
-                      const personLabel =
-                        conversation.contactName?.trim() ||
-                        conversation.contactEmail?.trim() ||
-                        conversation.contactPhone?.trim() ||
-                        "Visitor";
-                      const avatarSrc =
-                        resolveAvatarSrc?.(conversation)?.trim() ||
-                        conversation.contactAvatarUrl?.trim() ||
-                        null;
-                      const age = chatConversationAgeLabel(conversation);
-                      const active =
-                        !emailSelected &&
-                        !supportSelected &&
-                        conversation.id === selectedId;
-                      const isTyping =
-                        typingIds?.has(conversation.id) === true;
-                      return (
-                        <li
-                          key={conversation.id}
-                          className={[
-                            "project-tasks-list__card-item",
-                            "task-kanban-card-item",
-                            "communication-chat__card-item",
-                            keyboardNavItemClass(active),
-                            active
-                              ? "communication-chat__card-item--active"
-                              : null,
-                            conversation.unread
-                              ? "communication-chat__card-item--unread"
-                              : null,
-                            isTyping
-                              ? "communication-chat__card-item--typing"
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                          {...keyboardNavItemProps(conversation.id)}
-                        >
-                          <TaskBoardCard
-                            task={{
-                              ...task,
-                              // Title row shows the last message; name sits with age.
-                              title: preview,
-                            }}
-                            onOpen={() => selectAndCloseCreate(conversation.id)}
-                            showDueDate
-                            showDisplayId={false}
-                            showStatus={false}
-                            leadingSlot={
-                              <span
-                                className="communication-chat__card-avatar-wrap"
-                                title={personLabel}
-                              >
-                                <span
-                                  className="communication-chat__card-avatar"
-                                  aria-hidden="true"
-                                >
-                                  {avatarSrc ? (
-                                    <EntityAvatarIcon
-                                      src={avatarSrc}
-                                      size={CHAT_CARD_AVATAR_SIZE}
-                                      kind="contact"
-                                    />
-                                  ) : (
-                                    <ContactPersonIcon
-                                      size={Math.round(
-                                        CHAT_CARD_AVATAR_SIZE * 0.55,
-                                      )}
-                                    />
-                                  )}
-                                </span>
-                                <span
-                                  className={[
-                                    "communication-chat__card-kind",
-                                    "communication-chat__card-kind--chat",
-                                    isTyping
-                                      ? "communication-chat__card-kind--typing"
-                                      : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  title={isTyping ? "Typing…" : "Chat"}
-                                  aria-label={isTyping ? "Typing" : "Chat"}
-                                >
-                                  {isTyping ? (
-                                    <ChatListTypingIcon />
-                                  ) : (
-                                    <CommunicationChatKindIcon />
-                                  )}
-                                </span>
-                              </span>
-                            }
-                            topLeadingSlot={
-                              <span
-                                className="communication-chat__card-name"
-                                title={personLabel}
-                              >
-                                {personLabel}
-                              </span>
-                            }
-                            ownerSlot={
-                              age.label ? (
-                                <span
-                                  className="communication-chat__card-age"
-                                  title={age.title}
-                                >
-                                  {age.label}
-                                </span>
-                              ) : null
-                            }
-                          />
-                        </li>
-                      );
-                    })}
-                  </StatusGroupSection>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        <CommunicationMessagesList
+          conversations={conversations}
+          emails={emails}
+          supportTasks={supportTasks}
+          selectedChatId={selectedId}
+          selectedEmailId={selectedEmailId}
+          selectedSupportId={selectedSupportId}
+          loading={loading}
+          error={error}
+          typingIds={typingIds}
+          resolveAvatarSrc={resolveAvatarSrc}
+          resolveEmailAvatarSrc={resolveEmailAvatarSrc}
+          resolveContactAvatarSrc={resolveContactAvatarSrc}
+          resolveConversationContactId={resolveConversationContactId}
+          resolveConversationOrganizationId={resolveConversationOrganizationId}
+          contactFilterOptions={contactFilterOptions}
+          organizationFilterOptions={organizationFilterOptions}
+          projectFilterOptions={projectFilterOptions}
+          onSelectChat={selectAndCloseCreate}
+          onSelectEmail={selectEmailAndCloseCreate}
+          onSelectSupport={selectSupportAndCloseCreate}
+          onVisibleRowIdsChange={onVisibleRowIdsChange}
+        />
         {onCreateOpenChange ? (
           <button
             type="button"
@@ -1352,6 +713,21 @@ export function CommunicationChatView({
               Compose a new email…
             </div>
           )
+        ) : createOpen &&
+          (createKind === "whatsapp" ||
+            createKind === "instagram" ||
+            createKind === "messenger" ||
+            createKind === "chat" ||
+            createKind === "support") ? (
+          channelCreateSlot ?? (
+            <div className="communication-chat__empty">
+              {createKind === "support"
+                ? "Create a support ticket…"
+                : createKind === "chat"
+                  ? "Start a new Telegram conversation…"
+                  : `Start a new ${createKind} conversation…`}
+            </div>
+          )
         ) : createOpen ? (
           <CommunicationCreateLauncher
             onSelect={(kind) => {
@@ -1380,11 +756,17 @@ export function CommunicationChatView({
         ) : (
           <div className="communication-chat__thread-body">
             <div className="communication-chat__thread-container">
+              {threadNotice ? (
+                <div className="communication-chat__thread-notice">
+                  {threadNotice}
+                </div>
+              ) : null}
               <div className="communication-chat__messages-wrap">
                 <div
                   className="communication-chat__messages"
                   ref={messagesRef}
                   onScroll={onMessagesScroll}
+                  {...threadMessagesContainerProps}
                 >
                   {detailLoading && !detail ? (
                     <div className="communication-chat__empty">
@@ -1397,8 +779,14 @@ export function CommunicationChatView({
                     </div>
                   ) : (
                     <>
-                      {(detail?.messages ?? []).map((message) => (
-                        <MessageBubble key={message.id} message={message} />
+                      {(threadMessages ?? []).map((message) => (
+                        <MessageBubble
+                          key={message.id}
+                          message={message}
+                          keyboardHighlighted={
+                            threadHighlightedId === message.id
+                          }
+                        />
                       ))}
                       {selectedIsTyping ? <ContactTypingIndicator /> : null}
                     </>

@@ -169,7 +169,13 @@ export const chatConversationSchema = z.object({
   contactName: z.string().nullable(),
   contactEmail: z.string().nullable(),
   contactPhone: z.string().nullable(),
+  /** Channel username (Telegram handle without @). */
+  contactUsername: z.string().nullable(),
   contactAvatarUrl: z.string().nullable(),
+  /** Durable BacksterOS contact link (Telegram / Messenger). */
+  contactId: z.string().nullable(),
+  /** Durable BacksterOS organization link. */
+  organizationId: z.string().nullable(),
   lastMessagePreview: z.string().nullable(),
   lastActivityAt: z.string().datetime().nullable(),
   unread: z.boolean(),
@@ -213,8 +219,101 @@ export const createChatMessageInputSchema = z.object({
   private: z.boolean().optional(),
 });
 
+/** Channels that can start/reopen a conversation from Communication → +. */
+export const chatCreateChannelSchema = z.enum([
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "telegram",
+  "support",
+]);
+
+export const chatWhatsAppTemplateParamsSchema = z.object({
+  name: z.string().min(1).max(200),
+  category: z.string().min(1).max(64),
+  language: z.string().min(1).max(32),
+  /** Template variable substitutions (Chatwoot `processed_params`). */
+  processedParams: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * Start or reopen a Chatwoot conversation and send the first outbound message.
+ * WhatsApp outside the 24h window requires `template`.
+ * Support tickets may include an optional `subject` (email support inbox).
+ */
+export const createChatConversationInputSchema = z.object({
+  channel: chatCreateChannelSchema,
+  /** BacksterOS contact id. */
+  contactId: z.string().min(1),
+  /** Chatwoot inbox id — resolved from channel when omitted. */
+  inboxId: z.string().min(1).optional(),
+  /** Outgoing message body (rendered template text for WhatsApp templates). */
+  content: z.string().min(1).max(10_000),
+  /** Support ticket subject (email / Channel::Email inbox). */
+  subject: z.string().min(1).max(500).optional(),
+  template: chatWhatsAppTemplateParamsSchema.optional(),
+});
+
+export const chatMessagingWindowQuerySchema = z.object({
+  channel: chatCreateChannelSchema,
+  contactId: z.string().min(1),
+});
+
+export const chatMessagingWindowSchema = z.object({
+  channel: chatCreateChannelSchema,
+  contactId: z.string(),
+  /** True when free-form (or within-window) outbound is allowed. */
+  open: z.boolean(),
+  /** Hours Meta grants after the last incoming message (24, or 168 with HUMAN_AGENT). */
+  windowHours: z.number().int().positive(),
+  lastIncomingAt: z.string().datetime().nullable(),
+  closesAt: z.string().datetime().nullable(),
+  /** Human-readable block reason when `open` is false. */
+  reason: z.string().nullable(),
+  /** Existing local mirror conversation for this contact+channel, if any. */
+  conversationId: z.string().nullable(),
+  /** Channel source id (phone / PSID / IGSID) when known. */
+  sourceId: z.string().nullable(),
+  /** WhatsApp: template is required to start/continue outside the window. */
+  requiresTemplate: z.boolean(),
+});
+
+export const chatWhatsAppTemplateSchema = z.object({
+  name: z.string(),
+  category: z.string().nullable(),
+  language: z.string().nullable(),
+  status: z.string().nullable(),
+  body: z.string().nullable(),
+});
+
+export const listChatWhatsAppTemplatesQuerySchema = z.object({
+  inboxId: z.string().min(1).optional(),
+});
+
+export const chatWhatsAppTemplatesListSchema = z.object({
+  inboxId: z.string(),
+  templates: z.array(chatWhatsAppTemplateSchema),
+});
+
+export const listChatInboxesQuerySchema = z.object({
+  channel: chatCreateChannelSchema.optional(),
+});
+
+export const chatInboxSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  channelType: z.string().nullable(),
+  channel: chatCreateChannelSchema.nullable(),
+});
+
+export const chatInboxesListSchema = z.object({
+  inboxes: z.array(chatInboxSummarySchema),
+});
+
 export const updateChatConversationInputSchema = z.object({
   status: chatConversationStatusSchema.optional(),
+  contactId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
@@ -769,6 +868,38 @@ export type ListChatConversationsQuery = z.infer<
 export type CreateChatMessageInput = z.infer<
   typeof createChatMessageInputSchema
 >;
+
+export type ChatCreateChannel = z.infer<typeof chatCreateChannelSchema>;
+
+export type ChatWhatsAppTemplateParams = z.infer<
+  typeof chatWhatsAppTemplateParamsSchema
+>;
+
+export type CreateChatConversationInput = z.infer<
+  typeof createChatConversationInputSchema
+>;
+
+export type ChatMessagingWindowQuery = z.infer<
+  typeof chatMessagingWindowQuerySchema
+>;
+
+export type ChatMessagingWindow = z.infer<typeof chatMessagingWindowSchema>;
+
+export type ChatWhatsAppTemplate = z.infer<typeof chatWhatsAppTemplateSchema>;
+
+export type ListChatWhatsAppTemplatesQuery = z.infer<
+  typeof listChatWhatsAppTemplatesQuerySchema
+>;
+
+export type ChatWhatsAppTemplatesList = z.infer<
+  typeof chatWhatsAppTemplatesListSchema
+>;
+
+export type ListChatInboxesQuery = z.infer<typeof listChatInboxesQuerySchema>;
+
+export type ChatInboxSummary = z.infer<typeof chatInboxSummarySchema>;
+
+export type ChatInboxesList = z.infer<typeof chatInboxesListSchema>;
 
 export type UpdateChatConversationInput = z.infer<
   typeof updateChatConversationInputSchema

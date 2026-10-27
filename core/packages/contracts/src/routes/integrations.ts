@@ -246,6 +246,58 @@ export const integrationsRoutes: AppRouter = c.router({
     },
     summary: "List mirrored Chatwoot conversations",
   },
+  createChatConversation: {
+    method: "POST",
+    path: "/api/v1/chat/conversations",
+    body: s.createChatConversationInputSchema,
+    responses: {
+      200: s.chatConversationDetailSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Create or reopen a Chatwoot conversation (WhatsApp / Instagram / Messenger) and send the first message",
+  },
+  listChatInboxes: {
+    method: "GET",
+    path: "/api/v1/chat/inboxes",
+    query: s.listChatInboxesQuerySchema,
+    responses: {
+      200: s.chatInboxesListSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "List Chatwoot inboxes (optionally filtered by channel kind)",
+  },
+  getChatMessagingWindow: {
+    method: "GET",
+    path: "/api/v1/chat/messaging-window",
+    query: s.chatMessagingWindowQuerySchema,
+    responses: {
+      200: s.chatMessagingWindowSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Whether Meta messaging window is open for a contact on WhatsApp / Instagram / Messenger",
+  },
+  listChatWhatsAppTemplates: {
+    method: "GET",
+    path: "/api/v1/chat/whatsapp-templates",
+    query: s.listChatWhatsAppTemplatesQuerySchema,
+    responses: {
+      200: s.chatWhatsAppTemplatesListSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "List approved WhatsApp message templates for a Chatwoot inbox",
+  },
   getChatConversation: {
     method: "GET",
     path: "/api/v1/chat/conversations/{conversationId}",

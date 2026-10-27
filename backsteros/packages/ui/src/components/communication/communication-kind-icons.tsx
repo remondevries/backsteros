@@ -1,10 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
+import {
+  chatChannelKindLabel,
+  resolveChatChannelKind,
+  type ChatChannelKind,
+  type ResolveChatChannelKindOptions,
+} from "../../communication/chat-channel-kind.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 
-/** Idle chat kind — solid bubble (list card + create launcher). */
+/** Idle chat kind — solid bubble (generic web / API). */
 export function CommunicationChatKindIcon({ size = 11 }: { size?: number }) {
   return (
     <svg
@@ -20,7 +26,130 @@ export function CommunicationChatKindIcon({ size = 11 }: { size?: number }) {
   );
 }
 
-/** WhatsApp brand mark for list kind badges. */
+/** Telegram mark (disc + plane) for list kind badges. */
+export function CommunicationTelegramKindIcon({
+  size = 15,
+}: {
+  size?: number;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-hidden
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title>Telegram</title>
+      <path
+        fill="#000"
+        d="M11.944 3.26667e-05C8.77112 0.0148396 5.73324 1.28566 3.4949 3.53449C1.25656 5.78332 -3.4549e-05 8.82711 7.12435e-10 12C7.12441e-10 15.1826 1.26428 18.2349 3.51472 20.4853C5.76515 22.7358 8.8174 24 12 24C15.1826 24 18.2348 22.7358 20.4853 20.4853C22.7357 18.2349 24 15.1826 24 12C24 8.81743 22.7357 5.76519 20.4853 3.51475C18.2348 1.26431 15.1826 3.26667e-05 12 3.26667e-05C11.9813 -1.08889e-05 11.9627 -1.08889e-05 11.944 3.26667e-05ZM16.906 7.22403C17.006 7.22203 17.227 7.24703 17.371 7.36403C17.4667 7.44713 17.5277 7.56311 17.542 7.68903C17.558 7.78203 17.578 7.99503 17.562 8.16103C17.382 10.059 16.6 14.663 16.202 16.788C16.034 17.688 15.703 17.989 15.382 18.018C14.686 18.083 14.157 17.558 13.482 17.116C12.426 16.423 11.829 15.992 10.804 15.316C9.619 14.536 10.387 14.106 11.062 13.406C11.239 13.222 14.309 10.429 14.369 10.176C14.376 10.144 14.383 10.026 14.313 9.96403C14.243 9.90203 14.139 9.92303 14.064 9.94003C13.958 9.96403 12.271 11.08 9.003 13.285C8.523 13.615 8.09 13.775 7.701 13.765C7.273 13.757 6.449 13.524 5.836 13.325C5.084 13.08 4.487 12.951 4.539 12.536C4.566 12.32 4.864 12.099 5.432 11.873C8.93 10.349 11.262 9.34403 12.43 8.85903C15.762 7.47303 16.455 7.23203 16.906 7.22403Z"
+      />
+      <path
+        fill="#FFF"
+        d="M16.906 7.22403C17.006 7.22203 17.227 7.24703 17.371 7.36403C17.4667 7.44713 17.5277 7.56311 17.542 7.68903C17.558 7.78203 17.578 7.99503 17.562 8.16103C17.382 10.059 16.6 14.663 16.202 16.788C16.034 17.688 15.703 17.989 15.382 18.018C14.686 18.083 14.157 17.558 13.482 17.116C12.426 16.423 11.829 15.992 10.804 15.316C9.619 14.536 10.387 14.106 11.062 13.406C11.239 13.222 14.309 10.429 14.369 10.176C14.376 10.144 14.383 10.026 14.313 9.96403C14.243 9.90203 14.139 9.92303 14.064 9.94003C13.958 9.96403 12.271 11.08 9.003 13.285C8.523 13.615 8.09 13.775 7.701 13.765C7.273 13.757 6.449 13.524 5.836 13.325C5.084 13.08 4.487 12.951 4.539 12.536C4.566 12.32 4.864 12.099 5.432 11.873C8.93 10.349 11.262 9.34403 12.43 8.85903C15.762 7.47303 16.455 7.23203 16.906 7.22403Z"
+      />
+    </svg>
+  );
+}
+
+/** Instagram brand mark (pink disc + white glyph) for list kind badges. */
+export function CommunicationInstagramKindIcon({
+  size = 15,
+}: {
+  size?: number;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 1024 1024"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-hidden
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title>Instagram</title>
+      <circle cx="512" cy="512" r="512" fill="#ff0069" />
+      <path
+        fill="#fff"
+        d="M512 256c-69.55 0-78.23.32-105.54 1.54s-45.82 5.57-62.14 11.9a130.83 130.83 0 0 0-74.88 74.88c-6.34 16.32-10.65 34.88-11.9 62.14S256 442.45 256 512s.32 78.23 1.54 105.54 5.57 45.82 11.9 62.14a130.83 130.83 0 0 0 74.88 74.88c16.34 6.31 34.9 10.65 62.14 11.9S442.45 768 512 768s78.23-.32 105.54-1.54 45.82-5.59 62.14-11.9a130.83 130.83 0 0 0 74.88-74.88c6.31-16.32 10.65-34.9 11.9-62.14S768 581.55 768 512s-.32-78.23-1.54-105.54-5.59-45.85-11.9-62.14a130.83 130.83 0 0 0-74.88-74.88c-16.32-6.34-34.9-10.65-62.14-11.9S581.55 256 512 256Zm0 46.08c68.33 0 76.48.34 103.47 1.51 25 1.17 38.51 5.31 47.51 8.85A84.24 84.24 0 0 1 711.57 361c3.5 9 7.68 22.55 8.81 47.51 1.22 27 1.49 35.11 1.49 103.47s-.32 76.48-1.58 103.47c-1.3 25-5.46 38.51-9 47.51-4.78 12-10.22 20.48-19.18 29.48a79.87 79.87 0 0 1-29.44 19.11c-9 3.5-22.72 7.68-47.68 8.81-27.18 1.22-35.18 1.49-103.66 1.49s-76.5-.32-103.66-1.58c-25-1.3-38.74-5.46-47.7-9-12.14-4.78-20.48-10.22-29.42-19.18a77.73 77.73 0 0 1-19.2-29.44c-3.52-9-7.66-22.72-9-47.68-1-26.88-1.3-35.18-1.3-103.34s.34-76.5 1.3-103.7c1.3-25 5.44-38.7 9-47.66 4.48-12.16 10.22-20.48 19.2-29.46s17.28-14.7 29.42-19.16c9-3.54 22.42-7.7 47.38-9 27.2-1 35.2-1.28 103.66-1.28Zm0 78.46A131.46 131.46 0 1 0 643.46 512 131.45 131.45 0 0 0 512 380.54Zm0 216.79A85.33 85.33 0 1 1 597.33 512 85.31 85.31 0 0 1 512 597.33Zm167.38-222a30.72 30.72 0 1 1-30.72-30.7 30.74 30.74 0 0 1 30.72 30.73Z"
+      />
+    </svg>
+  );
+}
+
+/** Facebook Messenger brand mark for list kind badges. */
+export function CommunicationMessengerKindIcon({
+  size = 15,
+}: {
+  size?: number;
+}) {
+  const gradientId = useId().replace(/:/g, "");
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 256 256"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-hidden
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title>Messenger</title>
+      <defs>
+        <radialGradient
+          id={gradientId}
+          cx="19.247%"
+          cy="99.465%"
+          r="108.96%"
+          fx="19.247%"
+          fy="99.465%"
+        >
+          <stop offset="0%" stopColor="#09F" />
+          <stop offset="60.975%" stopColor="#A033FF" />
+          <stop offset="93.482%" stopColor="#FF5280" />
+          <stop offset="100%" stopColor="#FF7061" />
+        </radialGradient>
+      </defs>
+      <path
+        fill={`url(#${gradientId})`}
+        d="M128 0C55.894 0 0 52.818 0 124.16c0 37.317 15.293 69.562 40.2 91.835 2.09 1.871 3.352 4.493 3.438 7.298l.697 22.77c.223 7.262 7.724 11.988 14.37 9.054L84.111 243.9a10.218 10.218 0 0 1 6.837-.501c11.675 3.21 24.1 4.92 37.052 4.92 72.106 0 128-52.818 128-124.16S200.106 0 128 0Z"
+      />
+      <path
+        fill="#FFF"
+        d="m51.137 160.47 37.6-59.653c5.98-9.49 18.788-11.853 27.762-5.123l29.905 22.43a7.68 7.68 0 0 0 9.252-.027l40.388-30.652c5.39-4.091 12.428 2.36 8.82 8.085l-37.6 59.654c-5.981 9.489-18.79 11.852-27.763 5.122l-29.906-22.43a7.68 7.68 0 0 0-9.25.027l-40.39 30.652c-5.39 4.09-12.427-2.36-8.818-8.085Z"
+      />
+    </svg>
+  );
+}
+
+/** X brand mark for list kind badges (black disc + white glyph baked in). */
+export function CommunicationXKindIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-hidden
+    >
+      <title>X</title>
+      <rect width="24" height="24" rx="12" fill="black" />
+      <path
+        d="M13.1415 11.081L17.6091 6H16.5503L12.6714 10.412L9.57333 6H6L10.6847 12.6715L6 18H7.05876L11.1548 13.341L14.4267 18H18L13.1415 11.081ZM11.6919 12.7305L11.2172 12.066L7.43996 6.78H9.06592L12.1139 11.046L12.5887 11.7105L16.5508 17.2555H14.9249L11.6919 12.7305Z"
+        fill="white"
+      />
+    </svg>
+  );
+}
+
+/** WhatsApp brand mark for list kind badges (white glyph on #25D366 disc). */
 export function CommunicationWhatsAppKindIcon({
   size = 11,
 }: {
@@ -30,14 +159,16 @@ export function CommunicationWhatsAppKindIcon({
     <svg
       width={size}
       height={size}
-      fill="currentColor"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-hidden
     >
       <title>WhatsApp</title>
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+      <path
+        fill="currentColor"
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"
+      />
     </svg>
   );
 }
@@ -66,11 +197,77 @@ export function CommunicationSupportKindIcon({
   );
 }
 
+/** Kind badge glyph for a Chatwoot channel type. */
+export function CommunicationChannelKindIcon({
+  channelType,
+  inboxName,
+  contactName,
+  size,
+}: {
+  channelType?: string | null;
+  inboxName?: string | null;
+  contactName?: string | null;
+  size?: number;
+}) {
+  const kind = resolveChatChannelKind(channelType, { inboxName, contactName });
+  const brandSize = size ?? 15;
+  const bubbleSize = size ?? 11;
+  if (kind === "whatsapp") {
+    // Glyph sits inside the CSS green disc (unlike Telegram’s self-colored SVG).
+    return <CommunicationWhatsAppKindIcon size={bubbleSize} />;
+  }
+  if (kind === "x") {
+    return <CommunicationXKindIcon size={brandSize} />;
+  }
+  if (kind === "telegram") {
+    return <CommunicationTelegramKindIcon size={brandSize} />;
+  }
+  if (kind === "instagram") {
+    return <CommunicationInstagramKindIcon size={brandSize} />;
+  }
+  if (kind === "messenger") {
+    return <CommunicationMessengerKindIcon size={brandSize} />;
+  }
+  return <CommunicationChatKindIcon size={bubbleSize} />;
+}
+
+export function communicationChannelKindClass(
+  channelType?: string | null,
+  options?: ResolveChatChannelKindOptions,
+): string {
+  const kind = resolveChatChannelKind(channelType, options);
+  if (kind === "whatsapp") return "communication-chat__card-kind--whatsapp";
+  if (kind === "x") return "communication-chat__card-kind--x";
+  if (kind === "telegram") return "communication-chat__card-kind--telegram";
+  if (kind === "instagram") return "communication-chat__card-kind--instagram";
+  if (kind === "messenger") return "communication-chat__card-kind--messenger";
+  return "communication-chat__card-kind--chat";
+}
+
+export function communicationChannelKindTitle(
+  channelType?: string | null,
+  typingOrOptions: boolean | ResolveChatChannelKindOptions = false,
+  options?: ResolveChatChannelKindOptions,
+): string {
+  const typing =
+    typeof typingOrOptions === "boolean" ? typingOrOptions : false;
+  const resolveOptions =
+    typeof typingOrOptions === "boolean" ? options : typingOrOptions;
+  if (typing) return "Typing…";
+  return chatChannelKindLabel(
+    resolveChatChannelKind(channelType, resolveOptions),
+  );
+}
+
 export type CommunicationKind =
   | "email"
   | "support"
   | "chat"
-  | "whatsapp";
+  | "telegram"
+  | "instagram"
+  | "messenger"
+  | "whatsapp"
+  | "x";
 
 /**
  * Colored disc + glyph matching Communication list card kind badges.
@@ -85,7 +282,18 @@ export function CommunicationKindMark({
   iconSize?: number;
 }): ReactNode {
   // Email glyph is slightly smaller on list cards (fits the envelope in the disc).
+  // Brand logos include their own disc, so they fill the 15px badge.
   const emailSize = Math.max(9, iconSize - 2);
+  const brandSize = Math.max(iconSize, 15);
+  const channelKind: ChatChannelKind | null =
+    kind === "telegram" ||
+    kind === "instagram" ||
+    kind === "messenger" ||
+    kind === "whatsapp" ||
+    kind === "x" ||
+    kind === "chat"
+      ? kind
+      : null;
   const glyph =
     kind === "email" ? (
       <InboxItemTypeIcon kind="email" size={emailSize} />
@@ -93,17 +301,34 @@ export function CommunicationKindMark({
       <CommunicationSupportKindIcon size={iconSize} />
     ) : kind === "whatsapp" ? (
       <CommunicationWhatsAppKindIcon size={iconSize} />
+    ) : kind === "x" ? (
+      <CommunicationXKindIcon size={brandSize} />
+    ) : kind === "telegram" ? (
+      <CommunicationTelegramKindIcon size={brandSize} />
+    ) : kind === "instagram" ? (
+      <CommunicationInstagramKindIcon size={brandSize} />
+    ) : kind === "messenger" ? (
+      <CommunicationMessengerKindIcon size={brandSize} />
     ) : (
       <CommunicationChatKindIcon size={iconSize} />
     );
 
+  const kindClass =
+    channelKind === "whatsapp"
+      ? "communication-chat__card-kind--whatsapp"
+      : channelKind === "x"
+        ? "communication-chat__card-kind--x"
+        : channelKind === "telegram"
+          ? "communication-chat__card-kind--telegram"
+          : channelKind === "instagram"
+            ? "communication-chat__card-kind--instagram"
+            : channelKind === "messenger"
+              ? "communication-chat__card-kind--messenger"
+              : `communication-chat__card-kind--${kind}`;
+
   return (
     <span
-      className={[
-        "communication-chat__card-kind",
-        `communication-chat__card-kind--${kind}`,
-        className,
-      ]
+      className={["communication-chat__card-kind", kindClass, className]
         .filter(Boolean)
         .join(" ")}
       aria-hidden="true"

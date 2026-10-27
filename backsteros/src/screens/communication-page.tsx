@@ -8,7 +8,10 @@ import {
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
-import type { ChatConversation } from "@backsteros/contracts";
+import type {
+  ChatConversation,
+  ChatCreateChannel,
+} from "@backsteros/contracts";
 import {
   CommunicationChatView,
   FinanceSyncIcon,
@@ -28,6 +31,7 @@ import {
   getCommunicationItemHref,
   getInboxItemDisplayId,
   matchEmailMessageParty,
+  normalizeContactSocialAccounts,
   normalizeEmailRecipients,
   resolveCommunicationEmailParty,
   resolveOrganizationAvatarSrc,
@@ -46,6 +50,7 @@ import {
   DesktopChatContactDetailPanel,
   type ChatContactPanelVisitor,
 } from "../components/desktop-chat-contact-detail-panel";
+import { DesktopCommunicationChannelCreate } from "../components/desktop-communication-channel-create";
 import { DesktopCommunicationEmailCompose } from "../components/desktop-communication-email-compose";
 import { DesktopCommunicationEmailThread } from "../components/desktop-communication-email-thread";
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
@@ -83,7 +88,14 @@ import {
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
-import { matchChatContact } from "../lib/chat/match-chat-contact";
+import {
+  chatChannelSocialKind,
+  chatChannelSocialOffer,
+  chatFacebookMessengerIdOffer,
+  findContactForFacebookMessengerOffer,
+  matchChatContact,
+  resolveChatContact,
+} from "../lib/chat/match-chat-contact";
 import { useChatInbox } from "../lib/chat/use-chat-inbox";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { parseTaskLinks } from "../lib/workspace/row-mappers";
@@ -303,10 +315,10 @@ function CommunicationPageBody() {
     () =>
       breadcrumbDetailLabel
         ? [
-            { label: "Communication", href: "/communication" },
+            { label: "Messages", href: "/communication" },
             { label: breadcrumbDetailLabel },
           ]
-        : [{ label: "Communication" }],
+        : [{ label: "Messages" }],
     [breadcrumbDetailLabel],
   );
   // Must be referentially stable — useRegisterChromeHeader setStates on every
@@ -577,13 +589,22 @@ function CommunicationPageBody() {
         : selectedSupport
           ? findContact(supportParties.contact?.id)
           : selectedConversation
-            ? matchChatContact(workspace.contacts, {
+            ? resolveChatContact(workspace.contacts, {
+                contactId:
+                  chatInbox.detail?.contactId ??
+                  selectedConversation.contactId,
                 contactEmail:
                   chatInbox.detail?.contactEmail ??
                   selectedConversation.contactEmail,
                 contactPhone:
                   chatInbox.detail?.contactPhone ??
                   selectedConversation.contactPhone,
+                contactUsername:
+                  chatInbox.detail?.contactUsername ??
+                  selectedConversation.contactUsername,
+                channelType:
+                  chatInbox.detail?.channelType ??
+                  selectedConversation.channelType,
               })
             : null;
     const organization = isComposingEmail
@@ -595,11 +616,20 @@ function CommunicationPageBody() {
         : selectedSupport
           ? (findOrganization(supportParties.organization?.id) ??
             findOrganization(contact?.organizationId))
-          : null;
+          : selectedConversation
+            ? (findOrganization(
+                chatInbox.detail?.organizationId ??
+                  selectedConversation.organizationId,
+              ) ?? findOrganization(contact?.organizationId))
+            : null;
     return { matchedContact: contact, matchedOrganization: organization };
   }, [
+    chatInbox.detail?.channelType,
+    chatInbox.detail?.contactId,
     chatInbox.detail?.contactEmail,
     chatInbox.detail?.contactPhone,
+    chatInbox.detail?.contactUsername,
+    chatInbox.detail?.organizationId,
     composeParty.contactId,
     composeParty.organizationId,
     isComposingEmail,
@@ -900,11 +930,18 @@ function CommunicationPageBody() {
         contactName: selectedConversation.contactName,
         contactEmail: selectedConversation.contactEmail,
         contactPhone: selectedConversation.contactPhone,
+        contactUsername:
+          chatInbox.detail?.id === selectedConversation.id
+            ? (chatInbox.detail.contactUsername ??
+              selectedConversation.contactUsername)
+            : selectedConversation.contactUsername,
         contactAvatarUrl: selectedConversation.contactAvatarUrl,
       };
     }
     return null;
   }, [
+    chatInbox.detail?.contactUsername,
+    chatInbox.detail?.id,
     contactAvatarSrc,
     emailPartyEmail,
     isComposingEmail,
@@ -927,6 +964,222 @@ function CommunicationPageBody() {
         : (selectedConversation ?? null);
   const railEmailItem = composeEmailItem ?? selectedEmail ?? supportAsEmailItem;
 
+  // Thread notice when a chat has an external channel identity (Telegram /
+  // Instagram / Facebook) that is missing from a linked contact — or when no
+  // BacksterOS contact is linked yet. Stays until the operator acts.
+  const [addingChannelSocial, setAddingChannelSocial] = useState(false);
+  const channelSocialGap = useMemo(() => {
+    if (
+      !selectedConversation ||
+      selectedEmail ||
+      selectedSupport ||
+      createOpen
+    ) {
+      return null;
+    }
+    const conversation = railConversation ?? selectedConversation;
+    const channelUsername = conversation.contactUsername?.trim() || null;
+    if (!channelUsername) return null;
+    const channelKind = chatChannelSocialKind(conversation.channelType);
+    if (!channelKind) return null;
+
+    // Facebook Messenger ID is a contact property (not a social profile).
+    if (channelKind === "facebook") {
+      const offerContact = findContactForFacebookMessengerOffer(
+        workspace.contacts,
+        {
+          matchedContact,
+          contactName: conversation.contactName,
+          organizationId:
+            conversation.organizationId ?? matchedOrganization?.id ?? null,
+        },
+      );
+      if (offerContact) {
+        const details = workspace.contactDetails[offerContact.id];
+        const messengerId = chatFacebookMessengerIdOffer(
+          {
+            facebookMessengerId:
+              details?.facebookMessengerId ??
+              offerContact.facebookMessengerId ??
+              null,
+          },
+          channelUsername,
+        );
+        if (messengerId) {
+          return {
+            mode: "facebook_messenger_id" as const,
+            kind: "contact" as const,
+            entityId: offerContact.id,
+            entityName: offerContact.name?.trim() || "this contact",
+            messengerId,
+            shouldLinkContact: !matchedContact,
+          };
+        }
+      }
+      // External Messenger identity with no contact to attach it to.
+      if (!matchedContact) {
+        return {
+          mode: "link_contact" as const,
+          platform: "Facebook" as const,
+          displayHandle: channelUsername,
+          label: "Facebook Messenger ID" as const,
+        };
+      }
+      return null;
+    }
+
+    if (matchedContact) {
+      const details = workspace.contactDetails[matchedContact.id];
+      const existingSocial = normalizeContactSocialAccounts(
+        details?.socialAccounts ?? matchedContact.socialAccounts,
+      );
+      const offer = chatChannelSocialOffer(existingSocial, {
+        channelType: conversation.channelType,
+        contactUsername: channelUsername,
+      });
+      // Facebook social profiles are handled via Messenger ID above.
+      if (!offer || offer.platform === "Facebook") return null;
+      return {
+        mode: "channel_social" as const,
+        kind: "contact" as const,
+        entityId: matchedContact.id,
+        entityName: matchedContact.name?.trim() || "this contact",
+        offer,
+      };
+    }
+    const orgId =
+      conversation.organizationId?.trim() ||
+      matchedOrganization?.id?.trim() ||
+      null;
+    if (orgId && matchedOrganization && matchedOrganization.id === orgId) {
+      const orgDetails = workspace.organizationDetails[orgId];
+      const existingSocial = normalizeContactSocialAccounts(
+        orgDetails?.socialAccounts,
+      );
+      const offer = chatChannelSocialOffer(existingSocial, {
+        channelType: conversation.channelType,
+        contactUsername: channelUsername,
+      });
+      if (offer && offer.platform !== "Facebook") {
+        return {
+          mode: "channel_social" as const,
+          kind: "organization" as const,
+          entityId: orgId,
+          entityName: matchedOrganization.name?.trim() || "this organization",
+          offer,
+        };
+      }
+    }
+
+            // External channel identity from Chatwoot, but no BacksterOS contact yet.
+    const offer = chatChannelSocialOffer([], {
+      channelType: conversation.channelType,
+      contactUsername: channelUsername,
+    });
+    if (!offer || offer.platform === "Facebook") return null;
+    return {
+      mode: "link_contact" as const,
+      platform: offer.platform,
+      displayHandle: offer.displayHandle ?? offer.handle,
+      label:
+        offer.platform === "WhatsApp"
+          ? ("WhatsApp number" as const)
+          : (`${offer.platform} handle` as const),
+    };
+  }, [
+    createOpen,
+    matchedContact,
+    matchedOrganization,
+    railConversation,
+    selectedConversation,
+    selectedEmail,
+    selectedSupport,
+    workspace.contactDetails,
+    workspace.contacts,
+    workspace.organizationDetails,
+  ]);
+  const addMissingChannelSocial = useCallback(async () => {
+    if (!channelSocialGap || channelSocialGap.mode === "link_contact") return;
+    setAddingChannelSocial(true);
+    try {
+      if (channelSocialGap.mode === "facebook_messenger_id") {
+        await workspace.patchContact(channelSocialGap.entityId, {
+          facebookMessengerId: channelSocialGap.messengerId,
+        });
+        // Durable-link the chat when Add resolved the contact by name.
+        if (
+          channelSocialGap.shouldLinkContact &&
+          selectedConversation?.id
+        ) {
+          await chatInbox.patchConversation(
+            { contactId: channelSocialGap.entityId },
+            selectedConversation.id,
+          );
+        }
+      } else if (channelSocialGap.kind === "contact") {
+        await workspace.patchContact(channelSocialGap.entityId, {
+          socialAccounts: channelSocialGap.offer.nextAccounts,
+        });
+      } else {
+        await workspace.patchOrganization(channelSocialGap.entityId, {
+          socialAccounts: channelSocialGap.offer.nextAccounts,
+        });
+      }
+    } catch (error) {
+      console.warn("[desktop] add chat channel identity failed", error);
+    } finally {
+      setAddingChannelSocial(false);
+    }
+  }, [channelSocialGap, chatInbox, selectedConversation?.id, workspace]);
+  const channelSocialThreadNotice = channelSocialGap ? (
+    <div
+      className="communication-chat__channel-social-notice"
+      role="status"
+    >
+      <p className="communication-chat__channel-social-notice__copy">
+        {channelSocialGap.mode === "link_contact" ? (
+          <>
+            {channelSocialGap.label}{" "}
+            <strong>{channelSocialGap.displayHandle}</strong> came from this
+            chat, but it isn&apos;t linked to a BacksterOS contact yet. Connect
+            this chat to a contact so future chats can match automatically.
+          </>
+        ) : channelSocialGap.mode === "facebook_messenger_id" ? (
+          <>
+            Facebook Messenger ID{" "}
+            <strong>{channelSocialGap.messengerId}</strong> is missing from{" "}
+            {channelSocialGap.entityName}. Add it so future Messenger chats can
+            match this contact automatically.
+          </>
+        ) : (
+          <>
+            {channelSocialGap.offer.platform} handle{" "}
+            <strong>{channelSocialGap.offer.displayHandle}</strong> is missing
+            from {channelSocialGap.entityName}&apos;s social profiles. Add it
+            so future chats can match this{" "}
+            {channelSocialGap.kind === "organization"
+              ? "organization"
+              : "contact"}{" "}
+            automatically.
+          </>
+        )}
+      </p>
+      {channelSocialGap.mode !== "link_contact" ? (
+        <div className="communication-chat__channel-social-notice__actions">
+          <button
+            type="button"
+            disabled={addingChannelSocial}
+            onClick={() => {
+              void addMissingChannelSocial();
+            }}
+          >
+            {addingChannelSocial ? "Adding…" : "Add"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
   const railHandlers = useCommunicationPropertyHandlers({
     client,
     contacts: workspace.contacts,
@@ -934,6 +1187,7 @@ function CommunicationPageBody() {
     isComposingEmail,
     selectedEmail,
     selectedSupport,
+    selectedChatConversation: selectedConversation,
     supportRelatedOrganizationIds:
       selectedTaskRecord?.relatedOrganizationIds ?? [],
     patchTask,
@@ -1014,10 +1268,34 @@ function CommunicationPageBody() {
         setChatMainFaded(false);
         return;
       }
-      // Support / chat create forms are not wired yet — the launcher stays open.
+      if (
+        kind === "whatsapp" ||
+        kind === "instagram" ||
+        kind === "messenger" ||
+        kind === "chat" ||
+        kind === "support"
+      ) {
+        resetComposeState();
+        setCreateKind(kind);
+        setCreateOpen(true);
+        setChatContactCollapsed(true);
+        setChatContactExpanded(false);
+        setChatMainFaded(false);
+        return;
+      }
+      // X remains out of scope — launcher stays open.
     },
     [resetComposeState],
   );
+
+  const channelCreateChannel = useMemo((): ChatCreateChannel | null => {
+    if (createKind === "whatsapp") return "whatsapp";
+    if (createKind === "instagram") return "instagram";
+    if (createKind === "messenger") return "messenger";
+    if (createKind === "chat") return "telegram";
+    if (createKind === "support") return "support";
+    return null;
+  }, [createKind]);
   const finishCreate = useCallback(() => {
     setCreateOpen(false);
     setCreateKind(null);
@@ -1032,6 +1310,16 @@ function CommunicationPageBody() {
     setCreateKind(null);
     resetComposeState();
   }, [resetComposeState]);
+  const handleChannelCreated = useCallback(
+    (detail: { id: string }) => {
+      leaveCreate();
+      setOptimisticChatItemId(detail.id);
+      void chatInbox.refresh();
+      void chatInbox.selectConversation(detail.id);
+      navigateToHref(navigate, getCommunicationHref(detail.id, "chat"));
+    },
+    [chatInbox, leaveCreate, navigate, setOptimisticChatItemId],
+  );
   const selectChat = useCallback(
     (conversationId: string) => {
       leaveCreate();
@@ -1107,25 +1395,36 @@ function CommunicationPageBody() {
 
   const resolveConversationContactId = useCallback(
     (conversation: ChatConversation) =>
-      matchChatContact(workspace.contacts, {
+      resolveChatContact(workspace.contacts, {
+        contactId: conversation.contactId,
         contactEmail: conversation.contactEmail,
         contactPhone: conversation.contactPhone,
+        contactUsername: conversation.contactUsername,
+        channelType: conversation.channelType,
       })?.id ?? null,
     [workspace.contacts],
   );
   const resolveConversationOrganizationId = useCallback(
     (conversation: ChatConversation) =>
-      matchChatContact(workspace.contacts, {
+      conversation.organizationId?.trim() ||
+      resolveChatContact(workspace.contacts, {
+        contactId: conversation.contactId,
         contactEmail: conversation.contactEmail,
         contactPhone: conversation.contactPhone,
-      })?.organizationId?.trim() || null,
+        contactUsername: conversation.contactUsername,
+        channelType: conversation.channelType,
+      })?.organizationId?.trim() ||
+      null,
     [workspace.contacts],
   );
   const resolveConversationAvatarSrc = useCallback(
     (conversation: ChatConversation) => {
-      const matched = matchChatContact(workspace.contacts, {
+      const matched = resolveChatContact(workspace.contacts, {
+        contactId: conversation.contactId,
         contactEmail: conversation.contactEmail,
         contactPhone: conversation.contactPhone,
+        contactUsername: conversation.contactUsername,
+        channelType: conversation.channelType,
       });
       if (matched) {
         return contactAvatarSrc[matched.id] ?? matched.avatarSrc ?? null;
@@ -1260,6 +1559,17 @@ function CommunicationPageBody() {
             createKind={createKind}
             onCreateOpenChange={handleCreateOpenChange}
             onCreateKind={handleCreateKind}
+            threadNotice={channelSocialThreadNotice}
+            channelCreateSlot={
+              channelCreateChannel ? (
+                <DesktopCommunicationChannelCreate
+                  channel={channelCreateChannel}
+                  contactOptions={contactPickerOptions}
+                  onCancel={leaveCreate}
+                  onCreated={handleChannelCreated}
+                />
+              ) : null
+            }
             emailComposeSlot={
               createKind === "email" || selectedEmailIsDraft ? (
                 <DesktopCommunicationEmailCompose
@@ -1303,7 +1613,7 @@ function CommunicationPageBody() {
               selectedSupport ? (
                 <div className="communication-chat__support-thread">
                   <TaskDetailView
-                    sectionLabel="Communication"
+                    sectionLabel="Messages"
                     copyIdShortcutEnabled={keepAliveActive}
                     hideProperties
                     task={{
@@ -1473,9 +1783,12 @@ function CommunicationPageBody() {
           onEmailAssigneeChange={railHandlers.onEmailAssigneeChange}
           onEmailProjectChange={railHandlers.onEmailProjectChange}
           onLinkOrganization={railHandlers.onLinkOrganization}
+          onUnlinkOrganization={railHandlers.onUnlinkOrganization}
           onLinkContact={railHandlers.onLinkContact}
           onUnlinkContact={railHandlers.onUnlinkContact}
           onSelectConversation={selectChat}
+          onSelectEmail={selectEmail}
+          onSelectSupport={selectSupport}
           collapsed={chatContactCollapsed}
           onHide={hideContactPanel}
           onShow={showContactPanel}

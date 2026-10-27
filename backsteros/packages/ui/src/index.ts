@@ -476,10 +476,15 @@ export {
   INBOX_LIST_MODE_OPTIONS,
   filterInboxItemsByListMode,
   inboxItemIsAgentMode,
+  inboxItemIsEmail,
+  inboxItemIsChatMessage,
+  inboxItemIsMessageMode,
+  inboxItemIsSupportMessage,
   inboxListModeLabel,
   inboxListModes,
   isInboxListMode,
   parseInboxListMode,
+  resolveInboxListModeFromShortcutKey,
   type InboxListMode,
 } from "./inbox/inbox-list-mode.js";
 export {
@@ -488,6 +493,20 @@ export {
   writeInboxListMode,
 } from "./inbox/inbox-list-mode-storage.js";
 export { useInboxListMode } from "./inbox/use-inbox-list-mode.js";
+export { useInboxListModeShortcuts } from "./inbox/use-inbox-list-mode-shortcuts.js";
+export {
+  isInboxEmailShellPath,
+  resolveInboxListItemIdFromPathname,
+  resolveInboxModeListItems,
+  resolveInboxOpenTarget,
+  resolveInboxPanelPathname,
+  type InboxOpenTarget,
+} from "./inbox/inbox-open-selection.js";
+export {
+  INBOX_MESSAGES_HIDDEN_STATUSES,
+  buildInboxMessagesModeItems,
+  type InboxMessagesSources,
+} from "./inbox/inbox-messages-mode.js";
 export {
   EmailSidePanelView,
   type EmailSidePanelViewProps,
@@ -3869,12 +3888,40 @@ export {
 } from "./components/communication/communication-chat-view.js";
 
 export {
+  CommunicationEmailListCard,
+  type CommunicationEmailListCardProps,
+} from "./components/communication/communication-email-list-card.js";
+
+export {
+  CommunicationChatListCard,
+  type CommunicationChatListCardProps,
+} from "./components/communication/communication-chat-list-card.js";
+
+export {
+  CommunicationMessagesList,
+  type CommunicationMessagesListProps,
+} from "./components/communication/communication-messages-list.js";
+
+export {
+  CommunicationSupportListCard,
+  type CommunicationSupportListCardProps,
+} from "./components/communication/communication-support-list-card.js";
+
+export {
   COMMUNICATION_CREATE_OPTIONS,
   CommunicationCreateLauncher,
   type CommunicationCreateKind,
   type CommunicationCreateLauncherProps,
   type CommunicationCreateOption,
 } from "./components/communication/communication-create-launcher.js";
+
+export {
+  CommunicationChannelCreateForm,
+  type CommunicationChannelCreateChannel,
+  type CommunicationChannelCreateFormProps,
+  type CommunicationChannelCreateTemplateOption,
+  type CommunicationChannelCreateWindow,
+} from "./components/communication/communication-channel-create-form.js";
 
 export {
   CommunicationChatListFilterMenu,
@@ -3893,7 +3940,44 @@ export {
 } from "./communication/previous-chat-conversations.js";
 
 export {
+  previousCommunicationItemActivityAt,
+  previousCommunicationItemId,
+  previousCommunicationItemKind,
+  previousCommunicationItemPreview,
+  previousCommunicationItemTitle,
+  previousCommunicationItems,
+} from "./communication/previous-communication-items.js";
+
+export {
+  PreviousConversationsList,
+  type PreviousConversationsListProps,
+} from "./components/communication/previous-conversations-list.js";
+
+export {
+  chatChannelKindLabel,
+  resolveChatChannelKind,
+  type ChatChannelKind,
+  type ResolveChatChannelKindOptions,
+} from "./communication/chat-channel-kind.js";
+
+export {
+  CommunicationChannelKindIcon,
+  CommunicationChatKindIcon,
+  CommunicationInstagramKindIcon,
+  CommunicationKindMark,
+  CommunicationMessengerKindIcon,
+  CommunicationSupportKindIcon,
+  CommunicationTelegramKindIcon,
+  CommunicationWhatsAppKindIcon,
+  CommunicationXKindIcon,
+  communicationChannelKindClass,
+  communicationChannelKindTitle,
+  type CommunicationKind,
+} from "./components/communication/communication-kind-icons.js";
+
+export {
   CHAT_LIST_STATUS_ORDER,
+  chatConversationToInboxListItem,
   chatConversationToTaskItemRowTask,
   chatStatusToTaskStatus,
   getChatListStatusLabel,
@@ -3919,6 +4003,7 @@ export {
 } from "./communication/communication-chat-list-filters.js";
 
 export {
+  communicationChatListKeyboardItemIds,
   communicationChatListRowActivityMs,
   communicationChatListRowIds,
   communicationChatListRowMatchesQuery,
