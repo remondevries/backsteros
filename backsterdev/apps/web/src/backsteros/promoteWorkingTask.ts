@@ -179,8 +179,7 @@ export function shouldMarkBacksterosTaskInReviewAfterWorking(input: {
     {
       readonly hasPendingApprovals?: boolean | undefined;
       readonly hasPendingUserInput?: boolean | undefined;
-      readonly session?: { readonly status?: string | null | undefined } | null | undefined;
-      readonly backgroundLiveness?: "working" | "monitoring" | null | undefined;
+      readonly runtime?: { readonly status?: string | null | undefined } | null | undefined;
     }
   >;
 }): boolean {

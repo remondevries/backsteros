@@ -181,8 +181,7 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
         {
           hasPendingApprovals: false,
           hasPendingUserInput: false,
-          session: { status: "stopped" as const },
-          backgroundLiveness: null,
+          runtime: null,
         },
       ],
     ]);
@@ -196,8 +195,7 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
         {
           hasPendingApprovals: false,
           hasPendingUserInput: false,
-          session: { status: "error" as const },
-          backgroundLiveness: null,
+          runtime: { status: "failed" as const },
         },
       ],
     ]);
@@ -216,8 +214,7 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
             {
               hasPendingApprovals: true,
               hasPendingUserInput: false,
-              session: { status: "running" as const },
-              backgroundLiveness: null,
+              runtime: { status: "running" as const },
             },
           ],
         ]),
@@ -233,8 +230,7 @@ describe("shouldMarkBacksterosTaskInReviewAfterWorking", () => {
             {
               hasPendingApprovals: false,
               hasPendingUserInput: true,
-              session: { status: "stopped" as const },
-              backgroundLiveness: null,
+              runtime: null,
             },
           ],
         ]),

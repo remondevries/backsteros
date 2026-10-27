@@ -908,7 +908,7 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "waiting";
   }
   if (
-    thread.runtime !== null &&
+    thread.runtime != null &&
     ["preparing", "queued", "starting", "running", "waiting"].includes(thread.runtime.status)
   ) {
     return "working";

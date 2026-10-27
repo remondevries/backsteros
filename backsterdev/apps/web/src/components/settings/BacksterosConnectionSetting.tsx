@@ -77,9 +77,7 @@ export function BacksterosConnectionSetting() {
           typeof data.contactId === "string" && data.contactId.trim()
             ? data.contactId.trim()
             : null;
-        if (fromDisk !== agentContactId) {
-          setAgentContactId(fromDisk);
-        }
+        setAgentContactId((current) => (fromDisk !== current ? fromDisk : current));
       } catch {
         // Host file optional until first save.
       }
@@ -87,8 +85,6 @@ export function BacksterosConnectionSetting() {
     return () => {
       cancelled = true;
     };
-    // Hydrate once on mount from the host profile file.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount hydrate
   }, []);
 
   useEffect(() => {
@@ -211,9 +207,8 @@ export function BacksterosConnectionSetting() {
         title: "Connection failed",
         description: cause instanceof Error ? cause.message : "Could not reach BacksterOS.",
       });
-    } finally {
-      setTesting(false);
     }
+    setTesting(false);
   };
 
   const onAgentContactChange = (value: string | null) => {

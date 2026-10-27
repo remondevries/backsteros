@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { useMemo, useRef } from "react";
 
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
@@ -29,7 +30,11 @@ export function collectBacksterosWorkingTaskIds(input: {
   for (const [taskId, binding] of Object.entries(input.byTaskId)) {
     const shell = shellByKey.get(threadKey(binding.environmentId, binding.threadId));
     if (!shell) continue;
-    if (resolveSidebarThreadStatus(shell) === "working") {
+    const status = resolveSidebarThreadStatus(shell);
+    if (
+      status === "working" ||
+      (status === "ready" && backgroundWorkHoldsCompletion(shell.pendingBackgroundTasks ?? []))
+    ) {
       working.add(taskId);
     }
   }

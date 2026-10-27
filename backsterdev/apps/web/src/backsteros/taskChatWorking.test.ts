@@ -8,8 +8,8 @@ import type { BacksterosTaskChatBinding } from "./taskChatStore";
 function shell(partial: {
   readonly id: string;
   readonly environmentId: string;
-  readonly sessionStatus?: "running" | "starting" | "stopped" | "error" | null;
-  readonly backgroundLiveness?: "working" | "monitoring" | null;
+  readonly runtimeStatus?: "running" | "starting" | "failed" | "idle" | null;
+  readonly pendingBackgroundTasks?: EnvironmentThreadShell["pendingBackgroundTasks"];
   readonly hasPendingApprovals?: boolean;
   readonly hasPendingUserInput?: boolean;
 }): EnvironmentThreadShell {
@@ -18,13 +18,13 @@ function shell(partial: {
     environmentId: EnvironmentId.make(partial.environmentId),
     hasPendingApprovals: partial.hasPendingApprovals ?? false,
     hasPendingUserInput: partial.hasPendingUserInput ?? false,
-    backgroundLiveness: partial.backgroundLiveness ?? null,
-    session:
-      partial.sessionStatus == null
+    pendingBackgroundTasks: partial.pendingBackgroundTasks ?? [],
+    runtime:
+      partial.runtimeStatus == null
         ? null
         : ({
-            status: partial.sessionStatus,
-          } as EnvironmentThreadShell["session"]),
+            status: partial.runtimeStatus,
+          } as NonNullable<EnvironmentThreadShell["runtime"]>),
   } as EnvironmentThreadShell;
 }
 
@@ -50,8 +50,8 @@ describe("collectBacksterosWorkingTaskIds", () => {
         "task-b": binding({ threadId: "thread-b", environmentId: "env-1" }),
       },
       shells: [
-        shell({ id: "thread-a", environmentId: "env-1", sessionStatus: "running" }),
-        shell({ id: "thread-b", environmentId: "env-1", sessionStatus: "stopped" }),
+        shell({ id: "thread-a", environmentId: "env-1", runtimeStatus: "running" }),
+        shell({ id: "thread-b", environmentId: "env-1", runtimeStatus: null }),
       ],
     });
 
@@ -67,8 +67,10 @@ describe("collectBacksterosWorkingTaskIds", () => {
         shell({
           id: "thread-a",
           environmentId: "env-1",
-          sessionStatus: "stopped",
-          backgroundLiveness: "working",
+          runtimeStatus: null,
+          pendingBackgroundTasks: [
+            { taskId: "bg-1", description: "fleet watch", kind: "background_task" },
+          ],
         }),
       ],
     });
@@ -86,13 +88,13 @@ describe("collectBacksterosWorkingTaskIds", () => {
         shell({
           id: "thread-a",
           environmentId: "env-1",
-          sessionStatus: "running",
+          runtimeStatus: "running",
           hasPendingApprovals: true,
         }),
         shell({
           id: "thread-b",
           environmentId: "env-1",
-          sessionStatus: "running",
+          runtimeStatus: "running",
           hasPendingUserInput: true,
         }),
       ],
