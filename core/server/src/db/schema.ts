@@ -314,6 +314,11 @@ export const contacts = pgTable(
       .$type<{ platform: string; url: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /**
+     * Facebook Page-Scoped ID (PSID) from Messenger / Chatwoot Facebook page
+     * chats. Not a public Facebook username — used only for channel matching.
+     */
+    facebookMessengerId: text("facebook_messenger_id"),
     /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
     birthday: date("birthday", { mode: "string" }),
     /** Preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
@@ -354,6 +359,11 @@ export const contacts = pgTable(
     uniqueIndex("contacts_workspace_portal_username_unique")
       .on(table.workspaceId, table.portalUsername)
       .where(sql`${table.deletedAt} is null and ${table.portalUsername} is not null`),
+    uniqueIndex("contacts_workspace_facebook_messenger_id_unique")
+      .on(table.workspaceId, table.facebookMessengerId)
+      .where(
+        sql`${table.deletedAt} is null and ${table.facebookMessengerId} is not null`,
+      ),
     index("contacts_organization_id_idx").on(table.organizationId),
     index("contacts_email_idx").on(table.workspaceId, table.email),
     index("contacts_birthday_idx").on(table.workspaceId, table.birthday),
@@ -2867,7 +2877,20 @@ export const chatConversations = pgTable(
     contactName: text("contact_name"),
     contactEmail: text("contact_email"),
     contactPhone: text("contact_phone"),
+    /** Channel username (Telegram @handle without @). */
+    contactUsername: text("contact_username"),
     contactAvatarUrl: text("contact_avatar_url"),
+    /**
+     * Durable BacksterOS contact link (Telegram / Messenger visitors often
+     * have no email/phone for soft-match).
+     */
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    /** Durable BacksterOS organization link (manual or via linked contact). */
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
     lastMessagePreview: text("last_message_preview"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     unread: boolean("unread").notNull().default(false),
@@ -2896,6 +2919,8 @@ export const chatConversations = pgTable(
       table.workspaceId,
       table.lastActivityAt,
     ),
+    index("chat_conversations_contact_id_idx").on(table.contactId),
+    index("chat_conversations_organization_id_idx").on(table.organizationId),
     index("chat_conversations_assignee_id_idx").on(table.assigneeId),
     index("chat_conversations_workspace_due_date_idx").on(
       table.workspaceId,

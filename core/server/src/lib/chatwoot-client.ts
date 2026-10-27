@@ -32,7 +32,42 @@ export type ChatwootContactSummary = {
   name: string | null;
   email: string | null;
   phone: string | null;
+  /** Channel username (Telegram @handle without @). */
+  username: string | null;
   avatarUrl: string | null;
+};
+
+export type ChatwootContactInboxSummary = {
+  sourceId: string | null;
+  inboxId: string | null;
+  channelType: string | null;
+};
+
+export type ChatwootWhatsAppTemplateSummary = {
+  name: string;
+  category: string | null;
+  language: string | null;
+  status: string | null;
+  body: string | null;
+};
+
+export type ChatwootCreateConversationInput = {
+  inboxId: string;
+  /** Required for most channels; WhatsApp template sends often omit it. */
+  sourceId?: string | null;
+  contactId?: string | null;
+  status?: "open" | "resolved" | "pending";
+  /** Optional Chatwoot additional_attributes (e.g. mail_subject for email). */
+  additionalAttributes?: Record<string, unknown>;
+  message: {
+    content: string;
+    templateParams?: {
+      name: string;
+      category: string;
+      language: string;
+      processedParams?: Record<string, unknown>;
+    };
+  };
 };
 
 export type ChatwootConversationSummary = {
@@ -102,13 +137,154 @@ function unixOrIsoToIso(value: unknown): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function parseContact(raw: unknown): ChatwootContactSummary {
+function normalizeChannelUsername(raw: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim().replace(/^@+/, "");
+  if (!trimmed) return null;
+  const tMe = trimmed.match(/(?:https?:\/\/)?(?:www\.)?t\.me\/([^/?#]+)/i);
+  const handle = (tMe?.[1] ?? trimmed).replace(/^\/+|\/+$/g, "").split("/")[0];
+  return handle?.trim() || null;
+}
+
+/**
+ * X / Twitter (and some Chatwoot API proxies) put the screen name in the
+ * display name as `Display (@handle)` when `username` / `screen_name` is empty.
+ */
+function usernameFromParenHandle(name: string | null): string | null {
+  if (!name) return null;
+  const match = name.match(/\(@([A-Za-z0-9_]{1,15})\)/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Facebook/Messenger PSIDs usually live on `contact_inboxes[].source_id`,
+ * not in `additional_attributes` (those often only have an avatar hash).
+ */
+function usernameFromContactInboxes(
+  inboxes: unknown,
+  channelType?: string | null,
+): string | null {
+  if (!Array.isArray(inboxes)) return null;
+  const preferred = (channelType ?? "").toLowerCase();
+  const wantWhatsApp = preferred.includes("whatsapp");
+  const wantX =
+    preferred.includes("twitter") ||
+    preferred.includes("channel::x") ||
+    preferred === "x";
+  const wantInstagram = preferred.includes("instagram");
+  const wantFacebook =
+    !preferred ||
+    preferred.includes("facebook") ||
+    preferred.includes("messenger");
+  const wantTelegram = preferred.includes("telegram");
+  let facebookFallback: string | null = null;
+  let telegramFallback: string | null = null;
+  let instagramFallback: string | null = null;
+  let whatsappFallback: string | null = null;
+  let xFallback: string | null = null;
+  for (const item of inboxes) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const sourceId = normalizeChannelUsername(asString(row.source_id));
+    if (!sourceId) continue;
+    const inbox = asRecord(row.inbox);
+    const inboxChannel = (
+      asString(inbox?.channel_type) ??
+      asString(row.channel_type) ??
+      ""
+    ).toLowerCase();
+    if (inboxChannel.includes("whatsapp")) {
+      // WhatsApp source_id is typically the E.164 phone (digits).
+      whatsappFallback ??= sourceId;
+    }
+    if (
+      inboxChannel.includes("twitter") ||
+      inboxChannel.includes("channel::x") ||
+      inboxChannel === "x"
+    ) {
+      // Prefer screen_name from attributes; source_id is often a numeric user id.
+      xFallback ??= sourceId;
+    }
+    if (inboxChannel.includes("instagram")) {
+      // Prefer @username from attributes when present; source_id is a numeric
+      // Instagram-scoped id and is a weaker social match key.
+      instagramFallback ??= sourceId;
+    }
+    if (inboxChannel.includes("facebook") || inboxChannel.includes("messenger")) {
+      if (
+        wantFacebook &&
+        !wantTelegram &&
+        !wantInstagram &&
+        !wantWhatsApp &&
+        !wantX
+      ) {
+        return sourceId;
+      }
+      facebookFallback ??= sourceId;
+    }
+    if (inboxChannel.includes("telegram")) {
+      // Prefer @username from attributes when present; source_id is a numeric
+      // Telegram user id and is a weaker social match key.
+      telegramFallback ??= sourceId;
+    }
+  }
+  if (wantWhatsApp) return whatsappFallback;
+  if (wantX) return xFallback;
+  if (wantInstagram) return instagramFallback;
+  if (wantTelegram) return telegramFallback;
+  if (wantFacebook) return facebookFallback;
+  return (
+    whatsappFallback ??
+    xFallback ??
+    instagramFallback ??
+    facebookFallback ??
+    telegramFallback
+  );
+}
+
+function parseContact(
+  raw: unknown,
+  options?: { channelType?: string | null },
+): ChatwootContactSummary {
   const record = asRecord(raw) ?? {};
+  const additional = asRecord(record.additional_attributes) ?? {};
+  const socialProfiles = asRecord(additional.social_profiles) ?? {};
+  // Prefer public @handles (Telegram / Instagram / X) over opaque platform ids.
+  // Facebook/Messenger often only expose a PSID — store that for Messenger ID.
+  // WhatsApp identity is the phone number (also used as contact_inboxes source_id).
+  // X / Twitter expose `screen_name` on additional_attributes.
+  const phone =
+    asString(record.phone_number) ?? asString(record.phone) ?? null;
+  const channelLower = (options?.channelType ?? "").toLowerCase();
+  const displayName =
+    asString(record.name) ?? asString(record.available_name) ?? null;
+  const username =
+    normalizeChannelUsername(asString(additional.username)) ??
+    normalizeChannelUsername(asString(additional.screen_name)) ??
+    normalizeChannelUsername(asString(additional.social_twitter_user_name)) ??
+    normalizeChannelUsername(asString(additional.social_x_user_name)) ??
+    normalizeChannelUsername(asString(socialProfiles.twitter)) ??
+    normalizeChannelUsername(asString(socialProfiles.x)) ??
+    normalizeChannelUsername(asString(additional.social_telegram_user_name)) ??
+    normalizeChannelUsername(asString(additional.social_instagram_user_name)) ??
+    normalizeChannelUsername(asString(socialProfiles.instagram)) ??
+    normalizeChannelUsername(asString(record.username)) ??
+    normalizeChannelUsername(asString(additional.social_facebook_user_id)) ??
+    normalizeChannelUsername(asString(additional.social_facebook_user_name)) ??
+    normalizeChannelUsername(asString(record.identifier)) ??
+    usernameFromContactInboxes(record.contact_inboxes, options?.channelType) ??
+    (channelLower.includes("whatsapp") && phone
+      ? phone.replace(/[^\d+]/g, "").replace(/^\+/, "") || null
+      : null) ??
+    // X / API proxies often only expose the handle inside the display name
+    // (`Display (@screen_name)`). Safe last resort — pattern is distinctive.
+    usernameFromParenHandle(displayName);
   return {
     id: asString(record.id),
-    name: asString(record.name) ?? asString(record.available_name),
+    name: displayName,
     email: asString(record.email),
-    phone: asString(record.phone_number) ?? asString(record.phone),
+    phone,
+    username,
     avatarUrl:
       asString(record.thumbnail) ??
       asString(record.avatar_url) ??
@@ -122,7 +298,13 @@ function parseConversation(raw: unknown): ChatwootConversationSummary | null {
   const id = asString(record.id);
   if (!id) return null;
   const meta = asRecord(record.meta);
-  const sender = meta ? parseContact(meta.sender) : parseContact(record.meta);
+  const channelType =
+    asString(record.channel) ??
+    asString(meta?.channel) ??
+    null;
+  const sender = meta
+    ? parseContact(meta.sender, { channelType })
+    : parseContact(record.meta, { channelType });
   const messages = Array.isArray(record.messages) ? record.messages : [];
   const lastMsg = messages.length > 0 ? asRecord(messages[messages.length - 1]) : null;
   const unread =
@@ -133,10 +315,7 @@ function parseConversation(raw: unknown): ChatwootConversationSummary | null {
     id,
     inboxId: asString(record.inbox_id),
     status: (asString(record.status) ?? "open").toLowerCase(),
-    channelType:
-      asString(record.channel) ??
-      asString(asRecord(record.meta)?.channel) ??
-      null,
+    channelType,
     contact: sender,
     lastActivityAt:
       unixOrIsoToIso(record.last_activity_at) ??
@@ -342,6 +521,28 @@ export class ChatwootClient {
     return parseConversation(payload) ?? parseConversation(asRecord(payload)?.payload);
   }
 
+  /**
+   * Full contact record (includes `contact_inboxes` with Facebook PSIDs).
+   */
+  async getContact(
+    contactId: string,
+    options?: { channelType?: string | null },
+  ): Promise<ChatwootContactSummary | null> {
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/contacts/${encodeURIComponent(contactId)}`,
+    );
+    const record =
+      asRecord(payload)?.payload != null
+        ? asRecord(asRecord(payload)?.payload)
+        : asRecord(payload);
+    if (!record) return null;
+    const contact = parseContact(record, {
+      channelType: options?.channelType,
+    });
+    return contact.id ? contact : null;
+  }
+
   async listMessages(
     conversationId: string,
   ): Promise<ChatwootMessageSummary[]> {
@@ -369,16 +570,31 @@ export class ChatwootClient {
 
   async createMessage(
     conversationId: string,
-    input: { content: string; private?: boolean },
+    input: {
+      content: string;
+      private?: boolean;
+      templateParams?: ChatwootCreateConversationInput["message"]["templateParams"];
+    },
   ): Promise<ChatwootMessageSummary> {
+    const body: Record<string, unknown> = {
+      content: input.content,
+      message_type: "outgoing",
+      private: Boolean(input.private),
+    };
+    if (input.templateParams) {
+      body.template_params = {
+        name: input.templateParams.name,
+        category: input.templateParams.category,
+        language: input.templateParams.language,
+        ...(input.templateParams.processedParams
+          ? { processed_params: input.templateParams.processedParams }
+          : {}),
+      };
+    }
     const payload = await this.requestJson<unknown>(
       "POST",
       `/conversations/${encodeURIComponent(conversationId)}/messages`,
-      {
-        content: input.content,
-        message_type: "outgoing",
-        private: Boolean(input.private),
-      },
+      body,
     );
     const parsed =
       parseMessage(payload, conversationId) ??
@@ -391,6 +607,213 @@ export class ChatwootClient {
       );
     }
     return parsed;
+  }
+
+  /**
+   * Create a conversation (optionally with the first outbound message).
+   * @see https://developers.chatwoot.com/api-reference/conversations/create-new-conversation
+   */
+  async createConversation(
+    input: ChatwootCreateConversationInput,
+  ): Promise<{ id: string; inboxId: string | null }> {
+    const body: Record<string, unknown> = {
+      inbox_id: Number(input.inboxId) || input.inboxId,
+      status: input.status ?? "open",
+      message: {
+        content: input.message.content,
+        message_type: "outgoing",
+        private: false,
+        content_type: "text",
+        ...(input.message.templateParams
+          ? {
+              template_params: {
+                name: input.message.templateParams.name,
+                category: input.message.templateParams.category,
+                language: input.message.templateParams.language,
+                ...(input.message.templateParams.processedParams
+                  ? {
+                      processed_params:
+                        input.message.templateParams.processedParams,
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+      },
+    };
+    const sourceId = input.sourceId?.trim();
+    if (sourceId) body.source_id = sourceId;
+    const contactId = input.contactId?.trim();
+    if (contactId) {
+      body.contact_id = Number(contactId) || contactId;
+    }
+    if (
+      input.additionalAttributes &&
+      Object.keys(input.additionalAttributes).length > 0
+    ) {
+      body.additional_attributes = input.additionalAttributes;
+    }
+    const payload = await this.requestJson<unknown>(
+      "POST",
+      "/conversations",
+      body,
+    );
+    const record =
+      asRecord(payload) ?? asRecord(asRecord(payload)?.payload) ?? null;
+    const id = asString(record?.id);
+    if (!id) {
+      throw new ChatwootApiError(
+        200,
+        typeof payload === "string" ? payload : JSON.stringify(payload),
+        "Chatwoot create conversation returned an unexpected payload",
+      );
+    }
+    return {
+      id,
+      inboxId: asString(record?.inbox_id) ?? input.inboxId,
+    };
+  }
+
+  async searchContacts(query: string): Promise<ChatwootContactSummary[]> {
+    const q = query.trim();
+    if (!q) return [];
+    const params = new URLSearchParams({ q });
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/contacts/search?${params.toString()}`,
+    );
+    const record = asRecord(payload);
+    const list = Array.isArray(record?.payload)
+      ? record!.payload
+      : Array.isArray(asRecord(record?.payload)?.payload)
+        ? (asRecord(record!.payload)!.payload as unknown[])
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const out: ChatwootContactSummary[] = [];
+    for (const item of list) {
+      const contact = parseContact(item);
+      if (contact.id) out.push(contact);
+    }
+    return out;
+  }
+
+  async createContact(input: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    identifier?: string | null;
+  }): Promise<ChatwootContactSummary> {
+    const body: Record<string, unknown> = {};
+    if (input.name?.trim()) body.name = input.name.trim();
+    if (input.email?.trim()) body.email = input.email.trim();
+    if (input.phone?.trim()) body.phone_number = input.phone.trim();
+    if (input.identifier?.trim()) body.identifier = input.identifier.trim();
+    const payload = await this.requestJson<unknown>("POST", "/contacts", body);
+    const record =
+      asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
+    const contact = parseContact(record);
+    if (!contact.id) {
+      throw new ChatwootApiError(
+        200,
+        typeof payload === "string" ? payload : JSON.stringify(payload),
+        "Chatwoot create contact returned an unexpected payload",
+      );
+    }
+    return contact;
+  }
+
+  async createContactInbox(input: {
+    contactId: string;
+    inboxId: string;
+    sourceId: string;
+  }): Promise<ChatwootContactInboxSummary> {
+    const payload = await this.requestJson<unknown>(
+      "POST",
+      `/contacts/${encodeURIComponent(input.contactId)}/contact_inboxes`,
+      {
+        inbox_id: Number(input.inboxId) || input.inboxId,
+        source_id: input.sourceId,
+      },
+    );
+    const record =
+      asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
+    const inbox = asRecord(record.inbox);
+    return {
+      sourceId: asString(record.source_id),
+      inboxId: asString(inbox?.id) ?? asString(record.inbox_id) ?? input.inboxId,
+      channelType: asString(inbox?.channel_type),
+    };
+  }
+
+  async getContactInboxes(
+    contactId: string,
+  ): Promise<ChatwootContactInboxSummary[]> {
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/contacts/${encodeURIComponent(contactId)}`,
+    );
+    const record =
+      asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
+    const inboxes = Array.isArray(record.contact_inboxes)
+      ? record.contact_inboxes
+      : [];
+    const out: ChatwootContactInboxSummary[] = [];
+    for (const item of inboxes) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const inbox = asRecord(row.inbox);
+      out.push({
+        sourceId: asString(row.source_id),
+        inboxId: asString(inbox?.id) ?? asString(row.inbox_id),
+        channelType:
+          asString(inbox?.channel_type) ?? asString(row.channel_type),
+      });
+    }
+    return out;
+  }
+
+  async listMessageTemplates(
+    inboxId: string,
+  ): Promise<ChatwootWhatsAppTemplateSummary[]> {
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/inboxes/${encodeURIComponent(inboxId)}/message_templates`,
+    );
+    const record = asRecord(payload);
+    const list = Array.isArray(record?.payload)
+      ? record!.payload
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    const out: ChatwootWhatsAppTemplateSummary[] = [];
+    for (const item of list) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const name = asString(row.name) ?? asString(row.element_name);
+      if (!name) continue;
+      const components = Array.isArray(row.components) ? row.components : [];
+      let body: string | null = null;
+      for (const component of components) {
+        const part = asRecord(component);
+        if (!part) continue;
+        if ((asString(part.type) ?? "").toLowerCase() === "body") {
+          body = asString(part.text);
+          break;
+        }
+      }
+      out.push({
+        name,
+        category: asString(row.category),
+        language:
+          asString(row.language) ??
+          asString(asRecord(row.language)?.code) ??
+          null,
+        status: asString(row.status),
+        body,
+      });
+    }
+    return out;
   }
 
   async toggleConversationStatus(

@@ -1142,6 +1142,27 @@
       "when": 1795970000000,
       "tag": "0161_financial_import_batches_replication",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795980000000,
+      "tag": "0162_chat_conversation_contact_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1795990000000,
+      "tag": "0163_chat_conversation_organization_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1796000000000,
+      "tag": "0164_contact_facebook_messenger_id",
+      "breakpoints": true
     }
   ]
 }

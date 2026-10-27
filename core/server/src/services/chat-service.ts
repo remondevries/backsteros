@@ -86,7 +86,10 @@ function mapConversation(row: DbChatConversation): ChatConversation {
     contactName: row.contactName,
     contactEmail: row.contactEmail,
     contactPhone: row.contactPhone,
+    contactUsername: row.contactUsername ?? null,
     contactAvatarUrl: row.contactAvatarUrl,
+    contactId: row.contactId ?? null,
+    organizationId: row.organizationId ?? null,
     lastMessagePreview: row.lastMessagePreview,
     lastActivityAt: toIso(row.lastActivityAt),
     unread: row.unread,
@@ -170,6 +173,9 @@ export async function upsertConversationFromChatwoot(
         contactName: summary.contact.name ?? existing.contactName,
         contactEmail: summary.contact.email ?? existing.contactEmail,
         contactPhone: summary.contact.phone ?? existing.contactPhone,
+        // Thin webhooks often send username as "" — keep any stored handle.
+        contactUsername:
+          summary.contact.username?.trim() || existing.contactUsername,
         contactAvatarUrl:
           summary.contact.avatarUrl ?? existing.contactAvatarUrl,
         lastMessagePreview: preview ?? existing.lastMessagePreview,
@@ -198,6 +204,7 @@ export async function upsertConversationFromChatwoot(
       contactName: summary.contact.name,
       contactEmail: summary.contact.email,
       contactPhone: summary.contact.phone,
+      contactUsername: summary.contact.username,
       contactAvatarUrl: summary.contact.avatarUrl,
       lastMessagePreview: preview,
       lastActivityAt,
@@ -470,6 +477,8 @@ export async function updateChatConversation(
 
   const patch: {
     status?: string;
+    contactId?: string | null;
+    organizationId?: string | null;
     assigneeId?: string | null;
     priority?: number;
     dueDate?: Date | null;
@@ -488,6 +497,14 @@ export async function updateChatConversation(
       input.status,
     );
     patch.status = normalizeStatus(remote?.status ?? input.status);
+    touched = true;
+  }
+  if (input.contactId !== undefined) {
+    patch.contactId = input.contactId;
+    touched = true;
+  }
+  if (input.organizationId !== undefined) {
+    patch.organizationId = input.organizationId;
     touched = true;
   }
   if (input.assigneeId !== undefined) {
@@ -532,21 +549,32 @@ export async function syncChatwootConversations(
   const client = createChatwootClient(credentials);
   const inboxes = await client.listInboxes();
   const inboxNameById = new Map(inboxes.map((inbox) => [inbox.id, inbox.name]));
-  // Portal chat for v1: Website / WebWidget and Chatwoot API inboxes
-  // (client.lemo-design.com uses Channel::Api). Skip WhatsApp.
+  // Website / WebWidget / API / Telegram / Instagram / Facebook / WhatsApp / X.
   const websiteInboxIds = new Set(
     inboxes
       .filter((inbox) => {
         const channel = (inbox.channelType ?? "").toLowerCase();
         if (!channel) return true;
-        if (channel.includes("whatsapp")) return false;
         return (
           channel.includes("web") ||
           channel.includes("widget") ||
           channel.includes("website") ||
           channel.includes("api") ||
+          channel.includes("telegram") ||
+          channel.includes("instagram") ||
+          channel.includes("facebook") ||
+          channel.includes("messenger") ||
+          channel.includes("whatsapp") ||
+          channel.includes("twitter") ||
+          channel.includes("channel::x") ||
+          channel === "x" ||
           channel.includes("channel::webwidget") ||
-          channel.includes("channel::api")
+          channel.includes("channel::api") ||
+          channel.includes("channel::telegram") ||
+          channel.includes("channel::instagram") ||
+          channel.includes("channel::facebook") ||
+          channel.includes("channel::whatsapp") ||
+          channel.includes("channel::twitter")
         );
       })
       .map((inbox) => inbox.id),
@@ -563,12 +591,17 @@ export async function syncChatwootConversations(
     ) {
       continue;
     }
-    const { conversation, created } = await upsertConversationFromChatwoot(
+    // List payloads omit Facebook PSIDs — hydrate from contact_inboxes when needed.
+    const enriched = await enrichConversationContactUsername(
       workspaceId,
       summary,
+    );
+    const { conversation, created } = await upsertConversationFromChatwoot(
+      workspaceId,
+      enriched,
       {
-        inboxName: summary.inboxId
-          ? (inboxNameById.get(summary.inboxId) ?? null)
+        inboxName: enriched.inboxId
+          ? (inboxNameById.get(enriched.inboxId) ?? null)
           : null,
       },
     );
@@ -650,6 +683,79 @@ function summaryFromWebhookMessage(
   return parseChatwootMessagePayload(payload);
 }
 
+/**
+ * Webhook conversation payloads often omit Telegram/Instagram/Facebook
+ * `additional_attributes`. When the channel username is missing, fetch the
+ * full conversation — and for Facebook/Instagram, the contact (opaque ids live
+ * on `contact_inboxes.source_id`; Instagram also exposes
+ * `social_instagram_user_name`) — so durable linking can store a social handle.
+ */
+async function enrichConversationContactUsername(
+  workspaceId: string,
+  summary: ChatwootConversationSummary,
+): Promise<ChatwootConversationSummary> {
+  if (summary.contact.username?.trim()) return summary;
+  const credentials = await getChatwootCredentials(workspaceId);
+  if (!credentials) return summary;
+  try {
+    const client = createChatwootClient(credentials);
+    const remote = await client.getConversation(summary.id);
+    const channelType = summary.channelType ?? remote?.channelType ?? null;
+    let username = remote?.contact.username?.trim() || null;
+    const contactId = remote?.contact.id?.trim() || summary.contact.id?.trim();
+    if (!username && contactId) {
+      const fullContact = await client.getContact(contactId, { channelType });
+      username = fullContact?.username?.trim() || null;
+      if (fullContact) {
+        return {
+          ...summary,
+          channelType,
+          contact: {
+            ...summary.contact,
+            id: summary.contact.id ?? fullContact.id,
+            name:
+              summary.contact.name ??
+              fullContact.name ??
+              remote?.contact.name ??
+              null,
+            email:
+              summary.contact.email ??
+              fullContact.email ??
+              remote?.contact.email ??
+              null,
+            phone:
+              summary.contact.phone ??
+              fullContact.phone ??
+              remote?.contact.phone ??
+              null,
+            username,
+            avatarUrl:
+              summary.contact.avatarUrl ??
+              fullContact.avatarUrl ??
+              remote?.contact.avatarUrl ??
+              null,
+          },
+        };
+      }
+    }
+    if (!username) return summary;
+    return {
+      ...summary,
+      channelType,
+      contact: {
+        ...summary.contact,
+        name: summary.contact.name ?? remote?.contact.name ?? null,
+        email: summary.contact.email ?? remote?.contact.email ?? null,
+        phone: summary.contact.phone ?? remote?.contact.phone ?? null,
+        username,
+        avatarUrl: summary.contact.avatarUrl ?? remote?.contact.avatarUrl ?? null,
+      },
+    };
+  } catch {
+    return summary;
+  }
+}
+
 async function ingestWebhookForWorkspace(
   workspaceId: string,
   payload: unknown,
@@ -662,8 +768,12 @@ async function ingestWebhookForWorkspace(
     parsed.event === "message_updated"
   ) {
     const message = summaryFromWebhookMessage(payload);
-    const conversationSummary = summaryFromWebhookConversation(payload);
+    let conversationSummary = summaryFromWebhookConversation(payload);
     if (!message || !conversationSummary) return { published: false };
+    conversationSummary = await enrichConversationContactUsername(
+      workspaceId,
+      conversationSummary,
+    );
 
     const { conversation } = await upsertConversationFromChatwoot(
       workspaceId,
@@ -695,8 +805,12 @@ async function ingestWebhookForWorkspace(
     parsed.event === "conversation_updated" ||
     parsed.event === "conversation_status_changed"
   ) {
-    const conversationSummary = summaryFromWebhookConversation(payload);
+    let conversationSummary = summaryFromWebhookConversation(payload);
     if (!conversationSummary) return { published: false };
+    conversationSummary = await enrichConversationContactUsername(
+      workspaceId,
+      conversationSummary,
+    );
     const { conversation } = await upsertConversationFromChatwoot(
       workspaceId,
       conversationSummary,
