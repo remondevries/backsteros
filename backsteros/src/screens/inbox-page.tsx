@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
+  CommunicationChatView,
   HairlineEmptyFigure,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -14,16 +15,14 @@ import {
   buildProjectDropdownOptions,
   buildTaskRelatedDropdownOptions,
   encodeTaskSlug,
-  filterInboxItemsByListMode,
   findInboxItemBySlugOrId,
-  getFirstInboxItemHref,
   getInboxHrefAfterRemovingItem,
   getInboxItemDisplayId,
   getInboxTaskRouteSlugForTask,
   getProjectTaskHref,
   resolveDuplicatedTaskHref,
   resolveSupportParties,
-  useInboxListMode,
+  type InboxListItem,
   type InboxTaskListItem,
 } from "@backsteros/ui";
 
@@ -46,6 +45,8 @@ import {
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
+import { useInboxModeModel } from "../lib/inbox/inbox-mode-model";
+import { inboxModeEmptyLabel } from "../shell/app-shell-inbox-side-panel";
 import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import {
   useKeepAliveActive,
@@ -56,7 +57,6 @@ import {
 import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
-  useDesktopWorkspaceInboxItems,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
@@ -70,7 +70,7 @@ type MovedToProjectNotice = {
 };
 
 function resolveInboxTaskFromWorkspace(
-  inboxItems: ReturnType<typeof useDesktopWorkspaceInboxItems>,
+  inboxItems: readonly InboxListItem[],
   allTasks: ReturnType<typeof useDesktopWorkspaceTasks>["allTasks"],
   itemId: string): InboxTaskListItem | null {
   const fromList = findInboxItemBySlugOrId(inboxItems, itemId);
@@ -110,7 +110,10 @@ function resolveInboxTaskFromWorkspace(
     projectKey: full.projectKey ?? null,
     projectName: full.projectName ?? null,
     assigneeId: full.assigneeId ?? null,
-    inbox: false,
+    inbox: full.inbox ?? false,
+    agentCreatedAt: full.agentCreatedAt ?? null,
+    agentInboxApprovedAt: full.agentInboxApprovedAt ?? null,
+    inboxUpdatedAt: full.inboxUpdatedAt ?? null,
     support: full.support ?? null,
     notification: full.notification ?? null,
   });
@@ -126,14 +129,16 @@ function InboxPageBody() {
   const { itemId: routeItemId } = useShellParams() as { itemId?: string };
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
-  const [listMode] = useInboxListMode();
-  const inboxItems = useDesktopWorkspaceInboxItems();
-  // Side panel filters by Notifications / Agents — detail must use the same
-  // slice, or an empty Agents list still keeps a Notifications task open.
-  const modeInboxItems = useMemo(
-    () => filterInboxItemsByListMode(inboxItems, listMode),
-    [inboxItems, listMode],
-  );
+  // Same model as the side panel — detail and list always agree on which
+  // rows belong to Notifications / Messages / Agents.
+  const {
+    listMode,
+    items: inboxItems,
+    modeItems: modeInboxItems,
+    messages,
+    pending: inboxPending,
+    chat,
+  } = useInboxModeModel();
   const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
   const { knowledgeDocuments, projectDocuments } =
@@ -180,55 +185,65 @@ function InboxPageBody() {
   const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
   const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
 
-  const firstInboxHref = getFirstInboxItemHref(modeInboxItems);
-  const firstInboxItemId =
-    !routeItemId && firstInboxHref?.startsWith("/inbox/")
-      ? firstInboxHref.slice("/inbox/".length).split("/")[0]
-      : undefined;
-  const itemId = routeItemId ?? firstInboxItemId;
+  // Side panel owns opening the first row at `/inbox`. Detail only follows
+  // `itemId` from the keep-alive snapshot / router.
+  const itemId = routeItemId;
 
-  // Match contacts: when the route is the section root, open the first row so
-  // the side panel selection and detail stay in sync with the URL.
-  useEffect(() => {
-    if (!keepAliveActive || routeItemId || !firstInboxHref) return;
-    if (!firstInboxHref.startsWith("/inbox/")) return;
-    navigateToHref(navigate, firstInboxHref, { replace: true });
-  }, [firstInboxHref, keepAliveActive, navigate, routeItemId]);
+  const selectedChat = useMemo(() => {
+    if (!itemId || listMode !== "messages") return null;
+    const id = decodeURIComponent(itemId);
+    return (
+      messages.conversations.find((row) => row.id === id) ??
+      (chat.detail?.id === id ? chat.detail : null)
+    );
+  }, [chat.detail, itemId, listMode, messages.conversations]);
 
   const selectedTask = useMemo(() => {
-    if (!itemId) return null;
+    if (!itemId || selectedChat) return null;
     return resolveInboxTaskFromWorkspace(
       inboxItems,
       allTasks,
       itemId);
-  }, [allTasks, inboxItems, itemId]);
+  }, [allTasks, inboxItems, itemId, selectedChat]);
 
-  const inList = useMemo(
+  const selectedRowId = selectedChat?.id ?? selectedTask?.id ?? null;
+  const inModeList = useMemo(
     () =>
-      selectedTask
-        ? modeInboxItems.some((item) => item.id === selectedTask.id)
-        : false,
-    [modeInboxItems, selectedTask],
+      selectedRowId != null &&
+      modeInboxItems.some((item) => item.id === selectedRowId),
+    [modeInboxItems, selectedRowId],
   );
+  // While the mode's sources are still arriving, trust the route so we don't
+  // flash empty / yank the URL before the row appears in modeInboxItems.
+  const inList = inModeList || (inboxPending && selectedRowId != null);
+
+  // Open chat rows in the shared Chatwoot hook (detail + SSE + send).
+  const selectedChatId = selectedChat?.id ?? null;
+  const { selectedId: chatSelectedId, selectConversation } = chat;
+  useEffect(() => {
+    if (!keepAliveActive) return;
+    if (chatSelectedId === selectedChatId) return;
+    selectConversation(selectedChatId);
+  }, [chatSelectedId, keepAliveActive, selectConversation, selectedChatId]);
 
   // When the open row leaves the current mode list (approve / complete / mode
   // switch / …), leave the detail too — otherwise allTasks fallback keeps
   // showing a finished or other-mode item while the side panel is empty.
-  // Skip while the moved-to-project banner is up.
+  // Skip while the moved-to-project banner is up, or before inbox is ready.
   const leftInboxNavKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!keepAliveActive || keepAliveFrozen || movedNotice) {
+    if (!keepAliveActive || keepAliveFrozen || movedNotice || inboxPending) {
       leftInboxNavKeyRef.current = null;
       return;
     }
-    if (!selectedTask || inList) {
+    if (!selectedRowId || inModeList) {
       leftInboxNavKeyRef.current = null;
       return;
     }
     const nextHref =
-      getInboxHrefAfterRemovingItem(modeInboxItems, selectedTask.id) ?? null;
+      getInboxHrefAfterRemovingItem(modeInboxItems, selectedRowId) ?? null;
     const target = nextHref ?? "/inbox";
-    const navKey = `${selectedTask.id}:${listMode}:${target}`;
+    const navKey = `${selectedRowId}:${listMode}:${target}`;
     // Avoid warm-flip storms when keep-alive still resolves the finished row.
     if (leftInboxNavKeyRef.current === navKey) return;
     leftInboxNavKeyRef.current = navKey;
@@ -239,12 +254,13 @@ function InboxPageBody() {
   }, [
     keepAliveActive,
     keepAliveFrozen,
-    inList,
+    inModeList,
+    inboxPending,
     listMode,
     modeInboxItems,
     movedNotice,
     navigate,
-    selectedTask,
+    selectedRowId,
   ]);
 
   // Inbox list items omit assignee; join full task row for detail chrome.
@@ -291,8 +307,16 @@ function InboxPageBody() {
   const showDetailChrome = Boolean(
     selectedTask && (inList || movedNotice),
   );
+  const chatLabel = selectedChat
+    ? selectedChat.contactName?.trim() ||
+      selectedChat.contactEmail?.trim() ||
+      selectedChat.contactPhone?.trim() ||
+      "Chat"
+    : null;
   useDesktopSectionBreadcrumb(
-    showDetailChrome && selectedTask
+    selectedChat && inList && chatLabel
+      ? [{ label: "Inbox", href: "/inbox" }, { label: chatLabel }]
+      : showDetailChrome && selectedTask
       ? [
           { label: "Inbox", href: "/inbox" },
           {
@@ -480,8 +504,29 @@ function InboxPageBody() {
   // Hide detail when the URL still points at a row outside this mode's list
   // (e.g. Agents empty while a Notifications task remains in the path).
   // Keep rendering when the moved-to-project banner is up.
+  if (selectedChat && inList) {
+    return (
+      <div className="inbox-detail-layout inbox-chat-detail" data-content-detail>
+        <CommunicationChatView
+          pane="thread"
+          conversations={messages.conversations}
+          selectedId={selectedChat.id}
+          detail={chat.detail?.id === selectedChat.id ? chat.detail : null}
+          detailLoading={chat.detailLoading}
+          error={chat.error}
+          typingIds={chat.typingIds}
+          onSelect={selectConversation}
+          onSend={chat.sendMessage}
+          onTypingChange={chat.setTyping}
+        />
+      </div>
+    );
+  }
+
   if (!selectedTask || (!inList && !movedNotice)) {
-    const notFound = Boolean(!selectedTask && itemId);
+    // A route row that has not arrived yet is not "not found".
+    const notFound = Boolean(!selectedRowId && itemId && !inboxPending);
+    const emptyLabel = inboxModeEmptyLabel(listMode);
     return (
       <div className="inbox-detail-layout" data-content-detail>
         <div className="inbox-detail-empty">
@@ -491,8 +536,8 @@ function InboxPageBody() {
             <HairlineEmptyFigure
               figure="stack"
               size={220}
-              label="No Notifications"
-              caption="No Notifications"
+              label={emptyLabel}
+              caption={emptyLabel}
             />
           )}
         </div>

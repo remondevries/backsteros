@@ -1,4 +1,4 @@
-import { memo, Suspense, type ReactNode } from "react";
+import { memo, Suspense, useLayoutEffect, type ReactNode } from "react";
 import {
   Navigate,
   Outlet,
@@ -169,27 +169,23 @@ function ShellRouteContent({
   const showOutlet =
     Boolean(trail) || !isKeepAliveSurface(surface, location.pathname);
 
-  // Keep-alive store is truth after warm pushState. Only mirror the router
-  // when History still agrees (first visit / Outlet / real TanStack nav).
-  if (routerAgreesWithWindow(location.pathname, location.searchStr ?? "")) {
+  // Mirror the router onto the warm store in layout — never during render.
+  // Assign+emit in the same layout pass so AppShell / side-panel host see the
+  // new visible surface before paint (microtask emit tore main vs list).
+  useLayoutEffect(() => {
+    if (!routerAgreesWithWindow(location.pathname, location.searchStr ?? "")) {
+      return;
+    }
+    const href = `${location.pathname}${location.searchStr ?? ""}`;
     if (trail || !shouldKeepAliveSurface(surface, location.pathname)) {
       syncVisibleKeepAliveSurfaceFromRoute(null);
-      // Inbox list stays warm on email detail — keep its selection href in sync.
-      rememberInboxPanelSelectionHref(
-        `${location.pathname}${location.searchStr ?? ""}`,
-      );
-      rememberCommunicationPanelSelectionHref(
-        `${location.pathname}${location.searchStr ?? ""}`,
-      );
-    } else {
-      rememberKeepAliveHref(
-        surface,
-        location.pathname,
-        location.searchStr ?? "",
-      );
-      syncVisibleKeepAliveSurfaceFromRoute(surface);
+      rememberInboxPanelSelectionHref(href);
+      rememberCommunicationPanelSelectionHref(href);
+      return;
     }
-  }
+    rememberKeepAliveHref(surface, location.pathname, location.searchStr ?? "");
+    syncVisibleKeepAliveSurfaceFromRoute(surface);
+  }, [location.pathname, location.searchStr, surface, trail]);
 
   return (
     <ShellRouteFrame>

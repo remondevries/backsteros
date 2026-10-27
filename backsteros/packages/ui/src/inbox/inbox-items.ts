@@ -92,6 +92,11 @@ export type InboxTaskListItem = {
   inboxUpdatedAt?: number | Date | string | null;
   /** Client support ticket (portal Support / Communication). */
   support?: boolean | null;
+  /**
+   * Chatwoot conversation row shown in Inbox → Messages / Communication.
+   * Distinct from support tickets; never a normal inbox (IN-…) task.
+   */
+  chat?: boolean | null;
   /** Notification-style task (distinct UI filter / presentation). */
   notification?: boolean | null;
   /** Related organization label (Communication support rows). */
@@ -281,6 +286,7 @@ export function buildInboxTaskListItem(input: {
   agentInboxApprovedAt?: number | Date | string | null;
   inboxUpdatedAt?: number | Date | string | null;
   support?: boolean | null;
+  chat?: boolean | null;
   notification?: boolean | null;
   organizationName?: string | null;
   organizationId?: string | null;
@@ -318,6 +324,7 @@ export function buildInboxTaskListItem(input: {
     agentInboxApprovedAt: toEpoch(input.agentInboxApprovedAt),
     inboxUpdatedAt: input.inboxUpdatedAt ?? null,
     support: input.support ?? null,
+    chat: input.chat ?? null,
     notification: input.notification ?? null,
     organizationName: input.organizationName ?? null,
     organizationId: input.organizationId ?? null,
@@ -696,6 +703,11 @@ export function getInboxItemHref(
     return getCalendarMeetingHref(meetingId);
   }
 
+  // Chatwoot rows open inside Inbox so the Messages list stays visible.
+  if (item.kind === "task" && item.chat) {
+    return `/inbox/${encodeURIComponent(item.id)}`;
+  }
+
   const slug = getInboxItemRouteSlug(item);
   const hasSlugCollision =
     items.length > 0 &&
@@ -748,6 +760,10 @@ export function buildInboxItemHrefById(
     if (item.kind === "meeting") {
       const meetingId = parseMeetingInboxItemId(item.id) ?? item.id;
       hrefById.set(item.id, getCalendarMeetingHref(meetingId));
+      continue;
+    }
+    if (item.chat) {
+      hrefById.set(item.id, `/inbox/${encodeURIComponent(item.id)}`);
       continue;
     }
     const slug = getInboxItemRouteSlug(item);

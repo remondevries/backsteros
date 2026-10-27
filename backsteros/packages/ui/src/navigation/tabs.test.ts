@@ -74,6 +74,18 @@ describe("buildProductTabHref", () => {
       "/calendar?mode=timetracking&date=2026-03-25&meeting=x&meetingLayout=page",
     );
   });
+
+  test("keeps the owning list on email detail so the side panel restores", () => {
+    assert.equal(
+      buildProductTabHref("/email/box/msg-1", "?list=inbox&x=1"),
+      "/email/box/msg-1?list=inbox",
+    );
+    assert.equal(
+      buildProductTabHref("/drafts/d-1", "?list=communication"),
+      "/drafts/d-1?list=communication",
+    );
+    assert.equal(buildProductTabHref("/email/box/msg-1", ""), "/email/box/msg-1");
+  });
 });
 
 describe("syncActiveTabTaskMeta", () => {

@@ -79,6 +79,8 @@ export function writeEmailMessageDetailCache(
   const inbox = inboxId.trim();
   const message = messageId.trim();
   if (!inbox || !message) return;
+  // Refuse cross-wiring a detail under another message's cache key.
+  if (detail.messageId.trim() !== message) return;
   messageCache.set(messageCacheKey(inbox, message), {
     detail,
     cachedAt: Date.now(),

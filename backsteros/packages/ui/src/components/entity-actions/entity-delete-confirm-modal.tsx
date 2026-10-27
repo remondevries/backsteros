@@ -23,6 +23,7 @@ export function EntityDeleteConfirmModal() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         closeDeleteModal();
       }
     }
@@ -62,7 +63,8 @@ export function EntityDeleteConfirmModal() {
         </h2>
         <p className="entity-delete-modal-body">
           This action cannot be undone. Press{" "}
-          <kbd className="entity-delete-modal-kbd">D</kbd> again to confirm, or{" "}
+          <kbd className="entity-delete-modal-kbd">D</kbd> or{" "}
+          <kbd className="entity-delete-modal-kbd">Enter</kbd> to confirm, or{" "}
           <kbd className="entity-delete-modal-kbd">Esc</kbd> to cancel.
         </p>
         {deleteError ? (

@@ -14,6 +14,8 @@ import {
 } from "@backsteros/ui/shell";
 
 import { InboxListSessionProvider } from "../lib/inbox/inbox-list-session-context";
+import { InboxModeModelProvider } from "../lib/inbox/inbox-mode-model";
+import { SyncingIssuesProvider } from "../lib/use-syncing-issues";
 import { MeetingSchedulingSettingsProvider } from "../lib/use-meeting-scheduling-settings";
 import { DesktopOverlayComposeContextPublisher } from "../components/desktop-overlay-compose-context-publisher";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
@@ -49,6 +51,8 @@ type ShellRuntimeProvidersProps = {
   sessionContextValue: React.ComponentProps<
     typeof InboxListSessionProvider
   >["value"];
+  /** Inbox list or page is on screen — drives the shared inbox model. */
+  inboxModelActive: boolean;
   registerPageIcon: (href: string, icon: string | null) => void;
   registerPageTitle: (href: string, title: string) => void;
   updateActiveTabIcon: (icon: string | null) => void;
@@ -65,6 +69,7 @@ export function ShellRuntimeProviders({
   pathname,
   composeOpen,
   sessionContextValue,
+  inboxModelActive,
   registerPageIcon,
   registerPageTitle,
   updateActiveTabIcon,
@@ -75,34 +80,38 @@ export function ShellRuntimeProviders({
 }: ShellRuntimeProvidersProps) {
   return (
     <ClientLinkProvider Link={DesktopClientLink}>
-      <InboxListSessionProvider value={sessionContextValue}>
-        <MentionNavigationProvider pathname={pathname}>
-          <AppShellMentionCatalog
-            pathname={pathname}
-            composeOpen={composeOpen}
-          >
-            <ListKeyboardNavigationProvider pathname={pathname}>
-              <AppShellTaskSideEffects setTabsState={setTabsState} />
-              <DesktopOverlayMainNavigationListener />
-              <DesktopOverlayComposeContextPublisher />
-              <ExternalOpenHrefListener />
-              <ModClickNewTabListener onOpenHrefInNewTab={openHrefInNewTab} />
-              <RegisterPageTitleProvider
+      <SyncingIssuesProvider>
+        <InboxListSessionProvider value={sessionContextValue}>
+          <InboxModeModelProvider active={inboxModelActive} pathname={pathname}>
+            <MentionNavigationProvider pathname={pathname}>
+              <AppShellMentionCatalog
                 pathname={pathname}
-                registerPageIcon={registerPageIcon}
-                registerPageTitle={registerPageTitle}
-                updateActiveTabIcon={updateActiveTabIcon}
-                updateActiveTabTitle={updateActiveTabTitle}
+                composeOpen={composeOpen}
               >
-                <TrackedTimerProvider onNavigate={onNavigate}>
-                  <SyncRemoteRunningTimers />
-                  {children}
-                </TrackedTimerProvider>
-              </RegisterPageTitleProvider>
-            </ListKeyboardNavigationProvider>
-          </AppShellMentionCatalog>
-        </MentionNavigationProvider>
-      </InboxListSessionProvider>
+                <ListKeyboardNavigationProvider pathname={pathname}>
+                  <AppShellTaskSideEffects setTabsState={setTabsState} />
+                  <DesktopOverlayMainNavigationListener />
+                  <DesktopOverlayComposeContextPublisher />
+                  <ExternalOpenHrefListener />
+                  <ModClickNewTabListener onOpenHrefInNewTab={openHrefInNewTab} />
+                  <RegisterPageTitleProvider
+                    pathname={pathname}
+                    registerPageIcon={registerPageIcon}
+                    registerPageTitle={registerPageTitle}
+                    updateActiveTabIcon={updateActiveTabIcon}
+                    updateActiveTabTitle={updateActiveTabTitle}
+                  >
+                    <TrackedTimerProvider onNavigate={onNavigate}>
+                      <SyncRemoteRunningTimers />
+                      {children}
+                    </TrackedTimerProvider>
+                  </RegisterPageTitleProvider>
+                </ListKeyboardNavigationProvider>
+              </AppShellMentionCatalog>
+            </MentionNavigationProvider>
+          </InboxModeModelProvider>
+        </InboxListSessionProvider>
+      </SyncingIssuesProvider>
     </ClientLinkProvider>
   );
 }

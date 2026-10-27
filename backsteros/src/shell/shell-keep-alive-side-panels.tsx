@@ -2,19 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, type Dispatch, type ReactNode,
 
 import { primeTabTitle } from "@backsteros/ui/shell";
 import {
-  buildAssigneeDropdownOptions,
-  buildProjectDropdownOptions,
-  buildTaskDueDatePatch,
-} from "@backsteros/ui/tasks";
-import {
-  buildInboxEmailListItem,
-  emailBelongsInInbox,
-  isInboxPath,
-  sortInboxItemsByAttentionStatus,
-  taskBelongsInInbox,
-  type InboxListItem,
-} from "@backsteros/ui/inbox";
-import {
   defaultNewMeetingTimes,
   withCalendarMeetingSearch,
   readCalendarViewModeFromSearch,
@@ -26,12 +13,9 @@ import {
   filterDocumentsForHelpArticleScope,
   filterDocumentsForSpaceRoot,
   findHelpArticleIndividualRoot,
-  findInboxItemBySlugOrId,
   getContactsGroupHref,
-  getFirstInboxItemHref,
   getJournalHref,
   getOrganizationsGroupHref,
-  getSelectedInboxSlugFromPathname,
   getSelectedSpaceRootFromPathname,
   getSocialHref,
   getUniqueListItemRouteParam,
@@ -42,9 +26,6 @@ import {
   isSupportCenterDocumentPath,
   normalizeContactSocialAccounts,
   parseCrmGroupId,
-  parseEmailDraftPath,
-  parseEmailMessagePath,
-  resolveEmailThreadMetadataKey,
   resolveLetterDetailHref,
   useHelpArticleAudienceMap,
   useHelpArticleListScope,
@@ -56,15 +37,9 @@ import {
   getTodayJournalDateSlug,
 } from "@backsteros/ui/navigation";
 
-import { useDesktopApi } from "../lib/api-context";
-import { useAgentMail } from "../lib/agentmail-context";
 import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
 import { firstLetterHref } from "../lib/section-entry-hrefs";
-import { buildMailboxByIdMap } from "../lib/email-list-tasks";
-import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
-import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
 import { habitsWithTodayTasks } from "../lib/habit-today-tasks";
-import { dueDateValueToEpochMs } from "../lib/workspace/row-mappers";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -74,13 +49,7 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
-import { buildInboxAttentionGroupOverrides } from "../lib/inbox/build-inbox-session-list";
-import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
-import { useInboxSessionList } from "../lib/inbox/use-inbox-session-list";
-import { useInboxTriageNotifications } from "../lib/inbox/use-inbox-triage-notifications";
-import { useInboxUpdatedNotifications } from "../lib/inbox/use-inbox-updated-notifications";
 import {
-  useKeepAliveAfterPaint,
   useKeepAliveFrozen,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
@@ -90,7 +59,6 @@ import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceMeta,
-  useDesktopWorkspaceInboxItems,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
@@ -186,443 +154,17 @@ export function keepAliveSidePanelTree(
 }
 
 export function InboxKeepAliveSidePanel({ onNavigate }: { onNavigate: PanelNav }) {
-  const painted = useKeepAliveAfterPaint();
-  const { pathname } = useShellLocation();
-  const inboxItems = useDesktopWorkspaceInboxItems();
-  if (!painted) {
-    return (
-      <DesktopInboxSidePanel
-        onNavigate={onNavigate}
-        pathname={panePathnameWithFirstItem(
-          pathname,
-          getFirstInboxItemHref(inboxItems),
-          pathname.startsWith("/inbox/") || pathname.startsWith("/email/"),
-        )}
-        items={inboxItems}
-        loading={false}
-        Link={RouterLink}
-        groupByAttentionStatus
-      />
-    );
-  }
-  return <InboxKeepAliveSidePanelLive onNavigate={onNavigate} />;
-}
-
-function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
-  const frozen = useKeepAliveFrozen();
-  const inboxReady = useWorkspaceSurfaceReady("inbox");
-  const { pathname } = useShellLocation();
-  const { client } = useDesktopApi();
-  const inboxItems = useDesktopWorkspaceInboxItems();
-  const { projects } = useDesktopWorkspaceProjects();
-  const { contacts, organizations } = useDesktopWorkspacePeople();
   const { allTasks } = useDesktopWorkspaceTasks();
-  const workspaceActions = useDesktopWorkspaceActions();
   const agentStatus = useDesktopAgentStatusOptional();
-  const agentMail = useAgentMail();
-  const { pinnedItems } = useInboxListSessionPin();
-
-  const contactAvatarSrc = useDesktopAvatarSrcMap(
-    "contact",
-    frozen ? NO_ENTITIES : contacts,
-  );
-  const organizationAvatarSrc = useDesktopAvatarSrcMap(
-    "organization",
-    frozen ? NO_ENTITIES : organizations,
-  );
-
-  const contactsById = useMemo(() => {
-    const map = new Map<string, (typeof contacts)[number]>();
-    for (const contact of contacts) {
-      map.set(contact.id, contact);
-    }
-    return map;
-  }, [contacts]);
-
-  const inboxNotificationsReady = inboxReady;
-  const inboxNotificationsActive = !frozen && isInboxPath(pathname);
-
-  const workspaceInboxItems = useMemo(
-    () => {
-      const liveTaskById = new Map(allTasks.map((task) => [task.id, task]));
-      const next: InboxListItem[] = [];
-      for (const item of inboxItems) {
-        if (item.kind === "meeting") {
-          if (!item.organizationId) {
-            next.push(item);
-            continue;
-          }
-          next.push({
-            ...item,
-            organizationAvatarSrc:
-              organizationAvatarSrc[item.organizationId] ?? null,
-          });
-          continue;
-        }
-        if (item.kind !== "task") {
-          next.push(item);
-          continue;
-        }
-        const live = liveTaskById.get(item.id);
-        const merged = live
-          ? {
-              ...item,
-              // Side panel + detail must show the same scheduling fields.
-              status: live.status ?? item.status,
-              priority: live.priority ?? item.priority,
-              // Explicit null is an intentional clear — never fall back to the
-              // stale inbox snapshot date (that made “No due date” bounce).
-              dueDate: dueDateValueToEpochMs(live.dueDate),
-              assigneeId: live.assigneeId ?? item.assigneeId,
-            }
-          : item;
-        // Live due-date overlays can move a row onto today/tomorrow — drop it.
-        if (
-          !taskBelongsInInbox({
-            inbox: merged.inbox,
-            status: merged.status,
-            dueDate: merged.dueDate,
-            agentCreatedAt: merged.agentCreatedAt,
-            agentInboxApprovedAt: merged.agentInboxApprovedAt,
-            inboxUpdatedAt: merged.inboxUpdatedAt,
-          })
-        ) {
-          continue;
-        }
-        const assigneeId = merged.assigneeId;
-        const assignee = assigneeId ? contactsById.get(assigneeId) : null;
-        next.push({
-          ...merged,
-          assigneeName: assignee?.name?.trim() || merged.assigneeName || null,
-          assigneeAvatarSrc: assigneeId
-            ? (contactAvatarSrc[assigneeId] ?? merged.assigneeAvatarSrc ?? null)
-            : null,
-        });
-      }
-      return next;
-    },
-    [allTasks, contactAvatarSrc, contactsById, inboxItems, organizationAvatarSrc],
-  );
-
-  const agentMailListSignature = useMemo(
-    () => agentMailMessagesSignature(agentMail.messages),
-    [agentMail.messages],
-  );
-
-  // Rebuild on content changes (signature), not on every refetched array.
-  const agentMailMessagesRef = useRef(agentMail.messages);
-  agentMailMessagesRef.current = agentMail.messages;
-  const emailInboxItems = useMemo((): InboxListItem[] => {
-    if (frozen) return [];
-    const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    return agentMailMessagesRef.current
-      .filter((item) =>
-        emailBelongsInInbox({
-          status: item.status,
-          dueDate: item.dueDate,
-          inboxUpdatedAt: item.inboxUpdatedAt,
-        }),
-      )
-      .map((item) => {
-        const mailbox = mailboxById.get(item.inboxId) ?? null;
-        return buildInboxEmailListItem({
-          inboxId: item.inboxId,
-          messageId: item.id,
-          draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
-          threadId: item.threadId,
-          title: item.subject,
-          from: item.from,
-          status: item.status,
-          inboxUpdatedAt: item.inboxUpdatedAt,
-          priority: item.priority,
-          dueDate: item.dueDate,
-          updatedAt: item.receivedAt,
-          assigneeId: item.assigneeId,
-          projectId: item.projectId,
-          projectKey: item.projectKey,
-          projectName: item.projectName,
-          organizationId: item.organizationId,
-          organizationName: item.organizationName,
-          contactId: item.contactId,
-          contactName: item.contactName,
-          emailThreadId: item.emailThreadId,
-          number: item.number,
-          displayId: item.displayId,
-          direction: item.direction ?? null,
-          mailboxEmail: mailbox?.email ?? null,
-          mailboxLabel: mailbox
-            ? mailbox.contactName?.trim() ||
-              mailbox.displayName?.trim() ||
-              mailbox.email ||
-              mailbox.inboxId
-            : null,
-          mailboxAvatarSrc: mailbox?.contactId
-            ? contactAvatarSrc[mailbox.contactId] ?? null
-            : null,
-          assigneeName: item.assigneeId
-            ? contactsById.get(item.assigneeId)?.name?.trim() || null
-            : null,
-          assigneeAvatarSrc: item.assigneeId
-            ? contactAvatarSrc[item.assigneeId] ?? null
-            : null,
-          unread: item.unread === true,
-        });
-      });
-    // `agentMailListSignature` stands in for the messages ref read above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    agentMail.mailboxes,
-    agentMailListSignature,
-    contactAvatarSrc,
-    contactsById,
-    frozen,
-  ]);
-
-  const baseInboxItems = useMemo(() => {
-    if (frozen) {
-      return sortInboxItemsByAttentionStatus(workspaceInboxItems);
-    }
-    return sortInboxItemsByAttentionStatus([
-      ...workspaceInboxItems,
-      ...emailInboxItems,
-    ]);
-  }, [emailInboxItems, frozen, workspaceInboxItems]);
-
-  const selectedInboxItemId = useMemo(() => {
-    const candidates: InboxListItem[] = [
-      ...baseInboxItems,
-      ...[...pinnedItems.values()].map((pin) => pin.item),
-    ];
-    const draftPath = parseEmailDraftPath(pathname);
-    if (draftPath) {
-      return (
-        candidates.find(
-          (entry) =>
-            entry.kind === "email" &&
-            entry.inboxId === draftPath.inboxId &&
-            (entry.draftId === draftPath.draftId ||
-              entry.messageId === draftPath.draftId),
-        )?.id ?? null
-      );
-    }
-    const emailPath = parseEmailMessagePath(pathname);
-    if (emailPath) {
-      return (
-        candidates.find(
-          (entry) =>
-            entry.kind === "email" &&
-            entry.inboxId === emailPath.inboxId &&
-            entry.messageId === emailPath.messageId,
-        )?.id ?? null
-      );
-    }
-    const slug = getSelectedInboxSlugFromPathname(pathname);
-    if (!slug) return null;
-    return findInboxItemBySlugOrId(candidates, slug)?.id ?? slug;
-  }, [baseInboxItems, pathname, pinnedItems]);
-
-  const inboxItemsWithEmail = useInboxSessionList(
-    !frozen,
-    inboxNotificationsReady,
-    baseInboxItems,
-    pinnedItems,
-    selectedInboxItemId,
-  );
-
-  const inboxAttentionGroupOverrides = useMemo(
-    () => buildInboxAttentionGroupOverrides(pinnedItems),
-    [pinnedItems],
-  );
-
-  useInboxTriageNotifications(inboxItemsWithEmail, inboxNotificationsActive);
-  useInboxUpdatedNotifications(
-    inboxItemsWithEmail,
-    inboxNotificationsReady,
-    inboxNotificationsActive,
-  );
-
-  const patchEmailThreadFromInbox = useCallback(
-    (
-      itemId: string,
-      patch: {
-        status?: string;
-        priority?: number;
-        dueDate?: string | null;
-        projectId?: string | null;
-        assigneeId?: string | null;
-      },
-      listExtras?: {
-        projectName?: string | null;
-        projectKey?: string | null;
-        assigneeName?: string | null;
-      },
-    ) => {
-      const item = inboxItemsWithEmail.find(
-        (entry) => entry.id === itemId && entry.kind === "email",
-      );
-      if (!item || item.kind !== "email") return;
-      const threadKey = resolveEmailThreadMetadataKey({
-        kind: item.draftId ? "draft" : "message",
-        draftId: item.draftId,
-        threadId: item.threadId,
-        messageId: item.messageId,
-      });
-      if (!threadKey) return;
-      dispatchEmailListPatch({
-        inboxId: item.inboxId,
-        messageId: item.messageId,
-        threadId: item.threadId ?? null,
-        ...(patch.status !== undefined ? { status: patch.status } : {}),
-        ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
-        ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
-        ...(patch.projectId !== undefined
-          ? { projectId: patch.projectId }
-          : {}),
-        ...(patch.assigneeId !== undefined
-          ? { assigneeId: patch.assigneeId }
-          : {}),
-        ...(listExtras?.projectName !== undefined
-          ? { projectName: listExtras.projectName }
-          : {}),
-        ...(listExtras?.projectKey !== undefined
-          ? { projectKey: listExtras.projectKey }
-          : {}),
-        ...(listExtras?.assigneeName !== undefined
-          ? { assigneeName: listExtras.assigneeName }
-          : {}),
-      });
-      void client
-        .requestJson(
-          `/api/v1/email/inboxes/${encodeURIComponent(item.inboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
-          {
-            method: "PATCH",
-            body: JSON.stringify(patch),
-          },
-        )
-        .catch((error) => {
-          console.warn("[inbox] email metadata patch failed:", error);
-        });
-    },
-    [client, inboxItemsWithEmail],
-  );
-
-  const inboxProjectOptions = useMemo(
-    () =>
-      buildProjectDropdownOptions(
-        projects.map((project) => ({
-          key: project.key,
-          name: project.name,
-          icon: project.icon,
-          type: project.type,
-          status: project.status,
-        })),
-        { includeNone: true },
-      ),
-    [projects],
-  );
-
-  const inboxAssigneeOptions = useMemo(
-    () =>
-      buildAssigneeDropdownOptions(contacts, {
-        avatarSrcById: frozen ? undefined : contactAvatarSrc,
-      }),
-    [contactAvatarSrc, contacts, frozen],
-  );
-
   const allTasksById = useMemo(() => {
     const map = new Map<string, (typeof allTasks)[number]>();
-    for (const task of allTasks) {
-      map.set(task.id, task);
-    }
+    for (const task of allTasks) map.set(task.id, task);
     return map;
   }, [allTasks]);
 
   return (
     <DesktopInboxSidePanel
       onNavigate={onNavigate}
-      pathname={panePathnameWithFirstItem(
-        pathname,
-        getFirstInboxItemHref(inboxItemsWithEmail),
-        pathname.startsWith("/inbox/") || pathname.startsWith("/email/"),
-      )}
-      items={inboxItemsWithEmail}
-      attentionGroupOverrides={inboxAttentionGroupOverrides}
-      loading={!inboxReady && inboxItemsWithEmail.length === 0}
-      Link={RouterLink}
-      projectOptions={inboxProjectOptions}
-      assigneeOptions={inboxAssigneeOptions}
-      onStatusChange={(itemId, status) => {
-        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
-        if (item?.kind === "meeting") return;
-        if (item?.kind === "email") {
-          void patchEmailThreadFromInbox(itemId, { status });
-          return;
-        }
-        void workspaceActions.patchTask(itemId, { status });
-      }}
-      onPriorityChange={(itemId, priority) => {
-        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
-        if (item?.kind === "meeting") return;
-        if (item?.kind === "email") {
-          void patchEmailThreadFromInbox(itemId, { priority });
-          return;
-        }
-        void workspaceActions.patchTask(itemId, { priority });
-      }}
-      onDueDateChange={(itemId, dueDate) => {
-        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
-        if (item?.kind === "meeting") return;
-        if (item?.kind === "email") {
-          void patchEmailThreadFromInbox(itemId, {
-            dueDate: dueDate ? dueDate.toISOString() : null,
-          });
-          return;
-        }
-        void workspaceActions.patchTask(
-          itemId,
-          buildTaskDueDatePatch(dueDate),
-        );
-      }}
-      onProjectChange={(itemId, projectKey) => {
-        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
-        if (item?.kind === "meeting") return;
-        const project = projectKey
-          ? (projects.find((entry) => entry.key === projectKey) ?? null)
-          : null;
-        if (item?.kind === "email") {
-          void patchEmailThreadFromInbox(
-            itemId,
-            { projectId: project?.id ?? null },
-            {
-              projectName: project?.name ?? null,
-              projectKey: project?.key ?? null,
-            },
-          );
-          return;
-        }
-        void workspaceActions.patchTask(itemId, {
-          projectId: project?.id ?? null,
-          inbox: !project,
-          ...(project ? {} : { status: "triage" }),
-        });
-      }}
-      onAssigneeChange={(itemId, assigneeId) => {
-        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
-        if (item?.kind === "meeting") return;
-        if (item?.kind === "email") {
-          const assignee = assigneeId
-            ? (contacts.find((entry) => entry.id === assigneeId) ?? null)
-            : null;
-          void patchEmailThreadFromInbox(
-            itemId,
-            { assigneeId },
-            { assigneeName: assignee?.name ?? null },
-          );
-          return;
-        }
-        void workspaceActions.patchTask(itemId, { assigneeId });
-      }}
-      groupByAttentionStatus
       isItemAgentWorking={(item) => {
         if (item.kind !== "task") return false;
         const task = allTasksById.get(item.id);
@@ -631,6 +173,10 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
             id: item.id,
             status: task?.status ?? item.status,
             agentWorkingContactId: task?.agentWorkingContactId,
+            agentCreatedAt:
+              task?.agentCreatedAt ?? item.agentCreatedAt ?? null,
+            agentInboxApprovedAt:
+              task?.agentInboxApprovedAt ?? item.agentInboxApprovedAt ?? null,
           },
           agentStatus,
         );
@@ -647,6 +193,10 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           taskStatus: task?.status,
           agentStatus,
           workingShownOnStatusIcon: true,
+          agentCreatedAt:
+            task?.agentCreatedAt ?? item.agentCreatedAt ?? null,
+          agentInboxApprovedAt:
+            task?.agentInboxApprovedAt ?? item.agentInboxApprovedAt ?? null,
         });
       }}
     />
@@ -952,8 +502,9 @@ export function ContactsKeepAliveSidePanel({
 }: {
   onNavigate: PanelNav;
 }) {
+  const frozen = useKeepAliveFrozen();
   const { searchStr } = useShellLocation();
-  const catalog = useCrmGroupsCatalog(true);
+  const catalog = useCrmGroupsCatalog(!frozen);
   const selectedGroupId = parseCrmGroupId(searchStr ?? "");
 
   return (
@@ -988,8 +539,9 @@ export function OrganizationsKeepAliveSidePanel({
 }: {
   onNavigate: PanelNav;
 }) {
+  const frozen = useKeepAliveFrozen();
   const { searchStr } = useShellLocation();
-  const catalog = useCrmGroupsCatalog(true);
+  const catalog = useCrmGroupsCatalog(!frozen);
   const selectedGroupId = parseCrmGroupId(searchStr ?? "");
 
   return (

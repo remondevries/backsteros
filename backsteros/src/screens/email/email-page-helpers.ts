@@ -32,6 +32,7 @@ export {
   endEmailAgentRequest,
   isEmailAgentRequestActive,
   isEmailFetchAbortError,
+  isEmailNotFoundError,
   emailRequestErrorMessage,
 } from "./email-request-errors.js";
 

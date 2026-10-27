@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import type { InboxListItem } from "@backsteros/ui";
 
-import { buildInboxSessionList } from "./build-inbox-session-list.js";
+import {
+  buildInboxSessionList,
+  shouldHoldInboxSessionList,
+} from "./build-inbox-session-list.js";
 
 function emailItem(
   id: string,
@@ -88,4 +91,40 @@ test("live sorted rows still appear without selection", () => {
   });
   assert.equal(built.items.length, 1);
   assert.equal(built.items[0]?.id, "msg_live");
+});
+
+test("holds painted rows while an empty list is unconfirmed", () => {
+  const painted = [emailItem("msg_1")];
+  assert.equal(
+    shouldHoldInboxSessionList({
+      next: [],
+      lastPainted: painted,
+      emptyConfirmed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldHoldInboxSessionList({
+      next: [],
+      lastPainted: painted,
+      emptyConfirmed: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldHoldInboxSessionList({
+      next: [],
+      lastPainted: [],
+      emptyConfirmed: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldHoldInboxSessionList({
+      next: painted,
+      lastPainted: [],
+      emptyConfirmed: false,
+    }),
+    false,
+  );
 });

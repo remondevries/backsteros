@@ -147,16 +147,18 @@ test("standalone contact card tabs are Activity / Details / expand (no portal)",
 
 test("standalone contact card tabs include Portal / Logs before expand when mounted", () => {
   const previousDocument = globalThis.document;
-  globalThis.document = {
-    querySelector: (selector: string) =>
-      selector === "[data-contact-card-section-ids]"
-        ? {
-            getAttribute: (name: string) =>
-              name === "data-contact-card-section-ids"
-                ? "overview,details,portal,logs"
-                : null,
-          }
+  const visible = {
+    closest: () => null,
+    getAttribute: (name: string) =>
+      name === "data-contact-card-section-ids"
+        ? "overview,details,portal,logs"
         : null,
+  };
+  globalThis.document = {
+    querySelectorAll: (selector: string) =>
+      selector === "[data-contact-card-section-ids]"
+        ? ([visible] as unknown as NodeListOf<Element>)
+        : ([] as unknown as NodeListOf<Element>),
   } as unknown as Document;
 
   try {

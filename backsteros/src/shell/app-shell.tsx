@@ -69,6 +69,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       pathname={pathname}
       composeOpen={composeOpen}
       sessionContextValue={sidePanelHost.sessionContextValue}
+      inboxModelActive={sidePanelHost.inboxModelActive}
       registerPageIcon={tabs.history.registerPageIcon}
       registerPageTitle={tabs.history.registerPageTitle}
       updateActiveTabIcon={tabs.updateActiveTabIcon}
@@ -82,7 +83,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         setComposeOpen={setComposeOpen}
         setComposeAssigneeOverride={setComposeAssigneeOverride}
         setComposeRelatedContactIdsOverride={setComposeRelatedContactIdsOverride}
-        showSidePanel={panel.showSidePanel}
+        showSidePanel={sidePanelHost.showSidePanel}
         panelPathname={panel.panelPathname}
         toggleSidePanelCollapsed={toggleSidePanelCollapsed}
       />
@@ -93,7 +94,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         sidebarActivePathname={panel.sidebarActivePathname}
         inboxSidebarIndicator={sidePanelHost.inboxSidebarIndicator}
         sidePanel={sidePanelHost.sidePanel}
-        showSidePanel={panel.showSidePanel}
+        showSidePanel={sidePanelHost.showSidePanel}
         financeRail={sidePanelHost.financeRail}
         sidePanelCollapsed={sidePanelCollapsed}
         sidePanelAnimating={sidePanelAnimating}

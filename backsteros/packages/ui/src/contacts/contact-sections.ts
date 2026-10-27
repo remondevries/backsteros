@@ -37,20 +37,22 @@ export const CONTACT_CARD_SECTIONS: readonly ContactSectionConfig[] = [
 export const CONTACT_CARD_SECTION_IDS_ATTR = "data-contact-card-section-ids";
 
 /**
- * Card section ids currently shown on the contact rail (comma-separated attribute).
- * Falls back to Activity / Details when the rail is not mounted (tests, SSR).
+ * Keep-alive panes stay mounted while hidden. Digit shortcuts must ignore their
+ * card-section attrs or Contacts 1/2/3 can bind to a frozen Communication rail
+ * (or the reverse) depending on DOM order.
  */
-export function readContactCardSectionIdsFromDom(): readonly ContactSectionId[] {
-  if (typeof document === "undefined") {
-    return CONTACT_CARD_SECTIONS.map((section) => section.id);
-  }
-  const node = document.querySelector(`[${CONTACT_CARD_SECTION_IDS_ATTR}]`);
-  const raw = node?.getAttribute(CONTACT_CARD_SECTION_IDS_ATTR)?.trim();
-  if (!raw) {
-    return CONTACT_CARD_SECTIONS.map((section) => section.id);
-  }
+export function isContactCardSectionAttrVisible(node: Element): boolean {
+  if (node.closest("[data-keep-alive-hidden]") != null) return false;
+  const ariaHiddenRoot = node.closest("[aria-hidden]");
+  if (ariaHiddenRoot?.getAttribute("aria-hidden") === "true") return false;
+  return true;
+}
+
+function parseContactCardSectionIdsAttr(
+  raw: string | null | undefined,
+): ContactSectionId[] {
   const ids: ContactSectionId[] = [];
-  for (const part of raw.split(",")) {
+  for (const part of (raw ?? "").split(",")) {
     const id = part.trim();
     if (
       id === "conversation" ||
@@ -62,6 +64,26 @@ export function readContactCardSectionIdsFromDom(): readonly ContactSectionId[] 
       ids.push(id);
     }
   }
+  return ids;
+}
+
+/**
+ * Card section ids currently shown on the contact rail (comma-separated attribute).
+ * Falls back to Activity / Details when the rail is not mounted (tests, SSR).
+ * Prefers a visible (non-keep-alive-hidden) node when several are mounted.
+ */
+export function readContactCardSectionIdsFromDom(): readonly ContactSectionId[] {
+  if (typeof document === "undefined") {
+    return CONTACT_CARD_SECTIONS.map((section) => section.id);
+  }
+  const nodes = document.querySelectorAll(`[${CONTACT_CARD_SECTION_IDS_ATTR}]`);
+  let raw: string | null = null;
+  for (const candidate of nodes) {
+    if (!isContactCardSectionAttrVisible(candidate)) continue;
+    raw = candidate.getAttribute(CONTACT_CARD_SECTION_IDS_ATTR)?.trim() || null;
+    if (raw) break;
+  }
+  const ids = parseContactCardSectionIdsAttr(raw);
   return ids.length > 0
     ? ids
     : CONTACT_CARD_SECTIONS.map((section) => section.id);

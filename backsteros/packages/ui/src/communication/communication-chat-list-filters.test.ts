@@ -26,6 +26,9 @@ function chat(
     contactName: "Ada Lovelace",
     contactEmail: "ada@example.com",
     contactPhone: null,
+    contactUsername: null,
+    contactId: null,
+    organizationId: null,
     contactAvatarUrl: null,
     lastMessagePreview: "Hello there",
     lastActivityAt: "2026-01-02T12:00:00.000Z",
@@ -132,6 +135,72 @@ describe("communicationChatListFilters", () => {
     assert.deepEqual(
       byParty.flatMap((group) => group.rows.map((row) => row.item.id)),
       ["e1"],
+    );
+  });
+
+  it("filters WhatsApp and X chats separately from other chats", () => {
+    const whatsapp = {
+      kind: "chat" as const,
+      conversation: chat({
+        id: "wa1",
+        channelType: "Channel::Whatsapp",
+      }),
+    };
+    const xChat = {
+      kind: "chat" as const,
+      conversation: chat({
+        id: "x1",
+        channelType: "Channel::TwitterProfile",
+      }),
+    };
+    const telegram = {
+      kind: "chat" as const,
+      conversation: chat({
+        id: "tg1",
+        channelType: "Channel::Telegram",
+      }),
+    };
+    assert.equal(
+      communicationChatListRowMatchesFilters(whatsapp, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "whatsapp",
+      }),
+      true,
+    );
+    assert.equal(
+      communicationChatListRowMatchesFilters(xChat, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "x",
+      }),
+      true,
+    );
+    assert.equal(
+      communicationChatListRowMatchesFilters(telegram, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "whatsapp",
+      }),
+      false,
+    );
+    assert.equal(
+      communicationChatListRowMatchesFilters(telegram, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "chat",
+      }),
+      true,
+    );
+    assert.equal(
+      communicationChatListRowMatchesFilters(whatsapp, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "chat",
+      }),
+      false,
+    );
+    assert.equal(
+      communicationChatListRowMatchesFilters(xChat, {
+        ...EMPTY_COMMUNICATION_CHAT_LIST_FILTERS,
+        kind: "chat",
+      }),
+      false,
     );
   });
 

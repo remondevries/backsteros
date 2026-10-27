@@ -90,7 +90,7 @@ export const navigation: NavigationItem[] = [
   { href: "/finance", label: "Finance", icon: "finance", section: "workspace" },
   {
     href: "/communication",
-    label: "Communication",
+    label: "Messages",
     icon: "communication",
     section: "people",
   },
@@ -158,7 +158,7 @@ export const routeCopy: Record<
     accent: "#6aa4e8",
   },
   communication: {
-    title: "Communication",
+    title: "Messages",
     description: "Support tickets and email with clients",
     singular: "conversation",
     accent: "#5b9fd6",

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -33,6 +34,8 @@ import {
   endEmailAgentRequest,
   resolveEmailThreadKey,
 } from "./email-page-helpers";
+import { isEmailNotFoundError } from "./email-request-errors";
+import { mergeEmailThreadComments } from "./merge-email-thread-comments";
 
 /** Fast then back off so we notice Grok finishing without hammering forever. */
 const AGENT_DRAFT_POLL_INTERVALS_MS = [
@@ -105,9 +108,28 @@ export function useEmailThreadComments({
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
+  const commentsMessageIdRef = useRef<string | null>(null);
+  /** Soft-deleted locally — keep out of merge so ghosts cannot reappear. */
+  const deletedCommentIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setThreadComments(message?.threadComments ?? []);
+    const nextMessageId = message?.messageId ?? null;
+    const serverComments = message?.threadComments ?? [];
+    if (nextMessageId !== commentsMessageIdRef.current) {
+      commentsMessageIdRef.current = nextMessageId;
+      deletedCommentIdsRef.current = new Set();
+      setThreadComments(serverComments);
+      return;
+    }
+    // Same thread: merge so open-thread refresh cannot drop a just-posted
+    // TASK_CARD / meeting card before the server list catches up.
+    setThreadComments((current) =>
+      mergeEmailThreadComments({
+        local: current,
+        server: serverComments,
+        excludeIds: deletedCommentIdsRef.current,
+      }),
+    );
   }, [message?.messageId, message?.threadComments]);
 
   const commentsApiBase = useCallback(() => {
@@ -119,7 +141,9 @@ export function useEmailThreadComments({
   const postThreadComment = useCallback(
     async (body: string, author: "user" | "agent") => {
       const base = commentsApiBase();
-      if (!base) return null;
+      if (!base) {
+        throw new Error("Email thread is not ready to accept comments.");
+      }
       const created = await client.requestJson<EmailThreadComment>(base, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,10 +151,28 @@ export function useEmailThreadComments({
       });
       // Newest-first UIs (Communication email) expect fresh activity at the
       // head; chronological email detail still sorts by createdAt ascending.
-      setThreadComments((current) => [created, ...current]);
+      setThreadComments((current) => {
+        if (current.some((comment) => comment.id === created.id)) {
+          return current;
+        }
+        return [created, ...current];
+      });
+      // Keep message.threadComments in sync so the next open-thread refresh
+      // fingerprint / merge still sees the card we just posted.
+      setMessage((current) => {
+        if (!current) return current;
+        const existing = current.threadComments ?? [];
+        if (existing.some((comment) => comment.id === created.id)) {
+          return current;
+        }
+        return {
+          ...current,
+          threadComments: [created, ...existing],
+        };
+      });
       return created;
     },
-    [client, commentsApiBase],
+    [client, commentsApiBase, setMessage],
   );
 
   const deleteThreadComment = useCallback(
@@ -139,11 +181,24 @@ export function useEmailThreadComments({
       if (!base || !commentId.trim()) return;
       setConceptError(null);
 
+      deletedCommentIdsRef.current.add(commentId);
       let removedComment: EmailThreadComment | null = null;
       setThreadComments((current) => {
         removedComment =
           current.find((comment) => comment.id === commentId) ?? null;
         return current.filter((comment) => comment.id !== commentId);
+      });
+      setMessage((current) => {
+        if (!current?.threadComments?.length) return current;
+        if (!current.threadComments.some((comment) => comment.id === commentId)) {
+          return current;
+        }
+        return {
+          ...current,
+          threadComments: current.threadComments.filter(
+            (comment) => comment.id !== commentId,
+          ),
+        };
       });
       setSelectedCommentId((current) =>
         current === commentId ? null : current,
@@ -154,6 +209,11 @@ export function useEmailThreadComments({
           method: "DELETE",
         })
         .catch((caught) => {
+          // Already gone on the server — keep optimistic removal (no ghost).
+          if (isEmailNotFoundError(caught)) {
+            return;
+          }
+          deletedCommentIdsRef.current.delete(commentId);
           if (removedComment) {
             setThreadComments((current) => {
               if (
@@ -165,13 +225,24 @@ export function useEmailThreadComments({
                 (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
               );
             });
+            setMessage((current) => {
+              if (!current) return current;
+              const existing = current.threadComments ?? [];
+              if (existing.some((comment) => comment.id === removedComment!.id)) {
+                return current;
+              }
+              return {
+                ...current,
+                threadComments: [...existing, removedComment!],
+              };
+            });
           }
           setConceptError(
             emailRequestErrorMessage(caught, "Could not delete comment."),
           );
         });
     },
-    [client, commentsApiBase, setConceptError],
+    [client, commentsApiBase, setConceptError, setMessage],
   );
 
   const updateThreadComment = useCallback(

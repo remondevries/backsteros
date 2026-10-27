@@ -170,8 +170,16 @@ export type SearchableDropdownProps<T extends string> = {
   /**
    * Single-select: pin the current value to the top of the panel (with a
    * divider) and let a second click clear it via `onClear`. Requires `onClear`.
+   * When `deselectLabel` is set, also shows that label as the first row in the
+   * panel (e.g. “Remove contact”).
    */
   allowDeselect?: boolean;
+  /**
+   * Label for an explicit clear row at the top of the panel when a value is
+   * selected (`allowDeselect` + `onClear`). Hidden while the search query is
+   * non-empty.
+   */
+  deselectLabel?: string;
   /**
    * Single-select values that count as empty (hide clear). Use for “All”
    * sentinels such as `__all__`. Multi-select treats `[]` as empty.
@@ -228,6 +236,7 @@ export function SearchableDropdown<T extends string>({
   onShiftTabFromSearch,
   onClear,
   allowDeselect = false,
+  deselectLabel,
   clearExemptValues,
   renderTrigger,
   defaultOpen = false,
@@ -453,6 +462,13 @@ export function SearchableDropdown<T extends string>({
     onClear();
     close();
   }, [canClear, close, onClear]);
+
+  const showDeselectRow =
+    !multiple &&
+    allowDeselect &&
+    canClear &&
+    Boolean(deselectLabel?.trim()) &&
+    !query.trim();
 
   const updatePanelPosition = useCallback(() => {
     const root = rootRef.current;
@@ -955,6 +971,32 @@ export function SearchableDropdown<T extends string>({
                 tabIndex={-1}
                 onKeyDown={handleListKeyDown}
               >
+                {showDeselectRow ? (
+                  <>
+                    <li role="presentation">
+                      <button
+                        type="button"
+                        id={`${triggerId}-option-deselect`}
+                        role="option"
+                        aria-selected={false}
+                        className="searchable-dropdown-panel__option searchable-dropdown-panel__option--deselect"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleClear();
+                        }}
+                      >
+                        <span className="searchable-dropdown-panel__option-label searchable-dropdown-panel__option-label--muted">
+                          {deselectLabel}
+                        </span>
+                      </button>
+                    </li>
+                    <li
+                      className="searchable-dropdown-panel__separator"
+                      role="separator"
+                    />
+                  </>
+                ) : null}
                 {hasCreateOption ? (
                   <li key="__create__" role="presentation">
                     <button

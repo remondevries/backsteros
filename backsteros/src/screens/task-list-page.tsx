@@ -500,6 +500,8 @@ function TaskListPageBody({
               agentWorkingContactName: task.agentWorkingContactName,
               agentWorkingKind: task.agentWorkingKind,
               taskStatus: task.status,
+              agentCreatedAt: task.agentCreatedAt,
+              agentInboxApprovedAt: task.agentInboxApprovedAt,
               agentStatus,
               workingShownOnStatusIcon: true,
             })

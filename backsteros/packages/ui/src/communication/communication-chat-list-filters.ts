@@ -5,6 +5,7 @@ import {
   taskDueDateMatchesFilter,
   type TasksDueFilter,
 } from "../tasks/tasks-due-filters.js";
+import { resolveChatChannelKind } from "./chat-channel-kind.js";
 import {
   emailStatusToChatListStatus,
   type CommunicationChatListRow,
@@ -21,7 +22,8 @@ export type CommunicationChatListKindFilter =
   | "email"
   | "chat"
   | "support"
-  | "whatsapp";
+  | "whatsapp"
+  | "x";
 
 /** Due presets plus “no due date”. */
 export type CommunicationChatListDueFilter = TasksDueFilter | "none";
@@ -198,12 +200,29 @@ function matchesDue(
   return taskDueDateMatchesFilter(value, due, referenceDate);
 }
 
+function rowMatchesKindFilter(
+  row: CommunicationChatListRow,
+  kind: CommunicationChatListKindFilter,
+): boolean {
+  if (kind === "email") return row.kind === "email";
+  if (kind === "support") return row.kind === "support";
+  if (row.kind !== "chat") return false;
+  const channelKind = resolveChatChannelKind(row.conversation.channelType, {
+    inboxName: row.conversation.inboxName,
+    contactName: row.conversation.contactName,
+  });
+  if (kind === "whatsapp") return channelKind === "whatsapp";
+  if (kind === "x") return channelKind === "x";
+  // "chat" = Chatwoot chats that are not WhatsApp / X (those have own filters).
+  return channelKind !== "whatsapp" && channelKind !== "x";
+}
+
 export function communicationChatListRowMatchesFilters(
   row: CommunicationChatListRow,
   filters: CommunicationChatListFilters,
   context: CommunicationChatListFilterContext = {},
 ): boolean {
-  if (filters.kind && row.kind !== filters.kind) return false;
+  if (filters.kind && !rowMatchesKindFilter(row, filters.kind)) return false;
   if (!matchesActivityRange(row, filters)) return false;
 
   if (filters.party?.kind === "contact") {

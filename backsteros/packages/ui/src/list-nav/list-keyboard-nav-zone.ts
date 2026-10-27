@@ -154,10 +154,11 @@ const ZONE_POLICY_ROWS: readonly ZonePolicyRow[] = [
     autoSwitchJkToMain: false,
   },
   {
-    // Channel nav left + item list main — Tab toggles; j/k follows Tab.
+    // Conversation list (main) + thread messages (content) — Tab toggles;
+    // j/k stays on the Tab-selected zone (same sticky model as Journal).
     match: isCommunicationListKeyboardPathname,
     defaultZone: "main",
-    autoSwitchJkToMain: true,
+    autoSwitchJkToMain: false,
     allowSidepanelPreference: true,
   },
   {
@@ -295,17 +296,32 @@ export function shouldAutoSwitchJkToMainList(
   }).autoSwitchJkToMain;
 }
 
+/**
+ * True when both a main list and a content list are mounted — e.g. Messages
+ * conversation list + thread. Bare Tab then cycles those zones instead of
+ * focusing the email agent composer.
+ */
+export function hasMainAndContentListKeyboardZones(): boolean {
+  if (typeof document === "undefined") return false;
+  return Boolean(
+    document.querySelector('[data-list-keyboard-nav-zone="main"]') &&
+      document.querySelector('[data-list-keyboard-nav-zone="content"]'),
+  );
+}
+
 export function shouldHandleListKeyboardZoneTab(event: KeyboardEvent): boolean {
   if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
     return false;
   }
 
   // Email thread agent composer owns bare Tab to focus the prompt (Escape
-  // blurs so 1–4 hotkeys work). Shift+Tab still cycles list zones.
+  // blurs so 1–4 hotkeys work) — except on Messages, where main+content lists
+  // use Tab to switch conversation list ↔ thread. Shift+Tab always cycles.
   if (
     !event.shiftKey &&
     typeof document !== "undefined" &&
-    document.querySelector("[data-email-agent-composer]")
+    document.querySelector("[data-email-agent-composer]") &&
+    !hasMainAndContentListKeyboardZones()
   ) {
     return false;
   }

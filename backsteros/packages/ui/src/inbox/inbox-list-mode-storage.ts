@@ -1,5 +1,5 @@
 /**
- * Persisted Inbox side-panel mode (Notifications / Agents).
+ * Persisted Inbox side-panel mode (Notifications / Messages / Agents).
  */
 
 import {

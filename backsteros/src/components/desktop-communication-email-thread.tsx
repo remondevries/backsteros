@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { TaskLink } from "@backsteros/contracts";
 import {
   filterProjectsForDefaultPicker,
@@ -26,6 +27,7 @@ import {
   EmailThreadCommentBubble,
   EmailThreadCommentComposer,
   EmailThreadMessageCard,
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
   MeetingMentionBlockChip,
   ProjectStatusIcon,
   RegisterEntityDeleteAction,
@@ -40,10 +42,13 @@ import {
   emailMessageHtmlBody,
   formatMeetingDisplayId,
   getCalendarMeetingHref,
+  getCommunicationHref,
   getEmailItemHref,
   getEmailMessageParty,
   getInboxTaskRouteHref,
   getScopedProjectTaskHref,
+  keyboardNavItemClass,
+  keyboardNavItemProps,
   listInboundPartyAddresses,
   matchEmailMessageParty,
   parseReplyToAddress,
@@ -51,6 +56,9 @@ import {
   resolveEmailMessagePartyAddress,
   resolveEmailThreadMetadataKey,
   resolveOrganizationAvatarSrc,
+  shouldHandleGlobalShortcut,
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
   useMentionCatalogOptional,
   type EmailAgentActionCardId,
   type EmailComposerMeetingSubmit,
@@ -81,6 +89,7 @@ import {
 import { getBrandfetchClientId } from "../lib/brandfetch";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { resolveAgentTaskMentionChip } from "../screens/email/email-page-helpers";
+import { navigateToHref } from "../router/navigate-href";
 import { useEmailDraftActions } from "../screens/email/use-email-draft-actions";
 import { useEmailMessageDetail } from "../screens/email/use-email-message-detail";
 import { useEmailThreadComments } from "../screens/email/use-email-thread-comments";
@@ -91,6 +100,29 @@ type TimelineEntry = {
   at: number;
   node: ReactNode;
 };
+
+/** Prefixed so email message ids never collide with comment uuids in j/k nav. */
+function emailThreadEmailNavId(messageId: string): string {
+  return `email:${messageId}`;
+}
+
+function emailThreadCommentNavId(commentId: string): string {
+  return `comment:${commentId}`;
+}
+
+function parseEmailThreadNavId(
+  navId: string,
+): { kind: "email"; id: string } | { kind: "comment"; id: string } | null {
+  if (navId.startsWith("email:")) {
+    const id = navId.slice("email:".length).trim();
+    return id ? { kind: "email", id } : null;
+  }
+  if (navId.startsWith("comment:")) {
+    const id = navId.slice("comment:".length).trim();
+    return id ? { kind: "comment", id } : null;
+  }
+  return null;
+}
 
 function emailHeaderDisplayName(
   raw: string | null | undefined,
@@ -219,6 +251,13 @@ function DesktopCommunicationEmailThreadView({
 }: DesktopCommunicationEmailThreadProps) {
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
+  const routerNavigate = useNavigate();
+  const navigateTo = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const workspace = useDesktopWorkspaceData();
   const { contacts, projects, organizations, meetings } = workspace;
   const mentionCatalog = useMentionCatalogOptional()?.catalog;
@@ -261,9 +300,14 @@ function DesktopCommunicationEmailThreadView({
   } = metadataState;
 
   const toEmailDetailHref = useCallback(
-    (targetInboxId: string, targetMessageId: string) =>
-      getEmailItemHref(targetInboxId, targetMessageId),
-    [],
+    (_targetInboxId: string, targetMessageId: string) => {
+      // Stay on the Communication thread when the anchor message is replaced
+      // (e.g. single-message delete). Selecting the new message updates the
+      // right rail without jumping to /email/...
+      onSelectMessage(targetMessageId);
+      return getCommunicationHref(item.id, "chat");
+    },
+    [item.id, onSelectMessage],
   );
 
   const drafts = useEmailDraftActions({
@@ -348,7 +392,11 @@ function DesktopCommunicationEmailThreadView({
     handleSubmitThreadComment,
   } = comments;
 
-  const { handleDeleteMessage, emailExtraMenuItems } = useEmailMessageActions({
+  const {
+    handleDeleteMessage,
+    handleDeleteThreadMessage,
+    emailExtraMenuItems,
+  } = useEmailMessageActions({
     inboxId,
     messageId,
     message,
@@ -363,9 +411,47 @@ function DesktopCommunicationEmailThreadView({
 
   const [agentActionMode, setAgentActionMode] =
     useState<EmailAgentActionCardId>("reply_draft");
+  const [composerFocusNonce, setComposerFocusNonce] = useState(0);
   const [entityCreateSending, setEntityCreateSending] = useState(false);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const timelineItemCountRef = useRef(0);
+
+  const activateComposerMode = useCallback((mode: EmailAgentActionCardId) => {
+    setAgentActionMode(mode);
+    setComposerFocusNonce((nonce) => nonce + 1);
+  }, []);
+
+  // r / Shift+C / Shift+A / n — switch composer mode and focus the prompt.
+  // Digits 1–4 stay free for the contact-details rail tabs.
+  useEffect(() => {
+    if (!message) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) {
+        return;
+      }
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      let next: EmailAgentActionCardId | null = null;
+      if (!event.shiftKey && event.code === "KeyR") {
+        next = "reply_draft";
+      } else if (event.shiftKey && event.code === "KeyC") {
+        next = "task";
+      } else if (event.shiftKey && event.code === "KeyA") {
+        next = "calendar";
+      } else if (!event.shiftKey && event.code === "KeyN") {
+        next = "note";
+      }
+      if (!next) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      activateComposerMode(next);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [activateComposerMode, message]);
 
   useEffect(() => {
     // Keep the Communication right rail closed until the thread has content
@@ -928,6 +1014,113 @@ function DesktopCommunicationEmailThreadView({
     threadEntries.length,
   ]);
 
+  // j/k walks the full timeline (emails + notes / tasks / agenda), newest first.
+  const emailThreadKeyboardIds = useMemo(() => {
+    type TimelineNavRow = { id: string; at: number };
+    const rows: TimelineNavRow[] = [];
+    for (const entry of threadEntries) {
+      const messageId = entry.messageId?.trim();
+      if (!messageId) continue;
+      const parsed = Date.parse(String(entry.timestamp ?? ""));
+      rows.push({
+        id: emailThreadEmailNavId(messageId),
+        at: Number.isFinite(parsed) ? parsed : 0,
+      });
+    }
+    for (const comment of threadComments) {
+      const commentId = comment.id?.trim();
+      if (!commentId) continue;
+      const parsed = Date.parse(comment.createdAt);
+      rows.push({
+        id: emailThreadCommentNavId(commentId),
+        at: Number.isFinite(parsed) ? parsed : 0,
+      });
+    }
+    rows.sort((left, right) => right.at - left.at);
+    return rows.map((row) => row.id);
+  }, [threadComments, threadEntries]);
+
+  // Enter on a task / agenda comment opens the linked entity.
+  const commentActivationHrefs = useMemo(() => {
+    const hrefs = new Map<string, string>();
+    const catalogTasks = mentionCatalog?.tasks ?? [];
+    for (const comment of threadComments) {
+      const commentId = comment.id?.trim();
+      if (!commentId) continue;
+      const taskCard = parseEmailAgentTaskCard(comment.body);
+      if (taskCard) {
+        const chip = resolveAgentTaskMentionChip(taskCard.card, catalogTasks);
+        const href = chip.href?.trim();
+        if (href) hrefs.set(commentId, href);
+        continue;
+      }
+      const meetingCard = parseEmailAgentMeetingCard(comment.body);
+      if (meetingCard) {
+        hrefs.set(
+          commentId,
+          getCalendarMeetingHref(meetingCard.card.meetingId),
+        );
+      }
+    }
+    return hrefs;
+  }, [mentionCatalog?.tasks, threadComments]);
+
+  const emailThreadListContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  );
+  const topEmailNavId = useMemo(() => {
+    const messageId = threadEntries[0]?.messageId?.trim();
+    return messageId ? emailThreadEmailNavId(messageId) : null;
+  }, [threadEntries]);
+  const selectedNavId = selectedCommentId
+    ? emailThreadCommentNavId(selectedCommentId)
+    : selectedMessageId
+      ? emailThreadEmailNavId(selectedMessageId)
+      : topEmailNavId;
+  const { highlightedId: emailThreadHighlightedId } = useListKeyboardNavigation({
+    containerRef: messagesScrollRef,
+    itemIds: emailThreadKeyboardIds,
+    // Prefer the reading selection so Tab returns to the open email; fall back
+    // to the top (newest) row when nothing is selected yet. Do not seed a
+    // default highlight — that painted an orange ring on auto-open while the
+    // list still had its own j/k outline.
+    selectedId: selectedNavId,
+    onNavigate: (navId) => {
+      const parsed = parseEmailThreadNavId(navId);
+      if (!parsed) return;
+      if (parsed.kind === "email") {
+        setSelectedCommentId(null);
+        onSelectMessage(parsed.id);
+        return;
+      }
+      setSelectedCommentId(parsed.id);
+      const href = commentActivationHrefs.get(parsed.id);
+      if (href) navigateTo(href);
+    },
+    zone: LIST_KEYBOARD_NAV_ZONE_CONTENT,
+    enabled: emailThreadKeyboardIds.length > 0,
+  });
+
+  // j/k keeps rail / comment selection with the orange ring. Do not clear
+  // selectedCommentId when landing on an email — that would briefly set
+  // selectedNavId to the previous message and wipe the manual highlight.
+  useEffect(() => {
+    if (!emailThreadHighlightedId) return;
+    const parsed = parseEmailThreadNavId(emailThreadHighlightedId);
+    if (!parsed) return;
+    if (parsed.kind === "email") {
+      if (parsed.id !== selectedMessageId) onSelectMessage(parsed.id);
+      return;
+    }
+    if (parsed.id !== selectedCommentId) setSelectedCommentId(parsed.id);
+  }, [
+    emailThreadHighlightedId,
+    onSelectMessage,
+    selectedCommentId,
+    selectedMessageId,
+    setSelectedCommentId,
+  ]);
+
   if (loading && !message) {
     return (
       <div className="communication-chat__empty">Loading email thread…</div>
@@ -1197,7 +1390,15 @@ function DesktopCommunicationEmailThreadView({
           bodyViewMode="rendered"
           isSent={isSent}
           selected={entry.messageId === selectedMessageId}
-          onSelect={() => onSelectMessage(entry.messageId)}
+          navItemId={emailThreadEmailNavId(entry.messageId)}
+          keyboardHighlighted={
+            emailThreadHighlightedId ===
+            emailThreadEmailNavId(entry.messageId)
+          }
+          onSelect={() => {
+            setSelectedCommentId(null);
+            onSelectMessage(entry.messageId);
+          }}
           partyAvatar={{
             direction: isSent ? "sent" : "received",
             src: avatarSrc,
@@ -1205,6 +1406,26 @@ function DesktopCommunicationEmailThreadView({
               (isSent
                 ? message.inboxEmail?.trim()
                 : entry.from?.trim()) || (isSent ? "Sent" : "Received"),
+          }}
+          deleteEntityLabel={`email from ${parseReplyToAddress(entry.from) || "sender"}`}
+          onDelete={async () => {
+            const deletingId = entry.messageId;
+            const threadRows =
+              message.threadMessages && message.threadMessages.length > 0
+                ? message.threadMessages
+                : [{ messageId: message.messageId }];
+            const remaining = threadRows.filter(
+              (row) => row.messageId !== deletingId,
+            );
+            const result = await handleDeleteThreadMessage(deletingId);
+            if (
+              result.ok &&
+              selectedMessageId === deletingId &&
+              remaining[0]?.messageId
+            ) {
+              onSelectMessage(remaining[0].messageId);
+            }
+            return result;
           }}
         />
       ),
@@ -1218,6 +1439,8 @@ function DesktopCommunicationEmailThreadView({
     const meetingCard = taskCard
       ? null
       : parseEmailAgentMeetingCard(comment.body);
+    const commentNavId = emailThreadCommentNavId(comment.id);
+    const commentHighlighted = emailThreadHighlightedId === commentNavId;
     const bubbleProps = {
       author: comment.author,
       timestamp: comment.createdAt,
@@ -1246,7 +1469,15 @@ function DesktopCommunicationEmailThreadView({
         key: `comment-task:${comment.id}`,
         at,
         node: (
-          <div className="email-thread-agent-task">
+          <div
+            className={[
+              "email-thread-agent-task",
+              keyboardNavItemClass(commentHighlighted),
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            {...keyboardNavItemProps(commentNavId)}
+          >
             {note ? (
               <EmailThreadCommentBubble
                 {...bubbleProps}
@@ -1287,7 +1518,15 @@ function DesktopCommunicationEmailThreadView({
         key: `comment-meeting:${comment.id}`,
         at,
         node: (
-          <div className="email-thread-agent-task">
+          <div
+            className={[
+              "email-thread-agent-task",
+              keyboardNavItemClass(commentHighlighted),
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            {...keyboardNavItemProps(commentNavId)}
+          >
             {note ? (
               <EmailThreadCommentBubble
                 {...bubbleProps}
@@ -1335,6 +1574,8 @@ function DesktopCommunicationEmailThreadView({
       node: (
         <EmailThreadCommentBubble
           {...bubbleProps}
+          navItemId={commentNavId}
+          keyboardHighlighted={commentHighlighted}
           body={comment.body}
           onSaveEdit={(nextBody) => updateThreadComment(comment.id, nextBody)}
         />
@@ -1370,25 +1611,33 @@ function DesktopCommunicationEmailThreadView({
         className="communication-chat__thread-body communication-chat__email-thread"
         data-agent-composer-mode={composerActionMode}
       >
-      <div className="communication-chat__thread-container">
-        <div className="communication-chat__messages-wrap">
+        {/*
+          Full-pane scroll shell: scrollbar on the far right of the middle
+          column (left of the contact rail). Emails stay centered inside.
+        */}
+        <div className="communication-chat__email-scroll-shell">
           <div
             ref={messagesScrollRef}
-            className="communication-chat__messages communication-chat__email-messages email-detail-scrollport--fade"
+            className="communication-chat__email-scrollport email-detail-scrollport--fade"
+            {...emailThreadListContainerProps}
           >
-            {conceptError ? (
-              <p className="email-concept-error" role="alert">
-                {conceptError}
-              </p>
-            ) : null}
-            {sendError ? (
-              <p className="email-send-error" role="alert">
-                {sendError}
-              </p>
-            ) : null}
-            {timelineEntries.map((entry) => (
-              <Fragment key={entry.key}>{entry.node}</Fragment>
-            ))}
+            <div className="communication-chat__thread-container">
+              <div className="communication-chat__email-messages">
+                {conceptError ? (
+                  <p className="email-concept-error" role="alert">
+                    {conceptError}
+                  </p>
+                ) : null}
+                {sendError ? (
+                  <p className="email-send-error" role="alert">
+                    {sendError}
+                  </p>
+                ) : null}
+                {timelineEntries.map((entry) => (
+                  <Fragment key={entry.key}>{entry.node}</Fragment>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="email-thread-composer-dock communication-chat__email-composer-dock">
@@ -1397,6 +1646,9 @@ function DesktopCommunicationEmailThreadView({
                 {editingConceptDraft ? null : (
                   <EmailAgentActionCards
                     selectedId={agentActionMode}
+                    // Digits 1–4 belong to the contact-details rail on Messages;
+                    // composer modes use r / Shift+C / Shift+A / n instead.
+                    hotkeysEnabled={false}
                     disabled={
                       conceptSaving ||
                       conceptBodySaving ||
@@ -1411,6 +1663,7 @@ function DesktopCommunicationEmailThreadView({
                 )}
                 <EmailThreadCommentComposer
                   mode={composerActionMode}
+                  focusNonce={composerFocusNonce}
                   onSubmit={handleComposerSubmit}
                   onSubmitTask={handleComposerCreateTask}
                   onSubmitMeeting={handleComposerCreateMeeting}
@@ -1450,7 +1703,6 @@ function DesktopCommunicationEmailThreadView({
           </div>
         </div>
       </div>
-    </div>
     </>
   );
 }

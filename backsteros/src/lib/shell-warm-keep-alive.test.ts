@@ -5,6 +5,7 @@ import {
   dismissKeepAliveForOutletNavigation,
   getVisibleKeepAliveSurface,
   getWarmKeepAliveEpoch,
+  isKeepAliveOutletTransitionPending,
   isWarmKeepAliveSectionFlip,
   keepAliveDestinationShowsSidePanel,
   keepAliveSidePanelSurface,
@@ -219,6 +220,29 @@ test("same-pane query flip updates lastHref in the store", () => {
 
 test("routerAgreesWithWindow is true without a window (SSR / node)", () => {
   assert.equal(routerAgreesWithWindow("/tasks", "?due=today"), true);
+});
+
+test("syncVisibleKeepAliveSurfaceFromRoute emits when the surface changes", () => {
+  const before = getWarmKeepAliveEpoch();
+  syncVisibleKeepAliveSurfaceFromRoute("inbox");
+  assert.equal(getVisibleKeepAliveSurface(), "inbox");
+  assert.ok(getWarmKeepAliveEpoch() > before);
+  assert.equal(isKeepAliveOutletTransitionPending(), false);
+
+  const mid = getWarmKeepAliveEpoch();
+  syncVisibleKeepAliveSurfaceFromRoute("inbox");
+  assert.equal(getWarmKeepAliveEpoch(), mid);
+});
+
+test("dismiss marks outlet transition until sync clears it", () => {
+  markKeepAliveSurfaceMounted("inbox");
+  rememberKeepAliveHref("inbox", "/inbox/in-1", "");
+  syncVisibleKeepAliveSurfaceFromRoute("inbox");
+  assert.equal(dismissKeepAliveForOutletNavigation("/settings"), true);
+  assert.equal(getVisibleKeepAliveSurface(), null);
+  assert.equal(isKeepAliveOutletTransitionPending(), true);
+  syncVisibleKeepAliveSurfaceFromRoute(null);
+  assert.equal(isKeepAliveOutletTransitionPending(), false);
 });
 
 test("tasks-list and standalone /projects stay in the keep-alive side-panel set", () => {

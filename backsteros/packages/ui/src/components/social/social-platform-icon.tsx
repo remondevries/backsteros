@@ -8,6 +8,7 @@ import {
 } from "../../social/social-contacts.js";
 import { InstagramIcon } from "../icons/instagram-icon.js";
 import { GlobeIcon } from "../icons/globe-icon.js";
+import { TelegramIcon } from "../icons/telegram-icon.js";
 
 type SocialPlatformIconProps = {
   platform: string;
@@ -68,6 +69,10 @@ function WebsiteGlyph({ size }: { size: number }) {
   return <GlobeIcon size={size} />;
 }
 
+function TelegramGlyph({ size }: { size: number }) {
+  return <TelegramIcon size={size} />;
+}
+
 function OtherGlyph({ size }: { size: number }) {
   return (
     <svg
@@ -90,6 +95,7 @@ const GLYPHS: Record<
   x: XGlyph,
   instagram: InstagramGlyph,
   github: GitHubGlyph,
+  telegram: TelegramGlyph,
   website: WebsiteGlyph,
   other: OtherGlyph,
 };

@@ -50,3 +50,19 @@ export function emailRequestErrorMessage(
   }
   return fallback;
 }
+
+/** True when the API (or AgentMail) says the target is already gone. */
+export function isEmailNotFoundError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  if (status === 404) return true;
+  const code = (error as { code?: unknown }).code;
+  if (code === "not_found") return true;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "";
+  return /not found/i.test(message);
+}

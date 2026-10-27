@@ -21,6 +21,9 @@ function row(
     contactName: "Ada Lovelace",
     contactEmail: "ada@example.com",
     contactPhone: null,
+    contactUsername: null,
+    contactId: null,
+    organizationId: null,
     contactAvatarUrl: null,
     lastMessagePreview: "Hello there",
     lastActivityAt: "2026-01-02T12:00:00.000Z",
@@ -50,6 +53,7 @@ describe("chatConversationToTaskItemRowTask", () => {
     assert.equal(chatStatusToTaskStatus("resolved"), "completed");
     assert.equal(taskStatusToChatStatus("completed"), "resolved");
     assert.equal(taskStatusToChatStatus("waiting"), "pending");
+    assert.equal(taskStatusToChatStatus("in_review"), "in_review");
     assert.equal(taskStatusToChatStatus("on_hold"), "snoozed");
     assert.equal(taskStatusToChatStatus("backlog"), "snoozed");
     assert.equal(taskStatusToChatStatus("triage"), "open");

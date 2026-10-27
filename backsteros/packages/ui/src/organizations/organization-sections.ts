@@ -37,7 +37,7 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "activity", label: "Activity" },
   { id: "projects", label: "Projects" },
   { id: "letters", label: "Letters" },
-  { id: "emails", label: "Communication" },
+  { id: "emails", label: "Messages" },
   { id: "contacts", label: "Contacts" },
   { id: "transactions", label: "Transactions" },
   { id: "invoices", label: "Invoices" },

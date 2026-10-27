@@ -157,3 +157,23 @@ export function buildInboxSessionList(input: {
 
   return { items, displayOrder: finalOrder };
 }
+
+/**
+ * How long a freshly-empty list must persist before it replaces painted rows.
+ * Live queries briefly yield `[]` on re-subscribe; committing that flashed the
+ * empty state and reset display order ("tasks sometimes don't load").
+ */
+export const INBOX_EMPTY_COMMIT_DELAY_MS = 400;
+
+/** True when `next` is an unconfirmed empty that should keep `lastPainted`. */
+export function shouldHoldInboxSessionList(input: {
+  next: readonly InboxListItem[];
+  lastPainted: readonly InboxListItem[];
+  emptyConfirmed: boolean;
+}): boolean {
+  return (
+    input.next.length === 0 &&
+    input.lastPainted.length > 0 &&
+    !input.emptyConfirmed
+  );
+}

@@ -51,7 +51,7 @@ export const CONTACT_EXPANDED_WORKSPACE_TABS: readonly {
   label: string;
 }[] = [
   { id: "meetings", label: "Meetings" },
-  { id: "emails", label: "Communication" },
+  { id: "emails", label: "Messages" },
   { id: "tasks", label: "Tasks" },
   { id: "letters", label: "Letters" },
   { id: "social", label: "Social" },

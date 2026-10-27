@@ -176,7 +176,7 @@ function sortRowsByRecency(rows: CommunicationChatListRow[]): CommunicationChatL
 }
 
 /**
- * Build a single Triage / Waiting / On Hold / Completed list with chats,
+ * Build a Triage / Waiting / In Review / On Hold / Completed list with chats,
  * emails, and support tickets interleaved by last activity within each group.
  */
 export function groupCommunicationChatListRows(
@@ -233,6 +233,27 @@ export function communicationChatListVisibleRowIds(peeled: {
   return [
     ...peeled.drafts.map(communicationChatListRowId),
     ...communicationChatListRowIds(peeled.groups),
+  ];
+}
+
+/**
+ * Flat j/k order matching the unified Messages list.
+ * Skips collapsed status groups so keyboard nav cannot land on hidden rows.
+ */
+export function communicationChatListKeyboardItemIds(
+  peeled: {
+    drafts: readonly CommunicationChatListRow[];
+    groups: readonly CommunicationChatListStatusGroup[];
+  },
+  collapsedKeys: ReadonlySet<string> = new Set(),
+): string[] {
+  return [
+    ...peeled.drafts.map(communicationChatListRowId),
+    ...peeled.groups.flatMap((group) =>
+      collapsedKeys.has(group.status)
+        ? []
+        : group.rows.map(communicationChatListRowId),
+    ),
   ];
 }
 

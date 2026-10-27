@@ -1,15 +1,17 @@
 import type { TokenProvider } from "@backsteros/api-client";
 import { isOwnerApiKeySecretFormat } from "@backsteros/contracts";
 
-import { getDesktopPublicEnvironment } from "./env";
-import { loadDesktopOwnerToken } from "./local-shell-auth";
+import { getDesktopPublicEnvironment, isLocalDevApiUrl } from "./env";
+import { loadDesktopProductToken } from "./local-shell-auth";
 
 export type DesktopOwnerAccessResult = "ok" | "denied";
 
 /**
- * Probe the owner Access key before opening the product shell.
- * Only explicit auth failure (missing key / 401 / 403) denies; network and
- * other errors allow offline SQLite so a down API does not lock the UI.
+ * Probe product API auth before opening the shell.
+ *
+ * - Local-core: local-shell bearer (or a valid owner key) — only missing token
+ *   or explicit 401/403 denies; network errors still open offline SQLite.
+ * - Cloud / gateway: owner Access key required (`sk_access_` / `sk_live_`).
  */
 export async function probeDesktopOwnerAccess(options?: {
   apiUrl?: string;
@@ -20,11 +22,17 @@ export async function probeDesktopOwnerAccess(options?: {
     /\/$/,
     "",
   );
-  const getToken = options?.getToken ?? loadDesktopOwnerToken;
+  const getToken =
+    options?.getToken ?? (() => loadDesktopProductToken(apiUrl));
   const fetchFn = options?.fetch ?? globalThis.fetch.bind(globalThis);
 
   const token = (await getToken()) ?? null;
-  if (!token || !isOwnerApiKeySecretFormat(token)) {
+  if (!token) {
+    return "denied";
+  }
+
+  const localCore = isLocalDevApiUrl(apiUrl);
+  if (!localCore && !isOwnerApiKeySecretFormat(token)) {
     return "denied";
   }
 

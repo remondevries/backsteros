@@ -7,8 +7,6 @@ import {
   OrganizationIcon,
   FinanceSyncIcon,
   RegisterPageTitle,
-  RegisterEntityDeleteAction,
-  RegisterEntityMenuItems,
   EmailThreadMessageCard,
   buildEmailRecipientDropdownOptions,
   getEmailItemHref,
@@ -22,7 +20,6 @@ import { parseEmailDraftPath } from "@backsteros/ui";
 
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
-import { emailDeleteEntityLabel } from "../lib/delete-email-message";
 import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
@@ -35,14 +32,12 @@ import {
   type ProjectNavFrom,
 } from "../lib/project-type-cache";
 import { resolveListReturnHref } from "../lib/list-return-href";
+import { DesktopEmailThreadWorkspace } from "../components/desktop-email-thread-workspace";
 import { EmailComposeView } from "./email/email-compose-view";
-import { EmailThreadDetail } from "./email/email-thread-detail";
 import { useEmailDraftActions } from "./email/use-email-draft-actions";
-import { useEmailMessageActions } from "./email/use-email-message-actions";
 import { useEmailMessageDetail } from "./email/use-email-message-detail";
 import { useEmailThreadComments } from "./email/use-email-thread-comments";
 import { useEmailThreadMetadata } from "./email/use-email-thread-metadata";
-import { useEmailThreadView } from "./email/use-email-thread-view";
 
 export function EmailPage({
   embedInboxId,
@@ -104,7 +99,6 @@ export function EmailPage({
     loading,
     error,
     reloadMessageDetail,
-    suppressAutoMarkRead,
   } = useEmailMessageDetail({ inboxId, messageId, draftId, isCompose });
 
   const metadataState = useEmailThreadMetadata({
@@ -179,38 +173,7 @@ export function EmailPage({
     assigneeId,
     projectKey,
   });
-  const {
-    threadComments,
-    setThreadComments,
-    commentAgentWorking,
-    draftAgentWorking,
-  } = comments;
-
-  const actions = useEmailMessageActions({
-    inboxId,
-    messageId,
-    message,
-    setMessage,
-    setDraft,
-    setThreadComments,
-    setConceptError,
-    reloadMessageDetail,
-    toEmailDetailHref,
-    listReturnHref,
-    suppressAutoMarkRead,
-  });
-  const { handleDeleteMessage, emailExtraMenuItems } = actions;
-
-  const view = useEmailThreadView({
-    message,
-    messageId,
-    loading,
-    threadComments,
-    replyComposeOpen,
-    commentAgentWorking,
-    draftAgentWorking,
-    draftStageWorking,
-  });
+  const { draftAgentWorking } = comments;
 
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
@@ -317,7 +280,7 @@ export function EmailPage({
 
     if (listContext === "communication") {
       return [
-        { label: "Communication", href: "/communication" },
+        { label: "Messages", href: "/communication" },
         { label: currentLabel },
       ];
     }
@@ -461,6 +424,21 @@ export function EmailPage({
     return composeMailboxes.find((mailbox) => mailbox.inboxId === id)?.avatarSrc ?? null;
   };
 
+  // Inbox / Messages / Tasks open `/email/:inbox/:message` — same thread +
+  // contact-rail layout as Communication → Messages (not the old split detail).
+  if (!isCompose && inboxId && messageId && !draftId) {
+    return (
+      <>
+        <RegisterPageTitle title={title} />
+        <DesktopEmailThreadWorkspace
+          inboxId={inboxId}
+          messageId={messageId}
+          listReturnHref={listReturnHref}
+        />
+      </>
+    );
+  }
+
   if (isCompose) {
     return (
       <EmailComposeView
@@ -558,24 +536,6 @@ export function EmailPage({
         />
       </div>
     );
-  } else if (message) {
-    content = (
-      <EmailThreadDetail
-        inboxId={inboxId}
-        messageId={messageId}
-        message={message}
-        composeMailboxes={composeMailboxes}
-        contactAvatarSrc={contactAvatarSrc}
-        mailboxSignOffAvatarSrc={mailboxSignOffAvatarSrc}
-        conceptDraftActionsDisabled={conceptDraftActionsDisabled}
-        showDraftWorking={showDraftWorking}
-        metadataState={metadataState}
-        drafts={drafts}
-        comments={comments}
-        actions={actions}
-        view={view}
-      />
-    );
   } else {
     content = (
       <div className="inbox-detail-empty">
@@ -584,23 +544,10 @@ export function EmailPage({
     );
   }
 
-  const detail = (
+  return (
     <>
       <RegisterPageTitle title={title} />
-      {message && inboxId && messageId ? (
-        <>
-          <RegisterEntityDeleteAction
-            entityLabel={emailDeleteEntityLabel(message.subject)}
-            confirmLabel="Delete thread"
-            actionVerb="Delete"
-            onDelete={handleDeleteMessage}
-          />
-          <RegisterEntityMenuItems items={emailExtraMenuItems} />
-        </>
-      ) : null}
       <div className="inbox-detail-layout">{content}</div>
     </>
   );
-
-  return detail;
 }

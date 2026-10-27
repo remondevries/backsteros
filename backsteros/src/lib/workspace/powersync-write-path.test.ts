@@ -63,6 +63,24 @@ test("mustDualWriteRestAfterCrudFlush for due-date clears and health checks", ()
   assert.equal(mustDualWriteRestAfterCrudFlush("projects", { startDate: null }), true);
   assert.equal(mustDualWriteRestAfterCrudFlush("projects", { name: "x" }), false);
   assert.equal(mustDualWriteRestAfterCrudFlush("letters", { dueDate: null }), true);
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("contacts", {
+      facebookMessengerId: null,
+    }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("contacts", { title: null }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("contacts", { title: "Engineer" }),
+    false,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("organizations", { website: null }),
+    true,
+  );
 });
 
 test("connected PowerSync still RESTs due-date clears after flush", () => {

@@ -39,6 +39,11 @@ const warmKeepAliveChromeListeners = new Set<() => void>();
 let warmChromeEmitScheduled = false;
 
 let visibleKeepAliveSurface: PendingPageSurface | null = null;
+/**
+ * Set by dismiss() until the next route sync — blocks pathname fallback to the
+ * previous list dest while TanStack is still on the old URL.
+ */
+let outletTransitionPending = false;
 let warmKeepAlivePopstateInstalled = false;
 /** Bumps on every warm emit so same-surface href flips still re-render. */
 let warmKeepAliveEpoch = 0;
@@ -71,15 +76,12 @@ function emitWarmKeepAlive(): void {
   if (warmKeepAliveChromeListeners.size === 0) return;
   if (warmChromeEmitScheduled) return;
   warmChromeEmitScheduled = true;
-  // Two frames so content thaw (one rAF from KeepAlivePane) runs first.
-  // Single-rAF chrome previously shared the first frame and delayed thaws.
+  // One frame after sync pane listeners so content visibility flips first.
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      warmChromeEmitScheduled = false;
-      for (const listener of warmKeepAliveChromeListeners) {
-        listener();
-      }
-    });
+    warmChromeEmitScheduled = false;
+    for (const listener of warmKeepAliveChromeListeners) {
+      listener();
+    }
   });
 }
 
@@ -196,14 +198,16 @@ function onWarmKeepAlivePopstate(): void {
       resolved.pathname,
       resolved.search,
     );
-    if (assignVisibleKeepAliveSurface(resolved.surface)) {
-      emitWarmKeepAlive();
-    }
+    outletTransitionPending = false;
+    assignVisibleKeepAliveSurface(resolved.surface);
+    emitWarmKeepAlive();
     return;
   }
-  if (assignVisibleKeepAliveSurface(null)) {
-    emitWarmKeepAlive();
-  }
+  // Back/Forward onto Outlet — TanStack can lag the address bar. Mark pending
+  // so dest trusts chrome (same as dismiss) instead of a stale list pathname.
+  outletTransitionPending = true;
+  assignVisibleKeepAliveSurface(null);
+  emitWarmKeepAlive();
 }
 
 function ensureWarmKeepAlivePopstate(): void {
@@ -299,7 +303,11 @@ function rememberEmailListPanelSelectionHref(
   const nextHref = formatResolvedAppHref(resolved);
   if (lastKeepAliveHref.get(list) === nextHref) return false;
   rememberKeepAliveHref(list, resolved.pathname, resolved.search);
-  emitWarmKeepAlive();
+  // Callers often run from layout/nav; defer so we never notify React
+  // subscribers synchronously inside another component's render.
+  queueMicrotask(() => {
+    emitWarmKeepAlive();
+  });
   return true;
 }
 
@@ -332,14 +340,20 @@ export function dismissKeepAliveForOutletNavigation(href: string): boolean {
   if (resolved.surface === visible) return false;
 
   assignVisibleKeepAliveSurface(null);
-  emitWarmKeepAlive();
+  outletTransitionPending = true;
 
-  if (shouldKeepAliveSurface(resolved.surface, resolved.pathname)) {
-    return true;
+  // Push the address bar before emit so chrome re-renders see the destination
+  // (trustedChromePath) — not the previous Inbox email URL.
+  if (!shouldKeepAliveSurface(resolved.surface, resolved.pathname)) {
+    followWarmKeepAliveUrl(formatResolvedAppHref(resolved));
   }
-
-  followWarmKeepAliveUrl(formatResolvedAppHref(resolved));
+  emitWarmKeepAlive();
   return true;
+}
+
+/** True between dismiss() and the next syncVisibleKeepAliveSurfaceFromRoute. */
+export function isKeepAliveOutletTransitionPending(): boolean {
+  return outletTransitionPending;
 }
 
 export function isWarmKeepAliveSectionFlip(href: string): boolean {
@@ -379,6 +393,7 @@ export function tryWarmKeepAliveFlip(
   }
   rememberKeepAliveHref(resolved.surface, resolved.pathname, resolved.search);
   assignVisibleKeepAliveSurface(resolved.surface);
+  outletTransitionPending = false;
   followWarmKeepAliveUrl(nextHref, replace);
   emitWarmKeepAlive();
   rememberSectionEntryFromNav(nextHref);
@@ -401,11 +416,17 @@ export function routerAgreesWithWindow(
   );
 }
 
-/** Parent already re-rendering from a real location change — no emit. */
+/**
+ * Mirror TanStack/Outlet route onto the warm visible surface.
+ * Preferred call site: `useLayoutEffect` in ShellRouteContent so assign+emit
+ * land before paint. Clears outlet-transition pending from dismiss().
+ */
 export function syncVisibleKeepAliveSurfaceFromRoute(
   surface: PendingPageSurface | null,
 ): void {
-  assignVisibleKeepAliveSurface(surface);
+  outletTransitionPending = false;
+  if (!assignVisibleKeepAliveSurface(surface)) return;
+  emitWarmKeepAlive();
 }
 
 export function markKeepAliveSurfaceMounted(surface: PendingPageSurface): void {
@@ -420,5 +441,6 @@ export function resetKeepAliveForTests(): void {
   mountedKeepAliveSurfaces.clear();
   lastKeepAliveHref.clear();
   visibleKeepAliveSurface = null;
+  outletTransitionPending = false;
   warmKeepAliveEpoch = 0;
 }

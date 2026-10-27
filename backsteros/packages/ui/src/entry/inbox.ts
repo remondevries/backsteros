@@ -1,5 +1,6 @@
 export {
   buildInboxEmailListItem,
+  buildInboxTaskListItem,
   emailBelongsInInbox,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,

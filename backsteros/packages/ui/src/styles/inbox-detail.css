@@ -74,6 +74,19 @@
   overflow: hidden;
 }
 
+/* Inbox → Messages chat: Communication thread fills the detail pane. */
+.inbox-chat-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.inbox-chat-detail > .communication-chat {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+
 .inbox-detail-header-meta {
   flex-shrink: 0;
   padding: 0.65rem 1rem 0;

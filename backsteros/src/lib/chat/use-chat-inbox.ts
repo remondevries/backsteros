@@ -342,6 +342,8 @@ export function useChatInbox(options?: UseChatInboxOptions) {
     async (
       patch: {
         status?: ChatConversation["status"];
+        contactId?: string | null;
+        organizationId?: string | null;
         assigneeId?: string | null;
         priority?: number;
         dueDate?: string | null;

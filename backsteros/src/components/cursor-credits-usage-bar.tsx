@@ -20,9 +20,9 @@ function AgentMailDegradedAlert() {
     <div
       className="sidebar-agentmail-degraded"
       role="alert"
-      title="AgentMail provider failed or reset (often during HMR). Email lists are paused; reload the app to restore."
+      title="Mail provider hit a temporary error and is retrying. Email lists may be empty until it recovers — reload only if this stays."
     >
-      AgentMail unavailable
+      AgentMail reconnecting…
     </div>
   );
 }
@@ -118,8 +118,8 @@ type CursorCreditsUsageBarProps = {
 /**
  * Sidebar footer: Cursor monthly included Auto / Premium usage toward the plan
  * allowance, plus weekly Grok quota when the account includes it.
- * Shows a static sync-conflict prototype and a red AgentMail alert above the
- * credits when mail sync has degraded.
+ * Shows a static sync-conflict prototype and a temporary AgentMail alert above
+ * the credits while the mail provider is crashed and auto-retrying.
  */
 export function CursorCreditsUsageBar({
   onOpenSyncingSettings,

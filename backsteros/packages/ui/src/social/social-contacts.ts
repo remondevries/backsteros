@@ -89,6 +89,7 @@ export type SocialPlatformId =
   | "x"
   | "instagram"
   | "github"
+  | "telegram"
   | "website"
   | "other";
 
@@ -98,6 +99,7 @@ export function normalizeSocialPlatform(platform: string): SocialPlatformId {
   if (key === "x" || key === "twitter" || key === "x.com") return "x";
   if (key === "instagram" || key === "ig") return "instagram";
   if (key === "github" || key === "gh") return "github";
+  if (key === "telegram" || key === "tg" || key === "t.me") return "telegram";
   if (key === "website" || key === "web" || key === "site") return "website";
   return "other";
 }

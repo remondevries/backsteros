@@ -23,6 +23,7 @@ import {
   EmailAddressContactField,
   type EmailThreadFromContactPicker,
 } from "./email-address-contact-field.js";
+import { EmailAddressCopyRow } from "./email-address-copy-row.js";
 import { EmailComposeBodyStage } from "./email-compose-body-stage.js";
 import { EmailDraftSignOffShell } from "./email-draft-sign-off-shell.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
@@ -41,6 +42,10 @@ import { PropertyInlineChip } from "../dropdowns/property-dropdown.js";
 import type { EmailThreadBodyViewMode } from "../../email/email.js";
 import { EmailDirectionArrowIcon } from "../../email/email-direction.js";
 import { stripEmailDraftShell } from "../../email/email.js";
+import {
+  keyboardNavItemClass,
+  keyboardNavItemProps,
+} from "../../list-nav/keyboard-nav-item.js";
 
 export type { EmailThreadFromContactPicker };
 
@@ -159,6 +164,13 @@ export type EmailThreadMessageCardProps = {
    */
   selected?: boolean;
   onSelect?: () => void;
+  /** Orange j/k ring while the Messages content zone is active. */
+  keyboardHighlighted?: boolean;
+  /**
+   * Override the j/k nav marker id (defaults to {@link messageId}).
+   * Communication timeline uses prefixed ids so emails and comments share one list.
+   */
+  navItemId?: string | null;
 };
 
 function EmailDraftBodyShell({ children }: { children: string }) {
@@ -276,6 +288,22 @@ function parseFromParts(value: string | string[] | null | undefined): {
   }
   if (raw.includes("@")) return { name: null, email: raw };
   return { name: raw, email: null };
+}
+
+/** Bare addresses for clipboard copy (comma-joined when To has several). */
+function bareEmailsForCopy(
+  value: string | string[] | null | undefined,
+): string | null {
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim()
+      ? [value]
+      : [];
+  const emails = entries
+    .map((entry) => parseFromParts(entry).email)
+    .filter((email): email is string => Boolean(email));
+  if (emails.length === 0) return null;
+  return emails.join(", ");
 }
 
 function MessageMenuIcon({ children }: { children: ReactNode }) {
@@ -482,6 +510,8 @@ function EmailThreadMessageCardComponent({
   onReportSpam,
   selected = false,
   onSelect,
+  keyboardHighlighted = false,
+  navItemId = null,
 }: EmailThreadMessageCardProps) {
   const entityHeaderActions = useEntityHeaderActionsContextOptional();
   const openDeleteModal = entityHeaderActions?.openDeleteModal;
@@ -697,24 +727,6 @@ function EmailThreadMessageCardComponent({
           icon: MESSAGE_MENU_ICONS.copy,
           onSelect: handleCopyMessageText,
         },
-        ...(onDelete
-          ? [
-              {
-                id: "trash",
-                label: "Move to Trash",
-                icon: MESSAGE_MENU_ICONS.trash,
-                disabled: deleting,
-                onSelect: () => {
-                  openDeleteModal?.({
-                    entityLabel: deleteEntityLabel,
-                    confirmLabel: "Delete",
-                    actionVerb: "Delete",
-                    onDelete,
-                  });
-                },
-              },
-            ]
-          : []),
         ...(onMarkUnreadFromHere
           ? [
               {
@@ -754,6 +766,25 @@ function EmailThreadMessageCardComponent({
           icon: MESSAGE_MENU_ICONS.info,
           onSelect: () => setInfoOpen(true),
         },
+        ...(onDelete
+          ? [
+              {
+                id: "trash",
+                label: "Delete email",
+                icon: MESSAGE_MENU_ICONS.trash,
+                danger: true,
+                disabled: deleting,
+                onSelect: () => {
+                  openDeleteModal?.({
+                    entityLabel: deleteEntityLabel,
+                    confirmLabel: "Delete",
+                    actionVerb: "Delete",
+                    onDelete,
+                  });
+                },
+              },
+            ]
+          : []),
       ];
 
   const messageActionsMenu =
@@ -807,6 +838,10 @@ function EmailThreadMessageCardComponent({
   const sourceDirection = partyAvatar?.direction ?? "received";
   const toFirstRaw = Array.isArray(to) ? (to[0] ?? "") : (to ?? "");
   const toParts = parseFromParts(toFirstRaw);
+  const toEmailsForCopy =
+    toContact?.contactEmail?.trim() || bareEmailsForCopy(to);
+  const fromEmailForCopy =
+    fromContact?.contactEmail?.trim() || fromParts.email;
 
   /** Compact route header — direction arrow + from → to (Plain + Source). */
   const routeHeader = (
@@ -818,15 +853,21 @@ function EmailThreadMessageCardComponent({
         >
           <EmailDirectionArrowIcon direction={sourceDirection} size={14} />
         </span>
-        <span className="email-source__from">
+        <EmailAddressCopyRow
+          email={fromEmailForCopy}
+          className="email-source__from"
+        >
           {fromParts.email || fromAddressLabel}
-        </span>
+        </EmailAddressCopyRow>
         <span className="email-source__route-arrow" aria-hidden="true">
           →
         </span>
-        <span className="email-source__to">
+        <EmailAddressCopyRow
+          email={toEmailsForCopy}
+          className="email-source__to"
+        >
           {toParts.email || toAddressLabel}
-        </span>
+        </EmailAddressCopyRow>
       </div>
       {headerEndControls}
     </header>
@@ -1002,6 +1043,9 @@ function EmailThreadMessageCardComponent({
     </span>
   );
 
+  const showSeparateFromAddress =
+    Boolean(senderEmail) && senderEmail !== senderName;
+
   // Gmail-style compact header for regular (read-only) messages.
   const compactHeader = (
     <header className="email-thread-message__topbar">
@@ -1038,20 +1082,37 @@ function EmailThreadMessageCardComponent({
               ariaLabel="From contact"
               disabled={interactionLocked}
             />
-          ) : (
+          ) : showSeparateFromAddress ? (
             <span className="email-thread-message__topbar-name">
               {senderName}
             </span>
+          ) : (
+            <EmailAddressCopyRow
+              email={fromEmailForCopy}
+              className="email-thread-message__topbar-name"
+            >
+              {senderName}
+            </EmailAddressCopyRow>
           )}
-          {senderEmail && senderEmail !== senderName ? (
-            <span className="email-thread-message__topbar-address">
+          {showSeparateFromAddress ? (
+            <EmailAddressCopyRow
+              email={fromEmailForCopy}
+              className="email-thread-message__topbar-address"
+            >
               {`<${senderEmail}>`}
-            </span>
+            </EmailAddressCopyRow>
+          ) : fromContact && fromEmailForCopy ? (
+            <EmailAddressCopyRow email={fromEmailForCopy} />
           ) : null}
         </div>
         <div className="email-thread-message__topbar-to">
           <span className="email-thread-message__topbar-to-prefix">to</span>
-          {toLine}
+          <EmailAddressCopyRow
+            email={toEmailsForCopy}
+            valueClickable={!toContact}
+          >
+            {toLine}
+          </EmailAddressCopyRow>
         </div>
       </div>
       {headerEndControls}
@@ -1196,18 +1257,26 @@ function EmailThreadMessageCardComponent({
     : null;
 
   const selectable = Boolean(onSelect) && !isConcept && !isEditable;
+  const navMessageId = !isConcept ? messageId?.trim() || null : null;
+  const keyboardNavId =
+    navItemId?.trim() || navMessageId || null;
 
   return (
     <article
-      className={`email-thread-message${
-        isConcept ? " is-concept" : isSent ? " is-sent" : ""
-      }${selected ? " is-selected" : ""}${selectable ? " is-selectable" : ""}`}
-      data-email-message={
-        !isConcept && messageId?.trim() ? messageId.trim() : undefined
-      }
+      className={[
+        "email-thread-message",
+        isConcept ? "is-concept" : isSent ? "is-sent" : null,
+        selected ? "is-selected" : null,
+        selectable ? "is-selectable" : null,
+        keyboardNavItemClass(keyboardHighlighted),
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-email-message={navMessageId || undefined}
       data-selected={selected ? "true" : undefined}
       role={selectable ? "button" : undefined}
-      tabIndex={selectable ? 0 : undefined}
+      tabIndex={selectable ? 0 : keyboardNavId ? -1 : undefined}
+      {...(keyboardNavId ? keyboardNavItemProps(keyboardNavId) : {})}
       aria-pressed={selectable ? selected : undefined}
       onClick={
         selectable

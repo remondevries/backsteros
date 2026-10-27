@@ -2,7 +2,11 @@ import { useEffect, useRef } from "react";
 import { getProjectTaskHref, getTaskDisplayId } from "@backsteros/ui";
 import { useTrackedTimer } from "@backsteros/ui/shell";
 
-import { cloudCoreRequestJson } from "./cloud-core-api";
+import {
+  cloudCoreRequestJson,
+  isCloudCoreApiError,
+} from "./cloud-core-api";
+import { loadDesktopOwnerToken } from "./local-shell-auth";
 
 type RemoteRunningTimerAdoption = {
   kind: "task";
@@ -39,6 +43,8 @@ type RecentTimerApiRow = {
 };
 
 const POLL_INTERVAL_MS = 2_000;
+/** Slow down after auth failure so we do not spam 401s every 2s. */
+const AUTH_BACKOFF_MS = 60_000;
 
 function parseStartedAtMs(value: string): number {
   const ms = Date.parse(value);
@@ -63,6 +69,7 @@ export function useSyncRemoteRunningTimers(): void {
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
+    let nextAllowedAt = 0;
 
     const apply = (
       rows: RecentTimerApiRow[],
@@ -142,8 +149,16 @@ export function useSyncRemoteRunningTimers(): void {
 
     const poll = async () => {
       if (cancelled || inFlight) return;
+      if (Date.now() < nextAllowedAt) return;
       inFlight = true;
       try {
+        const token = await loadDesktopOwnerToken();
+        if (!token) {
+          // No owner key yet — skip fetch (avoids a guaranteed 401 in Network).
+          nextAllowedAt = Date.now() + AUTH_BACKOFF_MS;
+          return;
+        }
+
         let rows: RecentTimerApiRow[] = [];
         let pruneAbsent = false;
         try {
@@ -152,21 +167,33 @@ export function useSyncRemoteRunningTimers(): void {
           }>("/api/v1/recent-timers");
           rows = body.timers ?? [];
           pruneAbsent = true;
-        } catch {
-          // Cloud without recent-timers yet — keep paused chrome rows.
-          const body = await cloudCoreRequestJson<{
-            timers: RecentTimerApiRow[];
-          }>("/api/v1/running-timers");
-          rows = (body.timers ?? []).map((row) => ({
-            ...row,
-            isRunning: true,
-            lastTimerAt: row.startedAt,
-          }));
+        } catch (error) {
+          // Only fall back when the cloud build is too old for recent-timers.
+          // Auth failures must not hit running-timers (second 401 in the console).
+          if (isCloudCoreApiError(error) && error.status === 404) {
+            const body = await cloudCoreRequestJson<{
+              timers: RecentTimerApiRow[];
+            }>("/api/v1/running-timers");
+            rows = (body.timers ?? []).map((row) => ({
+              ...row,
+              isRunning: true,
+              lastTimerAt: row.startedAt,
+            }));
+          } else {
+            if (
+              isCloudCoreApiError(error) &&
+              (error.status === 401 || error.status === 403)
+            ) {
+              nextAllowedAt = Date.now() + AUTH_BACKOFF_MS;
+            }
+            throw error;
+          }
         }
         if (cancelled) return;
+        nextAllowedAt = 0;
         apply(rows, { pruneAbsent });
       } catch {
-        // Poll is best-effort; next tick retries.
+        // Poll is best-effort; next tick retries (or auth backoff above).
       } finally {
         inFlight = false;
       }

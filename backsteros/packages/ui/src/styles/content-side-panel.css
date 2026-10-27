@@ -649,9 +649,32 @@ body.is-resizing {
   padding-bottom: 52px;
 }
 
-/* Inbox: Notifications / Agents toggle (calendar footer pattern). */
+/* Inbox: Notifications / Messages / Agents toggle (calendar footer pattern). */
 .inbox-side-panel--with-mode-footer {
   position: relative;
+}
+
+/* Messages mode — shared Communication list (status groups, cards). */
+.inbox-side-panel__messages {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.inbox-side-panel__messages .communication-chat__messages-list {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.inbox-side-panel__messages .communication-chat__list-scroll:has(
+    > .app-content-side-panel-empty
+  ) {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .inbox-side-panel__footer {

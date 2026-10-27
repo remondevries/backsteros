@@ -143,6 +143,13 @@ export type InboxSidePanelViewProps = {
   listContainerProps?: HTMLAttributes<HTMLElement>;
   /** Optional footer (e.g. Communication Everything / Email / Support toggle). */
   footer?: ReactNode;
+  /**
+   * Replaces the row list under the header (Inbox → Messages renders the
+   * shared Communication list here). `items` / `loading` are ignored.
+   */
+  body?: ReactNode;
+  /** @deprecated Rows only; Messages uses `body`. */
+  listItemVariant?: "row";
 };
 
 /**
@@ -173,6 +180,7 @@ export function InboxSidePanelView({
   listRef,
   listContainerProps,
   footer = null,
+  body,
 }: InboxSidePanelViewProps) {
   const [composing, setComposing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -208,6 +216,7 @@ export function InboxSidePanelView({
   );
 
   const useVirtualList = items.length >= OVERVIEW_LIST_VIRTUALIZE_THRESHOLD;
+  const itemEstimatedSize = minimized ? 28 : 44;
 
   const virtualRows = useMemo(() => {
     if (!useVirtualList) return [];
@@ -228,7 +237,7 @@ export function InboxSidePanelView({
             kind: "item" as const,
             itemId: item.id,
             item,
-            estimatedSize: minimized ? 28 : 44,
+            estimatedSize: itemEstimatedSize,
           })),
         ];
       });
@@ -238,9 +247,16 @@ export function InboxSidePanelView({
       kind: "item" as const,
       itemId: item.id,
       item,
-      estimatedSize: minimized ? 28 : 44,
+      estimatedSize: itemEstimatedSize,
     }));
-  }, [attentionGroups, collapsedGroups, items, minimized, useVirtualList]);
+  }, [
+    attentionGroups,
+    collapsedGroups,
+    itemEstimatedSize,
+    items,
+    minimized,
+    useVirtualList,
+  ]);
 
   const hrefById = useMemo(
     () => hrefByIdProp ?? buildInboxItemHrefById(items),
@@ -269,6 +285,7 @@ export function InboxSidePanelView({
       className={`app-content-side-panel${minimized ? " is-minimized" : ""}${
         footer ? " inbox-side-panel--with-mode-footer" : ""
       }`}
+      data-inbox-body={body !== undefined ? "custom" : undefined}
     >
       {showHeader ? (
         <ContentSidePanelHeader
@@ -334,7 +351,9 @@ export function InboxSidePanelView({
             />
           </div>
         ) : null}
-        {loading && !items.length ? (
+        {body !== undefined ? (
+          body
+        ) : loading && !items.length ? (
           <div className="app-content-side-panel-body">
             <InboxSidePanelSkeleton />
           </div>
@@ -353,7 +372,7 @@ export function InboxSidePanelView({
                 "aria-label": "Inbox items",
               }}
               className="app-content-side-panel-body"
-              estimatedItemSize={minimized ? 28 : 40}
+              estimatedItemSize={itemEstimatedSize}
               extraData={highlightedId}
               renderRow={(row) => {
                 if (row.kind === "header") {

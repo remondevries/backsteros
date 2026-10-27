@@ -199,6 +199,11 @@ export function CommunicationChatListFilterMenu({
             searchTerms: "whatsapp wa message",
           },
           {
+            value: "x",
+            label: "X",
+            searchTerms: "x twitter tweet",
+          },
+          {
             value: "support",
             label: "Support",
             searchTerms: "support ticket helpdesk",

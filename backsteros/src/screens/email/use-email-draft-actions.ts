@@ -40,6 +40,7 @@ import {
 
 import {
   emailRequestErrorMessage,
+  isEmailNotFoundError,
   requestMailboxReload,
 } from "./email-page-helpers";
 import {
@@ -469,6 +470,25 @@ export function useEmailDraftActions({
         setConceptBodyDraft(nextEditable);
         requestMailboxReload();
       } catch (caught) {
+        if (isEmailNotFoundError(caught)) {
+          // Draft was deleted elsewhere — drop local concept chrome instead of
+          // leaving a sticky "Draft not found" banner in the thread.
+          setConceptError(null);
+          setMessage((current) =>
+            current
+              ? {
+                  ...current,
+                  conceptDraft: null,
+                  conceptDraftId: null,
+                  conceptPreview: null,
+                }
+              : null,
+          );
+          setDraft(null);
+          setComposeDraft(null);
+          setReplyComposeOpen(false);
+          return;
+        }
         setConceptError(
           emailRequestErrorMessage(caught, "Could not save draft changes."),
         );
@@ -488,8 +508,11 @@ export function useEmailDraftActions({
       inboxId,
       messageId,
       reloadMessageDetail,
+      setComposeDraft,
+      setConceptError,
       setDraft,
       setMessage,
+      setReplyComposeOpen,
     ],
   );
 
@@ -891,6 +914,7 @@ export function useEmailDraftActions({
 
       // Optimistic UI — leave / clear immediately; DELETE runs in the background.
       setConceptBodyDraft("");
+      setConceptError(null);
       setReplyComposeOpen(false);
       setMessage((current) =>
         current
@@ -955,6 +979,17 @@ export function useEmailDraftActions({
           }
         })
         .catch((caught) => {
+          // Already deleted remotely — keep optimistic removal (no ghost draft).
+          if (isEmailNotFoundError(caught)) {
+            if (returnToMessageId && inboxId) {
+              void reloadMessageDetail(inboxId, returnToMessageId)
+                .then((reloaded) => {
+                  setMessage(reloaded);
+                })
+                .catch(() => {});
+            }
+            return;
+          }
           setSendError(
             emailRequestErrorMessage(caught, "Could not delete draft."),
           );
@@ -978,6 +1013,7 @@ export function useEmailDraftActions({
       messageId,
       listReturnHref,
       setMessage,
+      setConceptError,
       inboxId,
       client,
       setDraft,

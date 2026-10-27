@@ -45,6 +45,7 @@ import {
 } from "../tasks/task-comment-editor.js";
 import { DEFAULT_MEETING_DURATION_MINUTES } from "../../meetings/parse-natural-language-meeting-schedule.js";
 import { MeetingAttendeeLabels } from "../meetings/meeting-attendee-labels.js";
+import { hasMainAndContentListKeyboardZones } from "../../list-nav/list-keyboard-nav-zone.js";
 import { isSearchableDropdownPanelOpen } from "../../list-nav/should-handle-list-keyboard-navigation.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import type { EmailAgentActionCardId } from "./email-agent-action-cards.js";
@@ -91,6 +92,12 @@ export type EmailThreadCommentComposerProps = {
   defaultAssigneeId?: string | null;
   defaultOrganizationId?: string | null;
   defaultAttendeeContactIds?: string[];
+  /**
+   * Bump to focus the primary field (title for task/agenda, body otherwise).
+   * Used by explicit hotkeys (r / Shift+C / Shift+A / n) — mode changes alone
+   * must not steal focus from the thread list.
+   */
+  focusNonce?: number;
 };
 
 function CommentPromptSendIcon() {
@@ -193,6 +200,7 @@ export function EmailThreadCommentComposer({
   defaultAssigneeId = null,
   defaultOrganizationId = null,
   defaultAttendeeContactIds = [],
+  focusNonce = 0,
 }: EmailThreadCommentComposerProps) {
   const isTask = mode === "task";
   const isAgenda = mode === "calendar";
@@ -228,7 +236,6 @@ export function EmailThreadCommentComposer({
   const formRef = useRef<HTMLFormElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyEditorRef = useRef<TaskCommentEditorHandle | null>(null);
-  const skipInitialFocusRef = useRef(true);
   // Reset when mode or seed identity changes — not on every parent re-render
   // that passes a new (but equal) default attendee array.
   const defaultAttendeeKey = defaultAttendeeContactIds.join(",");
@@ -259,12 +266,9 @@ export function EmailThreadCommentComposer({
     defaultAttendeeKey,
   ]);
 
+  // Explicit focus only (hotkeys) — never on mount / mode / send toggles.
   useEffect(() => {
-    if (skipInitialFocusRef.current) {
-      skipInitialFocusRef.current = false;
-      return;
-    }
-    if (disabled || sending) return;
+    if (!focusNonce || disabled || sending) return;
 
     let timeoutId = 0;
     const focusComposer = () => {
@@ -275,17 +279,16 @@ export function EmailThreadCommentComposer({
       );
     };
 
-    // Title input mounts after structured mode flips; wait a frame.
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
-      // CodeMirror may not be ready on the first frame after mode change.
+      // Title / CodeMirror may mount a frame after structured mode flips.
       timeoutId = window.setTimeout(focusComposer, 0);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeoutId);
     };
-  }, [disabled, mode, sending]);
+  }, [disabled, focusNonce, mode, sending]);
 
   useEffect(() => {
     if (disabled || sending) return;
@@ -345,6 +348,8 @@ export function EmailThreadCommentComposer({
       if (event.key === "Tab" && !event.shiftKey) {
         // Inside title/body: leave Tab alone (title → body / properties).
         if (isComposerTextFieldFocused()) return;
+        // Messages: Tab cycles conversation list ↔ thread messages.
+        if (hasMainAndContentListKeyboardZones()) return;
         if (!shouldHandleGlobalShortcut(event)) return;
         event.preventDefault();
         event.stopImmediatePropagation();

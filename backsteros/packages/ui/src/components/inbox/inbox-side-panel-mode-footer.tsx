@@ -6,7 +6,7 @@ import {
   INBOX_LIST_MODE_OPTIONS,
   type InboxListMode,
 } from "../../inbox/inbox-list-mode.js";
-import { InboxNavIcon } from "../shell/sidebar-nav-icons.js";
+import { EmailNavIcon, InboxNavIcon } from "../shell/sidebar-nav-icons.js";
 import { AgentActivityIcon } from "../tasks/agent-activity-icon.js";
 import {
   SegmentedPillToggle,
@@ -15,6 +15,7 @@ import {
 
 const MODE_ICONS: Record<InboxListMode, ReactNode> = {
   notifications: <InboxNavIcon />,
+  messages: <EmailNavIcon size={16} />,
   agents: <AgentActivityIcon size={16} />,
 };
 
@@ -23,7 +24,7 @@ export type InboxSidePanelModeFooterProps = {
   onModeChange: (mode: InboxListMode) => void;
 };
 
-/** Notifications / Agents — calendar side-panel footer pattern. */
+/** Notifications / Messages / Agents — calendar side-panel footer pattern. */
 export function InboxSidePanelModeFooter({
   mode,
   onModeChange,

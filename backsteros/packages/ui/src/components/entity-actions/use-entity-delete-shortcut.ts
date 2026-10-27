@@ -18,6 +18,18 @@ function isPlainDeleteShortcut(event: KeyboardEvent): boolean {
   );
 }
 
+function isDeleteConfirmShortcut(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+  return (
+    isPlainDeleteShortcut(event) ||
+    event.key === "Enter" ||
+    event.code === "Enter" ||
+    event.code === "NumpadEnter"
+  );
+}
+
 export function useEntityDeleteShortcut() {
   const {
     deleteConfig,
@@ -31,20 +43,23 @@ export function useEntityDeleteShortcut() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      // Modal confirm must not require a registered deleteConfig — drafts open
+      // the modal with an override config only (EmailDraftActions), so
+      // deleteConfig stays null while modalDeleteConfig holds the action.
+      if (deleteModalOpen) {
+        if (isDeletePending) return;
+        if (!isDeleteConfirmShortcut(event)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        confirmDeleteRef.current();
+        return;
+      }
+
       const treeDeleteConfig = resolveDocumentTreeDeleteConfig();
       const effectiveDeleteConfig =
         treeDeleteConfig ?? deleteConfigRef.current;
 
       if (!effectiveDeleteConfig || isDeletePending) {
-        return;
-      }
-
-      if (deleteModalOpen) {
-        if (isPlainDeleteShortcut(event)) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          confirmDeleteRef.current();
-        }
         return;
       }
 

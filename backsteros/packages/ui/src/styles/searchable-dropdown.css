@@ -477,6 +477,11 @@
   color: color-mix(in srgb, var(--foreground) 85%, transparent);
 }
 
+.searchable-dropdown-panel__option--deselect
+  .searchable-dropdown-panel__option-label--muted {
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
 .searchable-dropdown-panel__option-row {
   display: flex;
   align-items: stretch;

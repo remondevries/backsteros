@@ -1,5 +1,13 @@
 import { ApiClientError } from "@backsteros/api-client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useDesktopApi } from "./api-context";
 import {
@@ -33,9 +41,14 @@ const CRUD_POLL_MS = 3_000;
 
 export type SyncingIssuesState = {
   loading: boolean;
+  /** Live issues after shared dismissals (sidebar + Settings agree). */
   issues: SyncIssueInstance[];
+  /** Raw live issues before local dismiss. */
+  liveIssues: SyncIssueInstance[];
   health: SyncingHealthFacts;
   snapshot: SyncingSnapshot;
+  dismissedIds: readonly SyncIssueLayoutId[];
+  dismissIssue: (id: SyncIssueLayoutId) => void;
   refresh: () => Promise<void>;
   retryPowerSync: () => Promise<void>;
   flushUploads: () => Promise<boolean>;
@@ -45,6 +58,8 @@ export type SyncingIssuesState = {
   topIssue: SyncIssueInstance | null;
   hasIssues: boolean;
 };
+
+const SyncingIssuesContext = createContext<SyncingIssuesState | null>(null);
 
 function mapCrudOp(op: string): string {
   switch (op) {
@@ -94,9 +109,10 @@ async function readUploadQueue(
 }
 
 /**
- * Aggregates PowerSync channel state + ops sync-health into the Syncing triage queue.
+ * Single owner of PowerSync + ops sync-health → triage queue.
+ * Mount once via {@link SyncingIssuesProvider} so sidebar and Settings share state.
  */
-export function useSyncingIssues(): SyncingIssuesState {
+function useSyncingIssuesState(): SyncingIssuesState {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
   const versionMismatch = useLocalCoreVersionMismatch();
@@ -107,6 +123,7 @@ export function useSyncingIssues(): SyncingIssuesState {
   const [mismatches, setMismatches] = useState<SyncReconcileMismatch[]>([]);
   const [healthFetchError, setHealthFetchError] = useState<string | null>(null);
   const [healthAuthDenied, setHealthAuthDenied] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<SyncIssueLayoutId[]>([]);
 
   const uploadErrorMessage =
     powerSync.database?.currentStatus?.dataFlowStatus?.uploadError?.message ??
@@ -138,9 +155,8 @@ export function useSyncingIssues(): SyncingIssuesState {
         );
       }
       setHealthAuthDenied(false);
-      setDeadLetters([]);
-      setDeadLetterCount(0);
-      setMismatches([]);
+      // Keep last known dead letters / mismatches — a transient fetch blip must
+      // not flash Settings as Healthy while the sidebar still shows twin-lag.
     }
   }, [client]);
 
@@ -227,14 +243,32 @@ export function useSyncingIssues(): SyncingIssuesState {
     ],
   );
 
-  const issues = useMemo(
+  const liveIssues = useMemo(
     () => buildSyncIssuesFromSnapshot(snapshot),
     [snapshot],
   );
+
+  // Drop dismissals once the live source no longer reports that issue.
+  useEffect(() => {
+    const liveIds = new Set(liveIssues.map((issue) => issue.id));
+    setDismissedIds((current) => current.filter((id) => liveIds.has(id)));
+  }, [liveIssues]);
+
+  const issues = useMemo(
+    () => liveIssues.filter((issue) => !dismissedIds.includes(issue.id)),
+    [dismissedIds, liveIssues],
+  );
+
   const health = useMemo(
     () => buildSyncingHealthFacts(snapshot),
     [snapshot],
   );
+
+  const dismissIssue = useCallback((id: SyncIssueLayoutId) => {
+    setDismissedIds((current) =>
+      current.includes(id) ? current : [...current, id],
+    );
+  }, []);
 
   const retryPowerSync = useCallback(async () => {
     await powerSync.retry();
@@ -273,20 +307,55 @@ export function useSyncingIssues(): SyncingIssuesState {
     [client, loadHealth],
   );
 
+  // Twin-lag / connecting are tone "info" (monitor-only). They stay in the
+  // Settings triage list, but must not drive the sidebar alert or the
+  // Settings "N issues" badge — otherwise the footer nags while Syncing
+  // already looks healthy for actionable problems.
+  const actionableIssues = useMemo(
+    () => issues.filter((issue) => issue.tone === "error" || issue.tone === "warning"),
+    [issues],
+  );
+
   return {
     loading,
     issues,
+    liveIssues,
     health,
     snapshot,
+    dismissedIds,
+    dismissIssue,
     refresh,
     retryPowerSync,
     flushUploads,
     forceSync,
     retryDeadLetter,
     acknowledgeDeadLetter,
-    topIssue: issues[0] ?? null,
-    hasIssues: issues.length > 0,
+    topIssue: actionableIssues[0] ?? null,
+    hasIssues: actionableIssues.length > 0,
   };
+}
+
+export function SyncingIssuesProvider({ children }: { children: ReactNode }) {
+  const value = useSyncingIssuesState();
+  return (
+    <SyncingIssuesContext.Provider value={value}>
+      {children}
+    </SyncingIssuesContext.Provider>
+  );
+}
+
+/**
+ * Shared Syncing triage queue (sidebar alert + Settings → Syncing).
+ * Must be under {@link SyncingIssuesProvider}.
+ */
+export function useSyncingIssues(): SyncingIssuesState {
+  const value = useContext(SyncingIssuesContext);
+  if (!value) {
+    throw new Error(
+      "useSyncingIssues must be used inside SyncingIssuesProvider",
+    );
+  }
+  return value;
 }
 
 export function isSyncIssueLayoutId(value: string): value is SyncIssueLayoutId {

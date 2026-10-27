@@ -112,6 +112,7 @@ export {
   KEEP_ALIVE_SURFACES,
   dismissKeepAliveForOutletNavigation,
   getVisibleKeepAliveSurface,
+  isKeepAliveOutletTransitionPending,
   isKeepAlivePaneMounted,
   isKeepAliveSurface,
   isWarmKeepAliveSectionFlip,
@@ -306,8 +307,8 @@ export const KeepAlivePane = memo(function KeepAlivePane({
   surface,
   active: activeProp,
   snapshot,
-  /** Side panels thaw one frame later so the main page paints first. */
-  role = "main",
+  /** Kept for call-site clarity (main vs sidepanel stacks). */
+  role: _role = "main",
   children,
 }: {
   surface?: PendingPageSurface;
@@ -316,6 +317,7 @@ export const KeepAlivePane = memo(function KeepAlivePane({
   role?: "main" | "sidepanel";
   children: ReactNode;
 }) {
+  void _role;
   // Only wake when THIS surface gains/loses keep-alive visibility — not when
   // other sections flip. Same-surface href flips leave `visible` unchanged and
   // use the epoch subscription below (shown panes only).
@@ -341,48 +343,15 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     isThisSurfaceShown,
   );
   const shown = active;
-  // DOM visibility flips immediately. Thaw runs on the next animation frame
-  // (urgent); freeze runs one frame later with a visibility guard so a stale
-  // freeze cannot land after the user has already returned.
+  // Thaw during render when shown flips on — avoids one frozen paint after
+  // Inbox ← Communication. Freeze stays one frame later with a stale guard.
   const [treeActive, setTreeActive] = useState(() => shown);
+  if (shown && !treeActive && isKeepAlivePaneShown(surface, activeProp)) {
+    setTreeActive(true);
+  }
   useLayoutEffect(() => {
+    if (shown || !treeActive) return;
     let cancelled = false;
-    if (shown) {
-      if (treeActive) {
-        return () => {
-          cancelled = true;
-        };
-      }
-      // Main panes thaw immediately — deferring one frame left Communication
-      // returning from email/spam with an empty main pane (`active === false`).
-      if (role === "main") {
-        if (isKeepAlivePaneShown(surface, activeProp)) {
-          setTreeActive(true);
-        }
-        return () => {
-          cancelled = true;
-        };
-      }
-      const thaw = () => {
-        if (cancelled) return;
-        // Match `isKeepAlivePaneShown`: Outlet email clears `visible`, so
-        // activeProp owns side-panel show — do not refuse thaw when visible
-        // is null (Communication list stayed empty after inbox → email return).
-        if (!isKeepAlivePaneShown(surface, activeProp)) return;
-        setTreeActive(true);
-      };
-      // Sidepanel waits one frame so main paints first.
-      const frame1 = requestAnimationFrame(() => {
-        if (!cancelled) thaw();
-      });
-      return () => {
-        cancelled = true;
-        cancelAnimationFrame(frame1);
-      };
-    }
-    if (!treeActive) return;
-    // Freeze one frame later than main thaw so the entering pane activates
-    // first. Skip if this surface is visible again (stale freeze guard).
     const frame = requestAnimationFrame(() => {
       if (cancelled) return;
       if (isKeepAlivePaneShown(surface, activeProp)) return;
@@ -392,7 +361,7 @@ export const KeepAlivePane = memo(function KeepAlivePane({
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [shown, treeActive, surface, activeProp, role]);
+  }, [shown, treeActive, surface, activeProp]);
   // Context consumers must stay frozen while DOM-hidden, even if raw
   // treeActive briefly disagrees.
   const effectiveTreeActive = treeActive && shown;
@@ -408,12 +377,10 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     getWarmKeepAliveEpoch,
     getWarmKeepAliveEpoch,
   );
-  // Main panes follow the warm lastHref store (pushState without TanStack).
-  // Side panels use the host snapshot instead: chrome already resolves the live
-  // router location for Outlet email (`/email/…?list=communication|inbox`), so
-  // list selection stays on the open message even when lastHref is briefly stale.
+  // Warm lastHref is source of truth for both main and sidepanel (email
+  // selection is mirrored onto inbox via rememberInboxPanelSelectionHref).
   let nextSnapshot = snapshot;
-  if (surface != null && role === "main") {
+  if (surface != null) {
     const parts = partsFromKeepAliveHref(lastHrefForKeepAliveSurface(surface));
     nextSnapshot = snapshotFor(surface, parts.pathname, parts.searchStr);
   }

@@ -1,3 +1,4 @@
+import { filterInboxItemsByListMode } from "@backsteros/ui";
 import {
   getFirstInboxItemHref,
   getKnowledgeHref,
@@ -121,10 +122,17 @@ export function rememberWorkspaceSectionEntries(input: {
   knowledgeDocuments: readonly KnowledgeListItem[];
 }): void {
   // Inbox membership churns (approve / complete / ack). Always sync the seed to
-  // the live first row — or null when empty — so `/inbox` never resurrects a
-  // finished item in the detail pane.
+  // the live first Notifications row — or null when empty — so `/inbox` opens
+  // the default list detail (not Agents / Messages).
+  const notificationItems = filterInboxItemsByListMode(
+    input.inboxItems,
+    "notifications",
+  );
   const seed: Partial<Record<SectionEntryKey, string | null>> = {
-    inbox: getFirstInboxItemHref(input.inboxItems) ?? null,
+    inbox:
+      getFirstInboxItemHref(
+        notificationItems.length > 0 ? notificationItems : input.inboxItems,
+      ) ?? null,
   };
   if (peekSectionEntryHref("communication") == null) {
     seed.communication = "/communication";

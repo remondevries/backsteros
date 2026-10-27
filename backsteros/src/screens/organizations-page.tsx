@@ -1800,7 +1800,7 @@ export function OrganizationsPage() {
                     chatInbox.selectConversation(null);
                   }}
                 >
-                  Back to Communication
+                  Back to Messages
                 </button>
                 <CommunicationChatView
                   pane="thread"

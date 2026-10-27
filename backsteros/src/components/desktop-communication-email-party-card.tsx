@@ -34,6 +34,7 @@ type DesktopCommunicationEmailPartyCardProps = {
   section: ContactSectionId;
   onSectionChange: (section: ContactSectionId) => void;
   onSelectOrganization: (organizationId: string) => void;
+  onClearOrganization?: () => void;
   onCreateOrganizationFromQuery?: (query: string) => void;
   onSelectContact: (contactId: string) => void;
   onClearContact?: () => void;
@@ -69,6 +70,7 @@ export function DesktopCommunicationEmailPartyCard({
   section,
   onSectionChange,
   onSelectOrganization,
+  onClearOrganization,
   onCreateOrganizationFromQuery,
   onSelectContact,
   onClearContact,
@@ -171,6 +173,7 @@ export function DesktopCommunicationEmailPartyCard({
         }}
         allowDeselect={Boolean(onClearContact)}
         onClear={onClearContact}
+        deselectLabel={onClearContact ? "Remove contact" : undefined}
         disabled={linking}
         searchPlaceholder="Search contacts…"
         ariaLabel="Select contact"
@@ -295,6 +298,11 @@ export function DesktopCommunicationEmailPartyCard({
                     const nextId = resolveDropdownNone(next);
                     if (nextId) onSelectOrganization(nextId);
                   }}
+                  allowDeselect={Boolean(onClearOrganization)}
+                  onClear={onClearOrganization}
+                  deselectLabel={
+                    onClearOrganization ? "Remove organisation" : undefined
+                  }
                   disabled={linking}
                   searchPlaceholder="Search organizations…"
                   ariaLabel="Select organization"

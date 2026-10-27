@@ -6,6 +6,7 @@ import type { InboxEmailListItem } from "../inbox/inbox-items.js";
 import type { InboxTaskListItem } from "../inbox/inbox-items.js";
 import {
   communicationChatListRowMatchesQuery,
+  communicationChatListKeyboardItemIds,
   communicationChatListVisibleRowIds,
   emailListItemPartyEmail,
   emailListItemPartyName,
@@ -29,6 +30,9 @@ function chat(
     contactName: "Ada Lovelace",
     contactEmail: "ada@example.com",
     contactPhone: null,
+    contactUsername: null,
+    contactId: null,
+    organizationId: null,
     contactAvatarUrl: null,
     lastMessagePreview: "Hello there",
     lastActivityAt: "2026-01-02T12:00:00.000Z",
@@ -65,10 +69,11 @@ function email(
 }
 
 describe("emailStatusToChatListStatus", () => {
-  it("maps task statuses into shared Triage/Waiting/On Hold/Completed buckets", () => {
+  it("maps task statuses into Triage/Waiting/In Review/On Hold/Completed buckets", () => {
     assert.equal(emailStatusToChatListStatus("triage"), "open");
     assert.equal(emailStatusToChatListStatus("in_progress"), "open");
     assert.equal(emailStatusToChatListStatus("waiting"), "pending");
+    assert.equal(emailStatusToChatListStatus("in_review"), "in_review");
     assert.equal(emailStatusToChatListStatus("on_hold"), "snoozed");
     assert.equal(emailStatusToChatListStatus("backlog"), "snoozed");
     assert.equal(emailStatusToChatListStatus("completed"), "resolved");
@@ -125,6 +130,24 @@ describe("communicationChatListVisibleRowIds", () => {
         peelCommunicationDraftEmailRows(groups),
       ),
       ["d1", "e-triage", "e-wait", "c-done"],
+    );
+  });
+});
+
+describe("communicationChatListKeyboardItemIds", () => {
+  it("skips collapsed status groups but keeps drafts", () => {
+    const groups = groupCommunicationChatListRows(
+      [chat({ id: "c-done", status: "resolved" })],
+      [
+        email({ id: "d1", draftId: "draft-1", status: "concept" }),
+        email({ id: "e-wait", status: "waiting" }),
+        email({ id: "e-triage", status: "triage" }),
+      ],
+    );
+    const peeled = peelCommunicationDraftEmailRows(groups);
+    assert.deepEqual(
+      communicationChatListKeyboardItemIds(peeled, new Set(["open"])),
+      ["d1", "e-wait", "c-done"],
     );
   });
 });

@@ -209,6 +209,13 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     href: "/finance/dashboard",
   },
   {
+    id: "messages",
+    letter: "m",
+    hint: "G M",
+    label: "Messages",
+    href: "/communication",
+  },
+  {
     id: "contacts",
     letter: "c",
     hint: "G C",

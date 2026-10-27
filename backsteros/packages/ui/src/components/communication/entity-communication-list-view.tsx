@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 
+import { resolveChatChannelKind } from "../../communication/chat-channel-kind.js";
 import {
   chatConversationToTaskItemRowTask,
   chatStatusToTaskStatus,
@@ -11,7 +12,6 @@ import {
   emailListItemPartyName,
   groupCommunicationChatListRows,
   peelCommunicationDraftEmailRows,
-  supportListItemPartyName,
   type CommunicationChatListRow,
 } from "../../communication/communication-chat-list-row.js";
 import {
@@ -25,10 +25,12 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import {
-  CommunicationChatKindIcon,
-  CommunicationSupportKindIcon,
+  CommunicationChannelKindIcon,
   CommunicationWhatsAppKindIcon,
+  communicationChannelKindClass,
+  communicationChannelKindTitle,
 } from "./communication-kind-icons.js";
+import { CommunicationSupportListCard } from "./communication-support-list-card.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
@@ -127,8 +129,17 @@ export function EntityCommunicationListView({
     conversations.length === 0 &&
     emails.length === 0 &&
     supportTasks.length === 0;
+  const hasWhatsAppConversation = conversations.some(
+    (conversation) =>
+      resolveChatChannelKind(conversation.channelType, {
+        inboxName: conversation.inboxName,
+        contactName: conversation.contactName,
+      }) === "whatsapp",
+  );
   const showWhatsApp =
-    showWhatsAppPlaceholder && !(listEmpty && loading);
+    showWhatsAppPlaceholder &&
+    !hasWhatsAppConversation &&
+    !(listEmpty && loading);
 
   function toggleGroup(status: string) {
     setCollapsedGroups((prev) => {
@@ -151,7 +162,7 @@ export function EntityCommunicationListView({
   return (
     <div
       className="contact-tasks-list-host communication-chat__entity-list"
-      aria-label="Communication"
+      aria-label="Messages"
     >
       <ul
         className="overview-grouped-list communication-chat__task-list contact-tasks-list"
@@ -275,71 +286,14 @@ function renderRow(
   }
 
   if (row.kind === "support") {
-    const item = row.item;
-    const task = inboxListItemToTaskItemRowTask(item);
-    if (!task) return null;
-    const personLabel = supportListItemPartyName(item);
-    const avatarSrc = item.contactAvatarSrc?.trim() || null;
-    const avatarKind = item.contactId?.trim()
-      ? "contact"
-      : item.organizationId?.trim()
-        ? "organization"
-        : "contact";
-    const age = ageLabel(item.updatedAt);
-    const active = item.id === ctx.selectedSupportId;
     return (
-      <li
-        key={item.id}
-        className={[
-          "project-tasks-list__card-item",
-          "task-kanban-card-item",
-          "communication-chat__card-item",
-          keyboardNavItemClass(active),
-          active ? "communication-chat__card-item--active" : null,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        {...keyboardNavItemProps(item.id)}
-      >
-        <TaskBoardCard
-          task={{
-            ...task,
-            title: item.title?.trim() || "Support ticket",
-          }}
-          onOpen={() => ctx.onSelectSupport?.(item.id)}
-          showDueDate
-          showDisplayId={false}
-          showStatus={false}
-          leadingSlot={
-            <KindAvatar
-              personLabel={personLabel}
-              avatarSrc={avatarSrc}
-              avatarKind={avatarKind}
-              kindBadge={
-                <span
-                  className="communication-chat__card-kind communication-chat__card-kind--support"
-                  title="Support"
-                  aria-label="Support"
-                >
-                  <CommunicationSupportKindIcon />
-                </span>
-              }
-            />
-          }
-          topLeadingSlot={
-            <span className="communication-chat__card-name" title={personLabel}>
-              {personLabel}
-            </span>
-          }
-          ownerSlot={
-            age.label ? (
-              <span className="communication-chat__card-age" title={age.title}>
-                {age.label}
-              </span>
-            ) : null
-          }
-        />
-      </li>
+      <CommunicationSupportListCard
+        key={row.item.id}
+        item={row.item}
+        selectedSupportId={ctx.selectedSupportId}
+        keyboardHighlighted={row.item.id === ctx.selectedSupportId}
+        onOpen={(supportId) => ctx.onSelectSupport?.(supportId)}
+      />
     );
   }
 
@@ -391,11 +345,30 @@ function renderRow(
             avatarKind="contact"
             kindBadge={
               <span
-                className="communication-chat__card-kind communication-chat__card-kind--chat"
-                title="Chat"
-                aria-label="Chat"
+                className={[
+                  "communication-chat__card-kind",
+                  communicationChannelKindClass(conversation.channelType, {
+                    inboxName: conversation.inboxName,
+                    contactName: conversation.contactName,
+                  }),
+                ].join(" ")}
+                title={communicationChannelKindTitle(conversation.channelType, {
+                  inboxName: conversation.inboxName,
+                  contactName: conversation.contactName,
+                })}
+                aria-label={communicationChannelKindTitle(
+                  conversation.channelType,
+                  {
+                    inboxName: conversation.inboxName,
+                    contactName: conversation.contactName,
+                  },
+                )}
               >
-                <CommunicationChatKindIcon />
+                <CommunicationChannelKindIcon
+                  channelType={conversation.channelType}
+                  inboxName={conversation.inboxName}
+                  contactName={conversation.contactName}
+                />
               </span>
             }
           />

@@ -35,8 +35,8 @@ export function SettingsSyncingWorkbench({
   const syncing = useSyncingIssues();
   const [selectedId, setSelectedId] = useState<SyncIssueLayoutId | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
-  const [dismissedIds, setDismissedIds] = useState<SyncIssueLayoutId[]>([]);
   const [forceSyncing, setForceSyncing] = useState(false);
+  const visibleIssues = syncing.issues;
 
   const runForceSync = () => {
     if (forceSyncing) return;
@@ -61,16 +61,6 @@ export function SettingsSyncingWorkbench({
       })
       .finally(() => setForceSyncing(false));
   };
-
-  const visibleIssues = syncing.issues.filter(
-    (issue) => !dismissedIds.includes(issue.id),
-  );
-
-  // Drop dismissals once the live source no longer reports that issue.
-  useEffect(() => {
-    const liveIds = new Set(syncing.issues.map((issue) => issue.id));
-    setDismissedIds((current) => current.filter((id) => liveIds.has(id)));
-  }, [syncing.issues]);
 
   // If the open detail disappeared from the live queue, return to triage.
   useEffect(() => {
@@ -97,21 +87,22 @@ export function SettingsSyncingWorkbench({
         );
       }
     }
-    setDismissedIds((current) =>
-      current.includes(id) ? current : [...current, id],
-    );
+    syncing.dismissIssue(id);
     setSelectedId(null);
     setBanner({ kind: "success", message });
   };
 
+  const actionableCount = visibleIssues.filter(
+    (issue) => issue.tone === "error" || issue.tone === "warning",
+  ).length;
   const issueCountLabel =
     syncing.loading && visibleIssues.length === 0
       ? "Checking"
-      : visibleIssues.length === 0
+      : actionableCount === 0
         ? "Healthy"
-        : visibleIssues.length === 1
+        : actionableCount === 1
           ? "1 issue"
-          : `${visibleIssues.length} issues`;
+          : `${actionableCount} issues`;
 
   return (
     <div className="settings-sync-workbench">
@@ -122,7 +113,7 @@ export function SettingsSyncingWorkbench({
           <span
             className={[
               "settings-sync-workbench__count",
-              visibleIssues.length === 0
+              actionableCount === 0
                 ? "settings-sync-workbench__count--ok"
                 : "settings-sync-workbench__count--warn",
             ].join(" ")}

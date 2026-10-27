@@ -216,8 +216,11 @@
   overflow: hidden;
 }
 
+/* Prefer visibility over content-visibility — WebKit can fail to restore
+   layout/paint after content-visibility:hidden (empty Inbox list column,
+   collapsed calendar timeline). */
 .keep-alive-pane[data-keep-alive-hidden] {
-  content-visibility: hidden;
+  visibility: hidden;
   pointer-events: none;
 }
 

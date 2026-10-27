@@ -54,6 +54,8 @@ function AppShellTabIcon({ tab }: { tab: ProductTab }) {
           id: meta.taskId,
           status: meta.taskStatus,
           agentWorkingContactId: liveTask?.agentWorkingContactId,
+          agentCreatedAt: liveTask?.agentCreatedAt,
+          agentInboxApprovedAt: liveTask?.agentInboxApprovedAt,
         },
         agentStatus,
       ),

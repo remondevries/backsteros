@@ -71,6 +71,14 @@ export function mustDualWriteRestAfterCrudFlush(
   ) {
     return true;
   }
+  // Contact / org nullable clears (title, FB Message ID, org link, …) — same
+  // PowerSync PATCH null-drop risk as due-date clears.
+  if (
+    (table === "contacts" || table === "organizations") &&
+    Object.values(values).some((value) => value === null)
+  ) {
+    return true;
+  }
   return false;
 }
 

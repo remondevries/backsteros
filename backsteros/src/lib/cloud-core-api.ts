@@ -6,6 +6,20 @@ import { loadDesktopOwnerToken } from "./local-shell-auth";
  */
 export const CLOUD_CORE_PUBLIC_API_URL = "https://agent.backsteros.com";
 
+export class CloudCoreApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "CloudCoreApiError";
+    this.status = status;
+  }
+}
+
+export function isCloudCoreApiError(error: unknown): error is CloudCoreApiError {
+  return error instanceof CloudCoreApiError;
+}
+
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -20,7 +34,10 @@ export async function cloudCoreRequestJson<T>(
 ): Promise<T> {
   const token = await loadDesktopOwnerToken();
   if (!token) {
-    throw new Error("Owner API key required for cloud-core timer sync");
+    throw new CloudCoreApiError(
+      401,
+      "Owner API key required for cloud-core timer sync",
+    );
   }
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const res = await fetch(`${trimSlash(CLOUD_CORE_PUBLIC_API_URL)}${normalized}`, {
@@ -34,7 +51,10 @@ export async function cloudCoreRequestJson<T>(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${body || res.statusText}`);
+    throw new CloudCoreApiError(
+      res.status,
+      `${res.status} ${body || res.statusText}`,
+    );
   }
   if (res.status === 204) {
     return undefined as T;

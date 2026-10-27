@@ -36,8 +36,23 @@ describe("social handles", () => {
       "https://x.com/remon",
     );
     assert.equal(
+      socialUrlFromHandle("Telegram", "@remon"),
+      "https://t.me/remon",
+    );
+    assert.equal(
       socialUrlFromHandle("Website", "example.com"),
       "https://example.com",
+    );
+  });
+
+  it("extracts Telegram handles from t.me URLs", () => {
+    assert.equal(
+      socialHandleFromUrl("Telegram", "https://t.me/remon"),
+      "remon",
+    );
+    assert.equal(
+      formatSocialHandleInput("Telegram", "https://t.me/remon"),
+      "@remon",
     );
   });
 

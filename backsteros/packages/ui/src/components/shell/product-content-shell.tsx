@@ -32,8 +32,10 @@ export type ProductContentShellProps = ProductContentTabsProps & {
   statusBar?: ReactNode;
 };
 
+/* Avoid content-visibility:hidden — WKWebView often fails to restore the
+   list column width/paint after Communication → Inbox (and similar) flips. */
 const HIDDEN_SIDE_PANEL_STYLE = {
-  contentVisibility: "hidden",
+  visibility: "hidden",
 } as CSSProperties;
 
 /**

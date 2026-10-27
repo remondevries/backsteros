@@ -43,6 +43,8 @@ export const ProjectTasksSection = memo(function ProjectTasksSection(
             agentWorkingContactName: task.agentWorkingContactName,
             agentWorkingKind: task.agentWorkingKind,
             taskStatus: task.status,
+            agentCreatedAt: task.agentCreatedAt,
+            agentInboxApprovedAt: task.agentInboxApprovedAt,
             agentStatus,
             workingShownOnStatusIcon: true,
           }),

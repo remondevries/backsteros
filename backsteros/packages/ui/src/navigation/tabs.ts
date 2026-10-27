@@ -52,9 +52,25 @@ const CALENDAR_TAB_SEARCH_KEYS = [
  * `/calendar` keeps mode / view / Timetracking period / open meeting so tab
  * switches restore Calendar chrome and the meeting note overlay.
  */
+/**
+ * Email / draft detail keep the owning list (`?list=inbox`) so returning to
+ * the tab restores the Inbox / Communication side panel.
+ */
+const EMAIL_TAB_SEARCH_KEYS = ["list"] as const;
+
+function isEmailDetailTabPath(path: string): boolean {
+  return path.startsWith("/email/") || path.startsWith("/drafts/");
+}
+
 export function buildProductTabHref(pathname: string, search = ""): string {
   const path = normalizeTabHref(pathname);
-  if (path !== "/calendar") {
+  const keys =
+    path === "/calendar"
+      ? CALENDAR_TAB_SEARCH_KEYS
+      : isEmailDetailTabPath(path)
+        ? EMAIL_TAB_SEARCH_KEYS
+        : null;
+  if (!keys) {
     return path;
   }
 
@@ -62,7 +78,7 @@ export function buildProductTabHref(pathname: string, search = ""): string {
     search.startsWith("?") ? search.slice(1) : search,
   );
   const next = new URLSearchParams();
-  for (const key of CALENDAR_TAB_SEARCH_KEYS) {
+  for (const key of keys) {
     const value = params.get(key)?.trim();
     if (value) next.set(key, value);
   }

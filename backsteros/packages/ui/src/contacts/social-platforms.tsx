@@ -8,6 +8,8 @@ import { GlobeIcon } from "../components/icons/globe-icon.js";
 import { InstagramIcon } from "../components/icons/instagram-icon.js";
 import { LinkedInIcon } from "../components/icons/linkedin-icon.js";
 import { SlackIcon } from "../components/icons/slack-icon.js";
+import { TelegramIcon } from "../components/icons/telegram-icon.js";
+import { WhatsAppIcon } from "../components/icons/whatsapp-icon.js";
 import { XTwitterIcon } from "../components/icons/x-twitter-icon.js";
 
 export const CONTACT_SOCIAL_PLATFORMS = [
@@ -17,6 +19,8 @@ export const CONTACT_SOCIAL_PLATFORMS = [
   "X",
   "GitHub",
   "Discord",
+  "Telegram",
+  "WhatsApp",
   "Slack",
   "Website",
   "Other",
@@ -34,6 +38,8 @@ const PLATFORM_URL_PREFIX: Record<
   X: "https://x.com/",
   GitHub: "https://github.com/",
   Discord: "https://discord.com/users/",
+  Telegram: "https://t.me/",
+  WhatsApp: "https://wa.me/",
   Slack: "https://",
   Website: "https://",
 };
@@ -46,6 +52,7 @@ const HANDLE_PLATFORMS = new Set<string>([
   "X",
   "GitHub",
   "Discord",
+  "Telegram",
 ]);
 
 const ALL_PREFIXES = Object.values(PLATFORM_URL_PREFIX);
@@ -95,7 +102,9 @@ export function socialHandleFromUrl(platform: string, url: string): string {
 
   const prefix = socialPlatformUrlPrefix(platform);
   if (prefix && prefix !== "https://" && trimmed.startsWith(prefix)) {
-    return normalizeSocialHandle(trimmed.slice(prefix.length));
+    const rest = trimmed.slice(prefix.length);
+    if (platform === "WhatsApp") return rest.replace(/[^\d]/g, "");
+    return normalizeSocialHandle(rest);
   }
 
   try {
@@ -103,6 +112,16 @@ export function socialHandleFromUrl(platform: string, url: string): string {
       /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
     );
     const parts = parsed.pathname.split("/").filter(Boolean);
+    if (platform === "WhatsApp") {
+      const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+      if (
+        host === "wa.me" ||
+        host === "api.whatsapp.com" ||
+        host === "whatsapp.com"
+      ) {
+        return (parts[0] ?? "").replace(/[^\d]/g, "");
+      }
+    }
     if (platform === "LinkedIn") {
       const inIndex = parts.indexOf("in");
       if (inIndex >= 0 && parts[inIndex + 1]) {
@@ -138,10 +157,15 @@ export function socialUrlFromHandle(
     return typed;
   }
 
-  const handle = normalizeSocialHandle(typed);
-  if (!handle) return socialPlatformUrlPrefix(platform) ?? "";
-
   const prefix = socialPlatformUrlPrefix(platform);
+  if (platform === "WhatsApp" && prefix) {
+    const digits = typed.replace(/[^\d]/g, "");
+    return digits ? `${prefix}${digits}` : prefix;
+  }
+
+  const handle = normalizeSocialHandle(typed);
+  if (!handle) return prefix ?? "";
+
   if (prefix && prefix !== "https://" && socialPlatformUsesHandle(platform)) {
     return `${prefix}${handle}`;
   }
@@ -185,6 +209,7 @@ export function formatSocialHandleInput(
 
 export function socialHandlePlaceholder(platform: string): string {
   if (socialPlatformUsesHandle(platform)) return "@username";
+  if (platform === "WhatsApp") return "+31612345678";
   if (platform === "Website" || platform === "Slack") return "example.com";
   return "username or URL";
 }
@@ -206,6 +231,10 @@ export function socialPlatformIcon(
       return <GitHubIcon size={size} />;
     case "Discord":
       return <DiscordIcon size={size} />;
+    case "Telegram":
+      return <TelegramIcon size={size} />;
+    case "WhatsApp":
+      return <WhatsAppIcon size={size} />;
     case "Slack":
       return <SlackIcon size={size} />;
     case "Website":

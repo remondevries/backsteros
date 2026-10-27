@@ -92,12 +92,9 @@ export function CalendarDayTimeline({
   useEffect(() => {
     const container = mainRef.current;
     if (!container) return;
-    // Keep-alive panes toggle `content-visibility: hidden`, which collapses this
-    // container to 0×0 and snaps it back to the *same* size on reveal. Calling
-    // `updateSize()` on that round-trip forces a full FullCalendar relayout on
-    // every reveal (the dominant cost when re-entering Journal/Calendar). Only
-    // resize on a genuine, non-zero size change so a same-size reveal just
-    // repaints the already-laid-out grid.
+    // Keep-alive panes hide with visibility (not content-visibility). Still
+    // ignore 0×0 observer noise and only resize on a genuine size change so
+    // same-size reveals do not force a FullCalendar relayout.
     let lastWidth = 0;
     let lastHeight = 0;
     const observer = new ResizeObserver(() => {

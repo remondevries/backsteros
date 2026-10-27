@@ -12,6 +12,10 @@ import { PencilIcon, TrashIcon } from "@primer/octicons-react";
 
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import {
+  keyboardNavItemClass,
+  keyboardNavItemProps,
+} from "../../list-nav/keyboard-nav-item.js";
+import {
   TaskCommentEditor,
   type TaskCommentEditorHandle,
 } from "../tasks/task-comment-editor.js";
@@ -27,6 +31,10 @@ export type EmailThreadCommentBubbleProps = {
   /** Chat-style enter animation for newly appended comments. */
   entering?: boolean;
   selected?: boolean;
+  /** j/k timeline highlight (orange inset ring). */
+  keyboardHighlighted?: boolean;
+  /** When set, registers this bubble as a j/k nav target. */
+  navItemId?: string | null;
   onSelect?: () => void;
   onDelete?: () => void;
   onSaveEdit?: (body: string) => void | Promise<void>;
@@ -57,6 +65,8 @@ export function EmailThreadCommentBubble({
   authorAvatarSrc = null,
   entering = false,
   selected = false,
+  keyboardHighlighted = false,
+  navItemId = null,
   onSelect,
   onDelete,
   onSaveEdit,
@@ -135,16 +145,24 @@ export function EmailThreadCommentBubble({
   const showActions = selected && !editing && (onDelete != null || onSaveEdit != null);
   const busy = deleting || saving;
 
+  const trimmedNavId = navItemId?.trim() || "";
+
   return (
     <div
-      className={`email-thread-comment-row${
+      className={[
+        "email-thread-comment-row",
         isAgent
-          ? " email-thread-comment-row--agent"
-          : " email-thread-comment-row--user"
-      }${entering ? " email-thread-comment-row--enter" : ""}${
-        selected ? " is-selected" : ""
-      }${editing ? " is-editing" : ""}`}
+          ? "email-thread-comment-row--agent"
+          : "email-thread-comment-row--user",
+        entering ? "email-thread-comment-row--enter" : null,
+        selected ? "is-selected" : null,
+        editing ? "is-editing" : null,
+        keyboardNavItemClass(keyboardHighlighted),
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-email-comment-bubble
+      {...(trimmedNavId ? keyboardNavItemProps(trimmedNavId) : {})}
     >
       <div className="email-thread-comment__author-row">
         {isAgent ? (

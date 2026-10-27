@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from "react";
 import {
   AgentActivityIcon,
+  isAgentInboxPending,
   migrateLegacyTaskStatus,
   TaskStatusWorkingPulse,
 } from "@backsteros/ui";
@@ -16,6 +17,8 @@ type TaskAgentBinding = {
   agentWorkingContactId?: string | null;
   agentWorkingKind?: AgentWorkingKind | null;
   status?: string | null;
+  agentCreatedAt?: number | Date | string | null;
+  agentInboxApprovedAt?: number | Date | string | null;
 };
 
 function hasApiAgentWorkingMarker(task: {
@@ -44,6 +47,8 @@ export function isTaskAgentWorkingForUi(
     id: string;
     status?: string | null;
     agentWorkingContactId?: string | null;
+    agentCreatedAt?: number | Date | string | null;
+    agentInboxApprovedAt?: number | Date | string | null;
   },
   agentStatus: Pick<DesktopAgentStatusContextValue, "isTaskWorking"> | null,
 ): boolean {
@@ -57,8 +62,12 @@ export function isTaskAgentWorkingForUi(
   ) {
     return false;
   }
+  const liveWorking = agentStatus?.isTaskWorking(task.id) ?? false;
+  // Agents inbox = awaiting human sign-off. Sticky API working markers would
+  // make every row shimmer forever; only show working for a live PTY run.
+  if (isAgentInboxPending(task)) return liveWorking;
   if (hasApiAgentWorkingMarker(task)) return true;
-  return agentStatus?.isTaskWorking(task.id) ?? false;
+  return liveWorking;
 }
 
 /**
@@ -74,6 +83,8 @@ export function renderTaskAgentTitleTrailing(options: {
   agentWorkingContactName?: string | null;
   agentWorkingKind?: AgentWorkingKind | null;
   taskStatus?: string | null;
+  agentCreatedAt?: number | Date | string | null;
+  agentInboxApprovedAt?: number | Date | string | null;
   agentStatus: Pick<
     DesktopAgentStatusContextValue,
     "isTaskWorking" | "isTaskAgentOpen"
@@ -91,12 +102,20 @@ export function renderTaskAgentTitleTrailing(options: {
     agentWorkingContactName,
     agentWorkingKind,
     taskStatus,
+    agentCreatedAt,
+    agentInboxApprovedAt,
     agentStatus,
     workingShownOnStatusIcon = false,
   } = options;
   const apiWorking = hasApiAgentWorkingMarker({ agentWorkingContactId });
   const working = isTaskAgentWorkingForUi(
-    { id: taskId, status: taskStatus, agentWorkingContactId },
+    {
+      id: taskId,
+      status: taskStatus,
+      agentWorkingContactId,
+      agentCreatedAt,
+      agentInboxApprovedAt,
+    },
     agentStatus,
   );
   const agentBound =
@@ -158,6 +177,8 @@ export function buildWorkingProjectIdSet(
           id: task.id,
           status: task.status,
           agentWorkingContactId: task.agentWorkingContactId,
+          agentCreatedAt: task.agentCreatedAt,
+          agentInboxApprovedAt: task.agentInboxApprovedAt,
         },
         { isTaskWorking: (id) => workingTaskIds.has(id) },
       )

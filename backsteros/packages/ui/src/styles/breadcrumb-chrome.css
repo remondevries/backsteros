@@ -324,6 +324,10 @@
   opacity: 0.45;
 }
 
+.entity-header-action-menu-item-danger .entity-header-action-menu-item-icon {
+  color: inherit;
+}
+
 .entity-header-action-menu-item-icon {
   display: inline-flex;
   width: 16px;

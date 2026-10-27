@@ -198,16 +198,23 @@ describe("tasks list zone policy", () => {
     assert.equal(resolveZonePolicy("/projects/CA").defaultZone, "sidepanel");
   });
 
-  it("communication defaults to main and Tab can pin sidepanel", () => {
+  it("communication defaults to main; Tab can pin content or sidepanel", () => {
     const policy = resolveZonePolicy("/communication");
     assert.equal(policy.defaultZone, "main");
-    assert.equal(policy.autoSwitchJkToMain, true);
+    assert.equal(policy.autoSwitchJkToMain, false);
     assert.equal(
       resolveZonePolicy("/communication", {
         activeZone: "main",
         hasMainList: true,
       }).jkZone,
       "main",
+    );
+    assert.equal(
+      resolveZonePolicy("/communication", {
+        activeZone: "content",
+        hasMainList: true,
+      }).jkZone,
+      "content",
     );
     assert.equal(
       resolveZonePolicy("/communication", {

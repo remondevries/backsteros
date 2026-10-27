@@ -18,6 +18,7 @@ import {
   type InboxTaskListItem,
   type TaskStatus,
 } from "@backsteros/ui";
+import type { ChatConversation } from "@backsteros/contracts";
 
 import { patchEmailTaskListItem } from "../../lib/email-list-tasks";
 import type { DesktopWorkspaceData } from "../../lib/workspace/workspace-data-types";
@@ -63,7 +64,7 @@ type EmailListExtras = {
 };
 
 /** Which entity the right-rail property edits apply to. */
-type RailMode = "compose" | "support" | "email" | "none";
+type RailMode = "compose" | "support" | "email" | "chat" | "none";
 
 export type CommunicationPropertyHandlersContext = {
   client: BacksterosApiClient;
@@ -72,6 +73,7 @@ export type CommunicationPropertyHandlersContext = {
   isComposingEmail: boolean;
   selectedEmail: InboxEmailListItem | null;
   selectedSupport: InboxTaskListItem | null;
+  selectedChatConversation: ChatConversation | null;
   supportRelatedOrganizationIds: readonly string[];
   patchTask: (patch: Record<string, unknown>) => void;
   /** Compose (new email or open draft). */
@@ -100,6 +102,8 @@ export type CommunicationPropertyHandlersContext = {
   /** Chat conversation edits. */
   setChatStatus: (status: ChatConversationStatus) => unknown;
   patchChatConversation: (patch: {
+    contactId?: string | null;
+    organizationId?: string | null;
     assigneeId?: string | null;
     priority?: number;
     dueDate?: string | null;
@@ -110,6 +114,7 @@ function railMode(ctx: CommunicationPropertyHandlersContext): RailMode {
   if (ctx.isComposingEmail) return "compose";
   if (ctx.selectedSupport) return "support";
   if (ctx.selectedEmail) return "email";
+  if (ctx.selectedChatConversation) return "chat";
   return "none";
 }
 
@@ -227,6 +232,7 @@ export function useCommunicationPropertyHandlers(
         case "email":
           void patchEmail(c, edit.email, edit.emailExtras);
           return;
+        case "chat":
         case "none":
           return;
       }
@@ -325,6 +331,38 @@ export function useCommunicationPropertyHandlers(
             }, { seedWhenEmpty: true });
             return;
           }
+          case "chat":
+            await c.patchChatConversation({ organizationId });
+            return;
+          case "none":
+            return;
+        }
+      },
+
+      onUnlinkOrganization: async () => {
+        const c = current();
+        switch (railMode(c)) {
+          case "compose":
+            c.composePartyManualRef.current = true;
+            c.setComposeParty((prev) => ({ ...prev, organizationId: null }));
+            return;
+          case "support":
+            c.patchTask({ relatedOrganizationIds: [] });
+            return;
+          case "email": {
+            const email = c.selectedEmail!;
+            await linkMessageParty(c, focusMessageId(c, email), {
+              contactId:
+                c.selectedMessageParty?.contactId ??
+                c.emailSelectedParty?.contactId ??
+                null,
+              organizationId: null,
+            }, { seedWhenEmpty: false });
+            return;
+          }
+          case "chat":
+            await c.patchChatConversation({ organizationId: null });
+            return;
           case "none":
             return;
         }
@@ -377,6 +415,20 @@ export function useCommunicationPropertyHandlers(
             }, { seedWhenEmpty: true });
             return;
           }
+          case "chat": {
+            const patch: {
+              contactId: string;
+              organizationId?: string | null;
+            } = { contactId };
+            // Prefer the contact's org when the chat has none yet.
+            const existingOrg =
+              c.selectedChatConversation?.organizationId?.trim() || null;
+            if (contactOrgId && !existingOrg) {
+              patch.organizationId = contactOrgId;
+            }
+            await c.patchChatConversation(patch);
+            return;
+          }
           case "none":
             return;
         }
@@ -404,6 +456,9 @@ export function useCommunicationPropertyHandlers(
             }, { seedWhenEmpty: false });
             return;
           }
+          case "chat":
+            await c.patchChatConversation({ contactId: null });
+            return;
           case "none":
             return;
         }

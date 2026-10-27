@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 
 import { chatStatusToTaskStatus } from "../../communication/chat-conversation-list-item.js";
+import type { CommunicationChatListRow } from "../../communication/communication-chat-list-row.js";
 import {
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,
@@ -20,6 +21,7 @@ import {
   getTaskPriorityLabel,
   TASK_PRIORITY_ORDER,
 } from "../../tasks/task-priority.js";
+import { PreviousConversationsList } from "./previous-conversations-list.js";
 
 export type ChatConversationStatus =
   | "open"
@@ -38,30 +40,10 @@ const STATUS_OPTIONS: {
   { value: "resolved", label: "Completed" },
 ];
 
-function formatWhen(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function conversationLabel(row: ChatConversation): string {
-  return (
-    row.contactName?.trim() ||
-    row.contactEmail?.trim() ||
-    row.contactPhone?.trim() ||
-    `Chat ${row.externalId}`
-  );
-}
-
 export type ChatConversationDetailsViewProps = {
   conversation: ChatConversation;
-  previousConversations?: readonly ChatConversation[];
+  /** Prior chats / emails / support for this contact or visitor. */
+  previousItems?: readonly CommunicationChatListRow[];
   statusUpdating?: boolean;
   propertiesUpdating?: boolean;
   assigneeOptions?: SearchableDropdownOption<string>[];
@@ -70,6 +52,9 @@ export type ChatConversationDetailsViewProps = {
   onPriorityChange?: (priority: number) => void | Promise<void>;
   onDueDateChange?: (dueDate: Date | null) => void | Promise<void>;
   onSelectConversation?: (conversationId: string) => void;
+  onSelectEmail?: (emailId: string) => void;
+  onSelectSupport?: (supportId: string) => void;
+  onViewAllPrevious?: () => void;
 };
 
 /**
@@ -78,7 +63,7 @@ export type ChatConversationDetailsViewProps = {
  */
 export function ChatConversationDetailsView({
   conversation,
-  previousConversations = [],
+  previousItems = [],
   statusUpdating = false,
   propertiesUpdating = false,
   assigneeOptions = [],
@@ -87,6 +72,9 @@ export function ChatConversationDetailsView({
   onPriorityChange,
   onDueDateChange,
   onSelectConversation,
+  onSelectEmail,
+  onSelectSupport,
+  onViewAllPrevious,
 }: ChatConversationDetailsViewProps) {
   const [copiedField, setCopiedField] = useState<"id" | "external" | null>(
     null,
@@ -122,16 +110,6 @@ export function ChatConversationDetailsView({
         icon: <TaskPriorityIcon priority={value} size={14} />,
       })),
     [],
-  );
-
-  const previous = useMemo(
-    () =>
-      [...previousConversations].sort((left, right) =>
-        (right.lastActivityAt ?? right.updatedAt).localeCompare(
-          left.lastActivityAt ?? left.updatedAt,
-        ),
-      ),
-    [previousConversations],
   );
 
   async function copyValue(field: "id" | "external", value: string) {
@@ -264,40 +242,14 @@ export function ChatConversationDetailsView({
         </dl>
       </EntityOverviewSubgroup>
 
-      <EntityOverviewSubgroup
-        title="Previous conversations"
+      <PreviousConversationsList
+        items={previousItems}
         storageKey="comm-chat-details-previous"
-      >
-        {previous.length === 0 ? (
-          <p className="communication-chat-details__empty">
-            No earlier chats with this visitor.
-          </p>
-        ) : (
-          <ul className="communication-chat-details__previous">
-            {previous.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  className="communication-chat-details__previous-row"
-                  onClick={() => onSelectConversation?.(row.id)}
-                >
-                  <span className="communication-chat-details__previous-top">
-                    <span className="communication-chat-details__previous-name">
-                      {conversationLabel(row)}
-                    </span>
-                    <span className="communication-chat-details__previous-when">
-                      {formatWhen(row.lastActivityAt)}
-                    </span>
-                  </span>
-                  <span className="communication-chat-details__previous-preview">
-                    {row.lastMessagePreview?.trim() || row.status}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </EntityOverviewSubgroup>
+        onSelectChat={onSelectConversation}
+        onSelectEmail={onSelectEmail}
+        onSelectSupport={onSelectSupport}
+        onViewAll={onViewAllPrevious}
+      />
     </div>
   );
 }

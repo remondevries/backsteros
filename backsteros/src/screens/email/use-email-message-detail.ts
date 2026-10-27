@@ -304,17 +304,27 @@ export function useEmailMessageDetail({
       ? peekEmailDraftDetailCache(inboxId, draftId)
       : null;
 
-    if (cachedMessage) {
+    const cachedMessageMatches =
+      cachedMessage != null &&
+      cachedMessage.messageId.trim() === messageId?.trim();
+    const cachedDraftMatches =
+      cachedDraft != null && cachedDraft.draftId.trim() === draftId?.trim();
+
+    if (cachedMessageMatches && cachedMessage) {
       setMessage(cachedMessage);
       setDraft(null);
       setLoading(false);
-    } else if (cachedDraft) {
+    } else if (cachedDraftMatches && cachedDraft) {
       setDraft(cachedDraft);
       setMessage(null);
       setLoading(false);
     } else {
       // Drop the previous thread immediately so chrome (breadcrumb / tab title)
       // does not keep showing the last subject while the next detail loads.
+      // Also discard a poisoned cache entry from a mismatched prior write.
+      if (cachedMessage && !cachedMessageMatches && messageId) {
+        discardEmailMessageDetailCache(inboxId, messageId);
+      }
       setMessage(null);
       setDraft(null);
       setLoading(true);
@@ -329,7 +339,10 @@ export function useEmailMessageDetail({
       isEmailMessageDetailCacheStale(inboxId, messageId!);
     const draftStale =
       Boolean(draftId) && isEmailDraftDetailCacheStale(inboxId, draftId!);
-    const hasWarm = Boolean(cachedMessage || cachedDraft);
+    const hasWarm = Boolean(
+      (cachedMessageMatches && cachedMessage) ||
+        (cachedDraftMatches && cachedDraft),
+    );
     const needsNetwork = !hasWarm || messageStale || draftStale;
     if (!needsNetwork) {
       return () => {
@@ -339,12 +352,12 @@ export function useEmailMessageDetail({
 
     const load = draftId
       ? fetchEmailDraftDetail(client, inboxId, draftId, {
-          force: Boolean(cachedDraft),
+          force: Boolean(cachedDraftMatches && cachedDraft),
           allowStale: false,
         })
       : messageId
         ? fetchEmailMessageDetail(client, inboxId, messageId, {
-            force: Boolean(cachedMessage),
+            force: Boolean(cachedMessageMatches && cachedMessage),
             allowStale: false,
           })
         : Promise.resolve(null);
@@ -418,13 +431,26 @@ export function useEmailMessageDetail({
   }, [client, inboxId, isCompose, message]);
 
   useEffect(() => {
-    if (message && inboxId && messageId) {
+    // Never cache under a route id that does not match the loaded detail —
+    // on inbox switches React still has the previous `message` for one paint,
+    // and writing it under the new messageId stuck the UI on the first email.
+    if (
+      message &&
+      inboxId &&
+      messageId &&
+      message.messageId.trim() === messageId.trim()
+    ) {
       writeEmailMessageDetailCache(inboxId, messageId, message);
     }
   }, [inboxId, message, messageId]);
 
   useEffect(() => {
-    if (draft && inboxId && draftId) {
+    if (
+      draft &&
+      inboxId &&
+      draftId &&
+      draft.draftId.trim() === draftId.trim()
+    ) {
       writeEmailDraftDetailCache(inboxId, draftId, draft);
     }
   }, [draft, draftId, inboxId]);

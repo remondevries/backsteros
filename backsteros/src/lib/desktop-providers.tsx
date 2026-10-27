@@ -48,8 +48,9 @@ function WorkspaceProviders({
 }
 
 /**
- * Opens the product shell after the owner Access key verifies.
- * Revoked/missing keys keep the boot splash with Access denied.
+ * Opens the product shell after product API auth verifies.
+ * Local-core uses the local-shell bearer; cloud requires an owner Access key.
+ * Auth failure keeps the boot splash with Access denied.
  *
  * `enablePowerSync` defaults on; the compose overlay webview sets it false so
  * we do not open a second SQLite sync connection (overlays also skip the gate —
@@ -62,7 +63,11 @@ export function DesktopProviders({
   children: ReactNode;
   enablePowerSync?: boolean;
 }) {
-  const tokenProvider = useMemo(() => createDesktopTokenProvider(), []);
+  const { apiUrl } = getDesktopPublicEnvironment();
+  const tokenProvider = useMemo(
+    () => createDesktopTokenProvider(apiUrl),
+    [apiUrl],
+  );
   const [access, setAccess] = useState<"pending" | "ok" | "denied">(() =>
     enablePowerSync ? "pending" : "ok",
   );
@@ -76,7 +81,10 @@ export function DesktopProviders({
 
     let cancelled = false;
     void (async () => {
-      const result = await probeDesktopOwnerAccess({ getToken: tokenProvider });
+      const result = await probeDesktopOwnerAccess({
+        apiUrl,
+        getToken: tokenProvider,
+      });
       if (cancelled) return;
       if (result === "denied") {
         presentBootSplashAccessDenied();
@@ -90,7 +98,7 @@ export function DesktopProviders({
     return () => {
       cancelled = true;
     };
-  }, [enablePowerSync, tokenProvider]);
+  }, [apiUrl, enablePowerSync, tokenProvider]);
 
   if (access === "pending" || access === "denied") {
     return null;

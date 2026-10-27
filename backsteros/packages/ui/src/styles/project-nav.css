@@ -813,6 +813,7 @@
 
 .contact-overview__name-row--switcher:hover .contact-overview__name-switcher-trigger,
 .contact-overview__name-row--switcher:focus-within .contact-overview__name-switcher-trigger,
+.contact-overview__name-row--switcher-always .contact-overview__name-switcher-trigger,
 .contact-overview__name-switcher-trigger.is-open,
 .contact-overview__name-switcher-trigger:focus-visible {
   opacity: 1;
@@ -1715,6 +1716,27 @@
   font-weight: inherit;
   line-height: inherit;
   outline: none;
+}
+
+/* FB Message ID: keep the Messenger icon prefix as tall as the value input. */
+.contact-detail-split-chip.contact-facebook-messenger-chip {
+  align-items: stretch;
+}
+
+.contact-detail-split-chip.contact-facebook-messenger-chip
+  .contact-detail-split-chip__label--icon {
+  align-self: stretch;
+  height: auto;
+  min-height: unset;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.contact-detail-split-chip.contact-facebook-messenger-chip
+  .contact-detail-split-chip__value {
+  align-self: stretch;
+  height: auto;
 }
 
 .contact-detail-split-chip__value::placeholder {
