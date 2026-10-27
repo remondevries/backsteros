@@ -1628,11 +1628,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         focusHostForAddressBar(target);
         // Guest→host focus is async on Electron/macOS; delay the renderer cue
         // and also poke the input via executeJavaScript as a hard fallback.
-        setTimeout(() => {
-          if (target.isDestroyed()) return;
-          target.send(MENU_ACTION_CHANNEL, command);
-          focusAddressBarInRenderer(target);
-        }, 0);
+        runFork(
+          Effect.sleep(0).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (target.isDestroyed()) return;
+                target.send(MENU_ACTION_CHANNEL, command);
+                focusAddressBarInRenderer(target);
+              }),
+            ),
+          ),
+        );
         return;
       }
       target.send(MENU_ACTION_CHANNEL, command);
