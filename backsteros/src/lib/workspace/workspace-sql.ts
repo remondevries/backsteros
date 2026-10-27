@@ -137,8 +137,12 @@ export const CONTACT_LIST_COLUMNS = [
   "latitude",
   "longitude",
   "social_accounts",
+  "facebook_messenger_id",
+  "x_user_id",
   "birthday",
   "languages",
+  "summary",
+  "timezone",
   // Portal ACL / login — required so local patches are not invisible to the
   // watch (gap-fill from a stale apiContacts row was reverting language, etc.).
   "portal_username",

@@ -38,6 +38,13 @@ export type ChatwootContactSummary = {
    * Chatwoot `identifier` — for X this is the numeric user id (never @handle).
    */
   identifier: string | null;
+  /**
+   * Numeric X user id from `custom_attributes.x_user_id` or a numeric
+   * `identifier` when present.
+   */
+  xUserId?: string | null;
+  /** Raw Chatwoot custom_attributes (may include `x_user_id`). */
+  customAttributes?: Record<string, unknown> | null;
   avatarUrl: string | null;
 };
 
@@ -63,6 +70,8 @@ export type ChatwootCreateConversationInput = {
   status?: "open" | "resolved" | "pending";
   /** Optional Chatwoot additional_attributes (e.g. mail_subject for email). */
   additionalAttributes?: Record<string, unknown>;
+  /** Optional Chatwoot custom_attributes (e.g. x_user_id for X DMs). */
+  customAttributes?: Record<string, unknown>;
   message: {
     content: string;
     templateParams?: {
@@ -83,6 +92,15 @@ export type ChatwootConversationSummary = {
   lastActivityAt: string | null;
   unreadCount: number;
   lastMessagePreview: string | null;
+  /** Conversation additional_attributes (may include `x_user_id`). */
+  additionalAttributes?: Record<string, unknown> | null;
+  /** Conversation custom_attributes (may include `x_user_id`). */
+  customAttributes?: Record<string, unknown> | null;
+  /**
+   * Numeric X user id from conversation custom/additional attributes when
+   * present.
+   */
+  xUserId?: string | null;
 };
 
 export type ChatwootMessageSummary = {
@@ -114,6 +132,32 @@ function asNumber(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/** Digits-only id (X user id / Messenger PSID); rejects @handles. */
+function numericOnlyId(raw: unknown): string | null {
+  const text = asString(raw);
+  if (!text) return null;
+  return /^\d+$/.test(text) ? text : null;
+}
+
+/**
+ * Prefer `custom_attributes.x_user_id`, then a numeric `identifier`.
+ * Never returns an @handle.
+ */
+export function xUserIdFromChatwootFields(input: {
+  identifier?: string | null;
+  customAttributes?: Record<string, unknown> | null;
+  additionalAttributes?: Record<string, unknown> | null;
+}): string | null {
+  const custom = input.customAttributes ?? null;
+  const additional = input.additionalAttributes ?? null;
+  return (
+    numericOnlyId(custom?.x_user_id) ??
+    numericOnlyId(additional?.x_user_id) ??
+    numericOnlyId(input.identifier) ??
+    null
+  );
 }
 
 function normalizeBaseUrl(raw: string): string {
@@ -262,6 +306,8 @@ function parseContact(
   const channelLower = (options?.channelType ?? "").toLowerCase();
   const displayName =
     asString(record.name) ?? asString(record.available_name) ?? null;
+  const identifier = asString(record.identifier);
+  const customAttributes = asRecord(record.custom_attributes);
   const username =
     normalizeChannelUsername(asString(additional.username)) ??
     normalizeChannelUsername(asString(additional.screen_name)) ??
@@ -275,7 +321,7 @@ function parseContact(
     normalizeChannelUsername(asString(record.username)) ??
     normalizeChannelUsername(asString(additional.social_facebook_user_id)) ??
     normalizeChannelUsername(asString(additional.social_facebook_user_name)) ??
-    normalizeChannelUsername(asString(record.identifier)) ??
+    normalizeChannelUsername(identifier) ??
     usernameFromContactInboxes(record.contact_inboxes, options?.channelType) ??
     (channelLower.includes("whatsapp") && phone
       ? phone.replace(/[^\d+]/g, "").replace(/^\+/, "") || null
@@ -289,7 +335,13 @@ function parseContact(
     email: asString(record.email),
     phone,
     username,
-    identifier: asString(record.identifier),
+    identifier,
+    xUserId: xUserIdFromChatwootFields({
+      identifier,
+      customAttributes,
+      additionalAttributes: additional,
+    }),
+    customAttributes,
     avatarUrl:
       asString(record.thumbnail) ??
       asString(record.avatar_url) ??
@@ -316,6 +368,8 @@ function parseConversation(raw: unknown): ChatwootConversationSummary | null {
     asNumber(record.unread_count) ??
     asNumber(record.agent_last_seen_at) ??
     0;
+  const additionalAttributes = asRecord(record.additional_attributes);
+  const customAttributes = asRecord(record.custom_attributes);
   return {
     id,
     inboxId: asString(record.inbox_id),
@@ -329,6 +383,13 @@ function parseConversation(raw: unknown): ChatwootConversationSummary | null {
       null,
     unreadCount: Math.max(0, unread),
     lastMessagePreview: asString(lastMsg?.content) ?? asString(record.last_non_activity_message),
+    additionalAttributes,
+    customAttributes,
+    xUserId: xUserIdFromChatwootFields({
+      identifier: sender.identifier,
+      customAttributes,
+      additionalAttributes,
+    }),
   };
 }
 
@@ -353,15 +414,25 @@ function parseConversationFromWebhookPayload(
     // Minimal fallback when only conversation_id is present on a message event.
     const conversationId = asString(record.conversation_id);
     if (conversationId) {
+      const contact = parseContact(record.sender);
+      const additionalAttributes = asRecord(record.additional_attributes);
+      const customAttributes = asRecord(record.custom_attributes);
       return {
         id: conversationId,
         inboxId: asString(record.inbox_id),
         status: "open",
         channelType: null,
-        contact: parseContact(record.sender),
+        contact,
         lastActivityAt: unixOrIsoToIso(record.created_at),
         unreadCount: 0,
         lastMessagePreview: asString(record.content),
+        additionalAttributes,
+        customAttributes,
+        xUserId: xUserIdFromChatwootFields({
+          identifier: contact.identifier,
+          customAttributes,
+          additionalAttributes,
+        }),
       };
     }
     if (eventName.startsWith("message_")) return null;
@@ -658,6 +729,12 @@ export class ChatwootClient {
     ) {
       body.additional_attributes = input.additionalAttributes;
     }
+    if (
+      input.customAttributes &&
+      Object.keys(input.customAttributes).length > 0
+    ) {
+      body.custom_attributes = input.customAttributes;
+    }
     const payload = await this.requestJson<unknown>(
       "POST",
       "/conversations",
@@ -759,17 +836,111 @@ export class ChatwootClient {
       asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
     const contact = parseContact(record);
     if (!contact.id) {
+      const identifier = input.identifier?.trim() || null;
+      const customAttributes = input.customAttributes ?? null;
       return {
         id: contactId,
         name: null,
         email: null,
         phone: null,
         username: null,
-        identifier: input.identifier?.trim() || null,
+        identifier,
+        xUserId: xUserIdFromChatwootFields({ identifier, customAttributes }),
+        customAttributes,
         avatarUrl: null,
       };
     }
     return contact;
+  }
+
+  /**
+   * Filter contacts by a custom attribute (e.g. x_user_id for inbox-8 reuse).
+   * @see https://developers.chatwoot.com/api-reference/contacts/contact-filter
+   */
+  async filterContactsByCustomAttribute(input: {
+    attributeKey: string;
+    value: string;
+  }): Promise<ChatwootContactSummary[]> {
+    const key = input.attributeKey.trim();
+    const value = input.value.trim();
+    if (!key || !value) return [];
+    const payload = await this.requestJson<unknown>("POST", "/contacts/filter", {
+      payload: [
+        {
+          attribute_key: key,
+          filter_operator: "equal_to",
+          values: [value],
+          attribute_model: "custom_attributes",
+          custom_attribute_type: "contact_attribute",
+        },
+      ],
+    });
+    const record = asRecord(payload);
+    const list = Array.isArray(record?.payload)
+      ? record!.payload
+      : Array.isArray(asRecord(record?.payload)?.payload)
+        ? (asRecord(record!.payload)!.payload as unknown[])
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const out: ChatwootContactSummary[] = [];
+    for (const item of list) {
+      const contact = parseContact(item);
+      if (contact.id) out.push(contact);
+    }
+    return out;
+  }
+
+  /**
+   * Filter conversations by custom/additional attribute (x_user_id) and optional
+   * inbox — used to find the inbox-8 X thread when contact identifier is empty.
+   */
+  async filterConversationsByAttribute(input: {
+    attributeKey: string;
+    value: string;
+    inboxId?: string | null;
+  }): Promise<ChatwootConversationSummary[]> {
+    const key = input.attributeKey.trim();
+    const value = input.value.trim();
+    if (!key || !value) return [];
+    const filters: Record<string, unknown>[] = [
+      {
+        attribute_key: key,
+        filter_operator: "equal_to",
+        values: [value],
+        attribute_model: "custom_attributes",
+        custom_attribute_type: "conversation_attribute",
+        query_operator: input.inboxId?.trim() ? "AND" : undefined,
+      },
+    ];
+    const inboxId = input.inboxId?.trim();
+    if (inboxId) {
+      filters.push({
+        attribute_key: "inbox_id",
+        filter_operator: "equal_to",
+        values: [Number(inboxId) || inboxId],
+        attribute_model: "standard",
+      });
+    }
+    const payload = await this.requestJson<unknown>(
+      "POST",
+      "/conversations/filter",
+      { payload: filters },
+    );
+    const record = asRecord(payload);
+    const list = Array.isArray(record?.payload)
+      ? record!.payload
+      : Array.isArray(asRecord(record?.payload)?.payload)
+        ? (asRecord(record!.payload)!.payload as unknown[])
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const out: ChatwootConversationSummary[] = [];
+    for (const item of list) {
+      const parsed = parseConversation(item);
+      if (parsed) out.push(parsed);
+    }
+    return out;
   }
 
   /** Conversations for a Chatwoot contact (used to reuse X thread / conv 17). */

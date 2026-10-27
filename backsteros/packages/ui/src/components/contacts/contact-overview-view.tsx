@@ -50,6 +50,10 @@ import { EntityAddressFields } from "../shared/entity-address-fields.js";
 import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { BirthdayCalendarIcon } from "../calendar/birthday-calendar-icon.js";
+import {
+  CommunicationMessengerKindIcon,
+  CommunicationXKindIcon,
+} from "../communication/communication-kind-icons.js";
 import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
 import {
   ContactSocialAccountsEditor,
@@ -92,6 +96,10 @@ export type ContactOverviewDetails = {
   organizationName?: string | null;
   summary?: string | null;
   socialAccounts?: ContactSocialAccount[];
+  /** Facebook Messenger Page-Scoped ID (not a public username). */
+  facebookMessengerId?: string | null;
+  /** Numeric X user id (never an @handle). */
+  xUserId?: string | null;
   /** YYYY-MM-DD; year required. */
   birthday?: string | null;
   /** Preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
@@ -187,6 +195,11 @@ export type ContactOverviewViewProps = {
    */
   mode?: "overview" | "details" | "section";
   /**
+   * When true, skip the cover/name/groups header and only render the tab body
+   * (e.g. contact fields under Contact on the Communication email rail).
+   */
+  hideChrome?: boolean;
+  /**
    * Optional contact switcher beside first/last name — chevron appears on
    * name-row hover and opens the contact dropdown (Communication Chat).
    */
@@ -196,7 +209,16 @@ export type ContactOverviewViewProps = {
     onSelect: (contactId: string) => void;
     /** Clear the linked contact (deselect in the switcher panel). */
     onClear?: () => void;
+    /** Top-of-list clear row when a contact is linked (e.g. Remove contact). */
+    deselectLabel?: string;
     onCreateFromQuery?: (query: string) => void;
+    /** Keep the chevron visible (unmatched chat invite to link a contact). */
+    alwaysShow?: boolean;
+    /**
+     * Selected contact id for the switcher. Defaults to `contact.id`.
+     * Pass `null` for unmatched visitors so the panel starts empty.
+     */
+    value?: string | null;
   } | null;
 };
 
@@ -301,6 +323,7 @@ export function ContactOverviewView({
   sectionNavSlot,
   sectionBody,
   mode = "overview",
+  hideChrome = false,
   contactSwitcher = null,
 }: ContactOverviewViewProps) {
   // Stable empty default — `= []` would be a new array every render and loop
@@ -320,6 +343,8 @@ export function ContactOverviewView({
   const remoteOrganizationId = contact.organizationId ?? "";
   const remoteSummary = contact.summary ?? "";
   const remoteSocialAccounts = contact.socialAccounts ?? [];
+  const remoteFacebookMessengerId = contact.facebookMessengerId ?? "";
+  const remoteXUserId = contact.xUserId ?? "";
   const remoteEmails = contact.emails ?? [];
   const remotePhones = contact.phones ?? [];
   const remoteBirthday = contact.birthday ?? "";
@@ -391,6 +416,14 @@ export function ContactOverviewView({
   const [socialAccountsSource, setSocialAccountsSource] = useState(
     socialAccountsKey(remoteSocialAccounts),
   );
+  const [facebookMessengerId, setFacebookMessengerId] = useState(
+    remoteFacebookMessengerId,
+  );
+  const [facebookMessengerIdSource, setFacebookMessengerIdSource] = useState(
+    remoteFacebookMessengerId,
+  );
+  const [xUserId, setXUserId] = useState(remoteXUserId);
+  const [xUserIdSource, setXUserIdSource] = useState(remoteXUserId);
   const [birthday, setBirthday] = useState(remoteBirthday);
   const [birthdaySource, setBirthdaySource] = useState(remoteBirthday);
   const [languages, setLanguages] = useState<ContactLanguage[]>(remoteLanguages);
@@ -401,6 +434,8 @@ export function ContactOverviewView({
   const pendingEmailsKeyRef = useRef<string | null>(null);
   const pendingPhonesKeyRef = useRef<string | null>(null);
   const pendingSocialAccountsKeyRef = useRef<string | null>(null);
+  const pendingFacebookMessengerIdRef = useRef<string | null>(null);
+  const pendingXUserIdRef = useRef<string | null>(null);
   const pendingLanguagesKeyRef = useRef<string | null>(null);
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [lastNameFocusRequest, setLastNameFocusRequest] = useState(0);
@@ -410,6 +445,7 @@ export function ContactOverviewView({
     useCallback(() => {
       setRenameFocusRequest((count) => count + 1);
     }, []),
+    { enabled: !hideChrome },
   );
 
   useEffect(() => {
@@ -475,6 +511,10 @@ export function ContactOverviewView({
     setSummarySource(remoteSummary);
     setSocialAccounts(remoteSocialAccounts);
     setSocialAccountsSource(socialAccountsKey(remoteSocialAccounts));
+    setFacebookMessengerId(remoteFacebookMessengerId);
+    setFacebookMessengerIdSource(remoteFacebookMessengerId);
+    setXUserId(remoteXUserId);
+    setXUserIdSource(remoteXUserId);
     setBirthday(remoteBirthday);
     setBirthdaySource(remoteBirthday);
     setLanguages(remoteLanguages);
@@ -482,6 +522,8 @@ export function ContactOverviewView({
     pendingEmailsKeyRef.current = null;
     pendingPhonesKeyRef.current = null;
     pendingSocialAccountsKeyRef.current = null;
+    pendingFacebookMessengerIdRef.current = null;
+    pendingXUserIdRef.current = null;
     pendingLanguagesKeyRef.current = null;
   } else {
     adoptRemoteField(
@@ -558,6 +600,31 @@ export function ContactOverviewView({
       setBirthday,
       setBirthdaySource,
     );
+
+    adoptRemoteKeyedField({
+      remoteKey: remoteFacebookMessengerId,
+      localKey: facebookMessengerId,
+      sourceKey: facebookMessengerIdSource,
+      pendingKey: pendingFacebookMessengerIdRef.current,
+      setSource: setFacebookMessengerIdSource,
+      setLocalFromRemote: () =>
+        setFacebookMessengerId(remoteFacebookMessengerId),
+      clearPending: () => {
+        pendingFacebookMessengerIdRef.current = null;
+      },
+    });
+
+    adoptRemoteKeyedField({
+      remoteKey: remoteXUserId,
+      localKey: xUserId,
+      sourceKey: xUserIdSource,
+      pendingKey: pendingXUserIdRef.current,
+      setSource: setXUserIdSource,
+      setLocalFromRemote: () => setXUserId(remoteXUserId),
+      clearPending: () => {
+        pendingXUserIdRef.current = null;
+      },
+    });
 
     adoptRemoteKeyedField({
       remoteKey: socialAccountsKey(remoteSocialAccounts),
@@ -706,6 +773,30 @@ export function ContactOverviewView({
     persist({ socialAccounts: normalized });
   }
 
+  function saveFacebookMessengerId(next: string) {
+    const trimmed = next.trim();
+    setFacebookMessengerId(trimmed);
+    if (trimmed === remoteFacebookMessengerId.trim()) {
+      setFacebookMessengerIdSource(trimmed);
+      pendingFacebookMessengerIdRef.current = null;
+      return;
+    }
+    pendingFacebookMessengerIdRef.current = trimmed;
+    persist({ facebookMessengerId: trimmed || null });
+  }
+
+  function saveXUserId(next: string) {
+    const trimmed = next.trim();
+    setXUserId(trimmed);
+    if (trimmed === remoteXUserId.trim()) {
+      setXUserIdSource(trimmed);
+      pendingXUserIdRef.current = null;
+      return;
+    }
+    pendingXUserIdRef.current = trimmed;
+    persist({ xUserId: trimmed || null });
+  }
+
   const addressLine = formatContactAddressLine({
     address,
     city,
@@ -736,10 +827,20 @@ export function ContactOverviewView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [locationEditing, mapExpanded]);
 
-  const organizationDropdownOptions = useMemo(
-    () => buildOrganizationDropdownOptions(organizationOptions),
-    [organizationOptions],
-  );
+  const organizationDropdownOptions = useMemo(() => {
+    const options = buildOrganizationDropdownOptions(organizationOptions);
+    // When an org is linked, the top “none” row reads as remove.
+    if (!organizationId) return options;
+    return options.map((option) =>
+      option.value === DROPDOWN_NONE_VALUE
+        ? {
+            ...option,
+            label: "Remove organisation",
+            searchTerms: "remove organisation organization none unassigned",
+          }
+        : option,
+    );
+  }, [organizationId, organizationOptions]);
   const groupDropdownOptions = useMemo(
     () =>
       (groupOptions ?? []).map((group) => ({
@@ -845,6 +946,107 @@ export function ContactOverviewView({
             onChange={setSocialAccounts}
             onSave={saveSocialAccounts}
           />
+        </DetailsField>
+        <DetailsField
+          label="FB Message ID"
+          htmlFor="contact-facebook-messenger-id"
+        >
+          <div className="contact-detail-chips">
+            <div className="contact-detail-chips__row">
+              <div
+                className={[
+                  "contact-detail-split-chip",
+                  "contact-facebook-messenger-chip",
+                  !facebookMessengerId.trim() ? "is-muted" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={(event) => {
+                  const input = (event.currentTarget as HTMLElement).querySelector(
+                    "input",
+                  );
+                  if (input instanceof HTMLInputElement) input.focus();
+                }}
+              >
+                <span
+                  className="contact-detail-split-chip__label contact-detail-split-chip__label--icon"
+                  aria-hidden
+                >
+                  <CommunicationMessengerKindIcon size={14} />
+                </span>
+                <input
+                  id="contact-facebook-messenger-id"
+                  className="contact-detail-split-chip__value"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="FB Message ID"
+                  placeholder="1234567890"
+                  value={facebookMessengerId}
+                  size={Math.max(facebookMessengerId.length, 10)}
+                  onChange={(event) =>
+                    setFacebookMessengerId(event.target.value)
+                  }
+                  onBlur={() => saveFacebookMessengerId(facebookMessengerId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </DetailsField>
+        <DetailsField label="X User ID" htmlFor="contact-x-user-id">
+          <div className="contact-detail-chips">
+            <div className="contact-detail-chips__row">
+              <div
+                className={[
+                  "contact-detail-split-chip",
+                  "contact-x-user-id-chip",
+                  !xUserId.trim() ? "is-muted" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={(event) => {
+                  const input = (event.currentTarget as HTMLElement).querySelector(
+                    "input",
+                  );
+                  if (input instanceof HTMLInputElement) input.focus();
+                }}
+              >
+                <span
+                  className="contact-detail-split-chip__label contact-detail-split-chip__label--icon"
+                  aria-hidden
+                >
+                  <CommunicationXKindIcon size={14} />
+                </span>
+                <input
+                  id="contact-x-user-id"
+                  className="contact-detail-split-chip__value"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="X User ID"
+                  placeholder="50254162"
+                  value={xUserId}
+                  size={Math.max(xUserId.length, 10)}
+                  onChange={(event) => setXUserId(event.target.value)}
+                  onBlur={() => saveXUserId(xUserId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </DetailsField>
       </DetailsSubgroup>
 
@@ -1066,6 +1268,59 @@ export function ContactOverviewView({
     </section>
   );
 
+  const body = (
+    <div
+      className={[
+        "contact-overview__scroll",
+        hideChrome ? "contact-overview__scroll--embedded" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {mode === "overview" && activitySlot ? (
+        <div
+          id="contact-activity-feed"
+          className="contact-overview__activity"
+        >
+          {activitySlot}
+        </div>
+      ) : null}
+
+      {mode === "details" ? (
+        <>
+          {detailsLeadSlot}
+          {hideDetailsFields ? null : detailsFields}
+          {detailsExtraSlot ? (
+            <div
+              className={[
+                "contact-overview__details-extra",
+                hideDetailsFields
+                  ? "contact-overview__details-extra--solo"
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {detailsExtraSlot}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {mode === "section" && sectionBody ? (
+        <div className="contact-overview__section-body">{sectionBody}</div>
+      ) : null}
+    </div>
+  );
+
+  if (hideChrome) {
+    return (
+      <div className="entity-overview contact-overview contact-overview--embedded">
+        {body}
+      </div>
+    );
+  }
+
   return (
     <article className="entity-overview contact-overview">
       {headerAccessory ? (
@@ -1187,6 +1442,9 @@ export function ContactOverviewView({
             className={[
               "contact-overview__name-row",
               contactSwitcher ? "contact-overview__name-row--switcher" : null,
+              contactSwitcher?.alwaysShow
+                ? "contact-overview__name-row--switcher-always"
+                : null,
             ]
               .filter(Boolean)
               .join(" ")}
@@ -1259,7 +1517,11 @@ export function ContactOverviewView({
             {contactSwitcher ? (
               <SearchableDropdown
                 className="contact-overview__name-switcher"
-                value={contact.id}
+                value={
+                  contactSwitcher.value !== undefined
+                    ? contactSwitcher.value
+                    : contact.id
+                }
                 options={contactSwitcher.options.filter(
                   (option) => option.value !== DROPDOWN_NONE_VALUE,
                 )}
@@ -1269,9 +1531,19 @@ export function ContactOverviewView({
                 }}
                 allowDeselect={Boolean(contactSwitcher.onClear)}
                 onClear={contactSwitcher.onClear}
+                deselectLabel={
+                  contactSwitcher.onClear
+                    ? (contactSwitcher.deselectLabel ?? "Remove contact")
+                    : undefined
+                }
                 disabled={contactSwitcher.disabled}
                 searchPlaceholder="Search contacts…"
-                ariaLabel="Change contact"
+                ariaLabel={
+                  contactSwitcher.value === null
+                    ? "Select contact"
+                    : "Change contact"
+                }
+                emptySelectionLabel="Select contact"
                 panelAlign="start"
                 panelWidth={280}
                 createFromQueryLabel={
@@ -1287,8 +1559,16 @@ export function ContactOverviewView({
                     disabled={disabled}
                     aria-haspopup="listbox"
                     aria-expanded={open}
-                    aria-label="Change contact"
-                    title="Change contact"
+                    aria-label={
+                      contactSwitcher.value === null
+                        ? "Select contact"
+                        : "Change contact"
+                    }
+                    title={
+                      contactSwitcher.value === null
+                        ? "Select contact"
+                        : "Change contact"
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       onToggle();
@@ -1317,41 +1597,7 @@ export function ContactOverviewView({
         {sectionNavSlot}
       </div>
 
-      <div className="contact-overview__scroll">
-        {mode === "overview" && activitySlot ? (
-          <div
-            id="contact-activity-feed"
-            className="contact-overview__activity"
-          >
-            {activitySlot}
-          </div>
-        ) : null}
-
-        {mode === "details" ? (
-          <>
-            {detailsLeadSlot}
-            {hideDetailsFields ? null : detailsFields}
-            {detailsExtraSlot ? (
-              <div
-                className={[
-                  "contact-overview__details-extra",
-                  hideDetailsFields
-                    ? "contact-overview__details-extra--solo"
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {detailsExtraSlot}
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {mode === "section" && sectionBody ? (
-          <div className="contact-overview__section-body">{sectionBody}</div>
-        ) : null}
-      </div>
+      {body}
     </article>
   );
 }

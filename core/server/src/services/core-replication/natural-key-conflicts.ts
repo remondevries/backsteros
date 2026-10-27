@@ -178,6 +178,21 @@ export const REPLICATED_UNIQUE_FORKS: readonly {
   },
   {
     table: "contacts",
+    constraint: "contacts_workspace_facebook_messenger_id_unique",
+    columns: ["workspace_id", "facebook_messenger_id"],
+    policy: "dead_letter",
+    reason:
+      "contacts.id is referenced; Messenger PSID collision is not identity.",
+  },
+  {
+    table: "contacts",
+    constraint: "contacts_workspace_x_user_id_unique",
+    columns: ["workspace_id", "x_user_id"],
+    policy: "dead_letter",
+    reason: "contacts.id is referenced; X user id collision is not identity.",
+  },
+  {
+    table: "contacts",
     constraint: "contacts_email_idx",
     columns: ["workspace_id", "email"],
     policy: "not_unique",

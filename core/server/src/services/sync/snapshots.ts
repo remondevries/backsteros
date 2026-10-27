@@ -262,6 +262,8 @@ export function contactSnapshot(row: typeof contacts.$inferSelect) {
     latitude: row.latitude ?? null,
     longitude: row.longitude ?? null,
     social_accounts: JSON.stringify(row.socialAccounts ?? []),
+    facebook_messenger_id: row.facebookMessengerId ?? null,
+    x_user_id: row.xUserId ?? null,
     birthday: row.birthday ?? null,
     languages: JSON.stringify(row.languages ?? []),
     portal_username: row.portalUsername ?? null,

@@ -598,6 +598,11 @@ export function mapContact(
         ? (portalSettingsParsed as ContactListItem["portalSettings"])
         : null,
     socialAccounts: socialAccounts.length > 0 ? socialAccounts : null,
+    facebookMessengerId:
+      (contact as { facebookMessengerId?: string | null })
+        .facebookMessengerId ?? null,
+    xUserId:
+      (contact as { xUserId?: string | null }).xUserId ?? null,
   };
 }
 

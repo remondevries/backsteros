@@ -210,6 +210,8 @@ const contacts = new Table(
     latitude: column.real,
     longitude: column.real,
     social_accounts: column.text,
+    facebook_messenger_id: column.text,
+    x_user_id: column.text,
     birthday: column.text,
     languages: column.text,
     portal_username: column.text,

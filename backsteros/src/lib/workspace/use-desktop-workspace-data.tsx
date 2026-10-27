@@ -741,6 +741,8 @@ function useDesktopWorkspaceDataImpl(): {
             "phones",
             "languages",
             "socialAccounts",
+            "facebookMessengerId",
+            "xUserId",
             "latitude",
             "longitude",
             "address",

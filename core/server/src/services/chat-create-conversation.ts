@@ -24,8 +24,10 @@ import {
 } from "../lib/chat-messaging-window.js";
 import {
   ChatwootApiError,
+  xUserIdFromChatwootFields,
   type ChatwootClient,
   type ChatwootContactSummary,
+  type ChatwootConversationSummary,
 } from "../lib/chatwoot-client.js";
 import {
   createChatwootClient,
@@ -115,7 +117,10 @@ export function normalizeXUserId(
   return numericChannelSourceId(raw);
 }
 
-/** Exact X match: Chatwoot contact identifier === numeric X user id. */
+/**
+ * Exact X match: Chatwoot contact identifier or custom_attributes.x_user_id
+ * equals the numeric X user id (never an @handle).
+ */
 export function pickExactXContact(
   hits: readonly ChatwootContactSummary[],
   xUserId: string,
@@ -123,7 +128,60 @@ export function pickExactXContact(
   const want = normalizeXUserId(xUserId);
   if (!want) return null;
   return (
-    hits.find((hit) => normalizeXUserId(hit.identifier) === want) ?? null
+    hits.find((hit) => {
+      const fromContact = xUserIdFromChatwootFields({
+        identifier: hit.identifier,
+        customAttributes: hit.customAttributes,
+      });
+      return fromContact === want || normalizeXUserId(hit.xUserId) === want;
+    }) ?? null
+  );
+}
+
+/**
+ * Conflicting numeric X id already stored on a Chatwoot contact.
+ * Returns the conflicting value when identifier or custom_attributes.x_user_id
+ * is set to something other than `want`.
+ */
+export function conflictingChatwootXUserId(
+  contact: ChatwootContactSummary,
+  want: string,
+): string | null {
+  const expected = normalizeXUserId(want);
+  if (!expected) return null;
+  const fromIdentifier = normalizeXUserId(contact.identifier);
+  if (fromIdentifier && fromIdentifier !== expected) return fromIdentifier;
+  const fromCustom = normalizeXUserId(
+    contact.customAttributes
+      ? String(contact.customAttributes.x_user_id ?? "")
+      : null,
+  ) ?? normalizeXUserId(contact.xUserId);
+  if (fromCustom && fromCustom !== expected) return fromCustom;
+  return null;
+}
+
+/**
+ * Prefer inbox-8 conversations that already carry this x_user_id.
+ * No inbox-only fallback — another user's thread in the same inbox must not
+ * match.
+ */
+export function pickInboxXConversation(
+  list: readonly ChatwootConversationSummary[],
+  inboxId: string,
+  xUserId: string,
+): ChatwootConversationSummary | null {
+  const want = normalizeXUserId(xUserId);
+  if (!want) return null;
+  return (
+    list.find((entry) => {
+      if (entry.inboxId !== inboxId) return false;
+      const fromConvo = xUserIdFromChatwootFields({
+        identifier: entry.contact.identifier,
+        customAttributes: entry.customAttributes,
+        additionalAttributes: entry.additionalAttributes,
+      });
+      return fromConvo === want || normalizeXUserId(entry.xUserId) === want;
+    }) ?? null
   );
 }
 
@@ -346,6 +404,8 @@ type EnsureChatwootContactInput = {
     | "createContactInbox"
     | "getConversation"
     | "listContactConversations"
+    | "filterContactsByCustomAttribute"
+    | "filterConversationsByAttribute"
   >;
 };
 
@@ -369,6 +429,26 @@ export async function ensureChatwootContact(
     }
     const hits = await client.searchContacts(xUserId);
     let chatwootContact = pickExactXContact(hits, xUserId);
+    // Conv 17 style: contact may lack identifier but has custom_attributes.x_user_id.
+    if (!chatwootContact?.id) {
+      const byAttr = await client.filterContactsByCustomAttribute({
+        attributeKey: "x_user_id",
+        value: xUserId,
+      });
+      chatwootContact = pickExactXContact(byAttr, xUserId);
+    }
+    // Last resort: conversation in inbox 8 that already carries x_user_id.
+    if (!chatwootContact?.id) {
+      const byConvo = await client.filterConversationsByAttribute({
+        attributeKey: "x_user_id",
+        value: xUserId,
+        inboxId,
+      });
+      const match = pickInboxXConversation(byConvo, inboxId, xUserId);
+      if (match?.contact.id) {
+        chatwootContact = match.contact;
+      }
+    }
     if (!chatwootContact?.id) {
       chatwootContact = await client.createContact({
         name: contact.name,
@@ -378,6 +458,13 @@ export async function ensureChatwootContact(
         customAttributes: { x_user_id: xUserId },
       });
     } else {
+      const conflict = conflictingChatwootXUserId(chatwootContact, xUserId);
+      if (conflict) {
+        throw badRequest(
+          `Chatwoot contact already has X user id ${conflict}; refusing to overwrite with ${xUserId}.`,
+          "x_user_id_conflict",
+        );
+      }
       await client.updateContact(chatwootContact.id, {
         identifier: xUserId,
         customAttributes: { x_user_id: xUserId },
@@ -807,10 +894,15 @@ export async function createChatConversation(
 
   if (!reuseExternalId && input.channel === "x" && !input.template) {
     const remoteList = await client.listContactConversations(chatwootContactId);
+    // Only reuse threads in the X inbox — never post into another channel.
     const match =
+      pickInboxXConversation(
+        remoteList,
+        inbox.id,
+        xUserId ?? "",
+      ) ??
       remoteList.find((entry) => entry.inboxId === inbox.id) ??
       remoteList.find((entry) => entry.inboxId === X_LEMO_DESIGN_INBOX_ID) ??
-      remoteList[0] ??
       null;
     if (match) {
       reuseExternalId = match.id;
@@ -913,6 +1005,9 @@ export async function createChatConversation(
     additionalAttributes.x_user_id = xUserId;
   }
 
+  const conversationCustomAttributes =
+    input.channel === "x" && xUserId ? { x_user_id: xUserId } : undefined;
+
   // Fresh create (WhatsApp template / support email / new X thread).
   const created = await client.createConversation({
     inboxId: inbox.id,
@@ -925,6 +1020,7 @@ export async function createChatConversation(
       Object.keys(additionalAttributes).length > 0
         ? additionalAttributes
         : undefined,
+    customAttributes: conversationCustomAttributes,
     message: {
       content: outboundContent,
       templateParams: input.template

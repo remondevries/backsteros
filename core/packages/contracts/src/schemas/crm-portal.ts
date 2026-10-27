@@ -254,6 +254,27 @@ const contactWritableFieldsSchema = z.object({
   latitude: z.number().finite().min(-90).max(90).nullable().optional(),
   longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
+  /**
+   * Facebook Messenger Page-Scoped ID (Chatwoot). Not a public username.
+   * Null/empty clears.
+   */
+  facebookMessengerId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .nullable()
+    .optional(),
+  /**
+   * Numeric X (Twitter) user id for Chatwoot / Grok Bot DMs. Never an @handle.
+   * Null clears.
+   */
+  xUserId: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{1,32}$/)
+    .nullable()
+    .optional(),
   /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
   birthday: calendarDateSchema.nullable().optional(),
   /** Spoken / preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
@@ -338,6 +359,13 @@ export const contactSchema = z.object({
   latitude: z.number().finite().nullable().optional(),
   longitude: z.number().finite().nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema),
+  facebookMessengerId: z.string().nullable().optional(),
+  /** Numeric X user id (never an @handle). */
+  xUserId: z
+    .string()
+    .regex(/^[0-9]{1,32}$/)
+    .nullable()
+    .optional(),
   birthday: calendarDateSchema.nullable().optional(),
   languages: z.array(z.enum(["nl", "en", "de", "es", "fr", "pl"])),
   portalUsername: z.string().nullable().optional(),

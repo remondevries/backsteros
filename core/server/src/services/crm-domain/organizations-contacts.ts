@@ -75,6 +75,9 @@ type ContactInput = {
   latitude?: number | null;
   longitude?: number | null;
   socialAccounts?: ContactSocialAccount[];
+  facebookMessengerId?: string | null;
+  /** Numeric X user id (never an @handle). */
+  xUserId?: string | null;
   birthday?: string | null;
   languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl">;
   portalUsername?: string | null;

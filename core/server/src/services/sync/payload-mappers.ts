@@ -214,6 +214,8 @@ export const contactKeys = {
   latitude: "latitude",
   longitude: "longitude",
   social_accounts: "socialAccounts",
+  facebook_messenger_id: "facebookMessengerId",
+  x_user_id: "xUserId",
   birthday: "birthday",
   languages: "languages",
   portal_username: "portalUsername",

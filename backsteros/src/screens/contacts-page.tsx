@@ -1382,7 +1382,7 @@ export function ContactsPage({
           embedMessageId={detail.messageId}
           embedDraftId={detail.draftId}
           breadcrumbItems={contactWorkspaceBreadcrumbPrefix(
-            "Communication",
+            "Messages",
             backHref,
           )}
         />
@@ -1518,6 +1518,11 @@ export function ContactsPage({
           socialAccounts: normalizeContactSocialAccounts(
             details?.socialAccounts,
           ),
+          facebookMessengerId:
+            details?.facebookMessengerId ??
+            contact.facebookMessengerId ??
+            null,
+          xUserId: details?.xUserId ?? contact.xUserId ?? null,
           birthday: details?.birthday ?? contact.birthday ?? null,
           languages: coerceContactLanguages(
             details?.languages ?? contact.languages ?? [],
@@ -1883,7 +1888,7 @@ export function ContactsPage({
                     chatInbox.selectConversation(null);
                   }}
                 >
-                  Back to Communication
+                  Back to Messages
                 </button>
                 <CommunicationChatView
                   pane="thread"

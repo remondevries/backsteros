@@ -16,6 +16,7 @@ import {
   chatConversations,
   chatMessages,
   chatWebhookEvents,
+  contacts,
   type DbChatConversation,
   type DbChatMessage,
 } from "../db/schema.js";
@@ -23,6 +24,7 @@ import { publishChatTyping, publishChatUpdated } from "../lib/chat-events.js";
 import { newId } from "../lib/crypto.js";
 import {
   ChatwootApiError,
+  type ChatwootContactSummary,
   type ChatwootConversationSummary,
   type ChatwootMessageSummary,
   chatwootAsRecord,
@@ -31,6 +33,7 @@ import {
   mapChatwootMessageType,
   parseChatwootConversationFromWebhookPayload,
   parseChatwootMessagePayload,
+  xUserIdFromChatwootFields,
 } from "../lib/chatwoot-client.js";
 import {
   extractChatwootDeliveryId,
@@ -65,6 +68,73 @@ const STATUS_SET = new Set(["open", "resolved", "pending", "snoozed"]);
 function normalizeStatus(raw: string | null | undefined): string {
   const value = (raw ?? "open").trim().toLowerCase();
   return STATUS_SET.has(value) ? value : "open";
+}
+
+/**
+ * Decide whether to copy a Chatwoot numeric X id onto a linked BacksterOS
+ * contact. Never overwrites a differing existing value.
+ */
+export function resolveContactXUserIdFill(
+  existingXUserId: string | null | undefined,
+  chatwootContact: Pick<
+    ChatwootContactSummary,
+    "identifier" | "xUserId" | "customAttributes"
+  >,
+): { action: "set"; value: string } | { action: "skip" } {
+  const incoming = xUserIdFromChatwootFields({
+    identifier: chatwootContact.identifier,
+    customAttributes: chatwootContact.customAttributes ?? null,
+  }) ?? (chatwootContact.xUserId?.trim().match(/^\d{1,32}$/)
+    ? chatwootContact.xUserId.trim()
+    : null);
+  if (!incoming) return { action: "skip" };
+  const current = existingXUserId?.trim() ?? "";
+  if (current && /^\d{1,32}$/.test(current) && current !== incoming) {
+    return { action: "skip" };
+  }
+  if (current === incoming) return { action: "skip" };
+  return { action: "set", value: incoming };
+}
+
+/**
+ * When a conversation is linked to a BacksterOS contact, fill `x_user_id`
+ * from Chatwoot custom_attributes / numeric identifier (never overwrite).
+ */
+export async function fillLinkedContactXUserIdFromChatwoot(
+  workspaceId: string,
+  conversation: Pick<DbChatConversation, "contactId">,
+  chatwootContact: Pick<
+    ChatwootContactSummary,
+    "identifier" | "xUserId" | "customAttributes"
+  >,
+): Promise<boolean> {
+  const contactId = conversation.contactId?.trim();
+  if (!contactId) return false;
+  const [row] = await db
+    .select({ id: contacts.id, xUserId: contacts.xUserId })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return false;
+  const decision = resolveContactXUserIdFill(row.xUserId, chatwootContact);
+  if (decision.action !== "set") return false;
+  await db
+    .update(contacts)
+    .set({ xUserId: decision.value, updatedAt: new Date() })
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    );
+  return true;
 }
 
 function toIso(value: Date | null | undefined): string | null {
@@ -605,6 +675,11 @@ export async function syncChatwootConversations(
           : null,
       },
     );
+    await fillLinkedContactXUserIdFromChatwoot(
+      workspaceId,
+      conversation,
+      enriched.contact,
+    );
     if (created) imported += 1;
     else updated += 1;
 
@@ -729,6 +804,13 @@ async function enrichConversationContactUsername(
               remote?.contact.phone ??
               null,
             username,
+            identifier:
+              summary.contact.identifier ?? fullContact.identifier ?? null,
+            xUserId: summary.contact.xUserId ?? fullContact.xUserId ?? null,
+            customAttributes:
+              summary.contact.customAttributes ??
+              fullContact.customAttributes ??
+              null,
             avatarUrl:
               summary.contact.avatarUrl ??
               fullContact.avatarUrl ??
@@ -748,6 +830,13 @@ async function enrichConversationContactUsername(
         email: summary.contact.email ?? remote?.contact.email ?? null,
         phone: summary.contact.phone ?? remote?.contact.phone ?? null,
         username,
+        identifier:
+          summary.contact.identifier ?? remote?.contact.identifier ?? null,
+        xUserId: summary.contact.xUserId ?? remote?.contact.xUserId ?? null,
+        customAttributes:
+          summary.contact.customAttributes ??
+          remote?.contact.customAttributes ??
+          null,
         avatarUrl: summary.contact.avatarUrl ?? remote?.contact.avatarUrl ?? null,
       },
     };
@@ -785,6 +874,11 @@ async function ingestWebhookForWorkspace(
         reviveDeleted: message.messageType === "incoming",
       },
     );
+    await fillLinkedContactXUserIdFromChatwoot(
+      workspaceId,
+      conversation,
+      conversationSummary.contact,
+    );
     const { message: stored } = await upsertMessageFromChatwoot(
       workspaceId,
       conversation.id,
@@ -814,6 +908,11 @@ async function ingestWebhookForWorkspace(
     const { conversation } = await upsertConversationFromChatwoot(
       workspaceId,
       conversationSummary,
+    );
+    await fillLinkedContactXUserIdFromChatwoot(
+      workspaceId,
+      conversation,
+      conversationSummary.contact,
     );
     publishChatUpdated({
       workspaceId,

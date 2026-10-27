@@ -11,6 +11,7 @@ import {
   pickExactSupportContact,
   pickExactWhatsAppContact,
   pickExactXContact,
+  pickInboxXConversation,
   type CreateChatConversationDeps,
 } from "./chat-create-conversation.js";
 import { X_LEMO_DESIGN_INBOX_ID } from "../lib/chat-messaging-window.js";
@@ -160,9 +161,77 @@ describe("exact Chatwoot contact matching", () => {
         identifier: "50254162",
         avatarUrl: null,
       },
+      {
+        id: "by-attr",
+        name: "Remon",
+        email: null,
+        phone: null,
+        username: "remondevries",
+        identifier: null,
+        customAttributes: { x_user_id: "50254162" },
+        avatarUrl: null,
+      },
     ];
     assert.equal(pickExactXContact(hits, "50254162")?.id, "exact");
+    assert.equal(
+      pickExactXContact(
+        hits.filter((hit) => hit.id !== "exact"),
+        "50254162",
+      )?.id,
+      "by-attr",
+    );
     assert.equal(pickExactXContact(hits, "@remondevries"), null);
+  });
+
+  it("requires exact x_user_id on inbox conversations (no inbox-only fallback)", () => {
+    const otherUser = {
+      id: "99",
+      inboxId: X_LEMO_DESIGN_INBOX_ID,
+      status: "open",
+      channelType: "Channel::Api",
+      contact: {
+        id: "cw-other",
+        name: "Other",
+        email: null,
+        phone: null,
+        username: "someoneelse",
+        identifier: "11111111",
+        customAttributes: { x_user_id: "11111111" },
+        avatarUrl: null,
+      },
+      additionalAttributes: { x_user_id: "11111111" },
+      customAttributes: { x_user_id: "11111111" },
+      xUserId: "11111111",
+      lastActivityAt: new Date().toISOString(),
+      unreadCount: 0,
+      lastMessagePreview: null,
+    };
+    assert.equal(
+      pickInboxXConversation([otherUser], X_LEMO_DESIGN_INBOX_ID, "50254162"),
+      null,
+    );
+    const match = {
+      ...otherUser,
+      id: "17",
+      contact: {
+        ...otherUser.contact,
+        id: "cw-x-existing",
+        identifier: null,
+        customAttributes: { x_user_id: "50254162" },
+        xUserId: "50254162",
+      },
+      additionalAttributes: { x_user_id: "50254162" },
+      customAttributes: { x_user_id: "50254162" },
+      xUserId: "50254162",
+    };
+    assert.equal(
+      pickInboxXConversation(
+        [otherUser, match],
+        X_LEMO_DESIGN_INBOX_ID,
+        "50254162",
+      )?.id,
+      "17",
+    );
   });
 
   it("only ignores 422 duplicate contact-inbox errors", () => {
@@ -236,6 +305,8 @@ describe("ensureChatwootContact", () => {
           inboxId: "wa-inbox",
           channelType: "Channel::Whatsapp",
         }),
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
         getConversation: async () => null,
       },
     });
@@ -291,6 +362,8 @@ describe("ensureChatwootContact", () => {
           inboxId: "email-inbox",
           channelType: "Channel::Email",
         }),
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
         getConversation: async () => null,
       },
     });
@@ -332,6 +405,8 @@ describe("ensureChatwootContact", () => {
               inboxId: null,
               channelType: null,
             }),
+            filterContactsByCustomAttribute: async () => [],
+            filterConversationsByAttribute: async () => [],
             getConversation: async () => null,
           },
         }),
@@ -373,6 +448,8 @@ describe("ensureChatwootContact", () => {
           inboxId: null,
           channelType: null,
         }),
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
         getConversation: async () => ({
           id: "cw-tg-9",
           inboxId: "tg-inbox",
@@ -384,6 +461,7 @@ describe("ensureChatwootContact", () => {
             email: null,
             phone: null,
             username: "7014761034",
+            identifier: null,
             avatarUrl: null,
           },
           lastActivityAt: new Date().toISOString(),
@@ -414,6 +492,16 @@ describe("ensureChatwootContact", () => {
             createContact: async () => {
               throw new Error("must not create");
             },
+            updateContact: async () => ({
+              id: "stub",
+              name: null,
+              email: null,
+              phone: null,
+              username: null,
+              identifier: null,
+              avatarUrl: null,
+            }),
+            listContactConversations: async () => [],
             getContactInboxes: async () => [
               {
                 sourceId: "remon",
@@ -426,6 +514,8 @@ describe("ensureChatwootContact", () => {
               inboxId: null,
               channelType: null,
             }),
+            filterContactsByCustomAttribute: async () => [],
+            filterConversationsByAttribute: async () => [],
             getConversation: async () => ({
               id: "cw-ig-1",
               inboxId: "ig-inbox",
@@ -437,6 +527,7 @@ describe("ensureChatwootContact", () => {
                 email: null,
                 phone: null,
                 username: "remon",
+                identifier: null,
                 avatarUrl: null,
               },
               lastActivityAt: new Date().toISOString(),
@@ -487,6 +578,8 @@ describe("ensureChatwootContact", () => {
             createContactInbox: async () => {
               throw new ChatwootApiError(400, "invalid source id");
             },
+            filterContactsByCustomAttribute: async () => [],
+            filterConversationsByAttribute: async () => [],
             getConversation: async () => null,
           },
         }),
@@ -546,6 +639,8 @@ describe("createChatConversation", () => {
         },
       ],
       searchContacts: async () => [],
+      filterContactsByCustomAttribute: async () => [],
+      filterConversationsByAttribute: async () => [],
       createContact: async () => ({
         id: "cw-new",
         name: "Remon",
@@ -769,6 +864,7 @@ describe("createChatConversation", () => {
               email: null,
               phone: null,
               username: "7014761034",
+              identifier: null,
               avatarUrl: null,
             },
             lastActivityAt: new Date().toISOString(),
@@ -967,10 +1063,12 @@ describe("createChatConversation", () => {
           createConversation: async (input: {
             inboxId: string;
             additionalAttributes?: Record<string, unknown>;
+            customAttributes?: Record<string, unknown>;
           }) => {
             createdBody = input as unknown as Record<string, unknown>;
             assert.equal(input.inboxId, X_LEMO_DESIGN_INBOX_ID);
             assert.equal(input.additionalAttributes?.x_user_id, "999888777");
+            assert.equal(input.customAttributes?.x_user_id, "999888777");
             return { id: "cw-x-convo", inboxId: X_LEMO_DESIGN_INBOX_ID };
           },
         },
@@ -978,6 +1076,289 @@ describe("createChatConversation", () => {
     );
     assert.equal(result.id, "local-1");
     assert.ok(createdBody);
+  });
+
+  it("ignores non-inbox-8 conversations and fresh-creates in the X inbox", async () => {
+    let createdOn: string | null = null;
+    let messagedOn: string | null = null;
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "x",
+        contactId: "contact-1",
+        content: "hello on X",
+      },
+      baseDeps({
+        local: null,
+        loadContact: async () => contact({ xUserId: "50254162" }),
+        client: {
+          searchContacts: async () => [
+            {
+              id: "cw-x-existing",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: "remondevries",
+              identifier: "50254162",
+              avatarUrl: null,
+            },
+          ],
+          getContactInboxes: async () => [
+            {
+              sourceId: "296b329e-a434-491d-b794-df60e164b4c8",
+              inboxId: X_LEMO_DESIGN_INBOX_ID,
+              channelType: "Channel::Api",
+            },
+          ],
+          listContactConversations: async () => [
+            {
+              id: "99",
+              inboxId: "wa-inbox",
+              status: "open",
+              channelType: "Channel::Whatsapp",
+              contact: {
+                id: "cw-x-existing",
+                name: "Remon",
+                email: null,
+                phone: null,
+                username: null,
+                identifier: "50254162",
+                avatarUrl: null,
+              },
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ],
+          createConversation: async (input: { inboxId: string }) => {
+            createdOn = input.inboxId;
+            return { id: "cw-x-fresh", inboxId: input.inboxId };
+          },
+          createMessage: async (conversationId: string) => {
+            messagedOn = conversationId;
+            return {
+              id: "m1",
+              conversationId,
+              content: "hello on X",
+              contentType: "text",
+              messageType: "outgoing" as const,
+              private: false,
+              senderName: "Agent",
+              createdAt: new Date().toISOString(),
+            };
+          },
+        },
+      }),
+    );
+    assert.equal(result.id, "local-1");
+    assert.equal(createdOn, X_LEMO_DESIGN_INBOX_ID);
+    assert.equal(messagedOn, null);
+  });
+
+  it("reuses conv-17 contact matched by custom_attributes.x_user_id without identifier", async () => {
+    let created = false;
+    let messagedOn: string | null = null;
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "x",
+        contactId: "contact-1",
+        content: "hello on X",
+      },
+      baseDeps({
+        local: null,
+        loadContact: async () => contact({ xUserId: "50254162" }),
+        client: {
+          searchContacts: async () => [],
+          filterContactsByCustomAttribute: async () => [
+            {
+              id: "cw-x-existing",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: "remondevries",
+              identifier: null,
+              customAttributes: { x_user_id: "50254162" },
+              xUserId: "50254162",
+              avatarUrl: null,
+            },
+          ],
+          getContactInboxes: async () => [
+            {
+              sourceId: "296b329e-a434-491d-b794-df60e164b4c8",
+              inboxId: X_LEMO_DESIGN_INBOX_ID,
+              channelType: "Channel::Api",
+            },
+          ],
+          listContactConversations: async () => [
+            {
+              id: "17",
+              inboxId: X_LEMO_DESIGN_INBOX_ID,
+              status: "open",
+              channelType: "Channel::Api",
+              contact: {
+                id: "cw-x-existing",
+                name: "Remon",
+                email: null,
+                phone: null,
+                username: "remondevries",
+                identifier: null,
+                customAttributes: { x_user_id: "50254162" },
+                avatarUrl: null,
+              },
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ],
+          createConversation: async () => {
+            created = true;
+            return { id: "should-not", inboxId: X_LEMO_DESIGN_INBOX_ID };
+          },
+          createMessage: async (conversationId: string) => {
+            messagedOn = conversationId;
+            return {
+              id: "m1",
+              conversationId,
+              content: "hello on X",
+              contentType: "text",
+              messageType: "outgoing" as const,
+              private: false,
+              senderName: "Agent",
+              createdAt: new Date().toISOString(),
+            };
+          },
+        },
+      }),
+    );
+    assert.equal(result.id, "local-1");
+    assert.equal(created, false);
+    assert.equal(messagedOn, "17");
+  });
+
+  it("does not reuse another user's inbox-8 conversation from a Chatwoot filter", async () => {
+    let createdOn: string | null = null;
+    let messagedOn: string | null = null;
+    let createdContact = false;
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "x",
+        contactId: "contact-1",
+        content: "hello on X",
+      },
+      baseDeps({
+        local: null,
+        loadContact: async () => contact({ xUserId: "50254162" }),
+        client: {
+          searchContacts: async () => [],
+          filterContactsByCustomAttribute: async () => [],
+          // Filter noise: another X user in inbox 8 — must not be reused.
+          filterConversationsByAttribute: async () => [
+            {
+              id: "99",
+              inboxId: X_LEMO_DESIGN_INBOX_ID,
+              status: "open",
+              channelType: "Channel::Api",
+              contact: {
+                id: "cw-other",
+                name: "Other",
+                email: null,
+                phone: null,
+                username: "someoneelse",
+                identifier: "11111111",
+                customAttributes: { x_user_id: "11111111" },
+                avatarUrl: null,
+              },
+              additionalAttributes: { x_user_id: "11111111" },
+              customAttributes: { x_user_id: "11111111" },
+              xUserId: "11111111",
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ],
+          createContact: async () => {
+            createdContact = true;
+            return {
+              id: "cw-x-new",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: null,
+              identifier: "50254162",
+              avatarUrl: null,
+            };
+          },
+          getContactInboxes: async () => [],
+          createContactInbox: async (input: {
+            inboxId: string;
+            sourceId: string;
+          }) => ({
+            sourceId: input.sourceId,
+            inboxId: input.inboxId,
+            channelType: "Channel::Api",
+          }),
+          listContactConversations: async () => [],
+          createConversation: async (input: { inboxId: string }) => {
+            createdOn = input.inboxId;
+            return { id: "cw-x-fresh", inboxId: input.inboxId };
+          },
+          createMessage: async (conversationId: string) => {
+            messagedOn = conversationId;
+            return {
+              id: "m1",
+              conversationId,
+              content: "hello on X",
+              contentType: "text",
+              messageType: "outgoing" as const,
+              private: false,
+              senderName: "Agent",
+              createdAt: new Date().toISOString(),
+            };
+          },
+        },
+      }),
+    );
+    assert.equal(result.id, "local-1");
+    assert.equal(createdContact, true);
+    assert.equal(createdOn, X_LEMO_DESIGN_INBOX_ID);
+    assert.equal(messagedOn, null);
+  });
+
+  it("refuses to overwrite a Chatwoot contact with a different x_user_id", async () => {
+    await assert.rejects(
+      () =>
+        createChatConversation(
+          "ws",
+          {
+            channel: "x",
+            contactId: "contact-1",
+            content: "hello",
+          },
+          baseDeps({
+            local: null,
+            loadContact: async () => contact({ xUserId: "50254162" }),
+            client: {
+              // Matched via custom_attributes, but identifier belongs to another X user.
+              searchContacts: async () => [
+                {
+                  id: "cw-conflict",
+                  name: "Someone",
+                  email: null,
+                  phone: null,
+                  username: null,
+                  identifier: "11111111",
+                  customAttributes: { x_user_id: "50254162" },
+                  xUserId: "50254162",
+                  avatarUrl: null,
+                },
+              ],
+            },
+          }),
+        ),
+      (error: unknown) => errCode(error) === "x_user_id_conflict",
+    );
   });
 
   it("refuses X create when the contact only has an @handle", async () => {

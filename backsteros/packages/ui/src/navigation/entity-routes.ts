@@ -147,6 +147,10 @@ export type ContactListItem = {
   } | null;
   /** Social profiles for list chips (right side of overview rows). */
   socialAccounts?: Array<{ platform: string; url: string }> | null;
+  /** Facebook Messenger Page-Scoped ID (Chatwoot) — not a public username. */
+  facebookMessengerId?: string | null;
+  /** Numeric X user id for Chatwoot DMs — never an @handle. */
+  xUserId?: string | null;
   /** CRM groups for list chips (right side of overview rows). */
   groups?: Array<{
     id: string;
