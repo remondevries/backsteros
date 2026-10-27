@@ -53,6 +53,29 @@ function buildAuthHeaders(apiKey: string): Record<string, string> {
   return headers;
 }
 
+/** Map 401/403 so an Applications door key is not mislabeled as “rejected”. */
+function formatBacksterosAuthFailure(input: {
+  readonly status: number;
+  readonly bodyError?: string;
+  readonly bodyCode?: string;
+  readonly fallback: string;
+}): string {
+  const error = (input.bodyError ?? "").trim();
+  const code = (input.bodyCode ?? "").trim().toLowerCase();
+  const looksInsufficientScope =
+    input.status === 403 &&
+    (code === "forbidden" ||
+      /insufficient scope/i.test(error) ||
+      /forbidden/i.test(error));
+  if (looksInsufficientScope) {
+    return "This BacksterOS key is valid but lacks Access scopes (projects/tasks). Use an Access key (sk_access_…), not an Applications key (sk_applications_…), in Settings → Integrations.";
+  }
+  if (input.status === 401 || input.status === 403) {
+    return "BacksterOS rejected the API key. Add or update an Access key in Settings → Integrations.";
+  }
+  return error || input.fallback;
+}
+
 /**
  * Product / gateway API (tasks, projects metadata, GitHub). Local sentinel +
  * Mac HTTPS gateway go through `/backsteros-api` (Vite / Electron / T3 proxy).
@@ -208,16 +231,17 @@ async function backsterosFetchJson<T>(
   }
 
   if (!response.ok) {
-    const body = await readBacksterosJsonBody<{ error?: unknown } | null>(response).catch(
-      () => null,
-    );
+    const body = await readBacksterosJsonBody<{ error?: unknown; code?: unknown } | null>(
+      response,
+    ).catch(() => null);
     const bodyError = typeof body?.error === "string" ? body.error.trim() : "";
-    const message =
-      response.status === 401 || response.status === 403
-        ? "BacksterOS rejected the API key. Add or update it in Settings → Integrations."
-        : bodyError
-          ? bodyError
-          : `BacksterOS request failed (${response.status})`;
+    const bodyCode = typeof body?.code === "string" ? body.code.trim() : "";
+    const message = formatBacksterosAuthFailure({
+      status: response.status,
+      bodyError,
+      bodyCode,
+      fallback: `BacksterOS request failed (${response.status})`,
+    });
     if (usesLocalCore) throw new Error(formatBacksterosLocalCoreError(new Error(message)));
     throw new Error(message);
   }
@@ -283,7 +307,19 @@ export async function testBacksterosConnection(input?: {
   }
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error("BacksterOS rejected the API key.");
+    const body = await readBacksterosJsonBody<{ error?: unknown; code?: unknown } | null>(
+      response,
+    ).catch(() => null);
+    const bodyError = typeof body?.error === "string" ? body.error.trim() : "";
+    const bodyCode = typeof body?.code === "string" ? body.code.trim() : "";
+    throw new Error(
+      formatBacksterosAuthFailure({
+        status: response.status,
+        bodyError,
+        bodyCode,
+        fallback: "BacksterOS rejected the API key.",
+      }),
+    );
   }
   if (!response.ok) {
     throw new Error(`BacksterOS connection failed (${response.status}).`);
