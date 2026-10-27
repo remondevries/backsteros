@@ -10,6 +10,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   coerceContactLanguages,
   getContactEmailAddresses,
+  parseBareEmailAddress,
   taskInvolvesContact,
   type ChatConversation,
   type ContactPortalSettings,
@@ -20,6 +21,7 @@ import {
   CONTACT_DETAIL_EXPAND_FADE_MS,
   ContactDetailOverlay,
   ContactDetailView,
+  ContactOverviewView,
   EntityCommunicationListView,
   ContactMeetingsListView,
   ContactPersonIcon,
@@ -39,17 +41,22 @@ import {
   normalizeContactSocialAccounts,
   organizationMatchesEmailAddress,
   OrganizationOverviewView,
+  chatConversationsShareVisitor,
+  emailListItemPartyEmail,
   previousChatConversations,
+  previousCommunicationItems,
   requestOpenComposeModal,
   resolveChatContactCardSections,
   resolveCommunicationEmailCardSections,
   resolveCommunicationSupportCardSections,
   resolveDropdownNone,
+  parseSectionTabIndex,
   resolveLetterDetailHref,
   resolveOrganizationAvatarSrc,
   ScopedLettersListView,
   SearchableDropdown,
   SegmentedPillToggle,
+  shouldHandleGlobalShortcut,
   SocialContactDetailView,
   taskReorderPatches,
   type ChatConversationStatus,
@@ -89,7 +96,13 @@ import {
   useCrmGroupsForSubject,
   useCrmRelationshipLabels,
 } from "../lib/use-crm-data";
+import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
 import { navigateToHref } from "../router/navigate-href";
+import {
+  chatChannelSocialKind,
+  normalizeFacebookHandle,
+  withChatChannelSocialAccount,
+} from "../lib/chat/match-chat-contact";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { DesktopCommunicationEmailPartyCard } from "./desktop-communication-email-party-card";
 
@@ -97,6 +110,8 @@ export type ChatContactPanelVisitor = {
   contactName?: string | null;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  /** Telegram @handle (without @) from Chatwoot. */
+  contactUsername?: string | null;
   contactAvatarUrl?: string | null;
 };
 
@@ -142,11 +157,15 @@ type DesktopChatContactDetailPanelProps = {
   onEmailProjectChange?: (projectKey: string | null) => void | Promise<void>;
   /** Link / select an existing contact for the unmatched chat or email party. */
   onLinkContact?: (contactId: string) => void | Promise<void>;
-  /** Clear the linked contact on the active email message party. */
+  /** Clear the linked contact on the active email message party / chat. */
   onUnlinkContact?: () => void | Promise<void>;
   /** Link an organization on the selected email thread (org-first party card). */
   onLinkOrganization?: (organizationId: string) => void | Promise<void>;
+  /** Clear the linked organization on the active email party / chat. */
+  onUnlinkOrganization?: () => void | Promise<void>;
   onSelectConversation?: (conversationId: string) => void;
+  onSelectEmail?: (emailId: string) => void;
+  onSelectSupport?: (supportId: string) => void;
   collapsed: boolean;
   onHide: () => void;
   onShow: () => void;
@@ -189,7 +208,10 @@ function DesktopChatContactDetailPanelView({
   onLinkContact,
   onUnlinkContact,
   onLinkOrganization,
+  onUnlinkOrganization,
   onSelectConversation,
+  onSelectEmail,
+  onSelectSupport,
   collapsed,
   onHide,
   onShow,
@@ -203,6 +225,7 @@ function DesktopChatContactDetailPanelView({
     },
     [routerNavigate],
   );
+  const keepAliveActive = useKeepAliveActive();
   const communicationItems = useCommunicationListItems();
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
@@ -346,42 +369,100 @@ function DesktopChatContactDetailPanelView({
     collapseCrossFade(() => setOverlayLayout("panel"));
   }, [collapseCrossFade, onShow, overlayLayout]);
 
-  const previousConversations = useMemo(() => {
-    if (!conversation) return [];
-    return previousChatConversations(conversations, conversation);
-  }, [conversation, conversations]);
+  const viewAllPreviousConversations = useCallback(() => {
+    if (!contact) return;
+    setWorkspaceTab("emails");
+    if (overlayLayout === "page") return;
+    onShow();
+    expandCrossFade(() => setOverlayLayout("page"));
+  }, [contact, expandCrossFade, onShow, overlayLayout]);
 
-  const conversationDetails = emailItem ? (
-    <EmailConversationDetailsView
-      item={emailItem}
-      assigneeOptions={assigneeOptions}
-      projectOptions={projectOptions}
-      onStatusChange={onEmailStatusChange}
-      onAssigneeChange={onEmailAssigneeChange}
-      onPriorityChange={onEmailPriorityChange}
-      onDueDateChange={onEmailDueDateChange}
-      onProjectChange={onEmailProjectChange}
-    />
-  ) : conversation ? (
-    <ChatConversationDetailsView
-      conversation={conversation}
-      previousConversations={previousConversations}
-      statusUpdating={statusUpdating}
-      propertiesUpdating={propertiesUpdating}
-      assigneeOptions={assigneeOptions}
-      onStatusChange={onStatusChange}
-      onAssigneeChange={onAssigneeChange}
-      onPriorityChange={onPriorityChange}
-      onDueDateChange={onDueDateChange}
-      onSelectConversation={onSelectConversation}
-    />
-  ) : (
-    <div className="communication-chat-contact-empty">
-      <p className="communication-chat-contact-empty__hint">
-        Select a conversation to see chat details.
-      </p>
-    </div>
-  );
+  const previousItems = useMemo(() => {
+    const excludeId = emailItem?.id ?? conversation?.id ?? null;
+    if (contact) {
+      const scoped = filterCommunicationForContact({
+        contact: {
+          id: contact.id,
+          email: details?.email ?? contact.email,
+          emails: normalizeContactEmails(details?.emails ?? contact.emails),
+          phone: details?.phone ?? contact.phone,
+          phones: normalizeContactPhones(details?.phones ?? contact.phones ?? []),
+          socialAccounts: normalizeContactSocialAccounts(
+            details?.socialAccounts ?? contact.socialAccounts,
+          ),
+          facebookMessengerId:
+            details?.facebookMessengerId ??
+            contact.facebookMessengerId ??
+            null,
+          xUserId: details?.xUserId ?? contact.xUserId ?? null,
+        },
+        items: communicationItems,
+        conversations,
+      });
+      return previousCommunicationItems({
+        conversations: scoped.conversations,
+        emails: scoped.emails,
+        supportTasks: scoped.supportTasks,
+        excludeId,
+      });
+    }
+
+    const visitorIdentity = {
+      contactEmail:
+        conversation?.contactEmail ?? visitor?.contactEmail ?? null,
+      contactPhone:
+        conversation?.contactPhone ?? visitor?.contactPhone ?? null,
+      contactName: conversation?.contactName ?? visitor?.contactName ?? null,
+    };
+    const relatedChats = conversation
+      ? [
+          conversation,
+          ...previousChatConversations(conversations, conversation),
+        ]
+      : conversations.filter((row) =>
+          chatConversationsShareVisitor(row, visitorIdentity),
+        );
+    const visitorEmailKey = visitorIdentity.contactEmail
+      ? parseBareEmailAddress(visitorIdentity.contactEmail)
+      : null;
+    const relatedEmails =
+      visitorEmailKey && visitorEmailKey.includes("@")
+        ? communicationItems.filter(
+            (item): item is InboxEmailListItem => {
+              if (item.kind !== "email") return false;
+              const party = emailListItemPartyEmail(item);
+              if (party && parseBareEmailAddress(party) === visitorEmailKey) {
+                return true;
+              }
+              const haystack =
+                `${item.partyLabel ?? ""} ${item.title ?? ""}`.toLowerCase();
+              return haystack.includes(visitorEmailKey);
+            },
+          )
+        : [];
+    return previousCommunicationItems({
+      conversations: relatedChats,
+      emails: relatedEmails,
+      supportTasks: [],
+      excludeId,
+    });
+  }, [
+    communicationItems,
+    contact,
+    conversation,
+    conversations,
+    details?.email,
+    details?.emails,
+    details?.facebookMessengerId,
+    details?.xUserId,
+    details?.phone,
+    details?.phones,
+    details?.socialAccounts,
+    emailItem?.id,
+    visitor?.contactEmail,
+    visitor?.contactName,
+    visitor?.contactPhone,
+  ]);
 
   const emailPartyOrganizationId =
     emailItem && emailActiveParty?.organizationId?.trim()
@@ -482,6 +563,30 @@ function DesktopChatContactDetailPanelView({
     setSection("conversation");
   }, [section, sections]);
 
+  // Communication rail sections are local state (not URL tabs). The pill
+  // tooltips advertise 1…N — wire those digits while this pane is active.
+  useEffect(() => {
+    if (!keepAliveActive || !open || collapsed) return;
+    if (sections.length < 2) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!shouldHandleGlobalShortcut(event)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      const tabIndex = parseSectionTabIndex(event.key);
+      if (tabIndex == null) return;
+      const next = sections[tabIndex];
+      if (!next || next.id === section) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setSection(next.id);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [collapsed, keepAliveActive, open, section, sections]);
+
   const contactOrganizationOptions = useMemo(
     () =>
       workspace.organizations.map((org) => ({
@@ -524,8 +629,12 @@ function DesktopChatContactDetailPanelView({
     [crmGroups],
   );
 
+  const visitorTelegram = visitor?.contactUsername?.trim()
+    ? `@${visitor.contactUsername.trim().replace(/^@+/, "")}`
+    : null;
   const visitorName =
     visitor?.contactName?.trim() ||
+    visitorTelegram ||
     visitor?.contactEmail?.trim() ||
     visitor?.contactPhone?.trim() ||
     (emailItem ? "Email party" : "Visitor");
@@ -732,23 +841,21 @@ function DesktopChatContactDetailPanelView({
       if (!nextContactId) return;
       setLinkingContact(true);
       try {
-        if (emailItem && onLinkContact) {
-          await onLinkContact(nextContactId);
-          return;
-        }
+        // Durable link first (email party / support task / chat conversation).
         if (onLinkContact) {
           await onLinkContact(nextContactId);
-          return;
         }
-        // Chat fallback: attach visitor email/phone so matchChatContact resolves.
+        // Copy visitor email/phone quietly. Missing Telegram/Instagram/Facebook
+        // identity is surfaced as a yellow notice on the chat thread (not auto-added).
         const email = visitor?.contactEmail?.trim() || null;
         const phone = visitor?.contactPhone?.trim() || null;
         const target =
           workspace.contacts.find((entry) => entry.id === nextContactId) ??
           null;
         if (!target) return;
+        const details = workspace.contactDetails[nextContactId];
         const existingEmails = normalizeContactEmails(
-          workspace.contactDetails[nextContactId]?.emails ?? target.emails,
+          details?.emails ?? target.emails,
         );
         const patch: Record<string, unknown> = {};
         if (email) {
@@ -777,7 +884,6 @@ function DesktopChatContactDetailPanelView({
       }
     },
     [
-      emailItem,
       onLinkContact,
       visitor?.contactEmail,
       visitor?.contactPhone,
@@ -795,6 +901,7 @@ function DesktopChatContactDetailPanelView({
           visitor?.contactName?.trim() ||
           ""
         ).split(/\s+/);
+        const channelUsername = visitor?.contactUsername?.trim() || null;
         const created = await workspace.createContact({
           firstName:
             nameParts[0] ||
@@ -808,8 +915,21 @@ function DesktopChatContactDetailPanelView({
             : {}),
         });
         const phone = visitor?.contactPhone?.trim();
-        if (phone) {
-          await workspace.patchContact(created.id, { phone });
+        const channelKind = chatChannelSocialKind(conversation?.channelType);
+        const extraPatch: Record<string, unknown> = {};
+        if (phone) extraPatch.phone = phone;
+        if (channelKind === "facebook" && channelUsername) {
+          const messengerId = normalizeFacebookHandle(channelUsername);
+          if (messengerId) extraPatch.facebookMessengerId = messengerId;
+        } else if (channelUsername) {
+          const channelSocial = withChatChannelSocialAccount([], {
+            channelType: conversation?.channelType,
+            contactUsername: channelUsername,
+          });
+          if (channelSocial) extraPatch.socialAccounts = channelSocial;
+        }
+        if (Object.keys(extraPatch).length > 0) {
+          await workspace.patchContact(created.id, extraPatch);
         }
         if (onLinkContact) {
           await onLinkContact(created.id);
@@ -821,12 +941,14 @@ function DesktopChatContactDetailPanelView({
       }
     },
     [
+      conversation?.channelType,
       emailItem,
       emailOrganizationId,
       onLinkContact,
       visitor?.contactEmail,
       visitor?.contactName,
       visitor?.contactPhone,
+      visitor?.contactUsername,
       workspace,
     ],
   );
@@ -888,6 +1010,50 @@ function DesktopChatContactDetailPanelView({
     [onLinkOrganization, visitor?.contactEmail, visitor?.contactName, workspace],
   );
 
+  const conversationDetails = emailItem ? (
+    <EmailConversationDetailsView
+      item={emailItem}
+      previousItems={previousItems}
+      assigneeOptions={assigneeOptions}
+      projectOptions={projectOptions}
+      onStatusChange={onEmailStatusChange}
+      onAssigneeChange={onEmailAssigneeChange}
+      onPriorityChange={onEmailPriorityChange}
+      onDueDateChange={onEmailDueDateChange}
+      onProjectChange={onEmailProjectChange}
+      onSelectConversation={onSelectConversation}
+      onSelectEmail={onSelectEmail}
+      onSelectSupport={onSelectSupport}
+      onViewAllPrevious={
+        contact ? viewAllPreviousConversations : undefined
+      }
+    />
+  ) : conversation ? (
+    <ChatConversationDetailsView
+      conversation={conversation}
+      previousItems={previousItems}
+      statusUpdating={statusUpdating}
+      propertiesUpdating={propertiesUpdating}
+      assigneeOptions={assigneeOptions}
+      onStatusChange={onStatusChange}
+      onAssigneeChange={onAssigneeChange}
+      onPriorityChange={onPriorityChange}
+      onDueDateChange={onDueDateChange}
+      onSelectConversation={onSelectConversation}
+      onSelectEmail={onSelectEmail}
+      onSelectSupport={onSelectSupport}
+      onViewAllPrevious={
+        contact ? viewAllPreviousConversations : undefined
+      }
+    />
+  ) : (
+    <div className="communication-chat-contact-empty">
+      <p className="communication-chat-contact-empty__hint">
+        Select a conversation to see chat details.
+      </p>
+    </div>
+  );
+
   const displayContact = useMemo(() => {
     if (contact) {
       return {
@@ -917,6 +1083,11 @@ function DesktopChatContactDetailPanelView({
         socialAccounts: normalizeContactSocialAccounts(
           details?.socialAccounts ?? contact.socialAccounts,
         ),
+        facebookMessengerId:
+          details?.facebookMessengerId ??
+          contact.facebookMessengerId ??
+          null,
+        xUserId: details?.xUserId ?? contact.xUserId ?? null,
         birthday: details?.birthday ?? contact.birthday ?? null,
         languages: coerceContactLanguages(
           details?.languages ?? contact.languages ?? [],
@@ -924,6 +1095,12 @@ function DesktopChatContactDetailPanelView({
       };
     }
     const nameParts = (visitor?.contactName?.trim() || "").split(/\s+/);
+    const linkedOrgId = conversation?.organizationId?.trim() || null;
+    const linkedOrg =
+      linkedOrgId != null
+        ? (workspace.organizations.find((entry) => entry.id === linkedOrgId) ??
+          null)
+        : null;
     return {
       id: "communication-unmatched",
       name: visitorName,
@@ -944,14 +1121,23 @@ function DesktopChatContactDetailPanelView({
       postalCode: null,
       country: null,
       region: null,
-      organizationId: null,
-      organizationName: null,
+      organizationId: linkedOrgId,
+      organizationName: linkedOrg?.name?.trim() || null,
       summary: null,
       socialAccounts: [],
+      facebookMessengerId: null,
+      xUserId: null,
       birthday: null,
       languages: [],
     };
-  }, [contact, details, visitor, visitorName]);
+  }, [
+    contact,
+    conversation?.organizationId,
+    details,
+    visitor,
+    visitorName,
+    workspace.organizations,
+  ]);
 
   const coverAccessory = contact ? (
     <CommunicationContactCoverAvatar
@@ -1141,9 +1327,10 @@ function DesktopChatContactDetailPanelView({
     ? "Add email to contact as other"
     : "Add email to organization as other";
 
-  // Contact tab: party-selected org (email) or the contact’s own organization.
+  // Contact tab: party org (email), durable chat org, or the contact’s org.
   const contactTabOrganizationId =
     emailOrganizationId ||
+    conversation?.organizationId?.trim() ||
     contact?.organizationId?.trim() ||
     details?.organizationId?.trim() ||
     null;
@@ -1224,8 +1411,67 @@ function DesktopChatContactDetailPanelView({
     [contactTabOrganization, workspace],
   );
 
-  // Org details for the Contact tab — unwrapped (no title chrome). Only mount
-  // while that tab is active so heavy editors do not remount on Activity.
+  const showContactOrgEntityTabs = Boolean(
+    contact && contactTabOrganizationViewModel,
+  );
+
+  // ⌘⌥← / ⌘⌥→ switch Contact ↔ Organization when both are linked on Details.
+  useEffect(() => {
+    if (!keepAliveActive || !open || collapsed) return;
+    if (!showContactOrgEntityTabs || section !== "details") return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return;
+      if (!(event.metaKey || event.ctrlKey) || !event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      const nextEntity =
+        event.key === "ArrowLeft" ? "contact" : "organization";
+      if (nextEntity === contactTabEntity) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setContactTabEntity(nextEntity);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    collapsed,
+    contactTabEntity,
+    keepAliveActive,
+    open,
+    section,
+    showContactOrgEntityTabs,
+  ]);
+
+  const contactTabEntityToggle = showContactOrgEntityTabs ? (
+    <div className="communication-chat-contact-entity-tabs">
+      <SegmentedPillToggle
+        ariaLabel="Contact or organization details"
+        value={contactTabEntity}
+        options={[
+          {
+            value: "contact" as const,
+            label: "Contact",
+            shortcut: "⌘⌥←",
+          },
+          {
+            value: "organization" as const,
+            label: "Organization",
+            shortcut: "⌘⌥→",
+          },
+        ]}
+        onChange={setContactTabEntity}
+      />
+    </div>
+  ) : null;
+
+  // Org / contact details for the Contact tab — unwrapped (no title chrome).
+  // Only mount while that tab is active so heavy editors do not remount on Activity.
   const organizationDetailsBody =
     section === "details" && contactTabOrganizationViewModel != null ? (
       <OrganizationOverviewView
@@ -1238,22 +1484,59 @@ function DesktopChatContactDetailPanelView({
       />
     ) : null;
 
-  const showContactOrgEntityTabs = Boolean(
-    contact && contactTabOrganizationViewModel,
-  );
-  const contactTabEntityToggle = showContactOrgEntityTabs ? (
-    <div className="communication-chat-contact-entity-tabs">
-      <SegmentedPillToggle
-        ariaLabel="Contact or organization details"
-        value={contactTabEntity}
-        options={[
-          { value: "contact" as const, label: "Contact" },
-          { value: "organization" as const, label: "Organization" },
-        ]}
-        onChange={setContactTabEntity}
+  const contactRelationshipsSlot =
+    contact &&
+    !(showContactOrgEntityTabs && contactTabEntity === "organization") ? (
+      <ContactRelationshipsListView
+        items={relationships.items}
+        loading={relationships.loading}
+        error={relationships.error}
+        relationshipLabels={relationshipLabels.labels}
+        contactOptions={workspace.contacts
+          .filter((entry) => entry.id !== contact.id)
+          .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            avatarSrc:
+              contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
+          }))}
+        onSelectContact={(id) => {
+          const target = workspace.contacts.find((entry) => entry.id === id);
+          if (!target) return;
+          navigate(
+            getContactOverlayHref(
+              getUniqueListItemRouteParam(target, workspace.contacts),
+            ),
+          );
+        }}
+        onAdd={relationships.add}
+        onRemove={relationships.remove}
+        onCreateLabel={relationshipLabels.createLabel}
+        onUpdateLabel={relationshipLabels.updateLabel}
+        onDeleteLabel={relationshipLabels.deleteLabel}
       />
-    </div>
-  ) : null;
+    ) : null;
+
+  const contactDetailsBody =
+    section === "details" && contact != null ? (
+      <ContactOverviewView
+        key={contact.id}
+        hideChrome
+        mode="details"
+        contact={displayContact}
+        organizationOptions={contactOrganizationOptions}
+        groupOptions={groupOptions}
+        memberGroupIds={memberGroupIds}
+        onMemberGroupIdsChange={handleMemberGroupIdsChange}
+        onSaveFirstName={chatContactPropertyHandlers.onSaveFirstName}
+        onSaveLastName={chatContactPropertyHandlers.onSaveLastName}
+        onSaveDetails={chatContactPropertyHandlers.onSaveDetails}
+        onCreateOrganizationFromQuery={
+          chatContactPropertyHandlers.onCreateOrganizationFromQuery
+        }
+        relationshipsSlot={contactRelationshipsSlot}
+      />
+    ) : null;
 
   const emailSectionBody = (() => {
     if (!emailItem) return null;
@@ -1349,9 +1632,26 @@ function DesktopChatContactDetailPanelView({
       return <UnmatchedContactTabHint kind="activity" />;
     }
     if (section === "details") {
-      // Org-only party card: organization details as the tab body (no wrapper).
-      if (organizationDetailsBody) return organizationDetailsBody;
-      return <UnmatchedContactTabHint kind="contact" />;
+      // Email party card path — Contact / Organization toggle when both are
+      // linked (same as chat ContactDetailView). Org-only / contact-only skip
+      // the toggle and show that entity's fields.
+      let detailsBody = <UnmatchedContactTabHint kind="contact" />;
+      if (showContactOrgEntityTabs) {
+        detailsBody =
+          contactTabEntity === "organization"
+            ? (organizationDetailsBody ?? detailsBody)
+            : (contactDetailsBody ?? detailsBody);
+      } else if (contactDetailsBody) {
+        detailsBody = contactDetailsBody;
+      } else if (organizationDetailsBody) {
+        detailsBody = organizationDetailsBody;
+      }
+      return (
+        <>
+          {contactTabEntityToggle}
+          {detailsBody}
+        </>
+      );
     }
     if (section === "portal") {
       return portalSectionBody;
@@ -1560,6 +1860,13 @@ function DesktopChatContactDetailPanelView({
           onSelectOrganization={(nextId) => {
             void linkExistingOrganization(nextId);
           }}
+          onClearOrganization={
+            emailOrganizationId && onUnlinkOrganization
+              ? () => {
+                  void onUnlinkOrganization();
+                }
+              : undefined
+          }
           onCreateOrganizationFromQuery={(query) => {
             void createAndLinkOrganization(query);
           }}
@@ -1589,7 +1896,11 @@ function DesktopChatContactDetailPanelView({
       ) : (
         <ContactDetailView
           contact={displayContact}
-          organizationOptions={contact ? contactOrganizationOptions : []}
+          organizationOptions={
+            contact || (conversation && onLinkOrganization)
+              ? contactOrganizationOptions
+              : []
+          }
           groupOptions={contact ? groupOptions : []}
           memberGroupIds={contact ? memberGroupIds : emptyMemberGroupIds}
           onMemberGroupIdsChange={
@@ -1600,21 +1911,26 @@ function DesktopChatContactDetailPanelView({
           onSectionChange={setSection}
           overviewHeaderAccessory={coverAccessory}
           contactSwitcher={
-            emailItem && contactOptions.length > 0
+            conversation && contactOptions.length > 0 && onLinkContact
               ? {
                   options: contactOptions,
                   disabled: linkingContact,
+                  value: contact?.id ?? null,
                   onSelect: (nextId) => {
                     void linkExistingContact(nextId);
                   },
-                  onClear: onUnlinkContact
-                    ? () => {
-                        void onUnlinkContact();
-                      }
-                    : undefined,
+                  onClear:
+                    contact && onUnlinkContact
+                      ? () => {
+                          void onUnlinkContact();
+                        }
+                      : undefined,
+                  deselectLabel: "Remove contact",
                   onCreateFromQuery: (query) => {
                     void createAndLinkContact(query);
                   },
+                  // Unmatched chats keep the chevron visible so linking is obvious.
+                  alwaysShow: !contact,
                 }
               : null
           }
@@ -1626,43 +1942,7 @@ function DesktopChatContactDetailPanelView({
             showContactOrgEntityTabs &&
             contactTabEntity === "organization"
           }
-          relationshipsSlot={
-            contact &&
-            !(
-              showContactOrgEntityTabs && contactTabEntity === "organization"
-            ) ? (
-              <ContactRelationshipsListView
-                items={relationships.items}
-                loading={relationships.loading}
-                error={relationships.error}
-                relationshipLabels={relationshipLabels.labels}
-                contactOptions={workspace.contacts
-                  .filter((entry) => entry.id !== contact.id)
-                  .map((entry) => ({
-                    id: entry.id,
-                    name: entry.name,
-                    avatarSrc:
-                      contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
-                  }))}
-                onSelectContact={(id) => {
-                  const target = workspace.contacts.find(
-                    (entry) => entry.id === id,
-                  );
-                  if (!target) return;
-                  navigate(
-                    getContactOverlayHref(
-                      getUniqueListItemRouteParam(target, workspace.contacts),
-                    ),
-                  );
-                }}
-                onAdd={relationships.add}
-                onRemove={relationships.remove}
-                onCreateLabel={relationshipLabels.createLabel}
-                onUpdateLabel={relationshipLabels.updateLabel}
-                onDeleteLabel={relationshipLabels.deleteLabel}
-              />
-            ) : null
-          }
+          relationshipsSlot={contactRelationshipsSlot}
           detailsExtraSlot={
             section === "details" &&
             showContactOrgEntityTabs &&
@@ -1722,7 +2002,11 @@ function DesktopChatContactDetailPanelView({
           onCreateOrganizationFromQuery={
             contact
               ? chatContactPropertyHandlers.onCreateOrganizationFromQuery
-              : undefined
+              : conversation && onLinkOrganization
+                ? (query) => {
+                    void createAndLinkOrganization(query);
+                  }
+                : undefined
           }
           onSaveFirstName={
             contact ? chatContactPropertyHandlers.onSaveFirstName : undefined
@@ -1731,7 +2015,21 @@ function DesktopChatContactDetailPanelView({
             contact ? chatContactPropertyHandlers.onSaveLastName : undefined
           }
           onSaveDetails={
-            contact ? chatContactPropertyHandlers.onSaveDetails : undefined
+            contact
+              ? chatContactPropertyHandlers.onSaveDetails
+              : conversation && (onLinkOrganization || onUnlinkOrganization)
+                ? async (patch) => {
+                    if (patch.organizationId === undefined) return;
+                    const nextOrgId = patch.organizationId?.trim() || null;
+                    if (nextOrgId) {
+                      await linkExistingOrganization(nextOrgId);
+                      return;
+                    }
+                    if (onUnlinkOrganization) {
+                      await onUnlinkOrganization();
+                    }
+                  }
+                : undefined
           }
           renderSection={(sectionId) => {
             if (sectionId === "conversation") {

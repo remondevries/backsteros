@@ -10,7 +10,7 @@ import type {
 } from "@backsteros/ui";
 
 import {
-  matchChatContact,
+  resolveChatContact,
   type ChatMatchableContact,
 } from "../chat/match-chat-contact";
 
@@ -20,6 +20,9 @@ type EntityContactInput = {
   emails?: readonly ContactEmailInput[] | null;
   phone?: string | null;
   phones?: readonly { number?: string | null }[] | null;
+  socialAccounts?: readonly { platform?: string | null; url?: string | null }[] | null;
+  facebookMessengerId?: string | null;
+  xUserId?: string | null;
 };
 
 function addressSet(contact: EntityContactInput): Set<string> {
@@ -35,6 +38,9 @@ function toMatchableContact(contact: EntityContactInput): ChatMatchableContact {
     emails: getContactEmailAddresses(contact).map((address) => ({ address })),
     phone: contact.phone,
     phones: contact.phones,
+    socialAccounts: contact.socialAccounts,
+    facebookMessengerId: contact.facebookMessengerId,
+    xUserId: contact.xUserId,
   };
 }
 
@@ -75,9 +81,13 @@ export function filterCommunicationForContact(input: {
   );
   const matchable = toMatchableContact(input.contact);
   const conversations = input.conversations.filter((conversation) => {
-    const matched = matchChatContact([matchable], {
+    if (conversation.contactId?.trim() === input.contact.id) return true;
+    const matched = resolveChatContact([matchable], {
+      contactId: conversation.contactId,
       contactEmail: conversation.contactEmail,
       contactPhone: conversation.contactPhone,
+      contactUsername: conversation.contactUsername,
+      channelType: conversation.channelType,
     });
     return matched?.id === input.contact.id;
   });
@@ -117,9 +127,16 @@ export function filterCommunicationForOrganization(input: {
   );
   const matchableContacts = input.contacts.map(toMatchableContact);
   const conversations = input.conversations.filter((conversation) => {
-    const matched = matchChatContact(matchableContacts, {
+    const linkedOrg = conversation.organizationId?.trim();
+    if (linkedOrg && linkedOrg === orgId) return true;
+    const linkedId = conversation.contactId?.trim();
+    if (linkedId && input.contactIds.has(linkedId)) return true;
+    const matched = resolveChatContact(matchableContacts, {
+      contactId: conversation.contactId,
       contactEmail: conversation.contactEmail,
       contactPhone: conversation.contactPhone,
+      contactUsername: conversation.contactUsername,
+      channelType: conversation.channelType,
     });
     if (!matched) return false;
     return input.contactIds.has(matched.id);
