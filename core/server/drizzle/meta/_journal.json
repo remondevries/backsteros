@@ -1170,6 +1170,13 @@
       "when": 1796010000000,
       "tag": "0165_contact_x_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1796020000000,
+      "tag": "0166_chat_conversation_contact_username",
+      "breakpoints": true
     }
   ]
 }
