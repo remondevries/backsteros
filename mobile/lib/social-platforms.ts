@@ -7,6 +7,7 @@ export const CONTACT_SOCIAL_PLATFORMS = [
   "X",
   "GitHub",
   "Discord",
+  "Telegram",
   "Slack",
   "Website",
   "Other",
@@ -24,6 +25,7 @@ const PLATFORM_URL_PREFIX: Record<
   X: "https://x.com/",
   GitHub: "https://github.com/",
   Discord: "https://discord.com/users/",
+  Telegram: "https://t.me/",
   Slack: "https://",
   Website: "https://",
 };
@@ -35,6 +37,7 @@ const HANDLE_PLATFORMS = new Set<string>([
   "X",
   "GitHub",
   "Discord",
+  "Telegram",
 ]);
 
 const ALL_PREFIXES = Object.values(PLATFORM_URL_PREFIX);

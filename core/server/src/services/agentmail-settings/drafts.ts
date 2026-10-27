@@ -995,33 +995,56 @@ export async function deleteAgentMailDraft(
   }
 
   const client = new AgentMailClient({ apiKey });
-  const draft = await resolveDraftAcrossInboxes(
-    client,
-    inboxIds,
-    draftId,
-    inboxId,
-  );
-  await client.deleteDraft(draft.inboxId, draft.draftId);
-
-  const parentMessageId =
-    draft.inReplyTo?.trim() ||
-    resolveConceptDraftParentMessageId(draft.clientId, []);
-  if (parentMessageId) {
-    await deleteConceptReplyDraftsForMessage(
+  let draft: Awaited<ReturnType<typeof resolveDraftAcrossInboxes>> | null =
+    null;
+  try {
+    draft = await resolveDraftAcrossInboxes(
       client,
       inboxIds,
-      parentMessageId,
-      draft.draftId,
+      draftId,
+      inboxId,
     );
+  } catch (error) {
+    // Idempotent delete — draft already gone (double-click, race, or list
+    // tombstone). Still scrub local draft:<id> metadata so the UI does not
+    // keep a ghost row that reloads as "Draft not found".
+    if (!isDraftNotFoundError(error)) {
+      throw error;
+    }
   }
 
-  await removeDraftEmailThreadMetadata(
-    workspaceId,
-    draft.inboxId,
-    draft.draftId,
-  );
+  if (draft) {
+    try {
+      await client.deleteDraft(draft.inboxId, draft.draftId);
+    } catch (error) {
+      if (!isDraftNotFoundError(error)) {
+        throw error;
+      }
+    }
 
-  return { inboxId: draft.inboxId, draftId: draft.draftId };
+    const parentMessageId =
+      draft.inReplyTo?.trim() ||
+      resolveConceptDraftParentMessageId(draft.clientId, []);
+    if (parentMessageId) {
+      await deleteConceptReplyDraftsForMessage(
+        client,
+        inboxIds,
+        parentMessageId,
+        draft.draftId,
+      );
+    }
+
+    await removeDraftEmailThreadMetadata(
+      workspaceId,
+      draft.inboxId,
+      draft.draftId,
+    );
+
+    return { inboxId: draft.inboxId, draftId: draft.draftId };
+  }
+
+  await removeDraftEmailThreadMetadata(workspaceId, inboxId, draftId);
+  return { inboxId, draftId };
 }
 
 export async function updateAgentMailDraft(
