@@ -8,7 +8,12 @@ export type ChatCreateChannel =
   | "instagram"
   | "messenger"
   | "telegram"
-  | "support";
+  | "support"
+  | "x";
+
+/** Chatwoot API inbox for Lemo-Design X (@lemodesign) encrypted DM relay. */
+export const X_LEMO_DESIGN_INBOX_ID = "8";
+export const X_LEMO_DESIGN_INBOX_IDENTIFIER = "EqVqfRJVN6N3tEZNa5RDbhKM";
 
 /** Standard customer-service window after the last user message (Meta). */
 export const META_MESSAGING_WINDOW_HOURS = 24;
@@ -49,10 +54,6 @@ function windowHoursFor(
   ) {
     return META_HUMAN_AGENT_WINDOW_HOURS;
   }
-  if (channel === "telegram" || channel === "support") {
-    // No Meta-style expiry for Telegram bots / support email.
-    return META_MESSAGING_WINDOW_HOURS;
-  }
   return META_MESSAGING_WINDOW_HOURS;
 }
 
@@ -61,7 +62,12 @@ function channelLabel(channel: ChatCreateChannel): string {
   if (channel === "instagram") return "Instagram";
   if (channel === "messenger") return "Messenger";
   if (channel === "telegram") return "Telegram";
+  if (channel === "x") return "X";
   return "Support";
+}
+
+function hasXStyleParenHandle(text: string): boolean {
+  return /\(@[a-z0-9_]{1,15}\)/i.test(text);
 }
 
 /**
@@ -75,6 +81,8 @@ function channelLabel(channel: ChatCreateChannel): string {
  * - Telegram: bots can only message users who started the bot (existing
  *   chat_id). Once identity exists, outbound is allowed.
  * - Support: needs a contact email; then free-form create is allowed.
+ * - X: needs a numeric X user id. Delivery is encrypted X Chat via Grok Bot;
+ *   recipient must accept DMs.
  */
 export function evaluateMessagingWindow(
   input: MessagingWindowInput,
@@ -126,6 +134,29 @@ export function evaluateMessagingWindow(
       lastIncomingAt,
       closesAt: null,
       reason: null,
+      requiresTemplate: false,
+    };
+  }
+
+  if (input.channel === "x") {
+    if (!input.hasChannelIdentity) {
+      return {
+        open: false,
+        windowHours,
+        lastIncomingAt: null,
+        closesAt: null,
+        reason:
+          "X DMs need a numeric X user id on the contact (not an @handle). The recipient must accept DMs and be on encrypted X Chat.",
+        requiresTemplate: false,
+      };
+    }
+    return {
+      open: true,
+      windowHours,
+      lastIncomingAt,
+      closesAt: null,
+      reason:
+        "Messages are delivered over encrypted X Chat via @lemodesign. The recipient must accept DMs.",
       requiresTemplate: false,
     };
   }
@@ -254,6 +285,19 @@ export function resolveChatCreateChannel(
   }
   if (channel.includes("telegram") || inbox.includes("telegram")) {
     return "telegram";
+  }
+  // X / Twitter — including Chatwoot API inbox "Lemo-Design X (@lemodesign)".
+  if (
+    channel.includes("twitter") ||
+    /(^|::)x($|[^a-z])/i.test(channel) ||
+    inbox.includes("twitter") ||
+    inbox.includes("x.com") ||
+    inbox.includes("lemo-design x") ||
+    inbox.includes("lemodesign x") ||
+    (channel.includes("api") && hasXStyleParenHandle(inbox)) ||
+    (inbox.includes("lemodesign") && hasXStyleParenHandle(inbox))
+  ) {
+    return "x";
   }
   // Support tickets use the Chatwoot email (or explicitly named support) inbox.
   if (

@@ -226,6 +226,7 @@ export const chatCreateChannelSchema = z.enum([
   "messenger",
   "telegram",
   "support",
+  "x",
 ]);
 
 export const chatWhatsAppTemplateParamsSchema = z.object({

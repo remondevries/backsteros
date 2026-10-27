@@ -1273,7 +1273,8 @@ function CommunicationPageBody() {
         kind === "instagram" ||
         kind === "messenger" ||
         kind === "chat" ||
-        kind === "support"
+        kind === "support" ||
+        kind === "x"
       ) {
         resetComposeState();
         setCreateKind(kind);
@@ -1283,7 +1284,6 @@ function CommunicationPageBody() {
         setChatMainFaded(false);
         return;
       }
-      // X remains out of scope — launcher stays open.
     },
     [resetComposeState],
   );
@@ -1294,6 +1294,7 @@ function CommunicationPageBody() {
     if (createKind === "messenger") return "messenger";
     if (createKind === "chat") return "telegram";
     if (createKind === "support") return "support";
+    if (createKind === "x") return "x";
     return null;
   }, [createKind]);
   const finishCreate = useCallback(() => {

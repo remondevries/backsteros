@@ -13,7 +13,8 @@ export type CommunicationChannelCreateChannel =
   | "instagram"
   | "messenger"
   | "telegram"
-  | "support";
+  | "support"
+  | "x";
 
 export type CommunicationChannelCreateTemplateOption = {
   name: string;
@@ -60,12 +61,13 @@ function channelLabel(channel: CommunicationChannelCreateChannel): string {
   if (channel === "instagram") return "Instagram";
   if (channel === "messenger") return "Messenger";
   if (channel === "telegram") return "Telegram";
+  if (channel === "x") return "X";
   return "Support ticket";
 }
 
 function kindMark(
   channel: CommunicationChannelCreateChannel,
-): "whatsapp" | "instagram" | "messenger" | "telegram" | "support" {
+): "whatsapp" | "instagram" | "messenger" | "telegram" | "support" | "x" {
   return channel;
 }
 

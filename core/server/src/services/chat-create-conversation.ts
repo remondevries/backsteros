@@ -15,9 +15,12 @@ import {
   chatMessages,
   contacts,
 } from "../db/schema.js";
+import { randomUUID } from "node:crypto";
+
 import {
   evaluateMessagingWindow,
   resolveChatCreateChannel,
+  X_LEMO_DESIGN_INBOX_ID,
 } from "../lib/chat-messaging-window.js";
 import {
   ChatwootApiError,
@@ -105,6 +108,25 @@ export function pickExactSupportContact(
   );
 }
 
+/** Numeric X user id only — never an @handle. */
+export function normalizeXUserId(
+  raw: string | null | undefined,
+): string | null {
+  return numericChannelSourceId(raw);
+}
+
+/** Exact X match: Chatwoot contact identifier === numeric X user id. */
+export function pickExactXContact(
+  hits: readonly ChatwootContactSummary[],
+  xUserId: string,
+): ChatwootContactSummary | null {
+  const want = normalizeXUserId(xUserId);
+  if (!want) return null;
+  return (
+    hits.find((hit) => normalizeXUserId(hit.identifier) === want) ?? null
+  );
+}
+
 /**
  * Only ignore Chatwoot "contact inbox already exists" duplicates.
  * Other 4xx must surface to the UI.
@@ -128,6 +150,7 @@ type LoadedContact = {
   phones: { number: string }[] | null;
   socialAccounts: { platform: string; url: string }[] | null;
   facebookMessengerId: string | null;
+  xUserId: string | null;
 };
 
 type LocalConversation = Awaited<
@@ -144,6 +167,7 @@ async function loadContact(workspaceId: string, contactId: string) {
       phones: contacts.phones,
       socialAccounts: contacts.socialAccounts,
       facebookMessengerId: contacts.facebookMessengerId,
+      xUserId: contacts.xUserId,
     })
     .from(contacts)
     .where(
@@ -197,11 +221,17 @@ async function resolveInboxId(
     };
   }
   const preferred =
-    channel === "support"
-      ? inboxes.find((inbox) =>
-          inbox.name.toLowerCase().includes("support"),
-        ) ?? inboxes[0]
-      : inboxes[0];
+    channel === "x"
+      ? inboxes.find((inbox) => inbox.id === X_LEMO_DESIGN_INBOX_ID) ??
+        inboxes.find((inbox) =>
+          inbox.name.toLowerCase().includes("lemodesign"),
+        ) ??
+        inboxes[0]
+      : channel === "support"
+        ? inboxes.find((inbox) =>
+            inbox.name.toLowerCase().includes("support"),
+          ) ?? inboxes[0]
+        : inboxes[0];
   if (!preferred) {
     throw badRequest(`No Chatwoot ${channel} inbox is configured.`);
   }
@@ -311,9 +341,11 @@ type EnsureChatwootContactInput = {
     ChatwootClient,
     | "searchContacts"
     | "createContact"
+    | "updateContact"
     | "getContactInboxes"
     | "createContactInbox"
     | "getConversation"
+    | "listContactConversations"
   >;
 };
 
@@ -326,6 +358,60 @@ export async function ensureChatwootContact(
   input: EnsureChatwootContactInput,
 ): Promise<{ chatwootContactId: string; sourceId: string | null }> {
   const { client, channel, contact, inboxId } = input;
+
+  if (channel === "x") {
+    const xUserId = normalizeXUserId(contact.xUserId);
+    if (!xUserId) {
+      throw badRequest(
+        "X DMs need a numeric X user id on the contact (not an @handle).",
+        "x_user_id_required",
+      );
+    }
+    const hits = await client.searchContacts(xUserId);
+    let chatwootContact = pickExactXContact(hits, xUserId);
+    if (!chatwootContact?.id) {
+      chatwootContact = await client.createContact({
+        name: contact.name,
+        email: contact.email,
+        phone: primaryPhone(contact),
+        identifier: xUserId,
+        customAttributes: { x_user_id: xUserId },
+      });
+    } else {
+      await client.updateContact(chatwootContact.id, {
+        identifier: xUserId,
+        customAttributes: { x_user_id: xUserId },
+      });
+    }
+    const chatwootContactId = chatwootContact.id?.trim();
+    if (!chatwootContactId) {
+      throw badRequest("Chatwoot contact was created without an id.");
+    }
+    const inboxes = await client.getContactInboxes(chatwootContactId);
+    const existingInbox = inboxes.find(
+      (entry) => entry.inboxId === inboxId && entry.sourceId?.trim(),
+    );
+    let sourceId = existingInbox?.sourceId?.trim() || null;
+    if (!sourceId) {
+      sourceId = randomUUID();
+      try {
+        await client.createContactInbox({
+          contactId: chatwootContactId,
+          inboxId,
+          sourceId,
+        });
+      } catch (error) {
+        if (!isIgnorableContactInboxDuplicate(error)) {
+          throw error;
+        }
+        const refreshed = await client.getContactInboxes(chatwootContactId);
+        sourceId =
+          refreshed.find((entry) => entry.inboxId === inboxId)?.sourceId?.trim() ||
+          sourceId;
+      }
+    }
+    return { chatwootContactId, sourceId };
+  }
 
   if (channel === "telegram") {
     if (!input.existing?.externalId) {
@@ -553,11 +639,17 @@ async function resolveInboxIdWithDeps(
     };
   }
   const preferred =
-    channel === "support"
-      ? inboxes.find((inbox) =>
-          inbox.name.toLowerCase().includes("support"),
-        ) ?? inboxes[0]
-      : inboxes[0];
+    channel === "x"
+      ? inboxes.find((inbox) => inbox.id === X_LEMO_DESIGN_INBOX_ID) ??
+        inboxes.find((inbox) =>
+          inbox.name.toLowerCase().includes("lemodesign"),
+        ) ??
+        inboxes[0]
+      : channel === "support"
+        ? inboxes.find((inbox) =>
+            inbox.name.toLowerCase().includes("support"),
+          ) ?? inboxes[0]
+        : inboxes[0];
   if (!preferred) {
     throw badRequest(`No Chatwoot ${channel} inbox is configured.`);
   }
@@ -609,6 +701,9 @@ async function getMessagingWindowWithDeps(
     hasChannelIdentity = Boolean(local?.externalId);
   } else if (input.channel === "support") {
     sourceId = primaryEmail(contact);
+    hasChannelIdentity = Boolean(sourceId);
+  } else if (input.channel === "x") {
+    sourceId = normalizeXUserId(contact.xUserId);
     hasChannelIdentity = Boolean(sourceId);
   }
 
@@ -696,35 +791,67 @@ export async function createChatConversation(
     client,
   });
 
-  // Reopen existing Chatwoot conversation when we already mirror one.
-  if (local?.externalId && !input.template) {
-    if (local.status === "resolved") {
-      await client.toggleConversationStatus(local.externalId, "open");
+  const xUserId =
+    input.channel === "x" ? normalizeXUserId(contact.xUserId) : null;
+
+  // Prefer an existing Chatwoot X thread (e.g. conversation 17) when the
+  // contact already has one in the Lemo-Design X inbox — even if local mirror
+  // is missing / not yet linked.
+  let reuseExternalId = local?.externalId?.trim() || null;
+  let reuseInboxId = local?.inboxId ?? inbox.id;
+  let reuseChannelType = local?.channelType ?? inbox.channelType;
+  let reuseInboxName = local?.inboxName ?? inbox.name;
+  let reuseUsername = local?.contactUsername ?? null;
+  let reuseAvatar = local?.contactAvatarUrl ?? null;
+  let reuseStatus = local?.status ?? "open";
+
+  if (!reuseExternalId && input.channel === "x" && !input.template) {
+    const remoteList = await client.listContactConversations(chatwootContactId);
+    const match =
+      remoteList.find((entry) => entry.inboxId === inbox.id) ??
+      remoteList.find((entry) => entry.inboxId === X_LEMO_DESIGN_INBOX_ID) ??
+      remoteList[0] ??
+      null;
+    if (match) {
+      reuseExternalId = match.id;
+      reuseInboxId = match.inboxId ?? inbox.id;
+      reuseChannelType = match.channelType ?? inbox.channelType;
+      reuseUsername = match.contact.username;
+      reuseAvatar = match.contact.avatarUrl;
+      reuseStatus = match.status;
     }
-    const remoteMessage = await client.createMessage(local.externalId, {
+  }
+
+  // Reopen existing Chatwoot conversation when we already have one.
+  if (reuseExternalId && !input.template) {
+    if (reuseStatus === "resolved") {
+      await client.toggleConversationStatus(reuseExternalId, "open");
+    }
+    const remoteMessage = await client.createMessage(reuseExternalId, {
       content: input.content,
     });
     const { conversation } = await deps.upsertConversationFromChatwoot(
       workspaceId,
       {
-        id: local.externalId,
-        inboxId: local.inboxId ?? inbox.id,
+        id: reuseExternalId,
+        inboxId: reuseInboxId,
         status: "open",
-        channelType: local.channelType ?? inbox.channelType,
+        channelType: reuseChannelType,
         contact: {
           id: chatwootContactId,
           name: contact.name,
           email: contact.email,
           phone: primaryPhone(contact),
-          username: local.contactUsername,
-          avatarUrl: local.contactAvatarUrl,
+          username: reuseUsername,
+          identifier: xUserId,
+          avatarUrl: reuseAvatar,
         },
         lastActivityAt: remoteMessage.createdAt,
         unreadCount: 0,
         lastMessagePreview: remoteMessage.content.slice(0, 280),
       },
       {
-        inboxName: local.inboxName ?? inbox.name,
+        inboxName: reuseInboxName,
         markUnread: false,
         reviveDeleted: true,
         lastMessagePreview: remoteMessage.content.slice(0, 280),
@@ -778,7 +905,15 @@ export async function createChatConversation(
       ? `${supportSubject}\n\n${input.content}`
       : input.content;
 
-  // Fresh create (WhatsApp template / support email). Meta/Telegram reuse above.
+  const additionalAttributes: Record<string, unknown> = {};
+  if (input.channel === "support" && supportSubject) {
+    additionalAttributes.mail_subject = supportSubject;
+  }
+  if (input.channel === "x" && xUserId) {
+    additionalAttributes.x_user_id = xUserId;
+  }
+
+  // Fresh create (WhatsApp template / support email / new X thread).
   const created = await client.createConversation({
     inboxId: inbox.id,
     contactId: chatwootContactId,
@@ -787,8 +922,8 @@ export async function createChatConversation(
       input.channel === "whatsapp" && input.template ? null : sourceId,
     status: "open",
     additionalAttributes:
-      input.channel === "support" && supportSubject
-        ? { mail_subject: supportSubject }
+      Object.keys(additionalAttributes).length > 0
+        ? additionalAttributes
         : undefined,
     message: {
       content: outboundContent,
@@ -818,6 +953,7 @@ export async function createChatConversation(
         email: contact.email,
         phone: primaryPhone(contact),
         username: sourceId,
+        identifier: xUserId,
         avatarUrl: null,
       },
       lastActivityAt: new Date().toISOString(),

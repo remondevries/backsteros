@@ -69,8 +69,7 @@ export const COMMUNICATION_CREATE_OPTIONS: readonly CommunicationCreateOption[] 
       kind: "x",
       label: "X",
       shortcut: "X",
-      available: false,
-      disabledReason: "X create is out of scope.",
+      available: true,
     },
   ];
 

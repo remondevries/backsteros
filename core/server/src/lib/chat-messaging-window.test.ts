@@ -135,6 +135,27 @@ describe("evaluateMessagingWindow", () => {
     assert.equal(result.open, true);
     assert.equal(result.reason, null);
   });
+
+  it("blocks X without a numeric user id and warns about encrypted Chat", () => {
+    const blocked = evaluateMessagingWindow({
+      channel: "x",
+      lastIncomingAt: null,
+      hasChannelIdentity: false,
+      now,
+    });
+    assert.equal(blocked.open, false);
+    assert.match(blocked.reason ?? "", /numeric X user id/i);
+    assert.match(blocked.reason ?? "", /encrypted X Chat/i);
+
+    const open = evaluateMessagingWindow({
+      channel: "x",
+      lastIncomingAt: null,
+      hasChannelIdentity: true,
+      now,
+    });
+    assert.equal(open.open, true);
+    assert.match(open.reason ?? "", /encrypted X Chat/i);
+  });
 });
 
 describe("resolveChatCreateChannel", () => {
@@ -147,6 +168,10 @@ describe("resolveChatCreateChannel", () => {
     );
     assert.equal(resolveChatCreateChannel("Channel::Telegram"), "telegram");
     assert.equal(resolveChatCreateChannel("Channel::Email"), "support");
+    assert.equal(
+      resolveChatCreateChannel("Channel::Api", "Lemo-Design X (@lemodesign)"),
+      "x",
+    );
     assert.equal(
       resolveChatCreateChannel("Channel::Api", "Support desk"),
       "support",

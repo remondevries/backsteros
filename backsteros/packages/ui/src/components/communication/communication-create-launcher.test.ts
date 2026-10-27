@@ -7,7 +7,7 @@ import {
 } from "./communication-create-launcher.js";
 
 describe("COMMUNICATION_CREATE_OPTIONS", () => {
-  it("exposes WhatsApp, Instagram, Messenger, Telegram, and Support as available", () => {
+  it("exposes WhatsApp, Instagram, Messenger, Telegram, Support, and X as available", () => {
     const byKind = new Map(
       COMMUNICATION_CREATE_OPTIONS.map((option) => [option.kind, option]),
     );
@@ -16,7 +16,7 @@ describe("COMMUNICATION_CREATE_OPTIONS", () => {
     assert.equal(byKind.get("messenger")?.available, true);
     assert.equal(byKind.get("chat")?.available, true);
     assert.equal(byKind.get("support")?.available, true);
-    assert.equal(byKind.get("x")?.available, false);
+    assert.equal(byKind.get("x")?.available, true);
   });
 
   it("keeps unique letter shortcuts for available kinds", () => {

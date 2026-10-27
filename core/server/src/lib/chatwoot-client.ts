@@ -34,6 +34,10 @@ export type ChatwootContactSummary = {
   phone: string | null;
   /** Channel username (Telegram @handle without @). */
   username: string | null;
+  /**
+   * Chatwoot `identifier` — for X this is the numeric user id (never @handle).
+   */
+  identifier: string | null;
   avatarUrl: string | null;
 };
 
@@ -285,6 +289,7 @@ function parseContact(
     email: asString(record.email),
     phone,
     username,
+    identifier: asString(record.identifier),
     avatarUrl:
       asString(record.thumbnail) ??
       asString(record.avatar_url) ??
@@ -703,12 +708,19 @@ export class ChatwootClient {
     email?: string | null;
     phone?: string | null;
     identifier?: string | null;
+    customAttributes?: Record<string, unknown>;
   }): Promise<ChatwootContactSummary> {
     const body: Record<string, unknown> = {};
     if (input.name?.trim()) body.name = input.name.trim();
     if (input.email?.trim()) body.email = input.email.trim();
     if (input.phone?.trim()) body.phone_number = input.phone.trim();
     if (input.identifier?.trim()) body.identifier = input.identifier.trim();
+    if (
+      input.customAttributes &&
+      Object.keys(input.customAttributes).length > 0
+    ) {
+      body.custom_attributes = input.customAttributes;
+    }
     const payload = await this.requestJson<unknown>("POST", "/contacts", body);
     const record =
       asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
@@ -721,6 +733,67 @@ export class ChatwootClient {
       );
     }
     return contact;
+  }
+
+  async updateContact(
+    contactId: string,
+    input: {
+      customAttributes?: Record<string, unknown>;
+      identifier?: string | null;
+    },
+  ): Promise<ChatwootContactSummary> {
+    const body: Record<string, unknown> = {};
+    if (input.identifier?.trim()) body.identifier = input.identifier.trim();
+    if (
+      input.customAttributes &&
+      Object.keys(input.customAttributes).length > 0
+    ) {
+      body.custom_attributes = input.customAttributes;
+    }
+    const payload = await this.requestJson<unknown>(
+      "PUT",
+      `/contacts/${encodeURIComponent(contactId)}`,
+      body,
+    );
+    const record =
+      asRecord(asRecord(payload)?.payload) ?? asRecord(payload) ?? {};
+    const contact = parseContact(record);
+    if (!contact.id) {
+      return {
+        id: contactId,
+        name: null,
+        email: null,
+        phone: null,
+        username: null,
+        identifier: input.identifier?.trim() || null,
+        avatarUrl: null,
+      };
+    }
+    return contact;
+  }
+
+  /** Conversations for a Chatwoot contact (used to reuse X thread / conv 17). */
+  async listContactConversations(
+    contactId: string,
+  ): Promise<ChatwootConversationSummary[]> {
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/contacts/${encodeURIComponent(contactId)}/conversations`,
+    );
+    const record = asRecord(payload);
+    const list = Array.isArray(record?.payload)
+      ? record!.payload
+      : Array.isArray(asRecord(record?.payload)?.payload)
+        ? (asRecord(record!.payload)!.payload as unknown[])
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const out: ChatwootConversationSummary[] = [];
+    for (const item of list) {
+      const parsed = parseConversation(item);
+      if (parsed) out.push(parsed);
+    }
+    return out;
   }
 
   async createContactInbox(input: {

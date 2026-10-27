@@ -319,6 +319,11 @@ export const contacts = pgTable(
      * chats. Not a public Facebook username — used only for channel matching.
      */
     facebookMessengerId: text("facebook_messenger_id"),
+    /**
+     * Numeric X user id for Chatwoot API inbox / Grok Bot encrypted DM relay.
+     * Never an @handle — matching uses this exact identifier only.
+     */
+    xUserId: text("x_user_id"),
     /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
     birthday: date("birthday", { mode: "string" }),
     /** Preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
@@ -363,6 +368,11 @@ export const contacts = pgTable(
       .on(table.workspaceId, table.facebookMessengerId)
       .where(
         sql`${table.deletedAt} is null and ${table.facebookMessengerId} is not null`,
+      ),
+    uniqueIndex("contacts_workspace_x_user_id_unique")
+      .on(table.workspaceId, table.xUserId)
+      .where(
+        sql`${table.deletedAt} is null and ${table.xUserId} is not null`,
       ),
     index("contacts_organization_id_idx").on(table.organizationId),
     index("contacts_email_idx").on(table.workspaceId, table.email),

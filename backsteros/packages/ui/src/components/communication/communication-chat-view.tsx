@@ -718,14 +718,17 @@ export function CommunicationChatView({
             createKind === "instagram" ||
             createKind === "messenger" ||
             createKind === "chat" ||
-            createKind === "support") ? (
+            createKind === "support" ||
+            createKind === "x") ? (
           channelCreateSlot ?? (
             <div className="communication-chat__empty">
               {createKind === "support"
                 ? "Create a support ticket…"
                 : createKind === "chat"
                   ? "Start a new Telegram conversation…"
-                  : `Start a new ${createKind} conversation…`}
+                  : createKind === "x"
+                    ? "Start a new X conversation…"
+                    : `Start a new ${createKind} conversation…`}
             </div>
           )
         ) : createOpen ? (
