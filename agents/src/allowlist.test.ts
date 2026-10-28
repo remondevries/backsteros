@@ -22,6 +22,9 @@ test("blocks sync, PTY, ops, and API key admin", () => {
   assert.equal(isRouteAllowed("GET", "/api/v1/agent-pty/connection"), false);
   assert.equal(isRouteAllowed("GET", "/api/v1/api-keys"), false);
   assert.equal(isRouteAllowed("POST", "/api/v1/api-keys"), false);
+  assert.equal(isRouteAllowed("GET", "/api/v1/settings"), false);
+  assert.equal(isRouteAllowed("GET", "/api/v1/settings/agentmail"), false);
+  assert.equal(isRouteAllowed("PATCH", "/api/v1/settings/agentmail"), false);
 });
 
 test("allows file-task mailbox on the public door", () => {

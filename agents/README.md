@@ -70,9 +70,67 @@ Blocked at the door (never forwarded):
 - PowerSync / sync / ops
 - PTY sidecar (`/agent-pty`) — PTY stays local-only
 - API key admin (`/api-keys`)
+- Settings (`/settings/*`) — defence in depth; core also rejects agent persona keys
 
 Attach a **contact** to each agent’s API key in Settings so comments and
-activity show that person.
+activity show that person. Agent keys never hold `settings:read` /
+`settings:write`; use `chat:*` and `email:*` for messaging.
+
+## Agents: start a conversation (OS-146)
+
+Required scopes on the agent persona key: `chat:read` / `chat:write` and/or
+`email:read` / `email:send`, plus `contacts:read` for lookup.
+
+Always dry-run first (`dryRun: true` or `?validate=1`) — no Chatwoot/AgentMail
+call — then send with an `Idempotency-Key` header. Poll with
+`GET /api/v1/chat/conversations?updatedSince=…`.
+
+```http
+# Resolve contact
+GET /api/v1/contacts/lookup?phone=%2B31612345678
+GET /api/v1/contacts/lookup?channel=x&value=123456789
+GET /api/v1/contacts/lookup?instagram=jan
+
+# List inboxes
+GET /api/v1/chat/inboxes?channel=whatsapp
+GET /api/v1/email/inboxes
+
+# Email (AgentMail) — one-shot start
+POST /api/v1/email/start
+{ "inboxId": "…", "to": "jan@example.com", "subject": "Hi", "body": "…", "contactId": "…", "dryRun": true }
+POST /api/v1/email/start
+Idempotency-Key: email-2026-10-28-1
+{ "inboxId": "…", "to": "jan@example.com", "subject": "Hi", "body": "…", "contactId": "…" }
+
+# WhatsApp (template outside 24h → 422 template_required without template)
+POST /api/v1/chat/conversations
+{ "channel": "whatsapp", "contactId": "…", "content": "Hi {{1}}", "template": { "name": "hello", "category": "UTILITY", "language": "en", "processedParams": { "1": "Jan" } }, "dryRun": true }
+POST /api/v1/chat/conversations
+Idempotency-Key: wa-2026-10-28-1
+{ "channel": "whatsapp", "contactId": "…", "content": "Hi Jan", "template": { "name": "hello", "category": "UTILITY", "language": "en" } }
+
+# Instagram / Messenger (must be inside messaging window)
+POST /api/v1/chat/conversations
+{ "channel": "instagram", "contactId": "…", "content": "Hi", "dryRun": true }
+POST /api/v1/chat/conversations
+{ "channel": "messenger", "contactId": "…", "content": "Hi" }
+
+# Telegram (contact must already have messaged the bot)
+POST /api/v1/chat/conversations
+{ "channel": "telegram", "contactId": "…", "content": "Hi" }
+
+# X (numeric xUserId on the contact)
+POST /api/v1/chat/conversations
+{ "channel": "x", "contactId": "…", "content": "Hi" }
+
+# Support ticket (subject required)
+POST /api/v1/chat/conversations
+{ "channel": "support", "contactId": "…", "subject": "Help with invoice", "content": "…" }
+
+# Follow-up on an existing conversation
+POST /api/v1/chat/conversations/{id}/messages
+{ "content": "Follow-up" }
+```
 
 ## Task images (screenshots)
 

@@ -494,16 +494,26 @@ A successful delivery records activity `auto_review_requested`
 - Published at `/api/v1/openapi.json`
 - `packages/api-client` generated for all UI repos
 
-## API key scopes (planned)
+## API key scopes
 
 | Scope | Allows |
 | --- | --- |
-| `projects:read` | List/read projects |
+| `projects:read` / `projects:write` | Project CRUD |
 | `tasks:read` / `tasks:write` | Task CRUD + batch + file attachments |
 | `documents:read` / `documents:write` | Markdown metadata + content |
-| `letters:read` | Letter metadata + PDF access |
+| `letters:read` / `letters:write` | Letter metadata + PDF access |
+| `organizations:*` / `contacts:*` | CRM orgs/contacts (incl. `GET /contacts/lookup`) |
 | `finance:read` / `finance:write` | Bank accounts, categories, transaction list/import/classification |
+| `settings:read` / `settings:write` | Integration settings (Access/desktop only — never on agent keys) |
+| `chat:read` / `chat:write` | Chatwoot inboxes, conversations, messages, templates |
+| `email:read` / `email:send` | AgentMail list/read + compose/send + `POST /email/start` |
 | `search:query` | Meilisearch proxy |
+| `avatars:*` | Avatar upload/download |
+| `carddav` / `tv.today_counts` / `applications` | Exclusive single-scope doors |
+
+Agent persona keys may hold any non-door scope **except** `settings:read` and
+`settings:write`. See `agents/README.md` for per-channel start-conversation
+examples (email, WhatsApp+template, Instagram, Messenger, Telegram, X, Support).
 
 ### Finance (Tier C ledger)
 
