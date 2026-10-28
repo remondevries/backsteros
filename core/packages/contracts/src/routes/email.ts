@@ -149,7 +149,7 @@ export const emailRoutes: AppRouter = c.router({
       403: errorSchema,
     },
     summary:
-      "List AgentMail inboxes (email:read — no settings scope required)",
+      "List AgentMail inboxes for agents (GET /api/v1/email/inboxes). Requires email:read — not settings.",
   },
   startEmailThread: {
     method: "POST",
@@ -175,7 +175,7 @@ export const emailRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary:
-      "Start a new email thread (compose + send). dryRun/validate previews without AgentMail.",
+      "Start a new email thread via POST /api/v1/email/start (compose + send). dryRun/validate previews without AgentMail. Supports Idempotency-Key.",
   },
   createEmailComposeDraft: {
     method: "POST",

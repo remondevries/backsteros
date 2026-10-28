@@ -515,6 +515,28 @@ Agent persona keys may hold any non-door scope **except** `settings:read` and
 `settings:write`. See `agents/README.md` for per-channel start-conversation
 examples (email, WhatsApp+template, Instagram, Messenger, Telegram, X, Support).
 
+**Settings are blocked for agents two ways (OS-146):** core returns 403 for
+contact-bound (persona) API keys on all `/api/v1/settings/*`, and the public
+agents door allowlist also refuses `/api/v1/settings/*`. Older skill text that
+only said the proxy “403s settings” was incomplete — update the shared
+`backsteros-tasks` / agent skill copy accordingly.
+
+### Agent message webhooks (OS-146)
+
+Register push endpoints without settings access:
+
+```http
+POST   /api/v1/agent/message-webhooks
+GET    /api/v1/agent/message-webhooks
+DELETE /api/v1/agent/message-webhooks/{id}
+```
+
+Create returns `{ secret }` **once** (HMAC signing key). Deliveries for
+`chat.message` / `email.message` (inbound and outbound) use the same
+`x-backsteros-signature` / `x-backsteros-timestamp` / `x-backsteros-delivery-id`
+headers as auto-review. Prefer webhooks for agents that cannot hold SSE;
+otherwise poll `GET /api/v1/chat/conversations?updatedSince=…`.
+
 ### Finance (Tier C ledger)
 
 ```http

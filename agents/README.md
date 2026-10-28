@@ -70,7 +70,14 @@ Blocked at the door (never forwarded):
 - PowerSync / sync / ops
 - PTY sidecar (`/agent-pty`) — PTY stays local-only
 - API key admin (`/api-keys`)
-- Settings (`/settings/*`) — defence in depth; core also rejects agent persona keys
+- Settings (`/settings/*`) — door allowlist block (defence in depth)
+
+**Settings lockdown (OS-146):** agent persona keys are rejected on
+`/api/v1/settings/*` in **core** (contact-bound API key → 403, even if a legacy
+key still lists `settings:read`). The agents door **also** blocks `/settings/*`
+so those requests never reach core. Older skill/docs text that only said
+“agents proxy 403s settings” (implying the door alone) was incomplete — update
+any shared `backsteros-tasks` / agent skill copy to match this dual block.
 
 Attach a **contact** to each agent’s API key in Settings so comments and
 activity show that person. Agent keys never hold `settings:read` /
@@ -82,8 +89,25 @@ Required scopes on the agent persona key: `chat:read` / `chat:write` and/or
 `email:read` / `email:send`, plus `contacts:read` for lookup.
 
 Always dry-run first (`dryRun: true` or `?validate=1`) — no Chatwoot/AgentMail
-call — then send with an `Idempotency-Key` header. Poll with
-`GET /api/v1/chat/conversations?updatedSince=…`.
+call — then send with an `Idempotency-Key` header.
+
+**Polling vs push:** poll with `GET /api/v1/chat/conversations?updatedSince=…`
+(and email list `updatedSince` where supported). For push, register an
+**agent message webhook** (not under `/settings`):
+
+```http
+POST /api/v1/agent/message-webhooks
+{ "url": "https://your.example/hooks/backsteros", "events": ["chat.message", "email.message"] }
+# → { id, url, events, secret }  — store `secret` now; it is shown once
+
+GET  /api/v1/agent/message-webhooks
+DELETE /api/v1/agent/message-webhooks/{id}
+```
+
+Deliveries are `POST` JSON with HMAC headers `x-backsteros-timestamp`,
+`x-backsteros-signature` (`sha256=` of `timestamp.body`), and
+`x-backsteros-delivery-id`. Events fire for new inbound and outbound chat and
+email messages. Requires `chat:read` or `email:read`.
 
 ```http
 # Resolve contact

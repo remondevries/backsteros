@@ -113,7 +113,7 @@ export const crmPortalRoutes: AppRouter = c.router({
       403: errorSchema,
     },
     summary:
-      "Lookup a contact by phone, X user id, Instagram/Telegram handle, or Messenger id",
+      "Lookup a contact via GET /api/v1/contacts/lookup (phone, xUserId, Instagram/Telegram handle, or Messenger id)",
   },
   getContact: {
     method: "GET",
