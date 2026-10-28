@@ -43,6 +43,11 @@ export type ChatwootContactSummary = {
    * `identifier` when present.
    */
   xUserId?: string | null;
+  /**
+   * Telegram bot chat_id from `contact_inboxes` source_id when the channel is
+   * Telegram (digits). Distinct from a public @username.
+   */
+  telegramChatId?: string | null;
   /** Raw Chatwoot custom_attributes (may include `x_user_id`). */
   customAttributes?: Record<string, unknown> | null;
   avatarUrl: string | null;
@@ -329,6 +334,16 @@ function parseContact(
     // X / API proxies often only expose the handle inside the display name
     // (`Display (@screen_name)`). Safe last resort — pattern is distinctive.
     usernameFromParenHandle(displayName);
+  const telegramChatId =
+    usernameFromContactInboxes(record.contact_inboxes, "Channel::Telegram") ??
+    (channelLower.includes("telegram")
+      ? normalizeChannelUsername(asString(record.identifier))?.match(
+          /^\d{3,32}$/,
+        )
+        ? normalizeChannelUsername(asString(record.identifier))
+        : null
+      : null);
+
   return {
     id: asString(record.id),
     name: displayName,
@@ -336,6 +351,9 @@ function parseContact(
     phone,
     username,
     identifier,
+    telegramChatId: telegramChatId?.match(/^\d{3,32}$/)
+      ? telegramChatId
+      : null,
     xUserId: xUserIdFromChatwootFields({
       identifier,
       customAttributes,

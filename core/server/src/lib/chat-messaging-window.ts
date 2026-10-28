@@ -78,8 +78,9 @@ function hasXStyleParenHandle(text: string): boolean {
  *   for free-form — callers still allow template send).
  * - Instagram / Messenger: no cold outreach. Outside the window, block with
  *   a clear reason (templates are not available the same way).
- * - Telegram: bots can only message users who started the bot (existing
- *   chat_id). Once identity exists, outbound is allowed.
+ * - Telegram: bots can message any user who has ever started the bot once a
+ *   chat_id is known — no Meta-style 24-hour window. Outbound is allowed
+ *   whenever hasChannelIdentity is true (even after the local thread is deleted).
  * - Support: needs a contact email; then free-form create is allowed.
  * - X: needs a numeric X user id. Delivery is encrypted X Chat via Grok Bot;
  *   recipient must accept DMs.
@@ -120,17 +121,17 @@ export function evaluateMessagingWindow(
     if (!input.hasChannelIdentity) {
       return {
         open: false,
-        windowHours,
+        // Telegram has no Meta 24h window — windowHours is informational only.
+        windowHours: 0,
         lastIncomingAt: null,
         closesAt: null,
-        reason:
-          "Telegram bots can only message users who have started the bot. Pick a contact with an existing Telegram chat.",
+        reason: "contact has never messaged the bot",
         requiresTemplate: false,
       };
     }
     return {
       open: true,
-      windowHours,
+      windowHours: 0,
       lastIncomingAt,
       closesAt: null,
       reason: null,

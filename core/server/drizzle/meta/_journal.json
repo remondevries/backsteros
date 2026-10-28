@@ -1191,6 +1191,13 @@
       "when": 1796040000000,
       "tag": "0168_agent_message_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1796050000000,
+      "tag": "0169_contact_telegram_chat_id",
+      "breakpoints": true
     }
   ]
 }

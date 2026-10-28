@@ -217,6 +217,7 @@ type LoadedContact = {
   phones: { number: string; label?: string | null }[] | null;
   socialAccounts: { platform: string; url: string }[] | null;
   facebookMessengerId: string | null;
+  telegramChatId: string | null;
   xUserId: string | null;
 };
 
@@ -234,6 +235,7 @@ async function loadContact(workspaceId: string, contactId: string) {
       phones: contacts.phones,
       socialAccounts: contacts.socialAccounts,
       facebookMessengerId: contacts.facebookMessengerId,
+      telegramChatId: contacts.telegramChatId,
       xUserId: contacts.xUserId,
     })
     .from(contacts)
@@ -403,7 +405,7 @@ type EnsureChatwootContactInput = {
   inboxId: string;
   sourceId: string | null;
   /** Existing local mirror of a Chatwoot conversation (Meta / Telegram). */
-  existing: LocalConversation;
+  existing: LocalConversation | null;
   client: Pick<
     ChatwootClient,
     | "searchContacts"
@@ -510,39 +512,88 @@ export async function ensureChatwootContact(
   }
 
   if (channel === "telegram") {
-    if (!input.existing?.externalId) {
-      throw badRequest(
-        "Telegram bots can only message users who have started the bot. Pick a contact with an existing Telegram chat.",
-        "telegram_chat_required",
-      );
-    }
-    const remote = await client.getConversation(input.existing.externalId);
-    const chatwootContactId = remote?.contact.id?.trim() || null;
-    if (!remote || !chatwootContactId) {
-      throw badRequest(
-        "Telegram bots can only message users who have started the bot. No Chatwoot Telegram contact was found for this thread.",
-        "telegram_chat_required",
-      );
-    }
-    let sourceId =
+    const chatId =
       numericChannelSourceId(input.sourceId) ||
-      numericChannelSourceId(input.existing.contactUsername) ||
-      numericChannelSourceId(remote.contact.username);
-    if (!sourceId) {
-      const inboxes = await client.getContactInboxes(chatwootContactId);
-      const match = inboxes.find(
-        (entry) =>
-          entry.inboxId === inboxId && numericChannelSourceId(entry.sourceId),
-      );
-      sourceId = numericChannelSourceId(match?.sourceId);
-    }
-    if (!sourceId) {
+      numericChannelSourceId(contact.telegramChatId) ||
+      numericChannelSourceId(input.existing?.contactUsername);
+    if (!chatId) {
       throw badRequest(
-        "Telegram bots can only message users who have started the bot. Missing chat_id on the existing thread.",
-        "telegram_chat_required",
+        "contact has never messaged the bot",
+        "telegram_chat_unknown",
+        422,
       );
     }
-    return { chatwootContactId, sourceId };
+
+    // Prefer the Chatwoot contact attached to an existing local thread.
+    if (input.existing?.externalId?.trim()) {
+      const remote = await client.getConversation(input.existing.externalId);
+      const chatwootContactId = remote?.contact.id?.trim() || null;
+      if (remote && chatwootContactId) {
+        let sourceId =
+          chatId ||
+          numericChannelSourceId(remote.contact.username) ||
+          numericChannelSourceId(remote.contact.telegramChatId);
+        if (!sourceId) {
+          const inboxes = await client.getContactInboxes(chatwootContactId);
+          const match = inboxes.find(
+            (entry) =>
+              entry.inboxId === inboxId &&
+              numericChannelSourceId(entry.sourceId),
+          );
+          sourceId = numericChannelSourceId(match?.sourceId);
+        }
+        if (sourceId) {
+          return { chatwootContactId, sourceId };
+        }
+      }
+    }
+
+    // Known chat_id but no local thread (e.g. conversation was deleted) —
+    // resolve or create a Chatwoot contact + telegram inbox source_id.
+    const hits = await client.searchContacts(chatId);
+    let chatwootContact =
+      hits.find(
+        (hit) =>
+          numericChannelSourceId(hit.telegramChatId) === chatId ||
+          numericChannelSourceId(hit.username) === chatId ||
+          numericChannelSourceId(hit.identifier) === chatId,
+      ) ?? null;
+    if (!chatwootContact?.id) {
+      chatwootContact = await client.createContact({
+        name: contact.name,
+        email: contact.email,
+        phone: primaryPhone(contact),
+        identifier: chatId,
+      });
+    }
+    const chatwootContactId = chatwootContact.id?.trim();
+    if (!chatwootContactId) {
+      throw badRequest(
+        "contact has never messaged the bot",
+        "telegram_chat_unknown",
+        422,
+      );
+    }
+    const inboxes = await client.getContactInboxes(chatwootContactId);
+    const hasInbox = inboxes.some(
+      (entry) =>
+        entry.inboxId === inboxId &&
+        numericChannelSourceId(entry.sourceId) === chatId,
+    );
+    if (!hasInbox) {
+      try {
+        await client.createContactInbox({
+          contactId: chatwootContactId,
+          inboxId,
+          sourceId: chatId,
+        });
+      } catch (error) {
+        if (!isIgnorableContactInboxDuplicate(error)) {
+          throw error;
+        }
+      }
+    }
+    return { chatwootContactId, sourceId: chatId };
   }
 
   if (channel === "instagram" || channel === "messenger") {
@@ -790,11 +841,12 @@ async function getMessagingWindowWithDeps(
     sourceId = numericChannelSourceId(local?.contactUsername);
     hasChannelIdentity = Boolean(local?.externalId);
   } else if (input.channel === "telegram") {
+    // Chat_id on the contact survives local conversation deletes; no 24h window.
     sourceId =
+      numericChannelSourceId(contact.telegramChatId) ||
       numericChannelSourceId(local?.contactUsername) ||
-      local?.contactUsername?.trim() ||
       null;
-    hasChannelIdentity = Boolean(local?.externalId);
+    hasChannelIdentity = Boolean(sourceId);
   } else if (input.channel === "support") {
     sourceId = primaryEmail(contact);
     hasChannelIdentity = Boolean(sourceId);
@@ -873,11 +925,11 @@ export async function createChatConversation(
   }
 
   // Validate before any Chatwoot inbox/API call.
-  if (input.channel === "telegram" && !local?.externalId) {
+  if (input.channel === "telegram" && !window.sourceId) {
     throw badRequest(
-      window.reason ??
-        "Telegram bots can only message users who have started the bot. Pick a contact with an existing Telegram chat.",
-      "telegram_chat_required",
+      window.reason ?? "contact has never messaged the bot",
+      "telegram_chat_unknown",
+      422,
     );
   }
 
@@ -925,16 +977,33 @@ export async function createChatConversation(
   const xUserId =
     input.channel === "x" ? normalizeXUserId(contact.xUserId) : null;
 
-  // Prefer an existing Chatwoot X thread (e.g. conversation 17) when the
-  // contact already has one in the Lemo-Design X inbox — even if local mirror
-  // is missing / not yet linked.
+  // Prefer an existing Chatwoot X / Telegram thread when the contact already
+  // has one — even if the local mirror is missing / was deleted.
   let reuseExternalId = local?.externalId?.trim() || null;
   let reuseInboxId = local?.inboxId ?? inbox.id;
   let reuseChannelType = local?.channelType ?? inbox.channelType;
   let reuseInboxName = local?.inboxName ?? inbox.name;
-  let reuseUsername = local?.contactUsername ?? null;
+  let reuseUsername = local?.contactUsername ?? sourceId;
   let reuseAvatar = local?.contactAvatarUrl ?? null;
   let reuseStatus = local?.status ?? "open";
+
+  if (!reuseExternalId && input.channel === "telegram" && sourceId) {
+    const remoteList = await client.listContactConversations(chatwootContactId);
+    const match =
+      remoteList.find((entry) => entry.inboxId === inbox.id) ??
+      remoteList.find((entry) =>
+        (entry.channelType ?? "").toLowerCase().includes("telegram"),
+      ) ??
+      null;
+    if (match) {
+      reuseExternalId = match.id;
+      reuseInboxId = match.inboxId ?? inbox.id;
+      reuseChannelType = match.channelType ?? inbox.channelType;
+      reuseUsername = match.contact.username ?? sourceId;
+      reuseAvatar = match.contact.avatarUrl;
+      reuseStatus = match.status;
+    }
+  }
 
   if (!reuseExternalId && input.channel === "x" && !input.template) {
     const remoteList = await client.listContactConversations(chatwootContactId);
@@ -1020,20 +1089,17 @@ export async function createChatConversation(
   }
 
   if (
-    (input.channel === "telegram" ||
-      input.channel === "instagram" ||
-      input.channel === "messenger") &&
+    (input.channel === "instagram" || input.channel === "messenger") &&
     !local?.externalId
   ) {
     throw badRequest(
-      input.channel === "telegram"
-        ? "Telegram bots can only message users who have started the bot. Pick a contact with an existing Telegram chat."
-        : `${input.channel} only allows replies after the contact messages you first.`,
-      input.channel === "telegram"
-        ? "telegram_chat_required"
-        : "messaging_window_closed",
+      `${input.channel} only allows replies after the contact messages you first.`,
+      "messaging_window_closed",
     );
   }
+
+  // Telegram with a known chat_id may create a fresh Chatwoot conversation
+  // even when the local mirror was deleted.
 
   const supportSubject = input.subject?.trim() || null;
   const outboundContent =

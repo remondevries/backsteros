@@ -92,7 +92,7 @@ describe("evaluateMessagingWindow", () => {
     assert.equal(result.windowHours, 24 * 7);
   });
 
-  it("blocks Telegram without an existing bot chat_id", () => {
+  it("blocks Telegram without a known chat_id", () => {
     const result = evaluateMessagingWindow({
       channel: "telegram",
       lastIncomingAt: null,
@@ -100,17 +100,19 @@ describe("evaluateMessagingWindow", () => {
       now,
     });
     assert.equal(result.open, false);
-    assert.match(result.reason ?? "", /started the bot/i);
+    assert.equal(result.windowHours, 0);
+    assert.equal(result.reason, "contact has never messaged the bot");
   });
 
-  it("allows Telegram once a prior chat exists", () => {
+  it("allows Telegram with a known chat_id even with a stale lastIncomingAt (no 24h window)", () => {
     const result = evaluateMessagingWindow({
       channel: "telegram",
-      lastIncomingAt: "2026-01-01T00:00:00.000Z",
+      lastIncomingAt: "2020-01-01T00:00:00.000Z",
       hasChannelIdentity: true,
       now,
     });
     assert.equal(result.open, true);
+    assert.equal(result.windowHours, 0);
     assert.equal(result.reason, null);
   });
 

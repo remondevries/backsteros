@@ -82,6 +82,8 @@ type ContactInput = {
   longitude?: number | null;
   socialAccounts?: ContactSocialAccount[];
   facebookMessengerId?: string | null;
+  /** Telegram bot chat_id (numeric). */
+  telegramChatId?: string | null;
   /** Numeric X user id (never an @handle). */
   xUserId?: string | null;
   birthday?: string | null;
@@ -819,6 +821,12 @@ export async function lookupContactByChannel(
       );
     }
     if (telegram) {
+      if (
+        /^\d{3,32}$/.test(telegram) &&
+        row.telegramChatId?.trim() === telegram
+      ) {
+        return true;
+      }
       return socialHandleMatches(row.socialAccounts, ["telegram"], telegram);
     }
     if (messenger) {

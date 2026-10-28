@@ -143,7 +143,7 @@ POST /api/v1/chat/conversations
 POST /api/v1/chat/conversations
 { "channel": "messenger", "contactId": "…", "content": "Hi" }
 
-# Telegram (contact must already have messaged the bot)
+# Telegram (no 24h window — needs a stored chat_id from a prior inbound; else 422 telegram_chat_unknown)
 POST /api/v1/chat/conversations
 { "channel": "telegram", "contactId": "…", "content": "Hi" }
 

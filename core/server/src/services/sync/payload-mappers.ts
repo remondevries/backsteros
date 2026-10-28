@@ -215,6 +215,7 @@ export const contactKeys = {
   longitude: "longitude",
   social_accounts: "socialAccounts",
   facebook_messenger_id: "facebookMessengerId",
+  telegram_chat_id: "telegramChatId",
   x_user_id: "xUserId",
   birthday: "birthday",
   languages: "languages",

@@ -320,6 +320,12 @@ export const contacts = pgTable(
      */
     facebookMessengerId: text("facebook_messenger_id"),
     /**
+     * Telegram bot chat_id (numeric) from Chatwoot Telegram inbox.
+     * Distinct from @username / t.me link in socialAccounts — used for
+     * outbound start after the local conversation row is deleted.
+     */
+    telegramChatId: text("telegram_chat_id"),
+    /**
      * Numeric X user id for Chatwoot API inbox / Grok Bot encrypted DM relay.
      * Never an @handle — matching uses this exact identifier only.
      */
@@ -368,6 +374,11 @@ export const contacts = pgTable(
       .on(table.workspaceId, table.facebookMessengerId)
       .where(
         sql`${table.deletedAt} is null and ${table.facebookMessengerId} is not null`,
+      ),
+    uniqueIndex("contacts_workspace_telegram_chat_id_unique")
+      .on(table.workspaceId, table.telegramChatId)
+      .where(
+        sql`${table.deletedAt} is null and ${table.telegramChatId} is not null`,
       ),
     uniqueIndex("contacts_workspace_x_user_id_unique")
       .on(table.workspaceId, table.xUserId)

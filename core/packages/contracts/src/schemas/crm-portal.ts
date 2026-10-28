@@ -266,6 +266,16 @@ const contactWritableFieldsSchema = z.object({
     .nullable()
     .optional(),
   /**
+   * Telegram bot chat_id (numeric digits). Distinct from @username / t.me.
+   * Null clears.
+   */
+  telegramChatId: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{3,32}$/)
+    .nullable()
+    .optional(),
+  /**
    * Numeric X (Twitter) user id for Chatwoot / Grok Bot DMs. Never an @handle.
    * Null clears.
    */
@@ -360,6 +370,12 @@ export const contactSchema = z.object({
   longitude: z.number().finite().nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema),
   facebookMessengerId: z.string().nullable().optional(),
+  /** Telegram bot chat_id (numeric). Distinct from @username / t.me. */
+  telegramChatId: z
+    .string()
+    .regex(/^[0-9]{3,32}$/)
+    .nullable()
+    .optional(),
   /** Numeric X user id (never an @handle). */
   xUserId: z
     .string()

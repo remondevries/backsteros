@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, ne } from "drizzle-orm";
 
 import type {
   ChatConversation,
@@ -41,6 +41,11 @@ import {
   verifyChatwootWebhookSignature,
   type ChatwootWebhookHeaders,
 } from "../lib/chatwoot-webhook.js";
+import {
+  mergeTelegramIdentityOnContact,
+  normalizeTelegramChatId,
+  resolveTelegramIdentityFromChatwoot,
+} from "../lib/telegram-contact-identity.js";
 import {
   createChatwootClient,
   getChatwootCredentials,
@@ -127,6 +132,101 @@ export async function fillLinkedContactXUserIdFromChatwoot(
   await db
     .update(contacts)
     .set({ xUserId: decision.value, updatedAt: new Date() })
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    );
+  return true;
+}
+
+/**
+ * When a Telegram inbound message lands on a linked contact, persist chat_id
+ * + @username (t.me link) so later agent starts work after the conversation
+ * row is deleted. Never overwrites a differing stored chat_id.
+ */
+export async function fillLinkedContactTelegramFromChatwoot(
+  workspaceId: string,
+  conversation: Pick<
+    DbChatConversation,
+    "contactId" | "channelType" | "contactUsername"
+  >,
+  chatwootContact: Pick<
+    ChatwootContactSummary,
+    "username" | "telegramChatId" | "identifier"
+  >,
+): Promise<boolean> {
+  const channel = (conversation.channelType ?? "").toLowerCase();
+  if (!channel.includes("telegram")) return false;
+  const contactId = conversation.contactId?.trim();
+  if (!contactId) return false;
+
+  const identity = resolveTelegramIdentityFromChatwoot({
+    username: chatwootContact.username,
+    telegramChatId: chatwootContact.telegramChatId,
+    inboxSourceId:
+      chatwootContact.telegramChatId ||
+      conversation.contactUsername ||
+      chatwootContact.identifier,
+  });
+  // Prefer a numeric conversation username / identifier as chat_id when the
+  // handle-preferring username field is an @name.
+  const chatId =
+    identity.chatId ||
+    normalizeTelegramChatId(conversation.contactUsername);
+
+  const [row] = await db
+    .select({
+      id: contacts.id,
+      telegramChatId: contacts.telegramChatId,
+      socialAccounts: contacts.socialAccounts,
+    })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return false;
+
+  let chatIdTakenByOtherContact = false;
+  if (chatId && !normalizeTelegramChatId(row.telegramChatId)) {
+    const [other] = await db
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.workspaceId, workspaceId),
+          eq(contacts.telegramChatId, chatId),
+          ne(contacts.id, contactId),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    chatIdTakenByOtherContact = Boolean(other);
+  }
+
+  const merged = mergeTelegramIdentityOnContact({
+    telegramChatId: row.telegramChatId,
+    socialAccounts: row.socialAccounts,
+    nextChatId: chatId,
+    nextUsername: identity.username,
+    chatIdTakenByOtherContact,
+  });
+  if (!merged.changed) return false;
+
+  await db
+    .update(contacts)
+    .set({
+      telegramChatId: merged.telegramChatId,
+      socialAccounts: merged.socialAccounts,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(contacts.workspaceId, workspaceId),
@@ -747,6 +847,19 @@ export async function syncChatwootConversations(
       conversation,
       enriched.contact,
     );
+    try {
+      await fillLinkedContactTelegramFromChatwoot(
+        workspaceId,
+        conversation,
+        enriched.contact,
+      );
+    } catch (error) {
+      console.warn(
+        "[chat] fillLinkedContactTelegramFromChatwoot failed during sync",
+        conversation.id,
+        error instanceof Error ? error.message : error,
+      );
+    }
     if (created) imported += 1;
     else updated += 1;
 
@@ -873,6 +986,10 @@ async function enrichConversationContactUsername(
             username,
             identifier:
               summary.contact.identifier ?? fullContact.identifier ?? null,
+            telegramChatId:
+              summary.contact.telegramChatId ??
+              fullContact.telegramChatId ??
+              null,
             xUserId: summary.contact.xUserId ?? fullContact.xUserId ?? null,
             customAttributes:
               summary.contact.customAttributes ??
@@ -946,6 +1063,21 @@ async function ingestWebhookForWorkspace(
       conversation,
       conversationSummary.contact,
     );
+    if (message.messageType === "incoming") {
+      try {
+        await fillLinkedContactTelegramFromChatwoot(
+          workspaceId,
+          conversation,
+          conversationSummary.contact,
+        );
+      } catch (error) {
+        console.warn(
+          "[chat] fillLinkedContactTelegramFromChatwoot failed during webhook ingest",
+          conversation.id,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
     const { message: stored } = await upsertMessageFromChatwoot(
       workspaceId,
       conversation.id,
