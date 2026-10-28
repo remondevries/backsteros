@@ -2,10 +2,32 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  messageFromChatwootErrorBody,
   parseChatwootConversationFromWebhookPayload,
   parseChatwootConversationPayload,
   parseChatwootMessagePayload,
 } from "./chatwoot-client.js";
+
+describe("messageFromChatwootErrorBody", () => {
+  test("prefers Chatwoot JSON message field", () => {
+    assert.equal(
+      messageFromChatwootErrorBody(
+        JSON.stringify({
+          message: "Phone number should be in e164 format",
+        }),
+        422,
+      ),
+      "Phone number should be in e164 format",
+    );
+  });
+
+  test("falls back to plain text body", () => {
+    assert.equal(
+      messageFromChatwootErrorBody("Source id already exists", 422),
+      "Source id already exists",
+    );
+  });
+});
 
 describe("parseChatwootConversationFromWebhookPayload", () => {
   test("message_created uses nested conversation id, not message id", () => {

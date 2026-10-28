@@ -15,6 +15,55 @@ export class ChatwootApiError extends Error {
   }
 }
 
+/**
+ * Prefer Chatwoot's own validation / error text so API clients see why a
+ * 422 happened (e.g. "Phone number should be in e164 format").
+ */
+export function messageFromChatwootErrorBody(
+  body: string,
+  status: number,
+): string {
+  const trimmed = body.trim();
+  if (!trimmed) return `Chatwoot request failed (${status})`;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const record = asRecord(parsed);
+    if (record) {
+      const fromMessage = asString(record.message);
+      if (fromMessage) return fromMessage;
+      const fromError = asString(record.error);
+      if (fromError) return fromError;
+      if (Array.isArray(record.message)) {
+        const joined = record.message
+          .map((entry) => asString(entry))
+          .filter((entry): entry is string => Boolean(entry))
+          .join("; ");
+        if (joined) return joined;
+      }
+      const errors = asRecord(record.errors);
+      if (errors) {
+        const parts: string[] = [];
+        for (const [key, value] of Object.entries(errors)) {
+          if (Array.isArray(value)) {
+            const msgs = value
+              .map((entry) => asString(entry))
+              .filter((entry): entry is string => Boolean(entry));
+            if (msgs.length) parts.push(`${key}: ${msgs.join(", ")}`);
+          } else {
+            const msg = asString(value);
+            if (msg) parts.push(`${key}: ${msg}`);
+          }
+        }
+        if (parts.length) return parts.join("; ");
+      }
+    }
+  } catch {
+    // fall through — plain text body
+  }
+  if (trimmed.length <= 400) return trimmed;
+  return `Chatwoot request failed (${status})`;
+}
+
 export type ChatwootClientOptions = {
   baseUrl: string;
   accountId: string;
@@ -532,13 +581,16 @@ export class ChatwootClient {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new ChatwootApiError(
-        response.status,
-        text,
+      const message =
         response.status === 401 || response.status === 403
           ? "Chatwoot rejected the access token (unauthorized)."
-          : `Chatwoot request failed (${response.status})`,
-      );
+          : messageFromChatwootErrorBody(text, response.status);
+      if (response.status >= 400) {
+        console.warn(
+          `[chatwoot] ${method} ${path} → ${response.status}: ${message}`,
+        );
+      }
+      throw new ChatwootApiError(response.status, text, message);
     }
     if (!text.trim()) return undefined as T;
     try {

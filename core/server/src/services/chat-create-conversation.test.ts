@@ -5,6 +5,7 @@ import { ChatwootApiError } from "../lib/chatwoot-client.js";
 import {
   createChatConversation,
   ensureChatwootContact,
+  findChatwootContactForTelegramChatId,
   isIgnorableContactInboxDuplicate,
   normalizeXUserId,
   numericChannelSourceId,
@@ -12,6 +13,7 @@ import {
   pickExactWhatsAppContact,
   pickExactXContact,
   pickInboxXConversation,
+  telegramUsernameFromSocialAccounts,
   type CreateChatConversationDeps,
 } from "./chat-create-conversation.js";
 import { X_LEMO_DESIGN_INBOX_ID } from "../lib/chat-messaging-window.js";
@@ -429,24 +431,31 @@ describe("ensureChatwootContact", () => {
 
   it("creates Telegram Chatwoot contact from stored chat_id without local thread", async () => {
     let createdInbox = false;
+    let createdPhone: string | null | undefined;
     const result = await ensureChatwootContact({
       channel: "telegram",
-      contact: contact({ telegramChatId: "7014761034" }),
+      contact: contact({
+        telegramChatId: "7014761034",
+        phone: "+31 (0)6 461 96 570",
+      }),
       inboxId: "tg-inbox",
       sourceId: "7014761034",
       existing: null as never,
       client: {
         searchContacts: async () => [],
-        createContact: async () => ({
-          id: "cw-new-tg",
-          name: "Remon",
-          email: null,
-          phone: null,
-          username: null,
-          identifier: "7014761034",
-          telegramChatId: "7014761034",
-          avatarUrl: null,
-        }),
+        createContact: async (input) => {
+          createdPhone = input.phone ?? null;
+          return {
+            id: "cw-new-tg",
+            name: "Remon",
+            email: null,
+            phone: null,
+            username: null,
+            identifier: "7014761034",
+            telegramChatId: "7014761034",
+            avatarUrl: null,
+          };
+        },
         updateContact: async () => ({
           id: "stub",
           name: null,
@@ -475,6 +484,126 @@ describe("ensureChatwootContact", () => {
     assert.equal(result.chatwootContactId, "cw-new-tg");
     assert.equal(result.sourceId, "7014761034");
     assert.equal(createdInbox, true);
+    assert.equal(createdPhone, "+31646196570");
+  });
+
+  it("reuses Chatwoot contact that owns telegram contact_inbox source_id (not attribute collisions)", async () => {
+    const result = await ensureChatwootContact({
+      channel: "telegram",
+      contact: contact({
+        telegramChatId: "7014761034",
+        phone: "+31 (0)6 461 96 570",
+      }),
+      inboxId: "4",
+      sourceId: "7014761034",
+      existing: null as never,
+      client: {
+        searchContacts: async () => [
+          {
+            id: "8",
+            name: "Rayon",
+            email: null,
+            phone: null,
+            username: "rayonnl6",
+            identifier: null,
+            telegramChatId: "7014761034",
+            avatarUrl: null,
+          },
+          {
+            id: "9",
+            name: "Remon de Vries",
+            email: null,
+            phone: null,
+            username: "remondevries",
+            identifier: null,
+            telegramChatId: "7014761034",
+            avatarUrl: null,
+          },
+        ],
+        createContact: async () => {
+          throw new Error("must not create — contact_inbox already exists");
+        },
+        updateContact: async () => ({
+          id: "stub",
+          name: null,
+          email: null,
+          phone: null,
+          username: null,
+          identifier: null,
+          avatarUrl: null,
+        }),
+        listContactConversations: async () => [],
+        getContactInboxes: async (contactId) => {
+          if (contactId === "9") {
+            return [
+              {
+                sourceId: "7014761034",
+                inboxId: "4",
+                channelType: "Channel::Telegram",
+              },
+            ];
+          }
+          return [];
+        },
+        createContactInbox: async () => {
+          throw new Error("must not create inbox");
+        },
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
+        getConversation: async () => null,
+      },
+    });
+    assert.equal(result.chatwootContactId, "9");
+    assert.equal(result.sourceId, "7014761034");
+  });
+
+  it("findChatwootContactForTelegramChatId prefers inbox source_id owner", async () => {
+    const found = await findChatwootContactForTelegramChatId(
+      {
+        searchContacts: async () => [
+          {
+            id: "8",
+            name: "Rayon",
+            email: null,
+            phone: null,
+            username: "rayonnl6",
+            identifier: null,
+            telegramChatId: "7014761034",
+            avatarUrl: null,
+          },
+          {
+            id: "9",
+            name: "Remon",
+            email: null,
+            phone: null,
+            username: "remondevries",
+            identifier: null,
+            telegramChatId: "7014761034",
+            avatarUrl: null,
+          },
+        ],
+        getContactInboxes: async (id) =>
+          id === "9"
+            ? [
+                {
+                  sourceId: "7014761034",
+                  inboxId: "4",
+                  channelType: "Channel::Telegram",
+                },
+              ]
+            : [],
+      },
+      "7014761034",
+      "4",
+      "remondevries",
+    );
+    assert.equal(found?.id, "9");
+    assert.equal(
+      telegramUsernameFromSocialAccounts([
+        { platform: "Telegram", url: "https://t.me/remondevries" },
+      ]),
+      "remondevries",
+    );
   });
 
   it("uses only the Chatwoot contact from the existing Telegram conversation", async () => {
@@ -1020,6 +1149,117 @@ describe("createChatConversation", () => {
     assert.equal(result.window.sourceId, "7014761034");
   });
 
+  it("after local delete, reuses still-open Chatwoot Telegram conversation via contact_inbox owner", async () => {
+    let createdConversation = false;
+    let messaged = false;
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "telegram",
+        contactId: "contact-1",
+        content: "hello again",
+        inboxId: "4",
+      },
+      baseDeps({
+        local: null,
+        loadContact: async () =>
+          contact({
+            telegramChatId: "7014761034",
+            phone: "+31 (0)6 461 96 570",
+          }),
+        client: {
+          listInboxes: async () => [
+            {
+              id: "4",
+              name: "Telegram",
+              channelType: "Channel::Telegram",
+            },
+          ],
+          searchContacts: async () => [
+            {
+              id: "8",
+              name: "Rayon",
+              email: null,
+              phone: null,
+              username: "rayonnl6",
+              identifier: null,
+              telegramChatId: "7014761034",
+              avatarUrl: null,
+            },
+            {
+              id: "9",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: "remondevries",
+              identifier: null,
+              telegramChatId: "7014761034",
+              avatarUrl: null,
+            },
+          ],
+          createContact: async () => {
+            throw new Error("must not create contact");
+          },
+          getContactInboxes: async (id) =>
+            id === "9"
+              ? [
+                  {
+                    sourceId: "7014761034",
+                    inboxId: "4",
+                    channelType: "Channel::Telegram",
+                  },
+                ]
+              : [],
+          createContactInbox: async () => {
+            throw new Error("must not create inbox");
+          },
+          listContactConversations: async () => [
+            {
+              id: "12",
+              inboxId: "4",
+              status: "open",
+              channelType: "Channel::Telegram",
+              contact: {
+                id: "9",
+                name: "Remon",
+                email: null,
+                phone: null,
+                username: "remondevries",
+                identifier: null,
+                avatarUrl: null,
+              },
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ],
+          createConversation: async () => {
+            createdConversation = true;
+            throw new Error("must reuse existing Chatwoot conversation 12");
+          },
+          createMessage: async (conversationId, input) => {
+            messaged = true;
+            assert.equal(conversationId, "12");
+            assert.equal(input.content, "hello again");
+            return {
+              id: "m-out",
+              conversationId: "12",
+              content: input.content,
+              contentType: "text",
+              messageType: "outgoing" as const,
+              private: false,
+              senderName: "Agent",
+              createdAt: new Date().toISOString(),
+            };
+          },
+        },
+      }),
+    );
+    assert.equal(createdConversation, false);
+    assert.equal(messaged, true);
+    assert.equal(result.id, "local-1");
+  });
+
   it("starts Telegram from stored chat_id after local conversation was deleted", async () => {
     let created = false;
     const result = await createChatConversation(
@@ -1034,16 +1274,19 @@ describe("createChatConversation", () => {
         loadContact: async () => contact({ telegramChatId: "7014761034" }),
         client: {
           searchContacts: async () => [],
-          createContact: async () => ({
-            id: "cw-tg",
-            name: "Remon",
-            email: null,
-            phone: null,
-            username: null,
-            identifier: "7014761034",
-            telegramChatId: "7014761034",
-            avatarUrl: null,
-          }),
+          createContact: async (input) => {
+            assert.equal(input.phone, "+31612345678");
+            return {
+              id: "cw-tg",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: null,
+              identifier: "7014761034",
+              telegramChatId: "7014761034",
+              avatarUrl: null,
+            };
+          },
           getContactInboxes: async () => [],
           createContactInbox: async () => ({
             sourceId: "7014761034",

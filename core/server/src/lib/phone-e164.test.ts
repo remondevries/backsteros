@@ -5,6 +5,7 @@ import {
   dropNationalTrunkZero,
   normalizePhoneDigits,
   pickWhatsAppRecipientPhone,
+  toE164PhoneNumber,
 } from "./phone-e164.js";
 
 describe("OS-146 E.164 phone normalisation", () => {
@@ -33,6 +34,13 @@ describe("OS-146 E.164 phone normalisation", () => {
     const storedLandline = normalizePhoneDigits("+31582664242");
     const queryLandline = normalizePhoneDigits("+31 (0) 58 266 42 42");
     assert.equal(storedLandline, queryLandline);
+  });
+
+  it("toE164PhoneNumber formats Chatwoot-safe +digits", () => {
+    assert.equal(toE164PhoneNumber("+31 (0)6 461 96 570"), "+31646196570");
+    assert.equal(toE164PhoneNumber("+31646196570"), "+31646196570");
+    assert.equal(toE164PhoneNumber(""), null);
+    assert.equal(toE164PhoneNumber("abc"), null);
   });
 
   it("dropNationalTrunkZero is a no-op without a trunk 0", () => {

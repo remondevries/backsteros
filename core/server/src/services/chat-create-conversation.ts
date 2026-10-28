@@ -44,12 +44,15 @@ import { publishChatUpdated } from "../lib/chat-events.js";
 import {
   normalizePhoneDigits,
   pickWhatsAppRecipientPhone,
+  toE164PhoneNumber,
 } from "../lib/phone-e164.js";
+import { normalizeTelegramUsername } from "../lib/telegram-contact-identity.js";
 
 export {
   dropNationalTrunkZero,
   normalizePhoneDigits,
   pickWhatsAppRecipientPhone,
+  toE164PhoneNumber,
 } from "../lib/phone-e164.js";
 
 function badRequest(
@@ -206,6 +209,89 @@ export function isIgnorableContactInboxDuplicate(error: unknown): boolean {
     haystack.includes("already exists") ||
     haystack.includes("already been taken") ||
     haystack.includes("has already been taken")
+  );
+}
+
+/** Telegram @handle from contact socialAccounts (t.me / telegram). */
+export function telegramUsernameFromSocialAccounts(
+  socialAccounts:
+    | readonly { platform: string; url: string }[]
+    | null
+    | undefined,
+): string | null {
+  for (const entry of socialAccounts ?? []) {
+    const platform = entry.platform?.trim().toLowerCase() ?? "";
+    if (
+      platform !== "telegram" &&
+      platform !== "tg" &&
+      platform !== "t.me"
+    ) {
+      continue;
+    }
+    const handle = normalizeTelegramUsername(entry.url);
+    if (handle) return handle;
+  }
+  return null;
+}
+
+/**
+ * Resolve the Chatwoot contact that owns a Telegram bot chat_id.
+ * Prefer contact_inbox.source_id ownership over additional_attributes
+ * (those can be wrong / duplicated across contacts).
+ */
+export async function findChatwootContactForTelegramChatId(
+  client: Pick<ChatwootClient, "searchContacts" | "getContactInboxes">,
+  chatId: string,
+  inboxId: string,
+  usernameHint?: string | null,
+): Promise<ChatwootContactSummary | null> {
+  const want = numericChannelSourceId(chatId);
+  if (!want) return null;
+
+  const queries = [want];
+  const hint = usernameHint?.trim().replace(/^@+/, "") || null;
+  if (hint && hint !== want) queries.push(hint);
+
+  const seen = new Set<string>();
+  const candidates: ChatwootContactSummary[] = [];
+  for (const query of queries) {
+    const hits = await client.searchContacts(query);
+    for (const hit of hits) {
+      const id = hit.id?.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      candidates.push(hit);
+    }
+  }
+
+  const withSourceId = async (
+    preferInbox: boolean,
+  ): Promise<ChatwootContactSummary | null> => {
+    for (const hit of candidates) {
+      const id = hit.id?.trim();
+      if (!id) continue;
+      const inboxes = await client.getContactInboxes(id);
+      const match = inboxes.find((entry) => {
+        if (numericChannelSourceId(entry.sourceId) !== want) return false;
+        if (preferInbox && entry.inboxId !== inboxId) return false;
+        return true;
+      });
+      if (match) {
+        return { ...hit, telegramChatId: want };
+      }
+    }
+    return null;
+  };
+
+  return (
+    (await withSourceId(true)) ??
+    (await withSourceId(false)) ??
+    candidates.find(
+      (hit) =>
+        numericChannelSourceId(hit.telegramChatId) === want ||
+        numericChannelSourceId(hit.identifier) === want,
+    ) ??
+    null
   );
 }
 
@@ -464,7 +550,7 @@ export async function ensureChatwootContact(
       chatwootContact = await client.createContact({
         name: contact.name,
         email: contact.email,
-        phone: primaryPhone(contact),
+        phone: toE164PhoneNumber(primaryPhone(contact)),
         identifier: xUserId,
         customAttributes: { x_user_id: xUserId },
       });
@@ -556,24 +642,37 @@ export async function ensureChatwootContact(
     }
 
     // Known chat_id but no local thread (e.g. conversation was deleted) —
-    // resolve or create a Chatwoot contact + telegram inbox source_id.
-    const hits = await client.searchContacts(chatId);
-    let chatwootContact =
-      hits.find(
-        (hit) =>
-          numericChannelSourceId(hit.telegramChatId) === chatId ||
-          numericChannelSourceId(hit.username) === chatId ||
-          numericChannelSourceId(hit.identifier) === chatId,
-      ) ?? null;
+    // resolve the Chatwoot contact that already owns this source_id (search
+    // alone is weak: attributes can collide / omit contact_inboxes).
+    const usernameHint = telegramUsernameFromSocialAccounts(
+      contact.socialAccounts,
+    );
+    let chatwootContact = await findChatwootContactForTelegramChatId(
+      client,
+      chatId,
+      inboxId,
+      usernameHint,
+    );
     if (!chatwootContact?.id) {
-      chatwootContact = await client.createContact({
-        name: contact.name,
-        email: contact.email,
-        phone: primaryPhone(contact),
-        identifier: chatId,
-      });
+      try {
+        chatwootContact = await client.createContact({
+          name: contact.name,
+          // Omit email — it often already belongs to another Chatwoot contact.
+          phone: toE164PhoneNumber(primaryPhone(contact)),
+          identifier: chatId,
+        });
+      } catch (error) {
+        // Create may still 422 (identifier taken, etc.) — re-resolve owner.
+        chatwootContact = await findChatwootContactForTelegramChatId(
+          client,
+          chatId,
+          inboxId,
+          usernameHint,
+        );
+        if (!chatwootContact?.id) throw error;
+      }
     }
-    const chatwootContactId = chatwootContact.id?.trim();
+    let chatwootContactId = chatwootContact.id?.trim() || null;
     if (!chatwootContactId) {
       throw badRequest(
         "contact has never messaged the bot",
@@ -597,6 +696,16 @@ export async function ensureChatwootContact(
       } catch (error) {
         if (!isIgnorableContactInboxDuplicate(error)) {
           throw error;
+        }
+        // source_id already on another contact — use that owner instead.
+        const owner = await findChatwootContactForTelegramChatId(
+          client,
+          chatId,
+          inboxId,
+          usernameHint,
+        );
+        if (owner?.id?.trim()) {
+          chatwootContactId = owner.id.trim();
         }
       }
     }
@@ -672,7 +781,7 @@ export async function ensureChatwootContact(
       chatwootContact = await client.createContact({
         name: contact.name,
         email: contact.email,
-        phone,
+        phone: toE164PhoneNumber(phone),
         identifier: null,
       });
     }
@@ -692,7 +801,7 @@ export async function ensureChatwootContact(
       chatwootContact = await client.createContact({
         name: contact.name,
         email,
-        phone: primaryPhone(contact),
+        phone: toE164PhoneNumber(primaryPhone(contact)),
         identifier: email,
       });
     }

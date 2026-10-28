@@ -94,6 +94,19 @@ export function normalizePhoneDigits(
   return cleaned || null;
 }
 
+/**
+ * Chatwoot contact create requires E.164 (`+31646196570`). Returns null when
+ * the input cannot be normalised — callers should omit phone rather than send
+ * a display-formatted string like `+31 (0)6 461 96 570`.
+ */
+export function toE164PhoneNumber(
+  raw: string | null | undefined,
+): string | null {
+  const digits = normalizePhoneDigits(raw);
+  if (!digits || digits.length < 8 || digits.length > 15) return null;
+  return `+${digits}`;
+}
+
 function isMobileOrWhatsAppLabel(label: string | null | undefined): boolean {
   const value = label?.trim().toLowerCase() ?? "";
   if (!value) return false;
