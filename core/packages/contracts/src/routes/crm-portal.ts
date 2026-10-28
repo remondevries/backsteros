@@ -100,6 +100,21 @@ export const crmPortalRoutes: AppRouter = c.router({
     },
     summary: "List contacts",
   },
+  lookupContact: {
+    method: "GET",
+    path: "/api/v1/contacts/lookup",
+    query: s.contactLookupQuerySchema,
+    responses: {
+      200: z.object({
+        contact: s.contactSchema.nullable(),
+      }),
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Lookup a contact by phone, X user id, Instagram/Telegram handle, or Messenger id",
+  },
   getContact: {
     method: "GET",
     path: "/api/v1/contacts/:id",

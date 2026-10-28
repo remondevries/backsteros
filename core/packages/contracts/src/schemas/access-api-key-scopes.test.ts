@@ -22,12 +22,23 @@ test("AGENT_API_KEY_SCOPES excludes exclusive door scopes", () => {
   assert.equal(AGENT_API_KEY_SCOPES.length + 3, API_KEY_SCOPES.length);
 });
 
-test("AGENT_KEY_SCOPES never includes settings:write", () => {
+test("AGENT_KEY_SCOPES never includes settings:read or settings:write", () => {
   assert.equal(AGENT_KEY_SCOPES.includes("settings:write" as never), false);
+  assert.equal(AGENT_KEY_SCOPES.includes("settings:read" as never), false);
   assert.ok(AGENT_KEY_SCOPES.includes("tasks:write"));
+  assert.ok(AGENT_KEY_SCOPES.includes("chat:read"));
+  assert.ok(AGENT_KEY_SCOPES.includes("chat:write"));
+  assert.ok(AGENT_KEY_SCOPES.includes("email:read"));
+  assert.ok(AGENT_KEY_SCOPES.includes("email:send"));
   assert.deepEqual(
-    sanitizeAgentKeyScopes(["tasks:read", "settings:write", "applications"]),
-    ["tasks:read"],
+    sanitizeAgentKeyScopes([
+      "tasks:read",
+      "settings:read",
+      "settings:write",
+      "applications",
+      "chat:write",
+    ]),
+    ["tasks:read", "chat:write"],
   );
 });
 

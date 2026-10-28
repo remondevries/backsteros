@@ -60,6 +60,14 @@ export const API_KEY_SCOPES = [
   "finance:write",
   "settings:read",
   "settings:write",
+  /** Chatwoot chat inboxes, conversations, messaging window, templates. */
+  "chat:read",
+  /** Start/send chat messages, typing, sync, conversation updates. */
+  "chat:write",
+  /** AgentMail message list/read and inbox list (not settings). */
+  "email:read",
+  /** Compose/send AgentMail drafts and thread metadata writes. */
+  "email:send",
   "avatars:read",
   "avatars:write",
   "search:query",
@@ -97,11 +105,12 @@ export const AGENT_API_KEY_SCOPES = API_KEY_SCOPES.filter(
 );
 
 /**
- * Scopes an agent (persona) key may hold. Never includes settings:write —
- * that scope is what allows minting new keys.
+ * Scopes an agent (persona) key may hold. Never includes settings:read or
+ * settings:write — settings expose integration secrets, and settings:write
+ * is what allows minting new keys. Agents use chat:* / email:* instead.
  */
 export const AGENT_KEY_SCOPES = AGENT_API_KEY_SCOPES.filter(
-  (scope) => scope !== "settings:write",
+  (scope) => scope !== "settings:write" && scope !== "settings:read",
 );
 
 const AGENT_KEY_SCOPE_SET = new Set<string>(AGENT_KEY_SCOPES);
@@ -546,6 +555,46 @@ export const listOrganizationsQuerySchema = listPaginationQuerySchema.extend({
   q: z.string().optional(),
   search: z.string().optional(),
 });
+
+/** Resolve one contact by channel handle / phone / X id (OS-146). */
+export const contactLookupQuerySchema = z
+  .object({
+    channel: z
+      .enum([
+        "whatsapp",
+        "phone",
+        "instagram",
+        "telegram",
+        "messenger",
+        "facebook",
+        "x",
+        "twitter",
+      ])
+      .optional(),
+    value: z.string().min(1).max(320).optional(),
+    phone: z.string().min(1).max(64).optional(),
+    xUserId: z.string().min(1).max(64).optional(),
+    instagram: z.string().min(1).max(128).optional(),
+    telegram: z.string().min(1).max(128).optional(),
+    messenger: z.string().min(1).max(128).optional(),
+  })
+  .refine(
+    (q) =>
+      Boolean(
+        q.phone ||
+          q.xUserId ||
+          q.instagram ||
+          q.telegram ||
+          q.messenger ||
+          (q.channel && q.value),
+      ),
+    {
+      message:
+        "Provide channel+value or one of phone, xUserId, instagram, telegram, messenger",
+    },
+  );
+
+export type ContactLookupQuery = z.infer<typeof contactLookupQuerySchema>;
 
 export const listContactsQuerySchema = listPaginationQuerySchema.extend({
   organizationId: z.string().optional(),

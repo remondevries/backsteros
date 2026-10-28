@@ -212,6 +212,8 @@ export const chatConversationDetailSchema = chatConversationSchema.extend({
 export const listChatConversationsQuerySchema = z.object({
   status: chatConversationStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  /** Poll for conversations with lastActivityAt >= this instant (ISO-8601). */
+  updatedSince: z.coerce.date().optional(),
 });
 
 export const createChatMessageInputSchema = z.object({
@@ -241,6 +243,7 @@ export const chatWhatsAppTemplateParamsSchema = z.object({
  * Start or reopen a Chatwoot conversation and send the first outbound message.
  * WhatsApp outside the 24h window requires `template`.
  * Support tickets may include an optional `subject` (email support inbox).
+ * Set `dryRun` / `validate` to resolve the target without calling Chatwoot.
  */
 export const createChatConversationInputSchema = z.object({
   channel: chatCreateChannelSchema,
@@ -253,6 +256,10 @@ export const createChatConversationInputSchema = z.object({
   /** Support ticket subject (email / Channel::Email inbox). */
   subject: z.string().min(1).max(500).optional(),
   template: chatWhatsAppTemplateParamsSchema.optional(),
+  /** Resolve contact/inbox/window and return what would be sent — no Chatwoot call. */
+  dryRun: z.boolean().optional(),
+  /** Alias for dryRun (query `?validate=1` is also accepted on the route). */
+  validate: z.boolean().optional(),
 });
 
 export const chatMessagingWindowQuerySchema = z.object({
@@ -277,6 +284,22 @@ export const chatMessagingWindowSchema = z.object({
   sourceId: z.string().nullable(),
   /** WhatsApp: template is required to start/continue outside the window. */
   requiresTemplate: z.boolean(),
+});
+
+/** Preview returned when createChatConversation is called with dryRun/validate. */
+export const createChatConversationDryRunSchema = z.object({
+  dryRun: z.literal(true),
+  channel: chatCreateChannelSchema,
+  contactId: z.string(),
+  contactName: z.string().nullable(),
+  inboxId: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  window: chatMessagingWindowSchema,
+  requiresTemplate: z.boolean(),
+  template: chatWhatsAppTemplateParamsSchema.nullable(),
+  content: z.string(),
+  subject: z.string().nullable(),
+  conversationId: z.string().nullable(),
 });
 
 export const chatWhatsAppTemplateSchema = z.object({
@@ -878,6 +901,10 @@ export type ChatWhatsAppTemplateParams = z.infer<
 
 export type CreateChatConversationInput = z.infer<
   typeof createChatConversationInputSchema
+>;
+
+export type CreateChatConversationDryRun = z.infer<
+  typeof createChatConversationDryRunSchema
 >;
 
 export type ChatMessagingWindowQuery = z.infer<

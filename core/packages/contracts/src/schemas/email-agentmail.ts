@@ -560,6 +560,37 @@ export const emailComposeDraftInputSchema = z.object({
   composeSessionId: z.string().min(1).max(200).optional(),
 });
 
+/**
+ * Agent-friendly one-shot: start a new email thread (compose + send).
+ * Use dryRun/validate to preview without calling AgentMail.
+ */
+export const emailStartThreadInputSchema = z.object({
+  inboxId: z.string().min(1),
+  to: z.union([
+    z.string().min(1).max(2_000),
+    z.array(z.string().min(1).max(320)).min(1).max(50),
+  ]),
+  cc: emailRecipientListSchema,
+  bcc: emailRecipientListSchema,
+  subject: z.string().min(1).max(500),
+  body: z.string().min(1).max(100_000),
+  /** Optional BacksterOS contact to link on the local email thread metadata. */
+  contactId: z.string().min(1).optional(),
+  dryRun: z.boolean().optional(),
+  validate: z.boolean().optional(),
+});
+
+export const emailStartThreadDryRunSchema = z.object({
+  dryRun: z.literal(true),
+  inboxId: z.string(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  subject: z.string(),
+  body: z.string(),
+  contactId: z.string().nullable(),
+});
+
 export const emailComposeDraftResponseSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
@@ -573,6 +604,14 @@ export const emailSendDraftResponseSchema = z.object({
   subject: z.string(),
   inReplyToMessageId: z.string().nullable().optional(),
 });
+
+export const emailStartThreadResponseSchema = z.union([
+  emailStartThreadDryRunSchema,
+  emailSendDraftResponseSchema.extend({
+    draftId: z.string().optional(),
+    contactId: z.string().nullable().optional(),
+  }),
+]);
 
 export const emailDeleteDraftResponseSchema = z.object({
   inboxId: z.string(),
@@ -673,6 +712,16 @@ export type EmailAgentCallbackEventPayload = z.infer<
 
 export type EmailComposeDraftInput = z.infer<
   typeof emailComposeDraftInputSchema
+>;
+
+export type EmailStartThreadInput = z.infer<typeof emailStartThreadInputSchema>;
+
+export type EmailStartThreadDryRun = z.infer<
+  typeof emailStartThreadDryRunSchema
+>;
+
+export type EmailStartThreadResponse = z.infer<
+  typeof emailStartThreadResponseSchema
 >;
 
 export type EmailComposeDraftResponse = z.infer<

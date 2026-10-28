@@ -139,6 +139,44 @@ export const emailRoutes: AppRouter = c.router({
     },
     summary: "Poll Grok Bot email agent command callback mailbox",
   },
+  listEmailInboxes: {
+    method: "GET",
+    path: "/api/v1/email/inboxes",
+    responses: {
+      200: s.agentMailInboxesResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List AgentMail inboxes (email:read — no settings scope required)",
+  },
+  startEmailThread: {
+    method: "POST",
+    path: "/api/v1/email/start",
+    body: s.emailStartThreadInputSchema,
+    query: z
+      .object({
+        validate: z
+          .union([
+            z.literal("1"),
+            z.literal("true"),
+            z.literal("0"),
+            z.literal("false"),
+          ])
+          .optional(),
+      })
+      .optional(),
+    responses: {
+      200: s.emailStartThreadResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Start a new email thread (compose + send). dryRun/validate previews without AgentMail.",
+  },
   createEmailComposeDraft: {
     method: "POST",
     path: "/api/v1/email/inboxes/:inboxId/compose-draft",

@@ -16,7 +16,7 @@ test("access always gets full owner scopes and null contact", () => {
   assert.deepEqual(result.scopes, [...AGENT_API_KEY_SCOPES]);
 });
 
-test("agent requires contact and strips settings:write", () => {
+test("agent requires contact and strips settings:read/write", () => {
   assert.throws(
     () =>
       resolveCreateApiKeyFields({
@@ -30,10 +30,17 @@ test("agent requires contact and strips settings:write", () => {
   const result = resolveCreateApiKeyFields({
     kind: "agent",
     contactId: "c1",
-    scopes: ["tasks:read", "settings:write", "applications"],
+    scopes: [
+      "tasks:read",
+      "settings:read",
+      "settings:write",
+      "applications",
+      "chat:write",
+      "email:send",
+    ],
   });
   assert.equal(result.contactId, "c1");
-  assert.deepEqual(result.scopes, ["tasks:read"]);
+  assert.deepEqual(result.scopes, ["tasks:read", "chat:write", "email:send"]);
 });
 
 test("door kinds are exclusive single scopes", () => {

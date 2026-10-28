@@ -250,15 +250,26 @@ export const integrationsRoutes: AppRouter = c.router({
     method: "POST",
     path: "/api/v1/chat/conversations",
     body: s.createChatConversationInputSchema,
+    query: z
+      .object({
+        validate: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0"), z.literal("false")])
+          .optional(),
+      })
+      .optional(),
     responses: {
-      200: s.chatConversationDetailSchema,
+      200: z.union([
+        s.chatConversationDetailSchema,
+        s.createChatConversationDryRunSchema,
+      ]),
       400: badRequestSchema,
       401: errorSchema,
       403: errorSchema,
       404: errorSchema,
+      422: badRequestSchema,
     },
     summary:
-      "Create or reopen a Chatwoot conversation (WhatsApp / Instagram / Messenger) and send the first message",
+      "Create or reopen a Chatwoot conversation and send the first message (dryRun/validate previews without Chatwoot)",
   },
   listChatInboxes: {
     method: "GET",
