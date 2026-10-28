@@ -759,6 +759,10 @@ export async function upsertEmailComposeDraft(
     subject: string;
     body: string;
     composeSessionId?: string;
+    /** When set, never derive greeting name from the To address. */
+    recipientFirstName?: string | null;
+    /** When false, skip greeting + sign-off wrapping. */
+    wrap?: boolean;
   },
 ): Promise<EmailComposeDraftResponse> {
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
@@ -793,6 +797,8 @@ export async function upsertEmailComposeDraft(
     subject: input.subject,
     body: input.body,
     templates,
+    recipientFirstName: input.recipientFirstName,
+    wrap: input.wrap,
   });
   const draft = await saveComposeDraft(
     client,

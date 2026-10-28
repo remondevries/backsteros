@@ -323,49 +323,224 @@ describe("OS-146 agent chat/email", () => {
     assert.equal(runs, 1);
   });
 
-  it("email start dryRun makes no AgentMail compose/send call", async () => {
+  function emailStartDeps(overrides: {
+    contact?: {
+      id: string;
+      firstName: string | null;
+      name: string | null;
+      email: string | null;
+    } | null;
+    inboxIds?: string[];
+  } = {}) {
     let composeCalls = 0;
     let sendCalls = 0;
+    let patched: { status?: string; contactId?: string } | null = null;
+    return {
+      composeCalls: () => composeCalls,
+      sendCalls: () => sendCalls,
+      patched: () => patched,
+      deps: {
+        getStoredCredentials: async () => ({
+          apiKey: "am_stored",
+          inboxId: "inbox_1",
+          inboxIds: overrides.inboxIds ?? ["inbox_1"],
+        }),
+        listKnownInboxIds: async () => overrides.inboxIds ?? ["inbox_1"],
+        getTemplates: async () => ({
+          greetingTemplateEn: "Hi {firstName},",
+          greetingTemplateNl: "Beste {firstName},",
+          signOffTemplateEn: "Sincerely,\n{name}",
+          signOffTemplateNl: "Met vriendelijke groet,\n{name}",
+          signOffName: "Remon de Vries, Lemo-Design",
+        }),
+        composeDraft: async (
+          _ws: string,
+          _inbox: string,
+          input: {
+            body: string;
+            recipientFirstName?: string | null;
+            wrap?: boolean;
+          },
+        ) => {
+          composeCalls += 1;
+          assert.equal(input.recipientFirstName !== undefined, true);
+          return {
+            draftId: "draft-1",
+            inboxId: "inbox_1",
+            composeSessionId: "s1",
+          };
+        },
+        sendDraft: async () => {
+          sendCalls += 1;
+          return {
+            inboxId: "inbox_1",
+            messageId: "msg-1",
+            threadId: "thread-1",
+            subject: "Hello",
+          };
+        },
+        loadContact: async () =>
+          overrides.contact === undefined
+            ? {
+                id: "c1",
+                firstName: "Jan",
+                name: "Jan Jansen",
+                email: "jan@example.com",
+              }
+            : overrides.contact,
+        resolveContactByEmail: async () =>
+          overrides.contact === undefined
+            ? {
+                id: "c1",
+                firstName: "Jan",
+                name: "Jan Jansen",
+                email: "jan@example.com",
+              }
+            : overrides.contact,
+        patchThread: async (
+          _ws: string,
+          _inbox: string,
+          _key: string,
+          patch: { status?: string; contactId?: string },
+        ) => {
+          patched = patch;
+          return null;
+        },
+      },
+    };
+  }
+
+  it("email start dryRun returns rendered body with contact first name", async () => {
     const { startEmailThread } = await import(
       "../services/agentmail-settings/send-lifecycle.js"
     );
+    const harness = emailStartDeps({
+      contact: {
+        id: "c1",
+        firstName: "Remon",
+        name: "Remon de Vries",
+        email: "email@remondevries.com",
+      },
+    });
     const preview = await startEmailThread(
+      "ws_1",
+      {
+        inboxId: "inbox_1",
+        to: "email@remondevries.com",
+        subject: "Hello",
+        body: "Can we talk?",
+        contactId: "c1",
+        dryRun: true,
+      },
+      harness.deps as never,
+    );
+    assert.equal((preview as { dryRun?: boolean }).dryRun, true);
+    assert.equal((preview as { status?: string }).status, "waiting");
+    assert.equal((preview as { wrap?: boolean }).wrap, true);
+    assert.match((preview as { body: string }).body, /^Hi Remon,/);
+    assert.match(
+      (preview as { body: string }).body,
+      /Sincerely,\nRemon de Vries, Lemo-Design/,
+    );
+    assert.doesNotMatch((preview as { body: string }).body, /To Email/i);
+    assert.equal(harness.composeCalls(), 0);
+    assert.equal(harness.sendCalls(), 0);
+  });
+
+  it("email start dryRun with raw:true returns body as-is", async () => {
+    const { startEmailThread } = await import(
+      "../services/agentmail-settings/send-lifecycle.js"
+    );
+    const harness = emailStartDeps({ contact: null });
+    const preview = await startEmailThread(
+      "ws_1",
+      {
+        inboxId: "inbox_1",
+        to: "email@remondevries.com",
+        subject: "Hello",
+        body: "Raw agent body",
+        raw: true,
+        dryRun: true,
+      },
+      harness.deps as never,
+    );
+    assert.equal((preview as { wrap?: boolean }).wrap, false);
+    assert.equal((preview as { body: string }).body, "Raw agent body");
+    assert.equal((preview as { status?: string }).status, "waiting");
+  });
+
+  it("email start dryRun uses nameless greeting when no contact name", async () => {
+    const { startEmailThread } = await import(
+      "../services/agentmail-settings/send-lifecycle.js"
+    );
+    const harness = emailStartDeps({ contact: null });
+    const preview = await startEmailThread(
+      "ws_1",
+      {
+        inboxId: "inbox_1",
+        to: "email@remondevries.com",
+        subject: "Hello",
+        body: "Ping",
+        dryRun: true,
+      },
+      harness.deps as never,
+    );
+    assert.match((preview as { body: string }).body, /^Hello,/);
+    assert.doesNotMatch((preview as { body: string }).body, /Hi Email/i);
+  });
+
+  it("email start send patches waiting status by default (not on_hold)", async () => {
+    const { startEmailThread } = await import(
+      "../services/agentmail-settings/send-lifecycle.js"
+    );
+    const harness = emailStartDeps({
+      contact: {
+        id: "c1",
+        firstName: "Jan",
+        name: "Jan Jansen",
+        email: "jan@example.com",
+      },
+    });
+    const sent = await startEmailThread(
       "ws_1",
       {
         inboxId: "inbox_1",
         to: "jan@example.com",
         subject: "Hello",
         body: "Body",
-        dryRun: true,
+        contactId: "c1",
       },
-      {
-        getStoredCredentials: async () => ({
-          apiKey: "am_stored",
-          inboxId: "inbox_1",
-          inboxIds: ["inbox_1"],
-        }),
-        listKnownInboxIds: async () => ["inbox_1"],
-        composeDraft: async () => {
-          composeCalls += 1;
-          throw new Error("compose should not run");
-        },
-        sendDraft: async () => {
-          sendCalls += 1;
-          throw new Error("send should not run");
-        },
-        loadContactId: async () => "c1",
-        patchThread: async () => null,
-      },
+      harness.deps as never,
     );
-    assert.equal((preview as { dryRun?: boolean }).dryRun, true);
-    assert.equal(composeCalls, 0);
-    assert.equal(sendCalls, 0);
+    assert.equal((sent as { messageId?: string }).messageId, "msg-1");
+    assert.equal(harness.patched()?.status, "waiting");
+    assert.equal(harness.patched()?.contactId, "c1");
+  });
+
+  it("email start accepts an explicit status", async () => {
+    const { startEmailThread } = await import(
+      "../services/agentmail-settings/send-lifecycle.js"
+    );
+    const harness = emailStartDeps();
+    await startEmailThread(
+      "ws_1",
+      {
+        inboxId: "inbox_1",
+        to: "jan@example.com",
+        subject: "Hello",
+        body: "Body",
+        status: "in_progress",
+      },
+      harness.deps as never,
+    );
+    assert.equal(harness.patched()?.status, "in_progress");
   });
 
   it("email start dryRun rejects unknown inboxId with inbox_not_found", async () => {
     const { startEmailThread } = await import(
       "../services/agentmail-settings/send-lifecycle.js"
     );
+    const harness = emailStartDeps({ inboxIds: ["inbox_real"], contact: null });
     await assert.rejects(
       () =>
         startEmailThread(
@@ -377,22 +552,7 @@ describe("OS-146 agent chat/email", () => {
             body: "Body",
             dryRun: true,
           },
-          {
-            getStoredCredentials: async () => ({
-              apiKey: "am_stored",
-              inboxId: null,
-              inboxIds: [],
-            }),
-            listKnownInboxIds: async () => ["inbox_real"],
-            composeDraft: async () => {
-              throw new Error("compose should not run");
-            },
-            sendDraft: async () => {
-              throw new Error("send should not run");
-            },
-            loadContactId: async () => "c1",
-            patchThread: async () => null,
-          },
+          harness.deps as never,
         ),
       (error: unknown) =>
         Boolean(

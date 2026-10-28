@@ -175,7 +175,7 @@ export const emailRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary:
-      "Start a new email thread via POST /api/v1/email/start (compose + send). dryRun/validate previews without AgentMail. Supports Idempotency-Key.",
+      "Start a new email thread via POST /api/v1/email/start (compose + send). dryRun/validate returns the final rendered subject/body. Optional wrap:false|raw:true skips greeting/signature. Optional status (default waiting). Supports Idempotency-Key.",
   },
   createEmailComposeDraft: {
     method: "POST",

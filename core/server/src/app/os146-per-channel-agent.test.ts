@@ -290,6 +290,13 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
           inboxIds: ["inbox_1"],
         }),
         listKnownInboxIds: async () => ["inbox_1"],
+        getTemplates: async () => ({
+          greetingTemplateEn: "Hi {firstName},",
+          greetingTemplateNl: "Beste {firstName},",
+          signOffTemplateEn: "Best,\n{name}",
+          signOffTemplateNl: "Groet,\n{name}",
+          signOffName: "Agent",
+        }),
         composeDraft: async () => {
           composeCalls += 1;
           return {
@@ -307,7 +314,18 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
             subject: "Hello",
           };
         },
-        loadContactId: async () => "c1",
+        loadContact: async () => ({
+          id: "c1",
+          firstName: "Jan",
+          name: "Jan",
+          email: "jan@example.com",
+        }),
+        resolveContactByEmail: async () => ({
+          id: "c1",
+          firstName: "Jan",
+          name: "Jan",
+          email: "jan@example.com",
+        }),
         patchThread: async () => null,
       },
     );
@@ -328,6 +346,13 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
           inboxIds: ["inbox_1"],
         }),
         listKnownInboxIds: async () => ["inbox_1"],
+        getTemplates: async () => ({
+          greetingTemplateEn: "Hi {firstName},",
+          greetingTemplateNl: "Beste {firstName},",
+          signOffTemplateEn: "Best,\n{name}",
+          signOffTemplateNl: "Groet,\n{name}",
+          signOffName: "Agent",
+        }),
         composeDraft: async () => {
           composeCalls += 1;
           return {
@@ -345,7 +370,18 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
             subject: "Re: Hello",
           };
         },
-        loadContactId: async () => "c1",
+        loadContact: async () => ({
+          id: "c1",
+          firstName: "Jan",
+          name: "Jan",
+          email: "jan@example.com",
+        }),
+        resolveContactByEmail: async () => ({
+          id: "c1",
+          firstName: "Jan",
+          name: "Jan",
+          email: "jan@example.com",
+        }),
         patchThread: async () => null,
       },
     );

@@ -281,8 +281,18 @@ export function renderEmailReplyShell(
     ResolvedEmailReplyTemplates,
     "greetingTemplate" | "signOffTemplate" | "signOffName"
   >,
+  options?: {
+    /**
+     * When set (including empty), use this first name and never derive one from
+     * `from` / an email local-part (OS-146 agent compose).
+     */
+    firstName?: string | null;
+  },
 ): { greeting: string; signOff: string; firstName: string } {
-  const firstName = parseSenderFirstName(from);
+  const firstName =
+    options && "firstName" in options
+      ? (options.firstName?.trim() || "")
+      : parseSenderFirstName(from);
   const vars = { firstName, name: templates.signOffName };
   const greeting = firstName
     ? renderEmailReplyTemplate(templates.greetingTemplate, vars)
@@ -905,8 +915,9 @@ export function renderEmailComposeShell(
     ResolvedEmailReplyTemplates,
     "greetingTemplate" | "signOffTemplate" | "signOffName"
   >,
+  options?: { firstName?: string | null },
 ): { greeting: string; signOff: string; firstName: string } {
-  return renderEmailReplyShell(to, templates);
+  return renderEmailReplyShell(to, templates, options);
 }
 
 /**
@@ -979,6 +990,9 @@ export function assembleReplyEmail(input: {
 /**
  * Wrap agent body-only output into a sendable plain-text new email.
  * Greeting + sign-off come from workspace settings — not agent-generated.
+ *
+ * Pass `recipientFirstName` (including `""`) to avoid deriving a name from the
+ * To address local-part. Pass `wrap: false` to send the body as-is.
  */
 export function assembleComposeEmail(input: {
   to: string | string[];
@@ -994,6 +1008,10 @@ export function assembleComposeEmail(input: {
   > | null;
   languageHint?: EmailReplyLanguage;
   preserveBody?: boolean;
+  /** When set, never derive a greeting name from the To address. */
+  recipientFirstName?: string | null;
+  /** When false, skip greeting + sign-off and send `body` as the full text. */
+  wrap?: boolean;
 }): AssembledComposeEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language = input.languageHint ?? detectEmailLanguage(input.body);
@@ -1014,8 +1032,29 @@ export function assembleComposeEmail(input: {
   const bccAddresses = normalizeComposeRecipients(input.bcc).filter(
     (address) => !toAndCc.has(address.toLowerCase()),
   );
+  const shouldWrap = input.wrap !== false;
+  if (!shouldWrap) {
+    return {
+      to: toAddresses,
+      cc: ccAddresses,
+      bcc: bccAddresses,
+      subject: input.subject.trim() || "(no subject)",
+      text: body,
+      body,
+      greeting: "",
+      signOff: "",
+    };
+  }
   const primaryTo = greetingPartyFromRecipients(input.to, toAddresses, "");
-  const { greeting, signOff } = renderEmailComposeShell(primaryTo, templates);
+  const shellOptions =
+    input.recipientFirstName !== undefined
+      ? { firstName: input.recipientFirstName }
+      : undefined;
+  const { greeting, signOff } = renderEmailComposeShell(
+    primaryTo,
+    templates,
+    shellOptions,
+  );
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
     to: toAddresses,

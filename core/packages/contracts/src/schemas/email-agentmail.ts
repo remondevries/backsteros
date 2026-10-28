@@ -124,6 +124,8 @@ export const EMAIL_THREAD_STATUSES = [...TASK_STATUSES, "concept"] as const;
 
 export const emailThreadStatusSchema = z.enum(EMAIL_THREAD_STATUSES);
 
+export type EmailThreadStatus = z.infer<typeof emailThreadStatusSchema>;
+
 /** One or more email addresses (string or list) for draft headers. */
 const emailRecipientListSchema = z
   .union([
@@ -560,6 +562,9 @@ export const emailComposeDraftInputSchema = z.object({
   composeSessionId: z.string().min(1).max(200).optional(),
 });
 
+/** Default workflow status for agent-started outbound threads (waiting on customer). */
+export const EMAIL_START_DEFAULT_STATUS = "waiting" as const;
+
 /**
  * Agent-friendly one-shot: start a new email thread (compose + send).
  * Use dryRun/validate to preview without calling AgentMail.
@@ -576,6 +581,18 @@ export const emailStartThreadInputSchema = z.object({
   body: z.string().min(1).max(100_000),
   /** Optional BacksterOS contact to link on the local email thread metadata. */
   contactId: z.string().min(1).optional(),
+  /**
+   * When false, send `body` as-is without greeting/signature wrapping.
+   * Defaults to true. `raw: true` is an alias for `wrap: false`.
+   */
+  wrap: z.boolean().optional(),
+  /** Alias for `wrap: false` — send the body without greeting/signature. */
+  raw: z.boolean().optional(),
+  /**
+   * Local email thread status after send. Defaults to `waiting` (waiting on
+   * customer). Validated against email thread statuses.
+   */
+  status: emailThreadStatusSchema.optional(),
   dryRun: z.boolean().optional(),
   validate: z.boolean().optional(),
 });
@@ -586,9 +603,13 @@ export const emailStartThreadDryRunSchema = z.object({
   to: z.array(z.string()),
   cc: z.array(z.string()),
   bcc: z.array(z.string()),
+  /** Final subject exactly as it would be sent. */
   subject: z.string(),
+  /** Final rendered body (greeting + body + sign-off when wrap is on). */
   body: z.string(),
   contactId: z.string().nullable(),
+  status: emailThreadStatusSchema,
+  wrap: z.boolean(),
 });
 
 export const emailComposeDraftResponseSchema = z.object({

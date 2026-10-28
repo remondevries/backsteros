@@ -2,6 +2,11 @@ import type {
   EmailAgentDraftStarted,
   EmailSendDraftResponse,
   EmailStartThreadResponse,
+  EmailThreadStatus,
+} from "@backsteros/contracts";
+import {
+  EMAIL_START_DEFAULT_STATUS,
+  emailThreadStatusSchema,
 } from "@backsteros/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 
@@ -23,6 +28,7 @@ import {
 import { upsertEmailComposeDraft } from "./drafts.js";
 import { registerEmailAgentCallback } from "../email-agent-callbacks.js";
 import * as emailThreadsService from "../email-threads.js";
+import { lookupContactByChannel } from "../crm-domain/organizations-contacts.js";
 import {
   loadConceptDraftForThreadAcrossInboxes,
   resolveDraftAcrossInboxes,
@@ -34,6 +40,7 @@ import {
 import { db } from "../../db/index.js";
 import { contacts } from "../../db/schema.js";
 import {
+  assembleComposeEmail,
   planDraftSendBodies,
   resolveEditableDraftBody,
   resolveReplyPartyFromMessage,
@@ -379,16 +386,28 @@ function asRecipientList(
     .filter(Boolean);
 }
 
+export type StartEmailContact = {
+  id: string;
+  firstName: string | null;
+  name: string | null;
+  email: string | null;
+};
+
 export type StartEmailThreadDeps = {
   getStoredCredentials: typeof getStoredAgentMailCredentials;
   /** Resolve known AgentMail inbox ids (stored, else live) for dryRun validation. */
   listKnownInboxIds: (workspaceId: string) => Promise<string[]>;
+  getTemplates: typeof getEmailReplyTemplatesForInbox;
   composeDraft: typeof upsertEmailComposeDraft;
   sendDraft: typeof sendAgentMailDraft;
-  loadContactId: (
+  loadContact: (
     workspaceId: string,
     contactId: string,
-  ) => Promise<string | null>;
+  ) => Promise<StartEmailContact | null>;
+  resolveContactByEmail: (
+    workspaceId: string,
+    email: string,
+  ) => Promise<StartEmailContact | null>;
   patchThread: typeof agentMailDraftLifecycleDeps.patchThread;
 };
 
@@ -401,32 +420,94 @@ async function defaultListKnownInboxIds(
   return live.inboxIds;
 }
 
+async function defaultLoadContact(
+  workspaceId: string,
+  contactId: string,
+): Promise<StartEmailContact | null> {
+  const [contact] = await db
+    .select({
+      id: contacts.id,
+      firstName: contacts.firstName,
+      name: contacts.name,
+      email: contacts.email,
+    })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  return contact ?? null;
+}
+
+async function defaultResolveContactByEmail(
+  workspaceId: string,
+  email: string,
+): Promise<StartEmailContact | null> {
+  const row = await lookupContactByChannel(workspaceId, { email });
+  if (!row) return null;
+  return {
+    id: row.id,
+    firstName: row.firstName ?? null,
+    name: row.name ?? null,
+    email: row.email ?? null,
+  };
+}
+
+/** First name from a linked/resolved contact — never from an email local-part. */
+export function recipientFirstNameFromContact(
+  contact: StartEmailContact | null | undefined,
+): string {
+  const first = contact?.firstName?.trim();
+  if (first) return first;
+  const fromName = contact?.name?.trim().split(/\s+/).filter(Boolean)[0] ?? "";
+  if (fromName && !fromName.includes("@")) return fromName;
+  return "";
+}
+
+export function shouldWrapEmailStartBody(input: {
+  wrap?: boolean;
+  raw?: boolean;
+}): boolean {
+  if (input.raw === true) return false;
+  if (input.wrap === false) return false;
+  return true;
+}
+
+export function resolveEmailStartStatus(
+  status: string | undefined,
+): EmailThreadStatus {
+  if (status == null || status === "") {
+    return EMAIL_START_DEFAULT_STATUS;
+  }
+  const parsed = emailThreadStatusSchema.safeParse(status);
+  if (!parsed.success) {
+    throw Object.assign(
+      new AgentMailApiError(400, "", `Invalid email thread status: ${status}`),
+      { code: "invalid_status" },
+    );
+  }
+  return parsed.data;
+}
+
 const defaultStartEmailThreadDeps: StartEmailThreadDeps = {
   getStoredCredentials: getStoredAgentMailCredentials,
   listKnownInboxIds: defaultListKnownInboxIds,
+  getTemplates: getEmailReplyTemplatesForInbox,
   composeDraft: upsertEmailComposeDraft,
   sendDraft: sendAgentMailDraft,
-  loadContactId: async (workspaceId, contactId) => {
-    const [contact] = await db
-      .select({ id: contacts.id })
-      .from(contacts)
-      .where(
-        and(
-          eq(contacts.workspaceId, workspaceId),
-          eq(contacts.id, contactId),
-          isNull(contacts.deletedAt),
-        ),
-      )
-      .limit(1);
-    return contact?.id ?? null;
-  },
+  loadContact: defaultLoadContact,
+  resolveContactByEmail: defaultResolveContactByEmail,
   patchThread: (...args) => agentMailDraftLifecycleDeps.patchThread(...args),
 };
 
 /**
  * Agent-friendly one-shot: compose a new email draft and send it.
- * dryRun/validate skips compose/send but still validates inboxId against
- * known AgentMail inboxes.
+ * dryRun/validate skips compose/send but returns the final rendered subject/body
+ * (greeting + signature unless wrap:false / raw:true).
  */
 export async function startEmailThread(
   workspaceId: string,
@@ -438,6 +519,9 @@ export async function startEmailThread(
     subject: string;
     body: string;
     contactId?: string;
+    wrap?: boolean;
+    raw?: boolean;
+    status?: string;
     dryRun?: boolean;
     validate?: boolean;
   },
@@ -450,6 +534,21 @@ export async function startEmailThread(
   if (to.length === 0) {
     throw new AgentMailApiError(400, "", "At least one To recipient is required");
   }
+
+  const wrap = shouldWrapEmailStartBody(input);
+  const status = resolveEmailStartStatus(input.status);
+
+  let contact: StartEmailContact | null = null;
+  if (input.contactId) {
+    contact = await deps.loadContact(workspaceId, input.contactId);
+    if (!contact) {
+      throw new AgentMailApiError(404, "", "Contact not found");
+    }
+  } else {
+    contact = await deps.resolveContactByEmail(workspaceId, to[0]!);
+  }
+  const recipientFirstName = recipientFirstNameFromContact(contact);
+  const contactId = contact?.id ?? input.contactId ?? null;
 
   if (isDryRun) {
     const stored = await deps.getStoredCredentials(workspaceId);
@@ -467,21 +566,28 @@ export async function startEmailThread(
         { code: "inbox_not_found" },
       );
     }
-    if (input.contactId) {
-      const contact = await deps.loadContactId(workspaceId, input.contactId);
-      if (!contact) {
-        throw new AgentMailApiError(404, "", "Contact not found");
-      }
-    }
-    return {
-      dryRun: true,
-      inboxId: input.inboxId,
+    const templates = await deps.getTemplates(workspaceId, input.inboxId);
+    const assembled = assembleComposeEmail({
       to,
       cc,
       bcc,
       subject: input.subject,
       body: input.body,
-      contactId: input.contactId ?? null,
+      templates,
+      recipientFirstName,
+      wrap,
+    });
+    return {
+      dryRun: true,
+      inboxId: input.inboxId,
+      to: assembled.to,
+      cc: assembled.cc,
+      bcc: assembled.bcc,
+      subject: assembled.subject,
+      body: assembled.text,
+      contactId,
+      status,
+      wrap,
     };
   }
 
@@ -491,6 +597,8 @@ export async function startEmailThread(
     bcc: input.bcc,
     subject: input.subject,
     body: input.body,
+    recipientFirstName,
+    wrap,
   });
   const sent = await deps.sendDraft(
     workspaceId,
@@ -498,19 +606,20 @@ export async function startEmailThread(
     composed.draftId,
   );
 
-  if (input.contactId && sent.threadId) {
+  if (sent.threadId) {
     const threadKey = emailThreadsService.resolveEmailThreadKey({
       threadId: sent.threadId,
       messageId: sent.messageId,
     });
     await deps.patchThread(workspaceId, sent.inboxId, threadKey, {
-      contactId: input.contactId,
+      ...(contactId ? { contactId } : {}),
+      status,
     });
   }
 
   return {
     ...sent,
     draftId: composed.draftId,
-    contactId: input.contactId ?? null,
+    contactId,
   };
 }

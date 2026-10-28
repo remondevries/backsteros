@@ -124,6 +124,8 @@ GET /api/v1/email/inboxes
 # Email (AgentMail) — one-shot start
 POST /api/v1/email/start
 { "inboxId": "…", "to": "jan@example.com", "subject": "Hi", "body": "…", "contactId": "…", "dryRun": true }
+# dryRun returns the final rendered subject/body (greeting uses contact firstName, never the email local-part).
+# Optional: "raw": true or "wrap": false to send body as-is; "status": "waiting"|"in_progress"|… (default waiting).
 POST /api/v1/email/start
 Idempotency-Key: email-2026-10-28-1
 { "inboxId": "…", "to": "jan@example.com", "subject": "Hi", "body": "…", "contactId": "…" }
