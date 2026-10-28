@@ -41,6 +41,16 @@ import {
 } from "./chat-service.js";
 import { notifyPeerOfEntityWrite } from "./core-replication/nudge.js";
 import { publishChatUpdated } from "../lib/chat-events.js";
+import {
+  normalizePhoneDigits,
+  pickWhatsAppRecipientPhone,
+} from "../lib/phone-e164.js";
+
+export {
+  dropNationalTrunkZero,
+  normalizePhoneDigits,
+  pickWhatsAppRecipientPhone,
+} from "../lib/phone-e164.js";
 
 function badRequest(
   message: string,
@@ -54,18 +64,12 @@ function notFound(message: string): Error {
   return Object.assign(new Error(message), { status: 404, code: "not_found" });
 }
 
-export function normalizePhoneDigits(
-  raw: string | null | undefined,
-): string | null {
-  if (!raw?.trim()) return null;
-  const digits = raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
-  return digits || null;
-}
-
 function primaryPhone(contact: {
   phone: string | null;
-  phones: { number: string }[] | null;
+  phones: { number: string; label?: string | null }[] | null;
 }): string | null {
+  const preferred = pickWhatsAppRecipientPhone(contact);
+  if (preferred) return preferred;
   const primary = contact.phone?.trim();
   if (primary) return primary;
   for (const entry of contact.phones ?? []) {
@@ -210,7 +214,7 @@ type LoadedContact = {
   name: string;
   email: string | null;
   phone: string | null;
-  phones: { number: string }[] | null;
+  phones: { number: string; label?: string | null }[] | null;
   socialAccounts: { platform: string; url: string }[] | null;
   facebookMessengerId: string | null;
   xUserId: string | null;
@@ -595,7 +599,7 @@ export async function ensureChatwootContact(
   let sourceId = input.sourceId;
 
   if (channel === "whatsapp") {
-    const phone = primaryPhone(contact);
+    const phone = pickWhatsAppRecipientPhone(contact);
     const phoneDigits = normalizePhoneDigits(phone);
     if (!phoneDigits) {
       throw badRequest(
@@ -774,7 +778,7 @@ async function getMessagingWindowWithDeps(
   let hasChannelIdentity = false;
   let sourceId: string | null = null;
   if (input.channel === "whatsapp") {
-    sourceId = normalizePhoneDigits(primaryPhone(contact));
+    sourceId = normalizePhoneDigits(pickWhatsAppRecipientPhone(contact));
     hasChannelIdentity = Boolean(sourceId);
   } else if (input.channel === "messenger") {
     sourceId =
@@ -840,13 +844,24 @@ export async function createChatConversation(
   );
 
   if (isDryRun) {
-    // No Chatwoot calls: skip inbox list / contact ensure / send.
+    // Resolve default channel inbox (read-only list) when inboxId omitted;
+    // still skip contact ensure / send.
+    let inboxId = input.inboxId?.trim() || null;
+    if (!inboxId) {
+      const inbox = await resolveInboxIdWithDeps(
+        workspaceId,
+        input.channel,
+        null,
+        deps,
+      );
+      inboxId = inbox.id;
+    }
     return {
       dryRun: true,
       channel: input.channel,
       contactId: contact.id,
       contactName: contact.name ?? null,
-      inboxId: input.inboxId?.trim() || null,
+      inboxId,
       sourceId: window.sourceId,
       window,
       requiresTemplate: window.requiresTemplate,

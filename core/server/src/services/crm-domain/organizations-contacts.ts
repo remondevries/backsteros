@@ -1,5 +1,11 @@
 import { and, asc, eq, gte, ilike, isNull, ne, or, sql, type SQL } from "drizzle-orm";
-import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
+import {
+  contactMatchesEmailAddress,
+  normalizeContactEmailsInput,
+  normalizeContactPhonesInput,
+} from "@backsteros/contracts";
+
+import { normalizePhoneDigits } from "../../lib/phone-e164.js";
 
 import { areas, contacts, organizations } from "../../db/schema.js";
 import { db } from "../../db/index.js";
@@ -692,10 +698,6 @@ export async function deleteContact(
   return row ?? null;
 }
 
-function normalizeLookupPhoneDigits(raw: string): string {
-  return raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
-}
-
 function socialHandleMatches(
   accounts: unknown,
   platforms: readonly string[],
@@ -734,6 +736,7 @@ export async function lookupContactByChannel(
     channel?: string;
     value?: string;
     phone?: string;
+    email?: string;
     xUserId?: string;
     instagram?: string;
     telegram?: string;
@@ -746,6 +749,8 @@ export async function lookupContactByChannel(
     input.phone?.trim() ||
     (channel === "whatsapp" || channel === "phone" ? value : "") ||
     "";
+  const email =
+    input.email?.trim() || (channel === "email" ? value : "") || "";
   const xUserId =
     input.xUserId?.trim() ||
     (channel === "x" || channel === "twitter" ? value.replace(/^@/, "") : "") ||
@@ -763,7 +768,7 @@ export async function lookupContactByChannel(
     (channel === "messenger" || channel === "facebook" ? value : "") ||
     "";
 
-  if (!phone && !xUserId && !instagram && !telegram && !messenger) {
+  if (!phone && !email && !xUserId && !instagram && !telegram && !messenger) {
     return null;
   }
 
@@ -776,7 +781,7 @@ export async function lookupContactByChannel(
 
   const matches = rows.filter((row) => {
     if (phone) {
-      const want = normalizeLookupPhoneDigits(phone);
+      const want = normalizePhoneDigits(phone);
       if (!want) return false;
       const candidates = [
         row.phone,
@@ -788,8 +793,18 @@ export async function lookupContactByChannel(
             )
           : []),
       ];
-      return candidates.some(
-        (c) => c && normalizeLookupPhoneDigits(c) === want,
+      return candidates.some((c) => {
+        if (!c) return false;
+        return normalizePhoneDigits(c) === want;
+      });
+    }
+    if (email) {
+      return contactMatchesEmailAddress(
+        {
+          email: row.email,
+          emails: Array.isArray(row.emails) ? row.emails : [],
+        },
+        email,
       );
     }
     if (xUserId) {

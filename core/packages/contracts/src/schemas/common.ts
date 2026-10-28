@@ -556,13 +556,14 @@ export const listOrganizationsQuerySchema = listPaginationQuerySchema.extend({
   search: z.string().optional(),
 });
 
-/** Resolve one contact by channel handle / phone / X id (OS-146). */
+/** Resolve one contact by channel handle / phone / email / X id (OS-146). */
 export const contactLookupQuerySchema = z
   .object({
     channel: z
       .enum([
         "whatsapp",
         "phone",
+        "email",
         "instagram",
         "telegram",
         "messenger",
@@ -573,6 +574,7 @@ export const contactLookupQuerySchema = z
       .optional(),
     value: z.string().min(1).max(320).optional(),
     phone: z.string().min(1).max(64).optional(),
+    email: z.string().min(1).max(320).optional(),
     xUserId: z.string().min(1).max(64).optional(),
     instagram: z.string().min(1).max(128).optional(),
     telegram: z.string().min(1).max(128).optional(),
@@ -582,6 +584,7 @@ export const contactLookupQuerySchema = z
     (q) =>
       Boolean(
         q.phone ||
+          q.email ||
           q.xUserId ||
           q.instagram ||
           q.telegram ||
@@ -590,7 +593,7 @@ export const contactLookupQuerySchema = z
       ),
     {
       message:
-        "Provide channel+value or one of phone, xUserId, instagram, telegram, messenger",
+        "Provide channel+value or one of phone, email, xUserId, instagram, telegram, messenger",
     },
   );
 
