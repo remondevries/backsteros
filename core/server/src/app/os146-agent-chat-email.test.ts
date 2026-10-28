@@ -51,37 +51,92 @@ function mount(register: (app: Hono) => void, auth: AuthContext): Hono {
   return app;
 }
 
-function chatDeps() {
-  let externalCalls = 0;
+function chatDeps(overrides: {
+  phone?: string | null;
+  phones?: { number: string; label?: string }[];
+  inboxes?: Array<{
+    id: string;
+    name: string;
+    channelType: string;
+    channel:
+      | "whatsapp"
+      | "instagram"
+      | "messenger"
+      | "telegram"
+      | "support"
+      | "x";
+  }>;
+} = {}) {
+  let writeCalls = 0;
+  let listInboxCalls = 0;
   return {
-    externalCalls: () => externalCalls,
+    writeCalls: () => writeCalls,
+    listInboxCalls: () => listInboxCalls,
+    /** @deprecated use writeCalls — dryRun may list inboxes */
+    externalCalls: () => writeCalls,
     loadContact: async () =>
       ({
         id: "c1",
         name: "Jan",
-        phone: "+31612345678",
-        phones: [],
+        phone: overrides.phone === undefined ? "+31612345678" : overrides.phone,
+        phones: overrides.phones ?? [],
         email: "jan@example.com",
         facebookMessengerId: "psid-1",
         xUserId: "12345",
       }) as never,
     findLocalChannelConversation: async () => null,
     lastIncomingAtForConversation: async () => null,
-    listChannelInboxes: async () => {
-      externalCalls += 1;
+    listChannelInboxes: async (
+      _ws: string,
+      channel?: string,
+    ) => {
+      listInboxCalls += 1;
+      const all = overrides.inboxes ?? [
+        {
+          id: "7",
+          name: "WA",
+          channelType: "Channel::Whatsapp",
+          channel: "whatsapp" as const,
+        },
+        {
+          id: "1",
+          name: "IG",
+          channelType: "Channel::Instagram",
+          channel: "instagram" as const,
+        },
+        {
+          id: "2",
+          name: "FB",
+          channelType: "Channel::Facebook",
+          channel: "messenger" as const,
+        },
+        {
+          id: "3",
+          name: "TG",
+          channelType: "Channel::Telegram",
+          channel: "telegram" as const,
+        },
+        {
+          id: "4",
+          name: "Support",
+          channelType: "Channel::Email",
+          channel: "support" as const,
+        },
+        {
+          id: "5",
+          name: "X",
+          channelType: "Channel::Api",
+          channel: "x" as const,
+        },
+      ];
       return {
-        inboxes: [
-          {
-            id: "1",
-            name: "WA",
-            channelType: "Channel::Whatsapp",
-            channel: "whatsapp" as const,
-          },
-        ],
+        inboxes: channel
+          ? all.filter((inbox) => inbox.channel === channel)
+          : all,
       };
     },
     getChatwootCredentials: async () => {
-      externalCalls += 1;
+      writeCalls += 1;
       return {
         baseUrl: "https://example.test",
         accountId: "1",
@@ -89,15 +144,15 @@ function chatDeps() {
       };
     },
     createChatwootClient: () => {
-      externalCalls += 1;
+      writeCalls += 1;
       throw new Error("Chatwoot client should not be created");
     },
     upsertConversationFromChatwoot: async () => {
-      externalCalls += 1;
+      writeCalls += 1;
       throw new Error("no");
     },
     upsertMessageFromChatwoot: async () => {
-      externalCalls += 1;
+      writeCalls += 1;
       throw new Error("no");
     },
     getChatConversation: async () => null,
@@ -129,7 +184,7 @@ describe("OS-146 agent chat/email", () => {
     assert.equal((await app.request("/api/v1/settings")).status, 403);
   });
 
-  it("dryRun create conversation makes no Chatwoot call", async () => {
+  it("dryRun create conversation makes no Chatwoot write call", async () => {
     const deps = chatDeps();
     const preview = await chatCreateService.createChatConversation(
       "ws_1",
@@ -146,10 +201,63 @@ describe("OS-146 agent chat/email", () => {
       (preview as { requiresTemplate?: boolean }).requiresTemplate,
       true,
     );
-    assert.equal(deps.externalCalls(), 0);
+    assert.equal((preview as { inboxId?: string | null }).inboxId, "7");
+    assert.equal(
+      (preview as { sourceId?: string | null }).sourceId,
+      "31612345678",
+    );
+    assert.equal(deps.writeCalls(), 0);
+    assert.ok(deps.listInboxCalls() >= 1);
   });
 
-  it("dryRun works for each chat channel without Chatwoot", async () => {
+  it("dryRun resolves default WhatsApp inbox and normalises landline sourceId", async () => {
+    const deps = chatDeps({
+      phone: "+31 (0) 58 266 42 42",
+      phones: [{ label: "work", number: "+31 (0) 58 266 42 42" }],
+    });
+    const preview = await chatCreateService.createChatConversation(
+      "ws_1",
+      {
+        channel: "whatsapp",
+        contactId: "c1",
+        content: "Hello",
+        dryRun: true,
+      },
+      deps,
+    );
+    assert.equal((preview as { inboxId?: string | null }).inboxId, "7");
+    assert.equal(
+      (preview as { sourceId?: string | null }).sourceId,
+      "31582664242",
+    );
+    assert.equal(deps.writeCalls(), 0);
+  });
+
+  it("dryRun prefers mobile over landline for WhatsApp sourceId", async () => {
+    const deps = chatDeps({
+      phone: "+31 (0) 58 266 42 42",
+      phones: [
+        { label: "work", number: "+31 (0) 58 266 42 42" },
+        { label: "mobile", number: "+31 (0)6 461 96 570" },
+      ],
+    });
+    const preview = await chatCreateService.createChatConversation(
+      "ws_1",
+      {
+        channel: "whatsapp",
+        contactId: "c1",
+        content: "Hello",
+        dryRun: true,
+      },
+      deps,
+    );
+    assert.equal(
+      (preview as { sourceId?: string | null }).sourceId,
+      "31646196570",
+    );
+  });
+
+  it("dryRun works for each chat channel without Chatwoot writes", async () => {
     const channels = [
       "whatsapp",
       "instagram",
@@ -173,7 +281,8 @@ describe("OS-146 agent chat/email", () => {
       );
       assert.equal((preview as { dryRun?: boolean }).dryRun, true);
       assert.equal((preview as { channel?: string }).channel, channel);
-      assert.equal(deps.externalCalls(), 0);
+      assert.ok((preview as { inboxId?: string | null }).inboxId);
+      assert.equal(deps.writeCalls(), 0);
     }
   });
 
@@ -214,7 +323,7 @@ describe("OS-146 agent chat/email", () => {
     assert.equal(runs, 1);
   });
 
-  it("email start dryRun makes no AgentMail call", async () => {
+  it("email start dryRun makes no AgentMail compose/send call", async () => {
     let composeCalls = 0;
     let sendCalls = 0;
     const { startEmailThread } = await import(
@@ -235,6 +344,7 @@ describe("OS-146 agent chat/email", () => {
           inboxId: "inbox_1",
           inboxIds: ["inbox_1"],
         }),
+        listKnownInboxIds: async () => ["inbox_1"],
         composeDraft: async () => {
           composeCalls += 1;
           throw new Error("compose should not run");
@@ -250,6 +360,48 @@ describe("OS-146 agent chat/email", () => {
     assert.equal((preview as { dryRun?: boolean }).dryRun, true);
     assert.equal(composeCalls, 0);
     assert.equal(sendCalls, 0);
+  });
+
+  it("email start dryRun rejects unknown inboxId with inbox_not_found", async () => {
+    const { startEmailThread } = await import(
+      "../services/agentmail-settings/send-lifecycle.js"
+    );
+    await assert.rejects(
+      () =>
+        startEmailThread(
+          "ws_1",
+          {
+            inboxId: "inbox_missing",
+            to: "jan@example.com",
+            subject: "Hello",
+            body: "Body",
+            dryRun: true,
+          },
+          {
+            getStoredCredentials: async () => ({
+              apiKey: "am_stored",
+              inboxId: null,
+              inboxIds: [],
+            }),
+            listKnownInboxIds: async () => ["inbox_real"],
+            composeDraft: async () => {
+              throw new Error("compose should not run");
+            },
+            sendDraft: async () => {
+              throw new Error("send should not run");
+            },
+            loadContactId: async () => "c1",
+            patchThread: async () => null,
+          },
+        ),
+      (error: unknown) =>
+        Boolean(
+          error &&
+            typeof error === "object" &&
+            (error as { code?: string }).code === "inbox_not_found" &&
+            (error as { status?: number }).status === 404,
+        ),
+    );
   });
 
   it("agent without chat:write cannot create conversations", async () => {

@@ -111,7 +111,9 @@ email messages. Requires `chat:read` or `email:read`.
 
 ```http
 # Resolve contact
-GET /api/v1/contacts/lookup?phone=%2B31612345678
+GET /api/v1/contacts/lookup?phone=%2B31%20(0)6%20461%2096%20570
+GET /api/v1/contacts/lookup?email=jan%40example.com
+GET /api/v1/contacts/lookup?channel=email&value=jan%40example.com
 GET /api/v1/contacts/lookup?channel=x&value=123456789
 GET /api/v1/contacts/lookup?instagram=jan
 

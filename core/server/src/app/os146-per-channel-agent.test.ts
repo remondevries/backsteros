@@ -289,6 +289,7 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
           inboxId: "inbox_1",
           inboxIds: ["inbox_1"],
         }),
+        listKnownInboxIds: async () => ["inbox_1"],
         composeDraft: async () => {
           composeCalls += 1;
           return {
@@ -326,6 +327,7 @@ describe("OS-146 per-channel create + follow-up (agent scopes, no settings)", ()
           inboxId: "inbox_1",
           inboxIds: ["inbox_1"],
         }),
+        listKnownInboxIds: async () => ["inbox_1"],
         composeDraft: async () => {
           composeCalls += 1;
           return {

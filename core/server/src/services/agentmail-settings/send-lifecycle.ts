@@ -381,6 +381,8 @@ function asRecipientList(
 
 export type StartEmailThreadDeps = {
   getStoredCredentials: typeof getStoredAgentMailCredentials;
+  /** Resolve known AgentMail inbox ids (stored, else live) for dryRun validation. */
+  listKnownInboxIds: (workspaceId: string) => Promise<string[]>;
   composeDraft: typeof upsertEmailComposeDraft;
   sendDraft: typeof sendAgentMailDraft;
   loadContactId: (
@@ -390,8 +392,18 @@ export type StartEmailThreadDeps = {
   patchThread: typeof agentMailDraftLifecycleDeps.patchThread;
 };
 
+async function defaultListKnownInboxIds(
+  workspaceId: string,
+): Promise<string[]> {
+  const stored = await getStoredAgentMailCredentials(workspaceId);
+  if (stored.inboxIds.length > 0) return stored.inboxIds;
+  const live = await getAgentMailCredentials(workspaceId);
+  return live.inboxIds;
+}
+
 const defaultStartEmailThreadDeps: StartEmailThreadDeps = {
   getStoredCredentials: getStoredAgentMailCredentials,
+  listKnownInboxIds: defaultListKnownInboxIds,
   composeDraft: upsertEmailComposeDraft,
   sendDraft: sendAgentMailDraft,
   loadContactId: async (workspaceId, contactId) => {
@@ -413,7 +425,8 @@ const defaultStartEmailThreadDeps: StartEmailThreadDeps = {
 
 /**
  * Agent-friendly one-shot: compose a new email draft and send it.
- * dryRun/validate resolves the target from stored credentials only — no AgentMail call.
+ * dryRun/validate skips compose/send but still validates inboxId against
+ * known AgentMail inboxes.
  */
 export async function startEmailThread(
   workspaceId: string,
@@ -443,14 +456,15 @@ export async function startEmailThread(
     if (!stored.apiKey) {
       throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
     }
-    if (
-      stored.inboxIds.length > 0 &&
-      !stored.inboxIds.includes(input.inboxId)
-    ) {
-      throw new AgentMailApiError(
-        400,
-        "",
-        `Inbox ${input.inboxId} is not in the configured AgentMail inbox list`,
+    const inboxIds = await deps.listKnownInboxIds(workspaceId);
+    if (!inboxIds.includes(input.inboxId)) {
+      throw Object.assign(
+        new AgentMailApiError(
+          404,
+          "",
+          `AgentMail inbox ${input.inboxId} was not found`,
+        ),
+        { code: "inbox_not_found" },
       );
     }
     if (input.contactId) {

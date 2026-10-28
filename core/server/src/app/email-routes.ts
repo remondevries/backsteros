@@ -113,11 +113,18 @@ export function registerEmailRoutes(app: Hono) {
         if (error instanceof AgentMailApiError) {
           const status =
             error.status === 404 ? (404 as const) : (400 as const);
+          const maybeCode = (error as unknown as { code?: unknown }).code;
+          const code =
+            typeof maybeCode === "string"
+              ? maybeCode
+              : status === 404
+                ? "not_found"
+                : "bad_request";
           return {
             status,
             body: {
               error: error.message,
-              code: status === 404 ? "not_found" : "bad_request",
+              code,
             },
           };
         }
