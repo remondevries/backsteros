@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull } from "drizzle-orm";
 
 import type {
   ChatConversation,
@@ -353,6 +353,9 @@ export async function listChatConversations(
   ];
   if (query.status) {
     conditions.push(eq(chatConversations.status, query.status));
+  }
+  if (query.updatedSince) {
+    conditions.push(gte(chatConversations.lastActivityAt, query.updatedSince));
   }
   const rows = await db
     .select()

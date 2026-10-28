@@ -692,6 +692,129 @@ export async function deleteContact(
   return row ?? null;
 }
 
+function normalizeLookupPhoneDigits(raw: string): string {
+  return raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
+}
+
+function socialHandleMatches(
+  accounts: unknown,
+  platforms: readonly string[],
+  value: string,
+): boolean {
+  if (!Array.isArray(accounts)) return false;
+  const needle = value.replace(/^@/, "").trim().toLowerCase();
+  if (!needle) return false;
+  const platformSet = new Set(platforms.map((p) => p.toLowerCase()));
+  for (const entry of accounts) {
+    if (!entry || typeof entry !== "object") continue;
+    const platform = String(
+      (entry as { platform?: unknown }).platform ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (!platformSet.has(platform)) continue;
+    const url = String((entry as { url?: unknown }).url ?? "")
+      .trim()
+      .toLowerCase();
+    if (!url) continue;
+    if (url === needle || url.includes(needle) || url.endsWith(`/${needle}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Resolve a contact by channel handle / phone / X user id (OS-146).
+ * Returns at most one exact match; empty when none.
+ */
+export async function lookupContactByChannel(
+  workspaceId: string,
+  input: {
+    channel?: string;
+    value?: string;
+    phone?: string;
+    xUserId?: string;
+    instagram?: string;
+    telegram?: string;
+    messenger?: string;
+  },
+) {
+  const channel = (input.channel ?? "").trim().toLowerCase();
+  const value = (input.value ?? "").trim();
+  const phone =
+    input.phone?.trim() ||
+    (channel === "whatsapp" || channel === "phone" ? value : "") ||
+    "";
+  const xUserId =
+    input.xUserId?.trim() ||
+    (channel === "x" || channel === "twitter" ? value.replace(/^@/, "") : "") ||
+    "";
+  const instagram =
+    input.instagram?.trim() ||
+    (channel === "instagram" ? value.replace(/^@/, "") : "") ||
+    "";
+  const telegram =
+    input.telegram?.trim() ||
+    (channel === "telegram" ? value.replace(/^@/, "") : "") ||
+    "";
+  const messenger =
+    input.messenger?.trim() ||
+    (channel === "messenger" || channel === "facebook" ? value : "") ||
+    "";
+
+  if (!phone && !xUserId && !instagram && !telegram && !messenger) {
+    return null;
+  }
+
+  const rows = await db
+    .select()
+    .from(contacts)
+    .where(
+      and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt)),
+    );
+
+  const matches = rows.filter((row) => {
+    if (phone) {
+      const want = normalizeLookupPhoneDigits(phone);
+      if (!want) return false;
+      const candidates = [
+        row.phone,
+        ...(Array.isArray(row.phones)
+          ? row.phones.map((p) =>
+              p && typeof p === "object"
+                ? String((p as { number?: unknown }).number ?? "")
+                : "",
+            )
+          : []),
+      ];
+      return candidates.some(
+        (c) => c && normalizeLookupPhoneDigits(c) === want,
+      );
+    }
+    if (xUserId) {
+      if (/^\d+$/.test(xUserId) && row.xUserId === xUserId) return true;
+      return socialHandleMatches(row.socialAccounts, ["x", "twitter"], xUserId);
+    }
+    if (instagram) {
+      return socialHandleMatches(
+        row.socialAccounts,
+        ["instagram"],
+        instagram,
+      );
+    }
+    if (telegram) {
+      return socialHandleMatches(row.socialAccounts, ["telegram"], telegram);
+    }
+    if (messenger) {
+      return row.facebookMessengerId?.trim() === messenger;
+    }
+    return false;
+  });
+
+  return matches[0] ?? null;
+}
+
 export function listAreas(workspaceId: string) {
   return db
     .select()

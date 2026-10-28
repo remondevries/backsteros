@@ -1,4 +1,8 @@
-import type { EmailAgentDraftStarted, EmailSendDraftResponse } from "@backsteros/contracts";
+import type {
+  EmailAgentDraftStarted,
+  EmailSendDraftResponse,
+  EmailStartThreadResponse,
+} from "@backsteros/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { decideEmailCommand } from "../../lib/email-command-intent.js";
@@ -13,8 +17,10 @@ import {
   getAgentMailCredentials,
   getEmailReplyTemplatesForInbox,
   getSecretRow,
+  getStoredAgentMailCredentials,
   resolveInboxEmail,
 } from "./settings.js";
+import { upsertEmailComposeDraft } from "./drafts.js";
 import { registerEmailAgentCallback } from "../email-agent-callbacks.js";
 import * as emailThreadsService from "../email-threads.js";
 import {
@@ -342,5 +348,140 @@ export async function sendAgentMailDraft(
     threadId: sent.threadId,
     subject: draft.subject ?? "",
     inReplyToMessageId: draft.inReplyTo,
+  };
+}
+
+function asRecipientList(
+  value: string | string[] | null | undefined,
+): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.map((entry) => entry.trim()).filter(Boolean);
+  }
+  return value
+    .split(/[,;]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+export type StartEmailThreadDeps = {
+  getStoredCredentials: typeof getStoredAgentMailCredentials;
+  composeDraft: typeof upsertEmailComposeDraft;
+  sendDraft: typeof sendAgentMailDraft;
+  loadContactId: (
+    workspaceId: string,
+    contactId: string,
+  ) => Promise<string | null>;
+  patchThread: typeof agentMailDraftLifecycleDeps.patchThread;
+};
+
+const defaultStartEmailThreadDeps: StartEmailThreadDeps = {
+  getStoredCredentials: getStoredAgentMailCredentials,
+  composeDraft: upsertEmailComposeDraft,
+  sendDraft: sendAgentMailDraft,
+  loadContactId: async (workspaceId, contactId) => {
+    const [contact] = await db
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.workspaceId, workspaceId),
+          eq(contacts.id, contactId),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    return contact?.id ?? null;
+  },
+  patchThread: (...args) => agentMailDraftLifecycleDeps.patchThread(...args),
+};
+
+/**
+ * Agent-friendly one-shot: compose a new email draft and send it.
+ * dryRun/validate resolves the target from stored credentials only — no AgentMail call.
+ */
+export async function startEmailThread(
+  workspaceId: string,
+  input: {
+    inboxId: string;
+    to: string | string[];
+    cc?: string | string[] | null;
+    bcc?: string | string[] | null;
+    subject: string;
+    body: string;
+    contactId?: string;
+    dryRun?: boolean;
+    validate?: boolean;
+  },
+  deps: StartEmailThreadDeps = defaultStartEmailThreadDeps,
+): Promise<EmailStartThreadResponse> {
+  const isDryRun = Boolean(input.dryRun || input.validate);
+  const to = asRecipientList(input.to);
+  const cc = asRecipientList(input.cc);
+  const bcc = asRecipientList(input.bcc);
+  if (to.length === 0) {
+    throw new AgentMailApiError(400, "", "At least one To recipient is required");
+  }
+
+  if (isDryRun) {
+    const stored = await deps.getStoredCredentials(workspaceId);
+    if (!stored.apiKey) {
+      throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+    }
+    if (
+      stored.inboxIds.length > 0 &&
+      !stored.inboxIds.includes(input.inboxId)
+    ) {
+      throw new AgentMailApiError(
+        400,
+        "",
+        `Inbox ${input.inboxId} is not in the configured AgentMail inbox list`,
+      );
+    }
+    if (input.contactId) {
+      const contact = await deps.loadContactId(workspaceId, input.contactId);
+      if (!contact) {
+        throw new AgentMailApiError(404, "", "Contact not found");
+      }
+    }
+    return {
+      dryRun: true,
+      inboxId: input.inboxId,
+      to,
+      cc,
+      bcc,
+      subject: input.subject,
+      body: input.body,
+      contactId: input.contactId ?? null,
+    };
+  }
+
+  const composed = await deps.composeDraft(workspaceId, input.inboxId, {
+    to: input.to,
+    cc: input.cc,
+    bcc: input.bcc,
+    subject: input.subject,
+    body: input.body,
+  });
+  const sent = await deps.sendDraft(
+    workspaceId,
+    composed.inboxId,
+    composed.draftId,
+  );
+
+  if (input.contactId && sent.threadId) {
+    const threadKey = emailThreadsService.resolveEmailThreadKey({
+      threadId: sent.threadId,
+      messageId: sent.messageId,
+    });
+    await deps.patchThread(workspaceId, sent.inboxId, threadKey, {
+      contactId: input.contactId,
+    });
+  }
+
+  return {
+    ...sent,
+    draftId: composed.draftId,
+    contactId: input.contactId ?? null,
   };
 }

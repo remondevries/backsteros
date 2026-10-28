@@ -6,6 +6,7 @@ import type {
   ChatInboxesList,
   ChatMessagingWindow,
   ChatWhatsAppTemplatesList,
+  CreateChatConversationDryRun,
   CreateChatConversationInput,
 } from "@backsteros/contracts";
 
@@ -41,8 +42,12 @@ import {
 import { notifyPeerOfEntityWrite } from "./core-replication/nudge.js";
 import { publishChatUpdated } from "../lib/chat-events.js";
 
-function badRequest(message: string, code = "bad_request"): Error {
-  return Object.assign(new Error(message), { status: 400, code });
+function badRequest(
+  message: string,
+  code = "bad_request",
+  status = 400,
+): Error {
+  return Object.assign(new Error(message), { status, code });
 }
 
 function notFound(message: string): Error {
@@ -822,13 +827,9 @@ export async function createChatConversation(
   workspaceId: string,
   input: CreateChatConversationInput,
   deps: CreateChatConversationDeps = defaultDeps,
-): Promise<ChatConversationDetail> {
-  const inbox = await resolveInboxIdWithDeps(
-    workspaceId,
-    input.channel,
-    input.inboxId,
-    deps,
-  );
+): Promise<ChatConversationDetail | CreateChatConversationDryRun> {
+  const isDryRun = Boolean(input.dryRun || input.validate);
+
   const { contact, local, window } = await getMessagingWindowWithDeps(
     workspaceId,
     {
@@ -838,6 +839,25 @@ export async function createChatConversation(
     deps,
   );
 
+  if (isDryRun) {
+    // No Chatwoot calls: skip inbox list / contact ensure / send.
+    return {
+      dryRun: true,
+      channel: input.channel,
+      contactId: contact.id,
+      contactName: contact.name ?? null,
+      inboxId: input.inboxId?.trim() || null,
+      sourceId: window.sourceId,
+      window,
+      requiresTemplate: window.requiresTemplate,
+      template: input.template ?? null,
+      content: input.content,
+      subject: input.subject?.trim() || null,
+      conversationId: local?.id ?? null,
+    };
+  }
+
+  // Validate before any Chatwoot inbox/API call.
   if (input.channel === "telegram" && !local?.externalId) {
     throw badRequest(
       window.reason ??
@@ -852,18 +872,27 @@ export async function createChatConversation(
         window.reason ??
           "WhatsApp requires an approved message template outside the 24-hour window.",
         "template_required",
+        422,
       );
     }
   } else if (!window.open) {
     throw badRequest(
       window.reason ?? `${input.channel} messaging window is closed.`,
       "messaging_window_closed",
+      422,
     );
   }
 
   if (input.channel === "support" && !input.subject?.trim()) {
     throw badRequest("Support tickets require a subject.", "subject_required");
   }
+
+  const inbox = await resolveInboxIdWithDeps(
+    workspaceId,
+    input.channel,
+    input.inboxId,
+    deps,
+  );
 
   const credentials = await deps.getChatwootCredentials(workspaceId);
   if (!credentials) throw badRequest("Chatwoot is not configured.");

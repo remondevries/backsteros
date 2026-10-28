@@ -18,25 +18,31 @@ import {
 } from "../lib/chat-events.js";
 import { ChatwootApiError } from "../lib/chatwoot-client.js";
 import { chatwootHeadersFromRequest } from "../lib/chatwoot-webhook.js";
+import {
+  readIdempotencyKey,
+  withIdempotency,
+} from "../lib/idempotency.js";
 import * as chatCreateService from "../services/chat-create-conversation.js";
 import * as chatService from "../services/chat-service.js";
 import * as chatwootSettingsService from "../services/chatwoot-settings.js";
 import { can, forbidden, getAuth, notFound } from "./route-helpers.js";
 
-function chatErrorStatus(error: unknown): 400 | 404 {
+function chatErrorStatus(error: unknown): 400 | 404 | 422 {
   if (
     error &&
     typeof error === "object" &&
     "status" in error &&
-    (error as { status?: unknown }).status === 404
+    typeof (error as { status?: unknown }).status === "number"
   ) {
-    return 404;
+    const status = (error as { status: number }).status;
+    if (status === 404) return 404;
+    if (status === 422) return 422;
   }
   if (error instanceof ChatwootApiError && error.status === 404) return 404;
   return 400;
 }
 
-function chatErrorCode(error: unknown, status: 400 | 404): string {
+function chatErrorCode(error: unknown, status: 400 | 404 | 422): string {
   if (
     error &&
     typeof error === "object" &&
@@ -45,7 +51,9 @@ function chatErrorCode(error: unknown, status: 400 | 404): string {
   ) {
     return (error as { code: string }).code;
   }
-  return status === 404 ? "not_found" : "bad_request";
+  if (status === 404) return "not_found";
+  if (status === 422) return "unprocessable";
+  return "bad_request";
 }
 
 export function registerChatRoutes(app: Hono) {
@@ -98,7 +106,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.get("/api/v1/chat/events", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const workspaceId = auth.workspaceId;
     return streamSSE(c, async (stream) => {
       let closed = false;
@@ -163,7 +171,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.post("/api/v1/chat/sync", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
     try {
       return c.json(
         await chatService.syncChatwootConversations(auth.workspaceId),
@@ -177,7 +185,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.get("/api/v1/chat/conversations", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const parsed = listChatConversationsQuerySchema.safeParse(c.req.query());
     if (!parsed.success) {
       return c.json(
@@ -192,7 +200,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.post("/api/v1/chat/conversations", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
     const parsed = createChatConversationInputSchema.safeParse(
       await c.req.json(),
     );
@@ -202,29 +210,54 @@ export function registerChatRoutes(app: Hono) {
         400,
       );
     }
-    try {
-      return c.json(
-        await chatCreateService.createChatConversation(
+    const validateQ = c.req.query("validate");
+    const wantDryRun =
+      Boolean(parsed.data.dryRun) ||
+      Boolean(parsed.data.validate) ||
+      validateQ === "1" ||
+      validateQ === "true";
+    const input = {
+      ...parsed.data,
+      dryRun: wantDryRun ? true : parsed.data.dryRun,
+      validate: wantDryRun ? true : parsed.data.validate,
+    };
+    const idempotencyKey = readIdempotencyKey(
+      c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key"),
+    );
+    const runCreate = async () => {
+      try {
+        const body = await chatCreateService.createChatConversation(
           auth.workspaceId,
-          parsed.data,
-        ),
-      );
-    } catch (error) {
-      const status = chatErrorStatus(error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not create conversation";
-      return c.json(
-        { error: message, code: chatErrorCode(error, status) },
-        status,
-      );
+          input,
+        );
+        return { status: 200 as const, body };
+      } catch (error) {
+        const status = chatErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not create conversation";
+        return {
+          status,
+          body: { error: message, code: chatErrorCode(error, status) },
+        };
+      }
+    };
+    if (idempotencyKey && !wantDryRun) {
+      const scope =
+        auth.apiKeyId != null
+          ? `api_key:${auth.apiKeyId}:chat`
+          : `ws:${auth.workspaceId}:chat`;
+      const result = await withIdempotency(scope, idempotencyKey, runCreate);
+      return c.json(result.body, result.status as 200 | 400 | 404 | 422);
     }
+    const result = await runCreate();
+    return c.json(result.body, result.status);
   });
 
   app.get("/api/v1/chat/inboxes", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const parsed = listChatInboxesQuerySchema.safeParse(c.req.query());
     if (!parsed.success) {
       return c.json(
@@ -252,7 +285,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.get("/api/v1/chat/messaging-window", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const parsed = chatMessagingWindowQuerySchema.safeParse(c.req.query());
     if (!parsed.success) {
       return c.json(
@@ -282,7 +315,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.get("/api/v1/chat/whatsapp-templates", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const parsed = listChatWhatsAppTemplatesQuerySchema.safeParse(
       c.req.query(),
     );
@@ -314,7 +347,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.get("/api/v1/chat/conversations/:conversationId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:read")) return c.json(forbidden(), 403);
     const conversationId = c.req.param("conversationId");
     const detail = await chatService.getChatConversation(
       auth.workspaceId,
@@ -328,7 +361,7 @@ export function registerChatRoutes(app: Hono) {
     "/api/v1/chat/conversations/:conversationId/messages",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
       const conversationId = c.req.param("conversationId");
       const parsed = createChatMessageInputSchema.safeParse(await c.req.json());
       if (!parsed.success) {
@@ -364,7 +397,7 @@ export function registerChatRoutes(app: Hono) {
     "/api/v1/chat/conversations/:conversationId/typing",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
       const conversationId = c.req.param("conversationId");
       const parsed = toggleChatTypingInputSchema.safeParse(await c.req.json());
       if (!parsed.success) {
@@ -400,7 +433,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.patch("/api/v1/chat/conversations/:conversationId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
     const conversationId = c.req.param("conversationId");
     const parsed = updateChatConversationInputSchema.safeParse(
       await c.req.json(),
@@ -437,7 +470,7 @@ export function registerChatRoutes(app: Hono) {
 
   app.delete("/api/v1/chat/conversations/:conversationId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    if (!can(auth, "chat:write")) return c.json(forbidden(), 403);
     const conversationId = c.req.param("conversationId");
     try {
       return c.json(

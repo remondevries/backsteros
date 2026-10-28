@@ -15,9 +15,17 @@ import { withAuth } from "./route-shared.js";
 import { registerFinanceRoutes } from "./finance-routes.js";
 import { registerAgentAiRoutes } from "./agent-ai-routes.js";
 import { registerApiKeyRoutes } from "./api-key-routes.js";
+import { forbidden, getAuth, isAgentPersonaAuth } from "./route-helpers.js";
 
 export function registerApiRoutes(app: Hono) {
   app.use("/api/v1/*", withAuth);
+  // OS-146: agent persona keys never read/write integration settings.
+  app.use("/api/v1/settings/*", async (c, next) => {
+    if (isAgentPersonaAuth(getAuth(c))) {
+      return c.json(forbidden(), 403);
+    }
+    await next();
+  });
   registerTaskLabelRoutes(app);
   registerDocumentPropertyTypeRoutes(app);
   registerSearchRoutes(app);

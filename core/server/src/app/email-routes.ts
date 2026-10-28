@@ -15,6 +15,7 @@ import {
   emailAgentDraftInputSchema,
   emailComposeDraftInputSchema,
   emailConceptReplyInputSchema,
+  emailStartThreadInputSchema,
   emailThreadsService,
   forbidden,
   getAuth,
@@ -41,11 +42,108 @@ import {
 import type {
   Hono,
 } from "./route-deps.js";
+import {
+  readIdempotencyKey,
+  withIdempotency,
+} from "../lib/idempotency.js";
 
 export function registerEmailRoutes(app: Hono) {
+  app.get("/api/v1/email/inboxes", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "email:read")) return c.json(forbidden(), 403);
+    try {
+      const inboxes = await agentmailSettingsService.listAgentMailInboxes(
+        auth.workspaceId,
+      );
+      return c.json({ inboxes });
+    } catch (error) {
+      if (error instanceof AgentMailApiError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.status === 404 ? "not_found" : "bad_request",
+          },
+          error.status === 404 ? 404 : 400,
+        );
+      }
+      const message =
+        error instanceof Error ? error.message : "Could not list email inboxes";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+
+  app.post("/api/v1/email/start", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "email:send")) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = emailStartThreadInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: parsed.error.message, code: "bad_request" },
+        400,
+      );
+    }
+    const validateQ = c.req.query("validate");
+    const wantDryRun =
+      Boolean(parsed.data.dryRun) ||
+      Boolean(parsed.data.validate) ||
+      validateQ === "1" ||
+      validateQ === "true";
+    const input = {
+      ...parsed.data,
+      dryRun: wantDryRun ? true : parsed.data.dryRun,
+      validate: wantDryRun ? true : parsed.data.validate,
+    };
+    const idempotencyKey = readIdempotencyKey(
+      c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key"),
+    );
+    const runStart = async () => {
+      try {
+        const result = await agentmailSettingsService.startEmailThread(
+          auth.workspaceId,
+          input,
+        );
+        return { status: 200 as const, body: result };
+      } catch (error) {
+        if (error instanceof AgentMailApiError) {
+          const status =
+            error.status === 404 ? (404 as const) : (400 as const);
+          return {
+            status,
+            body: {
+              error: error.message,
+              code: status === 404 ? "not_found" : "bad_request",
+            },
+          };
+        }
+        const message =
+          error instanceof Error ? error.message : "Could not start email thread";
+        return {
+          status: 400 as const,
+          body: { error: message, code: "bad_request" },
+        };
+      }
+    };
+    if (idempotencyKey && !wantDryRun) {
+      const scope =
+        auth.apiKeyId != null
+          ? `api_key:${auth.apiKeyId}:email`
+          : `ws:${auth.workspaceId}:email`;
+      const result = await withIdempotency(scope, idempotencyKey, runStart);
+      return c.json(result.body, result.status as 200 | 400 | 404);
+    }
+    const result = await runStart();
+    return c.json(result.body, result.status);
+  });
+
   app.get("/api/v1/email/messages", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "email:read")) return c.json(forbidden(), 403);
     const raw = collectQueryParams(new URL(c.req.url));
     let parsed;
     try {
@@ -111,7 +209,7 @@ export function registerEmailRoutes(app: Hono) {
 
   app.get("/api/v1/email/events", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "email:read")) return c.json(forbidden(), 403);
     const workspaceId = auth.workspaceId;
     return streamSSE(c, async (stream) => {
       let closed = false;
@@ -236,7 +334,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:read")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       try {
@@ -270,7 +368,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/attachments/:attachmentId",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:read")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       const attachmentId = decodeURIComponent(c.req.param("attachmentId"));
@@ -312,7 +410,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       const scope = c.req.query("scope");
@@ -356,7 +454,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/report-spam",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       try {
@@ -390,7 +488,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/source",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:read")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       try {
@@ -417,7 +515,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/mark-unread",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       try {
@@ -444,7 +542,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/mark-read",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       try {
@@ -469,7 +567,7 @@ export function registerEmailRoutes(app: Hono) {
   );
   app.get("/api/v1/email/inboxes/:inboxId/drafts/:draftId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    if (!can(auth, "email:read")) return c.json(forbidden(), 403);
     const inboxId = decodeURIComponent(c.req.param("inboxId"));
     const draftId = decodeURIComponent(c.req.param("draftId"));
     try {
@@ -493,7 +591,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/concept-reply",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       let body: unknown;
@@ -552,7 +650,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/messages/:messageId/agent-draft",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
       let body: unknown;
@@ -613,7 +711,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/compose-draft",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       let body: unknown;
       try {
@@ -656,7 +754,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/drafts/:draftId/send",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const draftId = decodeURIComponent(c.req.param("draftId"));
       try {
@@ -685,7 +783,7 @@ export function registerEmailRoutes(app: Hono) {
   );
   app.delete("/api/v1/email/inboxes/:inboxId/drafts/:draftId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    if (!can(auth, "email:send")) return c.json(forbidden(), 403);
     const inboxId = decodeURIComponent(c.req.param("inboxId"));
     const draftId = decodeURIComponent(c.req.param("draftId"));
     try {
@@ -716,7 +814,7 @@ export function registerEmailRoutes(app: Hono) {
     zValidator("json", updateAgentMailDraftSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const draftId = decodeURIComponent(c.req.param("draftId"));
       try {
@@ -740,7 +838,7 @@ export function registerEmailRoutes(app: Hono) {
   );
   app.get("/api/v1/email/threads/by-display-id/:displayId", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "settings:read") && !can(auth, "settings:write")) {
+    if (!can(auth, "email:read") && !can(auth, "email:send")) {
       return c.json(forbidden(), 403);
     }
     const displayId = decodeURIComponent(c.req.param("displayId"));
@@ -758,7 +856,7 @@ export function registerEmailRoutes(app: Hono) {
     zValidator("json", updateEmailThreadMetadataSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const threadKey = decodeURIComponent(c.req.param("threadKey"));
       const patch = c.req.valid("json");
@@ -848,7 +946,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:read") && !can(auth, "settings:write")) {
+      if (!can(auth, "email:read") && !can(auth, "email:send")) {
         return c.json(forbidden(), 403);
       }
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
@@ -866,7 +964,7 @@ export function registerEmailRoutes(app: Hono) {
     zValidator("json", createEmailThreadCommentSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const threadKey = decodeURIComponent(c.req.param("threadKey"));
       const input = c.req.valid("json");
@@ -931,7 +1029,7 @@ export function registerEmailRoutes(app: Hono) {
     zValidator("json", updateEmailThreadCommentSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const threadKey = decodeURIComponent(c.req.param("threadKey"));
       const commentId = decodeURIComponent(c.req.param("commentId"));
@@ -998,7 +1096,7 @@ export function registerEmailRoutes(app: Hono) {
     "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments/:commentId",
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const threadKey = decodeURIComponent(c.req.param("threadKey"));
       const commentId = decodeURIComponent(c.req.param("commentId"));

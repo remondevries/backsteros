@@ -8,6 +8,7 @@ import {
   circleService,
   collectQueryParams,
   commitRestEntityWrite,
+  contactLookupQuerySchema,
   contactSchema,
   createCrmActivityNoteSchema,
   createPortalContactLogSchema,
@@ -122,6 +123,22 @@ export function registerContactRoutes(app: Hono) {
       items: result.items.map(toPublicContact),
       nextCursor: result.nextCursor,
     });
+  });
+  app.get("/api/v1/contacts/lookup", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const parsed = contactLookupQuerySchema.safeParse(c.req.query());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid contact lookup query", code: "bad_request" },
+        400,
+      );
+    }
+    const row = await circleService.lookupContactByChannel(
+      auth.workspaceId,
+      parsed.data,
+    );
+    return c.json({ contact: row ? toPublicContact(row) : null });
   });
   app.get("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);

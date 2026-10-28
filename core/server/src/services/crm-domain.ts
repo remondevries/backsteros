@@ -10,6 +10,7 @@ export {
   deleteOrganization,
   listContacts,
   listContactsPaginated,
+  lookupContactByChannel,
   createContact,
   getContactByPortalUsername,
   getContactForPortalLogin,

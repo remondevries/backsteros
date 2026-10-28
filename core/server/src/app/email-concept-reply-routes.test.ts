@@ -24,7 +24,7 @@ const authWrite: AuthContext = {
   contactId: null,
   workspaceId: "ws_1",
   membershipRole: null,
-  scopes: ["settings:write", "settings:read"],
+  scopes: ["email:send", "email:read"],
 };
 
 const TEMPLATES = resolveEmailReplyTemplates({

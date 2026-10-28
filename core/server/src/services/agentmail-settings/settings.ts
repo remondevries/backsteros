@@ -413,6 +413,19 @@ export async function getEmailReplyTemplatesForInbox(
   };
 }
 
+/** DB-only credentials — never calls AgentMail (OS-146 dryRun / validate). */
+export async function getStoredAgentMailCredentials(
+  workspaceId: string,
+): Promise<{ apiKey: string | null; inboxId: string | null; inboxIds: string[] }> {
+  const row = await getSecretRow(workspaceId);
+  const apiKey = row?.agentmailApiKey?.trim() || null;
+  if (!apiKey) {
+    return { apiKey: null, inboxId: null, inboxIds: [] };
+  }
+  const inboxIds = row ? inboxIdsFromRow(row) : [];
+  return { apiKey, inboxId: inboxIds[0] ?? null, inboxIds };
+}
+
 export async function getAgentMailCredentials(
   workspaceId: string,
 ): Promise<{ apiKey: string | null; inboxId: string | null; inboxIds: string[] }> {

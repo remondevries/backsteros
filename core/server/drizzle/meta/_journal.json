@@ -1177,6 +1177,13 @@
       "when": 1796020000000,
       "tag": "0166_chat_conversation_contact_username",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1796030000000,
+      "tag": "0167_os146_chat_email_scopes",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,10 @@ export function can(auth: AuthContext, scope: Parameters<typeof requireScope>[0]
   return requireScope(scope)(auth);
 }
 
+/** Agent persona keys are API keys bound to a contact (never Access/door keys). */
+export function isAgentPersonaAuth(auth: AuthContext | undefined | null): boolean {
+  return Boolean(auth && auth.kind === "api_key" && auth.contactId != null);
+}
 
 export function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };

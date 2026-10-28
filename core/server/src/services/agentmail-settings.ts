@@ -8,6 +8,7 @@ export {
   getEmailReplyTemplates,
   getEmailReplyTemplatesForInbox,
   getAgentMailCredentials,
+  getStoredAgentMailCredentials,
   getAgentMailSettings,
   updateAgentMailSettings,
   agentsPublicWebhookUrl,
@@ -44,4 +45,5 @@ export type {
 export {
   startEmailAgentDraft,
   sendAgentMailDraft,
+  startEmailThread,
 } from "./agentmail-settings/send-lifecycle.js";
