@@ -86,7 +86,33 @@ describe("parseChatwootConversationPayload contact username", () => {
       },
     });
     assert.equal(summary?.contact.username, "remondevries");
+    assert.equal(summary?.contact.telegramChatId, "7014761034");
     assert.equal(summary?.channelType, "Channel::Telegram");
+  });
+
+  test("reads Telegram chat_id from contact_inboxes source_id", () => {
+    const summary = parseChatwootConversationPayload({
+      id: 12,
+      inbox_id: 4,
+      status: "open",
+      meta: {
+        channel: "Channel::Telegram",
+        sender: {
+          name: "Remon de Vries",
+          additional_attributes: {
+            username: "remondevries",
+          },
+          contact_inboxes: [
+            {
+              source_id: "7014761034",
+              inbox: { channel_type: "Channel::Telegram" },
+            },
+          ],
+        },
+      },
+    });
+    assert.equal(summary?.contact.username, "remondevries");
+    assert.equal(summary?.contact.telegramChatId, "7014761034");
   });
 
   test("reads Facebook PSID from additional_attributes", () => {

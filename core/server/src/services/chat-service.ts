@@ -949,18 +949,37 @@ async function enrichConversationContactUsername(
   workspaceId: string,
   summary: ChatwootConversationSummary,
 ): Promise<ChatwootConversationSummary> {
-  if (summary.contact.username?.trim()) return summary;
+  const channelHint = (summary.channelType ?? "").toLowerCase();
+  const needsTelegramChatId =
+    channelHint.includes("telegram") &&
+    !summary.contact.telegramChatId?.trim();
+  // Telegram webhooks often include @username but omit contact_inboxes — still
+  // hydrate so fillLinkedContactTelegramFromChatwoot can persist chat_id.
+  if (summary.contact.username?.trim() && !needsTelegramChatId) {
+    return summary;
+  }
   const credentials = await getChatwootCredentials(workspaceId);
   if (!credentials) return summary;
   try {
     const client = createChatwootClient(credentials);
     const remote = await client.getConversation(summary.id);
     const channelType = summary.channelType ?? remote?.channelType ?? null;
-    let username = remote?.contact.username?.trim() || null;
+    let username =
+      summary.contact.username?.trim() ||
+      remote?.contact.username?.trim() ||
+      null;
+    let telegramChatId =
+      summary.contact.telegramChatId?.trim() ||
+      remote?.contact.telegramChatId?.trim() ||
+      null;
     const contactId = remote?.contact.id?.trim() || summary.contact.id?.trim();
-    if (!username && contactId) {
+    const stillNeedsTelegram =
+      (channelType ?? "").toLowerCase().includes("telegram") && !telegramChatId;
+    if ((!username || stillNeedsTelegram) && contactId) {
       const fullContact = await client.getContact(contactId, { channelType });
-      username = fullContact?.username?.trim() || null;
+      username = username || fullContact?.username?.trim() || null;
+      telegramChatId =
+        telegramChatId || fullContact?.telegramChatId?.trim() || null;
       if (fullContact) {
         return {
           ...summary,
@@ -986,10 +1005,7 @@ async function enrichConversationContactUsername(
             username,
             identifier:
               summary.contact.identifier ?? fullContact.identifier ?? null,
-            telegramChatId:
-              summary.contact.telegramChatId ??
-              fullContact.telegramChatId ??
-              null,
+            telegramChatId,
             xUserId: summary.contact.xUserId ?? fullContact.xUserId ?? null,
             customAttributes:
               summary.contact.customAttributes ??
@@ -1004,7 +1020,7 @@ async function enrichConversationContactUsername(
         };
       }
     }
-    if (!username) return summary;
+    if (!username && !telegramChatId) return summary;
     return {
       ...summary,
       channelType,
@@ -1016,6 +1032,8 @@ async function enrichConversationContactUsername(
         username,
         identifier:
           summary.contact.identifier ?? remote?.contact.identifier ?? null,
+        telegramChatId:
+          telegramChatId ?? summary.contact.telegramChatId ?? null,
         xUserId: summary.contact.xUserId ?? remote?.contact.xUserId ?? null,
         customAttributes:
           summary.contact.customAttributes ??

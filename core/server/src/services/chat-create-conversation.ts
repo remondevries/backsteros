@@ -512,40 +512,47 @@ export async function ensureChatwootContact(
   }
 
   if (channel === "telegram") {
-    const chatId =
+    let chatId =
       numericChannelSourceId(input.sourceId) ||
       numericChannelSourceId(contact.telegramChatId) ||
       numericChannelSourceId(input.existing?.contactUsername);
-    if (!chatId) {
-      throw badRequest(
-        "contact has never messaged the bot",
-        "telegram_chat_unknown",
-        422,
-      );
-    }
 
     // Prefer the Chatwoot contact attached to an existing local thread.
+    // contact_username is often the @handle — fall back to contact_inbox
+    // source_id (bot chat_id) when telegram_chat_id was never persisted.
     if (input.existing?.externalId?.trim()) {
       const remote = await client.getConversation(input.existing.externalId);
       const chatwootContactId = remote?.contact.id?.trim() || null;
       if (remote && chatwootContactId) {
         let sourceId =
           chatId ||
-          numericChannelSourceId(remote.contact.username) ||
-          numericChannelSourceId(remote.contact.telegramChatId);
+          numericChannelSourceId(remote.contact.telegramChatId) ||
+          numericChannelSourceId(remote.contact.username);
         if (!sourceId) {
           const inboxes = await client.getContactInboxes(chatwootContactId);
-          const match = inboxes.find(
-            (entry) =>
-              entry.inboxId === inboxId &&
+          const match =
+            inboxes.find(
+              (entry) =>
+                entry.inboxId === inboxId &&
+                numericChannelSourceId(entry.sourceId),
+            ) ??
+            inboxes.find((entry) =>
               numericChannelSourceId(entry.sourceId),
-          );
+            );
           sourceId = numericChannelSourceId(match?.sourceId);
         }
         if (sourceId) {
           return { chatwootContactId, sourceId };
         }
       }
+    }
+
+    if (!chatId) {
+      throw badRequest(
+        "contact has never messaged the bot",
+        "telegram_chat_unknown",
+        422,
+      );
     }
 
     // Known chat_id but no local thread (e.g. conversation was deleted) —
@@ -807,6 +814,48 @@ async function resolveInboxIdWithDeps(
   };
 }
 
+/**
+ * When contacts.telegram_chat_id is empty but a Telegram conversation exists,
+ * read the bot chat_id from Chatwoot contact_inboxes.source_id (or the
+ * hydrated contact.telegramChatId / numeric username).
+ */
+async function resolveTelegramSourceIdFromChatwoot(
+  workspaceId: string,
+  local: NonNullable<LocalConversation>,
+  deps: CreateChatConversationDeps,
+): Promise<string | null> {
+  const externalId = local.externalId?.trim();
+  if (!externalId) return null;
+  const credentials = await deps.getChatwootCredentials(workspaceId);
+  if (!credentials) return null;
+  try {
+    const client = deps.createChatwootClient(credentials);
+    const remote = await client.getConversation(externalId);
+    const chatwootContactId = remote?.contact.id?.trim() || null;
+    if (!remote || !chatwootContactId) return null;
+    const fromContact =
+      numericChannelSourceId(remote.contact.telegramChatId) ||
+      numericChannelSourceId(remote.contact.username);
+    if (fromContact) return fromContact;
+    const inboxes = await client.getContactInboxes(chatwootContactId);
+    const match =
+      inboxes.find(
+        (entry) =>
+          entry.inboxId === local.inboxId &&
+          numericChannelSourceId(entry.sourceId),
+      ) ??
+      inboxes.find(
+        (entry) =>
+          (entry.channelType ?? "").toLowerCase().includes("telegram") &&
+          numericChannelSourceId(entry.sourceId),
+      ) ??
+      inboxes.find((entry) => numericChannelSourceId(entry.sourceId));
+    return numericChannelSourceId(match?.sourceId);
+  } catch {
+    return null;
+  }
+}
+
 async function getMessagingWindowWithDeps(
   workspaceId: string,
   input: { channel: ChatCreateChannel; contactId: string },
@@ -846,6 +895,15 @@ async function getMessagingWindowWithDeps(
       numericChannelSourceId(contact.telegramChatId) ||
       numericChannelSourceId(local?.contactUsername) ||
       null;
+    // Live threads often store @username on contact_username while the bot
+    // chat_id only lives on Chatwoot contact_inboxes.source_id.
+    if (!sourceId && local?.externalId?.trim()) {
+      sourceId = await resolveTelegramSourceIdFromChatwoot(
+        workspaceId,
+        local,
+        deps,
+      );
+    }
     hasChannelIdentity = Boolean(sourceId);
   } else if (input.channel === "support") {
     sourceId = primaryEmail(contact);

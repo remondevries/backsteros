@@ -47,6 +47,7 @@ function contact(overrides: {
 function localConversation(overrides: {
   id?: string;
   externalId?: string | null;
+  inboxId?: string;
   channelType?: string;
   inboxName?: string | null;
   contactUsername?: string | null;
@@ -56,7 +57,7 @@ function localConversation(overrides: {
     id: overrides.id ?? "local-1",
     workspaceId: "ws",
     externalId: overrides.externalId === undefined ? "cw-1" : overrides.externalId!,
-    inboxId: "inbox-1",
+    inboxId: overrides.inboxId ?? "inbox-1",
     inboxName: overrides.inboxName ?? "Inbox",
     channelType: overrides.channelType ?? "Channel::Telegram",
     status: overrides.status ?? "open",
@@ -535,6 +536,73 @@ describe("ensureChatwootContact", () => {
     assert.equal(result.sourceId, "7014761034");
   });
 
+  it("falls back to Chatwoot contact_inbox source_id when telegram_chat_id empty and username is @handle", async () => {
+    const result = await ensureChatwootContact({
+      channel: "telegram",
+      contact: contact({ telegramChatId: null }),
+      inboxId: "4",
+      sourceId: null,
+      existing: localConversation({
+        externalId: "12",
+        inboxId: "4",
+        contactUsername: "remondevries",
+      }),
+      client: {
+        searchContacts: async () => {
+          throw new Error("must not search");
+        },
+        createContact: async () => {
+          throw new Error("must not create");
+        },
+        updateContact: async () => ({
+          id: "stub",
+          name: null,
+          email: null,
+          phone: null,
+          username: null,
+          identifier: null,
+          avatarUrl: null,
+        }),
+        listContactConversations: async () => [],
+        getContactInboxes: async () => [
+          {
+            sourceId: "7014761034",
+            inboxId: "4",
+            channelType: "Channel::Telegram",
+          },
+        ],
+        createContactInbox: async () => ({
+          sourceId: null,
+          inboxId: null,
+          channelType: null,
+        }),
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
+        getConversation: async () => ({
+          id: "12",
+          inboxId: "4",
+          status: "open",
+          channelType: "Channel::Telegram",
+          contact: {
+            id: "9",
+            name: "Remon de Vries",
+            email: null,
+            phone: null,
+            username: "remondevries",
+            identifier: null,
+            telegramChatId: null,
+            avatarUrl: null,
+          },
+          lastActivityAt: new Date().toISOString(),
+          unreadCount: 0,
+          lastMessagePreview: null,
+        }),
+      },
+    });
+    assert.equal(result.chatwootContactId, "9");
+    assert.equal(result.sourceId, "7014761034");
+  });
+
   it("refuses Instagram when only an @handle is available (no IGSID)", async () => {
     await assert.rejects(
       () =>
@@ -885,6 +953,71 @@ describe("createChatConversation", () => {
         (error as { message?: string }).message ===
           "contact has never messaged the bot",
     );
+  });
+
+  it("dry-run Telegram falls back to Chatwoot contact_inbox source_id when telegram_chat_id empty", async () => {
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "telegram",
+        contactId: "contact-1",
+        content: "hello",
+        dryRun: true,
+        inboxId: "4",
+      },
+      baseDeps({
+        local: localConversation({
+          id: "kO6jTg7TtVQdPXWLg2N2z",
+          externalId: "12",
+          inboxId: "4",
+          contactUsername: "remondevries",
+        }),
+        lastIncomingAt: new Date().toISOString(),
+        loadContact: async () => contact({ telegramChatId: null }),
+        client: {
+          getConversation: async () => ({
+            id: "12",
+            inboxId: "4",
+            status: "open",
+            channelType: "Channel::Telegram",
+            contact: {
+              id: "9",
+              name: "Remon",
+              email: null,
+              phone: null,
+              username: "remondevries",
+              identifier: null,
+              telegramChatId: null,
+              avatarUrl: null,
+            },
+            lastActivityAt: new Date().toISOString(),
+            unreadCount: 0,
+            lastMessagePreview: null,
+          }),
+          getContactInboxes: async () => [
+            {
+              sourceId: "7014761034",
+              inboxId: "4",
+              channelType: "Channel::Telegram",
+            },
+          ],
+          listInboxes: async () => [
+            {
+              id: "4",
+              name: "Telegram",
+              channelType: "Channel::Telegram",
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal("dryRun" in result && result.dryRun, true);
+    if (!("dryRun" in result) || !result.dryRun) {
+      throw new Error("expected dry-run result");
+    }
+    assert.equal(result.sourceId, "7014761034");
+    assert.equal(result.window.open, true);
+    assert.equal(result.window.sourceId, "7014761034");
   });
 
   it("starts Telegram from stored chat_id after local conversation was deleted", async () => {

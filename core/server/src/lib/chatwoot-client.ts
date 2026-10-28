@@ -334,14 +334,13 @@ function parseContact(
     // X / API proxies often only expose the handle inside the display name
     // (`Display (@screen_name)`). Safe last resort — pattern is distinctive.
     usernameFromParenHandle(displayName);
+  // Webhook/list sender payloads usually omit contact_inboxes but still carry
+  // social_telegram_user_id on additional_attributes (the bot chat_id).
   const telegramChatId =
+    numericOnlyId(additional.social_telegram_user_id) ??
     usernameFromContactInboxes(record.contact_inboxes, "Channel::Telegram") ??
     (channelLower.includes("telegram")
-      ? normalizeChannelUsername(asString(record.identifier))?.match(
-          /^\d{3,32}$/,
-        )
-        ? normalizeChannelUsername(asString(record.identifier))
-        : null
+      ? numericOnlyId(record.identifier)
       : null);
 
   return {
