@@ -431,7 +431,7 @@ describe("ensureChatwootContact", () => {
 
   it("creates Telegram Chatwoot contact from stored chat_id without local thread", async () => {
     let createdInbox = false;
-    let createdPhone: string | null | undefined;
+    let createdBody: { phone?: string | null; email?: string | null } = {};
     const result = await ensureChatwootContact({
       channel: "telegram",
       contact: contact({
@@ -443,8 +443,9 @@ describe("ensureChatwootContact", () => {
       existing: null as never,
       client: {
         searchContacts: async () => [],
+        listConversations: async () => [],
         createContact: async (input) => {
-          createdPhone = input.phone ?? null;
+          createdBody = { phone: input.phone ?? null, email: input.email ?? null };
           return {
             id: "cw-new-tg",
             name: "Remon",
@@ -484,7 +485,9 @@ describe("ensureChatwootContact", () => {
     assert.equal(result.chatwootContactId, "cw-new-tg");
     assert.equal(result.sourceId, "7014761034");
     assert.equal(createdInbox, true);
-    assert.equal(createdPhone, "+31646196570");
+    // Never send phone/email — they collide with other Chatwoot contacts.
+    assert.equal(createdBody.phone, null);
+    assert.equal(createdBody.email, null);
   });
 
   it("reuses Chatwoot contact that owns telegram contact_inbox source_id (not attribute collisions)", async () => {
@@ -520,6 +523,7 @@ describe("ensureChatwootContact", () => {
             avatarUrl: null,
           },
         ],
+        listConversations: async () => [],
         createContact: async () => {
           throw new Error("must not create — contact_inbox already exists");
         },
@@ -582,6 +586,7 @@ describe("ensureChatwootContact", () => {
             avatarUrl: null,
           },
         ],
+        listConversations: async () => [],
         getContactInboxes: async (id) =>
           id === "9"
             ? [
@@ -604,6 +609,86 @@ describe("ensureChatwootContact", () => {
       ]),
       "remondevries",
     );
+  });
+
+  it("finds Telegram contact via inbox conversation chat_id when search misses", async () => {
+    const found = await findChatwootContactForTelegramChatId(
+      {
+        // Live Chatwoot SearchService: chat id → []; @handle → wrong contacts 2/14
+        searchContacts: async (q) => {
+          if (q === "remondevries") {
+            return [
+              {
+                id: "2",
+                name: "Brandon Small",
+                email: "hello@remondevries.com",
+                phone: null,
+                username: null,
+                identifier: null,
+                avatarUrl: null,
+              },
+              {
+                id: "14",
+                name: "Remon de Vries (@remondevries)",
+                email: null,
+                phone: null,
+                username: null,
+                identifier: "50254162",
+                avatarUrl: null,
+              },
+            ];
+          }
+          return [];
+        },
+        getContactInboxes: async (id) => {
+          if (id === "9") {
+            return [
+              {
+                sourceId: "7014761034",
+                inboxId: "4",
+                channelType: "Channel::Telegram",
+              },
+            ];
+          }
+          return [
+            {
+              sourceId: "other",
+              inboxId: "1",
+              channelType: "Channel::WebWidget",
+            },
+          ];
+        },
+        listConversations: async ({ status } = {}) => {
+          if (status !== "open") return [];
+          return [
+            {
+              id: "12",
+              inboxId: "4",
+              status: "open",
+              channelType: "Channel::Telegram",
+              contact: {
+                id: "9",
+                name: "Remon de Vries",
+                email: null,
+                phone: null,
+                username: "remondevries",
+                identifier: null,
+                avatarUrl: null,
+              },
+              additionalAttributes: { chat_id: 7014761034 },
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ];
+        },
+      },
+      "7014761034",
+      "4",
+      "remondevries",
+    );
+    assert.equal(found?.id, "9");
+    assert.equal(found?.telegramChatId, "7014761034");
   });
 
   it("uses only the Chatwoot contact from the existing Telegram conversation", async () => {
@@ -918,6 +1003,7 @@ describe("createChatConversation", () => {
         avatarUrl: null,
       }),
       getContactInboxes: async () => [],
+      listConversations: async () => [],
       listContactConversations: async () => [],
       createContactInbox: async () => ({
         sourceId: "31612345678",
@@ -1149,6 +1235,239 @@ describe("createChatConversation", () => {
     assert.equal(result.window.sourceId, "7014761034");
   });
 
+  it("live OS-146: search misses contact 9, finds via chat_id, never POST /contacts (phone taken)", async () => {
+    let createdContact = false;
+    let messaged = false;
+    const result = await createChatConversation(
+      "ws",
+      {
+        channel: "telegram",
+        contactId: "9c36dc9c-6e9e-4f21-a602-4f7291231e60",
+        content: "fresh telegram after delete",
+        inboxId: "4",
+      },
+      baseDeps({
+        local: null,
+        loadContact: async () =>
+          contact({
+            id: "9c36dc9c-6e9e-4f21-a602-4f7291231e60",
+            telegramChatId: "7014761034",
+            phone: "+31 (0)6 461 96 570",
+            email: "email@remondevries.com",
+          }),
+        client: {
+          listInboxes: async () => [
+            {
+              id: "4",
+              name: "Telegram",
+              channelType: "Channel::Telegram",
+            },
+          ],
+          // Exact live Chatwoot SearchService behaviour
+          searchContacts: async (q) => {
+            if (q === "7014761034") return [];
+            if (q === "remondevries") {
+              return [
+                {
+                  id: "2",
+                  name: "Brandon Small",
+                  email: "hello@remondevries.com",
+                  phone: null,
+                  username: null,
+                  identifier: null,
+                  avatarUrl: null,
+                },
+                {
+                  id: "14",
+                  name: "Remon de Vries (@remondevries)",
+                  email: null,
+                  phone: null,
+                  username: null,
+                  identifier: "50254162",
+                  avatarUrl: null,
+                },
+              ];
+            }
+            return [];
+          },
+          getContactInboxes: async (id) => {
+            if (id === "9") {
+              return [
+                {
+                  sourceId: "7014761034",
+                  inboxId: "4",
+                  channelType: "Channel::Telegram",
+                },
+              ];
+            }
+            return [];
+          },
+          listConversations: async ({ status } = {}) => {
+            if (status !== "open") return [];
+            return [
+              {
+                id: "12",
+                inboxId: "4",
+                status: "open",
+                channelType: "Channel::Telegram",
+                contact: {
+                  id: "9",
+                  name: "Remon de Vries",
+                  email: null,
+                  phone: null,
+                  username: "remondevries",
+                  identifier: null,
+                  avatarUrl: null,
+                },
+                additionalAttributes: { chat_id: 7014761034 },
+                lastActivityAt: new Date().toISOString(),
+                unreadCount: 0,
+                lastMessagePreview: null,
+              },
+            ];
+          },
+          createContact: async () => {
+            createdContact = true;
+            throw new ChatwootApiError(
+              422,
+              JSON.stringify({
+                message: "Phone number has already been taken",
+              }),
+              "Phone number has already been taken",
+            );
+          },
+          listContactConversations: async (contactId) => {
+            assert.equal(contactId, "9");
+            return [
+              {
+                id: "12",
+                inboxId: "4",
+                status: "open",
+                channelType: "Channel::Telegram",
+                contact: {
+                  id: "9",
+                  name: "Remon de Vries",
+                  email: null,
+                  phone: null,
+                  username: "remondevries",
+                  identifier: null,
+                  avatarUrl: null,
+                },
+                lastActivityAt: new Date().toISOString(),
+                unreadCount: 0,
+                lastMessagePreview: null,
+              },
+            ];
+          },
+          createConversation: async () => {
+            throw new Error("must reuse conversation 12, not create");
+          },
+          createMessage: async (conversationId, input) => {
+            messaged = true;
+            assert.equal(conversationId, "12");
+            assert.equal(input.content, "fresh telegram after delete");
+            return {
+              id: "m-out",
+              conversationId: "12",
+              content: input.content,
+              contentType: "text",
+              messageType: "outgoing" as const,
+              private: false,
+              senderName: "Agent",
+              createdAt: new Date().toISOString(),
+            };
+          },
+        },
+      }),
+    );
+    assert.equal(createdContact, false);
+    assert.equal(messaged, true);
+    assert.equal(result.id, "local-1");
+  });
+
+  it("on Chatwoot identifier already taken, falls back to conversation chat_id reuse", async () => {
+    let createdContact = false;
+    const result = await ensureChatwootContact({
+      channel: "telegram",
+      contact: contact({
+        telegramChatId: "7014761034",
+        phone: "+31 (0)6 461 96 570",
+      }),
+      inboxId: "4",
+      sourceId: "7014761034",
+      existing: null as never,
+      client: {
+        searchContacts: async () => [],
+        // First find misses (empty list); after create 422, find succeeds via chat_id
+        listConversations: async () => {
+          if (!createdContact) return [];
+          return [
+            {
+              id: "12",
+              inboxId: "4",
+              status: "open",
+              channelType: "Channel::Telegram",
+              contact: {
+                id: "9",
+                name: "Remon",
+                email: null,
+                phone: null,
+                username: "remondevries",
+                identifier: null,
+                avatarUrl: null,
+              },
+              additionalAttributes: { chat_id: 7014761034 },
+              lastActivityAt: new Date().toISOString(),
+              unreadCount: 0,
+              lastMessagePreview: null,
+            },
+          ];
+        },
+        getContactInboxes: async (id) =>
+          id === "9"
+            ? [
+                {
+                  sourceId: "7014761034",
+                  inboxId: "4",
+                  channelType: "Channel::Telegram",
+                },
+              ]
+            : [],
+        createContact: async () => {
+          createdContact = true;
+          throw new ChatwootApiError(
+            422,
+            JSON.stringify({
+              message: "Identifier has already been taken",
+            }),
+            "Identifier has already been taken",
+          );
+        },
+        updateContact: async () => ({
+          id: "stub",
+          name: null,
+          email: null,
+          phone: null,
+          username: null,
+          identifier: null,
+          avatarUrl: null,
+        }),
+        listContactConversations: async () => [],
+        createContactInbox: async () => ({
+          sourceId: null,
+          inboxId: null,
+          channelType: null,
+        }),
+        filterContactsByCustomAttribute: async () => [],
+        filterConversationsByAttribute: async () => [],
+        getConversation: async () => null,
+      },
+    });
+    assert.equal(createdContact, true);
+    assert.equal(result.chatwootContactId, "9");
+    assert.equal(result.sourceId, "7014761034");
+  });
+
   it("after local delete, reuses still-open Chatwoot Telegram conversation via contact_inbox owner", async () => {
     let createdConversation = false;
     let messaged = false;
@@ -1275,7 +1594,9 @@ describe("createChatConversation", () => {
         client: {
           searchContacts: async () => [],
           createContact: async (input) => {
-            assert.equal(input.phone, "+31612345678");
+            assert.equal(input.phone, undefined);
+            assert.equal(input.email, undefined);
+            assert.equal(input.identifier, "7014761034");
             return {
               id: "cw-tg",
               name: "Remon",
@@ -1287,6 +1608,7 @@ describe("createChatConversation", () => {
               avatarUrl: null,
             };
           },
+          listConversations: async () => [],
           getContactInboxes: async () => [],
           createContactInbox: async () => ({
             sourceId: "7014761034",
