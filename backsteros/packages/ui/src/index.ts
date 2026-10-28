@@ -3781,6 +3781,20 @@ export {
 } from "./components/contacts/contact-overview-view.js";
 
 export {
+  ContactDropdownNameEditRow,
+  type ContactDropdownNameEditRowProps,
+  type ContactDropdownNameEditSaveResult,
+} from "./components/contacts/contact-dropdown-name-edit-row.js";
+
+export {
+  contactDropdownNameEditModeAfterCommit,
+  contactDropdownNameEditShowsPencil,
+  resolveContactNameEditFields,
+  splitContactDisplayName,
+  type ContactDropdownNameEditMode,
+} from "./contacts/contact-dropdown-name-edit.js";
+
+export {
   ContactPeekCard,
   formatContactPeekJobSubtitle,
   splitContactPeekName,

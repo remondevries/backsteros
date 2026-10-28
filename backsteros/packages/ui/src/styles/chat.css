@@ -1772,6 +1772,62 @@
   opacity: 0.4;
 }
 
+/* Linked contact chip + hover pencil to edit first/last name (OS-147). */
+.contact-dropdown-name-edit {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.contact-dropdown-name-edit--dropdown .searchable-dropdown-root,
+.contact-dropdown-name-edit--dropdown .property-dropdown {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.contact-dropdown-name-edit__pencil {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.contact-dropdown-name-edit--linked:hover .contact-dropdown-name-edit__pencil,
+.contact-dropdown-name-edit--linked:focus-within .contact-dropdown-name-edit__pencil,
+.contact-dropdown-name-edit__pencil:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contact-dropdown-name-edit__pencil:hover:not(:disabled),
+.contact-dropdown-name-edit__pencil:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.contact-dropdown-name-edit__pencil:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.contact-dropdown-name-edit--editing {
+  justify-content: center;
+}
+
 /* Contact tab — Contact / Organization entity toggle under the main tabs. */
 .communication-chat-contact-entity-tabs {
   display: flex;

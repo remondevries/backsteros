@@ -1851,6 +1851,8 @@ function DesktopChatContactDetailPanelView({
           contactId={emailContactId}
           contactName={emailContactName}
           contactAvatarSrc={emailContactAvatar}
+          contactFirstName={contact?.firstName ?? null}
+          contactLastName={contact?.lastName ?? null}
           partyEmailBelongsToOrganization={partyEmailBelongsToOrganization}
           organizationOptions={organizationOptions}
           contactOptions={contactOptions}
@@ -1889,6 +1891,16 @@ function DesktopChatContactDetailPanelView({
           onCreateContactFromQuery={(query) => {
             void createAndLinkContact(query);
           }}
+          onSaveContactFirstName={
+            emailContactId
+              ? chatContactPropertyHandlers.onSaveFirstName
+              : undefined
+          }
+          onSaveContactLastName={
+            emailContactId
+              ? chatContactPropertyHandlers.onSaveLastName
+              : undefined
+          }
           linking={linkingContact || addingPartyEmail}
         >
           {emailSectionBody}

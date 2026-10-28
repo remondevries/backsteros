@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { Check } from "lucide-react";
 
 import {
+  ContactDropdownNameEditRow,
   ContactPersonIcon,
   DROPDOWN_NONE_VALUE,
   EntityAvatarIcon,
@@ -23,6 +24,8 @@ type DesktopCommunicationEmailPartyCardProps = {
   contactId: string | null;
   contactName: string | null;
   contactAvatarSrc: string | null;
+  contactFirstName?: string | null;
+  contactLastName?: string | null;
   /**
    * Party address is one of the selected organization’s emails — show as plain
    * text (org mailbox), not a contact picker.
@@ -45,6 +48,18 @@ type DesktopCommunicationEmailPartyCardProps = {
   /** Aria label for the hover check (org vs contact). */
   addPartyEmailAsOtherLabel?: string;
   onCreateContactFromQuery?: (query: string) => void;
+  onSaveContactFirstName?: (
+    firstName: string,
+  ) =>
+    | Promise<{ ok: true } | { ok: false; error: string }>
+    | { ok: true }
+    | { ok: false; error: string };
+  onSaveContactLastName?: (
+    lastName: string,
+  ) =>
+    | Promise<{ ok: true } | { ok: false; error: string }>
+    | { ok: true }
+    | { ok: false; error: string };
   linking?: boolean;
   children: ReactNode;
 };
@@ -53,7 +68,8 @@ type DesktopCommunicationEmailPartyCardProps = {
  * Org-first party chrome for Communication → Chat email selection — cover shows
  * the org logo, the title picks the organization. When the party address belongs
  * to that org, it is plain text; otherwise a dashed contact picker invites a
- * link. A linked contact keeps the contact chip dropdown.
+ * link. A linked contact keeps the contact chip dropdown (with pencil to edit
+ * first/last name).
  */
 export function DesktopCommunicationEmailPartyCard({
   partyName,
@@ -63,6 +79,8 @@ export function DesktopCommunicationEmailPartyCard({
   contactId,
   contactName,
   contactAvatarSrc,
+  contactFirstName = null,
+  contactLastName = null,
   partyEmailBelongsToOrganization = false,
   organizationOptions,
   contactOptions,
@@ -77,6 +95,8 @@ export function DesktopCommunicationEmailPartyCard({
   onAddPartyEmailAsOther,
   addPartyEmailAsOtherLabel = "Add email as other",
   onCreateContactFromQuery,
+  onSaveContactFirstName,
+  onSaveContactLastName,
   linking = false,
   children,
 }: DesktopCommunicationEmailPartyCardProps) {
@@ -153,110 +173,136 @@ export function DesktopCommunicationEmailPartyCard({
     </div>
   );
 
-  const contactChip = (opts: { allowAddAsOther: boolean }) => (
-    <div
-      className={[
-        "contact-overview__groups-dropdown",
-        opts.allowAddAsOther
-          ? "communication-email-party__unknown-email"
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <SearchableDropdown
-        value={contactId}
-        options={contactPickerOptions}
-        onChange={(next) => {
-          const nextId = resolveDropdownNone(next);
-          if (nextId) onSelectContact(nextId);
-        }}
-        allowDeselect={Boolean(onClearContact)}
-        onClear={onClearContact}
-        deselectLabel={onClearContact ? "Remove contact" : undefined}
-        disabled={linking}
-        searchPlaceholder="Search contacts…"
-        ariaLabel="Select contact"
-        emptySelectionLabel="Select contact"
-        className="property-dropdown property-dropdown--inline-chip"
-        panelAlign="start"
-        panelWidth={280}
-        createFromQueryLabel={
-          onCreateContactFromQuery
-            ? (query) => getCreateEntityFromQueryLabel("contact", query)
-            : undefined
-        }
-        onCreateFromQuery={onCreateContactFromQuery}
-        renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-          <button
-            type="button"
-            id={triggerId}
-            disabled={disabled}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            aria-label={
-              contactId && contactName?.trim()
-                ? `Contact: ${contactName}`
-                : `Select contact for ${partyLabel}`
-            }
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
-            className={[
-              "property-dropdown-trigger",
-              "property-dropdown-trigger--inline-chip",
-              "contact-overview__groups-trigger",
-              "communication-email-party__contact-trigger",
-              contactId
-                ? "communication-email-party__contact-trigger--linked"
-                : "communication-email-party__contact-trigger--unlinked",
-              open ? "is-open" : null,
-              !contactId ? "is-muted" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {contactId ? (
-              <span
-                className="property-dropdown-trigger__icon"
-                aria-hidden="true"
-              >
-                {contactAvatarSrc ? (
-                  <EntityAvatarIcon
-                    src={contactAvatarSrc}
-                    size={14}
-                    kind="contact"
-                  />
-                ) : (
-                  <ContactPersonIcon size={14} />
-                )}
-              </span>
-            ) : null}
-            <span className="property-dropdown-trigger__label">
-              {contactId ? contactName?.trim() || "Contact" : partyLabel}
-            </span>
-          </button>
-        )}
-      />
-      {opts.allowAddAsOther && onAddPartyEmailAsOther ? (
+  const contactDropdown = (
+    <SearchableDropdown
+      value={contactId}
+      options={contactPickerOptions}
+      onChange={(next) => {
+        const nextId = resolveDropdownNone(next);
+        if (nextId) onSelectContact(nextId);
+      }}
+      allowDeselect={Boolean(onClearContact)}
+      onClear={onClearContact}
+      deselectLabel={onClearContact ? "Remove contact" : undefined}
+      disabled={linking}
+      searchPlaceholder="Search contacts…"
+      ariaLabel="Select contact"
+      emptySelectionLabel="Select contact"
+      className="property-dropdown property-dropdown--inline-chip"
+      panelAlign="start"
+      panelWidth={280}
+      createFromQueryLabel={
+        onCreateContactFromQuery
+          ? (query) => getCreateEntityFromQueryLabel("contact", query)
+          : undefined
+      }
+      onCreateFromQuery={onCreateContactFromQuery}
+      renderTrigger={({ open, disabled, triggerId, onToggle }) => (
         <button
           type="button"
-          className="communication-email-party__add-email"
-          aria-label={addPartyEmailAsOtherLabel}
-          title={addPartyEmailAsOtherLabel}
-          disabled={linking}
+          id={triggerId}
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={
+            contactId && contactName?.trim()
+              ? `Contact: ${contactName}`
+              : `Select contact for ${partyLabel}`
+          }
           onClick={(event) => {
-            event.preventDefault();
             event.stopPropagation();
-            void onAddPartyEmailAsOther();
+            onToggle();
           }}
+          className={[
+            "property-dropdown-trigger",
+            "property-dropdown-trigger--inline-chip",
+            "contact-overview__groups-trigger",
+            "communication-email-party__contact-trigger",
+            contactId
+              ? "communication-email-party__contact-trigger--linked"
+              : "communication-email-party__contact-trigger--unlinked",
+            open ? "is-open" : null,
+            !contactId ? "is-muted" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
-          <Check size={14} strokeWidth={2.25} aria-hidden="true" />
+          {contactId ? (
+            <span
+              className="property-dropdown-trigger__icon"
+              aria-hidden="true"
+            >
+              {contactAvatarSrc ? (
+                <EntityAvatarIcon
+                  src={contactAvatarSrc}
+                  size={14}
+                  kind="contact"
+                />
+              ) : (
+                <ContactPersonIcon size={14} />
+              )}
+            </span>
+          ) : null}
+          <span className="property-dropdown-trigger__label">
+            {contactId ? contactName?.trim() || "Contact" : partyLabel}
+          </span>
         </button>
-      ) : null}
-    </div>
+      )}
+    />
   );
+
+  const contactChip = (opts: { allowAddAsOther: boolean }) => {
+    const canEditName =
+      Boolean(contactId) &&
+      Boolean(onSaveContactFirstName) &&
+      Boolean(onSaveContactLastName);
+
+    const chipBody = canEditName ? (
+      <ContactDropdownNameEditRow
+        contactId={contactId}
+        contactName={contactName}
+        firstName={contactFirstName}
+        lastName={contactLastName}
+        disabled={linking}
+        dropdown={contactDropdown}
+        onSaveFirstName={onSaveContactFirstName!}
+        onSaveLastName={onSaveContactLastName!}
+      />
+    ) : (
+      contactDropdown
+    );
+
+    return (
+      <div
+        className={[
+          "contact-overview__groups-dropdown",
+          opts.allowAddAsOther
+            ? "communication-email-party__unknown-email"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {chipBody}
+        {opts.allowAddAsOther && onAddPartyEmailAsOther ? (
+          <button
+            type="button"
+            className="communication-email-party__add-email"
+            aria-label={addPartyEmailAsOtherLabel}
+            title={addPartyEmailAsOtherLabel}
+            disabled={linking}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void onAddPartyEmailAsOther();
+            }}
+          >
+            <Check size={14} strokeWidth={2.25} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
 
   let partySecondary: ReactNode;
   if (organizationId) {
