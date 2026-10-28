@@ -342,6 +342,21 @@ export async function sendAgentMailDraft(
     );
   }
 
+  // OS-146: agent outbound webhooks for sent email.
+  void import("../agent-message-webhooks.js").then(
+    ({ notifyAgentMessageWebhooks }) => {
+      notifyAgentMessageWebhooks({
+        event: "email.message",
+        direction: "outbound",
+        workspaceId,
+        inboxId: sent.inboxId,
+        messageId: sent.messageId,
+        threadId: sent.threadId ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  );
+
   return {
     inboxId: sent.inboxId,
     messageId: sent.messageId,

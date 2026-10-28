@@ -1184,6 +1184,13 @@
       "when": 1796030000000,
       "tag": "0167_os146_chat_email_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1796040000000,
+      "tag": "0168_agent_message_webhooks",
+      "breakpoints": true
     }
   ]
 }

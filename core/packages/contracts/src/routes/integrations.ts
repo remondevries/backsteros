@@ -668,4 +668,40 @@ export const integrationsRoutes: AppRouter = c.router({
     summary:
       "Discover Tailscale-reachable PTY sidecar URL + auth token for agent TUI clients",
   },
+  listAgentMessageWebhooks: {
+    method: "GET",
+    path: "/api/v1/agent/message-webhooks",
+    responses: {
+      200: s.agentMessageWebhooksListSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List agent message webhooks (chat/email). No secrets returned. Requires chat:read or email:read.",
+  },
+  createAgentMessageWebhook: {
+    method: "POST",
+    path: "/api/v1/agent/message-webhooks",
+    body: s.createAgentMessageWebhookInputSchema,
+    responses: {
+      200: s.agentMessageWebhookCreatedSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Register an HMAC-signed outbound webhook for new chat/email messages. Secret returned once.",
+  },
+  deleteAgentMessageWebhook: {
+    method: "DELETE",
+    path: "/api/v1/agent/message-webhooks/:webhookId",
+    pathParams: z.object({ webhookId: z.string().min(1) }),
+    responses: {
+      200: z.object({ ok: z.literal(true) }),
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Revoke an agent message webhook",
+  },
 });

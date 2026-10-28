@@ -600,6 +600,38 @@ export const apiKeys = pgTable(
 );
 
 /**
+ * Agent-registered outbound webhooks for chat/email messages (OS-146).
+ * Secret plaintext is returned once on create; only ciphertext is stored.
+ */
+export const agentMessageWebhooks = pgTable(
+  "agent_message_webhooks",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    apiKeyId: text("api_key_id").references(() => apiKeys.id, {
+      onDelete: "set null",
+    }),
+    url: text("url").notNull(),
+    secretCiphertext: text("secret_ciphertext").notNull(),
+    events: text("events").array().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_message_webhooks_workspace_idx").on(table.workspaceId),
+    index("agent_message_webhooks_api_key_idx").on(table.apiKeyId),
+  ],
+);
+
+/**
  * Staff-facing audit trail for API key create / revoke / rotate.
  * Twinned between cores (insert-only, idempotent by id) so history is searchable
  * from either side (OS-139).

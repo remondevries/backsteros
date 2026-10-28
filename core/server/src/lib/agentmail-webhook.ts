@@ -142,6 +142,22 @@ export function handleAgentMailWebhookDelivery(input: {
     inboxId: parsed.inboxId,
     messageId: parsed.messageId,
   });
+  // OS-146: agent outbound webhooks for inbound AgentMail messages.
+  if (parsed.messageId) {
+    void import("../services/agent-message-webhooks.js").then(
+      ({ notifyAgentMessageWebhooks }) => {
+        notifyAgentMessageWebhooks({
+          event: "email.message",
+          direction: "inbound",
+          workspaceId: matched.workspaceId,
+          inboxId: parsed.inboxId!,
+          messageId: parsed.messageId!,
+          threadId: null,
+          timestamp: new Date().toISOString(),
+        });
+      },
+    );
+  }
   return { ok: true, published: true, workspaceId: matched.workspaceId };
 }
 

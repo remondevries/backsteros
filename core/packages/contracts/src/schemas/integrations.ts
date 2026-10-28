@@ -334,6 +334,35 @@ export const chatInboxesListSchema = z.object({
   inboxes: z.array(chatInboxSummarySchema),
 });
 
+/** Agent-registered outbound webhooks for chat/email messages (OS-146). */
+export const agentMessageWebhookEventSchema = z.enum([
+  "chat.message",
+  "email.message",
+]);
+
+export const createAgentMessageWebhookInputSchema = z.object({
+  url: z.string().url().max(2000),
+  events: z.array(agentMessageWebhookEventSchema).min(1).max(2).optional(),
+});
+
+export const agentMessageWebhookSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  events: z.array(agentMessageWebhookEventSchema),
+  enabled: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const agentMessageWebhookCreatedSchema = agentMessageWebhookSchema.extend({
+  /** Plaintext HMAC secret — returned once on create; store it. */
+  secret: z.string().min(1),
+});
+
+export const agentMessageWebhooksListSchema = z.object({
+  webhooks: z.array(agentMessageWebhookSchema),
+});
+
 export const updateChatConversationInputSchema = z.object({
   status: chatConversationStatusSchema.optional(),
   contactId: z.string().nullable().optional(),
@@ -928,6 +957,24 @@ export type ListChatInboxesQuery = z.infer<typeof listChatInboxesQuerySchema>;
 export type ChatInboxSummary = z.infer<typeof chatInboxSummarySchema>;
 
 export type ChatInboxesList = z.infer<typeof chatInboxesListSchema>;
+
+export type AgentMessageWebhookEvent = z.infer<
+  typeof agentMessageWebhookEventSchema
+>;
+
+export type CreateAgentMessageWebhookInput = z.infer<
+  typeof createAgentMessageWebhookInputSchema
+>;
+
+export type AgentMessageWebhook = z.infer<typeof agentMessageWebhookSchema>;
+
+export type AgentMessageWebhookCreated = z.infer<
+  typeof agentMessageWebhookCreatedSchema
+>;
+
+export type AgentMessageWebhooksList = z.infer<
+  typeof agentMessageWebhooksListSchema
+>;
 
 export type UpdateChatConversationInput = z.infer<
   typeof updateChatConversationInputSchema

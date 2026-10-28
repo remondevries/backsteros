@@ -339,7 +339,27 @@ export async function upsertMessageFromChatwoot(
       updatedAt: new Date(),
     })
     .returning();
-  return { message: created!, created: true };
+  const message = created!;
+  // OS-146: notify agent message webhooks for new inbound/outbound chat messages.
+  if (direction === "incoming" || direction === "outgoing") {
+    if (!summary.private) {
+      void import("./agent-message-webhooks.js").then(
+        ({ notifyAgentMessageWebhooks }) => {
+          notifyAgentMessageWebhooks({
+            event: "chat.message",
+            direction: direction === "incoming" ? "inbound" : "outbound",
+            workspaceId,
+            conversationId,
+            messageId: message.id,
+            channel: null,
+            contentPreview: summary.content?.slice(0, 280) ?? null,
+            timestamp: new Date().toISOString(),
+          });
+        },
+      );
+    }
+  }
+  return { message, created: true };
 }
 
 export async function listChatConversations(
@@ -409,57 +429,101 @@ export async function getChatConversation(
   };
 }
 
+export type CreateChatMessageDeps = {
+  getChatwootCredentials: typeof getChatwootCredentials;
+  createChatwootClient: typeof createChatwootClient;
+  loadConversation: (
+    workspaceId: string,
+    conversationId: string,
+  ) => Promise<{
+    id: string;
+    externalId: string;
+  } | null>;
+  upsertMessageFromChatwoot: typeof upsertMessageFromChatwoot;
+  touchConversation: (
+    conversationId: string,
+    patch: {
+      lastMessagePreview: string;
+      lastActivityAt: Date;
+    },
+  ) => Promise<void>;
+  publishChatUpdated: typeof publishChatUpdated;
+  nudgeChatTwin: typeof nudgeChatTwin;
+};
+
+const defaultCreateChatMessageDeps: CreateChatMessageDeps = {
+  getChatwootCredentials,
+  createChatwootClient,
+  loadConversation: async (workspaceId, conversationId) => {
+    const [conversation] = await db
+      .select({
+        id: chatConversations.id,
+        externalId: chatConversations.externalId,
+      })
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.workspaceId, workspaceId),
+          eq(chatConversations.id, conversationId),
+          isNull(chatConversations.deletedAt),
+        ),
+      )
+      .limit(1);
+    return conversation ?? null;
+  },
+  upsertMessageFromChatwoot,
+  touchConversation: async (conversationId, patch) => {
+    await db
+      .update(chatConversations)
+      .set({
+        lastMessagePreview: patch.lastMessagePreview,
+        lastActivityAt: patch.lastActivityAt,
+        unread: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(chatConversations.id, conversationId));
+  },
+  publishChatUpdated,
+  nudgeChatTwin,
+};
+
 export async function createChatMessage(
   workspaceId: string,
   conversationId: string,
   input: CreateChatMessageInput,
+  deps: CreateChatMessageDeps = defaultCreateChatMessageDeps,
 ): Promise<ChatMessage> {
-  const credentials = await getChatwootCredentials(workspaceId);
+  const credentials = await deps.getChatwootCredentials(workspaceId);
   if (!credentials) {
     throw new Error("Chatwoot is not configured.");
   }
-  const [conversation] = await db
-    .select()
-    .from(chatConversations)
-    .where(
-      and(
-        eq(chatConversations.workspaceId, workspaceId),
-        eq(chatConversations.id, conversationId),
-        isNull(chatConversations.deletedAt),
-      ),
-    )
-    .limit(1);
+  const conversation = await deps.loadConversation(workspaceId, conversationId);
   if (!conversation) {
     throw Object.assign(new Error("Conversation not found"), { status: 404 });
   }
 
-  const client = createChatwootClient(credentials);
+  const client = deps.createChatwootClient(credentials);
   const remote = await client.createMessage(conversation.externalId, {
     content: input.content,
     private: input.private,
   });
-  const { message } = await upsertMessageFromChatwoot(
+  const { message } = await deps.upsertMessageFromChatwoot(
     workspaceId,
     conversation.id,
     remote,
   );
-  await db
-    .update(chatConversations)
-    .set({
-      lastMessagePreview: remote.content.slice(0, 280),
-      lastActivityAt: new Date(remote.createdAt),
-      unread: false,
-      updatedAt: new Date(),
-    })
-    .where(eq(chatConversations.id, conversation.id));
+  await deps.touchConversation(conversation.id, {
+    lastMessagePreview: remote.content.slice(0, 280),
+    lastActivityAt: new Date(remote.createdAt),
+  });
 
-  publishChatUpdated({
+  deps.publishChatUpdated({
     workspaceId,
     conversationId: conversation.id,
     messageId: message.id,
     kind: "message",
   });
-  nudgeChatTwin(workspaceId, conversation.id, "chat.message.create");
+  deps.nudgeChatTwin(workspaceId, conversation.id, "chat.message.create");
 
   return mapMessage(message);
 }
