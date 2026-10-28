@@ -921,17 +921,15 @@
 }
 
 /*
- * WhatsApp placeholder + email drafts — transparent fill with dashed outline
+ * Email drafts — transparent fill with dashed outline
  * (same pattern as .email-thread-message.is-concept).
  */
-.communication-chat__card-item--placeholder .task-kanban-card,
 .communication-chat__card-item--draft .task-kanban-card {
   position: relative;
   border-color: transparent;
   background: transparent;
 }
 
-.communication-chat__card-item--placeholder .task-kanban-card::after,
 .communication-chat__card-item--draft .task-kanban-card::after {
   content: "";
   position: absolute;
@@ -974,8 +972,6 @@
     no-repeat repeat;
 }
 
-.communication-chat__card-item--placeholder .task-kanban-card:hover,
-.communication-chat__card-item--placeholder .task-kanban-card:focus-visible,
 .communication-chat__card-item--draft .task-kanban-card:hover,
 .communication-chat__card-item--draft .task-kanban-card:focus-visible {
   border-color: transparent;

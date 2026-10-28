@@ -44,8 +44,7 @@ export function isCommunicationEmailDraft(
 }
 
 /**
- * Lift draft email rows out of status groups so they render above Triage
- * (alongside the WhatsApp placeholder).
+ * Lift draft email rows out of status groups so they render above Triage.
  */
 export function peelCommunicationDraftEmailRows(
   groups: readonly CommunicationChatListStatusGroup[],

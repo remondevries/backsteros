@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 import { SearchIcon, XCircleFillIcon } from "@primer/octicons-react";
 
-import { resolveChatChannelKind } from "../../communication/chat-channel-kind.js";
 import {
   chatStatusToTaskStatus,
   type ChatListStatus,
@@ -35,34 +34,12 @@ import {
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
-import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { TaskBoardCard } from "../tasks/task-board-card.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
-import {
-  CHAT_CARD_AVATAR_SIZE,
-  CommunicationChatListCard,
-} from "./communication-chat-list-card.js";
+import { CommunicationChatListCard } from "./communication-chat-list-card.js";
 import { CommunicationChatListFilterMenu } from "./communication-chat-list-filter-menu.js";
 import { CommunicationEmailListCard } from "./communication-email-list-card.js";
-import { CommunicationWhatsAppKindIcon } from "./communication-kind-icons.js";
 import { CommunicationSupportListCard } from "./communication-support-list-card.js";
-
-const WHATSAPP_PLACEHOLDER_ID = "__whatsapp-placeholder__";
-
-const WHATSAPP_PLACEHOLDER_TASK = {
-  id: WHATSAPP_PLACEHOLDER_ID,
-  number: 0,
-  title: "WhatsApp cards will show here once connected",
-  status: "triage",
-  priority: 0,
-  dueDate: null,
-  projectId: null,
-  projectKey: null,
-  projectName: null,
-  assigneeId: null,
-  listKind: "task" as const,
-};
 
 const NO_HIDDEN_STATUSES: readonly ChatListStatus[] = [];
 
@@ -99,8 +76,6 @@ export type CommunicationMessagesListProps = {
   onHighlightChange?: (rowId: string | null) => void;
   /** Status buckets never shown (Inbox hides `resolved` / Completed). */
   hiddenStatuses?: readonly ChatListStatus[];
-  /** Dashed WhatsApp placeholder card above the list. */
-  showWhatsAppPlaceholder?: boolean;
   /** Search + filter toolbar above the list. */
   showToolbar?: boolean;
   keyboardZone?: ListKeyboardNavZone;
@@ -139,7 +114,6 @@ export function CommunicationMessagesList({
   onKeyboardItemIdsChange,
   onHighlightChange,
   hiddenStatuses = NO_HIDDEN_STATUSES,
-  showWhatsAppPlaceholder: allowWhatsAppPlaceholder = true,
   showToolbar = true,
   keyboardZone = LIST_KEYBOARD_NAV_ZONE_MAIN,
   keyboardEnabled = true,
@@ -232,29 +206,9 @@ export function CommunicationMessagesList({
   const visibleEmpty = statusGroups.length === 0 && draftEmailRows.length === 0;
   const listQueryActive = listQuery.trim().length > 0;
   const listFiltersActive = communicationChatListFiltersAreActive(listFilters);
-  const listQueryNeedle = listQuery.trim().toLowerCase();
-  const hasWhatsAppConversation = conversations.some(
-    (conversation) =>
-      resolveChatChannelKind(conversation.channelType, {
-        inboxName: conversation.inboxName,
-        contactName: conversation.contactName,
-      }) === "whatsapp",
-  );
-  const showWhatsAppPlaceholder =
-    allowWhatsAppPlaceholder &&
-    !hasWhatsAppConversation &&
-    !(listEmpty && loading) &&
-    (listFilters.kind == null || listFilters.kind === "whatsapp") &&
-    (!listQueryActive ||
-      "whatsapp".includes(listQueryNeedle) ||
-      WHATSAPP_PLACEHOLDER_TASK.title.toLowerCase().includes(listQueryNeedle));
   const listFilteredEmpty =
-    !listEmpty &&
-    (listQueryActive || listFiltersActive) &&
-    visibleEmpty &&
-    !showWhatsAppPlaceholder;
-  const nothingToShow =
-    visibleEmpty && !showWhatsAppPlaceholder && !listFilteredEmpty;
+    !listEmpty && (listQueryActive || listFiltersActive) && visibleEmpty;
+  const nothingToShow = visibleEmpty && !listFilteredEmpty;
   const emailSelected = Boolean(selectedEmailId);
   const supportSelected = Boolean(selectedSupportId);
 
@@ -377,55 +331,6 @@ export function CommunicationMessagesList({
             aria-label="Chats, emails, WhatsApp, and support"
             {...listContainerProps}
           >
-            {showWhatsAppPlaceholder ? (
-              <li
-                key={WHATSAPP_PLACEHOLDER_ID}
-                className={[
-                  "project-tasks-list__card-item",
-                  "task-kanban-card-item",
-                  "communication-chat__card-item",
-                  "communication-chat__card-item--placeholder",
-                ].join(" ")}
-              >
-                <TaskBoardCard
-                  task={WHATSAPP_PLACEHOLDER_TASK}
-                  onOpen={() => undefined}
-                  showDueDate={false}
-                  showDisplayId={false}
-                  showStatus={false}
-                  leadingSlot={
-                    <span
-                      className="communication-chat__card-avatar-wrap"
-                      title="WhatsApp"
-                    >
-                      <span
-                        className="communication-chat__card-avatar"
-                        aria-hidden="true"
-                      >
-                        <ContactPersonIcon
-                          size={Math.round(CHAT_CARD_AVATAR_SIZE * 0.55)}
-                        />
-                      </span>
-                      <span
-                        className="communication-chat__card-kind communication-chat__card-kind--whatsapp"
-                        title="WhatsApp"
-                        aria-label="WhatsApp"
-                      >
-                        <CommunicationWhatsAppKindIcon />
-                      </span>
-                    </span>
-                  }
-                  topLeadingSlot={
-                    <span
-                      className="communication-chat__card-name"
-                      title="WhatsApp"
-                    >
-                      WhatsApp
-                    </span>
-                  }
-                />
-              </li>
-            ) : null}
             {draftEmailRows.map((row) => (
               <CommunicationEmailListCard
                 key={row.item.id}

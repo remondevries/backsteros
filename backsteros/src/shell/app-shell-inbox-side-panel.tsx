@@ -327,7 +327,6 @@ export function DesktopInboxSidePanel({
         onKeyboardItemIdsChange={setMessagesKeyboardIds}
         onHighlightChange={setMessagesHighlightedId}
         hiddenStatuses={INBOX_MESSAGES_HIDDEN_STATUSES}
-        showWhatsAppPlaceholder={false}
         showToolbar={false}
         keyboardZone={LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL}
         keyboardEnabled={keepAliveActive}

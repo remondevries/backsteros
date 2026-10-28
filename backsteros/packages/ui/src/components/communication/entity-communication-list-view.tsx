@@ -3,7 +3,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 
-import { resolveChatChannelKind } from "../../communication/chat-channel-kind.js";
 import {
   chatConversationToTaskItemRowTask,
   chatStatusToTaskStatus,
@@ -26,7 +25,6 @@ import {
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import {
   CommunicationChannelKindIcon,
-  CommunicationWhatsAppKindIcon,
   communicationChannelKindClass,
   communicationChannelKindTitle,
 } from "./communication-kind-icons.js";
@@ -40,22 +38,6 @@ import { TaskBoardCard } from "../tasks/task-board-card.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 
 const CHAT_CARD_AVATAR_SIZE = 40;
-
-const WHATSAPP_PLACEHOLDER_ID = "__whatsapp-placeholder__";
-
-const WHATSAPP_PLACEHOLDER_TASK = {
-  id: WHATSAPP_PLACEHOLDER_ID,
-  number: 0,
-  title: "WhatsApp cards will show here once connected",
-  status: "triage",
-  priority: 0,
-  dueDate: null,
-  projectId: null,
-  projectKey: null,
-  projectName: null,
-  assigneeId: null,
-  listKind: "task" as const,
-};
 
 function ageLabel(raw: string | number | null | undefined): {
   label: string;
@@ -80,7 +62,6 @@ export type EntityCommunicationListViewProps = {
   loading?: boolean;
   emptyMessage?: string;
   emptyHint?: string;
-  showWhatsAppPlaceholder?: boolean;
   resolveAvatarSrc?: (
     conversation: ChatConversation,
   ) => string | null | undefined;
@@ -94,7 +75,7 @@ export type EntityCommunicationListViewProps = {
 
 /**
  * Contact / org Communication workspace tab — same cards as the main
- * Communication list (kind badges, draft dashed style, WhatsApp placeholder).
+ * Communication list (kind badges, draft dashed style).
  */
 export function EntityCommunicationListView({
   conversations = [],
@@ -106,7 +87,6 @@ export function EntityCommunicationListView({
   loading = false,
   emptyMessage = "No communication yet",
   emptyHint = "Chats, emails, and support tickets for this contact will show up here.",
-  showWhatsAppPlaceholder = true,
   resolveAvatarSrc,
   resolveEmailAvatarSrc,
   onSelectChat,
@@ -129,17 +109,6 @@ export function EntityCommunicationListView({
     conversations.length === 0 &&
     emails.length === 0 &&
     supportTasks.length === 0;
-  const hasWhatsAppConversation = conversations.some(
-    (conversation) =>
-      resolveChatChannelKind(conversation.channelType, {
-        inboxName: conversation.inboxName,
-        contactName: conversation.contactName,
-      }) === "whatsapp",
-  );
-  const showWhatsApp =
-    showWhatsAppPlaceholder &&
-    !hasWhatsAppConversation &&
-    !(listEmpty && loading);
 
   function toggleGroup(status: string) {
     setCollapsedGroups((prev) => {
@@ -150,7 +119,7 @@ export function EntityCommunicationListView({
     });
   }
 
-  if (listEmpty && !loading && !showWhatsApp) {
+  if (listEmpty && !loading) {
     return (
       <div className="contact-tasks-list__empty">
         <h2 className="contact-tasks-list__empty-title">{emptyMessage}</h2>
@@ -168,52 +137,6 @@ export function EntityCommunicationListView({
         className="overview-grouped-list communication-chat__task-list contact-tasks-list"
         role="list"
       >
-        {showWhatsApp ? (
-          <li
-            key={WHATSAPP_PLACEHOLDER_ID}
-            className={[
-              "project-tasks-list__card-item",
-              "task-kanban-card-item",
-              "communication-chat__card-item",
-              "communication-chat__card-item--placeholder",
-            ].join(" ")}
-          >
-            <TaskBoardCard
-              task={WHATSAPP_PLACEHOLDER_TASK}
-              onOpen={() => undefined}
-              showDueDate={false}
-              showDisplayId={false}
-              showStatus={false}
-              leadingSlot={
-                <span
-                  className="communication-chat__card-avatar-wrap"
-                  title="WhatsApp"
-                >
-                  <span
-                    className="communication-chat__card-avatar"
-                    aria-hidden="true"
-                  >
-                    <ContactPersonIcon
-                      size={Math.round(CHAT_CARD_AVATAR_SIZE * 0.55)}
-                    />
-                  </span>
-                  <span
-                    className="communication-chat__card-kind communication-chat__card-kind--whatsapp"
-                    title="WhatsApp"
-                    aria-label="WhatsApp"
-                  >
-                    <CommunicationWhatsAppKindIcon />
-                  </span>
-                </span>
-              }
-              topLeadingSlot={
-                <span className="communication-chat__card-name" title="WhatsApp">
-                  WhatsApp
-                </span>
-              }
-            />
-          </li>
-        ) : null}
         {draftEmailRows.map((row) => (
           <EmailCard
             key={row.item.id}
