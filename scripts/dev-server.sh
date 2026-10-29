@@ -7,6 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 TAILSCALE_IP="${DEV_SERVER_TAILSCALE_IP:-100.126.31.97}"
+PUBLIC_HOST="${DEV_SERVER_PUBLIC_HOST:-dev-os.lemo-design.com}"
+PUBLIC_ORIGIN="https://${PUBLIC_HOST}"
 TMUX_SESSION="${DEV_SERVER_TMUX_SESSION:-backsteros-dev}"
 COMPOSE_PROJECT="${BACKSTEROS_COMPOSE_PROJECT:-backsteros-devserver}"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.dev-server.yml)
@@ -41,59 +43,63 @@ assert_bind_safety() {
   fi
 }
 
+# Upsert KEY=VALUE in an env file (creates the file if missing).
+upsert_env() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+  tmp="$(mktemp)"
+  if grep -qE "^${key}=" "$file"; then
+    # Avoid sed -i portability issues; rewrite without matching line.
+    grep -vE "^${key}=" "$file" >"$tmp" || true
+    mv "$tmp" "$file"
+  else
+    rm -f "$tmp"
+  fi
+  printf '%s=%s\n' "$key" "$value" >>"$file"
+}
+
 write_env_files() {
   [[ -f "$EXAMPLE" ]] || die "missing $EXAMPLE"
   mkdir -p "$(dirname "$VAULT_PATH")" "$LOG_DIR"
 
-  # Root env for compose variable substitution.
-  if [[ ! -f "$ENV_ROOT" ]]; then
-    grep -E '^(BACKSTEROS_COMPOSE_PROJECT|COMPOSE_PROJECT_NAME|POSTGRES_|DEV_SERVER_)' \
-      "$EXAMPLE" >"$ENV_ROOT" || true
-    # Ensure compose can read POSTGRES_* from project dir.
-    {
-      echo "BACKSTEROS_COMPOSE_PROJECT=${COMPOSE_PROJECT}"
-      echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
-      echo "POSTGRES_USER=backsteros"
-      echo "POSTGRES_PASSWORD=backsteros_dev_only"
-      echo "POSTGRES_DB=backsteros"
-    } >"$ENV_ROOT"
-    echo "Wrote $ENV_ROOT"
-  fi
+  upsert_env "$ENV_ROOT" "BACKSTEROS_COMPOSE_PROJECT" "$COMPOSE_PROJECT"
+  upsert_env "$ENV_ROOT" "COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT"
+  upsert_env "$ENV_ROOT" "POSTGRES_USER" "backsteros"
+  upsert_env "$ENV_ROOT" "POSTGRES_PASSWORD" "backsteros_dev_only"
+  upsert_env "$ENV_ROOT" "POSTGRES_DB" "backsteros"
+  upsert_env "$ENV_ROOT" "DEV_SERVER_PUBLIC_HOST" "$PUBLIC_HOST"
 
-  if [[ ! -f "$ENV_SERVER" ]]; then
-    cat >"$ENV_SERVER" <<EOF
-DATABASE_URL=postgresql://backsteros:backsteros_dev_only@127.0.0.1:5433/backsteros
-PORT=8788
-HOST=${TAILSCALE_IP}
-NODE_ENV=development
-LOG_LEVEL=info
-PUBLIC_API_URL=http://${TAILSCALE_IP}:8788
-CORS_ORIGINS=http://${TAILSCALE_IP}:1420,http://development:1420,http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,https://tauri.localhost
-LOCAL_SHELL_AUTH=1
-LOCAL_SHELL_TOKEN=local
-POWERSYNC_JWT_SECRET=PhusPC__XjONaDuOHFIEcJF8bKH-PnyblObbfJO7yz8
-POWERSYNC_AUDIENCE=backsteros-powersync
-POWERSYNC_URL=http://${TAILSCALE_IP}:8080
-POWERSYNC_LOCAL_URL=http://127.0.0.1:8080
-BACKSTEROS_VAULT_PATH=${VAULT_PATH}
-EOF
-    echo "Wrote $ENV_SERVER"
-  fi
+  upsert_env "$ENV_SERVER" "DATABASE_URL" "postgresql://backsteros:backsteros_dev_only@127.0.0.1:5433/backsteros"
+  upsert_env "$ENV_SERVER" "PORT" "8788"
+  upsert_env "$ENV_SERVER" "HOST" "${TAILSCALE_IP}"
+  upsert_env "$ENV_SERVER" "NODE_ENV" "development"
+  upsert_env "$ENV_SERVER" "LOG_LEVEL" "info"
+  upsert_env "$ENV_SERVER" "PUBLIC_API_URL" "${PUBLIC_ORIGIN}"
+  upsert_env "$ENV_SERVER" "CORS_ORIGINS" "${PUBLIC_ORIGIN},http://${TAILSCALE_IP}:1420,http://development:1420,http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,https://tauri.localhost"
+  upsert_env "$ENV_SERVER" "LOCAL_SHELL_AUTH" "1"
+  upsert_env "$ENV_SERVER" "LOCAL_SHELL_TOKEN" "local"
+  upsert_env "$ENV_SERVER" "POWERSYNC_JWT_SECRET" "PhusPC__XjONaDuOHFIEcJF8bKH-PnyblObbfJO7yz8"
+  upsert_env "$ENV_SERVER" "POWERSYNC_AUDIENCE" "backsteros-powersync"
+  upsert_env "$ENV_SERVER" "POWERSYNC_URL" "${PUBLIC_ORIGIN}/powersync"
+  upsert_env "$ENV_SERVER" "POWERSYNC_LOCAL_URL" "http://127.0.0.1:8080"
+  upsert_env "$ENV_SERVER" "BACKSTEROS_VAULT_PATH" "${VAULT_PATH}"
 
-  if [[ ! -f "$ENV_WEB" ]]; then
-    cat >"$ENV_WEB" <<EOF
-VITE_API_URL=http://${TAILSCALE_IP}:8788
-VITE_TREAT_API_AS_LOCAL_CORE=1
-VITE_LOCAL_SHELL_TOKEN=local
-TAURI_DEV_HOST=${TAILSCALE_IP}
-EOF
-    echo "Wrote $ENV_WEB"
-  fi
+  upsert_env "$ENV_WEB" "VITE_API_URL" "${PUBLIC_ORIGIN}"
+  upsert_env "$ENV_WEB" "VITE_TREAT_API_AS_LOCAL_CORE" "1"
+  upsert_env "$ENV_WEB" "VITE_DEV_SERVER_HOST" "${PUBLIC_HOST}"
+  upsert_env "$ENV_WEB" "VITE_LOCAL_SHELL_TOKEN" "local"
+  upsert_env "$ENV_WEB" "TAURI_DEV_HOST" "${TAILSCALE_IP}"
+  upsert_env "$ENV_WEB" "DEV_PUBLIC_HOST" "${PUBLIC_HOST}"
 
   assert_bind_safety "$ENV_ROOT"
   assert_bind_safety "$ENV_SERVER"
   assert_bind_safety "$ENV_WEB"
   mkdir -p "$VAULT_PATH"
+  echo "Ensured env files for ${PUBLIC_ORIGIN} (and Tailscale ${TAILSCALE_IP})."
 }
 
 compose() {
@@ -180,16 +186,14 @@ tmux_running() {
 
 start_tmux_apps() {
   need_cmd tmux
-  if tmux_running; then
-    echo "tmux session '$TMUX_SESSION' already running"
-    return 0
-  fi
-
+  stop_tmux_apps
   mkdir -p "$LOG_DIR"
+  : >"$LOG_DIR/core.log"
+  : >"$LOG_DIR/web.log"
   tmux new-session -d -s "$TMUX_SESSION" -n core \
     "cd '$ROOT' && pnpm --filter @backsteros/server dev 2>&1 | tee -a '$LOG_DIR/core.log'"
   tmux new-window -t "$TMUX_SESSION" -n web \
-    "cd '$ROOT/backsteros' && export TAURI_DEV_HOST='${TAILSCALE_IP}' && pnpm run dev:browser 2>&1 | tee -a '$LOG_DIR/web.log'"
+    "cd '$ROOT/backsteros' && export TAURI_DEV_HOST='${TAILSCALE_IP}' DEV_PUBLIC_HOST='${PUBLIC_HOST}' VITE_DEV_SERVER_HOST='${PUBLIC_HOST}' && pnpm run dev:browser 2>&1 | tee -a '$LOG_DIR/web.log'"
   echo "Started tmux session '$TMUX_SESSION' (windows: core, web)"
 }
 
@@ -218,14 +222,17 @@ cmd_up() {
   wait_http "http://${TAILSCALE_IP}:8788/health"
   echo "Waiting for Vite…"
   wait_http "http://${TAILSCALE_IP}:1420/" || true
+  wait_http "${PUBLIC_ORIGIN}/" || true
   cat <<EOF
 
 BacksterOS dev-server is up.
 
-  Web UI:     http://${TAILSCALE_IP}:1420/   (or http://development:1420/)
-  API:        http://${TAILSCALE_IP}:8788/health
-  PowerSync:  http://${TAILSCALE_IP}:8080/
-  OpenAPI:    http://${TAILSCALE_IP}:8788/api/v1/openapi.json
+  HTTPS UI:   ${PUBLIC_ORIGIN}/
+  HTTPS API:  ${PUBLIC_ORIGIN}/health
+  PowerSync:  ${PUBLIC_ORIGIN}/powersync/
+  OpenAPI:    ${PUBLIC_ORIGIN}/api/v1/openapi.json
+
+  Direct (also kept): http://${TAILSCALE_IP}:1420/  ·  http://${TAILSCALE_IP}:8788/health
 
   Login: no password — local-shell bearer \`local\` (automatic in the web app).
   Logs:  tmux attach -t ${TMUX_SESSION}   or   ${LOG_DIR}/
@@ -273,7 +280,9 @@ cmd_status() {
   fi
   echo
   curl -fsS "http://${TAILSCALE_IP}:8788/health" && echo || echo "API: down"
-  curl -fsS -o /dev/null -w "Vite: HTTP %{http_code}\n" "http://${TAILSCALE_IP}:1420/" || echo "Vite: down"
+  curl -fsS -o /dev/null -w "Vite direct: HTTP %{http_code}\n" "http://${TAILSCALE_IP}:1420/" || echo "Vite direct: down"
+  curl -fsS -o /dev/null -w "HTTPS UI: HTTP %{http_code}\n" "${PUBLIC_ORIGIN}/" || echo "HTTPS UI: down"
+  curl -fsS -o /dev/null -w "HTTPS health: HTTP %{http_code}\n" "${PUBLIC_ORIGIN}/health" || echo "HTTPS health: down"
 }
 
 cmd_logs() {

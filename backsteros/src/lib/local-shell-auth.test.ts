@@ -30,6 +30,24 @@ describe("desktop product auth", () => {
     }
   });
 
+  it("uses local-shell bearer for HTTPS gateway when opted in", async () => {
+    const previousFlag = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    const previousHost = process.env.VITE_DEV_SERVER_HOST;
+    process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+    process.env.VITE_DEV_SERVER_HOST = "dev-os.lemo-design.com";
+    try {
+      const token = await loadDesktopProductToken(
+        "https://dev-os.lemo-design.com",
+      );
+      assert.equal(token, DEFAULT_LOCAL_SHELL_TOKEN);
+    } finally {
+      if (previousFlag === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+      else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previousFlag;
+      if (previousHost === undefined) delete process.env.VITE_DEV_SERVER_HOST;
+      else process.env.VITE_DEV_SERVER_HOST = previousHost;
+    }
+  });
+
   it("does not invent a local-shell bearer for cloud API URLs", async () => {
     const token = await loadDesktopProductToken(
       "https://api.local.backsteros.com",

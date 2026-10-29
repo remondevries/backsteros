@@ -14,6 +14,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+/** HTTPS public hostname in front of Vite (nginx). Mac/Tauri leave unset. */
+const publicHost = (
+  process.env.DEV_PUBLIC_HOST ||
+  process.env.VITE_DEV_SERVER_HOST ||
+  ""
+).trim();
 const bundleReport = process.env.BUNDLE_REPORT === "1";
 // T3 Code HTTP API (Hetzner/Kamal discovery). Default matches backsterdev/scripts/dev-runner.ts.
 const t3CodeHttpUrl = (
@@ -141,12 +147,13 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    // MagicDNS `development` + Tailscale IP for browser testing on this box (OS-148).
+    // MagicDNS `development` + Tailscale IP + optional HTTPS gateway (OS-148).
     // os.local.backsteros.com remains the Mac HTTPS gateway name.
     allowedHosts: [
       ".local.backsteros.com",
       "development",
       "100.126.31.97",
+      ...(publicHost ? [publicHost] : []),
     ],
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
@@ -158,13 +165,21 @@ export default defineConfig(async () => ({
         changeOrigin: true,
       },
     },
-    hmr: host
+    // Behind nginx TLS (`DEV_PUBLIC_HOST`): browser HMR over wss:443.
+    // Direct Tailscale / Tauri (`TAURI_DEV_HOST` only): ws on :1421 (unchanged).
+    hmr: publicHost
       ? {
-          protocol: "ws",
-          host,
-          port: 1421,
+          protocol: "wss",
+          host: publicHost,
+          clientPort: 443,
         }
-      : undefined,
+      : host
+        ? {
+            protocol: "ws",
+            host,
+            port: 1421,
+          }
+        : undefined,
     watch: {
       // Ignore Tauri / generated UI dist. Dev aliases `@backsteros/ui` →
       // `packages/ui/src`, so watching `dist` only storms HMR (and leaks

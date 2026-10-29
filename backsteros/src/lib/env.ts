@@ -41,23 +41,49 @@ function resolveConfiguredDesktopApiUrl(): string {
   return devGatewayApiUrl() ?? LOCAL_CORE_API_URL;
 }
 
+function readViteOrProcessEnv(name: string): string | undefined {
+  try {
+    const fromImport = (import.meta.env as Record<string, string | undefined>)?.[
+      name
+    ]?.trim();
+    if (fromImport) return fromImport;
+  } catch {
+    // import.meta.env is absent in some test runners
+  }
+  return process.env[name]?.trim() || undefined;
+}
+
 /**
- * When `1`/`true`, keep a cleartext Tailscale `:8788` URL as local-core instead
- * of rewriting it to the HTTPS cloud gateway. Used by the Ubuntu development
- * server (OS-148) so a browser on the tailnet can talk to this box's API.
+ * When `1`/`true`, keep a cleartext Tailscale `:8788` URL (or the configured
+ * HTTPS {@link configuredDevServerHostname}) as local-core instead of rewriting
+ * to the cloud gateway. Used by the Ubuntu development server (OS-148).
  */
 export function treatConfiguredApiAsLocalCore(): boolean {
-  let flag: string | undefined;
-  try {
-    flag = import.meta.env?.VITE_TREAT_API_AS_LOCAL_CORE?.trim();
-  } catch {
-    flag = undefined;
-  }
-  if (!flag) {
-    flag = process.env.VITE_TREAT_API_AS_LOCAL_CORE?.trim();
-  }
-  const normalized = flag?.toLowerCase();
+  const normalized = readViteOrProcessEnv("VITE_TREAT_API_AS_LOCAL_CORE")?.toLowerCase();
   return normalized === "1" || normalized === "true";
+}
+
+/**
+ * Hostname of the HTTPS same-origin gateway in front of this box's local-core
+ * (e.g. `dev-os.lemo-design.com`). Only consulted when
+ * {@link treatConfiguredApiAsLocalCore} is set — Mac/production stay unchanged.
+ */
+export function configuredDevServerHostname(): string | null {
+  if (!treatConfiguredApiAsLocalCore()) return null;
+  const raw = readViteOrProcessEnv("VITE_DEV_SERVER_HOST");
+  if (!raw) return null;
+  try {
+    if (raw.includes("://")) return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  return raw.replace(/\/$/, "").toLowerCase() || null;
+}
+
+/** Same-origin PowerSync path on the HTTPS gateway (nginx strips the prefix). */
+export function configuredDevServerPowerSyncUrl(): string | null {
+  const host = configuredDevServerHostname();
+  return host ? `https://${host}/powersync` : null;
 }
 
 function isLoopbackHostname(host: string): boolean {
@@ -71,8 +97,8 @@ function isLocalCoreApiPort(port: string): boolean {
 
 /**
  * True when `VITE_API_URL` targets local-core (`:8788`), not the Vite UI on `:1420`.
- * Loopback always qualifies. Cleartext Tailscale / MagicDNS hosts qualify only when
- * {@link treatConfiguredApiAsLocalCore} is set (dev-server browser testing).
+ * Loopback always qualifies. Cleartext Tailscale / MagicDNS / configured HTTPS
+ * gateway hosts qualify only when {@link treatConfiguredApiAsLocalCore} is set.
  */
 export function isLocalDevApiUrl(apiUrl: string): boolean {
   try {
@@ -81,6 +107,9 @@ export function isLocalDevApiUrl(apiUrl: string): boolean {
     if (url.port === "1420") return false;
     if (isLoopbackHostname(host)) return isLocalCoreApiPort(url.port);
     if (!treatConfiguredApiAsLocalCore()) return false;
+    const configured = configuredDevServerHostname();
+    // HTTPS same-origin gateway (nginx → :8788 / :1420 / PowerSync).
+    if (configured && host === configured) return true;
     if (!isLocalCoreApiPort(url.port)) return false;
     // Explicit opt-in: MagicDNS name, this development box, or any CGNAT tailnet IP.
     return (
@@ -163,6 +192,23 @@ export function rewritePowerSyncEndpoint(
   const trimmed = endpoint.trim().replace(/\/+$/, "");
   const apiUrl = options?.apiUrl ?? null;
   if (apiUrl && isLocalDevApiUrl(apiUrl)) {
+    // Browser on the HTTPS gateway needs a secure-context PowerSync URL (OPFS).
+    const secure = configuredDevServerPowerSyncUrl();
+    if (secure) {
+      try {
+        const api = new URL(apiUrl);
+        const ep = new URL(trimmed);
+        if (
+          api.protocol === "https:" &&
+          ep.protocol === "http:" &&
+          (isLoopbackHostname(ep.hostname) || ep.hostname.startsWith("100."))
+        ) {
+          return secure;
+        }
+      } catch {
+        // keep trimmed
+      }
+    }
     return trimmed;
   }
   // Product default is local-core — keep loopback PowerSync when API is unset/local.

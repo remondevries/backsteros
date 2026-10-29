@@ -30,7 +30,9 @@ test("product API defaults to local-core", () => {
 
 test("VITE_TREAT_API_AS_LOCAL_CORE keeps Tailscale local-core cleartext", () => {
   const previous = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  const previousHost = process.env.VITE_DEV_SERVER_HOST;
   process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+  delete process.env.VITE_DEV_SERVER_HOST;
   try {
     assert.equal(
       resolveDesktopApiUrl("http://100.126.31.97:8788"),
@@ -47,6 +49,61 @@ test("VITE_TREAT_API_AS_LOCAL_CORE keeps Tailscale local-core cleartext", () => 
   } finally {
     if (previous === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
     else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previous;
+    if (previousHost === undefined) delete process.env.VITE_DEV_SERVER_HOST;
+    else process.env.VITE_DEV_SERVER_HOST = previousHost;
+  }
+});
+
+test("VITE_DEV_SERVER_HOST HTTPS gateway is local-core when opted in", () => {
+  const previousFlag = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  const previousHost = process.env.VITE_DEV_SERVER_HOST;
+  process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+  process.env.VITE_DEV_SERVER_HOST = "dev-os.lemo-design.com";
+  try {
+    assert.equal(
+      isLocalDevApiUrl("https://dev-os.lemo-design.com"),
+      true,
+    );
+    assert.equal(
+      isLocalDevApiUrl("https://dev-os.lemo-design.com/"),
+      true,
+    );
+    assert.equal(
+      rewritePowerSyncEndpoint("http://127.0.0.1:8080", {
+        apiUrl: "https://dev-os.lemo-design.com",
+      }),
+      "https://dev-os.lemo-design.com/powersync",
+    );
+    assert.equal(
+      rewritePowerSyncEndpoint("https://dev-os.lemo-design.com/powersync", {
+        apiUrl: "https://dev-os.lemo-design.com",
+      }),
+      "https://dev-os.lemo-design.com/powersync",
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previousFlag;
+    if (previousHost === undefined) delete process.env.VITE_DEV_SERVER_HOST;
+    else process.env.VITE_DEV_SERVER_HOST = previousHost;
+  }
+});
+
+test("without treat flag, HTTPS gateway host is not local-core", () => {
+  const previousFlag = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  const previousHost = process.env.VITE_DEV_SERVER_HOST;
+  delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  process.env.VITE_DEV_SERVER_HOST = "dev-os.lemo-design.com";
+  try {
+    assert.equal(isLocalDevApiUrl("https://dev-os.lemo-design.com"), false);
+    assert.equal(
+      resolveDesktopApiUrl("http://100.75.45.22:8788"),
+      CLOUD_CORE_API_URL,
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previousFlag;
+    if (previousHost === undefined) delete process.env.VITE_DEV_SERVER_HOST;
+    else process.env.VITE_DEV_SERVER_HOST = previousHost;
   }
 });
 
