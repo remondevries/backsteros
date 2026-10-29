@@ -47,6 +47,17 @@ function asString(value: unknown): string | null {
   return null;
 }
 
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.max(0, Math.floor(parsed));
+  }
+  return null;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -179,8 +190,102 @@ export class ZernioClient {
     return { url };
   }
 
+  /**
+   * Live platform posts for a connected account (incl. posts not created via Zernio).
+   * LinkedIn personal profiles typically return [] — LinkedIn does not grant
+   * `r_member_social`, so only org pages (and posts published via Zernio) work.
+   * @see https://docs.zernio.com/accounts/get-account-posts
+   */
+  async listAccountPosts(accountId: string): Promise<ZernioPlatformPostRaw[]> {
+    const payload = await this.requestJson<unknown>(
+      `/v1/accounts/${encodeURIComponent(accountId)}/posts`,
+    );
+    const record = asRecord(payload);
+    const rows = Array.isArray(record?.posts)
+      ? (record!.posts as unknown[])
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    return rows
+      .map((row) => parsePlatformPost(row))
+      .filter((row): row is ZernioPlatformPostRaw => row != null);
+  }
+
+  /**
+   * Posts authored through Zernio for an account (not the live platform listing).
+   * Used to fill the Network inbox when LinkedIn refuses historical member posts.
+   * @see https://docs.zernio.com/posts/list-posts
+   */
+  async listZernioPosts(input: {
+    accountId: string;
+    status?: string;
+    limit?: number;
+  }): Promise<ZernioAuthoredPostRaw[]> {
+    const params = new URLSearchParams({
+      accountId: input.accountId,
+      source: "zernio",
+      limit: String(input.limit ?? 25),
+    });
+    if (input.status) params.set("status", input.status);
+    const payload = await this.requestJson<unknown>(`/v1/posts?${params}`);
+    const record = asRecord(payload);
+    const rows = Array.isArray(record?.posts)
+      ? (record!.posts as unknown[])
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    return rows
+      .map((row) => parseAuthoredPost(row, input.accountId))
+      .filter((row): row is ZernioAuthoredPostRaw => row != null);
+  }
+
   async createPost(body: Record<string, unknown>): Promise<unknown> {
     return this.requestJson("/v1/posts", { method: "POST", body });
+  }
+
+  /** Update draft/scheduled/failed/cancelled posts (incl. `scheduledFor`). */
+  async updatePost(
+    postId: string,
+    body: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.requestJson(`/v1/posts/${encodeURIComponent(postId)}`, {
+      method: "PUT",
+      body,
+    });
+  }
+
+  /**
+   * Presign a direct-to-storage upload; use `publicUrl` in post mediaItems.
+   * @see https://docs.zernio.com/media/presign
+   */
+  async presignMedia(input: {
+    filename: string;
+    contentType: string;
+    size?: number;
+  }): Promise<{ uploadUrl: string; publicUrl: string }> {
+    const payload = await this.requestJson<Record<string, unknown>>(
+      "/v1/media/presign",
+      {
+        method: "POST",
+        body: {
+          filename: input.filename,
+          contentType: input.contentType,
+          ...(input.size != null ? { size: input.size } : {}),
+        },
+      },
+    );
+    const uploadUrl =
+      asString(payload.uploadUrl) ?? asString(payload.upload_url);
+    const publicUrl =
+      asString(payload.publicUrl) ?? asString(payload.public_url);
+    if (!uploadUrl || !publicUrl) {
+      throw new ZernioApiError(
+        502,
+        JSON.stringify(payload),
+        "Zernio media presign did not return uploadUrl/publicUrl",
+      );
+    }
+    return { uploadUrl, publicUrl };
   }
 
   async editPublishedPost(
@@ -256,6 +361,42 @@ export class ZernioClient {
       `/v1/inbox/comments/${encodeURIComponent(postId)}?${params}`,
       { method: "DELETE" },
     );
+  }
+
+  /** React to a post as `accountId` (`POST /v1/inbox/posts/{postId}/like`). */
+  async likePost(
+    postId: string,
+    body: { accountId: string; reactionType?: string },
+  ): Promise<unknown> {
+    return this.requestJson(
+      `/v1/inbox/posts/${encodeURIComponent(postId)}/like`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Remove a reaction (`DELETE /v1/inbox/posts/{postId}/like?accountId=`). */
+  async unlikePost(postId: string, accountId: string): Promise<unknown> {
+    const params = new URLSearchParams({ accountId });
+    return this.requestJson(
+      `/v1/inbox/posts/${encodeURIComponent(postId)}/like?${params}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Per-post LinkedIn stats (includes saves on personal accounts).
+   * `GET /v1/accounts/{accountId}/linkedin-post-analytics?urn=`
+   */
+  async getLinkedInPostAnalytics(
+    accountId: string,
+    urn: string,
+  ): Promise<ZernioLinkedInPostAnalyticsRaw> {
+    const params = new URLSearchParams({ urn });
+    const payload = await this.requestJson<unknown>(
+      `/v1/accounts/${encodeURIComponent(accountId)}/linkedin-post-analytics?${params}`,
+      { analytics: true },
+    );
+    return parseLinkedInPostAnalytics(payload);
   }
 
   async listConversations(options?: {
@@ -476,6 +617,49 @@ export type ZernioAccountRaw = {
   displayName: string | null;
   status: string | null;
   url: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  followersCount: number | null;
+};
+
+export type ZernioPlatformPostRaw = {
+  id: string;
+  platform: string | null;
+  message: string;
+  createdTime: string | null;
+  permalink: string | null;
+  picture: string | null;
+  mediaType: string | null;
+  commentCount: number | null;
+  likeCount: number | null;
+  reactionCount: number | null;
+  shareCount: number | null;
+  saveCount: number | null;
+};
+
+export type ZernioLinkedInPostAnalyticsRaw = {
+  urn: string | null;
+  impressions: number;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  sends: number;
+  clicks: number;
+  views: number;
+};
+
+/** Post created via Zernio (`GET /v1/posts`), not the live platform listing. */
+export type ZernioAuthoredPostRaw = {
+  id: string;
+  /** LinkedIn share/UGC id when Zernio has published to the platform. */
+  platformPostId: string | null;
+  message: string;
+  createdTime: string | null;
+  permalink: string | null;
+  picture: string | null;
+  status: string | null;
 };
 
 export type ZernioWebhookRaw = {
@@ -486,12 +670,159 @@ export type ZernioWebhookRaw = {
   events: string[];
 };
 
+function parsePlatformPost(row: unknown): ZernioPlatformPostRaw | null {
+  const r = asRecord(row);
+  if (!r) return null;
+  const id = asString(r.id) ?? asString(r._id) ?? asString(r.postId);
+  if (!id) return null;
+  return {
+    id,
+    platform: asString(r.platform),
+    message:
+      asString(r.message) ??
+      asString(r.content) ??
+      asString(r.text) ??
+      asString(r.caption) ??
+      "",
+    createdTime:
+      asString(r.createdTime) ??
+      asString(r.created_time) ??
+      asString(r.createdAt) ??
+      asString(r.publishedAt),
+    permalink:
+      asString(r.permalink) ??
+      asString(r.url) ??
+      asString(r.platformPostUrl),
+    picture:
+      asString(r.picture) ??
+      asString(r.thumbnail) ??
+      asString(r.thumbnailUrl) ??
+      asString(r.imageUrl),
+    mediaType: asString(r.mediaType) ?? asString(r.media_type),
+    commentCount: asNumber(r.commentCount) ?? asNumber(r.comment_count),
+    likeCount: asNumber(r.likeCount) ?? asNumber(r.like_count),
+    reactionCount: asNumber(r.reactionCount) ?? asNumber(r.reaction_count),
+    shareCount: asNumber(r.shareCount) ?? asNumber(r.share_count),
+    saveCount:
+      asNumber(r.saveCount) ??
+      asNumber(r.save_count) ??
+      asNumber(r.saves),
+  };
+}
+
+function parseLinkedInPostAnalytics(
+  payload: unknown,
+): ZernioLinkedInPostAnalyticsRaw {
+  const r = asRecord(payload) ?? {};
+  const analytics = asRecord(r.analytics) ?? r;
+  return {
+    urn: asString(r.postUrn) ?? asString(r.urn),
+    impressions: asNumber(analytics.impressions) ?? 0,
+    reach: asNumber(analytics.reach) ?? 0,
+    likes: asNumber(analytics.likes) ?? 0,
+    comments: asNumber(analytics.comments) ?? 0,
+    shares: asNumber(analytics.shares) ?? 0,
+    saves: asNumber(analytics.saves) ?? 0,
+    sends: asNumber(analytics.sends) ?? 0,
+    clicks: asNumber(analytics.clicks) ?? 0,
+    views: asNumber(analytics.views) ?? 0,
+  };
+}
+
+function platformEntryAccountId(entry: Record<string, unknown>): string | null {
+  const direct = asString(entry.accountId);
+  if (direct) return direct;
+  const nested = asRecord(entry.accountId);
+  return nested
+    ? (asString(nested._id) ?? asString(nested.id))
+    : null;
+}
+
+function parseAuthoredPost(
+  row: unknown,
+  accountId: string,
+): ZernioAuthoredPostRaw | null {
+  const r = asRecord(row);
+  if (!r) return null;
+  const id = asString(r.id) ?? asString(r._id) ?? asString(r.postId);
+  if (!id) return null;
+  const platforms = Array.isArray(r.platforms) ? r.platforms : [];
+  const matched =
+    platforms
+      .map((entry) => asRecord(entry))
+      .find((entry) => entry && platformEntryAccountId(entry) === accountId) ??
+    platforms.map((entry) => asRecord(entry)).find((entry) => entry != null) ??
+    null;
+  const mediaItems = Array.isArray(r.mediaItems) ? r.mediaItems : [];
+  const firstMedia = mediaItems
+    .map((entry) => asRecord(entry))
+    .find((entry) => entry != null);
+  return {
+    id,
+    platformPostId:
+      asString(matched?.platformPostId) ??
+      asString(matched?.platform_post_id) ??
+      asString(matched?.postId) ??
+      null,
+    message:
+      asString(r.content) ??
+      asString(r.message) ??
+      asString(r.text) ??
+      asString(r.title) ??
+      "",
+    createdTime:
+      asString(r.publishedAt) ??
+      asString(r.createdAt) ??
+      asString(r.scheduledFor) ??
+      asString(matched?.publishedAt),
+    permalink:
+      asString(matched?.platformPostUrl) ??
+      asString(matched?.url) ??
+      asString(r.platformPostUrl) ??
+      asString(r.url),
+    picture:
+      asString(firstMedia?.url) ??
+      asString(firstMedia?.thumbnailUrl) ??
+      asString(r.thumbnailUrl),
+    status: asString(r.status) ?? asString(matched?.status),
+  };
+}
+
+function vanityFromLinkedInUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const match = new URL(url).pathname.match(
+      /\/(?:in|company)\/([^/?#]+)/i,
+    );
+    if (!match?.[1]) return null;
+    return decodeURIComponent(match[1]).replace(/\/+$/, "") || null;
+  } catch {
+    return null;
+  }
+}
+
 function parseAccount(row: unknown): ZernioAccountRaw | null {
   const r = asRecord(row);
   if (!r) return null;
   const id = asString(r._id) ?? asString(r.id);
   const platform = asString(r.platform);
   if (!id || !platform) return null;
+  const metadata = asRecord(r.metadata);
+  const profileData = asRecord(metadata?.profileData);
+  const extraData = asRecord(profileData?.extraData);
+  const organizationInfo = asRecord(metadata?.organizationInfo);
+  const url =
+    asString(r.url) ??
+    asString(r.profileUrl) ??
+    asString(r.profile_url) ??
+    asString(profileData?.profileUrl) ??
+    (asString(organizationInfo?.vanityName)
+      ? `https://www.linkedin.com/company/${asString(organizationInfo?.vanityName)}/`
+      : null);
+  const vanity =
+    asString(extraData?.vanityName) ??
+    asString(organizationInfo?.vanityName) ??
+    vanityFromLinkedInUrl(url);
   return {
     id,
     profileId: asString(r.profileId) ?? asString(r.profile_id),
@@ -499,11 +830,38 @@ function parseAccount(row: unknown): ZernioAccountRaw | null {
     accountType:
       asString(r.accountType) ??
       asString(r.account_type) ??
-      asString(r.type),
-    username: asString(r.username) ?? asString(r.handle),
-    displayName: asString(r.displayName) ?? asString(r.display_name) ?? asString(r.name),
+      asString(r.type) ??
+      asString(metadata?.accountType),
+    // Prefer LinkedIn vanity slug for @handle; Zernio username is often the display name.
+    username: vanity ?? asString(r.username) ?? asString(r.handle),
+    displayName:
+      asString(r.displayName) ??
+      asString(r.display_name) ??
+      asString(r.name) ??
+      asString(organizationInfo?.name) ??
+      asString(profileData?.displayName),
     status: asString(r.status),
-    url: asString(r.url) ?? asString(r.profileUrl) ?? asString(r.profile_url),
+    url,
+    avatarUrl:
+      asString(r.profilePicture) ??
+      asString(r.profile_picture) ??
+      asString(r.avatarUrl) ??
+      asString(r.avatar_url) ??
+      asString(r.imageUrl) ??
+      asString(r.image_url) ??
+      asString(organizationInfo?.logoUrl),
+    bio:
+      asString(profileData?.bio) ??
+      asString(r.bio) ??
+      asString(r.description) ??
+      asString(r.about) ??
+      asString(organizationInfo?.description) ??
+      asString(organizationInfo?.about),
+    followersCount:
+      asNumber(r.followersCount) ??
+      asNumber(r.followers_count) ??
+      asNumber(profileData?.followersCount) ??
+      asNumber(profileData?.followers_count),
   };
 }
 
@@ -530,6 +888,12 @@ function messageForStatus(
     return "Zernio reports a missing OAuth scope — reconnect the account.";
   }
   if (status === 402 || status === 403) {
+    if (
+      code === "linkedin_reconnect_required" ||
+      lower.includes("linkedin_reconnect_required")
+    ) {
+      return "LinkedIn needs a reconnect for reactions — reconnect in Settings → Social.";
+    }
     if (lower.includes("analytics") && lower.includes("add-on")) {
       return "Zernio analytics access denied (legacy add-on wording or plan).";
     }

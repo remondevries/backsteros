@@ -20,6 +20,12 @@ export type SocialMockPost = {
   id: string;
   authorName: string;
   authorHandle: string;
+  /** Live connected-account avatar when the feed comes from Zernio. */
+  authorAvatarUrl?: string;
+  /** Live connected-account follower count when known. */
+  authorFollowersCount?: number;
+  /** Public URL on the network (e.g. LinkedIn post) for open-in-browser. */
+  permalink?: string;
   authorVerified?: boolean;
   platform: SocialMockPostPlatform;
   /**
@@ -37,8 +43,27 @@ export type SocialMockPost = {
   replyCount: number;
   repostCount: number;
   likeCount: number;
+  /** LinkedIn save count when known from analytics. */
+  saveCount?: number;
   feed: "for-you" | "following" | "both";
 };
+
+/** LinkedIn feed home — used when a post has no permalink yet. */
+export const SOCIAL_LINKEDIN_FEED_FALLBACK_URL =
+  "https://www.linkedin.com/feed/";
+
+/**
+ * Where to leave a reply on the network itself (apps can’t post LinkedIn
+ * comments). Prefer the post permalink; LinkedIn falls back to the feed.
+ */
+export function getSocialPostExternalReplyUrl(
+  post: Pick<SocialMockPost, "permalink" | "platform">,
+): string | null {
+  const permalink = post.permalink?.trim();
+  if (permalink) return permalink;
+  if (post.platform === "linkedin") return SOCIAL_LINKEDIN_FEED_FALLBACK_URL;
+  return null;
+}
 
 export type SocialMockTrendingTopic = {
   id: string;
@@ -123,6 +148,7 @@ export type SocialMockReply = {
   postId: string;
   authorName: string;
   authorHandle: string;
+  authorAvatarUrl?: string;
   authorVerified?: boolean;
   body: string;
   createdAt: string;
@@ -1006,6 +1032,16 @@ export function getSocialMockRepliesForPost(
 export const SOCIAL_MOCK_PERSONAL_AVATAR_URL =
   "/social/backsteros-personal-avatar.jpg";
 
+/**
+ * Solid red banner — placeholder until LinkedIn (via Zernio) exposes cover URLs.
+ * Intentionally obvious so Discover never looks “synced” for banners.
+ */
+export const SOCIAL_MOCK_COVER_PLACEHOLDER_URL =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="400" viewBox="0 0 1600 400"><rect width="1600" height="400" fill="#e11"/></svg>`,
+  );
+
 /** Static “you” profile for the Network → Profile page / personal Discover widget. */
 export const SOCIAL_MOCK_PROFILE: SocialMockProfile = {
   firstName: "Remon",
@@ -1020,8 +1056,7 @@ export const SOCIAL_MOCK_PROFILE: SocialMockProfile = {
   followingCount: 248,
   followersCount: 1820,
   avatarUrl: SOCIAL_MOCK_PERSONAL_AVATAR_URL,
-  coverUrl:
-    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80",
+  coverUrl: SOCIAL_MOCK_COVER_PLACEHOLDER_URL,
   postIds: ["post-2", "post-13", "post-1", "post-5", "post-7"],
 };
 
@@ -1043,8 +1078,7 @@ export const SOCIAL_MOCK_BUSINESS_PROFILE: SocialMockProfile = {
   followingCount: 86,
   followersCount: 12400,
   avatarUrl: SOCIAL_MOCK_BUSINESS_AVATAR_URL,
-  coverUrl:
-    "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1600&q=80",
+  coverUrl: SOCIAL_MOCK_COVER_PLACEHOLDER_URL,
   postIds: ["post-8", "post-3", "post-9", "post-15", "post-14"],
 };
 

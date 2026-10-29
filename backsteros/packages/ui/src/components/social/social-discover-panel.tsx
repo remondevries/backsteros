@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
-import { ImageIcon, SyncIcon } from "@primer/octicons-react";
+import { ImageIcon, LinkExternalIcon, SyncIcon } from "@primer/octicons-react";
 
+import {
+  findSocialConnectedAccount,
+  resolveSocialComposerAvatarUrl,
+  resolveSocialConnectedIdentity,
+  type SocialConnectedAccountAvatar,
+} from "../../social/social-connected-account-avatar.js";
 import {
   getSocialMockAnalyticsForAccount,
   getSocialMockOwnedAccounts,
@@ -33,6 +39,8 @@ export type SocialDiscoverPanelProps = {
   platform?: SocialMockAnalyticsPlatformFilterId;
   /** Personal vs business owned-account bundle (controlled from feed chrome). */
   accountKind?: SocialMockAccountKind;
+  /** Connected owned accounts — LinkedIn (etc.) avatars for the mini-profile. */
+  connectedAccounts?: readonly SocialConnectedAccountAvatar[];
 };
 
 type ProfileDraft = Pick<
@@ -127,6 +135,7 @@ export function SocialDiscoverPanel({
   className,
   platform = "all",
   accountKind = "personal",
+  connectedAccounts = [],
 }: SocialDiscoverPanelProps) {
   const [accounts, setAccounts] = useState<
     Record<SocialMockAccountKind, AccountDraftState>
@@ -138,6 +147,38 @@ export function SocialDiscoverPanel({
   const [pushMessage, setPushMessage] = useState<string | null>(null);
 
   const profile = getSocialMockProfileForAccount(accountKind);
+  const profileDisplayName = socialMockProfileDisplayName(profile);
+  const resolvedAvatarUrl = useMemo(
+    () =>
+      resolveSocialComposerAvatarUrl({
+        feedPlatform: platform,
+        accountKind,
+        connectedAccounts,
+        fallbackAvatarUrl: profile.avatarUrl,
+      }) ?? profile.avatarUrl,
+    [accountKind, connectedAccounts, platform, profile.avatarUrl],
+  );
+  const resolvedIdentity = useMemo(
+    () =>
+      resolveSocialConnectedIdentity({
+        feedPlatform: platform,
+        accountKind,
+        connectedAccounts,
+        fallbackHandle: profile.handle,
+        fallbackDisplayName: profileDisplayName,
+        fallbackBio: profile.bio,
+        fallbackFollowersCount: profile.followersCount,
+      }),
+    [
+      accountKind,
+      connectedAccounts,
+      platform,
+      profile.bio,
+      profile.followersCount,
+      profile.handle,
+      profileDisplayName,
+    ],
+  );
   const analytics = useMemo(
     () => getSocialMockAnalyticsForAccount(accountKind, platform),
     [accountKind, platform],
@@ -147,9 +188,9 @@ export function SocialDiscoverPanel({
     [accountKind],
   );
 
-  // Keep mock avatar in sync when brand assets change and the user hasn't edited it.
+  // Keep avatar in sync with connected account / mock when the user hasn't edited it.
   useEffect(() => {
-    const nextAvatar = profile.avatarUrl;
+    const nextAvatar = resolvedAvatarUrl;
     setAccounts((current) => {
       const entry = current[accountKind];
       if (entry.draft.avatarUrl !== entry.baseline.avatarUrl) return current;
@@ -160,14 +201,103 @@ export function SocialDiscoverPanel({
         [accountKind]: { baseline: next, draft: next },
       };
     });
-  }, [accountKind, profile.avatarUrl]);
+  }, [accountKind, resolvedAvatarUrl]);
+
+  // Keep name in sync with connected account / mock when the user hasn't edited it.
+  useEffect(() => {
+    const nextFirst = resolvedIdentity.firstName ?? profile.firstName;
+    const nextLast = resolvedIdentity.lastName ?? profile.lastName;
+    setAccounts((current) => {
+      const entry = current[accountKind];
+      const nameDirty =
+        entry.draft.firstName !== entry.baseline.firstName ||
+        entry.draft.lastName !== entry.baseline.lastName;
+      if (nameDirty) return current;
+      if (
+        entry.baseline.firstName === nextFirst &&
+        entry.baseline.lastName === nextLast
+      ) {
+        return current;
+      }
+      const next = {
+        ...entry.draft,
+        firstName: nextFirst,
+        lastName: nextLast,
+      };
+      return {
+        ...current,
+        [accountKind]: { baseline: next, draft: next },
+      };
+    });
+  }, [
+    accountKind,
+    profile.firstName,
+    profile.lastName,
+    resolvedIdentity.firstName,
+    resolvedIdentity.lastName,
+  ]);
+
+  // Keep bio in sync with connected account / mock when the user hasn't edited it.
+  // Selected networks with no provider bio stay empty (no mock BacksterOS copy).
+  useEffect(() => {
+    const nextBio =
+      resolvedIdentity.bio ?? (platform === "all" ? profile.bio : "");
+    setAccounts((current) => {
+      const entry = current[accountKind];
+      if (entry.draft.bio !== entry.baseline.bio) return current;
+      if (entry.baseline.bio === nextBio) return current;
+      const next = { ...entry.draft, bio: nextBio };
+      return {
+        ...current,
+        [accountKind]: { baseline: next, draft: next },
+      };
+    });
+  }, [accountKind, platform, profile.bio, resolvedIdentity.bio]);
+
+  // Keep banner in sync with mock placeholder when the user hasn't edited it.
+  useEffect(() => {
+    const nextCover = profile.coverUrl;
+    setAccounts((current) => {
+      const entry = current[accountKind];
+      if (entry.draft.coverUrl !== entry.baseline.coverUrl) return current;
+      if (entry.baseline.coverUrl === nextCover) return current;
+      const next = { ...entry.draft, coverUrl: nextCover };
+      return {
+        ...current,
+        [accountKind]: { baseline: next, draft: next },
+      };
+    });
+  }, [accountKind, profile.coverUrl]);
   const activeOwnedAccount = useMemo(() => {
     if (platform === "all") return null;
     return (
       ownedAccounts.find((account) => account.platform === platform) ?? null
     );
   }, [ownedAccounts, platform]);
-  const handle = activeOwnedAccount?.handle ?? profile.handle;
+  const connectedAccount = useMemo(
+    () =>
+      findSocialConnectedAccount({
+        feedPlatform: platform,
+        accountKind,
+        connectedAccounts,
+      }),
+    [accountKind, connectedAccounts, platform],
+  );
+  const handle =
+    resolvedIdentity.handle ??
+    activeOwnedAccount?.handle ??
+    profile.handle;
+  const linkedInProfileUrl = useMemo(() => {
+    if (platform !== "linkedin") return null;
+    const fromAccount = connectedAccount?.url?.trim();
+    if (fromAccount) return fromAccount;
+    const slug = handle?.trim().replace(/^@+/, "");
+    if (!slug) return null;
+    return accountKind === "business"
+      ? `https://www.linkedin.com/company/${encodeURIComponent(slug)}/`
+      : `https://www.linkedin.com/in/${encodeURIComponent(slug)}/`;
+  }, [accountKind, connectedAccount?.url, handle, platform]);
+  const showLinkedInViewProfile = platform === "linkedin";
   const { baseline, draft } = accounts[accountKind];
   const badgeLabel =
     platform === "all"
@@ -362,31 +492,76 @@ export function SocialDiscoverPanel({
             />
           </div>
           <div className="social-discover__mini-stats">
-            <span>
-              <strong>{formatStat(profile.followingCount)}</strong> Following
-            </span>
-            <span>
-              <strong>{formatStat(profile.followersCount)}</strong> Followers
-            </span>
-            <button
-              type="button"
-              className="social-discover__mini-push"
-              disabled={!dirty || pushing}
-              title={
-                dirty
-                  ? "Sync name, bio, avatar, and banner to connected accounts"
-                  : "Up to date across platforms"
-              }
-              aria-label={pushing ? "Pushing profile" : "Push profile"}
-              onClick={() => {
-                void onPush();
-              }}
-            >
-              <SyncIcon size={14} />
-              <span>{pushing ? "Pushing…" : "Push"}</span>
-            </button>
+            {platform === "linkedin" ? (
+              <span
+                className="social-discover__mini-stat social-discover__mini-stat--hidden"
+                title="LinkedIn following / connections are not available via the API"
+              >
+                <strong className="social-discover__mini-stat-value--blurred" aria-hidden="true">
+                  88
+                </strong>
+                <span className="sr-only">Following unavailable</span> Following
+              </span>
+            ) : (
+              <span>
+                <strong>{formatStat(profile.followingCount)}</strong> Following
+              </span>
+            )}
+            {resolvedIdentity.followersCount != null ||
+            platform === "all" ? (
+              <span>
+                <strong>
+                  {formatStat(
+                    resolvedIdentity.followersCount ?? profile.followersCount,
+                  )}
+                </strong>{" "}
+                Followers
+              </span>
+            ) : null}
+            {showLinkedInViewProfile ? (
+              linkedInProfileUrl ? (
+                <a
+                  className="social-discover__mini-push"
+                  href={linkedInProfileUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title="Open LinkedIn profile"
+                  aria-label="View LinkedIn profile"
+                >
+                  <LinkExternalIcon size={14} />
+                  <span>View profile</span>
+                </a>
+              ) : (
+                <span
+                  className="social-discover__mini-push social-discover__mini-push--disabled"
+                  title="LinkedIn profile URL unavailable"
+                  aria-disabled="true"
+                >
+                  <LinkExternalIcon size={14} />
+                  <span>View profile</span>
+                </span>
+              )
+            ) : (
+              <button
+                type="button"
+                className="social-discover__mini-push"
+                disabled={!dirty || pushing}
+                title={
+                  dirty
+                    ? "Sync name, bio, avatar, and banner to connected accounts"
+                    : "Up to date across platforms"
+                }
+                aria-label={pushing ? "Pushing profile" : "Push profile"}
+                onClick={() => {
+                  void onPush();
+                }}
+              >
+                <SyncIcon size={14} />
+                <span>{pushing ? "Pushing…" : "Push"}</span>
+              </button>
+            )}
           </div>
-          {pushMessage ? (
+          {!showLinkedInViewProfile && pushMessage ? (
             <p className="social-discover__mini-push-status" role="status">
               {pushMessage}
             </p>

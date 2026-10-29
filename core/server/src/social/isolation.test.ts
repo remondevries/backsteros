@@ -38,6 +38,8 @@ describe("social adapter isolation", () => {
       if (file.startsWith(allowedPrefix)) continue;
       // Allowed wiring surface for settings + webhook ingest.
       if (file.endsWith(`${join("app", "social-routes.ts")}`)) continue;
+      // Planned calendar schedule/unschedule mirrors to Zernio via provider.
+      if (file.endsWith(`${join("social", "planned-posts.ts")}`)) continue;
       // Isolation / non-provider tests may mention forbidden tokens in assertions.
       if (file.endsWith(".test.ts")) continue;
       const text = readFileSync(file, "utf8");

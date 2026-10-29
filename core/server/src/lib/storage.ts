@@ -339,6 +339,21 @@ export function buildTaskImageStorageKey(
   );
 }
 
+/** Planned social media under `.backsteros/attachments/social-{postId}/…`. */
+export function buildSocialPostMediaStorageKey(
+  postId: string,
+  mediaId: string,
+  extension: string,
+): string {
+  const ext = safeSegment(extension.replace(/^\./, "") || "bin");
+  return buildPrivateStorageKey(
+    "",
+    "attachments",
+    `social-${safeSegment(postId)}`,
+    `${safeSegment(mediaId)}.${ext}`,
+  );
+}
+
 /** Task file attachments under `.backsteros/attachments/tasks/{taskId}/…`. */
 export function buildTaskAttachmentStorageKey(
   taskId: string,

@@ -134,6 +134,24 @@ function readSocialImageOnly(
   return extendedProps.socialImageOnly === true;
 }
 
+function readSocialMediaPreviewUrl(
+  extendedProps: Record<string, unknown>,
+): string | null {
+  const value = extendedProps.socialMediaPreviewUrl;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function readSocialMediaKind(
+  extendedProps: Record<string, unknown>,
+): "image" | "video" | null {
+  const value = extendedProps.socialMediaKind;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "video" || normalized === "image" ? normalized : null;
+}
+
 function readSocialHashtags(
   extendedProps: Record<string, unknown>,
 ): string[] {
@@ -153,16 +171,27 @@ function socialStartTimeText(arg: EventContentArg): string {
   return `${hours}:${minutes}`;
 }
 
+export type CalendarTaskEventContentOptions = {
+  /** Network Planned — return a scheduled post to the unscheduled tray. */
+  onSocialPlanUnschedule?: (taskId: string) => void;
+};
+
 export function CalendarTaskEventContent({
   arg,
+  onSocialPlanUnschedule,
 }: {
   arg: EventContentArg;
+  onSocialPlanUnschedule?: (taskId: string) => void;
 }) {
   const entity = calendarEntityFromEvent(arg.event);
   const habitId = readHabitId(arg.event.extendedProps);
   const habitIcon = readHabitIcon(arg.event.extendedProps);
   const socialPlatforms = readSocialPlatforms(arg.event.extendedProps);
   const socialImageOnly = readSocialImageOnly(arg.event.extendedProps);
+  const socialMediaPreviewUrl = readSocialMediaPreviewUrl(
+    arg.event.extendedProps,
+  );
+  const socialMediaKind = readSocialMediaKind(arg.event.extendedProps);
   const socialHashtags = readSocialHashtags(arg.event.extendedProps);
   const isSocial = socialPlatforms.length > 0;
   const title =
@@ -186,10 +215,122 @@ export function CalendarTaskEventContent({
   const durationMs = calendarEventDurationMs(arg.event.start, arg.event.end);
   // All-day chips (Google birthdays, tasks, …) are always a single icon+title
   // row — day-long FC ranges would otherwise trip the timed expanded layout.
-  // Social planned posts always stack: icon+start time, then caption/hashtags.
+  // Social planned posts always stack: start time, caption/hashtags, platforms.
   const expanded =
     isSocial ||
     (!arg.event.allDay && calendarEventHasExpandedContent(durationMs));
+  if (isSocial) {
+    const timeText = socialStartTimeText(arg);
+    const taskId =
+      entity.entityType === "task" ? entity.entityId : arg.event.id;
+    return (
+      <div className="task-calendar-event__content task-calendar-event__content--expanded social-planned-calendar-event__content">
+        {onSocialPlanUnschedule && taskId ? (
+          <button
+            type="button"
+            className="social-planned-calendar-event__unschedule"
+            aria-label="Move back to planning tray"
+            title="Move back to planning tray"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              // Defer so FullCalendar can finish this click before React
+              // removes the event node (avoids removeChild crashes).
+              const id = taskId;
+              window.setTimeout(() => onSocialPlanUnschedule(id), 0);
+            }}
+          >
+            <svg
+              className="social-planned-calendar-event__unschedule-icon"
+              width="8"
+              height="8"
+              viewBox="0 0 8 8"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M1.2 1.2l5.6 5.6M6.8 1.2L1.2 6.8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        ) : null}
+        {timeText ? (
+          <div className="task-calendar-event__row">
+            <span className="task-calendar-event__time">{timeText}</span>
+          </div>
+        ) : null}
+        {title ? (
+          <span className="task-calendar-event__title">{title}</span>
+        ) : null}
+        {socialMediaPreviewUrl ? (
+          <span
+            className="social-planned-calendar-event__media"
+            title={socialMediaKind === "video" ? "Video" : "Image"}
+            aria-label={socialMediaKind === "video" ? "Video" : "Image"}
+          >
+            {socialMediaKind === "video" ? (
+              <video
+                className="social-planned-calendar-event__media-thumb"
+                src={socialMediaPreviewUrl}
+                muted
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              <img
+                className="social-planned-calendar-event__media-thumb"
+                src={socialMediaPreviewUrl}
+                alt=""
+                draggable={false}
+              />
+            )}
+          </span>
+        ) : socialImageOnly ? (
+          <span
+            className="social-planned-calendar-event__image"
+            title="Image post"
+            aria-label="Image post"
+          >
+            <SocialImageIcon size={14} />
+          </span>
+        ) : null}
+        {socialHashtags.length > 0 ? (
+          <span className="social-planned-calendar-event__hashtags">
+            {socialHashtags.join(" ")}
+          </span>
+        ) : null}
+        <span
+          className={[
+            "social-planned-calendar-event__platforms",
+            socialPlatforms.length > 1
+              ? "social-planned-calendar-event__platforms--multi"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden="true"
+        >
+          {socialPlatforms.map((platform) => (
+            <span
+              key={platform}
+              className="social-planned-calendar-event__platform-icon"
+            >
+              <SocialCalendarPlatformIcon platform={platform} size={12} />
+            </span>
+          ))}
+        </span>
+      </div>
+    );
+  }
+
   const meetingFinished =
     entity.entityType === "meeting" &&
     readMeetingFinished(arg.event.extendedProps);
@@ -225,28 +366,6 @@ export function CalendarTaskEventContent({
         size={12}
         className="task-calendar-event__status-icon"
       />
-    ) : isSocial ? (
-      <span
-        className={[
-          "task-calendar-event__status-icon",
-          "social-planned-calendar-event__platforms",
-          socialPlatforms.length > 1
-            ? "social-planned-calendar-event__platforms--multi"
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-hidden="true"
-      >
-        {socialPlatforms.map((platform) => (
-          <span
-            key={platform}
-            className="social-planned-calendar-event__platform-icon"
-          >
-            <SocialCalendarPlatformIcon platform={platform} size={12} />
-          </span>
-        ))}
-      </span>
     ) : habitId ? (
       <span className="task-calendar-event__status-icon" aria-hidden="true">
         {habitIcon ? (
@@ -277,36 +396,6 @@ export function CalendarTaskEventContent({
         }
       />
     );
-
-  if (isSocial) {
-    const timeText = socialStartTimeText(arg);
-    return (
-      <div className="task-calendar-event__content task-calendar-event__content--expanded social-planned-calendar-event__content">
-        <div className="task-calendar-event__row">
-          {statusIcon}
-          {timeText ? (
-            <span className="task-calendar-event__time">{timeText}</span>
-          ) : null}
-        </div>
-        {socialImageOnly ? (
-          <span
-            className="social-planned-calendar-event__image"
-            title="Image post"
-            aria-label="Image post"
-          >
-            <SocialImageIcon size={14} />
-          </span>
-        ) : title ? (
-          <span className="task-calendar-event__title">{title}</span>
-        ) : null}
-        {socialHashtags.length > 0 ? (
-          <span className="social-planned-calendar-event__hashtags">
-            {socialHashtags.join(" ")}
-          </span>
-        ) : null}
-      </div>
-    );
-  }
 
   return (
     <div
@@ -340,12 +429,20 @@ export function CalendarTaskEventContent({
   );
 }
 
-export function renderCalendarTaskEventContent(arg: EventContentArg) {
+export function renderCalendarTaskEventContent(
+  arg: EventContentArg,
+  options?: CalendarTaskEventContentOptions,
+) {
   if (
     arg.event.display === "background" ||
     arg.event.extendedProps.entityType === MEETINGS_AVAILABILITY_MARKER_TYPE
   ) {
     return null;
   }
-  return <CalendarTaskEventContent arg={arg} />;
+  return (
+    <CalendarTaskEventContent
+      arg={arg}
+      onSocialPlanUnschedule={options?.onSocialPlanUnschedule}
+    />
+  );
 }

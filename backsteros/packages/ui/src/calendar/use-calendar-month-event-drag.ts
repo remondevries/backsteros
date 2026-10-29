@@ -127,20 +127,28 @@ export function useCalendarMonthEventDrag(
       ].join(";");
 
       const chip = document.createElement("div");
+      const socialClasses = Array.from(source.classList).filter(
+        (name) =>
+          name === "social-planned-calendar-event" ||
+          name.startsWith("social-planned-calendar-event--"),
+      );
       chip.className = [
         "task-calendar-event",
         "calendar-month-event-drag-mirror__chip",
-        source.classList.contains("social-planned-calendar-event")
-          ? "social-planned-calendar-event"
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
+        ...socialClasses,
+      ].join(" ");
 
       const computed = getComputedStyle(source);
       const bg = source.style.backgroundColor || computed.backgroundColor;
       const border = source.style.borderColor || computed.borderColor;
-      if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+      // Platform gradient comes from CSS classes; only fall back to solid fill
+      // when this isn't a social planned chip.
+      if (
+        socialClasses.length === 0 &&
+        bg &&
+        bg !== "rgba(0, 0, 0, 0)" &&
+        bg !== "transparent"
+      ) {
         chip.style.backgroundColor = bg;
       }
       if (border && border !== "rgba(0, 0, 0, 0)" && border !== "transparent") {

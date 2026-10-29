@@ -26,6 +26,8 @@ export type CalendarTaskDragEventData = {
     status: string;
     socialPlatform?: string | null;
     socialImageOnly?: boolean;
+    socialMediaPreviewUrl?: string | null;
+    socialMediaKind?: "image" | "video" | null;
     socialHashtags?: readonly string[] | null;
   };
 };
@@ -69,7 +71,11 @@ export function calendarTaskDragEventData(element: HTMLElement): CalendarTaskDra
       id: taskId,
       title,
       duration: calendarTaskDragDurationFromElement(element),
-      classNames: ["task-calendar-event", "social-planned-calendar-event"],
+      classNames: [
+        "task-calendar-event",
+        "social-planned-calendar-event",
+        `social-planned-calendar-event--${socialPlatform}`,
+      ],
       backgroundColor,
       borderColor,
       displayEventEnd: false,
@@ -80,6 +86,15 @@ export function calendarTaskDragEventData(element: HTMLElement): CalendarTaskDra
         status,
         socialPlatform,
         socialImageOnly: element.getAttribute("data-social-image-only") === "true",
+        socialMediaPreviewUrl:
+          element.getAttribute("data-social-media-preview-url")?.trim() || null,
+        socialMediaKind: (() => {
+          const kind = element
+            .getAttribute("data-social-media-kind")
+            ?.trim()
+            .toLowerCase();
+          return kind === "video" || kind === "image" ? kind : null;
+        })(),
         socialHashtags: readSocialHashtagsAttribute(element),
       },
     };
@@ -231,6 +246,10 @@ export function applyCalendarExternalDragMirrorAppearance(
   }
   if (sourceEl.hasAttribute("data-social-platform")) {
     mirrorEl.classList.add("social-planned-calendar-event");
+    const platform = sourceEl.getAttribute("data-social-platform")?.trim();
+    if (platform) {
+      mirrorEl.classList.add(`social-planned-calendar-event--${platform}`);
+    }
     const bg = sourceEl.getAttribute("data-social-event-bg");
     if (bg) {
       mirrorEl.style.backgroundColor = bg;

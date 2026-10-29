@@ -447,22 +447,311 @@
   overflow: hidden;
 }
 
+.social-planned--tray-open {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.social-planned__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.social-planned__tray-panel {
+  display: flex;
+  width: 260px;
+  min-width: 220px;
+  max-width: 320px;
+  flex-shrink: 0;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+}
+
+.social-planned__tray-panel-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.social-planned__tray-panel-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.social-planned__tray-panel-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+}
+
+.social-planned__tray-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  /* Keep rows clear of the scrollbar: gutter on the right, room at the bottom. */
+  padding: 10px 6px 20px 10px;
+  list-style: none;
+  overflow: auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.social-planned__tray-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.social-planned__tray-list::-webkit-scrollbar-track {
+  margin-block: 8px 12px;
+  background: transparent;
+}
+
+.social-planned__tray-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.social-planned__tray-empty {
+  margin: 0;
+  padding: 14px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+}
+
+.social-planned__tray-item {
+  list-style: none;
+  margin: 0 2px 0 0;
+  padding: 0;
+}
+
+.social-planned__tray-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.35rem 0.25rem 0.35rem 0.2rem;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.social-planned__tray-row:hover {
+  border-color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.social-planned__tray-row--selected,
+.social-planned__tray-item--selected .social-planned__tray-row {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.social-planned__tray-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.15rem 0.3rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.social-planned__tray-body {
+  display: -webkit-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.social-planned__toolbar-start {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.social-planned__tray-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  cursor: pointer;
+}
+
+.social-planned__tray-toggle:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.social-planned__tray-toggle[aria-pressed="true"] {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-planned__pending-scroll {
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+  /* Soft edge fades without JS — ResizeObserver + class toggles froze the UI. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 1.25rem,
+    #000 calc(100% - 1.25rem),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 1.25rem,
+    #000 calc(100% - 1.25rem),
+    transparent
+  );
+}
+
+.social-planned__pending-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.social-planned__pending-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
 .social-planned__pending {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.4rem;
   margin: 0;
-  padding: 0;
+  padding: 0 0.15rem 0 0;
   list-style: none;
-  min-width: 0;
+  min-width: min-content;
+  width: max-content;
 }
 
 .social-planned__pending-item {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-width: 100%;
+  flex: 0 0 auto;
+  max-width: 18rem;
+}
+
+.social-planned__pending-media {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  cursor: zoom-in;
+}
+
+.social-planned__pending-media:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.social-planned__pending-media-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.social-media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.social-media-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: none;
+  padding: 0;
+  background: color-mix(in srgb, #000 0%, transparent);
+  cursor: zoom-out;
+  transition: background 200ms ease;
+}
+
+.social-media-lightbox--open .social-media-lightbox__backdrop {
+  background: color-mix(in srgb, #000 78%, transparent);
+}
+
+.social-media-lightbox__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.social-media-lightbox__video {
+  position: relative;
+  z-index: 1;
+  max-width: min(92vw, 1200px);
+  max-height: 92vh;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: 0 24px 64px color-mix(in srgb, #000 55%, transparent);
 }
 
 .social-planned__pending-item--draggable {
@@ -484,7 +773,7 @@ html.is-calendar-external-dragging * {
 
 .social-planned__pending-chip {
   display: inline-flex;
-  max-width: min(100%, 22rem);
+  max-width: 18rem;
   align-items: center;
   gap: 0.2rem;
   min-height: 1.75rem;
@@ -499,6 +788,21 @@ html.is-calendar-external-dragging * {
 .social-planned__pending-chip:hover {
   border-color: color-mix(in srgb, var(--foreground) 42%, transparent);
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.social-planned__pending-chip--selected,
+.social-planned__pending-item--selected .social-planned__pending-chip {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.social-planned__pending-chip--selected:hover,
+.social-planned__pending-item--selected .social-planned__pending-chip:hover {
+  border-color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .social-planned__pending-open {
@@ -557,7 +861,7 @@ html.is-calendar-external-dragging * {
   line-height: 1.3;
 }
 
-.social-planned__pending-dismiss {
+.social-planned__pending-delete {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -570,15 +874,17 @@ html.is-calendar-external-dragging * {
   border-radius: 999px;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
-  font: inherit;
-  font-size: 1rem;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
 }
 
-.social-planned__pending-dismiss:hover {
+.social-planned__pending-delete:hover {
   color: var(--foreground);
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-planned__pending-delete svg {
+  display: block;
 }
 
 .social-planned__toolbar {
@@ -587,8 +893,12 @@ html.is-calendar-external-dragging * {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px 8px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--border);
+}
+
+.social-planned--tray-open .social-planned__toolbar {
+  padding-left: 12px;
 }
 
 .social-planned__title-block {
@@ -685,17 +995,144 @@ html.is-calendar-external-dragging * {
   background: color-mix(in srgb, var(--foreground) 22%, transparent);
 }
 
+/* Pin × to the chip frame (not the inner flex content, which can shrink). */
+.calendar-view .fc .fc-event.task-calendar-event.social-planned-calendar-event,
+.calendar-view
+  .fc
+  .fc-popover
+  .fc-daygrid-event.task-calendar-event.social-planned-calendar-event,
+.calendar-external-drag-mirror.task-calendar-event.social-planned-calendar-event,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event {
+  --social-planned-event-base: #3a3a3a;
+  --task-calendar-event-bg: transparent;
+  position: relative;
+  color: #fff !important;
+  /* Soft #272727 top-right → transparent bottom-left. */
+  background-image: linear-gradient(
+    to bottom left,
+    #272727,
+    color-mix(in srgb, var(--social-planned-event-base) 40%, transparent) 48%,
+    transparent
+  ) !important;
+  background-color: transparent !important;
+  border-color: color-mix(
+    in srgb,
+    var(--social-planned-event-base) 55%,
+    black
+  ) !important;
+}
+
+.calendar-view
+  .fc
+  .fc-event.task-calendar-event.social-planned-calendar-event
+  .fc-event-main,
+.calendar-view
+  .fc
+  .fc-event.task-calendar-event.social-planned-calendar-event
+  .task-calendar-event__content,
+.calendar-external-drag-mirror.task-calendar-event.social-planned-calendar-event
+  .fc-event-main {
+  color: inherit !important;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--facebook,
+.calendar-external-drag-mirror.social-planned-calendar-event--facebook,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--facebook {
+  --social-planned-event-base: #1877f2;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--instagram,
+.calendar-external-drag-mirror.social-planned-calendar-event--instagram,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--instagram {
+  --social-planned-event-base: #e1306c;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--x,
+.calendar-external-drag-mirror.social-planned-calendar-event--x,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--x {
+  --social-planned-event-base: #1a1a1a;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--linkedin,
+.calendar-external-drag-mirror.social-planned-calendar-event--linkedin,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--linkedin {
+  --social-planned-event-base: #0a66c2;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--dev-null,
+.calendar-external-drag-mirror.social-planned-calendar-event--dev-null,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--dev-null {
+  --social-planned-event-base: #ff8a4c;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event--multi,
+.calendar-external-drag-mirror.social-planned-calendar-event--multi,
+.calendar-month-event-drag-mirror__chip.social-planned-calendar-event--multi {
+  --social-planned-event-base: #2a2a2a;
+}
+
 .social-planned-calendar-event__content {
+  position: static;
+  box-sizing: border-box;
+  width: 100%;
   gap: 2px;
-  padding: 4px 5px 3px;
+  /* Room for the absolute × so caption/time never sit under it. */
+  padding: 4px 18px 3px 5px;
   overflow: hidden;
+}
+
+.social-planned-calendar-event__unschedule {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 5;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  line-height: 0;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 100ms ease,
+    color 100ms ease,
+    background-color 100ms ease;
+}
+
+.social-planned-calendar-event__unschedule-icon {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+.calendar-view .fc .fc-event.social-planned-calendar-event:hover
+  .social-planned-calendar-event__unschedule,
+.social-planned-calendar-event__unschedule:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.social-planned-calendar-event__unschedule:hover,
+.social-planned-calendar-event__unschedule:focus-visible {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
 }
 
 .social-planned-calendar-event__platforms {
   display: inline-flex;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   align-items: center;
+  align-self: flex-start;
   gap: 2px;
+  margin-top: 6px;
   line-height: 0;
 }
 
@@ -727,6 +1164,26 @@ html.is-calendar-external-dragging * {
 
 .social-planned-calendar-event__image svg {
   display: block;
+}
+
+.social-planned-calendar-event__media {
+  display: block;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, #000 28%, transparent);
+  line-height: 0;
+  pointer-events: none;
+}
+
+.social-planned-calendar-event__media-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .social-planned-calendar-event__content > .task-calendar-event__title {
@@ -841,7 +1298,80 @@ html.is-calendar-external-dragging * {
   box-sizing: border-box;
   padding: 8px 16px 14px;
   background: transparent;
-  border-bottom: none;
+  border-radius: 12px;
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+  transition:
+    background 120ms ease,
+    outline-color 120ms ease;
+}
+
+.social-feed__composer--drop-active {
+  outline-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.social-feed__composer-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.social-feed__composer-media-item {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-feed__composer-media-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.social-feed__composer-media-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.social-feed__composer-media-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.social-feed__composer-media-remove:hover {
+  background: var(--background);
 }
 
 .social-feed__composer-avatar {
@@ -893,6 +1423,13 @@ html.is-calendar-external-dragging * {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.social-feed__composer-error {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #ff6b6b;
 }
 
 .social-feed__composer-submit-group {
@@ -1132,10 +1669,16 @@ html.is-calendar-external-dragging * {
 
 .social-post-row__card {
   min-width: 0;
+  /* Stretch with the filing column so short posts match Reply/Like/… height. */
+  display: flex;
+  flex-direction: column;
 }
 
 .social-post-row__card .social-post-card {
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 100%;
+  box-sizing: border-box;
   border-bottom: none;
 }
 
@@ -1199,6 +1742,7 @@ html.is-calendar-external-dragging * {
   line-height: 1.35;
   letter-spacing: 0.01em;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1215,11 +1759,12 @@ html.is-calendar-external-dragging * {
   display: block;
 }
 
-.social-post-row__filing-action:hover {
+.social-post-row__filing-action:hover:not(:disabled) {
   color: var(--foreground);
 }
 
-.social-post-row__filing-action:hover .social-post-row__filing-label {
+.social-post-row__filing-action:hover:not(:disabled)
+  .social-post-row__filing-label {
   text-decoration: underline;
 }
 
@@ -1229,6 +1774,15 @@ html.is-calendar-external-dragging * {
 
 .social-post-row__filing-action--danger:hover {
   color: #c9373b;
+}
+
+.social-post-row__filing-action--active {
+  color: var(--foreground);
+}
+
+.social-post-row__filing-action:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .social-post-card {
@@ -1352,6 +1906,13 @@ html.is-calendar-external-dragging * {
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 14%, transparent);
 }
 
+.social-post-card__avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .social-post-card--detail .social-post-card__avatar {
   width: 48px;
   height: 48px;
@@ -1473,6 +2034,30 @@ html.is-calendar-external-dragging * {
   color: color-mix(in srgb, var(--foreground) 92%, transparent);
 }
 
+.social-post-card__text-editor {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+}
+
+.social-post-card__text-editor .cm-editor {
+  background: transparent;
+  font: inherit;
+  color: inherit;
+}
+
+.social-post-card--editing .social-post-card__text-editor {
+  cursor: text;
+}
+
+.social-post-row__edit-error {
+  margin: 6px 0 0;
+  padding: 0 2px;
+  color: var(--danger, #e5484d);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
 /* Instagram: trailing hashtags collapse behind “… more”, like the real app. */
 .social-post-card__caption-more {
   position: relative;
@@ -1550,6 +2135,54 @@ html.is-calendar-external-dragging * {
   font: inherit;
   font-size: 0.75rem;
   cursor: default;
+}
+
+.social-post-card__action--like:not(:disabled) {
+  cursor: pointer;
+}
+
+.social-post-card__action--like:not(:disabled):hover:not(.is-hover-suppressed),
+.social-post-card__action--like.is-liked {
+  color: #e5484d;
+}
+
+.social-post-card__like-icon {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.social-post-card__like-icon-outline,
+.social-post-card__like-icon-fill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.social-post-card__like-icon svg {
+  display: block;
+}
+
+.social-post-card__like-icon-fill {
+  display: none;
+}
+
+.social-post-card__action--like:not(:disabled):hover:not(.is-hover-suppressed)
+  .social-post-card__like-icon-outline,
+.social-post-card__action--like.is-liked .social-post-card__like-icon-outline {
+  display: none;
+}
+
+.social-post-card__action--like:not(:disabled):hover:not(.is-hover-suppressed)
+  .social-post-card__like-icon-fill,
+.social-post-card__action--like.is-liked .social-post-card__like-icon-fill {
+  display: inline-flex;
 }
 
 .social-post-card__draft-platforms {
@@ -1824,8 +2457,6 @@ html.is-calendar-external-dragging * {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   padding: 10px 12px 6px;
 }
 
@@ -1838,29 +2469,9 @@ html.is-calendar-external-dragging * {
   color: color-mix(in srgb, var(--foreground) 48%, transparent);
 }
 
-.social-post-detail__panel-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
-  cursor: pointer;
-}
-
-.social-post-detail__panel-close:hover {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
 .social-post-detail__planned-hint {
   margin: 0;
-  padding: 10px 14px 16px;
+  padding: 4px 14px 10px;
   font-size: 0.8125rem;
   line-height: 1.45;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
@@ -1934,6 +2545,39 @@ html.is-calendar-external-dragging * {
   border-bottom: 0.5px solid var(--border);
 }
 
+.social-post-detail__linkedin-comments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.social-post-detail__linkedin-comments-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--foreground);
+}
+
+.social-post-detail__linkedin-comments-copy {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.social-post-detail__linkedin-comments-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  text-decoration: none;
+}
+
 .social-post-detail__replies {
   display: flex;
   flex-direction: column;
@@ -1978,6 +2622,13 @@ html.is-calendar-external-dragging * {
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-reply__avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .social-reply__body {
@@ -2330,6 +2981,16 @@ html.is-calendar-external-dragging * {
   color: var(--foreground);
 }
 
+.social-discover__mini-stat--hidden {
+  user-select: none;
+}
+
+.social-discover__mini-stat-value--blurred {
+  display: inline-block;
+  filter: blur(4px);
+  opacity: 0.72;
+}
+
 .social-discover__mini-push {
   display: inline-flex;
   align-items: center;
@@ -2344,16 +3005,24 @@ html.is-calendar-external-dragging * {
   font: inherit;
   font-size: 0.75rem;
   font-weight: 650;
+  text-decoration: none;
   cursor: pointer;
+}
+
+a.social-discover__mini-push:hover {
+  opacity: 0.92;
+  color: var(--background);
 }
 
 .social-discover__mini-push:hover:not(:disabled) {
   opacity: 0.92;
 }
 
-.social-discover__mini-push:disabled {
+.social-discover__mini-push:disabled,
+.social-discover__mini-push--disabled {
   opacity: 0.35;
   cursor: default;
+  pointer-events: none;
 }
 
 .social-discover__mini-push-status {

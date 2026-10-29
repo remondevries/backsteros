@@ -14,6 +14,14 @@ describe("mapZernioPlatform", () => {
       mapZernioPlatform("linkedin", "organization"),
       "linkedin_org",
     );
+    assert.equal(
+      mapZernioPlatform(
+        "linkedin",
+        null,
+        "https://www.linkedin.com/company/lemodesign/",
+      ),
+      "linkedin_org",
+    );
   });
 
   it("maps googlebusiness", () => {

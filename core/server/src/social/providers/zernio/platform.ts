@@ -1,9 +1,33 @@
 import type { SocialPlatform } from "../../types.js";
 
+/** True when Zernio metadata or profile URL clearly names a company Page. */
+export function isZernioLinkedInOrg(input: {
+  accountType?: string | null;
+  url?: string | null;
+  platformRaw?: string | null;
+}): boolean {
+  const type = (input.accountType ?? "").trim().toLowerCase();
+  const raw = (input.platformRaw ?? "").trim().toLowerCase();
+  if (
+    type === "organization" ||
+    type === "org" ||
+    type === "page" ||
+    type === "company" ||
+    raw === "linkedin_org" ||
+    raw === "linkedin_page"
+  ) {
+    return true;
+  }
+  const url = (input.url ?? "").trim().toLowerCase();
+  // Zernio sometimes omits accountType; company Pages still use /company/.
+  return /linkedin\.com\/company\//.test(url);
+}
+
 /** Zernio path/query platform strings → normalized SocialPlatform. */
 export function mapZernioPlatform(
   platform: string | null | undefined,
   accountType?: string | null,
+  url?: string | null,
 ): SocialPlatform | null {
   const raw = (platform ?? "").trim().toLowerCase();
   if (!raw) return null;
@@ -20,15 +44,7 @@ export function mapZernioPlatform(
     case "linkedin_personal":
     case "linkedin_org":
     case "linkedin_page": {
-      const type = (accountType ?? "").trim().toLowerCase();
-      if (
-        type === "organization" ||
-        type === "org" ||
-        type === "page" ||
-        type === "company" ||
-        raw === "linkedin_org" ||
-        raw === "linkedin_page"
-      ) {
+      if (isZernioLinkedInOrg({ accountType, url, platformRaw: raw })) {
         return "linkedin_org";
       }
       return "linkedin_personal";

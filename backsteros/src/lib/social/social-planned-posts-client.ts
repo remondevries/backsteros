@@ -14,6 +14,7 @@ function toRecord(post: SocialPlannedPost): SocialPlannedPostRecord {
     body: post.body,
     accountKind: post.accountKind,
     platforms: post.platforms,
+    media: post.media ?? [],
     scheduledAt: post.scheduledAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -42,6 +43,7 @@ export function createSocialPlannedPostsClient(
             accountKind: input.accountKind,
             platforms: input.platforms,
             scheduledAt: input.scheduledAt ?? null,
+            mediaUploads: input.mediaUploads,
           }),
         },
       );
@@ -62,6 +64,11 @@ export function createSocialPlannedPostsClient(
       await client.requestJson(
         `/api/v1/social/planned-posts/${encodeURIComponent(id)}`,
         { method: "DELETE" },
+      );
+    },
+    async downloadMedia(postId: string, mediaId: string) {
+      return client.requestBinary(
+        `/api/v1/social/planned-posts/${encodeURIComponent(postId)}/media/${encodeURIComponent(mediaId)}`,
       );
     },
   };

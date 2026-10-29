@@ -5,6 +5,7 @@ import { CheckIcon } from "@primer/octicons-react";
 
 import { socialPlatformIcon } from "../../contacts/social-platforms.js";
 import type {
+  SocialMockAccountKind,
   SocialMockAnalyticsPlatformFilterId,
   SocialMockPostPlatform,
 } from "../../social/social-mock-data.js";
@@ -17,31 +18,44 @@ import { ChevronDownIcon } from "../icons/chevron-down-icon.js";
 
 export type SocialComposerPostButtonProps = {
   platform: SocialMockAnalyticsPlatformFilterId;
+  /** Personal vs Business — LinkedIn Post targets profile vs company page. */
+  accountKind?: SocialMockAccountKind;
   disabled?: boolean;
   /** Connected platforms for the active Personal / Business bundle. */
   availablePlatforms?: readonly SocialMockPostPlatform[];
   /** Platforms selected for multi-post when filter is All. */
   postTargets: readonly SocialPlatformNavId[];
   onPostTargetsChange: (next: readonly SocialPlatformNavId[]) => void;
-  /** Planned tab uses Plan instead of immediate Post. */
-  action?: "post" | "plan";
+  /** Planned tab uses Plan; editing a tray chip uses Update. */
+  action?: "post" | "plan" | "update";
   onSubmit?: () => void;
 };
 
 function platformActionLabel(
   platform: Exclude<SocialMockAnalyticsPlatformFilterId, "all">,
-  action: "post" | "plan",
+  action: "post" | "plan" | "update",
+  accountKind: SocialMockAccountKind = "personal",
 ): string {
+  if (platform === "linkedin") {
+    const target =
+      accountKind === "business" ? "company page" : "LinkedIn";
+    if (action === "update") return `Update on ${target}`;
+    if (action === "plan") return `Plan for ${target}`;
+    return `Post to ${target}`;
+  }
   const name =
     platform === "x"
       ? "X"
       : (SOCIAL_PLATFORM_NAV_ITEMS.find((item) => item.id === platform)?.label ??
         platform);
-  return action === "plan" ? `Plan for ${name}` : `Post to ${name}`;
+  if (action === "update") return `Update on ${name}`;
+  if (action === "plan") return `Plan for ${name}`;
+  return `Post to ${name}`;
 }
 
 export function SocialComposerPostButton({
   platform,
+  accountKind = "personal",
   disabled = false,
   availablePlatforms = SOCIAL_PLATFORM_NAV_IDS,
   postTargets,
@@ -57,13 +71,26 @@ export function SocialComposerPostButton({
     availablePlatforms.includes(item.id),
   );
   const canPost = !disabled && (platform !== "all" || selected.size > 0);
-  const primaryLabel = action === "plan" ? "Plan" : "Post";
+  const primaryLabel =
+    action === "update" ? "Update" : action === "plan" ? "Plan" : "Post";
   const targetsHint =
-    action === "plan" ? "Plan for these accounts" : "Post to these accounts";
+    action === "update"
+      ? "Update these accounts"
+      : action === "plan"
+        ? "Plan for these accounts"
+        : "Post to these accounts";
   const menuAriaLabel =
-    action === "plan" ? "Choose platforms to plan for" : "Choose platforms to post to";
+    action === "update"
+      ? "Choose platforms to update"
+      : action === "plan"
+        ? "Choose platforms to plan for"
+        : "Choose platforms to post to";
   const menuLabel =
-    action === "plan" ? "Plan for platforms" : "Post to platforms";
+    action === "update"
+      ? "Update platforms"
+      : action === "plan"
+        ? "Plan for platforms"
+        : "Post to platforms";
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -107,7 +134,7 @@ export function SocialComposerPostButton({
         disabled={!canPost}
         onClick={onSubmit}
       >
-        {platformActionLabel(platform, action)}
+        {platformActionLabel(platform, action, accountKind)}
       </button>
     );
   }

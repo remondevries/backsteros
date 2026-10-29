@@ -111,8 +111,12 @@ export type TaskCalendarEvent = {
         socialPlatform?: string | null;
         /** All platforms for a grouped multi-network planned post. */
         socialPlatforms?: readonly string[] | null;
-        /** Image-only planned post (no caption) — chip shows an image mark. */
+        /** Image-only planned post (no caption) — chip shows media thumb. */
         socialImageOnly?: boolean;
+        /** First attached media preview (blob URL or public/mock URL). */
+        socialMediaPreviewUrl?: string | null;
+        /** Kind for the preview above — video uses a muted `<video>` frame. */
+        socialMediaKind?: "image" | "video" | null;
         /** Trailing hashtags to show under the caption when space allows. */
         socialHashtags?: readonly string[] | null;
       }

@@ -55,7 +55,7 @@ async function main() {
     await createTask(owner.workspaceId, {
       title,
       projectId: project.id,
-      status: "todo",
+      status: "ready_to_start",
     });
   }
 

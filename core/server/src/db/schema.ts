@@ -2660,6 +2660,12 @@ export const socialAccounts = pgTable(
     handle: text("handle"),
     displayName: text("display_name"),
     url: text("url"),
+    /** Provider CDN URL for the connected account’s profile picture. */
+    avatarUrl: text("avatar_url"),
+    /** Provider about/bio text when the network supplies one. */
+    bio: text("bio"),
+    /** Provider follower count when the network supplies one. */
+    followersCount: integer("followers_count"),
     contactId: text("contact_id"),
     organizationId: text("organization_id"),
     capabilities: jsonb("capabilities")
@@ -2705,8 +2711,18 @@ export const socialPosts = pgTable(
     externalId: text("external_id").notNull(),
     url: text("url"),
     text: text("text").notNull().default(""),
+    /** Provider media pointers and/or local planned uploads (storageKey). */
     media: jsonb("media")
-      .$type<{ kind: string; url: string }[]>()
+      .$type<
+        {
+          kind: string;
+          url: string;
+          id?: string;
+          contentType?: string;
+          filename?: string | null;
+          storageKey?: string;
+        }[]
+      >()
       .notNull()
       .default(sql`'[]'::jsonb`),
     status: text("status").notNull().default("draft"),

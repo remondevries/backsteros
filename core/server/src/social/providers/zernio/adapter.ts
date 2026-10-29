@@ -465,7 +465,7 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
   }
 
   private mapAccount(row: ZernioAccountRaw): SocialAccount | null {
-    const platform = mapZernioPlatform(row.platform, row.accountType);
+    const platform = mapZernioPlatform(row.platform, row.accountType, row.url);
     if (!platform) return null;
     const status = (row.status ?? "").toLowerCase();
     const disconnected =
@@ -484,6 +484,9 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
       handle: row.username,
       displayName: row.displayName,
       url: row.url,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      followersCount: row.followersCount,
       contactId: null,
       organizationId: null,
       capabilities: zernioCapabilities(platform),
@@ -506,6 +509,9 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
           handle: account.handle,
           displayName: account.displayName,
           url: account.url,
+          avatarUrl: account.avatarUrl,
+          bio: account.bio,
+          followersCount: account.followersCount,
           capabilities: account.capabilities,
           disconnected: account.disconnected,
           needsReconnect: account.needsReconnect,
@@ -518,6 +524,9 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
             handle: account.handle,
             displayName: account.displayName,
             url: account.url,
+            avatarUrl: account.avatarUrl,
+            bio: account.bio,
+            followersCount: account.followersCount,
             capabilities: account.capabilities,
             disconnected: account.disconnected,
             needsReconnect: account.needsReconnect,
@@ -553,6 +562,9 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
         handle: row.handle,
         displayName: row.displayName,
         url: row.url,
+        avatarUrl: row.avatarUrl,
+        bio: row.bio,
+        followersCount: row.followersCount,
         contactId: row.contactId,
         organizationId: row.organizationId,
         capabilities: row.capabilities as SocialAccount["capabilities"],

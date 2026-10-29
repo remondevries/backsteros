@@ -4,6 +4,11 @@ import type {
   SocialPlannedPostPlatform,
 } from "@backsteros/contracts";
 
+import {
+  parseStoredSocialPostMedia,
+  toPublicSocialPostMedia,
+} from "./planned-post-media.js";
+
 export const LOCAL_PLANNED_PROVIDER = "local";
 
 const PLATFORM_SET = new Set<string>([
@@ -43,6 +48,7 @@ export type SocialPlannedPostRow = {
   provider: string;
   platform: string;
   text: string;
+  media: unknown;
   accountKind: string | null;
   targetPlatforms: string[] | null;
   scheduledAt: Date | null;
@@ -72,6 +78,7 @@ export function rowToSocialPlannedPost(
     body: row.text,
     accountKind,
     platforms,
+    media: toPublicSocialPostMedia(parseStoredSocialPostMedia(row.media)),
     scheduledAt,
     status,
     createdAt: row.createdAt.toISOString(),

@@ -152,6 +152,11 @@ export type CalendarViewProps = {
   ) => CalendarBirthdayPopoverContact | null | undefined;
   onTaskOpen?: (taskId: string) => void;
   /**
+   * Network Planned — hover × on a social chip returns it to the tray
+   * (clears schedule; does not delete).
+   */
+  onSocialPlanUnschedule?: (taskId: string) => void;
+  /**
    * After an event drag ends (before/with drop). Used when month-strip CSS
    * breaks FC hit-testing so hosts can resolve the day under the pointer.
    */
@@ -203,6 +208,7 @@ export function CalendarView({
   onTaskPopoverChange,
   resolveBirthdayContact,
   onTaskOpen,
+  onSocialPlanUnschedule,
   onEventDragStop,
   onBirthdayOpen,
   onBirthdayAddNote,
@@ -227,6 +233,8 @@ export function CalendarView({
   const monthStripRef = useRef<HTMLDivElement>(null);
   const dayStripRef = useRef<HTMLDivElement>(null);
   const calendarApiRef = useRef<CalendarApi | null>(null);
+  const onSocialPlanUnscheduleRef = useRef(onSocialPlanUnschedule);
+  onSocialPlanUnscheduleRef.current = onSocialPlanUnschedule;
   const meetingDragCopyCleanupRef = useRef<(() => void) | null>(null);
   const weekApisRef = useRef<(CalendarApi | null)[]>(
     Array.from({ length: CALENDAR_WEEK_STRIP_PANE_COUNT }, () => null),
@@ -1812,6 +1820,16 @@ export function CalendarView({
     interactionPlugin,
   ];
 
+  const renderEventContent = useCallback(
+    (arg: Parameters<typeof renderCalendarTaskEventContent>[0]) =>
+      renderCalendarTaskEventContent(arg, {
+        onSocialPlanUnschedule: onSocialPlanUnscheduleRef.current
+          ? (taskId) => onSocialPlanUnscheduleRef.current?.(taskId)
+          : undefined,
+      }),
+    [],
+  );
+
   const sharedInteractionProps = {
     headerToolbar: CALENDAR_HEADER_TOOLBAR,
     height: "100%" as const,
@@ -1845,7 +1863,7 @@ export function CalendarView({
     eventResize: handleEventResize,
     eventReceive: handleEventReceive,
     eventClick: handleEventClick,
-    eventContent: renderCalendarTaskEventContent,
+    eventContent: renderEventContent,
     eventDidMount: handleEventDidMountWithAllDayClick,
     eventWillUnmount: handleEventWillUnmountWithAllDayClick,
     dayCellDidMount,
@@ -1862,7 +1880,7 @@ export function CalendarView({
 
   const monthStripFcProps = {
     ...sharedInteractionProps,
-    // Hug the square day grid — no viewport-tall empty band under each month.
+    // Hug content — day cells are at least square, then grow with events.
     height: "auto" as const,
     // In-pane month title owns labeling; no sticky Mon–Sun rail.
     dayHeaders: false,
@@ -1871,6 +1889,9 @@ export function CalendarView({
     showNonCurrentDates: false,
     fixedWeekCount: false,
     expandRows: false,
+    // Don’t collapse into “+N more” — let the day square grow instead.
+    dayMaxEventRows: false,
+    dayMaxEvents: false,
   };
 
   const dayStripFcProps = {

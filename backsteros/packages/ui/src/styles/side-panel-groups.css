@@ -2092,6 +2092,45 @@ button.settings-inbox-account-label:disabled {
   font-size: 12px;
 }
 
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-social-account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-social-account-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.settings-social-account-avatar--empty {
+  display: inline-block;
+}
+
+.settings-social-account-meta {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.settings-social-account-meta strong {
+  font-weight: 600;
+}
+
 .settings-sync-header {
   display: flex;
   align-items: flex-start;

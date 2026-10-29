@@ -3874,6 +3874,24 @@ export type {
 } from "./social/social-planned-posts.js";
 
 export {
+  isLiveSocialFeedPlatform,
+  isLiveSocialFeedPostId,
+  type SocialFeedPostsClient,
+} from "./social/social-feed-posts.js";
+
+export {
+  findSocialConnectedAccount,
+  isPlausibleSocialHandle,
+  resolveSocialComposerAvatarUrl,
+  resolveSocialConnectedIdentity,
+  resolveSocialHandle,
+  socialAccountPlatformForFeed,
+  splitSocialDisplayName,
+  vanityFromSocialProfileUrl,
+  type SocialConnectedAccountAvatar,
+} from "./social/social-connected-account-avatar.js";
+
+export {
   SocialPlannedView,
   pendingPlanAsFeedPost,
   planTargetsAllPlatforms,
@@ -3939,7 +3957,6 @@ export {
   isSocialPlatformNavId,
   getSocialNavHref,
   getSocialPlatformNavHref,
-  getSocialPostHref,
   getSocialProfileHref,
   getSocialAnalyticsHref,
   getSocialAnalyticsMetricFromSearch,
@@ -3948,15 +3965,25 @@ export {
   SOCIAL_FEED_TAB_IDS,
   SOCIAL_FEED_TAB_PARAM,
   DEFAULT_SOCIAL_FEED_TAB,
+  SOCIAL_FEED_ACCOUNT_KIND_IDS,
+  SOCIAL_FEED_ACCOUNT_PARAM,
+  DEFAULT_SOCIAL_FEED_ACCOUNT_KIND,
+  DEFAULT_SOCIAL_FEED_PLATFORM,
   isSocialFeedTabId,
+  isSocialFeedAccountKind,
   getSocialFeedTabFromSearch,
+  getSocialFeedAccountKindFromSearch,
+  getSocialFeedPathname,
   getSocialFeedHref,
+  getSocialPostHref,
   getSelectedSocialPostIdFromPathname,
   getSelectedSocialProfileHandleFromPathname,
   getSelectedSocialNavIdFromPathname,
   getSocialFeedPlatformFromPathname,
+  getSocialFeedPlatformFromSearch,
   getSocialSidePanelSelectionLabel,
   resolveSocialSidePanelHref,
+  SOCIAL_FEED_PLATFORM_PARAM,
   type SocialNavId,
   type SocialNavItem,
   type SocialPlatformNavId,
@@ -3964,7 +3991,10 @@ export {
   type SocialSidePanelSelectionId,
   type SocialAnalyticsHrefOptions,
   type SocialFeedTabId,
+  type SocialFeedAccountKind,
+  type SocialFeedPlatformFilterId,
   type SocialFeedHrefOptions,
+  type SocialPostHrefOptions,
 } from "./social/social-nav.js";
 
 export {
@@ -3982,6 +4012,8 @@ export {
   SOCIAL_MOCK_OWNED_ACCOUNTS,
   SOCIAL_MOCK_REPLIES,
   getSocialMockPostById,
+  getSocialPostExternalReplyUrl,
+  SOCIAL_LINKEDIN_FEED_FALLBACK_URL,
   getSocialMockRepliesForPost,
   getSocialMockAnalyticsSelection,
   getSocialMockAnalyticsMetrics,

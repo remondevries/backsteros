@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { CalendarApi } from "@fullcalendar/core";
+import { TrashIcon } from "@primer/octicons-react";
 
 import {
   type TaskCalendarEvent,
@@ -31,8 +32,10 @@ import {
 } from "../../social/social-mock-data.js";
 import type { SocialPlannedPostRecord } from "../../social/social-planned-posts.js";
 import { SOCIAL_PLATFORM_NAV_ITEMS } from "../../social/social-nav.js";
+import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import { CalendarDateNav } from "../calendar/calendar-date-nav.js";
 import { CalendarView } from "../calendar/calendar-view.js";
+import { SocialMediaLightbox } from "./social-media-lightbox.js";
 import { SocialPlannedTimeModal } from "./social-planned-time-modal.js";
 
 const SOCIAL_PENDING_DRAG_DURATION_MINUTES = 30;
@@ -44,12 +47,20 @@ type PendingTimePrompt = {
   dateYmd: string;
 };
 
+/** Attached image/video on a tray chip (blob preview or authenticated API path). */
+export type SocialPendingPlanMedia = {
+  id: string;
+  kind: "image" | "video";
+  previewUrl: string;
+};
+
 /** Composer “Plan” result — not on the grid yet (dashed chip at the top). */
 export type SocialPendingPlan = {
   id: string;
   body: string;
   accountKind: SocialMockAccountKind;
   platforms: readonly SocialMockPostPlatform[];
+  media?: readonly SocialPendingPlanMedia[];
 };
 
 export type SocialPlannedViewProps = {
@@ -59,13 +70,24 @@ export type SocialPlannedViewProps = {
   pendingPlans?: readonly SocialPendingPlan[];
   /** Persisted scheduled posts from core (merged with mock seeds). */
   scheduledPlans?: readonly SocialPlannedPostRecord[];
+  /** Tray chip currently loaded in the composer (stays visible, highlighted). */
+  selectedPendingPlanId?: string | null;
   onDismissPendingPlan?: (id: string) => void;
   /** Load a plan back into the composer for editing. */
   onEditPendingPlan?: (plan: SocialPendingPlan) => void;
-  /** Persist schedule when a tray chip lands on the calendar. */
-  onSchedulePendingPlan?: (plan: SocialPendingPlan, scheduledAt: Date) => void;
+  /**
+   * Persist schedule when a tray chip lands on the calendar.
+   * May return a record with a new id when the tray chip was never in core
+   * (schedule creates instead of patching).
+   */
+  onSchedulePendingPlan?: (
+    plan: SocialPendingPlan,
+    scheduledAt: Date,
+  ) => void | Promise<SocialPlannedPostRecord | null | void>;
   /** Persist reschedule for a core-backed calendar event. */
   onReschedulePersistedPlan?: (id: string, scheduledAt: Date) => void;
+  /** Clear schedule and return the post to the unscheduled tray. */
+  onUnschedulePlan?: (plan: SocialPendingPlan) => void;
   /** Open post in the Discover rail (keeps the calendar mounted). */
   onInspectPost?: (post: SocialMockPost) => void;
 };
@@ -109,6 +131,19 @@ const PLATFORM_EVENT_COLORS: Record<
   "dev-null": { backgroundColor: "#ff8a4c", borderColor: "#ff8a4c" },
 };
 
+function socialPlannedCalendarEventClassNames(
+  platforms: readonly SocialMockPostPlatform[],
+): string[] {
+  const primary = platforms[0];
+  const multi = platforms.length > 1;
+  return [
+    "task-calendar-event",
+    "social-planned-calendar-event",
+    primary ? `social-planned-calendar-event--${primary}` : null,
+    multi ? "social-planned-calendar-event--multi" : null,
+  ].filter(Boolean) as string[];
+}
+
 function platformLabel(platform: SocialMockPostPlatform): string {
   if (platform === "x") return "X";
   if (platform === "dev-null") return "Dev-null";
@@ -148,6 +183,7 @@ function plannedPostToCalendarEvent(
   const colors = PLATFORM_EVENT_COLORS[post.platform];
   const { caption, hashtags } = splitSocialPlannedCaption(post.body);
   const imageOnly = Boolean(post.imageUrl) && !caption.trim();
+  const mediaPreviewUrl = post.imageUrl?.trim() || null;
   return {
     id: post.id,
     title: imageOnly ? "" : caption,
@@ -158,7 +194,7 @@ function plannedPostToCalendarEvent(
     startEditable: true,
     durationEditable: false,
     displayEventEnd: false,
-    classNames: ["task-calendar-event", "social-planned-calendar-event"],
+    classNames: socialPlannedCalendarEventClassNames([post.platform]),
     backgroundColor: colors.backgroundColor,
     borderColor: colors.borderColor,
     extendedProps: {
@@ -169,6 +205,8 @@ function plannedPostToCalendarEvent(
       socialPlatform: post.platform,
       socialPlatforms: [post.platform],
       socialImageOnly: imageOnly,
+      socialMediaPreviewUrl: mediaPreviewUrl,
+      socialMediaKind: mediaPreviewUrl ? "image" : null,
       socialHashtags: hashtags.length > 0 ? hashtags : null,
     },
   };
@@ -188,6 +226,29 @@ function applyTaskPatchToEvent(
     end,
     allDay,
   };
+}
+
+/**
+ * When the seed set gains/loses ids (tray schedule, unschedule, filter), keep
+ * in-calendar drag positions for events that already exist. Replacing the whole
+ * array with seed times was wiping local month moves.
+ */
+function mergeCalendarEventsWithSeed(
+  current: readonly TaskCalendarEvent[],
+  seed: readonly TaskCalendarEvent[],
+): TaskCalendarEvent[] {
+  const currentById = new Map(current.map((event) => [event.id, event]));
+  return seed.map((seedEvent) => {
+    const existing = currentById.get(seedEvent.id);
+    if (!existing) return seedEvent;
+    return {
+      ...seedEvent,
+      start: existing.start,
+      end: existing.end,
+      allDay: existing.allDay,
+      displayEventEnd: existing.displayEventEnd,
+    };
+  });
 }
 
 function isSocialCalendarEvent(event: TaskCalendarEvent): boolean {
@@ -308,7 +369,8 @@ function planToCalendarEventsAt(
   const platforms = plan.platforms;
   if (platforms.length === 0) return [];
   const { caption, hashtags } = splitSocialPlannedCaption(plan.body);
-  const imageOnly = !caption.trim();
+  const firstMedia = plan.media?.[0] ?? null;
+  const imageOnly = !caption.trim() && Boolean(firstMedia);
   const primary = platforms[0]!;
   const colors = PLATFORM_EVENT_COLORS[primary];
   const endAt =
@@ -330,11 +392,7 @@ function planToCalendarEventsAt(
       startEditable: true,
       durationEditable: false,
       displayEventEnd: false,
-      classNames: [
-        "task-calendar-event",
-        "social-planned-calendar-event",
-        multi ? "social-planned-calendar-event--multi" : null,
-      ].filter(Boolean) as string[],
+      classNames: socialPlannedCalendarEventClassNames(platforms),
       backgroundColor: multi ? "#2a2a2a" : colors.backgroundColor,
       borderColor: multi ? "#555" : colors.borderColor,
       extendedProps: {
@@ -345,6 +403,8 @@ function planToCalendarEventsAt(
         socialPlatform: primary,
         socialPlatforms: platforms,
         socialImageOnly: imageOnly,
+        socialMediaPreviewUrl: firstMedia?.previewUrl ?? null,
+        socialMediaKind: firstMedia?.kind ?? null,
         socialHashtags: hashtags.length > 0 ? hashtags : null,
       },
     },
@@ -364,6 +424,11 @@ function persistedRecordToCalendarEvent(
         body: record.body,
         accountKind: record.accountKind,
         platforms: record.platforms,
+        media: record.media.map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          previewUrl: item.url,
+        })),
       },
       start,
     )[0] ?? null
@@ -375,26 +440,41 @@ export function SocialPlannedView({
   platform = "all",
   pendingPlans = [],
   scheduledPlans = [],
+  selectedPendingPlanId = null,
   onDismissPendingPlan,
   onEditPendingPlan,
   onSchedulePendingPlan,
   onReschedulePersistedPlan,
+  onUnschedulePlan,
   onInspectPost,
 }: SocialPlannedViewProps) {
   const calendarApiRef = useRef<CalendarApi | null>(null);
   const pendingListRef = useRef<HTMLUListElement | null>(null);
+  const pendingPanelListRef = useRef<HTMLUListElement | null>(null);
   const suppressChipClickRef = useRef(false);
   /** Plans placed on the grid — kept so chip click can open the inspect rail. */
   const scheduledPlansByIdRef = useRef(new Map<string, SocialPendingPlan>());
   const persistedIdSetRef = useRef(new Set<string>());
+  /** Mock seed posts returned to the tray — keep them off the grid until re-scheduled. */
+  const [unscheduledSeedIds, setUnscheduledSeedIds] = useState(
+    () => new Set<string>(),
+  );
+  /** Spacious left list — default is the compact ribbon tray. */
+  const [trayPanelOpen, setTrayPanelOpen] = useState(false);
+  const [mediaLightbox, setMediaLightbox] = useState<{
+    src: string;
+    kind: "image" | "video";
+    alt: string;
+    sourceRect: DOMRect;
+  } | null>(null);
   const [calendarNavReady, setCalendarNavReady] = useState(false);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
   const [rangeTitle, setRangeTitle] = useState("");
 
   const seedEvents = useMemo(() => {
-    const mocks = getSocialMockPlannedPostsForAccount(accountKind, platform).map(
-      (post) => plannedPostToCalendarEvent(post),
-    );
+    const mocks = getSocialMockPlannedPostsForAccount(accountKind, platform)
+      .filter((post) => !unscheduledSeedIds.has(post.id))
+      .map((post) => plannedPostToCalendarEvent(post));
     const persisted = scheduledPlans
       .filter((row) => {
         if (row.accountKind !== accountKind) return false;
@@ -409,19 +489,24 @@ export function SocialPlannedView({
         body: row.body,
         accountKind: row.accountKind,
         platforms: row.platforms,
+        media: row.media.map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          previewUrl: item.url,
+        })),
       });
       persistedIdSetRef.current.add(row.id);
     }
     const mockIds = new Set(mocks.map((event) => event.id));
     return [...mocks, ...persisted.filter((event) => !mockIds.has(event.id))];
-  }, [accountKind, platform, scheduledPlans]);
+  }, [accountKind, platform, scheduledPlans, unscheduledSeedIds]);
 
   const [events, setEvents] = useState<TaskCalendarEvent[]>(seedEvents);
   const seedKey = `${accountKind}:${platform}:${seedEvents.map((e) => e.id).join(",")}`;
   const [appliedSeedKey, setAppliedSeedKey] = useState(seedKey);
   if (appliedSeedKey !== seedKey) {
     setAppliedSeedKey(seedKey);
-    setEvents(seedEvents);
+    setEvents((current) => mergeCalendarEventsWithSeed(current, seedEvents));
   }
 
   const ownedPlatforms = useMemo(
@@ -449,6 +534,36 @@ export function SocialPlannedView({
     scheduledPlansByIdRef.current.set(plan.id, plan);
   }, []);
 
+  const remapScheduledPlanId = useCallback(
+    (fromId: string, toPlan: SocialPendingPlan, start: Date) => {
+      const end = new Date(
+        start.getTime() + SOCIAL_PENDING_DRAG_DURATION_MINUTES * 60_000,
+      );
+      const scheduled = pendingPlanToCalendarEvents(toPlan, {
+        dueDate: start.toISOString(),
+        dueEndDate: end.toISOString(),
+      });
+      scheduledPlansByIdRef.current.delete(fromId);
+      persistedIdSetRef.current.delete(fromId);
+      rememberScheduledPlan(toPlan);
+      persistedIdSetRef.current.add(toPlan.id);
+      setEvents((current) => [
+        ...current.filter(
+          (event) =>
+            event.id !== fromId &&
+            event.id !== toPlan.id &&
+            !(
+              event.extendedProps.entityType === "task" &&
+              (event.extendedProps.taskId === fromId ||
+                event.extendedProps.taskId === toPlan.id)
+            ),
+        ),
+        ...scheduled,
+      ]);
+    },
+    [rememberScheduledPlan],
+  );
+
   const commitPendingPlanAt = useCallback(
     (plan: SocialPendingPlan, start: Date) => {
       const end = new Date(
@@ -461,18 +576,126 @@ export function SocialPlannedView({
       if (scheduled.length === 0) return false;
       rememberScheduledPlan(plan);
       persistedIdSetRef.current.add(plan.id);
+      setUnscheduledSeedIds((current) => {
+        if (!current.has(plan.id)) return current;
+        const next = new Set(current);
+        next.delete(plan.id);
+        return next;
+      });
       setEvents((current) => [
         ...current.filter((event) => event.id !== plan.id),
         ...scheduled,
       ]);
       if (onSchedulePendingPlan) {
-        onSchedulePendingPlan(plan, start);
+        const result = onSchedulePendingPlan(plan, start);
+        if (result != null && typeof (result as Promise<unknown>).then === "function") {
+          void (result as Promise<SocialPlannedPostRecord | null | void>).then(
+            (saved) => {
+              if (!saved || saved.id === plan.id) return;
+              remapScheduledPlanId(
+                plan.id,
+                {
+                  id: saved.id,
+                  body: saved.body,
+                  accountKind: saved.accountKind,
+                  platforms: saved.platforms,
+                  media: saved.media.map((item) => ({
+                    id: item.id,
+                    kind: item.kind,
+                    previewUrl: item.url,
+                  })),
+                },
+                start,
+              );
+            },
+          );
+        }
       } else {
         onDismissPendingPlan?.(plan.id);
       }
       return true;
     },
-    [onDismissPendingPlan, onSchedulePendingPlan, rememberScheduledPlan],
+    [
+      onDismissPendingPlan,
+      onSchedulePendingPlan,
+      remapScheduledPlanId,
+      rememberScheduledPlan,
+    ],
+  );
+
+  const resolvePlanForUnschedule = useCallback(
+    (taskId: string): SocialPendingPlan | null => {
+      const remembered = scheduledPlansByIdRef.current.get(taskId);
+      if (remembered) return remembered;
+      const mock = getSocialMockPlannedPostById(taskId);
+      if (mock) {
+        return {
+          id: mock.id,
+          body: mock.body,
+          accountKind: mock.accountKind,
+          platforms: [mock.platform],
+        };
+      }
+      const event = events.find(
+        (entry) =>
+          entry.id === taskId ||
+          (entry.extendedProps.entityType === "task" &&
+            entry.extendedProps.taskId === taskId),
+      );
+      if (!event || !isSocialCalendarEvent(event)) return null;
+      if (event.extendedProps.entityType !== "task") return null;
+      const allowed = new Set<SocialMockPostPlatform>([
+        "facebook",
+        "instagram",
+        "x",
+        "linkedin",
+        "dev-null",
+      ]);
+      const fromList = event.extendedProps.socialPlatforms ?? [];
+      const platforms = (
+        fromList.length > 0
+          ? fromList
+          : event.extendedProps.socialPlatform
+            ? [event.extendedProps.socialPlatform]
+            : []
+      ).filter((entry): entry is SocialMockPostPlatform =>
+        allowed.has(entry as SocialMockPostPlatform),
+      );
+      if (platforms.length === 0) return null;
+      return {
+        id: taskId,
+        body: event.title || "",
+        accountKind,
+        platforms,
+      };
+    },
+    [accountKind, events],
+  );
+
+  const handleSocialPlanUnschedule = useCallback(
+    (taskId: string) => {
+      const plan = resolvePlanForUnschedule(taskId);
+      if (!plan) return;
+      setEvents((current) =>
+        current.filter(
+          (event) =>
+            event.id !== taskId &&
+            !(
+              event.extendedProps.entityType === "task" &&
+              event.extendedProps.taskId === taskId
+            ),
+        ),
+      );
+      setUnscheduledSeedIds((current) => {
+        const next = new Set(current);
+        next.add(taskId);
+        return next;
+      });
+      scheduledPlansByIdRef.current.delete(taskId);
+      persistedIdSetRef.current.delete(taskId);
+      onUnschedulePlan?.(plan);
+    },
+    [onUnschedulePlan, resolvePlanForUnschedule],
   );
 
   const schedulePendingPlanAtPoint = useCallback(
@@ -544,7 +767,15 @@ export function SocialPlannedView({
   );
 
   useCalendarExternalTaskDrag(pendingListRef, {
-    enabled: visiblePendingPlans.length > 0,
+    enabled: !trayPanelOpen && visiblePendingPlans.length > 0,
+    itemSelector: SOCIAL_PENDING_DRAG_ITEM_SELECTOR,
+    minDistance: 6,
+    onDragStart: handlePendingDragStart,
+    onDragEnd: handlePendingDragEnd,
+  });
+
+  useCalendarExternalTaskDrag(pendingPanelListRef, {
+    enabled: trayPanelOpen && visiblePendingPlans.length > 0,
     itemSelector: SOCIAL_PENDING_DRAG_ITEM_SELECTOR,
     minDistance: 6,
     onDragStart: handlePendingDragStart,
@@ -634,134 +865,288 @@ export function SocialPlannedView({
     [events, onInspectPost, pendingPlans],
   );
 
+  function renderPendingPlanItem(
+    plan: SocialPendingPlan,
+    variant: "ribbon" | "panel",
+  ) {
+    const showAll = planTargetsAllPlatforms(plan.platforms, ownedPlatforms);
+    const { caption, hashtags } = splitSocialPlannedCaption(plan.body);
+    const primaryPlatform = plan.platforms[0] ?? "x";
+    const colors = PLATFORM_EVENT_COLORS[primaryPlatform];
+    const firstMedia = plan.media?.[0] ?? null;
+    const dragTitle =
+      caption.trim() ||
+      plan.body ||
+      (firstMedia ? "Image post" : "Planned post");
+    const isSelected = selectedPendingPlanId === plan.id;
+    const isPanel = variant === "panel";
+    const imageOnly = !caption.trim() && Boolean(firstMedia);
+    return (
+      <li
+        key={`${variant}-${plan.id}`}
+        className={[
+          isPanel
+            ? "social-planned__tray-item"
+            : "social-planned__pending-item",
+          "social-planned__pending-item--draggable",
+          isSelected
+            ? isPanel
+              ? "social-planned__tray-item--selected"
+              : "social-planned__pending-item--selected"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-social-pending-plan-id={plan.id}
+        data-calendar-task-id={plan.id}
+        data-calendar-task-title={dragTitle}
+        data-calendar-task-status="ready_to_start"
+        data-calendar-drag-duration-minutes={SOCIAL_PENDING_DRAG_DURATION_MINUTES}
+        data-social-platform={primaryPlatform}
+        data-social-event-bg={colors.backgroundColor}
+        data-social-event-border={colors.borderColor}
+        data-social-image-only={imageOnly ? "true" : "false"}
+        data-social-media-preview-url={firstMedia?.previewUrl ?? undefined}
+        data-social-media-kind={firstMedia?.kind ?? undefined}
+        data-social-hashtags={hashtags.join(" ")}
+      >
+        <div
+          className={[
+            isPanel
+              ? "social-planned__tray-row"
+              : "social-planned__pending-chip",
+            isSelected
+              ? isPanel
+                ? "social-planned__tray-row--selected"
+                : "social-planned__pending-chip--selected"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {firstMedia ? (
+            <button
+              type="button"
+              className="social-planned__pending-media"
+              aria-label={
+                firstMedia.kind === "video"
+                  ? "View video fullscreen"
+                  : "View image fullscreen"
+              }
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                setMediaLightbox({
+                  src: firstMedia.previewUrl,
+                  kind: firstMedia.kind,
+                  alt: firstMedia.kind === "video" ? "Video" : "Image",
+                  sourceRect: DOMRect.fromRect({
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                  }),
+                });
+              }}
+            >
+              {firstMedia.kind === "video" ? (
+                <video
+                  className="social-planned__pending-media-thumb"
+                  src={firstMedia.previewUrl}
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  className="social-planned__pending-media-thumb"
+                  src={firstMedia.previewUrl}
+                  alt=""
+                />
+              )}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={
+              isPanel
+                ? "social-planned__tray-open"
+                : "social-planned__pending-open"
+            }
+            aria-pressed={isSelected}
+            onClick={() => {
+              if (suppressChipClickRef.current) return;
+              if (onEditPendingPlan) {
+                onEditPendingPlan(plan);
+                return;
+              }
+              onInspectPost?.(pendingPlanAsFeedPost(plan));
+            }}
+          >
+            {showAll ? (
+              <span className="social-planned__pending-all">All</span>
+            ) : (
+              <span
+                className="social-planned__pending-platforms"
+                aria-hidden="true"
+              >
+                {plan.platforms.map((entry) => {
+                  const nav = SOCIAL_PLATFORM_NAV_ITEMS.find(
+                    (item) => item.id === entry,
+                  );
+                  return (
+                    <span
+                      key={entry}
+                      className="social-planned__pending-platform"
+                      title={platformLabel(entry)}
+                    >
+                      {socialPlatformIcon(nav?.platform ?? entry, 14)}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+            <span
+              className={
+                isPanel
+                  ? "social-planned__tray-body"
+                  : "social-planned__pending-body"
+              }
+            >
+              {plan.body.trim()
+                ? plan.body
+                : firstMedia
+                  ? firstMedia.kind === "video"
+                    ? "Video"
+                    : "Image"
+                  : ""}
+            </span>
+          </button>
+          {onDismissPendingPlan ? (
+            <button
+              type="button"
+              className="social-planned__pending-delete"
+              aria-label="Delete planned post"
+              title="Delete planned post"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={() => onDismissPendingPlan(plan.id)}
+            >
+              <TrashIcon size={isPanel ? 14 : 12} />
+            </button>
+          ) : null}
+        </div>
+      </li>
+    );
+  }
+
   return (
-    <div className="social-planned">
-      <header className="social-planned__toolbar">
-        <div className="social-planned__title-block">
+    <div
+      className={[
+        "social-planned",
+        trayPanelOpen ? "social-planned--tray-open" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {trayPanelOpen ? (
+        <aside
+          className="social-planned__tray-panel"
+          aria-label="Planning tray"
+        >
+          <header className="social-planned__tray-panel-header">
+            <h2 className="social-planned__tray-panel-title">Tray</h2>
+            <span className="social-planned__tray-panel-count">
+              {visiblePendingPlans.length}
+            </span>
+          </header>
           {visiblePendingPlans.length > 0 ? (
             <ul
-              ref={pendingListRef}
-              className="social-planned__pending"
+              ref={pendingPanelListRef}
+              className="social-planned__tray-list"
               role="list"
               aria-label="Unscheduled plans"
             >
-              {visiblePendingPlans.map((plan) => {
-                const showAll = planTargetsAllPlatforms(
-                  plan.platforms,
-                  ownedPlatforms,
-                );
-                const { caption, hashtags } = splitSocialPlannedCaption(
-                  plan.body,
-                );
-                const primaryPlatform = plan.platforms[0] ?? "x";
-                const colors = PLATFORM_EVENT_COLORS[primaryPlatform];
-                const dragTitle = caption.trim() || plan.body || "Planned post";
-                return (
-                  <li
-                    key={plan.id}
-                    className="social-planned__pending-item social-planned__pending-item--draggable"
-                    data-social-pending-plan-id={plan.id}
-                    data-calendar-task-id={plan.id}
-                    data-calendar-task-title={dragTitle}
-                    data-calendar-task-status="ready_to_start"
-                    data-calendar-drag-duration-minutes={
-                      SOCIAL_PENDING_DRAG_DURATION_MINUTES
-                    }
-                    data-social-platform={primaryPlatform}
-                    data-social-event-bg={colors.backgroundColor}
-                    data-social-event-border={colors.borderColor}
-                    data-social-image-only={caption.trim() ? "false" : "true"}
-                    data-social-hashtags={hashtags.join(" ")}
-                  >
-                    <div className="social-planned__pending-chip">
-                      <button
-                        type="button"
-                        className="social-planned__pending-open"
-                        onClick={() => {
-                          if (suppressChipClickRef.current) return;
-                          if (onEditPendingPlan) {
-                            onEditPendingPlan(plan);
-                            return;
-                          }
-                          onInspectPost?.(pendingPlanAsFeedPost(plan));
-                        }}
-                      >
-                        {showAll ? (
-                          <span className="social-planned__pending-all">
-                            All
-                          </span>
-                        ) : (
-                          <span
-                            className="social-planned__pending-platforms"
-                            aria-hidden="true"
-                          >
-                            {plan.platforms.map((entry) => {
-                              const nav = SOCIAL_PLATFORM_NAV_ITEMS.find(
-                                (item) => item.id === entry,
-                              );
-                              return (
-                                <span
-                                  key={entry}
-                                  className="social-planned__pending-platform"
-                                  title={platformLabel(entry)}
-                                >
-                                  {socialPlatformIcon(
-                                    nav?.platform ?? entry,
-                                    14,
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </span>
-                        )}
-                        <span className="social-planned__pending-body">
-                          {plan.body}
-                        </span>
-                      </button>
-                      {onDismissPendingPlan ? (
-                        <button
-                          type="button"
-                          className="social-planned__pending-dismiss"
-                          aria-label="Remove unscheduled plan"
-                          onPointerDown={(event) => {
-                            // Keep dismiss from starting a calendar drag.
-                            event.stopPropagation();
-                          }}
-                          onClick={() => onDismissPendingPlan(plan.id)}
-                        >
-                          ×
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
+              {visiblePendingPlans.map((plan) =>
+                renderPendingPlanItem(plan, "panel"),
+              )}
             </ul>
           ) : (
-            <h2 className="social-planned__title">Planned</h2>
+            <p className="social-planned__tray-empty">
+              No unscheduled plans. Plan a post, then drag it onto the calendar.
+            </p>
           )}
-          {rangeTitle && viewMode !== "month" ? (
-            <p className="social-planned__range">{rangeTitle}</p>
-          ) : null}
+        </aside>
+      ) : null}
+
+      <div className="social-planned__main">
+        <header className="social-planned__toolbar">
+          <div className="social-planned__toolbar-start">
+            <button
+              type="button"
+              className="social-planned__tray-toggle"
+              aria-pressed={trayPanelOpen}
+              aria-label={
+                trayPanelOpen ? "Hide planning tray panel" : "Show planning tray panel"
+              }
+              title={
+                trayPanelOpen ? "Hide tray panel" : "Show tray panel"
+              }
+              onClick={() => setTrayPanelOpen((open) => !open)}
+            >
+              <ProjectsSidePanelIcon
+                size={16}
+                collapsed={!trayPanelOpen}
+                rail="start"
+              />
+            </button>
+            <div className="social-planned__title-block">
+              {!trayPanelOpen && visiblePendingPlans.length > 0 ? (
+                <div className="social-planned__pending-scroll">
+                  <ul
+                    ref={pendingListRef}
+                    className="social-planned__pending"
+                    role="list"
+                    aria-label="Unscheduled plans"
+                  >
+                    {visiblePendingPlans.map((plan) =>
+                      renderPendingPlanItem(plan, "ribbon"),
+                    )}
+                  </ul>
+                </div>
+              ) : (
+                <h2 className="social-planned__title">Planned</h2>
+              )}
+              {rangeTitle && viewMode !== "month" ? (
+                <p className="social-planned__range">{rangeTitle}</p>
+              ) : null}
+            </div>
+          </div>
+          <CalendarDateNav
+            disabled={!calendarNavReady}
+            onPrev={() => calendarApiRef.current?.prev()}
+            onNext={() => calendarApiRef.current?.next()}
+            onToday={() => calendarApiRef.current?.today()}
+          />
+        </header>
+        <div className="social-planned__calendar">
+          <CalendarView
+            events={events}
+            onTaskReschedule={handleTaskReschedule}
+            onTaskOpen={handleInspectPlannedId}
+            onSocialPlanUnschedule={handleSocialPlanUnschedule}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onCalendarApi={handleCalendarApi}
+            onRangeTitleChange={setRangeTitle}
+            keyboardNavigationEnabled={false}
+          />
         </div>
-        <CalendarDateNav
-          disabled={!calendarNavReady}
-          onPrev={() => calendarApiRef.current?.prev()}
-          onNext={() => calendarApiRef.current?.next()}
-          onToday={() => calendarApiRef.current?.today()}
-        />
-      </header>
-      <div className="social-planned__calendar">
-        <CalendarView
-          events={events}
-          onTaskReschedule={handleTaskReschedule}
-          onTaskOpen={handleInspectPlannedId}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onCalendarApi={handleCalendarApi}
-          onRangeTitleChange={setRangeTitle}
-          keyboardNavigationEnabled={false}
-        />
       </div>
       <SocialPlannedTimeModal
         open={timePrompt != null}
@@ -771,6 +1156,15 @@ export function SocialPlannedView({
         onCancel={handleTimePromptCancel}
         onConfirm={handleTimePromptConfirm}
       />
+      {mediaLightbox ? (
+        <SocialMediaLightbox
+          src={mediaLightbox.src}
+          kind={mediaLightbox.kind}
+          alt={mediaLightbox.alt}
+          sourceRect={mediaLightbox.sourceRect}
+          onClose={() => setMediaLightbox(null)}
+        />
+      ) : null}
     </div>
   );
 }

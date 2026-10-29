@@ -56,6 +56,13 @@ function originFromElement(element: Element): { x: number; y: number } {
   };
 }
 
+export type FireHabitCompleteConfettiOptions = {
+  /** Particle palette — defaults to habit greens. */
+  colors?: readonly string[];
+  /** Multiplier for particle count, size, and velocity (1 = habit default). */
+  scale?: number;
+};
+
 /**
  * Burst confetti from a habit control (day square or side-panel checkbox).
  * Uses a dedicated full-screen canvas so particles are never clipped by app
@@ -65,6 +72,7 @@ function originFromElement(element: Element): { x: number; y: number } {
 export function fireHabitCompleteConfetti(
   originEl: Element,
   contentRoot: Element | null = null,
+  options: FireHabitCompleteConfettiOptions = {},
 ): void {
   if (typeof window === "undefined") return;
 
@@ -81,32 +89,35 @@ export function fireHabitCompleteConfetti(
     if (!visible) return;
   }
 
+  const colors = options.colors ?? HABIT_COMPLETE_COLORS;
+  const scale = options.scale ?? 1;
+
   try {
     const fire = getHabitConfettiFire();
     const origin = originFromElement(originEl);
-    const burst = (options: Options) => {
+    const burst = (burstOptions: Options) => {
       void fire({
-        ...options,
+        ...burstOptions,
         origin,
-        colors: HABIT_COMPLETE_COLORS,
+        colors: [...colors],
         disableForReducedMotion: false,
       });
     };
 
     burst({
-      particleCount: 36,
+      particleCount: Math.round(36 * scale),
       spread: 58,
-      startVelocity: 32,
+      startVelocity: 32 * scale,
       gravity: 0.95,
-      scalar: 0.9,
+      scalar: 0.9 * scale,
       ticks: 140,
     });
     burst({
-      particleCount: 24,
+      particleCount: Math.round(24 * scale),
       spread: 90,
-      startVelocity: 22,
+      startVelocity: 22 * scale,
       gravity: 1.1,
-      scalar: 0.75,
+      scalar: 0.75 * scale,
       ticks: 120,
       decay: 0.9,
     });

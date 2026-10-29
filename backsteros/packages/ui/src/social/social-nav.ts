@@ -106,10 +106,6 @@ export function getSocialPlatformNavHref(id: SocialPlatformNavId): string {
   return `/social/${id}`;
 }
 
-export function getSocialPostHref(postId: string): string {
-  return `/social/post/${encodeURIComponent(postId)}`;
-}
-
 /** Own profile (`/social/profile`) or another author (`/social/profile/:handle`). */
 export function getSocialProfileHref(handle?: string | null): string {
   const trimmed = handle?.trim().replace(/^@/, "");
@@ -150,12 +146,35 @@ export type SocialFeedTabId = (typeof SOCIAL_FEED_TAB_IDS)[number];
 export const SOCIAL_FEED_TAB_PARAM = "tab";
 export const DEFAULT_SOCIAL_FEED_TAB: SocialFeedTabId = "inbox";
 
+/** Personal vs business owned-account filter (`?account=business`). */
+export const SOCIAL_FEED_ACCOUNT_KIND_IDS = ["personal", "business"] as const;
+export type SocialFeedAccountKind =
+  (typeof SOCIAL_FEED_ACCOUNT_KIND_IDS)[number];
+export const SOCIAL_FEED_ACCOUNT_PARAM = "account";
+export const DEFAULT_SOCIAL_FEED_ACCOUNT_KIND: SocialFeedAccountKind =
+  "personal";
+
+/** Platform filter — `all` uses `/social`; a network uses `/social/:platform`. */
+export type SocialFeedPlatformFilterId = SocialPlatformNavId | "all";
+export const DEFAULT_SOCIAL_FEED_PLATFORM: SocialFeedPlatformFilterId = "all";
+/** On post detail URLs, platform is carried as `?platform=` (path is `/social/post/…`). */
+export const SOCIAL_FEED_PLATFORM_PARAM = "platform";
+
 const SOCIAL_FEED_TAB_ID_SET = new Set<string>(SOCIAL_FEED_TAB_IDS);
+const SOCIAL_FEED_ACCOUNT_KIND_SET = new Set<string>(
+  SOCIAL_FEED_ACCOUNT_KIND_IDS,
+);
 
 export function isSocialFeedTabId(
   value: string | null | undefined,
 ): value is SocialFeedTabId {
   return Boolean(value && SOCIAL_FEED_TAB_ID_SET.has(value));
+}
+
+export function isSocialFeedAccountKind(
+  value: string | null | undefined,
+): value is SocialFeedAccountKind {
+  return Boolean(value && SOCIAL_FEED_ACCOUNT_KIND_SET.has(value));
 }
 
 export function getSocialFeedTabFromSearch(
@@ -169,28 +188,113 @@ export function getSocialFeedTabFromSearch(
   return DEFAULT_SOCIAL_FEED_TAB;
 }
 
+export function getSocialFeedAccountKindFromSearch(
+  searchStr: string,
+): SocialFeedAccountKind {
+  const raw = searchStr.startsWith("?") ? searchStr.slice(1) : searchStr;
+  const value = new URLSearchParams(raw).get(SOCIAL_FEED_ACCOUNT_PARAM);
+  if (isSocialFeedAccountKind(value)) return value;
+  return DEFAULT_SOCIAL_FEED_ACCOUNT_KIND;
+}
+
+/** Platform filter from `?platform=` (used on post detail to rebuild the feed href). */
+export function getSocialFeedPlatformFromSearch(
+  searchStr: string,
+): SocialFeedPlatformFilterId | null {
+  const raw = searchStr.startsWith("?") ? searchStr.slice(1) : searchStr;
+  const value = new URLSearchParams(raw).get(SOCIAL_FEED_PLATFORM_PARAM);
+  if (!value) return null;
+  if (value === "all") return "all";
+  return isSocialPlatformNavId(value) ? value : null;
+}
+
+/** Path for a Network feed platform filter (`/social` or `/social/linkedin`). */
+export function getSocialFeedPathname(
+  platform: SocialFeedPlatformFilterId = DEFAULT_SOCIAL_FEED_PLATFORM,
+): string {
+  if (platform === "all") return "/social";
+  return getSocialPlatformNavHref(platform);
+}
+
+export type SocialPostHrefOptions = {
+  accountKind?: SocialFeedAccountKind | null;
+  platform?: SocialFeedPlatformFilterId | null;
+  tab?: SocialFeedTabId | null;
+};
+
+/**
+ * `/social/post/:id` with optional `account` / `platform` / `tab` query so
+ * returning to Network lands on the same Personal/Business + network filter.
+ */
+export function getSocialPostHref(
+  postId: string,
+  options: SocialPostHrefOptions = {},
+): string {
+  const params = new URLSearchParams();
+  const accountKind = options.accountKind ?? DEFAULT_SOCIAL_FEED_ACCOUNT_KIND;
+  if (accountKind !== DEFAULT_SOCIAL_FEED_ACCOUNT_KIND) {
+    params.set(SOCIAL_FEED_ACCOUNT_PARAM, accountKind);
+  }
+  if (options.platform && options.platform !== DEFAULT_SOCIAL_FEED_PLATFORM) {
+    params.set(SOCIAL_FEED_PLATFORM_PARAM, options.platform);
+  }
+  const tab = options.tab ?? DEFAULT_SOCIAL_FEED_TAB;
+  if (tab !== DEFAULT_SOCIAL_FEED_TAB) {
+    params.set(SOCIAL_FEED_TAB_PARAM, tab);
+  }
+  const query = params.toString();
+  const path = `/social/post/${encodeURIComponent(postId)}`;
+  return query ? `${path}?${query}` : path;
+}
+
 export type SocialFeedHrefOptions = {
   tab?: SocialFeedTabId | null;
-  /** Defaults to `/social`. Keep platform legacy paths when provided. */
+  accountKind?: SocialFeedAccountKind | null;
+  /**
+   * When set, pathname becomes `/social` or `/social/:platform`.
+   * When omitted, `pathname` (or `/social`) is kept as-is.
+   */
+  platform?: SocialFeedPlatformFilterId | null;
+  /** Defaults to `/social`. Keep platform paths when provided. */
   pathname?: string;
   /** Existing search — unrelated params are preserved. */
   searchStr?: string;
 };
 
-/** Build a Network feed href with an optional `tab` query. */
+/** Build a Network feed href with tab / account / platform location. */
 export function getSocialFeedHref(options: SocialFeedHrefOptions = {}): string {
-  const pathname = options.pathname?.trim() || "/social";
+  const pathname =
+    options.platform != null
+      ? getSocialFeedPathname(options.platform)
+      : options.pathname?.trim() || "/social";
   const params = new URLSearchParams(
     options.searchStr?.startsWith("?")
       ? options.searchStr.slice(1)
       : (options.searchStr ?? ""),
   );
-  const tab = options.tab ?? DEFAULT_SOCIAL_FEED_TAB;
+  const tab =
+    options.tab === undefined
+      ? getSocialFeedTabFromSearch(params.toString())
+      : (options.tab ?? DEFAULT_SOCIAL_FEED_TAB);
   if (tab === DEFAULT_SOCIAL_FEED_TAB) {
     params.delete(SOCIAL_FEED_TAB_PARAM);
   } else {
     params.set(SOCIAL_FEED_TAB_PARAM, tab);
   }
+
+  const accountKind =
+    options.accountKind === undefined
+      ? getSocialFeedAccountKindFromSearch(params.toString())
+      : (options.accountKind ?? DEFAULT_SOCIAL_FEED_ACCOUNT_KIND);
+  if (accountKind === DEFAULT_SOCIAL_FEED_ACCOUNT_KIND) {
+    params.delete(SOCIAL_FEED_ACCOUNT_PARAM);
+  } else {
+    params.set(SOCIAL_FEED_ACCOUNT_PARAM, accountKind);
+  }
+
+  // Feed locations put platform in the path — drop a leftover post-detail query.
+  params.delete(SOCIAL_FEED_PLATFORM_PARAM);
+
   const query = params.toString();
   return query ? `${pathname}?${query}` : pathname;
 }

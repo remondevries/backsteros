@@ -17,6 +17,17 @@ export {
   rateTierForAccountCount,
   setZernioAccountCount,
 } from "./request-gate.js";
+export { listSocialFeedPosts } from "./feed.js";
+export { listSocialFeedComments } from "./feed-comments.js";
+export { likeSocialFeedPost, unlikeSocialFeedPost } from "./feed-like.js";
+export { editSocialFeedPost } from "./feed-edit.js";
+export { publishSocialPost } from "./publish.js";
+export {
+  engagementWithZernioPostId,
+  parseZernioPostIdFromEngagement,
+  plannedPostTargetsLinkedIn,
+  syncPlannedPostScheduleToZernio,
+} from "./planned-schedule.js";
 export {
   createZernioAdapter,
   disconnectSocialAccount,

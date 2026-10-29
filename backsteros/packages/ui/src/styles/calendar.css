@@ -300,6 +300,11 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px;
   background-color: var(--calendar-grid-border);
+  /* Column width drives the square min-height on day cells (100cqw). */
+  container-type: inline-size;
+  container-name: month-days;
+  /* Rows grow with the tallest day in that week. */
+  grid-auto-rows: minmax(0, auto);
 }
 
 .calendar-view[data-month-strip="true"]
@@ -327,22 +332,38 @@
   .fc-daygrid-day {
   display: flex;
   flex-direction: column;
-  aspect-ratio: 1 / 1;
   width: 100%;
   height: auto;
-  min-height: 0;
+  /* Square floor from column width (7 cols + 6×1px gaps); grow with posts. */
+  min-height: calc((100cqw - 6px) / 7);
+  aspect-ratio: unset;
+  align-self: stretch;
   /* Neutralize shared right/bottom + :last-child edge stripping. */
   border: none !important;
   /* Opaque so the gap “seam” color does not fill the cell. */
   background-color: var(--background) !important;
+  overflow: visible;
 }
 
 .calendar-view[data-month-strip="true"]
   .calendar-month-strip
   .fc-daygrid-day-frame {
-  flex: 1;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: min-content;
+  height: auto;
+  overflow: visible;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-day-events {
+  flex: 0 1 auto;
   min-height: 0;
-  height: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
+  overflow: visible;
 }
 
 /* Shared table-edge selectors must not apply — see gap-based seams above. */
@@ -749,7 +770,22 @@
 }
 
 .calendar-view .fc .fc-daygrid-day-top {
-  padding: 10px 8px 4px;
+  /* Keep side/top padding; pull events up toward the day number. */
+  padding: 8px 8px 0;
+}
+
+/* Monthly strip (Planned / main calendar month panes) — sit chips under the number. */
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-day-top {
+  padding: 6px 6px 0;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-event-harness:first-child
+  .fc-daygrid-event.task-calendar-event {
+  margin-top: 0;
 }
 
 .calendar-view .fc .fc-daygrid-day-number {
@@ -908,7 +944,16 @@
 }
 
 .calendar-view .fc .fc-daygrid-day-events {
+  margin-top: 1px;
   margin-bottom: 2px;
+}
+
+/* First chip sits closer to the day number; later chips keep the 3px stack gap. */
+.calendar-view
+  .fc
+  .fc-daygrid-event-harness:first-of-type
+  .fc-daygrid-event.task-calendar-event {
+  margin-top: 1px;
 }
 
 .calendar-view .fc .fc-daygrid-event.task-calendar-event .fc-event-main,
@@ -919,6 +964,14 @@
 
 .calendar-view .fc .fc-daygrid-event.task-calendar-event .task-calendar-event__content {
   padding: 2px 4px;
+}
+
+.calendar-view
+  .fc
+  .fc-daygrid-event.social-planned-calendar-event
+  .social-planned-calendar-event__content {
+  /* Keep right gutter for the absolute × (overrides daygrid 2px 4px). */
+  padding: 2px 18px 2px 4px;
 }
 
 /* "+N more" popover — FC sets --fc-page-bg-color to transparent on .calendar-view .fc */
@@ -1433,6 +1486,18 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 .calendar-view .fc .fc-daygrid-day-frame .calendar-day-habits-slot {
   margin-top: 8px;
   padding: 2px 2px 4px;
+}
+
+/* Empty habit row still reserved min-height + margin — that pushed month
+ * chips away from the day number. Collapse when there are no habit chips. */
+.calendar-view
+  .fc
+  .fc-daygrid-day-frame
+  .calendar-day-habits-slot:not(:has(.calendar-day-habits__list)) {
+  display: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .calendar-view .fc .fc-list-day-cushion .calendar-day-habits-slot {

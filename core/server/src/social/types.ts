@@ -49,6 +49,12 @@ export type SocialAccount = {
   handle: string | null;
   displayName: string | null;
   url: string | null;
+  /** Provider CDN URL for the account profile picture, when available. */
+  avatarUrl: string | null;
+  /** Provider about/bio text when available. */
+  bio: string | null;
+  /** Provider follower count when available. */
+  followersCount: number | null;
   contactId: string | null;
   organizationId: string | null;
   capabilities: SocialCapabilities;

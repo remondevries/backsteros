@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import { HeartIcon, ReplyIcon, SyncIcon } from "@primer/octicons-react";
+import {
+  HeartFillIcon,
+  HeartIcon,
+  ReplyIcon,
+  SyncIcon,
+} from "@primer/octicons-react";
 
+import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
+import { SocialSaveIcon } from "../icons/social-save-icon.js";
 import {
   getSocialMockProfileByHandle,
   type SocialMockPost,
@@ -24,6 +31,7 @@ import { DevNullIcon } from "../icons/dev-null-icon.js";
 import { FacebookIcon } from "../icons/facebook-icon.js";
 import { LinkedInIcon } from "../icons/linkedin-icon.js";
 import { VerifiedBadgeIcon } from "../icons/verified-badge-icon.js";
+import { SocialPostBodyEditor } from "./social-post-body-editor.js";
 
 /** Trailing `#tag` run (Instagram caption style), after caption copy. */
 const TRAILING_HASHTAG_BLOCK =
@@ -103,6 +111,20 @@ export type SocialPostCardProps = {
   variant?: "post" | "draft";
   /** Platforms this draft will publish to (draft variant only). */
   draftPlatforms?: readonly SocialMockPostPlatform[];
+  /** Live like control on the heart action (list cards). */
+  liked?: boolean;
+  likeBusy?: boolean;
+  likeCount?: number;
+  onToggleLike?: () => void;
+  /** Overrides default `/social/post/:id` (include feed filters for Back). */
+  href?: string;
+  /** Inline body edit (invisible CodeMirror) — replaces the static text. */
+  editing?: boolean;
+  editBody?: string;
+  editBusy?: boolean;
+  onEditBodyChange?: (value: string) => void;
+  onEditSave?: () => void;
+  onEditCancel?: () => void;
 };
 
 function formatCount(value: number): string {
@@ -154,21 +176,40 @@ export function SocialPostCard({
   emphasis = "list",
   variant = "post",
   draftPlatforms = [],
+  liked = false,
+  likeBusy = false,
+  likeCount,
+  onToggleLike,
+  href,
+  editing = false,
+  editBody,
+  editBusy = false,
+  onEditBodyChange,
+  onEditSave,
+  onEditCancel,
 }: SocialPostCardProps) {
+  /** After a click, ignore :hover solid until the pointer moves again. */
+  const [suppressLikeHover, setSuppressLikeHover] = useState(false);
   const age = formatRelativeAgeLabel(post.createdAt);
-  const postHref = getSocialPostHref(post.id);
+  const postHref = href ?? getSocialPostHref(post.id);
   const profileHref = getSocialProfileHref(post.authorHandle);
   const authorProfile = getSocialMockProfileByHandle(post.authorHandle);
-  const followersLabel = formatCount(authorProfile?.followersCount ?? 0);
+  const followersCount =
+    post.authorFollowersCount ?? authorProfile?.followersCount ?? 0;
+  const followersLabel = formatCount(followersCount);
+  const authorAvatarUrl =
+    post.authorAvatarUrl?.trim() || authorProfile?.avatarUrl || null;
   const isInstagram = post.platform === "instagram";
   const isDraft = variant === "draft";
   const avatarSize = emphasis === "detail" ? 48 : 40;
+  const linkInteractive = interactive && !editing;
   const className = [
     "social-post-card",
-    interactive ? "social-post-card--interactive" : null,
+    linkInteractive ? "social-post-card--interactive" : null,
     emphasis === "detail" ? "social-post-card--detail" : null,
     isInstagram ? "social-post-card--instagram" : null,
     isDraft ? "social-post-card--draft" : null,
+    editing ? "social-post-card--editing" : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -187,9 +228,27 @@ export function SocialPostCard({
     </div>
   ) : null;
 
+  const bodyNode = editing ? (
+    <SocialPostBodyEditor
+      value={editBody ?? post.body}
+      onChange={(value) => onEditBodyChange?.(value)}
+      onSave={() => onEditSave?.()}
+      onCancel={() => onEditCancel?.()}
+      disabled={editBusy}
+      emphasis={emphasis}
+    />
+  ) : isInstagram ? (
+    <InstagramPostCaption
+      body={post.body}
+      defaultExpanded={emphasis === "detail"}
+    />
+  ) : (
+    <p className="social-post-card__text">{post.body}</p>
+  );
+
   return (
     <article className={className} data-platform={post.platform}>
-      {interactive ? (
+      {linkInteractive ? (
         <ClientLink
           href={postHref}
           className="social-post-card__stretch-link"
@@ -210,7 +269,18 @@ export function SocialPostCard({
           >
             <span className="social-post-card__avatar-wrap">
               <span className="social-post-card__avatar" aria-hidden="true">
-                <EntityAvatarIcon size={avatarSize} />
+                {authorAvatarUrl ? (
+                  <img
+                    className="social-post-card__avatar-image"
+                    src={authorAvatarUrl}
+                    alt=""
+                    width={avatarSize}
+                    height={avatarSize}
+                    decoding="async"
+                  />
+                ) : (
+                  <EntityAvatarIcon size={avatarSize} />
+                )}
               </span>
               {!isDraft ? (
                 <SocialPostPlatformBadge platform={post.platform} />
@@ -268,14 +338,7 @@ export function SocialPostCard({
 
         {/* Instagram feed posts lead with square media, then caption. */}
         {isInstagram ? media : null}
-        {isInstagram ? (
-          <InstagramPostCaption
-            body={post.body}
-            defaultExpanded={emphasis === "detail"}
-          />
-        ) : (
-          <p className="social-post-card__text">{post.body}</p>
-        )}
+        {bodyNode}
         {!isInstagram ? media : null}
         {emphasis === "list" && isDraft && draftPlatforms.length > 0 ? (
           <div
@@ -319,13 +382,75 @@ export function SocialPostCard({
               <ReplyIcon size={14} />
               <span>{formatCount(post.replyCount)}</span>
             </button>
-            <button type="button" className="social-post-card__action" disabled>
+            <button
+              type="button"
+              className="social-post-card__action"
+              disabled
+              title="Repost isn’t available here yet — this feed only shows your own posts."
+              aria-label="Repost unavailable"
+            >
               <SyncIcon size={14} />
               <span>{formatCount(post.repostCount)}</span>
             </button>
-            <button type="button" className="social-post-card__action" disabled>
-              <HeartIcon size={14} />
-              <span>{formatCount(post.likeCount)}</span>
+            <button
+              type="button"
+              className={[
+                "social-post-card__action",
+                "social-post-card__action--like",
+                liked ? "is-liked" : null,
+                suppressLikeHover ? "is-hover-suppressed" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              disabled={likeBusy || !onToggleLike}
+              aria-pressed={liked}
+              aria-label={liked ? "Unlike" : "Like"}
+              title={
+                onToggleLike
+                  ? liked
+                    ? "Unlike"
+                    : "Like"
+                  : "Likes aren’t available for this post yet"
+              }
+              onPointerMove={() => {
+                if (suppressLikeHover) setSuppressLikeHover(false);
+              }}
+              onPointerLeave={() => {
+                if (suppressLikeHover) setSuppressLikeHover(false);
+              }}
+              onClick={(event) => {
+                stopCardNavigation(event);
+                if (!onToggleLike) return;
+                setSuppressLikeHover(true);
+                if (!liked) {
+                  // Match `.social-post-card__action--like` hover/liked red.
+                  fireHabitCompleteConfetti(event.currentTarget, null, {
+                    colors: ["#e5484d", "#ff6b6b", "#c9373b", "#fda4af"],
+                    scale: 0.5,
+                  });
+                }
+                onToggleLike();
+              }}
+            >
+              <span className="social-post-card__like-icon" aria-hidden="true">
+                <span className="social-post-card__like-icon-outline">
+                  <HeartIcon size={14} />
+                </span>
+                <span className="social-post-card__like-icon-fill">
+                  <HeartFillIcon size={14} />
+                </span>
+              </span>
+              <span>{formatCount(likeCount ?? post.likeCount)}</span>
+            </button>
+            <button
+              type="button"
+              className="social-post-card__action social-post-card__action--save"
+              disabled
+              title="Times this post was saved on LinkedIn"
+              aria-label={`${formatCount(post.saveCount ?? 0)} saves`}
+            >
+              <SocialSaveIcon size={14} />
+              <span>{formatCount(post.saveCount ?? 0)}</span>
             </button>
           </div>
         ) : null}

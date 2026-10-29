@@ -7,6 +7,8 @@ import type {
   SocialMockAnalyticsPlatformFilterId,
   SocialMockPost,
 } from "../../social/social-mock-data.js";
+import type { SocialConnectedAccountAvatar } from "../../social/social-connected-account-avatar.js";
+import type { SocialFeedPostsClient } from "../../social/social-feed-posts.js";
 import type { SocialPlannedPostsClient } from "../../social/social-planned-posts.js";
 import { SocialFeedView } from "./social-feed-view.js";
 
@@ -26,6 +28,10 @@ export type SocialDashboardViewProps = {
   onNavigateHref?: (href: string) => void;
   /** Persist Planned posts in core. */
   plannedPostsClient?: SocialPlannedPostsClient | null;
+  /** Live inbox posts (LinkedIn via Zernio). */
+  feedPostsClient?: SocialFeedPostsClient | null;
+  /** Connected owned accounts for composer avatars (LinkedIn, …). */
+  connectedAccounts?: readonly SocialConnectedAccountAvatar[];
 };
 
 /**
@@ -43,6 +49,8 @@ export function SocialDashboardView({
   onInspectPost,
   onNavigateHref,
   plannedPostsClient = null,
+  feedPostsClient = null,
+  connectedAccounts = [],
 }: SocialDashboardViewProps) {
   const railHidden = discoverCollapsed || discoverPanel == null;
 
@@ -71,6 +79,8 @@ export function SocialDashboardView({
           onInspectPost={onInspectPost}
           onNavigateHref={onNavigateHref}
           plannedPostsClient={plannedPostsClient}
+          feedPostsClient={feedPostsClient}
+          connectedAccounts={connectedAccounts}
         />
       </div>
       {discoverPanel}

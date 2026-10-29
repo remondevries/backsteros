@@ -1,16 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { HeartIcon, ReplyIcon, SyncIcon, XIcon } from "@primer/octicons-react";
+import { useEffect, useState } from "react";
+import {
+  HeartIcon,
+  LinkExternalIcon,
+  ReplyIcon,
+  SyncIcon,
+} from "@primer/octicons-react";
 
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
 import {
   getSocialMockPostById,
   getSocialMockRepliesForPost,
+  getSocialPostExternalReplyUrl,
   resolveSocialMockInspectPost,
+  SOCIAL_LINKEDIN_FEED_FALLBACK_URL,
+  type SocialMockAccountKind,
   type SocialMockPost,
   type SocialMockReply,
 } from "../../social/social-mock-data.js";
+import {
+  isLiveSocialFeedPostId,
+  type SocialFeedPostsClient,
+} from "../../social/social-feed-posts.js";
 import { getSocialProfileHref } from "../../social/social-nav.js";
 import { ClientLink } from "../../shared/client-link.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
@@ -27,6 +39,10 @@ export type SocialPostDetailViewProps = {
   layout?: "page" | "panel";
   /** Clear inspect selection and restore Discover widgets. */
   onClose?: () => void;
+  /** Personal vs Business — company LinkedIn can load live comments. */
+  accountKind?: SocialMockAccountKind;
+  /** Live inbox client (LinkedIn company comments). */
+  feedPostsClient?: SocialFeedPostsClient | null;
 };
 
 function formatCount(value: number): string {
@@ -42,6 +58,7 @@ function formatCount(value: number): string {
 function SocialReplyRow({ reply }: { reply: SocialMockReply }) {
   const age = formatRelativeAgeLabel(reply.createdAt);
   const profileHref = getSocialProfileHref(reply.authorHandle);
+  const avatarUrl = reply.authorAvatarUrl?.trim() || null;
   return (
     <article className="social-reply">
       <ClientLink
@@ -50,7 +67,18 @@ function SocialReplyRow({ reply }: { reply: SocialMockReply }) {
         aria-label={`${reply.authorName}'s profile`}
       >
         <span className="social-reply__avatar" aria-hidden="true">
-          <EntityAvatarIcon size={36} />
+          {avatarUrl ? (
+            <img
+              className="social-reply__avatar-image"
+              src={avatarUrl}
+              alt=""
+              width={36}
+              height={36}
+              decoding="async"
+            />
+          ) : (
+            <EntityAvatarIcon size={36} />
+          )}
         </span>
       </ClientLink>
       <div className="social-reply__body">
@@ -106,19 +134,70 @@ export function SocialPostDetailView({
   backHref = "/social",
   layout = "page",
   onClose,
+  accountKind = "personal",
+  feedPostsClient = null,
 }: SocialPostDetailViewProps) {
+  // Prefer an explicit post (live Zernio / planned inspect). `null` means
+  // "resolved missing" — skip mock lookup so live ids don't flash "not found".
   const post =
-    postProp ??
-    (postId
-      ? (resolveSocialMockInspectPost(postId) ?? getSocialMockPostById(postId))
-      : null);
-  const replies = post ? getSocialMockRepliesForPost(post.id) : [];
+    postProp !== undefined && postProp !== null
+      ? postProp
+      : postProp === null
+        ? null
+        : postId
+          ? (resolveSocialMockInspectPost(postId) ??
+            getSocialMockPostById(postId))
+          : null;
+  const mockReplies = post ? getSocialMockRepliesForPost(post.id) : [];
   const [draft, setDraft] = useState("");
+  const [liveComments, setLiveComments] = useState<SocialMockReply[]>([]);
+  const [liveCommentsStatus, setLiveCommentsStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const isPanel = layout === "panel";
   const isPendingPlan = Boolean(post?.id.startsWith("plan-"));
   const isPlanned = Boolean(
     post?.id.startsWith("planned-") || isPendingPlan,
   );
+  const commentsViaLinkedIn = post?.platform === "linkedin";
+  const canLoadCompanyComments =
+    Boolean(post) &&
+    commentsViaLinkedIn &&
+    accountKind === "business" &&
+    isLiveSocialFeedPostId(post!.id) &&
+    feedPostsClient != null;
+  const linkedInCommentUrl =
+    (post ? getSocialPostExternalReplyUrl(post) : null) ??
+    SOCIAL_LINKEDIN_FEED_FALLBACK_URL;
+
+  useEffect(() => {
+    if (!canLoadCompanyComments || !post || !feedPostsClient) {
+      setLiveComments([]);
+      setLiveCommentsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setLiveCommentsStatus("loading");
+    void (async () => {
+      try {
+        const rows = await feedPostsClient.listComments({
+          platform: "linkedin",
+          accountKind: "business",
+          postId: post.id,
+        });
+        if (cancelled) return;
+        setLiveComments(rows);
+        setLiveCommentsStatus("ready");
+      } catch {
+        if (cancelled) return;
+        setLiveComments([]);
+        setLiveCommentsStatus("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canLoadCompanyComments, feedPostsClient, post]);
 
   if (!post) {
     return (
@@ -154,6 +233,13 @@ export function SocialPostDetailView({
     );
   }
 
+  const replies = canLoadCompanyComments ? liveComments : mockReplies;
+  const replyCountLabel = canLoadCompanyComments
+    ? liveCommentsStatus === "ready"
+      ? liveComments.length
+      : post.replyCount
+    : post.replyCount;
+
   return (
     <div
       className={[
@@ -164,24 +250,38 @@ export function SocialPostDetailView({
         .filter(Boolean)
         .join(" ")}
     >
-      {isPanel && onClose ? (
+      {isPanel ? (
         <div className="social-post-detail__panel-bar">
           <p className="social-post-detail__panel-label">
             {isPlanned ? "Planned post" : "Post"}
           </p>
-          <button
-            type="button"
-            className="social-post-detail__panel-close"
-            aria-label="Back to Discover"
-            onClick={onClose}
-          >
-            <XIcon size={14} />
-          </button>
         </div>
       ) : null}
       <div className="social-post-detail__scroll">
         <div className="social-post-detail__inner">
           <div className="social-post-detail__column">
+            {isPlanned ? (
+              <p className="social-post-detail__planned-hint">
+                {isPendingPlan ? (
+                  "Not on the calendar yet — keep it here until you schedule a time."
+                ) : (
+                  <>
+                    Scheduled{" "}
+                    <time dateTime={post.createdAt}>
+                      {new Date(post.createdAt).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                    . Drag on the calendar to reschedule.
+                  </>
+                )}
+              </p>
+            ) : null}
+
             <SocialPostCard
               post={post}
               interactive={false}
@@ -207,7 +307,10 @@ export function SocialPostDetailView({
                     <strong>{formatCount(post.likeCount)}</strong> Likes
                   </span>
                   <span>
-                    <strong>{formatCount(post.replyCount)}</strong> Replies
+                    <strong>{formatCount(post.saveCount ?? 0)}</strong> Saves
+                  </span>
+                  <span>
+                    <strong>{formatCount(replyCountLabel)}</strong> Replies
                   </span>
                 </div>
 
@@ -239,72 +342,128 @@ export function SocialPostDetailView({
                   </button>
                 </div>
 
-                <div className="social-feed__composer social-post-detail__composer">
-                  <div
-                    className="social-feed__composer-avatar"
-                    aria-hidden="true"
-                  >
-                    <EntityAvatarIcon size={40} />
-                  </div>
-                  <div className="social-feed__composer-main">
-                    <textarea
-                      className="social-feed__composer-input"
-                      rows={2}
-                      placeholder="Post your reply"
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      aria-label="Reply to post"
-                    />
-                    <div className="social-feed__composer-actions">
-                      <button
-                        type="button"
-                        className="social-feed__composer-submit"
-                        disabled={!draft.trim()}
+                {commentsViaLinkedIn ? (
+                  <>
+                    <div
+                      className="social-post-detail__linkedin-comments"
+                      role="note"
+                    >
+                      <p className="social-post-detail__linkedin-comments-title">
+                        Commenting isn’t available in BacksterOS
+                      </p>
+                      <p className="social-post-detail__linkedin-comments-copy">
+                        LinkedIn doesn’t let apps post comments from here. You
+                        can still leave one on LinkedIn itself
+                        {canLoadCompanyComments
+                          ? ", and existing company-page comments show below."
+                          : "."}
+                      </p>
+                      <a
+                        className="social-feed__composer-submit social-post-detail__linkedin-comments-action"
+                        href={linkedInCommentUrl}
+                        target="_blank"
+                        rel="noreferrer"
                       >
-                        Reply
-                      </button>
+                        <LinkExternalIcon size={14} />
+                        Comment on LinkedIn
+                      </a>
                     </div>
-                  </div>
-                </div>
 
-                <div className="social-post-detail__replies" aria-label="Replies">
-                  {replies.length === 0 ? (
-                    <div className="social-profile__empty">
-                      <p className="social-profile__empty-title">
-                        No replies yet
-                      </p>
-                      <p className="social-profile__empty-copy">
-                        Be the first to reply to this post.
-                      </p>
-                    </div>
-                  ) : (
-                    replies.map((reply) => (
-                      <SocialReplyRow key={reply.id} reply={reply} />
-                    ))
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="social-post-detail__planned-hint">
-                {isPendingPlan ? (
-                  "Not on the calendar yet — keep it here until you schedule a time."
+                    {canLoadCompanyComments ? (
+                      <div
+                        className="social-post-detail__replies"
+                        aria-label="Comments"
+                      >
+                        {liveCommentsStatus === "loading" ? (
+                          <div className="social-profile__empty">
+                            <p className="social-profile__empty-title">
+                              Loading comments…
+                            </p>
+                            <p className="social-profile__empty-copy">
+                              Fetching LinkedIn company-page comments.
+                            </p>
+                          </div>
+                        ) : liveCommentsStatus === "error" ? (
+                          <div className="social-profile__empty">
+                            <p className="social-profile__empty-title">
+                              Couldn’t load comments
+                            </p>
+                            <p className="social-profile__empty-copy">
+                              Try again in a moment, or open the post on
+                              LinkedIn.
+                            </p>
+                          </div>
+                        ) : replies.length === 0 ? (
+                          <div className="social-profile__empty">
+                            <p className="social-profile__empty-title">
+                              No comments yet
+                            </p>
+                            <p className="social-profile__empty-copy">
+                              When people comment on LinkedIn, they’ll show up
+                              here.
+                            </p>
+                          </div>
+                        ) : (
+                          replies.map((reply) => (
+                            <SocialReplyRow key={reply.id} reply={reply} />
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <>
-                    Scheduled{" "}
-                    <time dateTime={post.createdAt}>
-                      {new Date(post.createdAt).toLocaleString(undefined, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                    . Drag on the calendar to reschedule.
+                    <div className="social-feed__composer social-post-detail__composer">
+                      <div
+                        className="social-feed__composer-avatar"
+                        aria-hidden="true"
+                      >
+                        <EntityAvatarIcon size={40} />
+                      </div>
+                      <div className="social-feed__composer-main">
+                        <textarea
+                          className="social-feed__composer-input"
+                          rows={2}
+                          placeholder="Post your reply"
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          aria-label="Reply to post"
+                        />
+                        <div className="social-feed__composer-actions">
+                          <button
+                            type="button"
+                            className="social-feed__composer-submit"
+                            disabled={!draft.trim()}
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className="social-post-detail__replies"
+                      aria-label="Replies"
+                    >
+                      {replies.length === 0 ? (
+                        <div className="social-profile__empty">
+                          <p className="social-profile__empty-title">
+                            No replies yet
+                          </p>
+                          <p className="social-profile__empty-copy">
+                            Be the first to reply to this post.
+                          </p>
+                        </div>
+                      ) : (
+                        replies.map((reply) => (
+                          <SocialReplyRow key={reply.id} reply={reply} />
+                        ))
+                      )}
+                    </div>
                   </>
                 )}
-              </p>
-            )}
+              </>
+            ) : null}
           </div>
         </div>
       </div>

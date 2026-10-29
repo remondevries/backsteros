@@ -191,12 +191,28 @@ export function SettingsSocialTab({
             {settings?.accounts?.length ? (
               <ul className="settings-list">
                 {settings.accounts.map((account) => (
-                  <li key={account.id}>
-                    <strong>{account.platform}</strong>
-                    {account.handle ? ` @${account.handle}` : null}
-                    {account.displayName ? ` — ${account.displayName}` : null}
-                    {account.disconnected ? " (disconnected)" : null}
-                    {account.needsReconnect ? " (reconnect needed)" : null}
+                  <li key={account.id} className="settings-social-account-row">
+                    {account.avatarUrl ? (
+                      <img
+                        src={account.avatarUrl}
+                        alt=""
+                        className="settings-social-account-avatar"
+                        width={28}
+                        height={28}
+                      />
+                    ) : (
+                      <span
+                        className="settings-social-account-avatar settings-social-account-avatar--empty"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="settings-social-account-meta">
+                      <strong>{account.platform}</strong>
+                      {account.handle ? ` @${account.handle}` : null}
+                      {account.displayName ? ` — ${account.displayName}` : null}
+                      {account.disconnected ? " (disconnected)" : null}
+                      {account.needsReconnect ? " (reconnect needed)" : null}
+                    </span>
                     <button
                       type="button"
                       disabled={saving}
